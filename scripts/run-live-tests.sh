@@ -42,6 +42,6 @@ if [[ "${OPENROUTER_API_KEY:-}" != sk-or-* ]]; then
 fi
 
 echo "Running live tests against model: $OPENROUTER_TEST_MODEL"
-echo "Key loaded: sk-or-…${OPENROUTER_API_KEY: -4} (length ${#OPENROUTER_API_KEY})"
+echo "OpenRouter key loaded."
 cd "$ROOT"
 exec npm run test:live

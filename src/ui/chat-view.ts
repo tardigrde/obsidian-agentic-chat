@@ -374,8 +374,16 @@ export class ChatView extends ItemView {
     }
   }
 
+  private scrollPending = false;
+
+  // Coalesce the per-token scroll updates into one reflow per frame.
   private scrollToBottom(): void {
-    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+    if (this.scrollPending) return;
+    this.scrollPending = true;
+    requestAnimationFrame(() => {
+      this.scrollPending = false;
+      this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+    });
   }
 }
 

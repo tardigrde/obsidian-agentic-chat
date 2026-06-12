@@ -153,6 +153,24 @@ describe("Agent.run", () => {
     ).rejects.toThrow(/failed after 2 attempts/);
   });
 
+  it("resets a tool's retry budget after a successful call", async () => {
+    // fail → recover (success resets the tally) → fail → recover again.
+    // Without the reset the second failure would exhaust the budget and abort.
+    const model = new FakeModel([
+      toolCallResponse("read_note", { path: "missing.md" }, "c1"),
+      toolCallResponse("read_note", { path: "a.md" }, "c2"),
+      toolCallResponse("read_note", { path: "missing-again.md" }, "c3"),
+      toolCallResponse("read_note", { path: "a.md" }, "c4"),
+      textResponse("done"),
+    ]);
+    const agent = new Agent<Deps>({ model, systemPrompt: "x", tools: [readNote] });
+
+    const result = await agent.run("go", { deps: makeDeps() });
+
+    expect(result.output).toBe("done");
+    expect(model.requests).toHaveLength(5);
+  });
+
   it("reports unknown tools to the model without crashing", async () => {
     const model = new FakeModel([
       toolCallResponse("bogus_tool", { x: 1 }),

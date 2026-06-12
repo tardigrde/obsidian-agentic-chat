@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sseEvents } from "../src/llm/sse";
+import { StreamIdleError, sseEvents } from "../src/llm/sse";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -45,5 +45,57 @@ describe("sseEvents", () => {
 
   it("passes through the [DONE] sentinel", async () => {
     expect(await collect(streamOf(["data: {}\n\ndata: [DONE]\n\n"]))).toEqual(["{}", "[DONE]"]);
+  });
+
+  it("raises StreamIdleError when the body stalls past the idle timeout", async () => {
+    const stalling = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data: first\n\n"));
+        // Never enqueues again and never closes: the stream goes silent.
+      },
+    });
+    const received: string[] = [];
+
+    await expect(
+      (async () => {
+        for await (const event of sseEvents(stalling, { idleTimeoutMs: 20 })) {
+          received.push(event);
+        }
+      })(),
+    ).rejects.toBeInstanceOf(StreamIdleError);
+    expect(received).toEqual(["first"]);
+  });
+
+  it("aborts the read promptly when the signal fires", async () => {
+    const controller = new AbortController();
+    const stalling = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode("data: hi\n\n"));
+      },
+    });
+    const pending = (async () => {
+      for await (const _event of sseEvents(stalling, { signal: controller.signal })) {
+        controller.abort();
+      }
+    })();
+
+    await expect(pending).rejects.toThrow(/abort/i);
+  });
+
+  it("does not time out a healthy stream that keeps sending", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        for (const word of ["a", "b", "c"]) {
+          controller.enqueue(encoder.encode(`data: ${word}\n\n`));
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        controller.close();
+      },
+    });
+    const out: string[] = [];
+    for await (const event of sseEvents(stream, { idleTimeoutMs: 100 })) out.push(event);
+
+    expect(out).toEqual(["a", "b", "c"]);
   });
 });

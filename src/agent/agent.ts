@@ -154,6 +154,9 @@ export class Agent<Deps = unknown> {
         ...base,
         retry: retries.get(name) ?? 0,
       });
+      // A clean run clears the failure tally so a later, unrelated call of the
+      // same tool gets its full retry budget rather than inheriting earlier ones.
+      retries.delete(name);
       return respond(result, false);
     } catch (error) {
       if (error instanceof ModelRetry) return retryable(error.message);

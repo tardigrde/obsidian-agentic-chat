@@ -6,7 +6,7 @@ import type {
   ToolCall,
   Usage,
 } from "../agent/types";
-import { sseEvents } from "./sse";
+import { StreamIdleError, sseEvents } from "./sse";
 
 /** Provider routing constraints enforced on every request. */
 export interface PrivacySettings {
@@ -36,6 +36,12 @@ export interface OpenRouterModelConfig {
   maxTokens?: number;
   /** Time budget for receiving response headers. Default 90s. */
   requestTimeoutMs?: number;
+  /**
+   * Max gap between streamed chunks before the response is considered stalled.
+   * Guards against a connection that delivers headers then goes silent.
+   * Defaults to `requestTimeoutMs`.
+   */
+  streamIdleTimeoutMs?: number;
   /** Automatic retries for rate limits and transient server errors. Default 2. */
   maxRetries?: number;
   referer?: string;
@@ -64,6 +70,7 @@ export interface OpenRouterModelInfo {
 
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_TIMEOUT_MS = 90_000;
+const DEFAULT_LIST_TIMEOUT_MS = 30_000;
 const DEFAULT_NETWORK_RETRIES = 2;
 const DEFAULT_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const DEFAULT_TITLE = "Obsidian Agentic Chat";
@@ -209,50 +216,64 @@ export class OpenRouterModel implements Model {
     let finishReason: string | null = null;
     const toolCalls = new Map<number, ToolCall>();
     const usage: Usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, requests: 1 };
+    const idleTimeoutMs =
+      this.config.streamIdleTimeoutMs ?? this.config.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-    for await (const payload of sseEvents(response.body)) {
-      if (payload === "[DONE]") break;
-      let chunk: StreamChunk;
-      try {
-        chunk = JSON.parse(payload) as StreamChunk;
-      } catch {
-        continue; // Tolerate malformed keep-alive payloads.
+    try {
+      for await (const payload of sseEvents(response.body, {
+        idleTimeoutMs,
+        signal: options.signal,
+      })) {
+        if (payload === "[DONE]") break;
+        let chunk: StreamChunk;
+        try {
+          chunk = JSON.parse(payload) as StreamChunk;
+        } catch {
+          continue; // Tolerate malformed keep-alive payloads.
+        }
+        if (chunk.error) {
+          throw new OpenRouterError(
+            chunk.error.message ?? "OpenRouter reported a mid-stream error.",
+            typeof chunk.error.code === "number" ? chunk.error.code : undefined,
+          );
+        }
+        if (chunk.usage) {
+          usage.promptTokens = chunk.usage.prompt_tokens ?? 0;
+          usage.completionTokens = chunk.usage.completion_tokens ?? 0;
+          usage.totalTokens = chunk.usage.total_tokens ?? 0;
+        }
+        const choice = chunk.choices?.[0];
+        if (!choice) continue;
+        if (choice.finish_reason) finishReason = choice.finish_reason;
+        const delta = choice.delta ?? {};
+        if (typeof delta.content === "string" && delta.content.length > 0) {
+          content += delta.content;
+          options.onDelta?.({ text: delta.content });
+        }
+        if (typeof delta.reasoning === "string" && delta.reasoning.length > 0) {
+          reasoning += delta.reasoning;
+          options.onDelta?.({ reasoning: delta.reasoning });
+        }
+        for (const fragment of delta.tool_calls ?? []) {
+          const index = fragment.index ?? 0;
+          const existing = toolCalls.get(index) ?? {
+            id: "",
+            type: "function" as const,
+            function: { name: "", arguments: "" },
+          };
+          if (fragment.id) existing.id = fragment.id;
+          if (fragment.function?.name) existing.function.name += fragment.function.name;
+          if (fragment.function?.arguments) existing.function.arguments += fragment.function.arguments;
+          toolCalls.set(index, existing);
+        }
       }
-      if (chunk.error) {
-        throw new OpenRouterError(
-          chunk.error.message ?? "OpenRouter reported a mid-stream error.",
-          typeof chunk.error.code === "number" ? chunk.error.code : undefined,
-        );
+    } catch (error) {
+      if (error instanceof StreamIdleError) {
+        // Partial output was already streamed, so a retry would duplicate it:
+        // surface a clear, non-retryable timeout instead.
+        throw new OpenRouterError(error.message, 408, false);
       }
-      if (chunk.usage) {
-        usage.promptTokens = chunk.usage.prompt_tokens ?? 0;
-        usage.completionTokens = chunk.usage.completion_tokens ?? 0;
-        usage.totalTokens = chunk.usage.total_tokens ?? 0;
-      }
-      const choice = chunk.choices?.[0];
-      if (!choice) continue;
-      if (choice.finish_reason) finishReason = choice.finish_reason;
-      const delta = choice.delta ?? {};
-      if (typeof delta.content === "string" && delta.content.length > 0) {
-        content += delta.content;
-        options.onDelta?.({ text: delta.content });
-      }
-      if (typeof delta.reasoning === "string" && delta.reasoning.length > 0) {
-        reasoning += delta.reasoning;
-        options.onDelta?.({ reasoning: delta.reasoning });
-      }
-      for (const fragment of delta.tool_calls ?? []) {
-        const index = fragment.index ?? 0;
-        const existing = toolCalls.get(index) ?? {
-          id: "",
-          type: "function" as const,
-          function: { name: "", arguments: "" },
-        };
-        if (fragment.id) existing.id = fragment.id;
-        if (fragment.function?.name) existing.function.name += fragment.function.name;
-        if (fragment.function?.arguments) existing.function.arguments += fragment.function.arguments;
-        toolCalls.set(index, existing);
-      }
+      throw error;
     }
 
     const calls = [...toolCalls.entries()]
@@ -288,13 +309,26 @@ interface StreamChunk {
 /** Fetch the OpenRouter model catalog (used by the settings model browser). */
 export async function listModels(
   apiKey: string,
-  options?: { baseUrl?: string; fetchImpl?: typeof fetch },
+  options?: { baseUrl?: string; fetchImpl?: typeof fetch; timeoutMs?: number },
 ): Promise<OpenRouterModelInfo[]> {
   const fetchImpl = options?.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const baseUrl = (options?.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
-  const response = await fetchImpl(`${baseUrl}/models`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_LIST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetchImpl(`${baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new OpenRouterError("Timed out while listing models.", 408, true);
+    }
+    throw new OpenRouterError(`Failed to list models: ${(error as Error).message}`);
+  } finally {
+    clearTimeout(timer);
+  }
   if (!response.ok) {
     throw new OpenRouterError(`Failed to list models (status ${response.status}).`, response.status);
   }

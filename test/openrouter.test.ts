@@ -237,6 +237,34 @@ describe("OpenRouterModel.request", () => {
     ).rejects.toThrow(/provider exploded/);
   });
 
+  it("raises a non-retryable timeout when the stream stalls mid-response", async () => {
+    const encoder = new TextEncoder();
+    const stallingBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"par"}}]}\n\n'));
+        // Headers + first chunk delivered, then the connection goes silent.
+      },
+    });
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(stallingBody, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+    ) as FetchMock;
+    const deltas: string[] = [];
+
+    await expect(
+      makeModel(fetchMock, { streamIdleTimeoutMs: 25, maxRetries: 3 }).request({
+        messages: [{ role: "user", content: "hi" }],
+        onDelta: (d) => d.text && deltas.push(d.text),
+      }),
+    ).rejects.toThrow(/idle timeout/i);
+    // Partial content streamed before the stall; no retry was attempted.
+    expect(deltas).toEqual(["par"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("converts a hung request into a retryable timeout error", async () => {
     const fetchMock = vi.fn(
       (_url: string, init: RequestInit) =>
@@ -310,5 +338,20 @@ describe("listModels", () => {
     const fetchMock = vi.fn(async () => new Response("nope", { status: 401 })) as FetchMock;
 
     await expect(listModels("bad", { fetchImpl: fetchMock })).rejects.toThrow(OpenRouterError);
+  });
+
+  it("times out a hung model-list request", async () => {
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError")),
+          );
+        }),
+    ) as unknown as FetchMock;
+
+    await expect(
+      listModels("sk-or-test", { fetchImpl: fetchMock, timeoutMs: 20 }),
+    ).rejects.toThrow(/Timed out while listing models/);
   });
 });
