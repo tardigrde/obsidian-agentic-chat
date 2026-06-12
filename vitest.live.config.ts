@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
+// Config for live OpenRouter integration tests. Run via `npm run test:live`.
 export default defineConfig({
   resolve: {
     alias: {
@@ -9,8 +10,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["test/**/*.test.ts"],
-    // Live tests hit the real OpenRouter API; opt in via `npm run test:live`.
-    exclude: ["test/live/**", "node_modules/**"],
+    include: ["test/live/**/*.test.ts"],
+    testTimeout: 60_000,
   },
 });
