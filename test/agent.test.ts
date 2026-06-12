@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { Type } from "typebox";
 import { Agent } from "../src/agent/agent";
 import { AgentRunError, ModelRetry, UsageLimitExceeded } from "../src/agent/errors";
 import { defineTool, RunContext } from "../src/agent/tool";
@@ -18,7 +18,7 @@ function makeDeps(): Deps {
 const readNote = defineTool({
   name: "read_note",
   description: "Read a note",
-  parameters: z.object({ path: z.string() }),
+  parameters: Type.Object({ path: Type.String() }),
   execute: ({ path }, { deps }: RunContext<Deps>) => {
     const content = deps.notes.get(path);
     if (content === undefined) throw new ModelRetry(`No note at ${path}`);
@@ -190,7 +190,7 @@ describe("Agent.run", () => {
     const exploding = defineTool({
       name: "explode",
       description: "always throws",
-      parameters: z.object({}),
+      parameters: Type.Object({}),
       execute: (): string => {
         throw new Error("boom");
       },

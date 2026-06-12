@@ -8,7 +8,7 @@
  * These hit the network and cost a few tokens per run.
  */
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { Type } from "typebox";
 import { Agent } from "../../src/agent/agent";
 import { defineTool, RunContext } from "../../src/agent/tool";
 import { OpenRouterModel, listModels } from "../../src/llm/openrouter";
@@ -110,7 +110,7 @@ liveDescribe(`Agent loop live (${model})`, () => {
   const readNote = defineTool({
     name: "read_note",
     description: "Read the contents of a note by its path.",
-    parameters: z.object({ path: z.string().describe("e.g. 'todo.md'") }),
+    parameters: Type.Object({ path: Type.String({ description: "e.g. 'todo.md'" }) }),
     execute: ({ path }, { deps }: RunContext<Deps>) => {
       deps.reads.push(path);
       const content = deps.notes.get(path);

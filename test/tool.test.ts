@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
-import { defineTool, toToolSpec, validateToolArgs } from "../src/agent/tool";
+import { Type } from "typebox";
+import { defineTool, stringEnum, toToolSpec, validateToolArgs } from "../src/agent/tool";
 
 const sample = defineTool({
   name: "write_note",
   description: "Write a note",
-  parameters: z.object({
-    path: z.string().describe("Vault path"),
-    content: z.string(),
-    mode: z.enum(["create", "overwrite", "append"]).default("create"),
+  parameters: Type.Object({
+    path: Type.String({ description: "Vault path" }),
+    content: Type.String(),
+    mode: Type.Optional(stringEnum(["create", "overwrite", "append"], { default: "create" })),
   }),
   execute: () => "ok",
 });
 
 describe("toToolSpec", () => {
-  it("produces an OpenAI-style function spec from a zod schema", () => {
+  it("produces an OpenAI-style function spec from a TypeBox schema", () => {
     const spec = toToolSpec(sample);
 
     expect(spec.type).toBe("function");
@@ -67,7 +67,7 @@ describe("validateToolArgs", () => {
   });
 
   it("treats an empty argument string as an empty object", () => {
-    const result = validateToolArgs(z.object({}), "");
+    const result = validateToolArgs(Type.Object({}), "");
 
     expect(result.ok).toBe(true);
   });
