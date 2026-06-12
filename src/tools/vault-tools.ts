@@ -1,6 +1,6 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
-import { z } from "zod";
-import { AgentTool, RunContext, defineTool } from "../agent/tool";
+import { Type } from "typebox";
+import { AgentTool, RunContext, defineTool, stringEnum } from "../agent/tool";
 import { ModelRetry } from "../agent/errors";
 
 /** Dependencies injected into every vault tool execution. */
@@ -43,8 +43,8 @@ const readNote = defineTool({
   name: "read_note",
   description:
     'Read the full contents of a note in the vault. The path is vault-relative and includes the extension, e.g. "Projects/Ideas.md".',
-  parameters: z.object({
-    path: z.string().describe("Vault-relative path to the note, including the file extension"),
+  parameters: Type.Object({
+    path: Type.String({ description: "Vault-relative path to the note, including the file extension" }),
   }),
   execute: async ({ path }, { deps }: RunContext<VaultDeps>) => {
     const file = resolveNote(deps.app, path);
@@ -57,17 +57,18 @@ const writeNote = defineTool({
   name: "write_note",
   description:
     "Create a new note or modify an existing one. Parent folders are created automatically.",
-  parameters: z.object({
-    path: z.string().describe('Vault-relative path, e.g. "Folder/Note.md"'),
-    content: z.string().describe("Markdown content to write"),
-    mode: z
-      .enum(["create", "overwrite", "append"])
-      .default("create")
-      .describe(
-        '"create" fails if the note already exists; "overwrite" replaces its content; "append" adds to the end',
-      ),
+  parameters: Type.Object({
+    path: Type.String({ description: 'Vault-relative path, e.g. "Folder/Note.md"' }),
+    content: Type.String({ description: "Markdown content to write" }),
+    mode: Type.Optional(
+      stringEnum(["create", "overwrite", "append"], {
+        default: "create",
+        description:
+          '"create" fails if the note already exists; "overwrite" replaces its content; "append" adds to the end',
+      }),
+    ),
   }),
-  execute: async ({ path, content, mode }, { deps }: RunContext<VaultDeps>) => {
+  execute: async ({ path, content, mode = "create" }, { deps }: RunContext<VaultDeps>) => {
     const normalized = normalizePath(path);
     const existing = deps.app.vault.getAbstractFileByPath(normalized);
     if (existing && !(existing instanceof TFile)) {
@@ -101,10 +102,12 @@ const listFolder = defineTool({
   name: "list_folder",
   description:
     'List the notes and subfolders inside a vault folder. Use "/" for the vault root. Folders are shown with a trailing slash.',
-  parameters: z.object({
-    path: z.string().default("/").describe('Vault-relative folder path, or "/" for the root'),
+  parameters: Type.Object({
+    path: Type.Optional(
+      Type.String({ default: "/", description: 'Vault-relative folder path, or "/" for the root' }),
+    ),
   }),
-  execute: ({ path }, { deps }: RunContext<VaultDeps>) => {
+  execute: ({ path = "/" }, { deps }: RunContext<VaultDeps>) => {
     const target =
       path === "/" || path === ""
         ? deps.app.vault.getRoot()
@@ -123,14 +126,14 @@ const searchVault = defineTool({
   name: "search_vault",
   description:
     "Search all markdown notes for a text query (case-insensitive, matches file paths and contents). Returns matching paths with a snippet.",
-  parameters: z.object({
-    query: z.string().min(1).describe("Text to search for"),
-    limit: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe(`Maximum number of results (default 10, max ${MAX_SEARCH_RESULTS})`),
+  parameters: Type.Object({
+    query: Type.String({ minLength: 1, description: "Text to search for" }),
+    limit: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        description: `Maximum number of results (default 10, max ${MAX_SEARCH_RESULTS})`,
+      }),
+    ),
   }),
   execute: async ({ query, limit }, { deps }: RunContext<VaultDeps>) => {
     const needle = query.toLowerCase();
@@ -158,7 +161,7 @@ const getActiveNote = defineTool({
   name: "get_active_note",
   description:
     "Get the path and full contents of the note currently open in the editor. Use this when the user refers to 'this note' or 'the current note'.",
-  parameters: z.object({}),
+  parameters: Type.Object({}),
   execute: async (_args, { deps }: RunContext<VaultDeps>) => {
     const file = deps.app.workspace.getActiveFile();
     if (!file) return "No note is currently active in the editor.";

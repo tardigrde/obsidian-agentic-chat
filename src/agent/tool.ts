@@ -1,5 +1,5 @@
-import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { type Static, type TSchema, Type } from "typebox";
+import { Value } from "typebox/value";
 import type { ToolSpec, Usage } from "./types";
 
 /** Per-call context handed to every tool execution (pydantic-ai's RunContext). */
@@ -10,7 +10,7 @@ export interface RunContext<Deps> {
   retry: number;
 }
 
-export interface AgentTool<Deps = unknown, Schema extends z.ZodTypeAny = z.ZodTypeAny> {
+export interface AgentTool<Deps = unknown, Schema extends TSchema = TSchema> {
   name: string;
   description: string;
   parameters: Schema;
@@ -19,7 +19,7 @@ export interface AgentTool<Deps = unknown, Schema extends z.ZodTypeAny = z.ZodTy
    * or a ModelRetry before the run fails. Default 1.
    */
   maxRetries?: number;
-  execute(args: z.output<Schema>, ctx: RunContext<Deps>): Promise<string> | string;
+  execute(args: Static<Schema>, ctx: RunContext<Deps>): Promise<string> | string;
 }
 
 /**
@@ -27,26 +27,37 @@ export interface AgentTool<Deps = unknown, Schema extends z.ZodTypeAny = z.ZodTy
  * parameter of `execute` with `RunContext<YourDeps>` and both `Deps` and
  * the argument type are inferred.
  */
-export function defineTool<Deps, Schema extends z.ZodTypeAny>(tool: {
+export function defineTool<Deps, Schema extends TSchema>(tool: {
   name: string;
   description: string;
   parameters: Schema;
   maxRetries?: number;
-  execute: (args: z.output<Schema>, ctx: RunContext<Deps>) => Promise<string> | string;
+  execute: (args: Static<Schema>, ctx: RunContext<Deps>) => Promise<string> | string;
 }): AgentTool<Deps, Schema> {
   return tool;
 }
 
+/**
+ * String enum emitted as a JSON-schema `enum` keyword. TypeBox unions of
+ * literals serialize to `anyOf`, which models follow less reliably.
+ */
+export function stringEnum<const T extends readonly string[]>(
+  values: T,
+  options?: { description?: string; default?: T[number] },
+) {
+  return Type.Unsafe<T[number]>({ type: "string", enum: [...values], ...options });
+}
+
 /** Convert a tool definition into the JSON-schema spec the model consumes. */
-export function toToolSpec(tool: AgentTool<never, z.ZodTypeAny> | AgentTool<unknown, z.ZodTypeAny>): ToolSpec {
-  const schema = zodToJsonSchema(tool.parameters, { $refStrategy: "none" }) as Record<string, unknown>;
-  delete schema.$schema;
+export function toToolSpec(tool: AgentTool<never, TSchema> | AgentTool<unknown, TSchema>): ToolSpec {
   return {
     type: "function",
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: schema,
+      // TypeBox schemas are plain JSON Schema; symbol-keyed metadata is
+      // dropped by JSON.stringify when the request body is serialized.
+      parameters: tool.parameters as unknown as Record<string, unknown>,
     },
   };
 }
@@ -56,19 +67,20 @@ export type ToolArgsValidation =
   | { ok: false; error: string };
 
 /** Parse and validate the raw JSON argument string the model produced. */
-export function validateToolArgs(parameters: z.ZodTypeAny, rawJson: string): ToolArgsValidation {
+export function validateToolArgs(parameters: TSchema, rawJson: string): ToolArgsValidation {
   let parsed: unknown;
   try {
     parsed = rawJson.trim() === "" ? {} : JSON.parse(rawJson);
   } catch (error) {
     return { ok: false, error: `Invalid JSON in tool arguments: ${(error as Error).message}` };
   }
-  const result = parameters.safeParse(parsed);
-  if (!result.success) {
-    const issues = result.error.issues
-      .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+  // Mirror zod's parse semantics: fill declared defaults, strip unknown keys.
+  const value = Value.Clean(parameters, Value.Default(parameters, Value.Clone(parsed)));
+  if (!Value.Check(parameters, value)) {
+    const issues = [...Value.Errors(parameters, value)]
+      .map((issue) => `${issue.instancePath.slice(1).replaceAll("/", ".") || "(root)"}: ${issue.message}`)
       .join("; ");
     return { ok: false, error: `Invalid arguments: ${issues}` };
   }
-  return { ok: true, args: result.data };
+  return { ok: true, args: value };
 }

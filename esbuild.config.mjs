@@ -18,6 +18,18 @@ const context = await esbuild.context({
     "electron",
     "@codemirror/*",
     "@lezer/*",
+    // Provider SDKs pulled in by @earendil-works/pi-ai that this plugin
+    // never uses (we only talk to OpenRouter via the openai-completions
+    // API). pi-ai registers providers lazily, so these imports are never
+    // executed at runtime; externalizing them keeps them out of the bundle.
+    "@anthropic-ai/sdk",
+    "@aws-sdk/*",
+    "@smithy/*",
+    "@google/genai",
+    "@mistralai/mistralai",
+    "http-proxy-agent",
+    "https-proxy-agent",
+    "canvas",
     ...builtins,
   ],
   format: "cjs",
