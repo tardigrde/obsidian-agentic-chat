@@ -22,10 +22,13 @@
   "author": "tardigrde",
   "license": "MIT",
   "devDependencies": {
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^10.0.1",
     "@types/node": "^20.14.0",
     "builtin-modules": "^3.3.0",
     "esbuild": "^0.21.5",
     "obsidian": "^1.7.2",
+    "semantic-release": "^25.0.5",
     "typescript": "^5.5.4",
     "vitest": "^2.1.9"
   },
