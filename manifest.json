@@ -1,0 +1,10 @@
+{
+  "id": "agentic-chat",
+  "name": "Agentic Chat",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Agent-led AI chat in the right sidebar. The agent reads, searches, and writes vault notes with visible tool calls, powered by OpenRouter with privacy-preserving provider routing.",
+  "author": "tardigrde",
+  "authorUrl": "https://github.com/tardigrde",
+  "isDesktopOnly": false
+}

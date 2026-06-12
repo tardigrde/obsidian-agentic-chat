@@ -1,0 +1,307 @@
+/* ===== Agentic Chat — sidebar view ===== */
+
+.agentic-chat-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+
+/* --- Header --- */
+
+.agentic-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--size-4-2) var(--size-4-3);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.agentic-chat-title {
+  font-weight: var(--font-semibold);
+  font-size: var(--font-ui-medium);
+}
+
+.agentic-chat-header-actions {
+  display: flex;
+  gap: var(--size-4-1);
+}
+
+/* --- Message list --- */
+
+.agentic-chat-messages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--size-4-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+}
+
+.agentic-chat-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--text-muted);
+  max-width: 28em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.agentic-chat-empty-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+.agentic-chat-message {
+  border-radius: var(--radius-m);
+  max-width: 100%;
+  word-break: break-word;
+}
+
+.agentic-chat-user {
+  align-self: flex-end;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  padding: var(--size-4-2) var(--size-4-3);
+  max-width: 88%;
+}
+
+.agentic-chat-user-text {
+  white-space: pre-wrap;
+}
+
+.agentic-chat-user-attachments {
+  font-size: var(--font-ui-smaller);
+  opacity: 0.85;
+  margin-bottom: var(--size-2-2);
+}
+
+.agentic-chat-assistant {
+  align-self: flex-start;
+  background-color: var(--background-secondary);
+  padding: var(--size-4-2) var(--size-4-3);
+  width: 100%;
+}
+
+.agentic-chat-text {
+  font-size: var(--font-ui-medium);
+}
+
+.agentic-chat-text.is-streaming {
+  white-space: pre-wrap;
+}
+
+.agentic-chat-text > p:first-child {
+  margin-top: 0;
+}
+
+.agentic-chat-text > p:last-child {
+  margin-bottom: 0;
+}
+
+.agentic-chat-footer {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  margin-top: var(--size-2-3);
+}
+
+.agentic-chat-footer:empty {
+  display: none;
+}
+
+.agentic-chat-error {
+  border-left: 3px solid var(--text-error);
+  color: var(--text-error);
+  padding: var(--size-2-2) var(--size-4-2);
+  margin: var(--size-2-3) 0;
+  font-size: var(--font-ui-small);
+}
+
+/* --- Reasoning --- */
+
+.agentic-chat-reasoning {
+  margin-bottom: var(--size-2-3);
+  font-size: var(--font-ui-small);
+}
+
+.agentic-chat-reasoning > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.agentic-chat-reasoning-body {
+  white-space: pre-wrap;
+  color: var(--text-muted);
+  border-left: 2px solid var(--background-modifier-border);
+  padding-left: var(--size-4-2);
+  margin-top: var(--size-2-2);
+}
+
+/* --- Tool call steps --- */
+
+.agentic-chat-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+}
+
+.agentic-chat-steps:not(:empty) {
+  margin-bottom: var(--size-4-2);
+}
+
+.agentic-chat-step {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: var(--size-2-2) var(--size-4-2);
+  background-color: var(--background-primary);
+  font-size: var(--font-ui-small);
+}
+
+.agentic-chat-step-header {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-2);
+}
+
+.agentic-chat-step-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.agentic-chat-step-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.agentic-chat-step.is-running .agentic-chat-step-icon svg {
+  animation: agentic-chat-spin 1s linear infinite;
+}
+
+.agentic-chat-step.is-done .agentic-chat-step-icon {
+  color: var(--color-green);
+}
+
+.agentic-chat-step.is-error .agentic-chat-step-icon {
+  color: var(--text-error);
+}
+
+.agentic-chat-step-name {
+  font-weight: var(--font-medium);
+}
+
+.agentic-chat-step-args {
+  display: block;
+  margin-top: var(--size-2-1);
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  overflow-wrap: anywhere;
+}
+
+.agentic-chat-step-result {
+  margin-top: var(--size-2-2);
+}
+
+.agentic-chat-step-result > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.agentic-chat-step-result > pre {
+  margin: var(--size-2-2) 0 0;
+  padding: var(--size-2-3);
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-s);
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: var(--font-smallest);
+}
+
+@keyframes agentic-chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- Composer --- */
+
+.agentic-chat-composer {
+  border-top: 1px solid var(--background-modifier-border);
+  padding: var(--size-4-2) var(--size-4-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-3);
+}
+
+.agentic-chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-2);
+}
+
+.agentic-chat-chips:empty {
+  display: none;
+}
+
+.agentic-chat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
+  padding: 2px var(--size-2-3);
+  font-size: var(--font-ui-smaller);
+}
+
+.agentic-chat-chip-icon svg,
+.agentic-chat-chip-remove svg {
+  width: 12px;
+  height: 12px;
+}
+
+.agentic-chat-chip-remove {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.agentic-chat-chip-remove:hover {
+  color: var(--text-error);
+}
+
+.agentic-chat-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+.agentic-chat-buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-3);
+}
+
+.agentic-chat-attach {
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-2-1) var(--size-2-3);
+}
+
+.agentic-chat-status {
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+/* --- Settings --- */
+
+.agentic-chat-system-prompt {
+  width: 100%;
+  min-width: 320px;
+}
