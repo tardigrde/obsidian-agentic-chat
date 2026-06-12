@@ -55,8 +55,9 @@ export function toToolSpec(tool: AgentTool<never, TSchema> | AgentTool<unknown, 
     function: {
       name: tool.name,
       description: tool.description,
-      // TypeBox schemas are plain JSON Schema; symbol-keyed metadata is
-      // dropped by JSON.stringify when the request body is serialized.
+      // TypeBox schemas are plain JSON Schema; internal metadata lives on
+      // non-enumerable keys, which JSON.stringify drops when the request
+      // body is serialized.
       parameters: tool.parameters as unknown as Record<string, unknown>,
     },
   };
