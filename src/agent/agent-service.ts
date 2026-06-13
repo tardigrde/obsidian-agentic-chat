@@ -368,14 +368,17 @@ function emptyUsage(): Usage {
 }
 
 function addUsage(into: Usage, from: Usage): void {
-  into.input += from.input;
-  into.output += from.output;
-  into.cacheRead += from.cacheRead;
-  into.cacheWrite += from.cacheWrite;
-  into.totalTokens += from.totalTokens;
-  into.cost.input += from.cost.input;
-  into.cost.output += from.cost.output;
-  into.cost.cacheRead += from.cost.cacheRead;
-  into.cost.cacheWrite += from.cost.cacheWrite;
-  into.cost.total += from.cost.total;
+  into.input += from.input ?? 0;
+  into.output += from.output ?? 0;
+  into.cacheRead += from.cacheRead ?? 0;
+  into.cacheWrite += from.cacheWrite ?? 0;
+  into.totalTokens += from.totalTokens ?? 0;
+  // Local providers (and malformed records) may omit cost entirely.
+  if (from.cost) {
+    into.cost.input += from.cost.input ?? 0;
+    into.cost.output += from.cost.output ?? 0;
+    into.cost.cacheRead += from.cost.cacheRead ?? 0;
+    into.cost.cacheWrite += from.cost.cacheWrite ?? 0;
+    into.cost.total += from.cost.total ?? 0;
+  }
 }

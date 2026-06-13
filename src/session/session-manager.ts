@@ -265,11 +265,13 @@ function getSessionModifiedTime(entries: SessionEntry[], fallback: number): numb
   let modifiedTime = fallback;
   for (const entry of entries) {
     if (entry.type === "message") {
-      modifiedTime = Math.max(modifiedTime, entry.message.timestamp);
+      const ts = entry.message.timestamp;
+      if (typeof ts === "number" && !Number.isNaN(ts)) modifiedTime = Math.max(modifiedTime, ts);
       continue;
     }
-    if (entry.type !== "session") {
-      modifiedTime = Math.max(modifiedTime, new Date(entry.timestamp).getTime());
+    if (entry.type !== "session" && entry.timestamp) {
+      const parsed = new Date(entry.timestamp).getTime();
+      if (!Number.isNaN(parsed)) modifiedTime = Math.max(modifiedTime, parsed);
     }
   }
   return modifiedTime;

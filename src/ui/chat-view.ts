@@ -723,6 +723,7 @@ function formatCost(total: number): string {
 }
 
 function formatUsage(usage: Usage): string {
-  const cost = usage.cost.total > 0 ? ` · ${formatCost(usage.cost.total)}` : "";
+  const total = usage.cost?.total ?? 0;
+  const cost = total > 0 ? ` · ${formatCost(total)}` : "";
   return `${usage.totalTokens} tokens${cost}`;
 }
