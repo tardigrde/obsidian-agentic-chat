@@ -54,9 +54,16 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   templatesFolder: "",
 };
 
-/** Merge stored settings over defaults, healing nested objects. */
+/** Pre-pi settings (v0.2): a single OpenRouter key/model lived at the top level. */
+interface LegacySettings {
+  apiKey?: string;
+  model?: string;
+}
+
+/** Merge stored settings over defaults, healing nested objects and migrating legacy keys. */
 export function mergeSettings(stored: Partial<AgenticChatSettings> | null | undefined): AgenticChatSettings {
-  return {
+  const legacy = (stored ?? {}) as LegacySettings;
+  const merged: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
     ...stored,
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
@@ -66,6 +73,12 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       perTool: { ...(stored?.approval?.perTool ?? {}) },
     },
   };
+  // Carry over a pre-pi OpenRouter key/model so upgrades don't lose them.
+  if (!merged.openrouterApiKey && legacy.apiKey) merged.openrouterApiKey = legacy.apiKey;
+  if (merged.openrouterModel === DEFAULT_SETTINGS.openrouterModel && legacy.model) {
+    merged.openrouterModel = legacy.model;
+  }
+  return merged;
 }
 
 /** The model id used for the active provider. */
