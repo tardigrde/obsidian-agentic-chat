@@ -44,9 +44,26 @@ export class ItemView extends Component {}
 export class Plugin extends Component {}
 export class PluginSettingTab {}
 export class Setting {}
+export class Modal {}
 export class FuzzySuggestModal {}
 export class WorkspaceLeaf {}
+export class MarkdownView {}
 export class MarkdownRenderer {
   static async render(): Promise<void> {}
 }
 export function setIcon(): void {}
+
+/** Tiny YAML frontmatter parser: enough for `key: value` and `key: "value"` lines. */
+export function parseYaml(input: string): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  for (const line of input.split(/\r?\n/)) {
+    const match = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line.trim());
+    if (!match) continue;
+    let value: string = match[2];
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    data[match[1]] = value;
+  }
+  return data;
+}

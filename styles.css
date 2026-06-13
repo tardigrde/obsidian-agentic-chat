@@ -299,9 +299,123 @@
   color: var(--text-muted);
 }
 
+/* --- Model pill --- */
+
+.agentic-chat-model-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--size-2-2);
+  margin-left: auto;
+  margin-right: var(--size-4-2);
+  padding: 2px var(--size-2-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
+  cursor: pointer;
+  max-width: 55%;
+  overflow: hidden;
+}
+
+.agentic-chat-model-pill:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-model-provider {
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agentic-chat-model-name {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Usage line --- */
+
+.agentic-chat-usage {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.agentic-chat-usage:empty {
+  display: none;
+}
+
+/* --- Session list modal --- */
+
+.agentic-chat-session-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.agentic-chat-session-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-2-3) var(--size-2-2);
+  border-radius: var(--radius-s);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.agentic-chat-session-row:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-session-row.is-active {
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.agentic-chat-session-main {
+  flex: 1 1 auto;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.agentic-chat-session-title {
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agentic-chat-session-meta {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.agentic-chat-session-delete {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.agentic-chat-session-delete:hover {
+  color: var(--text-error);
+}
+
+/* --- Approval modal --- */
+
+.agentic-chat-approval-args {
+  max-height: 240px;
+  overflow: auto;
+  padding: var(--size-2-3);
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-s);
+  white-space: pre-wrap;
+  font-size: var(--font-smallest);
+}
+
 /* --- Settings --- */
 
 .agentic-chat-system-prompt {
   width: 100%;
   min-width: 320px;
+}
+
+.agentic-chat-folder-input {
+  width: 100%;
 }

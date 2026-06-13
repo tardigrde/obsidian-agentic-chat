@@ -38,6 +38,7 @@ export class FakeVault {
     file.path = path;
     file.name = path.split("/").pop() ?? path;
     file.extension = file.name.includes(".") ? file.name.split(".").pop() ?? "" : "";
+    file.basename = file.name.includes(".") ? file.name.slice(0, file.name.lastIndexOf(".")) : file.name;
     const parent = this.parentOf(path);
     file.parent = parent;
     parent.children.push(file);
