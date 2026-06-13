@@ -299,7 +299,7 @@ export class ChatView extends ItemView {
     const usage = this.service.getSessionUsage();
     new Notice(
       usage.totalTokens > 0
-        ? `This conversation: ${usage.totalTokens} tokens · ${formatCost(usage.cost.total)}`
+        ? `This conversation: ${usage.totalTokens} tokens · ${formatCost(usage.cost?.total ?? 0)}`
         : "No usage recorded yet for this conversation.",
     );
   }
