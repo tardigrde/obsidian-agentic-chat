@@ -60,4 +60,10 @@ describe("buildSkillInvocation", () => {
     expect(out).toContain("Base skill body.");
     expect(out).toContain("also be terse");
   });
+
+  it("does not treat currency like $10 or $1.50 as placeholders", () => {
+    const out = buildSkillInvocation(skill("The price is $10 and $1.50."), "extra instructions");
+    expect(out).toContain("The price is $10 and $1.50.");
+    expect(out).toContain("extra instructions");
+  });
 });

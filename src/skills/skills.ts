@@ -11,8 +11,10 @@ export {
   substituteArgs,
 } from "@earendil-works/pi-agent-core";
 
-// $1 / $@ / $ARGUMENTS / ${@:N} — the placeholders pi's substituteArgs understands.
-const ARG_PLACEHOLDER = /\$(?:ARGUMENTS|@|\d|\{@)/;
+// $1–$9 / $@ / $ARGUMENTS / ${@:N} — the placeholders pi's substituteArgs understands.
+// The positional case excludes digits followed by more digits or a decimal/thousands
+// separator so currency in a skill body ($10, $1.50, $1,000) isn't misread as a template.
+const ARG_PLACEHOLDER = /\$(?:ARGUMENTS|@|[1-9](?!\d|[.,]\d)|\{@)/;
 
 /**
  * Build the user-message prompt for invoking a skill, folding in any arguments.
