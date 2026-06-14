@@ -133,6 +133,20 @@ Issue #2 §2. The most-requested feature across Obsidian AI plugins, but heavies
 
 ---
 
+## Bugs
+
+Reported issues to be fixed. Ordered by severity, not by fix order.
+
+- [ ] **Invisible error text.** `/skill <unknown>` renders a red rectangle with red text — the error message is there but unreadable because both foreground and background are red.
+- [ ] **Invisible text selection.** Selecting text in user or error bubbles shows no visible highlight — user text is blue, error text is red, and the selection color doesn't contrast with either.
+- [ ] **No prompt editing.** Clicking a sent user bubble (or a pen icon next to it, or a context-menu entry) should let the user rewrite the prompt. The old message disappears and a new generation starts.
+- [ ] **Model browser ignores ZDR setting.** Non-ZDR models are shown in the in-pane model browser even when ZDR is enabled in privacy settings. Selecting one yields a 404 from OpenRouter.
+- [ ] **Red error rectangle in settings.** An unexplained red error bubble appears between the model provider and OpenRouter API key fields.
+- [ ] **`@` autocomplete breaks on spaces.** Folder names with spaces (e.g. `200 Resources`) cause the autocomplete to close after the space. Need UX for multi-word paths — full path input, next-level listing on key combo.
+- [ ] **File drag opens note instead of adding link.** Dragging a file to the pane opens it as a note instead of adding its `obsidian://` URL to the chat input. A cleaner relative path would be better than the full `obsidian://open?...` URL.
+- [ ] **No session rename.** Sessions cannot be renamed.
+- [ ] **No auto-naming.** Sessions should be named after the first prompt via a small model call (e.g. "hi" → "Greeting").
+
 ## Cross-cutting
 
 - [x] **Ignore lists (security).** User-configured gitignore-style globs
