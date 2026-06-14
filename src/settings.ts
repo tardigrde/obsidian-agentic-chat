@@ -40,7 +40,7 @@ export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "mediu
 export const DEFAULT_SETTINGS: AgenticChatSettings = {
   provider: "openrouter",
   openrouterApiKey: "",
-  openrouterModel: "anthropic/claude-sonnet-4.5",
+  openrouterModel: "moonshotai/kimi-k2.6",
   ollamaBaseUrl: DEFAULT_OLLAMA_BASE_URL,
   ollamaModel: "llama3.1",
   thinkingLevel: "off",
@@ -49,7 +49,9 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   requestTimeoutMs: 90_000,
   maxNetworkRetries: 2,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  privacy: { denyDataCollection: true, requireZDR: false, allowFallbacks: true },
+  // Strongest privacy out of the box: zero data retention, no prompt
+  // logging/training, and any fallback provider must also satisfy both.
+  privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
   approval: DEFAULT_APPROVAL_SETTINGS,
   skillsFolder: "",
   templatesFolder: "",
@@ -159,7 +161,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setDesc('OpenRouter model id. "Browse" lists models that support tool calling.')
       .addText((text) =>
         text
-          .setPlaceholder("anthropic/claude-sonnet-4.5")
+          .setPlaceholder("moonshotai/kimi-k2.6")
           .setValue(settings.openrouterModel)
           .onChange(async (value) => {
             settings.openrouterModel = value.trim();
@@ -174,7 +176,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           }
           button.setDisabled(true);
           try {
-            const models = (await listOpenRouterModels(settings.openrouterApiKey))
+            const models = (await listOpenRouterModels(settings.openrouterApiKey, { zdr: settings.privacy.requireZDR }))
               .filter((model) => model.supportsTools)
               .sort((a, b) => a.id.localeCompare(b.id));
             new ModelSuggestModal(this.app, models, async (model) => {
@@ -202,7 +204,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       );
     new Setting(containerEl)
       .setName("Require zero data retention")
-      .setDesc("Only route to ZDR endpoints. Strictest option; some models become unavailable.")
+      .setDesc("On by default. Only route to ZDR endpoints; some models may have no compliant provider — pick another model or use Ollama.")
       .addToggle((toggle) =>
         toggle.setValue(settings.privacy.requireZDR).onChange(async (value) => {
           settings.privacy.requireZDR = value;
