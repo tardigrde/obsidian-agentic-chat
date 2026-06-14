@@ -51,6 +51,10 @@ describe("formatCost", () => {
   it("uses 2 decimals at or above a cent", () => {
     expect(formatCost(1.234)).toBe("$1.23");
   });
+  it("collapses negative or non-finite input to $0.00", () => {
+    expect(formatCost(-0.005)).toBe("$0.00");
+    expect(formatCost(Number.NaN)).toBe("$0.00");
+  });
 });
 
 describe("formatUsage", () => {

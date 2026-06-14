@@ -42,7 +42,9 @@ export function safeJson(value: unknown): string {
 }
 
 export function formatCost(total: number): string {
-  if (!total) return "$0.00";
+  // Cost is always a non-negative finite number; collapse anything else to zero
+  // so a stray NaN/negative never renders as "$NaN" or "$-0.0050".
+  if (!Number.isFinite(total) || total <= 0) return "$0.00";
   return total < 0.01 ? `$${total.toFixed(4)}` : `$${total.toFixed(2)}`;
 }
 
