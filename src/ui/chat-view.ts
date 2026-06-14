@@ -406,9 +406,25 @@ export class ChatView extends ItemView {
     this.renderTranscript([]);
   }
 
-  private resetUsageNotifications(): void {
+  /**
+   * Clear one-shot notification state. When `muteExisting` is set (loading a
+   * session that may already be past a threshold), pre-mark crossed thresholds so
+   * the user is only toasted about *new* crossings, not the loaded-in state.
+   */
+  private resetUsageNotifications(muteExisting = false): void {
     this.notifiedContext = new Set<number>();
     this.notifiedCost = false;
+    if (!muteExisting) return;
+    const fraction = this.service.getContextFraction();
+    if (fraction !== undefined) {
+      for (const threshold of CONTEXT_THRESHOLDS) {
+        if (fraction >= threshold) this.notifiedContext.add(threshold);
+      }
+    }
+    const cap = this.plugin.settings.notifications.costAlertUsd;
+    if (cap > 0 && (this.service.getSessionUsage().cost?.total ?? 0) >= cap) {
+      this.notifiedCost = true;
+    }
   }
 
   private async openSessionList(): Promise<void> {
@@ -422,7 +438,7 @@ export class ChatView extends ItemView {
 
   private async loadSession(path: string): Promise<void> {
     await this.service.loadSession(path);
-    this.resetUsageNotifications();
+    this.resetUsageNotifications(true);
     this.bubble = null;
     this.renderTranscript(this.service.getMessages());
   }

@@ -110,12 +110,14 @@ export class AgentService {
   getContextFraction(): number | undefined {
     const contextWindow = this.agent?.state.model?.contextWindow ?? 0;
     if (contextWindow <= 0) return undefined;
-    let lastInput = 0;
-    for (const message of this.getMessages()) {
-      if (message.role === "assistant" && message.usage) lastInput = message.usage.input ?? 0;
+    // Walk back from the latest message to the most recent assistant turn with usage.
+    const messages = this.getMessages();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      const input = message.role === "assistant" ? message.usage?.input ?? 0 : 0;
+      if (input > 0) return Math.min(input / contextWindow, 1);
     }
-    if (lastInput <= 0) return undefined;
-    return Math.min(lastInput / contextWindow, 1);
+    return undefined;
   }
 
   /** Sum token usage and cost across all assistant turns in the active session. */
