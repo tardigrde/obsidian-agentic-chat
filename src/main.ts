@@ -47,6 +47,9 @@ export default class AgenticChatPlugin extends Plugin {
 
   onunload(): void {
     this.agentService?.dispose();
+    // Guard against a second onunload double-disposing (clearing listeners twice,
+    // aborting an already-gone agent).
+    this.agentService = undefined as unknown as AgentService;
   }
 
   /** Show the approval dialog and persist a "remember" choice as a per-tool override. */

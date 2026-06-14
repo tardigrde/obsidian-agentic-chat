@@ -140,15 +140,27 @@ Issue #2 §2. The most-requested feature across Obsidian AI plugins, but heavies
 
 Reported issues to be fixed. Ordered by severity, not by fix order.
 
-- [ ] **Invisible error text.** `/skill <unknown>` renders a red rectangle with red text — the error message is there but unreadable because both foreground and background are red.
-- [ ] **Invisible text selection.** Selecting text in user or error bubbles shows no visible highlight — user text is blue, error text is red, and the selection color doesn't contrast with either.
-- [ ] **No prompt editing.** Clicking a sent user bubble (or a pen icon next to it, or a context-menu entry) should let the user rewrite the prompt. The old message disappears and a new generation starts.
-- [ ] **Model browser ignores ZDR setting.** Non-ZDR models are shown in the in-pane model browser even when ZDR is enabled in privacy settings. Selecting one yields a 404 from OpenRouter.
-- [ ] **Red error rectangle in settings.** An unexplained red error bubble appears between the model provider and OpenRouter API key fields.
-- [ ] **`@` autocomplete breaks on spaces.** Folder names with spaces (e.g. `200 Resources`) cause the autocomplete to close after the space. Need UX for multi-word paths — full path input, next-level listing on key combo.
-- [ ] **File drag opens note instead of adding link.** Dragging a file to the pane opens it as a note instead of adding its `obsidian://` URL to the chat input. A cleaner relative path would be better than the full `obsidian://open?...` URL.
-- [ ] **No session rename.** Sessions cannot be renamed.
-- [ ] **No auto-naming.** Sessions should be named after the first prompt via a small model call (e.g. "hi" → "Greeting").
+- [x] **Invisible error text.** Error blocks (`/skill <unknown>`) now use a neutral
+      background with a red accent bar and normal-contrast body text (was red-on-red).
+- [x] **Invisible text selection.** The user bubble now has an inverted `::selection`
+      (and the error block its own), so highlights contrast with the accent/error fill.
+- [x] **No prompt editing.** Clicking a sent user bubble reloads it into the composer;
+      sending rewinds the conversation to that turn (in memory and on disk via
+      `rewriteMessages`) and starts a fresh generation. Esc cancels.
+- [x] **Model browser ignores ZDR setting.** `listOpenRouterModels` now passes both
+      `zdr` and `data_collection=deny` so the browser only offers models the active
+      privacy routing can actually reach.
+- [x] **Red error rectangle in settings.** The plaintext-key banner is restyled as a
+      caution notice (neutral panel, warning accent, readable text), not an error.
+- [x] **`@` autocomplete breaks on spaces.** Mention tokens now allow spaces (multi-word
+      paths like `200 Resources` match); the token ends at a line break, and a
+      non-matching query simply hides the menu.
+- [x] **File drag opens note instead of adding link.** Dropping a note on the composer
+      attaches it as context (resolved to a vault-relative path) instead of opening it.
+- [x] **No session rename.** Sessions can be renamed inline from the conversation list.
+- [x] **No auto-naming.** Sessions are auto-titled from the first prompt after the first
+      turn. (Deterministic for now — `deriveAutoName`; a small-model upgrade can replace
+      the heuristic later, e.g. "hi" → "Greeting".)
 
 ## Cross-cutting
 

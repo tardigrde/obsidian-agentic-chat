@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildModel, formatContextWindow, listOpenRouterModels, type ModelConfig } from "../src/llm/models";
+import { buildModel, formatContextWindow, listOpenRouterModels, ModelListError, type ModelConfig } from "../src/llm/models";
 
 const PRIVACY = { denyDataCollection: true, requireZDR: true, allowFallbacks: false };
 
@@ -90,6 +90,31 @@ describe("listOpenRouterModels", () => {
     await listOpenRouterModels("key", { fetchImpl: fakeFetch(captured) });
     expect(captured.url).toMatch(/\/models$/);
     expect(captured.url).not.toContain("zdr");
+  });
+
+  it("filters by data_collection=deny when denyDataCollection is set", async () => {
+    const captured: { url?: string } = {};
+    await listOpenRouterModels("key", { fetchImpl: fakeFetch(captured), denyDataCollection: true });
+    expect(captured.url).toContain("data_collection=deny");
+  });
+
+  it("combines zdr and data_collection filters", async () => {
+    const captured: { url?: string } = {};
+    await listOpenRouterModels("key", { fetchImpl: fakeFetch(captured), zdr: true, denyDataCollection: true });
+    expect(captured.url).toContain("zdr=true");
+    expect(captured.url).toContain("data_collection=deny");
+  });
+
+  it("wraps a malformed JSON body in a ModelListError instead of throwing raw", async () => {
+    const badFetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError("Unexpected token < in JSON");
+        },
+      }) as unknown as Response) as unknown as typeof fetch;
+    await expect(listOpenRouterModels("key", { fetchImpl: badFetch })).rejects.toBeInstanceOf(ModelListError);
   });
 });
 

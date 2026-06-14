@@ -37,6 +37,7 @@ import {
   suggest,
 } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
+import { parseDroppedVaultPath } from "./drag-drop";
 import { resolveCommand, visibleCommands } from "./commands";
 import { type AgentMode, MODE_ORDER, MODES } from "../agent/modes";
 import { type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
@@ -75,6 +76,9 @@ export class ChatView extends ItemView {
   // Last turn we sent, kept so "retry" re-runs it without re-showing the context preamble.
   private lastSentPrompt: string | null = null;
   private lastSentDisplay: string | null = null;
+  // When editing a sent prompt, the index of the user message being rewritten.
+  private editingIndex: number | null = null;
+  private editingEl: HTMLElement | null = null;
 
   private messagesEl!: HTMLElement;
   private emptyStateEl: HTMLElement | null = null;
@@ -181,6 +185,11 @@ export class ChatView extends ItemView {
     this.menu = new AutocompleteMenu(inputWrap, (item) => this.chooseAutocomplete(item));
     this.inputEl.addEventListener("keydown", (event) => {
       if (this.menu.handleKey(event)) return;
+      if (event.key === "Escape" && this.editingIndex !== null) {
+        event.preventDefault();
+        this.cancelEditing();
+        return;
+      }
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
         void this.submit();
@@ -236,6 +245,26 @@ export class ChatView extends ItemView {
     this.sendButton.addEventListener("click", () => void this.submit());
 
     this.usageEl = composer.createDiv({ cls: "agentic-chat-usage" });
+
+    // Dragging a note onto the composer should attach it as context, not open it.
+    this.registerDomEvent(composer, "dragover", (event) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    });
+    this.registerDomEvent(composer, "drop", (event) => this.handleDrop(event));
+  }
+
+  /** Turn a dropped note/folder into a context attachment instead of opening it. */
+  private handleDrop(event: DragEvent): void {
+    const data =
+      event.dataTransfer?.getData("text/plain") || event.dataTransfer?.getData("text/uri-list") || "";
+    const path = parseDroppedVaultPath(data, this.app.vault.getName());
+    if (!path) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFolder) this.addAttachment(`${FOLDER_PREFIX}${path}`);
+    else this.addAttachment(path);
   }
 
   private renderEmptyState(): void {
@@ -455,6 +484,9 @@ export class ChatView extends ItemView {
     const text = this.inputEl.value.trim();
     if (!text) return;
 
+    const editIndex = this.editingIndex;
+    this.cancelEditing();
+
     if (text.startsWith("/")) {
       const handled = await this.handleSlashCommand(text);
       if (handled) {
@@ -463,6 +495,45 @@ export class ChatView extends ItemView {
       }
     }
     this.inputEl.value = "";
+    if (editIndex !== null) {
+      await this.editAndResend(editIndex, text);
+      return;
+    }
+    await this.sendPrompt(text);
+  }
+
+  // --- prompt editing (rewrite a sent user turn) ---
+
+  /** Load a sent prompt back into the composer for rewriting. */
+  private beginEdit(index: number, displayText: string, el: HTMLElement): void {
+    if (this.service.isStreaming()) return;
+    this.clearEditingHighlight();
+    this.editingIndex = index;
+    this.editingEl = el;
+    el.addClass("is-editing");
+    this.inputEl.value = displayText;
+    this.inputEl.focus();
+    this.inputEl.setSelectionRange(displayText.length, displayText.length);
+    this.statusEl.setText("Editing — Enter to resend, Esc to cancel");
+  }
+
+  private cancelEditing(): void {
+    if (this.editingIndex === null) return;
+    this.editingIndex = null;
+    this.clearEditingHighlight();
+    this.statusEl.setText("");
+  }
+
+  private clearEditingHighlight(): void {
+    this.editingEl?.removeClass("is-editing");
+    this.editingEl = null;
+  }
+
+  /** Rewind to `index`, drop that turn and everything after, then send the edit. */
+  private async editAndResend(index: number, text: string): Promise<void> {
+    await this.service.truncateMessages(index);
+    this.bubble = null;
+    this.renderTranscript(this.service.getMessages());
     await this.sendPrompt(text);
   }
 
@@ -713,6 +784,7 @@ export class ChatView extends ItemView {
     this.attachments = [];
     this.lastSentPrompt = null;
     this.lastSentDisplay = null;
+    this.cancelEditing();
     this.renderChips();
     this.bubble = null;
     this.renderTranscript([]);
@@ -745,6 +817,7 @@ export class ChatView extends ItemView {
     new SessionListModal(this.app, sessions, this.service.getSessionInfo()?.path ?? null, {
       load: (session) => void this.loadSession(session.path),
       delete: (session) => this.service.deleteSession(session.path),
+      rename: (session, name) => this.service.renameSession(session.path, name),
     }).open();
   }
 
@@ -758,6 +831,7 @@ export class ChatView extends ItemView {
     }
     this.lastSentPrompt = null;
     this.lastSentDisplay = null;
+    this.cancelEditing();
     this.bubble = null;
     this.renderTranscript(this.service.getMessages());
   }
@@ -773,7 +847,12 @@ export class ChatView extends ItemView {
       return;
     }
     try {
-      const models = (await listOpenRouterModels(settings.openrouterApiKey, { zdr: settings.privacy.requireZDR }))
+      const models = (
+        await listOpenRouterModels(settings.openrouterApiKey, {
+          zdr: settings.privacy.requireZDR,
+          denyDataCollection: settings.privacy.denyDataCollection,
+        })
+      )
         .filter((model) => model.supportsTools)
         .sort((a, b) => a.id.localeCompare(b.id));
       new ModelSuggestModal(this.app, models, async (model) => {
@@ -854,7 +933,7 @@ export class ChatView extends ItemView {
     let rendered = 0;
     messages.forEach((message, index) => {
       if (message.role === "user") {
-        this.renderUserMessage(messageText(message), []);
+        this.renderUserMessage(messageText(message), [], index);
         rendered += 1;
       } else if (message.role === "assistant") {
         this.renderAssistantMessage(message, toolResults, index === lastAssistant);
@@ -887,7 +966,7 @@ export class ChatView extends ItemView {
     if (usage) bubble.showUsage(usage);
   }
 
-  private renderUserMessage(text: string, attachments: string[]): void {
+  private renderUserMessage(text: string, attachments: string[], editIndex?: number): void {
     const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-user"] });
     if (attachments.length > 0) {
       const labels = attachments.map((entry) =>
@@ -896,6 +975,12 @@ export class ChatView extends ItemView {
       el.createDiv({ cls: "agentic-chat-user-attachments", text: `Attached: ${labels.join(", ")}` });
     }
     el.createDiv({ cls: "agentic-chat-user-text", text });
+    // Persisted turns are editable: click to reload the prompt and rewrite it.
+    if (editIndex !== undefined) {
+      el.addClass("is-editable");
+      el.setAttribute("aria-label", "Click to edit and resend");
+      el.addEventListener("click", () => this.beginEdit(editIndex, stripContextPreamble(text), el));
+    }
     this.scrollToBottom();
   }
 

@@ -53,7 +53,10 @@ export interface AcResolution {
  *
  * - `^/word` (no space yet) → command menu.
  * - `/skill <partial>` or `/template <partial>` (first arg) → skill menu.
- * - `@partial` preceded by start-of-line or whitespace → mention menu.
+ * - `@partial` preceded by start-of-line or whitespace → mention menu. The token
+ *   may contain spaces so multi-word paths (e.g. `@200 Resources`) match; it ends
+ *   only at a newline. Picking a candidate or pressing Escape closes the menu, and
+ *   a query that matches nothing simply yields an empty (hidden) menu.
  *
  * Returns null when nothing should open. Only text *before* the caret matters;
  * the range it reports is what `resolve` replaces.
@@ -71,7 +74,8 @@ export function detectQuery(text: string, caret: number): AcQuery | null {
   const at = before.lastIndexOf("@");
   if (at >= 0 && (at === 0 || /\s/.test(before[at - 1]))) {
     const token = before.slice(at + 1);
-    if (!/\s/.test(token)) return { kind: "mention", range: [at, end], query: token };
+    // Allow spaces (multi-word paths) but stop the token at a line break.
+    if (!/[\r\n]/.test(token)) return { kind: "mention", range: [at, end], query: token };
   }
   return null;
 }

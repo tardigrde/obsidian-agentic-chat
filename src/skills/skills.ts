@@ -85,7 +85,16 @@ export async function loadVaultSkills(app: App, folderInput: string): Promise<Sk
 
   const skills: Skill[] = [];
   for (const file of files.sort((a, b) => a.path.localeCompare(b.path))) {
-    const { data, body } = splitFrontmatter(await app.vault.cachedRead(file));
+    let raw: string;
+    try {
+      raw = await app.vault.cachedRead(file);
+    } catch (error) {
+      // A single unreadable file (deleted mid-scan, permission issue) must not
+      // abort the whole skill load — skip it and keep the rest.
+      console.warn(`Agentic chat: could not read skill file ${file.path}`, error);
+      continue;
+    }
+    const { data, body } = splitFrontmatter(raw);
     const name = stringField(data, "name") ?? deriveName(file);
     const description = stringField(data, "description") ?? name;
     if (!body.trim()) continue;

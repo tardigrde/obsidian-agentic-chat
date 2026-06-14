@@ -207,7 +207,12 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           }
           button.setDisabled(true);
           try {
-            const models = (await listOpenRouterModels(settings.openrouterApiKey, { zdr: settings.privacy.requireZDR }))
+            const models = (
+              await listOpenRouterModels(settings.openrouterApiKey, {
+                zdr: settings.privacy.requireZDR,
+                denyDataCollection: settings.privacy.denyDataCollection,
+              })
+            )
               .filter((model) => model.supportsTools)
               .sort((a, b) => a.id.localeCompare(b.id));
             new ModelSuggestModal(this.app, models, async (model) => {

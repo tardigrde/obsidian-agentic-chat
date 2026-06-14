@@ -34,4 +34,8 @@ describe("grepContent", () => {
     expect(grepContent("note.md", content, "^beta", { regex: true, caseSensitive: true })).toHaveLength(1);
     expect(grepContent("note.md", content, "a", { maxMatches: 1 })).toHaveLength(1);
   });
+
+  it("throws a clear error for an invalid regex instead of a raw SyntaxError", () => {
+    expect(() => grepContent("note.md", content, "(", { regex: true })).toThrow(/Invalid regular expression/);
+  });
 });

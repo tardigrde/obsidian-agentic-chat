@@ -53,7 +53,14 @@ export function formatGrepMatches(matches: GrepMatch[], truncated: boolean): str
 function createLineMatcher(pattern: string, options: GrepOptions): (line: string) => boolean {
   if (options.regex) {
     const flags = options.caseSensitive ? "" : "i";
-    const regex = new RegExp(pattern, flags);
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, flags);
+    } catch (error) {
+      // The pattern comes from the model; surface a clear error instead of
+      // letting a raw SyntaxError bubble out of the grep tool.
+      throw new Error(`Invalid regular expression: ${(error as Error).message}`);
+    }
     return (line) => regex.test(line);
   }
   const needle = options.caseSensitive ? pattern : pattern.toLowerCase();
