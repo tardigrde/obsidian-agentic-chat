@@ -64,6 +64,16 @@ describe("ObsidianSessionManager.rewriteMessages", () => {
     expect(entries[0]?.type).toBe("session");
   });
 
+  it("preserves a custom session name across a rewrite", async () => {
+    const { sm } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    await sm.appendMessage(userMessage("first"));
+    await sm.appendMessage(userMessage("second"));
+    await sm.renameSession(info.path, "Important chat");
+    await sm.rewriteMessages([userMessage("first")]);
+    expect(sm.getActiveSessionInfo().name).toBe("Important chat");
+  });
+
   it("can rewind to an empty transcript", async () => {
     const { sm } = manager();
     await sm.createSession(DEFAULTS);

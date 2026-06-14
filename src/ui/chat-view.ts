@@ -996,8 +996,10 @@ export class ChatView extends ItemView {
       el.addClass("is-editable");
       el.setAttribute("aria-label", "Click to edit and resend");
       el.addEventListener("click", () => {
-        // Don't hijack a text selection (the bubble is selectable for copying).
-        if (window.getSelection()?.toString()) return;
+        // Don't hijack a text selection inside this bubble (it's selectable for
+        // copying); a selection elsewhere on the page shouldn't block editing.
+        const selection = window.getSelection();
+        if (selection?.toString() && selection.anchorNode && el.contains(selection.anchorNode)) return;
         this.beginEdit(editIndex, stripContextPreamble(text), el);
       });
     }

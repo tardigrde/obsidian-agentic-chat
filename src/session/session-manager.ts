@@ -199,6 +199,7 @@ export class ObsidianSessionManager {
     if (!this.sessionFile) throw new Error("No active session.");
     const header = this.entries[0];
     if (!header || header.type !== "session") throw new Error("Session file is missing a session header.");
+    const sessionName = getSessionName(this.entries);
     const context = this.buildSessionContext();
     const rebuilt: SessionEntry[] = [header];
     let parentId: string | null = null;
@@ -223,6 +224,16 @@ export class ObsidianSessionManager {
       timestamp: new Date().toISOString(),
       thinkingLevel: context.thinkingLevel,
     });
+    // Carry over a custom session name so prompt editing doesn't silently lose it.
+    if (sessionName) {
+      push({
+        type: "session_info",
+        id: createEntryId(rebuilt),
+        parentId,
+        timestamp: new Date().toISOString(),
+        name: sessionName,
+      });
+    }
     for (const message of messages) {
       push({
         type: "message",
