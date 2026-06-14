@@ -270,6 +270,9 @@ export class AgentService {
     this.unsubscribeAgent?.();
     this.unsubscribeAgent = null;
     this.agent?.abort();
+    // Drop the reference so getMessages()/isStreaming() don't report stale
+    // old-session state during the async gap before replaceAgent() runs.
+    this.agent = null;
   }
 
   private replaceAgent(messages: AgentMessage[]): void {

@@ -947,7 +947,9 @@ export class ChatView extends ItemView {
     let rendered = 0;
     messages.forEach((message, index) => {
       if (message.role === "user") {
-        this.renderUserMessage(messageText(message), [], index);
+        // Hide the attachment <context> preamble so history reads like the
+        // live transcript (which renders the user's text, not the prompt).
+        this.renderUserMessage(stripContextPreamble(messageText(message)), [], index);
         rendered += 1;
       } else if (message.role === "assistant") {
         this.renderAssistantMessage(message, toolResults, index === lastAssistant);

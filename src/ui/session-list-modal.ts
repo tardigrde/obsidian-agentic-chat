@@ -98,9 +98,10 @@ export class SessionListModal extends Modal {
       committed = true;
       const next = input.value.trim();
       if (save && next && next !== current) {
-        session.name = next;
         try {
           await this.callbacks.rename(session, next);
+          // Only update the in-memory name once the rename actually persisted.
+          session.name = next;
         } catch (error) {
           console.error("Agentic chat: failed to rename session", error);
         }
