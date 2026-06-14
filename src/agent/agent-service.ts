@@ -276,6 +276,9 @@ export class AgentService {
   }
 
   private replaceAgent(messages: AgentMessage[]): void {
+    // A late initialize/load/new that resolves after dispose() must not resurrect
+    // the agent or re-subscribe to events.
+    if (this.disposed) return;
     this.unsubscribeAgent?.();
     const settings = this.getSettings();
     const agent = new Agent({

@@ -26,6 +26,10 @@ describe("parseDroppedVaultPath", () => {
     expect(parseDroppedVaultPath("Folder/Note.md", "MyVault")).toBe("Folder/Note.md");
   });
 
+  it("accepts an uppercase OBSIDIAN:// scheme", () => {
+    expect(parseDroppedVaultPath("OBSIDIAN://open?vault=MyVault&file=note.md", "MyVault")).toBe("note.md");
+  });
+
   it("rejects foreign URL schemes and empty data", () => {
     expect(parseDroppedVaultPath("https://example.com/x", "MyVault")).toBeNull();
     expect(parseDroppedVaultPath("file:///etc/passwd", "MyVault")).toBeNull();

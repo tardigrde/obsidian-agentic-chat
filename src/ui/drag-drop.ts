@@ -13,7 +13,8 @@ export function parseDroppedVaultPath(data: string, vaultName: string): string |
   const trimmed = data.split(/[\r\n]+/)[0]?.trim() ?? "";
   if (!trimmed) return null;
 
-  if (trimmed.startsWith("obsidian://")) {
+  // URL schemes are case-insensitive (RFC 3986), so accept OBSIDIAN:// too.
+  if (/^obsidian:\/\//i.test(trimmed)) {
     let url: URL;
     try {
       url = new URL(trimmed);
