@@ -379,7 +379,7 @@ export class ChatView extends ItemView {
       return;
     }
     try {
-      const models = (await listOpenRouterModels(settings.openrouterApiKey))
+      const models = (await listOpenRouterModels(settings.openrouterApiKey, { zdr: settings.privacy.requireZDR }))
         .filter((model) => model.supportsTools)
         .sort((a, b) => a.id.localeCompare(b.id));
       new ModelSuggestModal(this.app, models, async (model) => {

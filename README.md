@@ -55,8 +55,8 @@ Add `tardigrde/obsidian-agentic-chat` in the [BRAT](https://github.com/TfTHacker
 **OpenRouter (default, zero data retention):**
 
 1. Create an API key at [openrouter.ai/keys](https://openrouter.ai/keys).
-2. Open *Settings → Agentic Chat*, paste the key, and pick a model. **Browse** lists tool-capable models.
-3. The strict privacy defaults are on. If your chosen model can't be routed under zero data retention, settings shows the routing toggles so you can pick another model or adjust them deliberately.
+2. Open *Settings → Agentic Chat*, paste the key, and pick a model. **Browse** lists tool-capable models — and while zero data retention is on, only models that have a ZDR-compliant endpoint, so you can't pick one the privacy routing would reject. The default is `moonshotai/kimi-k2.6`.
+3. The strict privacy defaults are on. To use a model with no ZDR provider, relax the routing toggles deliberately — Browse then shows the full catalog.
 
 **Ollama (fully local):**
 

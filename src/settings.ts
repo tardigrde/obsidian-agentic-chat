@@ -40,7 +40,7 @@ export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "mediu
 export const DEFAULT_SETTINGS: AgenticChatSettings = {
   provider: "openrouter",
   openrouterApiKey: "",
-  openrouterModel: "anthropic/claude-sonnet-4.5",
+  openrouterModel: "moonshotai/kimi-k2.6",
   ollamaBaseUrl: DEFAULT_OLLAMA_BASE_URL,
   ollamaModel: "llama3.1",
   thinkingLevel: "off",
@@ -161,7 +161,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setDesc('OpenRouter model id. "Browse" lists models that support tool calling.')
       .addText((text) =>
         text
-          .setPlaceholder("anthropic/claude-sonnet-4.5")
+          .setPlaceholder("moonshotai/kimi-k2.6")
           .setValue(settings.openrouterModel)
           .onChange(async (value) => {
             settings.openrouterModel = value.trim();
@@ -176,7 +176,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           }
           button.setDisabled(true);
           try {
-            const models = (await listOpenRouterModels(settings.openrouterApiKey))
+            const models = (await listOpenRouterModels(settings.openrouterApiKey, { zdr: settings.privacy.requireZDR }))
               .filter((model) => model.supportsTools)
               .sort((a, b) => a.id.localeCompare(b.id));
             new ModelSuggestModal(this.app, models, async (model) => {

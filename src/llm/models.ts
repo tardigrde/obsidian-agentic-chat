@@ -14,7 +14,7 @@ export type ProviderId = "openrouter" | "ollama";
 
 export interface ModelConfig {
   provider: ProviderId;
-  /** OpenRouter model id (e.g. `anthropic/claude-sonnet-4.5`) or Ollama tag (e.g. `llama3.1`). */
+  /** OpenRouter model id (e.g. `moonshotai/kimi-k2.6`) or Ollama tag (e.g. `llama3.1`). */
   modelId: string;
   privacy: PrivacySettings;
   /** Base URL of the local Ollama server (OpenAI-compatible endpoint is `${baseUrl}/v1`). */
@@ -123,18 +123,23 @@ export class ModelListError extends Error {
   }
 }
 
-/** Fetch the live OpenRouter catalog for the settings model browser. */
+/**
+ * Fetch the live OpenRouter catalog for the model browser. With `zdr: true`
+ * OpenRouter returns only models that have a zero-data-retention endpoint, so
+ * the browser never offers a model that the active privacy routing can't reach.
+ */
 export async function listOpenRouterModels(
   apiKey: string,
-  options?: { baseUrl?: string; fetchImpl?: typeof fetch; timeoutMs?: number },
+  options?: { baseUrl?: string; fetchImpl?: typeof fetch; timeoutMs?: number; zdr?: boolean },
 ): Promise<OpenRouterModelInfo[]> {
   const fetchImpl = options?.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const baseUrl = (options?.baseUrl ?? OPENROUTER_BASE_URL).replace(/\/$/, "");
+  const url = `${baseUrl}/models${options?.zdr ? "?zdr=true" : ""}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_LIST_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetchImpl(`${baseUrl}/models`, {
+    response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
     });
