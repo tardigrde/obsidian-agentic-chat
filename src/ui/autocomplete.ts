@@ -102,12 +102,17 @@ export function suggest(query: AcQuery, context: AcContext): AcItem[] {
   return suggestMentions(query.query, context.files);
 }
 
+/** Best (lowest, earliest) match score across several candidate strings; -1 if none match. */
+function bestMatchScore(query: string, candidates: string[]): number {
+  const scores = candidates.map((text) => matchScore(query, text)).filter((n) => n >= 0);
+  return scores.length > 0 ? Math.min(...scores) : -1;
+}
+
 function suggestCommands(query: string, commands: SlashCommand[]): AcItem[] {
   const scored = commands.map((command): Scored<AcItem> => {
     const names = [command.name, ...(command.aliases ?? [])];
-    const score = Math.min(...names.map((name) => matchScore(query, name)).map((n) => (n < 0 ? Infinity : n)));
     return {
-      score: Number.isFinite(score) ? score : -1,
+      score: bestMatchScore(query, names),
       item: {
         kind: "command",
         label: `/${command.name}${command.args ? ` ${command.args}` : ""}`,
@@ -132,7 +137,7 @@ function suggestMentions(query: string, files: MentionCandidate[]): AcItem[] {
   const scored = files.map((file): Scored<AcItem> => {
     const name = file.name ?? file.path.split("/").pop() ?? file.path;
     // Match on the basename first; fall back to the full path so "folder/note" works.
-    const score = bestScore(query, name, file.path);
+    const score = bestMatchScore(query, [name, file.path]);
     return {
       score,
       item: {
@@ -145,11 +150,6 @@ function suggestMentions(query: string, files: MentionCandidate[]): AcItem[] {
     };
   });
   return rank(scored);
-}
-
-function bestScore(query: string, ...texts: string[]): number {
-  const scores = texts.map((text) => matchScore(query, text)).filter((n) => n >= 0);
-  return scores.length ? Math.min(...scores) : -1;
 }
 
 /**

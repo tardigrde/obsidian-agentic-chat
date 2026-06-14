@@ -134,6 +134,7 @@ export class ChatView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.cancelAutocomplete();
     for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.unsubscribers = [];
   }
@@ -181,12 +182,15 @@ export class ChatView extends ItemView {
         void this.submit();
       }
     });
-    this.inputEl.addEventListener("input", () => this.updateAutocomplete());
-    this.inputEl.addEventListener("click", () => this.updateAutocomplete());
+    this.inputEl.addEventListener("input", () => this.scheduleAutocomplete());
+    this.inputEl.addEventListener("click", () => this.scheduleAutocomplete());
     this.inputEl.addEventListener("keyup", (event) => {
-      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) this.updateAutocomplete();
+      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) this.scheduleAutocomplete();
     });
-    this.inputEl.addEventListener("blur", () => this.menu.hide());
+    this.inputEl.addEventListener("blur", () => {
+      this.cancelAutocomplete();
+      this.menu.hide();
+    });
 
     const buttonRow = composer.createDiv({ cls: "agentic-chat-buttons" });
     const attachNoteButton = buttonRow.createEl("button", {
@@ -230,6 +234,28 @@ export class ChatView extends ItemView {
   }
 
   // --- autocomplete (slash commands, skills, @-mentions) ---
+
+  private autocompleteTimer: number | null = null;
+
+  /**
+   * Debounced recompute for typing/caret events, so a fast typist (or a large
+   * vault's mention scan) doesn't re-filter on every keystroke. Picking an item
+   * calls {@link updateAutocomplete} directly for an instant reopen.
+   */
+  private scheduleAutocomplete(): void {
+    this.cancelAutocomplete();
+    this.autocompleteTimer = window.setTimeout(() => {
+      this.autocompleteTimer = null;
+      this.updateAutocomplete();
+    }, 120);
+  }
+
+  private cancelAutocomplete(): void {
+    if (this.autocompleteTimer !== null) {
+      window.clearTimeout(this.autocompleteTimer);
+      this.autocompleteTimer = null;
+    }
+  }
 
   private updateAutocomplete(): void {
     if (this.service.isStreaming()) {
@@ -332,10 +358,11 @@ export class ChatView extends ItemView {
 
   private setRunning(running: boolean): void {
     this.sendButton.disabled = running;
-    if (running) this.stopButton.show();
-    else {
+    if (running) {
+      this.stopButton.show();
+    } else {
       this.stopButton.hide();
-      if (!running) this.statusEl.setText("");
+      this.statusEl.setText("");
     }
   }
 
@@ -343,6 +370,7 @@ export class ChatView extends ItemView {
 
   private async submit(): Promise<void> {
     if (this.service.isStreaming()) return;
+    this.cancelAutocomplete();
     this.menu.hide();
     const text = this.inputEl.value.trim();
     if (!text) return;

@@ -18,6 +18,9 @@ export class AutocompleteMenu {
     private readonly onChoose: (item: AcItem) => void,
   ) {
     this.el = parent.createDiv({ cls: "agentic-chat-autocomplete" });
+    // Keep clicks on the menu chrome (scrollbar, padding) from blurring the textarea,
+    // which would hide the menu before the user can scroll or pick.
+    this.el.addEventListener("mousedown", (event) => event.preventDefault());
     this.el.hide();
   }
 
