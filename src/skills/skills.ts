@@ -12,9 +12,11 @@ export {
 } from "@earendil-works/pi-agent-core";
 
 // $1–$9 / $@ / $ARGUMENTS / ${@:N} — the placeholders pi's substituteArgs understands.
-// The positional case excludes digits followed by more digits or a decimal/thousands
-// separator so currency in a skill body ($10, $1.50, $1,000) isn't misread as a template.
-const ARG_PLACEHOLDER = /\$(?:ARGUMENTS|@|[1-9](?!\d|[.,]\d)|\{@)/;
+// The positional case requires the digit not be followed by another digit, a period, or
+// a comma, so currency in a skill body ($10, $1.50, $1,000, "costs $1.") isn't misread as
+// a template. When detection is ambiguous we prefer NOT substituting: a literal `$1.` left
+// in the output is obvious and fixable, whereas wrongly substituting silently corrupts text.
+const ARG_PLACEHOLDER = /\$(?:ARGUMENTS|@|[1-9](?![\d.,])|\{@)/;
 
 /**
  * Build the user-message prompt for invoking a skill, folding in any arguments.
