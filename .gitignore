@@ -4,3 +4,5 @@ main.js
 coverage/
 .DS_Store
 data.json
+sessions/
+
