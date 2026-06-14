@@ -292,7 +292,8 @@ export class ChatView extends ItemView {
       `Approval (mutating): ${settings.approval.mutating}`,
       session ? `Session: ${session.messageCount} messages` : "Session: (none)",
     ];
-    new Notice(lines.join("\n"));
+    // Persist until dismissed — status is easy to miss at the default timeout.
+    new Notice(lines.join("\n"), 0);
   }
 
   private showUsage(): void {
@@ -301,21 +302,37 @@ export class ChatView extends ItemView {
       usage.totalTokens > 0
         ? `This conversation: ${usage.totalTokens} tokens · ${formatCost(usage.cost?.total ?? 0)}`
         : "No usage recorded yet for this conversation.",
+      0,
     );
   }
 
   private showHelp(): void {
-    new Notice(
-      [
-        "/new — start a new conversation",
-        "/sessions — browse past conversations",
-        "/model — switch model",
-        "/status — show provider, model, session",
-        "/usage — show token & cost totals",
-        "/skill [name] — run a vault skill",
-        "/template [name] [args] — run a prompt template",
-      ].join("\n"),
-    );
+    this.clearEmptyState();
+    this.renderInfoMessage("Slash commands", [
+      ["/new", "start a new conversation"],
+      ["/sessions", "browse past conversations"],
+      ["/model", "switch model"],
+      ["/status", "show provider, model, session"],
+      ["/usage", "show token & cost totals"],
+      ["/skill [name]", "run a vault skill"],
+      ["/template [name] [args]", "run a prompt template"],
+      ["/help", "show this list"],
+    ]);
+  }
+
+  /** Render a collapsible info block in the transcript (not sent to the model). */
+  private renderInfoMessage(title: string, entries: Array<[string, string]>): void {
+    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
+    const details = el.createEl("details", { cls: "agentic-chat-info-details" });
+    details.open = true;
+    details.createEl("summary", { text: title });
+    const list = details.createEl("ul", { cls: ["agentic-chat-info-body", "agentic-chat-info-list"] });
+    for (const [command, description] of entries) {
+      const item = list.createEl("li");
+      item.createEl("code", { text: command });
+      item.appendText(` — ${description}`);
+    }
+    this.scrollToBottom();
   }
 
   private showServiceError(): void {
@@ -334,7 +351,8 @@ export class ChatView extends ItemView {
   }
 
   private async openSessionList(): Promise<void> {
-    const sessions = await this.service.listSessions();
+    // Hide empty sessions — a conversation with no messages isn't worth listing.
+    const sessions = (await this.service.listSessions()).filter((session) => session.messageCount > 0);
     new SessionListModal(this.app, sessions, this.service.getSessionInfo()?.path ?? null, {
       load: (session) => void this.loadSession(session.path),
       delete: (session) => this.service.deleteSession(session.path),

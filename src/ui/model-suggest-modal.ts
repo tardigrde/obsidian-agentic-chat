@@ -1,4 +1,5 @@
-import { App, FuzzySuggestModal } from "obsidian";
+import { App, SuggestModal } from "obsidian";
+import { formatContextWindow } from "../llm/models";
 
 export interface BrowsableModel {
   id: string;
@@ -6,8 +7,12 @@ export interface BrowsableModel {
   contextLength: number | null;
 }
 
-/** Fuzzy picker over OpenRouter models (already filtered to tool-capable). */
-export class ModelSuggestModal extends FuzzySuggestModal<BrowsableModel> {
+/**
+ * Picker over OpenRouter models (already filtered to tool-capable). Uses a plain
+ * substring filter so results stay in the alphabetical order they arrive in —
+ * a FuzzySuggestModal would reorder matches by fuzzy score.
+ */
+export class ModelSuggestModal extends SuggestModal<BrowsableModel> {
   constructor(
     app: App,
     private readonly models: BrowsableModel[],
@@ -17,16 +22,24 @@ export class ModelSuggestModal extends FuzzySuggestModal<BrowsableModel> {
     this.setPlaceholder("Pick an OpenRouter model (tool-calling capable)…");
   }
 
-  getItems(): BrowsableModel[] {
-    return this.models;
+  getSuggestions(query: string): BrowsableModel[] {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return this.models;
+    return this.models.filter(
+      (model) => model.id.toLowerCase().includes(needle) || model.name.toLowerCase().includes(needle),
+    );
   }
 
-  getItemText(model: BrowsableModel): string {
-    const context = model.contextLength ? ` · ${Math.round(model.contextLength / 1000)}k ctx` : "";
-    return `${model.id}${context}`;
+  renderSuggestion(model: BrowsableModel, el: HTMLElement): void {
+    el.setText(itemText(model));
   }
 
-  onChooseItem(model: BrowsableModel): void {
+  onChooseSuggestion(model: BrowsableModel): void {
     this.onChoose(model);
   }
+}
+
+function itemText(model: BrowsableModel): string {
+  const context = formatContextWindow(model.contextLength);
+  return context ? `${model.id} · ${context} ctx` : model.id;
 }

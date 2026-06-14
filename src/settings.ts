@@ -10,6 +10,7 @@ import {
 } from "./llm/models";
 import { type ApprovalPolicy, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
+import { createVaultTools, MUTATING_TOOLS } from "./tools/vault-tools";
 import { FolderSuggestModal } from "./ui/folder-suggest";
 import { ModelSuggestModal } from "./ui/model-suggest-modal";
 
@@ -338,6 +339,30 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           await this.save();
         });
       });
+
+    new Setting(containerEl)
+      .setName("Per-tool overrides")
+      .setDesc("Override allow/ask/deny for individual tools. 'Default' follows the rule above (read-only tools always run).")
+      .setHeading();
+    for (const tool of createVaultTools(this.app)) {
+      const mutating = MUTATING_TOOLS.has(tool.name);
+      new Setting(containerEl)
+        .setName(tool.label)
+        .setDesc(`${tool.name} · ${mutating ? "mutating" : "read-only"}`)
+        .addDropdown((dropdown) => {
+          dropdown
+            .addOption("default", "Default")
+            .addOption("allow", "Allow")
+            .addOption("ask", "Ask")
+            .addOption("deny", "Deny")
+            .setValue(settings.approval.perTool[tool.name] ?? "default")
+            .onChange(async (value) => {
+              if (value === "default") delete settings.approval.perTool[tool.name];
+              else settings.approval.perTool[tool.name] = value as ApprovalPolicy;
+              await this.save();
+            });
+        });
+    }
   }
 
   private renderResources(containerEl: HTMLElement, settings: AgenticChatSettings): void {

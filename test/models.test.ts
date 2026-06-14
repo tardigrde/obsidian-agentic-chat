@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildModel, type ModelConfig } from "../src/llm/models";
+import { buildModel, formatContextWindow, type ModelConfig } from "../src/llm/models";
 
 const PRIVACY = { denyDataCollection: true, requireZDR: true, allowFallbacks: false };
 
@@ -40,6 +40,25 @@ describe("buildModel — OpenRouter", () => {
     expect(model.baseUrl).toContain("openrouter.ai/api/v1");
     expect(model.cost.input).toBe(0);
     expect(model.compat?.openRouterRouting?.data_collection).toBe("deny");
+  });
+});
+
+describe("formatContextWindow", () => {
+  it("renders millions with an M suffix", () => {
+    expect(formatContextWindow(1_000_000)).toBe("1M");
+    expect(formatContextWindow(2_000_000)).toBe("2M");
+    expect(formatContextWindow(1_500_000)).toBe("1.5M");
+  });
+
+  it("renders thousands with a k suffix", () => {
+    expect(formatContextWindow(128_000)).toBe("128k");
+    expect(formatContextWindow(8_192)).toBe("8k");
+  });
+
+  it("returns an empty string for unknown sizes", () => {
+    expect(formatContextWindow(null)).toBe("");
+    expect(formatContextWindow(0)).toBe("");
+    expect(formatContextWindow(undefined)).toBe("");
   });
 });
 

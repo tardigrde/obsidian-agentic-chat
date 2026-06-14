@@ -53,6 +53,13 @@ export class ApprovalModal extends Modal {
           .setCta()
           .onClick(() => this.decide({ approved: true, remember })),
       );
+
+    // Enter accepts (Escape already dismisses via the default modal handler).
+    this.scope.register([], "Enter", (event) => {
+      event.preventDefault();
+      this.decide({ approved: true, remember });
+      return false;
+    });
   }
 
   onClose(): void {

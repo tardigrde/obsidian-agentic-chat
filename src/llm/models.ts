@@ -99,6 +99,21 @@ export interface OpenRouterModelInfo {
   supportsTools: boolean;
 }
 
+/**
+ * Human-friendly context window size, e.g. `1M`, `128k`, `512`. Returns an
+ * empty string when the size is unknown so callers can omit the suffix.
+ */
+export function formatContextWindow(contextLength: number | null | undefined): string {
+  if (!contextLength || contextLength <= 0) return "";
+  if (contextLength >= 1_000_000) return `${trimDecimal(contextLength / 1_000_000)}M`;
+  if (contextLength >= 1_000) return `${Math.round(contextLength / 1_000)}k`;
+  return String(contextLength);
+}
+
+function trimDecimal(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+}
+
 const DEFAULT_LIST_TIMEOUT_MS = 30_000;
 
 export class ModelListError extends Error {
