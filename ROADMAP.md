@@ -112,11 +112,11 @@ Issue #2 §2. The most-requested feature across Obsidian AI plugins, but heavies
 
 ## Cross-cutting
 
-- [ ] **Ignore lists (security).** User-configured globs / an `.aiignore`-style file
-      naming notes the model **cannot** read. Enforced at the tool layer
-      (`src/tools/vault-tools.ts` — `read`/`grep`/`find`/`ls`/`get_active_note` all
-      consult it) and in path resolution (`src/vault/path.ts`), never in the UI, so the
-      model cannot route around it. Excluded paths are invisible, not just denied.
+- [x] **Ignore lists (security).** User-configured gitignore-style globs
+      (`settings.ignoredGlobs`) naming notes the model **cannot** read. Matcher in
+      `src/vault/ignore.ts`; enforced at the tool layer (`src/tools/vault-tools.ts` —
+      every tool consults it), never in the UI, so the model cannot route around it.
+      Excluded paths report as "not found" — invisible, not just denied.
 - [ ] **Context-window management.** pi sends the whole history each turn; long sessions
       hit the model limit and spike cost. Add auto-compaction/summarization of old turns
       as the context fills. Pairs with the context-% notification.

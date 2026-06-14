@@ -12,6 +12,7 @@ import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider, activeModelConfig } from "../settings";
 import { buildModel } from "../llm/models";
 import { createVaultTools } from "../tools/vault-tools";
+import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "../vault/ignore";
 import { ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
 import {
   formatPromptTemplateInvocation,
@@ -63,6 +64,7 @@ export class AgentService {
 
   private skills: Skill[] = [];
   private templates: PromptTemplate[] = [];
+  private ignoreMatcher: IgnoreMatcher = () => false;
   private sessionInfo: SessionInfo | undefined;
   private errorMessage: string | undefined;
 
@@ -242,7 +244,7 @@ export class AgentService {
         systemPrompt: buildSystemPrompt(settings.systemPrompt, this.skills),
         model: buildModel(activeModelConfig(settings)),
         thinkingLevel: settings.thinkingLevel,
-        tools: createVaultTools(this.app),
+        tools: createVaultTools(this.app, this.ignoreMatcher),
         messages,
       },
       getApiKey: (provider) => apiKeyForProvider(this.getSettings(), provider),
@@ -301,7 +303,7 @@ export class AgentService {
     await this.reloadResources();
     agent.state.model = buildModel(activeModelConfig(settings));
     agent.state.thinkingLevel = settings.thinkingLevel;
-    agent.state.tools = createVaultTools(this.app);
+    agent.state.tools = createVaultTools(this.app, this.ignoreMatcher);
     agent.state.systemPrompt = buildSystemPrompt(settings.systemPrompt, this.skills);
     await this.sessionManager.ensureConfiguration(this.sessionDefaults());
     this.sessionInfo = this.sessionManager.getActiveSessionInfo();
@@ -309,6 +311,7 @@ export class AgentService {
 
   private async reloadResources(): Promise<void> {
     const settings = this.getSettings();
+    this.ignoreMatcher = createIgnoreMatcher(parseIgnorePatterns(settings.ignoredGlobs));
     this.skills = await loadVaultSkills(this.app, settings.skillsFolder);
     this.templates = await loadVaultPromptTemplates(this.app, settings.templatesFolder);
   }

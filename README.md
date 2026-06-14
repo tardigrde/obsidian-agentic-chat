@@ -21,6 +21,7 @@ Your notes are yours. This plugin is built so that using AI on them does not mea
 - **Native sidebar chat** — an Obsidian `ItemView` styled with theme variables (light and dark just work). Tool calls appear as live step cards; reasoning tokens stream into a collapsible section.
 - **Vault tools** — the agent can `read`, `write`, `edit` (exact string replacements), `ls`, `find` (glob/substring), `grep`, `get_active_note`, `rename` (backlinks preserved), and `delete` (to trash). All paths are vault-relative; absolute paths and `..` escapes are rejected.
 - **Approval gates** — read-only tools run freely; mutating tools are gated **allow / ask / deny**, globally or per tool. "Ask" shows a confirm dialog with the exact arguments.
+- **Ignore list** — gitignore-style globs (e.g. `Private/`, `*.secret.md`, `**/diary/**`) name notes the agent can never touch. Enforced at the tool layer: matching files are invisible to *every* tool — they report as "not found", so the agent can't read, list, search, or edit them.
 - **Conversation history** — every chat is stored as JSONL under the plugin folder and resumed on reload; browse, reopen, or delete past conversations. Works on mobile (no SQLite, no Node `fs`).
 - **Token & cost tracking** — per-message and per-conversation token usage and USD cost (`/usage`, `/status`).
 - **Skills & personas** — drop `SKILL.md` files into a vault folder; they're offered to the agent and invokable with `/skill <name>`.
@@ -34,7 +35,7 @@ In the interest of transparency (and the [Obsidian Developer Policies](https://d
 
 - **Network use.** When the provider is OpenRouter, your prompt — including any note content you attach or the agent reads, plus tool results — is sent to OpenRouter and the model provider it routes to, subject to the privacy constraints above. With Ollama, requests go only to your configured local server.
 - **Account & payment.** OpenRouter requires your own account and API key, and hosted models are billed by OpenRouter to that account. The plugin itself is free and takes no payment. Ollama needs no account and is free.
-- **File access.** The agent reads and modifies files in your vault through Obsidian's vault API, only when you prompt it. Mutating actions are gated by the approval policy; deletes move files to trash.
+- **File access.** The agent reads and modifies files in your vault through Obsidian's vault API, only when you prompt it. Mutating actions are gated by the approval policy; deletes move files to trash. Files matched by your ignore list are never exposed to the agent.
 - **Telemetry.** None. No analytics, no tracking, no background network calls.
 - **Source.** Fully open source under the MIT license.
 
