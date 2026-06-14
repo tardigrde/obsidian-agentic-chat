@@ -46,6 +46,9 @@ export class PluginSettingTab {}
 export class Setting {}
 export class Modal {}
 export class FuzzySuggestModal {}
+export class SuggestModal {
+  setPlaceholder(): void {}
+}
 export class WorkspaceLeaf {}
 export class MarkdownView {}
 export class MarkdownRenderer {

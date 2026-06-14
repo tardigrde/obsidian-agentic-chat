@@ -8,13 +8,18 @@ export interface SessionListCallbacks {
 
 /** Browse, resume, or delete past conversations. */
 export class SessionListModal extends Modal {
+  private sessions: SessionInfo[];
+
   constructor(
     app: App,
-    private readonly sessions: SessionInfo[],
+    sessions: SessionInfo[],
     private readonly activePath: string | null,
     private readonly callbacks: SessionListCallbacks,
   ) {
     super(app);
+    // Own a mutable copy so sequential deletes shrink the list instead of
+    // re-filtering a stale snapshot (which made deleted rows reappear).
+    this.sessions = [...sessions];
   }
 
   onOpen(): void {
@@ -54,8 +59,15 @@ export class SessionListModal extends Modal {
       setIcon(remove, "trash-2");
       remove.addEventListener("click", async (event) => {
         event.stopPropagation();
-        await this.callbacks.delete(session);
-        this.renderList(this.sessions.filter((item) => item.path !== session.path));
+        // Optimistically drop the row first: keeps the list responsive and
+        // stops a quick second click from deleting the same session twice.
+        this.sessions = this.sessions.filter((item) => item.path !== session.path);
+        this.renderList(this.sessions);
+        try {
+          await this.callbacks.delete(session);
+        } catch (error) {
+          console.error("Agentic chat: failed to delete session", error);
+        }
       });
     }
   }

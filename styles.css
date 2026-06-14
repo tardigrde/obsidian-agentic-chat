@@ -36,6 +36,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--size-4-3);
+  /* Let users select and copy chat text. Descendants at the default `auto`
+     inherit this used value, so the whole transcript becomes selectable. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .agentic-chat-empty {
@@ -117,6 +121,38 @@
   padding: var(--size-2-2) var(--size-4-2);
   margin: var(--size-2-3) 0;
   font-size: var(--font-ui-small);
+}
+
+/* --- Info / slash-command output --- */
+
+.agentic-chat-info {
+  align-self: stretch;
+  background-color: var(--background-secondary);
+  padding: var(--size-4-2) var(--size-4-3);
+  width: 100%;
+  font-size: var(--font-ui-small);
+}
+
+.agentic-chat-info-details > summary {
+  cursor: pointer;
+  font-weight: var(--font-medium);
+  color: var(--text-muted);
+}
+
+.agentic-chat-info-body {
+  margin-top: var(--size-2-3);
+}
+
+.agentic-chat-info-list {
+  margin: 0;
+  padding-left: var(--size-4-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+}
+
+.agentic-chat-info-list code {
+  font-size: var(--font-smallest);
 }
 
 /* --- Reasoning --- */

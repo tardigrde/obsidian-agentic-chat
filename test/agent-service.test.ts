@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
-import type { Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
@@ -39,15 +39,46 @@ function cannedStreamFn(text: string): StreamFn {
   }) as unknown as StreamFn;
 }
 
-function makeService(streamFn: StreamFn): { service: AgentService; adapter: MemoryAdapter; settings: AgenticChatSettings } {
+/** Stream function that scripts one assistant message per agent turn. */
+function scriptedStreamFn(
+  turns: Array<{ content: AssistantMessage["content"]; stopReason: "stop" | "toolUse" }>,
+): StreamFn {
+  let turn = 0;
+  return ((model: Model<"openai-completions">) => {
+    const stream = createAssistantMessageEventStream();
+    const spec = turns[Math.min(turn, turns.length - 1)];
+    turn += 1;
+    const message = {
+      role: "assistant" as const,
+      content: spec.content,
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: spec.stopReason,
+      timestamp: Date.now(),
+    };
+    queueMicrotask(() => {
+      stream.push({ type: "start", partial: { ...message, content: [] } });
+      stream.push({ type: "done", reason: spec.stopReason, message });
+      stream.end(message);
+    });
+    return stream;
+  }) as unknown as StreamFn;
+}
+
+function makeService(
+  streamFn: StreamFn,
+  confirmToolCall: () => Promise<boolean> = async () => true,
+): { service: AgentService; adapter: MemoryAdapter; settings: AgenticChatSettings } {
   const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
   const adapter = new MemoryAdapter();
   const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
   const service = new AgentService({
-    app: {} as App,
+    app: { vault: {}, workspace: {} } as unknown as App,
     getSettings: () => settings,
     sessionManager,
-    confirmToolCall: async () => true,
+    confirmToolCall,
     streamFn,
   });
   return { service, adapter, settings };
@@ -74,6 +105,26 @@ describe("AgentService", () => {
     const entries = parseSessionEntries(adapter.files.get(sessionFile as string) as string);
     const messageEntries = entries.filter((entry) => entry.type === "message");
     expect(messageEntries).toHaveLength(2);
+  });
+
+  it("sends a denial result back to the model when the user declines a tool call", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "note.md", content: "hi" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "Understood, I won't write it." }], stopReason: "stop" },
+    ]);
+    const { service } = makeService(streamFn, async () => false);
+    await service.sendPrompt("Create note.md");
+
+    const messages = service.getMessages();
+    const toolResult = messages.find((message) => message.role === "toolResult") as
+      | { role: "toolResult"; isError: boolean; content: Array<{ type: string; text?: string }> }
+      | undefined;
+    expect(toolResult).toBeDefined();
+    expect(toolResult?.isError).toBe(true);
+    const resultText = (toolResult?.content ?? []).map((block) => block.text ?? "").join("");
+    expect(resultText).toMatch(/declined/i);
+    // The model received the denial and produced a follow-up turn.
+    expect(messages.filter((message) => message.role === "assistant")).toHaveLength(2);
   });
 
   it("reports a friendly error when no API key is configured", async () => {
