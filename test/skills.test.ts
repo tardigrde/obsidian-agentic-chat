@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
-import { loadVaultPromptTemplates, loadVaultSkills } from "../src/skills/skills";
+import type { Skill } from "@earendil-works/pi-agent-core";
+import { buildSkillInvocation, loadVaultSkills } from "../src/skills/skills";
 import { FakeApp } from "./helpers/fake-vault";
 
 async function seed(): Promise<App> {
@@ -10,8 +11,6 @@ async function seed(): Promise<App> {
     "Skills/summarize.md",
     "---\nname: Summarize\ndescription: Summarize the active note\n---\nWrite a 3-bullet summary.",
   );
-  await app.vault.createFolder("Templates");
-  await app.vault.create("Templates/daily.md", "Summarize daily note $1 and extract tasks.");
   return app as unknown as App;
 }
 
@@ -32,11 +31,33 @@ describe("loadVaultSkills", () => {
   });
 });
 
-describe("loadVaultPromptTemplates", () => {
-  it("loads markdown templates from the folder", async () => {
-    const templates = await loadVaultPromptTemplates(await seed(), "Templates");
-    expect(templates).toHaveLength(1);
-    expect(templates[0].name).toBe("daily");
-    expect(templates[0].content).toContain("$1");
+describe("buildSkillInvocation", () => {
+  const skill = (content: string): Skill => ({
+    name: "Demo",
+    description: "demo",
+    content,
+    filePath: "Skills/demo.md",
+  });
+
+  it("invokes a plain skill with no arguments", () => {
+    const out = buildSkillInvocation(skill("Do the thing."));
+    expect(out).toContain('<skill name="Demo"');
+    expect(out).toContain("Do the thing.");
+  });
+
+  it("substitutes $ARGUMENTS/$1 placeholders from the arg string", () => {
+    const out = buildSkillInvocation(skill("Summarize $1 and tag with $ARGUMENTS."), "Daily.md");
+    expect(out).toContain("Summarize Daily.md and tag with Daily.md.");
+  });
+
+  it("respects shell-style quoting when parsing args", () => {
+    const out = buildSkillInvocation(skill("Title: $1 / Body: $2"), '"My Note" body');
+    expect(out).toContain("Title: My Note / Body: body");
+  });
+
+  it("appends args as freeform instructions when the body has no placeholders", () => {
+    const out = buildSkillInvocation(skill("Base skill body."), "also be terse");
+    expect(out).toContain("Base skill body.");
+    expect(out).toContain("also be terse");
   });
 });

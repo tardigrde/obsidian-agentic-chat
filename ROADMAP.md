@@ -33,22 +33,22 @@ concepts that compose — they do not fully overlap:
 
 Low-risk groundwork everything else builds on. No new providers, no new model behavior.
 
-- [ ] **Progressive-disclosure skills.** Inject only skill `name`/`description` into the
-      system prompt; load the body on invocation. Fixes token cost scaling with skill
-      count (`src/agent/system-prompt.ts`, `src/skills/skills.ts`).
-- [ ] **Merge templates into skills.** `$ARGUMENTS`/`$1` support on skills; retire the
-      separate `templatesFolder` setting and `/template` command (keep a deprecation
-      path / migration note). One folder, one `/skill`, one loader.
-- [ ] **Reconcile execution semantics.** Today skills inject into the *system prompt* and
-      templates substitute args into a *user message*. Unify under the
-      progressive-disclosure invocation path.
-- [ ] **Slash rendering rule: in-pane for everything.** All slash output renders as
-      in-pane blocks (incl. the `/skill` list and validation errors), not toasts.
-      Replace the `Notice` calls in `chat-view.ts` (`:258, :272, :343, :374, :378`) with
-      in-pane rendering.
+- [x] **Progressive-disclosure skills.** Already satisfied: pi's
+      `formatSkillsForSystemPrompt` injects only `name`/`description`/`location` (no
+      body), and the model reads the full `SKILL.md` on demand. Locked with a test.
+- [x] **Merge templates into skills.** Skills now support `$ARGUMENTS`/`$1` via
+      `buildSkillInvocation`; the `templatesFolder` is folded into the skill list and the
+      setting is marked deprecated; `/template` is a deprecated alias to `/skill`. One
+      loader (`loadVaultSkills`), one `/skill`.
+- [x] **Reconcile execution semantics.** Already unified: both skills and (former)
+      templates invoke through `agent.prompt()` as a user message; only the
+      name/description list lives in the system prompt.
+- [x] **Slash rendering rule: in-pane for everything.** Slash/skill/model/error output
+      renders as in-pane blocks; the misused `Notice` calls in `chat-view.ts` are gone
+      (only the startup-init notification remains, pending the notification layer).
 - [ ] **Toasts = notifications only.** Reserve toasts for transient/background events we
       don't yet emit: long-running agent finished, context-window % thresholds, etc.
-      (See the cross-cutting notifications item.)
+      (See the cross-cutting notifications item.) — *PR2.*
 
 ## Milestone 2 — Interactive pane (Copilot-inspired)
 
@@ -100,7 +100,27 @@ The issue #2 §4 + §10 "workflow platform" leap. Depends on the taxonomy being 
       capable model for reasoning.
 - [ ] Agent selector in the mode dropdown / composer.
 
-## Milestone 6 — Embeddings + RAG QA (far future)
+## Milestone 6 — Web search + deep research
+
+Break the vault boundary: let the agent pull from the open web, then layer a
+multi-step research modality on top.
+
+- [ ] **Web search tool.** A typed tool the agent can call to query the web and read
+      results, alongside the existing vault tools. Read-only, but **network-egress
+      aware**: gate behind a setting (off by default) surfaced in privacy settings, since
+      it sends query text off-device. Decide the backend (provider-native search vs.
+      Brave/SearXNG endpoint) — favor an OpenAI-compatible/provider option to match the
+      existing stack.
+- [ ] **Fetch/read-page tool.** Companion to search: fetch a URL, return readable text
+      (the agent picks which results to open). Same egress gating.
+- [ ] **Deep research modality.** A multi-step plan→search→synthesize→cite loop that
+      produces a sourced note. Implement as a **default skill** first (composes search +
+      fetch + plan mode); promote to a dedicated **agent type** (M5) once the agent unit
+      lands — own system prompt + tool allowlist + model routing.
+- [ ] **Citations.** Research output writes inline source links/footnotes into the vault
+      note so claims are traceable.
+
+## Milestone 7 — Embeddings + RAG QA (far future)
 
 Issue #2 §2. The most-requested feature across Obsidian AI plugins, but heaviest.
 
