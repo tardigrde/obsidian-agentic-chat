@@ -285,24 +285,27 @@ export class ChatView extends ItemView {
   private showStatus(): void {
     const { settings } = this.plugin;
     const session = this.service.getSessionInfo();
-    const lines = [
-      `Provider: ${settings.provider}`,
-      `Model: ${activeModelId(settings)}`,
-      `Thinking: ${settings.thinkingLevel}`,
-      `Approval (mutating): ${settings.approval.mutating}`,
-      session ? `Session: ${session.messageCount} messages` : "Session: (none)",
-    ];
-    // Persist until dismissed — status is easy to miss at the default timeout.
-    new Notice(lines.join("\n"), 0);
+    this.clearEmptyState();
+    this.renderInfoMessage("Status", [
+      ["Provider", settings.provider],
+      ["Model", activeModelId(settings)],
+      ["Thinking", settings.thinkingLevel],
+      ["Approval (mutating)", settings.approval.mutating],
+      ["Session", session ? `${session.messageCount} messages` : "(none)"],
+    ]);
   }
 
   private showUsage(): void {
     const usage = this.service.getSessionUsage();
-    new Notice(
+    this.clearEmptyState();
+    this.renderInfoMessage(
+      "Usage",
       usage.totalTokens > 0
-        ? `This conversation: ${usage.totalTokens} tokens · ${formatCost(usage.cost?.total ?? 0)}`
-        : "No usage recorded yet for this conversation.",
-      0,
+        ? [
+            ["Tokens", String(usage.totalTokens)],
+            ["Cost", formatCost(usage.cost?.total ?? 0)],
+          ]
+        : [["Usage", "No usage recorded yet for this conversation."]],
     );
   }
 
@@ -327,10 +330,10 @@ export class ChatView extends ItemView {
     details.open = true;
     details.createEl("summary", { text: title });
     const list = details.createEl("ul", { cls: ["agentic-chat-info-body", "agentic-chat-info-list"] });
-    for (const [command, description] of entries) {
+    for (const [label, value] of entries) {
       const item = list.createEl("li");
-      item.createEl("code", { text: command });
-      item.appendText(` — ${description}`);
+      item.createEl("code", { text: label });
+      item.appendText(` — ${value}`);
     }
     this.scrollToBottom();
   }
