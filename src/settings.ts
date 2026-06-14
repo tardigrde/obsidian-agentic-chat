@@ -33,6 +33,11 @@ export interface AgenticChatSettings {
   skillsFolder: string;
   /** Vault folder scanned for reusable prompt templates. Empty disables templates. */
   templatesFolder: string;
+  /**
+   * Newline-separated gitignore-style globs the agent may never read or see.
+   * Enforced at the tool layer; matched files are invisible, not just denied.
+   */
+  ignoredGlobs: string;
 }
 
 export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -55,6 +60,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   approval: DEFAULT_APPROVAL_SETTINGS,
   skillsFolder: "",
   templatesFolder: "",
+  ignoredGlobs: "",
 };
 
 /** Merge stored settings over defaults, healing nested objects. */
@@ -391,6 +397,22 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         await this.save();
       },
     );
+
+    new Setting(containerEl).setName("Ignored files").setHeading();
+    new Setting(containerEl)
+      .setName("Ignore list")
+      .setDesc(
+        "One gitignore-style glob per line. Matching notes are invisible to the agent — it cannot read, " +
+          "list, search, or edit them. Examples: Private/  ·  *.secret.md  ·  /Inbox/passwords.md  ·  **/diary/**",
+      )
+      .addTextArea((text) => {
+        text.inputEl.rows = 6;
+        text.inputEl.addClass("agentic-chat-system-prompt");
+        text.setPlaceholder("Private/\n*.secret.md").setValue(settings.ignoredGlobs).onChange(async (value) => {
+          settings.ignoredGlobs = value;
+          await this.save();
+        });
+      });
   }
 
   private folderSetting(
