@@ -57,6 +57,14 @@ describe("createIgnoreMatcher", () => {
     expect(isIgnored("Privates/a.md")).toBe(false);
   });
 
+  it("hides a folder's contents even without a trailing slash (no bypass)", () => {
+    const isIgnored = matcher("Private");
+    expect(isIgnored("Private")).toBe(true);
+    expect(isIgnored("Private/Secret.md")).toBe(true);
+    expect(isIgnored("Private/sub/Secret.md")).toBe(true);
+    expect(isIgnored("Privates/a.md")).toBe(false);
+  });
+
   it("anchors patterns with a leading slash to the vault root", () => {
     const isIgnored = matcher("/Inbox/passwords.md");
     expect(isIgnored("Inbox/passwords.md")).toBe(true);

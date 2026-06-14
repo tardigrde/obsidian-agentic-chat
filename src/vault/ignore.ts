@@ -29,25 +29,22 @@ export function parseIgnorePatterns(text: string): string[] {
  * - a trailing `/` matches the folder itself and everything beneath it
  */
 export function createIgnoreMatcher(patterns: string[]): IgnoreMatcher {
-  const regexes = patterns
-    .map(compilePattern)
-    .filter((regex): regex is RegExp => regex !== null);
-  if (regexes.length === 0) return () => false;
-  return (path) => {
-    const normalized = path.replace(/^\/+/, "");
-    return regexes.some((regex) => regex.test(normalized));
-  };
+  const sources = patterns
+    .map(compilePatternSource)
+    .filter((source): source is string => source !== null);
+  if (sources.length === 0) return () => false;
+  // One combined regex = a single pass per path, instead of one test per pattern.
+  const combined = new RegExp(sources.map((source) => `(?:${source})`).join("|"), "i");
+  return (path) => combined.test(path.replace(/^\/+/, ""));
 }
 
-function compilePattern(pattern: string): RegExp | null {
+function compilePatternSource(pattern: string): string | null {
   let body = pattern.trim();
   if (!body || body.startsWith("#")) return null;
 
-  let dirOnly = false;
-  if (body.endsWith("/")) {
-    dirOnly = true;
-    body = body.slice(0, -1);
-  }
+  // A trailing slash is documentary: every match already covers the folder's
+  // subtree (see suffix below), so `Private` and `Private/` behave identically.
+  if (body.endsWith("/")) body = body.slice(0, -1);
 
   let anchored = false;
   if (body.startsWith("/")) {
@@ -58,8 +55,11 @@ function compilePattern(pattern: string): RegExp | null {
 
   const rootScoped = anchored || body.includes("/");
   const prefix = rootScoped ? "^" : "(?:^|.*/)";
-  const suffix = dirOnly ? "(?:/.*)?$" : "$";
-  return new RegExp(`${prefix}${globToRegExpSource(body)}${suffix}`, "i");
+  // Always extend a match to the whole subtree so a folder pattern hides the
+  // files inside it (matching gitignore). Without this, `Private` would match
+  // the folder node but leak `Private/Secret.md` — a silent security bypass.
+  const suffix = "(?:/.*)?$";
+  return `${prefix}${globToRegExpSource(body)}${suffix}`;
 }
 
 function globToRegExpSource(glob: string): string {
