@@ -41,7 +41,9 @@ export function highestUnnotifiedThreshold(
 ): number | null {
   let highestReached: number | null = null;
   for (const threshold of thresholds) {
-    if (value >= threshold) highestReached = threshold;
+    if (value >= threshold && (highestReached === null || threshold > highestReached)) {
+      highestReached = threshold;
+    }
   }
   if (highestReached === null) return null;
   for (const threshold of thresholds) {

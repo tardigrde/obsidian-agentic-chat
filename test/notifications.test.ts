@@ -44,4 +44,8 @@ describe("highestUnnotifiedThreshold", () => {
     // Jumped 0.70 -> 0.95 (notified 0.9); a later 0.95 turn must stay quiet, not emit 0.75.
     expect(highestUnnotifiedThreshold(0.95, [0.75, 0.9], new Set([0.9]))).toBeNull();
   });
+
+  it("is robust to unsorted threshold arrays", () => {
+    expect(highestUnnotifiedThreshold(0.92, [0.9, 0.75], new Set())).toBe(0.9);
+  });
 });

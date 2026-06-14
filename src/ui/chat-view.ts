@@ -37,6 +37,9 @@ export class ChatView extends ItemView {
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
   private notifiedContext = new Set<number>();
   private notifiedCost = false;
+  // The service fires onChange synchronously during session transitions; this silences
+  // automatic toasts until the new session's notification baseline has been set.
+  private muteNotifications = false;
 
   private messagesEl!: HTMLElement;
   private emptyStateEl: HTMLElement | null = null;
@@ -75,10 +78,15 @@ export class ChatView extends ItemView {
     this.buildLayout();
     this.unsubscribers.push(this.service.onEvent((event) => this.handleAgentEvent(event)));
     this.unsubscribers.push(this.service.onChange(() => this.syncChrome()));
+    this.muteNotifications = true;
     try {
       await this.service.initialize();
     } catch (error) {
       new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      // Baseline against the continued session so reopening doesn't toast existing crossings.
+      this.resetUsageNotifications(true);
+      this.muteNotifications = false;
     }
     this.renderTranscript(this.service.getMessages());
     this.syncChrome();
@@ -194,6 +202,7 @@ export class ChatView extends ItemView {
 
   /** Fire one-shot background toasts as the context window fills or cost crosses the cap. */
   private checkUsageNotifications(): void {
+    if (this.muteNotifications) return;
     const fraction = this.service.getContextFraction();
     if (fraction !== undefined) {
       const crossed = highestUnnotifiedThreshold(fraction, CONTEXT_THRESHOLDS, this.notifiedContext);
@@ -398,9 +407,14 @@ export class ChatView extends ItemView {
   // --- session + model actions ---
 
   private async newSession(): Promise<void> {
-    await this.service.newSession();
+    this.muteNotifications = true;
+    try {
+      await this.service.newSession();
+      this.resetUsageNotifications();
+    } finally {
+      this.muteNotifications = false;
+    }
     this.attachments = [];
-    this.resetUsageNotifications();
     this.renderChips();
     this.bubble = null;
     this.renderTranscript([]);
@@ -437,8 +451,13 @@ export class ChatView extends ItemView {
   }
 
   private async loadSession(path: string): Promise<void> {
-    await this.service.loadSession(path);
-    this.resetUsageNotifications(true);
+    this.muteNotifications = true;
+    try {
+      await this.service.loadSession(path);
+      this.resetUsageNotifications(true);
+    } finally {
+      this.muteNotifications = false;
+    }
     this.bubble = null;
     this.renderTranscript(this.service.getMessages());
   }

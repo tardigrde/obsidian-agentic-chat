@@ -412,13 +412,16 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Cost alert (USD)")
       .setDesc("Notify once when a conversation's cost crosses this amount. 0 disables.")
-      .addText((text) =>
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.setAttribute("min", "0");
+        text.inputEl.setAttribute("step", "any");
         text.setValue(String(settings.notifications.costAlertUsd)).onChange(async (value) => {
           const parsed = Number.parseFloat(value);
           settings.notifications.costAlertUsd = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
           await this.save();
-        }),
-      );
+        });
+      });
   }
 
   private renderResources(containerEl: HTMLElement, settings: AgenticChatSettings): void {
