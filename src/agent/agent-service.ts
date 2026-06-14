@@ -56,6 +56,7 @@ export class AgentService {
   private unsubscribeAgent: (() => void) | null = null;
   private initialization: Promise<void> | null = null;
   private persisted = new WeakSet<object>();
+  private disposed = false;
 
   private skills: Skill[] = [];
   private ignoreMatcher: IgnoreMatcher = () => false;
@@ -197,9 +198,8 @@ export class AgentService {
 
   async renameSession(path: string, name: string): Promise<void> {
     await this.sessionManager.renameSession(path, name);
-    if (this.sessionManager.getActiveSessionPath() === path && this.sessionManager.hasActiveSession()) {
-      this.sessionInfo = this.sessionManager.getActiveSessionInfo();
-    }
+    // Refresh cached info so renaming the active session updates the chrome.
+    if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
     this.notifyChange();
   }
 
@@ -221,9 +221,12 @@ export class AgentService {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.unsubscribeAgent?.();
     this.unsubscribeAgent = null;
     this.agent?.abort();
+    this.agent = null;
     this.eventListeners.clear();
     this.changeListeners.clear();
   }

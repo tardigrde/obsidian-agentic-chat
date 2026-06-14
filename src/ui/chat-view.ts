@@ -260,11 +260,12 @@ export class ChatView extends ItemView {
       event.dataTransfer?.getData("text/plain") || event.dataTransfer?.getData("text/uri-list") || "";
     const path = parseDroppedVaultPath(data, this.app.vault.getName());
     if (!path) return;
+    const file = this.app.vault.getAbstractFileByPath(path);
+    // Only intercept real vault entries; otherwise let Obsidian handle the drop.
+    if (!(file instanceof TFile) && !(file instanceof TFolder)) return;
     event.preventDefault();
     event.stopPropagation();
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (file instanceof TFolder) this.addAttachment(`${FOLDER_PREFIX}${path}`);
-    else this.addAttachment(path);
+    this.addAttachment(file instanceof TFolder ? `${FOLDER_PREFIX}${path}` : path);
   }
 
   private renderEmptyState(): void {
@@ -979,7 +980,11 @@ export class ChatView extends ItemView {
     if (editIndex !== undefined) {
       el.addClass("is-editable");
       el.setAttribute("aria-label", "Click to edit and resend");
-      el.addEventListener("click", () => this.beginEdit(editIndex, stripContextPreamble(text), el));
+      el.addEventListener("click", () => {
+        // Don't hijack a text selection (the bubble is selectable for copying).
+        if (window.getSelection()?.toString()) return;
+        this.beginEdit(editIndex, stripContextPreamble(text), el);
+      });
     }
     this.scrollToBottom();
   }
