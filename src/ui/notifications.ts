@@ -29,18 +29,23 @@ export class Notifier {
 }
 
 /**
- * Given an ascending list of thresholds and the set already notified, return the
- * highest threshold the value has reached but not yet been notified for (or null).
- * Notifying once per threshold per session avoids repeat toasts as usage drifts.
+ * Return the single threshold to notify for: the highest one `value` has reached,
+ * or null if nothing new. Only the highest reached threshold is ever surfaced — if
+ * it (or a higher one) was already notified, we stay quiet. This avoids a stale
+ * lower-threshold toast firing after the value jumped past several thresholds at once.
  */
 export function highestUnnotifiedThreshold(
   value: number,
   thresholds: readonly number[],
   notified: ReadonlySet<number>,
 ): number | null {
-  let result: number | null = null;
+  let highestReached: number | null = null;
   for (const threshold of thresholds) {
-    if (value >= threshold && !notified.has(threshold)) result = threshold;
+    if (value >= threshold) highestReached = threshold;
   }
-  return result;
+  if (highestReached === null) return null;
+  for (const threshold of thresholds) {
+    if (threshold >= highestReached && notified.has(threshold)) return null;
+  }
+  return highestReached;
 }

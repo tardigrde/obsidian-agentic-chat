@@ -39,4 +39,9 @@ describe("highestUnnotifiedThreshold", () => {
     expect(highestUnnotifiedThreshold(0.8, [0.75, 0.9], new Set([0.75]))).toBeNull();
     expect(highestUnnotifiedThreshold(0.95, [0.75, 0.9], new Set([0.75]))).toBe(0.9);
   });
+
+  it("never fires a lower threshold once a higher one was notified", () => {
+    // Jumped 0.70 -> 0.95 (notified 0.9); a later 0.95 turn must stay quiet, not emit 0.75.
+    expect(highestUnnotifiedThreshold(0.95, [0.75, 0.9], new Set([0.9]))).toBeNull();
+  });
 });
