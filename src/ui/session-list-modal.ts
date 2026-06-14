@@ -1,4 +1,4 @@
-import { App, Modal, setIcon } from "obsidian";
+import { App, Modal, Notice, setIcon } from "obsidian";
 import type { SessionInfo } from "../session/session-manager";
 
 export interface SessionListCallbacks {
@@ -107,6 +107,7 @@ export class SessionListModal extends Modal {
           session.name = next || undefined;
         } catch (error) {
           console.error("Agentic chat: failed to rename session", error);
+          new Notice("Failed to rename conversation.");
         }
       }
       this.renderList(this.sessions);

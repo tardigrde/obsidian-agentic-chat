@@ -519,7 +519,7 @@ export class ChatView extends ItemView {
     this.editingIndex = index;
     this.editingEl = el;
     el.addClass("is-editing");
-    this.inputEl.value = displayText;
+    this.setComposerValue(displayText);
     this.inputEl.focus();
     this.inputEl.setSelectionRange(displayText.length, displayText.length);
     this.statusEl.setText("Editing — Enter to resend, Esc to cancel");
@@ -537,8 +537,14 @@ export class ChatView extends ItemView {
     if (this.editingIndex === null) return;
     this.editingIndex = null;
     this.clearEditingHighlight();
-    if (restoreDraft && draft !== null) this.inputEl.value = draft;
+    if (restoreDraft && draft !== null) this.setComposerValue(draft);
     this.statusEl.setText("");
+  }
+
+  /** Set the composer text and notify input listeners (autocomplete) of the change. */
+  private setComposerValue(value: string): void {
+    this.inputEl.value = value;
+    this.inputEl.dispatchEvent(new Event("input"));
   }
 
   private clearEditingHighlight(): void {
