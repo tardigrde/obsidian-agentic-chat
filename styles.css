@@ -338,11 +338,76 @@
   color: var(--text-error);
 }
 
+.agentic-chat-input-wrap {
+  position: relative;
+}
+
 .agentic-chat-input {
   width: 100%;
   resize: vertical;
   min-height: 60px;
   font-family: inherit;
+}
+
+/* --- Autocomplete menu (slash / skill / @-mention) --- */
+
+.agentic-chat-autocomplete {
+  position: absolute;
+  bottom: calc(100% + var(--size-2-2));
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: var(--layer-popover);
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-s);
+  padding: var(--size-2-2);
+}
+
+.agentic-chat-autocomplete-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-3);
+  padding: var(--size-2-2) var(--size-2-3);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.agentic-chat-autocomplete-item.is-selected {
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-autocomplete-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.agentic-chat-autocomplete-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.agentic-chat-autocomplete-main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-2-3);
+  min-width: 0;
+}
+
+.agentic-chat-autocomplete-label {
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+.agentic-chat-autocomplete-detail {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agentic-chat-buttons {
@@ -482,4 +547,87 @@
 
 .agentic-chat-folder-input {
   width: 100%;
+}
+
+/* --- Inline result actions (copy / retry) --- */
+
+.agentic-chat-actions {
+  display: flex;
+  gap: var(--size-2-2);
+  margin-top: var(--size-2-2);
+}
+
+.agentic-chat-actions:empty {
+  display: none;
+}
+
+.agentic-chat-action {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.agentic-chat-assistant:hover .agentic-chat-action,
+.agentic-chat-action:focus-visible {
+  opacity: 1;
+}
+
+/* --- Clickable in-pane lists (e.g. /skill picker) --- */
+
+.agentic-chat-info-subtitle {
+  color: var(--text-muted);
+  margin-bottom: var(--size-2-3);
+}
+
+.agentic-chat-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+}
+
+.agentic-chat-action-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-3);
+  width: 100%;
+  text-align: left;
+  padding: var(--size-2-2) var(--size-2-3);
+  border-radius: var(--radius-s);
+  background-color: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.agentic-chat-action-row:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-action-row-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.agentic-chat-action-row-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.agentic-chat-action-row-main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-2-3);
+  min-width: 0;
+}
+
+.agentic-chat-action-row-label {
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+.agentic-chat-action-row-detail {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

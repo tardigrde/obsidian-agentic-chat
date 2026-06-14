@@ -1,8 +1,5 @@
 import {
-  type App,
-  type Component,
   ItemView,
-  MarkdownRenderer,
   Notice,
   TFile,
   TFolder,
@@ -10,7 +7,6 @@ import {
   setIcon,
 } from "obsidian";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Usage } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId } from "../settings";
@@ -19,15 +15,45 @@ import { ModelSuggestModal } from "./model-suggest-modal";
 import { SessionListModal } from "./session-list-modal";
 import { FolderSuggestModal } from "./folder-suggest";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
+import { AssistantBubble } from "./assistant-bubble";
+import { formatCost, formatUsage, safeJson } from "./format";
+import {
+  assistantUsage,
+  collectToolResults,
+  lastUserText,
+  messageText,
+  thinkingText,
+  toolCalls,
+  type ToolResultLite,
+  toolResultText,
+} from "./message-content";
+import {
+  type AcItem,
+  type AcQuery,
+  detectQuery,
+  FOLDER_PREFIX,
+  type MentionCandidate,
+  resolve,
+  suggest,
+} from "./autocomplete";
+import { AutocompleteMenu } from "./autocomplete-menu";
+import { resolveCommand, visibleCommands } from "./commands";
 
 export { VIEW_TYPE_AGENT_CHAT };
 
-const FOLDER_PREFIX = "folder:";
 /** Context-window fill fractions that trigger a background notification, once each. */
 const CONTEXT_THRESHOLDS = [0.75, 0.9] as const;
 
-function truncateText(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max)}…`;
+/** Strip an attachment `<context>…</context>` preamble for display (used by retry fallback). */
+function stripContextPreamble(text: string): string {
+  return text.replace(/^<context>[\s\S]*?<\/context>\n\n/, "");
+}
+
+interface ActionRow {
+  label: string;
+  detail?: string;
+  icon: string;
+  onClick: () => void;
 }
 
 export class ChatView extends ItemView {
@@ -41,10 +67,18 @@ export class ChatView extends ItemView {
   // automatic toasts until the new session's notification baseline has been set.
   private muteNotifications = false;
 
+  // Autocomplete state: the active query token and a cached mention candidate list.
+  private activeQuery: AcQuery | null = null;
+  private mentionCache: MentionCandidate[] | null = null;
+  // Last turn we sent, kept so "retry" re-runs it without re-showing the context preamble.
+  private lastSentPrompt: string | null = null;
+  private lastSentDisplay: string | null = null;
+
   private messagesEl!: HTMLElement;
   private emptyStateEl: HTMLElement | null = null;
   private chipsEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
+  private menu!: AutocompleteMenu;
   private sendButton!: HTMLButtonElement;
   private stopButton!: HTMLButtonElement;
   private statusEl!: HTMLElement;
@@ -78,6 +112,13 @@ export class ChatView extends ItemView {
     this.buildLayout();
     this.unsubscribers.push(this.service.onEvent((event) => this.handleAgentEvent(event)));
     this.unsubscribers.push(this.service.onChange(() => this.syncChrome()));
+    // The mention list is cached; drop it whenever the vault's file set changes.
+    const invalidate = () => {
+      this.mentionCache = null;
+    };
+    this.registerEvent(this.app.vault.on("create", invalidate));
+    this.registerEvent(this.app.vault.on("delete", invalidate));
+    this.registerEvent(this.app.vault.on("rename", invalidate));
     this.muteNotifications = true;
     try {
       await this.service.initialize();
@@ -126,16 +167,26 @@ export class ChatView extends ItemView {
 
     const composer = root.createDiv({ cls: "agentic-chat-composer" });
     this.chipsEl = composer.createDiv({ cls: "agentic-chat-chips" });
-    this.inputEl = composer.createEl("textarea", {
+
+    const inputWrap = composer.createDiv({ cls: "agentic-chat-input-wrap" });
+    this.inputEl = inputWrap.createEl("textarea", {
       cls: "agentic-chat-input",
-      attr: { rows: "3", placeholder: "Ask about your vault, or type / for commands… (Enter to send)" },
+      attr: { rows: "3", placeholder: "Ask about your vault — / for commands, @ to attach a note… (Enter to send)" },
     });
+    this.menu = new AutocompleteMenu(inputWrap, (item) => this.chooseAutocomplete(item));
     this.inputEl.addEventListener("keydown", (event) => {
+      if (this.menu.handleKey(event)) return;
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
         void this.submit();
       }
     });
+    this.inputEl.addEventListener("input", () => this.updateAutocomplete());
+    this.inputEl.addEventListener("click", () => this.updateAutocomplete());
+    this.inputEl.addEventListener("keyup", (event) => {
+      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) this.updateAutocomplete();
+    });
+    this.inputEl.addEventListener("blur", () => this.menu.hide());
 
     const buttonRow = composer.createDiv({ cls: "agentic-chat-buttons" });
     const attachNoteButton = buttonRow.createEl("button", {
@@ -169,13 +220,65 @@ export class ChatView extends ItemView {
     setIcon(icon, "bot");
     this.emptyStateEl.createDiv({
       cls: "agentic-chat-empty-text",
-      text: "Ask anything about your vault. The agent can read, search, write, and edit notes — every tool call is shown inline. Type / for commands.",
+      text: "Ask anything about your vault. The agent can read, search, write, and edit notes — every tool call is shown inline. Type / for commands or @ to attach a note.",
     });
   }
 
   private clearEmptyState(): void {
     this.emptyStateEl?.detach();
     this.emptyStateEl = null;
+  }
+
+  // --- autocomplete (slash commands, skills, @-mentions) ---
+
+  private updateAutocomplete(): void {
+    if (this.service.isStreaming()) {
+      this.menu.hide();
+      return;
+    }
+    const text = this.inputEl.value;
+    const caret = this.inputEl.selectionStart ?? text.length;
+    const query = detectQuery(text, caret);
+    if (!query) {
+      this.activeQuery = null;
+      this.menu.hide();
+      return;
+    }
+    this.activeQuery = query;
+    this.menu.show(
+      suggest(query, {
+        commands: visibleCommands(),
+        skills: this.service.getSkills(),
+        files: query.kind === "mention" ? this.mentionCandidates() : [],
+      }),
+    );
+  }
+
+  private chooseAutocomplete(item: AcItem): void {
+    if (!this.activeQuery) return;
+    const result = resolve(this.inputEl.value, this.activeQuery, item);
+    this.inputEl.value = result.text;
+    this.inputEl.setSelectionRange(result.caret, result.caret);
+    this.inputEl.focus();
+    if (result.attach) this.addAttachment(result.attach);
+    this.activeQuery = null;
+    // Re-evaluate so e.g. completing "/skill " immediately offers the skill list.
+    this.updateAutocomplete();
+  }
+
+  /** All notes and folders as mention candidates, cached until the vault changes. */
+  private mentionCandidates(): MentionCandidate[] {
+    if (this.mentionCache) return this.mentionCache;
+    const candidates: MentionCandidate[] = [];
+    for (const file of this.app.vault.getAllLoadedFiles()) {
+      if (file instanceof TFolder) {
+        if (file.path && file.path !== "/") candidates.push({ path: file.path, type: "folder" });
+      } else if (file instanceof TFile) {
+        candidates.push({ path: file.path, type: "file", name: file.basename });
+      }
+    }
+    this.mentionCache = candidates;
+    return candidates;
   }
 
   // --- chrome (header pill, usage, running state) ---
@@ -240,6 +343,7 @@ export class ChatView extends ItemView {
 
   private async submit(): Promise<void> {
     if (this.service.isStreaming()) return;
+    this.menu.hide();
     const text = this.inputEl.value.trim();
     if (!text) return;
 
@@ -259,20 +363,35 @@ export class ChatView extends ItemView {
     const attachments = [...this.attachments];
     const context = await this.buildContext();
     const prompt = context ? `${context}\n\n${text}` : text;
+    this.lastSentPrompt = prompt;
+    this.lastSentDisplay = text;
     this.renderUserMessage(text, attachments);
     await this.service.sendPrompt(prompt);
     this.showServiceError();
   }
 
+  /** Re-run the conversation's last user turn (inline "Ask again" action). */
+  private async retryLast(): Promise<void> {
+    if (this.service.isStreaming()) return;
+    const prompt = this.lastSentPrompt ?? lastUserText(this.service.getMessages());
+    if (!prompt) return;
+    const display = this.lastSentDisplay ?? stripContextPreamble(prompt);
+    this.clearEmptyState();
+    this.renderUserMessage(display, []);
+    await this.service.sendPrompt(prompt);
+    this.showServiceError();
+  }
+
   private async handleSlashCommand(raw: string): Promise<boolean> {
-    const [command, ...rest] = raw.slice(1).split(/\s+/);
-    const argString = raw.slice(1 + command.length).trim();
-    switch (command.toLowerCase()) {
+    const [word, ...rest] = raw.slice(1).split(/\s+/);
+    const argString = raw.slice(1 + word.length).trim();
+    const command = resolveCommand(word);
+    if (!command) return false;
+    switch (command.name) {
       case "new":
         await this.newSession();
         return true;
       case "sessions":
-      case "history":
         await this.openSessionList();
         return true;
       case "model":
@@ -309,14 +428,23 @@ export class ChatView extends ItemView {
     this.showServiceError();
   }
 
+  /** `/skill` with no argument: a clickable picker, not a static list. */
   private showSkillList(): void {
     const skills = this.service.getSkills();
     this.clearEmptyState();
-    this.renderInfoMessage(
+    if (skills.length === 0) {
+      this.renderInfoMessage("Skills", [["(none)", "Set a skills folder in settings to add skills."]]);
+      return;
+    }
+    this.renderActionList(
       "Skills",
-      skills.length
-        ? skills.map((skill): [string, string] => [skill.name, skill.description])
-        : [["(none)", "Set a skills folder in settings to add skills."]],
+      "Pick a skill to run.",
+      skills.map((skill) => ({
+        label: skill.name,
+        detail: skill.description,
+        icon: "sparkles",
+        onClick: () => void this.runSkill(skill.name, ""),
+      })),
     );
   }
 
@@ -362,15 +490,13 @@ export class ChatView extends ItemView {
 
   private showHelp(): void {
     this.clearEmptyState();
-    this.renderInfoMessage("Slash commands", [
-      ["/new", "start a new conversation"],
-      ["/sessions", "browse past conversations"],
-      ["/model", "switch model"],
-      ["/status", "show provider, model, session"],
-      ["/usage", "show token & cost totals"],
-      ["/skill [name] [args]", "run a vault skill; args fill $ARGUMENTS/$1"],
-      ["/help", "show this list"],
-    ]);
+    this.renderInfoMessage(
+      "Slash commands",
+      visibleCommands().map((command): [string, string] => [
+        `/${command.name}${command.args ? ` ${command.args}` : ""}`,
+        command.description,
+      ]),
+    );
   }
 
   /** Render a collapsible info block in the transcript (not sent to the model). */
@@ -384,6 +510,27 @@ export class ChatView extends ItemView {
       const item = list.createEl("li");
       item.createEl("code", { text: label });
       item.appendText(` — ${value}`);
+    }
+    this.scrollToBottom();
+  }
+
+  /** Render a collapsible block whose rows are clickable buttons (e.g. the skill picker). */
+  private renderActionList(title: string, subtitle: string, items: ActionRow[]): void {
+    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
+    const details = el.createEl("details", { cls: "agentic-chat-info-details" });
+    details.open = true;
+    details.createEl("summary", { text: title });
+    const body = details.createDiv({ cls: "agentic-chat-info-body" });
+    if (subtitle) body.createDiv({ cls: "agentic-chat-info-subtitle", text: subtitle });
+    const list = body.createDiv({ cls: "agentic-chat-action-list" });
+    for (const item of items) {
+      const row = list.createEl("button", { cls: "agentic-chat-action-row" });
+      const icon = row.createSpan({ cls: "agentic-chat-action-row-icon" });
+      setIcon(icon, item.icon);
+      const main = row.createDiv({ cls: "agentic-chat-action-row-main" });
+      main.createSpan({ cls: "agentic-chat-action-row-label", text: item.label });
+      if (item.detail) main.createSpan({ cls: "agentic-chat-action-row-detail", text: item.detail });
+      row.addEventListener("click", item.onClick);
     }
     this.scrollToBottom();
   }
@@ -415,6 +562,8 @@ export class ChatView extends ItemView {
       this.muteNotifications = false;
     }
     this.attachments = [];
+    this.lastSentPrompt = null;
+    this.lastSentDisplay = null;
     this.renderChips();
     this.bubble = null;
     this.renderTranscript([]);
@@ -458,6 +607,8 @@ export class ChatView extends ItemView {
     } finally {
       this.muteNotifications = false;
     }
+    this.lastSentPrompt = null;
+    this.lastSentDisplay = null;
     this.bubble = null;
     this.renderTranscript(this.service.getMessages());
   }
@@ -550,22 +701,27 @@ export class ChatView extends ItemView {
     this.messagesEl.empty();
     this.bubble = null;
     const toolResults = collectToolResults(messages);
+    const lastAssistant = lastIndex(messages, (message) => message.role === "assistant");
     let rendered = 0;
-    for (const message of messages) {
+    messages.forEach((message, index) => {
       if (message.role === "user") {
         this.renderUserMessage(messageText(message), []);
         rendered += 1;
       } else if (message.role === "assistant") {
-        this.renderAssistantMessage(message, toolResults);
+        this.renderAssistantMessage(message, toolResults, index === lastAssistant);
         rendered += 1;
       }
-    }
+    });
     if (rendered === 0) this.renderEmptyState();
     this.scrollToBottom();
   }
 
-  private renderAssistantMessage(message: AgentMessage, toolResults: Map<string, ToolResultLite>): void {
-    const bubble = new AssistantBubble(this.messagesEl);
+  private renderAssistantMessage(
+    message: AgentMessage,
+    toolResults: Map<string, ToolResultLite>,
+    isLast: boolean,
+  ): void {
+    const bubble = this.newBubble();
     const reasoning = thinkingText(message);
     if (reasoning) bubble.appendReasoning(reasoning);
     for (const call of toolCalls(message)) {
@@ -574,7 +730,10 @@ export class ChatView extends ItemView {
       if (result) bubble.endStep(call.id, result.text, result.isError);
     }
     const text = messageText(message);
-    if (text) void bubble.finalizeText(text, this.app, this);
+    if (text) {
+      void bubble.finalizeText(text, this.app, this);
+      bubble.showActions({ canRetry: isLast });
+    }
     const usage = assistantUsage(message);
     if (usage) bubble.showUsage(usage);
   }
@@ -603,7 +762,7 @@ export class ChatView extends ItemView {
         break;
       case "message_start":
         if (event.message.role === "assistant") {
-          this.bubble = new AssistantBubble(this.messagesEl);
+          this.bubble = this.newBubble();
           this.statusEl.setText("Responding…");
         }
         break;
@@ -643,15 +802,22 @@ export class ChatView extends ItemView {
     const bubble = this.bubble;
     if (!bubble) return;
     const text = messageText(message);
-    if (text) void bubble.finalizeText(text, this.app, this);
+    if (text) {
+      void bubble.finalizeText(text, this.app, this);
+      bubble.showActions({ canRetry: true });
+    }
     const errorMessage = (message as { errorMessage?: string }).errorMessage;
     if (errorMessage) bubble.showError(errorMessage);
     const usage = assistantUsage(message);
     if (usage) bubble.showUsage(usage);
   }
 
+  private newBubble(): AssistantBubble {
+    return new AssistantBubble(this.messagesEl, { onRetry: () => void this.retryLast() });
+  }
+
   private ensureBubble(): AssistantBubble {
-    if (!this.bubble) this.bubble = new AssistantBubble(this.messagesEl);
+    if (!this.bubble) this.bubble = this.newBubble();
     return this.bubble;
   }
 
@@ -667,179 +833,10 @@ export class ChatView extends ItemView {
   }
 }
 
-/** Owns the DOM of a single assistant turn: reasoning, tool steps, text, footer. */
-class AssistantBubble {
-  private readonly el: HTMLElement;
-  private readonly stepsEl: HTMLElement;
-  private readonly textEl: HTMLElement;
-  private readonly footerEl: HTMLElement;
-  private reasoningBody: HTMLElement | null = null;
-  private readonly steps = new Map<string, { card: HTMLElement; icon: HTMLElement }>();
-
-  constructor(parent: HTMLElement) {
-    this.el = parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-assistant"] });
-    this.stepsEl = this.el.createDiv({ cls: "agentic-chat-steps" });
-    this.textEl = this.el.createDiv({ cls: ["agentic-chat-text", "is-streaming"] });
-    this.footerEl = this.el.createDiv({ cls: "agentic-chat-footer" });
+/** Index of the last element matching `predicate`, or -1. */
+function lastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (predicate(items[i])) return i;
   }
-
-  appendText(delta: string): void {
-    this.textEl.appendText(delta);
-  }
-
-  appendReasoning(delta: string): void {
-    if (!this.reasoningBody) {
-      const details = this.el.createEl("details", { cls: "agentic-chat-reasoning" });
-      details.createEl("summary", { text: "Reasoning" });
-      this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
-      this.el.insertBefore(details, this.stepsEl);
-    }
-    this.reasoningBody.appendText(delta);
-  }
-
-  startStep(id: string, name: string, rawArgs: string): void {
-    const card = this.stepsEl.createDiv({ cls: ["agentic-chat-step", "is-running"] });
-    const header = card.createDiv({ cls: "agentic-chat-step-header" });
-    const icon = header.createSpan({ cls: "agentic-chat-step-icon" });
-    setIcon(icon, "loader-2");
-    header.createSpan({ cls: "agentic-chat-step-name", text: describeCall(name, rawArgs) });
-    if (rawArgs && rawArgs !== "{}") {
-      card.createEl("code", { cls: "agentic-chat-step-args", text: truncateText(rawArgs, 200) });
-    }
-    this.steps.set(id, { card, icon });
-  }
-
-  endStep(id: string, result: string, isError: boolean): void {
-    const step = this.steps.get(id);
-    if (!step) return;
-    step.card.removeClass("is-running");
-    step.card.addClass(isError ? "is-error" : "is-done");
-    setIcon(step.icon, isError ? "x-circle" : "check-circle-2");
-    const details = step.card.createEl("details", { cls: "agentic-chat-step-result" });
-    details.createEl("summary", { text: isError ? "Error" : "Result" });
-    details.createEl("pre", { text: truncateText(result, 4_000) });
-  }
-
-  async finalizeText(markdown: string, app: App, component: Component): Promise<void> {
-    this.textEl.empty();
-    this.textEl.removeClass("is-streaming");
-    await MarkdownRenderer.render(app, markdown, this.textEl, "", component);
-  }
-
-  showError(message: string): void {
-    const banner = this.el.createDiv({ cls: "agentic-chat-error" });
-    banner.setText(message);
-    this.el.insertBefore(banner, this.footerEl);
-  }
-
-  showUsage(usage: Usage): void {
-    this.footerEl.setText(formatUsage(usage));
-  }
-}
-
-const TOOL_LABELS: Record<string, string> = {
-  read: "Reading file",
-  write: "Writing file",
-  edit: "Editing file",
-  ls: "Listing folder",
-  find: "Finding files",
-  grep: "Searching",
-  get_active_note: "Reading active note",
-  rename: "Renaming",
-  delete: "Deleting",
-};
-
-function describeCall(name: string, rawArgs: string): string {
-  let detail = "";
-  try {
-    const args = JSON.parse(rawArgs) as Record<string, unknown>;
-    const candidate = args.path ?? args.pattern ?? args.newPath;
-    if (typeof candidate === "string") detail = candidate;
-  } catch {
-    // Arguments may be malformed; the label alone is still useful.
-  }
-  const label = TOOL_LABELS[name] ?? `Running ${name}`;
-  return detail ? `${label}: ${detail}` : label;
-}
-
-// --- message extraction helpers (pi message shapes) ---
-
-interface ToolResultLite {
-  text: string;
-  isError: boolean;
-}
-
-function collectToolResults(messages: AgentMessage[]): Map<string, ToolResultLite> {
-  const map = new Map<string, ToolResultLite>();
-  for (const message of messages) {
-    if (message.role === "toolResult") {
-      map.set(message.toolCallId, { text: toolResultText(message), isError: message.isError });
-    }
-  }
-  return map;
-}
-
-function contentBlocks(message: AgentMessage): Array<Record<string, unknown>> {
-  const content = (message as { content?: unknown }).content;
-  return Array.isArray(content) ? (content as Array<Record<string, unknown>>) : [];
-}
-
-function messageText(message: AgentMessage): string {
-  const content = (message as { content?: unknown }).content;
-  if (typeof content === "string") return content;
-  return contentBlocks(message)
-    .filter((block) => block.type === "text")
-    .map((block) => String(block.text ?? ""))
-    .join("");
-}
-
-function thinkingText(message: AgentMessage): string {
-  return contentBlocks(message)
-    .filter((block) => block.type === "thinking")
-    .map((block) => String(block.thinking ?? ""))
-    .join("");
-}
-
-function toolCalls(message: AgentMessage): Array<{ id: string; name: string; arguments: Record<string, unknown> }> {
-  return contentBlocks(message)
-    .filter((block) => block.type === "toolCall")
-    .map((block) => ({
-      id: String(block.id ?? ""),
-      name: String(block.name ?? ""),
-      arguments: (block.arguments as Record<string, unknown>) ?? {},
-    }));
-}
-
-function toolResultText(result: unknown): string {
-  const content = (result as { content?: unknown })?.content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block) => (block as { type?: unknown }).type === "text")
-    .map((block) => String((block as { text?: unknown }).text ?? ""))
-    .join("\n");
-}
-
-function assistantUsage(message: AgentMessage): Usage | undefined {
-  const usage = (message as { usage?: Usage }).usage;
-  return usage && usage.totalTokens > 0 ? usage : undefined;
-}
-
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value ?? {});
-  } catch {
-    return "{}";
-  }
-}
-
-function formatCost(total: number): string {
-  if (!total) return "$0.00";
-  return total < 0.01 ? `$${total.toFixed(4)}` : `$${total.toFixed(2)}`;
-}
-
-function formatUsage(usage: Usage): string {
-  const total = usage.cost?.total ?? 0;
-  const cost = total > 0 ? ` · ${formatCost(total)}` : "";
-  return `${usage.totalTokens} tokens${cost}`;
+  return -1;
 }

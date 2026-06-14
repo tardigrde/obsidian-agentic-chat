@@ -54,16 +54,19 @@ Low-risk groundwork everything else builds on. No new providers, no new model be
 
 Make the pane carry actions, not just text. UX reference: GitHub Copilot chat sidebar.
 
-- [ ] **Slash-command autocomplete menu.** Typing `/` opens a filterable command/skill
-      menu in the composer.
-- [ ] **`@`-mention context attach.** Mention notes/folders inline to add as context,
-      beyond the current active-note attach button.
-- [ ] **Inline action buttons on results.** Apply edit / retry / copy / run suggested
-      skill — clickable affordances on result blocks.
-- [ ] **Interactive in-pane lists.** `/skill` with no arg renders a clickable list (pick
+- [x] **Slash-command autocomplete menu.** Typing `/` opens a filterable command/skill
+      menu in the composer (`src/ui/autocomplete.ts` engine + `autocomplete-menu.ts`
+      widget). `/skill <partial>` filters skills; the registry lives in `commands.ts`.
+- [x] **`@`-mention context attach.** Typing `@` filters notes/folders inline; picking one
+      adds it as a context chip (reusing the existing attachment system).
+- [x] **Inline action buttons on results.** Copy and "ask again" (retry) on each assistant
+      turn; "run suggested skill" is covered by the clickable `/skill` picker. Apply-edit
+      stays with the **Edit diff review + undo** cross-cutting item.
+- [x] **Interactive in-pane lists.** `/skill` with no arg renders a clickable picker (pick
       to run) instead of a static block.
-- [ ] **Refactor `chat-view.ts`.** Already ~750 lines; split before adding this surface
-      (composer, transcript, message bubble, slash/autocomplete as separate units).
+- [x] **Refactor `chat-view.ts`.** Split into pure units (`format.ts`, `message-content.ts`,
+      `commands.ts`, `autocomplete.ts`) plus DOM units (`assistant-bubble.ts`,
+      `autocomplete-menu.ts`); `chat-view.ts` now just orchestrates.
 
 ## Milestone 3 — Modes + output styles
 
