@@ -127,6 +127,25 @@ describe("AgentService", () => {
     expect(messages.filter((message) => message.role === "assistant")).toHaveLength(2);
   });
 
+  it("blocks mutating tools in ask mode and feeds the read-only denial back to the model", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "note.md", content: "hi" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "Read-only — here's what I would write." }], stopReason: "stop" },
+    ]);
+    // Approval allows mutating and the user would confirm — ask mode must still block.
+    const { service, settings } = makeService(streamFn, async () => true);
+    settings.mode = "ask";
+    settings.approval = { mutating: "allow", perTool: {} };
+    await service.sendPrompt("Create note.md");
+
+    const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
+      | { role: "toolResult"; isError: boolean; content: Array<{ type: string; text?: string }> }
+      | undefined;
+    expect(toolResult?.isError).toBe(true);
+    const resultText = (toolResult?.content ?? []).map((block) => block.text ?? "").join("");
+    expect(resultText).toMatch(/read-only/i);
+  });
+
   it("reports a friendly error when no API key is configured", async () => {
     const { service, settings } = makeService(cannedStreamFn("unused"));
     settings.openrouterApiKey = "";

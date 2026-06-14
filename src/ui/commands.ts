@@ -22,6 +22,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "sessions", description: "browse past conversations", aliases: ["history"] },
   { name: "model", description: "switch model" },
   { name: "status", description: "show provider, model, session" },
+  { name: "config", description: "switch mode & output style", aliases: ["mode", "style"] },
   { name: "usage", description: "show token & cost totals" },
   { name: "skill", args: "[name] [args]", description: "run a vault skill; args fill $ARGUMENTS/$1", takesSkillArg: true },
   { name: "help", description: "show this list" },
