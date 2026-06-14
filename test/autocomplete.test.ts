@@ -64,6 +64,14 @@ describe("detectQuery", () => {
   it("closes the mention at a line break", () => {
     expect(detectQuery("@Daily\nnext", 11)).toBeNull();
   });
+  it("stops treating @ as a mention once the token runs into ordinary prose", () => {
+    // Many spaces (prose after an early @) should fall back to plain text.
+    const prose = "@hey there how are you doing today";
+    expect(detectQuery(prose, prose.length)).toBeNull();
+    // An overly long single token is also not a plausible path.
+    const long = `@${"x".repeat(60)}`;
+    expect(detectQuery(long, long.length)).toBeNull();
+  });
   it("uses the caret, ignoring text to its right", () => {
     expect(detectQuery("/sk extra", 3)).toEqual({ kind: "command", range: [0, 3], query: "sk" });
   });

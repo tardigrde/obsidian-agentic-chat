@@ -79,6 +79,8 @@ export class ChatView extends ItemView {
   // When editing a sent prompt, the index of the user message being rewritten.
   private editingIndex: number | null = null;
   private editingEl: HTMLElement | null = null;
+  // The composer draft to restore if the user cancels an edit.
+  private draftBeforeEdit: string | null = null;
 
   private messagesEl!: HTMLElement;
   private emptyStateEl: HTMLElement | null = null;
@@ -486,7 +488,7 @@ export class ChatView extends ItemView {
     if (!text) return;
 
     const editIndex = this.editingIndex;
-    this.cancelEditing();
+    this.endEditing(false);
 
     if (text.startsWith("/")) {
       const handled = await this.handleSlashCommand(text);
@@ -509,6 +511,8 @@ export class ChatView extends ItemView {
   private beginEdit(index: number, displayText: string, el: HTMLElement): void {
     if (this.service.isStreaming()) return;
     this.clearEditingHighlight();
+    // Stash the composer draft on first entry so Esc can restore it.
+    if (this.editingIndex === null) this.draftBeforeEdit = this.inputEl.value;
     this.editingIndex = index;
     this.editingEl = el;
     el.addClass("is-editing");
@@ -518,10 +522,19 @@ export class ChatView extends ItemView {
     this.statusEl.setText("Editing — Enter to resend, Esc to cancel");
   }
 
+  /** Cancel an in-progress edit, restoring the draft the user had before editing. */
   private cancelEditing(): void {
+    this.endEditing(true);
+  }
+
+  /** Clear editing state. `restoreDraft` puts back the pre-edit composer draft. */
+  private endEditing(restoreDraft: boolean): void {
+    const draft = this.draftBeforeEdit;
+    this.draftBeforeEdit = null;
     if (this.editingIndex === null) return;
     this.editingIndex = null;
     this.clearEditingHighlight();
+    if (restoreDraft && draft !== null) this.inputEl.value = draft;
     this.statusEl.setText("");
   }
 
@@ -785,7 +798,7 @@ export class ChatView extends ItemView {
     this.attachments = [];
     this.lastSentPrompt = null;
     this.lastSentDisplay = null;
-    this.cancelEditing();
+    this.endEditing(false);
     this.renderChips();
     this.bubble = null;
     this.renderTranscript([]);
@@ -832,7 +845,7 @@ export class ChatView extends ItemView {
     }
     this.lastSentPrompt = null;
     this.lastSentDisplay = null;
-    this.cancelEditing();
+    this.endEditing(false);
     this.bubble = null;
     this.renderTranscript(this.service.getMessages());
   }

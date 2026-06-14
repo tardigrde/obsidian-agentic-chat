@@ -6,6 +6,10 @@ export const FOLDER_PREFIX = "folder:";
 /** Cap suggestions so the menu (and large vaults) stay manageable. */
 const MAX_ITEMS = 50;
 
+/** Bound a mention token so it stays a plausible path, not an ever-growing query. */
+const MAX_MENTION_TOKEN = 50;
+const MAX_MENTION_SPACES = 3;
+
 export type AcKind = "command" | "skill" | "mention";
 
 export interface AcItem {
@@ -74,8 +78,13 @@ export function detectQuery(text: string, caret: number): AcQuery | null {
   const at = before.lastIndexOf("@");
   if (at >= 0 && (at === 0 || /\s/.test(before[at - 1]))) {
     const token = before.slice(at + 1);
-    // Allow spaces (multi-word paths) but stop the token at a line break.
-    if (!/[\r\n]/.test(token)) return { kind: "mention", range: [at, end], query: token };
+    // Allow spaces (multi-word paths) but bound the token: stop at a line break,
+    // and cap length/spaces so an `@` early in ordinary prose doesn't keep an
+    // ever-growing query running the O(files) mention scan on every keystroke.
+    const spaces = (token.match(/ /g) ?? []).length;
+    if (!/[\r\n]/.test(token) && token.length <= MAX_MENTION_TOKEN && spaces <= MAX_MENTION_SPACES) {
+      return { kind: "mention", range: [at, end], query: token };
+    }
   }
   return null;
 }

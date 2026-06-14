@@ -82,6 +82,8 @@ export class SessionListModal extends Modal {
 
   /** Swap a session's title for an inline text input; commit on Enter/blur. */
   private beginRename(session: SessionInfo, titleEl: HTMLElement): void {
+    // A rename is already in progress on this row — don't stack inputs/listeners.
+    if (titleEl.querySelector(".agentic-chat-session-rename-input")) return;
     const current = session.name?.trim() || session.firstMessage;
     const input = titleEl.createEl("input", {
       cls: "agentic-chat-session-rename-input",
