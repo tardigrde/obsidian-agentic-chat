@@ -46,6 +46,7 @@ export default class AgenticChatPlugin extends Plugin {
   }
 
   onunload(): void {
+    // dispose() is idempotent, so a repeated onunload is harmless.
     this.agentService?.dispose();
   }
 

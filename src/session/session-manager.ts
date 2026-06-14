@@ -15,6 +15,7 @@ import {
   type ModelChangeSessionEntry,
   type SessionContext,
   type SessionEntry,
+  type SessionHeaderEntry,
   type SessionInfoEntry,
   type ThinkingLevelChangeSessionEntry,
 } from "./jsonl";
@@ -165,6 +166,88 @@ export class ObsidianSessionManager {
     });
   }
 
+  /**
+   * Rename any session by path — the active one in memory, or another on disk by
+   * appending a `session_info` entry to its file.
+   */
+  async renameSession(path: string, name: string | undefined): Promise<void> {
+    const sessionPath = normalizeFolderPath(path, { allowPluginInternals: true });
+    const trimmed = name?.trim() || undefined;
+    if (this.sessionFile === sessionPath) {
+      await this.appendSessionName(trimmed);
+      return;
+    }
+    const content = await this.adapter.read(sessionPath);
+    const entries = parseSessionEntries(content);
+    if (entries[0]?.type !== "session") throw new Error("Session file is missing a session header.");
+    const entry: SessionInfoEntry = {
+      type: "session_info",
+      id: createEntryId(entries),
+      parentId: getLastLeafId(entries),
+      timestamp: new Date().toISOString(),
+      name: trimmed,
+    };
+    await this.adapter.append(sessionPath, `${JSON.stringify(entry)}\n`);
+  }
+
+  /**
+   * Replace the active session's transcript with `messages`, rewriting the file
+   * to a fresh linear chain (preserving the header + active model/thinking level).
+   * Used by prompt editing to rewind a conversation to an earlier turn.
+   */
+  async rewriteMessages(messages: AgentMessage[]): Promise<void> {
+    if (!this.sessionFile) throw new Error("No active session.");
+    const header = this.entries[0];
+    if (!header || header.type !== "session") throw new Error("Session file is missing a session header.");
+    const sessionName = getSessionName(this.entries);
+    const context = this.buildSessionContext();
+    const rebuilt: SessionEntry[] = [header];
+    let parentId: string | null = null;
+    const push = (entry: Exclude<SessionEntry, SessionHeaderEntry>): void => {
+      rebuilt.push(entry);
+      parentId = entry.id;
+    };
+    if (context.model) {
+      push({
+        type: "model_change",
+        id: createEntryId(rebuilt),
+        parentId,
+        timestamp: new Date().toISOString(),
+        provider: context.model.provider,
+        modelId: context.model.modelId,
+      });
+    }
+    push({
+      type: "thinking_level_change",
+      id: createEntryId(rebuilt),
+      parentId,
+      timestamp: new Date().toISOString(),
+      thinkingLevel: context.thinkingLevel,
+    });
+    // Carry over a custom session name so prompt editing doesn't silently lose it.
+    if (sessionName) {
+      push({
+        type: "session_info",
+        id: createEntryId(rebuilt),
+        parentId,
+        timestamp: new Date().toISOString(),
+        name: sessionName,
+      });
+    }
+    for (const message of messages) {
+      push({
+        type: "message",
+        id: createEntryId(rebuilt),
+        parentId,
+        timestamp: new Date().toISOString(),
+        message,
+      });
+    }
+    await this.adapter.write(this.sessionFile, serializeSessionEntries(rebuilt));
+    this.entries = rebuilt;
+    this.leafId = parentId;
+  }
+
   buildSessionContext(): SessionContext {
     return buildSessionContext(this.entries, this.leafId);
   }
@@ -195,9 +278,11 @@ export class ObsidianSessionManager {
 
   private async appendEntry<TEntry extends Exclude<SessionEntry, { type: "session" }>>(entry: TEntry): Promise<string> {
     if (!this.sessionFile) throw new Error("No active session.");
+    // Write to disk first: if the append fails, the in-memory entries/leafId stay
+    // consistent with what's actually persisted instead of drifting ahead of it.
+    await this.adapter.append(this.sessionFile, `${JSON.stringify(entry)}\n`);
     this.entries.push(entry);
     this.leafId = entry.id;
-    await this.adapter.append(this.sessionFile, `${JSON.stringify(entry)}\n`);
     return entry.id;
   }
 
@@ -275,6 +360,27 @@ function getSessionModifiedTime(entries: SessionEntry[], fallback: number): numb
     }
   }
   return modifiedTime;
+}
+
+/**
+ * Derive a short session title from the first user prompt. Strips any attachment
+ * `<context>…</context>` preamble, collapses whitespace, and trims to a handful of
+ * words. Deterministic (no model call) — see ROADMAP for the model-based upgrade.
+ */
+export function deriveAutoName(firstMessage: string): string | undefined {
+  const withoutContext = firstMessage.replace(/^<context>[\s\S]*?<\/context>\s*/, "");
+  const slashStripped = withoutContext.replace(/^\/(?:skill|template)\s+/, "");
+  const condensed = slashStripped.replace(/\s+/g, " ").trim();
+  if (!condensed) return undefined;
+  const words = condensed.split(" ").slice(0, 8).join(" ");
+  let capped = words;
+  if (capped.length > 60) {
+    capped = capped.slice(0, 60);
+    const lastSpace = capped.lastIndexOf(" ");
+    capped = `${(lastSpace > 0 ? capped.slice(0, lastSpace) : capped).trimEnd()}…`;
+  }
+  const cleaned = capped.replace(/[.,;:!?]+$/, "");
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 function extractMessageText(message: AgentMessage): string {

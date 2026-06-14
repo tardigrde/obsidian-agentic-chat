@@ -26,12 +26,17 @@ export function sliceTextByLines(content: string, options: TextSliceOptions = {}
   const maxCharacters = options.maxCharacters ?? DEFAULT_MAX_CHARS;
   const joined = selectedLines.join("\n");
   const text = joined.length > maxCharacters ? joined.slice(0, maxCharacters) : joined;
-  const visibleLineCount = selectedLines.length;
+  // When a character cap cuts mid-text, fewer lines are actually emitted than
+  // were selected; report the last line the emitted text really reaches so the
+  // "lines X-Y" header doesn't over-claim.
+  // Empty text means nothing was emitted (no lines selected, or a 0-char cap);
+  // "".split("\n") would otherwise miscount as 1.
+  const emittedLineCount = text === "" ? 0 : text.split("\n").length;
 
   return {
     text,
     startLine,
-    endLine: visibleLineCount === 0 ? startLine - 1 : startLine + visibleLineCount - 1,
+    endLine: emittedLineCount === 0 ? startLine - 1 : startLine + emittedLineCount - 1,
     totalLines: lines.length,
     truncated: requestedEnd < lines.length || joined.length > maxCharacters,
   };

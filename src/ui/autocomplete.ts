@@ -6,6 +6,10 @@ export const FOLDER_PREFIX = "folder:";
 /** Cap suggestions so the menu (and large vaults) stay manageable. */
 const MAX_ITEMS = 50;
 
+/** Bound a mention token so it stays a plausible path, not an ever-growing query. */
+const MAX_MENTION_TOKEN = 50;
+const MAX_MENTION_SPACES = 3;
+
 export type AcKind = "command" | "skill" | "mention";
 
 export interface AcItem {
@@ -53,7 +57,10 @@ export interface AcResolution {
  *
  * - `^/word` (no space yet) → command menu.
  * - `/skill <partial>` or `/template <partial>` (first arg) → skill menu.
- * - `@partial` preceded by start-of-line or whitespace → mention menu.
+ * - `@partial` preceded by start-of-line or whitespace → mention menu. The token
+ *   may contain spaces so multi-word paths (e.g. `@200 Resources`) match; it ends
+ *   only at a newline. Picking a candidate or pressing Escape closes the menu, and
+ *   a query that matches nothing simply yields an empty (hidden) menu.
  *
  * Returns null when nothing should open. Only text *before* the caret matters;
  * the range it reports is what `resolve` replaces.
@@ -71,7 +78,13 @@ export function detectQuery(text: string, caret: number): AcQuery | null {
   const at = before.lastIndexOf("@");
   if (at >= 0 && (at === 0 || /\s/.test(before[at - 1]))) {
     const token = before.slice(at + 1);
-    if (!/\s/.test(token)) return { kind: "mention", range: [at, end], query: token };
+    // Allow spaces (multi-word paths) but bound the token: stop at a line break,
+    // and cap length/spaces so an `@` early in ordinary prose doesn't keep an
+    // ever-growing query running the O(files) mention scan on every keystroke.
+    const spaces = (token.match(/ /g) ?? []).length;
+    if (!/[\r\n]/.test(token) && token.length <= MAX_MENTION_TOKEN && spaces <= MAX_MENTION_SPACES) {
+      return { kind: "mention", range: [at, end], query: token };
+    }
   }
   return null;
 }

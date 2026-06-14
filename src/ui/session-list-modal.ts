@@ -1,9 +1,10 @@
-import { App, Modal, setIcon } from "obsidian";
+import { App, Modal, Notice, setIcon } from "obsidian";
 import type { SessionInfo } from "../session/session-manager";
 
 export interface SessionListCallbacks {
   load: (session: SessionInfo) => void;
   delete: (session: SessionInfo) => Promise<void>;
+  rename: (session: SessionInfo, name: string) => Promise<void>;
 }
 
 /** Browse, resume, or delete past conversations. */
@@ -45,7 +46,7 @@ export class SessionListModal extends Modal {
       if (session.path === this.activePath) row.addClass("is-active");
 
       const main = row.createDiv({ cls: "agentic-chat-session-main" });
-      main.createDiv({ cls: "agentic-chat-session-title", text: title(session) });
+      const titleEl = main.createDiv({ cls: "agentic-chat-session-title", text: title(session) });
       main.createDiv({
         cls: "agentic-chat-session-meta",
         text: `${session.messageCount} message${session.messageCount === 1 ? "" : "s"} · ${formatWhen(session.updatedAt)}`,
@@ -53,6 +54,13 @@ export class SessionListModal extends Modal {
       main.addEventListener("click", () => {
         this.callbacks.load(session);
         this.close();
+      });
+
+      const rename = row.createDiv({ cls: "agentic-chat-session-rename clickable-icon", attr: { "aria-label": "Rename" } });
+      setIcon(rename, "pencil");
+      rename.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.beginRename(session, titleEl);
       });
 
       const remove = row.createDiv({ cls: "agentic-chat-session-delete clickable-icon", attr: { "aria-label": "Delete" } });
@@ -70,6 +78,51 @@ export class SessionListModal extends Modal {
         }
       });
     }
+  }
+
+  /** Swap a session's title for an inline text input; commit on Enter/blur. */
+  private beginRename(session: SessionInfo, titleEl: HTMLElement): void {
+    // A rename is already in progress on this row — don't stack inputs/listeners.
+    if (titleEl.querySelector(".agentic-chat-session-rename-input")) return;
+    const hadCustomName = !!session.name?.trim();
+    const current = session.name?.trim() || session.firstMessage;
+    const input = titleEl.createEl("input", {
+      cls: "agentic-chat-session-rename-input",
+      attr: { type: "text", value: current === "(no messages)" ? "" : current },
+    });
+    titleEl.firstChild?.remove();
+    input.focus();
+    input.select();
+    let committed = false;
+    const commit = async (save: boolean): Promise<void> => {
+      if (committed) return;
+      committed = true;
+      const next = input.value.trim();
+      // Rename to a new title, or clear a previously-set custom name (empty input).
+      const shouldCommit = save && next !== current && (next.length > 0 || hadCustomName);
+      if (shouldCommit) {
+        try {
+          await this.callbacks.rename(session, next);
+          // Only update the in-memory name once the rename actually persisted.
+          session.name = next || undefined;
+        } catch (error) {
+          console.error("Agentic chat: failed to rename session", error);
+          new Notice("Failed to rename conversation.");
+        }
+      }
+      this.renderList(this.sessions);
+    };
+    input.addEventListener("click", (event) => event.stopPropagation());
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        void commit(true);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        void commit(false);
+      }
+    });
+    input.addEventListener("blur", () => void commit(true));
   }
 }
 

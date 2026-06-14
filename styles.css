@@ -72,8 +72,27 @@
   max-width: 88%;
 }
 
+/* The default selection tint is the accent colour, which is invisible over the
+   accent-filled user bubble; invert to a contrasting highlight. */
+.agentic-chat-user ::selection,
+.agentic-chat-user::selection {
+  background-color: var(--text-on-accent);
+  color: var(--interactive-accent);
+}
+
 .agentic-chat-user-text {
   white-space: pre-wrap;
+  /* Editing a sent prompt: click to reload it into the composer. */
+  cursor: text;
+}
+
+.agentic-chat-user.is-editable .agentic-chat-user-text {
+  cursor: pointer;
+}
+
+.agentic-chat-user.is-editing {
+  outline: 2px solid var(--text-on-accent);
+  outline-offset: 1px;
 }
 
 .agentic-chat-user-attachments {
@@ -155,17 +174,33 @@
   font-size: var(--font-smallest);
 }
 
+/* Error blocks: a subtle error-tinted background with a clear red accent, but
+   normal-contrast body text. (Previously red text on a red background, which
+   left the message unreadable.) */
 .agentic-chat-info-error {
-  background-color: var(--background-modifier-error);
-  color: var(--text-error);
+  background-color: var(--background-secondary);
+  border-left: 3px solid var(--text-error);
+  color: var(--text-normal);
+}
+
+.agentic-chat-info-error .agentic-chat-info-body {
+  color: var(--text-normal);
 }
 
 .agentic-chat-info-error .agentic-chat-info-details > summary {
   color: var(--text-error);
 }
 
+.agentic-chat-info-error ::selection {
+  background-color: var(--text-error);
+  color: var(--text-on-accent);
+}
+
 /* --- Settings warning banner --- */
 
+/* A caution notice, not an error: a neutral panel with a warning-coloured accent
+   and normal-contrast text (the old red-on-red looked like an unexplained error
+   and the text was hard to read). */
 .agentic-chat-settings-warning {
   display: flex;
   gap: var(--size-4-2);
@@ -173,14 +208,16 @@
   margin: var(--size-4-2) 0;
   padding: var(--size-4-2) var(--size-4-3);
   border-radius: var(--radius-m);
-  background-color: var(--background-modifier-error);
-  color: var(--text-error);
+  background-color: var(--background-secondary);
+  border-left: 3px solid var(--text-warning);
+  color: var(--text-muted);
   font-size: var(--font-ui-small);
 }
 
 .agentic-chat-settings-warning-icon {
   flex-shrink: 0;
   font-weight: var(--font-bold);
+  color: var(--text-warning);
 }
 
 /* --- Reasoning --- */
@@ -528,6 +565,20 @@
 .agentic-chat-session-meta {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
+}
+
+.agentic-chat-session-rename {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.agentic-chat-session-rename:hover {
+  color: var(--text-normal);
+}
+
+.agentic-chat-session-rename-input {
+  width: 100%;
+  font: inherit;
 }
 
 .agentic-chat-session-delete {

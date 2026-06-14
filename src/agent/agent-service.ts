@@ -12,7 +12,7 @@ import { activeModelId, apiKeyForProvider, activeModelConfig } from "../settings
 import { buildModel } from "../llm/models";
 import { createVaultTools } from "../tools/vault-tools";
 import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "../vault/ignore";
-import { ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
+import { deriveAutoName, ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
 import { buildSkillInvocation, loadVaultSkills } from "../skills/skills";
 import { buildSystemPrompt } from "./system-prompt";
 import { MODES, resolveModePolicy } from "./modes";
@@ -56,6 +56,7 @@ export class AgentService {
   private unsubscribeAgent: (() => void) | null = null;
   private initialization: Promise<void> | null = null;
   private persisted = new WeakSet<object>();
+  private disposed = false;
 
   private skills: Skill[] = [];
   private ignoreMatcher: IgnoreMatcher = () => false;
@@ -165,7 +166,7 @@ export class AgentService {
   }
 
   async newSession(): Promise<void> {
-    this.agent?.abort();
+    this.detachAgent();
     this.sessionInfo = await this.sessionManager.createSession(this.sessionDefaults());
     this.persisted = new WeakSet<object>();
     await this.reloadResources();
@@ -179,7 +180,7 @@ export class AgentService {
   }
 
   async loadSession(path: string): Promise<void> {
-    this.agent?.abort();
+    this.detachAgent();
     this.sessionInfo = await this.sessionManager.loadSession(path);
     this.persisted = new WeakSet<object>();
     await this.reloadResources();
@@ -195,10 +196,37 @@ export class AgentService {
     else this.notifyChange();
   }
 
+  async renameSession(path: string, name: string): Promise<void> {
+    await this.sessionManager.renameSession(path, name);
+    // Refresh cached info so renaming the active session updates the chrome.
+    if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
+    this.notifyChange();
+  }
+
+  /**
+   * Rewind the conversation to just before message `index` (prompt editing): drop
+   * that turn and everything after it, in memory and on disk, so the caller can
+   * resend an edited prompt as a fresh branch.
+   */
+  async truncateMessages(index: number): Promise<void> {
+    if (!this.agent || this.agent.state.isStreaming) return;
+    const messages = this.getMessages().slice(0, Math.max(0, index));
+    await this.sessionManager.rewriteMessages(messages);
+    this.persisted = new WeakSet<object>();
+    for (const message of messages) this.persisted.add(message as object);
+    this.replaceAgent(messages);
+    if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
+    this.errorMessage = undefined;
+    this.notifyChange();
+  }
+
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.unsubscribeAgent?.();
     this.unsubscribeAgent = null;
     this.agent?.abort();
+    this.agent = null;
     this.eventListeners.clear();
     this.changeListeners.clear();
   }
@@ -233,7 +261,24 @@ export class AgentService {
     this.notifyChange();
   }
 
+  /**
+   * Detach the current agent before an async session swap: unsubscribe first so
+   * no late events from the outgoing (aborted) agent are handled against the new
+   * session's `persisted` set, then abort it.
+   */
+  private detachAgent(): void {
+    this.unsubscribeAgent?.();
+    this.unsubscribeAgent = null;
+    this.agent?.abort();
+    // Drop the reference so getMessages()/isStreaming() don't report stale
+    // old-session state during the async gap before replaceAgent() runs.
+    this.agent = null;
+  }
+
   private replaceAgent(messages: AgentMessage[]): void {
+    // A late initialize/load/new that resolves after dispose() must not resurrect
+    // the agent or re-subscribe to events.
+    if (this.disposed) return;
     this.unsubscribeAgent?.();
     const settings = this.getSettings();
     const agent = new Agent({
@@ -276,6 +321,7 @@ export class AgentService {
       }
       if (event.type === "agent_end") {
         for (const message of event.messages) await this.persistMessage(message);
+        await this.autoNameSession();
       }
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : String(error);
@@ -287,6 +333,17 @@ export class AgentService {
       }
       this.notifyChange();
     }
+  }
+
+  /** Name an as-yet-unnamed session after its first user prompt, once. */
+  private async autoNameSession(): Promise<void> {
+    if (!this.sessionManager.hasActiveSession()) return;
+    const info = this.sessionManager.getActiveSessionInfo();
+    if (info.name || info.messageCount === 0) return;
+    const name = deriveAutoName(info.firstMessage);
+    if (!name) return;
+    await this.sessionManager.appendSessionName(name);
+    this.sessionInfo = this.sessionManager.getActiveSessionInfo();
   }
 
   private async persistMessage(message: AgentMessage): Promise<void> {

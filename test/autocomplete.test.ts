@@ -54,8 +54,23 @@ describe("detectQuery", () => {
   it("does not treat an @ inside a word as a mention", () => {
     expect(detectQuery("email@x", 7)).toBeNull();
   });
-  it("closes the mention once whitespace follows the token", () => {
-    expect(detectQuery("@Daily here", 11)).toBeNull();
+  it("keeps the mention open across spaces for multi-word paths", () => {
+    expect(detectQuery("@200 Resources", 14)).toEqual({
+      kind: "mention",
+      range: [0, 14],
+      query: "200 Resources",
+    });
+  });
+  it("closes the mention at a line break", () => {
+    expect(detectQuery("@Daily\nnext", 11)).toBeNull();
+  });
+  it("stops treating @ as a mention once the token runs into ordinary prose", () => {
+    // Many spaces (prose after an early @) should fall back to plain text.
+    const prose = "@hey there how are you doing today";
+    expect(detectQuery(prose, prose.length)).toBeNull();
+    // An overly long single token is also not a plausible path.
+    const long = `@${"x".repeat(60)}`;
+    expect(detectQuery(long, long.length)).toBeNull();
   });
   it("uses the caret, ignoring text to its right", () => {
     expect(detectQuery("/sk extra", 3)).toEqual({ kind: "command", range: [0, 3], query: "sk" });
@@ -113,6 +128,13 @@ describe("suggest — mentions", () => {
   it("excludes non-matches", () => {
     const items = suggest({ kind: "mention", range: [0, 3], query: "zzz" }, context());
     expect(items).toHaveLength(0);
+  });
+  it("matches a multi-word folder path with spaces", () => {
+    const items = suggest(
+      { kind: "mention", range: [0, 14], query: "200 Resources" },
+      context({ files: [{ path: "200 Resources", type: "folder" }] }),
+    );
+    expect(items.map((i) => i.value)).toEqual([`${FOLDER_PREFIX}200 Resources`]);
   });
 });
 

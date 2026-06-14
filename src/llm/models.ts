@@ -124,17 +124,29 @@ export class ModelListError extends Error {
 }
 
 /**
- * Fetch the live OpenRouter catalog for the model browser. With `zdr: true`
- * OpenRouter returns only models that have a zero-data-retention endpoint, so
- * the browser never offers a model that the active privacy routing can't reach.
+ * Fetch the live OpenRouter catalog for the model browser. The privacy filters
+ * mirror the active routing so the browser never offers a model the routing
+ * can't reach (which would 404 at request time): `zdr: true` restricts to
+ * zero-data-retention endpoints and `denyDataCollection: true` restricts to
+ * providers with a `deny` data policy.
  */
 export async function listOpenRouterModels(
   apiKey: string,
-  options?: { baseUrl?: string; fetchImpl?: typeof fetch; timeoutMs?: number; zdr?: boolean },
+  options?: {
+    baseUrl?: string;
+    fetchImpl?: typeof fetch;
+    timeoutMs?: number;
+    zdr?: boolean;
+    denyDataCollection?: boolean;
+  },
 ): Promise<OpenRouterModelInfo[]> {
   const fetchImpl = options?.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const baseUrl = (options?.baseUrl ?? OPENROUTER_BASE_URL).replace(/\/$/, "");
-  const url = `${baseUrl}/models${options?.zdr ? "?zdr=true" : ""}`;
+  const query = new URLSearchParams();
+  if (options?.zdr) query.set("zdr", "true");
+  if (options?.denyDataCollection) query.set("data_collection", "deny");
+  const suffix = query.toString();
+  const url = `${baseUrl}/models${suffix ? `?${suffix}` : ""}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_LIST_TIMEOUT_MS);
   let response: Response;
@@ -154,10 +166,15 @@ export async function listOpenRouterModels(
   if (!response.ok) {
     throw new ModelListError(`Failed to list models (status ${response.status}).`, response.status);
   }
-  const payload = (await response.json()) as {
+  let payload: {
     data?: Array<{ id: string; name?: string; context_length?: number; supported_parameters?: string[] }>;
   };
-  return (payload.data ?? []).map((model) => ({
+  try {
+    payload = await response.json();
+  } catch (error) {
+    throw new ModelListError(`Failed to parse model list: ${(error as Error).message}`);
+  }
+  return (payload?.data ?? []).map((model) => ({
     id: model.id,
     name: model.name ?? model.id,
     contextLength: model.context_length ?? null,
