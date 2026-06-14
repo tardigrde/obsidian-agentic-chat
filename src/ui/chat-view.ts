@@ -18,10 +18,13 @@ import { listOpenRouterModels } from "../llm/models";
 import { ModelSuggestModal } from "./model-suggest-modal";
 import { SessionListModal } from "./session-list-modal";
 import { FolderSuggestModal } from "./folder-suggest";
+import { highestUnnotifiedThreshold, Notifier } from "./notifications";
 
 export { VIEW_TYPE_AGENT_CHAT };
 
 const FOLDER_PREFIX = "folder:";
+/** Context-window fill fractions that trigger a background notification, once each. */
+const CONTEXT_THRESHOLDS = [0.75, 0.9] as const;
 
 function truncateText(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
@@ -31,6 +34,12 @@ export class ChatView extends ItemView {
   private attachments: string[] = [];
   private bubble: AssistantBubble | null = null;
   private unsubscribers: Array<() => void> = [];
+  private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
+  private notifiedContext = new Set<number>();
+  private notifiedCost = false;
+  // The service fires onChange synchronously during session transitions; this silences
+  // automatic toasts until the new session's notification baseline has been set.
+  private muteNotifications = false;
 
   private messagesEl!: HTMLElement;
   private emptyStateEl: HTMLElement | null = null;
@@ -69,10 +78,15 @@ export class ChatView extends ItemView {
     this.buildLayout();
     this.unsubscribers.push(this.service.onEvent((event) => this.handleAgentEvent(event)));
     this.unsubscribers.push(this.service.onChange(() => this.syncChrome()));
+    this.muteNotifications = true;
     try {
       await this.service.initialize();
     } catch (error) {
       new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      // Baseline against the continued session so reopening doesn't toast existing crossings.
+      this.resetUsageNotifications(true);
+      this.muteNotifications = false;
     }
     this.renderTranscript(this.service.getMessages());
     this.syncChrome();
@@ -174,11 +188,43 @@ export class ChatView extends ItemView {
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: activeModelId(settings) });
 
     const usage = this.service.getSessionUsage();
-    this.usageEl.setText(usage.totalTokens > 0 ? formatUsage(usage) : "");
+    const fraction = this.service.getContextFraction();
+    const parts: string[] = [];
+    if (usage.totalTokens > 0) parts.push(formatUsage(usage));
+    if (fraction !== undefined) parts.push(`${Math.round(fraction * 100)}% ctx`);
+    this.usageEl.setText(parts.join(" · "));
 
     const error = this.service.getError();
     this.setRunning(this.service.isStreaming());
     if (error && !this.service.isStreaming()) this.statusEl.setText("");
+    this.checkUsageNotifications();
+  }
+
+  /** Fire one-shot background toasts as the context window fills or cost crosses the cap. */
+  private checkUsageNotifications(): void {
+    if (this.muteNotifications) return;
+    const fraction = this.service.getContextFraction();
+    if (fraction !== undefined) {
+      const crossed = highestUnnotifiedThreshold(fraction, CONTEXT_THRESHOLDS, this.notifiedContext);
+      if (crossed !== null) {
+        this.notifiedContext.add(crossed);
+        this.notifier.notify("contextWindow", `Context window ${Math.round(crossed * 100)}% full — consider /new soon.`);
+      }
+    }
+    const cap = this.plugin.settings.notifications.costAlertUsd;
+    if (cap > 0 && !this.notifiedCost) {
+      const cost = this.service.getSessionUsage().cost?.total ?? 0;
+      if (cost >= cap) {
+        this.notifiedCost = true;
+        this.notifier.notify("cost", `This conversation has cost $${cost.toFixed(2)} (alert set at $${cap.toFixed(2)}).`);
+      }
+    }
+  }
+
+  /** Notify when a turn finishes while the user is working elsewhere. */
+  private notifyTurnComplete(): void {
+    if (this.leaf === this.app.workspace.activeLeaf) return;
+    this.notifier.notify("agentFinished", "Agentic chat finished responding.");
   }
 
   private setRunning(running: boolean): void {
@@ -361,11 +407,38 @@ export class ChatView extends ItemView {
   // --- session + model actions ---
 
   private async newSession(): Promise<void> {
-    await this.service.newSession();
+    this.muteNotifications = true;
+    try {
+      await this.service.newSession();
+      this.resetUsageNotifications();
+    } finally {
+      this.muteNotifications = false;
+    }
     this.attachments = [];
     this.renderChips();
     this.bubble = null;
     this.renderTranscript([]);
+  }
+
+  /**
+   * Clear one-shot notification state. When `muteExisting` is set (loading a
+   * session that may already be past a threshold), pre-mark crossed thresholds so
+   * the user is only toasted about *new* crossings, not the loaded-in state.
+   */
+  private resetUsageNotifications(muteExisting = false): void {
+    this.notifiedContext = new Set<number>();
+    this.notifiedCost = false;
+    if (!muteExisting) return;
+    const fraction = this.service.getContextFraction();
+    if (fraction !== undefined) {
+      for (const threshold of CONTEXT_THRESHOLDS) {
+        if (fraction >= threshold) this.notifiedContext.add(threshold);
+      }
+    }
+    const cap = this.plugin.settings.notifications.costAlertUsd;
+    if (cap > 0 && (this.service.getSessionUsage().cost?.total ?? 0) >= cap) {
+      this.notifiedCost = true;
+    }
   }
 
   private async openSessionList(): Promise<void> {
@@ -378,7 +451,13 @@ export class ChatView extends ItemView {
   }
 
   private async loadSession(path: string): Promise<void> {
-    await this.service.loadSession(path);
+    this.muteNotifications = true;
+    try {
+      await this.service.loadSession(path);
+      this.resetUsageNotifications(true);
+    } finally {
+      this.muteNotifications = false;
+    }
     this.bubble = null;
     this.renderTranscript(this.service.getMessages());
   }
@@ -545,6 +624,7 @@ export class ChatView extends ItemView {
         this.setRunning(false);
         this.statusEl.setText("");
         this.syncChrome();
+        this.notifyTurnComplete();
         break;
       default:
         break;
