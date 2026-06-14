@@ -38,6 +38,15 @@ export interface AgenticChatSettings {
    * Enforced at the tool layer; matched files are invisible, not just denied.
    */
   ignoredGlobs: string;
+  /** Background notification preferences (toasts for agent/context/cost signals). */
+  notifications: NotificationSettings;
+}
+
+export interface NotificationSettings {
+  /** Master switch for background toasts. Errors always show regardless. */
+  enabled: boolean;
+  /** Notify once when session cost crosses this USD amount. 0 disables. */
+  costAlertUsd: number;
 }
 
 export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -61,6 +70,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   skillsFolder: "",
   templatesFolder: "",
   ignoredGlobs: "",
+  notifications: { enabled: true, costAlertUsd: 0 },
 };
 
 /** Merge stored settings over defaults, healing nested objects. */
@@ -74,6 +84,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       ...(stored?.approval ?? {}),
       perTool: { ...(stored?.approval?.perTool ?? {}) },
     },
+    notifications: { ...DEFAULT_SETTINGS.notifications, ...(stored?.notifications ?? {}) },
   };
 }
 
@@ -144,10 +155,12 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     this.renderAgent(containerEl, settings);
     this.renderApproval(containerEl, settings);
+    this.renderNotifications(containerEl, settings);
     this.renderResources(containerEl, settings);
   }
 
   private renderOpenRouter(containerEl: HTMLElement, settings: AgenticChatSettings): void {
+    this.renderApiKeyWarning(containerEl);
     new Setting(containerEl)
       .setName("OpenRouter API key")
       .setDesc("Create one at openrouter.ai/keys. Stored locally in this plugin's data file.")
@@ -371,6 +384,41 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             });
         });
     }
+  }
+
+  /** Warn that API keys live in plaintext inside the vault's plugin data file. */
+  private renderApiKeyWarning(containerEl: HTMLElement): void {
+    const warning = containerEl.createDiv({ cls: "agentic-chat-settings-warning" });
+    warning.createSpan({ cls: "agentic-chat-settings-warning-icon", text: "⚠" });
+    warning.createSpan({
+      text:
+        "Your API key is stored in plaintext in this plugin's data.json inside the vault. " +
+        "If you sync or share the vault, the key goes with it — treat it like a password and " +
+        "rotate it at openrouter.ai/keys if the vault is ever exposed.",
+    });
+  }
+
+  private renderNotifications(containerEl: HTMLElement, settings: AgenticChatSettings): void {
+    new Setting(containerEl).setName("Notifications").setHeading();
+    new Setting(containerEl)
+      .setName("Background notifications")
+      .setDesc("Show toasts for background signals (agent finished while you're elsewhere, context window filling, cost cap). Errors always show.")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.notifications.enabled).onChange(async (value) => {
+          settings.notifications.enabled = value;
+          await this.save();
+        }),
+      );
+    new Setting(containerEl)
+      .setName("Cost alert (USD)")
+      .setDesc("Notify once when a conversation's cost crosses this amount. 0 disables.")
+      .addText((text) =>
+        text.setValue(String(settings.notifications.costAlertUsd)).onChange(async (value) => {
+          const parsed = Number.parseFloat(value);
+          settings.notifications.costAlertUsd = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+          await this.save();
+        }),
+      );
   }
 
   private renderResources(containerEl: HTMLElement, settings: AgenticChatSettings): void {

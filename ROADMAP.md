@@ -46,9 +46,9 @@ Low-risk groundwork everything else builds on. No new providers, no new model be
 - [x] **Slash rendering rule: in-pane for everything.** Slash/skill/model/error output
       renders as in-pane blocks; the misused `Notice` calls in `chat-view.ts` are gone
       (only the startup-init notification remains, pending the notification layer).
-- [ ] **Toasts = notifications only.** Reserve toasts for transient/background events we
-      don't yet emit: long-running agent finished, context-window % thresholds, etc.
-      (See the cross-cutting notifications item.) — *PR2.*
+- [x] **Toasts = notifications only.** Toasts now fire only for background signals
+      (agent finished while you're elsewhere, context-window % thresholds, cost cap) via
+      the notification layer below; foreground slash output is in-pane.
 
 ## Milestone 2 — Interactive pane (Copilot-inspired)
 
@@ -139,15 +139,18 @@ Issue #2 §2. The most-requested feature across Obsidian AI plugins, but heavies
       Excluded paths report as "not found" — invisible, not just denied.
 - [ ] **Context-window management.** pi sends the whole history each turn; long sessions
       hit the model limit and spike cost. Add auto-compaction/summarization of old turns
-      as the context fills. Pairs with the context-% notification.
-- [ ] **Notification system.** A small toast/event layer for background signals (agent
-      finished, context-window % used, cost thresholds). Prerequisite for the M1 "toasts
-      = notifications only" rule.
-- [ ] **Token budget (issue #2 §8, partial).** Pre-send cost estimate and a spend
-      cap/warning. Cost *tracking* already shipped; this is the FinOps guardrail on top.
-- [ ] **API-key storage.** Keys currently live in `data.json` inside the vault —
-      plaintext, and leak if the vault is synced/shared. At minimum warn; prefer OS
-      keychain where the platform allows.
+      as the context fills. The context-% **signal** now ships (`getContextFraction` +
+      chrome readout + threshold notifications); auto-compaction itself is still open.
+- [x] **Notification system.** `src/ui/notifications.ts` — a typed `Notifier` over
+      Obsidian `Notice` with a master toggle (errors bypass it), wired in `ChatView` for
+      agent-finished (when you're elsewhere), context-window thresholds (75/90%), and the
+      cost cap. Threshold dedup via the pure `highestUnnotifiedThreshold` helper.
+- [ ] **Token budget (issue #2 §8, partial).** A per-conversation **cost alert**
+      (`notifications.costAlertUsd`) now warns once when crossed. Still open: pre-send
+      cost *estimate* and a hard spend cap.
+- [x] **API-key storage.** Settings now shows a plaintext-storage security warning
+      (key lives in vault `data.json`, leaks on sync/share). OS-keychain storage remains
+      a future enhancement.
 - [ ] **Edit diff review + undo.** Show a diff in the approval flow and offer
       undo-last-change. Extends the `beforeToolCall` gate (`src/agent/approval.ts`) from
       yes/no into reviewable, reversible edits.
