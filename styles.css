@@ -155,6 +155,15 @@
   font-size: var(--font-smallest);
 }
 
+.agentic-chat-info-error {
+  background-color: var(--background-modifier-error);
+  color: var(--text-error);
+}
+
+.agentic-chat-info-error .agentic-chat-info-details > summary {
+  color: var(--text-error);
+}
+
 /* --- Reasoning --- */
 
 .agentic-chat-reasoning {

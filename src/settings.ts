@@ -389,8 +389,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     this.folderSetting(
       containerEl,
-      "Prompt templates folder",
-      "Vault folder of reusable prompt templates (support $ARGUMENTS). Leave empty to disable.",
+      "Prompt templates folder (deprecated)",
+      "Deprecated: templates are now skills. Files here load as skills and run via /skill " +
+        "(with $ARGUMENTS/$1 support). Move them into the skills folder; this setting will be removed.",
       settings.templatesFolder,
       async (value) => {
         settings.templatesFolder = value;

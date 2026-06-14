@@ -253,11 +253,8 @@ export class ChatView extends ItemView {
   }
 
   private async runSkill(name: string | undefined, extra: string): Promise<void> {
-    const skills = this.service.getSkills();
     if (!name) {
-      new Notice(
-        skills.length ? `Skills: ${skills.map((s) => s.name).join(", ")}` : "No skills found. Set a skills folder in settings.",
-      );
+      this.showSkillList();
       return;
     }
     this.clearEmptyState();
@@ -266,20 +263,28 @@ export class ChatView extends ItemView {
     this.showServiceError();
   }
 
+  private showSkillList(): void {
+    const skills = this.service.getSkills();
+    this.clearEmptyState();
+    this.renderInfoMessage(
+      "Skills",
+      skills.length
+        ? skills.map((skill): [string, string] => [skill.name, skill.description])
+        : [["(none)", "Set a skills folder in settings to add skills."]],
+    );
+  }
+
+  /** `/template` is retired: templates are now skills (with $ARGUMENTS support). */
   private async runTemplate(name: string | undefined, args: string[]): Promise<void> {
-    const templates = this.service.getTemplates();
+    this.clearEmptyState();
+    this.renderInfoMessage("Deprecated", [
+      ["/template", "is now /skill — templates load as skills with $ARGUMENTS/$1 support."],
+    ]);
     if (!name) {
-      new Notice(
-        templates.length
-          ? `Templates: ${templates.map((t) => t.name).join(", ")}`
-          : "No templates found. Set a templates folder in settings.",
-      );
+      this.showSkillList();
       return;
     }
-    this.clearEmptyState();
-    this.renderUserMessage(`/template ${name}${args.length ? ` ${args.join(" ")}` : ""}`, []);
-    await this.service.invokeTemplate(name, args);
-    this.showServiceError();
+    await this.runSkill(name, args.join(" "));
   }
 
   private showStatus(): void {
@@ -317,8 +322,7 @@ export class ChatView extends ItemView {
       ["/model", "switch model"],
       ["/status", "show provider, model, session"],
       ["/usage", "show token & cost totals"],
-      ["/skill [name]", "run a vault skill"],
-      ["/template [name] [args]", "run a prompt template"],
+      ["/skill [name] [args]", "run a vault skill; args fill $ARGUMENTS/$1"],
       ["/help", "show this list"],
     ]);
   }
@@ -340,7 +344,18 @@ export class ChatView extends ItemView {
 
   private showServiceError(): void {
     const error = this.service.getError();
-    if (error && !this.service.isStreaming()) new Notice(`Agentic chat: ${error}`);
+    if (error && !this.service.isStreaming()) this.renderErrorMessage(error);
+  }
+
+  /** Render an error block in the transcript (not sent to the model). */
+  private renderErrorMessage(message: string): void {
+    this.clearEmptyState();
+    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-info-error"] });
+    const details = el.createEl("details", { cls: "agentic-chat-info-details" });
+    details.open = true;
+    details.createEl("summary", { text: "Error" });
+    details.createDiv({ cls: "agentic-chat-info-body", text: message });
+    this.scrollToBottom();
   }
 
   // --- session + model actions ---
@@ -371,11 +386,11 @@ export class ChatView extends ItemView {
   private async switchModel(): Promise<void> {
     const { settings } = this.plugin;
     if (settings.provider !== "openrouter") {
-      new Notice("Set the Ollama model in plugin settings.");
+      this.renderErrorMessage("Set the Ollama model in plugin settings.");
       return;
     }
     if (!settings.openrouterApiKey) {
-      new Notice("Set your OpenRouter API key in settings first.");
+      this.renderErrorMessage("Set your OpenRouter API key in settings first.");
       return;
     }
     try {
@@ -388,7 +403,7 @@ export class ChatView extends ItemView {
         this.syncChrome();
       }).open();
     } catch (error) {
-      new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
+      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -397,7 +412,7 @@ export class ChatView extends ItemView {
   private attachActiveNote(): void {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new Notice("Agentic chat: no active note to attach.");
+      this.renderErrorMessage("No active note to attach.");
       return;
     }
     this.addAttachment(file.path);

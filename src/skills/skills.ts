@@ -1,15 +1,38 @@
 import { type App, parseYaml, TFile } from "obsidian";
-import type { PromptTemplate, Skill } from "@earendil-works/pi-agent-core";
+import type { Skill } from "@earendil-works/pi-agent-core";
+import { formatSkillInvocation, parseCommandArgs, substituteArgs } from "@earendil-works/pi-agent-core";
 import { normalizeFolderPath } from "../vault/path";
 
 // pi owns the spec-compatible formatting; we only handle loading from the vault.
 export {
   formatSkillsForSystemPrompt,
   formatSkillInvocation,
-  formatPromptTemplateInvocation,
   parseCommandArgs,
   substituteArgs,
 } from "@earendil-works/pi-agent-core";
+
+// $1–$9 / $@ / $ARGUMENTS / ${@:N} — the placeholders pi's substituteArgs understands.
+// The positional case requires the digit not be followed by another digit, a period, or
+// a comma, so currency in a skill body ($10, $1.50, $1,000, "costs $1.") isn't misread as
+// a template. When detection is ambiguous we prefer NOT substituting: a literal `$1.` left
+// in the output is obvious and fixable, whereas wrongly substituting silently corrupts text.
+const ARG_PLACEHOLDER = /\$(?:ARGUMENTS|@|[1-9](?![\d.,])|\{@)/;
+
+/**
+ * Build the user-message prompt for invoking a skill, folding in any arguments.
+ * If the body contains `$1`/`$ARGUMENTS`-style placeholders, the args are
+ * substituted into it (templates are just skills with placeholders). Otherwise
+ * the arg string is appended as freeform additional instructions.
+ */
+export function buildSkillInvocation(skill: Skill, argString?: string): string {
+  const trimmed = argString?.trim() ?? "";
+  if (!trimmed) return formatSkillInvocation(skill);
+  if (ARG_PLACEHOLDER.test(skill.content)) {
+    const substituted = substituteArgs(skill.content, parseCommandArgs(trimmed));
+    return formatSkillInvocation({ ...skill, content: substituted });
+  }
+  return formatSkillInvocation(skill, trimmed);
+}
 
 interface Frontmatter {
   data: Record<string, unknown>;
@@ -69,29 +92,6 @@ export async function loadVaultSkills(app: App, folderInput: string): Promise<Sk
     skills.push({ name, description, content: body, filePath: file.path });
   }
   return dedupeByName(skills);
-}
-
-/** Load reusable prompt templates ($ARGUMENTS-aware) from a vault folder. */
-export async function loadVaultPromptTemplates(app: App, folderInput: string): Promise<PromptTemplate[]> {
-  const folder = safeFolder(folderInput);
-  if (folder === null) return [];
-
-  const files = app.vault
-    .getMarkdownFiles()
-    .filter((file) => (file.parent?.path ?? "") === folder)
-    .sort((a, b) => a.path.localeCompare(b.path));
-
-  const templates: PromptTemplate[] = [];
-  for (const file of files) {
-    const { data, body } = splitFrontmatter(await app.vault.cachedRead(file));
-    if (!body.trim()) continue;
-    templates.push({
-      name: stringField(data, "name") ?? file.basename,
-      description: stringField(data, "description"),
-      content: body,
-    });
-  }
-  return dedupeByName(templates);
 }
 
 function safeFolder(folderInput: string): string | null {

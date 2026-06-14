@@ -3,7 +3,6 @@ import {
   Agent,
   type AgentEvent,
   type AgentMessage,
-  type PromptTemplate,
   type Skill,
   type StreamFn,
 } from "@earendil-works/pi-agent-core";
@@ -14,12 +13,7 @@ import { buildModel } from "../llm/models";
 import { createVaultTools } from "../tools/vault-tools";
 import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "../vault/ignore";
 import { ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
-import {
-  formatPromptTemplateInvocation,
-  formatSkillInvocation,
-  loadVaultPromptTemplates,
-  loadVaultSkills,
-} from "../skills/skills";
+import { buildSkillInvocation, loadVaultSkills } from "../skills/skills";
 import { buildSystemPrompt } from "./system-prompt";
 import { type ApprovalPolicy, resolvePolicy } from "./approval";
 
@@ -63,7 +57,6 @@ export class AgentService {
   private persisted = new WeakSet<object>();
 
   private skills: Skill[] = [];
-  private templates: PromptTemplate[] = [];
   private ignoreMatcher: IgnoreMatcher = () => false;
   private sessionInfo: SessionInfo | undefined;
   private errorMessage: string | undefined;
@@ -109,10 +102,6 @@ export class AgentService {
     return this.skills;
   }
 
-  getTemplates(): PromptTemplate[] {
-    return this.templates;
-  }
-
   /** Sum token usage and cost across all assistant turns in the active session. */
   getSessionUsage(): Usage {
     const total = emptyUsage();
@@ -139,23 +128,13 @@ export class AgentService {
     await this.runPrompt(() => this.requireAgent().prompt(trimmed));
   }
 
-  async invokeSkill(name: string, additionalInstructions?: string): Promise<void> {
+  async invokeSkill(name: string, args?: string): Promise<void> {
     const skill = this.skills.find((item) => item.name === name);
     if (!skill) {
       this.setError(`No skill named "${name}".`);
       return;
     }
-    const text = formatSkillInvocation(skill, additionalInstructions);
-    await this.runPrompt(() => this.requireAgent().prompt(text));
-  }
-
-  async invokeTemplate(name: string, args: string[]): Promise<void> {
-    const template = this.templates.find((item) => item.name === name);
-    if (!template) {
-      this.setError(`No prompt template named "${name}".`);
-      return;
-    }
-    const text = formatPromptTemplateInvocation(template, args);
+    const text = buildSkillInvocation(skill, args);
     await this.runPrompt(() => this.requireAgent().prompt(text));
   }
 
@@ -312,8 +291,17 @@ export class AgentService {
   private async reloadResources(): Promise<void> {
     const settings = this.getSettings();
     this.ignoreMatcher = createIgnoreMatcher(parseIgnorePatterns(settings.ignoredGlobs));
-    this.skills = await loadVaultSkills(this.app, settings.skillsFolder);
-    this.templates = await loadVaultPromptTemplates(this.app, settings.templatesFolder);
+    // One skill concept: load the skills folder plus the deprecated templates
+    // folder (folded in as skills, by name, skills folder winning on conflict).
+    const skills = await loadVaultSkills(this.app, settings.skillsFolder);
+    const legacyTemplates = settings.templatesFolder
+      ? await loadVaultSkills(this.app, settings.templatesFolder)
+      : [];
+    const byName = new Map<string, Skill>();
+    for (const skill of [...skills, ...legacyTemplates]) {
+      if (!byName.has(skill.name)) byName.set(skill.name, skill);
+    }
+    this.skills = [...byName.values()];
   }
 
   private buildStreamFn(): StreamFn {
