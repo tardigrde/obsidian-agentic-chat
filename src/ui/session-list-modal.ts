@@ -84,6 +84,7 @@ export class SessionListModal extends Modal {
   private beginRename(session: SessionInfo, titleEl: HTMLElement): void {
     // A rename is already in progress on this row — don't stack inputs/listeners.
     if (titleEl.querySelector(".agentic-chat-session-rename-input")) return;
+    const hadCustomName = !!session.name?.trim();
     const current = session.name?.trim() || session.firstMessage;
     const input = titleEl.createEl("input", {
       cls: "agentic-chat-session-rename-input",
@@ -97,11 +98,13 @@ export class SessionListModal extends Modal {
       if (committed) return;
       committed = true;
       const next = input.value.trim();
-      if (save && next && next !== current) {
+      // Rename to a new title, or clear a previously-set custom name (empty input).
+      const shouldCommit = save && next !== current && (next.length > 0 || hadCustomName);
+      if (shouldCommit) {
         try {
           await this.callbacks.rename(session, next);
           // Only update the in-memory name once the rename actually persisted.
-          session.name = next;
+          session.name = next || undefined;
         } catch (error) {
           console.error("Agentic chat: failed to rename session", error);
         }
