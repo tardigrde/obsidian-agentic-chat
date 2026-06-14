@@ -59,9 +59,15 @@ export class SessionListModal extends Modal {
       setIcon(remove, "trash-2");
       remove.addEventListener("click", async (event) => {
         event.stopPropagation();
-        await this.callbacks.delete(session);
+        // Optimistically drop the row first: keeps the list responsive and
+        // stops a quick second click from deleting the same session twice.
         this.sessions = this.sessions.filter((item) => item.path !== session.path);
         this.renderList(this.sessions);
+        try {
+          await this.callbacks.delete(session);
+        } catch (error) {
+          console.error("Agentic chat: failed to delete session", error);
+        }
       });
     }
   }

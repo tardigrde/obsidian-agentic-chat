@@ -41,5 +41,8 @@ export class ModelSuggestModal extends SuggestModal<BrowsableModel> {
 
 function itemText(model: BrowsableModel): string {
   const context = formatContextWindow(model.contextLength);
-  return context ? `${model.id} · ${context} ctx` : model.id;
+  const suffix = context ? ` · ${context} ctx` : "";
+  // The filter also matches the friendly name, so surface it when it differs.
+  const label = model.name && model.name !== model.id ? `${model.name} (${model.id})` : model.id;
+  return `${label}${suffix}`;
 }

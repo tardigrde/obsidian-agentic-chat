@@ -55,7 +55,9 @@ export class ApprovalModal extends Modal {
       );
 
     // Enter accepts (Escape already dismisses via the default modal handler).
+    // Let a focused button handle Enter itself so Tab-to-Deny still works.
     this.scope.register([], "Enter", (event) => {
+      if (this.decided || document.activeElement instanceof HTMLButtonElement) return;
       event.preventDefault();
       this.decide({ approved: true, remember });
       return false;
