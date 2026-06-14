@@ -510,6 +510,9 @@ export class ChatView extends ItemView {
   /** Load a sent prompt back into the composer for rewriting. */
   private beginEdit(index: number, displayText: string, el: HTMLElement): void {
     if (this.service.isStreaming()) return;
+    // Re-clicking the turn already being edited must not reset the composer and
+    // discard the user's in-progress changes.
+    if (this.editingIndex === index) return;
     this.clearEditingHighlight();
     // Stash the composer draft on first entry so Esc can restore it.
     if (this.editingIndex === null) this.draftBeforeEdit = this.inputEl.value;
@@ -545,7 +548,13 @@ export class ChatView extends ItemView {
 
   /** Rewind to `index`, drop that turn and everything after, then send the edit. */
   private async editAndResend(index: number, text: string): Promise<void> {
-    await this.service.truncateMessages(index);
+    try {
+      await this.service.truncateMessages(index);
+    } catch (error) {
+      // A failed session rewrite must not silently swallow the edit.
+      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      return;
+    }
     this.bubble = null;
     this.renderTranscript(this.service.getMessages());
     await this.sendPrompt(text);
