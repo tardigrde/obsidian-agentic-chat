@@ -49,7 +49,9 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   requestTimeoutMs: 90_000,
   maxNetworkRetries: 2,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  privacy: { denyDataCollection: true, requireZDR: false, allowFallbacks: true },
+  // Strongest privacy out of the box: zero data retention, no prompt
+  // logging/training, and any fallback provider must also satisfy both.
+  privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
   approval: DEFAULT_APPROVAL_SETTINGS,
   skillsFolder: "",
   templatesFolder: "",
@@ -202,7 +204,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       );
     new Setting(containerEl)
       .setName("Require zero data retention")
-      .setDesc("Only route to ZDR endpoints. Strictest option; some models become unavailable.")
+      .setDesc("On by default. Only route to ZDR endpoints; some models may have no compliant provider — pick another model or use Ollama.")
       .addToggle((toggle) =>
         toggle.setValue(settings.privacy.requireZDR).onChange(async (value) => {
           settings.privacy.requireZDR = value;
