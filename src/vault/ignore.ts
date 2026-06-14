@@ -26,7 +26,8 @@ export function parseIgnorePatterns(text: string): string[] {
  * - a leading `/` anchors the pattern to the vault root
  * - a pattern containing a `/` is anchored to the vault root; otherwise it
  *   matches at any depth (by basename), like gitignore
- * - a trailing `/` matches the folder itself and everything beneath it
+ * - any match also covers the path's subtree, so a folder pattern hides the
+ *   files inside it; a trailing `/` is therefore optional/documentary
  */
 export function createIgnoreMatcher(patterns: string[]): IgnoreMatcher {
   const sources = patterns
