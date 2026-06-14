@@ -35,4 +35,9 @@ describe("parseDroppedVaultPath", () => {
   it("returns null for an obsidian URL with no file param", () => {
     expect(parseDroppedVaultPath("obsidian://open?vault=MyVault", "MyVault")).toBeNull();
   });
+
+  it("uses the first entry when several files are dropped at once", () => {
+    const multi = "obsidian://open?vault=MyVault&file=a.md\nobsidian://open?vault=MyVault&file=b.md";
+    expect(parseDroppedVaultPath(multi, "MyVault")).toBe("a.md");
+  });
 });

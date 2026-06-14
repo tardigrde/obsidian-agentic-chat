@@ -31,4 +31,11 @@ describe("sliceTextByLines", () => {
     expect(slice.text).toBe("");
     expect(slice.endLine).toBe(slice.startLine - 1);
   });
+
+  it("does not over-count when a zero-character cap emits no text", () => {
+    const slice = sliceTextByLines(sample, { maxCharacters: 0 });
+    expect(slice.text).toBe("");
+    expect(slice.endLine).toBe(slice.startLine - 1);
+    expect(slice.truncated).toBe(true);
+  });
 });

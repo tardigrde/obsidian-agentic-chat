@@ -174,7 +174,7 @@ export async function listOpenRouterModels(
   } catch (error) {
     throw new ModelListError(`Failed to parse model list: ${(error as Error).message}`);
   }
-  return (payload.data ?? []).map((model) => ({
+  return (payload?.data ?? []).map((model) => ({
     id: model.id,
     name: model.name ?? model.id,
     contextLength: model.context_length ?? null,

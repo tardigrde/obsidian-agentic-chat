@@ -116,6 +116,12 @@ describe("listOpenRouterModels", () => {
       }) as unknown as Response) as unknown as typeof fetch;
     await expect(listOpenRouterModels("key", { fetchImpl: badFetch })).rejects.toBeInstanceOf(ModelListError);
   });
+
+  it("returns an empty list when the body is JSON null", async () => {
+    const nullFetch = (async () =>
+      ({ ok: true, status: 200, json: async () => null }) as unknown as Response) as unknown as typeof fetch;
+    await expect(listOpenRouterModels("key", { fetchImpl: nullFetch })).resolves.toEqual([]);
+  });
 });
 
 describe("buildModel — Ollama", () => {

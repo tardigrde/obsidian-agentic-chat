@@ -8,7 +8,9 @@
  * the event fall through to Obsidian's default handling.
  */
 export function parseDroppedVaultPath(data: string, vaultName: string): string | null {
-  const trimmed = data.trim();
+  // A multi-file drag yields newline-separated entries; take the first one so a
+  // multi-line string doesn't make `new URL()` throw and fail the whole drop.
+  const trimmed = data.split(/[\r\n]+/)[0]?.trim() ?? "";
   if (!trimmed) return null;
 
   if (trimmed.startsWith("obsidian://")) {

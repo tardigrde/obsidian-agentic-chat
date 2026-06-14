@@ -29,7 +29,9 @@ export function sliceTextByLines(content: string, options: TextSliceOptions = {}
   // When a character cap cuts mid-text, fewer lines are actually emitted than
   // were selected; report the last line the emitted text really reaches so the
   // "lines X-Y" header doesn't over-claim.
-  const emittedLineCount = selectedLines.length === 0 ? 0 : text.split("\n").length;
+  // Empty text means nothing was emitted (no lines selected, or a 0-char cap);
+  // "".split("\n") would otherwise miscount as 1.
+  const emittedLineCount = text === "" ? 0 : text.split("\n").length;
 
   return {
     text,
