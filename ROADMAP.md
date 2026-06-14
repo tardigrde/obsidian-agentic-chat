@@ -70,18 +70,21 @@ Make the pane carry actions, not just text. UX reference: GitHub Copilot chat si
 
 ## Milestone 3 — Modes + output styles
 
-- [ ] **Mode dropdown (ask / plan / agent)**, visible in the composer.
+- [x] **Mode dropdown (ask / plan / agent)**, visible in the composer.
   - **ask** — strictly read-only. The harness MUST block any mutating tool call and
     return a "read-only mode" note to the model (reuse the `beforeToolCall` gate so the
     denial reaches the model the normal way).
   - **plan** — for large info-gathering/synthesis or big vault restructures: produce a
     plan; no writes until approved.
   - **agent** — default. Tools behave per the configured approval policy (ask/allow/deny).
-  - Implementation: presets over the existing approval system
-    (`src/agent/approval.ts`) **plus** a per-mode system-prompt overlay.
-- [ ] **Built-in output styles** (default / brainstorm / learning) as system-prompt
-      overlays. Switchable via a `/config`-style command (which can configure more than
-      just style) and/or a selector. Custom user styles deferred.
+  - Implementation: `src/agent/modes.ts` — presets over the existing approval system
+    (`resolveModePolicy` wraps `resolvePolicy`; ask/plan deny mutating tools through the
+    `beforeToolCall` gate) **plus** a per-mode system-prompt overlay. Surfaced as a
+    composer dropdown and in `/config`/`/status`.
+- [x] **Built-in output styles** (default / brainstorm / learning) as system-prompt
+      overlays (`src/agent/output-styles.ts`, composed by `buildSystemPrompt`). Switchable
+      via the `/config` command and a composer selector. Custom user styles deferred.
+      See: https://code.claude.com/docs/en/output-styles
 
 ## Milestone 4 — Chutes provider (TEE privacy)
 

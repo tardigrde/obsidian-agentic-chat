@@ -15,7 +15,8 @@ import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "..
 import { ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
 import { buildSkillInvocation, loadVaultSkills } from "../skills/skills";
 import { buildSystemPrompt } from "./system-prompt";
-import { type ApprovalPolicy, resolvePolicy } from "./approval";
+import { MODES, resolveModePolicy } from "./modes";
+import { OUTPUT_STYLES } from "./output-styles";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
@@ -238,7 +239,7 @@ export class AgentService {
     const agent = new Agent({
       streamFn: this.buildStreamFn(),
       initialState: {
-        systemPrompt: buildSystemPrompt(settings.systemPrompt, this.skills),
+        systemPrompt: buildSystemPrompt(settings.systemPrompt, this.skills, promptOverlays(settings)),
         model: buildModel(activeModelConfig(settings)),
         thinkingLevel: settings.thinkingLevel,
         tools: createVaultTools(this.app, this.ignoreMatcher),
@@ -257,10 +258,11 @@ export class AgentService {
     toolName: string,
     args: unknown,
   ): Promise<{ block: true; reason: string } | undefined> {
-    const policy: ApprovalPolicy = resolvePolicy(this.getSettings().approval, toolName);
+    const settings = this.getSettings();
+    const { policy, reason } = resolveModePolicy(settings.mode, settings.approval, toolName);
     if (policy === "allow") return undefined;
     if (policy === "deny") {
-      return { block: true, reason: `The "${toolName}" tool is disabled by your approval settings.` };
+      return { block: true, reason: reason ?? `The "${toolName}" tool is disabled by your approval settings.` };
     }
     const tool = this.agent?.state.tools.find((candidate) => candidate.name === toolName);
     const approved = await this.confirmToolCall({ toolName, label: tool?.label ?? toolName, args });
@@ -301,7 +303,7 @@ export class AgentService {
     agent.state.model = buildModel(activeModelConfig(settings));
     agent.state.thinkingLevel = settings.thinkingLevel;
     agent.state.tools = createVaultTools(this.app, this.ignoreMatcher);
-    agent.state.systemPrompt = buildSystemPrompt(settings.systemPrompt, this.skills);
+    agent.state.systemPrompt = buildSystemPrompt(settings.systemPrompt, this.skills, promptOverlays(settings));
     await this.sessionManager.ensureConfiguration(this.sessionDefaults());
     this.sessionInfo = this.sessionManager.getActiveSessionInfo();
   }
@@ -363,6 +365,11 @@ export class AgentService {
   private notifyChange(): void {
     for (const listener of this.changeListeners) listener();
   }
+}
+
+/** System-prompt overlays contributed by the active mode and output style. */
+function promptOverlays(settings: AgenticChatSettings): string[] {
+  return [MODES[settings.mode].promptOverlay, OUTPUT_STYLES[settings.outputStyle].promptOverlay];
 }
 
 function emptyUsage(): Usage {

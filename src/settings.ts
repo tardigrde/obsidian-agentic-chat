@@ -9,6 +9,8 @@ import {
   type ProviderId,
 } from "./llm/models";
 import { type ApprovalPolicy, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
+import { type AgentMode, DEFAULT_MODE, MODE_ORDER, MODES } from "./agent/modes";
+import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { createVaultTools, MUTATING_TOOLS } from "./tools/vault-tools";
 import { FolderSuggestModal } from "./ui/folder-suggest";
@@ -27,6 +29,10 @@ export interface AgenticChatSettings {
   requestTimeoutMs: number;
   maxNetworkRetries: number;
   systemPrompt: string;
+  /** What the agent may do: read-only (ask), plan-first (plan), or full (agent). */
+  mode: AgentMode;
+  /** How the assistant talks: a built-in system-prompt overlay. */
+  outputStyle: OutputStyle;
   privacy: PrivacySettings;
   approval: ApprovalSettings;
   /** Vault folder scanned for SKILL.md skills/personas. Empty disables skills. */
@@ -63,6 +69,8 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   requestTimeoutMs: 90_000,
   maxNetworkRetries: 2,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  mode: DEFAULT_MODE,
+  outputStyle: DEFAULT_OUTPUT_STYLE,
   // Strongest privacy out of the box: zero data retention, no prompt
   // logging/training, and any fallback provider must also satisfy both.
   privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
@@ -78,6 +86,10 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
+    // Heal enum-like fields so an unknown persisted value can't break the gate or prompt.
+    mode: stored?.mode && stored.mode in MODES ? stored.mode : DEFAULT_MODE,
+    outputStyle:
+      stored?.outputStyle && stored.outputStyle in OUTPUT_STYLES ? stored.outputStyle : DEFAULT_OUTPUT_STYLE,
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
     approval: {
       ...DEFAULT_SETTINGS.approval,
@@ -270,6 +282,28 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
   private renderAgent(containerEl: HTMLElement, settings: AgenticChatSettings): void {
     new Setting(containerEl).setName("Agent").setHeading();
+
+    new Setting(containerEl)
+      .setName("Mode")
+      .setDesc("What the agent may do. Ask is read-only; Plan proposes before writing; Agent follows your approval gates. Also switchable from the chat composer.")
+      .addDropdown((dropdown) => {
+        for (const id of MODE_ORDER) dropdown.addOption(id, MODES[id].label);
+        dropdown.setValue(settings.mode).onChange(async (value) => {
+          settings.mode = value as AgentMode;
+          await this.save();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Output style")
+      .setDesc("How the assistant talks. A system-prompt overlay; also switchable with /config in the chat.")
+      .addDropdown((dropdown) => {
+        for (const id of OUTPUT_STYLE_ORDER) dropdown.addOption(id, OUTPUT_STYLES[id].label);
+        dropdown.setValue(settings.outputStyle).onChange(async (value) => {
+          settings.outputStyle = value as OutputStyle;
+          await this.save();
+        });
+      });
 
     new Setting(containerEl)
       .setName("Thinking level")

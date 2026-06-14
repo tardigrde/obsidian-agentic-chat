@@ -38,6 +38,8 @@ import {
 } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
 import { resolveCommand, visibleCommands } from "./commands";
+import { type AgentMode, MODE_ORDER, MODES } from "../agent/modes";
+import { type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
 
 export { VIEW_TYPE_AGENT_CHAT };
 
@@ -78,6 +80,8 @@ export class ChatView extends ItemView {
   private emptyStateEl: HTMLElement | null = null;
   private chipsEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
+  private modeSelectEl!: HTMLSelectElement;
+  private styleSelectEl!: HTMLSelectElement;
   private menu!: AutocompleteMenu;
   private sendButton!: HTMLButtonElement;
   private stopButton!: HTMLButtonElement;
@@ -191,6 +195,22 @@ export class ChatView extends ItemView {
       this.cancelAutocomplete();
       this.menu.hide();
     });
+
+    const controls = composer.createDiv({ cls: "agentic-chat-controls" });
+    this.modeSelectEl = this.buildControlSelect(
+      controls,
+      "Agent mode",
+      MODE_ORDER.map((id) => ({ value: id, label: MODES[id].label, title: MODES[id].description })),
+      this.plugin.settings.mode,
+      (value) => this.setMode(value as AgentMode),
+    );
+    this.styleSelectEl = this.buildControlSelect(
+      controls,
+      "Output style",
+      OUTPUT_STYLE_ORDER.map((id) => ({ value: id, label: OUTPUT_STYLES[id].label, title: OUTPUT_STYLES[id].description })),
+      this.plugin.settings.outputStyle,
+      (value) => this.setOutputStyle(value as OutputStyle),
+    );
 
     const buttonRow = composer.createDiv({ cls: "agentic-chat-buttons" });
     const attachNoteButton = buttonRow.createEl("button", {
@@ -307,10 +327,70 @@ export class ChatView extends ItemView {
     return candidates;
   }
 
+  // --- composer controls (mode + output style) ---
+
+  /** A compact labelled `<select>` for the composer control row. */
+  private buildControlSelect(
+    parent: HTMLElement,
+    ariaLabel: string,
+    options: Array<{ value: string; label: string; title?: string }>,
+    value: string,
+    onChange: (value: string) => void,
+  ): HTMLSelectElement {
+    const select = parent.createEl("select", {
+      cls: ["dropdown", "agentic-chat-control-select"],
+      attr: { "aria-label": ariaLabel },
+    });
+    for (const option of options) {
+      const el = select.createEl("option", { text: option.label, value: option.value });
+      if (option.title) el.title = option.title;
+    }
+    select.value = value;
+    select.addEventListener("change", () => onChange(select.value));
+    return select;
+  }
+
+  private async setMode(mode: AgentMode): Promise<void> {
+    // Mode is evaluated live by the tool gate; changing it mid-stream would
+    // disagree with the system prompt this run started under. Lock it while busy.
+    if (this.service.isStreaming()) return;
+    if (this.plugin.settings.mode === mode) return;
+    this.plugin.settings.mode = mode;
+    await this.plugin.saveSettings();
+    this.syncControls();
+  }
+
+  private async setOutputStyle(style: OutputStyle): Promise<void> {
+    if (this.service.isStreaming()) return;
+    if (this.plugin.settings.outputStyle === style) return;
+    this.plugin.settings.outputStyle = style;
+    await this.plugin.saveSettings();
+    this.syncControls();
+  }
+
+  /**
+   * Reflect settings (e.g. changed via /config or the settings tab) back into the
+   * selects, and disable them while the agent is streaming so mode/style can't drift
+   * from the prompt/policy the in-flight turn started under.
+   */
+  private syncControls(): void {
+    const { settings } = this.plugin;
+    const streaming = this.service.isStreaming();
+    if (this.modeSelectEl) {
+      if (this.modeSelectEl.value !== settings.mode) this.modeSelectEl.value = settings.mode;
+      this.modeSelectEl.disabled = streaming;
+    }
+    if (this.styleSelectEl) {
+      if (this.styleSelectEl.value !== settings.outputStyle) this.styleSelectEl.value = settings.outputStyle;
+      this.styleSelectEl.disabled = streaming;
+    }
+  }
+
   // --- chrome (header pill, usage, running state) ---
 
   private syncChrome(): void {
     const { settings } = this.plugin;
+    this.syncControls();
     this.modelPillEl.empty();
     const providerLabel = settings.provider === "ollama" ? "Ollama" : "OpenRouter";
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: providerLabel });
@@ -428,6 +508,9 @@ export class ChatView extends ItemView {
       case "status":
         this.showStatus();
         return true;
+      case "config":
+        this.showConfig();
+        return true;
       case "usage":
         this.showUsage();
         return true;
@@ -496,10 +579,48 @@ export class ChatView extends ItemView {
     this.renderInfoMessage("Status", [
       ["Provider", settings.provider],
       ["Model", activeModelId(settings)],
+      ["Mode", MODES[settings.mode].label],
+      ["Output style", OUTPUT_STYLES[settings.outputStyle].label],
       ["Thinking", settings.thinkingLevel],
       ["Approval (mutating)", settings.approval.mutating],
       ["Session", session ? `${session.messageCount} messages` : "(none)"],
     ]);
+  }
+
+  /** `/config`: clickable pickers for mode and output style, applied in-pane. */
+  private showConfig(): void {
+    const { settings } = this.plugin;
+    this.clearEmptyState();
+    this.renderActionList(
+      "Mode",
+      `What the agent may do · current: ${MODES[settings.mode].label}`,
+      MODE_ORDER.map((id) => ({
+        label: MODES[id].label,
+        detail: MODES[id].description,
+        icon: MODES[id].icon,
+        onClick: () => void this.chooseMode(id),
+      })),
+    );
+    this.renderActionList(
+      "Output style",
+      `How the assistant talks · current: ${OUTPUT_STYLES[settings.outputStyle].label}`,
+      OUTPUT_STYLE_ORDER.map((id) => ({
+        label: OUTPUT_STYLES[id].label,
+        detail: OUTPUT_STYLES[id].description,
+        icon: OUTPUT_STYLES[id].icon,
+        onClick: () => void this.chooseStyle(id),
+      })),
+    );
+  }
+
+  private async chooseMode(mode: AgentMode): Promise<void> {
+    await this.setMode(mode);
+    this.renderInfoMessage("Mode", [[MODES[mode].label, MODES[mode].description]]);
+  }
+
+  private async chooseStyle(style: OutputStyle): Promise<void> {
+    await this.setOutputStyle(style);
+    this.renderInfoMessage("Output style", [[OUTPUT_STYLES[style].label, OUTPUT_STYLES[style].description]]);
   }
 
   private showUsage(): void {
