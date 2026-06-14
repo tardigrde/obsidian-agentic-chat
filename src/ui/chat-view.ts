@@ -351,6 +351,9 @@ export class ChatView extends ItemView {
   }
 
   private async setMode(mode: AgentMode): Promise<void> {
+    // Mode is evaluated live by the tool gate; changing it mid-stream would
+    // disagree with the system prompt this run started under. Lock it while busy.
+    if (this.service.isStreaming()) return;
     if (this.plugin.settings.mode === mode) return;
     this.plugin.settings.mode = mode;
     await this.plugin.saveSettings();
@@ -358,18 +361,28 @@ export class ChatView extends ItemView {
   }
 
   private async setOutputStyle(style: OutputStyle): Promise<void> {
+    if (this.service.isStreaming()) return;
     if (this.plugin.settings.outputStyle === style) return;
     this.plugin.settings.outputStyle = style;
     await this.plugin.saveSettings();
     this.syncControls();
   }
 
-  /** Reflect settings (e.g. changed via /config or the settings tab) back into the selects. */
+  /**
+   * Reflect settings (e.g. changed via /config or the settings tab) back into the
+   * selects, and disable them while the agent is streaming so mode/style can't drift
+   * from the prompt/policy the in-flight turn started under.
+   */
   private syncControls(): void {
     const { settings } = this.plugin;
-    if (this.modeSelectEl && this.modeSelectEl.value !== settings.mode) this.modeSelectEl.value = settings.mode;
-    if (this.styleSelectEl && this.styleSelectEl.value !== settings.outputStyle) {
-      this.styleSelectEl.value = settings.outputStyle;
+    const streaming = this.service.isStreaming();
+    if (this.modeSelectEl) {
+      if (this.modeSelectEl.value !== settings.mode) this.modeSelectEl.value = settings.mode;
+      this.modeSelectEl.disabled = streaming;
+    }
+    if (this.styleSelectEl) {
+      if (this.styleSelectEl.value !== settings.outputStyle) this.styleSelectEl.value = settings.outputStyle;
+      this.styleSelectEl.disabled = streaming;
     }
   }
 
