@@ -164,6 +164,25 @@
   color: var(--text-error);
 }
 
+/* --- Settings warning banner --- */
+
+.agentic-chat-settings-warning {
+  display: flex;
+  gap: var(--size-4-2);
+  align-items: flex-start;
+  margin: var(--size-4-2) 0;
+  padding: var(--size-4-2) var(--size-4-3);
+  border-radius: var(--radius-m);
+  background-color: var(--background-modifier-error);
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+}
+
+.agentic-chat-settings-warning-icon {
+  flex-shrink: 0;
+  font-weight: var(--font-bold);
+}
+
 /* --- Reasoning --- */
 
 .agentic-chat-reasoning {

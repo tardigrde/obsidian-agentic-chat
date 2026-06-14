@@ -102,6 +102,22 @@ export class AgentService {
     return this.skills;
   }
 
+  /**
+   * Fraction (0–1) of the model's context window filled by the most recent turn.
+   * Uses the last assistant turn's input tokens (the prompt pi sent that turn) as
+   * a proxy for how full the next request will be. Undefined if unknown.
+   */
+  getContextFraction(): number | undefined {
+    const contextWindow = this.agent?.state.model?.contextWindow ?? 0;
+    if (contextWindow <= 0) return undefined;
+    let lastInput = 0;
+    for (const message of this.getMessages()) {
+      if (message.role === "assistant" && message.usage) lastInput = message.usage.input ?? 0;
+    }
+    if (lastInput <= 0) return undefined;
+    return Math.min(lastInput / contextWindow, 1);
+  }
+
   /** Sum token usage and cost across all assistant turns in the active session. */
   getSessionUsage(): Usage {
     const total = emptyUsage();
