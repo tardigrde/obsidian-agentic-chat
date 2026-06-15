@@ -147,6 +147,18 @@ export function createSubagentTool(
         emit();
       });
 
+      // If an abort stopped the pool, queued children never entered the worker and
+      // would otherwise be reported as still "running" — finalize them.
+      if (signal?.aborted) {
+        for (const status of statuses) {
+          if (status.status === "running") {
+            status.status = "error";
+            status.summary = "aborted";
+          }
+        }
+        emit();
+      }
+
       return {
         content: [{ type: "text", text: truncateToolOutput(mergeSummaries(statuses)) }],
         details: snapshot(statuses),
@@ -166,9 +178,12 @@ export function normalizeTasks(params: {
   if (Array.isArray(params.tasks) && params.tasks.length > 0) {
     return params.tasks
       .filter((task) => task && typeof task.agent === "string" && typeof task.task === "string")
-      .map((task) => ({ agent: task.agent, task: task.task }));
+      .map((task) => ({ agent: task.agent.trim(), task: task.task.trim() }))
+      .filter((task) => task.agent.length > 0 && task.task.length > 0);
   }
-  if (params.agent && params.task) return [{ agent: params.agent, task: params.task }];
+  const agent = params.agent?.trim();
+  const task = params.task?.trim();
+  if (agent && task) return [{ agent, task }];
   return [];
 }
 
@@ -233,7 +248,8 @@ function lastAssistantText(messages: AgentMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message.role !== "assistant") continue;
-    return (message.content ?? [])
+    const content = Array.isArray(message.content) ? message.content : [];
+    return content
       .filter((block): block is { type: "text"; text: string } => block?.type === "text")
       .map((block) => block.text)
       .join("")

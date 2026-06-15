@@ -177,6 +177,9 @@ describe("normalizeTasks", () => {
         tasks?: { agent: string; task: string }[];
       }),
     ).toEqual([{ agent: "b", task: "t" }]);
+    // Blank / whitespace-only agent or task is rejected (trimmed then filtered).
+    expect(normalizeTasks({ agent: "researcher", task: "  " })).toEqual([]);
+    expect(normalizeTasks({ tasks: [{ agent: " ", task: "t" }] })).toEqual([]);
   });
 });
 
