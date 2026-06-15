@@ -141,6 +141,9 @@ export function createWebSearchTool(config: WebSearchConfig): AgentTool<typeof S
       const maxResults = clampResults(params.maxResults ?? config.maxResults);
       throwIfAborted(signal);
       const response = await config.fetcher(adapter.buildRequest(query, maxResults, config), signal);
+      if (response.status === 0) {
+        throw new Error(`web_search failed via ${config.provider}: ${response.text || "network error"}.`);
+      }
       if (response.status < 200 || response.status >= 300) {
         throw new Error(`web_search failed via ${config.provider} (HTTP ${response.status}).`);
       }

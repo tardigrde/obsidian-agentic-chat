@@ -70,6 +70,21 @@ describe("normalizeWebUrl", () => {
       expect(() => normalizeWebUrl(url), url).toThrow(/local or private/i);
     }
   });
+
+  it("blocks IPv4-mapped IPv6 addresses (the parser normalizes these to hex)", () => {
+    for (const url of [
+      "http://[::ffff:127.0.0.1]/x",
+      "http://[::ffff:169.254.169.254]/x",
+      "http://[::ffff:10.0.0.1]/x",
+      "http://[0:0:0:0:0:ffff:c0a8:0101]/x", // ::ffff:192.168.1.1
+    ]) {
+      expect(() => normalizeWebUrl(url), url).toThrow(/local or private/i);
+    }
+  });
+
+  it("still allows IPv4-mapped IPv6 of a public address", () => {
+    expect(() => normalizeWebUrl("http://[::ffff:8.8.8.8]/x")).not.toThrow();
+  });
 });
 
 describe("fetch_url tool", () => {
@@ -125,6 +140,35 @@ describe("fetch_url tool", () => {
   it("errors on a non-2xx response", async () => {
     const tool = createWebFetchTool({ fetcher: stubFetcher({ status: 404, text: "nope" }), charLimit: 10_000 });
     await expect(run(tool, { url: "https://example.com/missing" })).rejects.toThrow(/HTTP 404/);
+  });
+
+  it("surfaces a network/DNS error (status 0) with its message", async () => {
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ status: 0, text: "getaddrinfo ENOTFOUND example.com" }),
+      charLimit: 10_000,
+    });
+    await expect(run(tool, { url: "https://example.com/x" })).rejects.toThrow(/ENOTFOUND/);
+  });
+
+  it("skips binary content instead of dumping it", async () => {
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ text: "\x89PNG\r\n\x1a\n…binary…", headers: { "content-type": "image/png" } }),
+      charLimit: 10_000,
+    });
+    const { text } = await run(tool, { url: "https://example.com/logo.png" });
+    expect(text).toContain("not text");
+    expect(text).not.toContain("PNG");
+  });
+
+  it("clips an oversized page before extracting and flags truncation", async () => {
+    const huge = `<p>${"a".repeat(600_000)}</p>`;
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ text: huge, headers: { "content-type": "text/html" } }),
+      charLimit: 50_000,
+    });
+    const { text, details } = await run(tool, { url: "https://example.com/huge" });
+    expect(details.truncated).toBe(true);
+    expect(text.length).toBeLessThan(60_000);
   });
 
   it("refuses to fetch a blocked host before issuing a request", async () => {

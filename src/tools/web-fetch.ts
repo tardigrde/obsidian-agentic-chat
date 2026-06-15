@@ -30,20 +30,26 @@ export type WebFetcher = (request: WebHttpRequest, signal?: AbortSignal) => Prom
 /** Production fetcher over Obsidian's `requestUrl`. */
 export function createObsidianFetcher(): WebFetcher {
   return async (request) => {
-    const response = await requestUrl({
-      url: request.url,
-      method: request.method ?? "GET",
-      headers: request.headers,
-      body: request.body,
-      // Handle non-2xx ourselves so a 404/500 becomes a tool error the model
-      // can read, not an exception that aborts the turn.
-      throw: false,
-    });
-    const headers: Record<string, string> = {};
-    for (const [key, value] of Object.entries(response.headers ?? {})) {
-      headers[key.toLowerCase()] = String(value);
+    try {
+      const response = await requestUrl({
+        url: request.url,
+        method: request.method ?? "GET",
+        headers: request.headers,
+        body: request.body,
+        // Handle non-2xx ourselves so a 404/500 becomes a tool error the model
+        // can read, not an exception that aborts the turn.
+        throw: false,
+      });
+      const headers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(response.headers ?? {})) {
+        headers[key.toLowerCase()] = String(value);
+      }
+      return { status: response.status, text: response.text, headers };
+    } catch (error) {
+      // Offline / DNS failure / TLS error: surface as status 0 with the message
+      // so the tool reports a clean error instead of crashing the agent turn.
+      return { status: 0, text: error instanceof Error ? error.message : String(error), headers: {} };
     }
-    return { status: response.status, text: response.text, headers };
   };
 }
 
@@ -80,6 +86,9 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
       const url = normalizeWebUrl(params.url);
       throwIfAborted(signal);
       const response = await config.fetcher({ url, method: "GET", headers: { Accept: ACCEPT_HEADER } }, signal);
+      if (response.status === 0) {
+        throw new Error(`Could not fetch ${url}: ${response.text || "network error"}.`);
+      }
       if (response.status < 200 || response.status >= 300) {
         throw new Error(`Could not fetch ${url} (HTTP ${response.status}).`);
       }
@@ -100,15 +109,34 @@ interface RenderedPage {
   truncated: boolean;
 }
 
+/** Cap on raw bytes fed to the regex extractor, so a huge page can't freeze the UI. */
+const MAX_RAW_CHARS = 500_000;
+
 function renderFetched(url: string, raw: string, contentType: string, limit: number): RenderedPage {
   const html = /html|xml/i.test(contentType) || (!contentType && looksLikeHtml(raw));
-  const extracted = html ? extractReadableText(raw) : { title: "", text: raw };
+  // Don't dump decoded binary (images, archives, PDFs) at the model — wasteful and unreadable.
+  if (!html && contentType && !isTextContentType(contentType)) {
+    return {
+      title: "",
+      text: `Source: ${url}\n\n[Skipped: "${contentType}" is not text. fetch_url only returns readable text.]`,
+      truncated: false,
+    };
+  }
+  // Bound the input before the regex passes; note when we had to clip it.
+  const clipped = raw.length > MAX_RAW_CHARS;
+  const safeRaw = clipped ? raw.slice(0, MAX_RAW_CHARS) : raw;
+  const extracted = html ? extractReadableText(safeRaw) : { title: "", text: safeRaw };
   const body = extracted.text.trim();
-  const truncated = body.length > limit;
-  const sliced = truncated ? body.slice(0, limit) : body;
+  const truncated = body.length > limit || clipped;
+  const sliced = body.length > limit ? body.slice(0, limit) : body;
   const header = extracted.title ? `# ${extracted.title}\nSource: ${url}` : `Source: ${url}`;
   const note = truncated ? `\n\n[Page text truncated at ${limit} characters.]` : "";
   return { title: extracted.title, text: `${header}\n\n${sliced || "(no readable text)"}${note}`, truncated };
+}
+
+/** Text-ish content types fetch_url will return as-is (besides HTML/XML). */
+function isTextContentType(contentType: string): boolean {
+  return /text\/|json|xml|markdown|javascript|ecmascript|csv|x-yaml|yaml/i.test(contentType);
 }
 
 function looksLikeHtml(text: string): boolean {
@@ -185,7 +213,15 @@ export function normalizeWebUrl(input: string): string {
 }
 
 function isBlockedHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
+  let host = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
+  // IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) would otherwise slip past the IPv4
+  // checks. The WHATWG URL parser serializes these to hex (::ffff:7f00:1), so
+  // accept both forms and re-check the embedded IPv4 address.
+  const mapped = /^(?:0*:)*ffff:(.+)$/.exec(host);
+  if (mapped) {
+    const embedded = mappedToIpv4(mapped[1]);
+    if (embedded) host = embedded;
+  }
   if (host === "localhost" || host.endsWith(".localhost")) return true;
   if (host === "" || host === "0.0.0.0" || host === "::" || host === "::1") return true;
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
@@ -202,6 +238,20 @@ function isBlockedHost(hostname: string): boolean {
   if (/^f[cd][0-9a-f]*:/.test(host)) return true;
   if (/^fe[89ab][0-9a-f]*:/.test(host)) return true;
   return false;
+}
+
+/**
+ * Convert the tail of an IPv4-mapped IPv6 address to dotted IPv4, accepting both
+ * the dotted form (`127.0.0.1`) and the two-hextet form (`7f00:1`) the URL
+ * parser normalizes to. Returns undefined when it isn't a recognizable IPv4.
+ */
+function mappedToIpv4(tail: string): string | undefined {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(tail)) return tail;
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(tail);
+  if (!hex) return undefined;
+  const high = Number.parseInt(hex[1], 16);
+  const low = Number.parseInt(hex[2], 16);
+  return [(high >> 8) & 255, high & 255, (low >> 8) & 255, low & 255].join(".");
 }
 
 /** Cap returned characters between a sane floor and the configured default. */
