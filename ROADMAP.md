@@ -341,11 +341,14 @@ deliberate — fanning out reads the whole vault), and the session `modifiedTime
       both." We have no host CLI doing this for us (unlike Claudian, which rides Claude
       Code's `fileCheckpointing`), so it needs our own lightweight per-turn snapshot of
       touched paths on the vault adapter. The full undo half of "Edit diff review + undo."
-- [ ] **Rendering performance.** Make the interactive pane safe on desktop and mobile:
-      append-only transcript rendering (avoid full `renderTranscript` rebuilds),
-      throttled streaming with markdown parsed on finalize (not per token), cached
-      vault file list for `@`-mentions. **No UI framework** — keep hand-rolled Obsidian
-      DOM so the bundle stays lean. This is the real perf risk, not the interactivity.
+- [x] **Rendering performance.** The interactive pane is hand-rolled DOM (no framework).
+      Markdown is parsed once on finalize, not per token (`AssistantBubble.finalizeText`);
+      streamed deltas are buffered and flushed once per animation frame
+      (`scheduleFlush`/`flushBuffers`) so a fast token stream is one reflow/frame, not one
+      per token; the live path is append-only (events append to bubbles — `renderTranscript`
+      only rebuilds on session load/new/edit, which are genuinely different transcripts); the
+      `@`-mention candidate list is cached and invalidated on vault create/delete/rename
+      (`mentionCache`). Scroll is `requestAnimationFrame`-coalesced.
 
 ## Backlog / ideas
 
