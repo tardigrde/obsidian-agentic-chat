@@ -617,6 +617,9 @@ export class ChatView extends ItemView {
       case "skill":
         await this.runSkill(rest[0], argString.slice(rest[0]?.length ?? 0).trim());
         return true;
+      case "agent":
+        await this.runAgent(rest[0], argString.slice(rest[0]?.length ?? 0).trim());
+        return true;
       case "template":
         await this.runTemplate(rest[0], rest.slice(1));
         return true;
@@ -657,6 +660,47 @@ export class ChatView extends ItemView {
         onClick: () => void this.runSkill(skill.name, ""),
       })),
     );
+  }
+
+  private async runAgent(name: string | undefined, task: string): Promise<void> {
+    if (!name) {
+      this.showAgentList();
+      return;
+    }
+    this.clearEmptyState();
+    this.renderUserMessage(`/agent ${name}${task ? ` ${task}` : ""}`, []);
+    await this.service.invokeAgent(name, task);
+    this.showServiceError();
+  }
+
+  /** `/agent` with no argument: a clickable picker that prefills the composer. */
+  private showAgentList(): void {
+    const profiles = this.service.getProfiles();
+    this.clearEmptyState();
+    if (profiles.length === 0) {
+      this.renderInfoMessage("Subagents", [
+        ["(none)", "Enable built-in subagents or set a subagents folder in settings."],
+      ]);
+      return;
+    }
+    this.renderActionList(
+      "Subagents",
+      "Pick a subagent, then type its task.",
+      profiles.map((profile) => ({
+        label: profile.name,
+        detail: profile.description,
+        icon: "bot",
+        onClick: () => this.prefillComposer(`/agent ${profile.name} `),
+      })),
+    );
+  }
+
+  private prefillComposer(text: string): void {
+    // setComposerValue dispatches the "input" event so autocomplete/composer
+    // state stays in sync (a bare `.value =` would not).
+    this.setComposerValue(text);
+    this.inputEl.focus();
+    this.inputEl.setSelectionRange(text.length, text.length);
   }
 
   /** `/template` is retired: templates are now skills (with $ARGUMENTS support). */
@@ -1046,6 +1090,9 @@ export class ChatView extends ItemView {
       case "tool_execution_start":
         this.statusEl.setText(`Running ${event.toolName}…`);
         this.ensureBubble().startStep(event.toolCallId, event.toolName, safeJson(event.args));
+        break;
+      case "tool_execution_update":
+        this.ensureBubble().updateStep(event.toolCallId, event.partialResult);
         break;
       case "tool_execution_end":
         this.ensureBubble().endStep(event.toolCallId, toolResultText(event.result), event.isError);

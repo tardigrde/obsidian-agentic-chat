@@ -146,6 +146,29 @@ describe("AgentService", () => {
     expect(resultText).toMatch(/read-only/i);
   });
 
+  it("dispatches a subagent, folds child usage into the session, and exposes profiles", async () => {
+    const streamFn = scriptedStreamFn([
+      // Parent turn 1: ask to dispatch the researcher subagent.
+      { content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "researcher", task: "summarize the inbox" } }], stopReason: "toolUse" },
+      // Child turn: the researcher's reply (same injected stream serves the child).
+      { content: [{ type: "text", text: "Inbox has 3 open threads." }], stopReason: "stop" },
+      // Parent turn 2: final answer after the subagent returns.
+      { content: [{ type: "text", text: "All done." }], stopReason: "stop" },
+    ]);
+    const { service } = makeService(streamFn);
+    await service.sendPrompt("Use a subagent to check my inbox");
+
+    expect(service.getProfiles().map((profile) => profile.name)).toContain("researcher");
+    const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
+      | { role: "toolResult"; isError: boolean; content: Array<{ type: string; text?: string }> }
+      | undefined;
+    expect(toolResult?.isError).toBe(false);
+    const resultText = (toolResult?.content ?? []).map((block) => block.text ?? "").join("");
+    expect(resultText).toContain("Inbox has 3 open threads.");
+    // Parent's two assistant turns (2 + 2) plus the child's folded-in usage (2).
+    expect(service.getSessionUsage().totalTokens).toBe(6);
+  });
+
   it("reports a friendly error when no API key is configured", async () => {
     const { service, settings } = makeService(cannedStreamFn("unused"));
     settings.openrouterApiKey = "";

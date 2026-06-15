@@ -20,8 +20,9 @@ concepts that compose — they do not fully overlap:
   overlay. Built-in set for now (default / brainstorm / learning).
 - **Mode** — *what the agent is allowed to do* (ask / plan / agent). A preset over the
   approval + tool system, plus a system-prompt framing. Surfaced as a visible dropdown.
-- **Agent / subagent** (longer term) — a bundle: system prompt + model + allowed tools +
-  default skills/style. This is where per-agent model routing lives.
+- **Agent / subagent** — a **profile** (system prompt + model + allowed tools + skills) the
+  agent *delegates to*: the parent spawns a focused child session, runs it in isolation, and
+  gets back a summary. **Delegation, not a whole-chat persona switch.** See Milestone 5.
 
 ### Out of scope
 
@@ -97,14 +98,72 @@ A second privacy-preserving option alongside OpenRouter ZDR routing and local Ol
 - [ ] (Stretch) Filter the model browser to TEE/confidential models, mirroring the ZDR
       filter, so privacy is enforced by construction.
 
-## Milestone 5 — Agents / subagents (longer term)
+## Milestone 5 — Subagents (delegation)
 
-The issue #2 §4 + §10 "workflow platform" leap. Depends on the taxonomy being settled.
+**Scope decision:** this milestone is **delegation only** — the parent agent spawns focused
+**child** agents mid-task, each with its own context window, model, and tool subset, then
+gets back a summary. It is **not** an "agent persona" you switch the whole chat into (that
+preset idea is folded back into modes/output-styles, not pursued here). Motivation:
+**parallelism** (fan out independent subtasks, merge) + **context isolation** (noisy
+multi-step work happens in a child; only the result returns), *not* cost/model-routing.
 
-- [ ] Define an **agent** unit: system prompt + model + allowed tools + default skills/style.
-- [ ] **Per-agent model routing** (issue #2 §10): cheap/fast model for tool-heavy steps,
-      capable model for reasoning.
-- [ ] Agent selector in the mode dropdown / composer.
+**Design reference:** [`pi-subagents`](https://github.com/nicobailon/pi-subagents) solves
+exactly this for the Pi CLI. We **port its design, not its code** — it is a Pi *host plugin*
+(`bin`/`pi.extensions` loader, peer-deps on `@earendil-works/pi-coding-agent`, assumes Node
+`fs` + `bash` + git worktrees), none of which this plugin has (vault-adapter JSONL sessions,
+mobile-safe, no bash). `pi-agent-core`'s `Agent` is self-contained, so we nest it directly:
+`new Agent({…})` → `prompt(task)` → `waitForIdle()` → read the final text from `state.messages`.
+Also see Claude Code's model: https://code.claude.com/docs/en/sub-agents
+
+### v1 deliverables (shipped)
+
+- [x] **Agent profile unit + loader** (`src/agent/subagents.ts`). A profile is
+      `{ name, description, systemPrompt, model?, toolAllowlist }`, authored as an `AGENT.md`
+      (YAML frontmatter + body), loaded with the `loadVaultSkills` frontmatter pattern from a
+      settings-configured folder. **Both** a built-in roster (researcher / reviewer / editor)
+      **and** user vault files; a vault profile overrides a built-in of the same name. The body
+      replaces the base prompt for the child.
+- [x] **`subagent` dispatch tool** (`src/tools/subagent-tool.ts`). One tool, two foreground
+      modes: single `{ agent, task }` and parallel `{ tasks: [{agent,task}], concurrency? }`.
+      `execute(id, params, signal, onUpdate)` builds a child `Agent` per task — child `tools` =
+      `createVaultTools` filtered to the profile allowlist; child `model` = `profile.model ??`
+      parent; child `streamFn` reuses `buildStreamFn` (OpenRouter wiring + attribution); child
+      `systemPrompt` from the profile. Fans out through a hand-rolled concurrency pool (default
+      cap 3); `signal` → `child.abort()` so a parent abort kills all children. Returns merged
+      child summaries as the tool result.
+- [x] **Permission boundary: profile allowlist, auto-approved.** The **dispatch** is the
+      approval boundary (`gateSubagentDispatch`): in a read-only mode children are forced
+      read-only so a dispatch is free; in agent mode a dispatch that *can* mutate follows the
+      `approval.mutating` policy (ask once / allow / deny). Inside a child, tools are
+      pre-filtered to the allowlist, so its calls auto-run — no per-call modal storm under
+      parallel fan-out.
+- [x] **Depth guard.** Children are built from `createVaultTools` only and never receive the
+      `subagent` tool, so the delegation depth is capped at one **by construction** (no
+      grandchildren).
+- [x] **Trigger: both.** Model-driven (profiles advertised in the system prompt as
+      name+description, like skills; the model calls `subagent` to fan out) **and** user-driven
+      (`/agent <name> <task>` slash command; no-arg `/agent` shows a picker that prefills the
+      composer).
+- [x] **UI: collapsed-per-child, expandable** (`AssistantBubble`). The dispatch renders as a
+      step card listing each child (name + live status: running / done / failed), fed by the
+      tool's `onUpdate` snapshots (`tool_execution_update`); click a row to expand that child's
+      summary. Collapsed by default so the main thread stays clean but stays debuggable.
+- [x] **Cost accounting.** Child `usage` (which lives outside the parent transcript) is summed
+      into `getSessionUsage` via a per-session accumulator so fan-outs show their true token/$
+      cost.
+
+**Isolation consequence (accepted for v1):** child steps are **live-only**. The expandable
+tree exists during the run; what persists to JSONL is the dispatch tool-result = the **summary
+text**. Reopening an old session shows the summary, not replayable child steps. That is the
+honest cost of context isolation; v2 may persist child transcripts as side artifacts.
+
+### Deferred (v2+)
+
+Async/background runs + run registry + status polling + completion notification; sequential
+**chains** (scout→planner→worker output-passing); git worktree isolation; `pi-intercom`
+`contact_supervisor` (child↔parent blocking questions); acceptance/verification gates;
+`mcp:` tools (MCP is out of scope). Per-agent **cost routing** (cheap model for tool-heavy
+steps) is enabled by `profile.model` but is not a v1 goal.
 
 ## Milestone 6 — Web search + deep research
 
