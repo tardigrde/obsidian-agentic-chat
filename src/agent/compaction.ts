@@ -1,4 +1,5 @@
 import { estimateContextTokens, estimateTokens, type AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Usage } from "@earendil-works/pi-ai";
 
 /**
  * Auto-compaction configuration. Fractions are of the model's context window.
@@ -57,13 +58,20 @@ export function planCompaction(
   if (userIndices.length < 2) return null;
 
   const keepBudget = Math.max(0, contextWindow * config.keepFraction);
+  // Suffix sums of per-message token estimates, so each candidate's kept-token
+  // total is an O(1) lookup (keeps the whole scan O(N), not O(N²)).
+  const suffixTokens = new Array<number>(messages.length + 1);
+  suffixTokens[messages.length] = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    suffixTokens[i] = suffixTokens[i + 1] + estimateTokens(messages[i]);
+  }
   // Candidate cut points are user boundaries after the first turn. Pick the
   // earliest cut whose retained tokens fit the keep budget (i.e. retain as much
   // recent history as fits); fall back to keeping only the final turn.
   const candidates = userIndices.slice(1);
   let cut = candidates[candidates.length - 1];
   for (const candidate of candidates) {
-    if (tokensFrom(messages, candidate) <= keepBudget) {
+    if (suffixTokens[candidate] <= keepBudget) {
       cut = candidate;
       break;
     }
@@ -75,19 +83,12 @@ export function planCompaction(
   return { summarize, keep, tokensBefore };
 }
 
-/** Estimated tokens for the messages from `index` to the end. */
-function tokensFrom(messages: AgentMessage[], index: number): number {
-  let total = 0;
-  for (let i = index; i < messages.length; i++) total += estimateTokens(messages[i]);
-  return total;
-}
-
 /**
  * Wrap a summary string as a user message that replaces compacted history. A user
  * message converts cleanly for every provider and reads to the model as prior
  * context; the marker makes it identifiable in the transcript and on reload.
  */
-export function buildSummaryMessage(summary: string, timestamp: number): AgentMessage {
+export function buildSummaryMessage(summary: string, timestamp: number, compactedUsage?: Usage): AgentMessage {
   return {
     role: "user",
     content: [
@@ -97,7 +98,16 @@ export function buildSummaryMessage(summary: string, timestamp: number): AgentMe
       },
     ],
     timestamp,
-  };
+    // Carried on the message (not just in memory) so the dropped turns' usage
+    // survives JSONL reload and conversation rewind. See AgentService.getSessionUsage.
+    ...(compactedUsage ? { compactedUsage } : {}),
+  } as AgentMessage;
+}
+
+/** Usage of the turns folded into a summary message, if recorded. */
+export function getCompactedUsage(message: AgentMessage): Usage | undefined {
+  if (!isSummaryMessage(message)) return undefined;
+  return (message as { compactedUsage?: Usage }).compactedUsage ?? undefined;
 }
 
 /** True when a message is a compaction summary produced by {@link buildSummaryMessage}. */

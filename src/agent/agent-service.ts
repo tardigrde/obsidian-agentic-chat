@@ -19,7 +19,14 @@ import { deriveAutoName, ObsidianSessionManager, type SessionDefaults, type Sess
 import { buildSkillInvocation, loadVaultSkills } from "../skills/skills";
 import { type AgentProfile, formatSubagentsForSystemPrompt, loadAgentProfiles } from "./subagents";
 import { addUsage, emptyUsage, sumAssistantUsage } from "./usage";
-import { type CompactionConfig, DEFAULT_COMPACTION_CONFIG, buildSummaryMessage, planCompaction } from "./compaction";
+import {
+  type CompactionConfig,
+  DEFAULT_COMPACTION_CONFIG,
+  buildSummaryMessage,
+  getCompactedUsage,
+  isSummaryMessage,
+  planCompaction,
+} from "./compaction";
 import { buildSystemPrompt } from "./system-prompt";
 import { MODES, resolveModePolicy } from "./modes";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -29,6 +36,9 @@ const X_TITLE = "Obsidian Agentic Chat";
 
 /** Tokens reserved for the summarization prompt + its output during compaction. */
 const COMPACTION_RESERVE_TOKENS = 16_384;
+
+/** Abort the compaction summary call after this long so it can't stall a prompt. */
+const COMPACTION_TIMEOUT_MS = 20_000;
 
 /** A pending tool call the user must approve. */
 export interface ToolApprovalRequest {
@@ -86,10 +96,6 @@ export class AgentService {
   private errorMessage: string | undefined;
   /** Token usage from subagent children, which live outside the parent transcript. */
   private subagentUsage: Usage = emptyUsage();
-  /** Usage of assistant turns dropped by compaction, so the session total never shrinks. */
-  private compactedUsage: Usage = emptyUsage();
-  /** Count of compactions this session, so the UI can toast each one once. */
-  private compactions = 0;
 
   private readonly eventListeners = new Set<EventListener>();
   private readonly changeListeners = new Set<ChangeListener>();
@@ -163,15 +169,19 @@ export class AgentService {
     }
     // Children run outside the parent transcript, so fold their usage in here.
     addUsage(total, this.subagentUsage);
-    // Turns dropped by compaction are no longer in the transcript; fold them in
-    // too so the session total reflects everything spent, not just what's kept.
-    addUsage(total, this.compactedUsage);
+    // Turns dropped by compaction are no longer in the transcript, but each
+    // summary message carries the usage it replaced — fold those in so the
+    // session total survives reload and rewind without shrinking.
+    for (const message of this.getMessages()) {
+      const compacted = getCompactedUsage(message);
+      if (compacted) addUsage(total, compacted);
+    }
     return total;
   }
 
   /** Number of times this session has been auto-compacted (for one-shot UI notices). */
   getCompactionCount(): number {
-    return this.compactions;
+    return this.getMessages().filter(isSummaryMessage).length;
   }
 
   async initialize(): Promise<void> {
@@ -230,8 +240,6 @@ export class AgentService {
       this.sessionInfo = await this.sessionManager.createSession(this.sessionDefaults());
       this.persisted = new WeakSet<object>();
       this.subagentUsage = emptyUsage();
-    this.compactedUsage = emptyUsage();
-    this.compactions = 0;
       await this.reloadResources();
       this.replaceAgent([]);
       this.errorMessage = undefined;
@@ -249,8 +257,6 @@ export class AgentService {
       this.sessionInfo = await this.sessionManager.loadSession(path);
       this.persisted = new WeakSet<object>();
       this.subagentUsage = emptyUsage();
-    this.compactedUsage = emptyUsage();
-    this.compactions = 0;
       await this.reloadResources();
       this.replaceAgent(this.sessionManager.buildSessionContext().messages);
       this.errorMessage = undefined;
@@ -302,8 +308,6 @@ export class AgentService {
     // Child usage isn't tracked per-message, so it can't be recomputed for the
     // surviving turns; zero it on rewind rather than let it over-count forever.
     this.subagentUsage = emptyUsage();
-    this.compactedUsage = emptyUsage();
-    this.compactions = 0;
     this.replaceAgent(messages);
     if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
     this.errorMessage = undefined;
@@ -555,15 +559,16 @@ export class AgentService {
       if (!plan) return;
       const summary = await this.summarizeForCompaction(plan.summarize);
       if (!summary.trim()) return;
-      const newMessages = [buildSummaryMessage(summary, Date.now()), ...plan.keep];
+      // Carry the dropped turns' usage onto the summary message so the session
+      // total is preserved on reload/rewind. Include usage already carried by an
+      // earlier summary in this slice, so iterative compaction never loses it.
+      const dropped = collectDroppedUsage(plan.summarize);
+      const newMessages = [buildSummaryMessage(summary, Date.now(), dropped), ...plan.keep];
       // Persist the rewrite first; only mutate in-memory state once disk succeeds.
       await this.sessionManager.rewriteMessages(newMessages);
-      const dropped = sumAssistantUsage(plan.summarize);
-      if (dropped) addUsage(this.compactedUsage, dropped);
       this.persisted = new WeakSet<object>();
       for (const message of newMessages) this.persisted.add(message as object);
       this.replaceAgent(newMessages);
-      this.compactions += 1;
       if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
       this.notifyChange();
     } catch {
@@ -578,23 +583,30 @@ export class AgentService {
    * left out of the session total.
    */
   private async summarizeForCompaction(messages: AgentMessage[]): Promise<string> {
-    if (this.injectedSummarize) return this.injectedSummarize(messages);
-    const settings = this.getSettings();
-    const apiKey = apiKeyForProvider(settings, settings.provider);
-    if (!apiKey) return "";
-    const model = buildModel(activeModelConfig(settings));
-    const result = await generateSummary(
-      messages,
-      model,
-      COMPACTION_RESERVE_TOKENS,
-      apiKey,
-      { "HTTP-Referer": HTTP_REFERER, "X-Title": X_TITLE },
-      undefined,
-      undefined,
-      undefined,
-      settings.thinkingLevel,
-    );
-    return result.ok ? result.value : "";
+    // Bound the summary call so a hung request can't stall the user's prompt.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), COMPACTION_TIMEOUT_MS);
+    try {
+      if (this.injectedSummarize) return await this.injectedSummarize(messages, controller.signal);
+      const settings = this.getSettings();
+      const apiKey = apiKeyForProvider(settings, settings.provider);
+      if (!apiKey) return "";
+      const model = buildModel(activeModelConfig(settings));
+      const result = await generateSummary(
+        messages,
+        model,
+        COMPACTION_RESERVE_TOKENS,
+        apiKey,
+        { "HTTP-Referer": HTTP_REFERER, "X-Title": X_TITLE },
+        controller.signal,
+        undefined,
+        undefined,
+        settings.thinkingLevel,
+      );
+      return result.ok ? result.value : "";
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async reloadResources(): Promise<void> {
@@ -655,6 +667,22 @@ export class AgentService {
   private notifyChange(): void {
     for (const listener of this.changeListeners) listener();
   }
+}
+
+/**
+ * Total usage to carry onto a new summary: the assistant turns being dropped plus
+ * any usage an earlier summary in the same slice already carried (iterative
+ * compaction), so nothing is lost when the old summary is folded into the new one.
+ */
+function collectDroppedUsage(messages: AgentMessage[]): Usage {
+  const total = emptyUsage();
+  const assistant = sumAssistantUsage(messages);
+  if (assistant) addUsage(total, assistant);
+  for (const message of messages) {
+    const carried = getCompactedUsage(message);
+    if (carried) addUsage(total, carried);
+  }
+  return total;
 }
 
 /** Map the persisted (percent-based) compaction settings to a {@link CompactionConfig}. */

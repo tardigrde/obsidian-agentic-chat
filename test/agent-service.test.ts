@@ -235,6 +235,21 @@ describe("AgentService", () => {
     expect(messages.some((m) => JSON.stringify(m).includes('"first"'))).toBe(false);
     // 3 turns × 110_100 totalTokens, with the dropped turn folded into the session total.
     expect(service.getSessionUsage().totalTokens).toBe(330_300);
+
+    // The compacted usage is carried on the summary message, so reloading the
+    // session from disk into a fresh service preserves the total and the count.
+    const path = service.getSessionInfo()?.path as string;
+    const reloaded = new AgentService({
+      app: { vault: {}, workspace: {} } as unknown as App,
+      getSettings: () => settings,
+      sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test"),
+      confirmToolCall: async () => true,
+      streamFn: bigUsageStream,
+      summarize: async () => "unused",
+    });
+    await reloaded.loadSession(path);
+    expect(reloaded.getCompactionCount()).toBe(1);
+    expect(reloaded.getSessionUsage().totalTokens).toBe(330_300);
   });
 
   it("reports a friendly error when no API key is configured", async () => {
