@@ -852,15 +852,18 @@ export class ChatView extends ItemView {
       await this.service.newSession();
       this.resetUsageNotifications();
     } finally {
+      // Reset the view to a clean empty state regardless of outcome: if the
+      // swap throws, leaving stale attachments/transcript behind is worse than
+      // an empty pane (the service surfaces its own error separately).
       this.muteNotifications = false;
+      this.attachments = [];
+      this.lastSentPrompt = null;
+      this.lastSentDisplay = null;
+      this.endEditing(false);
+      this.renderChips();
+      this.bubble = null;
+      this.renderTranscript([]);
     }
-    this.attachments = [];
-    this.lastSentPrompt = null;
-    this.lastSentDisplay = null;
-    this.endEditing(false);
-    this.renderChips();
-    this.bubble = null;
-    this.renderTranscript([]);
   }
 
   /**
