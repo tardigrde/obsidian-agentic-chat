@@ -200,7 +200,9 @@ export class AgentService {
     if (!model || !hasPricing(model.cost)) return undefined;
     const settings = this.getSettings();
     const expectedOutput = settings.maxTokens > 0 ? settings.maxTokens : DEFAULT_EXPECTED_OUTPUT_TOKENS;
-    return estimateNextRequestCost(this.getMessages(), model.cost, expectedOutput);
+    // Include the system prompt (base + overlays + skills + subagents) so the
+    // first-turn estimate isn't a large underestimate.
+    return estimateNextRequestCost(this.getMessages(), model.cost, expectedOutput, this.composeSystemPrompt(settings));
   }
 
   async initialize(): Promise<void> {
@@ -525,6 +527,9 @@ export class AgentService {
         await this.persistMessage(event.message);
         if (event.message.role === "assistant") this.enforceSpendCap();
       }
+      // A subagent dispatch accrues cost during tool execution; check here too so
+      // a costly fan-out aborts as soon as it finishes, not only at the next turn.
+      if (event.type === "tool_execution_end") this.enforceSpendCap();
       if (event.type === "agent_end") {
         for (const message of event.messages) await this.persistMessage(message);
         await this.autoNameSession();

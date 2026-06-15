@@ -34,13 +34,22 @@ export function estimateRequestCost(params: {
  * Estimate the next request's cost from the current transcript plus an assumed
  * output. Input tokens reuse pi's context estimate (provider usage when known,
  * a char heuristic otherwise).
+ *
+ * `systemPromptText` is folded in only when there's no prior assistant usage to
+ * anchor the estimate: once a turn has run, the provider's reported input tokens
+ * already include the system prompt, so adding it again would double-count it.
  */
 export function estimateNextRequestCost(
   messages: AgentMessage[],
   cost: ModelCost | undefined,
   expectedOutputTokens: number,
+  systemPromptText?: string,
 ): RequestCostEstimate {
-  const inputTokens = estimateContextTokens(messages).tokens;
+  const context = estimateContextTokens(messages);
+  let inputTokens = context.tokens;
+  if (context.lastUsageIndex === null && systemPromptText) {
+    inputTokens += Math.ceil(systemPromptText.length / 4);
+  }
   return estimateRequestCost({ inputTokens, outputTokens: expectedOutputTokens, cost });
 }
 
