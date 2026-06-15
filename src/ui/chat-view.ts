@@ -696,7 +696,9 @@ export class ChatView extends ItemView {
   }
 
   private prefillComposer(text: string): void {
-    this.inputEl.value = text;
+    // setComposerValue dispatches the "input" event so autocomplete/composer
+    // state stays in sync (a bare `.value =` would not).
+    this.setComposerValue(text);
     this.inputEl.focus();
     this.inputEl.setSelectionRange(text.length, text.length);
   }

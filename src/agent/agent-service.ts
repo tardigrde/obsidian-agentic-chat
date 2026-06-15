@@ -245,6 +245,9 @@ export class AgentService {
     await this.sessionManager.rewriteMessages(messages);
     this.persisted = new WeakSet<object>();
     for (const message of messages) this.persisted.add(message as object);
+    // Child usage isn't tracked per-message, so it can't be recomputed for the
+    // surviving turns; zero it on rewind rather than let it over-count forever.
+    this.subagentUsage = emptyUsage();
     this.replaceAgent(messages);
     if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
     this.errorMessage = undefined;
@@ -363,7 +366,10 @@ export class AgentService {
     if (policy === "deny") {
       return { block: true, reason: "Subagent dispatch is blocked because mutating tools are denied." };
     }
-    const approved = await this.confirmToolCall({ toolName: SUBAGENT_TOOL_NAME, label: "Dispatch subagents", args });
+    // This dispatch can mutate the vault and child writes then run unattended, so
+    // make the one-time approval say so explicitly.
+    const label = "Dispatch subagents (auto-approves their file changes)";
+    const approved = await this.confirmToolCall({ toolName: SUBAGENT_TOOL_NAME, label, args });
     return approved ? undefined : { block: true, reason: "The user declined to dispatch subagents." };
   }
 

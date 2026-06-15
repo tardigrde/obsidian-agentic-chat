@@ -168,6 +168,16 @@ describe("normalizeTasks", () => {
     expect(normalizeTasks({ tasks: [] })).toEqual([]);
     expect(normalizeTasks({ agent: "a" })).toEqual([]);
   });
+
+  it("guards against malformed model output", () => {
+    // tasks emitted as a non-array, or items missing agent/task, must not throw.
+    expect(normalizeTasks({ tasks: "nope" } as unknown as { tasks?: never })).toEqual([]);
+    expect(
+      normalizeTasks({ tasks: [{ agent: "a" }, { agent: "b", task: "t" }] } as unknown as {
+        tasks?: { agent: string; task: string }[];
+      }),
+    ).toEqual([{ agent: "b", task: "t" }]);
+  });
 });
 
 describe("filterChildTools", () => {
@@ -241,6 +251,26 @@ describe("createSubagentTool", () => {
     });
     await expect(tool.execute("id", { agent: "ghost", task: "x" }, undefined)).rejects.toThrow(/unknown agent/i);
     await expect(tool.execute("id", {}, undefined)).rejects.toThrow(/provide either/i);
+  });
+
+  it("rejects a fan-out beyond the hard task cap", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(childStreamFn("x")),
+    });
+    const tasks = Array.from({ length: 21 }, (_, i) => ({ agent: "researcher", task: `t${i}` }));
+    await expect(tool.execute("id", { tasks }, undefined)).rejects.toThrow(/too many tasks/i);
+  });
+
+  it("truncates an oversized child summary before it reaches the parent", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(childStreamFn("x".repeat(20_000))),
+    });
+    const result = await tool.execute("id", { agent: "researcher", task: "t" }, undefined);
+    const summary = result.details.children[0].summary ?? "";
+    expect(summary.length).toBeLessThan(8_200);
+    expect(summary).toContain("[Output truncated");
   });
 
   it("aborts in-flight children when the dispatch signal aborts", async () => {

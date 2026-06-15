@@ -3,8 +3,15 @@ import type { Usage } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { AgentProfile } from "../agent/subagents";
 import { sumAssistantUsage } from "../agent/usage";
+import { truncateToolOutput } from "../vault/truncate";
 
 export const SUBAGENT_TOOL_NAME = "subagent";
+
+/** Hard ceilings so a single dispatch cannot fan out unboundedly. */
+const MAX_TASKS = 20;
+const MAX_CONCURRENCY = 8;
+/** Per-child summary cap (characters) fed into the parent's context. */
+const PER_CHILD_SUMMARY_CHARS = 8_000;
 
 /** Live status of one dispatched child, streamed to the UI and returned as details. */
 export interface SubagentChildStatus {
@@ -46,10 +53,13 @@ const SubagentParameters = Type.Object({
   agent: Type.Optional(Type.String({ description: "Profile name for a single dispatch" })),
   task: Type.Optional(Type.String({ description: "Task for a single dispatch" })),
   tasks: Type.Optional(
-    Type.Array(TaskSpec, { description: "Several subagents to run in parallel, each {agent, task}" }),
+    Type.Array(TaskSpec, {
+      maxItems: MAX_TASKS,
+      description: `Several subagents to run in parallel, each {agent, task} (max ${MAX_TASKS})`,
+    }),
   ),
   concurrency: Type.Optional(
-    Type.Number({ description: "Max subagents to run at once (default 3)" }),
+    Type.Number({ description: `Max subagents to run at once (default 3, capped at ${MAX_CONCURRENCY})` }),
   ),
 });
 
@@ -79,6 +89,9 @@ export function createSubagentTool(
       if (tasks.length === 0) {
         throw new Error('subagent: provide either {agent, task} or a non-empty {tasks: [...]}.');
       }
+      if (tasks.length > MAX_TASKS) {
+        throw new Error(`subagent: too many tasks (${tasks.length}); dispatch at most ${MAX_TASKS} at once.`);
+      }
       const profiles = deps.getProfiles();
       for (const task of tasks) {
         if (!profiles.some((profile) => profile.name === task.agent)) {
@@ -105,6 +118,9 @@ export function createSubagentTool(
           const child = deps.createChildAgent(profile);
           const onAbort = (): void => child.abort();
           signal?.addEventListener("abort", onAbort);
+          // Close the race where the signal fires between the pool's top-of-loop
+          // check and attaching the listener: the listener would never run.
+          if (signal?.aborted) child.abort();
           try {
             await child.prompt(tasks[index].task);
             await child.waitForIdle();
@@ -116,10 +132,13 @@ export function createSubagentTool(
           const error = child.state.errorMessage;
           if (error) {
             status.status = "error";
-            status.summary = error;
+            status.summary = truncateToolOutput(error, PER_CHILD_SUMMARY_CHARS);
           } else {
             status.status = "done";
-            status.summary = lastAssistantText(child.state.messages) || "(no output)";
+            status.summary = truncateToolOutput(
+              lastAssistantText(child.state.messages) || "(no output)",
+              PER_CHILD_SUMMARY_CHARS,
+            );
           }
         } catch (error) {
           status.status = "error";
@@ -129,7 +148,7 @@ export function createSubagentTool(
       });
 
       return {
-        content: [{ type: "text", text: mergeSummaries(statuses) }],
+        content: [{ type: "text", text: truncateToolOutput(mergeSummaries(statuses)) }],
         details: snapshot(statuses),
       };
     },
@@ -142,8 +161,12 @@ export function normalizeTasks(params: {
   task?: string;
   tasks?: SubagentTask[];
 }): SubagentTask[] {
-  if (params.tasks && params.tasks.length > 0) {
-    return params.tasks.map((task) => ({ agent: task.agent, task: task.task }));
+  // The model can emit a malformed call (tasks as a non-array, or items missing
+  // agent/task), so guard rather than trusting the shape.
+  if (Array.isArray(params.tasks) && params.tasks.length > 0) {
+    return params.tasks
+      .filter((task) => task && typeof task.agent === "string" && typeof task.task === "string")
+      .map((task) => ({ agent: task.agent, task: task.task }));
   }
   if (params.agent && params.task) return [{ agent: params.agent, task: params.task }];
   return [];
@@ -151,7 +174,7 @@ export function normalizeTasks(params: {
 
 function clampConcurrency(requested: number, count: number): number {
   if (!Number.isFinite(requested) || requested < 1) return 1;
-  return Math.min(Math.floor(requested), count);
+  return Math.min(Math.floor(requested), count, MAX_CONCURRENCY);
 }
 
 /**
@@ -210,8 +233,8 @@ function lastAssistantText(messages: AgentMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message.role !== "assistant") continue;
-    return message.content
-      .filter((block): block is { type: "text"; text: string } => block.type === "text")
+    return (message.content ?? [])
+      .filter((block): block is { type: "text"; text: string } => block?.type === "text")
       .map((block) => block.text)
       .join("")
       .trim();
