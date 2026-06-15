@@ -24,6 +24,11 @@ export class AssistantBubble {
   private reasoningBody: HTMLElement | null = null;
   private markdown = "";
   private readonly steps = new Map<string, { card: HTMLElement; icon: HTMLElement }>();
+  // Streaming deltas are buffered and flushed once per animation frame, so a fast
+  // token stream causes one DOM mutation/reflow per frame instead of one per token.
+  private pendingText = "";
+  private pendingReasoning = "";
+  private flushHandle: number | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -37,17 +42,46 @@ export class AssistantBubble {
   }
 
   appendText(delta: string): void {
-    this.textEl.appendText(delta);
+    // Ignore late deltas after the bubble has been finalized to rendered
+    // markdown, so a stray event can't append raw text over the final output.
+    if (this.markdown) return;
+    this.pendingText += delta;
+    this.scheduleFlush();
   }
 
   appendReasoning(delta: string): void {
+    if (this.markdown) return;
+    // Create the reasoning container eagerly so the structure is in place; the
+    // text itself is buffered and flushed with the rest on the next frame.
     if (!this.reasoningBody) {
       const details = this.el.createEl("details", { cls: "agentic-chat-reasoning" });
       details.createEl("summary", { text: "Reasoning" });
       this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
       this.el.insertBefore(details, this.stepsEl);
     }
-    this.reasoningBody.appendText(delta);
+    this.pendingReasoning += delta;
+    this.scheduleFlush();
+  }
+
+  /** Schedule a single buffered flush on the next animation frame. */
+  private scheduleFlush(): void {
+    if (this.flushHandle !== null) return;
+    this.flushHandle = requestAnimationFrame(() => {
+      this.flushHandle = null;
+      this.flushBuffers();
+    });
+  }
+
+  /** Append all buffered stream deltas in one DOM mutation per surface. */
+  private flushBuffers(): void {
+    if (this.pendingText) {
+      this.textEl.appendText(this.pendingText);
+      this.pendingText = "";
+    }
+    if (this.pendingReasoning && this.reasoningBody) {
+      this.reasoningBody.appendText(this.pendingReasoning);
+      this.pendingReasoning = "";
+    }
   }
 
   startStep(id: string, name: string, rawArgs: string): void {
@@ -101,6 +135,13 @@ export class AssistantBubble {
   }
 
   async finalizeText(markdown: string, app: App, component: Component): Promise<void> {
+    // Commit any buffered deltas (so streamed reasoning isn't lost) and cancel the
+    // pending frame before replacing the streamed text with rendered markdown.
+    if (this.flushHandle !== null) {
+      cancelAnimationFrame(this.flushHandle);
+      this.flushHandle = null;
+    }
+    this.flushBuffers();
     this.markdown = markdown;
     this.textEl.empty();
     this.textEl.removeClass("is-streaming");
