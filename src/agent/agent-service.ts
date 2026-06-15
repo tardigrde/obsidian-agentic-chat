@@ -4,6 +4,7 @@ import {
   type AgentEvent,
   type AgentMessage,
   type AgentTool,
+  generateSummary,
   type Skill,
   type StreamFn,
 } from "@earendil-works/pi-agent-core";
@@ -17,7 +18,15 @@ import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "..
 import { deriveAutoName, ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
 import { buildSkillInvocation, loadVaultSkills } from "../skills/skills";
 import { type AgentProfile, formatSubagentsForSystemPrompt, loadAgentProfiles } from "./subagents";
-import { addUsage, emptyUsage } from "./usage";
+import { addUsage, emptyUsage, sumAssistantUsage } from "./usage";
+import {
+  type CompactionConfig,
+  DEFAULT_COMPACTION_CONFIG,
+  buildSummaryMessage,
+  getCompactedUsage,
+  isSummaryMessage,
+  planCompaction,
+} from "./compaction";
 import { buildSystemPrompt } from "./system-prompt";
 import { MODES, resolveModePolicy } from "./modes";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -25,12 +34,25 @@ import { OUTPUT_STYLES } from "./output-styles";
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
 
+/** Tokens reserved for the summarization prompt + its output during compaction. */
+const COMPACTION_RESERVE_TOKENS = 16_384;
+
+/** Abort the compaction summary call after this long so it can't stall a prompt. */
+const COMPACTION_TIMEOUT_MS = 20_000;
+
 /** A pending tool call the user must approve. */
 export interface ToolApprovalRequest {
   toolName: string;
   label: string;
   args: unknown;
 }
+
+/**
+ * Summarize a slice of transcript into compaction summary text. Injected for
+ * tests; production calls the model through pi's `generateSummary`. Returns "" to
+ * signal "no summary" so the caller skips compaction rather than dropping history.
+ */
+export type SummarizeFn = (messages: AgentMessage[], signal?: AbortSignal) => Promise<string>;
 
 export interface AgentServiceOptions {
   app: App;
@@ -40,6 +62,8 @@ export interface AgentServiceOptions {
   confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
   /** Injected for tests; production wraps pi-ai streamSimple. */
   streamFn?: StreamFn;
+  /** Injected for tests; production summarizes via pi's `generateSummary`. */
+  summarize?: SummarizeFn;
 }
 
 type EventListener = (event: AgentEvent) => void;
@@ -55,6 +79,7 @@ export class AgentService {
   private readonly sessionManager: ObsidianSessionManager;
   private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
   private readonly injectedStreamFn?: StreamFn;
+  private readonly injectedSummarize?: SummarizeFn;
 
   private agent: Agent | null = null;
   private unsubscribeAgent: (() => void) | null = null;
@@ -81,6 +106,7 @@ export class AgentService {
     this.sessionManager = options.sessionManager;
     this.confirmToolCall = options.confirmToolCall;
     this.injectedStreamFn = options.streamFn;
+    this.injectedSummarize = options.summarize;
   }
 
   onEvent(listener: EventListener): () => void {
@@ -143,7 +169,19 @@ export class AgentService {
     }
     // Children run outside the parent transcript, so fold their usage in here.
     addUsage(total, this.subagentUsage);
+    // Turns dropped by compaction are no longer in the transcript, but each
+    // summary message carries the usage it replaced — fold those in so the
+    // session total survives reload and rewind without shrinking.
+    for (const message of this.getMessages()) {
+      const compacted = getCompactedUsage(message);
+      if (compacted) addUsage(total, compacted);
+    }
     return total;
+  }
+
+  /** Number of times this session has been auto-compacted (for one-shot UI notices). */
+  getCompactionCount(): number {
+    return this.getMessages().filter(isSummaryMessage).length;
   }
 
   async initialize(): Promise<void> {
@@ -299,6 +337,9 @@ export class AgentService {
       return;
     }
     await this.refreshConfiguration();
+    // Summarize old turns before the next request if the window is filling, so a
+    // long session doesn't hit the model limit or spike cost. Never throws.
+    await this.maybeCompact();
     try {
       this.errorMessage = undefined;
       this.notifyChange();
@@ -502,6 +543,72 @@ export class AgentService {
     this.sessionInfo = this.sessionManager.getActiveSessionInfo();
   }
 
+  /**
+   * Auto-compaction: when the transcript fills past the configured threshold,
+   * summarize the older turns into a single message and keep the recent ones, in
+   * memory and on disk. Best-effort — any failure (no key, summary error, write
+   * error) leaves the transcript untouched so a prompt is never lost.
+   */
+  private async maybeCompact(): Promise<void> {
+    try {
+      const agent = this.agent;
+      if (!agent) return;
+      const config = compactionConfig(this.getSettings());
+      const contextWindow = agent.state.model?.contextWindow ?? 0;
+      const plan = planCompaction(agent.state.messages, contextWindow, config);
+      if (!plan) return;
+      const summary = await this.summarizeForCompaction(plan.summarize);
+      if (!summary.trim()) return;
+      // Carry the dropped turns' usage onto the summary message so the session
+      // total is preserved on reload/rewind. Include usage already carried by an
+      // earlier summary in this slice, so iterative compaction never loses it.
+      const dropped = collectDroppedUsage(plan.summarize);
+      const newMessages = [buildSummaryMessage(summary, Date.now(), dropped), ...plan.keep];
+      // Persist the rewrite first; only mutate in-memory state once disk succeeds.
+      await this.sessionManager.rewriteMessages(newMessages);
+      this.persisted = new WeakSet<object>();
+      for (const message of newMessages) this.persisted.add(message as object);
+      this.replaceAgent(newMessages);
+      if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
+      this.notifyChange();
+    } catch {
+      // Compaction is an optimization; never let it break the pending prompt.
+    }
+  }
+
+  /**
+   * Produce summary text for compaction. Tests inject a summarizer; production
+   * summarizes through pi's `generateSummary` with the active model. The summary
+   * call's own (small) token cost is not captured by `generateSummary`, so it is
+   * left out of the session total.
+   */
+  private async summarizeForCompaction(messages: AgentMessage[]): Promise<string> {
+    // Bound the summary call so a hung request can't stall the user's prompt.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), COMPACTION_TIMEOUT_MS);
+    try {
+      if (this.injectedSummarize) return await this.injectedSummarize(messages, controller.signal);
+      const settings = this.getSettings();
+      const apiKey = apiKeyForProvider(settings, settings.provider);
+      if (!apiKey) return "";
+      const model = buildModel(activeModelConfig(settings));
+      const result = await generateSummary(
+        messages,
+        model,
+        COMPACTION_RESERVE_TOKENS,
+        apiKey,
+        { "HTTP-Referer": HTTP_REFERER, "X-Title": X_TITLE },
+        controller.signal,
+        undefined,
+        undefined,
+        settings.thinkingLevel,
+      );
+      return result.ok ? result.value : "";
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private async reloadResources(): Promise<void> {
     const settings = this.getSettings();
     this.ignoreMatcher = createIgnoreMatcher(parseIgnorePatterns(settings.ignoredGlobs));
@@ -560,6 +667,33 @@ export class AgentService {
   private notifyChange(): void {
     for (const listener of this.changeListeners) listener();
   }
+}
+
+/**
+ * Total usage to carry onto a new summary: the assistant turns being dropped plus
+ * any usage an earlier summary in the same slice already carried (iterative
+ * compaction), so nothing is lost when the old summary is folded into the new one.
+ */
+function collectDroppedUsage(messages: AgentMessage[]): Usage {
+  const total = emptyUsage();
+  const assistant = sumAssistantUsage(messages);
+  if (assistant) addUsage(total, assistant);
+  for (const message of messages) {
+    const carried = getCompactedUsage(message);
+    if (carried) addUsage(total, carried);
+  }
+  return total;
+}
+
+/** Map the persisted (percent-based) compaction settings to a {@link CompactionConfig}. */
+function compactionConfig(settings: AgenticChatSettings): CompactionConfig {
+  const percent = settings.compaction?.thresholdPercent ?? DEFAULT_COMPACTION_CONFIG.thresholdFraction * 100;
+  const thresholdFraction = Math.min(0.95, Math.max(0.5, percent / 100));
+  return {
+    enabled: settings.compaction?.enabled ?? DEFAULT_COMPACTION_CONFIG.enabled,
+    thresholdFraction,
+    keepFraction: DEFAULT_COMPACTION_CONFIG.keepFraction,
+  };
 }
 
 /** System-prompt overlays contributed by the active mode and output style. */

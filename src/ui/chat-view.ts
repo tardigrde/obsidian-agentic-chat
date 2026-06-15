@@ -39,6 +39,7 @@ import {
 import { AutocompleteMenu } from "./autocomplete-menu";
 import { parseDroppedVaultPath } from "./drag-drop";
 import { resolveCommand, visibleCommands } from "./commands";
+import { isSummaryMessage } from "../agent/compaction";
 import { type AgentMode, MODE_ORDER, MODES } from "../agent/modes";
 import { type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
 
@@ -66,6 +67,8 @@ export class ChatView extends ItemView {
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
   private notifiedContext = new Set<number>();
   private notifiedCost = false;
+  // Compaction count last surfaced to the user, so each compaction toasts once.
+  private lastCompactionCount = 0;
   // The service fires onChange synchronously during session transitions; this silences
   // automatic toasts until the new session's notification baseline has been set.
   private muteNotifications = false;
@@ -444,6 +447,13 @@ export class ChatView extends ItemView {
   /** Fire one-shot background toasts as the context window fills or cost crosses the cap. */
   private checkUsageNotifications(): void {
     if (this.muteNotifications) return;
+    const compactions = this.service.getCompactionCount();
+    if (compactions > this.lastCompactionCount) {
+      this.lastCompactionCount = compactions;
+      // The window just freed up; re-arm the fill warnings for the next climb.
+      this.notifiedContext = new Set<number>();
+      this.notifier.notify("contextWindow", "Compacted earlier turns to free up context.");
+    }
     const fraction = this.service.getContextFraction();
     if (fraction !== undefined) {
       const crossed = highestUnnotifiedThreshold(fraction, CONTEXT_THRESHOLDS, this.notifiedContext);
@@ -807,6 +817,17 @@ export class ChatView extends ItemView {
     this.scrollToBottom();
   }
 
+  /** Render an auto-compaction summary as a collapsed, non-editable transcript block. */
+  private renderSummaryMessage(text: string): void {
+    const inner = text.match(/<conversation-summary>\n?([\s\S]*?)\n?<\/conversation-summary>/);
+    const summary = (inner ? inner[1] : text).trim();
+    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
+    const details = el.createEl("details", { cls: "agentic-chat-info-details" });
+    details.createEl("summary", { text: "Summarized earlier conversation" });
+    details.createDiv({ cls: "agentic-chat-info-body", text: summary });
+    this.scrollToBottom();
+  }
+
   /** Render a collapsible block whose rows are clickable buttons (e.g. the skill picker). */
   private renderActionList(title: string, subtitle: string, items: ActionRow[]): void {
     const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
@@ -874,6 +895,7 @@ export class ChatView extends ItemView {
   private resetUsageNotifications(muteExisting = false): void {
     this.notifiedContext = new Set<number>();
     this.notifiedCost = false;
+    this.lastCompactionCount = this.service.getCompactionCount();
     if (!muteExisting) return;
     const fraction = this.service.getContextFraction();
     if (fraction !== undefined) {
@@ -1008,7 +1030,12 @@ export class ChatView extends ItemView {
     const lastAssistant = lastIndex(messages, (message) => message.role === "assistant");
     let rendered = 0;
     messages.forEach((message, index) => {
-      if (message.role === "user") {
+      if (message.role === "user" && isSummaryMessage(message)) {
+        // A compaction summary isn't a user turn: show it as a distinct,
+        // non-editable block instead of an editable user bubble.
+        this.renderSummaryMessage(messageText(message));
+        rendered += 1;
+      } else if (message.role === "user") {
         // Hide the attachment <context> preamble so history reads like the
         // live transcript (which renders the user's text, not the prompt).
         this.renderUserMessage(stripContextPreamble(messageText(message)), [], index);
