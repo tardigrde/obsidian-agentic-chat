@@ -33,6 +33,7 @@ import {
   hasPricing,
   type RequestCostEstimate,
 } from "./cost";
+import { type UndoEntry, UNDOABLE_TOOLS, applyUndo, captureUndo } from "./undo";
 import { buildSystemPrompt } from "./system-prompt";
 import { MODES, resolveModePolicy } from "./modes";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -102,6 +103,10 @@ export class AgentService {
   private errorMessage: string | undefined;
   /** Token usage from subagent children, which live outside the parent transcript. */
   private subagentUsage: Usage = emptyUsage();
+  /** Reversible records of mutating tool calls, newest last (for undo-last-change). */
+  private undoStack: UndoEntry[] = [];
+  /** Undo records captured pre-execution, keyed by tool call id, pending success. */
+  private pendingUndo = new Map<string, UndoEntry>();
 
   private readonly eventListeners = new Set<EventListener>();
   private readonly changeListeners = new Set<ChangeListener>();
@@ -205,6 +210,29 @@ export class AgentService {
     return estimateNextRequestCost(this.getMessages(), model.cost, expectedOutput, this.composeSystemPrompt(settings));
   }
 
+  /** Whether there's a captured vault change that {@link undoLastChange} can revert. */
+  canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+
+  /**
+   * Revert the most recent mutating tool call (write/edit/rename/delete) this
+   * session. Undo state is in-memory, so it doesn't survive a reload or rewind.
+   */
+  async undoLastChange(): Promise<string> {
+    const entry = this.undoStack.pop();
+    if (!entry) return "Nothing to undo.";
+    try {
+      const summary = await applyUndo(this.app, entry);
+      this.notifyChange();
+      return summary;
+    } catch (error) {
+      // Restore the entry so the user can retry or inspect; report the failure.
+      this.undoStack.push(entry);
+      return `Could not undo: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
   async initialize(): Promise<void> {
     if (this.agent) return;
     if (this.initialization) return this.initialization;
@@ -261,6 +289,8 @@ export class AgentService {
       this.sessionInfo = await this.sessionManager.createSession(this.sessionDefaults());
       this.persisted = new WeakSet<object>();
       this.subagentUsage = emptyUsage();
+    this.undoStack = [];
+    this.pendingUndo.clear();
       await this.reloadResources();
       this.replaceAgent([]);
       this.errorMessage = undefined;
@@ -278,6 +308,8 @@ export class AgentService {
       this.sessionInfo = await this.sessionManager.loadSession(path);
       this.persisted = new WeakSet<object>();
       this.subagentUsage = emptyUsage();
+    this.undoStack = [];
+    this.pendingUndo.clear();
       await this.reloadResources();
       this.replaceAgent(this.sessionManager.buildSessionContext().messages);
       this.errorMessage = undefined;
@@ -329,6 +361,8 @@ export class AgentService {
     // Child usage isn't tracked per-message, so it can't be recomputed for the
     // surviving turns; zero it on rewind rather than let it over-count forever.
     this.subagentUsage = emptyUsage();
+    this.undoStack = [];
+    this.pendingUndo.clear();
     this.replaceAgent(messages);
     if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
     this.errorMessage = undefined;
@@ -417,7 +451,28 @@ export class AgentService {
         messages,
       },
       getApiKey: (provider) => apiKeyForProvider(this.getSettings(), provider),
-      beforeToolCall: async (context) => this.gateToolCall(context.toolCall.name, context.args),
+      beforeToolCall: async (context) => {
+        const decision = await this.gateToolCall(context.toolCall.name, context.args);
+        // Capture the inverse only for allowed mutating calls; a blocked call
+        // never runs, so it has nothing to undo.
+        if (!decision && UNDOABLE_TOOLS.has(context.toolCall.name)) {
+          const entry = await captureUndo(this.app, context.toolCall.name, context.args);
+          if (entry) this.pendingUndo.set(context.toolCall.id, entry);
+        }
+        return decision;
+      },
+      afterToolCall: async (context) => {
+        const entry = this.pendingUndo.get(context.toolCall.id);
+        if (entry) {
+          this.pendingUndo.delete(context.toolCall.id);
+          // Only record successful mutations; a failed tool left nothing to undo.
+          if (!context.isError) {
+            this.undoStack.push(entry);
+            this.notifyChange();
+          }
+        }
+        return undefined;
+      },
       sessionId: this.sessionInfo?.id,
       toolExecution: "sequential",
     });

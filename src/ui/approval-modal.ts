@@ -1,5 +1,11 @@
-import { App, Modal, Setting } from "obsidian";
+import { App, Modal, Setting, TFile } from "obsidian";
 import type { ToolApprovalRequest } from "../agent/agent-service";
+import { buildEditPreview, type EditPreview } from "../agent/edit-preview";
+import { diffLines, diffStat, diffTooLarge } from "../vault/diff";
+import { normalizeVaultPath } from "../vault/path";
+
+/** Cap diff lines rendered in the modal so a huge change can't bloat the dialog. */
+const MAX_DIFF_DISPLAY_LINES = 400;
 
 export interface ApprovalChoice {
   approved: boolean;
@@ -32,10 +38,13 @@ export class ApprovalModal extends Modal {
     contentEl.addClass("agentic-chat-approval");
 
     contentEl.createEl("p", {
-      text: `The agent wants to run the ${this.request.toolName} tool. Review the arguments before allowing it.`,
+      text: `The agent wants to run the ${this.request.toolName} tool. Review the change before allowing it.`,
     });
-    const pre = contentEl.createEl("pre", { cls: "agentic-chat-approval-args" });
-    pre.setText(previewArgs(this.request.args));
+    // Render the change preview asynchronously (it reads the file from the vault);
+    // show the raw arguments immediately as a fallback until it resolves.
+    const previewEl = contentEl.createDiv({ cls: "agentic-chat-approval-preview" });
+    previewEl.createEl("pre", { cls: "agentic-chat-approval-args", text: previewArgs(this.request.args) });
+    void this.renderPreview(previewEl);
 
     let remember = false;
     new Setting(contentEl)
@@ -67,6 +76,73 @@ export class ApprovalModal extends Modal {
   onClose(): void {
     this.contentEl.empty();
     if (!this.decided) this.resolve?.({ approved: false, remember: false });
+  }
+
+  /** Read the target file and render a structured preview of the pending change. */
+  private async renderPreview(container: HTMLElement): Promise<void> {
+    const rawPath = (this.request.args as { path?: unknown })?.path;
+    const path = typeof rawPath === "string" ? rawPath : "";
+    let current: string | null = null;
+    if (path) {
+      const file = this.app.vault.getAbstractFileByPath(normalizeVaultPath(path));
+      if (file instanceof TFile) {
+        try {
+          current = await this.app.vault.cachedRead(file);
+        } catch {
+          current = null;
+        }
+      }
+    }
+    // The modal may have been dismissed while we were reading the file.
+    if (this.decided) return;
+    const preview = buildEditPreview(this.request.toolName, this.request.args, current);
+    if (preview.kind === "none") return; // keep the raw-args fallback already shown
+    container.empty();
+    this.renderPreviewBody(container, preview);
+  }
+
+  private renderPreviewBody(container: HTMLElement, preview: EditPreview): void {
+    if (preview.kind === "rename") {
+      container.createEl("p", { cls: "agentic-chat-approval-summary", text: `Rename ${preview.from} → ${preview.to}` });
+      return;
+    }
+    if (preview.kind === "delete") {
+      container.createEl("p", { cls: "agentic-chat-approval-summary", text: `Move ${preview.path} to trash` });
+      this.renderDiff(container, preview.content, "");
+      return;
+    }
+    if (preview.kind !== "diff") return;
+    const verb = preview.isNew ? "Create" : "Edit";
+    container.createEl("p", { cls: "agentic-chat-approval-summary", text: `${verb} ${preview.path}` });
+    this.renderDiff(container, preview.before, preview.after);
+  }
+
+  /** Render a line-level diff, or a compact summary when the change is too large. */
+  private renderDiff(container: HTMLElement, before: string, after: string): void {
+    if (diffTooLarge(before, after)) {
+      const beforeLines = before ? before.split("\n").length : 0;
+      const afterLines = after ? after.split("\n").length : 0;
+      container.createEl("p", {
+        cls: "agentic-chat-approval-summary",
+        text: `Large change: ${beforeLines} → ${afterLines} lines (diff omitted).`,
+      });
+      return;
+    }
+    const lines = diffLines(before, after);
+    const stat = diffStat(lines);
+    container.createEl("p", {
+      cls: "agentic-chat-approval-summary",
+      text: `+${stat.added} −${stat.removed}`,
+    });
+    const pre = container.createEl("pre", { cls: "agentic-chat-diff" });
+    const shown = lines.slice(0, MAX_DIFF_DISPLAY_LINES);
+    for (const line of shown) {
+      const prefix = line.op === "add" ? "+" : line.op === "remove" ? "-" : " ";
+      pre.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
+    }
+    if (lines.length > shown.length) {
+      pre.createDiv({ cls: "agentic-chat-diff-line is-context", text: `… ${lines.length - shown.length} more lines` });
+    }
   }
 
   private decide(choice: ApprovalChoice): void {
