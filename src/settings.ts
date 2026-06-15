@@ -39,6 +39,10 @@ export interface AgenticChatSettings {
   skillsFolder: string;
   /** Vault folder scanned for reusable prompt templates. Empty disables templates. */
   templatesFolder: string;
+  /** Vault folder scanned for AGENT.md subagent profiles. Empty disables vault profiles. */
+  agentsFolder: string;
+  /** Include the built-in subagent roster (researcher / reviewer / editor). */
+  enableBuiltinAgents: boolean;
   /**
    * Newline-separated gitignore-style globs the agent may never read or see.
    * Enforced at the tool layer; matched files are invisible, not just denied.
@@ -77,6 +81,8 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   approval: DEFAULT_APPROVAL_SETTINGS,
   skillsFolder: "",
   templatesFolder: "",
+  agentsFolder: "",
+  enableBuiltinAgents: true,
   ignoredGlobs: "",
   notifications: { enabled: true, costAlertUsd: 0 },
 };
@@ -485,6 +491,28 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       settings.templatesFolder,
       async (value) => {
         settings.templatesFolder = value;
+        await this.save();
+      },
+    );
+
+    new Setting(containerEl).setName("Subagents").setHeading();
+    new Setting(containerEl)
+      .setName("Built-in subagents")
+      .setDesc("Offer the built-in researcher, reviewer, and editor subagents for delegation.")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.enableBuiltinAgents).onChange(async (value) => {
+          settings.enableBuiltinAgents = value;
+          await this.save();
+        }),
+      );
+    this.folderSetting(
+      containerEl,
+      "Subagents folder",
+      "Vault folder scanned for AGENT.md profiles (frontmatter: name, description, model, tools). " +
+        "A vault profile overrides a built-in of the same name. Leave empty for built-ins only.",
+      settings.agentsFolder,
+      async (value) => {
+        settings.agentsFolder = value;
         await this.save();
       },
     );

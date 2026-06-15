@@ -3,17 +3,21 @@ import {
   Agent,
   type AgentEvent,
   type AgentMessage,
+  type AgentTool,
   type Skill,
   type StreamFn,
 } from "@earendil-works/pi-agent-core";
 import { streamSimple, type Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider, activeModelConfig } from "../settings";
-import { buildModel } from "../llm/models";
-import { createVaultTools } from "../tools/vault-tools";
+import { buildModel, type ModelConfig } from "../llm/models";
+import { createVaultTools, MUTATING_TOOLS } from "../tools/vault-tools";
+import { createSubagentTool, SUBAGENT_TOOL_NAME, normalizeTasks } from "../tools/subagent-tool";
 import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "../vault/ignore";
 import { deriveAutoName, ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
 import { buildSkillInvocation, loadVaultSkills } from "../skills/skills";
+import { type AgentProfile, formatSubagentsForSystemPrompt, loadAgentProfiles } from "./subagents";
+import { addUsage, emptyUsage } from "./usage";
 import { buildSystemPrompt } from "./system-prompt";
 import { MODES, resolveModePolicy } from "./modes";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -59,9 +63,12 @@ export class AgentService {
   private disposed = false;
 
   private skills: Skill[] = [];
+  private profiles: AgentProfile[] = [];
   private ignoreMatcher: IgnoreMatcher = () => false;
   private sessionInfo: SessionInfo | undefined;
   private errorMessage: string | undefined;
+  /** Token usage from subagent children, which live outside the parent transcript. */
+  private subagentUsage: Usage = emptyUsage();
 
   private readonly eventListeners = new Set<EventListener>();
   private readonly changeListeners = new Set<ChangeListener>();
@@ -104,6 +111,10 @@ export class AgentService {
     return this.skills;
   }
 
+  getProfiles(): AgentProfile[] {
+    return this.profiles;
+  }
+
   /**
    * Fraction (0–1) of the model's context window filled by the most recent turn.
    * Uses the last assistant turn's input tokens (the prompt pi sent that turn) as
@@ -128,6 +139,8 @@ export class AgentService {
     for (const message of this.getMessages()) {
       if (message.role === "assistant" && message.usage) addUsage(total, message.usage);
     }
+    // Children run outside the parent transcript, so fold their usage in here.
+    addUsage(total, this.subagentUsage);
     return total;
   }
 
@@ -158,6 +171,22 @@ export class AgentService {
     await this.runPrompt(() => this.requireAgent().prompt(text));
   }
 
+  /** User-driven dispatch: ask the model to delegate a task to a named subagent. */
+  async invokeAgent(name: string, task: string): Promise<void> {
+    const profile = this.profiles.find((item) => item.name === name);
+    if (!profile) {
+      this.setError(`No subagent named "${name}".`);
+      return;
+    }
+    const trimmed = task.trim();
+    if (!trimmed) {
+      this.setError(`Give the "${name}" subagent a task, e.g. /agent ${name} <task>.`);
+      return;
+    }
+    const directive = `Use the subagent tool to delegate this task to the "${name}" subagent: ${trimmed}`;
+    await this.runPrompt(() => this.requireAgent().prompt(directive));
+  }
+
   abort(): void {
     const agent = this.agent;
     if (!agent) return;
@@ -169,6 +198,7 @@ export class AgentService {
     this.detachAgent();
     this.sessionInfo = await this.sessionManager.createSession(this.sessionDefaults());
     this.persisted = new WeakSet<object>();
+    this.subagentUsage = emptyUsage();
     await this.reloadResources();
     this.replaceAgent([]);
     this.errorMessage = undefined;
@@ -183,6 +213,7 @@ export class AgentService {
     this.detachAgent();
     this.sessionInfo = await this.sessionManager.loadSession(path);
     this.persisted = new WeakSet<object>();
+    this.subagentUsage = emptyUsage();
     await this.reloadResources();
     this.replaceAgent(this.sessionManager.buildSessionContext().messages);
     this.errorMessage = undefined;
@@ -284,10 +315,10 @@ export class AgentService {
     const agent = new Agent({
       streamFn: this.buildStreamFn(),
       initialState: {
-        systemPrompt: buildSystemPrompt(settings.systemPrompt, this.skills, promptOverlays(settings)),
+        systemPrompt: this.composeSystemPrompt(settings),
         model: buildModel(activeModelConfig(settings)),
         thinkingLevel: settings.thinkingLevel,
-        tools: createVaultTools(this.app, this.ignoreMatcher),
+        tools: this.buildParentTools(),
         messages,
       },
       getApiKey: (provider) => apiKeyForProvider(this.getSettings(), provider),
@@ -304,6 +335,7 @@ export class AgentService {
     args: unknown,
   ): Promise<{ block: true; reason: string } | undefined> {
     const settings = this.getSettings();
+    if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, args);
     const { policy, reason } = resolveModePolicy(settings.mode, settings.approval, toolName);
     if (policy === "allow") return undefined;
     if (policy === "deny") {
@@ -312,6 +344,83 @@ export class AgentService {
     const tool = this.agent?.state.tools.find((candidate) => candidate.name === toolName);
     const approved = await this.confirmToolCall({ toolName, label: tool?.label ?? toolName, args });
     return approved ? undefined : { block: true, reason: "The user declined this action." };
+  }
+
+  /**
+   * Gate a subagent dispatch. In a read-only mode (ask/plan) children are forced
+   * read-only, so a dispatch is always safe. Otherwise it is gated like a mutating
+   * action — but only when some dispatched profile can actually write, so a pure
+   * research fan-out never prompts.
+   */
+  private async gateSubagentDispatch(
+    settings: AgenticChatSettings,
+    args: unknown,
+  ): Promise<{ block: true; reason: string } | undefined> {
+    if (settings.mode !== "agent") return undefined;
+    if (!this.dispatchCanMutate(args)) return undefined;
+    const policy = settings.approval.mutating;
+    if (policy === "allow") return undefined;
+    if (policy === "deny") {
+      return { block: true, reason: "Subagent dispatch is blocked because mutating tools are denied." };
+    }
+    const approved = await this.confirmToolCall({ toolName: SUBAGENT_TOOL_NAME, label: "Dispatch subagents", args });
+    return approved ? undefined : { block: true, reason: "The user declined to dispatch subagents." };
+  }
+
+  /** True when any dispatched profile's allowlist includes a mutating tool. */
+  private dispatchCanMutate(args: unknown): boolean {
+    const tasks = normalizeTasks((args ?? {}) as Parameters<typeof normalizeTasks>[0]);
+    return tasks.some((task) => {
+      const profile = this.profiles.find((candidate) => candidate.name === task.agent);
+      return !!profile && profile.toolAllowlist.some((name) => MUTATING_TOOLS.has(name));
+    });
+  }
+
+  private composeSystemPrompt(settings: AgenticChatSettings): string {
+    const overlays = [...promptOverlays(settings), formatSubagentsForSystemPrompt(this.profiles)];
+    return buildSystemPrompt(settings.systemPrompt, this.skills, overlays);
+  }
+
+  /** Parent tool set: the vault tools, plus the subagent tool when profiles exist. */
+  private buildParentTools(): AgentTool[] {
+    const tools = createVaultTools(this.app, this.ignoreMatcher);
+    if (this.profiles.length > 0) tools.push(this.createSubagentToolInstance());
+    return tools;
+  }
+
+  private createSubagentToolInstance(): AgentTool {
+    return createSubagentTool({
+      getProfiles: () => this.profiles,
+      createChildAgent: (profile) => this.createChildAgent(profile),
+      recordUsage: (usage) => addUsage(this.subagentUsage, usage),
+      defaultConcurrency: 3,
+    });
+  }
+
+  /**
+   * Build an isolated child agent for a profile: a filtered tool set (allowlist,
+   * read-only when the parent mode forbids writes), the profile's prompt, and an
+   * optional model override. Children never receive the subagent tool, so the
+   * delegation depth is capped at one by construction.
+   */
+  private createChildAgent(profile: AgentProfile): Agent {
+    const settings = this.getSettings();
+    const readOnly = settings.mode !== "agent";
+    const tools = filterChildTools(createVaultTools(this.app, this.ignoreMatcher), profile.toolAllowlist, readOnly);
+    return new Agent({
+      streamFn: this.buildStreamFn(),
+      initialState: {
+        systemPrompt: profile.systemPrompt,
+        model: buildModel(childModelConfig(settings, profile.model)),
+        thinkingLevel: settings.thinkingLevel,
+        tools,
+        messages: [],
+      },
+      getApiKey: (provider) => apiKeyForProvider(this.getSettings(), provider),
+      // Tools are pre-filtered to the allowlist, so the child needs no per-call
+      // gate: the user already approved the dispatch (see gateSubagentDispatch).
+      toolExecution: "sequential",
+    });
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
@@ -359,8 +468,8 @@ export class AgentService {
     await this.reloadResources();
     agent.state.model = buildModel(activeModelConfig(settings));
     agent.state.thinkingLevel = settings.thinkingLevel;
-    agent.state.tools = createVaultTools(this.app, this.ignoreMatcher);
-    agent.state.systemPrompt = buildSystemPrompt(settings.systemPrompt, this.skills, promptOverlays(settings));
+    agent.state.tools = this.buildParentTools();
+    agent.state.systemPrompt = this.composeSystemPrompt(settings);
     await this.sessionManager.ensureConfiguration(this.sessionDefaults());
     this.sessionInfo = this.sessionManager.getActiveSessionInfo();
   }
@@ -379,6 +488,7 @@ export class AgentService {
       if (!byName.has(skill.name)) byName.set(skill.name, skill);
     }
     this.skills = [...byName.values()];
+    this.profiles = await loadAgentProfiles(this.app, settings.agentsFolder, settings.enableBuiltinAgents);
   }
 
   private buildStreamFn(): StreamFn {
@@ -429,29 +539,23 @@ function promptOverlays(settings: AgenticChatSettings): string[] {
   return [MODES[settings.mode].promptOverlay, OUTPUT_STYLES[settings.outputStyle].promptOverlay];
 }
 
-function emptyUsage(): Usage {
-  return {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    totalTokens: 0,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-  };
+/** Resolve the model config for a child, overriding only the model id when given. */
+function childModelConfig(settings: AgenticChatSettings, modelOverride?: string): ModelConfig {
+  const base = activeModelConfig(settings);
+  return modelOverride ? { ...base, modelId: modelOverride } : base;
 }
 
-function addUsage(into: Usage, from: Usage): void {
-  into.input += from.input ?? 0;
-  into.output += from.output ?? 0;
-  into.cacheRead += from.cacheRead ?? 0;
-  into.cacheWrite += from.cacheWrite ?? 0;
-  into.totalTokens += from.totalTokens ?? 0;
-  // Local providers (and malformed records) may omit cost entirely.
-  if (from.cost) {
-    into.cost.input += from.cost.input ?? 0;
-    into.cost.output += from.cost.output ?? 0;
-    into.cost.cacheRead += from.cost.cacheRead ?? 0;
-    into.cost.cacheWrite += from.cost.cacheWrite ?? 0;
-    into.cost.total += from.cost.total ?? 0;
-  }
+/**
+ * Restrict a child's tools to its profile allowlist. An empty allowlist defaults
+ * to the read-only vault tools; when the parent mode forbids writes, mutating
+ * tools are stripped regardless of the allowlist.
+ */
+export function filterChildTools(tools: AgentTool[], allowlist: string[], readOnly: boolean): AgentTool[] {
+  let allowed =
+    allowlist.length > 0
+      ? tools.filter((tool) => allowlist.includes(tool.name))
+      : tools.filter((tool) => !MUTATING_TOOLS.has(tool.name));
+  if (readOnly) allowed = allowed.filter((tool) => !MUTATING_TOOLS.has(tool.name));
+  return allowed;
 }
+

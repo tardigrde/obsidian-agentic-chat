@@ -1,6 +1,13 @@
 import { type App, type Component, MarkdownRenderer, Notice, setIcon } from "obsidian";
 import type { Usage } from "@earendil-works/pi-ai";
+import type { SubagentChildStatus } from "../tools/subagent-tool";
 import { describeCall, formatUsage, truncateText } from "./format";
+
+const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
+  running: "running…",
+  done: "done",
+  error: "failed",
+};
 
 export interface BubbleActions {
   /** Re-run the conversation's last user turn. */
@@ -53,6 +60,33 @@ export class AssistantBubble {
       card.createEl("code", { cls: "agentic-chat-step-args", text: truncateText(rawArgs, 200) });
     }
     this.steps.set(id, { card, icon });
+  }
+
+  /**
+   * Live update for a running tool step. Currently renders subagent child
+   * progress (a collapsed-per-child, expandable tree) as the dispatch runs.
+   */
+  updateStep(id: string, partial: unknown): void {
+    const step = this.steps.get(id);
+    if (!step) return;
+    const details = (partial as { details?: unknown } | undefined)?.details as
+      | { kind?: string; children?: SubagentChildStatus[] }
+      | undefined;
+    if (!details || details.kind !== "subagent" || !Array.isArray(details.children)) return;
+    this.renderSubagentChildren(step.card, details.children);
+  }
+
+  private renderSubagentChildren(card: HTMLElement, children: SubagentChildStatus[]): void {
+    let list = card.querySelector<HTMLElement>(".agentic-chat-subagents");
+    if (!list) list = card.createDiv({ cls: "agentic-chat-subagents" });
+    list.empty();
+    for (const child of children) {
+      const row = list.createEl("details", { cls: ["agentic-chat-subagent", `is-${child.status}`] });
+      const summary = row.createEl("summary");
+      summary.createSpan({ cls: "agentic-chat-subagent-name", text: `${child.agent}: ${child.task}` });
+      summary.createSpan({ cls: "agentic-chat-subagent-status", text: SUBAGENT_STATUS_LABEL[child.status] });
+      if (child.summary) row.createEl("pre", { text: truncateText(child.summary, 4_000) });
+    }
   }
 
   endStep(id: string, result: string, isError: boolean): void {

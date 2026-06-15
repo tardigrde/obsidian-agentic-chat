@@ -321,6 +321,49 @@
   font-size: var(--font-smallest);
 }
 
+.agentic-chat-subagents {
+  margin-top: var(--size-2-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+}
+
+.agentic-chat-subagent > summary {
+  cursor: pointer;
+  display: flex;
+  gap: var(--size-2-2);
+  align-items: baseline;
+}
+
+.agentic-chat-subagent-name {
+  color: var(--text-normal);
+}
+
+.agentic-chat-subagent-status {
+  margin-left: auto;
+  font-size: var(--font-smallest);
+  color: var(--text-muted);
+}
+
+.agentic-chat-subagent.is-running .agentic-chat-subagent-status {
+  color: var(--text-accent);
+}
+
+.agentic-chat-subagent.is-error .agentic-chat-subagent-status {
+  color: var(--text-error);
+}
+
+.agentic-chat-subagent > pre {
+  margin: var(--size-2-2) 0 0;
+  padding: var(--size-2-3);
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-s);
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: var(--font-smallest);
+}
+
 @keyframes agentic-chat-spin {
   to {
     transform: rotate(360deg);

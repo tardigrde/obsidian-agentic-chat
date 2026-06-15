@@ -25,6 +25,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "config", description: "switch mode & output style", aliases: ["mode", "style"] },
   { name: "usage", description: "show token & cost totals" },
   { name: "skill", args: "[name] [args]", description: "run a vault skill; args fill $ARGUMENTS/$1", takesSkillArg: true },
+  { name: "agent", args: "[name] [task]", description: "delegate a task to a subagent" },
   { name: "help", description: "show this list" },
   {
     name: "template",

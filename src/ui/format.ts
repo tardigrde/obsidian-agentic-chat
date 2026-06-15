@@ -16,6 +16,7 @@ export const TOOL_LABELS: Record<string, string> = {
   get_active_note: "Reading active note",
   rename: "Renaming",
   delete: "Deleting",
+  subagent: "Dispatching subagents",
 };
 
 /** Caption a tool call: a friendly label plus the most relevant path/pattern arg. */

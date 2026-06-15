@@ -34,12 +34,12 @@ export function buildSkillInvocation(skill: Skill, argString?: string): string {
   return formatSkillInvocation(skill, trimmed);
 }
 
-interface Frontmatter {
+export interface Frontmatter {
   data: Record<string, unknown>;
   body: string;
 }
 
-function splitFrontmatter(content: string): Frontmatter {
+export function splitFrontmatter(content: string): Frontmatter {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(content);
   if (!match) return { data: {}, body: content };
   let data: Record<string, unknown> = {};
@@ -55,7 +55,7 @@ function isUnder(path: string, folder: string): boolean {
   return folder === "" || path === folder || path.startsWith(`${folder}/`);
 }
 
-function stringField(data: Record<string, unknown>, key: string): string | undefined {
+export function stringField(data: Record<string, unknown>, key: string): string | undefined {
   const value = data[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
