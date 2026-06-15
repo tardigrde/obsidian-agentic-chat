@@ -436,6 +436,9 @@ export class ChatView extends ItemView {
     const parts: string[] = [];
     if (usage.totalTokens > 0) parts.push(formatUsage(usage));
     if (fraction !== undefined) parts.push(`${Math.round(fraction * 100)}% ctx`);
+    // Pre-send estimate of what the next request will cost (priced models only).
+    const estimate = this.service.estimateNextCost();
+    if (estimate && estimate.usd > 0) parts.push(`next ~${formatCost(estimate.usd)}`);
     this.usageEl.setText(parts.join(" · "));
 
     const error = this.service.getError();

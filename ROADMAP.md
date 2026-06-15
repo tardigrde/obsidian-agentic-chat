@@ -322,9 +322,12 @@ deliberate — fanning out reads the whole vault), and the session `modifiedTime
       Obsidian `Notice` with a master toggle (errors bypass it), wired in `ChatView` for
       agent-finished (when you're elsewhere), context-window thresholds (75/90%), and the
       cost cap. Threshold dedup via the pure `highestUnnotifiedThreshold` helper.
-- [ ] **Token budget (issue #2 §8, partial).** A per-conversation **cost alert**
-      (`notifications.costAlertUsd`) now warns once when crossed. Still open: pre-send
-      cost *estimate* and a hard spend cap.
+- [x] **Token budget (issue #2 §8).** Complete: a per-conversation **cost alert**
+      (`notifications.costAlertUsd`) warns once when crossed; a **pre-send cost estimate**
+      (`AgentService.estimateNextCost` via `src/agent/cost.ts`, shown as "next ~$x" in the
+      chrome for priced models); and a **hard spend cap** (`notifications.costCapUsd`) that
+      blocks new turns pre-send and aborts a running turn once the conversation cost reaches
+      the cap.
 - [x] **API-key storage.** Settings now shows a plaintext-storage security warning
       (key lives in vault `data.json`, leaks on sync/share). OS-keychain storage remains
       a future enhancement.
@@ -379,8 +382,8 @@ generic chat features.
 
 - ~~**Auto-compaction**~~ — shipped (see Cross-cutting "Context-window management"). The
   summarize-old-turns loop now runs automatically as the window fills.
-- **Pre-send cost estimate + hard spend cap** (Cross-cutting "Token budget" open item) —
-  the post-hoc alert ships; the estimate and cap do not.
+- ~~**Pre-send cost estimate + hard spend cap**~~ — shipped (see Cross-cutting "Token
+  budget"). Pre-send estimate in the chrome + a hard cap that blocks/aborts at the limit.
 
 ### UX polish (cheap, not yet scheduled)
 

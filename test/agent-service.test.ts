@@ -252,6 +252,46 @@ describe("AgentService", () => {
     expect(reloaded.getSessionUsage().totalTokens).toBe(330_300);
   });
 
+  it("blocks new turns once the hard spend cap is reached", async () => {
+    const costStream: StreamFn = ((model: Model<"openai-completions">) => {
+      const stream = createAssistantMessageEventStream();
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "ok" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 100,
+          output: 50,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 150,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.02 },
+        },
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    }) as unknown as StreamFn;
+
+    const { service, settings } = makeService(costStream);
+    settings.notifications.costCapUsd = 0.01;
+
+    await service.sendPrompt("one"); // allowed: cost is 0 at send time
+    expect(service.getSessionUsage().cost?.total).toBeCloseTo(0.02, 6);
+
+    await service.sendPrompt("two"); // blocked: 0.02 already ≥ 0.01 cap
+    expect(service.getError()).toMatch(/spend cap/i);
+    // The blocked prompt never ran, so only the first turn's two messages exist.
+    expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
   it("reports a friendly error when no API key is configured", async () => {
     const { service, settings } = makeService(cannedStreamFn("unused"));
     settings.openrouterApiKey = "";

@@ -66,6 +66,8 @@ export interface NotificationSettings {
   enabled: boolean;
   /** Notify once when session cost crosses this USD amount. 0 disables. */
   costAlertUsd: number;
+  /** Hard cap: block new turns (and abort the running one) once session cost reaches this USD. 0 disables. */
+  costCapUsd: number;
 }
 
 export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -93,7 +95,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   agentsFolder: "",
   enableBuiltinAgents: true,
   ignoredGlobs: "",
-  notifications: { enabled: true, costAlertUsd: 0 },
+  notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
   compaction: { enabled: true, thresholdPercent: 80 },
 };
 
@@ -502,6 +504,22 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         text.setValue(String(settings.notifications.costAlertUsd)).onChange(async (value) => {
           const parsed = Number.parseFloat(value);
           settings.notifications.costAlertUsd = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+          await this.save();
+        });
+      });
+    new Setting(containerEl)
+      .setName("Hard spend cap (USD)")
+      .setDesc(
+        "Block new turns — and stop a turn already running — once this conversation's cost reaches this amount. " +
+          "0 disables. Applies only to models with known pricing.",
+      )
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.setAttribute("min", "0");
+        text.inputEl.setAttribute("step", "any");
+        text.setValue(String(settings.notifications.costCapUsd)).onChange(async (value) => {
+          const parsed = Number.parseFloat(value);
+          settings.notifications.costCapUsd = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
           await this.save();
         });
       });
