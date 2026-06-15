@@ -16,10 +16,14 @@ export class ModelSuggestModal extends SuggestModal<BrowsableModel> {
   constructor(
     app: App,
     private readonly models: BrowsableModel[],
-    private readonly onChoose: (model: BrowsableModel) => void,
+    private readonly onChoose: (model: BrowsableModel, once: boolean) => void,
   ) {
     super(app);
     this.setPlaceholder("Pick an OpenRouter model (tool-calling capable)…");
+    this.setInstructions([
+      { command: "↵", purpose: "switch model" },
+      { command: "shift ↵ / shift-click", purpose: "use for next message only" },
+    ]);
   }
 
   getSuggestions(query: string): BrowsableModel[] {
@@ -35,8 +39,9 @@ export class ModelSuggestModal extends SuggestModal<BrowsableModel> {
     el.setText(itemText(model));
   }
 
-  onChooseSuggestion(model: BrowsableModel): void {
-    this.onChoose(model);
+  onChooseSuggestion(model: BrowsableModel, evt: MouseEvent | KeyboardEvent): void {
+    // Shift picks the model for the next prompt only, leaving the saved default untouched.
+    this.onChoose(model, evt.shiftKey);
   }
 }
 

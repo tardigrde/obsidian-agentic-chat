@@ -17,6 +17,7 @@ import { FolderSuggestModal } from "./folder-suggest";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
 import { AssistantBubble } from "./assistant-bubble";
 import { formatCost, formatUsage, safeJson } from "./format";
+import { contextLevel, contextPercent } from "./context-bar";
 import {
   assistantUsage,
   collectToolResults,
@@ -97,6 +98,9 @@ export class ChatView extends ItemView {
   private statusEl!: HTMLElement;
   private modelPillEl!: HTMLElement;
   private usageEl!: HTMLElement;
+  private contextBarEl!: HTMLElement;
+  private contextFillEl!: HTMLElement;
+  private workingEl!: HTMLElement;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -242,6 +246,8 @@ export class ChatView extends ItemView {
       new FolderSuggestModal(this.app, (folder) => this.addAttachment(`${FOLDER_PREFIX}${folder.path}`)).open();
     });
 
+    this.workingEl = buttonRow.createDiv({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
+    this.workingEl.hide();
     this.statusEl = buttonRow.createDiv({ cls: "agentic-chat-status" });
     this.stopButton = buttonRow.createEl("button", { cls: ["agentic-chat-stop", "mod-warning"], text: "Stop" });
     this.stopButton.hide();
@@ -249,7 +255,14 @@ export class ChatView extends ItemView {
     this.sendButton = buttonRow.createEl("button", { cls: "mod-cta", text: "Send" });
     this.sendButton.addEventListener("click", () => void this.submit());
 
-    this.usageEl = composer.createDiv({ cls: "agentic-chat-usage" });
+    const footer = composer.createDiv({ cls: "agentic-chat-meta" });
+    this.contextBarEl = footer.createDiv({
+      cls: "agentic-chat-ctx-bar",
+      attr: { "aria-label": "Context window used", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100" },
+    });
+    this.contextFillEl = this.contextBarEl.createDiv({ cls: "agentic-chat-ctx-fill" });
+    this.contextBarEl.hide();
+    this.usageEl = footer.createDiv({ cls: "agentic-chat-usage" });
 
     // Dragging a note onto the composer should attach it as context, not open it.
     this.registerDomEvent(composer, "dragover", (event) => {
@@ -427,24 +440,41 @@ export class ChatView extends ItemView {
     const { settings } = this.plugin;
     this.syncControls();
     this.modelPillEl.empty();
-    const providerLabel = settings.provider === "ollama" ? "Ollama" : "OpenRouter";
+    const override = this.service.getModelOverride();
+    const providerLabel = override ? "next only" : settings.provider === "ollama" ? "Ollama" : "OpenRouter";
+    this.modelPillEl.toggleClass("is-override", !!override);
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: providerLabel });
-    this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: activeModelId(settings) });
+    this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: override ?? activeModelId(settings) });
 
     const usage = this.service.getSessionUsage();
     const fraction = this.service.getContextFraction();
     const parts: string[] = [];
     if (usage.totalTokens > 0) parts.push(formatUsage(usage));
-    if (fraction !== undefined) parts.push(`${Math.round(fraction * 100)}% ctx`);
     // Pre-send estimate of what the next request will cost (priced models only).
     const estimate = this.service.estimateNextCost();
     if (estimate && estimate.usd > 0) parts.push(`next ~${formatCost(estimate.usd)}`);
     this.usageEl.setText(parts.join(" · "));
+    this.syncContextBar(fraction);
 
     const error = this.service.getError();
     this.setRunning(this.service.isStreaming());
     if (error && !this.service.isStreaming()) this.statusEl.setText("");
     this.checkUsageNotifications();
+  }
+
+  /** Glanceable color-coded context-window fill bar; hidden until usage is known. */
+  private syncContextBar(fraction: number | undefined): void {
+    if (fraction === undefined) {
+      this.contextBarEl.hide();
+      return;
+    }
+    const percent = contextPercent(fraction);
+    this.contextBarEl.show();
+    this.contextBarEl.setAttr("aria-label", `Context window ${percent}% used`);
+    this.contextBarEl.setAttr("aria-valuenow", String(percent));
+    this.contextFillEl.style.width = `${percent}%`;
+    this.contextFillEl.removeClasses(["is-ok", "is-warn", "is-high"]);
+    this.contextFillEl.addClass(`is-${contextLevel(fraction)}`);
   }
 
   /** Fire one-shot background toasts as the context window fills or cost crosses the cap. */
@@ -485,8 +515,10 @@ export class ChatView extends ItemView {
     this.sendButton.disabled = running;
     if (running) {
       this.stopButton.show();
+      this.workingEl.show();
     } else {
       this.stopButton.hide();
+      this.workingEl.hide();
       this.statusEl.setText("");
     }
   }
@@ -735,10 +767,11 @@ export class ChatView extends ItemView {
   private showStatus(): void {
     const { settings } = this.plugin;
     const session = this.service.getSessionInfo();
+    const override = this.service.getModelOverride();
     this.clearEmptyState();
     this.renderInfoMessage("Status", [
       ["Provider", settings.provider],
-      ["Model", activeModelId(settings)],
+      ["Model", override ? `${override} (next message only)` : activeModelId(settings)],
       ["Mode", MODES[settings.mode].label],
       ["Output style", OUTPUT_STYLES[settings.outputStyle].label],
       ["Thinking", settings.thinkingLevel],
@@ -966,9 +999,15 @@ export class ChatView extends ItemView {
       )
         .filter((model) => model.supportsTools)
         .sort((a, b) => a.id.localeCompare(b.id));
-      new ModelSuggestModal(this.app, models, async (model) => {
-        settings.openrouterModel = model.id;
-        await this.plugin.saveSettings();
+      new ModelSuggestModal(this.app, models, async (model, once) => {
+        if (once) {
+          // Per-request override: use this model for the next prompt only, then revert.
+          this.service.setModelOverride(model.id);
+        } else {
+          settings.openrouterModel = model.id;
+          this.service.setModelOverride(null);
+          await this.plugin.saveSettings();
+        }
         this.syncChrome();
       }).open();
     } catch (error) {

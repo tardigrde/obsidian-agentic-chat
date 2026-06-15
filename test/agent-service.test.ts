@@ -132,6 +132,27 @@ describe("AgentService", () => {
     expect(service.isStreaming()).toBe(false);
   });
 
+  it("applies a one-shot model override to the next prompt only, then reverts", async () => {
+    const seen: string[] = [];
+    const base = cannedStreamFn("ok");
+    const streamFn: StreamFn = ((model: Model<"openai-completions">, context: unknown, options: unknown) => {
+      seen.push(model.id);
+      return (base as (...args: unknown[]) => unknown)(model, context, options);
+    }) as unknown as StreamFn;
+    const { service, settings } = makeService(streamFn);
+
+    service.setModelOverride("anthropic/claude-3.5-sonnet");
+    expect(service.getModelOverride()).toBe("anthropic/claude-3.5-sonnet");
+    expect(service.getActiveModelId()).toBe("anthropic/claude-3.5-sonnet");
+    await service.sendPrompt("first");
+    // The override was consumed by the turn it was set for.
+    expect(service.getModelOverride()).toBeNull();
+    expect(service.getActiveModelId()).toBe(settings.openrouterModel);
+
+    await service.sendPrompt("second");
+    expect(seen).toEqual(["anthropic/claude-3.5-sonnet", settings.openrouterModel]);
+  });
+
   it("persists the conversation to a JSONL session file", async () => {
     const { service, adapter } = makeService(cannedStreamFn("Persisted reply."));
     await service.sendPrompt("Remember this");

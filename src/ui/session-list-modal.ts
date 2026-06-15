@@ -7,9 +7,25 @@ export interface SessionListCallbacks {
   rename: (session: SessionInfo, name: string) => Promise<void>;
 }
 
+/** Substring filter over a session's display name and first message (case-insensitive). */
+export function filterSessions(sessions: SessionInfo[], query: string): SessionInfo[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return sessions;
+  return sessions.filter((session) => {
+    const name = session.name?.trim() ?? "";
+    return `${name}\n${session.firstMessage}`.toLowerCase().includes(needle);
+  });
+}
+
+/** How long after the last keystroke the search re-filters the list. */
+const SEARCH_DEBOUNCE_MS = 150;
+
 /** Browse, resume, or delete past conversations. */
 export class SessionListModal extends Modal {
   private sessions: SessionInfo[];
+  private query = "";
+  private listEl: HTMLElement | null = null;
+  private searchTimer: number | null = null;
 
   constructor(
     app: App,
@@ -27,18 +43,42 @@ export class SessionListModal extends Modal {
     const { contentEl, titleEl } = this;
     titleEl.setText("Conversations");
     contentEl.addClass("agentic-chat-session-list");
-    this.renderList(this.sessions);
+
+    // Only offer search once there's enough to scroll through.
+    if (this.sessions.length > 1) {
+      const search = contentEl.createEl("input", {
+        cls: "agentic-chat-session-search",
+        attr: { type: "search", placeholder: "Search conversations…" },
+      });
+      search.focus();
+      search.addEventListener("input", () => {
+        this.query = search.value;
+        // Debounce so each keystroke doesn't rebuild the whole list.
+        if (this.searchTimer !== null) window.clearTimeout(this.searchTimer);
+        this.searchTimer = window.setTimeout(() => {
+          this.searchTimer = null;
+          this.renderList();
+        }, SEARCH_DEBOUNCE_MS);
+      });
+    }
+
+    this.listEl = contentEl.createDiv({ cls: "agentic-chat-session-rows" });
+    this.renderList();
   }
 
   onClose(): void {
+    if (this.searchTimer !== null) window.clearTimeout(this.searchTimer);
     this.contentEl.empty();
   }
 
-  private renderList(sessions: SessionInfo[]): void {
-    const list = this.contentEl;
+  private renderList(): void {
+    const list = this.listEl;
+    if (!list) return;
     list.empty();
+    const sessions = filterSessions(this.sessions, this.query);
     if (sessions.length === 0) {
-      list.createEl("p", { text: "No saved conversations yet." });
+      const message = this.sessions.length === 0 ? "No saved conversations yet." : "No conversations match your search.";
+      list.createEl("p", { cls: "agentic-chat-session-empty", text: message });
       return;
     }
     for (const session of sessions) {
@@ -70,7 +110,7 @@ export class SessionListModal extends Modal {
         // Optimistically drop the row first: keeps the list responsive and
         // stops a quick second click from deleting the same session twice.
         this.sessions = this.sessions.filter((item) => item.path !== session.path);
-        this.renderList(this.sessions);
+        this.renderList();
         try {
           await this.callbacks.delete(session);
         } catch (error) {
@@ -110,7 +150,7 @@ export class SessionListModal extends Modal {
           new Notice("Failed to rename conversation.");
         }
       }
-      this.renderList(this.sessions);
+      this.renderList();
     };
     input.addEventListener("click", (event) => event.stopPropagation());
     input.addEventListener("keydown", (event) => {

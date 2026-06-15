@@ -54,3 +54,16 @@ export function formatUsage(usage: Usage): string {
   const cost = total > 0 ? ` · ${formatCost(total)}` : "";
   return `${usage.totalTokens} tokens${cost}`;
 }
+
+/**
+ * Human-readable elapsed time for a tool step: sub-second in ms, then seconds
+ * with one decimal, then minutes+seconds. Negative/non-finite collapses to 0ms.
+ */
+export function formatElapsed(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) ms = 0;
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.round((ms % 60_000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
