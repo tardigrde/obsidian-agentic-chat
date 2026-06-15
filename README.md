@@ -25,6 +25,7 @@ Your notes are yours. This plugin is built so that using AI on them does not mea
 - **Conversation history** — every chat is stored as JSONL under the plugin folder and resumed on reload; browse, reopen, or delete past conversations. Works on mobile (no SQLite, no Node `fs`).
 - **Token & cost tracking** — per-message and per-conversation token usage and USD cost (`/usage`, `/status`).
 - **Skills & personas** — drop `SKILL.md` files into a vault folder; they're offered to the agent and invokable with `/skill <name>`.
+- **Web access (opt-in)** — off by default. Turn on *Web access* in settings to give the agent `web_search` (Tavily / Brave / SearXNG backend) and `fetch_url` (read a page as text). When on, a built-in `/skill deep-research` runs a plan→search→read→cite loop and writes a sourced note. Egress-gated: while it's off the tools aren't registered, so nothing leaves your device for the web.
 - **Prompt templates** — reusable prompts with `$ARGUMENTS` / `$1` substitution, invokable with `/template <name> [args]`.
 - **Context attachments** — one click attaches the active note or a folder listing to your next message.
 - **Slash commands** — `/new`, `/sessions`, `/model`, `/status`, `/usage`, `/skill`, `/template`, `/help`.
@@ -33,7 +34,7 @@ Your notes are yours. This plugin is built so that using AI on them does not mea
 
 In the interest of transparency (and the [Obsidian Developer Policies](https://docs.obsidian.md/Developer+policies)):
 
-- **Network use.** When the provider is OpenRouter, your prompt — including any note content you attach or the agent reads, plus tool results — is sent to OpenRouter and the model provider it routes to, subject to the privacy constraints above. With Ollama, requests go only to your configured local server.
+- **Network use.** When the provider is OpenRouter, your prompt — including any note content you attach or the agent reads, plus tool results — is sent to OpenRouter and the model provider it routes to, subject to the privacy constraints above. With Ollama, requests go only to your configured local server. **Web access** is a separate, off-by-default opt-in: when enabled, search queries and the URLs the agent opens are sent to your chosen search provider (Tavily/Brave/SearXNG) and the fetched sites — outside the model-provider privacy boundary.
 - **Account & payment.** OpenRouter requires your own account and API key, and hosted models are billed by OpenRouter to that account. The plugin itself is free and takes no payment. Ollama needs no account and is free.
 - **File access.** The agent reads and modifies files in your vault through Obsidian's vault API, only when you prompt it. Mutating actions are gated by the approval policy; deletes move files to trash. Files matched by your ignore list are never exposed to the agent.
 - **Telemetry.** None. No analytics, no tracking, no background network calls.

@@ -205,6 +205,17 @@ describe("AgentService", () => {
     expect(service.getSessionUsage().totalTokens).toBe(6);
   });
 
+  it("exposes the deep-research skill only when web access is enabled", async () => {
+    const off = makeService(cannedStreamFn("hi"));
+    await off.service.initialize();
+    expect(off.service.getSkills().map((skill) => skill.name)).not.toContain("deep-research");
+
+    const on = makeService(cannedStreamFn("hi"));
+    on.settings.web = { ...on.settings.web, enabled: true };
+    await on.service.initialize();
+    expect(on.service.getSkills().map((skill) => skill.name)).toContain("deep-research");
+  });
+
   it("auto-compacts old turns once the context window fills, preserving usage", async () => {
     // Each assistant turn reports ~110k context tokens — over 80% of the synthesized
     // 128k window — so the third send triggers compaction of the first turn.
