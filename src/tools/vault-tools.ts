@@ -511,7 +511,9 @@ async function readFrontmatter(app: App, file: TFile): Promise<Record<string, un
 function parseFrontmatterBlock(content: string): Record<string, unknown> {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
   if (!match) return {};
-  return parseYaml(match[1]) as Record<string, unknown>;
+  // parseYaml returns null/undefined for an empty or scalar block; normalize to {}.
+  const parsed = parseYaml(match[1]) as Record<string, unknown> | null | undefined;
+  return parsed && typeof parsed === "object" ? parsed : {};
 }
 
 function getVaultFile(app: App, path: string): TFile {
