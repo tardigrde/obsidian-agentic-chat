@@ -78,7 +78,9 @@ async function ensureParentFolders(app: App, path: string): Promise<void> {
   const parent = getParentPath(path);
   if (!parent) return;
   let current = "";
-  for (const segment of parent.split("/")) {
+  // Drop empty segments (leading/trailing/consecutive slashes) so we never try
+  // to create a folder with an empty name.
+  for (const segment of parent.split("/").filter(Boolean)) {
     current = current ? `${current}/${segment}` : segment;
     if (!app.vault.getFolderByPath(current)) await app.vault.createFolder(current);
   }

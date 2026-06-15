@@ -22,6 +22,12 @@ describe("buildEditPreview", () => {
     expect(preview).toEqual({ kind: "none" });
   });
 
+  it("returns none for malformed edits args (not an array / wrong shape)", () => {
+    expect(buildEditPreview("edit", { path: "n.md", edits: "oops" }, "a b")).toEqual({ kind: "none" });
+    expect(buildEditPreview("edit", { path: "n.md", edits: null }, "a b")).toEqual({ kind: "none" });
+    expect(buildEditPreview("edit", { path: "n.md", edits: [{ oldText: 1 }] }, "a b")).toEqual({ kind: "none" });
+  });
+
   it("describes delete and rename", () => {
     expect(buildEditPreview("delete", { path: "n.md" }, "body")).toEqual({ kind: "delete", path: "n.md", content: "body" });
     expect(buildEditPreview("rename", { path: "a.md", newPath: "b.md" }, null)).toEqual({ kind: "rename", from: "a.md", to: "b.md" });

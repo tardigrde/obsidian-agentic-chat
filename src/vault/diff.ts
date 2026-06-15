@@ -18,7 +18,14 @@ export interface DiffStat {
 export const MAX_DIFF_CELLS = 250_000;
 
 function splitLines(text: string): string[] {
-  return text.length === 0 ? [] : text.split("\n");
+  if (text.length === 0) return [];
+  // Treat a single trailing newline as a line terminator, not a final empty
+  // line: "a\n" is one line ("a"), same as "a". Otherwise vault content (which
+  // usually ends in "\n") would show a phantom empty-line removal whenever the
+  // model's after-content omits the trailing newline, and stat counts/the
+  // "X → Y lines" summary would be off by one.
+  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return body.split("\n");
 }
 
 /** True when an exact line diff would be too large to compute cheaply. */
@@ -40,11 +47,16 @@ export function diffLines(before: string, after: string): DiffLine[] {
   const n = b.length;
   if (m * n > MAX_DIFF_CELLS) throw new Error("Diff input too large.");
 
-  // dp[i][j] = LCS length of a[i:] and b[j:].
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  // dp[i*stride + j] = LCS length of a[i:] and b[j:]. A single flat Int32Array
+  // (one contiguous block, no per-row object overhead) keeps memory and GC flat
+  // for inputs near the cell cap.
+  const stride = n + 1;
+  const dp = new Int32Array((m + 1) * stride);
   for (let i = m - 1; i >= 0; i--) {
+    const row = i * stride;
+    const nextRow = (i + 1) * stride;
     for (let j = n - 1; j >= 0; j--) {
-      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      dp[row + j] = a[i] === b[j] ? dp[nextRow + j + 1] + 1 : Math.max(dp[nextRow + j], dp[row + j + 1]);
     }
   }
 
@@ -56,7 +68,7 @@ export function diffLines(before: string, after: string): DiffLine[] {
       out.push({ op: "context", text: a[i] });
       i++;
       j++;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+    } else if (dp[(i + 1) * stride + j] >= dp[i * stride + j + 1]) {
       out.push({ op: "remove", text: a[i] });
       i++;
     } else {

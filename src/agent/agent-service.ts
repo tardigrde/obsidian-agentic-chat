@@ -466,10 +466,10 @@ export class AgentService {
         if (entry) {
           this.pendingUndo.delete(context.toolCall.id);
           // Only record successful mutations; a failed tool left nothing to undo.
-          if (!context.isError) {
-            this.undoStack.push(entry);
-            this.notifyChange();
-          }
+          // No notifyChange: undo availability isn't surfaced in the UI (`/undo`
+          // is an always-available slash command), so this would only force a
+          // redundant transcript re-render mid tool-run.
+          if (!context.isError) this.undoStack.push(entry);
         }
         return undefined;
       },

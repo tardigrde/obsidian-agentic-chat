@@ -19,6 +19,23 @@ function asString(value: unknown): string {
 }
 
 /**
+ * Narrow unknown tool args to well-formed edits. The model controls these, so a
+ * malformed shape (null, a string, missing fields) is filtered out rather than
+ * cast through — leaving applyExactEdits to throw on the empty result, which the
+ * caller turns into `kind: "none"`.
+ */
+function asExactEdits(value: unknown): ExactEdit[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (edit): edit is ExactEdit =>
+      typeof edit === "object" &&
+      edit !== null &&
+      typeof (edit as ExactEdit).oldText === "string" &&
+      typeof (edit as ExactEdit).newText === "string",
+  );
+}
+
+/**
  * Describe a mutating tool call as a reviewable change, given the file's current
  * content (`null` when it doesn't exist yet). Pure: the modal supplies the
  * content it read from the vault. Returns `kind: "none"` for non-previewable
@@ -39,7 +56,7 @@ export function buildEditPreview(toolName: string, args: unknown, currentContent
     case "edit": {
       const before = currentContent ?? "";
       try {
-        const after = applyExactEdits(before, (raw.edits as ExactEdit[]) ?? []);
+        const after = applyExactEdits(before, asExactEdits(raw.edits));
         return { kind: "diff", path, before, after, isNew: false };
       } catch {
         return { kind: "none" };

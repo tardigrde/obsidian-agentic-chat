@@ -30,6 +30,14 @@ describe("diffLines", () => {
     expect(diffStat(lines)).toEqual({ added: 0, removed: 0 });
     expect(lines.every((line) => line.op === "context")).toBe(true);
   });
+
+  it("treats a trailing newline as a terminator, not a phantom empty line", () => {
+    // Vault content usually ends in "\n"; an after with the same text but no
+    // trailing newline must not register a spurious empty-line change.
+    const lines = diffLines("a\nb\n", "a\nb");
+    expect(diffStat(lines)).toEqual({ added: 0, removed: 0 });
+    expect(lines.every((line) => line.op === "context")).toBe(true);
+  });
 });
 
 describe("diffTooLarge", () => {

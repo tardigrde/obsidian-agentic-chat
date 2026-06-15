@@ -83,7 +83,10 @@ export class ApprovalModal extends Modal {
     const rawPath = (this.request.args as { path?: unknown })?.path;
     const path = typeof rawPath === "string" ? rawPath : "";
     let current: string | null = null;
-    if (path) {
+    // Only write/edit/delete render a content diff; rename never needs the file
+    // body, so don't pay a cachedRead (slow for large files) to preview it.
+    const needsContent = ["write", "edit", "delete"].includes(this.request.toolName);
+    if (path && needsContent) {
       const file = this.app.vault.getAbstractFileByPath(normalizeVaultPath(path));
       if (file instanceof TFile) {
         try {
