@@ -627,6 +627,9 @@ export class ChatView extends ItemView {
       case "usage":
         this.showUsage();
         return true;
+      case "undo":
+        await this.runUndo();
+        return true;
       case "skill":
         await this.runSkill(rest[0], argString.slice(rest[0]?.length ?? 0).trim());
         return true;
@@ -778,6 +781,13 @@ export class ChatView extends ItemView {
   private async chooseStyle(style: OutputStyle): Promise<void> {
     await this.setOutputStyle(style);
     this.renderInfoMessage("Output style", [[OUTPUT_STYLES[style].label, OUTPUT_STYLES[style].description]]);
+  }
+
+  /** `/undo`: revert the agent's most recent vault change, reported in-pane. */
+  private async runUndo(): Promise<void> {
+    this.clearEmptyState();
+    const result = await this.service.undoLastChange();
+    this.renderInfoMessage("Undo", [["result", result]]);
   }
 
   private showUsage(): void {
