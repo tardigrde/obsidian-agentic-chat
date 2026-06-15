@@ -4,6 +4,7 @@ import {
   type AgentEvent,
   type AgentMessage,
   type AgentTool,
+  generateSummary,
   type Skill,
   type StreamFn,
 } from "@earendil-works/pi-agent-core";
@@ -17,7 +18,8 @@ import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "..
 import { deriveAutoName, ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
 import { buildSkillInvocation, loadVaultSkills } from "../skills/skills";
 import { type AgentProfile, formatSubagentsForSystemPrompt, loadAgentProfiles } from "./subagents";
-import { addUsage, emptyUsage } from "./usage";
+import { addUsage, emptyUsage, sumAssistantUsage } from "./usage";
+import { type CompactionConfig, DEFAULT_COMPACTION_CONFIG, buildSummaryMessage, planCompaction } from "./compaction";
 import { buildSystemPrompt } from "./system-prompt";
 import { MODES, resolveModePolicy } from "./modes";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -25,12 +27,22 @@ import { OUTPUT_STYLES } from "./output-styles";
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
 
+/** Tokens reserved for the summarization prompt + its output during compaction. */
+const COMPACTION_RESERVE_TOKENS = 16_384;
+
 /** A pending tool call the user must approve. */
 export interface ToolApprovalRequest {
   toolName: string;
   label: string;
   args: unknown;
 }
+
+/**
+ * Summarize a slice of transcript into compaction summary text. Injected for
+ * tests; production calls the model through pi's `generateSummary`. Returns "" to
+ * signal "no summary" so the caller skips compaction rather than dropping history.
+ */
+export type SummarizeFn = (messages: AgentMessage[], signal?: AbortSignal) => Promise<string>;
 
 export interface AgentServiceOptions {
   app: App;
@@ -40,6 +52,8 @@ export interface AgentServiceOptions {
   confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
   /** Injected for tests; production wraps pi-ai streamSimple. */
   streamFn?: StreamFn;
+  /** Injected for tests; production summarizes via pi's `generateSummary`. */
+  summarize?: SummarizeFn;
 }
 
 type EventListener = (event: AgentEvent) => void;
@@ -55,6 +69,7 @@ export class AgentService {
   private readonly sessionManager: ObsidianSessionManager;
   private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
   private readonly injectedStreamFn?: StreamFn;
+  private readonly injectedSummarize?: SummarizeFn;
 
   private agent: Agent | null = null;
   private unsubscribeAgent: (() => void) | null = null;
@@ -71,6 +86,10 @@ export class AgentService {
   private errorMessage: string | undefined;
   /** Token usage from subagent children, which live outside the parent transcript. */
   private subagentUsage: Usage = emptyUsage();
+  /** Usage of assistant turns dropped by compaction, so the session total never shrinks. */
+  private compactedUsage: Usage = emptyUsage();
+  /** Count of compactions this session, so the UI can toast each one once. */
+  private compactions = 0;
 
   private readonly eventListeners = new Set<EventListener>();
   private readonly changeListeners = new Set<ChangeListener>();
@@ -81,6 +100,7 @@ export class AgentService {
     this.sessionManager = options.sessionManager;
     this.confirmToolCall = options.confirmToolCall;
     this.injectedStreamFn = options.streamFn;
+    this.injectedSummarize = options.summarize;
   }
 
   onEvent(listener: EventListener): () => void {
@@ -143,7 +163,15 @@ export class AgentService {
     }
     // Children run outside the parent transcript, so fold their usage in here.
     addUsage(total, this.subagentUsage);
+    // Turns dropped by compaction are no longer in the transcript; fold them in
+    // too so the session total reflects everything spent, not just what's kept.
+    addUsage(total, this.compactedUsage);
     return total;
+  }
+
+  /** Number of times this session has been auto-compacted (for one-shot UI notices). */
+  getCompactionCount(): number {
+    return this.compactions;
   }
 
   async initialize(): Promise<void> {
@@ -202,6 +230,8 @@ export class AgentService {
       this.sessionInfo = await this.sessionManager.createSession(this.sessionDefaults());
       this.persisted = new WeakSet<object>();
       this.subagentUsage = emptyUsage();
+    this.compactedUsage = emptyUsage();
+    this.compactions = 0;
       await this.reloadResources();
       this.replaceAgent([]);
       this.errorMessage = undefined;
@@ -219,6 +249,8 @@ export class AgentService {
       this.sessionInfo = await this.sessionManager.loadSession(path);
       this.persisted = new WeakSet<object>();
       this.subagentUsage = emptyUsage();
+    this.compactedUsage = emptyUsage();
+    this.compactions = 0;
       await this.reloadResources();
       this.replaceAgent(this.sessionManager.buildSessionContext().messages);
       this.errorMessage = undefined;
@@ -270,6 +302,8 @@ export class AgentService {
     // Child usage isn't tracked per-message, so it can't be recomputed for the
     // surviving turns; zero it on rewind rather than let it over-count forever.
     this.subagentUsage = emptyUsage();
+    this.compactedUsage = emptyUsage();
+    this.compactions = 0;
     this.replaceAgent(messages);
     if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
     this.errorMessage = undefined;
@@ -299,6 +333,9 @@ export class AgentService {
       return;
     }
     await this.refreshConfiguration();
+    // Summarize old turns before the next request if the window is filling, so a
+    // long session doesn't hit the model limit or spike cost. Never throws.
+    await this.maybeCompact();
     try {
       this.errorMessage = undefined;
       this.notifyChange();
@@ -502,6 +539,64 @@ export class AgentService {
     this.sessionInfo = this.sessionManager.getActiveSessionInfo();
   }
 
+  /**
+   * Auto-compaction: when the transcript fills past the configured threshold,
+   * summarize the older turns into a single message and keep the recent ones, in
+   * memory and on disk. Best-effort — any failure (no key, summary error, write
+   * error) leaves the transcript untouched so a prompt is never lost.
+   */
+  private async maybeCompact(): Promise<void> {
+    try {
+      const agent = this.agent;
+      if (!agent) return;
+      const config = compactionConfig(this.getSettings());
+      const contextWindow = agent.state.model?.contextWindow ?? 0;
+      const plan = planCompaction(agent.state.messages, contextWindow, config);
+      if (!plan) return;
+      const summary = await this.summarizeForCompaction(plan.summarize);
+      if (!summary.trim()) return;
+      const newMessages = [buildSummaryMessage(summary, Date.now()), ...plan.keep];
+      // Persist the rewrite first; only mutate in-memory state once disk succeeds.
+      await this.sessionManager.rewriteMessages(newMessages);
+      const dropped = sumAssistantUsage(plan.summarize);
+      if (dropped) addUsage(this.compactedUsage, dropped);
+      this.persisted = new WeakSet<object>();
+      for (const message of newMessages) this.persisted.add(message as object);
+      this.replaceAgent(newMessages);
+      this.compactions += 1;
+      if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
+      this.notifyChange();
+    } catch {
+      // Compaction is an optimization; never let it break the pending prompt.
+    }
+  }
+
+  /**
+   * Produce summary text for compaction. Tests inject a summarizer; production
+   * summarizes through pi's `generateSummary` with the active model. The summary
+   * call's own (small) token cost is not captured by `generateSummary`, so it is
+   * left out of the session total.
+   */
+  private async summarizeForCompaction(messages: AgentMessage[]): Promise<string> {
+    if (this.injectedSummarize) return this.injectedSummarize(messages);
+    const settings = this.getSettings();
+    const apiKey = apiKeyForProvider(settings, settings.provider);
+    if (!apiKey) return "";
+    const model = buildModel(activeModelConfig(settings));
+    const result = await generateSummary(
+      messages,
+      model,
+      COMPACTION_RESERVE_TOKENS,
+      apiKey,
+      { "HTTP-Referer": HTTP_REFERER, "X-Title": X_TITLE },
+      undefined,
+      undefined,
+      undefined,
+      settings.thinkingLevel,
+    );
+    return result.ok ? result.value : "";
+  }
+
   private async reloadResources(): Promise<void> {
     const settings = this.getSettings();
     this.ignoreMatcher = createIgnoreMatcher(parseIgnorePatterns(settings.ignoredGlobs));
@@ -560,6 +655,17 @@ export class AgentService {
   private notifyChange(): void {
     for (const listener of this.changeListeners) listener();
   }
+}
+
+/** Map the persisted (percent-based) compaction settings to a {@link CompactionConfig}. */
+function compactionConfig(settings: AgenticChatSettings): CompactionConfig {
+  const percent = settings.compaction?.thresholdPercent ?? DEFAULT_COMPACTION_CONFIG.thresholdFraction * 100;
+  const thresholdFraction = Math.min(0.95, Math.max(0.5, percent / 100));
+  return {
+    enabled: settings.compaction?.enabled ?? DEFAULT_COMPACTION_CONFIG.enabled,
+    thresholdFraction,
+    keepFraction: DEFAULT_COMPACTION_CONFIG.keepFraction,
+  };
 }
 
 /** System-prompt overlays contributed by the active mode and output style. */

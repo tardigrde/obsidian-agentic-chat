@@ -4,6 +4,7 @@ import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
+import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { parseSessionEntries } from "../src/session/jsonl";
@@ -167,6 +168,73 @@ describe("AgentService", () => {
     expect(resultText).toContain("Inbox has 3 open threads.");
     // Parent's two assistant turns (2 + 2) plus the child's folded-in usage (2).
     expect(service.getSessionUsage().totalTokens).toBe(6);
+  });
+
+  it("auto-compacts old turns once the context window fills, preserving usage", async () => {
+    // Each assistant turn reports ~110k context tokens — over 80% of the synthesized
+    // 128k window — so the third send triggers compaction of the first turn.
+    const bigUsageStream: StreamFn = ((model: Model<"openai-completions">) => {
+      const stream = createAssistantMessageEventStream();
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "ok" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 110_000,
+          output: 100,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 110_100,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    }) as unknown as StreamFn;
+
+    const settings: AgenticChatSettings = {
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "test-key",
+      // An id absent from pi's catalog → synthesized model with the default 128k window.
+      openrouterModel: "test/compaction-model",
+    };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    let summarizeCalls = 0;
+    const service = new AgentService({
+      app: { vault: {}, workspace: {} } as unknown as App,
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => true,
+      streamFn: bigUsageStream,
+      summarize: async () => {
+        summarizeCalls += 1;
+        return "Summary of earlier turns.";
+      },
+    });
+
+    await service.sendPrompt("first");
+    await service.sendPrompt("second");
+    expect(service.getCompactionCount()).toBe(0); // only one user turn behind us so far
+
+    await service.sendPrompt("third"); // maybeCompact runs before this prompt
+    expect(summarizeCalls).toBe(1);
+    expect(service.getCompactionCount()).toBe(1);
+
+    const messages = service.getMessages();
+    expect(isSummaryMessage(messages[0])).toBe(true);
+    // The first turn was folded into the summary, not left verbatim.
+    expect(messages.some((m) => JSON.stringify(m).includes('"first"'))).toBe(false);
+    // 3 turns × 110_100 totalTokens, with the dropped turn folded into the session total.
+    expect(service.getSessionUsage().totalTokens).toBe(330_300);
   });
 
   it("reports a friendly error when no API key is configured", async () => {

@@ -50,6 +50,15 @@ export interface AgenticChatSettings {
   ignoredGlobs: string;
   /** Background notification preferences (toasts for agent/context/cost signals). */
   notifications: NotificationSettings;
+  /** Auto-compaction: summarize old turns as the context window fills. */
+  compaction: CompactionSettings;
+}
+
+export interface CompactionSettings {
+  /** Summarize old turns automatically as the context window fills. */
+  enabled: boolean;
+  /** Context fill percent (50–95) at which compaction triggers. */
+  thresholdPercent: number;
 }
 
 export interface NotificationSettings {
@@ -85,6 +94,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   enableBuiltinAgents: true,
   ignoredGlobs: "",
   notifications: { enabled: true, costAlertUsd: 0 },
+  compaction: { enabled: true, thresholdPercent: 80 },
 };
 
 /** Merge stored settings over defaults, healing nested objects. */
@@ -103,6 +113,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       perTool: { ...(stored?.approval?.perTool ?? {}) },
     },
     notifications: { ...DEFAULT_SETTINGS.notifications, ...(stored?.notifications ?? {}) },
+    compaction: { ...DEFAULT_SETTINGS.compaction, ...(stored?.compaction ?? {}) },
   };
 }
 
@@ -386,6 +397,33 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           await this.save();
         });
       });
+
+    new Setting(containerEl).setName("Context window").setHeading();
+    new Setting(containerEl)
+      .setName("Auto-compaction")
+      .setDesc(
+        "Summarize older turns automatically as the context window fills, so long conversations don't hit the " +
+          "model limit or spike cost. The summary replaces the compacted turns in the transcript.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.compaction.enabled).onChange(async (value) => {
+          settings.compaction.enabled = value;
+          await this.save();
+        }),
+      );
+    new Setting(containerEl)
+      .setName("Compact at (% of context window)")
+      .setDesc("Trigger compaction once the conversation fills this share of the model's context window.")
+      .addSlider((slider) =>
+        slider
+          .setLimits(50, 95, 5)
+          .setValue(settings.compaction.thresholdPercent)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            settings.compaction.thresholdPercent = value;
+            await this.save();
+          }),
+      );
   }
 
   private renderApproval(containerEl: HTMLElement, settings: AgenticChatSettings): void {

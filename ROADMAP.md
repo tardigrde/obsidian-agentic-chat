@@ -309,10 +309,15 @@ deliberate — fanning out reads the whole vault), and the session `modifiedTime
       `src/vault/ignore.ts`; enforced at the tool layer (`src/tools/vault-tools.ts` —
       every tool consults it), never in the UI, so the model cannot route around it.
       Excluded paths report as "not found" — invisible, not just denied.
-- [ ] **Context-window management.** pi sends the whole history each turn; long sessions
-      hit the model limit and spike cost. Add auto-compaction/summarization of old turns
-      as the context fills. The context-% **signal** now ships (`getContextFraction` +
-      chrome readout + threshold notifications); auto-compaction itself is still open.
+- [x] **Context-window management.** pi sends the whole history each turn; long sessions
+      hit the model limit and spike cost. Auto-compaction now ships: `src/agent/compaction.ts`
+      (pure cut-point + token-estimate logic) plus `AgentService.maybeCompact`, which
+      summarizes old turns into a single summary message before a send once the window fills
+      past a configurable threshold (`settings.compaction`). Dropped-turn usage is folded into
+      the session total so cost never shrinks; the summary renders as a distinct, non-editable
+      transcript block and toasts once via the notification layer. Summarization uses pi's
+      `generateSummary` (injectable for tests). The context-% signal (`getContextFraction` +
+      chrome readout + threshold notifications) was the precursor.
 - [x] **Notification system.** `src/ui/notifications.ts` — a typed `Notifier` over
       Obsidian `Notice` with a master toggle (errors bypass it), wired in `ChatView` for
       agent-finished (when you're elsewhere), context-window thresholds (75/90%), and the
@@ -372,9 +377,8 @@ generic chat features.
 
 ### Pull-forward (re-affirmed by the bug-sweep review)
 
-- **Auto-compaction** is the real long-session pain (already a Cross-cutting open item; the
-  `getContextFraction` signal ships, the summarize-old-turns loop does not). Higher ROI
-  than most UX polish.
+- ~~**Auto-compaction**~~ — shipped (see Cross-cutting "Context-window management"). The
+  summarize-old-turns loop now runs automatically as the window fills.
 - **Pre-send cost estimate + hard spend cap** (Cross-cutting "Token budget" open item) —
   the post-hoc alert ships; the estimate and cap do not.
 
