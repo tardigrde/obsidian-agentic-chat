@@ -27,6 +27,12 @@ import {
   isSummaryMessage,
   planCompaction,
 } from "./compaction";
+import {
+  DEFAULT_EXPECTED_OUTPUT_TOKENS,
+  estimateNextRequestCost,
+  hasPricing,
+  type RequestCostEstimate,
+} from "./cost";
 import { buildSystemPrompt } from "./system-prompt";
 import { MODES, resolveModePolicy } from "./modes";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -184,6 +190,21 @@ export class AgentService {
     return this.getMessages().filter(isSummaryMessage).length;
   }
 
+  /**
+   * Estimated size and cost of the next request (current transcript + assumed
+   * output), for a pre-send readout. Undefined when the model has no pricing
+   * (unknown model or local Ollama) so the UI can omit a meaningless "$0".
+   */
+  estimateNextCost(): RequestCostEstimate | undefined {
+    const model = this.agent?.state.model;
+    if (!model || !hasPricing(model.cost)) return undefined;
+    const settings = this.getSettings();
+    const expectedOutput = settings.maxTokens > 0 ? settings.maxTokens : DEFAULT_EXPECTED_OUTPUT_TOKENS;
+    // Include the system prompt (base + overlays + skills + subagents) so the
+    // first-turn estimate isn't a large underestimate.
+    return estimateNextRequestCost(this.getMessages(), model.cost, expectedOutput, this.composeSystemPrompt(settings));
+  }
+
   async initialize(): Promise<void> {
     if (this.agent) return;
     if (this.initialization) return this.initialization;
@@ -334,6 +355,14 @@ export class AgentService {
     }
     if (!this.hasApiKey()) {
       this.setError(`Add a ${this.getSettings().provider} API key in plugin settings before sending a prompt.`);
+      return;
+    }
+    const cap = this.getSettings().notifications.costCapUsd;
+    if (cap > 0 && (this.getSessionUsage().cost?.total ?? 0) >= cap) {
+      this.setError(
+        `Spend cap of $${cap.toFixed(2)} reached for this conversation. ` +
+          `Raise it in settings or start a new conversation.`,
+      );
       return;
     }
     await this.refreshConfiguration();
@@ -496,7 +525,11 @@ export class AgentService {
     try {
       if (event.type === "message_end") {
         await this.persistMessage(event.message);
+        if (event.message.role === "assistant") this.enforceSpendCap();
       }
+      // A subagent dispatch accrues cost during tool execution; check here too so
+      // a costly fan-out aborts as soon as it finishes, not only at the next turn.
+      if (event.type === "tool_execution_end") this.enforceSpendCap();
       if (event.type === "agent_end") {
         for (const message of event.messages) await this.persistMessage(message);
         await this.autoNameSession();
@@ -511,6 +544,20 @@ export class AgentService {
       }
       this.notifyChange();
     }
+  }
+
+  /**
+   * Hard spend cap: abort the in-flight run once this conversation's cost reaches
+   * the cap, so a long tool-use turn can't blow past it. The pre-send check in
+   * `runPrompt` stops new turns; this stops a turn already underway.
+   */
+  private enforceSpendCap(): void {
+    const cap = this.getSettings().notifications.costCapUsd;
+    if (cap <= 0) return;
+    if (!this.agent?.state.isStreaming) return;
+    if ((this.getSessionUsage().cost?.total ?? 0) < cap) return;
+    this.errorMessage = `Spend cap of $${cap.toFixed(2)} reached — stopped this turn.`;
+    this.agent.abort();
   }
 
   /** Name an as-yet-unnamed session after its first user prompt, once. */

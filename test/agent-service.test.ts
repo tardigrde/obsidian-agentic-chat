@@ -68,6 +68,41 @@ function scriptedStreamFn(
   }) as unknown as StreamFn;
 }
 
+/** Scripts one assistant message per turn, each carrying a USD cost. */
+function scriptedCostStreamFn(
+  turns: Array<{ content: AssistantMessage["content"]; stopReason: "stop" | "toolUse"; costTotal: number }>,
+): StreamFn {
+  let turn = 0;
+  return ((model: Model<"openai-completions">) => {
+    const stream = createAssistantMessageEventStream();
+    const spec = turns[Math.min(turn, turns.length - 1)];
+    turn += 1;
+    const message = {
+      role: "assistant" as const,
+      content: spec.content,
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: {
+        input: 100,
+        output: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 150,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: spec.costTotal },
+      },
+      stopReason: spec.stopReason,
+      timestamp: Date.now(),
+    };
+    queueMicrotask(() => {
+      stream.push({ type: "start", partial: { ...message, content: [] } });
+      stream.push({ type: "done", reason: spec.stopReason, message });
+      stream.end(message);
+    });
+    return stream;
+  }) as unknown as StreamFn;
+}
+
 function makeService(
   streamFn: StreamFn,
   confirmToolCall: () => Promise<boolean> = async () => true,
@@ -250,6 +285,63 @@ describe("AgentService", () => {
     await reloaded.loadSession(path);
     expect(reloaded.getCompactionCount()).toBe(1);
     expect(reloaded.getSessionUsage().totalTokens).toBe(330_300);
+  });
+
+  it("blocks new turns once the hard spend cap is reached", async () => {
+    const costStream: StreamFn = ((model: Model<"openai-completions">) => {
+      const stream = createAssistantMessageEventStream();
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "ok" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 100,
+          output: 50,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 150,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.02 },
+        },
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    }) as unknown as StreamFn;
+
+    const { service, settings } = makeService(costStream);
+    settings.notifications.costCapUsd = 0.01;
+
+    await service.sendPrompt("one"); // allowed: cost is 0 at send time
+    expect(service.getSessionUsage().cost?.total).toBeCloseTo(0.02, 6);
+
+    await service.sendPrompt("two"); // blocked: 0.02 already ≥ 0.01 cap
+    expect(service.getError()).toMatch(/spend cap/i);
+    // The blocked prompt never ran, so only the first turn's two messages exist.
+    expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("aborts an in-flight turn once the running turn crosses the spend cap", async () => {
+    // Turn 1 is a tool call that already costs 0.02 (> the 0.01 cap); the loop
+    // must abort after that turn instead of proceeding to a second turn.
+    const stream = scriptedCostStreamFn([
+      { content: [{ type: "toolCall", id: "c1", name: "write", arguments: { path: "n.md", content: "x" } }], stopReason: "toolUse", costTotal: 0.02 },
+      { content: [{ type: "text", text: "should not run" }], stopReason: "stop", costTotal: 0.02 },
+    ]);
+    const { service, settings } = makeService(stream, async () => true);
+    settings.notifications.costCapUsd = 0.01;
+
+    await service.sendPrompt("go"); // cost is 0 at send time, so the turn starts
+    // The "stopped this turn" wording is only produced by the in-flight
+    // enforceSpendCap path (the pre-send block uses different wording), so this
+    // proves the cap fired mid-run and aborted the agent.
+    expect(service.getError()).toMatch(/stopped this turn/i);
   });
 
   it("reports a friendly error when no API key is configured", async () => {
