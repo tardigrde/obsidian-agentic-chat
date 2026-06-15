@@ -170,20 +170,26 @@ steps) is enabled by `profile.model` but is not a v1 goal.
 Break the vault boundary: let the agent pull from the open web, then layer a
 multi-step research modality on top.
 
-- [ ] **Web search tool.** A typed tool the agent can call to query the web and read
-      results, alongside the existing vault tools. Read-only, but **network-egress
-      aware**: gate behind a setting (off by default) surfaced in privacy settings, since
-      it sends query text off-device. Decide the backend (provider-native search vs.
-      Brave/SearXNG endpoint) — favor an OpenAI-compatible/provider option to match the
-      existing stack.
-- [ ] **Fetch/read-page tool.** Companion to search: fetch a URL, return readable text
-      (the agent picks which results to open). Same egress gating.
-- [ ] **Deep research modality.** A multi-step plan→search→synthesize→cite loop that
-      produces a sourced note. Implement as a **default skill** first (composes search +
-      fetch + plan mode); promote to a dedicated **agent type** (M5) once the agent unit
-      lands — own system prompt + tool allowlist + model routing.
-- [ ] **Citations.** Research output writes inline source links/footnotes into the vault
-      note so claims are traceable.
+- [x] **Web search tool.** `web_search` (`src/tools/web-search.ts`) queries a configured
+      backend and returns ranked title/URL/snippet results. Read-only but **network-egress
+      aware**: the whole web layer is gated behind a single off-by-default setting
+      (`settings.web.enabled`) surfaced under "Web access" with an egress warning — when off
+      the tools are not registered, so the model can't reach the network. Backend is a small
+      provider abstraction (Tavily / Brave / SearXNG), keyed/configured in settings; the
+      HTTP layer is injected (`WebFetcher`) and production wraps Obsidian `requestUrl`
+      (mobile-safe, no CORS).
+- [x] **Fetch/read-page tool.** `fetch_url` (`src/tools/web-fetch.ts`): fetches an http(s)
+      URL and returns readable text (`extractReadableText` strips scripts/markup, decodes
+      entities, no DOM needed). Same egress gate; best-effort SSRF guard
+      (`normalizeWebUrl` blocks non-http(s) and localhost/private/link-local hosts) since a
+      fetched page can steer the model.
+- [x] **Deep research modality.** Shipped as a **default skill** (`deep-research` in
+      `src/skills/builtin-skills.ts`), advertised only when web access is on: a
+      plan→search→read→synthesize→cite→save loop that composes `web_search` + `fetch_url` +
+      the write tool. Promotion to a dedicated **agent type** (M5) is still deferred.
+- [x] **Citations.** The deep-research skill requires inline source links plus a
+      `## Sources` list, and both web tools surface result/source URLs so claims are
+      traceable.
 
 ## Milestone 7 — Embeddings + RAG QA (far future)
 

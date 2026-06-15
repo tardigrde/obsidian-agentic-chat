@@ -13,6 +13,11 @@ import { type AgentMode, DEFAULT_MODE, MODE_ORDER, MODES } from "./agent/modes";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { createVaultTools, MUTATING_TOOLS } from "./tools/vault-tools";
+import {
+  WEB_SEARCH_PROVIDER_LABELS,
+  WEB_SEARCH_PROVIDERS,
+  type WebSearchProvider,
+} from "./tools/web-search";
 import { FolderSuggestModal } from "./ui/folder-suggest";
 import { ModelSuggestModal } from "./ui/model-suggest-modal";
 
@@ -52,6 +57,26 @@ export interface AgenticChatSettings {
   notifications: NotificationSettings;
   /** Auto-compaction: summarize old turns as the context window fills. */
   compaction: CompactionSettings;
+  /** Open-web access: search + fetch tools. Off by default — sends data off-device. */
+  web: WebSettings;
+}
+
+export interface WebSettings {
+  /**
+   * Master egress gate for web search + fetch. Off by default. When off the web
+   * tools are not registered at all, so the agent cannot reach the network.
+   */
+  enabled: boolean;
+  /** Search backend. Tavily/Brave need an API key; SearXNG needs an instance URL. */
+  searchProvider: WebSearchProvider;
+  /** API key for the chosen search provider (Tavily/Brave). */
+  searchApiKey: string;
+  /** Base URL of a self-hosted SearXNG instance (used only when provider is SearXNG). */
+  searxngUrl: string;
+  /** Default number of search results to return (1–10). */
+  maxResults: number;
+  /** Default cap on characters of fetched page text returned to the model. */
+  fetchCharLimit: number;
 }
 
 export interface CompactionSettings {
@@ -97,6 +122,14 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   ignoredGlobs: "",
   notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
   compaction: { enabled: true, thresholdPercent: 80 },
+  web: {
+    enabled: false,
+    searchProvider: "tavily",
+    searchApiKey: "",
+    searxngUrl: "",
+    maxResults: 5,
+    fetchCharLimit: 10_000,
+  },
 };
 
 /** Merge stored settings over defaults, healing nested objects. */
@@ -116,7 +149,17 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     },
     notifications: { ...DEFAULT_SETTINGS.notifications, ...(stored?.notifications ?? {}) },
     compaction: { ...DEFAULT_SETTINGS.compaction, ...(stored?.compaction ?? {}) },
+    web: {
+      ...DEFAULT_SETTINGS.web,
+      ...(stored?.web ?? {}),
+      // Heal the provider enum so an unknown persisted value can't break search.
+      searchProvider: healSearchProvider(stored?.web?.searchProvider),
+    },
   };
+}
+
+function healSearchProvider(stored: WebSearchProvider | undefined): WebSearchProvider {
+  return stored && WEB_SEARCH_PROVIDERS.includes(stored) ? stored : DEFAULT_SETTINGS.web.searchProvider;
 }
 
 /** The model id used for the active provider. */
@@ -186,6 +229,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     this.renderAgent(containerEl, settings);
     this.renderApproval(containerEl, settings);
+    this.renderWebAccess(containerEl, settings);
     this.renderNotifications(containerEl, settings);
     this.renderResources(containerEl, settings);
   }
@@ -469,6 +513,107 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             });
         });
     }
+  }
+
+  private renderWebAccess(containerEl: HTMLElement, settings: AgenticChatSettings): void {
+    new Setting(containerEl).setName("Web access").setHeading();
+
+    const warning = containerEl.createDiv({ cls: "agentic-chat-settings-warning" });
+    warning.createSpan({ cls: "agentic-chat-settings-warning-icon", text: "⚠" });
+    warning.createSpan({
+      text:
+        "Web search and fetch send your query text and the URLs the agent opens to a third-party " +
+        "service, off-device — outside the vault's privacy boundary. Off by default; turn it on only " +
+        "when you want the agent to use the open web.",
+    });
+
+    new Setting(containerEl)
+      .setName("Enable web search & fetch")
+      .setDesc("Give the agent web_search and fetch_url tools. When off, the agent cannot reach the network at all.")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.web.enabled).onChange(async (value) => {
+          settings.web.enabled = value;
+          await this.save();
+          this.display();
+        }),
+      );
+
+    if (!settings.web.enabled) return;
+
+    new Setting(containerEl)
+      .setName("Search provider")
+      .setDesc("Backend for web_search. Tavily and Brave need an API key; SearXNG needs a self-hosted instance URL.")
+      .addDropdown((dropdown) => {
+        for (const provider of WEB_SEARCH_PROVIDERS) {
+          dropdown.addOption(provider, WEB_SEARCH_PROVIDER_LABELS[provider]);
+        }
+        dropdown.setValue(settings.web.searchProvider).onChange(async (value) => {
+          settings.web.searchProvider = value as WebSearchProvider;
+          await this.save();
+          this.display();
+        });
+      });
+
+    if (settings.web.searchProvider === "searxng") {
+      new Setting(containerEl)
+        .setName("SearXNG instance URL")
+        .setDesc("Base URL of your SearXNG instance, e.g. https://searx.example.com. The JSON API must be enabled.")
+        .addText((text) =>
+          text
+            .setPlaceholder("https://searx.example.com")
+            .setValue(settings.web.searxngUrl)
+            .onChange(async (value) => {
+              settings.web.searxngUrl = value.trim();
+              await this.save();
+            }),
+        );
+    } else {
+      new Setting(containerEl)
+        .setName("Search API key")
+        .setDesc(
+          settings.web.searchProvider === "tavily"
+            ? "Tavily API key (tavily.com). Stored in plaintext like your model key."
+            : "Brave Search API key (brave.com/search/api). Stored in plaintext like your model key.",
+        )
+        .addText((text) => {
+          text.inputEl.type = "password";
+          text
+            .setPlaceholder(settings.web.searchProvider === "tavily" ? "tvly-…" : "BSA…")
+            .setValue(settings.web.searchApiKey)
+            .onChange(async (value) => {
+              settings.web.searchApiKey = value.trim();
+              await this.save();
+            });
+        });
+    }
+
+    new Setting(containerEl)
+      .setName("Search results")
+      .setDesc("How many results web_search returns by default.")
+      .addSlider((slider) =>
+        slider
+          .setLimits(1, 10, 1)
+          .setValue(settings.web.maxResults)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            settings.web.maxResults = value;
+            await this.save();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Fetched page character limit")
+      .setDesc("Maximum characters of a fetched page's text returned to the model.")
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.setAttribute("min", "500");
+        text.setValue(String(settings.web.fetchCharLimit)).onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          settings.web.fetchCharLimit =
+            Number.isFinite(parsed) && parsed >= 500 ? parsed : DEFAULT_SETTINGS.web.fetchCharLimit;
+          await this.save();
+        });
+      });
   }
 
   /** Warn that API keys live in plaintext inside the vault's plugin data file. */

@@ -14,9 +14,12 @@ import { activeModelId, apiKeyForProvider, activeModelConfig } from "../settings
 import { buildModel, type ModelConfig } from "../llm/models";
 import { createVaultTools, MUTATING_TOOLS } from "../tools/vault-tools";
 import { createSubagentTool, SUBAGENT_TOOL_NAME, normalizeTasks } from "../tools/subagent-tool";
+import { createObsidianFetcher, type WebFetcher } from "../tools/web-fetch";
+import { createWebTools } from "../tools/web-tools";
 import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "../vault/ignore";
 import { deriveAutoName, ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
 import { buildSkillInvocation, loadVaultSkills } from "../skills/skills";
+import { builtinSkills } from "../skills/builtin-skills";
 import { type AgentProfile, formatSubagentsForSystemPrompt, loadAgentProfiles } from "./subagents";
 import { addUsage, emptyUsage, sumAssistantUsage } from "./usage";
 import {
@@ -71,6 +74,8 @@ export interface AgentServiceOptions {
   streamFn?: StreamFn;
   /** Injected for tests; production summarizes via pi's `generateSummary`. */
   summarize?: SummarizeFn;
+  /** Injected for tests; production wraps Obsidian's `requestUrl` for the web tools. */
+  webFetch?: WebFetcher;
 }
 
 type EventListener = (event: AgentEvent) => void;
@@ -87,6 +92,7 @@ export class AgentService {
   private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
   private readonly injectedStreamFn?: StreamFn;
   private readonly injectedSummarize?: SummarizeFn;
+  private readonly webFetch: WebFetcher;
 
   private agent: Agent | null = null;
   private unsubscribeAgent: (() => void) | null = null;
@@ -118,6 +124,7 @@ export class AgentService {
     this.confirmToolCall = options.confirmToolCall;
     this.injectedStreamFn = options.streamFn;
     this.injectedSummarize = options.summarize;
+    this.webFetch = options.webFetch ?? createObsidianFetcher();
   }
 
   onEvent(listener: EventListener): () => void {
@@ -534,9 +541,13 @@ export class AgentService {
     return buildSystemPrompt(settings.systemPrompt, this.skills, overlays);
   }
 
-  /** Parent tool set: the vault tools, plus the subagent tool when profiles exist. */
+  /**
+   * Parent tool set: the vault tools, the web tools when web access is enabled,
+   * plus the subagent tool when profiles exist.
+   */
   private buildParentTools(): AgentTool[] {
     const tools = createVaultTools(this.app, this.ignoreMatcher);
+    tools.push(...createWebTools(this.getSettings().web, this.webFetch));
     if (this.profiles.length > 0) tools.push(this.createSubagentToolInstance());
     return tools;
   }
@@ -721,7 +732,8 @@ export class AgentService {
       ? await loadVaultSkills(this.app, settings.templatesFolder)
       : [];
     const byName = new Map<string, Skill>();
-    for (const skill of [...skills, ...legacyTemplates]) {
+    // Vault skills win over built-ins of the same name (added last, kept-first map).
+    for (const skill of [...skills, ...legacyTemplates, ...builtinSkills(settings.web.enabled)]) {
       if (!byName.has(skill.name)) byName.set(skill.name, skill);
     }
     this.skills = [...byName.values()];
