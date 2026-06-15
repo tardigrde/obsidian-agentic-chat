@@ -8,6 +8,8 @@ interface FileSpec {
   content?: string;
   /** Outbound resolved links (target path -> count). */
   links?: Record<string, number>;
+  /** Cached frontmatter as Obsidian's metadataCache would expose it. */
+  frontmatter?: Record<string, unknown>;
 }
 
 interface VaultSpec {
@@ -17,12 +19,13 @@ interface VaultSpec {
 }
 
 /**
- * Minimal Obsidian `App` stand-in tailored to the graph tools.
+ * Minimal Obsidian `App` stand-in tailored to the graph + frontmatter tools.
  * Builds resolvedLinks/backlinks from the per-file `links` spec.
  */
 function makeApp(spec: VaultSpec): App {
   const files = new Map<string, TFile>();
   const contents = new Map<string, string>();
+  const frontmatterCache = new Map<string, Record<string, unknown>>();
 
   for (const [path, file] of Object.entries(spec.files)) {
     const tfile = new TFile();
@@ -31,6 +34,7 @@ function makeApp(spec: VaultSpec): App {
     tfile.extension = tfile.name.includes(".") ? tfile.name.split(".").pop() ?? "" : "";
     files.set(path, tfile);
     contents.set(path, file.content ?? "");
+    if (file.frontmatter) frontmatterCache.set(path, file.frontmatter);
   }
 
   const resolvedLinks: Record<string, Record<string, number>> = {};
@@ -59,6 +63,18 @@ function makeApp(spec: VaultSpec): App {
         const record = backlinksFor(file.path);
         return { data: spec.backlinksAsMap ? new Map(Object.entries(record)) : record };
       },
+      getFileCache: (file: TFile) => {
+        const fm = frontmatterCache.get(file.path);
+        return fm ? { frontmatter: { ...fm } } : null;
+      },
+    },
+    fileManager: {
+      // Mirror processFrontMatter: mutate a parsed object, then persist it.
+      processFrontMatter: async (file: TFile, fn: (fm: Record<string, unknown>) => void) => {
+        const current = { ...(frontmatterCache.get(file.path) ?? {}) };
+        fn(current);
+        frontmatterCache.set(file.path, current);
+      },
     },
   } as unknown as App;
 }
@@ -81,7 +97,9 @@ const ignore = (...paths: string[]): IgnoreMatcher => {
 };
 
 describe("MUTATING_TOOLS", () => {
-  it("keeps the read-only graph tools out of the mutating set", () => {
+  it("includes set_properties but not the read-only graph/property tools", () => {
+    expect(MUTATING_TOOLS.has("set_properties")).toBe(true);
+    expect(MUTATING_TOOLS.has("get_properties")).toBe(false);
     expect(MUTATING_TOOLS.has("get_backlinks")).toBe(false);
     expect(MUTATING_TOOLS.has("get_links")).toBe(false);
     expect(MUTATING_TOOLS.has("local_graph")).toBe(false);
@@ -210,5 +228,97 @@ describe("local_graph", () => {
   it("reports a missing note as not found", async () => {
     const app = makeApp(spec);
     await expect(run(getTool(app, "local_graph"), { path: "Missing.md" })).rejects.toThrow(/not found/);
+  });
+});
+
+describe("get_properties", () => {
+  it("reads frontmatter from the metadata cache", async () => {
+    const app = makeApp({ files: { "Note.md": { frontmatter: { status: "active", tags: ["a", "b"] } } } });
+    const { text, details } = await run(getTool(app, "get_properties"), { path: "Note.md" });
+    expect(details.keys).toEqual(["status", "tags"]);
+    expect(JSON.parse(text)).toEqual({ status: "active", tags: ["a", "b"] });
+  });
+
+  it("strips the internal position field from cached frontmatter", async () => {
+    const app = makeApp({
+      files: { "Note.md": { frontmatter: { status: "active", position: { start: 0 } } } },
+    });
+    const { details } = await run(getTool(app, "get_properties"), { path: "Note.md" });
+    expect(details.keys).toEqual(["status"]);
+  });
+
+  it("falls back to parsing the YAML block when the cache is empty", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "---\nstatus: draft\n---\n\nBody" } } });
+    const { details, text } = await run(getTool(app, "get_properties"), { path: "Note.md" });
+    expect(details.keys).toEqual(["status"]);
+    expect(JSON.parse(text)).toEqual({ status: "draft" });
+  });
+
+  it("reports no frontmatter cleanly", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "Just a body" } } });
+    const { text, details } = await run(getTool(app, "get_properties"), { path: "Note.md" });
+    expect(text).toBe("(no frontmatter properties)");
+    expect(details.keys).toEqual([]);
+  });
+
+  it("reports an ignored note as not found", async () => {
+    const app = makeApp({ files: { "Note.md": { frontmatter: { a: 1 } } } });
+    await expect(run(getTool(app, "get_properties", ignore("Note.md")), { path: "Note.md" })).rejects.toThrow(
+      /not found/,
+    );
+  });
+
+  it("reports a missing note as not found", async () => {
+    const app = makeApp({ files: {} });
+    await expect(run(getTool(app, "get_properties"), { path: "Gone.md" })).rejects.toThrow(/not found/);
+  });
+});
+
+describe("set_properties", () => {
+  it("merges keys into existing frontmatter without touching others", async () => {
+    const app = makeApp({ files: { "Note.md": { frontmatter: { status: "draft", keep: "me" } } } });
+    const { text, details } = await run(getTool(app, "set_properties"), {
+      path: "Note.md",
+      properties: { status: "published", priority: 3 },
+    });
+    expect(details.set).toEqual(["status", "priority"]);
+    expect(text).toContain("set status, priority");
+    const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
+    expect(JSON.parse(after.text)).toEqual({ status: "published", keep: "me", priority: 3 });
+  });
+
+  it("deletes a key when its value is null", async () => {
+    const app = makeApp({ files: { "Note.md": { frontmatter: { drop: "x", keep: "y" } } } });
+    const { details, text } = await run(getTool(app, "set_properties"), {
+      path: "Note.md",
+      properties: { drop: null },
+    });
+    expect(details.deleted).toEqual(["drop"]);
+    expect(text).toContain("deleted drop");
+    const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
+    expect(JSON.parse(after.text)).toEqual({ keep: "y" });
+  });
+
+  it("creates frontmatter on a note that has none", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "Body only" } } });
+    await run(getTool(app, "set_properties"), { path: "Note.md", properties: { tag: "new" } });
+    const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
+    expect(JSON.parse(after.text)).toEqual({ tag: "new" });
+  });
+
+  it("reports an ignored note as not found and does not mutate it", async () => {
+    const app = makeApp({ files: { "Note.md": { frontmatter: { a: 1 } } } });
+    await expect(
+      run(getTool(app, "set_properties", ignore("Note.md")), { path: "Note.md", properties: { a: 2 } }),
+    ).rejects.toThrow(/not found/);
+    const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
+    expect(JSON.parse(after.text)).toEqual({ a: 1 });
+  });
+
+  it("reports a missing note as not found", async () => {
+    const app = makeApp({ files: {} });
+    await expect(
+      run(getTool(app, "set_properties"), { path: "Gone.md", properties: { a: 1 } }),
+    ).rejects.toThrow(/not found/);
   });
 });

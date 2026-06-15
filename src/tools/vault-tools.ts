@@ -1,4 +1,4 @@
-import { type App, TFile, TFolder, MarkdownView } from "obsidian";
+import { type App, TFile, TFolder, MarkdownView, parseYaml } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { applyExactEdits } from "../vault/edit";
@@ -8,7 +8,7 @@ import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } fr
 import { formatTextSlice, sliceTextByLines, truncateToolOutput } from "../vault/truncate";
 
 /** Tools that change the vault. Used to pick a default approval policy. */
-export const MUTATING_TOOLS = new Set(["write", "edit", "delete", "rename"]);
+export const MUTATING_TOOLS = new Set(["write", "edit", "delete", "rename", "set_properties"]);
 
 const TEXT_EXTENSIONS = new Set([
   "md", "txt", "json", "jsonl", "csv", "tsv", "yaml", "yml",
@@ -80,6 +80,19 @@ const LocalGraphParameters = Type.Object({
   path: Type.String({ description: "Vault-relative path of the note to map the neighborhood of" }),
 });
 
+const GetPropertiesParameters = Type.Object({
+  path: Type.String({ description: "Vault-relative path of the note whose frontmatter to read" }),
+});
+
+const SetPropertiesParameters = Type.Object({
+  path: Type.String({ description: "Vault-relative path of the note whose frontmatter to update" }),
+  properties: Type.Record(Type.String(), Type.Unknown(), {
+    description:
+      "Key/value pairs to merge into the note's YAML frontmatter. Existing keys are overwritten; " +
+      "keys not listed are left untouched. Pass null as a value to delete that key.",
+  }),
+});
+
 /**
  * All built-in vault tools, bound to the active Obsidian app.
  *
@@ -101,6 +114,8 @@ export function createVaultTools(app: App, isIgnored: IgnoreMatcher = () => fals
     createBacklinksTool(app, isIgnored),
     createLinksTool(app, isIgnored),
     createLocalGraphTool(app, isIgnored),
+    createGetPropertiesTool(app, isIgnored),
+    createSetPropertiesTool(app, isIgnored),
   ];
 }
 
@@ -384,6 +399,62 @@ function createLocalGraphTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typ
   };
 }
 
+function createGetPropertiesTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof GetPropertiesParameters> {
+  return {
+    name: "get_properties",
+    label: "Get note properties",
+    description: "Read a note's YAML frontmatter as structured key/value data.",
+    parameters: GetPropertiesParameters,
+    execute: async (_id, params) => {
+      const path = normalizeVaultPath(params.path);
+      assertVisible(isIgnored, path);
+      const file = getVaultFile(app, path);
+      const frontmatter = await readFrontmatter(app, file);
+      const keys = Object.keys(frontmatter);
+      const text = keys.length === 0 ? "(no frontmatter properties)" : JSON.stringify(frontmatter, null, 2);
+      return textResult(truncateToolOutput(text), { path, keys });
+    },
+  };
+}
+
+function createSetPropertiesTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof SetPropertiesParameters> {
+  return {
+    name: "set_properties",
+    label: "Set note properties",
+    description:
+      "Merge keys into a note's YAML frontmatter (set/overwrite; pass null to delete a key). " +
+      "Edits the structured frontmatter, never the raw YAML text.",
+    parameters: SetPropertiesParameters,
+    executionMode: "sequential",
+    execute: async (_id, params) => {
+      const path = normalizeVaultPath(params.path);
+      assertVisible(isIgnored, path);
+      const file = getVaultFile(app, path);
+      const set: string[] = [];
+      const deleted: string[] = [];
+      await app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+        for (const [key, value] of Object.entries(params.properties)) {
+          if (value === null) {
+            delete frontmatter[key];
+            deleted.push(key);
+          } else {
+            frontmatter[key] = value;
+            set.push(key);
+          }
+        }
+      });
+      const parts: string[] = [];
+      if (set.length > 0) parts.push(`set ${set.join(", ")}`);
+      if (deleted.length > 0) parts.push(`deleted ${deleted.join(", ")}`);
+      return textResult(`Updated frontmatter of ${path}: ${parts.join("; ") || "no changes"}.`, {
+        path,
+        set,
+        deleted,
+      });
+    },
+  };
+}
+
 /**
  * Obsidian's backlink API (`metadataCache.getBacklinksForFile`) is undocumented
  * in the public typings: it returns a structure whose `.data` maps each source
@@ -418,6 +489,29 @@ function getOutboundLinks(app: App, sourcePath: string): Array<{ path: string; c
     .map(([targetPath, count]) => ({ path: targetPath, count: typeof count === "number" ? count : 0 }))
     .filter((entry) => entry.path !== sourcePath)
     .sort((left, right) => left.path.localeCompare(right.path));
+}
+
+/**
+ * Read a note's frontmatter as structured data. Prefers the metadata cache;
+ * falls back to parsing the file's leading YAML block when the cache is empty
+ * (e.g. the file was just written, or in non-Obsidian test runtimes).
+ */
+async function readFrontmatter(app: App, file: TFile): Promise<Record<string, unknown>> {
+  const cached = app.metadataCache.getFileCache(file)?.frontmatter;
+  if (cached) {
+    const { position, ...rest } = cached as Record<string, unknown>;
+    void position;
+    return rest;
+  }
+  const content = await app.vault.cachedRead(file);
+  return parseFrontmatterBlock(content);
+}
+
+/** Parse the leading `---` YAML block of a note into structured data. */
+function parseFrontmatterBlock(content: string): Record<string, unknown> {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
+  if (!match) return {};
+  return parseYaml(match[1]) as Record<string, unknown>;
 }
 
 function getVaultFile(app: App, path: string): TFile {
