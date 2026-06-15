@@ -59,6 +59,8 @@ export class AgentService {
   private agent: Agent | null = null;
   private unsubscribeAgent: (() => void) | null = null;
   private initialization: Promise<void> | null = null;
+  /** Serializes session swaps so a rapid double-trigger can't interleave detach/create/replace. */
+  private sessionSwap: Promise<void> = Promise.resolve();
   private persisted = new WeakSet<object>();
   private disposed = false;
 
@@ -195,14 +197,16 @@ export class AgentService {
   }
 
   async newSession(): Promise<void> {
-    this.detachAgent();
-    this.sessionInfo = await this.sessionManager.createSession(this.sessionDefaults());
-    this.persisted = new WeakSet<object>();
-    this.subagentUsage = emptyUsage();
-    await this.reloadResources();
-    this.replaceAgent([]);
-    this.errorMessage = undefined;
-    this.notifyChange();
+    return this.enqueueSessionSwap(async () => {
+      this.detachAgent();
+      this.sessionInfo = await this.sessionManager.createSession(this.sessionDefaults());
+      this.persisted = new WeakSet<object>();
+      this.subagentUsage = emptyUsage();
+      await this.reloadResources();
+      this.replaceAgent([]);
+      this.errorMessage = undefined;
+      this.notifyChange();
+    });
   }
 
   async listSessions(): Promise<SessionInfo[]> {
@@ -210,14 +214,32 @@ export class AgentService {
   }
 
   async loadSession(path: string): Promise<void> {
-    this.detachAgent();
-    this.sessionInfo = await this.sessionManager.loadSession(path);
-    this.persisted = new WeakSet<object>();
-    this.subagentUsage = emptyUsage();
-    await this.reloadResources();
-    this.replaceAgent(this.sessionManager.buildSessionContext().messages);
-    this.errorMessage = undefined;
-    this.notifyChange();
+    return this.enqueueSessionSwap(async () => {
+      this.detachAgent();
+      this.sessionInfo = await this.sessionManager.loadSession(path);
+      this.persisted = new WeakSet<object>();
+      this.subagentUsage = emptyUsage();
+      await this.reloadResources();
+      this.replaceAgent(this.sessionManager.buildSessionContext().messages);
+      this.errorMessage = undefined;
+      this.notifyChange();
+    });
+  }
+
+  /**
+   * Run a session swap exclusively: chain it after any in-flight swap so two
+   * rapid triggers (e.g. double-tapping "New conversation") can't interleave
+   * detach/create/replace and corrupt the active session.
+   */
+  private enqueueSessionSwap(op: () => Promise<void>): Promise<void> {
+    const next = this.sessionSwap.then(op, op);
+    // Swallow rejections on the chain itself so one failure doesn't poison the
+    // next swap; the awaited caller still sees the original rejection.
+    this.sessionSwap = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
   }
 
   async deleteSession(path: string): Promise<void> {

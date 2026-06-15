@@ -40,7 +40,7 @@ export class ApprovalModal extends Modal {
     let remember = false;
     new Setting(contentEl)
       .setName("Don't ask again for this tool")
-      .setDesc("Always allow this tool for now on (changeable in settings).")
+      .setDesc("Always allow this tool from now on (changeable in settings).")
       .addToggle((toggle) => toggle.setValue(false).onChange((value) => (remember = value)));
 
     new Setting(contentEl)

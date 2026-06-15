@@ -26,7 +26,8 @@ export class ModelSuggestModal extends SuggestModal<BrowsableModel> {
     const needle = query.trim().toLowerCase();
     if (!needle) return this.models;
     return this.models.filter(
-      (model) => model.id.toLowerCase().includes(needle) || model.name.toLowerCase().includes(needle),
+      (model) =>
+        model.id.toLowerCase().includes(needle) || (model.name?.toLowerCase().includes(needle) ?? false),
     );
   }
 

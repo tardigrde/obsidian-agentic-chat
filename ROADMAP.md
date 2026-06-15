@@ -192,6 +192,63 @@ Issue #2 §2. The most-requested feature across Obsidian AI plugins, but heavies
 - [ ] Local and OpenRouter embeddings.
 - [ ] Semantic vault search to back RAG-based Q&A (replace/augment the brute-force
       `search_vault`).
+- [ ] **Lexical-first Vault QA, embeddings as an upgrade.** Ship a "chat with the whole
+      vault" retrieval mode that works **day one** on lexical/grep ranking (no index
+      required), then swap in embeddings for relevance without changing the UX. Avoids
+      gating QA on the heaviest part of the milestone. (Pattern from Obsidian Copilot's
+      "Smart Vault Search.")
+- [ ] **Inline citations.** Prompt the QA/research path to cite the exact
+      `[[note#heading]]`/`^block` it drew each claim from, rendered as clickable links, so
+      answers are verifiable. (Generalizes the M6 §4 citation item to vault QA.)
+- [ ] **Relevant-notes panel (ambient discovery).** A sidebar section that surfaces notes
+      related to what you're reading/writing — no prompt — ranked by embeddings + backlink
+      proximity (rides the graph/backlink tools idea). A *non-chat* delivery surface; the
+      flagship PKM differentiator once embeddings + graph land.
+
+## Milestone 8 — Live interaction + in-editor editing
+
+From a competitive review (Claudian, obsidian-chat, pi-plugin, Obsidian Copilot). Make the
+running agent steerable and let edits happen where the cursor is, not only in the chat pane.
+Everything here stays in-process and mobile-safe — no shell/subprocess.
+
+- [ ] **Steering messages.** Inject a message into a *running* turn to course-correct
+      without aborting (today we only have abort). pi-agent-core should support queued user
+      input mid-loop; surface a send-while-running affordance that feeds the in-flight
+      agent. Cheapest high-impact win since we already own the pi loop. (pi-plugin.)
+- [ ] **Message queue (type-ahead while running).** Messages typed during a turn stay
+      editable until the turn ends, then send. **Design tension with steering — needs
+      refinement:** a mid-run message could either *steer now* or *queue for next*. Decide a
+      default and an explicit modifier (e.g. plain Enter = queue, Shift/Cmd = steer now), or
+      one unified composer that routes by intent. Resolve before building either. (Claudian.)
+- [ ] **`ask_user` clarification tool.** A typed tool the agent calls to pause and ask the
+      user a structured question mid-task (distinct from emitting prose). Renders as an
+      inline prompt; pairs with the approval gate and plan/agent modes. (obsidian-chat.)
+- [ ] **Inline edit / Quick Ask.** Select text in a note (or at the cursor) + a hotkey →
+      the agent rewrites **in place**, shown as a word-level diff to accept/reject, no chat
+      round-trip. Strong Obsidian-native surface and a clear gap; composes with the
+      Cross-cutting "Edit diff review + undo" item (shared diff/accept UI).
+      (Claudian `InlineEditModal`; Copilot "Quick Command".)
+- [ ] **Plan/todo tracker panel.** Render the agent's plan (its `todo`-style steps) as a
+      live `Tasks (x/y)` checklist surfaced above the transcript, not buried in tool steps.
+      (Claudian `StatusPanel` — todo half only; its bash-console half needs a shell we don't
+      have.)
+- [ ] **`#` inline persistent instruction.** Typing `#…` in the composer appends a durable
+      custom instruction (lightweight "remember this") rather than sending a prompt — grows
+      a per-session/per-vault instruction set inline. Complements output styles. (Claudian.)
+
+## Milestone 9 — Project workspaces
+
+A saved, scoped workspace ("NotebookLM inside the vault"): bundle a context scope + model +
+system prompt + its own history under a name. Composes with what already ships (sessions,
+ignore-globs, model picker, output styles). (Obsidian Copilot "Projects".)
+
+- [ ] **Project definition.** A config `{ name, includeGlobs/tags, model?, systemPrompt?,
+      sessionGroup }`, authored as a vault `.md` (frontmatter + body) for sync/portability,
+      loaded with the `loadVaultSkills`/`loadAgentProfiles` frontmatter pattern.
+- [ ] **Scoped context pre-load.** On entering a project, matching notes (folder/tag globs)
+      are available as default context; the ignore matcher still applies.
+- [ ] **Pinned model + prompt + isolated history.** Selecting a project switches the active
+      model and system-prompt overlay and filters the session list to that project's group.
 
 ---
 
@@ -221,6 +278,30 @@ Reported issues to be fixed. Ordered by severity, not by fix order.
       turn. (Deterministic for now — `deriveAutoName`; a small-model upgrade can replace
       the heuristic later, e.g. "hi" → "Greeting".)
 
+### Bug sweep (2026-06-15)
+
+Triaged from an automated 42-item report; most were false or trivial. Fixed the real ones:
+
+- [x] **`newSession()` swap race.** Rapid double-trigger of "New conversation" could
+      interleave `detachAgent`/`createSession`/`replaceAgent`. Session swaps now serialize
+      through `enqueueSessionSwap` in `AgentService` (`newSession` + `loadSession`).
+- [x] **`ChatView.newSession()` left stale view state on error.** Attachment/transcript
+      reset moved into `finally` so a failed swap clears the pane instead of showing stale
+      chips and an old transcript.
+- [x] **Model browser crash on null model name.** `ModelSuggestModal.getSuggestions`
+      guards `model.name?.toLowerCase()` so an OpenRouter entry with a null `name` no
+      longer throws.
+- [x] **`tsconfig` skipped `vitest.live.config.ts`.** Added to `include` so type errors in
+      the live-test config are caught by `tsc -noEmit`.
+- [x] **Approval-modal copy typo** ("for now on" → "from now on").
+
+Dismissed as false/non-bugs: duplicate release tags (semantic-release tags once via
+`tagFormat`; `@semantic-release/npm` with `npmPublish:false` does not git-tag — verified
+single tags in history), `styles.css` CI validation (committed source, not a build
+artifact), parallelizing the `grep` tool (the serial loop's early-break at `maxMatches` is
+deliberate — fanning out reads the whole vault), and the session `modifiedTime` `continue`
+(uses `message.timestamp` by design).
+
 ## Cross-cutting
 
 - [x] **Ignore lists (security).** User-configured gitignore-style globs
@@ -244,7 +325,14 @@ Reported issues to be fixed. Ordered by severity, not by fix order.
       a future enhancement.
 - [ ] **Edit diff review + undo.** Show a diff in the approval flow and offer
       undo-last-change. Extends the `beforeToolCall` gate (`src/agent/approval.ts`) from
-      yes/no into reviewable, reversible edits.
+      yes/no into reviewable, reversible edits. Shares its diff/accept UI with the M8
+      **Inline edit / Quick Ask** surface.
+- [ ] **Per-turn file checkpoints + rewind modes.** Snapshot the files a turn changed
+      (write/edit/rename), so the existing conversation rewind (`truncateMessages`) can also
+      restore **vault file state** — with a mode menu: "conversation only / files only /
+      both." We have no host CLI doing this for us (unlike Claudian, which rides Claude
+      Code's `fileCheckpointing`), so it needs our own lightweight per-turn snapshot of
+      touched paths on the vault adapter. The full undo half of "Edit diff review + undo."
 - [ ] **Rendering performance.** Make the interactive pane safe on desktop and mobile:
       append-only transcript rendering (avoid full `renderTranscript` rebuilds),
       throttled streaming with markdown parsed on finalize (not per token), cached
@@ -256,3 +344,67 @@ Reported issues to be fixed. Ordered by severity, not by fix order.
 - Visual event debugger over the `AgentEvent` stream (noted as an insight in issue #2).
 - Custom (user-authored) output styles, once built-ins prove the model.
 - Session export (JSONL → Markdown note); issue #2 wanted conversations exportable.
+
+### Obsidian-native tools (differentiators)
+
+These are things only an *Obsidian* agent can do — higher-signal than re-deriving
+generic chat features.
+
+- **Graph / backlink tools.** `get_backlinks`, `follow_links`, `local_graph(note)` as
+  typed tools so the agent traverses the `[[wikilink]]` graph instead of brute-grep.
+  Read-only; consults the ignore matcher like every other vault tool. Strongest single add.
+- **Heading / block-level `@`-mention.** `@note#heading` / `@note^block` attaches a slice
+  instead of the whole file — cheaper context, native to Obsidian's addressing. Extends the
+  existing mention/attachment system in `chat-view.ts` + `autocomplete.ts`.
+- **Vision attachments.** Attach vault images to a multimodal OpenRouter model. The chip
+  plumbing exists; needs an image content-part in the outgoing message + a model-capability
+  check (only offer when the active model `supportsImages`).
+- **Conversation fork.** Prompt editing already *rewinds* (`truncateMessages`); forking
+  keeps both branches as separate sessions. Cheap given the JSONL `parentId`/`leafId`
+  linked-list already models branches.
+- **Frontmatter property tools.** `get_properties` / `set_properties` typed tools that
+  read/write YAML frontmatter as structured data via `FileManager.processFrontMatter` +
+  `metadataCache`, instead of the `edit` tool mutating raw text (fragile, can corrupt YAML).
+  Lets the model reliably set tags/aliases/status fields. (obsidian-chat.)
+- **Link-aware `rename_file` tool.** Rename/move a note via `fileManager.renameFile()` so
+  Obsidian rewrites every inbound wikilink — behavior the model can't replicate with text
+  edits, and which a plain write/rename would orphan. (obsidian-chat.)
+
+### Pull-forward (re-affirmed by the bug-sweep review)
+
+- **Auto-compaction** is the real long-session pain (already a Cross-cutting open item; the
+  `getContextFraction` signal ships, the summarize-old-turns loop does not). Higher ROI
+  than most UX polish.
+- **Pre-send cost estimate + hard spend cap** (Cross-cutting "Token budget" open item) —
+  the post-hoc alert ships; the estimate and cap do not.
+
+### UX polish (cheap, not yet scheduled)
+
+- **Session search/filter** in `SessionListModal` — debounced substring match on name.
+- **Context-window progress bar** — the `getContextFraction` signal exists; this is the
+  glanceable color-coded visual (green/yellow/red) for it.
+- **Per-request `/model` override** — switch model for the next prompt only, then revert;
+  a stepping stone to M5 per-agent model routing.
+- **Tool timing + thinking indicator** — per-step elapsed time and an animated
+  agent-working indicator. Sugar; low priority.
+
+### Competitive-review polish (low priority)
+
+From the same plugin survey; lower-priority parity/reach items.
+
+- **Mermaid + callout render parity.** Verify `AssistantBubble` renders mermaid diagrams and
+  `> [!note]` callouts the model emits (Obsidian's `MarkdownRenderer` needs explicit
+  post-processing for mermaid). Pure rendering parity. (pi-plugin.)
+- **Editor/file context-menu "Send selection to chat".** Right-click selected text or a
+  note → add it as a scoped context chip / "Chat about this note" command, via
+  `editor-menu`/`file-menu` events. Low-effort UX. (obsidian-chat.)
+- **Internationalization (i18n).** Externalize UI strings; most Obsidian AI plugins are
+  English-only, so locales are a reach/accessibility differentiator. Independent of
+  architecture. (Claudian ships 10 locales.)
+- **Document ingestion (PDF/EPUB/Office) as context.** Parse non-image documents into
+  attachable text. Heavier (needs parsers) and lower priority for a local-first plugin;
+  PDF text extraction is the reasonable first subset. (Obsidian Copilot.)
+- **Per-agent memory for subagent profiles.** Our `AGENT.md` profiles already declare a
+  per-agent tool allowlist; add an optional per-profile memory scope so a persona can
+  accumulate durable notes. (obsidian-ai-agents — the one part of its "markdown agents" we
+  don't already have.)
