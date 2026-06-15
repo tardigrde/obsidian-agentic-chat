@@ -42,11 +42,15 @@ export class AssistantBubble {
   }
 
   appendText(delta: string): void {
+    // Ignore late deltas after the bubble has been finalized to rendered
+    // markdown, so a stray event can't append raw text over the final output.
+    if (this.markdown) return;
     this.pendingText += delta;
     this.scheduleFlush();
   }
 
   appendReasoning(delta: string): void {
+    if (this.markdown) return;
     // Create the reasoning container eagerly so the structure is in place; the
     // text itself is buffered and flushed with the rest on the next frame.
     if (!this.reasoningBody) {
