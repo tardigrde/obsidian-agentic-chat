@@ -13,7 +13,10 @@ export function filterSessions(sessions: SessionInfo[], query: string): SessionI
   if (!needle) return sessions;
   return sessions.filter((session) => {
     const name = session.name?.trim() ?? "";
-    return `${name}\n${session.firstMessage}`.toLowerCase().includes(needle);
+    // Guard against a nullish firstMessage so it never coerces to "undefined"
+    // (which would otherwise match a search for "undef").
+    const firstMessage = session.firstMessage?.trim() ?? "";
+    return `${name}\n${firstMessage}`.toLowerCase().includes(needle);
   });
 }
 

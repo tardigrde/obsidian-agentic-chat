@@ -175,14 +175,19 @@ export class AgentService {
     this.notifyChange();
   }
 
-  /** The pending one-shot model override, or null when none is queued. */
+  /**
+   * The pending one-shot model override, or null when none is queued. Reported
+   * only for OpenRouter — the override is provider-specific and {@link
+   * modelConfigForTurn} ignores it elsewhere, so the UI must too.
+   */
   getModelOverride(): string | null {
+    if (this.getSettings().provider !== "openrouter") return null;
     return this.modelOverride;
   }
 
   /** The model id the next prompt will actually use (override if queued, else settings). */
   getActiveModelId(): string {
-    return this.modelOverride ?? activeModelId(this.getSettings());
+    return this.getModelOverride() ?? activeModelId(this.getSettings());
   }
 
   getProfiles(): AgentProfile[] {
