@@ -394,15 +394,20 @@ generic chat features.
 - ~~**Pre-send cost estimate + hard spend cap**~~ — shipped (see Cross-cutting "Token
   budget"). Pre-send estimate in the chrome + a hard cap that blocks/aborts at the limit.
 
-### UX polish (cheap, not yet scheduled)
+### UX polish (cheap)
 
-- **Session search/filter** in `SessionListModal` — debounced substring match on name.
-- **Context-window progress bar** — the `getContextFraction` signal exists; this is the
-  glanceable color-coded visual (green/yellow/red) for it.
-- **Per-request `/model` override** — switch model for the next prompt only, then revert;
-  a stepping stone to M5 per-agent model routing.
-- **Tool timing + thinking indicator** — per-step elapsed time and an animated
-  agent-working indicator. Sugar; low priority.
+- [x] **Session search/filter** in `SessionListModal` — a debounced (`filterSessions`)
+      substring match over name + first message, shown once there's more than one session.
+- [x] **Context-window progress bar** — a glanceable color-coded fill (`src/ui/context-bar.ts`
+      `contextLevel` green/yellow/red at the 75/90% notification thresholds) in the composer
+      footer, driven by the existing `getContextFraction` signal.
+- [x] **Per-request `/model` override** — pick a model for the next prompt only (shift-enter /
+      shift-click in the picker), then auto-revert. `AgentService.setModelOverride` applies a
+      one-shot model in `modelConfigForTurn`, consumed in `runPrompt`; the model pill shows a
+      "next only" badge. A stepping stone to M5 per-agent model routing.
+- [x] **Tool timing + thinking indicator** — per-step elapsed time (`formatElapsed`, surfaced
+      in `AssistantBubble.endStep`) and an animated agent-working spinner in the composer while
+      a turn runs.
 
 ### Competitive-review polish (low priority)
 

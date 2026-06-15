@@ -1,7 +1,7 @@
 import { type App, type Component, MarkdownRenderer, Notice, setIcon } from "obsidian";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { SubagentChildStatus } from "../tools/subagent-tool";
-import { describeCall, formatUsage, truncateText } from "./format";
+import { describeCall, formatElapsed, formatUsage, truncateText } from "./format";
 
 const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
   running: "running…",
@@ -23,7 +23,7 @@ export class AssistantBubble {
   private readonly footerEl: HTMLElement;
   private reasoningBody: HTMLElement | null = null;
   private markdown = "";
-  private readonly steps = new Map<string, { card: HTMLElement; icon: HTMLElement }>();
+  private readonly steps = new Map<string, { card: HTMLElement; icon: HTMLElement; startedAt: number }>();
   // Streaming deltas are buffered and flushed once per animation frame, so a fast
   // token stream causes one DOM mutation/reflow per frame instead of one per token.
   private pendingText = "";
@@ -93,7 +93,7 @@ export class AssistantBubble {
     if (rawArgs && rawArgs !== "{}") {
       card.createEl("code", { cls: "agentic-chat-step-args", text: truncateText(rawArgs, 200) });
     }
-    this.steps.set(id, { card, icon });
+    this.steps.set(id, { card, icon, startedAt: performance.now() });
   }
 
   /**
@@ -129,6 +129,9 @@ export class AssistantBubble {
     step.card.removeClass("is-running");
     step.card.addClass(isError ? "is-error" : "is-done");
     setIcon(step.icon, isError ? "x-circle" : "check-circle-2");
+    // Per-step elapsed time, surfaced once the step settles.
+    const header = step.card.querySelector<HTMLElement>(".agentic-chat-step-header");
+    header?.createSpan({ cls: "agentic-chat-step-time", text: formatElapsed(performance.now() - step.startedAt) });
     const details = step.card.createEl("details", { cls: "agentic-chat-step-result" });
     details.createEl("summary", { text: isError ? "Error" : "Result" });
     details.createEl("pre", { text: truncateText(result, 4_000) });

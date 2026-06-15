@@ -293,6 +293,14 @@
   font-weight: var(--font-medium);
 }
 
+.agentic-chat-step-time {
+  margin-left: auto;
+  padding-left: var(--size-2-2);
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 .agentic-chat-step-args {
   display: block;
   margin-top: var(--size-2-1);
@@ -521,6 +529,51 @@
   color: var(--text-muted);
 }
 
+/* --- Working indicator (agent is running) --- */
+
+.agentic-chat-working {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--background-modifier-border);
+  border-top-color: var(--interactive-accent);
+  border-radius: 50%;
+  animation: agentic-chat-spin 0.7s linear infinite;
+}
+
+/* --- Context-window progress bar --- */
+
+.agentic-chat-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.agentic-chat-ctx-bar {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 5px;
+  border-radius: var(--radius-l);
+  background-color: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.agentic-chat-ctx-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  transition: width 0.2s ease;
+  background-color: var(--color-green);
+}
+
+.agentic-chat-ctx-fill.is-warn {
+  background-color: var(--color-yellow);
+}
+
+.agentic-chat-ctx-fill.is-high {
+  background-color: var(--color-red);
+}
+
 /* --- Model pill --- */
 
 .agentic-chat-model-pill {
@@ -541,6 +594,15 @@
   background-color: var(--background-modifier-hover);
 }
 
+/* One-shot per-request model override: highlight so it's clearly temporary. */
+.agentic-chat-model-pill.is-override {
+  border-color: var(--interactive-accent);
+}
+
+.agentic-chat-model-pill.is-override .agentic-chat-model-provider {
+  color: var(--text-accent);
+}
+
 .agentic-chat-model-provider {
   font-size: var(--font-smallest);
   color: var(--text-faint);
@@ -559,6 +621,7 @@
 /* --- Usage line --- */
 
 .agentic-chat-usage {
+  flex: 1 1 auto;
   font-size: var(--font-ui-smaller);
   color: var(--text-faint);
   text-align: right;
@@ -573,6 +636,17 @@
 .agentic-chat-session-list {
   max-height: 60vh;
   overflow-y: auto;
+}
+
+.agentic-chat-session-search {
+  width: 100%;
+  margin-bottom: var(--size-2-3);
+}
+
+.agentic-chat-session-empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: var(--size-4-2);
 }
 
 .agentic-chat-session-row {

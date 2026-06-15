@@ -113,6 +113,8 @@ export class AgentService {
   private undoStack: UndoEntry[] = [];
   /** Undo records captured pre-execution, keyed by tool call id, pending success. */
   private pendingUndo = new Map<string, UndoEntry>();
+  /** One-shot model id used for the next prompt only, then reverted (per-request `/model`). */
+  private modelOverride: string | null = null;
 
   private readonly eventListeners = new Set<EventListener>();
   private readonly changeListeners = new Set<ChangeListener>();
@@ -155,6 +157,37 @@ export class AgentService {
 
   getSkills(): Skill[] {
     return this.skills;
+  }
+
+  /**
+   * Set (or clear) a one-shot model override applied to the next prompt only,
+   * then automatically reverted. A stepping stone to per-agent model routing.
+   * Ignored for Ollama (the model id space is provider-specific).
+   */
+  setModelOverride(modelId: string | null): void {
+    this.modelOverride = modelId?.trim() || null;
+    // Reflect the pending override in the chrome/estimate right away — but never
+    // swap the model out from under an in-flight turn; refreshConfiguration will
+    // pick it up before the next prompt.
+    if (this.agent && !this.agent.state.isStreaming) {
+      this.agent.state.model = buildModel(this.modelConfigForTurn(this.getSettings()));
+    }
+    this.notifyChange();
+  }
+
+  /**
+   * The pending one-shot model override, or null when none is queued. Reported
+   * only for OpenRouter — the override is provider-specific and {@link
+   * modelConfigForTurn} ignores it elsewhere, so the UI must too.
+   */
+  getModelOverride(): string | null {
+    if (this.getSettings().provider !== "openrouter") return null;
+    return this.modelOverride;
+  }
+
+  /** The model id the next prompt will actually use (override if queued, else settings). */
+  getActiveModelId(): string {
+    return this.getModelOverride() ?? activeModelId(this.getSettings());
   }
 
   getProfiles(): AgentProfile[] {
@@ -417,6 +450,9 @@ export class AgentService {
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : String(error);
     } finally {
+      // A one-shot model override is consumed by exactly the turn it was set for;
+      // revert so the following prompt uses the configured model again.
+      this.modelOverride = null;
       this.notifyChange();
     }
   }
@@ -452,7 +488,7 @@ export class AgentService {
       streamFn: this.buildStreamFn(),
       initialState: {
         systemPrompt: this.composeSystemPrompt(settings),
-        model: buildModel(activeModelConfig(settings)),
+        model: buildModel(this.modelConfigForTurn(settings)),
         thinkingLevel: settings.thinkingLevel,
         tools: this.buildParentTools(),
         messages,
@@ -644,11 +680,23 @@ export class AgentService {
     this.persisted.add(key);
   }
 
+  /**
+   * The model config for the next turn: the queued one-shot override if any
+   * (OpenRouter only), otherwise the configured active model.
+   */
+  private modelConfigForTurn(settings: AgenticChatSettings): ModelConfig {
+    const config = activeModelConfig(settings);
+    if (this.modelOverride && settings.provider === "openrouter") {
+      return { ...config, modelId: this.modelOverride };
+    }
+    return config;
+  }
+
   private async refreshConfiguration(): Promise<void> {
     const agent = this.requireAgent();
     const settings = this.getSettings();
     await this.reloadResources();
-    agent.state.model = buildModel(activeModelConfig(settings));
+    agent.state.model = buildModel(this.modelConfigForTurn(settings));
     agent.state.thinkingLevel = settings.thinkingLevel;
     agent.state.tools = this.buildParentTools();
     agent.state.systemPrompt = this.composeSystemPrompt(settings);

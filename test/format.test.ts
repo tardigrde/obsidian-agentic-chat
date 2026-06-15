@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Usage } from "@earendil-works/pi-ai";
-import { describeCall, formatCost, formatUsage, safeJson, truncateText } from "../src/ui/format";
+import { describeCall, formatCost, formatElapsed, formatUsage, safeJson, truncateText } from "../src/ui/format";
 
 describe("truncateText", () => {
   it("leaves short text untouched", () => {
@@ -54,6 +54,25 @@ describe("formatCost", () => {
   it("collapses negative or non-finite input to $0.00", () => {
     expect(formatCost(-0.005)).toBe("$0.00");
     expect(formatCost(Number.NaN)).toBe("$0.00");
+  });
+});
+
+describe("formatElapsed", () => {
+  it("shows sub-second durations in milliseconds", () => {
+    expect(formatElapsed(0)).toBe("0ms");
+    expect(formatElapsed(321.6)).toBe("322ms");
+  });
+  it("shows seconds with one decimal under a minute", () => {
+    expect(formatElapsed(1000)).toBe("1.0s");
+    expect(formatElapsed(12_500)).toBe("12.5s");
+  });
+  it("shows minutes and seconds past a minute", () => {
+    expect(formatElapsed(65_000)).toBe("1m 5s");
+    expect(formatElapsed(125_000)).toBe("2m 5s");
+  });
+  it("collapses negative or non-finite input to 0ms", () => {
+    expect(formatElapsed(-50)).toBe("0ms");
+    expect(formatElapsed(Number.NaN)).toBe("0ms");
   });
 });
 
