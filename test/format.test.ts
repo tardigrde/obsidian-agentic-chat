@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Usage } from "@earendil-works/pi-ai";
-import { describeCall, formatCost, formatElapsed, formatUsage, safeJson, truncateText } from "../src/ui/format";
+import {
+  describeCall,
+  formatCost,
+  formatElapsed,
+  formatUsage,
+  safeJson,
+  shortModelLabel,
+  truncateText,
+} from "../src/ui/format";
 
 describe("truncateText", () => {
   it("leaves short text untouched", () => {
@@ -8,6 +16,24 @@ describe("truncateText", () => {
   });
   it("cuts and appends an ellipsis past the limit", () => {
     expect(truncateText("hello world", 5)).toBe("hello…");
+  });
+});
+
+describe("shortModelLabel", () => {
+  it("drops the provider prefix from an OpenRouter slug", () => {
+    expect(shortModelLabel("anthropic/claude-opus-4")).toBe("claude-opus-4");
+  });
+  it("keeps a variant suffix", () => {
+    expect(shortModelLabel("deepseek/deepseek-chat-v3-0324:free")).toBe("deepseek-chat-v3-0324:free");
+  });
+  it("returns a bare id unchanged", () => {
+    expect(shortModelLabel("llama3.1")).toBe("llama3.1");
+  });
+  it("trims surrounding whitespace", () => {
+    expect(shortModelLabel("  openai/gpt-5  ")).toBe("gpt-5");
+  });
+  it("handles an empty string", () => {
+    expect(shortModelLabel("")).toBe("");
   });
 });
 

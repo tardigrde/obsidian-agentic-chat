@@ -5,6 +5,19 @@ export function truncateText(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
+/**
+ * Short, glanceable model label for the composer pill. OpenRouter ids are long
+ * (`anthropic/claude-opus-4`, `deepseek/deepseek-chat-v3-0324:free`); drop the
+ * provider prefix and keep the rest (including any `:free`/`:nitro` variant). The
+ * full id is still shown in the pill's tooltip.
+ */
+export function shortModelLabel(modelId: string): string {
+  const trimmed = modelId.trim();
+  if (!trimmed) return trimmed;
+  const lastSegment = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  return lastSegment || trimmed;
+}
+
 /** Human labels for the vault tools, used to caption tool-step cards. */
 export const TOOL_LABELS: Record<string, string> = {
   read: "Reading file",

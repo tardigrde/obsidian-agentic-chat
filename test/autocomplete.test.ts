@@ -97,8 +97,27 @@ describe("suggest — commands", () => {
   });
   it("ranks earlier matches first", () => {
     const items = suggest({ kind: "command", range: [0, 2], query: "s" }, context());
-    // "sessions"/"status"/"skill" start with s (score 0); "usage" has s at index 2.
-    expect(items[items.length - 1].value).toBe("usage");
+    const order = items.map((i) => i.value);
+    // "sessions"/"status"/"skill" start with s (score 0); "usage" has s at index 2;
+    // the "translate" skill has s at index 4, so it sorts last.
+    expect(order.indexOf("status")).toBeLessThan(order.indexOf("usage"));
+    expect(order.indexOf("usage")).toBeLessThan(order.indexOf("translate"));
+  });
+
+  it("offers skills as first-class slash commands", () => {
+    const items = suggest({ kind: "command", range: [0, 5], query: "summ" }, context());
+    const skill = items.find((i) => i.value === "summarize");
+    expect(skill).toMatchObject({ kind: "command", label: "/summarize", icon: "sparkles" });
+  });
+
+  it("omits a skill that collides with a built-in command name (the command wins)", () => {
+    const items = suggest(
+      { kind: "command", range: [0, 7], query: "status" },
+      context({ skills: [{ name: "status", description: "a shadowing skill" }] }),
+    );
+    const matches = items.filter((i) => i.value === "status");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].icon).toBe("terminal"); // the built-in command, not the skill
   });
 });
 

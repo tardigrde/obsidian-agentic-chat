@@ -110,7 +110,7 @@ function rank<T>(items: Scored<T>[]): T[] {
 
 /** Produce ranked suggestions for a detected query. */
 export function suggest(query: AcQuery, context: AcContext): AcItem[] {
-  if (query.kind === "command") return suggestCommands(query.query, context.commands);
+  if (query.kind === "command") return suggestCommands(query.query, context.commands, context.skills);
   if (query.kind === "skill") return suggestSkills(query.query, context.skills);
   return suggestMentions(query.query, context.files);
 }
@@ -121,8 +121,12 @@ function bestMatchScore(query: string, candidates: string[]): number {
   return scores.length > 0 ? Math.min(...scores) : -1;
 }
 
-function suggestCommands(query: string, commands: SlashCommand[]): AcItem[] {
-  const scored = commands.map((command): Scored<AcItem> => {
+function suggestCommands(
+  query: string,
+  commands: SlashCommand[],
+  skills: Array<{ name: string; description: string }>,
+): AcItem[] {
+  const scoredCommands = commands.map((command): Scored<AcItem> => {
     const names = [command.name, ...(command.aliases ?? [])];
     return {
       score: bestMatchScore(query, names),
@@ -135,7 +139,25 @@ function suggestCommands(query: string, commands: SlashCommand[]): AcItem[] {
       },
     };
   });
-  return rank(scored);
+
+  // Skills are first-class slash commands: `/daily` runs the daily-note skill.
+  // A skill whose name collides with a built-in command is omitted here (the
+  // command wins); it stays reachable via `/skill <name>`.
+  const reserved = new Set(commands.flatMap((command) => [command.name, ...(command.aliases ?? [])]));
+  const scoredSkills = skills
+    .filter((skill) => !reserved.has(skill.name.toLowerCase()))
+    .map((skill): Scored<AcItem> => ({
+      score: matchScore(query, skill.name),
+      item: {
+        kind: "command",
+        label: `/${skill.name}`,
+        detail: skill.description,
+        icon: "sparkles",
+        value: skill.name,
+      },
+    }));
+
+  return rank([...scoredCommands, ...scoredSkills]);
 }
 
 function suggestSkills(query: string, skills: Array<{ name: string; description: string }>): AcItem[] {

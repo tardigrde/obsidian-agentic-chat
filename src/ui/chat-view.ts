@@ -16,7 +16,7 @@ import { SessionListModal } from "./session-list-modal";
 import { FolderSuggestModal } from "./folder-suggest";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
 import { AssistantBubble } from "./assistant-bubble";
-import { formatCost, formatUsage, safeJson } from "./format";
+import { formatCost, formatUsage, safeJson, shortModelLabel } from "./format";
 import { contextLevel, contextPercent } from "./context-bar";
 import {
   assistantUsage,
@@ -42,7 +42,7 @@ import { parseDroppedVaultPath } from "./drag-drop";
 import { resolveCommand, visibleCommands } from "./commands";
 import { isSummaryMessage } from "../agent/compaction";
 import { type AgentMode, MODE_ORDER, MODES } from "../agent/modes";
-import { type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
+import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
 
 export { VIEW_TYPE_AGENT_CHAT };
 
@@ -59,6 +59,11 @@ interface ActionRow {
   detail?: string;
   icon: string;
   onClick: () => void;
+}
+
+/** Minimal shape of Obsidian's internal (undocumented) drag manager. */
+interface ObsidianDragManager {
+  draggable?: { file?: unknown; files?: unknown[] } | null;
 }
 
 export class ChatView extends ItemView {
@@ -91,8 +96,13 @@ export class ChatView extends ItemView {
   private chipsEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
   private modeSelectEl!: HTMLSelectElement;
-  private styleSelectEl!: HTMLSelectElement;
   private menu!: AutocompleteMenu;
+  // Shell-style command history: every submitted message, newest last. Up/Down in
+  // the composer cycle through it; `historyIndex` is the current position while
+  // navigating (null = not navigating), `historyDraft` stashes the live draft.
+  private readonly sentHistory: string[] = [];
+  private historyIndex: number | null = null;
+  private historyDraft: string | null = null;
   private sendButton!: HTMLButtonElement;
   private stopButton!: HTMLButtonElement;
   private statusEl!: HTMLElement;
@@ -199,12 +209,25 @@ export class ChatView extends ItemView {
         this.cancelEditing();
         return;
       }
+      if (event.key === "ArrowUp" && this.recallHistory(-1)) {
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "ArrowDown" && this.recallHistory(1)) {
+        event.preventDefault();
+        return;
+      }
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
         void this.submit();
       }
     });
-    this.inputEl.addEventListener("input", () => this.scheduleAutocomplete());
+    // Real user typing both refreshes autocomplete and abandons history navigation.
+    // Programmatic value changes (recall) set `.value` directly without an input event.
+    this.inputEl.addEventListener("input", () => {
+      this.resetHistoryNav();
+      this.scheduleAutocomplete();
+    });
     this.inputEl.addEventListener("click", () => this.scheduleAutocomplete());
     this.inputEl.addEventListener("keyup", (event) => {
       if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) this.scheduleAutocomplete();
@@ -222,13 +245,7 @@ export class ChatView extends ItemView {
       this.plugin.settings.mode,
       (value) => this.setMode(value as AgentMode),
     );
-    this.styleSelectEl = this.buildControlSelect(
-      controls,
-      "Output style",
-      OUTPUT_STYLE_ORDER.map((id) => ({ value: id, label: OUTPUT_STYLES[id].label, title: OUTPUT_STYLES[id].description })),
-      this.plugin.settings.outputStyle,
-      (value) => this.setOutputStyle(value as OutputStyle),
-    );
+    // Output style is no longer a composer control — switch it with /style.
 
     const buttonRow = composer.createDiv({ cls: "agentic-chat-buttons" });
     const attachNoteButton = buttonRow.createEl("button", {
@@ -274,16 +291,32 @@ export class ChatView extends ItemView {
 
   /** Turn a dropped note/folder into a context attachment instead of opening it. */
   private handleDrop(event: DragEvent): void {
+    const file = this.resolveDroppedEntry(event);
+    // Only intercept real vault entries; otherwise let Obsidian handle the drop.
+    if (!file) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.addAttachment(file instanceof TFolder ? `${FOLDER_PREFIX}${file.path}` : file.path);
+  }
+
+  /**
+   * Resolve a drop to a vault file/folder. Obsidian's file-explorer and editor
+   * drags no longer put an `obsidian://` URL on the dataTransfer, so we first ask
+   * the internal drag manager for the entry being dragged, then fall back to
+   * parsing a path/URL out of the drop payload (external or older drags).
+   */
+  private resolveDroppedEntry(event: DragEvent): TFile | TFolder | null {
+    const dragManager = (this.app as unknown as { dragManager?: ObsidianDragManager }).dragManager;
+    const dragged = dragManager?.draggable;
+    const fromDrag = dragged?.file ?? dragged?.files?.[0];
+    if (fromDrag instanceof TFile || fromDrag instanceof TFolder) return fromDrag;
+
     const data =
       event.dataTransfer?.getData("text/plain") || event.dataTransfer?.getData("text/uri-list") || "";
     const path = parseDroppedVaultPath(data, this.app.vault.getName());
-    if (!path) return;
+    if (!path) return null;
     const file = this.app.vault.getAbstractFileByPath(path);
-    // Only intercept real vault entries; otherwise let Obsidian handle the drop.
-    if (!(file instanceof TFile) && !(file instanceof TFolder)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    this.addAttachment(file instanceof TFolder ? `${FOLDER_PREFIX}${path}` : path);
+    return file instanceof TFile || file instanceof TFolder ? file : null;
   }
 
   private renderEmptyState(): void {
@@ -428,10 +461,6 @@ export class ChatView extends ItemView {
       if (this.modeSelectEl.value !== settings.mode) this.modeSelectEl.value = settings.mode;
       this.modeSelectEl.disabled = streaming;
     }
-    if (this.styleSelectEl) {
-      if (this.styleSelectEl.value !== settings.outputStyle) this.styleSelectEl.value = settings.outputStyle;
-      this.styleSelectEl.disabled = streaming;
-    }
   }
 
   // --- chrome (header pill, usage, running state) ---
@@ -442,9 +471,12 @@ export class ChatView extends ItemView {
     this.modelPillEl.empty();
     const override = this.service.getModelOverride();
     const providerLabel = override ? "next only" : settings.provider === "ollama" ? "Ollama" : "OpenRouter";
+    const fullModel = override ?? activeModelId(settings);
     this.modelPillEl.toggleClass("is-override", !!override);
+    // Full slug in the tooltip; the pill shows a short label since OpenRouter ids are long.
+    this.modelPillEl.setAttr("title", `${providerLabel} · ${fullModel}`);
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: providerLabel });
-    this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: override ?? activeModelId(settings) });
+    this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: shortModelLabel(fullModel) });
 
     const usage = this.service.getSessionUsage();
     const fraction = this.service.getContextFraction();
@@ -531,6 +563,7 @@ export class ChatView extends ItemView {
     this.menu.hide();
     const text = this.inputEl.value.trim();
     if (!text) return;
+    this.pushHistory(text);
 
     const editIndex = this.editingIndex;
     this.endEditing(false);
@@ -592,6 +625,83 @@ export class ChatView extends ItemView {
     this.inputEl.dispatchEvent(new Event("input"));
   }
 
+  // --- command history (shell-style up/down recall) ---
+
+  private static readonly MAX_HISTORY = 200;
+
+  /** Record a submitted message, skipping consecutive duplicates, then reset navigation. */
+  private pushHistory(text: string): void {
+    if (this.sentHistory[this.sentHistory.length - 1] !== text) {
+      this.sentHistory.push(text);
+      if (this.sentHistory.length > ChatView.MAX_HISTORY) this.sentHistory.shift();
+    }
+    this.resetHistoryNav();
+  }
+
+  private resetHistoryNav(): void {
+    this.historyIndex = null;
+    this.historyDraft = null;
+  }
+
+  /**
+   * Cycle the composer through sent-message history. `direction` is -1 (older,
+   * ArrowUp) or +1 (newer, ArrowDown). Only acts when the caret is on the edge
+   * line in that direction, so arrow keys still move within a multi-line draft.
+   * Returns true when it consumed the key.
+   */
+  private recallHistory(direction: -1 | 1): boolean {
+    if (this.editingIndex !== null || this.sentHistory.length === 0) return false;
+    if (!this.caretOnEdgeLine(direction)) return false;
+
+    if (direction === -1) {
+      if (this.historyIndex === null) {
+        this.historyDraft = this.inputEl.value;
+        this.historyIndex = this.sentHistory.length - 1;
+      } else if (this.historyIndex > 0) {
+        this.historyIndex -= 1;
+      } else {
+        return true; // already at the oldest entry: swallow the key, don't wrap
+      }
+      this.setComposerValueQuiet(this.sentHistory[this.historyIndex]);
+      return true;
+    }
+
+    // direction === 1 (newer)
+    if (this.historyIndex === null) return false; // not navigating: let ArrowDown act normally
+    if (this.historyIndex < this.sentHistory.length - 1) {
+      this.historyIndex += 1;
+      this.setComposerValueQuiet(this.sentHistory[this.historyIndex]);
+    } else {
+      // Past the newest entry: restore the draft stashed when navigation began.
+      const draft = this.historyDraft ?? "";
+      this.resetHistoryNav();
+      this.setComposerValueQuiet(draft);
+    }
+    return true;
+  }
+
+  /** True when the caret sits on the first line (up) or last line (down) of the composer. */
+  private caretOnEdgeLine(direction: -1 | 1): boolean {
+    const value = this.inputEl.value;
+    const start = this.inputEl.selectionStart ?? 0;
+    const end = this.inputEl.selectionEnd ?? start;
+    if (start !== end) return false; // a selection: let the arrow collapse/extend it
+    return direction === -1
+      ? value.lastIndexOf("\n", start - 1) === -1
+      : value.indexOf("\n", start) === -1;
+  }
+
+  /**
+   * Set the composer value WITHOUT dispatching an input event, so history recall
+   * doesn't reset its own navigation state. Places the caret at the end and hides
+   * the autocomplete menu.
+   */
+  private setComposerValueQuiet(value: string): void {
+    this.inputEl.value = value;
+    this.inputEl.setSelectionRange(value.length, value.length);
+    this.menu.hide();
+  }
+
   private clearEditingHighlight(): void {
     this.editingEl?.removeClass("is-editing");
     this.editingEl = null;
@@ -639,10 +749,22 @@ export class ChatView extends ItemView {
     const [word, ...rest] = raw.slice(1).split(/\s+/);
     const argString = raw.slice(1 + word.length).trim();
     const command = resolveCommand(word);
-    if (!command) return false;
+    if (!command) {
+      // A bare /<skill-name> runs that skill directly (built-in commands take
+      // precedence — a shadowed skill stays reachable via /skill <name>).
+      const skill = this.service.getSkills().find((item) => item.name.toLowerCase() === word.toLowerCase());
+      if (skill) {
+        await this.runSkill(skill.name, argString, `/${word}${argString ? ` ${argString}` : ""}`);
+        return true;
+      }
+      return false;
+    }
     switch (command.name) {
       case "new":
         await this.newSession();
+        return true;
+      case "style":
+        await this.runStyle(argString);
         return true;
       case "sessions":
         await this.openSessionList();
@@ -679,15 +801,46 @@ export class ChatView extends ItemView {
     }
   }
 
-  private async runSkill(name: string | undefined, extra: string): Promise<void> {
+  private async runSkill(name: string | undefined, extra: string, display?: string): Promise<void> {
     if (!name) {
       this.showSkillList();
       return;
     }
     this.clearEmptyState();
-    this.renderUserMessage(`/skill ${name}${extra ? ` ${extra}` : ""}`, []);
+    this.renderUserMessage(display ?? `/skill ${name}${extra ? ` ${extra}` : ""}`, []);
     await this.service.invokeSkill(name, extra || undefined);
     this.showServiceError();
+  }
+
+  /** `/style [name]`: no arg shows a picker; an arg switches output style directly. */
+  private async runStyle(arg: string): Promise<void> {
+    this.clearEmptyState();
+    if (!arg) {
+      this.showStyleList();
+      return;
+    }
+    const lower = arg.toLowerCase();
+    const style = OUTPUT_STYLE_ORDER.find((id) => id === lower || OUTPUT_STYLES[id].label.toLowerCase() === lower);
+    if (!style) {
+      this.renderErrorMessage(`Unknown output style "${arg}". Options: ${OUTPUT_STYLE_ORDER.join(", ")}.`);
+      return;
+    }
+    await this.chooseStyle(style);
+  }
+
+  /** Clickable output-style picker, applied in-pane. */
+  private showStyleList(): void {
+    const { settings } = this.plugin;
+    this.renderActionList(
+      "Output style",
+      `How the assistant talks · current: ${OUTPUT_STYLES[settings.outputStyle].label}`,
+      OUTPUT_STYLE_ORDER.map((id) => ({
+        label: OUTPUT_STYLES[id].label,
+        detail: OUTPUT_STYLES[id].description,
+        icon: OUTPUT_STYLES[id].icon,
+        onClick: () => void this.chooseStyle(id),
+      })),
+    );
   }
 
   /** `/skill` with no argument: a clickable picker, not a static list. */
@@ -926,10 +1079,16 @@ export class ChatView extends ItemView {
       this.attachments = [];
       this.lastSentPrompt = null;
       this.lastSentDisplay = null;
+      this.resetHistoryNav();
       this.endEditing(false);
       this.renderChips();
       this.bubble = null;
       this.renderTranscript([]);
+      // A new conversation starts in the default (normal) output style.
+      if (this.plugin.settings.outputStyle !== DEFAULT_OUTPUT_STYLE) {
+        this.plugin.settings.outputStyle = DEFAULT_OUTPUT_STYLE;
+        await this.plugin.saveSettings();
+      }
     }
   }
 

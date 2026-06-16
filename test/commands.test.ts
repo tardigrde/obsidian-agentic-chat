@@ -29,6 +29,10 @@ describe("resolveCommand", () => {
   it("resolves an alias to its canonical command", () => {
     expect(resolveCommand("history")?.name).toBe("sessions");
   });
+  it("exposes /style as its own command (not a /config alias)", () => {
+    expect(resolveCommand("style")?.name).toBe("style");
+    expect(resolveCommand("mode")?.name).toBe("config");
+  });
   it("returns undefined for an unknown word", () => {
     expect(resolveCommand("nope")).toBeUndefined();
   });

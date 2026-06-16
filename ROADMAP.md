@@ -18,15 +18,20 @@ concepts that compose — they do not fully overlap:
   just an invokable skill.
 - **Output style** — *how* the assistant talks (tone, structure). A system-prompt
   overlay. Built-in set for now (default / brainstorm / learning).
-- **Mode** — *what the agent is allowed to do* (ask / plan / agent). A preset over the
-  approval + tool system, plus a system-prompt framing. Surfaced as a visible dropdown.
+- **Mode** — *what the agent is allowed to do*. Collapsed to a single visible **Safe ↔ YOLO**
+  slider (Safe = honor the settings approval policy; YOLO = session auto-approve all mutating).
+  **Plan** (read-only, plan-only) is no longer a visible mode — it's the `/plan` command (sticky
+  read-only until `/endplan`), which doubles as the fully-read-only lock. See M3 revision / M10.
 - **Agent / subagent** — a **profile** (system prompt + model + allowed tools + skills) the
   agent *delegates to*: the parent spawns a focused child session, runs it in isolation, and
   gets back a summary. **Delegation, not a whole-chat persona switch.** See Milestone 5.
 
 ### Out of scope
 
-- **MCP** (issue #2 §3) — not pursuing.
+- **stdio / subprocess transports on mobile.** Every integration stays networked or in-process
+  so mobile keeps working: MCP is **Streamable HTTP only** (M11), and the ACP client is
+  **desktop-only** by nature (M12). No shell/subprocess in the in-process agent.
+- **MCP server role.** We are an MCP *client* only (M11), never a server.
 
 ---
 
@@ -87,14 +92,27 @@ Make the pane carry actions, not just text. UX reference: GitHub Copilot chat si
       via the `/config` command and a composer selector. Custom user styles deferred.
       See: https://code.claude.com/docs/en/output-styles
 
-## Milestone 4 — Chutes provider (TEE privacy)
+### Revision — collapse to Safe/YOLO (planned, see M10)
 
-A second privacy-preserving option alongside OpenRouter ZDR routing and local Ollama.
+- [ ] The shipped ask/plan/agent **dropdown is superseded** by the M10 single **Safe ↔ YOLO**
+      slider + the `/plan` command. `resolveModePolicy` stays the engine; the visible mode
+      dropdown and the redundant ask-mode/plan-mode split go away. Safe = honor settings
+      approval policy; YOLO = session master auto-approve. Precedence: `/plan` > slider >
+      per-tool override > settings default.
+- [ ] **Output style via `/style` only.** Remove the composer style selector; `/style` switches
+      default / brainstorm / learning. New sessions default to **normal** (default) style.
 
-- [ ] Add `chutes` as a third provider in `buildModel` (`src/llm/models.ts`), modeled on
-      the Ollama branch: OpenAI-compatible endpoint + API key, with a TEE/confidential
-      model flag exposed in privacy settings.
-- [ ] Settings UI for the Chutes key/endpoint and model selection.
+## Milestone 4 — Privacy-preserving providers (generalized)
+
+Generalize to a **generic OpenAI-compatible provider** so any privacy option is *config, not
+code*, alongside OpenRouter ZDR routing and local Ollama. The Ollama branch already proves the
+shape.
+
+- [ ] **Generic OpenAI-compatible provider** in `buildModel` (`src/llm/models.ts`): endpoint +
+      API key + privacy flags, modeled on the Ollama branch. Named presets — **Chutes** (TEE/
+      confidential), **Venice.ai**, **LM Studio**, **vLLM**, llama.cpp — become settings entries,
+      not new code branches.
+- [ ] **Settings UI** for endpoint/key/model selection per provider/preset.
 - [ ] (Stretch) Filter the model browser to TEE/confidential models, mirroring the ZDR
       filter, so privacy is enforced by construction.
 
@@ -190,6 +208,21 @@ multi-step research modality on top.
 - [x] **Citations.** The deep-research skill requires inline source links plus a
       `## Sources` list, and both web tools surface result/source URLs so claims are
       traceable.
+- [ ] **Read-more / pagination for `fetch_url`.** Add an `offset` param so the model can fetch
+      the next window of a truncated page (subsumes a one-shot "double the limit") and learn
+      whether more remains. The char limit applies to the *already-extracted tidy text*, not raw
+      HTML (raw is pre-capped at `MAX_RAW_CHARS`).
+- [ ] **Better extraction (Readability).** The hand-rolled regex stripper (`extractReadableText`)
+      returns *all* visible text — nav, footer, cookie banners, ads — with no main-content
+      detection, so it wastes the char budget on boilerplate. Upgrade to Mozilla Readability via
+      the platform `DOMParser` (present in the Obsidian renderer on **desktop and mobile**),
+      keeping the regex path as fallback.
+- [ ] **Deep-research = subagent-backed orchestration.** Re-back the `deep-research` skill with
+      the M5 `subagent` dispatch: a supervisor fans out parallel searcher children (isolated
+      context) + adversarial verify, then synthesizes — matching the open_deep_research /
+      langchain deepagents / Gemini topology, instead of one flat prompt loop. Keep
+      `/deep-research` as the entry point. **Model configurable** via the research **profile's
+      `model`** field (M5). Refs: open_deep_research, langchain deepagents, @forecastx/deep-research.
 
 ## Milestone 7 — Embeddings + RAG QA (far future)
 
@@ -258,6 +291,59 @@ ignore-globs, model picker, output styles). (Obsidian Copilot "Projects".)
 
 ---
 
+## Milestone 10 — Input-area & permission UX (composer redesign)
+
+A cohesive cluster from the Claudian input-area review (`image.png`). Everything mobile-safe.
+
+- [ ] **Single permission slider (Safe ↔ YOLO).** Replace the ask/plan/agent mode dropdown +
+      the separate approval toggle with one visible slider over the existing `beforeToolCall`
+      gate. **Safe** honors the settings approval policy (per-tool overrides + `approval.mutating`);
+      **YOLO** is a session master switch forcing auto-approve on all mutating tools. Two layers:
+      settings = granular default, slider = session master. (See M3 revision.)
+- [ ] **`/plan` command (sticky read-only).** Plan leaves the visible chrome; `/plan` enters a
+      sticky read-only + plan-framing state until `/endplan`, and doubles as the fully-read-only
+      lock. Precedence: `/plan` > slider > per-tool > settings default.
+- [ ] **Model pill in the composer (short label).** Move the model switcher into the composer
+      footer. OpenRouter slugs are long — show a short label (catalog `name`, fallback last path
+      segment), ellipsis at a fixed width, full slug in `title` + the existing `SuggestModal`
+      picker (unchanged).
+- [ ] **Active note attached by default.** Drop the `+ Active note` button; auto-attach the
+      active leaf as a **removable** context chip each turn. Truncation ladder: full note →
+      visible editor range → path only. Mobile: active leaf resolves the same.
+- [ ] **`+ Folder` → `/add-dir` working-dir scope.** A granted folder becomes a working set:
+      reads/writes **inside** auto-run, **outside** always ask. The security half lives in
+      Cross-cutting "Working-dir read boundary."
+- [ ] **Effort knob stays in the composer.** Quick per-turn knob; kept visible (unlike output
+      style, which moves to `/style`).
+- [ ] **Multiple tabs in one pane (deferred).** Up to N independent sessions in the same leaf,
+      tab-switched. Session infra exists; UI plumbing is the cost. Roadmap-only for now.
+
+## Milestone 11 — MCP client (networked only)
+
+Reverses the earlier "MCP out of scope." **Client only — this plugin is never an MCP server.**
+
+- [ ] **MCP client over Streamable HTTP.** Latest transport (MCP spec 2025-03-26, replaced
+      HTTP+SSE) + OAuth2. **Never stdio/subprocess** — networked always, `localhost` when the
+      server is local, so mobile keeps working. Discovered MCP tools register alongside vault
+      tools and flow through the same approval gate.
+- [ ] **Server config + auth in settings** (endpoint + OAuth), behind an egress warning like
+      the web layer.
+
+## Milestone 12 — ACP client (desktop)
+
+This plugin as an **Agent Client Protocol client**: drive an *external* coding agent (Claude
+Code / Codex / Gemini CLI) from the chat pane — a second backend alongside the native pi loop
+(openclaw-style bridge).
+
+- [ ] **ACP client transport.** Spawn + drive an ACP agent over JSON-RPC. ACP is
+      **stdio/subprocess by design → desktop-only**; mobile keeps the native pi loop. Identity
+      shift accepted: the plugin becomes "own agent **+** universal client" (Zed-style dual
+      backend).
+- [ ] **Backend switch.** Pick native-pi vs an external ACP agent per session; render the
+      external agent's turn/tool stream in the existing transcript UI.
+
+---
+
 ## Bugs
 
 Reported issues to be fixed. Ordered by severity, not by fix order.
@@ -308,6 +394,17 @@ artifact), parallelizing the `grep` tool (the serial loop's early-break at `maxM
 deliberate — fanning out reads the whole vault), and the session `modifiedTime` `continue`
 (uses `message.timestamp` by design).
 
+### Reported (2026-06-16)
+
+- [ ] **`/agent <unknown>` is a dead end.** `invokeAgent` (`agent-service.ts:307`) reports
+      `No subagent named "x"` with no list. Append the available profile names; and if the name
+      matches a **skill** (e.g. `deep` → `deep-research`), hint the `/skill` / `/<skill>` form.
+- [ ] **Note drag-drop does nothing now.** The earlier "attach as chip" fix regressed —
+      file-explorer drags no longer carry `obsidian://` in `dataTransfer`, so
+      `parseDroppedVaultPath` no-ops. **Decision: option B** — read the dragged `TFile` from
+      `app.dragManager`, keep the chip behavior, and make **folder drops also attach as a chip**
+      (consistency), not insert path text.
+
 ## Cross-cutting
 
 - [x] **Ignore lists (security).** User-configured gitignore-style globs
@@ -337,6 +434,20 @@ deliberate — fanning out reads the whole vault), and the session `modifiedTime
 - [x] **API-key storage.** Settings now shows a plaintext-storage security warning
       (key lives in vault `data.json`, leaks on sync/share). OS-keychain storage remains
       a future enhancement.
+- [ ] **Keystore for API keys.** Use Electron `safeStorage` (OS-keychain-backed encryption) on
+      **desktop**; mobile has no plugin keychain access, so it stays obfuscated `data.json` + the
+      existing warning. Honest split: desktop = real secure storage, mobile = warned plaintext.
+      Pairs with the external-config item — **secrets never go in a synced vault file**.
+- [ ] **Working-dir read boundary (security).** Today all reads auto-run (read-only = free). With
+      `/add-dir` working dirs configured, reads/writes **outside** every granted dir route through
+      the approval gate (ask); **inside** auto-run. Inverse of ignore-globs (allow-list working
+      set vs deny-list); ignore-globs still win inside a granted dir. Empty config = today's
+      behavior. The security half of the M10 `+ Folder` item.
+- [ ] **External config file (YAML / frontmatter).** Let the portable, git-friendly, syncable
+      settings (providers, privacy, web backend, skill/agent folders) live in a vault
+      `agentic-chat.config.yaml` / `.md` frontmatter, reusing the
+      `loadVaultSkills`/`loadAgentProfiles` loader pattern. `data.json` keeps UI state +
+      **secrets only** (secrets never in a synced file).
 - [ ] **Edit diff review + undo.** Show a diff in the approval flow and offer
       undo-last-change. Extends the `beforeToolCall` gate (`src/agent/approval.ts`) from
       yes/no into reviewable, reversible edits. Shares its diff/accept UI with the M8
@@ -361,6 +472,12 @@ deliberate — fanning out reads the whole vault), and the session `modifiedTime
 - Visual event debugger over the `AgentEvent` stream (noted as an insight in issue #2).
 - Custom (user-authored) output styles, once built-ins prove the model.
 - Session export (JSONL → Markdown note); issue #2 wanted conversations exportable.
+- **Docs: BRAT install first.** List the BRAT (pre-release) install method *ahead of* manual
+  install in the README — it's the primary distribution path.
+- **Repo: AGENTS.md is the real file, CLAUDE.md a symlink** to it (AGENTS.md is the emerging
+  cross-tool standard). Windows-checkout symlink fragility accepted (don't care).
+- **Standing rule: every item is evaluated for mobile UX** — no subprocess/stdio in-process,
+  networked-only integrations, touch-friendly UI, arrow-key/keyboard features degrade gracefully.
 
 ### Obsidian-native tools (differentiators)
 
@@ -408,6 +525,16 @@ generic chat features.
 - [x] **Tool timing + thinking indicator** — per-step elapsed time (`formatElapsed`, surfaced
       in `AssistantBubble.endStep`) and an animated agent-working spinner in the composer while
       a turn runs.
+- [ ] **Up-arrow command history.** Up/Down cycles a full ring buffer of past sent messages in
+      the composer (shell-style), restoring the in-progress draft at the bottom. (Desktop; mobile
+      has no arrow keys — degrades harmlessly.)
+- [ ] **Settings: virtual tabs.** The settings page is too long. Add a tab strip
+      (General / Models / Privacy / Web / Skills & Agents / Advanced) that swaps the rendered
+      group — standard community-plugin pattern, pure DOM, tabs wrap on mobile.
+- [ ] **Skills as first-class slash commands.** A loaded skill is invokable directly —
+      `/daily`, `/deep-research` — not only via `/skill <name>`. Built-in command names win on
+      collision (the skill stays reachable via `/skill <name>`; autocomplete warns). `/skill`
+      becomes the disambiguator/fallback. Auto-loaded skills already surface in the `/` popup.
 
 ### Competitive-review polish (low priority)
 
