@@ -7,6 +7,7 @@ import {
   generateSummary,
   type Skill,
   type StreamFn,
+  type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import { streamSimple, type Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
@@ -115,6 +116,8 @@ export class AgentService {
   private pendingUndo = new Map<string, UndoEntry>();
   /** One-shot model id used for the next prompt only, then reverted (per-request `/model`). */
   private modelOverride: string | null = null;
+  /** One-shot thinking level for the next prompt only, then reverted (per-turn `/effort`). */
+  private thinkingOverride: ThinkingLevel | null = null;
 
   private readonly eventListeners = new Set<EventListener>();
   private readonly changeListeners = new Set<ChangeListener>();
@@ -188,6 +191,32 @@ export class AgentService {
   /** The model id the next prompt will actually use (override if queued, else settings). */
   getActiveModelId(): string {
     return this.getModelOverride() ?? activeModelId(this.getSettings());
+  }
+
+  /**
+   * Set (or clear) a one-shot thinking level applied to the next prompt only, then
+   * reverted — so effort can be raised for one hard prompt without changing the
+   * saved default. Changing effort mid-conversation re-processes the prompt prefix
+   * (a one-time cache miss); the composer knob's tooltip warns about that cost.
+   */
+  setThinkingOverride(level: ThinkingLevel | null): void {
+    this.thinkingOverride = level;
+    // Reflect the pending override in the chrome/estimate right away, but never
+    // change the level out from under an in-flight turn.
+    if (this.agent && !this.agent.state.isStreaming) {
+      this.agent.state.thinkingLevel = this.thinkingLevelForTurn(this.getSettings());
+    }
+    this.notifyChange();
+  }
+
+  /** The pending one-shot thinking override, or null when none is queued. */
+  getThinkingOverride(): ThinkingLevel | null {
+    return this.thinkingOverride;
+  }
+
+  /** The thinking level the next prompt will actually use (override if queued, else settings). */
+  getActiveThinkingLevel(): ThinkingLevel {
+    return this.thinkingOverride ?? this.getSettings().thinkingLevel;
   }
 
   getProfiles(): AgentProfile[] {
@@ -467,9 +496,10 @@ export class AgentService {
     } catch (error) {
       this.errorMessage = error instanceof Error ? error.message : String(error);
     } finally {
-      // A one-shot model override is consumed by exactly the turn it was set for;
-      // revert so the following prompt uses the configured model again.
+      // A one-shot model/thinking override is consumed by exactly the turn it was
+      // set for; revert so the following prompt uses the configured defaults again.
       this.modelOverride = null;
+      this.thinkingOverride = null;
       this.notifyChange();
     }
   }
@@ -506,7 +536,7 @@ export class AgentService {
       initialState: {
         systemPrompt: this.composeSystemPrompt(settings),
         model: buildModel(this.modelConfigForTurn(settings)),
-        thinkingLevel: settings.thinkingLevel,
+        thinkingLevel: this.thinkingLevelForTurn(settings),
         tools: this.buildParentTools(),
         messages,
       },
@@ -716,12 +746,17 @@ export class AgentService {
     return config;
   }
 
+  /** The thinking level for the next turn: the queued one-shot override, else settings. */
+  private thinkingLevelForTurn(settings: AgenticChatSettings): ThinkingLevel {
+    return this.thinkingOverride ?? settings.thinkingLevel;
+  }
+
   private async refreshConfiguration(): Promise<void> {
     const agent = this.requireAgent();
     const settings = this.getSettings();
     await this.reloadResources();
     agent.state.model = buildModel(this.modelConfigForTurn(settings));
-    agent.state.thinkingLevel = settings.thinkingLevel;
+    agent.state.thinkingLevel = this.thinkingLevelForTurn(settings);
     agent.state.tools = this.buildParentTools();
     agent.state.systemPrompt = this.composeSystemPrompt(settings);
     await this.sessionManager.ensureConfiguration(this.sessionDefaults());

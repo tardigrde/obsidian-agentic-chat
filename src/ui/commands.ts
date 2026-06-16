@@ -26,6 +26,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "plan", description: "enter read-only plan mode (sticky)" },
   { name: "endplan", description: "leave plan mode, restoring Safe/YOLO" },
   { name: "style", args: "[name]", description: "switch output style" },
+  { name: "effort", args: "[level]", description: "set reasoning effort for the next message", aliases: ["thinking"] },
   { name: "usage", description: "show token & cost totals" },
   { name: "undo", description: "undo the last vault change the agent made" },
   { name: "skill", args: "[name] [args]", description: "run a vault skill; args fill $ARGUMENTS/$1", takesSkillArg: true },

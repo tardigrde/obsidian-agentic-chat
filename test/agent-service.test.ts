@@ -153,6 +153,20 @@ describe("AgentService", () => {
     expect(seen).toEqual(["anthropic/claude-3.5-sonnet", settings.openrouterModel]);
   });
 
+  it("applies a one-shot thinking override to the next prompt only, then reverts", async () => {
+    const { service, settings } = makeService(cannedStreamFn("ok"));
+    expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
+
+    service.setThinkingOverride("high");
+    expect(service.getThinkingOverride()).toBe("high");
+    expect(service.getActiveThinkingLevel()).toBe("high");
+
+    await service.sendPrompt("one hard prompt");
+    // The override was consumed by the turn it was set for.
+    expect(service.getThinkingOverride()).toBeNull();
+    expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
+  });
+
   it("persists the conversation to a JSONL session file", async () => {
     const { service, adapter } = makeService(cannedStreamFn("Persisted reply."));
     await service.sendPrompt("Remember this");

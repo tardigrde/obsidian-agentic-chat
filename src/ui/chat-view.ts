@@ -7,10 +7,10 @@ import {
   type WorkspaceLeaf,
   setIcon,
 } from "obsidian";
-import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type AgenticChatPlugin from "../main";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
-import { activeModelId } from "../settings";
+import { activeModelId, THINKING_LEVELS } from "../settings";
 import { listOpenRouterModels } from "../llm/models";
 import { ModelSuggestModal } from "./model-suggest-modal";
 import { SessionListModal } from "./session-list-modal";
@@ -826,6 +826,9 @@ export class ChatView extends ItemView {
       case "style":
         await this.runStyle(argString);
         return true;
+      case "effort":
+        this.runEffort(argString);
+        return true;
       case "sessions":
         await this.openSessionList();
         return true;
@@ -909,6 +912,50 @@ export class ChatView extends ItemView {
     );
   }
 
+  /** `/effort [level]`: no arg shows a picker; an arg sets the next message's reasoning effort. */
+  private runEffort(arg: string): void {
+    this.clearEmptyState();
+    if (!arg) {
+      this.showEffortList();
+      return;
+    }
+    const lower = arg.toLowerCase();
+    const level = THINKING_LEVELS.find((id) => id === lower);
+    if (!level) {
+      this.renderErrorMessage(`Unknown effort "${arg}". Options: ${THINKING_LEVELS.join(", ")}.`);
+      return;
+    }
+    this.chooseEffort(level);
+  }
+
+  /** Clickable effort picker. The subtitle warns that switching costs a one-time cache miss. */
+  private showEffortList(): void {
+    const current = this.service.getActiveThinkingLevel();
+    this.renderActionList(
+      "Effort",
+      `Reasoning effort for your next message · current: ${current}. ` +
+        "Changing it re-processes the prompt once (a cache miss) — affects cost.",
+      THINKING_LEVELS.map((id) => ({
+        label: id,
+        detail: id === current ? "current" : "",
+        icon: "gauge",
+        onClick: () => this.chooseEffort(id),
+      })),
+    );
+  }
+
+  /** Apply a one-shot effort override for the next message only (reverts to the saved default). */
+  private chooseEffort(level: ThinkingLevel): void {
+    if (this.service.isStreaming()) {
+      this.renderErrorMessage("Can't change effort while the agent is responding.");
+      return;
+    }
+    this.service.setThinkingOverride(level);
+    this.renderInfoMessage("Effort", [
+      [level, "Applies to your next message only, then reverts to the saved default."],
+    ]);
+  }
+
   /** `/skill` with no argument: a clickable picker, not a static list. */
   private showSkillList(): void {
     const skills = this.service.getSkills();
@@ -987,13 +1034,14 @@ export class ChatView extends ItemView {
     const { settings } = this.plugin;
     const session = this.service.getSessionInfo();
     const override = this.service.getModelOverride();
+    const effortOverride = this.service.getThinkingOverride();
     this.clearEmptyState();
     this.renderInfoMessage("Status", [
       ["Provider", settings.provider],
       ["Model", override ? `${override} (next message only)` : activeModelId(settings)],
       ["Mode", MODES[settings.mode].label],
       ["Output style", OUTPUT_STYLES[settings.outputStyle].label],
-      ["Thinking", settings.thinkingLevel],
+      ["Thinking", effortOverride ? `${effortOverride} (next message only)` : settings.thinkingLevel],
       ["Approval (mutating)", settings.approval.mutating],
       ["Session", session ? `${session.messageCount} messages` : "(none)"],
     ]);
