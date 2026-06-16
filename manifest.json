@@ -1,7 +1,7 @@
 {
   "id": "agentic-chat",
   "name": "Agentic Chat",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "minAppVersion": "1.5.0",
   "description": "Privacy-first agentic AI chat in the sidebar. The agent reads, searches, and edits your vault through visible tool calls, routed to zero-data-retention providers by default, or runs fully local with Ollama.",
   "author": "tardigrde",
