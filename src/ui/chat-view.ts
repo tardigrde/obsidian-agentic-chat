@@ -1245,10 +1245,14 @@ export class ChatView extends ItemView {
     this.renderChips();
   }
 
-  /** Recompute the auto-attached active note from the focused leaf, honoring suppression. */
+  /**
+   * Recompute the auto-attached active note from the focused leaf, honoring suppression.
+   * Limited to Markdown notes — the active leaf can be an image/PDF/canvas, which would
+   * be read as garbage UTF-8 and injected into the prompt.
+   */
   private syncActiveNote(): void {
     const file = this.activeNoteSuppressed ? null : this.app.workspace.getActiveFile();
-    this.activeNotePath = file ? file.path : null;
+    this.activeNotePath = file && file.extension === "md" ? file.path : null;
     this.renderChips();
   }
 

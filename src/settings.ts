@@ -386,8 +386,11 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       )
       .addDropdown((dropdown) => {
         for (const id of TOGGLE_MODES) dropdown.addOption(id, MODES[id].label);
-        // Plan is command-driven and not offered here; show the underlying posture instead.
-        dropdown.setValue(settings.mode === "plan" ? DEFAULT_MODE : settings.mode).onChange(async (value) => {
+        // Plan is entered via /plan in chat, but surface it while active so the control
+        // reflects the real state — otherwise it would read "Safe" and picking Safe would
+        // fire no change, trapping the user in plan mode.
+        if (settings.mode === "plan") dropdown.addOption("plan", `${MODES.plan.label} (set via /plan)`);
+        dropdown.setValue(settings.mode).onChange(async (value) => {
           settings.mode = value as AgentMode;
           await this.save();
         });
