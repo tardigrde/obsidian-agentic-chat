@@ -623,7 +623,14 @@ export class AgentService {
   private createChildAgent(profile: AgentProfile): Agent {
     const settings = this.getSettings();
     const readOnly = settings.mode === "plan";
-    const tools = filterChildTools(createVaultTools(this.app, this.ignoreMatcher), profile.toolAllowlist ?? [], readOnly);
+    // Children run without a per-call gate, so a tool the user explicitly denied
+    // (per-tool "deny") must be stripped here — otherwise an allowlisted child could
+    // bypass that deny in safe/yolo. resolveModePolicy gives the same precedence the
+    // parent gate uses (plan > yolo > per-tool override > settings default).
+    const allowedVaultTools = createVaultTools(this.app, this.ignoreMatcher).filter(
+      (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
+    );
+    const tools = filterChildTools(allowedVaultTools, profile.toolAllowlist ?? [], readOnly);
     return new Agent({
       streamFn: this.buildStreamFn(),
       initialState: {
