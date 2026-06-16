@@ -28,6 +28,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "style", args: "[name]", description: "switch output style" },
   { name: "effort", args: "[level]", description: "set reasoning effort for the next message", aliases: ["thinking"] },
   { name: "usage", description: "show token & cost totals" },
+  { name: "export", description: "save this conversation as a Markdown note" },
   { name: "undo", description: "undo the last vault change the agent made" },
   { name: "skill", args: "[name] [args]", description: "run a vault skill; args fill $ARGUMENTS/$1", takesSkillArg: true },
   { name: "agent", args: "[name] [task]", description: "delegate a task to a subagent" },

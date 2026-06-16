@@ -12,6 +12,7 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
 import { arrayBufferToBase64, imageMimeType, isImagePath } from "./image-attachments";
+import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, THINKING_LEVELS } from "../settings";
 import { listOpenRouterModels } from "../llm/models";
@@ -1129,6 +1130,9 @@ export class ChatView extends ItemView {
       case "usage":
         this.showUsage();
         return true;
+      case "export":
+        await this.exportSession();
+        return true;
       case "undo":
         await this.runUndo();
         return true;
@@ -1402,6 +1406,28 @@ export class ChatView extends ItemView {
           ]
         : [["Usage", "No usage recorded yet for this conversation."]],
     );
+  }
+
+  /** `/export`: write the active conversation to a Markdown note and open it. */
+  private async exportSession(): Promise<void> {
+    this.clearEmptyState();
+    const messages = this.service.getMessages();
+    if (!hasExportableTurns(messages)) {
+      this.renderInfoMessage("Export", [["Export", "Nothing to export yet — send a message first."]]);
+      return;
+    }
+    try {
+      const markdown = sessionToMarkdown(messages, this.service.getSessionInfo());
+      if (!this.app.vault.getFolderByPath(EXPORT_FOLDER)) {
+        await this.app.vault.createFolder(EXPORT_FOLDER);
+      }
+      const path = `${EXPORT_FOLDER}/${exportFileName(this.service.getSessionInfo(), Date.now())}`;
+      const file = await this.app.vault.create(path, markdown);
+      await this.app.workspace.getLeaf(false).openFile(file);
+      this.renderInfoMessage("Export", [["Saved", file.path]]);
+    } catch (error) {
+      this.renderErrorMessage(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private showHelp(): void {
