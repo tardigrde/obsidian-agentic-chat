@@ -143,7 +143,9 @@ function suggestCommands(
   // Skills are first-class slash commands: `/daily` runs the daily-note skill.
   // A skill whose name collides with a built-in command is omitted here (the
   // command wins); it stays reachable via `/skill <name>`.
-  const reserved = new Set(commands.flatMap((command) => [command.name, ...(command.aliases ?? [])]));
+  const reserved = new Set(
+    commands.flatMap((command) => [command.name, ...(command.aliases ?? [])].map((word) => word.toLowerCase())),
+  );
   const scoredSkills = skills
     .filter((skill) => !reserved.has(skill.name.toLowerCase()))
     .map((skill): Scored<AcItem> => ({

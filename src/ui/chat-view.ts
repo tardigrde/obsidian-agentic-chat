@@ -686,9 +686,13 @@ export class ChatView extends ItemView {
     const start = this.inputEl.selectionStart ?? 0;
     const end = this.inputEl.selectionEnd ?? start;
     if (start !== end) return false; // a selection: let the arrow collapse/extend it
-    return direction === -1
-      ? value.lastIndexOf("\n", start - 1) === -1
-      : value.indexOf("\n", start) === -1;
+    if (direction === -1) {
+      // First line: caret is at or before the first newline (or there is none).
+      const firstNewline = value.indexOf("\n");
+      return start <= (firstNewline === -1 ? value.length : firstNewline);
+    }
+    // Last line: caret is after the last newline (or there is none).
+    return start > value.lastIndexOf("\n");
   }
 
   /**
