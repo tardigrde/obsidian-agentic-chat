@@ -1,5 +1,6 @@
 import {
   ItemView,
+  MarkdownView,
   Notice,
   TFile,
   TFolder,
@@ -42,6 +43,12 @@ import { parseDroppedVaultPath } from "./drag-drop";
 import { resolveCommand, visibleCommands } from "./commands";
 import { isSummaryMessage } from "../agent/compaction";
 import { type AgentMode, enterPlan, exitPlan, MODE_ORDER, MODES } from "../agent/modes";
+import {
+  type ActiveNoteState,
+  buildActiveNoteSection,
+  effectiveActiveNote,
+  MAX_ACTIVE_NOTE_CHARS,
+} from "./active-note";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
 
 export { VIEW_TYPE_AGENT_CHAT };
@@ -68,7 +75,11 @@ interface ObsidianDragManager {
 
 export class ChatView extends ItemView {
   private attachments: string[] = [];
-  // When in plan mode, the Safe/YOLO posture to restore on /endplan.
+  // Active-note-attached-by-default state: the current active note's path, whether
+  // the user dismissed the auto chip (suppressed for the session), and — when in
+  // plan mode — the posture to restore on /endplan.
+  private activeNotePath: string | null = null;
+  private activeNoteSuppressed = false;
   private modeBeforePlan: AgentMode | null = null;
   private bubble: AssistantBubble | null = null;
   private unsubscribers: Array<() => void> = [];
@@ -151,6 +162,9 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.vault.on("create", invalidate));
     this.registerEvent(this.app.vault.on("delete", invalidate));
     this.registerEvent(this.app.vault.on("rename", invalidate));
+    // Keep the auto-attached active note in sync as the focused leaf/file changes.
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.syncActiveNote()));
+    this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveNote()));
     this.muteNotifications = true;
     try {
       await this.service.initialize();
@@ -161,6 +175,7 @@ export class ChatView extends ItemView {
       this.resetUsageNotifications(true);
       this.muteNotifications = false;
     }
+    this.syncActiveNote();
     this.renderTranscript(this.service.getMessages());
     this.syncChrome();
   }
@@ -263,12 +278,6 @@ export class ChatView extends ItemView {
     // Output style is no longer a composer control — switch it with /style.
 
     const buttonRow = composer.createDiv({ cls: "agentic-chat-buttons" });
-    const attachNoteButton = buttonRow.createEl("button", {
-      cls: "agentic-chat-attach",
-      text: "+ Active note",
-      attr: { "aria-label": "Attach the active note as context" },
-    });
-    attachNoteButton.addEventListener("click", () => this.attachActiveNote());
     const attachFolderButton = buttonRow.createEl("button", {
       cls: "agentic-chat-attach",
       text: "+ Folder",
@@ -772,7 +781,9 @@ export class ChatView extends ItemView {
 
   private async sendPrompt(text: string): Promise<void> {
     this.clearEmptyState();
-    const attachments = [...this.attachments];
+    // Show the auto-attached active note alongside explicit attachments in the user bubble.
+    const autoPath = this.effectiveActiveNote();
+    const attachments = [...(autoPath ? [autoPath] : []), ...this.attachments];
     const context = await this.buildContext();
     const prompt = context ? `${context}\n\n${text}` : text;
     this.lastSentPrompt = prompt;
@@ -1127,11 +1138,13 @@ export class ChatView extends ItemView {
       // an empty pane (the service surfaces its own error separately).
       this.muteNotifications = false;
       this.attachments = [];
+      // A new conversation re-attaches the active note by default (clear suppression).
+      this.activeNoteSuppressed = false;
       this.lastSentPrompt = null;
       this.lastSentDisplay = null;
       this.resetHistoryNav();
       this.endEditing(false);
-      this.renderChips();
+      this.syncActiveNote();
       this.bubble = null;
       this.renderTranscript([]);
       // A new conversation starts in the default (normal) output style.
@@ -1226,40 +1239,68 @@ export class ChatView extends ItemView {
 
   // --- attachments ---
 
-  private attachActiveNote(): void {
-    const file = this.app.workspace.getActiveFile();
-    if (!file) {
-      this.renderErrorMessage("No active note to attach.");
-      return;
-    }
-    this.addAttachment(file.path);
-  }
-
   private addAttachment(entry: string): void {
     if (this.attachments.includes(entry)) return;
     this.attachments.push(entry);
     this.renderChips();
   }
 
+  /** Recompute the auto-attached active note from the focused leaf, honoring suppression. */
+  private syncActiveNote(): void {
+    const file = this.activeNoteSuppressed ? null : this.app.workspace.getActiveFile();
+    this.activeNotePath = file ? file.path : null;
+    this.renderChips();
+  }
+
+  /** The active note auto-attached this turn, or null (suppressed / none / already explicit). */
+  private effectiveActiveNote(): string | null {
+    return effectiveActiveNote(this.activeNoteState());
+  }
+
+  private activeNoteState(): ActiveNoteState {
+    return { activePath: this.activeNotePath, suppressed: this.activeNoteSuppressed, explicit: this.attachments };
+  }
+
   private renderChips(): void {
     this.chipsEl.empty();
+    // The active note rides as a distinct, removable chip ahead of explicit attachments.
+    const autoPath = this.effectiveActiveNote();
+    if (autoPath) {
+      this.renderChip(autoPath, true, () => {
+        // Dismissing the auto chip suppresses it for the rest of the session.
+        this.activeNoteSuppressed = true;
+        this.activeNotePath = null;
+        this.renderChips();
+      });
+    }
     for (const entry of this.attachments) {
-      const chip = this.chipsEl.createDiv({ cls: "agentic-chat-chip" });
-      const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
-      setIcon(icon, entry.startsWith(FOLDER_PREFIX) ? "folder" : "file-text");
-      chip.createSpan({ text: entry.startsWith(FOLDER_PREFIX) ? entry.slice(FOLDER_PREFIX.length) : entry });
-      const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
-      setIcon(remove, "x");
-      remove.addEventListener("click", () => {
+      this.renderChip(entry, false, () => {
         this.attachments = this.attachments.filter((a) => a !== entry);
         this.renderChips();
       });
     }
   }
 
+  private renderChip(entry: string, active: boolean, onRemove: () => void): void {
+    const isFolder = entry.startsWith(FOLDER_PREFIX);
+    const chip = this.chipsEl.createDiv({ cls: active ? ["agentic-chat-chip", "is-active-note"] : ["agentic-chat-chip"] });
+    const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
+    setIcon(icon, isFolder ? "folder" : "file-text");
+    chip.createSpan({ text: isFolder ? entry.slice(FOLDER_PREFIX.length) : entry });
+    if (active) {
+      chip.createSpan({ cls: "agentic-chat-chip-tag", text: "active" });
+      chip.setAttr("title", "The active note is attached automatically — remove to stop for this session.");
+    }
+    const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
+    setIcon(remove, "x");
+    remove.addEventListener("click", onRemove);
+  }
+
   private async buildContext(): Promise<string> {
-    if (this.attachments.length === 0) return "";
     const sections: string[] = [];
+    // The auto-attached active note leads, built via its own truncation ladder.
+    const autoPath = this.effectiveActiveNote();
+    if (autoPath) sections.push(await this.buildActiveNoteSection(autoPath));
     for (const entry of this.attachments) {
       if (entry.startsWith(FOLDER_PREFIX)) {
         const folderPath = entry.slice(FOLDER_PREFIX.length);
@@ -1280,6 +1321,36 @@ export class ChatView extends ItemView {
     }
     if (sections.length === 0) return "";
     return `<context>\nThe user attached the following from their vault:\n\n${sections.join("\n\n---\n\n")}\n</context>`;
+  }
+
+  /** Build the active-note context section via the truncation ladder (full → visible range → path). */
+  private async buildActiveNoteSection(path: string): Promise<string> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
+    }
+    const full = await this.app.vault.cachedRead(file);
+    const visibleRange = full.length > MAX_ACTIVE_NOTE_CHARS ? this.getVisibleEditorRange(file) : null;
+    return buildActiveNoteSection({ path, full, visibleRange, limit: MAX_ACTIVE_NOTE_CHARS });
+  }
+
+  /**
+   * Best-effort slice of the active editor's visible range: a window of lines around
+   * the cursor in the matching MarkdownView. Mobile-safe (public Editor API only);
+   * returns null when there's no editor open on this file.
+   */
+  private getVisibleEditorRange(file: TFile): string | null {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || view.file?.path !== file.path || !view.editor) return null;
+    const editor = view.editor;
+    const total = editor.lineCount();
+    if (total === 0) return null;
+    const cursor = editor.getCursor();
+    const half = 120;
+    const from = Math.max(0, cursor.line - half);
+    const to = Math.min(total - 1, cursor.line + half);
+    const text = editor.getRange({ line: from, ch: 0 }, { line: to, ch: editor.getLine(to).length });
+    return text.trim() ? text : null;
   }
 
   // --- rendering: static transcript ---

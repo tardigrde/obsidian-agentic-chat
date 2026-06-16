@@ -310,9 +310,11 @@ A cohesive cluster from the Claudian input-area review (`image.png`). Everything
       footer. OpenRouter slugs are long — show a short label (catalog `name`, fallback last path
       segment), ellipsis at a fixed width, full slug in `title` + the existing `SuggestModal`
       picker (unchanged).
-- [ ] **Active note attached by default.** Drop the `+ Active note` button; auto-attach the
-      active leaf as a **removable** context chip each turn. Truncation ladder: full note →
-      visible editor range → path only. Mobile: active leaf resolves the same.
+- [x] **Active note attached by default.** Dropped the `+ Active note` button; the active leaf
+      auto-attaches as a **removable** context chip, kept in sync on `active-leaf-change`/
+      `file-open`. Dismissing it suppresses for the session (reset on `/new`); an explicit
+      attachment of the same note wins (no double-attach). Truncation ladder (`src/ui/active-note.ts`):
+      full note → visible editor range → labeled path only. Mobile: active leaf resolves the same.
 - [ ] **`+ Folder` → `/add-dir` working-dir scope.** A granted folder becomes a working set:
       reads/writes **inside** auto-run, **outside** always ask. The security half lives in
       Cross-cutting "Working-dir read boundary."

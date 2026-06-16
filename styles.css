@@ -447,6 +447,19 @@
   font-size: var(--font-ui-smaller);
 }
 
+.agentic-chat-chip.is-active-note {
+  border-style: dashed;
+  border-color: var(--interactive-accent);
+}
+
+.agentic-chat-chip-tag {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-accent);
+  opacity: 0.85;
+}
+
 .agentic-chat-chip-icon svg,
 .agentic-chat-chip-remove svg {
   width: 12px;
