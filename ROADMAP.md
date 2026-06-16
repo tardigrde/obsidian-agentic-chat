@@ -94,11 +94,13 @@ Make the pane carry actions, not just text. UX reference: GitHub Copilot chat si
 
 ### Revision — collapse to Safe/YOLO (planned, see M10)
 
-- [ ] The shipped ask/plan/agent **dropdown is superseded** by the M10 single **Safe ↔ YOLO**
-      slider + the `/plan` command. `resolveModePolicy` stays the engine; the visible mode
-      dropdown and the redundant ask-mode/plan-mode split go away. Safe = honor settings
-      approval policy; YOLO = session master auto-approve. Precedence: `/plan` > slider >
-      per-tool override > settings default.
+- [x] The shipped ask/plan/agent **dropdown is superseded** by the M10 single **Safe ↔ YOLO**
+      toggle + the `/plan` command. `resolveModePolicy` stays the engine; `AgentMode` is now
+      `safe | yolo | plan` (ask/agent retired, healed in `mergeSettings`: agent→safe, ask→plan).
+      Safe = honor settings approval policy; YOLO = session master auto-approve (`{...approval,
+      mutating:"allow"}`, so a per-tool deny still wins). `/plan` is sticky read-only until
+      `/endplan`, which restores the prior posture (`enterPlan`/`exitPlan`). Precedence:
+      `/plan` > slider > per-tool override > settings default.
 - [ ] **Output style via `/style` only.** Remove the composer style selector; `/style` switches
       default / brainstorm / learning. New sessions default to **normal** (default) style.
 
@@ -295,21 +297,24 @@ ignore-globs, model picker, output styles). (Obsidian Copilot "Projects".)
 
 A cohesive cluster from the Claudian input-area review (`image.png`). Everything mobile-safe.
 
-- [ ] **Single permission slider (Safe ↔ YOLO).** Replace the ask/plan/agent mode dropdown +
-      the separate approval toggle with one visible slider over the existing `beforeToolCall`
-      gate. **Safe** honors the settings approval policy (per-tool overrides + `approval.mutating`);
-      **YOLO** is a session master switch forcing auto-approve on all mutating tools. Two layers:
-      settings = granular default, slider = session master. (See M3 revision.)
-- [ ] **`/plan` command (sticky read-only).** Plan leaves the visible chrome; `/plan` enters a
-      sticky read-only + plan-framing state until `/endplan`, and doubles as the fully-read-only
-      lock. Precedence: `/plan` > slider > per-tool > settings default.
+- [x] **Single permission slider (Safe ↔ YOLO).** The ask/plan/agent mode dropdown is replaced
+      by one composer toggle over the existing `beforeToolCall` gate. **Safe** honors the settings
+      approval policy (per-tool overrides + `approval.mutating`); **YOLO** is a session master
+      switch forcing auto-approve on all mutating tools (a per-tool deny still wins). Two layers:
+      settings = granular default, toggle = session master. (See M3 revision.)
+- [x] **`/plan` command (sticky read-only).** Plan left the visible chrome; `/plan` enters a
+      sticky read-only + plan-framing state until `/endplan` (restoring the prior Safe/YOLO
+      posture), and doubles as the fully-read-only lock. A "Plan" indicator shows in the composer
+      while active. Precedence: `/plan` > slider > per-tool > settings default.
 - [ ] **Model pill in the composer (short label).** Move the model switcher into the composer
       footer. OpenRouter slugs are long — show a short label (catalog `name`, fallback last path
       segment), ellipsis at a fixed width, full slug in `title` + the existing `SuggestModal`
       picker (unchanged).
-- [ ] **Active note attached by default.** Drop the `+ Active note` button; auto-attach the
-      active leaf as a **removable** context chip each turn. Truncation ladder: full note →
-      visible editor range → path only. Mobile: active leaf resolves the same.
+- [x] **Active note attached by default.** Dropped the `+ Active note` button; the active leaf
+      auto-attaches as a **removable** context chip, kept in sync on `active-leaf-change`/
+      `file-open`. Dismissing it suppresses for the session (reset on `/new`); an explicit
+      attachment of the same note wins (no double-attach). Truncation ladder (`src/ui/active-note.ts`):
+      full note → visible editor range → labeled path only. Mobile: active leaf resolves the same.
 - [ ] **`+ Folder` → `/add-dir` working-dir scope.** A granted folder becomes a working set:
       reads/writes **inside** auto-run, **outside** always ask. The security half lives in
       Cross-cutting "Working-dir read boundary."

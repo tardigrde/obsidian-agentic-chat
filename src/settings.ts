@@ -9,7 +9,7 @@ import {
   type ProviderId,
 } from "./llm/models";
 import { type ApprovalPolicy, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
-import { type AgentMode, DEFAULT_MODE, MODE_ORDER, MODES } from "./agent/modes";
+import { type AgentMode, DEFAULT_MODE, healMode, MODES, TOGGLE_MODES } from "./agent/modes";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { createVaultTools, MUTATING_TOOLS } from "./tools/vault-tools";
@@ -34,7 +34,10 @@ export interface AgenticChatSettings {
   requestTimeoutMs: number;
   maxNetworkRetries: number;
   systemPrompt: string;
-  /** What the agent may do: read-only (ask), plan-first (plan), or full (agent). */
+  /**
+   * Session permission posture: `safe` honors the approval policy, `yolo` auto-approves
+   * mutating tools. `plan` (read-only) is reached via the `/plan` command, not this default.
+   */
   mode: AgentMode;
   /** How the assistant talks: a built-in system-prompt overlay. */
   outputStyle: OutputStyle;
@@ -137,8 +140,8 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
-    // Heal enum-like fields so an unknown persisted value can't break the gate or prompt.
-    mode: stored?.mode && stored.mode in MODES ? stored.mode : DEFAULT_MODE,
+    // Heal enum-like fields so an unknown (or retired ask/plan/agent) value can't break the gate or prompt.
+    mode: healMode(stored?.mode),
     outputStyle:
       stored?.outputStyle && stored.outputStyle in OUTPUT_STYLES ? stored.outputStyle : DEFAULT_OUTPUT_STYLE,
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
@@ -376,10 +379,17 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Agent").setHeading();
 
     new Setting(containerEl)
-      .setName("Mode")
-      .setDesc("What the agent may do. Ask is read-only; Plan proposes before writing; Agent follows your approval gates. Also switchable from the chat composer.")
+      .setName("Permission mode")
+      .setDesc(
+        "Safe honors your approval gates below; YOLO auto-approves every mutating tool for the session " +
+          "(a per-tool deny still wins). Also a toggle in the chat composer. Use /plan in chat for a sticky read-only mode.",
+      )
       .addDropdown((dropdown) => {
-        for (const id of MODE_ORDER) dropdown.addOption(id, MODES[id].label);
+        for (const id of TOGGLE_MODES) dropdown.addOption(id, MODES[id].label);
+        // Plan is entered via /plan in chat, but surface it while active so the control
+        // reflects the real state — otherwise it would read "Safe" and picking Safe would
+        // fire no change, trapping the user in plan mode.
+        if (settings.mode === "plan") dropdown.addOption("plan", `${MODES.plan.label} (set via /plan)`);
         dropdown.setValue(settings.mode).onChange(async (value) => {
           settings.mode = value as AgentMode;
           await this.save();

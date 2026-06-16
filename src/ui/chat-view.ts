@@ -1,5 +1,6 @@
 import {
   ItemView,
+  MarkdownView,
   Notice,
   TFile,
   TFolder,
@@ -41,7 +42,13 @@ import { AutocompleteMenu } from "./autocomplete-menu";
 import { parseDroppedVaultPath } from "./drag-drop";
 import { resolveCommand, visibleCommands } from "./commands";
 import { isSummaryMessage } from "../agent/compaction";
-import { type AgentMode, MODE_ORDER, MODES } from "../agent/modes";
+import { type AgentMode, enterPlan, exitPlan, MODE_ORDER, MODES } from "../agent/modes";
+import {
+  type ActiveNoteState,
+  buildActiveNoteSection,
+  effectiveActiveNote,
+  MAX_ACTIVE_NOTE_CHARS,
+} from "./active-note";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
 
 export { VIEW_TYPE_AGENT_CHAT };
@@ -68,6 +75,12 @@ interface ObsidianDragManager {
 
 export class ChatView extends ItemView {
   private attachments: string[] = [];
+  // Active-note-attached-by-default state: the current active note's path, whether
+  // the user dismissed the auto chip (suppressed for the session), and — when in
+  // plan mode — the posture to restore on /endplan.
+  private activeNotePath: string | null = null;
+  private activeNoteSuppressed = false;
+  private modeBeforePlan: AgentMode | null = null;
   private bubble: AssistantBubble | null = null;
   private unsubscribers: Array<() => void> = [];
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
@@ -95,7 +108,10 @@ export class ChatView extends ItemView {
   private emptyStateEl: HTMLElement | null = null;
   private chipsEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
-  private modeSelectEl!: HTMLSelectElement;
+  private safeButtonEl!: HTMLButtonElement;
+  private yoloButtonEl!: HTMLButtonElement;
+  private modeToggleEl!: HTMLElement;
+  private planBadgeEl!: HTMLElement;
   private menu!: AutocompleteMenu;
   // Shell-style command history: every submitted message, newest last. Up/Down in
   // the composer cycle through it; `historyIndex` is the current position while
@@ -146,6 +162,9 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.vault.on("create", invalidate));
     this.registerEvent(this.app.vault.on("delete", invalidate));
     this.registerEvent(this.app.vault.on("rename", invalidate));
+    // Keep the auto-attached active note in sync as the focused leaf/file changes.
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.syncActiveNote()));
+    this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveNote()));
     this.muteNotifications = true;
     try {
       await this.service.initialize();
@@ -156,6 +175,7 @@ export class ChatView extends ItemView {
       this.resetUsageNotifications(true);
       this.muteNotifications = false;
     }
+    this.syncActiveNote();
     this.renderTranscript(this.service.getMessages());
     this.syncChrome();
   }
@@ -238,22 +258,26 @@ export class ChatView extends ItemView {
     });
 
     const controls = composer.createDiv({ cls: "agentic-chat-controls" });
-    this.modeSelectEl = this.buildControlSelect(
-      controls,
-      "Agent mode",
-      MODE_ORDER.map((id) => ({ value: id, label: MODES[id].label, title: MODES[id].description })),
-      this.plugin.settings.mode,
-      (value) => this.setMode(value as AgentMode),
-    );
+    // Single Safe ↔ YOLO permission toggle (the ask/plan/agent dropdown is retired).
+    this.modeToggleEl = controls.createDiv({
+      cls: "agentic-chat-mode-toggle",
+      attr: { role: "group", "aria-label": "Permission mode" },
+    });
+    this.safeButtonEl = this.buildModeSegment(this.modeToggleEl, "safe");
+    this.yoloButtonEl = this.buildModeSegment(this.modeToggleEl, "yolo");
+    // Plan is sticky (/plan…/endplan); show a clear indicator while it's active.
+    this.planBadgeEl = controls.createDiv({
+      cls: "agentic-chat-plan-badge",
+      attr: { "aria-label": "Plan mode active — read-only. Click or /endplan to exit." },
+    });
+    const planIcon = this.planBadgeEl.createSpan({ cls: "agentic-chat-plan-badge-icon" });
+    setIcon(planIcon, MODES.plan.icon);
+    this.planBadgeEl.createSpan({ text: "Plan" });
+    this.planBadgeEl.addEventListener("click", () => void this.exitPlanMode());
+    this.planBadgeEl.hide();
     // Output style is no longer a composer control — switch it with /style.
 
     const buttonRow = composer.createDiv({ cls: "agentic-chat-buttons" });
-    const attachNoteButton = buttonRow.createEl("button", {
-      cls: "agentic-chat-attach",
-      text: "+ Active note",
-      attr: { "aria-label": "Attach the active note as context" },
-    });
-    attachNoteButton.addEventListener("click", () => this.attachActiveNote());
     const attachFolderButton = buttonRow.createEl("button", {
       cls: "agentic-chat-attach",
       text: "+ Folder",
@@ -408,27 +432,17 @@ export class ChatView extends ItemView {
     return candidates;
   }
 
-  // --- composer controls (mode + output style) ---
+  // --- composer controls (Safe ↔ YOLO toggle + sticky plan) ---
 
-  /** A compact labelled `<select>` for the composer control row. */
-  private buildControlSelect(
-    parent: HTMLElement,
-    ariaLabel: string,
-    options: Array<{ value: string; label: string; title?: string }>,
-    value: string,
-    onChange: (value: string) => void,
-  ): HTMLSelectElement {
-    const select = parent.createEl("select", {
-      cls: ["dropdown", "agentic-chat-control-select"],
-      attr: { "aria-label": ariaLabel },
+  /** One segment of the Safe ↔ YOLO toggle. */
+  private buildModeSegment(parent: HTMLElement, mode: "safe" | "yolo"): HTMLButtonElement {
+    const button = parent.createEl("button", {
+      cls: "agentic-chat-mode-seg",
+      text: MODES[mode].label,
+      attr: { "aria-label": MODES[mode].description, title: MODES[mode].description },
     });
-    for (const option of options) {
-      const el = select.createEl("option", { text: option.label, value: option.value });
-      if (option.title) el.title = option.title;
-    }
-    select.value = value;
-    select.addEventListener("change", () => onChange(select.value));
-    return select;
+    button.addEventListener("click", () => void this.setMode(mode));
+    return button;
   }
 
   private async setMode(mode: AgentMode): Promise<void> {
@@ -437,8 +451,44 @@ export class ChatView extends ItemView {
     if (this.service.isStreaming()) return;
     if (this.plugin.settings.mode === mode) return;
     this.plugin.settings.mode = mode;
+    // Choosing a posture other than plan ends any sticky plan state.
+    if (mode !== "plan") this.modeBeforePlan = null;
     await this.plugin.saveSettings();
     this.syncControls();
+  }
+
+  /** `/plan`: enter sticky read-only plan mode, remembering the posture to restore. */
+  private async enterPlanMode(): Promise<void> {
+    this.clearEmptyState();
+    if (this.service.isStreaming()) {
+      this.renderErrorMessage("Can't switch mode while the agent is responding.");
+      return;
+    }
+    const transition = enterPlan(this.plugin.settings.mode);
+    if (!transition) {
+      this.renderInfoMessage("Plan", [["Plan", "Already in plan mode. Use /endplan to leave."]]);
+      return;
+    }
+    this.modeBeforePlan = transition.previous;
+    await this.setMode("plan");
+    this.renderInfoMessage("Plan", [[MODES.plan.label, MODES.plan.description]]);
+  }
+
+  /** `/endplan`: leave plan mode, restoring the Safe/YOLO posture in effect before /plan. */
+  private async exitPlanMode(): Promise<void> {
+    this.clearEmptyState();
+    if (this.plugin.settings.mode !== "plan") {
+      this.renderInfoMessage("Plan", [["Plan", "Not in plan mode."]]);
+      return;
+    }
+    if (this.service.isStreaming()) {
+      this.renderErrorMessage("Can't switch mode while the agent is responding.");
+      return;
+    }
+    const restored = exitPlan(this.modeBeforePlan);
+    this.modeBeforePlan = null;
+    await this.setMode(restored);
+    this.renderInfoMessage("Mode", [[MODES[restored].label, MODES[restored].description]]);
   }
 
   private async setOutputStyle(style: OutputStyle): Promise<void> {
@@ -450,17 +500,21 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Reflect settings (e.g. changed via /config or the settings tab) back into the
-   * selects, and disable them while the agent is streaming so mode/style can't drift
-   * from the prompt/policy the in-flight turn started under.
+   * Reflect settings (e.g. changed via /config, /plan, or the settings tab) back into
+   * the composer toggle, and disable it while the agent is streaming or in plan mode so
+   * the posture can't drift from the prompt/policy the in-flight turn started under.
    */
   private syncControls(): void {
+    if (!this.modeToggleEl) return;
     const { settings } = this.plugin;
     const streaming = this.service.isStreaming();
-    if (this.modeSelectEl) {
-      if (this.modeSelectEl.value !== settings.mode) this.modeSelectEl.value = settings.mode;
-      this.modeSelectEl.disabled = streaming;
-    }
+    const planning = settings.mode === "plan";
+    this.safeButtonEl.toggleClass("is-active", settings.mode === "safe");
+    this.yoloButtonEl.toggleClass("is-active", settings.mode === "yolo");
+    this.safeButtonEl.disabled = streaming || planning;
+    this.yoloButtonEl.disabled = streaming || planning;
+    this.modeToggleEl.toggleClass("is-planning", planning);
+    this.planBadgeEl.toggle(planning);
   }
 
   // --- chrome (header pill, usage, running state) ---
@@ -727,7 +781,9 @@ export class ChatView extends ItemView {
 
   private async sendPrompt(text: string): Promise<void> {
     this.clearEmptyState();
-    const attachments = [...this.attachments];
+    // Show the auto-attached active note alongside explicit attachments in the user bubble.
+    const autoPath = this.effectiveActiveNote();
+    const attachments = [...(autoPath ? [autoPath] : []), ...this.attachments];
     const context = await this.buildContext();
     const prompt = context ? `${context}\n\n${text}` : text;
     this.lastSentPrompt = prompt;
@@ -781,6 +837,12 @@ export class ChatView extends ItemView {
         return true;
       case "config":
         this.showConfig();
+        return true;
+      case "plan":
+        await this.enterPlanMode();
+        return true;
+      case "endplan":
+        await this.exitPlanMode();
         return true;
       case "usage":
         this.showUsage();
@@ -954,6 +1016,11 @@ export class ChatView extends ItemView {
   }
 
   private async chooseMode(mode: AgentMode): Promise<void> {
+    // Plan is sticky: route it through enterPlanMode so /endplan can restore the posture.
+    if (mode === "plan") {
+      await this.enterPlanMode();
+      return;
+    }
     await this.setMode(mode);
     this.renderInfoMessage("Mode", [[MODES[mode].label, MODES[mode].description]]);
   }
@@ -1071,11 +1138,13 @@ export class ChatView extends ItemView {
       // an empty pane (the service surfaces its own error separately).
       this.muteNotifications = false;
       this.attachments = [];
+      // A new conversation re-attaches the active note by default (clear suppression).
+      this.activeNoteSuppressed = false;
       this.lastSentPrompt = null;
       this.lastSentDisplay = null;
       this.resetHistoryNav();
       this.endEditing(false);
-      this.renderChips();
+      this.syncActiveNote();
       this.bubble = null;
       this.renderTranscript([]);
       // A new conversation starts in the default (normal) output style.
@@ -1170,40 +1239,72 @@ export class ChatView extends ItemView {
 
   // --- attachments ---
 
-  private attachActiveNote(): void {
-    const file = this.app.workspace.getActiveFile();
-    if (!file) {
-      this.renderErrorMessage("No active note to attach.");
-      return;
-    }
-    this.addAttachment(file.path);
-  }
-
   private addAttachment(entry: string): void {
     if (this.attachments.includes(entry)) return;
     this.attachments.push(entry);
     this.renderChips();
   }
 
+  /**
+   * Recompute the auto-attached active note from the focused leaf, honoring suppression.
+   * Limited to Markdown notes — the active leaf can be an image/PDF/canvas, which would
+   * be read as garbage UTF-8 and injected into the prompt.
+   */
+  private syncActiveNote(): void {
+    const file = this.activeNoteSuppressed ? null : this.app.workspace.getActiveFile();
+    this.activeNotePath = file && file.extension.toLowerCase() === "md" ? file.path : null;
+    this.renderChips();
+  }
+
+  /** The active note auto-attached this turn, or null (suppressed / none / already explicit). */
+  private effectiveActiveNote(): string | null {
+    return effectiveActiveNote(this.activeNoteState());
+  }
+
+  private activeNoteState(): ActiveNoteState {
+    return { activePath: this.activeNotePath, suppressed: this.activeNoteSuppressed, explicit: this.attachments };
+  }
+
   private renderChips(): void {
     this.chipsEl.empty();
+    // The active note rides as a distinct, removable chip ahead of explicit attachments.
+    const autoPath = this.effectiveActiveNote();
+    if (autoPath) {
+      this.renderChip(autoPath, true, () => {
+        // Dismissing the auto chip suppresses it for the rest of the session.
+        this.activeNoteSuppressed = true;
+        this.activeNotePath = null;
+        this.renderChips();
+      });
+    }
     for (const entry of this.attachments) {
-      const chip = this.chipsEl.createDiv({ cls: "agentic-chat-chip" });
-      const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
-      setIcon(icon, entry.startsWith(FOLDER_PREFIX) ? "folder" : "file-text");
-      chip.createSpan({ text: entry.startsWith(FOLDER_PREFIX) ? entry.slice(FOLDER_PREFIX.length) : entry });
-      const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
-      setIcon(remove, "x");
-      remove.addEventListener("click", () => {
+      this.renderChip(entry, false, () => {
         this.attachments = this.attachments.filter((a) => a !== entry);
         this.renderChips();
       });
     }
   }
 
+  private renderChip(entry: string, active: boolean, onRemove: () => void): void {
+    const isFolder = entry.startsWith(FOLDER_PREFIX);
+    const chip = this.chipsEl.createDiv({ cls: active ? ["agentic-chat-chip", "is-active-note"] : ["agentic-chat-chip"] });
+    const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
+    setIcon(icon, isFolder ? "folder" : "file-text");
+    chip.createSpan({ text: isFolder ? entry.slice(FOLDER_PREFIX.length) : entry });
+    if (active) {
+      chip.createSpan({ cls: "agentic-chat-chip-tag", text: "active" });
+      chip.setAttr("title", "The active note is attached automatically — remove to stop for this session.");
+    }
+    const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
+    setIcon(remove, "x");
+    remove.addEventListener("click", onRemove);
+  }
+
   private async buildContext(): Promise<string> {
-    if (this.attachments.length === 0) return "";
     const sections: string[] = [];
+    // The auto-attached active note leads, built via its own truncation ladder.
+    const autoPath = this.effectiveActiveNote();
+    if (autoPath) sections.push(await this.loadActiveNoteSection(autoPath));
     for (const entry of this.attachments) {
       if (entry.startsWith(FOLDER_PREFIX)) {
         const folderPath = entry.slice(FOLDER_PREFIX.length);
@@ -1224,6 +1325,44 @@ export class ChatView extends ItemView {
     }
     if (sections.length === 0) return "";
     return `<context>\nThe user attached the following from their vault:\n\n${sections.join("\n\n---\n\n")}\n</context>`;
+  }
+
+  /** Read the active note and serialize it via the truncation ladder (full → visible range → path). */
+  private async loadActiveNoteSection(path: string): Promise<string> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) {
+      return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
+    }
+    let full: string;
+    try {
+      full = await this.app.vault.cachedRead(file);
+    } catch {
+      // File locked/deleted mid-send: fall back to a path-only reference rather than crash the send.
+      return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
+    }
+    const visibleRange = full.length > MAX_ACTIVE_NOTE_CHARS ? this.getVisibleEditorRange(file) : null;
+    return buildActiveNoteSection({ path, full, visibleRange, limit: MAX_ACTIVE_NOTE_CHARS });
+  }
+
+  /**
+   * Best-effort slice of the active editor's visible range: a window of lines around
+   * the cursor in the matching MarkdownView. Mobile-safe (public Editor API only);
+   * returns null when there's no editor open on this file.
+   */
+  private getVisibleEditorRange(file: TFile): string | null {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || view.file?.path !== file.path || !view.editor) return null;
+    const editor = view.editor;
+    const total = editor.lineCount();
+    if (total === 0) return null;
+    const cursor = editor.getCursor();
+    const half = 120;
+    const from = Math.max(0, cursor.line - half);
+    const to = Math.min(total - 1, cursor.line + half);
+    // getLine can be undefined if the doc mutated under us; fall back to column 0.
+    const lineText = editor.getLine(to);
+    const text = editor.getRange({ line: from, ch: 0 }, { line: to, ch: lineText ? lineText.length : 0 });
+    return text.trim() ? text : null;
   }
 
   // --- rendering: static transcript ---

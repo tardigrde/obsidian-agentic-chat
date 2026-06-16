@@ -447,6 +447,19 @@
   font-size: var(--font-ui-smaller);
 }
 
+.agentic-chat-chip.is-active-note {
+  border-style: dashed;
+  border-color: var(--interactive-accent);
+}
+
+.agentic-chat-chip-tag {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-accent);
+  opacity: 0.85;
+}
+
 .agentic-chat-chip-icon svg,
 .agentic-chat-chip-remove svg {
   width: 12px;
@@ -547,6 +560,60 @@
   font-size: var(--font-ui-smaller);
   height: auto;
   padding: var(--size-2-1) var(--size-4-4) var(--size-2-1) var(--size-2-3);
+}
+
+/* --- Permission mode (Safe ↔ YOLO toggle + sticky plan badge) --- */
+
+.agentic-chat-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+}
+
+.agentic-chat-mode-toggle.is-planning {
+  opacity: 0.5;
+}
+
+.agentic-chat-mode-seg {
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-2-1) var(--size-2-3);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.agentic-chat-mode-seg:not(:last-child) {
+  border-right: 1px solid var(--background-modifier-border);
+}
+
+.agentic-chat-mode-seg.is-active {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.agentic-chat-mode-seg:disabled {
+  cursor: default;
+}
+
+.agentic-chat-plan-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-2-1) var(--size-2-3);
+  border-radius: var(--radius-m);
+  background-color: var(--background-modifier-hover);
+  color: var(--text-accent);
+  cursor: pointer;
+}
+
+.agentic-chat-plan-badge-icon svg {
+  width: 12px;
+  height: 12px;
 }
 
 .agentic-chat-buttons {
