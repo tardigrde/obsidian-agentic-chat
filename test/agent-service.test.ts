@@ -184,14 +184,14 @@ describe("AgentService", () => {
     expect(messages.filter((message) => message.role === "assistant")).toHaveLength(2);
   });
 
-  it("blocks mutating tools in ask mode and feeds the read-only denial back to the model", async () => {
+  it("blocks mutating tools in plan mode and feeds the read-only denial back to the model", async () => {
     const streamFn = scriptedStreamFn([
       { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "note.md", content: "hi" } }], stopReason: "toolUse" },
       { content: [{ type: "text", text: "Read-only — here's what I would write." }], stopReason: "stop" },
     ]);
-    // Approval allows mutating and the user would confirm — ask mode must still block.
+    // Approval allows mutating and the user would confirm — plan mode must still block.
     const { service, settings } = makeService(streamFn, async () => true);
-    settings.mode = "ask";
+    settings.mode = "plan";
     settings.approval = { mutating: "allow", perTool: {} };
     await service.sendPrompt("Create note.md");
 
@@ -201,6 +201,28 @@ describe("AgentService", () => {
     expect(toolResult?.isError).toBe(true);
     const resultText = (toolResult?.content ?? []).map((block) => block.text ?? "").join("");
     expect(resultText).toMatch(/read-only/i);
+  });
+
+  it("yolo mode auto-approves mutating tools, but an explicit per-tool deny still wins", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "note.md", content: "hi" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "Understood, write is off-limits." }], stopReason: "stop" },
+    ]);
+    // YOLO forces mutating→allow, but the per-tool deny on `write` must override it,
+    // and never prompt the user even though confirmToolCall would say yes.
+    const { service, settings } = makeService(streamFn, async () => true);
+    settings.mode = "yolo";
+    settings.approval = { mutating: "allow", perTool: { write: "deny" } };
+    await service.sendPrompt("Create note.md");
+
+    const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
+      | { role: "toolResult"; isError: boolean; content: Array<{ type: string; text?: string }> }
+      | undefined;
+    expect(toolResult?.isError).toBe(true);
+    const resultText = (toolResult?.content ?? []).map((block) => block.text ?? "").join("");
+    expect(resultText).toMatch(/disabled by your approval settings|declined/i);
+    // The model received the denial and produced a follow-up turn.
+    expect(service.getMessages().filter((message) => message.role === "assistant")).toHaveLength(2);
   });
 
   it("dispatches a subagent, folds child usage into the session, and exposes profiles", async () => {

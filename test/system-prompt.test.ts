@@ -13,9 +13,9 @@ describe("buildSystemPrompt", () => {
   });
 
   it("appends non-blank overlays after the base prompt", () => {
-    const out = buildSystemPrompt("Base.", [], [MODES.ask.promptOverlay, OUTPUT_STYLES.learning.promptOverlay]);
+    const out = buildSystemPrompt("Base.", [], [MODES.plan.promptOverlay, OUTPUT_STYLES.learning.promptOverlay]);
     expect(out.startsWith("Base.")).toBe(true);
-    expect(out).toContain(MODES.ask.promptOverlay);
+    expect(out).toContain(MODES.plan.promptOverlay);
     expect(out).toContain(OUTPUT_STYLES.learning.promptOverlay);
   });
 

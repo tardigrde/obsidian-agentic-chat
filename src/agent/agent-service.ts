@@ -557,18 +557,18 @@ export class AgentService {
   }
 
   /**
-   * Gate a subagent dispatch. In a read-only mode (ask/plan) children are forced
-   * read-only, so a dispatch is always safe. Otherwise it is gated like a mutating
-   * action — but only when some dispatched profile can actually write, so a pure
-   * research fan-out never prompts.
+   * Gate a subagent dispatch. In **plan** mode children are forced read-only, so a
+   * dispatch is always safe. In **YOLO** the session master switch auto-approves it.
+   * Otherwise (safe) it is gated like a mutating action — but only when some dispatched
+   * profile can actually write, so a pure research fan-out never prompts.
    */
   private async gateSubagentDispatch(
     settings: AgenticChatSettings,
     args: unknown,
   ): Promise<{ block: true; reason: string } | undefined> {
-    if (settings.mode !== "agent") return undefined;
+    if (settings.mode === "plan") return undefined;
     if (!this.dispatchCanMutate(args)) return undefined;
-    const policy = settings.approval.mutating;
+    const policy = settings.mode === "yolo" ? "allow" : settings.approval.mutating;
     if (policy === "allow") return undefined;
     if (policy === "deny") {
       return { block: true, reason: "Subagent dispatch is blocked because mutating tools are denied." };
@@ -622,7 +622,7 @@ export class AgentService {
    */
   private createChildAgent(profile: AgentProfile): Agent {
     const settings = this.getSettings();
-    const readOnly = settings.mode !== "agent";
+    const readOnly = settings.mode === "plan";
     const tools = filterChildTools(createVaultTools(this.app, this.ignoreMatcher), profile.toolAllowlist, readOnly);
     return new Agent({
       streamFn: this.buildStreamFn(),

@@ -41,7 +41,7 @@ import { AutocompleteMenu } from "./autocomplete-menu";
 import { parseDroppedVaultPath } from "./drag-drop";
 import { resolveCommand, visibleCommands } from "./commands";
 import { isSummaryMessage } from "../agent/compaction";
-import { type AgentMode, MODE_ORDER, MODES } from "../agent/modes";
+import { type AgentMode, enterPlan, exitPlan, MODE_ORDER, MODES } from "../agent/modes";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
 
 export { VIEW_TYPE_AGENT_CHAT };
@@ -68,6 +68,8 @@ interface ObsidianDragManager {
 
 export class ChatView extends ItemView {
   private attachments: string[] = [];
+  // When in plan mode, the Safe/YOLO posture to restore on /endplan.
+  private modeBeforePlan: AgentMode | null = null;
   private bubble: AssistantBubble | null = null;
   private unsubscribers: Array<() => void> = [];
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
@@ -95,7 +97,10 @@ export class ChatView extends ItemView {
   private emptyStateEl: HTMLElement | null = null;
   private chipsEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
-  private modeSelectEl!: HTMLSelectElement;
+  private safeButtonEl!: HTMLButtonElement;
+  private yoloButtonEl!: HTMLButtonElement;
+  private modeToggleEl!: HTMLElement;
+  private planBadgeEl!: HTMLElement;
   private menu!: AutocompleteMenu;
   // Shell-style command history: every submitted message, newest last. Up/Down in
   // the composer cycle through it; `historyIndex` is the current position while
@@ -238,13 +243,23 @@ export class ChatView extends ItemView {
     });
 
     const controls = composer.createDiv({ cls: "agentic-chat-controls" });
-    this.modeSelectEl = this.buildControlSelect(
-      controls,
-      "Agent mode",
-      MODE_ORDER.map((id) => ({ value: id, label: MODES[id].label, title: MODES[id].description })),
-      this.plugin.settings.mode,
-      (value) => this.setMode(value as AgentMode),
-    );
+    // Single Safe ↔ YOLO permission toggle (the ask/plan/agent dropdown is retired).
+    this.modeToggleEl = controls.createDiv({
+      cls: "agentic-chat-mode-toggle",
+      attr: { role: "group", "aria-label": "Permission mode" },
+    });
+    this.safeButtonEl = this.buildModeSegment(this.modeToggleEl, "safe");
+    this.yoloButtonEl = this.buildModeSegment(this.modeToggleEl, "yolo");
+    // Plan is sticky (/plan…/endplan); show a clear indicator while it's active.
+    this.planBadgeEl = controls.createDiv({
+      cls: "agentic-chat-plan-badge",
+      attr: { "aria-label": "Plan mode active — read-only. Click or /endplan to exit." },
+    });
+    const planIcon = this.planBadgeEl.createSpan({ cls: "agentic-chat-plan-badge-icon" });
+    setIcon(planIcon, MODES.plan.icon);
+    this.planBadgeEl.createSpan({ text: "Plan" });
+    this.planBadgeEl.addEventListener("click", () => void this.exitPlanMode());
+    this.planBadgeEl.hide();
     // Output style is no longer a composer control — switch it with /style.
 
     const buttonRow = composer.createDiv({ cls: "agentic-chat-buttons" });
@@ -408,27 +423,17 @@ export class ChatView extends ItemView {
     return candidates;
   }
 
-  // --- composer controls (mode + output style) ---
+  // --- composer controls (Safe ↔ YOLO toggle + sticky plan) ---
 
-  /** A compact labelled `<select>` for the composer control row. */
-  private buildControlSelect(
-    parent: HTMLElement,
-    ariaLabel: string,
-    options: Array<{ value: string; label: string; title?: string }>,
-    value: string,
-    onChange: (value: string) => void,
-  ): HTMLSelectElement {
-    const select = parent.createEl("select", {
-      cls: ["dropdown", "agentic-chat-control-select"],
-      attr: { "aria-label": ariaLabel },
+  /** One segment of the Safe ↔ YOLO toggle. */
+  private buildModeSegment(parent: HTMLElement, mode: "safe" | "yolo"): HTMLButtonElement {
+    const button = parent.createEl("button", {
+      cls: "agentic-chat-mode-seg",
+      text: MODES[mode].label,
+      attr: { "aria-label": MODES[mode].description, title: MODES[mode].description },
     });
-    for (const option of options) {
-      const el = select.createEl("option", { text: option.label, value: option.value });
-      if (option.title) el.title = option.title;
-    }
-    select.value = value;
-    select.addEventListener("change", () => onChange(select.value));
-    return select;
+    button.addEventListener("click", () => void this.setMode(mode));
+    return button;
   }
 
   private async setMode(mode: AgentMode): Promise<void> {
@@ -437,8 +442,44 @@ export class ChatView extends ItemView {
     if (this.service.isStreaming()) return;
     if (this.plugin.settings.mode === mode) return;
     this.plugin.settings.mode = mode;
+    // Choosing a posture other than plan ends any sticky plan state.
+    if (mode !== "plan") this.modeBeforePlan = null;
     await this.plugin.saveSettings();
     this.syncControls();
+  }
+
+  /** `/plan`: enter sticky read-only plan mode, remembering the posture to restore. */
+  private async enterPlanMode(): Promise<void> {
+    this.clearEmptyState();
+    if (this.service.isStreaming()) {
+      this.renderErrorMessage("Can't switch mode while the agent is responding.");
+      return;
+    }
+    const transition = enterPlan(this.plugin.settings.mode);
+    if (!transition) {
+      this.renderInfoMessage("Plan", [["Plan", "Already in plan mode. Use /endplan to leave."]]);
+      return;
+    }
+    this.modeBeforePlan = transition.previous;
+    await this.setMode("plan");
+    this.renderInfoMessage("Plan", [[MODES.plan.label, MODES.plan.description]]);
+  }
+
+  /** `/endplan`: leave plan mode, restoring the Safe/YOLO posture in effect before /plan. */
+  private async exitPlanMode(): Promise<void> {
+    this.clearEmptyState();
+    if (this.plugin.settings.mode !== "plan") {
+      this.renderInfoMessage("Plan", [["Plan", "Not in plan mode."]]);
+      return;
+    }
+    if (this.service.isStreaming()) {
+      this.renderErrorMessage("Can't switch mode while the agent is responding.");
+      return;
+    }
+    const restored = exitPlan(this.modeBeforePlan);
+    this.modeBeforePlan = null;
+    await this.setMode(restored);
+    this.renderInfoMessage("Mode", [[MODES[restored].label, MODES[restored].description]]);
   }
 
   private async setOutputStyle(style: OutputStyle): Promise<void> {
@@ -450,17 +491,21 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Reflect settings (e.g. changed via /config or the settings tab) back into the
-   * selects, and disable them while the agent is streaming so mode/style can't drift
-   * from the prompt/policy the in-flight turn started under.
+   * Reflect settings (e.g. changed via /config, /plan, or the settings tab) back into
+   * the composer toggle, and disable it while the agent is streaming or in plan mode so
+   * the posture can't drift from the prompt/policy the in-flight turn started under.
    */
   private syncControls(): void {
+    if (!this.modeToggleEl) return;
     const { settings } = this.plugin;
     const streaming = this.service.isStreaming();
-    if (this.modeSelectEl) {
-      if (this.modeSelectEl.value !== settings.mode) this.modeSelectEl.value = settings.mode;
-      this.modeSelectEl.disabled = streaming;
-    }
+    const planning = settings.mode === "plan";
+    this.safeButtonEl.toggleClass("is-active", settings.mode === "safe");
+    this.yoloButtonEl.toggleClass("is-active", settings.mode === "yolo");
+    this.safeButtonEl.disabled = streaming || planning;
+    this.yoloButtonEl.disabled = streaming || planning;
+    this.modeToggleEl.toggleClass("is-planning", planning);
+    this.planBadgeEl.toggle(planning);
   }
 
   // --- chrome (header pill, usage, running state) ---
@@ -782,6 +827,12 @@ export class ChatView extends ItemView {
       case "config":
         this.showConfig();
         return true;
+      case "plan":
+        await this.enterPlanMode();
+        return true;
+      case "endplan":
+        await this.exitPlanMode();
+        return true;
       case "usage":
         this.showUsage();
         return true;
@@ -954,6 +1005,11 @@ export class ChatView extends ItemView {
   }
 
   private async chooseMode(mode: AgentMode): Promise<void> {
+    // Plan is sticky: route it through enterPlanMode so /endplan can restore the posture.
+    if (mode === "plan") {
+      await this.enterPlanMode();
+      return;
+    }
     await this.setMode(mode);
     this.renderInfoMessage("Mode", [[MODES[mode].label, MODES[mode].description]]);
   }
