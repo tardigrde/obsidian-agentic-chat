@@ -133,6 +133,28 @@ system prompt + its own history under a name. (Obsidian Copilot "Projects".)
 
 - **`+ Folder` → `/add-dir` working-dir scope** (`C1`). A granted folder becomes a working set:
   reads/writes **inside** auto-run, **outside** always ask. Pairs with `S2` (the security half).
+- **Unify the composer into one input card** (`C4`). Today the composer (`ChatView.buildLayout`,
+  `src/ui/chat-view.ts`) stacks separate sibling rows inside `.agentic-chat-composer`:
+  `.agentic-chat-tabs`, `.agentic-chat-chips`, `.agentic-chat-input-wrap` (the textarea
+  `.agentic-chat-input`, which carries Obsidian's default border/background), `.agentic-chat-toolbar`,
+  `.agentic-chat-buttons`, `.agentic-chat-usage`. Visually the controls sit *around* a bordered
+  textarea rather than *inside* one input rectangle. Match the design reference (Claudian) by making
+  a **single bordered card** hold the chips + textarea + bottom toolbar:
+  - **DOM (`buildLayout`):** wrap `.agentic-chat-chips` + `.agentic-chat-input-wrap` +
+    `.agentic-chat-toolbar` in a new `.agentic-chat-field` element (flex column). Keep
+    `.agentic-chat-tabs` as a nav row *above* the card (tabs left, header actions right), and keep
+    `.agentic-chat-buttons`/`.agentic-chat-usage` below (or move Send/Stop into the card's
+    bottom-right). Chips become the in-card top "context row".
+  - **CSS (`styles.css`):** give `.agentic-chat-field` the card chrome — `border: 1px solid
+    var(--background-modifier-border)`, `border-radius`, `background: var(--background-primary)`,
+    `display:flex; flex-direction:column`, a `min-height`. Strip the textarea's own box on
+    `.agentic-chat-input` (`border: none; background: transparent; box-shadow: none`) and let it
+    `flex: 1 1 auto` so it fills the card; move the textarea padding onto the card. Drop the
+    now-redundant `border-top`/padding on `.agentic-chat-composer`. Mirror Claudian's
+    `src/style/components/input.css` (`.claudian-input-wrapper` is the border container;
+    `textarea.claudian-input { border: none }`; `.claudian-context-row` holds chips inside the top).
+  Reference: [YishenTu/claudian](https://github.com/YishenTu/claudian)
+  `src/style/components/input.css` + `tabs.css` + `context-footer.css`.
 
 ## Integrations (MCP / ACP)
 
@@ -247,6 +269,7 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `G1` | Generic OpenAI-compatible provider | 6 | M |
 | `M1` | Durable memory store | 6 | M |
 | `R4` | QA inline citations | 6 | S |
+| `C4` | Unify the composer into one input card | 6 | S |
 | `W2` | Better extraction (Readability) | 5 | M |
 | `S1` | Keystore for API keys | 5 | M |
 | `S4` | Per-turn file checkpoints + rewind | 5 | L |
