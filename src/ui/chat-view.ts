@@ -123,9 +123,11 @@ export class ChatView extends ItemView {
   private stopButton!: HTMLButtonElement;
   private statusEl!: HTMLElement;
   private modelPillEl!: HTMLElement;
+  private effortKnobEl!: HTMLElement;
   private usageEl!: HTMLElement;
   private contextBarEl!: HTMLElement;
   private contextFillEl!: HTMLElement;
+  private contextPercentEl!: HTMLElement;
   private workingEl!: HTMLElement;
 
   constructor(
@@ -193,8 +195,6 @@ export class ChatView extends ItemView {
 
     const header = root.createDiv({ cls: "agentic-chat-header" });
     header.createDiv({ cls: "agentic-chat-title", text: "Agentic chat" });
-    this.modelPillEl = header.createDiv({ cls: "agentic-chat-model-pill", attr: { "aria-label": "Switch model" } });
-    this.modelPillEl.addEventListener("click", () => void this.switchModel());
 
     const actions = header.createDiv({ cls: "agentic-chat-header-actions" });
     const historyButton = actions.createEl("button", {
@@ -257,16 +257,58 @@ export class ChatView extends ItemView {
       this.menu.hide();
     });
 
-    const controls = composer.createDiv({ cls: "agentic-chat-controls" });
+    // Bottom toolbar: model · effort · context · folder-context on the left; the
+    // Safe ↔ YOLO toggle (+ sticky plan badge) on the right — mirrors the design ref.
+    const toolbar = composer.createDiv({ cls: "agentic-chat-toolbar" });
+    const toolbarLeft = toolbar.createDiv({ cls: "agentic-chat-toolbar-left" });
+
+    this.modelPillEl = toolbarLeft.createDiv({
+      cls: "agentic-chat-model-pill",
+      attr: { "aria-label": "Switch model" },
+    });
+    this.modelPillEl.addEventListener("click", () => void this.switchModel());
+
+    // Effort knob: click cycles the reasoning level for the next message only.
+    this.effortKnobEl = toolbarLeft.createDiv({
+      cls: "agentic-chat-effort",
+      attr: { role: "button", tabindex: "0" },
+    });
+    this.effortKnobEl.addEventListener("click", () => this.cycleEffort());
+    this.effortKnobEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        this.cycleEffort();
+      }
+    });
+
+    this.contextBarEl = toolbarLeft.createDiv({
+      cls: "agentic-chat-ctx-bar",
+      attr: { "aria-label": "Context window used", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100" },
+    });
+    this.contextFillEl = this.contextBarEl.createDiv({ cls: "agentic-chat-ctx-fill" });
+    this.contextPercentEl = toolbarLeft.createSpan({ cls: "agentic-chat-ctx-percent" });
+    this.contextBarEl.hide();
+    this.contextPercentEl.hide();
+
+    const attachFolderButton = toolbarLeft.createEl("button", {
+      cls: "agentic-chat-attach",
+      attr: { "aria-label": "Attach a folder listing as context" },
+    });
+    setIcon(attachFolderButton, "folder");
+    attachFolderButton.addEventListener("click", () => {
+      new FolderSuggestModal(this.app, (folder) => this.addAttachment(`${FOLDER_PREFIX}${folder.path}`)).open();
+    });
+
+    const toolbarRight = toolbar.createDiv({ cls: "agentic-chat-toolbar-right" });
     // Single Safe ↔ YOLO permission toggle (the ask/plan/agent dropdown is retired).
-    this.modeToggleEl = controls.createDiv({
+    this.modeToggleEl = toolbarRight.createDiv({
       cls: "agentic-chat-mode-toggle",
       attr: { role: "group", "aria-label": "Permission mode" },
     });
     this.safeButtonEl = this.buildModeSegment(this.modeToggleEl, "safe");
     this.yoloButtonEl = this.buildModeSegment(this.modeToggleEl, "yolo");
     // Plan is sticky (/plan…/endplan); show a clear indicator while it's active.
-    this.planBadgeEl = controls.createDiv({
+    this.planBadgeEl = toolbarRight.createDiv({
       cls: "agentic-chat-plan-badge",
       attr: { "aria-label": "Plan mode active — read-only. Click or /endplan to exit." },
     });
@@ -278,15 +320,6 @@ export class ChatView extends ItemView {
     // Output style is no longer a composer control — switch it with /style.
 
     const buttonRow = composer.createDiv({ cls: "agentic-chat-buttons" });
-    const attachFolderButton = buttonRow.createEl("button", {
-      cls: "agentic-chat-attach",
-      text: "+ Folder",
-      attr: { "aria-label": "Attach a folder listing as context" },
-    });
-    attachFolderButton.addEventListener("click", () => {
-      new FolderSuggestModal(this.app, (folder) => this.addAttachment(`${FOLDER_PREFIX}${folder.path}`)).open();
-    });
-
     this.workingEl = buttonRow.createDiv({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
     this.workingEl.hide();
     this.statusEl = buttonRow.createDiv({ cls: "agentic-chat-status" });
@@ -296,14 +329,8 @@ export class ChatView extends ItemView {
     this.sendButton = buttonRow.createEl("button", { cls: "mod-cta", text: "Send" });
     this.sendButton.addEventListener("click", () => void this.submit());
 
-    const footer = composer.createDiv({ cls: "agentic-chat-meta" });
-    this.contextBarEl = footer.createDiv({
-      cls: "agentic-chat-ctx-bar",
-      attr: { "aria-label": "Context window used", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100" },
-    });
-    this.contextFillEl = this.contextBarEl.createDiv({ cls: "agentic-chat-ctx-fill" });
-    this.contextBarEl.hide();
-    this.usageEl = footer.createDiv({ cls: "agentic-chat-usage" });
+    // Token/cost readout on its own muted line; hidden until there's usage.
+    this.usageEl = composer.createDiv({ cls: "agentic-chat-usage" });
 
     // Dragging a note onto the composer should attach it as context, not open it.
     this.registerDomEvent(composer, "dragover", (event) => {
@@ -515,6 +542,8 @@ export class ChatView extends ItemView {
     this.yoloButtonEl.disabled = streaming || planning;
     this.modeToggleEl.toggleClass("is-planning", planning);
     this.planBadgeEl.toggle(planning);
+    // Effort can't change mid-turn (it would disagree with the in-flight request).
+    this.effortKnobEl?.toggleClass("is-disabled", streaming);
   }
 
   // --- chrome (header pill, usage, running state) ---
@@ -531,6 +560,7 @@ export class ChatView extends ItemView {
     this.modelPillEl.setAttr("title", `${providerLabel} · ${fullModel}`);
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: providerLabel });
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: shortModelLabel(fullModel) });
+    this.syncEffortKnob();
 
     const usage = this.service.getSessionUsage();
     const fraction = this.service.getContextFraction();
@@ -552,15 +582,20 @@ export class ChatView extends ItemView {
   private syncContextBar(fraction: number | undefined): void {
     if (fraction === undefined) {
       this.contextBarEl.hide();
+      this.contextPercentEl.hide();
       return;
     }
     const percent = contextPercent(fraction);
     this.contextBarEl.show();
+    this.contextPercentEl.show();
     this.contextBarEl.setAttr("aria-label", `Context window ${percent}% used`);
     this.contextBarEl.setAttr("aria-valuenow", String(percent));
     this.contextFillEl.style.width = `${percent}%`;
     this.contextFillEl.removeClasses(["is-ok", "is-warn", "is-high"]);
     this.contextFillEl.addClass(`is-${contextLevel(fraction)}`);
+    this.contextPercentEl.setText(`${percent}%`);
+    this.contextPercentEl.removeClasses(["is-ok", "is-warn", "is-high"]);
+    this.contextPercentEl.addClass(`is-${contextLevel(fraction)}`);
   }
 
   /** Fire one-shot background toasts as the context window fills or cost crosses the cap. */
@@ -954,6 +989,32 @@ export class ChatView extends ItemView {
     this.renderInfoMessage("Effort", [
       [level, "Applies to your next message only, then reverts to the saved default."],
     ]);
+  }
+
+  /** Composer effort knob: cycle to the next reasoning level for the next message only. */
+  private cycleEffort(): void {
+    if (this.service.isStreaming()) return;
+    const current = this.service.getActiveThinkingLevel();
+    const index = THINKING_LEVELS.indexOf(current);
+    const next = THINKING_LEVELS[(index + 1) % THINKING_LEVELS.length];
+    // setThinkingOverride notifies, so syncChrome re-renders the knob.
+    this.service.setThinkingOverride(next);
+  }
+
+  /** Render the composer effort knob from the level the next message will use. */
+  private syncEffortKnob(): void {
+    if (!this.effortKnobEl) return;
+    const level = this.service.getActiveThinkingLevel();
+    const overridden = this.service.getThinkingOverride() !== null;
+    this.effortKnobEl.empty();
+    this.effortKnobEl.createSpan({ cls: "agentic-chat-effort-label", text: "Effort" });
+    this.effortKnobEl.createSpan({ cls: "agentic-chat-effort-value", text: level });
+    this.effortKnobEl.toggleClass("is-override", overridden);
+    const hint =
+      `Reasoning effort for your next message: ${level}. Click to change. ` +
+      "Switching effort re-processes the prompt once (a cache miss) — affects cost.";
+    this.effortKnobEl.setAttr("title", hint);
+    this.effortKnobEl.setAttr("aria-label", hint);
   }
 
   /** `/skill` with no argument: a clickable picker, not a static list. */

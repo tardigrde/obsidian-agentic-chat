@@ -549,17 +549,71 @@
   white-space: nowrap;
 }
 
-.agentic-chat-controls {
+/* --- Bottom toolbar (model · effort · context · folder | Safe↔YOLO) --- */
+
+.agentic-chat-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--size-2-3);
 }
 
-.agentic-chat-control-select {
+.agentic-chat-toolbar-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-2-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.agentic-chat-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-3);
+  margin-left: auto;
+}
+
+/* --- Effort knob (per-message reasoning level) --- */
+
+.agentic-chat-effort {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--size-2-1);
+  padding: 2px var(--size-2-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.agentic-chat-effort:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-effort.is-override {
+  border-color: var(--interactive-accent);
+}
+
+.agentic-chat-effort.is-disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.agentic-chat-effort-label {
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agentic-chat-effort-value {
   font-size: var(--font-ui-smaller);
-  height: auto;
-  padding: var(--size-2-1) var(--size-4-4) var(--size-2-1) var(--size-2-3);
+  color: var(--text-muted);
+}
+
+.agentic-chat-effort.is-override .agentic-chat-effort-value {
+  color: var(--text-accent);
 }
 
 /* --- Permission mode (Safe ↔ YOLO toggle + sticky plan badge) --- */
@@ -623,8 +677,24 @@
 }
 
 .agentic-chat-attach {
-  font-size: var(--font-ui-smaller);
-  padding: var(--size-2-1) var(--size-2-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--size-2-1) var(--size-2-2);
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.agentic-chat-attach:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-attach svg {
+  width: 15px;
+  height: 15px;
 }
 
 .agentic-chat-status {
@@ -646,17 +716,24 @@
   animation: agentic-chat-spin 0.7s linear infinite;
 }
 
-/* --- Context-window progress bar --- */
+/* --- Context-window progress bar + percent readout --- */
 
-.agentic-chat-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--size-4-2);
+.agentic-chat-ctx-percent {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.agentic-chat-ctx-percent.is-warn {
+  color: var(--color-yellow);
+}
+
+.agentic-chat-ctx-percent.is-high {
+  color: var(--color-red);
 }
 
 .agentic-chat-ctx-bar {
   flex: 0 0 auto;
-  width: 64px;
+  width: 40px;
   height: 5px;
   border-radius: var(--radius-l);
   background-color: var(--background-modifier-border);
@@ -685,13 +762,11 @@
   display: inline-flex;
   align-items: baseline;
   gap: var(--size-2-2);
-  margin-left: auto;
-  margin-right: var(--size-4-2);
   padding: 2px var(--size-2-3);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-l);
   cursor: pointer;
-  max-width: 55%;
+  max-width: 45%;
   overflow: hidden;
 }
 
