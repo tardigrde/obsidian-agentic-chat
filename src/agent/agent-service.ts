@@ -623,7 +623,7 @@ export class AgentService {
   private createChildAgent(profile: AgentProfile): Agent {
     const settings = this.getSettings();
     const readOnly = settings.mode === "plan";
-    const tools = filterChildTools(createVaultTools(this.app, this.ignoreMatcher), profile.toolAllowlist, readOnly);
+    const tools = filterChildTools(createVaultTools(this.app, this.ignoreMatcher), profile.toolAllowlist ?? [], readOnly);
     return new Agent({
       streamFn: this.buildStreamFn(),
       initialState: {

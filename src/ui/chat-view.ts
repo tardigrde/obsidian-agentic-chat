@@ -1300,7 +1300,7 @@ export class ChatView extends ItemView {
     const sections: string[] = [];
     // The auto-attached active note leads, built via its own truncation ladder.
     const autoPath = this.effectiveActiveNote();
-    if (autoPath) sections.push(await this.buildActiveNoteSection(autoPath));
+    if (autoPath) sections.push(await this.loadActiveNoteSection(autoPath));
     for (const entry of this.attachments) {
       if (entry.startsWith(FOLDER_PREFIX)) {
         const folderPath = entry.slice(FOLDER_PREFIX.length);
@@ -1323,8 +1323,8 @@ export class ChatView extends ItemView {
     return `<context>\nThe user attached the following from their vault:\n\n${sections.join("\n\n---\n\n")}\n</context>`;
   }
 
-  /** Build the active-note context section via the truncation ladder (full → visible range → path). */
-  private async buildActiveNoteSection(path: string): Promise<string> {
+  /** Read the active note and serialize it via the truncation ladder (full → visible range → path). */
+  private async loadActiveNoteSection(path: string): Promise<string> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) {
       return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
@@ -1349,7 +1349,9 @@ export class ChatView extends ItemView {
     const half = 120;
     const from = Math.max(0, cursor.line - half);
     const to = Math.min(total - 1, cursor.line + half);
-    const text = editor.getRange({ line: from, ch: 0 }, { line: to, ch: editor.getLine(to).length });
+    // getLine can be undefined if the doc mutated under us; fall back to column 0.
+    const lineText = editor.getLine(to);
+    const text = editor.getRange({ line: from, ch: 0 }, { line: to, ch: lineText ? lineText.length : 0 });
     return text.trim() ? text : null;
   }
 

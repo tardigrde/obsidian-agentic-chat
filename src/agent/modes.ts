@@ -111,7 +111,8 @@ export function exitPlan(previous: AgentMode | null): AgentMode {
 
 /** Heal a persisted/legacy mode value, mapping the retired ask/plan/agent set onto the new one. */
 export function healMode(stored: string | undefined): AgentMode {
-  if (stored && stored in MODES) return stored as AgentMode;
+  // hasOwnProperty (not `in`) so a prototype key like "constructor"/"toString" isn't treated as a mode.
+  if (stored && Object.prototype.hasOwnProperty.call(MODES, stored)) return stored as AgentMode;
   // Legacy modes: agent (full approval) → safe; ask (read-only) → plan; anything else → default.
   if (stored === "agent") return "safe";
   if (stored === "ask") return "plan";
