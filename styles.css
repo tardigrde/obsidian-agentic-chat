@@ -426,6 +426,92 @@
   gap: var(--size-2-3);
 }
 
+/* --- Tab strip (up to MAX_TABS independent sessions) --- */
+
+.agentic-chat-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-2);
+}
+
+.agentic-chat-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  padding: 2px var(--size-2-3);
+  min-width: 24px;
+  justify-content: center;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.agentic-chat-tab:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-tab.is-active {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.agentic-chat-tab-busy {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--interactive-accent);
+  animation: agentic-chat-pulse 1s ease-in-out infinite;
+}
+
+.agentic-chat-tab-close {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  border-radius: var(--radius-s);
+}
+
+.agentic-chat-tab-close:hover {
+  color: var(--text-error);
+}
+
+.agentic-chat-tab-close svg {
+  width: 11px;
+  height: 11px;
+}
+
+.agentic-chat-tab-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  color: var(--text-muted);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.agentic-chat-tab-add:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-tab-add svg {
+  width: 14px;
+  height: 14px;
+}
+
+@keyframes agentic-chat-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
 .agentic-chat-chips {
   display: flex;
   flex-wrap: wrap;

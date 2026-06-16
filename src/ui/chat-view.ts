@@ -9,6 +9,7 @@ import {
 } from "obsidian";
 import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type AgenticChatPlugin from "../main";
+import type { AgentService } from "../agent/agent-service";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, THINKING_LEVELS } from "../settings";
 import { listOpenRouterModels } from "../llm/models";
@@ -68,12 +69,45 @@ interface ActionRow {
   onClick: () => void;
 }
 
+/** Maximum independent sessions ("tabs") in one chat leaf. */
+const MAX_TABS = 3;
+
+/**
+ * Per-conversation working state. While a tab is active these live on the
+ * ChatView instance (so existing methods are unchanged); switching tabs saves the
+ * active tab's values here and loads the target's. The pi session itself lives in
+ * `service`; this is only the composer/UI state that rides alongside it.
+ */
+interface TabWorkingState {
+  attachments: string[];
+  activeNoteSuppressed: boolean;
+  draft: string;
+  sentHistory: string[];
+  notifiedContext: Set<number>;
+  notifiedCost: boolean;
+  lastCompactionCount: number;
+  lastSentPrompt: string | null;
+  lastSentDisplay: string | null;
+}
+
+/** One open conversation in the leaf: its own agent service + saved UI state. */
+interface ChatTab {
+  service: AgentService;
+  unsubscribe: () => void;
+  state: TabWorkingState;
+}
+
 /** Minimal shape of Obsidian's internal (undocumented) drag manager. */
 interface ObsidianDragManager {
   draggable?: { file?: unknown; files?: unknown[] } | null;
 }
 
 export class ChatView extends ItemView {
+  // Open tabs (independent sessions). The fields below mirror the *active* tab's
+  // working state; switchToTab saves/loads them against `tabs[activeTabIndex].state`.
+  private tabs: ChatTab[] = [];
+  private activeTabIndex = 0;
+  private tabsEl!: HTMLElement;
   private attachments: string[] = [];
   // Active-note-attached-by-default state: the current active note's path, whether
   // the user dismissed the auto chip (suppressed for the session), and — when in
@@ -82,7 +116,6 @@ export class ChatView extends ItemView {
   private activeNoteSuppressed = false;
   private modeBeforePlan: AgentMode | null = null;
   private bubble: AssistantBubble | null = null;
-  private unsubscribers: Array<() => void> = [];
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
   private notifiedContext = new Set<number>();
   private notifiedCost = false;
@@ -116,7 +149,7 @@ export class ChatView extends ItemView {
   // Shell-style command history: every submitted message, newest last. Up/Down in
   // the composer cycle through it; `historyIndex` is the current position while
   // navigating (null = not navigating), `historyDraft` stashes the live draft.
-  private readonly sentHistory: string[] = [];
+  private sentHistory: string[] = [];
   private historyIndex: number | null = null;
   private historyDraft: string | null = null;
   private sendButton!: HTMLButtonElement;
@@ -149,14 +182,21 @@ export class ChatView extends ItemView {
     return "messages-square";
   }
 
-  private get service() {
-    return this.plugin.agentService;
+  /** The active tab's agent service. Tabs are created before any service access. */
+  private get service(): AgentService {
+    return this.tabs[this.activeTabIndex].service;
+  }
+
+  private get activeTab(): ChatTab {
+    return this.tabs[this.activeTabIndex];
   }
 
   async onOpen(): Promise<void> {
     this.buildLayout();
-    this.unsubscribers.push(this.service.onEvent((event) => this.handleAgentEvent(event)));
-    this.unsubscribers.push(this.service.onChange(() => this.syncChrome()));
+    // First tab continues the most-recent session (initialize); later tabs each
+    // start a fresh session. Each tab's service has its own event subscription.
+    this.tabs = [this.createTab()];
+    this.activeTabIndex = 0;
     // The mention list is cached; drop it whenever the vault's file set changes.
     const invalidate = () => {
       this.mentionCache = null;
@@ -180,12 +220,193 @@ export class ChatView extends ItemView {
     this.syncActiveNote();
     this.renderTranscript(this.service.getMessages());
     this.syncChrome();
+    this.syncTabStrip();
   }
 
   async onClose(): Promise<void> {
     this.cancelAutocomplete();
-    for (const unsubscribe of this.unsubscribers) unsubscribe();
-    this.unsubscribers = [];
+    // The view owns its tab services; dispose them so no detached agent keeps running.
+    for (const tab of this.tabs) {
+      tab.unsubscribe();
+      tab.service.dispose();
+    }
+    this.tabs = [];
+  }
+
+  // --- tabs (independent sessions in one leaf) ---
+
+  /** Build a tab with its own agent service and a tab-aware event subscription. */
+  private createTab(): ChatTab {
+    const service = this.plugin.createAgentService();
+    const tab: ChatTab = { service, unsubscribe: () => {}, state: freshTabState() };
+    const offEvent = service.onEvent((event) => this.handleTabEvent(tab, event));
+    const offChange = service.onChange(() => this.handleTabChange(tab));
+    tab.unsubscribe = () => {
+      offEvent();
+      offChange();
+    };
+    return tab;
+  }
+
+  /** Snapshot the active tab's composer/UI state so it survives a switch. */
+  private saveActiveState(): void {
+    const tab = this.tabs[this.activeTabIndex];
+    if (!tab) return;
+    tab.state = {
+      attachments: this.attachments,
+      activeNoteSuppressed: this.activeNoteSuppressed,
+      draft: this.inputEl.value,
+      sentHistory: this.sentHistory,
+      notifiedContext: this.notifiedContext,
+      notifiedCost: this.notifiedCost,
+      lastCompactionCount: this.lastCompactionCount,
+      lastSentPrompt: this.lastSentPrompt,
+      lastSentDisplay: this.lastSentDisplay,
+    };
+  }
+
+  /** Restore the active tab's saved composer/UI state into the live fields. */
+  private loadActiveState(): void {
+    const tab = this.tabs[this.activeTabIndex];
+    if (!tab) return;
+    const state = tab.state;
+    this.attachments = state.attachments;
+    this.activeNoteSuppressed = state.activeNoteSuppressed;
+    this.sentHistory = state.sentHistory;
+    this.notifiedContext = state.notifiedContext;
+    this.notifiedCost = state.notifiedCost;
+    this.lastCompactionCount = state.lastCompactionCount;
+    this.lastSentPrompt = state.lastSentPrompt;
+    this.lastSentDisplay = state.lastSentDisplay;
+    this.resetHistoryNav();
+    this.setComposerValueQuiet(state.draft);
+  }
+
+  /** Re-render the transcript + chrome for the active tab (after a switch/close). */
+  private renderActiveTab(): void {
+    this.bubble = null;
+    this.endEditing(false);
+    // Don't toast about the incoming tab's already-existing context/cost state.
+    this.muteNotifications = true;
+    this.syncActiveNote();
+    this.renderTranscript(this.service.getMessages());
+    this.syncChrome();
+    this.muteNotifications = false;
+    this.syncTabStrip();
+  }
+
+  private async switchToTab(index: number): Promise<void> {
+    if (index === this.activeTabIndex || index < 0 || index >= this.tabs.length) return;
+    this.cancelAutocomplete();
+    this.menu.hide();
+    this.endEditing(false);
+    this.saveActiveState();
+    this.activeTabIndex = index;
+    this.loadActiveState();
+    this.renderActiveTab();
+  }
+
+  /** `+`: open a new tab on a fresh session and switch to it (capped at MAX_TABS). */
+  private async addTab(): Promise<void> {
+    if (this.tabs.length >= MAX_TABS) return;
+    this.endEditing(false);
+    this.saveActiveState();
+    const tab = this.createTab();
+    this.tabs.push(tab);
+    this.activeTabIndex = this.tabs.length - 1;
+    // Reset the live fields to this fresh tab before any async work renders against them.
+    this.loadActiveState();
+    this.muteNotifications = true;
+    try {
+      // A new tab is always a fresh session, never a continuation of tab 0's.
+      await tab.service.newSession();
+      this.resetUsageNotifications();
+    } catch (error) {
+      new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.muteNotifications = false;
+    }
+    this.renderActiveTab();
+  }
+
+  /** `×`: close a tab, disposing its session. Closing the only tab resets it instead. */
+  private closeTab(index: number): void {
+    if (index < 0 || index >= this.tabs.length) return;
+    if (this.tabs.length <= 1) {
+      void this.startNewConversation();
+      return;
+    }
+    const closingActive = index === this.activeTabIndex;
+    if (closingActive) this.endEditing(false);
+    const [tab] = this.tabs.splice(index, 1);
+    tab.unsubscribe();
+    tab.service.dispose();
+    if (index < this.activeTabIndex) {
+      this.activeTabIndex -= 1;
+    } else if (closingActive) {
+      this.activeTabIndex = Math.min(this.activeTabIndex, this.tabs.length - 1);
+      // The closed tab was showing; load + render whichever tab took its place.
+      this.loadActiveState();
+      this.renderActiveTab();
+      return;
+    }
+    this.syncTabStrip();
+  }
+
+  private tabLabel(tab: ChatTab): string {
+    const info = tab.service.getSessionInfo();
+    return info?.name?.trim() || "New chat";
+  }
+
+  /** Render the tab pills + add button, reflecting active/busy state. */
+  private syncTabStrip(): void {
+    if (!this.tabsEl) return;
+    this.tabsEl.empty();
+    this.tabs.forEach((tab, index) => {
+      const pill = this.tabsEl.createDiv({
+        cls: "agentic-chat-tab",
+        attr: { role: "tab", "aria-label": this.tabLabel(tab), title: this.tabLabel(tab) },
+      });
+      pill.toggleClass("is-active", index === this.activeTabIndex);
+      pill.createSpan({ cls: "agentic-chat-tab-num", text: String(index + 1) });
+      if (tab.service.isStreaming()) pill.createSpan({ cls: "agentic-chat-tab-busy", attr: { "aria-hidden": "true" } });
+      pill.addEventListener("click", () => void this.switchToTab(index));
+      if (this.tabs.length > 1) {
+        const close = pill.createSpan({ cls: "agentic-chat-tab-close", attr: { "aria-label": "Close tab" } });
+        setIcon(close, "x");
+        close.addEventListener("click", (event) => {
+          event.stopPropagation();
+          this.closeTab(index);
+        });
+      }
+    });
+    if (this.tabs.length < MAX_TABS) {
+      const add = this.tabsEl.createDiv({ cls: "agentic-chat-tab-add", attr: { "aria-label": "New tab", title: "New tab" } });
+      setIcon(add, "plus");
+      add.addEventListener("click", () => void this.addTab());
+    }
+  }
+
+  private handleTabEvent(tab: ChatTab, event: AgentEvent): void {
+    if (tab === this.activeTab) {
+      this.handleAgentEvent(event);
+      return;
+    }
+    // A background tab finishing while you're viewing another: surface it.
+    if (event.type === "agent_end") {
+      this.notifier.notify("agentFinished", `Tab ${this.tabs.indexOf(tab) + 1} finished responding.`);
+    }
+    this.syncTabStrip();
+  }
+
+  private handleTabChange(tab: ChatTab): void {
+    this.syncTabStrip();
+    if (tab === this.activeTab) this.syncChrome();
+  }
+
+  /** Public entry for the "New conversation" command: fresh session in the active tab. */
+  async startNewConversation(): Promise<void> {
+    await this.newSession();
   }
 
   private buildLayout(): void {
@@ -214,6 +435,8 @@ export class ChatView extends ItemView {
     this.renderEmptyState();
 
     const composer = root.createDiv({ cls: "agentic-chat-composer" });
+    // Tab strip: switch between up to MAX_TABS independent sessions in this leaf.
+    this.tabsEl = composer.createDiv({ cls: "agentic-chat-tabs", attr: { role: "tablist" } });
     this.chipsEl = composer.createDiv({ cls: "agentic-chat-chips" });
 
     const inputWrap = composer.createDiv({ cls: "agentic-chat-input-wrap" });
@@ -1261,6 +1484,8 @@ export class ChatView extends ItemView {
         this.plugin.settings.outputStyle = DEFAULT_OUTPUT_STYLE;
         await this.plugin.saveSettings();
       }
+      // The session reset back to unnamed — refresh the tab pill's label.
+      this.syncTabStrip();
     }
   }
 
@@ -1297,6 +1522,15 @@ export class ChatView extends ItemView {
   }
 
   private async loadSession(path: string): Promise<void> {
+    // A session must not be open in two tabs at once (both would write the same
+    // file). If another tab already has it, just switch there.
+    const openIn = this.tabs.findIndex(
+      (tab, index) => index !== this.activeTabIndex && tab.service.getSessionInfo()?.path === path,
+    );
+    if (openIn >= 0) {
+      await this.switchToTab(openIn);
+      return;
+    }
     this.muteNotifications = true;
     try {
       await this.service.loadSession(path);
@@ -1309,6 +1543,7 @@ export class ChatView extends ItemView {
     this.endEditing(false);
     this.bubble = null;
     this.renderTranscript(this.service.getMessages());
+    this.syncTabStrip();
   }
 
   private async switchModel(): Promise<void> {
@@ -1632,6 +1867,21 @@ export class ChatView extends ItemView {
       this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
     });
   }
+}
+
+/** A clean per-tab working state for a fresh conversation. */
+function freshTabState(): TabWorkingState {
+  return {
+    attachments: [],
+    activeNoteSuppressed: false,
+    draft: "",
+    sentHistory: [],
+    notifiedContext: new Set<number>(),
+    notifiedCost: false,
+    lastCompactionCount: 0,
+    lastSentPrompt: null,
+    lastSentDisplay: null,
+  };
 }
 
 /** Index of the last element matching `predicate`, or -1. */
