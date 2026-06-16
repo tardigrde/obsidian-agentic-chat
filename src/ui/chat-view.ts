@@ -361,32 +361,50 @@ export class ChatView extends ItemView {
     return info?.name?.trim() || "New chat";
   }
 
+  /** Activate `el` on click and on Enter/Space, so non-button controls are keyboard-usable. */
+  private onActivate(el: HTMLElement, handler: () => void, stopPropagation = false): void {
+    el.addEventListener("click", (event) => {
+      if (stopPropagation) event.stopPropagation();
+      handler();
+    });
+    el.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      if (stopPropagation) event.stopPropagation();
+      handler();
+    });
+  }
+
   /** Render the tab pills + add button, reflecting active/busy state. */
   private syncTabStrip(): void {
     if (!this.tabsEl) return;
     this.tabsEl.empty();
     this.tabs.forEach((tab, index) => {
+      const active = index === this.activeTabIndex;
       const pill = this.tabsEl.createDiv({
         cls: "agentic-chat-tab",
-        attr: { role: "tab", "aria-label": this.tabLabel(tab), title: this.tabLabel(tab) },
+        attr: { role: "tab", tabindex: "0", "aria-selected": String(active), "aria-label": this.tabLabel(tab), title: this.tabLabel(tab) },
       });
-      pill.toggleClass("is-active", index === this.activeTabIndex);
+      pill.toggleClass("is-active", active);
       pill.createSpan({ cls: "agentic-chat-tab-num", text: String(index + 1) });
       if (tab.service.isStreaming()) pill.createSpan({ cls: "agentic-chat-tab-busy", attr: { "aria-hidden": "true" } });
-      pill.addEventListener("click", () => void this.switchToTab(index));
+      this.onActivate(pill, () => void this.switchToTab(index));
       if (this.tabs.length > 1) {
-        const close = pill.createSpan({ cls: "agentic-chat-tab-close", attr: { "aria-label": "Close tab" } });
-        setIcon(close, "x");
-        close.addEventListener("click", (event) => {
-          event.stopPropagation();
-          this.closeTab(index);
+        const close = pill.createSpan({
+          cls: "agentic-chat-tab-close",
+          attr: { role: "button", tabindex: "0", "aria-label": "Close tab" },
         });
+        setIcon(close, "x");
+        this.onActivate(close, () => this.closeTab(index), true);
       }
     });
     if (this.tabs.length < MAX_TABS) {
-      const add = this.tabsEl.createDiv({ cls: "agentic-chat-tab-add", attr: { "aria-label": "New tab", title: "New tab" } });
+      const add = this.tabsEl.createDiv({
+        cls: "agentic-chat-tab-add",
+        attr: { role: "button", tabindex: "0", "aria-label": "New tab", title: "New tab" },
+      });
       setIcon(add, "plus");
-      add.addEventListener("click", () => void this.addTab());
+      this.onActivate(add, () => void this.addTab());
     }
   }
 

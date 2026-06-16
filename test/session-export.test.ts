@@ -40,6 +40,11 @@ describe("session export", () => {
     expect(md.endsWith("\n")).toBe(true);
   });
 
+  it("escapes control characters in the frontmatter title", () => {
+    const md = sessionToMarkdown([user("hi")], { ...info, name: "line1\nline2" });
+    expect(md).toContain('title: "line1\\nline2"');
+  });
+
   it("strips the attachment context preamble from user turns", () => {
     const md = sessionToMarkdown([user("<context>\nattached stuff\n</context>\n\nWhat is this?")], info);
     expect(md).toContain("## You\n\nWhat is this?");

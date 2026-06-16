@@ -458,6 +458,15 @@
   color: var(--text-normal);
 }
 
+/* Keyboard focus affordance for the non-button composer controls. */
+.agentic-chat-tab:focus-visible,
+.agentic-chat-tab-close:focus-visible,
+.agentic-chat-tab-add:focus-visible,
+.agentic-chat-effort:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
 .agentic-chat-tab-busy {
   width: 6px;
   height: 6px;

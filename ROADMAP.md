@@ -133,11 +133,6 @@ system prompt + its own history under a name. (Obsidian Copilot "Projects".)
 
 - **`+ Folder` → `/add-dir` working-dir scope** (`C1`). A granted folder becomes a working set:
   reads/writes **inside** auto-run, **outside** always ask. Pairs with `S2` (the security half).
-- **Per-turn effort knob** (`C2`). Thinking level is currently global (settings only). Add a
-  quick per-turn knob in the composer (and/or a `/thinking` command) so effort can be raised for
-  one hard prompt without changing the default.
-- **Multiple tabs in one pane** (`C3`). Up to N independent sessions in the same leaf,
-  tab-switched. Session infra exists; UI plumbing is the cost.
 
 ## Integrations (MCP / ACP)
 
@@ -180,9 +175,6 @@ rename tools already shipped — see README.)
 - **Heading / block-level `@`-mention** (`O1`). `@note#heading` / `@note^block` attaches a slice
   instead of the whole file — cheaper context, native to Obsidian's addressing. Extends the
   shipped mention/attachment system.
-- **Vision attachments** (`O2`). Attach vault images to a multimodal OpenRouter model. The chip
-  plumbing exists; needs an image content-part in the outgoing message + a model-capability check
-  (only offer when the active model `supportsImages`).
 - **Conversation fork** (`O3`). Prompt editing already *rewinds*; forking keeps both branches as
   separate sessions. Cheap given the JSONL `parentId`/`leafId` linked-list already models branches.
 
@@ -215,7 +207,6 @@ Deferred from the shipped v1 (delegation, foreground, depth-1, cost-accounted).
   mermaid). (pi-plugin.)
 - **Editor/file context-menu "Send selection to chat"** (`X2`). Right-click selected text or a
   note → add it as a scoped context chip, via `editor-menu`/`file-menu` events. (obsidian-chat.)
-- **Session export** (`X3`). JSONL → Markdown note, so conversations are portable.
 - **Custom (user-authored) output styles** (`X4`). Once the built-ins prove the model.
 - **Document ingestion (PDF/EPUB/Office) as context** (`X5`). Parse non-image documents into
   attachable text; PDF text extraction is the reasonable first subset. (Obsidian Copilot.)
@@ -255,7 +246,6 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `I1` | MCP client (Streamable HTTP) | 6 | L |
 | `G1` | Generic OpenAI-compatible provider | 6 | M |
 | `M1` | Durable memory store | 6 | M |
-| `O2` | Vision attachments | 6 | S |
 | `R4` | QA inline citations | 6 | S |
 | `W2` | Better extraction (Readability) | 5 | M |
 | `S1` | Keystore for API keys | 5 | M |
@@ -266,13 +256,11 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `O1` | Heading/block-level `@`-mention | 5 | S |
 | `G2` | Provider/preset settings UI | 5 | S |
 | `X2` | Context-menu "Send selection to chat" | 5 | S |
-| `X3` | Session export (JSONL → Markdown) | 5 | S |
 | `X1` | Mermaid + callout render parity | 5 | S |
 | `X5` | Document ingestion (PDF first) | 5 | L |
 | `C1` | `+ Folder` → `/add-dir` working-dir scope | 4 | M |
 | `S2` | Working-dir read boundary | 4 | M |
 | `S3` | External config file (YAML) | 4 | M |
-| `C2` | Per-turn effort knob | 4 | S |
 | `W1` | `fetch_url` read-more / pagination | 4 | S |
 | `L6` | `#` inline persistent instruction | 4 | S |
 | `W3` | Deep-research = subagent-backed | 4 | L |
@@ -282,7 +270,6 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `X6` | Internationalization (i18n) | 4 | L |
 | `G3` | TEE/confidential model filter | 3 | S |
 | `D2` | Formatting + extended lint (prettier, import hygiene) | 3 | S |
-| `C3` | Multiple tabs in one pane | 3 | L |
 | `A1` | Async/background subagent runs | 3 | XL |
 | `A2` | Per-agent profile memory | 3 | M |
 | `O3` | Conversation fork | 2 | S |

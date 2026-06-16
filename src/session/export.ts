@@ -61,9 +61,15 @@ export function hasExportableTurns(messages: AgentMessage[]): boolean {
   return messages.some((message) => message.role === "user" || message.role === "assistant");
 }
 
-/** Double-quote a YAML scalar, escaping backslashes and quotes. */
+/** Double-quote a YAML scalar, escaping backslashes, quotes, and control whitespace. */
 function yamlString(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  const escaped = value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t");
+  return `"${escaped}"`;
 }
 
 /** Drop characters illegal in vault file names, collapse whitespace, and cap length. */
