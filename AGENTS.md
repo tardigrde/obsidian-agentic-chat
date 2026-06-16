@@ -12,16 +12,21 @@ An Obsidian plugin (`id: agentic-chat`): an agent-led chat in the right sidebar 
 npm install
 npm run dev          # esbuild watch → rebuilds main.js in place
 npm run build        # tsc -noEmit + production bundle (what releases ship)
-npm run typecheck    # tsc -noEmit — this is the lint gate; there is NO eslint
+npm run typecheck    # tsc -noEmit — strict type gate; keep it clean
+npm run lint         # eslint (flat config: typescript-eslint, non-type-checked)
 npm test             # vitest run (no Obsidian needed)
 npm run test:watch   # vitest watch
 ```
+
+Both `typecheck` and `lint` are gates — keep `tsc` strict-clean and `eslint` clean. The
+eslint config (`eslint.config.mjs`) is deliberately lean (recommended rules + a couple of
+project rules); heavier formatting/import rules are the `D2` roadmap item.
 
 - Single test file: `npx vitest run test/approval.test.ts`
 - Single test by name: `npx vitest run -t "honors explicit per-tool overrides"`
 - **Live tests** hit the real OpenRouter API and are excluded from `npm test`. Run with `scripts/run-live-tests.sh` (loads `OPENROUTER_API_KEY` from an `.env`; never commit the key). They live in `test/live/**` and use `vitest.live.config.ts`.
 
-CI (`.github/workflows/ci.yml`) runs exactly: `typecheck`, `test`, `build` on **Node 22** (pi-\* require `>=22.19`). There is no separate lint job — keep `tsc` strict-clean.
+CI (`.github/workflows/ci.yml`) runs exactly: `typecheck`, `lint`, `test`, `build` on **Node 22** (pi-\* require `>=22.19`). Keep `tsc` strict-clean and eslint clean.
 
 ## Architecture (the parts that span files)
 

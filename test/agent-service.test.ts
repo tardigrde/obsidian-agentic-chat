@@ -153,6 +153,51 @@ describe("AgentService", () => {
     expect(seen).toEqual(["anthropic/claude-3.5-sonnet", settings.openrouterModel]);
   });
 
+  it("applies a one-shot thinking override to the next prompt only, then reverts", async () => {
+    const { service, settings } = makeService(cannedStreamFn("ok"));
+    expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
+
+    service.setThinkingOverride("high");
+    expect(service.getThinkingOverride()).toBe("high");
+    expect(service.getActiveThinkingLevel()).toBe("high");
+
+    await service.sendPrompt("one hard prompt");
+    // The override was consumed by the turn it was set for.
+    expect(service.getThinkingOverride()).toBeNull();
+    expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
+  });
+
+  it("keeps two tab services over one sessions dir independent", async () => {
+    // Mirrors the C3 tab model: each tab is its own AgentService with its own
+    // session manager, but they share the plugin's sessions directory.
+    const adapter = new MemoryAdapter();
+    const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
+    const makeTab = () =>
+      new AgentService({
+        app: { vault: {}, workspace: {} } as unknown as App,
+        getSettings: () => settings,
+        sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test"),
+        confirmToolCall: async () => true,
+        streamFn: cannedStreamFn("reply"),
+      });
+
+    const tab1 = makeTab();
+    await tab1.sendPrompt("first tab message");
+
+    const tab2 = makeTab();
+    await tab2.newSession(); // a new tab is always a fresh session, not a continuation
+    await tab2.sendPrompt("second tab message");
+
+    // Two distinct session files, each holding only its own conversation.
+    const files = [...adapter.files.keys()].filter((path) => path.endsWith(".jsonl"));
+    expect(files.length).toBe(2);
+    const contents = files.map((path) => adapter.files.get(path) as string);
+    expect(contents.some((c) => c.includes("first tab message") && !c.includes("second tab message"))).toBe(true);
+    expect(contents.some((c) => c.includes("second tab message") && !c.includes("first tab message"))).toBe(true);
+    expect(tab1.getMessages().map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(tab2.getMessages().map((m) => m.role)).toEqual(["user", "assistant"]);
+  });
+
   it("persists the conversation to a JSONL session file", async () => {
     const { service, adapter } = makeService(cannedStreamFn("Persisted reply."));
     await service.sendPrompt("Remember this");

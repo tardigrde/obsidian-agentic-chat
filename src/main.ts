@@ -13,18 +13,9 @@ import { ChatView } from "./ui/chat-view";
 
 export default class AgenticChatPlugin extends Plugin {
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
-  agentService!: AgentService;
 
   async onload(): Promise<void> {
     await this.loadSettings();
-
-    const sessionManager = ObsidianSessionManager.forPlugin(this.app, this);
-    this.agentService = new AgentService({
-      app: this.app,
-      getSettings: () => this.settings,
-      sessionManager,
-      confirmToolCall: (request) => this.confirmToolCall(request),
-    });
 
     this.registerView(VIEW_TYPE_AGENT_CHAT, (leaf) => new ChatView(leaf, this));
 
@@ -39,15 +30,31 @@ export default class AgenticChatPlugin extends Plugin {
     this.addCommand({
       id: "new-conversation",
       name: "New conversation",
-      callback: () => void this.agentService.newSession(),
+      callback: () => void this.runOnActiveView((view) => view.startNewConversation()),
     });
 
     this.addSettingTab(new AgenticChatSettingTab(this.app, this));
   }
 
-  onunload(): void {
-    // dispose() is idempotent, so a repeated onunload is harmless.
-    this.agentService?.dispose();
+  /**
+   * Build a fresh agent service backed by its own session manager. The chat view
+   * creates one per tab so multiple conversations can run independently in a leaf.
+   */
+  createAgentService(): AgentService {
+    const sessionManager = ObsidianSessionManager.forPlugin(this.app, this);
+    return new AgentService({
+      app: this.app,
+      getSettings: () => this.settings,
+      sessionManager,
+      confirmToolCall: (request) => this.confirmToolCall(request),
+    });
+  }
+
+  /** Reveal the chat view, then run `fn` against it (commands act on the active view). */
+  private async runOnActiveView(fn: (view: ChatView) => void | Promise<void>): Promise<void> {
+    await this.activateView();
+    const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_AGENT_CHAT)[0];
+    if (leaf?.view instanceof ChatView) await fn(leaf.view);
   }
 
   /** Show the approval dialog and persist a "remember" choice as a per-tool override. */

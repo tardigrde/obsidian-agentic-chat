@@ -426,6 +426,101 @@
   gap: var(--size-2-3);
 }
 
+/* --- Tab strip (up to MAX_TABS independent sessions) --- */
+
+.agentic-chat-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-2);
+}
+
+.agentic-chat-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  padding: 2px var(--size-2-3);
+  min-width: 24px;
+  justify-content: center;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.agentic-chat-tab:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-tab.is-active {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+/* Keyboard focus affordance for the non-button composer controls. */
+.agentic-chat-tab:focus-visible,
+.agentic-chat-tab-close:focus-visible,
+.agentic-chat-tab-add:focus-visible,
+.agentic-chat-effort:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.agentic-chat-tab-busy {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--interactive-accent);
+  animation: agentic-chat-pulse 1s ease-in-out infinite;
+}
+
+.agentic-chat-tab-close {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  border-radius: var(--radius-s);
+}
+
+.agentic-chat-tab-close:hover {
+  color: var(--text-error);
+}
+
+.agentic-chat-tab-close svg {
+  width: 11px;
+  height: 11px;
+}
+
+.agentic-chat-tab-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  color: var(--text-muted);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.agentic-chat-tab-add:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-tab-add svg {
+  width: 14px;
+  height: 14px;
+}
+
+@keyframes agentic-chat-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
 .agentic-chat-chips {
   display: flex;
   flex-wrap: wrap;
@@ -549,17 +644,71 @@
   white-space: nowrap;
 }
 
-.agentic-chat-controls {
+/* --- Bottom toolbar (model · effort · context · folder | Safe↔YOLO) --- */
+
+.agentic-chat-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--size-2-3);
 }
 
-.agentic-chat-control-select {
+.agentic-chat-toolbar-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-2-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.agentic-chat-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-3);
+  margin-left: auto;
+}
+
+/* --- Effort knob (per-message reasoning level) --- */
+
+.agentic-chat-effort {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--size-2-1);
+  padding: 2px var(--size-2-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.agentic-chat-effort:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-effort.is-override {
+  border-color: var(--interactive-accent);
+}
+
+.agentic-chat-effort.is-disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.agentic-chat-effort-label {
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agentic-chat-effort-value {
   font-size: var(--font-ui-smaller);
-  height: auto;
-  padding: var(--size-2-1) var(--size-4-4) var(--size-2-1) var(--size-2-3);
+  color: var(--text-muted);
+}
+
+.agentic-chat-effort.is-override .agentic-chat-effort-value {
+  color: var(--text-accent);
 }
 
 /* --- Permission mode (Safe ↔ YOLO toggle + sticky plan badge) --- */
@@ -623,8 +772,24 @@
 }
 
 .agentic-chat-attach {
-  font-size: var(--font-ui-smaller);
-  padding: var(--size-2-1) var(--size-2-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--size-2-1) var(--size-2-2);
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.agentic-chat-attach:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-attach svg {
+  width: 15px;
+  height: 15px;
 }
 
 .agentic-chat-status {
@@ -646,17 +811,24 @@
   animation: agentic-chat-spin 0.7s linear infinite;
 }
 
-/* --- Context-window progress bar --- */
+/* --- Context-window progress bar + percent readout --- */
 
-.agentic-chat-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--size-4-2);
+.agentic-chat-ctx-percent {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.agentic-chat-ctx-percent.is-warn {
+  color: var(--color-yellow);
+}
+
+.agentic-chat-ctx-percent.is-high {
+  color: var(--color-red);
 }
 
 .agentic-chat-ctx-bar {
   flex: 0 0 auto;
-  width: 64px;
+  width: 40px;
   height: 5px;
   border-radius: var(--radius-l);
   background-color: var(--background-modifier-border);
@@ -685,13 +857,11 @@
   display: inline-flex;
   align-items: baseline;
   gap: var(--size-2-2);
-  margin-left: auto;
-  margin-right: var(--size-4-2);
   padding: 2px var(--size-2-3);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-l);
   cursor: pointer;
-  max-width: 55%;
+  max-width: 45%;
   overflow: hidden;
 }
 
