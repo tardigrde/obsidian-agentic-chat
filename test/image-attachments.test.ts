@@ -23,4 +23,12 @@ describe("image-attachments", () => {
     const buffer = new Uint8Array([104, 105]).buffer; // "hi"
     expect(arrayBufferToBase64(buffer)).toBe("aGk=");
   });
+
+  it("encodes data larger than one chunk correctly", () => {
+    // Spans several 4 KiB chunks to exercise the chunk-boundary stitching.
+    const bytes = new Uint8Array(10_000);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 256;
+    const expected = Buffer.from(bytes).toString("base64");
+    expect(arrayBufferToBase64(bytes.buffer)).toBe(expected);
+  });
 });

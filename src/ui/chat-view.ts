@@ -1076,6 +1076,9 @@ export class ChatView extends ItemView {
 
   /** Encode image attachments as multimodal content parts for the model. */
   private async loadImageAttachments(): Promise<ImageContent[]> {
+    // If the model was swapped to a non-vision one after an image was attached,
+    // skip the images — the API would reject them; the text prompt still sends.
+    if (!this.service.supportsImages()) return [];
     const images: ImageContent[] = [];
     for (const entry of this.attachments) {
       if (!isImagePath(entry)) continue;
@@ -1436,7 +1439,9 @@ export class ChatView extends ItemView {
     }
     try {
       const markdown = sessionToMarkdown(messages, this.service.getSessionInfo());
-      if (!this.app.vault.getFolderByPath(EXPORT_FOLDER)) {
+      // getAbstractFileByPath (not getFolderByPath, which needs Obsidian ≥1.5.3) so
+      // the folder check works down to the manifest's minAppVersion.
+      if (!this.app.vault.getAbstractFileByPath(EXPORT_FOLDER)) {
         await this.app.vault.createFolder(EXPORT_FOLDER);
       }
       const path = `${EXPORT_FOLDER}/${exportFileName(this.service.getSessionInfo(), Date.now())}`;
