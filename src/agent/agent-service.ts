@@ -9,7 +9,7 @@ import {
   type StreamFn,
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import { streamSimple, type Usage } from "@earendil-works/pi-ai";
+import { streamSimple, type ImageContent, type Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider, activeModelConfig } from "../settings";
 import { buildModel, type ModelConfig } from "../llm/models";
@@ -313,10 +313,16 @@ export class AgentService {
     }
   }
 
-  async sendPrompt(prompt: string): Promise<void> {
+  async sendPrompt(prompt: string, images?: ImageContent[]): Promise<void> {
     const trimmed = prompt.trim();
     if (!trimmed) return;
-    await this.runPrompt(() => this.requireAgent().prompt(trimmed));
+    const attached = images && images.length > 0 ? images : undefined;
+    await this.runPrompt(() => this.requireAgent().prompt(trimmed, attached));
+  }
+
+  /** Whether the model the next turn will use accepts image input (vision). */
+  supportsImages(): boolean {
+    return !!this.agent?.state.model?.input?.includes("image");
   }
 
   async invokeSkill(name: string, args?: string): Promise<void> {

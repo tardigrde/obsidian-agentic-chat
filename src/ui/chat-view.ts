@@ -8,8 +8,10 @@ import {
   setIcon,
 } from "obsidian";
 import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
+import { arrayBufferToBase64, imageMimeType, isImagePath } from "./image-attachments";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, THINKING_LEVELS } from "../settings";
 import { listOpenRouterModels } from "../llm/models";
@@ -1044,11 +1046,30 @@ export class ChatView extends ItemView {
     const attachments = [...(autoPath ? [autoPath] : []), ...this.attachments];
     const context = await this.buildContext();
     const prompt = context ? `${context}\n\n${text}` : text;
+    // Image attachments ride as multimodal content parts, not text context.
+    const images = await this.loadImageAttachments();
     this.lastSentPrompt = prompt;
     this.lastSentDisplay = text;
     this.renderUserMessage(text, attachments);
-    await this.service.sendPrompt(prompt);
+    await this.service.sendPrompt(prompt, images);
     this.showServiceError();
+  }
+
+  /** Encode image attachments as multimodal content parts for the model. */
+  private async loadImageAttachments(): Promise<ImageContent[]> {
+    const images: ImageContent[] = [];
+    for (const entry of this.attachments) {
+      if (!isImagePath(entry)) continue;
+      const file = this.app.vault.getAbstractFileByPath(entry);
+      if (!(file instanceof TFile)) continue;
+      try {
+        const buffer = await this.app.vault.readBinary(file);
+        images.push({ type: "image", data: arrayBufferToBase64(buffer), mimeType: imageMimeType(file.extension) });
+      } catch {
+        // A missing/unreadable image just drops out — the text prompt still sends.
+      }
+    }
+    return images;
   }
 
   /** Re-run the conversation's last user turn (inline "Ask again" action). */
@@ -1585,6 +1606,11 @@ export class ChatView extends ItemView {
 
   private addAttachment(entry: string): void {
     if (this.attachments.includes(entry)) return;
+    // Image attachments only make sense for a vision-capable model.
+    if (isImagePath(entry) && !this.service.supportsImages()) {
+      new Notice("This model can't read images. Switch to a vision model to attach images.");
+      return;
+    }
     this.attachments.push(entry);
     this.renderChips();
   }
@@ -1631,9 +1657,10 @@ export class ChatView extends ItemView {
 
   private renderChip(entry: string, active: boolean, onRemove: () => void): void {
     const isFolder = entry.startsWith(FOLDER_PREFIX);
+    const isImage = isImagePath(entry);
     const chip = this.chipsEl.createDiv({ cls: active ? ["agentic-chat-chip", "is-active-note"] : ["agentic-chat-chip"] });
     const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
-    setIcon(icon, isFolder ? "folder" : "file-text");
+    setIcon(icon, isFolder ? "folder" : isImage ? "image" : "file-text");
     chip.createSpan({ text: isFolder ? entry.slice(FOLDER_PREFIX.length) : entry });
     if (active) {
       chip.createSpan({ cls: "agentic-chat-chip-tag", text: "active" });
@@ -1659,6 +1686,9 @@ export class ChatView extends ItemView {
             .join("\n");
           sections.push(`Folder listing for "${folderPath}":\n${listing || "(empty)"}`);
         }
+      } else if (isImagePath(entry)) {
+        // Images go to the model as multimodal parts (loadImageAttachments), not text.
+        continue;
       } else {
         const file = this.app.vault.getAbstractFileByPath(entry);
         if (file instanceof TFile) {
