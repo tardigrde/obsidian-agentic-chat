@@ -304,7 +304,7 @@ export class AgentService {
   async invokeAgent(name: string, task: string): Promise<void> {
     const profile = this.profiles.find((item) => item.name === name);
     if (!profile) {
-      this.setError(`No subagent named "${name}".`);
+      this.setError(this.unknownAgentMessage(name));
       return;
     }
     const trimmed = task.trim();
@@ -314,6 +314,23 @@ export class AgentService {
     }
     const directive = `Use the subagent tool to delegate this task to the "${name}" subagent: ${trimmed}`;
     await this.runPrompt(() => this.requireAgent().prompt(directive));
+  }
+
+  /**
+   * Helpful "unknown subagent" error: list the agents that *do* exist, and if the
+   * typed name actually matches a skill (a common mix-up, e.g. `/agent deep` for the
+   * `deep-research` skill), point the user at `/skill` instead.
+   */
+  private unknownAgentMessage(name: string): string {
+    const available = this.profiles.map((item) => item.name);
+    const lower = name.toLowerCase();
+    const skill = this.skills.find(
+      (item) => item.name.toLowerCase() === lower || item.name.toLowerCase().includes(lower),
+    );
+    const parts = [`No subagent named "${name}".`];
+    if (skill) parts.push(`Did you mean the skill "${skill.name}"? Run it with /${skill.name} or /skill ${skill.name}.`);
+    parts.push(available.length > 0 ? `Available subagents: ${available.join(", ")}.` : "No subagents are configured.");
+    return parts.join(" ");
   }
 
   abort(): void {

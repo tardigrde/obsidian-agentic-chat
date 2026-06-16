@@ -10,7 +10,7 @@ import {
 } from "./llm/models";
 import { type ApprovalPolicy, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
 import { type AgentMode, DEFAULT_MODE, MODE_ORDER, MODES } from "./agent/modes";
-import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "./agent/output-styles";
+import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { createVaultTools, MUTATING_TOOLS } from "./tools/vault-tools";
 import {
@@ -200,11 +200,41 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     await this.plugin.saveSettings();
   }
 
+  /** Settings grouped into virtual tabs so the page isn't one long scroll. */
+  private readonly tabs: Array<{
+    label: string;
+    render: (containerEl: HTMLElement, settings: AgenticChatSettings) => void;
+  }> = [
+    { label: "Models", render: (el, settings) => this.renderModels(el, settings) },
+    { label: "Agent", render: (el, settings) => this.renderAgent(el, settings) },
+    { label: "Approval", render: (el, settings) => this.renderApproval(el, settings) },
+    { label: "Web", render: (el, settings) => this.renderWebAccess(el, settings) },
+    { label: "Notifications", render: (el, settings) => this.renderNotifications(el, settings) },
+    { label: "Resources", render: (el, settings) => this.renderResources(el, settings) },
+  ];
+  private activeTab = 0;
+
   display(): void {
     const { containerEl } = this;
     const { settings } = this.plugin;
     containerEl.empty();
 
+    if (this.activeTab < 0 || this.activeTab >= this.tabs.length) this.activeTab = 0;
+
+    const nav = containerEl.createDiv({ cls: "agentic-chat-settings-tabs" });
+    const body = containerEl.createDiv({ cls: "agentic-chat-settings-tabbody" });
+    this.tabs.forEach((tab, index) => {
+      const button = nav.createEl("button", { cls: "agentic-chat-settings-tab", text: tab.label });
+      if (index === this.activeTab) button.addClass("is-active");
+      button.addEventListener("click", () => {
+        this.activeTab = index;
+        this.display();
+      });
+    });
+    this.tabs[this.activeTab].render(body, settings);
+  }
+
+  private renderModels(containerEl: HTMLElement, settings: AgenticChatSettings): void {
     new Setting(containerEl).setName("Provider").setHeading();
 
     new Setting(containerEl)
@@ -226,12 +256,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     } else {
       this.renderOllama(containerEl, settings);
     }
-
-    this.renderAgent(containerEl, settings);
-    this.renderApproval(containerEl, settings);
-    this.renderWebAccess(containerEl, settings);
-    this.renderNotifications(containerEl, settings);
-    this.renderResources(containerEl, settings);
   }
 
   private renderOpenRouter(containerEl: HTMLElement, settings: AgenticChatSettings): void {
@@ -358,17 +382,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         for (const id of MODE_ORDER) dropdown.addOption(id, MODES[id].label);
         dropdown.setValue(settings.mode).onChange(async (value) => {
           settings.mode = value as AgentMode;
-          await this.save();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Output style")
-      .setDesc("How the assistant talks. A system-prompt overlay; also switchable with /config in the chat.")
-      .addDropdown((dropdown) => {
-        for (const id of OUTPUT_STYLE_ORDER) dropdown.addOption(id, OUTPUT_STYLES[id].label);
-        dropdown.setValue(settings.outputStyle).onChange(async (value) => {
-          settings.outputStyle = value as OutputStyle;
           await this.save();
         });
       });

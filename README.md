@@ -42,15 +42,15 @@ In the interest of transparency (and the [Obsidian Developer Policies](https://d
 
 ## Install
 
+### Via BRAT (recommended)
+
+Install [BRAT](https://github.com/TfTHacker/obsidian42-brat), then add `tardigrde/obsidian-agentic-chat` as a beta plugin. BRAT keeps it updated as new releases ship — the simplest way to install while the plugin is in pre-release.
+
 ### Manual
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the latest [release](https://github.com/tardigrde/obsidian-agentic-chat/releases) (or build them — see [Development](#development)).
 2. Copy them into `<your vault>/.obsidian/plugins/agentic-chat/`.
 3. Reload Obsidian and enable **Agentic Chat** in *Settings → Community plugins*.
-
-### Via BRAT
-
-Add `tardigrde/obsidian-agentic-chat` in the [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin.
 
 ## Setup
 
@@ -96,7 +96,7 @@ npm run typecheck  # tsc — the lint gate
 npm run build      # typecheck + production bundle
 ```
 
-The test suite runs without Obsidian: the `obsidian` package is replaced by a minimal mock via a vitest alias, the model stream by an injected `streamFn`, and the session store by an in-memory adapter. See `CLAUDE.md` for architecture notes.
+The test suite runs without Obsidian: the `obsidian` package is replaced by a minimal mock via a vitest alias, the model stream by an injected `streamFn`, and the session store by an in-memory adapter. See `AGENTS.md` for architecture notes.
 
 ## Acknowledgements
 

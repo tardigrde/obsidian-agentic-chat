@@ -237,6 +237,18 @@ describe("AgentService", () => {
     expect(on.service.getSkills().map((skill) => skill.name)).toContain("deep-research");
   });
 
+  it("lists available subagents (and hints a skill) for an unknown /agent name", async () => {
+    const { service, settings } = makeService(cannedStreamFn("unused"));
+    settings.web = { ...settings.web, enabled: true }; // load the deep-research skill
+    await service.initialize();
+
+    await service.invokeAgent("deep", "do some research");
+    const error = service.getError() ?? "";
+    expect(error).toContain('No subagent named "deep"');
+    expect(error).toContain("researcher"); // available built-in profiles are listed
+    expect(error).toMatch(/deep-research/); // "deep" is hinted as the deep-research skill
+  });
+
   it("auto-compacts old turns once the context window fills, preserving usage", async () => {
     // Each assistant turn reports ~110k context tokens — over 80% of the synthesized
     // 128k window — so the third send triggers compaction of the first turn.
