@@ -96,7 +96,7 @@ npm run typecheck  # tsc — the lint gate
 npm run build      # typecheck + production bundle
 ```
 
-The test suite runs without Obsidian: the `obsidian` package is replaced by a minimal mock via a vitest alias, the model stream by an injected `streamFn`, and the session store by an in-memory adapter. See `CLAUDE.md` for architecture notes.
+The test suite runs without Obsidian: the `obsidian` package is replaced by a minimal mock via a vitest alias, the model stream by an injected `streamFn`, and the session store by an in-memory adapter. See `AGENTS.md` for architecture notes.
 
 ## Acknowledgements
 

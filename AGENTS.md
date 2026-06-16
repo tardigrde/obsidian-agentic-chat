@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This is the canonical agent guide for this repository — guidance for any coding agent working in this codebase (Claude Code reads it through the `CLAUDE.md` symlink).
 
 ## What this is
 

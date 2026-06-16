@@ -937,7 +937,7 @@ export class ChatView extends ItemView {
     ]);
   }
 
-  /** `/config`: clickable pickers for mode and output style, applied in-pane. */
+  /** `/config`: clickable mode picker, applied in-pane. Output style lives under /style. */
   private showConfig(): void {
     const { settings } = this.plugin;
     this.clearEmptyState();
@@ -949,16 +949,6 @@ export class ChatView extends ItemView {
         detail: MODES[id].description,
         icon: MODES[id].icon,
         onClick: () => void this.chooseMode(id),
-      })),
-    );
-    this.renderActionList(
-      "Output style",
-      `How the assistant talks · current: ${OUTPUT_STYLES[settings.outputStyle].label}`,
-      OUTPUT_STYLE_ORDER.map((id) => ({
-        label: OUTPUT_STYLES[id].label,
-        detail: OUTPUT_STYLES[id].description,
-        icon: OUTPUT_STYLES[id].icon,
-        onClick: () => void this.chooseStyle(id),
       })),
     );
   }
