@@ -1252,7 +1252,7 @@ export class ChatView extends ItemView {
    */
   private syncActiveNote(): void {
     const file = this.activeNoteSuppressed ? null : this.app.workspace.getActiveFile();
-    this.activeNotePath = file && file.extension === "md" ? file.path : null;
+    this.activeNotePath = file && file.extension.toLowerCase() === "md" ? file.path : null;
     this.renderChips();
   }
 
@@ -1333,7 +1333,13 @@ export class ChatView extends ItemView {
     if (!(file instanceof TFile)) {
       return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
     }
-    const full = await this.app.vault.cachedRead(file);
+    let full: string;
+    try {
+      full = await this.app.vault.cachedRead(file);
+    } catch {
+      // File locked/deleted mid-send: fall back to a path-only reference rather than crash the send.
+      return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
+    }
     const visibleRange = full.length > MAX_ACTIVE_NOTE_CHARS ? this.getVisibleEditorRange(file) : null;
     return buildActiveNoteSection({ path, full, visibleRange, limit: MAX_ACTIVE_NOTE_CHARS });
   }
