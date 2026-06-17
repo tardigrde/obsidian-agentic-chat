@@ -1,4 +1,5 @@
-import { App, normalizePath, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { normalizeFolderPath } from "./vault/path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type AgenticChatPlugin from "./main";
 import {
@@ -562,7 +563,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         button.setButtonText("Add folder").onClick(() => {
           new FolderSuggestModal(this.app, async (folder) => {
             const dirs = settings.approval.workingDirs;
-            const path = folder.path === "/" ? "" : normalizePath(folder.path);
+            // Normalize identically to the chat view + gate so entries can't diverge.
+            const path = folder.path === "/" ? "" : normalizeFolderPath(folder.path);
             if (!dirs.includes(path)) {
               dirs.push(path);
               await this.save();

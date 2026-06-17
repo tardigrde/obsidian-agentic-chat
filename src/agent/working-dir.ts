@@ -35,6 +35,8 @@ export function toolTargetPaths(args: unknown): string[] {
 
 /** Normalize granted dirs once: drop blanks/invalid entries and de-duplicate. */
 export function normalizeWorkingDirs(dirs: string[]): string[] {
+  // Defensive: a corrupted/legacy settings value might not be an array.
+  if (!Array.isArray(dirs)) return [];
   const out: string[] = [];
   for (const dir of dirs) {
     try {
