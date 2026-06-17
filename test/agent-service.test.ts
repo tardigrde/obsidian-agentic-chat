@@ -237,7 +237,7 @@ describe("AgentService", () => {
     // Approval allows mutating and the user would confirm — plan mode must still block.
     const { service, settings } = makeService(streamFn, async () => true);
     settings.mode = "plan";
-    settings.approval = { mutating: "allow", perTool: {} };
+    settings.approval = { mutating: "allow", perTool: {}, workingDirs: [] };
     await service.sendPrompt("Create note.md");
 
     const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
@@ -257,7 +257,7 @@ describe("AgentService", () => {
     // and never prompt the user even though confirmToolCall would say yes.
     const { service, settings } = makeService(streamFn, async () => true);
     settings.mode = "yolo";
-    settings.approval = { mutating: "allow", perTool: { write: "deny" } };
+    settings.approval = { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] };
     await service.sendPrompt("Create note.md");
 
     const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
@@ -268,6 +268,57 @@ describe("AgentService", () => {
     expect(resultText).toMatch(/disabled by your approval settings|declined/i);
     // The model received the denial and produced a follow-up turn.
     expect(service.getMessages().filter((message) => message.role === "assistant")).toHaveLength(2);
+  });
+
+  it("safe-mode working-dir boundary routes out-of-scope mutations through ask", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "Other/x.md", content: "hi" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "Ok, leaving it." }], stopReason: "stop" },
+    ]);
+    let confirmCalls = 0;
+    const { service, settings } = makeService(streamFn, async () => {
+      confirmCalls += 1;
+      return false;
+    });
+    settings.mode = "safe";
+    // Even with mutating set to allow, a target outside the working set must prompt.
+    settings.approval = { mutating: "allow", perTool: {}, workingDirs: ["Notes"] };
+    await service.sendPrompt("write outside");
+    expect(confirmCalls).toBe(1);
+  });
+
+  it("safe-mode working-dir boundary auto-runs mutations inside the granted dir", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "Notes/x.md", content: "hi" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "Wrote it." }], stopReason: "stop" },
+    ]);
+    let confirmCalls = 0;
+    const { service, settings } = makeService(streamFn, async () => {
+      confirmCalls += 1;
+      return true;
+    });
+    settings.mode = "safe";
+    // Default mutating "ask" is overridden to auto-run because the target is in-scope.
+    settings.approval = { mutating: "ask", perTool: {}, workingDirs: ["Notes"] };
+    await service.sendPrompt("write inside");
+    expect(confirmCalls).toBe(0);
+  });
+
+  it("safe-mode working-dir boundary asks before reading outside the granted dir", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "Other/x.md" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "Ok." }], stopReason: "stop" },
+    ]);
+    let confirmCalls = 0;
+    const { service, settings } = makeService(streamFn, async () => {
+      confirmCalls += 1;
+      return false;
+    });
+    settings.mode = "safe";
+    // A read is normally free, but with a working set configured an out-of-scope read asks (S2).
+    settings.approval = { mutating: "ask", perTool: {}, workingDirs: ["Notes"] };
+    await service.sendPrompt("read outside");
+    expect(confirmCalls).toBe(1);
   });
 
   it("dispatches a subagent, folds child usage into the session, and exposes profiles", async () => {

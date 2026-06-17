@@ -129,33 +129,6 @@ system prompt + its own history under a name. (Obsidian Copilot "Projects".)
   Entering a project pre-loads matching notes as default context (ignore matcher still applies),
   switches the active model + system-prompt overlay, and filters the session list to that group.
 
-## Composer & permission UX
-
-- **`+ Folder` → `/add-dir` working-dir scope** (`C1`). A granted folder becomes a working set:
-  reads/writes **inside** auto-run, **outside** always ask. Pairs with `S2` (the security half).
-- **Unify the composer into one input card** (`C4`). Today the composer (`ChatView.buildLayout`,
-  `src/ui/chat-view.ts`) stacks separate sibling rows inside `.agentic-chat-composer`:
-  `.agentic-chat-tabs`, `.agentic-chat-chips`, `.agentic-chat-input-wrap` (the textarea
-  `.agentic-chat-input`, which carries Obsidian's default border/background), `.agentic-chat-toolbar`,
-  `.agentic-chat-buttons`, `.agentic-chat-usage`. Visually the controls sit *around* a bordered
-  textarea rather than *inside* one input rectangle. Match the design reference (Claudian) by making
-  a **single bordered card** hold the chips + textarea + bottom toolbar:
-  - **DOM (`buildLayout`):** wrap `.agentic-chat-chips` + `.agentic-chat-input-wrap` +
-    `.agentic-chat-toolbar` in a new `.agentic-chat-field` element (flex column). Keep
-    `.agentic-chat-tabs` as a nav row *above* the card (tabs left, header actions right), and keep
-    `.agentic-chat-buttons`/`.agentic-chat-usage` below (or move Send/Stop into the card's
-    bottom-right). Chips become the in-card top "context row".
-  - **CSS (`styles.css`):** give `.agentic-chat-field` the card chrome — `border: 1px solid
-    var(--background-modifier-border)`, `border-radius`, `background: var(--background-primary)`,
-    `display:flex; flex-direction:column`, a `min-height`. Strip the textarea's own box on
-    `.agentic-chat-input` (`border: none; background: transparent; box-shadow: none`) and let it
-    `flex: 1 1 auto` so it fills the card; move the textarea padding onto the card. Drop the
-    now-redundant `border-top`/padding on `.agentic-chat-composer`. Mirror Claudian's
-    `src/style/components/input.css` (`.claudian-input-wrapper` is the border container;
-    `textarea.claudian-input { border: none }`; `.claudian-context-row` holds chips inside the top).
-  Reference: [YishenTu/claudian](https://github.com/YishenTu/claudian)
-  `src/style/components/input.css` + `tabs.css` + `context-footer.css`.
-
 ## Integrations (MCP / ACP)
 
 - **MCP client over Streamable HTTP** (`I1`). Latest transport (MCP spec 2025-03-26) + OAuth2.
@@ -175,10 +148,6 @@ system prompt + its own history under a name. (Obsidian Copilot "Projects".)
 - **Keystore for API keys** (`S1`). Use Electron `safeStorage` (OS-keychain-backed) on
   **desktop**; mobile has no plugin keychain, so it stays obfuscated `data.json` + the existing
   warning. Honest split: desktop = real secure storage, mobile = warned plaintext.
-- **Working-dir read boundary** (`S2`). With `/add-dir` working dirs configured, reads/writes
-  **outside** every granted dir route through the approval gate (ask); **inside** auto-run.
-  Inverse of ignore-globs (allow-list working set vs deny-list); ignore-globs still win inside a
-  granted dir. Empty config = today's behavior. Security half of `C1`.
 - **External config file (YAML / frontmatter)** (`S3`). Let portable, git-friendly settings
   (providers, privacy, web backend, skill/agent folders) live in a vault `agentic-chat.config.yaml`
   / `.md` frontmatter, reusing the `loadVaultSkills` loader. `data.json` keeps UI state +
@@ -214,7 +183,16 @@ Deferred from the shipped v1 (delegation, foreground, depth-1, cost-accounted).
 
 ## Testing & developer experience
 
-- **E2E test suite** (`D1`). Add end-to-end tests that run the plugin inside a real Obsidian instance. Use [`wdio-obsidian-service`](https://github.com/platers/wdio-obsidian-service) (purpose-built for Obsidian plugins): it auto-downloads Obsidian, sandboxes the instance, loads the plugin, and opens a test vault — no Docker required. WebdriverIO drives user interactions (open chat, send a message, verify vault file writes, approve tool calls). Runs in GitHub Actions CI alongside the existing `typecheck`/`test`/`build` jobs. The existing vitest suite mocks Obsidian entirely; E2E catches integration failures (view registration, tool gate wiring, settings persistence) that unit tests cannot. Reference: [`obsidian-timecodes-plugin`](https://github.com/gavvvr/obsidian-timecodes-plugin/) for a worked example with the wdio-electron-service variant (alternative if wdio-obsidian-service doesn't fit).
+- **E2E test suite — CI + coverage** (`D1`). The **base infra has landed** (local-only): a
+  [`wdio-obsidian-service`](https://github.com/jesse-r-s-hines/wdio-obsidian-service) config
+  (`wdio.conf.mts`), a throwaway test vault (`test/e2e/vault`), and a smoke spec
+  (`test/e2e/specs/smoke.e2e.ts`) that boots a real Obsidian, loads the plugin, and checks view
+  registration, the composer card, in-pane slash routing, the `/dirs` working-dir command, and
+  active-note attachment — run with `npm run test:e2e`. See the README "End-to-end tests" section.
+  **Open:** wire it into GitHub Actions CI (boots Electron, so it needs a headless display +
+  Obsidian-download caching, kept separate from the fast `typecheck`/`lint`/`test`/`build` jobs),
+  add the emulate-mobile/Android matrix, and grow coverage to the approval modal + a real
+  model-backed turn (verifying a vault write) behind a gated API key.
 - **Formatting + extended lint** (`D2`). The lean base — an eslint flat config + `typescript-eslint`,
   a `lint` npm script, and a CI `lint` job alongside `typecheck`/`test`/`build` — lands first as a
   small batch item. This is the heavier follow-up: Prettier (or `@stylistic/eslint`) for consistent
@@ -269,7 +247,6 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `G1` | Generic OpenAI-compatible provider | 6 | M |
 | `M1` | Durable memory store | 6 | M |
 | `R4` | QA inline citations | 6 | S |
-| `C4` | Unify the composer into one input card | 6 | S |
 | `W2` | Better extraction (Readability) | 5 | M |
 | `S1` | Keystore for API keys | 5 | M |
 | `S4` | Per-turn file checkpoints + rewind | 5 | L |
@@ -281,15 +258,13 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `X2` | Context-menu "Send selection to chat" | 5 | S |
 | `X1` | Mermaid + callout render parity | 5 | S |
 | `X5` | Document ingestion (PDF first) | 5 | L |
-| `C1` | `+ Folder` → `/add-dir` working-dir scope | 4 | M |
-| `S2` | Working-dir read boundary | 4 | M |
 | `S3` | External config file (YAML) | 4 | M |
 | `W1` | `fetch_url` read-more / pagination | 4 | S |
 | `L6` | `#` inline persistent instruction | 4 | S |
 | `W3` | Deep-research = subagent-backed | 4 | L |
 | `I3` | ACP client (desktop) | 4 | XL |
 | `X4` | Custom output styles | 4 | M |
-| `D1` | E2E test suite (wdio-obsidian-service) | 4 | M |
+| `D1` | E2E in CI + coverage (base infra shipped) | 4 | M |
 | `X6` | Internationalization (i18n) | 4 | L |
 | `G3` | TEE/confidential model filter | 3 | S |
 | `D2` | Formatting + extended lint (prettier, import hygiene) | 3 | S |

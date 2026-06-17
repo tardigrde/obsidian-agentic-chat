@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, normalizePath, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type AgenticChatPlugin from "./main";
 import {
@@ -149,6 +149,11 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       ...DEFAULT_SETTINGS.approval,
       ...(stored?.approval ?? {}),
       perTool: { ...(stored?.approval?.perTool ?? {}) },
+      // Heal the granted working dirs to a string[] so a malformed persisted value
+      // can't break the gate.
+      workingDirs: Array.isArray(stored?.approval?.workingDirs)
+        ? stored.approval.workingDirs.filter((dir): dir is string => typeof dir === "string")
+        : [],
     },
     notifications: { ...DEFAULT_SETTINGS.notifications, ...(stored?.notifications ?? {}) },
     compaction: { ...DEFAULT_SETTINGS.compaction, ...(stored?.compaction ?? {}) },
@@ -499,7 +504,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Approval gates").setHeading();
     new Setting(containerEl)
       .setName("Before mutating tools")
-      .setDesc("Gate write, edit, rename, and delete. Read-only tools always run. 'Ask' shows a confirm dialog.")
+      .setDesc("Gate write, edit, rename, and delete. Read-only tools always run (unless a working directory is set below). 'Ask' shows a confirm dialog.")
       .addDropdown((dropdown) => {
         const options: Record<ApprovalPolicy, string> = {
           allow: "Allow automatically",
@@ -512,6 +517,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           await this.save();
         });
       });
+
+    this.renderWorkingDirs(containerEl, settings);
 
     new Setting(containerEl)
       .setName("Per-tool overrides")
@@ -535,6 +542,57 @@ export class AgenticChatSettingTab extends PluginSettingTab {
               await this.save();
             });
         });
+    }
+  }
+
+  /**
+   * Working directories (C1/S2): an allow-list working set. When any are granted, tool
+   * calls inside auto-run and calls outside route through the gate (ask) — even reads.
+   */
+  private renderWorkingDirs(containerEl: HTMLElement, settings: AgenticChatSettings): void {
+    new Setting(containerEl)
+      .setName("Working directories")
+      .setDesc(
+        "Grant folders as a working set: the agent auto-runs reads/writes inside them and asks before " +
+          "touching anything outside (in Safe mode). Empty keeps the vault-wide behavior above. " +
+          "Ignored globs still win inside a granted folder.",
+      )
+      .setHeading()
+      .addButton((button) =>
+        button.setButtonText("Add folder").onClick(() => {
+          new FolderSuggestModal(this.app, async (folder) => {
+            const dirs = settings.approval.workingDirs;
+            const path = folder.path === "/" ? "" : normalizePath(folder.path);
+            if (!dirs.includes(path)) {
+              dirs.push(path);
+              await this.save();
+              this.display();
+            }
+          }).open();
+        }),
+      );
+
+    if (settings.approval.workingDirs.length === 0) {
+      containerEl.createDiv({
+        cls: "setting-item-description",
+        text: "No working directories — approval applies vault-wide.",
+      });
+      return;
+    }
+    for (const dir of settings.approval.workingDirs) {
+      new Setting(containerEl)
+        .setName(dir === "" ? "/ (vault root)" : dir)
+        .setDesc("Auto-run inside; ask outside.")
+        .addButton((button) =>
+          button
+            .setButtonText("Remove")
+            .setWarning()
+            .onClick(async () => {
+              settings.approval.workingDirs = settings.approval.workingDirs.filter((entry) => entry !== dir);
+              await this.save();
+              this.display();
+            }),
+        );
     }
   }
 

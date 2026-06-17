@@ -11,6 +11,7 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.ts"],
     // Live tests hit the real OpenRouter API; opt in via `npm run test:live`.
-    exclude: ["test/live/**", "node_modules/**"],
+    // The e2e suite (test/e2e/**) runs under wdio, not vitest.
+    exclude: ["test/live/**", "test/e2e/**", "node_modules/**"],
   },
 });

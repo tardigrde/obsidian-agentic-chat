@@ -7,8 +7,16 @@ import globals from "globals";
 
 export default tseslint.config(
   {
-    // Build output and deps are never linted.
-    ignores: ["main.js", "node_modules/**", "esbuild.config.mjs"],
+    // Build output, deps, and the separate e2e toolchain (its own ESM/wdio types) are never linted.
+    ignores: [
+      "main.js",
+      "node_modules/**",
+      "esbuild.config.mjs",
+      "test/e2e/**",
+      "wdio.conf.mjs",
+      "wdio.conf.mts",
+      ".obsidian-cache/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

@@ -14,5 +14,8 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts", "vitest.live.config.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts", "vitest.live.config.ts"],
+  // The e2e suite (D1) runs under its own ESM toolchain (wdio + mocha) and types
+  // (tsconfig.e2e.json). Keep it out of the strict `npm run typecheck` gate.
+  "exclude": ["node_modules", "test/e2e/**", "wdio.conf.mts"]
 }

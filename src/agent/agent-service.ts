@@ -40,6 +40,7 @@ import {
 import { type UndoEntry, UNDOABLE_TOOLS, applyUndo, captureUndo } from "./undo";
 import { buildSystemPrompt } from "./system-prompt";
 import { MODES, resolveModePolicy } from "./modes";
+import { resolveWorkingDirPolicy } from "./working-dir";
 import { OUTPUT_STYLES } from "./output-styles";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
@@ -582,7 +583,15 @@ export class AgentService {
   ): Promise<{ block: true; reason: string } | undefined> {
     const settings = this.getSettings();
     if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, args);
-    const { policy, reason } = resolveModePolicy(settings.mode, settings.approval, toolName);
+    const decision = resolveModePolicy(settings.mode, settings.approval, toolName);
+    const { reason } = decision;
+    // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
+    // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
+    // already forces read-only, so the boundary only refines Safe.
+    const policy =
+      settings.mode === "safe"
+        ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, decision.policy)
+        : decision.policy;
     if (policy === "allow") return undefined;
     if (policy === "deny") {
       return { block: true, reason: reason ?? `The "${toolName}" tool is disabled by your approval settings.` };

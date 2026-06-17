@@ -23,6 +23,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "model", description: "switch model" },
   { name: "status", description: "show provider, model, session" },
   { name: "config", description: "switch permission mode (Safe / YOLO)", aliases: ["mode"] },
+  { name: "add-dir", args: "[folder]", description: "grant a working directory (auto-run inside, ask outside)", aliases: ["adddir"] },
+  { name: "dirs", description: "list/revoke granted working directories", aliases: ["working-dirs"] },
   { name: "plan", description: "enter read-only plan mode (sticky)" },
   { name: "endplan", description: "leave plan mode, restoring Safe/YOLO" },
   { name: "style", args: "[name]", description: "switch output style" },

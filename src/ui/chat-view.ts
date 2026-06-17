@@ -45,6 +45,7 @@ import {
 import { AutocompleteMenu } from "./autocomplete-menu";
 import { parseDroppedVaultPath } from "./drag-drop";
 import { resolveCommand, visibleCommands } from "./commands";
+import { normalizeFolderPath } from "../vault/path";
 import { isSummaryMessage } from "../agent/compaction";
 import { type AgentMode, enterPlan, exitPlan, MODE_ORDER, MODES } from "../agent/modes";
 import {
@@ -165,6 +166,7 @@ export class ChatView extends ItemView {
   private contextFillEl!: HTMLElement;
   private contextPercentEl!: HTMLElement;
   private workingEl!: HTMLElement;
+  private folderButtonEl!: HTMLButtonElement;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -435,32 +437,35 @@ export class ChatView extends ItemView {
     root.empty();
     root.addClass("agentic-chat-view");
 
-    const header = root.createDiv({ cls: "agentic-chat-header" });
-    header.createDiv({ cls: "agentic-chat-title", text: "Agentic chat" });
+    this.messagesEl = root.createDiv({ cls: "agentic-chat-messages" });
+    this.renderEmptyState();
 
-    const actions = header.createDiv({ cls: "agentic-chat-header-actions" });
-    const historyButton = actions.createEl("button", {
+    const composer = root.createDiv({ cls: "agentic-chat-composer" });
+
+    // Nav row above the input card: tab pills on the left (switch between up to
+    // MAX_TABS independent sessions), header actions on the right (C4 / design ref).
+    const tabsRow = composer.createDiv({ cls: "agentic-chat-tabs-row" });
+    this.tabsEl = tabsRow.createDiv({ cls: "agentic-chat-tabs", attr: { role: "tablist" } });
+    const headerActions = tabsRow.createDiv({ cls: "agentic-chat-tab-actions" });
+    const newChatButton = headerActions.createEl("button", {
+      cls: "clickable-icon",
+      attr: { "aria-label": "New chat" },
+    });
+    setIcon(newChatButton, "square-pen");
+    newChatButton.addEventListener("click", () => void this.newSession());
+    const historyButton = headerActions.createEl("button", {
       cls: "clickable-icon",
       attr: { "aria-label": "Conversation history" },
     });
     setIcon(historyButton, "history");
     historyButton.addEventListener("click", () => void this.openSessionList());
-    const newChatButton = actions.createEl("button", {
-      cls: "clickable-icon",
-      attr: { "aria-label": "New chat" },
-    });
-    setIcon(newChatButton, "plus");
-    newChatButton.addEventListener("click", () => void this.newSession());
 
-    this.messagesEl = root.createDiv({ cls: "agentic-chat-messages" });
-    this.renderEmptyState();
+    // The single bordered input card: context row (chips) + textarea + bottom toolbar
+    // all live *inside* one rectangle, instead of stacked around a bordered textarea.
+    const field = composer.createDiv({ cls: "agentic-chat-field" });
+    this.chipsEl = field.createDiv({ cls: "agentic-chat-chips" });
 
-    const composer = root.createDiv({ cls: "agentic-chat-composer" });
-    // Tab strip: switch between up to MAX_TABS independent sessions in this leaf.
-    this.tabsEl = composer.createDiv({ cls: "agentic-chat-tabs", attr: { role: "tablist" } });
-    this.chipsEl = composer.createDiv({ cls: "agentic-chat-chips" });
-
-    const inputWrap = composer.createDiv({ cls: "agentic-chat-input-wrap" });
+    const inputWrap = field.createDiv({ cls: "agentic-chat-input-wrap" });
     this.inputEl = inputWrap.createEl("textarea", {
       cls: "agentic-chat-input",
       attr: { rows: "3", placeholder: "Ask about your vault — / for commands, @ to attach a note… (Enter to send)" },
@@ -501,9 +506,9 @@ export class ChatView extends ItemView {
       this.menu.hide();
     });
 
-    // Bottom toolbar: model · effort · context · folder-context on the left; the
-    // Safe ↔ YOLO toggle (+ sticky plan badge) on the right — mirrors the design ref.
-    const toolbar = composer.createDiv({ cls: "agentic-chat-toolbar" });
+    // Bottom toolbar (in-card): model · effort · context · folder-context on the
+    // left; the Safe ↔ YOLO toggle (+ sticky plan badge) on the right — design ref.
+    const toolbar = field.createDiv({ cls: "agentic-chat-toolbar" });
     const toolbarLeft = toolbar.createDiv({ cls: "agentic-chat-toolbar-left" });
 
     this.modelPillEl = toolbarLeft.createDiv({
@@ -534,14 +539,14 @@ export class ChatView extends ItemView {
     this.contextBarEl.hide();
     this.contextPercentEl.hide();
 
-    const attachFolderButton = toolbarLeft.createEl("button", {
+    // Folder affordance ("dir. context"): grant a working directory (auto-run inside,
+    // ask outside) or attach a one-off folder listing as context. (C1)
+    this.folderButtonEl = toolbarLeft.createEl("button", {
       cls: "agentic-chat-attach",
-      attr: { "aria-label": "Attach a folder listing as context" },
+      attr: { "aria-label": "Folders: working directory or attach listing" },
     });
-    setIcon(attachFolderButton, "folder");
-    attachFolderButton.addEventListener("click", () => {
-      new FolderSuggestModal(this.app, (folder) => this.addAttachment(`${FOLDER_PREFIX}${folder.path}`)).open();
-    });
+    setIcon(this.folderButtonEl, "folder");
+    this.folderButtonEl.addEventListener("click", () => this.showFolderMenu());
 
     const toolbarRight = toolbar.createDiv({ cls: "agentic-chat-toolbar-right" });
     // Single Safe ↔ YOLO permission toggle (the ask/plan/agent dropdown is retired).
@@ -805,6 +810,7 @@ export class ChatView extends ItemView {
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: providerLabel });
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: shortModelLabel(fullModel) });
     this.syncEffortKnob();
+    this.syncFolderButton(settings.approval.workingDirs.length);
 
     const usage = this.service.getSessionUsage();
     const fraction = this.service.getContextFraction();
@@ -820,6 +826,18 @@ export class ChatView extends ItemView {
     this.setRunning(this.service.isStreaming());
     if (error && !this.service.isStreaming()) this.statusEl.setText("");
     this.checkUsageNotifications();
+  }
+
+  /** Accent the folder button while working dirs are granted, and surface the count. */
+  private syncFolderButton(scopeCount: number): void {
+    if (!this.folderButtonEl) return;
+    this.folderButtonEl.toggleClass("has-scope", scopeCount > 0);
+    this.folderButtonEl.setAttr(
+      "aria-label",
+      scopeCount > 0
+        ? `Folders · ${scopeCount} working ${scopeCount === 1 ? "directory" : "directories"} granted`
+        : "Folders: working directory or attach listing",
+    );
   }
 
   /** Glanceable color-coded context-window fill bar; hidden until usage is known. */
@@ -1141,6 +1159,12 @@ export class ChatView extends ItemView {
         return true;
       case "config":
         this.showConfig();
+        return true;
+      case "add-dir":
+        await this.runAddDir(argString);
+        return true;
+      case "dirs":
+        this.showWorkingDirs();
         return true;
       case "plan":
         await this.enterPlanMode();
@@ -1686,6 +1710,11 @@ export class ChatView extends ItemView {
 
   private renderChips(): void {
     this.chipsEl.empty();
+    // Granted working dirs lead the context row: a persistent permission grant
+    // (auto-run inside, ask outside), distinct from per-message attachments. (C1)
+    for (const dir of this.plugin.settings.approval.workingDirs) {
+      this.renderScopeChip(dir);
+    }
     // The active note rides as a distinct, removable chip ahead of explicit attachments.
     const autoPath = this.effectiveActiveNote();
     if (autoPath) {
@@ -1718,6 +1747,130 @@ export class ChatView extends ItemView {
     const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
     setIcon(remove, "x");
     remove.addEventListener("click", onRemove);
+  }
+
+  /** A granted working directory: persistent permission grant, removable to revoke. */
+  private renderScopeChip(dir: string): void {
+    const label = dir === "" ? "/ (vault root)" : dir;
+    const chip = this.chipsEl.createDiv({ cls: ["agentic-chat-chip", "is-scope"] });
+    const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
+    setIcon(icon, "folder-check");
+    chip.createSpan({ text: label });
+    chip.createSpan({ cls: "agentic-chat-chip-tag", text: "scope" });
+    chip.setAttr(
+      "title",
+      "Working directory — the agent auto-runs inside it and asks before touching anything outside. Remove to revoke.",
+    );
+    const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
+    setIcon(remove, "x");
+    remove.addEventListener("click", () => void this.removeWorkingDir(dir));
+  }
+
+  // --- working directories (C1: + Folder / /add-dir scope) ---
+
+  /** Composer folder button: grant a working dir or attach a one-off folder listing. */
+  private showFolderMenu(): void {
+    this.clearEmptyState();
+    this.renderActionList(
+      "Folders",
+      "Grant a working directory (auto-run inside, ask outside) or attach a folder listing as one-off context.",
+      [
+        {
+          label: "Add working directory…",
+          detail: "Auto-run reads/writes inside it; ask before anything outside.",
+          icon: "folder-check",
+          onClick: () => this.pickWorkingDir(),
+        },
+        {
+          label: "Attach folder listing…",
+          detail: "Add a folder's file list to your next message as context.",
+          icon: "folder",
+          onClick: () => this.pickFolderAttachment(),
+        },
+      ],
+    );
+  }
+
+  /** `/dirs`: clickable list of granted working dirs (click an entry to revoke). */
+  private showWorkingDirs(): void {
+    this.clearEmptyState();
+    const dirs = this.plugin.settings.approval.workingDirs;
+    const items: ActionRow[] = [
+      {
+        label: "Add working directory…",
+        detail: "Grant a folder as a working set.",
+        icon: "folder-plus",
+        onClick: () => this.pickWorkingDir(),
+      },
+      ...dirs.map((dir) => ({
+        label: dir === "" ? "/ (vault root)" : dir,
+        detail: "Granted — click to revoke.",
+        icon: "folder-check",
+        onClick: () => void this.removeWorkingDir(dir),
+      })),
+    ];
+    this.renderActionList(
+      "Working directories",
+      dirs.length
+        ? "Auto-run inside these; ask before touching anything outside."
+        : "None granted — reads/writes follow your approval policy everywhere in the vault.",
+      items,
+    );
+  }
+
+  private pickWorkingDir(): void {
+    new FolderSuggestModal(this.app, (folder) => void this.addWorkingDir(folder.path)).open();
+  }
+
+  private pickFolderAttachment(): void {
+    new FolderSuggestModal(this.app, (folder) => this.addAttachment(`${FOLDER_PREFIX}${folder.path}`)).open();
+  }
+
+  /** `/add-dir [path]`: no arg opens a folder picker; an arg grants that folder directly. */
+  private async runAddDir(arg: string): Promise<void> {
+    this.clearEmptyState();
+    if (!arg) {
+      this.pickWorkingDir();
+      return;
+    }
+    await this.addWorkingDir(arg);
+  }
+
+  private async addWorkingDir(path: string): Promise<void> {
+    let normalized: string;
+    try {
+      // The folder picker yields "/" for the vault root, which normalizeFolderPath
+      // rejects as absolute — map it to "" (the whole-vault scope) first.
+      normalized = normalizeFolderPath(path === "/" ? "" : path);
+    } catch {
+      this.renderErrorMessage(`Invalid folder path "${path}".`);
+      return;
+    }
+    const dirs = this.plugin.settings.approval.workingDirs;
+    if (dirs.includes(normalized)) {
+      this.renderInfoMessage("Working directory", [[normalized || "/ (vault root)", "Already a working directory."]]);
+      return;
+    }
+    dirs.push(normalized);
+    await this.plugin.saveSettings();
+    this.renderChips();
+    this.syncChrome();
+    this.renderInfoMessage("Working directory", [
+      [
+        normalized || "/ (vault root)",
+        "Granted — the agent auto-runs inside it and asks before touching anything outside.",
+      ],
+    ]);
+  }
+
+  private async removeWorkingDir(dir: string): Promise<void> {
+    const dirs = this.plugin.settings.approval.workingDirs;
+    const index = dirs.indexOf(dir);
+    if (index === -1) return;
+    dirs.splice(index, 1);
+    await this.plugin.saveSettings();
+    this.renderChips();
+    this.syncChrome();
   }
 
   private async buildContext(): Promise<string> {
