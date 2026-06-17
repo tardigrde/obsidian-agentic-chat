@@ -8,11 +8,19 @@ export interface ApprovalSettings {
   mutating: ApprovalPolicy;
   /** Explicit per-tool overrides, keyed by tool name. */
   perTool: Record<string, ApprovalPolicy>;
+  /**
+   * Granted working directories (vault-relative folder paths). When non-empty, tool
+   * calls targeting paths inside any granted dir auto-run, while targets outside every
+   * granted dir route through the gate (ask) — even reads. Empty = today's behavior.
+   * See `src/agent/working-dir.ts` (C1/S2).
+   */
+  workingDirs: string[];
 }
 
 export const DEFAULT_APPROVAL_SETTINGS: ApprovalSettings = {
   mutating: "ask",
   perTool: {},
+  workingDirs: [],
 };
 
 /**

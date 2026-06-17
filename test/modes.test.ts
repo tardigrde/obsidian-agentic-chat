@@ -12,7 +12,7 @@ import {
 import { type ApprovalSettings } from "../src/agent/approval";
 import { MUTATING_TOOLS } from "../src/tools/vault-tools";
 
-const allow: ApprovalSettings = { mutating: "allow", perTool: {} };
+const allow: ApprovalSettings = { mutating: "allow", perTool: {}, workingDirs: [] };
 
 describe("MODES", () => {
   it("defaults to safe and only plan carries a prompt overlay", () => {
@@ -29,21 +29,21 @@ describe("MODES", () => {
 describe("resolveModePolicy", () => {
   it("safe mode defers entirely to the approval policy", () => {
     expect(resolveModePolicy("safe", allow, "write").policy).toBe("allow");
-    expect(resolveModePolicy("safe", { mutating: "ask", perTool: {} }, "edit").policy).toBe("ask");
-    expect(resolveModePolicy("safe", { mutating: "deny", perTool: {} }, "write").policy).toBe("deny");
-    expect(resolveModePolicy("safe", { mutating: "ask", perTool: {} }, "read").policy).toBe("allow");
+    expect(resolveModePolicy("safe", { mutating: "ask", perTool: {}, workingDirs: [] }, "edit").policy).toBe("ask");
+    expect(resolveModePolicy("safe", { mutating: "deny", perTool: {}, workingDirs: [] }, "write").policy).toBe("deny");
+    expect(resolveModePolicy("safe", { mutating: "ask", perTool: {}, workingDirs: [] }, "read").policy).toBe("allow");
   });
 
   it("yolo mode forces mutating tools to allow even when settings deny them", () => {
-    expect(resolveModePolicy("yolo", { mutating: "deny", perTool: {} }, "write").policy).toBe("allow");
-    expect(resolveModePolicy("yolo", { mutating: "ask", perTool: {} }, "edit").policy).toBe("allow");
+    expect(resolveModePolicy("yolo", { mutating: "deny", perTool: {}, workingDirs: [] }, "write").policy).toBe("allow");
+    expect(resolveModePolicy("yolo", { mutating: "ask", perTool: {}, workingDirs: [] }, "edit").policy).toBe("allow");
   });
 
   it("yolo mode still honors an explicit per-tool deny (per-tool override wins)", () => {
-    const decision = resolveModePolicy("yolo", { mutating: "allow", perTool: { write: "deny" } }, "write");
+    const decision = resolveModePolicy("yolo", { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] }, "write");
     expect(decision.policy).toBe("deny");
     // A per-tool ask is also respected under yolo.
-    expect(resolveModePolicy("yolo", { mutating: "allow", perTool: { edit: "ask" } }, "edit").policy).toBe("ask");
+    expect(resolveModePolicy("yolo", { mutating: "allow", perTool: { edit: "ask" }, workingDirs: [] }, "edit").policy).toBe("ask");
   });
 
   it("plan mode denies every mutating tool with a read-only reason, even when approval allows", () => {

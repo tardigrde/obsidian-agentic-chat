@@ -7,26 +7,6 @@
   padding: 0;
 }
 
-/* --- Header --- */
-
-.agentic-chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--size-4-2) var(--size-4-3);
-  border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.agentic-chat-title {
-  font-weight: var(--font-semibold);
-  font-size: var(--font-ui-medium);
-}
-
-.agentic-chat-header-actions {
-  display: flex;
-  gap: var(--size-4-1);
-}
-
 /* --- Message list --- */
 
 .agentic-chat-messages {
@@ -419,19 +399,55 @@
 /* --- Composer --- */
 
 .agentic-chat-composer {
-  border-top: 1px solid var(--background-modifier-border);
-  padding: var(--size-4-2) var(--size-4-3);
+  padding: var(--size-4-2) var(--size-4-3) var(--size-4-3);
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-3);
+  gap: var(--size-2-2);
 }
 
 /* --- Tab strip (up to MAX_TABS independent sessions) --- */
+
+/* Nav row above the input card: tab pills left, header actions right. */
+.agentic-chat-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-2-2);
+}
+
+.agentic-chat-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  flex: 0 0 auto;
+}
 
 .agentic-chat-tabs {
   display: flex;
   align-items: center;
   gap: var(--size-2-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+/* --- The unified input card (chips + textarea + toolbar in one rectangle) --- */
+
+.agentic-chat-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+  min-height: 92px;
+  padding: var(--size-2-3) var(--size-4-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background-color: var(--background-primary);
+}
+
+/* Mirror a focused input: the whole card lights up when the textarea has focus. */
+.agentic-chat-field:focus-within {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 1px var(--interactive-accent);
 }
 
 .agentic-chat-tab {
@@ -547,6 +563,12 @@
   border-color: var(--interactive-accent);
 }
 
+/* Working-directory scope: a persistent permission grant, not a per-message attachment. */
+.agentic-chat-chip.is-scope {
+  border-color: var(--interactive-accent);
+  color: var(--text-accent);
+}
+
 .agentic-chat-chip-tag {
   font-size: var(--font-ui-smaller);
   text-transform: uppercase;
@@ -574,13 +596,28 @@
 
 .agentic-chat-input-wrap {
   position: relative;
+  flex: 1 1 auto;
+  display: flex;
 }
 
+/* The textarea carries no box of its own — the card is the input rectangle.
+   Keep vertical resize so a long prompt can grow the card. */
 .agentic-chat-input {
   width: 100%;
   resize: vertical;
-  min-height: 60px;
+  min-height: 48px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
   font-family: inherit;
+}
+
+.agentic-chat-input:focus,
+.agentic-chat-input:focus-visible,
+.agentic-chat-input:hover {
+  border: none;
+  box-shadow: none;
 }
 
 /* --- Autocomplete menu (slash / skill / @-mention) --- */
@@ -785,6 +822,11 @@
 .agentic-chat-attach:hover {
   color: var(--text-normal);
   background-color: var(--background-modifier-hover);
+}
+
+/* Accent the folder button while one or more working dirs are granted. */
+.agentic-chat-attach.has-scope {
+  color: var(--text-accent);
 }
 
 .agentic-chat-attach svg {
