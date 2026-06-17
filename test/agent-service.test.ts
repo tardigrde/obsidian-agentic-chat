@@ -344,6 +344,24 @@ describe("AgentService", () => {
     expect(service.getSessionUsage().totalTokens).toBe(6);
   });
 
+  it("confirms a subagent dispatch when a working set is configured (children bypass the path boundary)", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "researcher", task: "summarize" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "Ok, not dispatching." }], stopReason: "stop" },
+    ]);
+    let confirmCalls = 0;
+    const { service, settings } = makeService(streamFn, async () => {
+      confirmCalls += 1;
+      return false;
+    });
+    settings.mode = "safe";
+    // A read-only research fan-out normally wouldn't prompt, but with a working set the
+    // children can't be path-constrained, so the dispatch must be confirmed up front.
+    settings.approval = { mutating: "ask", perTool: {}, workingDirs: ["Notes"] };
+    await service.sendPrompt("research with a subagent");
+    expect(confirmCalls).toBe(1);
+  });
+
   it("exposes the deep-research skill only when web access is enabled", async () => {
     const off = makeService(cannedStreamFn("hi"));
     await off.service.initialize();

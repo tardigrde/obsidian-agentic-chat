@@ -73,7 +73,10 @@ describe("resolveWorkingDirPolicy", () => {
     expect(resolveWorkingDirPolicy(["Notes"], { path: "Notes/a.md", newPath: "Notes/b.md" }, "ask")).toBe("allow");
   });
 
-  it("leaves pathless calls on the base policy", () => {
-    expect(resolveWorkingDirPolicy(["Notes"], { pattern: "foo" }, "allow")).toBe("allow");
+  it("asks on pathless calls under a working set (they can span the vault)", () => {
+    expect(resolveWorkingDirPolicy(["Notes"], { pattern: "foo" }, "allow")).toBe("ask");
+    expect(resolveWorkingDirPolicy(["Notes"], {}, "allow")).toBe("ask");
+    // ...but not when no working set is configured.
+    expect(resolveWorkingDirPolicy([], { pattern: "foo" }, "allow")).toBe("allow");
   });
 });

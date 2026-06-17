@@ -606,12 +606,25 @@ export class AgentService {
    * dispatch is always safe. In **YOLO** the session master switch auto-approves it.
    * Otherwise (safe) it is gated like a mutating action — but only when some dispatched
    * profile can actually write, so a pure research fan-out never prompts.
+   *
+   * Working-dir caveat: children run without a per-call gate, so `resolveWorkingDirPolicy`
+   * never sees their tool calls. When a working set is configured we therefore confirm the
+   * dispatch up front (even a read-only fan-out) rather than let it read/write outside the
+   * granted dirs unattended — full per-child path enforcement is tracked as future work.
    */
   private async gateSubagentDispatch(
     settings: AgenticChatSettings,
     args: unknown,
   ): Promise<{ block: true; reason: string } | undefined> {
     if (settings.mode === "plan") return undefined;
+    if (settings.mode === "safe" && settings.approval.workingDirs.length > 0) {
+      if (this.dispatchCanMutate(args) && settings.approval.mutating === "deny") {
+        return { block: true, reason: "Subagent dispatch is blocked because mutating tools are denied." };
+      }
+      const label = "Dispatch subagents (children are not limited to your working directories)";
+      const approved = await this.confirmToolCall({ toolName: SUBAGENT_TOOL_NAME, label, args });
+      return approved ? undefined : { block: true, reason: "The user declined to dispatch subagents." };
+    }
     if (!this.dispatchCanMutate(args)) return undefined;
     const policy = settings.mode === "yolo" ? "allow" : settings.approval.mutating;
     if (policy === "allow") return undefined;

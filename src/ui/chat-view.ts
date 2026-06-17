@@ -1846,6 +1846,12 @@ export class ChatView extends ItemView {
       this.renderErrorMessage(`Invalid folder path "${path}".`);
       return;
     }
+    // A working directory must be a real folder — reject typos and file paths so a
+    // bogus scope can't silently weaken the boundary. "" is the vault root.
+    if (normalized !== "" && !(this.app.vault.getAbstractFileByPath(normalized) instanceof TFolder)) {
+      this.renderErrorMessage(`"${normalized}" is not a folder in this vault.`);
+      return;
+    }
     const dirs = this.plugin.settings.approval.workingDirs;
     if (dirs.includes(normalized)) {
       this.renderInfoMessage("Working directory", [[normalized || "/ (vault root)", "Already a working directory."]]);

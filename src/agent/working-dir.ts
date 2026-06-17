@@ -56,9 +56,11 @@ export function isInsideWorkingDirs(path: string, dirs: string[]): boolean {
 
 /**
  * Refine an approval policy by the working-dir boundary. With dirs configured, a call
- * whose targets are all inside a granted dir auto-runs (`allow`); a call with any
- * target outside routes through `ask`; pathless calls and an empty config are returned
- * unchanged. A `deny` (per-tool override / plan mode) always wins.
+ * whose targets are all inside a granted dir auto-runs (`allow`); any other call routes
+ * through `ask`. That deliberately includes **pathless** calls (find, grep without a
+ * path, get_active_note, ls of the root): they can traverse the whole vault, so under an
+ * allow-list working set they must not silently read outside it. An empty config is
+ * returned unchanged, and a `deny` (per-tool override / plan mode) always wins.
  */
 export function resolveWorkingDirPolicy(
   workingDirs: string[],
@@ -69,7 +71,8 @@ export function resolveWorkingDirPolicy(
   const dirs = normalizeWorkingDirs(workingDirs);
   if (dirs.length === 0) return basePolicy;
   const targets = toolTargetPaths(args);
-  if (targets.length === 0) return basePolicy;
+  // Pathless calls can span the vault → ask. Otherwise every target must be in-scope.
+  if (targets.length === 0) return "ask";
   const allInside = targets.every((path) => isInsideWorkingDirs(path, dirs));
   return allInside ? "allow" : "ask";
 }
