@@ -280,35 +280,33 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 
 ## Next batch
 
-Small, self-contained follow-ups deferred from the latest review pass. Each is a
-PR-sized chunk; pick them off in value order. (The brainstorming notes that seeded
-these are retired — the shipped subset is summarized below.)
-
-- **Context-window gauge** (`NB1`). Restyle the flat fill `<progress>` bar in the
-  composer toolbar into a gauge/arc shape (CSS only; the `contextLevel`/
-  `contextPercent` helpers stay). Polish.
-- **Drag-to-attach on release + dedup the image notice** (`NB2`). Attach on `drop`
-  (mouse release) and support multi-file drops; aggregate the "this model can't
-  read images" notice so a batch of images yields one toast, not one per file.
-- **Prompt-cache feedback** (`NB3`). Surface OpenRouter's `cacheRead`/`cacheWrite`
-  (already accumulated in usage) as a hit ratio in the usage footer + `/usage`,
-  and lean on prompt-order stability to improve it.
-- **Claudian system-prompt study** (`NB4`). Compare Claudian's agent instructions
-  (Claude Code's, which it shells out to) against ours and port any useful
-  framing. Research; folds into the system-prompt work.
-- **README: community-plugin install** (`NB5`). The plugin is now in the Obsidian
-  community directory — make "From Obsidian community plugins" the recommended
-  install path (ahead of BRAT/manual), mirroring claudian's README layout.
-- **E2E coverage of the new behavior** (`NB6`). Extend the local e2e suite past
-  the smoke spec — the approval modal, a real model-backed turn (gated API key),
-  and assertions for the guardrails shipped below (attachment budget/restriction,
-  read de-dup + size guardrail, dynamic effort levels). Base infra (D1) is already
-  local-only.
+The previous batch (`NB1`–`NB6`) shipped — see **Shipped this batch** below. No
+follow-ups are currently deferred from the latest review pass; new small items go
+here as they surface.
 
 ### Shipped this batch
 
 Already landed (documented in the README, not tracked as open work):
 
+- **Context-window gauge (`NB1`)** — the composer-toolbar fill is restyled from a
+  flat `<progress>` bar into an arc/gauge ring (CSS-only conic gradient keyed off a
+  `--ctx-pct` var; the `contextLevel`/`contextPercent` helpers are unchanged).
+- **Multi-file drag-to-attach + dedup image notice (`NB2`)** — a drop attaches
+  every dragged entry at once (multi-select), and a batch of images a vision-less
+  model can't read yields one aggregated toast instead of one per file.
+- **Prompt-cache feedback (`NB3`)** — OpenRouter `cacheRead`/`cacheWrite` (already
+  accumulated) surface as a prompt-cache hit ratio in the usage footer and `/usage`.
+- **Claudian system-prompt study (`NB4`)** — research only. Claudian shells out to
+  the `claude` CLI and inherits Claude Code's prompt; its portable lessons
+  (conciseness, proactive tool use, guidelines over rigid rules) are already
+  embodied in our `DEFAULT_SYSTEM_PROMPT`, so no text was ported (adding more would
+  violate the brevity lesson). Folds into the future system-prompt work.
+- **README: community-plugin install (`NB5`)** — "From Obsidian community plugins"
+  is now the recommended install path, ahead of BRAT/manual.
+- **E2E coverage of the new behavior (`NB6`)** — the local e2e suite grows past the
+  smoke spec: the context gauge + dynamic effort knob (model-independent), plus a
+  gated model-backed spec (`guardrails.e2e.ts`) for the approval modal + a real
+  turn → vault write. Key-gated on `OPENROUTER_API_KEY`; local-only, not in CI.
 - **Dynamic thinking levels** — the effort knob / `/effort` only offers levels the
   current model supports (`thinkingLevelMap`), and the requested level is clamped
   so we never send an unsupported `xhigh`.

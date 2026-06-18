@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Usage } from "@earendil-works/pi-ai";
 import {
+  cacheHitPercent,
   describeCall,
   formatCost,
   formatElapsed,
@@ -102,15 +103,42 @@ describe("formatElapsed", () => {
   });
 });
 
+describe("cacheHitPercent", () => {
+  const usage = (over: Partial<Usage>): Usage => ({ totalTokens: 0, ...over }) as Usage;
+
+  it("is null until anything cacheable is billed (no 0% before a cached turn)", () => {
+    expect(cacheHitPercent(usage({}))).toBeNull();
+    expect(cacheHitPercent(usage({ input: 100 }))).toBe(0);
+  });
+  it("treats cacheRead as hits over the full prompt-token base", () => {
+    // base = input + cacheRead + cacheWrite = 100 + 900 + 0 → 90% hit.
+    expect(cacheHitPercent(usage({ input: 100, cacheRead: 900 }))).toBe(90);
+  });
+  it("folds cacheWrite into the base but not the numerator", () => {
+    // base = 100 + 450 + 450 = 1000 → 45% hit.
+    expect(cacheHitPercent(usage({ input: 100, cacheRead: 450, cacheWrite: 450 }))).toBe(45);
+  });
+  it("rounds to a whole percent", () => {
+    expect(cacheHitPercent(usage({ input: 0, cacheRead: 1, cacheWrite: 2 }))).toBe(33);
+  });
+});
+
 describe("formatUsage", () => {
   const usage = (over: Partial<Usage>): Usage => ({ totalTokens: 0, ...over }) as Usage;
 
-  it("shows tokens only when there is no cost", () => {
+  it("shows tokens only when there is no cost and no cache", () => {
     expect(formatUsage(usage({ totalTokens: 120 }))).toBe("120 tokens");
   });
   it("appends cost when present", () => {
     expect(formatUsage(usage({ totalTokens: 120, cost: { total: 0.5 } as Usage["cost"] }))).toBe(
       "120 tokens · $0.50",
     );
+  });
+  it("surfaces the prompt-cache hit ratio between tokens and cost", () => {
+    expect(
+      formatUsage(
+        usage({ totalTokens: 1000, input: 100, cacheRead: 900, cost: { total: 0.02 } as Usage["cost"] }),
+      ),
+    ).toBe("1000 tokens · 90% cache · $0.02");
   });
 });

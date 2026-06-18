@@ -107,9 +107,13 @@ In the interest of transparency (and the [Obsidian Developer Policies](https://d
 
 ## Install
 
-### Via BRAT (recommended)
+### From Obsidian community plugins (recommended)
 
-Install [BRAT](https://github.com/TfTHacker/obsidian42-brat), then add `tardigrde/obsidian-agentic-chat` as a beta plugin. BRAT keeps it updated as new releases ship — the simplest way to install while the plugin is in pre-release.
+The plugin is listed in the official community directory. Open *Settings → Community plugins* (disable **Restricted mode** if prompted) → **Browse**, search for **Agentic Chat**, and install + enable it. This is the simplest path and keeps you on official releases with automatic updates.
+
+### Via BRAT
+
+For pre-release builds not yet in the community directory, install [BRAT](https://github.com/TfTHacker/obsidian42-brat), then add `tardigrde/obsidian-agentic-chat` as a beta plugin. BRAT installs and updates from GitHub releases.
 
 ### Manual
 
