@@ -75,6 +75,7 @@ function makeApp(spec: VaultSpec): App {
         fn(current);
         frontmatterCache.set(file.path, current);
       },
+      trashFile: async () => {},
     },
   } as unknown as App;
 }

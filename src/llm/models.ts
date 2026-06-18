@@ -211,7 +211,7 @@ function isModelListPayload(
   return (
     Array.isArray(value.data) &&
     value.data.every(
-      (model) =>
+      (model: unknown) =>
         typeof model === "object" &&
         model !== null &&
         "id" in model &&
