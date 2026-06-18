@@ -833,7 +833,7 @@ export class AgentService {
   private async summarizeForCompaction(messages: AgentMessage[]): Promise<string> {
     // Bound the summary call so a hung request can't stall the user's prompt.
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), COMPACTION_TIMEOUT_MS);
+    const timer = window.setTimeout(() => controller.abort(), COMPACTION_TIMEOUT_MS);
     try {
       if (this.injectedSummarize) return await this.injectedSummarize(messages, controller.signal);
       const settings = this.getSettings();
@@ -853,7 +853,7 @@ export class AgentService {
       );
       return result.ok ? result.value : "";
     } finally {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
     }
   }
 
@@ -969,4 +969,3 @@ export function filterChildTools(tools: AgentTool[], allowlist: string[], readOn
   if (readOnly) allowed = allowed.filter((tool) => !MUTATING_TOOLS.has(tool.name));
   return allowed;
 }
-

@@ -76,7 +76,7 @@ export default class AgenticChatPlugin extends Plugin {
       if (!leaf) return;
       await leaf.setViewState({ type: VIEW_TYPE_AGENT_CHAT, active: true });
     }
-    await workspace.revealLeaf(leaf);
+    workspace.setActiveLeaf(leaf, { focus: true });
   }
 
   async loadSettings(): Promise<void> {

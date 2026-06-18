@@ -66,7 +66,7 @@ export class AssistantBubble {
   /** Schedule a single buffered flush on the next animation frame. */
   private scheduleFlush(): void {
     if (this.flushHandle !== null) return;
-    this.flushHandle = requestAnimationFrame(() => {
+    this.flushHandle = window.requestAnimationFrame(() => {
       this.flushHandle = null;
       this.flushBuffers();
     });

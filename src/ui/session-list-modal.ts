@@ -108,18 +108,22 @@ export class SessionListModal extends Modal {
 
       const remove = row.createDiv({ cls: "agentic-chat-session-delete clickable-icon", attr: { "aria-label": "Delete" } });
       setIcon(remove, "trash-2");
-      remove.addEventListener("click", async (event) => {
+      remove.addEventListener("click", (event) => {
         event.stopPropagation();
         // Optimistically drop the row first: keeps the list responsive and
         // stops a quick second click from deleting the same session twice.
         this.sessions = this.sessions.filter((item) => item.path !== session.path);
         this.renderList();
-        try {
-          await this.callbacks.delete(session);
-        } catch (error) {
-          console.error("Agentic chat: failed to delete session", error);
-        }
+        void this.deleteSession(session);
       });
+    }
+  }
+
+  private async deleteSession(session: SessionInfo): Promise<void> {
+    try {
+      await this.callbacks.delete(session);
+    } catch (error) {
+      console.error("Agentic chat: failed to delete session", error);
     }
   }
 

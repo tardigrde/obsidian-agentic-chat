@@ -1656,14 +1656,14 @@ export class ChatView extends ItemView {
       )
         .filter((model) => model.supportsTools)
         .sort((a, b) => a.id.localeCompare(b.id));
-      new ModelSuggestModal(this.app, models, async (model, once) => {
+      new ModelSuggestModal(this.app, models, (model, once) => {
         if (once) {
           // Per-request override: use this model for the next prompt only, then revert.
           this.service.setModelOverride(model.id);
         } else {
           settings.openrouterModel = model.id;
           this.service.setModelOverride(null);
-          await this.plugin.saveSettings();
+          void this.plugin.saveSettings();
         }
         this.syncChrome();
       }).open();
@@ -2097,7 +2097,7 @@ export class ChatView extends ItemView {
   private scrollToBottom(): void {
     if (this.scrollPending) return;
     this.scrollPending = true;
-    requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       this.scrollPending = false;
       this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
     });

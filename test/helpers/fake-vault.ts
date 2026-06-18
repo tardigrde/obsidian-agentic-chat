@@ -65,6 +65,13 @@ export class FakeVault {
     entry.content += content;
   }
 
+  async trash(file: TFile): Promise<void> {
+    this.files.delete(file.path);
+    const siblings = file.parent?.children;
+    const index = siblings?.indexOf(file) ?? -1;
+    if (siblings && index >= 0) siblings.splice(index, 1);
+  }
+
   async createFolder(path: string): Promise<TFolder> {
     if (this.folders.has(path) || this.files.has(path)) {
       throw new Error(`Folder already exists: ${path}`);

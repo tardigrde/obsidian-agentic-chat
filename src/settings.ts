@@ -311,10 +311,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             )
               .filter((model) => model.supportsTools)
               .sort((a, b) => a.id.localeCompare(b.id));
-            new ModelSuggestModal(this.app, models, async (model) => {
+            new ModelSuggestModal(this.app, models, (model) => {
               settings.openrouterModel = model.id;
-              await this.save();
-              this.display();
+              void this.save().then(() => this.display());
             }).open();
           } catch (error) {
             new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
@@ -417,7 +416,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       slider
         .setLimits(0, 2, 0.1)
         .setValue(settings.temperature)
-        .setDynamicTooltip()
         .onChange(async (value) => {
           settings.temperature = value;
           await this.save();
@@ -454,7 +452,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         slider
           .setLimits(0, 5, 1)
           .setValue(settings.maxNetworkRetries)
-          .setDynamicTooltip()
           .onChange(async (value) => {
             settings.maxNetworkRetries = value;
             await this.save();
@@ -493,7 +490,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         slider
           .setLimits(50, 95, 5)
           .setValue(settings.compaction.thresholdPercent)
-          .setDynamicTooltip()
           .onChange(async (value) => {
             settings.compaction.thresholdPercent = value;
             await this.save();
@@ -561,14 +557,13 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setHeading()
       .addButton((button) =>
         button.setButtonText("Add folder").onClick(() => {
-          new FolderSuggestModal(this.app, async (folder) => {
+          new FolderSuggestModal(this.app, (folder) => {
             const dirs = settings.approval.workingDirs;
             // Normalize identically to the chat view + gate so entries can't diverge.
             const path = folder.path === "/" ? "" : normalizeFolderPath(folder.path);
             if (!dirs.includes(path)) {
               dirs.push(path);
-              await this.save();
-              this.display();
+              void this.save().then(() => this.display());
             }
           }).open();
         }),
@@ -588,7 +583,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         .addButton((button) =>
           button
             .setButtonText("Remove")
-            .setWarning()
+            .setClass("mod-warning")
             .onClick(async () => {
               settings.approval.workingDirs = settings.approval.workingDirs.filter((entry) => entry !== dir);
               await this.save();
@@ -677,7 +672,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         slider
           .setLimits(1, 10, 1)
           .setValue(settings.web.maxResults)
-          .setDynamicTooltip()
           .onChange(async (value) => {
             settings.web.maxResults = value;
             await this.save();

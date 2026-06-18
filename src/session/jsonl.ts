@@ -156,5 +156,5 @@ function getLastNonHeaderEntry(entries: SessionEntry[]): NonHeaderEntry | undefi
 }
 
 function createRandomId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(16).slice(2);
+  return window.crypto?.randomUUID?.() ?? Math.random().toString(16).slice(2);
 }

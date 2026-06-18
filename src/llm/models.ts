@@ -80,8 +80,7 @@ function buildRouting(privacy: PrivacySettings): OpenRouterRouting {
 
 function findCatalogModel(provider: "openrouter", id: string): Model<"openai-completions"> | undefined {
   try {
-    const match = getModels(provider).find((model) => model.id === id);
-    return match as Model<"openai-completions"> | undefined;
+    return getModels(provider).find((model) => model.id === id);
   } catch {
     return undefined;
   }
@@ -155,16 +154,17 @@ export async function listOpenRouterModels(
   try {
     if (options?.fetchImpl) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
       try {
         const response = await options.fetchImpl(url, {
           headers: { Authorization: `Bearer ${apiKey}` },
           signal: controller.signal,
         });
         status = response.status;
-        payload = await response.json();
+        const responsePayload: unknown = await response.json();
+        payload = isModelListPayload(responsePayload) ? responsePayload : null;
       } finally {
-        clearTimeout(timer);
+        window.clearTimeout(timer);
       }
     } else {
       const response = await withTimeout(
@@ -201,17 +201,44 @@ function isAbortError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 }
 
+function isModelListPayload(
+  value: unknown,
+): value is {
+  data?: Array<{ id: string; name?: string; context_length?: number; supported_parameters?: string[] }>;
+} {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("data" in value) || value.data === undefined) return true;
+  return (
+    Array.isArray(value.data) &&
+    value.data.every(
+      (model) =>
+        typeof model === "object" &&
+        model !== null &&
+        "id" in model &&
+        typeof model.id === "string" &&
+        (!("name" in model) || model.name === undefined || typeof model.name === "string") &&
+        (!("context_length" in model) ||
+          model.context_length === undefined ||
+          typeof model.context_length === "number") &&
+        (!("supported_parameters" in model) ||
+          model.supported_parameters === undefined ||
+          (Array.isArray(model.supported_parameters) &&
+            model.supported_parameters.every((parameter: unknown) => typeof parameter === "string"))),
+    )
+  );
+}
+
 async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: number | undefined;
   try {
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new RequestTimeoutError()), timeoutMs);
+        timer = window.setTimeout(() => reject(new RequestTimeoutError()), timeoutMs);
       }),
     ]);
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    if (timer !== undefined) window.clearTimeout(timer);
   }
 }
 

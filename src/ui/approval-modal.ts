@@ -54,7 +54,10 @@ export class ApprovalModal extends Modal {
 
     new Setting(contentEl)
       .addButton((button) =>
-        button.setButtonText("Deny").setWarning().onClick(() => this.decide({ approved: false, remember: false })),
+        button
+          .setButtonText("Deny")
+          .setClass("mod-warning")
+          .onClick(() => this.decide({ approved: false, remember: false })),
       )
       .addButton((button) =>
         button
@@ -66,7 +69,7 @@ export class ApprovalModal extends Modal {
     // Enter accepts (Escape already dismisses via the default modal handler).
     // Let a focused button handle Enter itself so Tab-to-Deny still works.
     this.scope.register([], "Enter", (event) => {
-      if (this.decided || document.activeElement instanceof HTMLButtonElement) return;
+      if (this.decided || activeDocument.activeElement instanceof HTMLButtonElement) return;
       event.preventDefault();
       this.decide({ approved: true, remember });
       return false;
