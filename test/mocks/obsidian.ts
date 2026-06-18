@@ -57,7 +57,12 @@ export class MarkdownRenderer {
 export function setIcon(): void {}
 
 /** Stub network access: the web tools inject their own fetcher in tests. */
-export function requestUrl(): Promise<{ status: number; text: string; headers: Record<string, string> }> {
+export function requestUrl(): Promise<{
+  status: number;
+  text: string;
+  json: unknown;
+  headers: Record<string, string>;
+}> {
   return Promise.reject(new Error("requestUrl is not available in tests"));
 }
 

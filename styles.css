@@ -869,27 +869,46 @@
 }
 
 .agentic-chat-ctx-bar {
+  appearance: none;
   flex: 0 0 auto;
   width: 40px;
   height: 5px;
+  border: 0;
   border-radius: var(--radius-l);
   background-color: var(--background-modifier-border);
   overflow: hidden;
 }
 
-.agentic-chat-ctx-fill {
-  height: 100%;
-  width: 0;
+.agentic-chat-ctx-bar::-webkit-progress-bar {
+  background-color: var(--background-modifier-border);
   border-radius: inherit;
-  transition: width 0.2s ease;
-  background-color: var(--color-green);
 }
 
-.agentic-chat-ctx-fill.is-warn {
+.agentic-chat-ctx-bar::-webkit-progress-value {
+  background-color: var(--color-green);
+  border-radius: inherit;
+  transition: inline-size 0.2s ease;
+}
+
+.agentic-chat-ctx-bar::-moz-progress-bar {
+  background-color: var(--color-green);
+  border-radius: inherit;
+  transition: inline-size 0.2s ease;
+}
+
+.agentic-chat-ctx-bar.is-warn::-webkit-progress-value {
   background-color: var(--color-yellow);
 }
 
-.agentic-chat-ctx-fill.is-high {
+.agentic-chat-ctx-bar.is-warn::-moz-progress-bar {
+  background-color: var(--color-yellow);
+}
+
+.agentic-chat-ctx-bar.is-high::-webkit-progress-value {
+  background-color: var(--color-red);
+}
+
+.agentic-chat-ctx-bar.is-high::-moz-progress-bar {
   background-color: var(--color-red);
 }
 

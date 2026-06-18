@@ -117,6 +117,18 @@ describe("listOpenRouterModels", () => {
     await expect(listOpenRouterModels("key", { fetchImpl: badFetch })).rejects.toBeInstanceOf(ModelListError);
   });
 
+  it("recognizes plain AbortError objects as timeouts", async () => {
+    const abortingFetch = (async () => {
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      throw error;
+    }) as unknown as typeof fetch;
+    await expect(listOpenRouterModels("key", { fetchImpl: abortingFetch })).rejects.toMatchObject({
+      name: "ModelListError",
+      status: 408,
+    });
+  });
+
   it("returns an empty list when the body is JSON null", async () => {
     const nullFetch = (async () =>
       ({ ok: true, status: 200, json: async () => null }) as unknown as Response) as unknown as typeof fetch;

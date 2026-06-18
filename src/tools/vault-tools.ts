@@ -152,7 +152,7 @@ function createWriteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof W
         throw new Error(`Cannot write file because a folder exists at ${path}.`);
       }
       if (existing instanceof TFile) {
-        await app.vault.modify(existing, params.content);
+        await app.vault.process(existing, () => params.content);
       } else {
         await app.vault.create(path, params.content);
       }
@@ -176,9 +176,7 @@ function createEditTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof Ed
       const path = normalizeVaultPath(params.path);
       assertVisible(isIgnored, path);
       const file = getVaultFile(app, path);
-      const content = await app.vault.read(file);
-      const updated = applyExactEdits(content, params.edits);
-      await app.vault.modify(file, updated);
+      await app.vault.process(file, (content) => applyExactEdits(content, params.edits));
       return textResult(`Applied ${params.edits.length} edit${params.edits.length === 1 ? "" : "s"} to ${path}.`, {
         path,
         editCount: params.edits.length,

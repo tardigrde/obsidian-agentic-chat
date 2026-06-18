@@ -59,7 +59,7 @@ export async function applyUndo(app: App, entry: UndoEntry): Promise<string> {
     return `Nothing to undo for ${entry.path}.`;
   }
   if (existing instanceof TFile) {
-    await app.vault.modify(existing, entry.before);
+    await app.vault.process(existing, () => entry.before ?? "");
   } else {
     await ensureParentFolders(app, entry.path);
     await app.vault.create(entry.path, entry.before);
