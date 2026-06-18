@@ -1,4 +1,4 @@
-import type { App } from "obsidian";
+import { TFile, type App, type EventRef } from "obsidian";
 import {
   Agent,
   type AgentEvent,
@@ -122,6 +122,14 @@ export class AgentService {
   private thinkingOverride: ThinkingLevel | null = null;
   /** De-dupes repeat `read` calls so re-reading can't double a file into the context window. */
   private readonly readMemo = new ReadMemo();
+  /** Vault `modify` listener that drops memoized reads when a file changes externally. */
+  private vaultModifyRef?: EventRef;
+  /**
+   * Cached supported thinking levels keyed by model id, so opening the effort
+   * picker / cycling effort doesn't rebuild the pi-ai model on every interaction.
+   * Invalidates automatically when the active model id changes.
+   */
+  private cachedLevels: { modelId: string; levels: ThinkingLevel[] } | null = null;
 
   private readonly eventListeners = new Set<EventListener>();
   private readonly changeListeners = new Set<ChangeListener>();
@@ -134,6 +142,12 @@ export class AgentService {
     this.injectedStreamFn = options.streamFn;
     this.injectedSummarize = options.summarize;
     this.webFetch = options.webFetch ?? createObsidianFetcher();
+    // External edits change a file's contents out from under the agent; drop any
+    // memoized read of it so the next read serves fresh content instead of a
+    // stale "already read" pointer. Agent-driven writes invalidate via the tool.
+    this.vaultModifyRef = this.app.vault.on("modify", (file) => {
+      if (file instanceof TFile) this.readMemo.invalidate(file.path);
+    });
   }
 
   onEvent(listener: EventListener): () => void {
@@ -226,10 +240,15 @@ export class AgentService {
   /**
    * Reasoning levels the active model actually supports, in UI order. Drives the
    * composer effort knob and `/effort` so the UI never offers a level (e.g.
-   * `xhigh`) the current model can't take.
+   * `xhigh`) the current model can't take. Cached by model id so repeated UI
+   * interactions (opening the picker, cycling effort) don't rebuild the model.
    */
   getActiveThinkingLevels(): ThinkingLevel[] {
-    return supportedThinkingLevels(this.activeModelForTurn());
+    const modelId = this.getActiveModelId();
+    if (this.cachedLevels?.modelId === modelId) return this.cachedLevels.levels;
+    const levels = supportedThinkingLevels(this.activeModelForTurn());
+    this.cachedLevels = { modelId, levels };
+    return levels;
   }
 
   /** The resolved pi-ai model object the next prompt will stream through. */
@@ -495,6 +514,8 @@ export class AgentService {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    if (this.vaultModifyRef) this.app.vault.offref(this.vaultModifyRef);
+    this.vaultModifyRef = undefined;
     this.unsubscribeAgent?.();
     this.unsubscribeAgent = null;
     this.agent?.abort();
@@ -817,7 +838,7 @@ export class AgentService {
   /** The thinking level for the next turn: the queued one-shot override, else settings, clamped to what the model supports. */
   private thinkingLevelForTurn(settings: AgenticChatSettings): ThinkingLevel {
     const requested = this.thinkingOverride ?? settings.thinkingLevel;
-    return clampThinkingLevel(requested, supportedThinkingLevels(this.activeModelForTurn()));
+    return clampThinkingLevel(requested, this.getActiveThinkingLevels());
   }
 
   private async refreshConfiguration(): Promise<void> {

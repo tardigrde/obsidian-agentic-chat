@@ -1247,13 +1247,9 @@ export class ChatView extends ItemView {
     }
     const lower = arg.toLowerCase();
     const levels = this.service.getActiveThinkingLevels();
-    const level = levels.find((id) => id === lower) ?? THINKING_LEVELS.find((id) => id === lower);
+    const level = levels.find((id) => id === lower);
     if (!level) {
-      this.renderErrorMessage(`Unknown effort "${arg}". Options: ${THINKING_LEVELS.join(", ")}.`);
-      return;
-    }
-    if (!levels.includes(level)) {
-      this.renderErrorMessage(`"${level}" isn't supported by the current model. Options: ${levels.join(", ")}.`);
+      this.renderErrorMessage(`Unknown or unsupported effort "${arg}". Options: ${levels.join(", ")}.`);
       return;
     }
     this.chooseEffort(level);

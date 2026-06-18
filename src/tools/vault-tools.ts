@@ -132,7 +132,7 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       // De-dup: a repeat read of the same range is handed a short pointer instead
       // of re-injecting the full text, so re-reading can't quietly double a file
       // into the context. Edits invalidate the path, forcing a fresh read.
-      if (memo?.note({ path, offset: params.offset, limit: params.limit })) {
+      if (memo?.has({ path, offset: params.offset, limit: params.limit })) {
         return textResult(alreadyReadMessage(path), { path, deduplicated: true });
       }
       const file = getVaultFile(app, path);
@@ -144,6 +144,10 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       }
       const content = await app.vault.cachedRead(file);
       const slice = sliceTextByLines(content, { offset: params.offset, limit: params.limit });
+      // Record only after a successful read — a failed/refused read (above) must
+      // not poison the memo, or the next identical read would return a stale
+      // "already read" pointer instead of retrying.
+      memo?.mark({ path, offset: params.offset, limit: params.limit });
       return textResult(formatTextSlice(path, slice), { path, totalLines: slice.totalLines, truncated: slice.truncated });
     },
   };

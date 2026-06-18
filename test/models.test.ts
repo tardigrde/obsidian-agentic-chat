@@ -112,6 +112,21 @@ describe("supportedThinkingLevels", () => {
     expect(levels).toContain("high");
     expect(levels[0]).toBe("off");
   });
+
+  it("does NOT advertise xhigh when the map lacks an explicit xhigh key (opt-in)", () => {
+    // A map present without an xhigh entry: every other level's missing key
+    // means "provider default", but xhigh is opt-in, so it must stay unlisted —
+    // otherwise the UI would offer xhigh and clamp would pass it through.
+    const map: Partial<Record<ThinkingLevel, string | null>> = { high: "high" };
+    const levels = supportedThinkingLevels({ reasoning: true, thinkingLevelMap: map });
+    expect(levels).not.toContain("xhigh");
+    expect(levels).toContain("high");
+  });
+
+  it("advertises xhigh only when the map has an explicit xhigh entry", () => {
+    const map: Partial<Record<ThinkingLevel, string | null>> = { xhigh: "xhigh" };
+    expect(supportedThinkingLevels({ reasoning: true, thinkingLevelMap: map })).toContain("xhigh");
+  });
 });
 
 describe("clampThinkingLevel", () => {

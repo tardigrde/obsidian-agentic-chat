@@ -9,8 +9,10 @@ export const THINKING_LEVEL_ORDER: ThinkingLevel[] = ["off", "minimal", "low", "
  * Thinking levels a model actually supports, in UI order. A model without
  * `reasoning` only ever offers `"off"`. For reasoning models, a `thinkingLevelMap`
  * entry explicitly set to `null` marks that level as unsupported (per the pi-ai
- * contract); missing entries use provider defaults and stay available. With no
- * map at all every level is offered (the provider applies its own default).
+ * contract); missing entries use provider defaults and stay available — except
+ * `"xhigh"`, which is opt-in: a map without an explicit `xhigh` entry does NOT
+ * advertise it (mirrors pi-ai's own `getSupportedThinkingLevels`). With no map
+ * at all every level is offered (the provider applies its own default).
  * `"off"` is always available — it means "don't request reasoning".
  */
 export function supportedThinkingLevels(
@@ -19,7 +21,14 @@ export function supportedThinkingLevels(
   if (!model.reasoning) return ["off"];
   const map = model.thinkingLevelMap;
   if (!map) return [...THINKING_LEVEL_ORDER];
-  return THINKING_LEVEL_ORDER.filter((level) => map[level] !== null);
+  return THINKING_LEVEL_ORDER.filter((level) => {
+    const mapped = map[level];
+    if (mapped === null) return false;
+    // xhigh is opt-in: it must have an explicit map entry, otherwise the
+    // provider ignores/rejects it — so never advertise it on a missing key.
+    if (level === "xhigh") return mapped !== undefined;
+    return true;
+  });
 }
 
 /**

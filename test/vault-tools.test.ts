@@ -363,4 +363,21 @@ describe("read — dedup + size guardrail", () => {
     const result = await run(read, { path: "Big.md", offset: 1, limit: 10 });
     expect(result.details.tooLarge).toBeUndefined();
   });
+
+  it("does not memoize a read that fails (missing file), so a retry isn't deduped", async () => {
+    const app = makeApp({ files: {} });
+    const memo = new ReadMemo();
+    const read = createVaultTools(app, undefined, memo).find((t) => t.name === "read")!;
+    await expect(run(read, { path: "Ghost.md" })).rejects.toThrow(/not found/);
+    expect(memo.has({ path: "Ghost.md" })).toBe(false);
+  });
+
+  it("does not memoize a read refused by the size guardrail", async () => {
+    const app = makeApp({ files: { "Big.md": { content: "x".repeat(60_000) } } });
+    const memo = new ReadMemo();
+    const read = createVaultTools(app, undefined, memo).find((t) => t.name === "read")!;
+    const result = await run(read, { path: "Big.md" });
+    expect(result.details.tooLarge).toBe(true);
+    expect(memo.has({ path: "Big.md" })).toBe(false);
+  });
 });
