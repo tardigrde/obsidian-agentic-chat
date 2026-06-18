@@ -8,8 +8,12 @@ import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } fr
 import { alreadyReadMessage, type ReadMemo } from "../vault/read-memo";
 import { formatTextSlice, readSizeGuardrail, sliceTextByLines, truncateToolOutput } from "../vault/truncate";
 
-/** Tools that change the vault. Used to pick a default approval policy. */
-export const MUTATING_TOOLS = new Set(["write", "edit", "delete", "rename", "set_properties"]);
+/**
+ * Tools that change the vault (or other durable state). Used to pick a default
+ * approval policy. `remember` is included because it persists to the durable
+ * memory store — it should follow the mutating gate, not auto-run like a read.
+ */
+export const MUTATING_TOOLS = new Set(["write", "edit", "delete", "rename", "set_properties", "remember"]);
 
 const TEXT_EXTENSIONS = new Set([
   "md", "txt", "json", "jsonl", "csv", "tsv", "yaml", "yml",

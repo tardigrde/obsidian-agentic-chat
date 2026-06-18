@@ -531,4 +531,84 @@ describe("AgentService", () => {
     expect(service.getError()).toMatch(/API key/);
     expect(service.getMessages()).toHaveLength(0);
   });
+
+  it("recall reads durable memory without gating, even when approvals would deny", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "c1", name: "recall", arguments: {} }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "got it" }], stopReason: "stop" },
+    ]);
+    // confirmToolCall denies everything — recall must still run (read-only).
+    const { service, settings } = makeService(streamFn, async () => false);
+    settings.memory = "- prefers terse answers";
+    await service.sendPrompt("What do you remember?");
+
+    const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
+      | { role: "toolResult"; isError: boolean; content: Array<{ type: string; text?: string }> }
+      | undefined;
+    expect(toolResult?.isError).toBe(false);
+    const text = (toolResult?.content ?? []).map((block) => block.text ?? "").join("");
+    expect(text).toContain("prefers terse answers");
+  });
+
+  it("remember appends to durable memory when the user approves", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "c1", name: "remember", arguments: { fact: "Project X lives in Projects/" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "saved" }], stopReason: "stop" },
+    ]);
+    const { service, settings } = makeService(streamFn, async () => true);
+    await service.sendPrompt("Note where Project X is");
+    expect(settings.memory).toContain("Project X lives in Projects/");
+  });
+
+  it("remember is gated like a mutating tool: a denial blocks it and leaves memory untouched", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "c1", name: "remember", arguments: { fact: "should not persist" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "ok" }], stopReason: "stop" },
+    ]);
+    const { service, settings } = makeService(streamFn, async () => false);
+    await service.sendPrompt("Remember this");
+    const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
+      | { role: "toolResult"; isError: boolean }
+      | undefined;
+    expect(toolResult?.isError).toBe(true);
+    expect(settings.memory).toBe("");
+  });
+
+  it("plan mode blocks remember (read-only) even when the user would approve", async () => {
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "c1", name: "remember", arguments: { fact: "x" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "ok" }], stopReason: "stop" },
+    ]);
+    const { service, settings } = makeService(streamFn, async () => true);
+    settings.mode = "plan";
+    await service.sendPrompt("Remember x");
+    const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
+      | { role: "toolResult"; isError: boolean; content: Array<{ type: string; text?: string }> }
+      | undefined;
+    expect(toolResult?.isError).toBe(true);
+    const text = (toolResult?.content ?? []).map((block) => block.text ?? "").join("");
+    expect(text).toMatch(/read-only/i);
+    expect(settings.memory).toBe("");
+  });
+
+  it("remember persists through the saveSettings hook", async () => {
+    const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "k" };
+    let saved = 0;
+    const service = new AgentService({
+      app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
+      getSettings: () => settings,
+      sessionManager: new ObsidianSessionManager(new MemoryAdapter().asDataAdapter(), "sessions", "vault:test"),
+      confirmToolCall: async () => true,
+      saveSettings: async () => {
+        saved += 1;
+      },
+      streamFn: scriptedStreamFn([
+        { content: [{ type: "toolCall", id: "c1", name: "remember", arguments: { fact: "persisted" } }], stopReason: "toolUse" },
+        { content: [{ type: "text", text: "done" }], stopReason: "stop" },
+      ]),
+    });
+    await service.sendPrompt("note it");
+    expect(saved).toBe(1);
+    expect(settings.memory).toContain("persisted");
+  });
 });

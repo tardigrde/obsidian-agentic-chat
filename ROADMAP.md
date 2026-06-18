@@ -106,17 +106,8 @@ mobile-safe — no shell/subprocess.
   `StatusPanel` — todo half only.)
 - **`#` inline persistent instruction** (`L6`). Typing `#…` in the composer appends a durable
   custom instruction (lightweight "remember this") rather than sending a prompt — grows a
-  per-session/per-vault instruction set inline. Complements output styles. **Depends on `M1`**
-  (the durable store it writes into). (Claudian.)
-
-## Memory
-
-- **Durable memory store** (`M1`). A persisted, user-authored store of facts + instructions the
-  agent carries across turns and sessions — the backing store `L6`'s `#…` capture writes into.
-  Surfaced as a system-prompt overlay (same path output styles use), editable in settings. Add
-  optional `remember`/`recall` tools so the agent can write/read its own durable notes through the
-  approval gate. Per-vault scope first (`data.json` / vault adapter — mobile-safe, no node fs);
-  per-session overlay and richer scoping later. Distinct from `A2` (per-*subagent-profile* memory).
+  per-session/per-vault instruction set inline. Complements output styles. Writes into the durable
+  memory store (`M1`, shipped). (Claudian.)
 
 ## Project workspaces
 
@@ -245,7 +236,6 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `P1` | Project workspaces | 6 | L |
 | `I1` | MCP client (Streamable HTTP) | 6 | L |
 | `G1` | Generic OpenAI-compatible provider | 6 | M |
-| `M1` | Durable memory store | 6 | M |
 | `R4` | QA inline citations | 6 | S |
 | `W2` | Better extraction (Readability) | 5 | M |
 | `S1` | Keystore for API keys | 5 | M |

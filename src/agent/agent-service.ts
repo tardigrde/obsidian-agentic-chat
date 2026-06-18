@@ -14,6 +14,7 @@ import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider, activeModelConfig } from "../settings";
 import { buildModel, clampThinkingLevel, supportedThinkingLevels, type ModelConfig } from "../llm/models";
 import { createVaultTools, MUTATING_TOOLS } from "../tools/vault-tools";
+import { createMemoryTools, MEMORY_TOOLS, type MemoryAccess } from "../tools/memory-tools";
 import { createSubagentTool, SUBAGENT_TOOL_NAME, normalizeTasks } from "../tools/subagent-tool";
 import { createObsidianFetcher, type WebFetcher } from "../tools/web-fetch";
 import { createWebTools } from "../tools/web-tools";
@@ -40,6 +41,7 @@ import {
 } from "./cost";
 import { type UndoEntry, UNDOABLE_TOOLS, applyUndo, captureUndo } from "./undo";
 import { buildSystemPrompt } from "./system-prompt";
+import { appendMemory, formatMemoryOverlay } from "./memory";
 import { MODES, resolveModePolicy } from "./modes";
 import { resolveWorkingDirPolicy } from "./working-dir";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -73,6 +75,8 @@ export interface AgentServiceOptions {
   sessionManager: ObsidianSessionManager;
   /** Resolve an "ask" approval gate; returns true to allow the tool call. */
   confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
+  /** Persist settings after a tool mutates them (e.g. `remember` writes durable memory). */
+  saveSettings?: () => Promise<void>;
   /** Injected for tests; production wraps pi-ai streamSimple. */
   streamFn?: StreamFn;
   /** Injected for tests; production summarizes via pi's `generateSummary`. */
@@ -93,6 +97,7 @@ export class AgentService {
   private readonly getSettings: () => AgenticChatSettings;
   private readonly sessionManager: ObsidianSessionManager;
   private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
+  private readonly saveSettings: () => Promise<void>;
   private readonly injectedStreamFn?: StreamFn;
   private readonly injectedSummarize?: SummarizeFn;
   private readonly webFetch: WebFetcher;
@@ -139,6 +144,9 @@ export class AgentService {
     this.getSettings = options.getSettings;
     this.sessionManager = options.sessionManager;
     this.confirmToolCall = options.confirmToolCall;
+    // No-op when tests omit it: the memory tool still mutates the live settings
+    // object, it just skips persisting to data.json.
+    this.saveSettings = options.saveSettings ?? (async () => undefined);
     this.injectedStreamFn = options.streamFn;
     this.injectedSummarize = options.summarize;
     this.webFetch = options.webFetch ?? createObsidianFetcher();
@@ -636,13 +644,16 @@ export class AgentService {
     if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, args);
     const decision = resolveModePolicy(settings.mode, settings.approval, toolName);
     const { reason } = decision;
+    // Memory tools aren't vault-path-scoped, so the working-dir boundary (which keys off
+    // path/newPath args) can't say anything useful about them — skip it. `recall` resolves
+    // to allow; `remember` is in MUTATING_TOOLS so it follows the mutating gate.
+    const scoped = settings.mode === "safe" && !MEMORY_TOOLS.has(toolName);
     // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
     // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
     // already forces read-only, so the boundary only refines Safe.
-    const policy =
-      settings.mode === "safe"
-        ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, decision.policy)
-        : decision.policy;
+    const policy = scoped
+      ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, decision.policy)
+      : decision.policy;
     if (policy === "allow") return undefined;
     if (policy === "deny") {
       return { block: true, reason: reason ?? `The "${toolName}" tool is disabled by your approval settings.` };
@@ -699,7 +710,12 @@ export class AgentService {
   }
 
   private composeSystemPrompt(settings: AgenticChatSettings): string {
-    const overlays = [this.selfAwarenessOverlay(), ...promptOverlays(settings), formatSubagentsForSystemPrompt(this.profiles)];
+    const overlays = [
+      this.selfAwarenessOverlay(),
+      formatMemoryOverlay(settings.memory),
+      ...promptOverlays(settings),
+      formatSubagentsForSystemPrompt(this.profiles),
+    ];
     return buildSystemPrompt(settings.systemPrompt, this.skills, overlays);
   }
 
@@ -719,9 +735,26 @@ export class AgentService {
    */
   private buildParentTools(): AgentTool[] {
     const tools = createVaultTools(this.app, this.ignoreMatcher, this.readMemo);
+    tools.push(...createMemoryTools(this.memoryAccess()));
     tools.push(...createWebTools(this.getSettings().web, this.webFetch));
     if (this.profiles.length > 0) tools.push(this.createSubagentToolInstance());
     return tools;
+  }
+
+  /**
+   * Read/append access the memory tools use, backed by the live settings object
+   * (so reads see mid-turn writes) and persisted through the plugin's save path.
+   */
+  private memoryAccess(): MemoryAccess {
+    return {
+      read: () => this.getSettings().memory ?? "",
+      append: async (fact) => {
+        const settings = this.getSettings();
+        settings.memory = appendMemory(settings.memory ?? "", fact);
+        await this.saveSettings();
+        return settings.memory;
+      },
+    };
   }
 
   private createSubagentToolInstance(): AgentTool {

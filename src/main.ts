@@ -47,6 +47,7 @@ export default class AgenticChatPlugin extends Plugin {
       getSettings: () => this.settings,
       sessionManager,
       confirmToolCall: (request) => this.confirmToolCall(request),
+      saveSettings: () => this.saveSettings(),
     });
   }
 
