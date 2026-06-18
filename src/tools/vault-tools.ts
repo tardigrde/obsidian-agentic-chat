@@ -317,14 +317,14 @@ function createDeleteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof 
   return {
     name: "delete",
     label: "Delete file",
-    description: "Move a vault file to trash (recoverable). Respects the user's deleted-files setting.",
+    description: "Move a vault file to trash (recoverable).",
     parameters: DeleteParameters,
     executionMode: "sequential",
     execute: async (_id, params) => {
       const path = normalizeVaultPath(params.path);
       assertVisible(isIgnored, path);
       const file = getVaultFile(app, path);
-      await app.fileManager.trashFile(file);
+      await app.vault.trash(file, true);
       return textResult(`Moved ${path} to trash.`, { path });
     },
   };

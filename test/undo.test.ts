@@ -24,6 +24,7 @@ function makeApp(initial: Record<string, string> = {}) {
         files.set(f.path, content);
         return content;
       },
+      trash: async (f: TFile) => void files.delete(f.path),
       create: async (p: string, c: string) => {
         files.set(p, c);
         const file = new TFile();
@@ -39,7 +40,6 @@ function makeApp(initial: Record<string, string> = {}) {
         files.delete(f.path);
         files.set(np, c);
       },
-      trashFile: async (f: TFile) => void files.delete(f.path),
     },
   } as unknown as App;
   return { app, files };
