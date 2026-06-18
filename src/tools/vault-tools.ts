@@ -324,7 +324,7 @@ function createDeleteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof 
       const path = normalizeVaultPath(params.path);
       assertVisible(isIgnored, path);
       const file = getVaultFile(app, path);
-      await app.vault.trash(file, true);
+      await app.fileManager.trashFile(file);
       return textResult(`Moved ${path} to trash.`, { path });
     },
   };

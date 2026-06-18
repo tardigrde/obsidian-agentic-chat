@@ -40,6 +40,7 @@ function makeApp(initial: Record<string, string> = {}) {
         files.delete(f.path);
         files.set(np, c);
       },
+      trashFile: async (f: TFile) => void files.delete(f.path),
     },
   } as unknown as App;
   return { app, files };
