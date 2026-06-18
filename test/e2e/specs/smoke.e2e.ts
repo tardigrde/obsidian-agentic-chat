@@ -60,4 +60,30 @@ describe("agentic-chat smoke", function () {
     await chip.waitForExist();
     await expect(chip).toHaveText(/Welcome/);
   });
+
+  it("renders the context-window arc gauge in the toolbar (NB1)", async function () {
+    // The fill element stays a <progress> (.agentic-chat-ctx-bar); its arc look is
+    // pure CSS. It exists in the toolbar from first render (hidden until a fill is
+    // known), so assert existence, not visibility.
+    await expect($(".agentic-chat-toolbar-left .agentic-chat-ctx-bar")).toExist();
+  });
+
+  it("renders a dynamic effort knob clamped to supported levels", async function () {
+    // Dynamic effort (shipped this batch): the knob only offers levels the active
+    // model supports. The rendered value must be a member of the canonical set.
+    const knob = await $(".agentic-chat-effort");
+    await knob.waitForExist();
+    await expect($(".agentic-chat-effort-label")).toHaveText("Effort");
+    const value = (await $(".agentic-chat-effort-value").getText()).trim();
+    const KNOWN_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+    if (!KNOWN_LEVELS.includes(value)) {
+      throw new Error(`effort knob rendered an unknown level: "${value}"`);
+    }
+    // Cycling must keep it within the supported set (no crash, no invalid level).
+    await knob.click();
+    const next = (await $(".agentic-chat-effort-value").getText()).trim();
+    if (!KNOWN_LEVELS.includes(next)) {
+      throw new Error(`effort knob cycled to an unknown level: "${next}"`);
+    }
+  });
 });

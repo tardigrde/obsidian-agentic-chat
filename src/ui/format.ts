@@ -62,10 +62,25 @@ export function formatCost(total: number): string {
   return total < 0.01 ? `$${total.toFixed(4)}` : `$${total.toFixed(2)}`;
 }
 
+/**
+ * Prompt-cache hit ratio as a rounded percentage, or null when nothing was
+ * cacheable. cacheRead = tokens served from cache (hits); the base is the full
+ * prompt-token bill (input + cacheRead + cacheWrite), matching OpenRouter's
+ * prompt_tokens decomposition. Returns null (not 0%) so we render nothing before
+ * a cached turn exists rather than advertising an empty cache.
+ */
+export function cacheHitPercent(usage: Usage): number | null {
+  const base = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+  if (base <= 0) return null;
+  return Math.round(((usage.cacheRead ?? 0) / base) * 100);
+}
+
 export function formatUsage(usage: Usage): string {
   const total = usage.cost?.total ?? 0;
   const cost = total > 0 ? ` · ${formatCost(total)}` : "";
-  return `${usage.totalTokens} tokens${cost}`;
+  const hit = cacheHitPercent(usage);
+  const cache = hit === null ? "" : ` · ${hit}% cache`;
+  return `${usage.totalTokens} tokens${cache}${cost}`;
 }
 
 /**

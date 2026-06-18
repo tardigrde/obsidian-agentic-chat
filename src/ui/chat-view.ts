@@ -21,7 +21,7 @@ import { SessionListModal } from "./session-list-modal";
 import { FolderSuggestModal } from "./folder-suggest";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
 import { AssistantBubble } from "./assistant-bubble";
-import { formatCost, formatUsage, safeJson, shortModelLabel } from "./format";
+import { cacheHitPercent, formatCost, formatUsage, safeJson, shortModelLabel } from "./format";
 import { contextLevel, contextPercent } from "./context-bar";
 import {
   assistantUsage,
@@ -588,34 +588,61 @@ export class ChatView extends ItemView {
     this.registerDomEvent(composer, "drop", (event) => this.handleDrop(event));
   }
 
-  /** Turn a dropped note/folder into a context attachment instead of opening it. */
+  /**
+   * Turn dropped notes/folders into context attachments instead of opening them.
+   * Multi-select drops are supported — every dragged entry attaches at once. Only
+   * real vault entries are intercepted; otherwise the drop falls through to Obsidian.
+   */
   private handleDrop(event: DragEvent): void {
-    const file = this.resolveDroppedEntry(event);
-    // Only intercept real vault entries; otherwise let Obsidian handle the drop.
-    if (!file) return;
+    const entries = this.resolveDroppedEntries(event);
+    if (!entries.length) return;
     event.preventDefault();
     event.stopPropagation();
-    this.addAttachment(file instanceof TFolder ? `${FOLDER_PREFIX}${file.path}` : file.path);
+    // Count vision-blocked images across the whole batch so we post one aggregated
+    // notice instead of one toast per file (the single-entry addAttachment path
+    // still self-notifies for non-drop attachers).
+    let skippedImages = 0;
+    for (const entry of entries) {
+      const path = entry instanceof TFolder ? `${FOLDER_PREFIX}${entry.path}` : entry.path;
+      if (isImagePath(path) && !this.service.supportsImages()) {
+        skippedImages++;
+        continue;
+      }
+      this.pushAttachment(path);
+    }
+    if (skippedImages > 0) {
+      new Notice(
+        skippedImages === 1
+          ? "This model can't read images. Switch to a vision model to attach images."
+          : `${skippedImages} images skipped — this model can't read images. Switch to a vision model.`,
+      );
+    }
   }
 
   /**
-   * Resolve a drop to a vault file/folder. Obsidian's file-explorer and editor
-   * drags no longer put an `obsidian://` URL on the dataTransfer, so we first ask
-   * the internal drag manager for the entry being dragged, then fall back to
-   * parsing a path/URL out of the drop payload (external or older drags).
+   * Resolve a drop to the vault files/folders it carries. Obsidian's file-explorer
+   * and editor drags no longer put an `obsidian://` URL on the dataTransfer, so we
+   * first ask the internal drag manager for the entries being dragged (a single
+   * `file` or a multi-select `files` array), then fall back to parsing a path/URL
+   * out of the drop payload (external or older drags, single entry only).
    */
-  private resolveDroppedEntry(event: DragEvent): TFile | TFolder | null {
+  private resolveDroppedEntries(event: DragEvent): Array<TFile | TFolder> {
     const dragManager = (this.app as unknown as { dragManager?: ObsidianDragManager }).dragManager;
     const dragged = dragManager?.draggable;
-    const fromDrag = dragged?.file ?? dragged?.files?.[0];
-    if (fromDrag instanceof TFile || fromDrag instanceof TFolder) return fromDrag;
+    const candidates: unknown[] = [];
+    if (dragged?.file) candidates.push(dragged.file);
+    if (Array.isArray(dragged?.files)) candidates.push(...dragged.files);
+    const fromDrag = candidates.filter(
+      (entry): entry is TFile | TFolder => entry instanceof TFile || entry instanceof TFolder,
+    );
+    if (fromDrag.length) return fromDrag;
 
     const data =
       event.dataTransfer?.getData("text/plain") || event.dataTransfer?.getData("text/uri-list") || "";
     const path = parseDroppedVaultPath(data, this.app.vault.getName());
-    if (!path) return null;
+    if (!path) return [];
     const file = this.app.vault.getAbstractFileByPath(path);
-    return file instanceof TFile || file instanceof TFolder ? file : null;
+    return file instanceof TFile || file instanceof TFolder ? [file] : [];
   }
 
   private renderEmptyState(): void {
@@ -851,6 +878,9 @@ export class ChatView extends ItemView {
     this.contextPercentEl.show();
     this.contextBarEl.setAttr("aria-label", `Context window ${percent}% used`);
     this.contextBarEl.value = percent;
+    // Drive the CSS arc/gauge fill (conic-gradient ring) off the same percent
+    // the helpers already compute — no new logic, just expose it to the style.
+    this.contextBarEl.style.setProperty("--ctx-pct", String(percent));
     this.contextBarEl.removeClasses(["is-ok", "is-warn", "is-high"]);
     this.contextBarEl.addClass(`is-${contextLevel(fraction)}`);
     this.contextPercentEl.setText(`${percent}%`);
@@ -1444,14 +1474,17 @@ export class ChatView extends ItemView {
   private showUsage(): void {
     const usage = this.service.getSessionUsage();
     this.clearEmptyState();
+    // Build the rows as a tuple array (renderInfoMessage wants [string, string][]),
+    // inserting the cache row only once a cached prompt has shown up.
+    const rows: Array<[string, string]> = [
+      ["Tokens", String(usage.totalTokens)],
+      ["Cost", formatCost(usage.cost?.total ?? 0)],
+    ];
+    const cacheHit = cacheHitPercent(usage);
+    if (cacheHit !== null) rows.splice(1, 0, ["Cache", `${cacheHit}% prompt-cache hit`]);
     this.renderInfoMessage(
       "Usage",
-      usage.totalTokens > 0
-        ? [
-            ["Tokens", String(usage.totalTokens)],
-            ["Cost", formatCost(usage.cost?.total ?? 0)],
-          ]
-        : [["Usage", "No usage recorded yet for this conversation."]],
+      usage.totalTokens > 0 ? rows : [["Usage", "No usage recorded yet for this conversation."]],
     );
   }
 
@@ -1680,14 +1713,22 @@ export class ChatView extends ItemView {
   // --- attachments ---
 
   private addAttachment(entry: string): void {
-    if (this.attachments.includes(entry)) return;
     // Image attachments only make sense for a vision-capable model.
     if (isImagePath(entry) && !this.service.supportsImages()) {
       new Notice("This model can't read images. Switch to a vision model to attach images.");
       return;
     }
+    this.pushAttachment(entry);
+  }
+
+  /** Dedup-aware push; returns true when the attachment was newly added. The
+   * multi-file drop path checks vision support itself (to aggregate the notice)
+   * and routes through here, skipping the per-entry guard in addAttachment. */
+  private pushAttachment(entry: string): boolean {
+    if (this.attachments.includes(entry)) return false;
     this.attachments.push(entry);
     this.renderChips();
+    return true;
   }
 
   /**

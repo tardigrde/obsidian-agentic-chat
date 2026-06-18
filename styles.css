@@ -853,7 +853,11 @@
   animation: agentic-chat-spin 0.7s linear infinite;
 }
 
-/* --- Context-window progress bar + percent readout --- */
+/* --- Context-window arc gauge + percent readout --- */
+/* The element stays a <progress> for semantics/a11y, but its look is an arc:
+   a conic-gradient ring whose fill is the --ctx-pct percent (set by
+   syncContextBar off the unchanged contextPercent helper), with the center
+   masked out. Color tracks the fill level via --ctx-fill. */
 
 .agentic-chat-ctx-percent {
   font-size: var(--font-ui-smaller);
@@ -870,46 +874,30 @@
 
 .agentic-chat-ctx-bar {
   appearance: none;
+  -webkit-appearance: none;
   flex: 0 0 auto;
-  width: 40px;
-  height: 5px;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-l);
-  background-color: var(--background-modifier-border);
-  overflow: hidden;
+  border-radius: 50%;
+  --ctx-fill: var(--color-green);
+  background: conic-gradient(
+    var(--ctx-fill) calc(var(--ctx-pct, 0) * 1%),
+    var(--background-modifier-border) 0
+  );
+  /* Knock the center out so the fill reads as a thin ring, not a solid disc. */
+  -webkit-mask: radial-gradient(circle, transparent 56%, #000 58%);
+  mask: radial-gradient(circle, transparent 56%, #000 58%);
 }
 
-.agentic-chat-ctx-bar::-webkit-progress-bar {
-  background-color: var(--background-modifier-border);
-  border-radius: inherit;
+.agentic-chat-ctx-bar.is-warn {
+  --ctx-fill: var(--color-yellow);
 }
 
-.agentic-chat-ctx-bar::-webkit-progress-value {
-  background-color: var(--color-green);
-  border-radius: inherit;
-  transition: inline-size 0.2s ease;
-}
-
-.agentic-chat-ctx-bar::-moz-progress-bar {
-  background-color: var(--color-green);
-  border-radius: inherit;
-  transition: inline-size 0.2s ease;
-}
-
-.agentic-chat-ctx-bar.is-warn::-webkit-progress-value {
-  background-color: var(--color-yellow);
-}
-
-.agentic-chat-ctx-bar.is-warn::-moz-progress-bar {
-  background-color: var(--color-yellow);
-}
-
-.agentic-chat-ctx-bar.is-high::-webkit-progress-value {
-  background-color: var(--color-red);
-}
-
-.agentic-chat-ctx-bar.is-high::-moz-progress-bar {
-  background-color: var(--color-red);
+.agentic-chat-ctx-bar.is-high {
+  --ctx-fill: var(--color-red);
 }
 
 /* --- Model pill --- */
