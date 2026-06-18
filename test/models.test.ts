@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildModel, formatContextWindow, listOpenRouterModels, ModelListError, type ModelConfig } from "../src/llm/models";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import {
+  buildModel,
+  clampThinkingLevel,
+  formatContextWindow,
+  listOpenRouterModels,
+  ModelListError,
+  supportedThinkingLevels,
+  type ModelConfig,
+} from "../src/llm/models";
 
 const PRIVACY = { denyDataCollection: true, requireZDR: true, allowFallbacks: false };
 
@@ -59,6 +68,70 @@ describe("formatContextWindow", () => {
     expect(formatContextWindow(null)).toBe("");
     expect(formatContextWindow(0)).toBe("");
     expect(formatContextWindow(undefined)).toBe("");
+  });
+});
+
+describe("supportedThinkingLevels", () => {
+  it("offers only off for a non-reasoning model", () => {
+    const ollama = buildModel(config({ provider: "ollama" }));
+    expect(supportedThinkingLevels(ollama)).toEqual(["off"]);
+  });
+
+  it("offers the full ladder for a reasoning model with no level map", () => {
+    expect(supportedThinkingLevels({ reasoning: true })).toEqual([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+  });
+
+  it("drops levels the thinkingLevelMap marks null (unsupported)", () => {
+    const map: Partial<Record<ThinkingLevel, string | null>> = {
+      minimal: "low",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: null,
+    };
+    expect(supportedThinkingLevels({ reasoning: true, thinkingLevelMap: map })).toEqual([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
+  });
+
+  it("keeps missing map entries (provider default applies)", () => {
+    const map: Partial<Record<ThinkingLevel, string | null>> = { xhigh: null };
+    const levels = supportedThinkingLevels({ reasoning: true, thinkingLevelMap: map });
+    expect(levels).not.toContain("xhigh");
+    expect(levels).toContain("high");
+    expect(levels[0]).toBe("off");
+  });
+});
+
+describe("clampThinkingLevel", () => {
+  it("returns the requested level when supported", () => {
+    expect(clampThinkingLevel("high", ["off", "low", "high"])).toBe("high");
+  });
+
+  it("clamps downward to the nearest supported level", () => {
+    // xhigh unsupported → fall to high
+    expect(clampThinkingLevel("xhigh", ["off", "low", "high"])).toBe("high");
+    // medium unsupported → fall to low
+    expect(clampThinkingLevel("medium", ["off", "low", "high"])).toBe("low");
+  });
+
+  it("falls back to off when nothing equal-or-lower is supported", () => {
+    expect(clampThinkingLevel("low", ["off", "high"])).toBe("off");
+  });
+
+  it("always resolves off for a non-reasoning model's supported set", () => {
+    expect(clampThinkingLevel("xhigh", ["off"])).toBe("off");
   });
 });
 

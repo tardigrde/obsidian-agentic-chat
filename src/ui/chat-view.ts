@@ -44,6 +44,7 @@ import {
 } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
 import { parseDroppedVaultPath } from "./drag-drop";
+import { buildAttachmentSection } from "./attachments";
 import { resolveCommand, visibleCommands } from "./commands";
 import { normalizeFolderPath } from "../vault/path";
 import { isSummaryMessage } from "../agent/compaction";
@@ -1245,9 +1246,14 @@ export class ChatView extends ItemView {
       return;
     }
     const lower = arg.toLowerCase();
-    const level = THINKING_LEVELS.find((id) => id === lower);
+    const levels = this.service.getActiveThinkingLevels();
+    const level = levels.find((id) => id === lower) ?? THINKING_LEVELS.find((id) => id === lower);
     if (!level) {
       this.renderErrorMessage(`Unknown effort "${arg}". Options: ${THINKING_LEVELS.join(", ")}.`);
+      return;
+    }
+    if (!levels.includes(level)) {
+      this.renderErrorMessage(`"${level}" isn't supported by the current model. Options: ${levels.join(", ")}.`);
       return;
     }
     this.chooseEffort(level);
@@ -1256,11 +1262,12 @@ export class ChatView extends ItemView {
   /** Clickable effort picker. The subtitle warns that switching costs a one-time cache miss. */
   private showEffortList(): void {
     const current = this.service.getActiveThinkingLevel();
+    const levels = this.service.getActiveThinkingLevels();
     this.renderActionList(
       "Effort",
       `Reasoning effort for your next message · current: ${current}. ` +
         "Changing it re-processes the prompt once (a cache miss) — affects cost.",
-      THINKING_LEVELS.map((id) => ({
+      levels.map((id) => ({
         label: id,
         detail: id === current ? "current" : "",
         icon: "gauge",
@@ -1281,12 +1288,14 @@ export class ChatView extends ItemView {
     ]);
   }
 
-  /** Composer effort knob: cycle to the next reasoning level for the next message only. */
+  /** Composer effort knob: cycle to the next supported reasoning level for the next message only. */
   private cycleEffort(): void {
     if (this.service.isStreaming()) return;
+    const levels = this.service.getActiveThinkingLevels();
     const current = this.service.getActiveThinkingLevel();
-    const index = THINKING_LEVELS.indexOf(current);
-    const next = THINKING_LEVELS[(index + 1) % THINKING_LEVELS.length];
+    const base = levels.length > 0 ? levels : THINKING_LEVELS;
+    const index = base.indexOf(current);
+    const next = base[(index + 1) % base.length];
     // setThinkingOverride notifies, so syncChrome re-renders the knob.
     this.service.setThinkingOverride(next);
   }
@@ -1887,6 +1896,7 @@ export class ChatView extends ItemView {
         const folder = folderPath === "/" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(folderPath);
         if (folder instanceof TFolder) {
           const listing = folder.children
+            .filter((child) => !this.service.isPathIgnored(child.path))
             .map((child) => (child instanceof TFolder ? `${child.name}/` : child.name))
             .join("\n");
           sections.push(`Folder listing for "${folderPath}":\n${listing || "(empty)"}`);
@@ -1895,19 +1905,44 @@ export class ChatView extends ItemView {
         // Images go to the model as multimodal parts (loadImageAttachments), not text.
         continue;
       } else {
-        const file = this.app.vault.getAbstractFileByPath(entry);
-        if (file instanceof TFile) {
-          const content = await this.app.vault.cachedRead(file);
-          sections.push(`Contents of note "${entry}":\n\n${content}`);
-        }
+        sections.push(await this.loadAttachmentSection(entry));
       }
     }
     if (sections.length === 0) return "";
     return `<context>\nThe user attached the following from their vault:\n\n${sections.join("\n\n---\n\n")}\n</context>`;
   }
 
+  /**
+   * Serialize an explicit note attachment. A note is inlined in full only up to a
+   * char budget; larger notes and ignore-listed (private) paths become path-only
+   * references — the model opens them with `read` if it needs them — so a stack
+   * of attachments can't dump hundreds of thousands of tokens into the context,
+   * and an attachment in a restricted folder never leaks its contents.
+   */
+  private async loadAttachmentSection(entry: string): Promise<string> {
+    const restricted = this.service.isPathIgnored(entry);
+    if (restricted) {
+      return buildAttachmentSection({ path: entry, full: null, restricted: true });
+    }
+    const file = this.app.vault.getAbstractFileByPath(entry);
+    let full: string | null = null;
+    if (file instanceof TFile) {
+      try {
+        full = await this.app.vault.cachedRead(file);
+      } catch {
+        full = null;
+      }
+    }
+    return buildAttachmentSection({ path: entry, full });
+  }
+
   /** Read the active note and serialize it via the truncation ladder (full → visible range → path). */
   private async loadActiveNoteSection(path: string): Promise<string> {
+    // An active note in an ignore-listed (private) folder is never inlined — only
+    // a withheld reference — so focusing a blacklisted note can't leak its body.
+    if (this.service.isPathIgnored(path)) {
+      return buildAttachmentSection({ path, full: null, restricted: true });
+    }
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) {
       return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });

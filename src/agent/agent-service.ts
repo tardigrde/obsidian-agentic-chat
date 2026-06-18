@@ -9,15 +9,16 @@ import {
   type StreamFn,
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import { streamSimple, type ImageContent, type Usage } from "@earendil-works/pi-ai";
+import { streamSimple, type ImageContent, type Model, type Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider, activeModelConfig } from "../settings";
-import { buildModel, type ModelConfig } from "../llm/models";
+import { buildModel, clampThinkingLevel, supportedThinkingLevels, type ModelConfig } from "../llm/models";
 import { createVaultTools, MUTATING_TOOLS } from "../tools/vault-tools";
 import { createSubagentTool, SUBAGENT_TOOL_NAME, normalizeTasks } from "../tools/subagent-tool";
 import { createObsidianFetcher, type WebFetcher } from "../tools/web-fetch";
 import { createWebTools } from "../tools/web-tools";
 import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "../vault/ignore";
+import { ReadMemo } from "../vault/read-memo";
 import { deriveAutoName, ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
 import { buildSkillInvocation, loadVaultSkills } from "../skills/skills";
 import { builtinSkills } from "../skills/builtin-skills";
@@ -119,6 +120,8 @@ export class AgentService {
   private modelOverride: string | null = null;
   /** One-shot thinking level for the next prompt only, then reverted (per-turn `/effort`). */
   private thinkingOverride: ThinkingLevel | null = null;
+  /** De-dupes repeat `read` calls so re-reading can't double a file into the context window. */
+  private readonly readMemo = new ReadMemo();
 
   private readonly eventListeners = new Set<EventListener>();
   private readonly changeListeners = new Set<ChangeListener>();
@@ -217,7 +220,21 @@ export class AgentService {
 
   /** The thinking level the next prompt will actually use (override if queued, else settings). */
   getActiveThinkingLevel(): ThinkingLevel {
-    return this.thinkingOverride ?? this.getSettings().thinkingLevel;
+    return this.thinkingLevelForTurn(this.getSettings());
+  }
+
+  /**
+   * Reasoning levels the active model actually supports, in UI order. Drives the
+   * composer effort knob and `/effort` so the UI never offers a level (e.g.
+   * `xhigh`) the current model can't take.
+   */
+  getActiveThinkingLevels(): ThinkingLevel[] {
+    return supportedThinkingLevels(this.activeModelForTurn());
+  }
+
+  /** The resolved pi-ai model object the next prompt will stream through. */
+  private activeModelForTurn(): Model<"openai-completions"> {
+    return buildModel(this.modelConfigForTurn(this.getSettings()));
   }
 
   getProfiles(): AgentProfile[] {
@@ -326,6 +343,16 @@ export class AgentService {
     return !!this.agent?.state.model?.input?.includes("image");
   }
 
+  /**
+   * Whether a vault-relative path is ignore-listed (invisible to the agent's
+   * tools). Used by the composer so an attachment — especially the auto-attached
+   * active note — in a private/ignored folder never leaks its contents into the
+   * prompt; only a path-only reference (or nothing) is surfaced.
+   */
+  isPathIgnored(path: string): boolean {
+    return this.ignoreMatcher(path);
+  }
+
   async invokeSkill(name: string, args?: string): Promise<void> {
     const skill = this.skills.find((item) => item.name === name);
     if (!skill) {
@@ -384,6 +411,7 @@ export class AgentService {
       this.subagentUsage = emptyUsage();
     this.undoStack = [];
     this.pendingUndo.clear();
+      this.readMemo.clear();
       await this.reloadResources();
       this.replaceAgent([]);
       this.errorMessage = undefined;
@@ -403,6 +431,7 @@ export class AgentService {
       this.subagentUsage = emptyUsage();
     this.undoStack = [];
     this.pendingUndo.clear();
+      this.readMemo.clear();
       await this.reloadResources();
       this.replaceAgent(this.sessionManager.buildSessionContext().messages);
       this.errorMessage = undefined;
@@ -456,6 +485,7 @@ export class AgentService {
     this.subagentUsage = emptyUsage();
     this.undoStack = [];
     this.pendingUndo.clear();
+    this.readMemo.clear();
     this.replaceAgent(messages);
     if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
     this.errorMessage = undefined;
@@ -648,8 +678,18 @@ export class AgentService {
   }
 
   private composeSystemPrompt(settings: AgenticChatSettings): string {
-    const overlays = [...promptOverlays(settings), formatSubagentsForSystemPrompt(this.profiles)];
+    const overlays = [this.selfAwarenessOverlay(), ...promptOverlays(settings), formatSubagentsForSystemPrompt(this.profiles)];
     return buildSystemPrompt(settings.systemPrompt, this.skills, overlays);
+  }
+
+  /**
+   * A short self-awareness note: the plugin name and the model id the next turn
+   * will use, so the agent can answer "what are you / which model are you"
+   * accurately instead of guessing. Overlays compose in order; this leads so the
+   * identity is stated once, up front.
+   */
+  private selfAwarenessOverlay(): string {
+    return `Identity: you are the "agentic-chat" Obsidian plugin. You are currently using the model "${this.getActiveModelId()}".`;
   }
 
   /**
@@ -657,7 +697,7 @@ export class AgentService {
    * plus the subagent tool when profiles exist.
    */
   private buildParentTools(): AgentTool[] {
-    const tools = createVaultTools(this.app, this.ignoreMatcher);
+    const tools = createVaultTools(this.app, this.ignoreMatcher, this.readMemo);
     tools.push(...createWebTools(this.getSettings().web, this.webFetch));
     if (this.profiles.length > 0) tools.push(this.createSubagentToolInstance());
     return tools;
@@ -685,7 +725,7 @@ export class AgentService {
     // (per-tool "deny") must be stripped here — otherwise an allowlisted child could
     // bypass that deny in safe/yolo. resolveModePolicy gives the same precedence the
     // parent gate uses (plan > yolo > per-tool override > settings default).
-    const allowedVaultTools = createVaultTools(this.app, this.ignoreMatcher).filter(
+    const allowedVaultTools = createVaultTools(this.app, this.ignoreMatcher, new ReadMemo()).filter(
       (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
     );
     const tools = filterChildTools(allowedVaultTools, profile.toolAllowlist ?? [], readOnly);
@@ -774,9 +814,10 @@ export class AgentService {
     return config;
   }
 
-  /** The thinking level for the next turn: the queued one-shot override, else settings. */
+  /** The thinking level for the next turn: the queued one-shot override, else settings, clamped to what the model supports. */
   private thinkingLevelForTurn(settings: AgenticChatSettings): ThinkingLevel {
-    return this.thinkingOverride ?? settings.thinkingLevel;
+    const requested = this.thinkingOverride ?? settings.thinkingLevel;
+    return clampThinkingLevel(requested, supportedThinkingLevels(this.activeModelForTurn()));
   }
 
   private async refreshConfiguration(): Promise<void> {

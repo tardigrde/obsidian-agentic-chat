@@ -12,6 +12,17 @@ describe("buildSystemPrompt", () => {
     expect(buildSystemPrompt("Base.", [], ["", "  "])).toBe("Base.");
   });
 
+  it("bakes self-awareness and context-guardrail guidance into the default prompt", () => {
+    // Self-awareness: the agent knows it is the agentic-chat Obsidian plugin.
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("agentic-chat");
+    // Attachments can be path-only references; the model must read them rather than assume.
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("path-only reference");
+    // Don't re-read what's already in context; paginate large reads.
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("offset/limit");
+    // Ignore-listed (private) paths are off-limits.
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("ignore-listed");
+  });
+
   it("appends non-blank overlays after the base prompt", () => {
     const out = buildSystemPrompt("Base.", [], [MODES.plan.promptOverlay, OUTPUT_STYLES.learning.promptOverlay]);
     expect(out.startsWith("Base.")).toBe(true);
