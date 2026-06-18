@@ -30,6 +30,10 @@ project rules); heavier formatting/import rules are the `D2` roadmap item.
 
 CI (`.github/workflows/ci.yml`) runs exactly: `typecheck`, `lint`, `test`, `build` on **Node 22** (pi-\* require `>=22.19`). Keep `tsc` strict-clean and eslint clean. The e2e suite is **not** in CI.
 
+For PR work, completion means the PR CI is green and all CodeRabbit and Gemini
+review comments are either fixed or explicitly dismissed with a documented
+reason. Each automated reviewer may be retriggered at most twice.
+
 ## Architecture (the parts that span files)
 
 **`main.ts` → `AgentService` → pi `Agent`.** `main.ts` registers the `ChatView`, settings tab, commands, and constructs the single `AgentService` (`src/agent/agent-service.ts`). `AgentService` is the hub: it wraps pi's `Agent` and feeds it everything — a `streamFn` (pi-ai `streamSimple` + request tuning + OpenRouter attribution headers), the model, vault tools, a `beforeToolCall` approval gate, and a JSONL session store. It fans pi events out to the UI via `onEvent`/`onChange`. To change agent behavior you almost always edit `AgentService`, not the UI.

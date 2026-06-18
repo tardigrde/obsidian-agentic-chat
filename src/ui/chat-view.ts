@@ -162,8 +162,7 @@ export class ChatView extends ItemView {
   private modelPillEl!: HTMLElement;
   private effortKnobEl!: HTMLElement;
   private usageEl!: HTMLElement;
-  private contextBarEl!: HTMLElement;
-  private contextFillEl!: HTMLElement;
+  private contextBarEl!: HTMLProgressElement;
   private contextPercentEl!: HTMLElement;
   private workingEl!: HTMLElement;
   private folderButtonEl!: HTMLButtonElement;
@@ -530,11 +529,10 @@ export class ChatView extends ItemView {
       }
     });
 
-    this.contextBarEl = toolbarLeft.createDiv({
+    this.contextBarEl = toolbarLeft.createEl("progress", {
       cls: "agentic-chat-ctx-bar",
-      attr: { "aria-label": "Context window used", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100" },
+      attr: { "aria-label": "Context window used", max: "100", value: "0" },
     });
-    this.contextFillEl = this.contextBarEl.createDiv({ cls: "agentic-chat-ctx-fill" });
     this.contextPercentEl = toolbarLeft.createSpan({ cls: "agentic-chat-ctx-percent" });
     this.contextBarEl.hide();
     this.contextPercentEl.hide();
@@ -575,7 +573,7 @@ export class ChatView extends ItemView {
     this.stopButton = buttonRow.createEl("button", { cls: ["agentic-chat-stop", "mod-warning"], text: "Stop" });
     this.stopButton.hide();
     this.stopButton.addEventListener("click", () => this.service.abort());
-    this.sendButton = buttonRow.createEl("button", { cls: "mod-cta", text: "Send" });
+    this.sendButton = buttonRow.createEl("button", { cls: ["agentic-chat-send", "mod-cta"], text: "Send" });
     this.sendButton.addEventListener("click", () => void this.submit());
 
     // Token/cost readout on its own muted line; hidden until there's usage.
@@ -851,10 +849,9 @@ export class ChatView extends ItemView {
     this.contextBarEl.show();
     this.contextPercentEl.show();
     this.contextBarEl.setAttr("aria-label", `Context window ${percent}% used`);
-    this.contextBarEl.setAttr("aria-valuenow", String(percent));
-    this.contextFillEl.style.width = `${percent}%`;
-    this.contextFillEl.removeClasses(["is-ok", "is-warn", "is-high"]);
-    this.contextFillEl.addClass(`is-${contextLevel(fraction)}`);
+    this.contextBarEl.value = percent;
+    this.contextBarEl.removeClasses(["is-ok", "is-warn", "is-high"]);
+    this.contextBarEl.addClass(`is-${contextLevel(fraction)}`);
     this.contextPercentEl.setText(`${percent}%`);
     this.contextPercentEl.removeClasses(["is-ok", "is-warn", "is-high"]);
     this.contextPercentEl.addClass(`is-${contextLevel(fraction)}`);
@@ -890,7 +887,7 @@ export class ChatView extends ItemView {
 
   /** Notify when a turn finishes while the user is working elsewhere. */
   private notifyTurnComplete(): void {
-    if (this.leaf === this.app.workspace.activeLeaf) return;
+    if (this.app.workspace.getActiveViewOfType(ChatView) === this) return;
     this.notifier.notify("agentFinished", "Agentic chat finished responding.");
   }
 

@@ -1,4 +1,5 @@
 import { getModels, type Model, type OpenAICompletionsCompat, type OpenRouterRouting } from "@earendil-works/pi-ai";
+import { requestUrl } from "obsidian";
 
 /** Provider routing constraints enforced on every OpenRouter request. */
 export interface PrivacySettings {
@@ -140,39 +141,51 @@ export async function listOpenRouterModels(
     denyDataCollection?: boolean;
   },
 ): Promise<OpenRouterModelInfo[]> {
-  const fetchImpl = options?.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const baseUrl = (options?.baseUrl ?? OPENROUTER_BASE_URL).replace(/\/$/, "");
   const query = new URLSearchParams();
   if (options?.zdr) query.set("zdr", "true");
   if (options?.denyDataCollection) query.set("data_collection", "deny");
   const suffix = query.toString();
   const url = `${baseUrl}/models${suffix ? `?${suffix}` : ""}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_LIST_TIMEOUT_MS);
-  let response: Response;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_LIST_TIMEOUT_MS;
+  let status: number;
+  let payload: {
+    data?: Array<{ id: string; name?: string; context_length?: number; supported_parameters?: string[] }>;
+  } | null;
   try {
-    response = await fetchImpl(url, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: controller.signal,
-    });
+    if (options?.fetchImpl) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await options.fetchImpl(url, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: controller.signal,
+        });
+        status = response.status;
+        payload = await response.json();
+      } finally {
+        clearTimeout(timer);
+      }
+    } else {
+      const response = await withTimeout(
+        requestUrl({
+          url,
+          headers: { Authorization: `Bearer ${apiKey}` },
+          throw: false,
+        }),
+        timeoutMs,
+      );
+      status = response.status;
+      payload = response.json as typeof payload;
+    }
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (error instanceof RequestTimeoutError || (error instanceof DOMException && error.name === "AbortError")) {
       throw new ModelListError("Timed out while listing models.", 408);
     }
     throw new ModelListError(`Failed to list models: ${(error as Error).message}`);
-  } finally {
-    clearTimeout(timer);
   }
-  if (!response.ok) {
-    throw new ModelListError(`Failed to list models (status ${response.status}).`, response.status);
-  }
-  let payload: {
-    data?: Array<{ id: string; name?: string; context_length?: number; supported_parameters?: string[] }>;
-  };
-  try {
-    payload = await response.json();
-  } catch (error) {
-    throw new ModelListError(`Failed to parse model list: ${(error as Error).message}`);
+  if (status < 200 || status >= 300) {
+    throw new ModelListError(`Failed to list models (status ${status}).`, status);
   }
   return (payload?.data ?? []).map((model) => ({
     id: model.id,
@@ -180,6 +193,22 @@ export async function listOpenRouterModels(
     contextLength: model.context_length ?? null,
     supportsTools: (model.supported_parameters ?? []).includes("tools"),
   }));
+}
+
+class RequestTimeoutError extends Error {}
+
+async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new RequestTimeoutError()), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 // Keep the OpenAICompletionsCompat type referenced so downstream imports resolve.

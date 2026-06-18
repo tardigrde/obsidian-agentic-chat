@@ -52,6 +52,13 @@ export class FakeVault {
     entry.content = content;
   }
 
+  async process(file: TFile, fn: (content: string) => string): Promise<string> {
+    const entry = this.files.get(file.path);
+    if (!entry) throw new Error(`File not found: ${file.path}`);
+    entry.content = fn(entry.content);
+    return entry.content;
+  }
+
   async append(file: TFile, content: string): Promise<void> {
     const entry = this.files.get(file.path);
     if (!entry) throw new Error(`File not found: ${file.path}`);

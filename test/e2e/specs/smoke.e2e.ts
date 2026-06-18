@@ -15,15 +15,14 @@ async function openChat(): Promise<void> {
   await $(".agentic-chat-view").waitForExist();
 }
 
-/** Type a slash command and submit it, dismissing the autocomplete popup first so
- *  Enter submits the line instead of selecting a suggestion. */
+/** Type a slash command and submit it through the explicit composer control.
+ * Clicking avoids version-specific WebDriver key synthesis differences while
+ * still exercising the same submit and slash-command route as Enter. */
 async function runSlashCommand(command: string): Promise<void> {
   const input = await $(".agentic-chat-input");
   await input.click();
   await input.setValue(command);
-  await browser.pause(300); // let the autocomplete debounce settle
-  await browser.keys("Escape"); // close the suggestion popup if it opened
-  await browser.keys("Enter"); // submit the command
+  await $(".agentic-chat-send").click();
 }
 
 describe("agentic-chat smoke", function () {

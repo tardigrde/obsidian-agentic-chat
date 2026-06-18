@@ -213,5 +213,5 @@ mocked unit tests can't.
 
 ## License
 
-[MIT](LICENSE)
-</content>
+[MIT](LICENSE). See also the [third-party notices](THIRD_PARTY_NOTICES.md) for
+bundled dependencies and adapted code.

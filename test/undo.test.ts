@@ -19,6 +19,11 @@ function makeApp(initial: Record<string, string> = {}) {
       cachedRead: async (f: TFile) => files.get(f.path) ?? "",
       read: async (f: TFile) => files.get(f.path) ?? "",
       modify: async (f: TFile, c: string) => void files.set(f.path, c),
+      process: async (f: TFile, fn: (content: string) => string) => {
+        const content = fn(files.get(f.path) ?? "");
+        files.set(f.path, content);
+        return content;
+      },
       create: async (p: string, c: string) => {
         files.set(p, c);
         const file = new TFile();
