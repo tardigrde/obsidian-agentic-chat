@@ -15,10 +15,16 @@ const forbiddenImports = [
   "@google/genai",
   "@mistralai/mistralai",
 ];
+const importedSpecifiers = [
+  ...bundle.matchAll(/\b(?:require|import)\s*\(\s*["']([^"']+)["']\s*\)/g),
+].map((match) => match[1]);
 
 if (!manifest.isDesktopOnly) {
   for (const specifier of forbiddenImports) {
-    if (bundle.includes(specifier)) {
+    const isForbidden = specifier.endsWith("/")
+      ? importedSpecifiers.some((imported) => imported.startsWith(specifier))
+      : importedSpecifiers.includes(specifier);
+    if (isForbidden) {
       failures.push(`main.js contains desktop-only or unused import: ${specifier}`);
     }
   }

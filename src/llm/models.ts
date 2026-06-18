@@ -179,7 +179,7 @@ export async function listOpenRouterModels(
       payload = response.json as typeof payload;
     }
   } catch (error) {
-    if (error instanceof RequestTimeoutError || (error instanceof DOMException && error.name === "AbortError")) {
+    if (error instanceof RequestTimeoutError || isAbortError(error)) {
       throw new ModelListError("Timed out while listing models.", 408);
     }
     throw new ModelListError(`Failed to list models: ${(error as Error).message}`);
@@ -196,6 +196,10 @@ export async function listOpenRouterModels(
 }
 
 class RequestTimeoutError extends Error {}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
+}
 
 async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
