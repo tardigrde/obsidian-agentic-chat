@@ -111,7 +111,7 @@ function makeService(
   const adapter = new MemoryAdapter();
   const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
   const service = new AgentService({
-    app: { vault: {}, workspace: {} } as unknown as App,
+    app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
     getSettings: () => settings,
     sessionManager,
     confirmToolCall,
@@ -174,7 +174,7 @@ describe("AgentService", () => {
     const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
     const makeTab = () =>
       new AgentService({
-        app: { vault: {}, workspace: {} } as unknown as App,
+        app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
         getSettings: () => settings,
         sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test"),
         confirmToolCall: async () => true,
@@ -425,7 +425,7 @@ describe("AgentService", () => {
     const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
     let summarizeCalls = 0;
     const service = new AgentService({
-      app: { vault: {}, workspace: {} } as unknown as App,
+      app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
       getSettings: () => settings,
       sessionManager,
       confirmToolCall: async () => true,
@@ -455,7 +455,7 @@ describe("AgentService", () => {
     // session from disk into a fresh service preserves the total and the count.
     const path = service.getSessionInfo()?.path as string;
     const reloaded = new AgentService({
-      app: { vault: {}, workspace: {} } as unknown as App,
+      app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
       getSettings: () => settings,
       sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test"),
       confirmToolCall: async () => true,

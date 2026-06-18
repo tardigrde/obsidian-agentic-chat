@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sliceTextByLines } from "../src/vault/truncate";
+import { readSizeGuardrail, READ_BULK_LIMIT, sliceTextByLines } from "../src/vault/truncate";
 
 const sample = "one\ntwo\nthree\nfour\nfive";
 
@@ -37,5 +37,28 @@ describe("sliceTextByLines", () => {
     expect(slice.text).toBe("");
     expect(slice.endLine).toBe(slice.startLine - 1);
     expect(slice.truncated).toBe(true);
+  });
+});
+
+describe("readSizeGuardrail", () => {
+  it("allows a small bulk read", () => {
+    expect(readSizeGuardrail({ path: "Note.md", size: 500 })).toBeNull();
+  });
+
+  it("refuses a bulk read above the limit with pagination guidance", () => {
+    const message = readSizeGuardrail({ path: "Big.md", size: READ_BULK_LIMIT + 1 });
+    expect(message).not.toBeNull();
+    expect(message).toContain("Big.md");
+    expect(message).toContain("offset/limit");
+  });
+
+  it("always allows a paginated read (offset or limit) regardless of size", () => {
+    expect(readSizeGuardrail({ path: "Big.md", size: 1_000_000, offset: 1 })).toBeNull();
+    expect(readSizeGuardrail({ path: "Big.md", size: 1_000_000, limit: 100 })).toBeNull();
+  });
+
+  it("treats an unknown size as no guardrail", () => {
+    expect(readSizeGuardrail({ path: "Note.md", size: 0 })).toBeNull();
+    expect(readSizeGuardrail({ path: "Note.md", size: Number.NaN })).toBeNull();
   });
 });

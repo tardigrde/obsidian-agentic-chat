@@ -5,7 +5,8 @@ import { applyExactEdits } from "../vault/edit";
 import { getParentPath, normalizeFolderPath, normalizeVaultPath } from "../vault/path";
 import type { IgnoreMatcher } from "../vault/ignore";
 import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../vault/search";
-import { formatTextSlice, sliceTextByLines, truncateToolOutput } from "../vault/truncate";
+import { alreadyReadMessage, type ReadMemo } from "../vault/read-memo";
+import { formatTextSlice, readSizeGuardrail, sliceTextByLines, truncateToolOutput } from "../vault/truncate";
 
 /** Tools that change the vault. Used to pick a default approval policy. */
 export const MUTATING_TOOLS = new Set(["write", "edit", "delete", "rename", "set_properties"]);
@@ -100,17 +101,17 @@ const SetPropertiesParameters = Type.Object({
  * listed, searched, or mutated, and report as "not found" so the model cannot
  * even infer their existence. Defaults to a permit-all matcher.
  */
-export function createVaultTools(app: App, isIgnored: IgnoreMatcher = () => false): AgentTool[] {
+export function createVaultTools(app: App, isIgnored: IgnoreMatcher = () => false, memo?: ReadMemo): AgentTool[] {
   return [
-    createReadTool(app, isIgnored),
-    createWriteTool(app, isIgnored),
-    createEditTool(app, isIgnored),
+    createReadTool(app, isIgnored, memo),
+    createWriteTool(app, isIgnored, memo),
+    createEditTool(app, isIgnored, memo),
     createLsTool(app, isIgnored),
     createFindTool(app, isIgnored),
     createGrepTool(app, isIgnored),
     createActiveNoteTool(app, isIgnored),
-    createRenameTool(app, isIgnored),
-    createDeleteTool(app, isIgnored),
+    createRenameTool(app, isIgnored, memo),
+    createDeleteTool(app, isIgnored, memo),
     createBacklinksTool(app, isIgnored),
     createLinksTool(app, isIgnored),
     createLocalGraphTool(app, isIgnored),
@@ -119,7 +120,7 @@ export function createVaultTools(app: App, isIgnored: IgnoreMatcher = () => fals
   ];
 }
 
-function createReadTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof ReadParameters> {
+function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof ReadParameters> {
   return {
     name: "read",
     label: "Read file",
@@ -128,15 +129,31 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof Re
     execute: async (_id, params) => {
       const path = normalizeVaultPath(params.path);
       assertVisible(isIgnored, path);
+      // De-dup: a repeat read of the same range is handed a short pointer instead
+      // of re-injecting the full text, so re-reading can't quietly double a file
+      // into the context. Edits invalidate the path, forcing a fresh read.
+      if (memo?.has({ path, offset: params.offset, limit: params.limit })) {
+        return textResult(alreadyReadMessage(path), { path, deduplicated: true });
+      }
       const file = getVaultFile(app, path);
+      // Size guardrail: refuse a bulk dump of a very large file; guide the model
+      // to paginate so one read can't blow the context window.
+      const guidance = readSizeGuardrail({ path, size: file.stat?.size ?? 0, offset: params.offset, limit: params.limit });
+      if (guidance) {
+        return textResult(guidance, { path, tooLarge: true });
+      }
       const content = await app.vault.cachedRead(file);
       const slice = sliceTextByLines(content, { offset: params.offset, limit: params.limit });
+      // Record only after a successful read — a failed/refused read (above) must
+      // not poison the memo, or the next identical read would return a stale
+      // "already read" pointer instead of retrying.
+      memo?.mark({ path, offset: params.offset, limit: params.limit });
       return textResult(formatTextSlice(path, slice), { path, totalLines: slice.totalLines, truncated: slice.truncated });
     },
   };
 }
 
-function createWriteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof WriteParameters> {
+function createWriteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof WriteParameters> {
   return {
     name: "write",
     label: "Write file",
@@ -156,6 +173,7 @@ function createWriteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof W
       } else {
         await app.vault.create(path, params.content);
       }
+      memo?.invalidate(path);
       return textResult(`Wrote ${params.content.length} characters to ${path}.`, {
         path,
         bytes: params.content.length,
@@ -164,7 +182,7 @@ function createWriteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof W
   };
 }
 
-function createEditTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof EditParameters> {
+function createEditTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof EditParameters> {
   return {
     name: "edit",
     label: "Edit file",
@@ -177,6 +195,7 @@ function createEditTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof Ed
       assertVisible(isIgnored, path);
       const file = getVaultFile(app, path);
       await app.vault.process(file, (content) => applyExactEdits(content, params.edits));
+      memo?.invalidate(path);
       return textResult(`Applied ${params.edits.length} edit${params.edits.length === 1 ? "" : "s"} to ${path}.`, {
         path,
         editCount: params.edits.length,
@@ -289,7 +308,7 @@ function createActiveNoteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typ
   };
 }
 
-function createRenameTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof RenameParameters> {
+function createRenameTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof RenameParameters> {
   return {
     name: "rename",
     label: "Rename or move file",
@@ -308,12 +327,14 @@ function createRenameTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof 
       }
       await ensureParentFolders(app, newPath);
       await app.fileManager.renameFile(file, newPath);
+      memo?.invalidate(path);
+      memo?.invalidate(newPath);
       return textResult(`Renamed ${path} to ${newPath}.`, { path, newPath });
     },
   };
 }
 
-function createDeleteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof DeleteParameters> {
+function createDeleteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof DeleteParameters> {
   return {
     name: "delete",
     label: "Delete file",
@@ -324,7 +345,8 @@ function createDeleteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof 
       const path = normalizeVaultPath(params.path);
       assertVisible(isIgnored, path);
       const file = getVaultFile(app, path);
-      await app.fileManager.trashFile(file);
+      await app.vault.trash(file, true);
+      memo?.invalidate(path);
       return textResult(`Moved ${path} to trash.`, { path });
     },
   };

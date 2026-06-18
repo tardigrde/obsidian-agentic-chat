@@ -1,5 +1,51 @@
 import { getModels, type Model, type OpenAICompletionsCompat, type OpenRouterRouting } from "@earendil-works/pi-ai";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { requestUrl } from "obsidian";
+
+/** Canonical reasoning-effort ladder, lowest → highest, in UI order. */
+export const THINKING_LEVEL_ORDER: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
+/**
+ * Thinking levels a model actually supports, in UI order. A model without
+ * `reasoning` only ever offers `"off"`. For reasoning models, a `thinkingLevelMap`
+ * entry explicitly set to `null` marks that level as unsupported (per the pi-ai
+ * contract); missing entries use provider defaults and stay available — except
+ * `"xhigh"`, which is opt-in: a map without an explicit `xhigh` entry does NOT
+ * advertise it (mirrors pi-ai's own `getSupportedThinkingLevels`). With no map
+ * at all every level is offered (the provider applies its own default).
+ * `"off"` is always available — it means "don't request reasoning".
+ */
+export function supportedThinkingLevels(
+  model: Pick<Model<"openai-completions">, "reasoning" | "thinkingLevelMap">,
+): ThinkingLevel[] {
+  if (!model.reasoning) return ["off"];
+  const map = model.thinkingLevelMap;
+  if (!map) return [...THINKING_LEVEL_ORDER];
+  return THINKING_LEVEL_ORDER.filter((level) => {
+    const mapped = map[level];
+    if (mapped === null) return false;
+    // xhigh is opt-in: it must have an explicit map entry, otherwise the
+    // provider ignores/rejects it — so never advertise it on a missing key.
+    if (level === "xhigh") return mapped !== undefined;
+    return true;
+  });
+}
+
+/**
+ * Clamp a requested level to one the model supports: the requested level when
+ * supported, otherwise the highest supported level at or below it (preserving
+ * the user's intent as closely as possible), falling back to `"off"`. Keeps us
+ * from ever sending an unsupported level (e.g. `xhigh` to a model that caps at
+ * `high`) — the model would otherwise ignore or reject it.
+ */
+export function clampThinkingLevel(requested: ThinkingLevel, supported: readonly ThinkingLevel[]): ThinkingLevel {
+  if (supported.includes(requested)) return requested;
+  for (let index = THINKING_LEVEL_ORDER.indexOf(requested); index >= 0; index -= 1) {
+    const candidate = THINKING_LEVEL_ORDER[index];
+    if (supported.includes(candidate)) return candidate;
+  }
+  return "off";
+}
 
 /** Provider routing constraints enforced on every OpenRouter request. */
 export interface PrivacySettings {

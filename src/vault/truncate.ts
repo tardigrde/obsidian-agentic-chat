@@ -53,3 +53,31 @@ export function truncateToolOutput(text: string, maxCharacters = DEFAULT_MAX_CHA
   if (text.length <= maxCharacters) return text;
   return `${text.slice(0, maxCharacters)}\n\n[Output truncated at ${maxCharacters} characters.]`;
 }
+
+/** Above this size, a bulk `read` (no offset/limit) is refused with guidance to paginate. */
+export const READ_BULK_LIMIT = 50_000;
+
+/**
+ * Guardrail for a bulk `read`: when a note is larger than the limit and the
+ * caller didn't narrow the range (offset/limit), return guidance instead of
+ * dumping the whole file — a single huge file can otherwise consume most of the
+ * model's context window in one tool call. Paginated reads are always allowed
+ * (the model is being deliberate). Returns the guidance string, or null when the
+ * read should proceed.
+ */
+export function readSizeGuardrail(params: {
+  path: string;
+  size: number;
+  offset?: number;
+  limit?: number;
+  maxChars?: number;
+}): string | null {
+  const maxChars = params.maxChars ?? READ_BULK_LIMIT;
+  if (params.offset !== undefined || params.limit !== undefined) return null;
+  if (!Number.isFinite(params.size) || params.size <= maxChars) return null;
+  const chars = Math.round(params.size);
+  return (
+    `"${params.path}" is large (~${chars.toLocaleString()} bytes). Reading it in full risks filling the ` +
+    "context window. Read a slice with offset/limit, or use grep/find to locate the part you need first."
+  );
+}

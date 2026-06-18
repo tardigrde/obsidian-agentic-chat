@@ -3,6 +3,7 @@ import { TFile, type App } from "obsidian";
 import { createVaultTools, MUTATING_TOOLS } from "../src/tools/vault-tools";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { IgnoreMatcher } from "../src/vault/ignore";
+import { ReadMemo } from "../src/vault/read-memo";
 
 interface FileSpec {
   content?: string;
@@ -32,6 +33,8 @@ function makeApp(spec: VaultSpec): App {
     tfile.path = path;
     tfile.name = path.split("/").pop() ?? path;
     tfile.extension = tfile.name.includes(".") ? tfile.name.split(".").pop() ?? "" : "";
+    // The read tool guards on file size; surface it so the guardrail is testable.
+    (tfile as unknown as { stat: { size: number } }).stat = { size: file.content?.length ?? 0 };
     files.set(path, tfile);
     contents.set(path, file.content ?? "");
     if (file.frontmatter) frontmatterCache.set(path, file.frontmatter);
@@ -321,5 +324,60 @@ describe("set_properties", () => {
     await expect(
       run(getTool(app, "set_properties"), { path: "Gone.md", properties: { a: 1 } }),
     ).rejects.toThrow(/not found/);
+  });
+});
+
+describe("read — dedup + size guardrail", () => {
+  it("returns content on the first read, a pointer on the second identical read", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "hello world" } } });
+    const memo = new ReadMemo();
+    const read = createVaultTools(app, undefined, memo).find((t) => t.name === "read")!;
+    const first = await run(read, { path: "Note.md" });
+    expect(first.text).toContain("hello world");
+    expect(first.details.deduplicated).toBeFalsy();
+    const second = await run(read, { path: "Note.md" });
+    expect(second.details.deduplicated).toBe(true);
+    expect(second.text).not.toContain("hello world");
+  });
+
+  it("treats a different range as a fresh read (pagination is not deduped)", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "line1\nline2" } } });
+    const memo = new ReadMemo();
+    const read = createVaultTools(app, undefined, memo).find((t) => t.name === "read")!;
+    await run(read, { path: "Note.md" });
+    const ranged = await run(read, { path: "Note.md", offset: 1, limit: 1 });
+    expect(ranged.details.deduplicated).toBeFalsy();
+  });
+
+  it("refuses a bulk read of a very large file with pagination guidance", async () => {
+    const app = makeApp({ files: { "Big.md": { content: "x".repeat(60_000) } } });
+    const read = createVaultTools(app).find((t) => t.name === "read")!;
+    const result = await run(read, { path: "Big.md" });
+    expect(result.details.tooLarge).toBe(true);
+    expect(result.text).toContain("offset/limit");
+  });
+
+  it("allows paginating a very large file", async () => {
+    const app = makeApp({ files: { "Big.md": { content: "x".repeat(60_000) } } });
+    const read = createVaultTools(app).find((t) => t.name === "read")!;
+    const result = await run(read, { path: "Big.md", offset: 1, limit: 10 });
+    expect(result.details.tooLarge).toBeUndefined();
+  });
+
+  it("does not memoize a read that fails (missing file), so a retry isn't deduped", async () => {
+    const app = makeApp({ files: {} });
+    const memo = new ReadMemo();
+    const read = createVaultTools(app, undefined, memo).find((t) => t.name === "read")!;
+    await expect(run(read, { path: "Ghost.md" })).rejects.toThrow(/not found/);
+    expect(memo.has({ path: "Ghost.md" })).toBe(false);
+  });
+
+  it("does not memoize a read refused by the size guardrail", async () => {
+    const app = makeApp({ files: { "Big.md": { content: "x".repeat(60_000) } } });
+    const memo = new ReadMemo();
+    const read = createVaultTools(app, undefined, memo).find((t) => t.name === "read")!;
+    const result = await run(read, { path: "Big.md" });
+    expect(result.details.tooLarge).toBe(true);
+    expect(memo.has({ path: "Big.md" })).toBe(false);
   });
 });

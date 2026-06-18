@@ -275,5 +275,51 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 
 > `I2` (MCP server config UI) ships with `I1`; `I4` (backend switch) ships with `I3` — folded
 > into their parents above.
-</content>
-</invoke>
+
+---
+
+## Next batch
+
+Small, self-contained follow-ups deferred from the latest review pass. Each is a
+PR-sized chunk; pick them off in value order. (The brainstorming notes that seeded
+these are retired — the shipped subset is summarized below.)
+
+- **Context-window gauge** (`NB1`). Restyle the flat fill `<progress>` bar in the
+  composer toolbar into a gauge/arc shape (CSS only; the `contextLevel`/
+  `contextPercent` helpers stay). Polish.
+- **Drag-to-attach on release + dedup the image notice** (`NB2`). Attach on `drop`
+  (mouse release) and support multi-file drops; aggregate the "this model can't
+  read images" notice so a batch of images yields one toast, not one per file.
+- **Prompt-cache feedback** (`NB3`). Surface OpenRouter's `cacheRead`/`cacheWrite`
+  (already accumulated in usage) as a hit ratio in the usage footer + `/usage`,
+  and lean on prompt-order stability to improve it.
+- **Claudian system-prompt study** (`NB4`). Compare Claudian's agent instructions
+  (Claude Code's, which it shells out to) against ours and port any useful
+  framing. Research; folds into the system-prompt work.
+- **README: community-plugin install** (`NB5`). The plugin is now in the Obsidian
+  community directory — make "From Obsidian community plugins" the recommended
+  install path (ahead of BRAT/manual), mirroring claudian's README layout.
+- **E2E coverage of the new behavior** (`NB6`). Extend the local e2e suite past
+  the smoke spec — the approval modal, a real model-backed turn (gated API key),
+  and assertions for the guardrails shipped below (attachment budget/restriction,
+  read de-dup + size guardrail, dynamic effort levels). Base infra (D1) is already
+  local-only.
+
+### Shipped this batch
+
+Already landed (documented in the README, not tracked as open work):
+
+- **Dynamic thinking levels** — the effort knob / `/effort` only offers levels the
+  current model supports (`thinkingLevelMap`), and the requested level is clamped
+  so we never send an unsupported `xhigh`.
+- **Read de-dup + size guardrail** — a repeat read of the same range returns a
+  pointer instead of re-injecting the file (edits invalidate it); a bulk read of a
+  very large file is refused with pagination guidance.
+- **Budgeted, ignore-aware attachments** — large attachments and ignore-listed
+  (private) paths attach as path-only references, never full bodies, so a stack of
+  attachments (or the active note in a blacklisted folder) can't blow — or leak —
+  the context.
+- **Self-aware system prompt** — the prompt states the plugin identity + active
+  model id and bakes in the context-guardrail rules.
+- **`trashFile` → `vault.trash`** — replaced a `1.6.6`-only API with the `0.9.7`
+  equivalent so we stay within the declared `minAppVersion` (community-review fix).
