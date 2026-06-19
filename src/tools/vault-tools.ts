@@ -10,10 +10,9 @@ import { formatTextSlice, readSizeGuardrail, sliceTextByLines, truncateToolOutpu
 
 /**
  * Tools that change the vault (or other durable state). Used to pick a default
- * approval policy. `remember` is included because it persists to the durable
- * memory store — it should follow the mutating gate, not auto-run like a read.
+ * approval policy — they follow the mutating gate rather than auto-running like a read.
  */
-export const MUTATING_TOOLS = new Set(["write", "edit", "delete", "rename", "set_properties", "remember"]);
+export const MUTATING_TOOLS = new Set(["write", "edit", "delete", "rename", "set_properties"]);
 
 const TEXT_EXTENSIONS = new Set([
   "md", "txt", "json", "jsonl", "csv", "tsv", "yaml", "yml",

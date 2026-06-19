@@ -34,6 +34,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "undo", description: "undo the last vault change the agent made" },
   { name: "skill", args: "[name] [args]", description: "run a vault skill; args fill $ARGUMENTS/$1", takesSkillArg: true },
   { name: "agent", args: "[name] [task]", description: "delegate a task to a subagent" },
+  { name: "init", description: "curate the vault's AGENTS.md standing-instructions file" },
   { name: "help", description: "show this list" },
   {
     name: "template",

@@ -28,19 +28,3 @@ describe("mergeSettings — working directories", () => {
   });
 });
 
-describe("mergeSettings — durable memory", () => {
-  it("defaults to an empty store", () => {
-    expect(mergeSettings(null).memory).toBe("");
-    expect(mergeSettings({}).memory).toBe("");
-  });
-
-  it("keeps a stored string memory", () => {
-    expect(mergeSettings({ memory: "- prefers terse answers" }).memory).toBe("- prefers terse answers");
-  });
-
-  it("heals a non-string memory back to empty", () => {
-    const merged = mergeSettings({ memory: { not: "a string" } as unknown as string });
-    expect(merged.memory).toBe("");
-  });
-});
-

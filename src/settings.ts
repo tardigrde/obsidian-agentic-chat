@@ -36,12 +36,6 @@ export interface AgenticChatSettings {
   maxNetworkRetries: number;
   systemPrompt: string;
   /**
-   * Durable memory (M1): persisted facts + instructions the agent carries across
-   * conversations, surfaced as a system-prompt overlay and readable/writable via
-   * the `remember`/`recall` tools. Per-vault (stored in this plugin's data.json).
-   */
-  memory: string;
-  /**
    * Session permission posture: `safe` honors the approval policy, `yolo` auto-approves
    * mutating tools. `plan` (read-only) is reached via the `/plan` command, not this default.
    */
@@ -119,7 +113,6 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   requestTimeoutMs: 90_000,
   maxNetworkRetries: 2,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  memory: "",
   mode: DEFAULT_MODE,
   outputStyle: DEFAULT_OUTPUT_STYLE,
   // Strongest privacy out of the box: zero data retention, no prompt
@@ -150,9 +143,6 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     ...stored,
     // Heal enum-like fields so an unknown (or retired ask/plan/agent) value can't break the gate or prompt.
     mode: healMode(stored?.mode),
-    // Coerce a malformed persisted memory back to a string (an object/array must
-    // never reach the system-prompt overlay or the remember tool).
-    memory: typeof stored?.memory === "string" ? stored.memory : "",
     outputStyle:
       stored?.outputStyle && stored.outputStyle in OUTPUT_STYLES ? stored.outputStyle : DEFAULT_OUTPUT_STYLE,
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
@@ -480,24 +470,13 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl).setName("Memory").setHeading();
     new Setting(containerEl)
-      .setName("Durable memory")
+      .setName("Standing instructions")
       .setDesc(
-        "Facts and instructions the agent carries across every conversation (one per line). " +
-          "Sent as part of the system prompt, so keep it concise. The agent can also add to this with " +
-          "the `remember` tool and read it with `recall`.",
-      )
-      .addTextArea((text) => {
-        text.inputEl.rows = 6;
-        text.inputEl.addClass("agentic-chat-system-prompt");
-        text.setPlaceholder("The user prefers terse answers.\nProject X lives in the Projects/ folder.")
-          .setValue(settings.memory)
-          .onChange(async (value) => {
-            settings.memory = value;
-            await this.save();
-          });
-      });
+        "The agent loads AGENTS.md from the vault root every turn as standing context " +
+          "(CLAUDE.md / GEMINI.md are read too if AGENTS.md is absent — symlink them for other agents). " +
+          "Edit the file directly, or run /init to have the agent curate it.",
+      );
 
     new Setting(containerEl).setName("Context window").setHeading();
     new Setting(containerEl)

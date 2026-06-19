@@ -14,7 +14,6 @@ import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider, activeModelConfig } from "../settings";
 import { buildModel, clampThinkingLevel, supportedThinkingLevels, type ModelConfig } from "../llm/models";
 import { createVaultTools, MUTATING_TOOLS } from "../tools/vault-tools";
-import { createMemoryTools, MEMORY_TOOLS, type MemoryAccess } from "../tools/memory-tools";
 import { createSubagentTool, SUBAGENT_TOOL_NAME, normalizeTasks } from "../tools/subagent-tool";
 import { createObsidianFetcher, type WebFetcher } from "../tools/web-fetch";
 import { createWebTools } from "../tools/web-tools";
@@ -41,7 +40,7 @@ import {
 } from "./cost";
 import { type UndoEntry, UNDOABLE_TOOLS, applyUndo, captureUndo } from "./undo";
 import { buildSystemPrompt } from "./system-prompt";
-import { appendMemory, formatMemoryOverlay, MEMORY_MAX_CHARS } from "./memory";
+import { formatInstructionsOverlay, loadVaultInstructions } from "./instructions";
 import { MODES, resolveModePolicy } from "./modes";
 import { resolveWorkingDirPolicy } from "./working-dir";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -75,8 +74,6 @@ export interface AgentServiceOptions {
   sessionManager: ObsidianSessionManager;
   /** Resolve an "ask" approval gate; returns true to allow the tool call. */
   confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
-  /** Persist settings after a tool mutates them (e.g. `remember` writes durable memory). */
-  saveSettings?: () => Promise<void>;
   /** Injected for tests; production wraps pi-ai streamSimple. */
   streamFn?: StreamFn;
   /** Injected for tests; production summarizes via pi's `generateSummary`. */
@@ -97,7 +94,6 @@ export class AgentService {
   private readonly getSettings: () => AgenticChatSettings;
   private readonly sessionManager: ObsidianSessionManager;
   private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
-  private readonly saveSettings: () => Promise<void>;
   private readonly injectedStreamFn?: StreamFn;
   private readonly injectedSummarize?: SummarizeFn;
   private readonly webFetch: WebFetcher;
@@ -112,6 +108,8 @@ export class AgentService {
 
   private skills: Skill[] = [];
   private profiles: AgentProfile[] = [];
+  /** System-prompt overlay from the vault's AGENTS.md/CLAUDE.md/GEMINI.md, re-read each turn. */
+  private instructionsOverlay = "";
   private ignoreMatcher: IgnoreMatcher = () => false;
   private sessionInfo: SessionInfo | undefined;
   private errorMessage: string | undefined;
@@ -144,9 +142,6 @@ export class AgentService {
     this.getSettings = options.getSettings;
     this.sessionManager = options.sessionManager;
     this.confirmToolCall = options.confirmToolCall;
-    // No-op when tests omit it: the memory tool still mutates the live settings
-    // object, it just skips persisting to data.json.
-    this.saveSettings = options.saveSettings ?? (async () => undefined);
     this.injectedStreamFn = options.streamFn;
     this.injectedSummarize = options.summarize;
     this.webFetch = options.webFetch ?? createObsidianFetcher();
@@ -407,6 +402,25 @@ export class AgentService {
   }
 
   /**
+   * `/init`: drive the agent to curate the vault's standing-instructions file
+   * (AGENTS.md → CLAUDE.md → GEMINI.md). The agent reads the current file (if any)
+   * and surveys the vault structure, then refines it with surgical `edit` calls —
+   * each surfaces as a diff through the approval gate. `write` is used only to
+   * create the file when none exists.
+   */
+  async invokeInit(): Promise<void> {
+    const directive = [
+      "Curate this vault's standing-instructions file for the agentic-chat agent.",
+      "Target the first of AGENTS.md, CLAUDE.md, or GEMINI.md that exists at the vault root; if none exists, create AGENTS.md.",
+      "First read the current file (if any) and survey the vault structure (top-level folders and a few representative notes) to infer what this vault is for.",
+      "Then write concise, durable guidance an agent needs to work well here: the vault's purpose, key folders, conventions, and the user's preferences.",
+      "Make SURGICAL edits with the `edit` tool — change only what is stale or missing, preserving existing good content; use `write` only to create the file.",
+      "Keep it concise: this file is injected into every conversation.",
+    ].join(" ");
+    await this.runPrompt(() => this.requireAgent().prompt(directive));
+  }
+
+  /**
    * Helpful "unknown subagent" error: list the agents that *do* exist, and if the
    * typed name actually matches a skill (a common mix-up, e.g. `/agent deep` for the
    * `deep-research` skill), point the user at `/skill` instead.
@@ -644,10 +658,9 @@ export class AgentService {
     if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, args);
     const decision = resolveModePolicy(settings.mode, settings.approval, toolName);
     const { reason } = decision;
-    // Memory tools aren't vault-path-scoped, so the working-dir boundary (which keys off
-    // path/newPath args) can't say anything useful about them — skip it. `recall` resolves
-    // to allow; `remember` is in MUTATING_TOOLS so it follows the mutating gate.
-    const scoped = settings.mode === "safe" && !MEMORY_TOOLS.has(toolName);
+    // Working-dir boundary keys off path/newPath args, so only Safe mode (which can scope
+    // calls to granted dirs) needs it; YOLO is a session-wide allow and plan is read-only.
+    const scoped = settings.mode === "safe";
     // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
     // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
     // already forces read-only, so the boundary only refines Safe.
@@ -712,7 +725,7 @@ export class AgentService {
   private composeSystemPrompt(settings: AgenticChatSettings): string {
     const overlays = [
       this.selfAwarenessOverlay(),
-      formatMemoryOverlay(settings.memory),
+      this.instructionsOverlay,
       ...promptOverlays(settings),
       formatSubagentsForSystemPrompt(this.profiles),
     ];
@@ -735,46 +748,9 @@ export class AgentService {
    */
   private buildParentTools(): AgentTool[] {
     const tools = createVaultTools(this.app, this.ignoreMatcher, this.readMemo);
-    tools.push(...createMemoryTools(this.memoryAccess()));
     tools.push(...createWebTools(this.getSettings().web, this.webFetch));
     if (this.profiles.length > 0) tools.push(this.createSubagentToolInstance());
     return tools;
-  }
-
-  /**
-   * Read/append access the memory tools use, backed by the live settings object
-   * (so reads see mid-turn writes) and persisted through the plugin's save path.
-   */
-  private memoryAccess(): MemoryAccess {
-    return {
-      read: () => this.getSettings().memory,
-      append: async (fact) => {
-        const settings = this.getSettings();
-        const next = appendMemory(settings.memory, fact);
-        // Memory rides in the system prompt every turn — bound it so a runaway
-        // append loop can't bloat context/cost. Refuse (don't silently drop) so
-        // the model knows to consolidate.
-        if (next.length > MEMORY_MAX_CHARS) {
-          throw new Error(
-            `Memory is full (${MEMORY_MAX_CHARS} chars). Consolidate or remove facts in Settings before adding more.`,
-          );
-        }
-        // Nothing changed (blank fact) — skip the write and the round-trip.
-        if (next === settings.memory) return next;
-        // `saveSettings` serializes this live settings object, so the field must
-        // be mutated before the save; roll it back on failure so in-memory state
-        // can never diverge from data.json (same invariant as compaction).
-        const previous = settings.memory;
-        settings.memory = next;
-        try {
-          await this.saveSettings();
-        } catch (error) {
-          settings.memory = previous;
-          throw error;
-        }
-        return next;
-      },
-    };
   }
 
   private createSubagentToolInstance(): AgentTool {
@@ -988,6 +964,11 @@ export class AgentService {
     }
     this.skills = [...byName.values()];
     this.profiles = await loadAgentProfiles(this.app, settings.agentsFolder, settings.enableBuiltinAgents);
+    // Standing instructions (AGENTS.md → CLAUDE.md → GEMINI.md at the vault root): re-read
+    // every turn so agent/user edits land in the next system prompt. The adapter is always
+    // present in production; the guard keeps minimal test harnesses (no adapter) working.
+    const adapter = this.app.vault.adapter;
+    this.instructionsOverlay = adapter ? formatInstructionsOverlay(await loadVaultInstructions(adapter)) : "";
   }
 
   private buildStreamFn(): StreamFn {
