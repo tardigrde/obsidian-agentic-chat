@@ -48,6 +48,8 @@ reason. Each automated reviewer may be retriggered at most twice.
 
 **Skills & prompt templates** (`src/skills/skills.ts`) are loaded from vault folders set in settings: `SKILL.md` files (agentskills.io frontmatter) are listed to the model and run via `/skill`; templates support `$ARGUMENTS`/`$1` and run via `/template`.
 
+**Standing instructions** (`src/agent/instructions.ts`): `AGENTS.md` at the vault root is read every turn (falling back to `CLAUDE.md` → `GEMINI.md`, first found, via the vault `DataAdapter` so symlinks resolve) and injected as a system-prompt overlay in `composeSystemPrompt`; re-read in `reloadResources` so edits land next turn. `/init` (`AgentService.invokeInit`) drives the agent to curate it with surgical `edit` calls (diff-gated). There is no bespoke memory tool — the flat M1 `remember`/`recall` store was removed in favor of this standard file.
+
 ## Testing model (so changes don't break the suite)
 
 Tests run without Obsidian. `vitest.config.ts` aliases the `obsidian` import to `test/mocks/obsidian.ts`, a **minimal** mock that only defines what non-UI code touches. UI files (`chat-view`, `settings`, the modals) are not imported by tests directly — but if a test imports a module that *transitively* imports a UI file, the mock must define every base class that file `extends`, or the suite fails at class-definition time (e.g. adding `SuggestModal` to the mock was required when a modal switched to it). The model stream is replaced by an injected `streamFn` (see `cannedStreamFn`/`scriptedStreamFn` in `test/agent-service.test.ts`); the session store by an in-memory `MemoryAdapter`.

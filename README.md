@@ -31,7 +31,7 @@ Your notes are yours. This plugin is built so that using AI on them does not mea
 - **Subagents (delegation)** — the agent can fan out focused child agents, each with its own context window, model, and tool subset, then merge their summaries. Drop `AGENT.md` profiles in a vault folder or use the built-in roster; invoke with `/agent <name> <task>`. See [Subagents](#subagents).
 - **Skills** — drop `SKILL.md` files into a vault folder; they're offered to the agent (name + description only, body loaded on demand) and invokable with `/skill <name>` or directly as `/<name>`. Skills with `$ARGUMENTS` / `$1` absorb the old "prompt template" concept. See [Skills](#skills).
 - **Output styles** — switch *how* the assistant talks (default / brainstorm / learning) with `/style`.
-- **Durable memory** — a persisted set of facts and instructions the agent carries across every conversation, authored in settings (or grown by the agent itself). Surfaced as a system-prompt overlay; the agent reads it with `recall` and adds to it with `remember` (gated like any mutating tool). See [Durable memory](#durable-memory).
+- **Standing instructions (AGENTS.md)** — the agent loads `AGENTS.md` from your vault root (or `CLAUDE.md` / `GEMINI.md` if absent) as standing context on every turn, so the same facts and conventions persist across every conversation. Edit the file yourself, or run `/init` to have the agent curate it surgically (each edit shown as a diff). See [Standing instructions](#standing-instructions-agentsmd).
 - **Web access (opt-in)** — off by default. Turn on *Web access* in settings to give the agent `web_search` (Tavily / Brave / SearXNG backend) and `fetch_url`, plus a built-in `/deep-research` skill. Egress-gated: while it's off the tools aren't registered, so nothing leaves your device for the web. See [Web access & research](#web-access--research).
 - **Composer power tools** — a single unified input card holds the context chips, the textarea, and the bottom toolbar (model · effort · context · folders · Safe↔YOLO), with the session tabs and history/new-chat actions as a nav row above it. Plus inline autocomplete (`/` commands & skills, `@` note mentions), the active note auto-attached as a removable chip, drag-and-drop a note or folder to attach it, copy/retry buttons on every answer, prompt editing (click a sent message to rewind), shell-style up/down command history, a model pill with a per-request model override, and a settings page split into virtual tabs.
 
@@ -52,7 +52,6 @@ All paths are vault-relative; absolute paths and `..` escapes are rejected, and 
 | `get_links` | List a note's outbound resolved links. |
 | `local_graph` | A note's immediate neighborhood — inbound (backlinks) and outbound notes. |
 | `get_properties` | Read a note's YAML frontmatter as structured data. |
-| `recall` | Read the full durable memory store (facts + instructions). |
 
 **Mutating (gated by the approval policy):**
 
@@ -63,17 +62,17 @@ All paths are vault-relative; absolute paths and `..` escapes are rejected, and 
 | `set_properties` | Write YAML frontmatter via Obsidian's API (won't corrupt the body). |
 | `rename` | Rename or move a note — **inbound wikilinks and backlinks are updated automatically**. |
 | `delete` | Move a note to trash. |
-| `remember` | Append a fact or instruction to durable memory (follows your mutating-tool gate). |
 
 The graph (`get_backlinks` / `get_links` / `local_graph`), frontmatter (`get_properties` / `set_properties`), and link-aware `rename` tools are Obsidian-native: they let the agent traverse the `[[wikilink]]` graph and edit structured metadata reliably instead of brute-grepping or hand-editing raw YAML.
 
-## Durable memory
+## Standing instructions (AGENTS.md)
 
-A persisted set of facts and instructions the agent carries across **every** conversation — a place for standing preferences ("answer terse"), project context ("Project X lives in `Projects/`"), or anything you want it to remember.
+The agent loads a single standing-instructions file from the vault root on **every** turn and injects it into the system prompt — a place for the vault's purpose, key folders, conventions, and your preferences. It's the standard `AGENTS.md` convention: portable, transparent, and synced with the vault.
 
-- **Author it yourself.** Edit the *Durable memory* box under **Settings → Agent**, one fact per line. It's sent as part of the system prompt, so keep it concise.
-- **Or let the agent grow it.** The `remember` tool appends a fact (gated like any mutating tool — ask/allow/deny — so you stay in control), and `recall` reads the whole store back. The agent is told the memory is standing context and should honor it unless the current task overrides it.
-- **Where it lives.** Per-vault, in this plugin's `data.json` — no Node `fs`, so it works on mobile and travels with the vault's plugin config.
+- **Which file.** `AGENTS.md` is read first; if absent, `CLAUDE.md`, then `GEMINI.md`. Symlink one to another so several agents (Claude Code, Gemini CLI, this plugin) share one source of truth.
+- **Author it yourself.** Create `AGENTS.md` at the vault root and write what the agent should always know. Keep it concise — it's part of every request.
+- **Or let the agent curate it.** `/init` asks the agent to read the vault structure and the current file, then make **surgical** edits to refine it (each shown as a diff for you to accept/reject; `write` is used only when creating the file). Edits go through the normal approval gate and are undoable with `/undo`.
+- **Living instructions.** Because it's a regular vault file, the agent (or you) can keep editing it mid-session with the standard `edit`/`write` tools — the next turn picks up the change.
 
 ## Subagents
 

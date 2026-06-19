@@ -84,7 +84,7 @@ The most-requested capability across Obsidian AI plugins, and the heaviest.
 ## Toolset & context hygiene
 
 The agent ships a wide tool surface (vault read/write/edit, find/grep, graph/backlinks,
-frontmatter, web, memory). As it grows, two levers keep per-turn prompt cost and decision
+frontmatter, web). As it grows, two levers keep per-turn prompt cost and decision
 noise down.
 
 - **Tool consolidation / meta-tools** (`T1`). Merge overlapping vault tools, or wrap them in
@@ -122,8 +122,8 @@ mobile-safe — no shell/subprocess.
   `StatusPanel` — todo half only.)
 - **`#` inline persistent instruction** (`L6`). Typing `#…` in the composer appends a durable
   custom instruction (lightweight "remember this") rather than sending a prompt — grows a
-  per-session/per-vault instruction set inline. Complements output styles. Writes into the durable
-  memory store (`M1`, shipped). (Claudian.)
+  per-session/per-vault instruction set inline. Complements output styles. Writes into the vault's
+  `AGENTS.md` standing-instructions file. (Claudian.)
 
 ## Project workspaces
 
@@ -185,8 +185,30 @@ Deferred from the shipped v1 (delegation, foreground, depth-1, cost-accounted).
   isolation, child↔parent blocking questions (`contact_supervisor`), acceptance/verification
   gates, persisting child transcripts as replayable side artifacts.
 - **Per-agent memory for profiles** (`A2`). Our `AGENT.md` profiles declare a per-agent tool
-  allowlist; add an optional per-profile memory scope so a persona accumulates durable notes.
-  (obsidian-ai-agents.)
+  allowlist; add an optional per-profile memory scope so a persona accumulates durable notes (builds
+  on [Memory v2](#memory-v2-automated)). (obsidian-ai-agents.)
+
+## Memory v2 (automated)
+
+Today the agent's standing knowledge is the vault's `AGENTS.md` — loaded every turn, curated by the
+user or `/init`. That's *instructions*, not *learning*: the agent never accumulates knowledge from
+past sessions. v2 closes the gap, modeled on [openai/codex](https://github.com/openai/codex)
+(`codex-rs/memories/`) — memory as a managed retrieval system, not a flat store. (This is why the
+flat M1 `remember`/`recall` store was cut: agent-writable memory without consolidation drifts.)
+
+- **Rollout extraction** (`V1`). After a session, mine the append-only JSONL transcript for durable
+  facts/lessons — parallel per-rollout extraction into structured records, the way Codex's Phase 1
+  turns completed rollouts into DB-backed memory.
+- **Consolidation + forgetting** (`V2`). A sub-agent merges new extractions into the registry,
+  dedups, and retires stale entries. Codex's Phase 2 runs a consolidation agent over a git-diff of a
+  git-baseline memory workspace, pruning by `usage_count` and a `max_unused_days` window — the
+  curation that makes agent-written memory safe.
+- **On-demand retrieval** (`V3`). Stop injecting everything every turn: inject a small token-capped
+  routing index and give the agent `memory_search`/`memory_read` tools for targeted lookups. Codex
+  injects `memory_summary.md` (~2.5k tokens) and searches `MEMORY.md` / `rollout_summaries/` on
+  demand. Pairs with `R2`/`R3` embeddings.
+- **Scope** (`V4`). Codex memory is per-user global; ours is per-vault (lives in the vault, syncs
+  with it). Decide whether v2 stays per-vault or adds a cross-vault user layer.
 
 ## Testing & developer experience
 
@@ -258,8 +280,11 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `R3` | Semantic vault search (RAG) | 9 | XL |
 | `R2` | Embeddings (local + OpenRouter) | 8 | XL |
 | `L1` | Steering messages (mid-turn) | 8 | M |
+| `V3` | Memory v2: on-demand retrieval | 8 | M |
 | `L4` | Inline edit / Quick Ask | 7 | L |
 | `R5` | Relevant-notes panel | 7 | L |
+| `V1` | Memory v2: rollout extraction | 7 | L |
+| `V2` | Memory v2: consolidation + forgetting | 7 | L |
 | `P1` | Project workspaces | 6 | L |
 | `I1` | MCP client (Streamable HTTP) | 6 | L |
 | `G1` | Generic OpenAI-compatible provider | 6 | M |
@@ -287,6 +312,7 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `X6` | Internationalization (i18n) | 4 | L |
 | `G3` | TEE/confidential model filter | 3 | S |
 | `D2` | Formatting + extended lint (prettier, import hygiene) | 3 | S |
+| `V4` | Memory v2: per-vault vs cross-vault scope | 3 | S |
 | `A1` | Async/background subagent runs | 3 | XL |
 | `A2` | Per-agent profile memory | 3 | M |
 | `O3` | Conversation fork | 2 | S |
