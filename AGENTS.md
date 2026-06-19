@@ -57,3 +57,7 @@ Tests run without Obsidian. `vitest.config.ts` aliases the `obsidian` import to 
 Releases are automated by **semantic-release** on `main`, so commit messages must be **Conventional Commits** (`fix:` → patch, `feat:` → minor; the type drives the version). Do not hand-edit versions: `scripts/version-bump.mjs` syncs `manifest.json` + `versions.json`, and the release commit is `chore(release): x.y.z [skip ci]`. Build artifacts (`main.js`, `manifest.json`, `styles.css`) are attached to the GitHub release. Work on a branch and open a PR; pushing to `main` triggers the release workflow.
 
 The esbuild bundle externalizes provider SDKs that pi-ai registers lazily but this plugin never uses (Anthropic/AWS/Google/Mistral, proxies, `canvas`) — only the OpenRouter `openai-completions` path runs. If you add a real dependency on one, remove it from the `external` list in `esbuild.config.mjs`.
+
+## Rules
+
+- Use 'FileManager.trashFile()' instead of 'Vault.trash()' to respect the user's file deletion preference.

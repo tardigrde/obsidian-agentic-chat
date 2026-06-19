@@ -53,7 +53,7 @@ export async function applyUndo(app: App, entry: UndoEntry): Promise<string> {
   const existing = app.vault.getAbstractFileByPath(entry.path);
   if (entry.before === null) {
     if (existing instanceof TFile) {
-      await app.vault.trash(existing, true);
+      await app.fileManager.trashFile(existing);
       return `Removed ${entry.path} (it didn't exist before).`;
     }
     return `Nothing to undo for ${entry.path}.`;
