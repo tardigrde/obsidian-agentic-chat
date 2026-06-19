@@ -7,6 +7,7 @@ import { AgentService } from "../src/agent/agent-service";
 import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { MEMORY_MAX_CHARS } from "../src/agent/memory";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
@@ -610,5 +611,56 @@ describe("AgentService", () => {
     await service.sendPrompt("note it");
     expect(saved).toBe(1);
     expect(settings.memory).toContain("persisted");
+  });
+
+  it("remember rolls back the in-memory store when saveSettings fails", async () => {
+    const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "k" };
+    settings.memory = "- keep me";
+    let saved = 0;
+    const service = new AgentService({
+      app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
+      getSettings: () => settings,
+      sessionManager: new ObsidianSessionManager(new MemoryAdapter().asDataAdapter(), "sessions", "vault:test"),
+      confirmToolCall: async () => true,
+      saveSettings: async () => {
+        saved += 1;
+        throw new Error("disk full");
+      },
+      streamFn: scriptedStreamFn([
+        { content: [{ type: "toolCall", id: "c1", name: "remember", arguments: { fact: "added" } }], stopReason: "toolUse" },
+        { content: [{ type: "text", text: "ok" }], stopReason: "stop" },
+      ]),
+    });
+    await service.sendPrompt("note it");
+    expect(saved).toBe(1);
+    // Rollback keeps in-memory state in sync with the (failed) disk write.
+    expect(settings.memory).toBe("- keep me");
+  });
+
+  it("remember refuses once memory crosses the size cap and leaves the store untouched", async () => {
+    const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "k" };
+    settings.memory = "- " + "x".repeat(MEMORY_MAX_CHARS); // already over the cap
+    let saved = 0;
+    const service = new AgentService({
+      app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
+      getSettings: () => settings,
+      sessionManager: new ObsidianSessionManager(new MemoryAdapter().asDataAdapter(), "sessions", "vault:test"),
+      confirmToolCall: async () => true,
+      saveSettings: async () => {
+        saved += 1;
+      },
+      streamFn: scriptedStreamFn([
+        { content: [{ type: "toolCall", id: "c1", name: "remember", arguments: { fact: "one more" } }], stopReason: "toolUse" },
+        { content: [{ type: "text", text: "ok" }], stopReason: "stop" },
+      ]),
+    });
+    await service.sendPrompt("note it");
+    expect(saved).toBe(0); // over the cap → never persisted
+    const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
+      | { role: "toolResult"; isError: boolean; content: Array<{ type: string; text?: string }> }
+      | undefined;
+    expect(toolResult?.isError).toBe(true);
+    const text = (toolResult?.content ?? []).map((block) => block.text ?? "").join("");
+    expect(text).toMatch(/full/i);
   });
 });

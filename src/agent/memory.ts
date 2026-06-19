@@ -12,6 +12,14 @@
  */
 
 /**
+ * Soft cap on persisted memory text. It ships in the system prompt every turn,
+ * so bound it to protect the context window and per-turn cost. Generous for
+ * personal facts/instructions; `remember` refuses once exceeded (rather than
+ * silently dropping) so the model knows to consolidate.
+ */
+export const MEMORY_MAX_CHARS = 8_000;
+
+/**
  * Append one durable fact/instruction to the memory text. A blank `fact` is a
  * no-op; a fact already starting with a list marker is kept verbatim, otherwise
  * it is formatted as a bullet so the overlay reads as a clean checklist.

@@ -41,7 +41,7 @@ import {
 } from "./cost";
 import { type UndoEntry, UNDOABLE_TOOLS, applyUndo, captureUndo } from "./undo";
 import { buildSystemPrompt } from "./system-prompt";
-import { appendMemory, formatMemoryOverlay } from "./memory";
+import { appendMemory, formatMemoryOverlay, MEMORY_MAX_CHARS } from "./memory";
 import { MODES, resolveModePolicy } from "./modes";
 import { resolveWorkingDirPolicy } from "./working-dir";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -747,12 +747,32 @@ export class AgentService {
    */
   private memoryAccess(): MemoryAccess {
     return {
-      read: () => this.getSettings().memory ?? "",
+      read: () => this.getSettings().memory,
       append: async (fact) => {
         const settings = this.getSettings();
-        settings.memory = appendMemory(settings.memory ?? "", fact);
-        await this.saveSettings();
-        return settings.memory;
+        const next = appendMemory(settings.memory, fact);
+        // Memory rides in the system prompt every turn — bound it so a runaway
+        // append loop can't bloat context/cost. Refuse (don't silently drop) so
+        // the model knows to consolidate.
+        if (next.length > MEMORY_MAX_CHARS) {
+          throw new Error(
+            `Memory is full (${MEMORY_MAX_CHARS} chars). Consolidate or remove facts in Settings before adding more.`,
+          );
+        }
+        // Nothing changed (blank fact) — skip the write and the round-trip.
+        if (next === settings.memory) return next;
+        // `saveSettings` serializes this live settings object, so the field must
+        // be mutated before the save; roll it back on failure so in-memory state
+        // can never diverge from data.json (same invariant as compaction).
+        const previous = settings.memory;
+        settings.memory = next;
+        try {
+          await this.saveSettings();
+        } catch (error) {
+          settings.memory = previous;
+          throw error;
+        }
+        return next;
       },
     };
   }
