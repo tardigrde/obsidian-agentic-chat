@@ -81,6 +81,22 @@ The most-requested capability across Obsidian AI plugins, and the heaviest.
   deepagents / Gemini topology, instead of one flat prompt loop. Keep `/deep-research` as the
   entry point; model configurable via the research profile's `model`.
 
+## Toolset & context hygiene
+
+The agent ships a wide tool surface (vault read/write/edit, find/grep, graph/backlinks,
+frontmatter, web, memory). As it grows, two levers keep per-turn prompt cost and decision
+noise down.
+
+- **Tool consolidation / meta-tools** (`T1`). Merge overlapping vault tools, or wrap them in
+  meta-tools the model fans out from (e.g. a single `search` umbrella over `grep`/`find`/
+  backlinks), so fewer tool definitions ride the system prompt every turn. Design-sensitive —
+  the approval-gate and ignore-list semantics must survive whatever new shape the tools take.
+- **Context-budgeted tool dropping + notice** (`T2`). Tools are system-prompt weight that
+  costs tokens every turn; once the context window fills past a low threshold (≈2%, tunable),
+  auto-drop the least-relevant/unused tools from the registered set for the rest of the session
+  and surface a notice so the user knows the agent's toolset shrank. Pairs with the shipped
+  context gauge and the context-window guardrails.
+
 ## Live interaction & in-editor editing
 
 Make the running agent steerable and let edits happen where the cursor is. All in-process and
@@ -214,9 +230,20 @@ Deferred from the shipped v1 (delegation, foreground, depth-1, cost-accounted).
 
 ## Bugs
 
-Reported issues to be fixed, ordered by severity. **None currently open** — the last batch
-(`/agent <unknown>` dead end and note drag-drop regression, both 2026-06-16) is fixed and
-documented in the README. New bugs go here.
+Reported issues to be fixed, ordered by severity. New bugs go here; fixed ones move to the
+README and out of this list. The last closed batch (`/agent <unknown>` dead end and note
+drag-drop regression, 2026-06-16) is documented in the README.
+
+- **Active note auto-attaches even when its path is ignore-listed** (e.g. `/Private/`).
+  (2026-06-19) Opening a note always pins it as the active-note chip in the composer, but
+  ignored/blacklisted paths attach too — pointless (the ignore matcher hides them from the
+  model, so it can't read them) and leaky (the path shows in the UI). Attachments are already
+  ignore-aware (path-only refs); the active-note auto-add should skip ignored paths entirely,
+  the same as a manual attach.
+- **Streaming pins the transcript to the bottom, blocking scroll-up.** (2026-06-19) While the
+  agent streams, the chat pane auto-scrolls to the newest token on every update, so the user
+  can't scroll up to read earlier output mid-stream. Fix: stick to bottom only when the user is
+  already at/near the bottom; once they scroll up, pause auto-scroll until they return.
 
 ---
 
@@ -236,6 +263,7 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `P1` | Project workspaces | 6 | L |
 | `I1` | MCP client (Streamable HTTP) | 6 | L |
 | `G1` | Generic OpenAI-compatible provider | 6 | M |
+| `T1` | Tool consolidation / meta-tools | 6 | M |
 | `R4` | QA inline citations | 6 | S |
 | `W2` | Better extraction (Readability) | 5 | M |
 | `S1` | Keystore for API keys | 5 | M |
@@ -247,6 +275,7 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `G2` | Provider/preset settings UI | 5 | S |
 | `X2` | Context-menu "Send selection to chat" | 5 | S |
 | `X1` | Mermaid + callout render parity | 5 | S |
+| `T2` | Context-budgeted tool dropping + notice | 5 | S |
 | `X5` | Document ingestion (PDF first) | 5 | L |
 | `S3` | External config file (YAML) | 4 | M |
 | `W1` | `fetch_url` read-more / pagination | 4 | S |
