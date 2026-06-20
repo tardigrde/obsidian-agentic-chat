@@ -364,5 +364,8 @@ Already landed (documented in the README, not tracked as open work):
   the context.
 - **Self-aware system prompt** — the prompt states the plugin identity + active
   model id and bakes in the context-guardrail rules.
-- **`trashFile` → `vault.trash`** — replaced a `1.6.6`-only API with the `0.9.7`
-  equivalent so we stay within the declared `minAppVersion` (community-review fix).
+- **`FileManager.trashFile`** — deletes route through
+  `app.fileManager.trashFile` (not `vault.trash`) so they honor the user's
+  chosen delete preference (system trash vs. obsidian trash). This is a
+  `1.6.6` API, so `minAppVersion` was raised to `1.6.6` and `versions.json`
+  synced accordingly.
