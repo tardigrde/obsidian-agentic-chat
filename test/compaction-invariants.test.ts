@@ -50,6 +50,7 @@ function toolTurn(callId: string, chars: number): AgentMessage[] {
 /** Stable signature for loss/order comparison (role + any text + any toolCall id). */
 function signature(message: AgentMessage): string {
   const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return `${message.role}|string:${content}`;
   const blocks = Array.isArray(content) ? content : [];
   const parts = blocks.map((b) => {
     const block = b as { type?: unknown; text?: unknown; id?: unknown };
@@ -114,15 +115,18 @@ describe("compaction never orphans a tool-call/result pair", () => {
     expect(beforeIsToolCall && afterIsToolResult).toBe(false);
 
     // Stronger, global invariant: every toolCall id and its matching toolResult
-    // land on the same side of the cut.
+    // land on the same side of the cut. Content may be a string or a block array;
+    // guard both so a string-content message iterates safely.
+    const blocksOf = (m: AgentMessage): Array<{ type?: string; id?: string; toolCallId?: string }> => {
+      const content = (m as { content?: unknown }).content;
+      return Array.isArray(content) ? (content as Array<{ type?: string; id?: string; toolCallId?: string }>) : [];
+    };
     const callIdsAcrossCut = new Set<string>();
     for (let i = 0; i < cut; i++) {
-      const blocks = (messages[i] as { content?: Array<{ type?: string; id?: string }> }).content ?? [];
-      for (const b of blocks) if (b.type === "toolCall" && b.id) callIdsAcrossCut.add(b.id);
+      for (const b of blocksOf(messages[i])) if (b.type === "toolCall" && b.id) callIdsAcrossCut.add(b.id);
     }
     for (let i = cut; i < messages.length; i++) {
-      const blocks = (messages[i] as { content?: Array<{ type?: string; toolCallId?: string }> }).content ?? [];
-      for (const b of blocks) {
+      for (const b of blocksOf(messages[i])) {
         if (b.type === "text" && b.toolCallId) {
           // A result in `keep` whose call was summarized would be an orphan.
           expect(callIdsAcrossCut.has(b.toolCallId)).toBe(false);

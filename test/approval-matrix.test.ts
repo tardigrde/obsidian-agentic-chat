@@ -196,10 +196,20 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
 
   function toolResult(service: AgentService): { isError: boolean; text: string } | undefined {
     const tr = service.getMessages().find((m) => m.role === "toolResult") as
-      | { isError: boolean; content: Array<{ type: string; text?: string }> }
+      | { isError: boolean; content: unknown }
       | undefined;
     if (!tr) return undefined;
-    return { isError: tr.isError, text: (tr.content ?? []).map((b) => b.text ?? "").join("") };
+    // Content may be a string or a block array; handle both so a string-content
+    // result doesn't throw on `.map`.
+    const content = tr.content;
+    const text = typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content
+            .map((b) => (typeof b === "object" && b !== null ? (b as { text?: string }).text ?? "" : ""))
+            .join("")
+        : "";
+    return { isError: tr.isError, text };
   }
 
   it("safe + no working set: a mutating (editor) dispatch prompts once", async () => {
