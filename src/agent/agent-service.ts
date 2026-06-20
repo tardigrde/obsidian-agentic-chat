@@ -40,6 +40,7 @@ import {
 } from "./cost";
 import { type UndoEntry, UNDOABLE_TOOLS, applyUndo, captureUndo } from "./undo";
 import { buildSystemPrompt } from "./system-prompt";
+import { formatInstructionsOverlay, loadVaultInstructions } from "./instructions";
 import { MODES, resolveModePolicy } from "./modes";
 import { resolveWorkingDirPolicy } from "./working-dir";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -107,6 +108,8 @@ export class AgentService {
 
   private skills: Skill[] = [];
   private profiles: AgentProfile[] = [];
+  /** System-prompt overlay from the vault's AGENTS.md/CLAUDE.md/GEMINI.md, re-read each turn. */
+  private instructionsOverlay = "";
   private ignoreMatcher: IgnoreMatcher = () => false;
   private sessionInfo: SessionInfo | undefined;
   private errorMessage: string | undefined;
@@ -399,6 +402,25 @@ export class AgentService {
   }
 
   /**
+   * `/init`: drive the agent to curate the vault's standing-instructions file
+   * (AGENTS.md → CLAUDE.md → GEMINI.md). The agent reads the current file (if any)
+   * and surveys the vault structure, then refines it with surgical `edit` calls —
+   * each surfaces as a diff through the approval gate. `write` is used only to
+   * create the file when none exists.
+   */
+  async invokeInit(): Promise<void> {
+    const directive = [
+      "Curate this vault's standing-instructions file for the agentic-chat agent.",
+      "Target the first of AGENTS.md, CLAUDE.md, or GEMINI.md that exists at the vault root; if none exists, create AGENTS.md.",
+      "First read the current file (if any) and survey the vault structure (top-level folders and a few representative notes) to infer what this vault is for.",
+      "Then write concise, durable guidance an agent needs to work well here: the vault's purpose, key folders, conventions, and the user's preferences.",
+      "Make surgical edits with the `edit` tool — change only what is stale or missing, preserving existing good content; use `write` only to create the file.",
+      "Keep it concise: this file is injected into every conversation.",
+    ].join(" ");
+    await this.runPrompt(() => this.requireAgent().prompt(directive));
+  }
+
+  /**
    * Helpful "unknown subagent" error: list the agents that *do* exist, and if the
    * typed name actually matches a skill (a common mix-up, e.g. `/agent deep` for the
    * `deep-research` skill), point the user at `/skill` instead.
@@ -636,13 +658,15 @@ export class AgentService {
     if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, args);
     const decision = resolveModePolicy(settings.mode, settings.approval, toolName);
     const { reason } = decision;
+    // Working-dir boundary keys off path/newPath args, so only Safe mode (which can scope
+    // calls to granted dirs) needs it; YOLO is a session-wide allow and plan is read-only.
+    const scoped = settings.mode === "safe";
     // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
     // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
     // already forces read-only, so the boundary only refines Safe.
-    const policy =
-      settings.mode === "safe"
-        ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, decision.policy)
-        : decision.policy;
+    const policy = scoped
+      ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, decision.policy)
+      : decision.policy;
     if (policy === "allow") return undefined;
     if (policy === "deny") {
       return { block: true, reason: reason ?? `The "${toolName}" tool is disabled by your approval settings.` };
@@ -699,7 +723,12 @@ export class AgentService {
   }
 
   private composeSystemPrompt(settings: AgenticChatSettings): string {
-    const overlays = [this.selfAwarenessOverlay(), ...promptOverlays(settings), formatSubagentsForSystemPrompt(this.profiles)];
+    const overlays = [
+      this.selfAwarenessOverlay(),
+      this.instructionsOverlay,
+      ...promptOverlays(settings),
+      formatSubagentsForSystemPrompt(this.profiles),
+    ];
     return buildSystemPrompt(settings.systemPrompt, this.skills, overlays);
   }
 
@@ -935,6 +964,11 @@ export class AgentService {
     }
     this.skills = [...byName.values()];
     this.profiles = await loadAgentProfiles(this.app, settings.agentsFolder, settings.enableBuiltinAgents);
+    // Standing instructions (AGENTS.md → CLAUDE.md → GEMINI.md at the vault root): re-read
+    // every turn so agent/user edits land in the next system prompt. The adapter is always
+    // present in production; the guard keeps minimal test harnesses (no adapter) working.
+    const adapter = this.app.vault.adapter;
+    this.instructionsOverlay = adapter ? formatInstructionsOverlay(await loadVaultInstructions(adapter)) : "";
   }
 
   private buildStreamFn(): StreamFn {

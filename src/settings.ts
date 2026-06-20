@@ -470,6 +470,14 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         });
       });
 
+    new Setting(containerEl)
+      .setName("Standing instructions")
+      .setDesc(
+        "The agent loads AGENTS.md from the vault root every turn as standing context " +
+          "(falls back to CLAUDE.md, then GEMINI.md, if AGENTS.md is absent — symlink them for other agents). " +
+          "Edit the file directly, or run /init to have the agent curate it.",
+      );
+
     new Setting(containerEl).setName("Context window").setHeading();
     new Setting(containerEl)
       .setName("Auto-compaction")

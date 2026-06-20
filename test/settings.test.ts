@@ -27,3 +27,4 @@ describe("mergeSettings — working directories", () => {
     expect(merged.approval.workingDirs).toEqual([]);
   });
 });
+

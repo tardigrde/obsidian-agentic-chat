@@ -1215,6 +1215,9 @@ export class ChatView extends ItemView {
       case "agent":
         await this.runAgent(rest[0], argString.slice(rest[0]?.length ?? 0).trim());
         return true;
+      case "init":
+        await this.runInit();
+        return true;
       case "template":
         await this.runTemplate(rest[0], rest.slice(1));
         return true;
@@ -1234,6 +1237,14 @@ export class ChatView extends ItemView {
     this.clearEmptyState();
     this.renderUserMessage(display ?? `/skill ${name}${extra ? ` ${extra}` : ""}`, []);
     await this.service.invokeSkill(name, extra || undefined);
+    this.showServiceError();
+  }
+
+  /** `/init`: drive the agent to curate the vault's AGENTS.md standing-instructions file. */
+  private async runInit(): Promise<void> {
+    this.clearEmptyState();
+    this.renderUserMessage("/init", []);
+    await this.service.invokeInit();
     this.showServiceError();
   }
 

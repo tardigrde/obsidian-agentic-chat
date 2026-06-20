@@ -81,6 +81,22 @@ The most-requested capability across Obsidian AI plugins, and the heaviest.
   deepagents / Gemini topology, instead of one flat prompt loop. Keep `/deep-research` as the
   entry point; model configurable via the research profile's `model`.
 
+## Toolset & context hygiene
+
+The agent ships a wide tool surface (vault read/write/edit, find/grep, graph/backlinks,
+frontmatter, web). As it grows, two levers keep per-turn prompt cost and decision
+noise down.
+
+- **Tool consolidation / meta-tools** (`T1`). Merge overlapping vault tools, or wrap them in
+  meta-tools the model fans out from (e.g. a single `search` umbrella over `grep`/`find`/
+  backlinks), so fewer tool definitions ride the system prompt every turn. Design-sensitive —
+  the approval-gate and ignore-list semantics must survive whatever new shape the tools take.
+- **Context-budgeted tool dropping + notice** (`T2`). Tools are system-prompt weight that
+  costs tokens every turn; once the context window fills past a low threshold (≈2%, tunable),
+  auto-drop the least-relevant/unused tools from the registered set for the rest of the session
+  and surface a notice so the user knows the agent's toolset shrank. Pairs with the shipped
+  context gauge and the context-window guardrails.
+
 ## Live interaction & in-editor editing
 
 Make the running agent steerable and let edits happen where the cursor is. All in-process and
@@ -106,17 +122,8 @@ mobile-safe — no shell/subprocess.
   `StatusPanel` — todo half only.)
 - **`#` inline persistent instruction** (`L6`). Typing `#…` in the composer appends a durable
   custom instruction (lightweight "remember this") rather than sending a prompt — grows a
-  per-session/per-vault instruction set inline. Complements output styles. **Depends on `M1`**
-  (the durable store it writes into). (Claudian.)
-
-## Memory
-
-- **Durable memory store** (`M1`). A persisted, user-authored store of facts + instructions the
-  agent carries across turns and sessions — the backing store `L6`'s `#…` capture writes into.
-  Surfaced as a system-prompt overlay (same path output styles use), editable in settings. Add
-  optional `remember`/`recall` tools so the agent can write/read its own durable notes through the
-  approval gate. Per-vault scope first (`data.json` / vault adapter — mobile-safe, no node fs);
-  per-session overlay and richer scoping later. Distinct from `A2` (per-*subagent-profile* memory).
+  per-session/per-vault instruction set inline. Complements output styles. Writes into the vault's
+  `AGENTS.md` standing-instructions file. (Claudian.)
 
 ## Project workspaces
 
@@ -178,8 +185,30 @@ Deferred from the shipped v1 (delegation, foreground, depth-1, cost-accounted).
   isolation, child↔parent blocking questions (`contact_supervisor`), acceptance/verification
   gates, persisting child transcripts as replayable side artifacts.
 - **Per-agent memory for profiles** (`A2`). Our `AGENT.md` profiles declare a per-agent tool
-  allowlist; add an optional per-profile memory scope so a persona accumulates durable notes.
-  (obsidian-ai-agents.)
+  allowlist; add an optional per-profile memory scope so a persona accumulates durable notes (builds
+  on [Memory v2](#memory-v2-automated)). (obsidian-ai-agents.)
+
+## Memory v2 (automated)
+
+Today the agent's standing knowledge is the vault's `AGENTS.md` — loaded every turn, curated by the
+user or `/init`. That's *instructions*, not *learning*: the agent never accumulates knowledge from
+past sessions. v2 closes the gap, modeled on [openai/codex](https://github.com/openai/codex)
+(`codex-rs/memories/`) — memory as a managed retrieval system, not a flat store. (This is why the
+flat M1 `remember`/`recall` store was cut: agent-writable memory without consolidation drifts.)
+
+- **Rollout extraction** (`V1`). After a session, mine the append-only JSONL transcript for durable
+  facts/lessons — parallel per-rollout extraction into structured records, the way Codex's Phase 1
+  turns completed rollouts into DB-backed memory.
+- **Consolidation + forgetting** (`V2`). A sub-agent merges new extractions into the registry,
+  dedups, and retires stale entries. Codex's Phase 2 runs a consolidation agent over a git-diff of a
+  git-baseline memory workspace, pruning by `usage_count` and a `max_unused_days` window — the
+  curation that makes agent-written memory safe.
+- **On-demand retrieval** (`V3`). Stop injecting everything every turn: inject a small token-capped
+  routing index and give the agent `memory_search`/`memory_read` tools for targeted lookups. Codex
+  injects `memory_summary.md` (~2.5k tokens) and searches `MEMORY.md` / `rollout_summaries/` on
+  demand. Pairs with `R2`/`R3` embeddings.
+- **Scope** (`V4`). Codex memory is per-user global; ours is per-vault (lives in the vault, syncs
+  with it). Decide whether v2 stays per-vault or adds a cross-vault user layer.
 
 ## Testing & developer experience
 
@@ -223,9 +252,20 @@ Deferred from the shipped v1 (delegation, foreground, depth-1, cost-accounted).
 
 ## Bugs
 
-Reported issues to be fixed, ordered by severity. **None currently open** — the last batch
-(`/agent <unknown>` dead end and note drag-drop regression, both 2026-06-16) is fixed and
-documented in the README. New bugs go here.
+Reported issues to be fixed, ordered by severity. New bugs go here; fixed ones move to the
+README and out of this list. The last closed batch (`/agent <unknown>` dead end and note
+drag-drop regression, 2026-06-16) is documented in the README.
+
+- **Active note auto-attaches even when its path is ignore-listed** (e.g. `/Private/`).
+  (2026-06-19) Opening a note always pins it as the active-note chip in the composer, but
+  ignored/blacklisted paths attach too — pointless (the ignore matcher hides them from the
+  model, so it can't read them) and leaky (the path shows in the UI). Attachments are already
+  ignore-aware (path-only refs); the active-note auto-add should skip ignored paths entirely,
+  the same as a manual attach.
+- **Streaming pins the transcript to the bottom, blocking scroll-up.** (2026-06-19) While the
+  agent streams, the chat pane auto-scrolls to the newest token on every update, so the user
+  can't scroll up to read earlier output mid-stream. Fix: stick to bottom only when the user is
+  already at/near the bottom; once they scroll up, pause auto-scroll until they return.
 
 ---
 
@@ -240,12 +280,15 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `R3` | Semantic vault search (RAG) | 9 | XL |
 | `R2` | Embeddings (local + OpenRouter) | 8 | XL |
 | `L1` | Steering messages (mid-turn) | 8 | M |
+| `V3` | Memory v2: on-demand retrieval | 8 | M |
 | `L4` | Inline edit / Quick Ask | 7 | L |
 | `R5` | Relevant-notes panel | 7 | L |
+| `V1` | Memory v2: rollout extraction | 7 | L |
+| `V2` | Memory v2: consolidation + forgetting | 7 | L |
 | `P1` | Project workspaces | 6 | L |
 | `I1` | MCP client (Streamable HTTP) | 6 | L |
 | `G1` | Generic OpenAI-compatible provider | 6 | M |
-| `M1` | Durable memory store | 6 | M |
+| `T1` | Tool consolidation / meta-tools | 6 | M |
 | `R4` | QA inline citations | 6 | S |
 | `W2` | Better extraction (Readability) | 5 | M |
 | `S1` | Keystore for API keys | 5 | M |
@@ -257,6 +300,7 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `G2` | Provider/preset settings UI | 5 | S |
 | `X2` | Context-menu "Send selection to chat" | 5 | S |
 | `X1` | Mermaid + callout render parity | 5 | S |
+| `T2` | Context-budgeted tool dropping + notice | 5 | S |
 | `X5` | Document ingestion (PDF first) | 5 | L |
 | `S3` | External config file (YAML) | 4 | M |
 | `W1` | `fetch_url` read-more / pagination | 4 | S |
@@ -268,6 +312,7 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `X6` | Internationalization (i18n) | 4 | L |
 | `G3` | TEE/confidential model filter | 3 | S |
 | `D2` | Formatting + extended lint (prettier, import hygiene) | 3 | S |
+| `V4` | Memory v2: per-vault vs cross-vault scope | 3 | S |
 | `A1` | Async/background subagent runs | 3 | XL |
 | `A2` | Per-agent profile memory | 3 | M |
 | `O3` | Conversation fork | 2 | S |
@@ -319,5 +364,8 @@ Already landed (documented in the README, not tracked as open work):
   the context.
 - **Self-aware system prompt** — the prompt states the plugin identity + active
   model id and bakes in the context-guardrail rules.
-- **`trashFile` → `vault.trash`** — replaced a `1.6.6`-only API with the `0.9.7`
-  equivalent so we stay within the declared `minAppVersion` (community-review fix).
+- **`FileManager.trashFile`** — deletes route through
+  `app.fileManager.trashFile` (not `vault.trash`) so they honor the user's
+  chosen delete preference (system trash vs. obsidian trash). This is a
+  `1.6.6` API, so `minAppVersion` was raised to `1.6.6` and `versions.json`
+  synced accordingly.
