@@ -414,7 +414,7 @@ export class AgentService {
       "Target the first of AGENTS.md, CLAUDE.md, or GEMINI.md that exists at the vault root; if none exists, create AGENTS.md.",
       "First read the current file (if any) and survey the vault structure (top-level folders and a few representative notes) to infer what this vault is for.",
       "Then write concise, durable guidance an agent needs to work well here: the vault's purpose, key folders, conventions, and the user's preferences.",
-      "Make SURGICAL edits with the `edit` tool — change only what is stale or missing, preserving existing good content; use `write` only to create the file.",
+      "Make surgical edits with the `edit` tool — change only what is stale or missing, preserving existing good content; use `write` only to create the file.",
       "Keep it concise: this file is injected into every conversation.",
     ].join(" ");
     await this.runPrompt(() => this.requireAgent().prompt(directive));
