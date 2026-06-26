@@ -237,7 +237,7 @@ export function enhanceCallouts(root: HTMLElement): void {
       first.remove();
     }
 
-    const callout = document.createElement("div");
+    const callout = activeDocument.createElement("div");
     callout.className = "callout";
     callout.dataset.callout = type;
     if (match[2]) {
@@ -270,11 +270,16 @@ export async function renderMermaidBlocks(root: HTMLElement): Promise<void> {
     const pre = code.parentElement;
     if (!pre) continue;
     const source = code.textContent ?? "";
-    const target = document.createElement("div");
+    const target = activeDocument.createElement("div");
     target.className = "agentic-chat-mermaid";
     try {
       const rendered = await mermaid.render(`agentic-chat-mermaid-${mermaidId++}`, source);
-      target.innerHTML = typeof rendered === "string" ? rendered : rendered.svg;
+      const svgMarkup = typeof rendered === "string" ? rendered : rendered.svg;
+      // Parse the SVG into a dedicated document and import the node instead of
+      // assigning to innerHTML — keeps the mermaid output out of an unsanitized
+      // HTML sink (and is the namespace-correct way to insert SVG markup).
+      const svgDocument = new DOMParser().parseFromString(svgMarkup, "image/svg+xml");
+      target.replaceChildren(activeDocument.importNode(svgDocument.documentElement, true));
       if (typeof rendered !== "string") rendered.bindFunctions?.(target);
       pre.replaceWith(target);
     } catch (error) {

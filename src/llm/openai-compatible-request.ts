@@ -250,7 +250,7 @@ function responseJson(response: OpenAICompatibleResponse): Record<string, unknow
   const parsed = recordValue(response.json);
   if (parsed) return parsed;
   try {
-    const fromText = JSON.parse(response.text);
+    const fromText: unknown = JSON.parse(response.text);
     const asRecord = recordValue(fromText);
     if (asRecord) return asRecord;
   } catch {
@@ -389,13 +389,13 @@ async function withRequestGuards<T>(
   signal: AbortSignal | undefined,
 ): Promise<T> {
   if (signal?.aborted) throw new RequestAbortError();
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: number | undefined;
   let abortListener: (() => void) | undefined;
   const race: Array<Promise<T>> = [promise];
   if (timeoutMs && timeoutMs > 0) {
     race.push(
       new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new RequestTimeoutError()), timeoutMs);
+        timer = window.setTimeout(() => reject(new RequestTimeoutError()), timeoutMs);
       }),
     );
   }
@@ -410,7 +410,7 @@ async function withRequestGuards<T>(
   try {
     return await Promise.race(race);
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    if (timer !== undefined) window.clearTimeout(timer);
     if (signal && abortListener) signal.removeEventListener("abort", abortListener);
   }
 }
@@ -471,7 +471,7 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function parseJsonMaybe(text: string): unknown | undefined {
+function parseJsonMaybe(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {

@@ -378,7 +378,7 @@ function headerName(key: string): string {
 }
 
 function optionalNodeRequire(): ((moduleName: string) => unknown) | undefined {
-  const candidate = (globalThis as { require?: (moduleName: string) => unknown }).require;
+  const candidate = (window as unknown as { require?: (moduleName: string) => unknown }).require;
   if (typeof candidate === "function") return candidate;
   return typeof require === "function" ? require : undefined;
 }

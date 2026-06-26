@@ -95,6 +95,15 @@ class FakeElement {
     this.parentElement = null;
   }
 
+  replaceChildren(...nodes: FakeElement[]): void {
+    for (const child of this.children.splice(0)) child.parentElement = null;
+    for (const node of nodes) this.appendChild(node);
+  }
+
+  importNode<T>(node: T, _deep?: boolean): T {
+    return node;
+  }
+
   closest(selector: string): FakeElement | null {
     if (!selector.startsWith(".")) return null;
     const cls = selector.slice(1);
@@ -143,6 +152,8 @@ function el(tagName: string, text = ""): FakeElement {
 
 afterEach(() => {
   delete (globalThis as { document?: unknown }).document;
+  delete (globalThis as { activeDocument?: unknown }).activeDocument;
+  delete (globalThis as { DOMParser?: unknown }).DOMParser;
   delete (globalThis as { __obsidianMockMermaid?: unknown }).__obsidianMockMermaid;
 });
 
@@ -156,6 +167,13 @@ describe("assistant markdown rendering helpers", () => {
     Object.defineProperty(globalThis, "document", {
       configurable: true,
       value: { createElement: (tagName: string) => el(tagName) },
+    });
+    Object.defineProperty(globalThis, "activeDocument", {
+      configurable: true,
+      value: {
+        createElement: (tagName: string) => el(tagName),
+        importNode: <T>(node: T) => node,
+      },
     });
 
     enhanceCallouts(root as unknown as HTMLElement);
@@ -178,6 +196,23 @@ describe("assistant markdown rendering helpers", () => {
       configurable: true,
       value: { createElement: (tagName: string) => el(tagName) },
     });
+    Object.defineProperty(globalThis, "activeDocument", {
+      configurable: true,
+      value: {
+        createElement: (tagName: string) => el(tagName),
+        importNode: <T>(node: T) => node,
+      },
+    });
+    Object.defineProperty(globalThis, "DOMParser", {
+      configurable: true,
+      value: class {
+        parseFromString(markup: string): { documentElement: FakeElement } {
+          const documentElement = el("svg");
+          documentElement.innerHTML = markup;
+          return { documentElement };
+        }
+      },
+    });
     (globalThis as { __obsidianMockMermaid?: unknown }).__obsidianMockMermaid = {
       render: async (_id: string, source: string) => ({ svg: `<svg>${source}</svg>` }),
     };
@@ -185,6 +220,8 @@ describe("assistant markdown rendering helpers", () => {
     await renderMermaidBlocks(root as unknown as HTMLElement);
 
     expect(root.children[0].classList.contains("agentic-chat-mermaid")).toBe(true);
-    expect(root.children[0].innerHTML).toBe("<svg>graph TD; A-->B</svg>");
+    const svg = root.children[0].children[0];
+    expect(svg.tagName).toBe("SVG");
+    expect(svg.innerHTML).toBe("<svg>graph TD; A-->B</svg>");
   });
 });

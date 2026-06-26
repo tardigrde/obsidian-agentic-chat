@@ -703,7 +703,7 @@ async function createPkce(randomBytes: ((size: number) => Uint8Array) | undefine
 }
 
 async function sha256Base64Url(input: string): Promise<string> {
-  const subtle = globalThis.crypto?.subtle;
+  const subtle = window.crypto?.subtle;
   if (!subtle) throw new Error("Web Crypto is required for MCP OAuth PKCE.");
   const digest = await subtle.digest("SHA-256", new TextEncoder().encode(input));
   return base64UrlEncode(new Uint8Array(digest));
@@ -717,7 +717,7 @@ function base64UrlEncode(bytes: Uint8Array): string {
 
 function defaultRandomBytes(size: number): Uint8Array {
   const bytes = new Uint8Array(size);
-  globalThis.crypto.getRandomValues(bytes);
+  window.crypto.getRandomValues(bytes);
   return bytes;
 }
 
@@ -766,12 +766,12 @@ export async function createLoopbackOAuthCallbackReceiver(
   return {
     redirectUri: `http://localhost:${address.port}/oauth/callback`,
     waitForCallback: async (expectedState, timeoutMs) => {
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      let timeoutId: number | undefined;
       const timeout = new Promise<McpOAuthCallback>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error("Timed out waiting for MCP OAuth callback.")), timeoutMs);
+        timeoutId = window.setTimeout(() => reject(new Error("Timed out waiting for MCP OAuth callback.")), timeoutMs);
       });
       const callback = await Promise.race([callbackPromise, timeout]).finally(() => {
-        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        if (timeoutId !== undefined) window.clearTimeout(timeoutId);
       });
       if (callback.state !== expectedState) throw new Error("MCP OAuth callback state did not match.");
       return callback;
@@ -842,7 +842,7 @@ async function openAuthorizationUrl(url: string): Promise<void> {
 }
 
 function optionalNodeRequire(): ((moduleName: string) => unknown) | undefined {
-  const candidate = (globalThis as { require?: (moduleName: string) => unknown }).require;
+  const candidate = (window as unknown as { require?: (moduleName: string) => unknown }).require;
   if (typeof candidate === "function") return candidate;
   return typeof require === "function" ? require : undefined;
 }
