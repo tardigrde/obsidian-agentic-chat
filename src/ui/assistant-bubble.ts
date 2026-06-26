@@ -279,7 +279,14 @@ export async function renderMermaidBlocks(root: HTMLElement): Promise<void> {
       // assigning to innerHTML — keeps the mermaid output out of an unsanitized
       // HTML sink (and is the namespace-correct way to insert SVG markup).
       const svgDocument = new DOMParser().parseFromString(svgMarkup, "image/svg+xml");
-      target.replaceChildren(activeDocument.importNode(svgDocument.documentElement, true));
+      const svgRoot = svgDocument.documentElement;
+      // Reject malformed Mermaid output — a missing/non-<svg> root or a DOMParser
+      // <parsererror> node — before it reaches the live document. Throwing here
+      // falls into the surrounding catch, which flags the block as a render error.
+      if (!svgRoot || svgRoot.localName.toLowerCase() !== "svg" || svgRoot.querySelector("parsererror")) {
+        throw new Error("Mermaid renderer returned invalid SVG or parser error");
+      }
+      target.replaceChildren(activeDocument.importNode(svgRoot, true));
       if (typeof rendered !== "string") rendered.bindFunctions?.(target);
       pre.replaceWith(target);
     } catch (error) {

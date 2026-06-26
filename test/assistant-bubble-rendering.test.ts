@@ -46,6 +46,10 @@ class FakeElement {
     this.classList.add(...value.split(/\s+/).filter(Boolean));
   }
 
+  get localName(): string {
+    return this.tagName.toLowerCase();
+  }
+
   get textContent(): string {
     return this.text + this.children.map((child) => child.textContent).join("");
   }
@@ -116,9 +120,14 @@ class FakeElement {
     return null;
   }
 
+  querySelector(selector: string): FakeElement | null {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
   querySelectorAll(selector: string): FakeElement[] {
     const all = [...this.walk()];
     if (selector === "blockquote") return all.filter((el) => el.tagName === "BLOCKQUOTE");
+    if (selector === "parsererror") return all.filter((el) => el.tagName === "PARSERERROR");
     if (selector === "pre > code.language-mermaid") {
       return all.filter(
         (el) =>
@@ -208,7 +217,10 @@ describe("assistant markdown rendering helpers", () => {
       value: class {
         parseFromString(markup: string): { documentElement: FakeElement } {
           const documentElement = el("svg");
-          documentElement.innerHTML = markup;
+          // Real DOMParser(image/svg+xml) makes <svg> the document element; its
+          // serialized content is only the markup inside the root tag.
+          const match = /^<svg\b[^>]*>([\s\S]*)<\/svg>\s*$/i.exec(markup.trim());
+          documentElement.innerHTML = match?.[1] ?? markup;
           return { documentElement };
         }
       },
@@ -222,6 +234,42 @@ describe("assistant markdown rendering helpers", () => {
     expect(root.children[0].classList.contains("agentic-chat-mermaid")).toBe(true);
     const svg = root.children[0].children[0];
     expect(svg.tagName).toBe("SVG");
-    expect(svg.innerHTML).toBe("<svg>graph TD; A-->B</svg>");
+    expect(svg.innerHTML).toBe("graph TD; A-->B");
+  });
+
+  it("flags Mermaid blocks as errors when the rendered SVG is invalid", async () => {
+    const root = el("div");
+    const pre = el("pre");
+    const code = el("code", "graph TD; A-->B");
+    code.classList.add("language-mermaid");
+    pre.appendChild(code);
+    root.appendChild(pre);
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { createElement: (tagName: string) => el(tagName) },
+    });
+    Object.defineProperty(globalThis, "activeDocument", {
+      configurable: true,
+      value: {
+        createElement: (tagName: string) => el(tagName),
+        importNode: <T>(node: T) => node,
+      },
+    });
+    Object.defineProperty(globalThis, "DOMParser", {
+      configurable: true,
+      value: class {
+        parseFromString(_markup: string): { documentElement: FakeElement } {
+          // Simulate a DOMParser parse failure: root is <parsererror>, not <svg>.
+          return { documentElement: el("parsererror") };
+        }
+      },
+    });
+    (globalThis as { __obsidianMockMermaid?: unknown }).__obsidianMockMermaid = {
+      render: async () => ({ svg: "<parsererror>boom</parsererror>" }),
+    };
+
+    await renderMermaidBlocks(root as unknown as HTMLElement);
+
+    expect(root.children[0].classList.contains("agentic-chat-mermaid-error")).toBe(true);
   });
 });
