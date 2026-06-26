@@ -46,6 +46,10 @@ class FakeElement {
     this.classList.add(...value.split(/\s+/).filter(Boolean));
   }
 
+  get localName(): string {
+    return this.tagName.toLowerCase();
+  }
+
   get textContent(): string {
     return this.text + this.children.map((child) => child.textContent).join("");
   }
@@ -95,6 +99,15 @@ class FakeElement {
     this.parentElement = null;
   }
 
+  replaceChildren(...nodes: FakeElement[]): void {
+    for (const child of this.children.splice(0)) child.parentElement = null;
+    for (const node of nodes) this.appendChild(node);
+  }
+
+  importNode<T>(node: T, _deep?: boolean): T {
+    return node;
+  }
+
   closest(selector: string): FakeElement | null {
     if (!selector.startsWith(".")) return null;
     const cls = selector.slice(1);
@@ -107,9 +120,14 @@ class FakeElement {
     return null;
   }
 
+  querySelector(selector: string): FakeElement | null {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
   querySelectorAll(selector: string): FakeElement[] {
     const all = [...this.walk()];
     if (selector === "blockquote") return all.filter((el) => el.tagName === "BLOCKQUOTE");
+    if (selector === "parsererror") return all.filter((el) => el.tagName === "PARSERERROR");
     if (selector === "pre > code.language-mermaid") {
       return all.filter(
         (el) =>
@@ -143,6 +161,8 @@ function el(tagName: string, text = ""): FakeElement {
 
 afterEach(() => {
   delete (globalThis as { document?: unknown }).document;
+  delete (globalThis as { activeDocument?: unknown }).activeDocument;
+  delete (globalThis as { DOMParser?: unknown }).DOMParser;
   delete (globalThis as { __obsidianMockMermaid?: unknown }).__obsidianMockMermaid;
 });
 
@@ -156,6 +176,13 @@ describe("assistant markdown rendering helpers", () => {
     Object.defineProperty(globalThis, "document", {
       configurable: true,
       value: { createElement: (tagName: string) => el(tagName) },
+    });
+    Object.defineProperty(globalThis, "activeDocument", {
+      configurable: true,
+      value: {
+        createElement: (tagName: string) => el(tagName),
+        importNode: <T>(node: T) => node,
+      },
     });
 
     enhanceCallouts(root as unknown as HTMLElement);
@@ -178,6 +205,26 @@ describe("assistant markdown rendering helpers", () => {
       configurable: true,
       value: { createElement: (tagName: string) => el(tagName) },
     });
+    Object.defineProperty(globalThis, "activeDocument", {
+      configurable: true,
+      value: {
+        createElement: (tagName: string) => el(tagName),
+        importNode: <T>(node: T) => node,
+      },
+    });
+    Object.defineProperty(globalThis, "DOMParser", {
+      configurable: true,
+      value: class {
+        parseFromString(markup: string): { documentElement: FakeElement } {
+          const documentElement = el("svg");
+          // Real DOMParser(image/svg+xml) makes <svg> the document element; its
+          // serialized content is only the markup inside the root tag.
+          const match = /^<svg\b[^>]*>([\s\S]*)<\/svg>\s*$/i.exec(markup.trim());
+          documentElement.innerHTML = match?.[1] ?? markup;
+          return { documentElement };
+        }
+      },
+    });
     (globalThis as { __obsidianMockMermaid?: unknown }).__obsidianMockMermaid = {
       render: async (_id: string, source: string) => ({ svg: `<svg>${source}</svg>` }),
     };
@@ -185,6 +232,44 @@ describe("assistant markdown rendering helpers", () => {
     await renderMermaidBlocks(root as unknown as HTMLElement);
 
     expect(root.children[0].classList.contains("agentic-chat-mermaid")).toBe(true);
-    expect(root.children[0].innerHTML).toBe("<svg>graph TD; A-->B</svg>");
+    const svg = root.children[0].children[0];
+    expect(svg.tagName).toBe("SVG");
+    expect(svg.innerHTML).toBe("graph TD; A-->B");
+  });
+
+  it("flags Mermaid blocks as errors when the rendered SVG is invalid", async () => {
+    const root = el("div");
+    const pre = el("pre");
+    const code = el("code", "graph TD; A-->B");
+    code.classList.add("language-mermaid");
+    pre.appendChild(code);
+    root.appendChild(pre);
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { createElement: (tagName: string) => el(tagName) },
+    });
+    Object.defineProperty(globalThis, "activeDocument", {
+      configurable: true,
+      value: {
+        createElement: (tagName: string) => el(tagName),
+        importNode: <T>(node: T) => node,
+      },
+    });
+    Object.defineProperty(globalThis, "DOMParser", {
+      configurable: true,
+      value: class {
+        parseFromString(_markup: string): { documentElement: FakeElement } {
+          // Simulate a DOMParser parse failure: root is <parsererror>, not <svg>.
+          return { documentElement: el("parsererror") };
+        }
+      },
+    });
+    (globalThis as { __obsidianMockMermaid?: unknown }).__obsidianMockMermaid = {
+      render: async () => ({ svg: "<parsererror>boom</parsererror>" }),
+    };
+
+    await renderMermaidBlocks(root as unknown as HTMLElement);
+
+    expect(root.children[0].classList.contains("agentic-chat-mermaid-error")).toBe(true);
   });
 });

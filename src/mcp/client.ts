@@ -497,7 +497,7 @@ function parseJsonBodyOrSse(text: string, contentType: string, id: number): unkn
       .join("\n")
       .trim();
     if (!data) continue;
-    const parsed = JSON.parse(data);
+    const parsed: unknown = JSON.parse(data);
     const record = asRecord(parsed);
     if (record.id === id || record.id === String(id)) return parsed;
   }

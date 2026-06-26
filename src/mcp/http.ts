@@ -18,15 +18,15 @@ export async function withMcpTimeout<T>(
   label: string,
   timeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
 ): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: number | undefined;
   const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => {
+    timer = window.setTimeout(() => {
       reject(new Error(`MCP request timed out after ${timeoutMs} ms while ${label}.`));
     }, timeoutMs);
   });
   try {
     return await Promise.race([promise, timeout]);
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    if (timer !== undefined) window.clearTimeout(timer);
   }
 }

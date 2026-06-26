@@ -237,7 +237,7 @@ export function enhanceCallouts(root: HTMLElement): void {
       first.remove();
     }
 
-    const callout = document.createElement("div");
+    const callout = activeDocument.createElement("div");
     callout.className = "callout";
     callout.dataset.callout = type;
     if (match[2]) {
@@ -270,11 +270,23 @@ export async function renderMermaidBlocks(root: HTMLElement): Promise<void> {
     const pre = code.parentElement;
     if (!pre) continue;
     const source = code.textContent ?? "";
-    const target = document.createElement("div");
+    const target = activeDocument.createElement("div");
     target.className = "agentic-chat-mermaid";
     try {
       const rendered = await mermaid.render(`agentic-chat-mermaid-${mermaidId++}`, source);
-      target.innerHTML = typeof rendered === "string" ? rendered : rendered.svg;
+      const svgMarkup = typeof rendered === "string" ? rendered : rendered.svg;
+      // Parse the SVG into a dedicated document and import the node instead of
+      // assigning to innerHTML — keeps the mermaid output out of an unsanitized
+      // HTML sink (and is the namespace-correct way to insert SVG markup).
+      const svgDocument = new DOMParser().parseFromString(svgMarkup, "image/svg+xml");
+      const svgRoot = svgDocument.documentElement;
+      // Reject malformed Mermaid output — a missing/non-<svg> root or a DOMParser
+      // <parsererror> node — before it reaches the live document. Throwing here
+      // falls into the surrounding catch, which flags the block as a render error.
+      if (!svgRoot || svgRoot.localName.toLowerCase() !== "svg" || svgRoot.querySelector("parsererror")) {
+        throw new Error("Mermaid renderer returned invalid SVG or parser error");
+      }
+      target.replaceChildren(activeDocument.importNode(svgRoot, true));
       if (typeof rendered !== "string") rendered.bindFunctions?.(target);
       pre.replaceWith(target);
     } catch (error) {

@@ -286,5 +286,5 @@ function replayUsage(usage: ReplayUsage = {}): Usage {
 }
 
 function wait(ms: number): Promise<void> {
-  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+  return ms > 0 ? new Promise((resolve) => window.setTimeout(resolve, ms)) : Promise.resolve();
 }
