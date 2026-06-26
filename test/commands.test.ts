@@ -18,6 +18,7 @@ describe("visibleCommands", () => {
   it("hides deprecated/internal commands", () => {
     const names = visibleCommands().map((c) => c.name);
     expect(names).toContain("skill");
+    expect(names).toContain("diagnostics");
     expect(names).not.toContain("template");
   });
 });
@@ -28,6 +29,7 @@ describe("resolveCommand", () => {
   });
   it("resolves an alias to its canonical command", () => {
     expect(resolveCommand("history")?.name).toBe("sessions");
+    expect(resolveCommand("diag")?.name).toBe("diagnostics");
   });
   it("exposes /style as its own command (not a /config alias)", () => {
     expect(resolveCommand("style")?.name).toBe("style");

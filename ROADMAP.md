@@ -37,13 +37,10 @@ concepts that compose — they do not fully overlap:
 
 ## Providers & privacy
 
-- **Generic OpenAI-compatible provider** (`G1`). Add a third branch to `buildModel`
-  (`src/llm/models.ts`) alongside OpenRouter/Ollama: endpoint + API key + privacy flags,
-  modeled on the Ollama branch. Named presets — **Chutes** (TEE/confidential), **Venice.ai**,
-  **LM Studio**, **vLLM**, **llama.cpp** — become settings entries, not new code branches.
-  Privacy becomes config, not code.
-- **Provider/preset settings UI** (`G2`). Endpoint / key / model selection per provider or
-  preset. Ships with `G1`.
+OpenRouter, Ollama, and generic OpenAI-compatible gateway support are shipped and documented in
+the [README](README.md). Open provider work is now about additional privacy affordances and
+convenience, not the base transport.
+
 - **TEE/confidential model filter** (`G3`, stretch). Filter the model browser to
   TEE/confidential models, mirroring the ZDR filter, so privacy is enforced by construction.
 
@@ -68,9 +65,6 @@ The most-requested capability across Obsidian AI plugins, and the heaviest.
 
 ## Web & research
 
-- **`fetch_url` read-more / pagination** (`W1`). Add an `offset` param so the model can fetch
-  the next window of a truncated page and learn whether more remains. The char limit applies to
-  the *already-extracted* text, not raw HTML (raw is pre-capped at `MAX_RAW_CHARS`).
 - **Better extraction (Readability)** (`W2`). The hand-rolled regex stripper
   (`extractReadableText`) returns *all* visible text — nav, footer, cookie banners — wasting the
   char budget on boilerplate. Upgrade to Mozilla Readability via the platform `DOMParser`
@@ -110,9 +104,6 @@ mobile-safe — no shell/subprocess.
   editable until it ends, then send. **Design tension with steering:** a mid-run message could
   *steer now* or *queue for next* — decide a default + an explicit modifier (e.g. Enter = queue,
   Shift = steer now) before building either. (Claudian.)
-- **`ask_user` clarification tool** (`L3`). A typed tool the agent calls to pause and ask a
-  structured question mid-task (distinct from prose). Renders as an inline prompt; pairs with the
-  approval gate and plan mode. (obsidian-chat.)
 - **Inline edit / Quick Ask** (`L4`). Select text in a note (or at the cursor) + a hotkey → the
   agent rewrites **in place**, shown as a word-level diff to accept/reject, no chat round-trip.
   Strong Obsidian-native surface; reuses the shipped diff/accept UI.
@@ -138,12 +129,31 @@ system prompt + its own history under a name. (Obsidian Copilot "Projects".)
 
 ## Integrations (MCP / ACP)
 
-- **MCP client over Streamable HTTP** (`I1`). Latest transport (MCP spec 2025-03-26) + OAuth2.
-  **Never stdio/subprocess** — networked always, `localhost` when the server is local, so mobile
-  keeps working. Discovered MCP tools register alongside vault tools and flow through the same
-  approval gate. Client only — never an MCP server.
-- **MCP server config + auth in settings** (`I2`). Endpoint + OAuth, behind an egress warning
-  like the web layer. Ships with `I1`.
+- **Obsidian Copilot concept audit** (`I0`). Before larger RAG / project-workspace /
+  inline-edit / MCP-expansion work, run a focused deep-research pass on Obsidian Copilot and
+  identify concepts worth borrowing, adapting, or explicitly avoiding. Cover at least Smart Vault
+  Search, Project Mode, Quick Commands / one-click edits, Agent Mode, web/document ingestion,
+  provider/settings UX, and any MCP/tooling patterns visible in docs or code. Deliverable: a short
+  comparison mapped to our roadmap IDs (`R1`/`R4`/`L4`/`P1`/`I5`/`X5`) with concrete "reuse
+  package", "copy pattern", and "do not copy" recommendations.
+- **MCP OAuth hardening** (`I5`). Baseline OAuth is shipped: protected-resource discovery,
+  authorization-server discovery, PKCE, dynamic client registration, bearer tokens, refresh, and
+  re-auth/forget-token UI, bounded request timeouts, expired-session re-open, scope step-up retry
+  through refresh-token grant, and runtime diagnostics with URL/auth/token state plus categorized
+  MCP errors. Remaining work: secure OS/mobile token storage and mobile-friendly redirects.
+- **Generic MCP setup UX** (`I8`). The MCP tab ships with no bundled servers or presets. Users add
+  any HTTPS Streamable HTTP server, choose no auth / bearer token / static header / OAuth, test
+  discovery from settings, and keep conservative default approval. Remaining work: broader live
+  e2e coverage against representative public OAuth and static-header servers.
+- **MCP Streamable HTTP hardening** (`I6`). The client handles JSON responses, POST SSE
+  responses, bounded `Last-Event-ID` resume attempts for incomplete POST SSE responses, expired-session
+  re-open, runtime discovery diagnostics, byte-safe proxy response parsing, and large-result
+  artifacts for context control. It also handles async `202` request completion through GET SSE,
+  bounded repeated SSE redelivery, and protocol-version fallback during initialization. Remaining
+  work: long-lived background server-initiated MCP event consumers if a future feature needs them.
+- **MCP non-tool capabilities** (`I7`). Decide if and how to expose MCP resources/prompts/roots,
+  sampling, elicitation, and richer binary/resource result rendering without turning the plugin into
+  an MCP server or leaking vault contents by default.
 - **ACP client (desktop)** (`I3`). Drive an *external* coding agent (Claude Code / Codex /
   Gemini CLI) from the chat pane over JSON-RPC — a second backend alongside the native pi loop.
   ACP is stdio/subprocess by design → **desktop-only**; mobile keeps the native loop.
@@ -170,9 +180,6 @@ system prompt + its own history under a name. (Obsidian Copilot "Projects".)
 Things only an *Obsidian* agent can do. (Graph/backlink, frontmatter-property, and link-aware
 rename tools already shipped — see README.)
 
-- **Heading / block-level `@`-mention** (`O1`). `@note#heading` / `@note^block` attaches a slice
-  instead of the whole file — cheaper context, native to Obsidian's addressing. Extends the
-  shipped mention/attachment system.
 - **Conversation fork** (`O3`). Prompt editing already *rewinds*; forking keeps both branches as
   separate sessions. Cheap given the JSONL `parentId`/`leafId` linked-list already models branches.
 
@@ -212,30 +219,23 @@ flat M1 `remember`/`recall` store was cut: agent-writable memory without consoli
 
 ## Testing & developer experience
 
-- **E2E test suite — CI + coverage** (`D1`). The **base infra has landed** (local-only): a
-  [`wdio-obsidian-service`](https://github.com/jesse-r-s-hines/wdio-obsidian-service) config
-  (`wdio.conf.mts`), a throwaway test vault (`test/e2e/vault`), and a smoke spec
-  (`test/e2e/specs/smoke.e2e.ts`) that boots a real Obsidian, loads the plugin, and checks view
-  registration, the composer card, in-pane slash routing, the `/dirs` working-dir command, and
-  active-note attachment — run with `npm run test:e2e`. See the README "End-to-end tests" section.
-  **Open:** wire it into GitHub Actions CI (boots Electron, so it needs a headless display +
-  Obsidian-download caching, kept separate from the fast `typecheck`/`lint`/`test`/`build` jobs),
-  add the emulate-mobile/Android matrix, and grow coverage to the approval modal + a real
-  model-backed turn (verifying a vault write) behind a gated API key.
-- **Formatting + extended lint** (`D2`). The lean base — an eslint flat config + `typescript-eslint`,
-  a `lint` npm script, and a CI `lint` job alongside `typecheck`/`test`/`build` — lands first as a
-  small batch item. This is the heavier follow-up: Prettier (or `@stylistic/eslint`) for consistent
-  formatting plus stricter rules (`no-floating-promises`, import ordering/hygiene), run as a
-  `format:check` + extended `lint` gate. Kept separate so the formatting churn is its own reviewable
-  commit, not mixed into feature diffs.
+The current local stabilization operating plan: diagnostics first, characterize one subsystem,
+simplify inside that tested boundary, verify, commit, and repeat. The roadmap tracks product
+direction; this section tracks the local testing and debt-reduction loop used before any remote
+publishing.
+
+### Stabilization status
+
+The local `DX1`-`DX15` stabilization pass has shipped. The shipped details now live in the
+developer/testing sections of the [README](README.md): tool contracts and compatibility surfaces,
+deterministic replay/e2e hooks, session invariants, runtime diagnostics, service/UI boundaries,
+prompt-turn ordering, and live-provider release gates.
+
+No open `DX` items are currently tracked here. Add new stabilization work to this section only when
+there is a concrete open slice to characterize, implement, verify, and commit.
 
 ## Polish & reach
 
-- **Mermaid + callout render parity** (`X1`). Verify `AssistantBubble` renders mermaid diagrams
-  and `> [!note]` callouts (Obsidian's `MarkdownRenderer` needs explicit post-processing for
-  mermaid). (pi-plugin.)
-- **Editor/file context-menu "Send selection to chat"** (`X2`). Right-click selected text or a
-  note → add it as a scoped context chip, via `editor-menu`/`file-menu` events. (obsidian-chat.)
 - **Custom (user-authored) output styles** (`X4`). Once the built-ins prove the model.
 - **Document ingestion (PDF/EPUB/Office) as context** (`X5`). Parse non-image documents into
   attachable text; PDF text extraction is the reasonable first subset. (Obsidian Copilot.)
@@ -256,23 +256,15 @@ Reported issues to be fixed, ordered by severity. New bugs go here; fixed ones m
 README and out of this list. The last closed batch (`/agent <unknown>` dead end and note
 drag-drop regression, 2026-06-16) is documented in the README.
 
-- **Active note auto-attaches even when its path is ignore-listed** (e.g. `/Private/`).
-  (2026-06-19) Opening a note always pins it as the active-note chip in the composer, but
-  ignored/blacklisted paths attach too — pointless (the ignore matcher hides them from the
-  model, so it can't read them) and leaky (the path shows in the UI). Attachments are already
-  ignore-aware (path-only refs); the active-note auto-add should skip ignored paths entirely,
-  the same as a manual attach.
-- **Streaming pins the transcript to the bottom, blocking scroll-up.** (2026-06-19) While the
-  agent streams, the chat pane auto-scrolls to the newest token on every update, so the user
-  can't scroll up to read earlier output mid-stream. Fix: stick to bottom only when the user is
-  already at/near the bottom; once they scroll up, pause auto-scroll until they return.
+No open bugs currently tracked.
 
 ---
 
 ## Priority matrix
 
-Value (1–10, to a general user) × effort (T-shirt). Sorted by value descending, then by
-ascending effort. This is the build-order signal — the top rows are the high-leverage work.
+Value (1–10, to a general user) × effort (T-shirt). For `DX` items, value means
+stabilization/development leverage rather than direct feature value. Sorted by value descending,
+then by ascending effort. This is the build-order signal — the top rows are the high-leverage work.
 
 | ID | Item | Value | Effort |
 |----|------|:-----:|:------:|
@@ -286,40 +278,35 @@ ascending effort. This is the build-order signal — the top rows are the high-l
 | `V1` | Memory v2: rollout extraction | 7 | L |
 | `V2` | Memory v2: consolidation + forgetting | 7 | L |
 | `P1` | Project workspaces | 6 | L |
-| `I1` | MCP client (Streamable HTTP) | 6 | L |
-| `G1` | Generic OpenAI-compatible provider | 6 | M |
 | `T1` | Tool consolidation / meta-tools | 6 | M |
 | `R4` | QA inline citations | 6 | S |
+| `I5` | MCP OAuth hardening | 6 | M |
+| `I8` | Generic MCP setup UX | 6 | M |
 | `W2` | Better extraction (Readability) | 5 | M |
 | `S1` | Keystore for API keys | 5 | M |
 | `S4` | Per-turn file checkpoints + rewind | 5 | L |
 | `L5` | Plan/todo tracker panel | 5 | M |
 | `L2` | Message queue (type-ahead) | 5 | M |
-| `L3` | `ask_user` clarification tool | 5 | S |
-| `O1` | Heading/block-level `@`-mention | 5 | S |
-| `G2` | Provider/preset settings UI | 5 | S |
-| `X2` | Context-menu "Send selection to chat" | 5 | S |
-| `X1` | Mermaid + callout render parity | 5 | S |
+| `I0` | Obsidian Copilot concept audit | 5 | S |
+| `I6` | MCP Streamable HTTP hardening | 5 | M |
 | `T2` | Context-budgeted tool dropping + notice | 5 | S |
 | `X5` | Document ingestion (PDF first) | 5 | L |
 | `S3` | External config file (YAML) | 4 | M |
-| `W1` | `fetch_url` read-more / pagination | 4 | S |
 | `L6` | `#` inline persistent instruction | 4 | S |
 | `W3` | Deep-research = subagent-backed | 4 | L |
 | `I3` | ACP client (desktop) | 4 | XL |
+| `I7` | MCP non-tool capabilities | 4 | L |
 | `X4` | Custom output styles | 4 | M |
-| `D1` | E2E in CI + coverage (base infra shipped) | 4 | M |
 | `X6` | Internationalization (i18n) | 4 | L |
 | `G3` | TEE/confidential model filter | 3 | S |
-| `D2` | Formatting + extended lint (prettier, import hygiene) | 3 | S |
 | `V4` | Memory v2: per-vault vs cross-vault scope | 3 | S |
 | `A1` | Async/background subagent runs | 3 | XL |
 | `A2` | Per-agent profile memory | 3 | M |
 | `O3` | Conversation fork | 2 | S |
 | `X7` | Visual event debugger | 2 | M |
 
-> `I2` (MCP server config UI) ships with `I1`; `I4` (backend switch) ships with `I3` — folded
-> into their parents above.
+> Static MCP server config shipped with the KISS MCP client and is documented in the README.
+> `I4` (backend switch) ships with `I3` — folded into its parent above.
 
 ---
 
@@ -351,10 +338,23 @@ Already landed (documented in the README, not tracked as open work):
 - **E2E coverage of the new behavior (`NB6`)** — the local e2e suite grows past the
   smoke spec: the context gauge + dynamic effort knob (model-independent), plus a
   gated model-backed spec (`guardrails.e2e.ts`) for the approval modal + a real
-  turn → vault write. Key-gated on `OPENROUTER_API_KEY`; local-only, not in CI.
+  turn → vault write. It also covers settings-tab persistence for provider/API key,
+  approval, web, MCP, and resource controls; existing `data.json` migration and
+  plaintext secret migration; and a sequential supported-version matrix runner
+  (`npm run test:e2e:matrix`, defaulting to earliest + latest Obsidian). Live provider
+  paths stay key-gated; the suite is local-only, not in CI.
 - **Dynamic thinking levels** — the effort knob / `/effort` only offers levels the
   current model supports (`thinkingLevelMap`), and the requested level is clamped
   so we never send an unsupported `xhigh`.
+- **`fetch_url` pagination (`W1`)** — `fetch_url` accepts an `offset` into extracted
+  readable text, returns `nextOffset`/`hasMore`, and tells the model how to fetch the
+  next window of long pages.
+- **Context-menu attachments (`X2`)** — editor selected text, files, folders, and
+  multi-file selections can be sent to Agentic Chat from Obsidian context menus as
+  removable context chips.
+- **`ask_user` clarification tool (`L3`)** — the model can pause a turn with a typed
+  `ask_user` tool call; the chat renders an inline question/choice prompt and feeds
+  the answer back as the tool result.
 - **Read de-dup + size guardrail** — a repeat read of the same range returns a
   pointer instead of re-injecting the file (edits invalidate it); a bulk read of a
   very large file is refused with pagination guidance.
@@ -369,3 +369,13 @@ Already landed (documented in the README, not tracked as open work):
   chosen delete preference (system trash vs. obsidian trash). This is a
   `1.6.6` API, so `minAppVersion` was raised to `1.6.6` and `versions.json`
   synced accordingly.
+- **Heading / block-level `@`-mentions (`O1`)** — `@note#heading` and
+  `@note^block` autocomplete to context chips and attach just the referenced
+  section/block at send time, with ignore-list checks applied to the base note.
+- **Provider preset shortcuts (`G2`)** — the OpenAI-compatible provider settings
+  include presets for OpenWebUI, LM Studio, vLLM, llama.cpp, Chutes, and Venice.ai
+  that fill base URLs and local/hosted privacy hints without adding transport
+  branches.
+- **Mermaid + callout render parity (`X1`)** — assistant Markdown is marked as
+  Obsidian-rendered content, callout blockquotes get a fallback conversion when
+  needed, and Mermaid code blocks render through Obsidian's Mermaid loader.

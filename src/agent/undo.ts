@@ -1,14 +1,12 @@
 import { type App, TFile } from "obsidian";
 import { getParentPath, normalizeVaultPath } from "../vault/path";
+export { UNDOABLE_TOOLS } from "../tools/tool-contracts";
 
 /** A reversible record of one mutating vault tool call. */
 export type UndoEntry =
   | { kind: "content"; path: string; before: string | null } // write/edit; null = file didn't exist
   | { kind: "rename"; from: string; to: string }
   | { kind: "delete"; path: string; before: string };
-
-/** Mutating tools whose effect we capture for undo. */
-export const UNDOABLE_TOOLS = new Set(["write", "edit", "delete", "rename"]);
 
 /**
  * Capture the inverse of a mutating tool call *before* it runs. Best-effort:

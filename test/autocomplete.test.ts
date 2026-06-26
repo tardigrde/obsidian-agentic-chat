@@ -155,6 +155,23 @@ describe("suggest — mentions", () => {
     );
     expect(items.map((i) => i.value)).toEqual([`${FOLDER_PREFIX}200 Resources`]);
   });
+  it("preserves heading suffixes on file mention suggestions", () => {
+    const items = suggest({ kind: "mention", range: [0, 13], query: "road#Next" }, context());
+    expect(items.map((i) => i.value)).toEqual(["Projects/roadmap.md#Next"]);
+    expect(items[0]).toMatchObject({ label: "roadmap.md#Next", detail: "Projects/roadmap.md#Next" });
+  });
+  it("preserves block suffixes on file mention suggestions without offering folders", () => {
+    const items = suggest(
+      { kind: "mention", range: [0, 14], query: "Projects^abc" },
+      context({
+        files: [
+          { path: "Projects", type: "folder" },
+          { path: "Projects.md", type: "file" },
+        ],
+      }),
+    );
+    expect(items.map((i) => i.value)).toEqual(["Projects.md^abc"]);
+  });
 });
 
 describe("resolve", () => {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildActiveNoteSection, effectiveActiveNote, MAX_ACTIVE_NOTE_CHARS } from "../src/ui/active-note";
+import {
+  autoActiveNotePath,
+  buildActiveNoteSection,
+  effectiveActiveNote,
+  MAX_ACTIVE_NOTE_CHARS,
+} from "../src/ui/active-note";
 
 describe("effectiveActiveNote", () => {
   it("auto-attaches the active note by default", () => {
@@ -18,6 +23,33 @@ describe("effectiveActiveNote", () => {
     expect(effectiveActiveNote({ activePath: "Notes/A.md", suppressed: false, explicit: ["Notes/A.md"] })).toBeNull();
     // A different explicit attachment doesn't suppress the active note.
     expect(effectiveActiveNote({ activePath: "Notes/A.md", suppressed: false, explicit: ["Other.md"] })).toBe("Notes/A.md");
+  });
+});
+
+describe("autoActiveNotePath", () => {
+  const allowed = () => false;
+
+  it("uses the active Markdown file by default", () => {
+    expect(autoActiveNotePath({ path: "Notes/A.md", extension: "md" }, { suppressed: false, isIgnored: allowed })).toBe(
+      "Notes/A.md",
+    );
+  });
+
+  it("skips non-Markdown active files", () => {
+    expect(autoActiveNotePath({ path: "Image.png", extension: "png" }, { suppressed: false, isIgnored: allowed })).toBeNull();
+  });
+
+  it("skips ignored active files so private paths are not auto-shown", () => {
+    expect(
+      autoActiveNotePath(
+        { path: "Private/Secret.md", extension: "md" },
+        { suppressed: false, isIgnored: (path) => path.startsWith("Private/") },
+      ),
+    ).toBeNull();
+  });
+
+  it("stays suppressed even for an otherwise eligible Markdown file", () => {
+    expect(autoActiveNotePath({ path: "Notes/A.md", extension: "md" }, { suppressed: true, isIgnored: allowed })).toBeNull();
   });
 });
 

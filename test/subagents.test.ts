@@ -16,7 +16,7 @@ import {
   type SubagentDetails,
 } from "../src/tools/subagent-tool";
 import { buildModel } from "../src/llm/models";
-import { filterChildTools } from "../src/agent/agent-service";
+import { filterChildTools } from "../src/agent/subagent-runtime";
 import { createVaultTools } from "../src/tools/vault-tools";
 
 const TEST_MODEL: Model<"openai-completions"> = buildModel({
@@ -24,6 +24,7 @@ const TEST_MODEL: Model<"openai-completions"> = buildModel({
   modelId: "test/model",
   privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
   ollamaBaseUrl: "http://localhost:11434",
+  openaiCompatibleBaseUrl: "http://localhost:3000/api",
 });
 
 /** A child stream that returns a fixed assistant reply with usage, no network. */
@@ -188,7 +189,7 @@ describe("filterChildTools", () => {
   const names = (subset: ReturnType<typeof createVaultTools>): string[] => subset.map((tool) => tool.name).sort();
 
   it("restricts to the named allowlist", () => {
-    expect(names(filterChildTools(tools, ["read", "grep"], false))).toEqual(["grep", "read"]);
+    expect(names(filterChildTools(tools, ["read", "search"], false))).toEqual(["read", "search"]);
   });
 
   it("defaults an empty allowlist to the read-only tools", () => {

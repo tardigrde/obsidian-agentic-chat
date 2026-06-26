@@ -10,7 +10,7 @@ import {
   TOGGLE_MODES,
 } from "../src/agent/modes";
 import { type ApprovalSettings } from "../src/agent/approval";
-import { MUTATING_TOOLS } from "../src/tools/vault-tools";
+import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
 
 const allow: ApprovalSettings = { mutating: "allow", perTool: {}, workingDirs: [] };
 

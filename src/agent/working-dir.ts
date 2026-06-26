@@ -14,7 +14,7 @@ const PATH_FIELDS = ["path", "newPath"] as const;
 
 /**
  * The vault-relative target paths a tool call acts on, normalized. Pathless calls
- * (find, grep without a path, get_active_note) return `[]` and so are unaffected by
+ * (search without a path, get_active_note) return `[]` and so are unaffected by
  * the boundary. Invalid/escaping paths are dropped — the tool layer rejects them.
  */
 export function toolTargetPaths(args: unknown): string[] {
@@ -57,7 +57,7 @@ export function isInsideWorkingDirs(path: string, dirs: string[]): boolean {
 /**
  * Refine an approval policy by the working-dir boundary. With dirs configured, a call
  * whose targets are all inside a granted dir auto-runs (`allow`); any other call routes
- * through `ask`. That deliberately includes **pathless** calls (find, grep without a
+ * through `ask`. That deliberately includes **pathless** calls (search without a
  * path, get_active_note, ls of the root): they can traverse the whole vault, so under an
  * allow-list working set they must not silently read outside it. An empty config is
  * returned unchanged, and a `deny` (per-tool override / plan mode) always wins.

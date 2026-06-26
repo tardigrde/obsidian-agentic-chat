@@ -43,6 +43,7 @@ describe("describeCall", () => {
     expect(describeCall("read", '{"path":"Notes/a.md"}')).toBe("Reading file: Notes/a.md");
   });
   it("prefers pattern, then newPath, when no path is present", () => {
+    expect(describeCall("search", '{"query":"TODO"}')).toBe("Searching: TODO");
     expect(describeCall("grep", '{"pattern":"TODO"}')).toBe("Searching: TODO");
     expect(describeCall("rename", '{"newPath":"b.md"}')).toBe("Renaming: b.md");
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TFile, type App } from "obsidian";
-import { createVaultTools, MUTATING_TOOLS } from "../src/tools/vault-tools";
+import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
+import { createVaultTools } from "../src/tools/vault-tools";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { IgnoreMatcher } from "../src/vault/ignore";
 import { ReadMemo } from "../src/vault/read-memo";
@@ -58,6 +59,7 @@ function makeApp(spec: VaultSpec): App {
   return {
     vault: {
       getFileByPath: (path: string) => files.get(path) ?? null,
+      getFiles: () => [...files.values()],
       cachedRead: async (file: TFile) => contents.get(file.path) ?? "",
     },
     metadataCache: {
@@ -84,7 +86,7 @@ function makeApp(spec: VaultSpec): App {
 }
 
 function getTool(app: App, name: string, isIgnored?: IgnoreMatcher): AgentTool {
-  const tool = createVaultTools(app, isIgnored).find((candidate) => candidate.name === name);
+  const tool = createVaultTools(app, isIgnored, undefined, { surface: "compat" }).find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`tool not found: ${name}`);
   return tool;
 }
@@ -107,6 +109,78 @@ describe("MUTATING_TOOLS", () => {
     expect(MUTATING_TOOLS.has("get_backlinks")).toBe(false);
     expect(MUTATING_TOOLS.has("get_links")).toBe(false);
     expect(MUTATING_TOOLS.has("local_graph")).toBe(false);
+  });
+});
+
+describe("search", () => {
+  it("searches file names and contents through one default tool while hiding ignored paths", async () => {
+    const app = makeApp({
+      files: {
+        "Projects/Needle.md": { content: "first needle" },
+        "Projects/Other.md": { content: "second needle" },
+        "Private/Needle.md": { content: "private needle" },
+      },
+    });
+
+    const { text, details } = await run(getTool(app, "search", ignore("Private/Needle.md")), {
+      query: "needle",
+      path: "Projects",
+    });
+
+    expect(text).toContain("File name matches (1):\nProjects/Needle.md");
+    expect(text).toContain("Content matches (2):");
+    expect(text).toContain("Projects/Needle.md:1: first needle");
+    expect(text).toContain("Projects/Other.md:1: second needle");
+    expect(text).not.toContain("Private");
+    expect(details).toMatchObject({
+      query: "needle",
+      kind: "both",
+      path: "Projects",
+      fileCount: 1,
+      fileTruncated: false,
+      contentCount: 2,
+      contentTruncated: false,
+    });
+  });
+
+  it("keeps separate result caps for path and content search", async () => {
+    const app = makeApp({
+      files: {
+        "One-Needle.md": { content: "needle one" },
+        "Two-Needle.md": { content: "needle two" },
+      },
+    });
+
+    const { text, details } = await run(getTool(app, "search"), {
+      query: "needle",
+      maxResults: 1,
+      maxMatches: 1,
+    });
+
+    expect(text).toContain("[File results truncated.]");
+    expect(text).toContain("[Matches truncated.]");
+    expect(text).toContain("One-Needle.md");
+    expect(text).not.toContain("Two-Needle.md");
+    expect(details).toMatchObject({
+      fileCount: 2,
+      fileTruncated: true,
+      contentCount: 1,
+      contentTruncated: true,
+    });
+  });
+
+  it("keeps find and grep available on the compatibility surface", async () => {
+    const app = makeApp({
+      files: {
+        "Alpha.md": { content: "hello compat" },
+      },
+    });
+
+    const find = await run(getTool(app, "find"), { pattern: "alpha" });
+    const grep = await run(getTool(app, "grep"), { pattern: "compat" });
+
+    expect(find.text).toContain("Alpha.md");
+    expect(grep.text).toContain("Alpha.md:1: hello compat");
   });
 });
 

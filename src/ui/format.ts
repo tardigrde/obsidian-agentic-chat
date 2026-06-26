@@ -24,6 +24,7 @@ export const TOOL_LABELS: Record<string, string> = {
   write: "Writing file",
   edit: "Editing file",
   ls: "Listing folder",
+  search: "Searching",
   find: "Finding files",
   grep: "Searching",
   get_active_note: "Reading active note",
@@ -37,7 +38,7 @@ export function describeCall(name: string, rawArgs: string): string {
   let detail = "";
   try {
     const args = JSON.parse(rawArgs) as Record<string, unknown>;
-    const candidate = args.path ?? args.pattern ?? args.newPath;
+    const candidate = args.path ?? args.query ?? args.pattern ?? args.newPath;
     if (typeof candidate === "string") detail = candidate;
   } catch {
     // Arguments may be malformed; the label alone is still useful.

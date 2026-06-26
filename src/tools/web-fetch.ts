@@ -55,6 +55,12 @@ export function createObsidianFetcher(): WebFetcher {
 
 const FetchParameters = Type.Object({
   url: Type.String({ description: "Absolute http(s) URL to fetch" }),
+  offset: Type.Optional(
+    Type.Number({
+      description:
+        "Character offset into the extracted readable text. Use the returned nextOffset to read the next window of a truncated page.",
+    }),
+  ),
   maxChars: Type.Optional(
     Type.Number({ description: "Maximum characters of extracted text to return" }),
   ),
@@ -93,11 +99,21 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
         throw new Error(`Could not fetch ${url} (HTTP ${response.status}).`);
       }
       const limit = clampCharLimit(params.maxChars, config.charLimit);
+      const offset = clampOffset(params.offset);
       const contentType = response.headers["content-type"] ?? "";
-      const rendered = renderFetched(url, response.text, contentType, limit);
+      const rendered = renderFetched(url, response.text, contentType, limit, offset);
       return {
         content: [{ type: "text", text: rendered.text }],
-        details: { url, title: rendered.title, contentType, truncated: rendered.truncated },
+        details: {
+          url,
+          title: rendered.title,
+          contentType,
+          offset: rendered.offset,
+          nextOffset: rendered.nextOffset,
+          totalChars: rendered.totalChars,
+          truncated: rendered.truncated,
+          hasMore: rendered.hasMore,
+        },
       };
     },
   };
@@ -106,20 +122,28 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
 interface RenderedPage {
   title: string;
   text: string;
+  offset: number;
+  nextOffset: number | null;
+  totalChars: number;
   truncated: boolean;
+  hasMore: boolean;
 }
 
 /** Cap on raw bytes fed to the regex extractor, so a huge page can't freeze the UI. */
 const MAX_RAW_CHARS = 500_000;
 
-function renderFetched(url: string, raw: string, contentType: string, limit: number): RenderedPage {
+function renderFetched(url: string, raw: string, contentType: string, limit: number, offset: number): RenderedPage {
   const html = /html|xml/i.test(contentType) || (!contentType && looksLikeHtml(raw));
   // Don't dump decoded binary (images, archives, PDFs) at the model — wasteful and unreadable.
   if (!html && contentType && !isTextContentType(contentType)) {
     return {
       title: "",
       text: `Source: ${url}\n\n[Skipped: "${contentType}" is not text. fetch_url only returns readable text.]`,
+      offset: 0,
+      nextOffset: null,
+      totalChars: 0,
       truncated: false,
+      hasMore: false,
     };
   }
   // Bound the input before the regex passes; note when we had to clip it.
@@ -127,11 +151,29 @@ function renderFetched(url: string, raw: string, contentType: string, limit: num
   const safeRaw = clipped ? raw.slice(0, MAX_RAW_CHARS) : raw;
   const extracted = html ? extractReadableText(safeRaw) : { title: "", text: safeRaw };
   const body = extracted.text.trim();
-  const truncated = body.length > limit || clipped;
-  const sliced = body.length > limit ? body.slice(0, limit) : body;
+  const start = Math.min(offset, body.length);
+  const end = Math.min(start + limit, body.length);
+  const hasMoreExtractedText = end < body.length;
+  const hasMore = hasMoreExtractedText || clipped;
+  const sliced = body.slice(start, end);
+  const nextOffset = hasMoreExtractedText ? end : null;
+  const truncated = hasMore;
   const header = extracted.title ? `# ${extracted.title}\nSource: ${url}` : `Source: ${url}`;
-  const note = truncated ? `\n\n[Page text truncated at ${limit} characters.]` : "";
-  return { title: extracted.title, text: `${header}\n\n${sliced || "(no readable text)"}${note}`, truncated };
+  const range = body.length > 0 ? `\n\n[Showing extracted text characters ${start}-${end} of ${body.length}.]` : "";
+  const nextNote = nextOffset !== null ? ` Fetch again with offset ${nextOffset} for the next window.` : "";
+  const clippedNote = clipped
+    ? " Raw page text was clipped before extraction; additional source content may remain unavailable."
+    : "";
+  const note = truncated ? `\n\n[Page text truncated at ${limit} characters.${nextNote}${clippedNote}]` : "";
+  return {
+    title: extracted.title,
+    text: `${header}${range}\n\n${sliced || "(no readable text)"}${note}`,
+    offset: start,
+    nextOffset,
+    totalChars: body.length,
+    truncated,
+    hasMore,
+  };
 }
 
 /** Text-ish content types fetch_url will return as-is (besides HTML/XML). */
@@ -258,6 +300,11 @@ function mappedToIpv4(tail: string): string | undefined {
 function clampCharLimit(requested: number | undefined, fallback: number): number {
   const value = Number.isFinite(requested) && (requested as number) > 0 ? Math.floor(requested as number) : fallback;
   return Math.min(Math.max(value, 500), 100_000);
+}
+
+/** Cap offsets to non-negative integer positions in the extracted text. */
+function clampOffset(requested: number | undefined): number {
+  return Number.isFinite(requested) && (requested as number) > 0 ? Math.floor(requested as number) : 0;
 }
 
 /** Throw if the run was aborted (requestUrl itself takes no signal). */

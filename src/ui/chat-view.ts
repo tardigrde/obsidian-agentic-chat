@@ -1,6 +1,5 @@
 import {
   ItemView,
-  MarkdownView,
   Notice,
   TFile,
   TFolder,
@@ -11,7 +10,8 @@ import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
-import { arrayBufferToBase64, imageMimeType, isImagePath } from "./image-attachments";
+import type { AskUserRequest } from "../tools/ask-user-tool";
+import { isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, THINKING_LEVELS } from "../settings";
@@ -44,18 +44,34 @@ import {
 } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
 import { parseDroppedVaultPath } from "./drag-drop";
-import { buildAttachmentSection } from "./attachments";
+import { ComposerHistory } from "./composer-history";
+import { PromptEditState } from "./prompt-edit-state";
+import { freshChatTabState, type ChatTabWorkingState } from "./chat-tab-state";
+import { buildPromptContext, loadImageAttachments as loadContextImageAttachments } from "./context-builder";
+import { attachmentBasePath } from "./attachment-ref";
+import {
+  contextAttachmentKey,
+  contextAttachmentLabel,
+  createTextContextAttachment,
+  isTextContextAttachment,
+  type ContextAttachment,
+} from "./context-attachments";
 import { resolveCommand, visibleCommands } from "./commands";
+import { isPinnedToBottom } from "./scroll-pinning";
 import { normalizeFolderPath } from "../vault/path";
 import { isSummaryMessage } from "../agent/compaction";
 import { type AgentMode, enterPlan, exitPlan, MODE_ORDER, MODES } from "../agent/modes";
 import {
   type ActiveNoteState,
-  buildActiveNoteSection,
+  autoActiveNotePath,
   effectiveActiveNote,
-  MAX_ACTIVE_NOTE_CHARS,
 } from "./active-note";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
+import {
+  formatMcpDiagnosticRows,
+  formatMcpDiagnosticSummary,
+  formatRuntimeDiagnosticsRows,
+} from "../agent/diagnostics";
 
 export { VIEW_TYPE_AGENT_CHAT };
 
@@ -77,29 +93,11 @@ interface ActionRow {
 /** Maximum independent sessions ("tabs") in one chat leaf. */
 const MAX_TABS = 3;
 
-/**
- * Per-conversation working state. While a tab is active these live on the
- * ChatView instance (so existing methods are unchanged); switching tabs saves the
- * active tab's values here and loads the target's. The pi session itself lives in
- * `service`; this is only the composer/UI state that rides alongside it.
- */
-interface TabWorkingState {
-  attachments: string[];
-  activeNoteSuppressed: boolean;
-  draft: string;
-  sentHistory: string[];
-  notifiedContext: Set<number>;
-  notifiedCost: boolean;
-  lastCompactionCount: number;
-  lastSentPrompt: string | null;
-  lastSentDisplay: string | null;
-}
-
 /** One open conversation in the leaf: its own agent service + saved UI state. */
 interface ChatTab {
   service: AgentService;
   unsubscribe: () => void;
-  state: TabWorkingState;
+  state: ChatTabWorkingState;
 }
 
 /** Minimal shape of Obsidian's internal (undocumented) drag manager. */
@@ -113,7 +111,7 @@ export class ChatView extends ItemView {
   private tabs: ChatTab[] = [];
   private activeTabIndex = 0;
   private tabsEl!: HTMLElement;
-  private attachments: string[] = [];
+  private attachments: ContextAttachment[] = [];
   // Active-note-attached-by-default state: the current active note's path, whether
   // the user dismissed the auto chip (suppressed for the session), and — when in
   // plan mode — the posture to restore on /endplan.
@@ -136,11 +134,8 @@ export class ChatView extends ItemView {
   // Last turn we sent, kept so "retry" re-runs it without re-showing the context preamble.
   private lastSentPrompt: string | null = null;
   private lastSentDisplay: string | null = null;
-  // When editing a sent prompt, the index of the user message being rewritten.
-  private editingIndex: number | null = null;
   private editingEl: HTMLElement | null = null;
-  // The composer draft to restore if the user cancels an edit.
-  private draftBeforeEdit: string | null = null;
+  private readonly promptEdit = new PromptEditState();
 
   private messagesEl!: HTMLElement;
   private emptyStateEl: HTMLElement | null = null;
@@ -151,12 +146,9 @@ export class ChatView extends ItemView {
   private modeToggleEl!: HTMLElement;
   private planBadgeEl!: HTMLElement;
   private menu!: AutocompleteMenu;
-  // Shell-style command history: every submitted message, newest last. Up/Down in
-  // the composer cycle through it; `historyIndex` is the current position while
-  // navigating (null = not navigating), `historyDraft` stashes the live draft.
-  private sentHistory: string[] = [];
-  private historyIndex: number | null = null;
-  private historyDraft: string | null = null;
+  // Shell-style command history: every submitted message, newest last. The
+  // helper owns navigation/draft state so ChatView only applies returned values.
+  private readonly composerHistory = new ComposerHistory();
   private sendButton!: HTMLButtonElement;
   private stopButton!: HTMLButtonElement;
   private statusEl!: HTMLElement;
@@ -167,6 +159,9 @@ export class ChatView extends ItemView {
   private contextPercentEl!: HTMLElement;
   private workingEl!: HTMLElement;
   private folderButtonEl!: HTMLButtonElement;
+  private autoScrollPinned = true;
+  private userScrollIntent = false;
+  private userScrollIntentTimer: number | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -230,6 +225,8 @@ export class ChatView extends ItemView {
 
   async onClose(): Promise<void> {
     this.cancelAutocomplete();
+    if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
+    this.userScrollIntentTimer = null;
     // The view owns its tab services; dispose them so no detached agent keeps running.
     for (const tab of this.tabs) {
       tab.unsubscribe();
@@ -238,12 +235,43 @@ export class ChatView extends ItemView {
     this.tabs = [];
   }
 
+  /** Add a vault file/folder from an Obsidian context menu to the next prompt. */
+  attachVaultEntryFromMenu(entry: TFile | TFolder): void {
+    const attachment = entry instanceof TFolder ? `${FOLDER_PREFIX}${entry.path}` : entry.path;
+    this.addAttachment(attachment);
+    this.inputEl.focus();
+  }
+
+  /** Add selected editor text from an Obsidian context menu to the next prompt. */
+  attachSelectionFromMenu(text: string, sourcePath?: string): void {
+    const selected = text.trim();
+    if (!selected) return;
+    if (sourcePath && this.service.isPathIgnored(sourcePath)) {
+      new Notice("That selection is in an ignored note, so Agentic Chat will not attach it.");
+      return;
+    }
+    const attachment = createTextContextAttachment({ text: selected, sourcePath });
+    if (sourcePath) {
+      this.activeNoteSuppressed = true;
+      if (this.activeNotePath === sourcePath) this.activeNotePath = null;
+    }
+    this.pushAttachment(attachment);
+    this.inputEl.focus();
+  }
+
   // --- tabs (independent sessions in one leaf) ---
 
   /** Build a tab with its own agent service and a tab-aware event subscription. */
   private createTab(): ChatTab {
-    const service = this.plugin.createAgentService();
-    const tab: ChatTab = { service, unsubscribe: () => {}, state: freshTabState() };
+    const tabRef: { current?: ChatTab } = {};
+    const service = this.plugin.createAgentService({
+      askUser: (request, signal) => {
+        if (!tabRef.current) throw new Error("The chat tab is not ready to ask the user.");
+        return this.askUserForTab(tabRef.current, request, signal);
+      },
+    });
+    const tab: ChatTab = { service, unsubscribe: () => {}, state: freshChatTabState() };
+    tabRef.current = tab;
     const offEvent = service.onEvent((event) => this.handleTabEvent(tab, event));
     const offChange = service.onChange(() => this.handleTabChange(tab));
     tab.unsubscribe = () => {
@@ -261,7 +289,7 @@ export class ChatView extends ItemView {
       attachments: this.attachments,
       activeNoteSuppressed: this.activeNoteSuppressed,
       draft: this.inputEl.value,
-      sentHistory: this.sentHistory,
+      sentHistory: this.composerHistory.entries(),
       notifiedContext: this.notifiedContext,
       notifiedCost: this.notifiedCost,
       lastCompactionCount: this.lastCompactionCount,
@@ -277,13 +305,12 @@ export class ChatView extends ItemView {
     const state = tab.state;
     this.attachments = state.attachments;
     this.activeNoteSuppressed = state.activeNoteSuppressed;
-    this.sentHistory = state.sentHistory;
+    this.composerHistory.load(state.sentHistory);
     this.notifiedContext = state.notifiedContext;
     this.notifiedCost = state.notifiedCost;
     this.lastCompactionCount = state.lastCompactionCount;
     this.lastSentPrompt = state.lastSentPrompt;
     this.lastSentDisplay = state.lastSentDisplay;
-    this.resetHistoryNav();
     this.setComposerValueQuiet(state.draft);
   }
 
@@ -427,6 +454,79 @@ export class ChatView extends ItemView {
     if (tab === this.activeTab) this.syncChrome();
   }
 
+  private async askUserForTab(tab: ChatTab, request: AskUserRequest, signal?: AbortSignal): Promise<string> {
+    const index = this.tabs.indexOf(tab);
+    if (index === -1) throw new Error("The chat tab that asked the question is no longer open.");
+    if (tab !== this.activeTab) await this.switchToTab(index);
+    return await this.renderAskUserPrompt(request, signal);
+  }
+
+  private async renderAskUserPrompt(request: AskUserRequest, signal?: AbortSignal): Promise<string> {
+    this.clearEmptyState();
+    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-ask-user"] });
+    const details = el.createEl("details", { cls: "agentic-chat-info-details" });
+    details.open = true;
+    details.createEl("summary", { text: "Question from agent" });
+    const body = details.createDiv({ cls: "agentic-chat-info-body" });
+    body.createDiv({ cls: "agentic-chat-ask-question", text: request.question });
+    const answerState = body.createDiv({ cls: "agentic-chat-ask-state", text: "Waiting for your answer." });
+    const controls = body.createDiv({ cls: "agentic-chat-ask-controls" });
+    const choices = request.choices.length ? controls.createDiv({ cls: "agentic-chat-ask-choices" }) : null;
+    const textarea = controls.createEl("textarea", {
+      cls: "agentic-chat-ask-input",
+      attr: { rows: "3", placeholder: "Type an answer..." },
+    });
+    const submit = controls.createEl("button", { cls: ["mod-cta", "agentic-chat-ask-submit"], text: "Send answer" });
+
+    this.scrollToBottom({ force: true });
+    textarea.focus();
+
+    return await new Promise<string>((resolve, reject) => {
+      let settled = false;
+      const cleanup = () => signal?.removeEventListener("abort", onAbort);
+      const settle = (answer: string) => {
+        const trimmed = answer.trim();
+        if (!trimmed || settled) {
+          textarea.focus();
+          return;
+        }
+        settled = true;
+        cleanup();
+        textarea.disabled = true;
+        submit.disabled = true;
+        controls.addClass("is-answered");
+        answerState.setText(`Answered: ${trimmed}`);
+        resolve(trimmed);
+      };
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        textarea.disabled = true;
+        submit.disabled = true;
+        controls.addClass("is-cancelled");
+        answerState.setText("Question cancelled.");
+        reject(new Error("ask_user was cancelled."));
+      };
+
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      signal?.addEventListener("abort", onAbort, { once: true });
+      for (const choice of request.choices) {
+        choices?.createEl("button", { cls: "agentic-chat-ask-choice", text: choice }).addEventListener("click", () => settle(choice));
+      }
+      submit.addEventListener("click", () => settle(textarea.value));
+      textarea.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          settle(textarea.value);
+        }
+      });
+    });
+  }
+
   /** Public entry for the "New conversation" command: fresh session in the active tab. */
   async startNewConversation(): Promise<void> {
     await this.newSession();
@@ -438,6 +538,11 @@ export class ChatView extends ItemView {
     root.addClass("agentic-chat-view");
 
     this.messagesEl = root.createDiv({ cls: "agentic-chat-messages" });
+    this.registerDomEvent(this.messagesEl, "wheel", () => this.markUserScrollIntent());
+    this.registerDomEvent(this.messagesEl, "touchmove", () => this.markUserScrollIntent());
+    this.registerDomEvent(this.messagesEl, "pointerdown", () => this.markUserScrollIntent());
+    this.registerDomEvent(this.messagesEl, "keydown", () => this.markUserScrollIntent());
+    this.registerDomEvent(this.messagesEl, "scroll", () => this.updateScrollPinning());
     this.renderEmptyState();
 
     const composer = root.createDiv({ cls: "agentic-chat-composer" });
@@ -473,7 +578,7 @@ export class ChatView extends ItemView {
     this.menu = new AutocompleteMenu(inputWrap, (item) => this.chooseAutocomplete(item));
     this.inputEl.addEventListener("keydown", (event) => {
       if (this.menu.handleKey(event)) return;
-      if (event.key === "Escape" && this.editingIndex !== null) {
+      if (event.key === "Escape" && this.promptEdit.isEditing) {
         event.preventDefault();
         this.cancelEditing();
         return;
@@ -828,7 +933,7 @@ export class ChatView extends ItemView {
     this.syncControls();
     this.modelPillEl.empty();
     const override = this.service.getModelOverride();
-    const providerLabel = override ? "next only" : settings.provider === "ollama" ? "Ollama" : "OpenRouter";
+    const providerLabel = override ? "next only" : modelProviderLabel(settings.provider);
     const fullModel = override ?? activeModelId(settings);
     this.modelPillEl.toggleClass("is-override", !!override);
     // Full slug in the tooltip; the pill shows a short label since OpenRouter ids are long.
@@ -944,7 +1049,7 @@ export class ChatView extends ItemView {
     if (!text) return;
     this.pushHistory(text);
 
-    const editIndex = this.editingIndex;
+    const editIndex = this.promptEdit.index;
     this.endEditing(false);
 
     if (text.startsWith("/")) {
@@ -969,11 +1074,9 @@ export class ChatView extends ItemView {
     if (this.service.isStreaming()) return;
     // Re-clicking the turn already being edited must not reset the composer and
     // discard the user's in-progress changes.
-    if (this.editingIndex === index) return;
+    const edit = this.promptEdit.begin(index, this.inputEl.value);
+    if (!edit.started) return;
     this.clearEditingHighlight();
-    // Stash the composer draft on first entry so Esc can restore it.
-    if (this.editingIndex === null) this.draftBeforeEdit = this.inputEl.value;
-    this.editingIndex = index;
     this.editingEl = el;
     el.addClass("is-editing");
     this.setComposerValue(displayText);
@@ -989,12 +1092,10 @@ export class ChatView extends ItemView {
 
   /** Clear editing state. `restoreDraft` puts back the pre-edit composer draft. */
   private endEditing(restoreDraft: boolean): void {
-    const draft = this.draftBeforeEdit;
-    this.draftBeforeEdit = null;
-    if (this.editingIndex === null) return;
-    this.editingIndex = null;
+    const edit = this.promptEdit.end(restoreDraft);
+    if (!edit.ended) return;
     this.clearEditingHighlight();
-    if (restoreDraft && draft !== null) this.setComposerValue(draft);
+    if (edit.draftToRestore !== null) this.setComposerValue(edit.draftToRestore);
     this.statusEl.setText("");
   }
 
@@ -1006,20 +1107,13 @@ export class ChatView extends ItemView {
 
   // --- command history (shell-style up/down recall) ---
 
-  private static readonly MAX_HISTORY = 200;
-
   /** Record a submitted message, skipping consecutive duplicates, then reset navigation. */
   private pushHistory(text: string): void {
-    if (this.sentHistory[this.sentHistory.length - 1] !== text) {
-      this.sentHistory.push(text);
-      if (this.sentHistory.length > ChatView.MAX_HISTORY) this.sentHistory.shift();
-    }
-    this.resetHistoryNav();
+    this.composerHistory.record(text);
   }
 
   private resetHistoryNav(): void {
-    this.historyIndex = null;
-    this.historyDraft = null;
+    this.composerHistory.resetNavigation();
   }
 
   /**
@@ -1029,49 +1123,15 @@ export class ChatView extends ItemView {
    * Returns true when it consumed the key.
    */
   private recallHistory(direction: -1 | 1): boolean {
-    if (this.editingIndex !== null || this.sentHistory.length === 0) return false;
-    if (!this.caretOnEdgeLine(direction)) return false;
-
-    if (direction === -1) {
-      if (this.historyIndex === null) {
-        this.historyDraft = this.inputEl.value;
-        this.historyIndex = this.sentHistory.length - 1;
-      } else if (this.historyIndex > 0) {
-        this.historyIndex -= 1;
-      } else {
-        return true; // already at the oldest entry: swallow the key, don't wrap
-      }
-      this.setComposerValueQuiet(this.sentHistory[this.historyIndex]);
-      return true;
-    }
-
-    // direction === 1 (newer)
-    if (this.historyIndex === null) return false; // not navigating: let ArrowDown act normally
-    if (this.historyIndex < this.sentHistory.length - 1) {
-      this.historyIndex += 1;
-      this.setComposerValueQuiet(this.sentHistory[this.historyIndex]);
-    } else {
-      // Past the newest entry: restore the draft stashed when navigation began.
-      const draft = this.historyDraft ?? "";
-      this.resetHistoryNav();
-      this.setComposerValueQuiet(draft);
-    }
+    if (this.promptEdit.isEditing) return false;
+    const result = this.composerHistory.recall(direction, {
+      value: this.inputEl.value,
+      selectionStart: this.inputEl.selectionStart,
+      selectionEnd: this.inputEl.selectionEnd,
+    });
+    if (!result.handled) return false;
+    if (result.value !== undefined) this.setComposerValueQuiet(result.value);
     return true;
-  }
-
-  /** True when the caret sits on the first line (up) or last line (down) of the composer. */
-  private caretOnEdgeLine(direction: -1 | 1): boolean {
-    const value = this.inputEl.value;
-    const start = this.inputEl.selectionStart ?? 0;
-    const end = this.inputEl.selectionEnd ?? start;
-    if (start !== end) return false; // a selection: let the arrow collapse/extend it
-    if (direction === -1) {
-      // First line: caret is at or before the first newline (or there is none).
-      const firstNewline = value.indexOf("\n");
-      return start <= (firstNewline === -1 ? value.length : firstNewline);
-    }
-    // Last line: caret is after the last newline (or there is none).
-    return start > value.lastIndexOf("\n");
   }
 
   /**
@@ -1122,22 +1182,11 @@ export class ChatView extends ItemView {
 
   /** Encode image attachments as multimodal content parts for the model. */
   private async loadImageAttachments(): Promise<ImageContent[]> {
-    // If the model was swapped to a non-vision one after an image was attached,
-    // skip the images — the API would reject them; the text prompt still sends.
-    if (!this.service.supportsImages()) return [];
-    const images: ImageContent[] = [];
-    for (const entry of this.attachments) {
-      if (!isImagePath(entry)) continue;
-      const file = this.app.vault.getAbstractFileByPath(entry);
-      if (!(file instanceof TFile)) continue;
-      try {
-        const buffer = await this.app.vault.readBinary(file);
-        images.push({ type: "image", data: arrayBufferToBase64(buffer), mimeType: imageMimeType(file.extension) });
-      } catch {
-        // A missing/unreadable image just drops out — the text prompt still sends.
-      }
-    }
-    return images;
+    return await loadContextImageAttachments({
+      app: this.app,
+      attachments: this.attachments,
+      supportsImages: this.service.supportsImages(),
+    });
   }
 
   /** Re-run the conversation's last user turn (inline "Ask again" action). */
@@ -1184,6 +1233,9 @@ export class ChatView extends ItemView {
         return true;
       case "status":
         this.showStatus();
+        return true;
+      case "diagnostics":
+        this.showDiagnostics();
         return true;
       case "config":
         this.showConfig();
@@ -1432,6 +1484,7 @@ export class ChatView extends ItemView {
     const session = this.service.getSessionInfo();
     const override = this.service.getModelOverride();
     const effortOverride = this.service.getThinkingOverride();
+    const diagnostics = this.service.getRuntimeDiagnostics();
     this.clearEmptyState();
     this.renderInfoMessage("Status", [
       ["Provider", settings.provider],
@@ -1441,7 +1494,14 @@ export class ChatView extends ItemView {
       ["Thinking", effortOverride ? `${effortOverride} (next message only)` : settings.thinkingLevel],
       ["Approval (mutating)", settings.approval.mutating],
       ["Session", session ? `${session.messageCount} messages` : "(none)"],
+      ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
+      ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
     ]);
+  }
+
+  private showDiagnostics(): void {
+    this.clearEmptyState();
+    this.renderInfoMessage("Diagnostics", formatRuntimeDiagnosticsRows(this.service.getRuntimeDiagnostics()));
   }
 
   /** `/config`: clickable mode picker, applied in-pane. Output style lives under /style. */
@@ -1546,7 +1606,7 @@ export class ChatView extends ItemView {
       item.createEl("code", { text: label });
       item.appendText(` — ${value}`);
     }
-    this.scrollToBottom();
+    this.scrollToBottom({ force: true });
   }
 
   /** Render an auto-compaction summary as a collapsed, non-editable transcript block. */
@@ -1689,7 +1749,7 @@ export class ChatView extends ItemView {
   private async switchModel(): Promise<void> {
     const { settings } = this.plugin;
     if (settings.provider !== "openrouter") {
-      this.renderErrorMessage("Set the Ollama model in plugin settings.");
+      this.renderErrorMessage(`Set the ${modelProviderLabel(settings.provider)} model in plugin settings.`);
       return;
     }
     if (!settings.openrouterApiKey) {
@@ -1723,9 +1783,9 @@ export class ChatView extends ItemView {
 
   // --- attachments ---
 
-  private addAttachment(entry: string): void {
+  private addAttachment(entry: ContextAttachment): void {
     // Image attachments only make sense for a vision-capable model.
-    if (isImagePath(entry) && !this.service.supportsImages()) {
+    if (typeof entry === "string" && isImagePath(entry) && !this.service.supportsImages()) {
       new Notice("This model can't read images. Switch to a vision model to attach images.");
       return;
     }
@@ -1735,8 +1795,9 @@ export class ChatView extends ItemView {
   /** Dedup-aware push; returns true when the attachment was newly added. The
    * multi-file drop path checks vision support itself (to aggregate the notice)
    * and routes through here, skipping the per-entry guard in addAttachment. */
-  private pushAttachment(entry: string): boolean {
-    if (this.attachments.includes(entry)) return false;
+  private pushAttachment(entry: ContextAttachment): boolean {
+    const key = contextAttachmentKey(entry);
+    if (this.attachments.some((existing) => contextAttachmentKey(existing) === key)) return false;
     this.attachments.push(entry);
     this.renderChips();
     return true;
@@ -1748,8 +1809,10 @@ export class ChatView extends ItemView {
    * be read as garbage UTF-8 and injected into the prompt.
    */
   private syncActiveNote(): void {
-    const file = this.activeNoteSuppressed ? null : this.app.workspace.getActiveFile();
-    this.activeNotePath = file && file.extension.toLowerCase() === "md" ? file.path : null;
+    this.activeNotePath = autoActiveNotePath(this.app.workspace.getActiveFile(), {
+      suppressed: this.activeNoteSuppressed,
+      isIgnored: (path) => this.service.isPathIgnored(path),
+    });
     this.renderChips();
   }
 
@@ -1759,7 +1822,13 @@ export class ChatView extends ItemView {
   }
 
   private activeNoteState(): ActiveNoteState {
-    return { activePath: this.activeNotePath, suppressed: this.activeNoteSuppressed, explicit: this.attachments };
+    return {
+      activePath: this.activeNotePath,
+      suppressed: this.activeNoteSuppressed,
+      explicit: this.attachments
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => attachmentBasePath(entry)),
+    };
   }
 
   private renderChips(): void {
@@ -1781,19 +1850,22 @@ export class ChatView extends ItemView {
     }
     for (const entry of this.attachments) {
       this.renderChip(entry, false, () => {
-        this.attachments = this.attachments.filter((a) => a !== entry);
+        const key = contextAttachmentKey(entry);
+        this.attachments = this.attachments.filter((a) => contextAttachmentKey(a) !== key);
         this.renderChips();
       });
     }
   }
 
-  private renderChip(entry: string, active: boolean, onRemove: () => void): void {
-    const isFolder = entry.startsWith(FOLDER_PREFIX);
-    const isImage = isImagePath(entry);
+  private renderChip(entry: ContextAttachment, active: boolean, onRemove: () => void): void {
+    const isText = isTextContextAttachment(entry);
+    const path = typeof entry === "string" ? entry : "";
+    const isFolder = path.startsWith(FOLDER_PREFIX);
+    const isImage = path ? isImagePath(path) : false;
     const chip = this.chipsEl.createDiv({ cls: active ? ["agentic-chat-chip", "is-active-note"] : ["agentic-chat-chip"] });
     const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
-    setIcon(icon, isFolder ? "folder" : isImage ? "image" : "file-text");
-    chip.createSpan({ text: isFolder ? entry.slice(FOLDER_PREFIX.length) : entry });
+    setIcon(icon, isText ? "text-select" : isFolder ? "folder" : isImage ? "image" : "file-text");
+    chip.createSpan({ text: isFolder ? path.slice(FOLDER_PREFIX.length) : contextAttachmentLabel(entry) });
     if (active) {
       chip.createSpan({ cls: "agentic-chat-chip-tag", text: "active" });
       chip.setAttr("title", "The active note is attached automatically — remove to stop for this session.");
@@ -1934,97 +2006,12 @@ export class ChatView extends ItemView {
   }
 
   private async buildContext(): Promise<string> {
-    const sections: string[] = [];
-    // The auto-attached active note leads, built via its own truncation ladder.
-    const autoPath = this.effectiveActiveNote();
-    if (autoPath) sections.push(await this.loadActiveNoteSection(autoPath));
-    for (const entry of this.attachments) {
-      if (entry.startsWith(FOLDER_PREFIX)) {
-        const folderPath = entry.slice(FOLDER_PREFIX.length);
-        const folder = folderPath === "/" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(folderPath);
-        if (folder instanceof TFolder) {
-          const listing = folder.children
-            .filter((child) => !this.service.isPathIgnored(child.path))
-            .map((child) => (child instanceof TFolder ? `${child.name}/` : child.name))
-            .join("\n");
-          sections.push(`Folder listing for "${folderPath}":\n${listing || "(empty)"}`);
-        }
-      } else if (isImagePath(entry)) {
-        // Images go to the model as multimodal parts (loadImageAttachments), not text.
-        continue;
-      } else {
-        sections.push(await this.loadAttachmentSection(entry));
-      }
-    }
-    if (sections.length === 0) return "";
-    return `<context>\nThe user attached the following from their vault:\n\n${sections.join("\n\n---\n\n")}\n</context>`;
-  }
-
-  /**
-   * Serialize an explicit note attachment. A note is inlined in full only up to a
-   * char budget; larger notes and ignore-listed (private) paths become path-only
-   * references — the model opens them with `read` if it needs them — so a stack
-   * of attachments can't dump hundreds of thousands of tokens into the context,
-   * and an attachment in a restricted folder never leaks its contents.
-   */
-  private async loadAttachmentSection(entry: string): Promise<string> {
-    const restricted = this.service.isPathIgnored(entry);
-    if (restricted) {
-      return buildAttachmentSection({ path: entry, full: null, restricted: true });
-    }
-    const file = this.app.vault.getAbstractFileByPath(entry);
-    let full: string | null = null;
-    if (file instanceof TFile) {
-      try {
-        full = await this.app.vault.cachedRead(file);
-      } catch {
-        full = null;
-      }
-    }
-    return buildAttachmentSection({ path: entry, full });
-  }
-
-  /** Read the active note and serialize it via the truncation ladder (full → visible range → path). */
-  private async loadActiveNoteSection(path: string): Promise<string> {
-    // An active note in an ignore-listed (private) folder is never inlined — only
-    // a withheld reference — so focusing a blacklisted note can't leak its body.
-    if (this.service.isPathIgnored(path)) {
-      return buildAttachmentSection({ path, full: null, restricted: true });
-    }
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) {
-      return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
-    }
-    let full: string;
-    try {
-      full = await this.app.vault.cachedRead(file);
-    } catch {
-      // File locked/deleted mid-send: fall back to a path-only reference rather than crash the send.
-      return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
-    }
-    const visibleRange = full.length > MAX_ACTIVE_NOTE_CHARS ? this.getVisibleEditorRange(file) : null;
-    return buildActiveNoteSection({ path, full, visibleRange, limit: MAX_ACTIVE_NOTE_CHARS });
-  }
-
-  /**
-   * Best-effort slice of the active editor's visible range: a window of lines around
-   * the cursor in the matching MarkdownView. Mobile-safe (public Editor API only);
-   * returns null when there's no editor open on this file.
-   */
-  private getVisibleEditorRange(file: TFile): string | null {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view || view.file?.path !== file.path || !view.editor) return null;
-    const editor = view.editor;
-    const total = editor.lineCount();
-    if (total === 0) return null;
-    const cursor = editor.getCursor();
-    const half = 120;
-    const from = Math.max(0, cursor.line - half);
-    const to = Math.min(total - 1, cursor.line + half);
-    // getLine can be undefined if the doc mutated under us; fall back to column 0.
-    const lineText = editor.getLine(to);
-    const text = editor.getRange({ line: from, ch: 0 }, { line: to, ch: lineText ? lineText.length : 0 });
-    return text.trim() ? text : null;
+    return await buildPromptContext({
+      app: this.app,
+      attachments: this.attachments,
+      activeNotePath: this.effectiveActiveNote(),
+      isPathIgnored: (path) => this.service.isPathIgnored(path),
+    });
   }
 
   // --- rendering: static transcript ---
@@ -2077,11 +2064,13 @@ export class ChatView extends ItemView {
     if (usage) bubble.showUsage(usage);
   }
 
-  private renderUserMessage(text: string, attachments: string[], editIndex?: number): void {
+  private renderUserMessage(text: string, attachments: ContextAttachment[], editIndex?: number): void {
     const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-user"] });
     if (attachments.length > 0) {
       const labels = attachments.map((entry) =>
-        entry.startsWith(FOLDER_PREFIX) ? `${entry.slice(FOLDER_PREFIX.length)}/` : entry,
+        typeof entry === "string" && entry.startsWith(FOLDER_PREFIX)
+          ? `${entry.slice(FOLDER_PREFIX.length)}/`
+          : contextAttachmentLabel(entry),
       );
       el.createDiv({ cls: "agentic-chat-user-attachments", text: `Attached: ${labels.join(", ")}` });
     }
@@ -2167,7 +2156,10 @@ export class ChatView extends ItemView {
   }
 
   private newBubble(): AssistantBubble {
-    return new AssistantBubble(this.messagesEl, { onRetry: () => void this.retryLast() });
+    return new AssistantBubble(this.messagesEl, {
+      onRetry: () => void this.retryLast(),
+      onContentChange: () => this.scrollToBottom(),
+    });
   }
 
   private ensureBubble(): AssistantBubble {
@@ -2176,30 +2168,39 @@ export class ChatView extends ItemView {
   }
 
   private scrollPending = false;
+  private scrollForcePending = false;
 
-  private scrollToBottom(): void {
+  private markUserScrollIntent(): void {
+    this.userScrollIntent = true;
+    if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
+    this.userScrollIntentTimer = window.setTimeout(() => {
+      this.userScrollIntent = false;
+      this.userScrollIntentTimer = null;
+    }, 250);
+  }
+
+  private updateScrollPinning(): void {
+    if (isPinnedToBottom(this.messagesEl)) {
+      this.autoScrollPinned = true;
+      return;
+    }
+    if (this.userScrollIntent) this.autoScrollPinned = false;
+  }
+
+  private scrollToBottom(options: { force?: boolean } = {}): void {
+    if (!options.force && !this.autoScrollPinned) return;
+    this.scrollForcePending ||= !!options.force;
     if (this.scrollPending) return;
     this.scrollPending = true;
     window.requestAnimationFrame(() => {
+      const force = this.scrollForcePending;
       this.scrollPending = false;
+      this.scrollForcePending = false;
+      if (!force && !this.autoScrollPinned) return;
       this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+      this.autoScrollPinned = isPinnedToBottom(this.messagesEl);
     });
   }
-}
-
-/** A clean per-tab working state for a fresh conversation. */
-function freshTabState(): TabWorkingState {
-  return {
-    attachments: [],
-    activeNoteSuppressed: false,
-    draft: "",
-    sentHistory: [],
-    notifiedContext: new Set<number>(),
-    notifiedCost: false,
-    lastCompactionCount: 0,
-    lastSentPrompt: null,
-    lastSentDisplay: null,
-  };
 }
 
 /** Index of the last element matching `predicate`, or -1. */
@@ -2208,4 +2209,10 @@ function lastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
     if (predicate(items[i])) return i;
   }
   return -1;
+}
+
+function modelProviderLabel(provider: string): string {
+  if (provider === "ollama") return "Ollama";
+  if (provider === "openai-compatible") return "OpenAI-compatible";
+  return "OpenRouter";
 }

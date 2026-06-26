@@ -78,6 +78,6 @@ export function readSizeGuardrail(params: {
   const chars = Math.round(params.size);
   return (
     `"${params.path}" is large (~${chars.toLocaleString()} bytes). Reading it in full risks filling the ` +
-    "context window. Read a slice with offset/limit, or use grep/find to locate the part you need first."
+    "context window. Read a slice with offset/limit, or use search to locate the part you need first."
   );
 }

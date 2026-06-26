@@ -19,10 +19,14 @@ async function openChat(): Promise<void> {
  * Clicking avoids version-specific WebDriver key synthesis differences while
  * still exercising the same submit and slash-command route as Enter. */
 async function runSlashCommand(command: string): Promise<void> {
-  const input = await $(".agentic-chat-input");
-  await input.click();
-  await input.setValue(command);
-  await $(".agentic-chat-send").click();
+  await browser.execute((value) => {
+    const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
+    const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
+    if (!textarea || !send) throw new Error("agentic-chat composer is not mounted");
+    textarea.value = value;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    send.click();
+  }, command);
 }
 
 describe("agentic-chat smoke", function () {
@@ -73,7 +77,7 @@ describe("agentic-chat smoke", function () {
     // model supports. The rendered value must be a member of the canonical set.
     const knob = await $(".agentic-chat-effort");
     await knob.waitForExist();
-    await expect($(".agentic-chat-effort-label")).toHaveText("Effort");
+    await expect($(".agentic-chat-effort-label")).toHaveText(/effort/i);
     const value = (await $(".agentic-chat-effort-value").getText()).trim();
     const KNOWN_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
     if (!KNOWN_LEVELS.includes(value)) {
