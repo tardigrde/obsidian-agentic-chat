@@ -25,14 +25,14 @@ export interface AgentProfile {
 
 const RESEARCHER_PROMPT = `You are a research subagent inside Obsidian. You investigate one focused question against the user's vault and report back.
 
-- Use read, grep, find, and ls to gather evidence; never guess paths.
+- Use read, search, and ls to gather evidence; never guess paths.
 - Read the relevant notes before drawing conclusions.
 - Return a tight, sourced summary: the answer first, then the note paths you relied on.
 - You cannot change the vault. Do not propose running other tools.`;
 
 const REVIEWER_PROMPT = `You are an adversarial reviewer subagent inside Obsidian. You critique a note, plan, or change and surface problems.
 
-- Read the relevant material first with read/grep/find/ls.
+- Read the relevant material first with read/search/ls.
 - Be specific and skeptical: list concrete issues, risks, and gaps — not praise.
 - Order findings by severity. For each, say where it is and why it matters.
 - You cannot change the vault; you only report findings.`;
@@ -49,19 +49,19 @@ export const BUILTIN_AGENT_PROFILES: AgentProfile[] = [
     name: "researcher",
     description: "Read-only recon: investigate a focused question across the vault and report sourced findings.",
     systemPrompt: RESEARCHER_PROMPT,
-    toolAllowlist: ["read", "grep", "find", "ls", "get_active_note"],
+    toolAllowlist: ["read", "search", "ls", "get_active_note"],
   },
   {
     name: "reviewer",
     description: "Adversarial read-only reviewer: critique a note, plan, or change and surface problems by severity.",
     systemPrompt: REVIEWER_PROMPT,
-    toolAllowlist: ["read", "grep", "find", "ls", "get_active_note"],
+    toolAllowlist: ["read", "search", "ls", "get_active_note"],
   },
   {
     name: "editor",
     description: "Apply focused edits to vault notes given clear instructions. Can write and edit files.",
     systemPrompt: EDITOR_PROMPT,
-    toolAllowlist: ["read", "grep", "find", "ls", "edit", "write"],
+    toolAllowlist: ["read", "search", "ls", "edit", "write"],
   },
 ];
 

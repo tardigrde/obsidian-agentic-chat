@@ -5,5 +5,6 @@
     "moduleResolution": "Bundler",
     "types": ["node", "mocha", "@wdio/globals/types", "wdio-obsidian-service"]
   },
-  "include": ["test/e2e/**/*.ts", "wdio.conf.mts"]
+  "include": ["test/e2e/**/*.ts", "wdio.conf.mts"],
+  "exclude": ["node_modules"]
 }

@@ -30,6 +30,28 @@ export function effectiveActiveNote(state: ActiveNoteState): string | null {
   return state.activePath;
 }
 
+export interface ActiveNoteCandidate {
+  path: string;
+  extension: string;
+}
+
+/**
+ * Current editor file to offer as the auto-active note chip. Only Markdown files
+ * are useful as inline prompt context, and ignored files should not leak even as
+ * an automatic path chip. Manual attachments still handle ignored paths as
+ * path-only references.
+ */
+export function autoActiveNotePath(
+  file: ActiveNoteCandidate | null | undefined,
+  options: { suppressed: boolean; isIgnored: (path: string) => boolean },
+): string | null {
+  if (options.suppressed) return null;
+  if (!file) return null;
+  if (file.extension.toLowerCase() !== "md") return null;
+  if (options.isIgnored(file.path)) return null;
+  return file.path;
+}
+
 export interface ActiveNoteContent {
   path: string;
   /** Full note text, or null when it can't be read. */

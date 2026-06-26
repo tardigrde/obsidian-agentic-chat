@@ -9,4 +9,4 @@ sessions/
 # e2e (wdio-obsidian-service): downloaded Obsidian builds + run logs
 .obsidian-cache/
 logs/
-
+test/e2e/vault/.obsidian/

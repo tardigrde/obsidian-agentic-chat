@@ -54,6 +54,11 @@ export class MarkdownView {}
 export class MarkdownRenderer {
   static async render(): Promise<void> {}
 }
+export async function loadMermaid(): Promise<{ render: () => string }> {
+  return ((globalThis as { __obsidianMockMermaid?: { render: () => string } }).__obsidianMockMermaid ?? {
+    render: () => "",
+  });
+}
 export function setIcon(): void {}
 
 /** Stub network access: the web tools inject their own fetcher in tests. */

@@ -57,26 +57,31 @@ export interface PrivacySettings {
   allowFallbacks: boolean;
 }
 
-export type ProviderId = "openrouter" | "ollama";
+export type ProviderId = "openrouter" | "ollama" | "openai-compatible";
 
 export interface ModelConfig {
   provider: ProviderId;
-  /** OpenRouter model id (e.g. `moonshotai/kimi-k2.6`) or Ollama tag (e.g. `llama3.1`). */
+  /** OpenRouter model id, Ollama tag, or OpenAI-compatible model id. */
   modelId: string;
   privacy: PrivacySettings;
   /** Base URL of the local Ollama server (OpenAI-compatible endpoint is `${baseUrl}/v1`). */
   ollamaBaseUrl: string;
+  /** Base URL whose `/chat/completions` endpoint follows the OpenAI chat completions API. */
+  openaiCompatibleBaseUrl: string;
 }
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 export const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
+export const DEFAULT_OPENAI_COMPATIBLE_BASE_URL = "http://localhost:3000/api";
 
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 8_192;
 
 /** Build the pi-ai model the agent streams through, applying privacy routing. */
 export function buildModel(config: ModelConfig): Model<"openai-completions"> {
-  return config.provider === "ollama" ? buildOllamaModel(config) : buildOpenRouterModel(config);
+  if (config.provider === "ollama") return buildOllamaModel(config);
+  if (config.provider === "openai-compatible") return buildOpenAICompatibleModel(config);
+  return buildOpenRouterModel(config);
 }
 
 function buildOpenRouterModel(config: ModelConfig): Model<"openai-completions"> {
@@ -100,7 +105,7 @@ function buildOpenRouterModel(config: ModelConfig): Model<"openai-completions"> 
 }
 
 function buildOllamaModel(config: ModelConfig): Model<"openai-completions"> {
-  const baseUrl = `${config.ollamaBaseUrl.replace(/\/+$/, "")}/v1`;
+  const baseUrl = `${normalizeBaseUrl(config.ollamaBaseUrl, DEFAULT_OLLAMA_BASE_URL)}/v1`;
   return {
     id: config.modelId,
     name: config.modelId,
@@ -115,6 +120,31 @@ function buildOllamaModel(config: ModelConfig): Model<"openai-completions"> {
     maxTokens: DEFAULT_MAX_TOKENS,
     compat: { supportsUsageInStreaming: true },
   };
+}
+
+function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completions"> {
+  return {
+    id: config.modelId,
+    name: config.modelId,
+    api: "openai-completions",
+    provider: "openai-compatible",
+    baseUrl: normalizeBaseUrl(config.openaiCompatibleBaseUrl, DEFAULT_OPENAI_COMPATIBLE_BASE_URL),
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: DEFAULT_CONTEXT_WINDOW,
+    maxTokens: DEFAULT_MAX_TOKENS,
+    compat: {
+      supportsReasoningEffort: false,
+      supportsStore: false,
+      supportsUsageInStreaming: false,
+      maxTokensField: "max_tokens",
+    },
+  };
+}
+
+function normalizeBaseUrl(value: string, fallback: string): string {
+  return (value.trim() || fallback).replace(/\/+$/, "");
 }
 
 function buildRouting(privacy: PrivacySettings): OpenRouterRouting {

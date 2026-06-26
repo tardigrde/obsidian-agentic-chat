@@ -15,6 +15,11 @@ const forbiddenImports = [
   "@google/genai",
   "@mistralai/mistralai",
 ];
+const forbiddenBundleStrings = [
+  ["__AGENTIC_CHAT_E2E_TURNS__", "WDIO scripted model stream hook"],
+  ["__AGENTIC_CHAT_E2E_CALLS__", "WDIO scripted model stream hook call counter"],
+  ["__AGENTIC_CHAT_E2E_CALL_LOG__", "WDIO scripted model stream hook call log"],
+];
 const importedSpecifiers = [
   ...bundle.matchAll(/\b(?:require|import)\s*\(\s*["']([^"']+)["']\s*\)/g),
 ].map((match) => match[1]);
@@ -27,6 +32,12 @@ if (!manifest.isDesktopOnly) {
     if (isForbidden) {
       failures.push(`main.js contains desktop-only or unused import: ${specifier}`);
     }
+  }
+}
+
+for (const [value, label] of forbiddenBundleStrings) {
+  if (bundle.includes(value)) {
+    failures.push(`main.js contains ${label}: ${value}`);
   }
 }
 

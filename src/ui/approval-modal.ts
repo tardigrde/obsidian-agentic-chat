@@ -1,6 +1,7 @@
 import { App, Modal, Setting, TFile } from "obsidian";
 import type { ToolApprovalRequest } from "../agent/agent-service";
 import { buildEditPreview, type EditPreview } from "../agent/edit-preview";
+import { approvalPreviewNeedsContent, toolApprovalDescription } from "../tools/tool-contracts";
 import { diffLines, diffStat, diffTooLarge } from "../vault/diff";
 import { normalizeVaultPath } from "../vault/path";
 
@@ -38,7 +39,7 @@ export class ApprovalModal extends Modal {
     contentEl.addClass("agentic-chat-approval");
 
     contentEl.createEl("p", {
-      text: `The agent wants to run the ${this.request.toolName} tool. Review the change before allowing it.`,
+      text: toolApprovalDescription(this.request.toolName),
     });
     // Render the change preview asynchronously (it reads the file from the vault);
     // show the raw arguments immediately as a fallback until it resolves.
@@ -86,9 +87,9 @@ export class ApprovalModal extends Modal {
     const rawPath = (this.request.args as { path?: unknown })?.path;
     const path = typeof rawPath === "string" ? rawPath : "";
     let current: string | null = null;
-    // Only write/edit/delete render a content diff; rename never needs the file
-    // body, so don't pay a cachedRead (slow for large files) to preview it.
-    const needsContent = ["write", "edit", "delete"].includes(this.request.toolName);
+    // Only preview types that need a body pay the cachedRead cost; rename and
+    // structured property updates can render from arguments alone.
+    const needsContent = approvalPreviewNeedsContent(this.request.toolName);
     if (path && needsContent) {
       const file = this.app.vault.getAbstractFileByPath(normalizeVaultPath(path));
       if (file instanceof TFile) {

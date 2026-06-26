@@ -104,6 +104,20 @@
   margin-bottom: 0;
 }
 
+.agentic-chat-mermaid {
+  overflow-x: auto;
+}
+
+.agentic-chat-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.agentic-chat-mermaid-error {
+  border-left: 3px solid var(--text-error);
+  padding-left: var(--size-2-3);
+}
+
 .agentic-chat-footer {
   font-size: var(--font-ui-smaller);
   color: var(--text-faint);
@@ -174,6 +188,52 @@
 .agentic-chat-info-error ::selection {
   background-color: var(--text-error);
   color: var(--text-on-accent);
+}
+
+.agentic-chat-ask-user {
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.agentic-chat-ask-question {
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+  margin-bottom: var(--size-2-2);
+}
+
+.agentic-chat-ask-state {
+  color: var(--text-muted);
+  margin-bottom: var(--size-2-2);
+}
+
+.agentic-chat-ask-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+}
+
+.agentic-chat-ask-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-1);
+}
+
+.agentic-chat-ask-choice {
+  width: fit-content;
+}
+
+.agentic-chat-ask-input {
+  width: 100%;
+  min-height: 4.5em;
+  resize: vertical;
+}
+
+.agentic-chat-ask-submit {
+  align-self: flex-start;
+}
+
+.agentic-chat-ask-controls.is-answered,
+.agentic-chat-ask-controls.is-cancelled {
+  opacity: 0.7;
 }
 
 /* --- Settings warning banner --- */
@@ -377,6 +437,22 @@
 
 .agentic-chat-subagent.is-error .agentic-chat-subagent-status {
   color: var(--text-error);
+}
+
+.agentic-chat-step-ask-user {
+  margin-top: var(--size-2-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.agentic-chat-step-ask-user-status {
+  color: var(--text-accent);
+  font-weight: var(--font-medium);
+}
+
+.agentic-chat-step-ask-user-question,
+.agentic-chat-step-ask-user-answer {
+  margin-top: var(--size-2-1);
 }
 
 .agentic-chat-subagent > pre {

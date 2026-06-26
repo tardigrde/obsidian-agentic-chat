@@ -207,6 +207,18 @@ export class ObsidianSessionManager {
       rebuilt.push(entry);
       parentId = entry.id;
     };
+    for (const message of messages) {
+      push({
+        type: "message",
+        id: createEntryId(rebuilt),
+        parentId,
+        timestamp: new Date().toISOString(),
+        message,
+      });
+    }
+    // Re-append session metadata after the rewritten transcript. Assistant
+    // messages also carry provider/model ids, so trailing metadata preserves the
+    // active config when a rewind keeps an older assistant message.
     if (context.model) {
       push({
         type: "model_change",
@@ -232,15 +244,6 @@ export class ObsidianSessionManager {
         parentId,
         timestamp: new Date().toISOString(),
         name: sessionName,
-      });
-    }
-    for (const message of messages) {
-      push({
-        type: "message",
-        id: createEntryId(rebuilt),
-        parentId,
-        timestamp: new Date().toISOString(),
-        message,
       });
     }
     await this.adapter.write(this.sessionFile, serializeSessionEntries(rebuilt));

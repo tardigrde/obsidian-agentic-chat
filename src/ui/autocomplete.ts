@@ -9,6 +9,8 @@ const MAX_ITEMS = 50;
 /** Bound a mention token so it stays a plausible path, not an ever-growing query. */
 const MAX_MENTION_TOKEN = 50;
 const MAX_MENTION_SPACES = 3;
+const MAX_SUBREF_MENTION_TOKEN = 120;
+const MAX_SUBREF_MENTION_SPACES = 10;
 
 export type AcKind = "command" | "skill" | "mention";
 
@@ -82,7 +84,10 @@ export function detectQuery(text: string, caret: number): AcQuery | null {
     // and cap length/spaces so an `@` early in ordinary prose doesn't keep an
     // ever-growing query running the O(files) mention scan on every keystroke.
     const spaces = (token.match(/ /g) ?? []).length;
-    if (!/[\r\n]/.test(token) && token.length <= MAX_MENTION_TOKEN && spaces <= MAX_MENTION_SPACES) {
+    const hasSubref = /[#^]/.test(token);
+    const maxToken = hasSubref ? MAX_SUBREF_MENTION_TOKEN : MAX_MENTION_TOKEN;
+    const maxSpaces = hasSubref ? MAX_SUBREF_MENTION_SPACES : MAX_MENTION_SPACES;
+    if (!/[\r\n]/.test(token) && token.length <= maxToken && spaces <= maxSpaces) {
       return { kind: "mention", range: [at, end], query: token };
     }
   }
@@ -171,22 +176,35 @@ function suggestSkills(query: string, skills: Array<{ name: string; description:
 }
 
 function suggestMentions(query: string, files: MentionCandidate[]): AcItem[] {
+  const parsed = parseMentionQuery(query);
   const scored = files.map((file): Scored<AcItem> => {
     const name = file.name ?? file.path.split("/").pop() ?? file.path;
     // Match on the basename first; fall back to the full path so "folder/note" works.
-    const score = bestMatchScore(query, [name, file.path]);
+    const score = parsed.suffix && file.type === "folder" ? -1 : bestMatchScore(parsed.lookup, [name, file.path]);
+    const suffix = file.type === "file" ? parsed.suffix : "";
     return {
       score,
       item: {
         kind: "mention",
-        label: name,
-        detail: file.path,
+        label: `${name}${suffix}`,
+        detail: `${file.path}${suffix}`,
         icon: file.type === "folder" ? "folder" : "file-text",
-        value: file.type === "folder" ? `${FOLDER_PREFIX}${file.path}` : file.path,
+        value: file.type === "folder" ? `${FOLDER_PREFIX}${file.path}` : `${file.path}${suffix}`,
       },
     };
   });
   return rank(scored);
+}
+
+function parseMentionQuery(query: string): { lookup: string; suffix: string } {
+  const hash = query.indexOf("#");
+  const caret = query.indexOf("^");
+  const delimiter =
+    hash === -1 ? caret : caret === -1 ? hash : Math.min(hash, caret);
+  if (delimiter < 0) return { lookup: query, suffix: "" };
+  const lookup = query.slice(0, delimiter).trimEnd();
+  const suffix = query.slice(delimiter).trim();
+  return { lookup, suffix };
 }
 
 /**

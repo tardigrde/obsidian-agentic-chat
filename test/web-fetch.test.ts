@@ -122,6 +122,39 @@ describe("fetch_url tool", () => {
     const { text, details } = await run(tool, { url: "https://example.com/big" });
     expect(details.truncated).toBe(true);
     expect(text).toContain("truncated at 600 characters");
+    expect(text).toContain("offset 600");
+    expect(details.nextOffset).toBe(600);
+    expect(details.hasMore).toBe(true);
+    expect(details.totalChars).toBe(5_000);
+  });
+
+  it("reads a later extracted-text window when offset is supplied", async () => {
+    const body = `${"a".repeat(600)}${"b".repeat(600)}${"c".repeat(600)}`;
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ text: body, headers: { "content-type": "text/plain" } }),
+      charLimit: 600,
+    });
+    const { text, details } = await run(tool, { url: "https://example.com/big", offset: 600 });
+    expect(text).toContain("characters 600-1200 of 1800");
+    expect(text).not.toContain("aaaa");
+    expect(text).toContain("bbbb");
+    expect(details.offset).toBe(600);
+    expect(details.nextOffset).toBe(1200);
+    expect(details.truncated).toBe(true);
+  });
+
+  it("reports no next offset on the final extracted-text window", async () => {
+    const body = `${"a".repeat(600)}${"b".repeat(200)}`;
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ text: body, headers: { "content-type": "text/plain" } }),
+      charLimit: 600,
+    });
+    const { text, details } = await run(tool, { url: "https://example.com/big", offset: 600 });
+    expect(text).toContain("characters 600-800 of 800");
+    expect(text).not.toContain("truncated");
+    expect(details.offset).toBe(600);
+    expect(details.nextOffset).toBeNull();
+    expect(details.hasMore).toBe(false);
   });
 
   it("requests the normalized URL via the injected fetcher", async () => {

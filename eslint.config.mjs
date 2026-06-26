@@ -1,9 +1,9 @@
-// Lean flat config: typescript-eslint (non-type-checked, so it stays fast and
-// needs no parser project wiring) + a few project-specific rules. This is the
-// base lint gate; richer formatting/import rules are tracked as `D2` in ROADMAP.
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import globals from "globals";
+import { fileURLToPath } from "node:url";
+
+const tsconfigRootDir = fileURLToPath(new URL(".", import.meta.url));
 
 export default tseslint.config(
   {
@@ -35,6 +35,18 @@ export default tseslint.config(
       // Floating promises are a real bug class in an event-driven agent loop, but
       // full type-aware linting is the heavier `D2` follow-up — keep the base lean.
       "no-console": ["warn", { allow: ["warn", "error"] }],
+    },
+  },
+  {
+    files: ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "vitest.live.config.ts"],
+    languageOptions: {
+      parserOptions: {
+        project: "./tsconfig.eslint.json",
+        tsconfigRootDir,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-floating-promises": "error",
     },
   },
 );

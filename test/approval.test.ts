@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type ApprovalSettings, resolvePolicy } from "../src/agent/approval";
-import { MUTATING_TOOLS } from "../src/tools/vault-tools";
+import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
 
 const base: ApprovalSettings = { mutating: "ask", perTool: {}, workingDirs: [] };
 

@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { App } from "obsidian";
-import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
+import { TFile, TFolder, type App } from "obsidian";
+import type { AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
+import type { AskUserHandler, AskUserRequest } from "../src/tools/ask-user-tool";
 import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeVault } from "./helpers/fake-vault";
 
 /** Stream function that returns a fixed assistant reply without any network. */
 function cannedStreamFn(text: string): StreamFn {
@@ -106,18 +108,49 @@ function scriptedCostStreamFn(
 function makeService(
   streamFn: StreamFn,
   confirmToolCall: () => Promise<boolean> = async () => true,
+  app: App = minimalApp(),
+  askUser?: AskUserHandler,
 ): { service: AgentService; adapter: MemoryAdapter; settings: AgenticChatSettings } {
   const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
   const adapter = new MemoryAdapter();
   const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
   const service = new AgentService({
-    app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
+    app,
     getSettings: () => settings,
     sessionManager,
     confirmToolCall,
+    askUser,
     streamFn,
   });
   return { service, adapter, settings };
+}
+
+function minimalApp(): App {
+  return { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App;
+}
+
+function vaultBackedApp(): { app: App; vault: FakeVault } {
+  const vault = new FakeVault() as FakeVault & {
+    getFolderByPath: (path: string) => TFolder | null;
+    on: () => Record<string, never>;
+    offref: () => void;
+  };
+  vault.getFolderByPath = (path) => {
+    const entry = vault.getAbstractFileByPath(path);
+    return entry instanceof TFolder ? entry : null;
+  };
+  vault.on = () => ({});
+  vault.offref = () => {};
+  return {
+    app: {
+      vault,
+      workspace: {},
+      fileManager: {
+        trashFile: async (file: TFile) => vault.trash(file),
+      },
+    } as unknown as App,
+    vault,
+  };
 }
 
 describe("AgentService", () => {
@@ -207,6 +240,143 @@ describe("AgentService", () => {
     const entries = parseSessionEntries(adapter.files.get(sessionFile as string) as string);
     const messageEntries = entries.filter((entry) => entry.type === "message");
     expect(messageEntries).toHaveLength(2);
+  });
+
+  it("initialize continues the most recent persisted session", async () => {
+    const first = makeService(cannedStreamFn("Persisted first reply."));
+    await first.service.sendPrompt("first persisted prompt");
+    const firstPath = first.service.getSessionInfo()?.path;
+    expect(firstPath).toBeDefined();
+
+    const secondSessionManager = new ObsidianSessionManager(first.adapter.asDataAdapter(), "sessions", "vault:test");
+    const second = new AgentService({
+      app: minimalApp(),
+      getSettings: () => first.settings,
+      sessionManager: secondSessionManager,
+      confirmToolCall: async () => true,
+      streamFn: cannedStreamFn("unused"),
+    });
+
+    await second.initialize();
+    expect(second.getSessionInfo()?.path).toBe(firstPath);
+    expect(second.getMessages().map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(second.getMessages().some((message) => JSON.stringify(message).includes("first persisted prompt"))).toBe(true);
+  });
+
+  it("refreshes resources and tool registration before each prompt", async () => {
+    const seenTools: string[][] = [];
+    const base = cannedStreamFn("ok");
+    const streamFn: StreamFn = ((model: Model<"openai-completions">, context: Context, options: unknown) => {
+      seenTools.push((context.tools ?? []).map((tool) => tool.name).sort());
+      return (base as (...args: unknown[]) => unknown)(model, context, options);
+    }) as unknown as StreamFn;
+    const { service, settings } = makeService(streamFn);
+
+    settings.web = { ...settings.web, enabled: false };
+    await service.sendPrompt("without web");
+    settings.web = { ...settings.web, enabled: true };
+    await service.sendPrompt("with web");
+
+    expect(seenTools[0]).not.toContain("web_search");
+    expect(seenTools[0]).not.toContain("fetch_url");
+    expect(seenTools[1]).toContain("web_search");
+    expect(seenTools[1]).toContain("fetch_url");
+  });
+
+  it("runs ask_user through the registered UI handler and continues", async () => {
+    const streamFn = scriptedStreamFn([
+      {
+        content: [
+          {
+            type: "toolCall",
+            id: "call-1",
+            name: "ask_user",
+            arguments: { question: "Which folder should I use?", choices: ["Notes", "Archive"] },
+          },
+        ],
+        stopReason: "toolUse",
+      },
+      { content: [{ type: "text", text: "I will use Notes." }], stopReason: "stop" },
+    ]);
+    let asked: AskUserRequest | undefined;
+    const { service } = makeService(streamFn, async () => true, minimalApp(), async (request) => {
+      asked = request;
+      return "Notes";
+    });
+
+    await service.sendPrompt("Organize this note");
+
+    expect(asked).toEqual({ question: "Which folder should I use?", choices: ["Notes", "Archive"] });
+    const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
+      | { role: "toolResult"; isError: boolean; content: Array<{ type: string; text?: string }> }
+      | undefined;
+    expect(toolResult?.isError).toBe(false);
+    expect((toolResult?.content ?? []).map((block) => block.text ?? "").join("")).toContain("User answered: Notes");
+    expect(service.getMessages().filter((message) => message.role === "assistant")).toHaveLength(2);
+  });
+
+  it("clears session-local undo state when starting a new session", async () => {
+    const { app, vault } = vaultBackedApp();
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "Undo/New.md", content: "created" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "Wrote it." }], stopReason: "stop" },
+    ]);
+    const { service } = makeService(streamFn, async () => true, app);
+
+    await service.sendPrompt("create undoable note");
+    expect(vault.contentOf("Undo/New.md")).toBe("created");
+    expect(service.canUndo()).toBe(true);
+
+    await service.newSession();
+    expect(service.canUndo()).toBe(false);
+    expect(await service.undoLastChange()).toBe("Nothing to undo.");
+  });
+
+  it("clears session-local state when loading another session", async () => {
+    const { app, vault } = vaultBackedApp();
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "text", text: "First session reply." }], stopReason: "stop" },
+      { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "Undo/Load.md", content: "created" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "Wrote it." }], stopReason: "stop" },
+    ]);
+    const { service, adapter } = makeService(streamFn, async () => true, app);
+
+    await service.sendPrompt("keep this session");
+    const firstPath = service.getSessionInfo()?.path as string;
+    expect(parseSessionEntries(adapter.files.get(firstPath) as string).filter((entry) => entry.type === "message")).toHaveLength(2);
+
+    await service.newSession();
+    await service.sendPrompt("create undoable note before loading");
+    expect(vault.contentOf("Undo/Load.md")).toBe("created");
+    expect(service.canUndo()).toBe(true);
+
+    await service.loadSession(firstPath);
+    expect(service.getMessages().some((message) => JSON.stringify(message).includes("keep this session"))).toBe(true);
+    expect(service.canUndo()).toBe(false);
+    expect(await service.undoLastChange()).toBe("Nothing to undo.");
+
+    await service.sendPrompt("continue loaded session");
+    const messageEntries = parseSessionEntries(adapter.files.get(firstPath) as string).filter((entry) => entry.type === "message");
+    expect(messageEntries).toHaveLength(4);
+    expect(messageEntries.filter((entry) => JSON.stringify(entry.message).includes("keep this session"))).toHaveLength(1);
+  });
+
+  it("clears session-local undo state when truncating messages", async () => {
+    const { app, vault } = vaultBackedApp();
+    const streamFn = scriptedStreamFn([
+      { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "Undo/Rewind.md", content: "created" } }], stopReason: "toolUse" },
+      { content: [{ type: "text", text: "Wrote it." }], stopReason: "stop" },
+    ]);
+    const { service } = makeService(streamFn, async () => true, app);
+
+    await service.sendPrompt("create undoable note");
+    expect(vault.contentOf("Undo/Rewind.md")).toBe("created");
+    expect(service.canUndo()).toBe(true);
+
+    await service.truncateMessages(1);
+    expect(service.getMessages().map((message) => message.role)).toEqual(["user"]);
+    expect(service.canUndo()).toBe(false);
+    expect(await service.undoLastChange()).toBe("Nothing to undo.");
   });
 
   it("sends a denial result back to the model when the user declines a tool call", async () => {
@@ -524,11 +694,32 @@ describe("AgentService", () => {
     expect(service.getError()).toMatch(/stopped this turn/i);
   });
 
+  it("records prompt run errors and consumes overrides for the attempted turn", async () => {
+    const failingStream: StreamFn = (() => {
+      throw new Error("stream failed");
+    }) as unknown as StreamFn;
+    const { service, settings } = makeService(failingStream);
+
+    service.setModelOverride("anthropic/claude-3.5-sonnet");
+    service.setThinkingOverride("high");
+    await service.sendPrompt("fail");
+
+    expect(service.getError()).toBe("stream failed");
+    expect(service.getModelOverride()).toBeNull();
+    expect(service.getActiveModelId()).toBe(settings.openrouterModel);
+    expect(service.getThinkingOverride()).toBeNull();
+    expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
+  });
+
   it("reports a friendly error when no API key is configured", async () => {
     const { service, settings } = makeService(cannedStreamFn("unused"));
     settings.openrouterApiKey = "";
+    service.setModelOverride("anthropic/claude-3.5-sonnet");
+
     await service.sendPrompt("Hi");
+
     expect(service.getError()).toMatch(/API key/);
     expect(service.getMessages()).toHaveLength(0);
+    expect(service.getModelOverride()).toBe("anthropic/claude-3.5-sonnet");
   });
 });

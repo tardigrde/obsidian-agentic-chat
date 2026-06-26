@@ -10,8 +10,11 @@ Third-party notices: https://github.com/tardigrde/obsidian-agentic-chat/blob/mai
 */`;
 
 const production = process.argv[2] === "production";
+const outfile = process.env.AGENTIC_CHAT_OUTFILE || "main.js";
+const enableE2EStream = !production || process.env.AGENTIC_CHAT_ENABLE_E2E_STREAM === "1";
 const piAiProviderPath = fileURLToPath(import.meta.resolve("@earendil-works/pi-ai/openai-completions"));
 const piAiDistDir = path.dirname(path.dirname(piAiProviderPath));
+const disabledE2EStreamPath = path.join(process.cwd(), "src", "agent", "e2e-stream-disabled.ts");
 
 /**
  * pi-agent-core imports the broad pi-ai entry point, which registers every
@@ -54,11 +57,22 @@ const piAiMobileEntry = {
   },
 };
 
+const e2eStreamBuildGate = {
+  name: "agentic-chat-e2e-stream-gate",
+  setup(build) {
+    if (enableE2EStream) return;
+    build.onResolve({ filter: /^\.\/agent\/e2e-stream$/ }, (args) => {
+      if (!args.importer.endsWith(path.join("src", "main.ts"))) return undefined;
+      return { path: disabledE2EStreamPath };
+    });
+  },
+};
+
 const context = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/main.ts"],
   bundle: true,
-  plugins: [piAiMobileEntry],
+  plugins: [piAiMobileEntry, e2eStreamBuildGate],
   external: [
     "obsidian",
     "electron",
@@ -67,12 +81,15 @@ const context = await esbuild.context({
   ],
   format: "cjs",
   target: "es2020",
+  define: {
+    __AGENTIC_CHAT_ENABLE_E2E_STREAM__: JSON.stringify(enableE2EStream),
+  },
   logLevel: "info",
   legalComments: production ? "eof" : "inline",
   minify: production,
   sourcemap: production ? false : "inline",
   treeShaking: true,
-  outfile: "main.js",
+  outfile,
 });
 
 if (production) {

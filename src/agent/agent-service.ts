@@ -1,72 +1,66 @@
 import { TFile, type App, type EventRef } from "obsidian";
 import {
-  Agent,
+  type Agent,
   type AgentEvent,
   type AgentMessage,
-  type AgentTool,
-  generateSummary,
   type Skill,
   type StreamFn,
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import { streamSimple, type ImageContent, type Model, type Usage } from "@earendil-works/pi-ai";
+import { type ImageContent, type Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
-import { activeModelId, apiKeyForProvider, activeModelConfig } from "../settings";
-import { buildModel, clampThinkingLevel, supportedThinkingLevels, type ModelConfig } from "../llm/models";
-import { createVaultTools, MUTATING_TOOLS } from "../tools/vault-tools";
-import { createSubagentTool, SUBAGENT_TOOL_NAME, normalizeTasks } from "../tools/subagent-tool";
+import { activeModelId, apiKeyForProvider } from "../settings";
+import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { createObsidianFetcher, type WebFetcher } from "../tools/web-fetch";
-import { createWebTools } from "../tools/web-tools";
-import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "../vault/ignore";
-import { ReadMemo } from "../vault/read-memo";
-import { deriveAutoName, ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
-import { buildSkillInvocation, loadVaultSkills } from "../skills/skills";
-import { builtinSkills } from "../skills/builtin-skills";
-import { type AgentProfile, formatSubagentsForSystemPrompt, loadAgentProfiles } from "./subagents";
-import { addUsage, emptyUsage, sumAssistantUsage } from "./usage";
+import type { AskUserHandler } from "../tools/ask-user-tool";
+import { createDynamicProxiedFetcher } from "../mcp/fetcher";
+import { type ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
+import { type AgentProfile } from "./subagents";
+import { handleAgentRuntimeEvent } from "./agent-event-handler";
+import type { RequestCostEstimate } from "./cost";
 import {
-  type CompactionConfig,
-  DEFAULT_COMPACTION_CONFIG,
-  buildSummaryMessage,
-  getCompactedUsage,
-  isSummaryMessage,
-  planCompaction,
-} from "./compaction";
+  agentCompactionCount,
+  agentContextFraction,
+  agentNextCostEstimate,
+  agentSessionUsage,
+  agentSupportsImages,
+} from "./service-readouts";
+import { spendCapAbortReason } from "./turn-control";
+import { AgentTurnConfiguration } from "./turn-configuration";
+import { AgentActiveSessionRuntime } from "./active-session-runtime";
+import { ParentAgentRuntime } from "./parent-agent-runtime";
+import { AgentParentConfigurationRuntime } from "./parent-agent-configuration";
+import { AgentSessionLocalState } from "./session-local-state";
+import { AgentToolCallController, type ToolApprovalRequest } from "./tool-call-controller";
+import { AgentSessionEventRecorder } from "./session-event-recorder";
+import { AgentSessionActivation } from "./session-activation";
+import { AgentSessionActions } from "./session-actions";
 import {
-  DEFAULT_EXPECTED_OUTPUT_TOKENS,
-  estimateNextRequestCost,
-  hasPricing,
-  type RequestCostEstimate,
-} from "./cost";
-import { type UndoEntry, UNDOABLE_TOOLS, applyUndo, captureUndo } from "./undo";
-import { buildSystemPrompt } from "./system-prompt";
-import { formatInstructionsOverlay, loadVaultInstructions } from "./instructions";
-import { MODES, resolveModePolicy } from "./modes";
-import { resolveWorkingDirPolicy } from "./working-dir";
-import { OUTPUT_STYLES } from "./output-styles";
+  type AgentCommandPlan,
+  resolveAgentCommand,
+  resolveInitCommand,
+  resolveSkillCommand,
+} from "./command-dispatcher";
+import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
+import { maybeCompactAgentTranscript } from "./compaction-orchestrator";
+import {
+  AgentServiceListeners,
+  type AgentServiceChangeListener,
+  type AgentServiceEventListener,
+} from "./service-listeners";
+import { AgentStreamRuntime } from "./stream-runtime";
+import { AgentRuntimeResourceState } from "./runtime-resource-state";
+import { AgentSubagentRuntime } from "./subagent-runtime";
+import { AgentPromptTurnRuntime, type PromptTurnRun } from "./prompt-turn-runtime";
+import {
+  buildRuntimeDiagnostics,
+  MAX_RECENT_DIAGNOSTIC_EVENTS,
+  summarizeAgentEvent,
+  type AgentRuntimeDiagnostics,
+} from "./diagnostics";
+export type { ToolApprovalRequest } from "./tool-call-controller";
 
-const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
-const X_TITLE = "Obsidian Agentic Chat";
-
-/** Tokens reserved for the summarization prompt + its output during compaction. */
-const COMPACTION_RESERVE_TOKENS = 16_384;
-
-/** Abort the compaction summary call after this long so it can't stall a prompt. */
-const COMPACTION_TIMEOUT_MS = 20_000;
-
-/** A pending tool call the user must approve. */
-export interface ToolApprovalRequest {
-  toolName: string;
-  label: string;
-  args: unknown;
-}
-
-/**
- * Summarize a slice of transcript into compaction summary text. Injected for
- * tests; production calls the model through pi's `generateSummary`. Returns "" to
- * signal "no summary" so the caller skips compaction rather than dropping history.
- */
-export type SummarizeFn = (messages: AgentMessage[], signal?: AbortSignal) => Promise<string>;
+export type { SummarizeFn } from "./compaction-runtime";
 
 export interface AgentServiceOptions {
   app: App;
@@ -80,10 +74,13 @@ export interface AgentServiceOptions {
   summarize?: SummarizeFn;
   /** Injected for tests; production wraps Obsidian's `requestUrl` for the web tools. */
   webFetch?: WebFetcher;
+  /** Resolve an agent clarification question through the chat UI. */
+  askUser?: AskUserHandler;
+  /** Persist settings when runtime-managed credentials, such as MCP OAuth tokens, rotate. */
+  saveSettings?: () => void | Promise<void>;
+  /** Store large tool outputs so the transcript can reference them by id. */
+  artifactStore?: ToolArtifactStoreLike;
 }
-
-type EventListener = (event: AgentEvent) => void;
-type ChangeListener = () => void;
 
 /**
  * Owns the pi Agent for the chat view: model/tool/skill wiring, approval gates,
@@ -92,75 +89,128 @@ type ChangeListener = () => void;
 export class AgentService {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
-  private readonly sessionManager: ObsidianSessionManager;
-  private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
-  private readonly injectedStreamFn?: StreamFn;
-  private readonly injectedSummarize?: SummarizeFn;
   private readonly webFetch: WebFetcher;
+  private readonly sessions: AgentActiveSessionRuntime;
+  private readonly streams: AgentStreamRuntime;
+  private readonly toolCalls: AgentToolCallController;
+  private readonly subagents: AgentSubagentRuntime;
+  private readonly sessionEvents: AgentSessionEventRecorder;
+  private readonly sessionActivation: AgentSessionActivation;
+  private readonly sessionActions: AgentSessionActions;
+  private readonly compaction: AgentCompactionRuntime;
+  private readonly turns: AgentTurnConfiguration;
+  private readonly runtimeResources: AgentRuntimeResourceState;
+  private readonly parentConfiguration: AgentParentConfigurationRuntime;
+  private readonly parentAgent: ParentAgentRuntime;
+  private readonly sessionState = new AgentSessionLocalState();
+  private readonly listeners = new AgentServiceListeners();
+  private readonly recentEvents: string[] = [];
+  private readonly promptTurns: AgentPromptTurnRuntime;
 
-  private agent: Agent | null = null;
-  private unsubscribeAgent: (() => void) | null = null;
   private initialization: Promise<void> | null = null;
-  /** Serializes session swaps so a rapid double-trigger can't interleave detach/create/replace. */
-  private sessionSwap: Promise<void> = Promise.resolve();
-  private persisted = new WeakSet<object>();
-  private disposed = false;
 
-  private skills: Skill[] = [];
-  private profiles: AgentProfile[] = [];
-  /** System-prompt overlay from the vault's AGENTS.md/CLAUDE.md/GEMINI.md, re-read each turn. */
-  private instructionsOverlay = "";
-  private ignoreMatcher: IgnoreMatcher = () => false;
-  private sessionInfo: SessionInfo | undefined;
-  private errorMessage: string | undefined;
-  /** Token usage from subagent children, which live outside the parent transcript. */
-  private subagentUsage: Usage = emptyUsage();
-  /** Reversible records of mutating tool calls, newest last (for undo-last-change). */
-  private undoStack: UndoEntry[] = [];
-  /** Undo records captured pre-execution, keyed by tool call id, pending success. */
-  private pendingUndo = new Map<string, UndoEntry>();
-  /** One-shot model id used for the next prompt only, then reverted (per-request `/model`). */
-  private modelOverride: string | null = null;
-  /** One-shot thinking level for the next prompt only, then reverted (per-turn `/effort`). */
-  private thinkingOverride: ThinkingLevel | null = null;
-  /** De-dupes repeat `read` calls so re-reading can't double a file into the context window. */
-  private readonly readMemo = new ReadMemo();
   /** Vault `modify` listener that drops memoized reads when a file changes externally. */
   private vaultModifyRef?: EventRef;
-  /**
-   * Cached supported thinking levels keyed by model id, so opening the effort
-   * picker / cycling effort doesn't rebuild the pi-ai model on every interaction.
-   * Invalidates automatically when the active model id changes.
-   */
-  private cachedLevels: { modelId: string; levels: ThinkingLevel[] } | null = null;
-
-  private readonly eventListeners = new Set<EventListener>();
-  private readonly changeListeners = new Set<ChangeListener>();
 
   constructor(options: AgentServiceOptions) {
     this.app = options.app;
     this.getSettings = options.getSettings;
-    this.sessionManager = options.sessionManager;
-    this.confirmToolCall = options.confirmToolCall;
-    this.injectedStreamFn = options.streamFn;
-    this.injectedSummarize = options.summarize;
-    this.webFetch = options.webFetch ?? createObsidianFetcher();
+    const sessionManager = options.sessionManager;
+    this.webFetch = options.webFetch ?? createDynamicProxiedFetcher(() => this.getSettings().network, createObsidianFetcher());
+    this.sessions = new AgentActiveSessionRuntime(sessionManager, () => this.sessionDefaults());
+    this.streams = new AgentStreamRuntime({
+      getSettings: this.getSettings,
+      streamFn: options.streamFn,
+    });
+    this.sessionEvents = new AgentSessionEventRecorder(sessionManager);
+    this.turns = new AgentTurnConfiguration({ getSettings: this.getSettings });
+    this.compaction = new AgentCompactionRuntime({
+      getSettings: this.getSettings,
+      sessionManager,
+      summarize: options.summarize,
+    });
+    this.runtimeResources = new AgentRuntimeResourceState({
+      app: this.app,
+      getSettings: this.getSettings,
+      readMemo: this.sessionState.readMemo,
+      webFetch: this.webFetch,
+      askUser:
+        options.askUser ??
+        (async () => {
+          throw new Error("ask_user is unavailable because no chat UI handler is registered.");
+        }),
+      saveSettings: options.saveSettings,
+      artifactStore: options.artifactStore,
+    });
+    this.subagents = new AgentSubagentRuntime({
+      app: this.app,
+      getSettings: this.getSettings,
+      getResources: () => this.runtimeResources.current,
+      buildStreamFn: () => this.streams.buildStreamFn(),
+      recordUsage: (usage) => this.sessionState.recordSubagentUsage(usage),
+    });
+    this.toolCalls = new AgentToolCallController({
+      app: this.app,
+      getSettings: this.getSettings,
+      confirmToolCall: options.confirmToolCall,
+      getTools: () => this.agent?.state.tools ?? [],
+      getProfiles: () => this.runtimeResources.current.profiles,
+      onUndoApplied: () => this.notifyChange(),
+    });
+    this.parentConfiguration = new AgentParentConfigurationRuntime({
+      getSettings: this.getSettings,
+      streams: this.streams,
+      turns: this.turns,
+      runtimeResources: this.runtimeResources,
+      subagents: this.subagents,
+      toolCalls: this.toolCalls,
+      sessions: this.sessions,
+      onEvent: (event) => this.handleAgentEvent(event),
+    });
+    this.parentAgent = new ParentAgentRuntime(() => this.parentConfiguration.build());
+    this.sessionActivation = new AgentSessionActivation({
+      parentAgent: this.parentAgent,
+      sessionEvents: this.sessionEvents,
+      sessionState: this.sessionState,
+      toolCalls: this.toolCalls,
+      runtimeResources: this.runtimeResources,
+    });
+    this.sessionActions = new AgentSessionActions({
+      sessions: this.sessions,
+      activation: this.sessionActivation,
+      notifyChange: () => this.notifyChange(),
+    });
+    this.promptTurns = new AgentPromptTurnRuntime({
+      requireAgent: () => this.requireAgent(),
+      getSettings: this.getSettings,
+      hasApiKey: () => this.hasApiKey(),
+      getSessionCostUsd: () => this.getSessionUsage().cost?.total ?? 0,
+      refreshConfiguration: () => this.parentConfiguration.refresh(this.parentAgent),
+      maybeCompact: () => this.maybeCompact(),
+      clearError: () => this.sessionState.clearError(),
+      setError: (error) => this.sessionState.setError(error),
+      setErrorMessage: (message) => this.sessionState.setErrorMessage(message),
+      consumeOverrides: () => this.turns.consumeOverrides(),
+      notifyChange: () => this.notifyChange(),
+    });
     // External edits change a file's contents out from under the agent; drop any
     // memoized read of it so the next read serves fresh content instead of a
     // stale "already read" pointer. Agent-driven writes invalidate via the tool.
     this.vaultModifyRef = this.app.vault.on("modify", (file) => {
-      if (file instanceof TFile) this.readMemo.invalidate(file.path);
+      if (file instanceof TFile) this.sessionState.invalidateRead(file.path);
     });
   }
 
-  onEvent(listener: EventListener): () => void {
-    this.eventListeners.add(listener);
-    return () => this.eventListeners.delete(listener);
+  private get agent(): Agent | null {
+    return this.parentAgent.current;
   }
 
-  onChange(listener: ChangeListener): () => void {
-    this.changeListeners.add(listener);
-    return () => this.changeListeners.delete(listener);
+  onEvent(listener: AgentServiceEventListener): () => void {
+    return this.listeners.onEvent(listener);
+  }
+
+  onChange(listener: AgentServiceChangeListener): () => void {
+    return this.listeners.onChange(listener);
   }
 
   getMessages(): AgentMessage[] {
@@ -172,15 +222,15 @@ export class AgentService {
   }
 
   getError(): string | undefined {
-    return this.errorMessage ?? this.agent?.state.errorMessage;
+    return this.sessionState.error ?? this.agent?.state.errorMessage;
   }
 
   getSessionInfo(): SessionInfo | undefined {
-    return this.sessionInfo;
+    return this.sessions.info;
   }
 
   getSkills(): Skill[] {
-    return this.skills;
+    return this.runtimeResources.getSkills();
   }
 
   /**
@@ -189,29 +239,28 @@ export class AgentService {
    * Ignored for Ollama (the model id space is provider-specific).
    */
   setModelOverride(modelId: string | null): void {
-    this.modelOverride = modelId?.trim() || null;
+    this.turns.setModelOverride(modelId);
     // Reflect the pending override in the chrome/estimate right away — but never
     // swap the model out from under an in-flight turn; refreshConfiguration will
     // pick it up before the next prompt.
     if (this.agent && !this.agent.state.isStreaming) {
-      this.agent.state.model = buildModel(this.modelConfigForTurn(this.getSettings()));
+      this.agent.state.model = this.turns.buildModelForTurn();
     }
     this.notifyChange();
   }
 
   /**
    * The pending one-shot model override, or null when none is queued. Reported
-   * only for OpenRouter — the override is provider-specific and {@link
-   * modelConfigForTurn} ignores it elsewhere, so the UI must too.
+   * only for OpenRouter; other providers ignore the provider-specific override,
+   * so the UI must too.
    */
   getModelOverride(): string | null {
-    if (this.getSettings().provider !== "openrouter") return null;
-    return this.modelOverride;
+    return this.turns.getModelOverride();
   }
 
   /** The model id the next prompt will actually use (override if queued, else settings). */
   getActiveModelId(): string {
-    return this.getModelOverride() ?? activeModelId(this.getSettings());
+    return this.turns.getActiveModelId();
   }
 
   /**
@@ -221,23 +270,23 @@ export class AgentService {
    * (a one-time cache miss); the composer knob's tooltip warns about that cost.
    */
   setThinkingOverride(level: ThinkingLevel | null): void {
-    this.thinkingOverride = level;
+    this.turns.setThinkingOverride(level);
     // Reflect the pending override in the chrome/estimate right away, but never
     // change the level out from under an in-flight turn.
     if (this.agent && !this.agent.state.isStreaming) {
-      this.agent.state.thinkingLevel = this.thinkingLevelForTurn(this.getSettings());
+      this.agent.state.thinkingLevel = this.turns.getActiveThinkingLevel();
     }
     this.notifyChange();
   }
 
   /** The pending one-shot thinking override, or null when none is queued. */
   getThinkingOverride(): ThinkingLevel | null {
-    return this.thinkingOverride;
+    return this.turns.getThinkingOverride();
   }
 
   /** The thinking level the next prompt will actually use (override if queued, else settings). */
   getActiveThinkingLevel(): ThinkingLevel {
-    return this.thinkingLevelForTurn(this.getSettings());
+    return this.turns.getActiveThinkingLevel();
   }
 
   /**
@@ -247,20 +296,11 @@ export class AgentService {
    * interactions (opening the picker, cycling effort) don't rebuild the model.
    */
   getActiveThinkingLevels(): ThinkingLevel[] {
-    const modelId = this.getActiveModelId();
-    if (this.cachedLevels?.modelId === modelId) return this.cachedLevels.levels;
-    const levels = supportedThinkingLevels(this.activeModelForTurn());
-    this.cachedLevels = { modelId, levels };
-    return levels;
-  }
-
-  /** The resolved pi-ai model object the next prompt will stream through. */
-  private activeModelForTurn(): Model<"openai-completions"> {
-    return buildModel(this.modelConfigForTurn(this.getSettings()));
+    return this.turns.getActiveThinkingLevels();
   }
 
   getProfiles(): AgentProfile[] {
-    return this.profiles;
+    return this.runtimeResources.getProfiles();
   }
 
   /**
@@ -269,39 +309,42 @@ export class AgentService {
    * a proxy for how full the next request will be. Undefined if unknown.
    */
   getContextFraction(): number | undefined {
-    const contextWindow = this.agent?.state.model?.contextWindow ?? 0;
-    if (contextWindow <= 0) return undefined;
-    // Walk back from the latest message to the most recent assistant turn with usage.
-    const messages = this.getMessages();
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i];
-      const input = message.role === "assistant" ? message.usage?.input ?? 0 : 0;
-      if (input > 0) return Math.min(input / contextWindow, 1);
-    }
-    return undefined;
+    return agentContextFraction({ messages: this.getMessages(), model: this.agent?.state.model });
   }
 
   /** Sum token usage and cost across all assistant turns in the active session. */
   getSessionUsage(): Usage {
-    const total = emptyUsage();
-    for (const message of this.getMessages()) {
-      if (message.role === "assistant" && message.usage) addUsage(total, message.usage);
-    }
-    // Children run outside the parent transcript, so fold their usage in here.
-    addUsage(total, this.subagentUsage);
-    // Turns dropped by compaction are no longer in the transcript, but each
-    // summary message carries the usage it replaced — fold those in so the
-    // session total survives reload and rewind without shrinking.
-    for (const message of this.getMessages()) {
-      const compacted = getCompactedUsage(message);
-      if (compacted) addUsage(total, compacted);
-    }
-    return total;
+    return agentSessionUsage({
+      messages: this.getMessages(),
+      subagentUsage: this.sessionState.subagentUsage,
+    });
   }
 
   /** Number of times this session has been auto-compacted (for one-shot UI notices). */
   getCompactionCount(): number {
-    return this.getMessages().filter(isSummaryMessage).length;
+    return agentCompactionCount({ messages: this.getMessages() });
+  }
+
+  getRuntimeDiagnostics(): AgentRuntimeDiagnostics {
+    const settings = this.getSettings();
+    return buildRuntimeDiagnostics({
+      settings,
+      sessionInfo: this.sessions.info,
+      sessionPath: this.sessions.activePath,
+      tools: this.agent?.state.tools ?? [],
+      resources: this.runtimeResources.current,
+      resourcesReloadedAt: this.runtimeResources.lastReloadAt,
+      modelOverride: this.getModelOverride(),
+      thinkingLevel: this.getActiveThinkingLevel(),
+      thinkingOverride: this.getThinkingOverride(),
+      isStreaming: this.isStreaming(),
+      canUndo: this.canUndo(),
+      lastError: this.getError(),
+      contextFraction: this.getContextFraction(),
+      compactionCount: this.getCompactionCount(),
+      usage: this.getSessionUsage(),
+      recentEvents: this.recentEvents,
+    });
   }
 
   /**
@@ -311,35 +354,24 @@ export class AgentService {
    */
   estimateNextCost(): RequestCostEstimate | undefined {
     const model = this.agent?.state.model;
-    if (!model || !hasPricing(model.cost)) return undefined;
     const settings = this.getSettings();
-    const expectedOutput = settings.maxTokens > 0 ? settings.maxTokens : DEFAULT_EXPECTED_OUTPUT_TOKENS;
     // Include the system prompt (base + overlays + skills + subagents) so the
     // first-turn estimate isn't a large underestimate.
-    return estimateNextRequestCost(this.getMessages(), model.cost, expectedOutput, this.composeSystemPrompt(settings));
+    return agentNextCostEstimate({
+      messages: this.getMessages(),
+      model,
+      settings,
+      systemPrompt: this.runtimeResources.composeSystemPrompt(settings, this.getActiveModelId()),
+    });
   }
 
   /** Whether there's a captured vault change that {@link undoLastChange} can revert. */
   canUndo(): boolean {
-    return this.undoStack.length > 0;
+    return this.toolCalls.canUndo();
   }
 
-  /**
-   * Revert the most recent mutating tool call (write/edit/rename/delete) this
-   * session. Undo state is in-memory, so it doesn't survive a reload or rewind.
-   */
   async undoLastChange(): Promise<string> {
-    const entry = this.undoStack.pop();
-    if (!entry) return "Nothing to undo.";
-    try {
-      const summary = await applyUndo(this.app, entry);
-      this.notifyChange();
-      return summary;
-    } catch (error) {
-      // Restore the entry so the user can retry or inspect; report the failure.
-      this.undoStack.push(entry);
-      return `Could not undo: ${error instanceof Error ? error.message : String(error)}`;
-    }
+    return this.toolCalls.undoLastChange();
   }
 
   async initialize(): Promise<void> {
@@ -357,12 +389,12 @@ export class AgentService {
     const trimmed = prompt.trim();
     if (!trimmed) return;
     const attached = images && images.length > 0 ? images : undefined;
-    await this.runPrompt(() => this.requireAgent().prompt(trimmed, attached));
+    await this.runPrompt((agent) => agent.prompt(trimmed, attached));
   }
 
   /** Whether the model the next turn will use accepts image input (vision). */
   supportsImages(): boolean {
-    return !!this.agent?.state.model?.input?.includes("image");
+    return agentSupportsImages(this.agent?.state.model);
   }
 
   /**
@@ -372,33 +404,16 @@ export class AgentService {
    * prompt; only a path-only reference (or nothing) is surfaced.
    */
   isPathIgnored(path: string): boolean {
-    return this.ignoreMatcher(path);
+    return this.runtimeResources.isPathIgnored(path);
   }
 
   async invokeSkill(name: string, args?: string): Promise<void> {
-    const skill = this.skills.find((item) => item.name === name);
-    if (!skill) {
-      this.setError(`No skill named "${name}".`);
-      return;
-    }
-    const text = buildSkillInvocation(skill, args);
-    await this.runPrompt(() => this.requireAgent().prompt(text));
+    return this.runCommandPlan(resolveSkillCommand(this.runtimeResources.current, name, args));
   }
 
   /** User-driven dispatch: ask the model to delegate a task to a named subagent. */
   async invokeAgent(name: string, task: string): Promise<void> {
-    const profile = this.profiles.find((item) => item.name === name);
-    if (!profile) {
-      this.setError(this.unknownAgentMessage(name));
-      return;
-    }
-    const trimmed = task.trim();
-    if (!trimmed) {
-      this.setError(`Give the "${name}" subagent a task, e.g. /agent ${name} <task>.`);
-      return;
-    }
-    const directive = `Use the subagent tool to delegate this task to the "${name}" subagent: ${trimmed}`;
-    await this.runPrompt(() => this.requireAgent().prompt(directive));
+    return this.runCommandPlan(resolveAgentCommand(this.runtimeResources.current, name, task));
   }
 
   /**
@@ -409,32 +424,7 @@ export class AgentService {
    * create the file when none exists.
    */
   async invokeInit(): Promise<void> {
-    const directive = [
-      "Curate this vault's standing-instructions file for the agentic-chat agent.",
-      "Target the first of AGENTS.md, CLAUDE.md, or GEMINI.md that exists at the vault root; if none exists, create AGENTS.md.",
-      "First read the current file (if any) and survey the vault structure (top-level folders and a few representative notes) to infer what this vault is for.",
-      "Then write concise, durable guidance an agent needs to work well here: the vault's purpose, key folders, conventions, and the user's preferences.",
-      "Make surgical edits with the `edit` tool — change only what is stale or missing, preserving existing good content; use `write` only to create the file.",
-      "Keep it concise: this file is injected into every conversation.",
-    ].join(" ");
-    await this.runPrompt(() => this.requireAgent().prompt(directive));
-  }
-
-  /**
-   * Helpful "unknown subagent" error: list the agents that *do* exist, and if the
-   * typed name actually matches a skill (a common mix-up, e.g. `/agent deep` for the
-   * `deep-research` skill), point the user at `/skill` instead.
-   */
-  private unknownAgentMessage(name: string): string {
-    const available = this.profiles.map((item) => item.name);
-    const lower = name.toLowerCase();
-    const skill = this.skills.find(
-      (item) => item.name.toLowerCase() === lower || item.name.toLowerCase().includes(lower),
-    );
-    const parts = [`No subagent named "${name}".`];
-    if (skill) parts.push(`Did you mean the skill "${skill.name}"? Run it with /${skill.name} or /skill ${skill.name}.`);
-    parts.push(available.length > 0 ? `Available subagents: ${available.join(", ")}.` : "No subagents are configured.");
-    return parts.join(" ");
+    return this.runCommandPlan(resolveInitCommand());
   }
 
   abort(): void {
@@ -445,69 +435,23 @@ export class AgentService {
   }
 
   async newSession(): Promise<void> {
-    return this.enqueueSessionSwap(async () => {
-      this.detachAgent();
-      this.sessionInfo = await this.sessionManager.createSession(this.sessionDefaults());
-      this.persisted = new WeakSet<object>();
-      this.subagentUsage = emptyUsage();
-    this.undoStack = [];
-    this.pendingUndo.clear();
-      this.readMemo.clear();
-      await this.reloadResources();
-      this.replaceAgent([]);
-      this.errorMessage = undefined;
-      this.notifyChange();
-    });
+    return this.sessionActions.newSession();
   }
 
   async listSessions(): Promise<SessionInfo[]> {
-    return this.sessionManager.listSessions();
+    return this.sessionActions.listSessions();
   }
 
   async loadSession(path: string): Promise<void> {
-    return this.enqueueSessionSwap(async () => {
-      this.detachAgent();
-      this.sessionInfo = await this.sessionManager.loadSession(path);
-      this.persisted = new WeakSet<object>();
-      this.subagentUsage = emptyUsage();
-    this.undoStack = [];
-    this.pendingUndo.clear();
-      this.readMemo.clear();
-      await this.reloadResources();
-      this.replaceAgent(this.sessionManager.buildSessionContext().messages);
-      this.errorMessage = undefined;
-      this.notifyChange();
-    });
-  }
-
-  /**
-   * Run a session swap exclusively: chain it after any in-flight swap so two
-   * rapid triggers (e.g. double-tapping "New conversation") can't interleave
-   * detach/create/replace and corrupt the active session.
-   */
-  private enqueueSessionSwap(op: () => Promise<void>): Promise<void> {
-    const next = this.sessionSwap.then(op, op);
-    // Swallow rejections on the chain itself so one failure doesn't poison the
-    // next swap; the awaited caller still sees the original rejection.
-    this.sessionSwap = next.then(
-      () => undefined,
-      () => undefined,
-    );
-    return next;
+    return this.sessionActions.loadSession(path);
   }
 
   async deleteSession(path: string): Promise<void> {
-    const active = this.sessionManager.getActiveSessionPath();
-    await this.sessionManager.deleteSession(path);
-    if (active === path) await this.newSession();
-    else this.notifyChange();
+    return this.sessionActions.deleteSession(path);
   }
 
   async renameSession(path: string, name: string): Promise<void> {
-    await this.sessionManager.renameSession(path, name);
-    // Refresh cached info so renaming the active session updates the chrome.
-    if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
-    this.notifyChange();
+    return this.sessionActions.renameSession(path, name);
   }
 
   /**
@@ -516,308 +460,46 @@ export class AgentService {
    * resend an edited prompt as a fresh branch.
    */
   async truncateMessages(index: number): Promise<void> {
-    if (!this.agent || this.agent.state.isStreaming) return;
-    const messages = this.getMessages().slice(0, Math.max(0, index));
-    await this.sessionManager.rewriteMessages(messages);
-    this.persisted = new WeakSet<object>();
-    for (const message of messages) this.persisted.add(message as object);
-    // Child usage isn't tracked per-message, so it can't be recomputed for the
-    // surviving turns; zero it on rewind rather than let it over-count forever.
-    this.subagentUsage = emptyUsage();
-    this.undoStack = [];
-    this.pendingUndo.clear();
-    this.readMemo.clear();
-    this.replaceAgent(messages);
-    if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
-    this.errorMessage = undefined;
-    this.notifyChange();
+    return this.sessionActions.truncateMessages(index);
   }
 
   dispose(): void {
-    if (this.disposed) return;
-    this.disposed = true;
+    if (this.parentAgent.isDisposed) return;
     if (this.vaultModifyRef) this.app.vault.offref(this.vaultModifyRef);
     this.vaultModifyRef = undefined;
-    this.unsubscribeAgent?.();
-    this.unsubscribeAgent = null;
-    this.agent?.abort();
-    this.agent = null;
-    this.eventListeners.clear();
-    this.changeListeners.clear();
+    this.parentAgent.dispose();
+    this.listeners.clear();
   }
 
-  private async runPrompt(run: () => Promise<void>): Promise<void> {
+  private async runPrompt(run: PromptTurnRun): Promise<void> {
     await this.initialize();
-    const agent = this.requireAgent();
-    if (agent.state.isStreaming) {
-      this.setError("The agent is already responding.");
+    await this.promptTurns.run(run);
+  }
+
+  private async runCommandPlan(plan: AgentCommandPlan): Promise<void> {
+    if (plan.type === "error") {
+      this.setError(plan.message);
       return;
     }
-    if (!this.hasApiKey()) {
-      this.setError(`Add a ${this.getSettings().provider} API key in plugin settings before sending a prompt.`);
-      return;
-    }
-    const cap = this.getSettings().notifications.costCapUsd;
-    if (cap > 0 && (this.getSessionUsage().cost?.total ?? 0) >= cap) {
-      this.setError(
-        `Spend cap of $${cap.toFixed(2)} reached for this conversation. ` +
-          `Raise it in settings or start a new conversation.`,
-      );
-      return;
-    }
-    await this.refreshConfiguration();
-    // Summarize old turns before the next request if the window is filling, so a
-    // long session doesn't hit the model limit or spike cost. Never throws.
-    await this.maybeCompact();
-    try {
-      this.errorMessage = undefined;
-      this.notifyChange();
-      await run();
-    } catch (error) {
-      this.errorMessage = error instanceof Error ? error.message : String(error);
-    } finally {
-      // A one-shot model/thinking override is consumed by exactly the turn it was
-      // set for; revert so the following prompt uses the configured defaults again.
-      this.modelOverride = null;
-      this.thinkingOverride = null;
-      this.notifyChange();
-    }
+    await this.runPrompt((agent) => agent.prompt(plan.prompt));
   }
 
   private async initializeAgent(): Promise<void> {
-    this.sessionInfo = await this.sessionManager.continueRecentSession(this.sessionDefaults());
-    await this.reloadResources();
-    this.replaceAgent(this.sessionManager.buildSessionContext().messages);
-    this.notifyChange();
-  }
-
-  /**
-   * Detach the current agent before an async session swap: unsubscribe first so
-   * no late events from the outgoing (aborted) agent are handled against the new
-   * session's `persisted` set, then abort it.
-   */
-  private detachAgent(): void {
-    this.unsubscribeAgent?.();
-    this.unsubscribeAgent = null;
-    this.agent?.abort();
-    // Drop the reference so getMessages()/isStreaming() don't report stale
-    // old-session state during the async gap before replaceAgent() runs.
-    this.agent = null;
-  }
-
-  private replaceAgent(messages: AgentMessage[]): void {
-    // A late initialize/load/new that resolves after dispose() must not resurrect
-    // the agent or re-subscribe to events.
-    if (this.disposed) return;
-    this.unsubscribeAgent?.();
-    const settings = this.getSettings();
-    const agent = new Agent({
-      streamFn: this.buildStreamFn(),
-      initialState: {
-        systemPrompt: this.composeSystemPrompt(settings),
-        model: buildModel(this.modelConfigForTurn(settings)),
-        thinkingLevel: this.thinkingLevelForTurn(settings),
-        tools: this.buildParentTools(),
-        messages,
-      },
-      getApiKey: (provider) => apiKeyForProvider(this.getSettings(), provider),
-      beforeToolCall: async (context) => {
-        const decision = await this.gateToolCall(context.toolCall.name, context.args);
-        // Capture the inverse only for allowed mutating calls; a blocked call
-        // never runs, so it has nothing to undo.
-        if (!decision && UNDOABLE_TOOLS.has(context.toolCall.name)) {
-          const entry = await captureUndo(this.app, context.toolCall.name, context.args);
-          if (entry) this.pendingUndo.set(context.toolCall.id, entry);
-        }
-        return decision;
-      },
-      afterToolCall: async (context) => {
-        const entry = this.pendingUndo.get(context.toolCall.id);
-        if (entry) {
-          this.pendingUndo.delete(context.toolCall.id);
-          // Only record successful mutations; a failed tool left nothing to undo.
-          // No notifyChange: undo availability isn't surfaced in the UI (`/undo`
-          // is an always-available slash command), so this would only force a
-          // redundant transcript re-render mid tool-run.
-          if (!context.isError) this.undoStack.push(entry);
-        }
-        return undefined;
-      },
-      sessionId: this.sessionInfo?.id,
-      toolExecution: "sequential",
-    });
-    this.agent = agent;
-    this.unsubscribeAgent = agent.subscribe((event) => this.handleAgentEvent(event));
-  }
-
-  private async gateToolCall(
-    toolName: string,
-    args: unknown,
-  ): Promise<{ block: true; reason: string } | undefined> {
-    const settings = this.getSettings();
-    if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, args);
-    const decision = resolveModePolicy(settings.mode, settings.approval, toolName);
-    const { reason } = decision;
-    // Working-dir boundary keys off path/newPath args, so only Safe mode (which can scope
-    // calls to granted dirs) needs it; YOLO is a session-wide allow and plan is read-only.
-    const scoped = settings.mode === "safe";
-    // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
-    // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
-    // already forces read-only, so the boundary only refines Safe.
-    const policy = scoped
-      ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, decision.policy)
-      : decision.policy;
-    if (policy === "allow") return undefined;
-    if (policy === "deny") {
-      return { block: true, reason: reason ?? `The "${toolName}" tool is disabled by your approval settings.` };
-    }
-    const tool = this.agent?.state.tools.find((candidate) => candidate.name === toolName);
-    const approved = await this.confirmToolCall({ toolName, label: tool?.label ?? toolName, args });
-    return approved ? undefined : { block: true, reason: "The user declined this action." };
-  }
-
-  /**
-   * Gate a subagent dispatch. In **plan** mode children are forced read-only, so a
-   * dispatch is always safe. In **YOLO** the session master switch auto-approves it.
-   * Otherwise (safe) it is gated like a mutating action — but only when some dispatched
-   * profile can actually write, so a pure research fan-out never prompts.
-   *
-   * Working-dir caveat: children run without a per-call gate, so `resolveWorkingDirPolicy`
-   * never sees their tool calls. When a working set is configured we therefore confirm the
-   * dispatch up front (even a read-only fan-out) rather than let it read/write outside the
-   * granted dirs unattended — full per-child path enforcement is tracked as future work.
-   */
-  private async gateSubagentDispatch(
-    settings: AgenticChatSettings,
-    args: unknown,
-  ): Promise<{ block: true; reason: string } | undefined> {
-    if (settings.mode === "plan") return undefined;
-    if (settings.mode === "safe" && settings.approval.workingDirs.length > 0) {
-      if (this.dispatchCanMutate(args) && settings.approval.mutating === "deny") {
-        return { block: true, reason: "Subagent dispatch is blocked because mutating tools are denied." };
-      }
-      const label = "Dispatch subagents (children are not limited to your working directories)";
-      const approved = await this.confirmToolCall({ toolName: SUBAGENT_TOOL_NAME, label, args });
-      return approved ? undefined : { block: true, reason: "The user declined to dispatch subagents." };
-    }
-    if (!this.dispatchCanMutate(args)) return undefined;
-    const policy = settings.mode === "yolo" ? "allow" : settings.approval.mutating;
-    if (policy === "allow") return undefined;
-    if (policy === "deny") {
-      return { block: true, reason: "Subagent dispatch is blocked because mutating tools are denied." };
-    }
-    // This dispatch can mutate the vault and child writes then run unattended, so
-    // make the one-time approval say so explicitly.
-    const label = "Dispatch subagents (auto-approves their file changes)";
-    const approved = await this.confirmToolCall({ toolName: SUBAGENT_TOOL_NAME, label, args });
-    return approved ? undefined : { block: true, reason: "The user declined to dispatch subagents." };
-  }
-
-  /** True when any dispatched profile's allowlist includes a mutating tool. */
-  private dispatchCanMutate(args: unknown): boolean {
-    const tasks = normalizeTasks((args ?? {}) as Parameters<typeof normalizeTasks>[0]);
-    return tasks.some((task) => {
-      const profile = this.profiles.find((candidate) => candidate.name === task.agent);
-      return !!profile && profile.toolAllowlist.some((name) => MUTATING_TOOLS.has(name));
-    });
-  }
-
-  private composeSystemPrompt(settings: AgenticChatSettings): string {
-    const overlays = [
-      this.selfAwarenessOverlay(),
-      this.instructionsOverlay,
-      ...promptOverlays(settings),
-      formatSubagentsForSystemPrompt(this.profiles),
-    ];
-    return buildSystemPrompt(settings.systemPrompt, this.skills, overlays);
-  }
-
-  /**
-   * A short self-awareness note: the plugin name and the model id the next turn
-   * will use, so the agent can answer "what are you / which model are you"
-   * accurately instead of guessing. Overlays compose in order; this leads so the
-   * identity is stated once, up front.
-   */
-  private selfAwarenessOverlay(): string {
-    return `Identity: you are the "agentic-chat" Obsidian plugin. You are currently using the model "${this.getActiveModelId()}".`;
-  }
-
-  /**
-   * Parent tool set: the vault tools, the web tools when web access is enabled,
-   * plus the subagent tool when profiles exist.
-   */
-  private buildParentTools(): AgentTool[] {
-    const tools = createVaultTools(this.app, this.ignoreMatcher, this.readMemo);
-    tools.push(...createWebTools(this.getSettings().web, this.webFetch));
-    if (this.profiles.length > 0) tools.push(this.createSubagentToolInstance());
-    return tools;
-  }
-
-  private createSubagentToolInstance(): AgentTool {
-    return createSubagentTool({
-      getProfiles: () => this.profiles,
-      createChildAgent: (profile) => this.createChildAgent(profile),
-      recordUsage: (usage) => addUsage(this.subagentUsage, usage),
-      defaultConcurrency: 3,
-    });
-  }
-
-  /**
-   * Build an isolated child agent for a profile: a filtered tool set (allowlist,
-   * read-only when the parent mode forbids writes), the profile's prompt, and an
-   * optional model override. Children never receive the subagent tool, so the
-   * delegation depth is capped at one by construction.
-   */
-  private createChildAgent(profile: AgentProfile): Agent {
-    const settings = this.getSettings();
-    const readOnly = settings.mode === "plan";
-    // Children run without a per-call gate, so a tool the user explicitly denied
-    // (per-tool "deny") must be stripped here — otherwise an allowlisted child could
-    // bypass that deny in safe/yolo. resolveModePolicy gives the same precedence the
-    // parent gate uses (plan > yolo > per-tool override > settings default).
-    const allowedVaultTools = createVaultTools(this.app, this.ignoreMatcher, new ReadMemo()).filter(
-      (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
-    );
-    const tools = filterChildTools(allowedVaultTools, profile.toolAllowlist ?? [], readOnly);
-    return new Agent({
-      streamFn: this.buildStreamFn(),
-      initialState: {
-        systemPrompt: profile.systemPrompt,
-        model: buildModel(childModelConfig(settings, profile.model)),
-        thinkingLevel: settings.thinkingLevel,
-        tools,
-        messages: [],
-      },
-      getApiKey: (provider) => apiKeyForProvider(this.getSettings(), provider),
-      // Tools are pre-filtered to the allowlist, so the child needs no per-call
-      // gate: the user already approved the dispatch (see gateSubagentDispatch).
-      toolExecution: "sequential",
-    });
+    await this.sessionActions.continueRecentSession();
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
-    try {
-      if (event.type === "message_end") {
-        await this.persistMessage(event.message);
-        if (event.message.role === "assistant") this.enforceSpendCap();
-      }
-      // A subagent dispatch accrues cost during tool execution; check here too so
-      // a costly fan-out aborts as soon as it finishes, not only at the next turn.
-      if (event.type === "tool_execution_end") this.enforceSpendCap();
-      if (event.type === "agent_end") {
-        for (const message of event.messages) await this.persistMessage(message);
-        await this.autoNameSession();
-      }
-    } catch (error) {
-      this.errorMessage = error instanceof Error ? error.message : String(error);
-    }
-    for (const listener of this.eventListeners) listener(event);
-    if (event.type === "agent_end" || event.type === "agent_start") {
-      if (this.sessionManager.getActiveSessionPath()) {
-        this.sessionInfo = this.sessionManager.getActiveSessionInfo();
-      }
-      this.notifyChange();
-    }
+    this.recordRecentEvent(event);
+    await handleAgentRuntimeEvent(event, {
+      recordMessageEnd: (message) => this.sessionEvents.recordMessageEnd(message),
+      recordAgentEnd: (messages) => this.sessionEvents.recordAgentEnd(messages),
+      enforceSpendCap: () => this.enforceSpendCap(),
+      setError: (error) => this.sessionState.setError(error),
+      emitEvent: (agentEvent) => this.listeners.emitEvent(agentEvent),
+      hasActiveSession: () => this.sessions.activePath !== null,
+      refreshActiveSessionInfo: () => this.sessions.refreshInfoIfActive(),
+      notifyChange: () => this.notifyChange(),
+    });
   }
 
   /**
@@ -826,60 +508,15 @@ export class AgentService {
    * `runPrompt` stops new turns; this stops a turn already underway.
    */
   private enforceSpendCap(): void {
-    const cap = this.getSettings().notifications.costCapUsd;
-    if (cap <= 0) return;
-    if (!this.agent?.state.isStreaming) return;
-    if ((this.getSessionUsage().cost?.total ?? 0) < cap) return;
-    this.errorMessage = `Spend cap of $${cap.toFixed(2)} reached — stopped this turn.`;
-    this.agent.abort();
-  }
-
-  /** Name an as-yet-unnamed session after its first user prompt, once. */
-  private async autoNameSession(): Promise<void> {
-    if (!this.sessionManager.hasActiveSession()) return;
-    const info = this.sessionManager.getActiveSessionInfo();
-    if (info.name || info.messageCount === 0) return;
-    const name = deriveAutoName(info.firstMessage);
-    if (!name) return;
-    await this.sessionManager.appendSessionName(name);
-    this.sessionInfo = this.sessionManager.getActiveSessionInfo();
-  }
-
-  private async persistMessage(message: AgentMessage): Promise<void> {
-    const key = message as object;
-    if (this.persisted.has(key)) return;
-    await this.sessionManager.appendMessage(message);
-    this.persisted.add(key);
-  }
-
-  /**
-   * The model config for the next turn: the queued one-shot override if any
-   * (OpenRouter only), otherwise the configured active model.
-   */
-  private modelConfigForTurn(settings: AgenticChatSettings): ModelConfig {
-    const config = activeModelConfig(settings);
-    if (this.modelOverride && settings.provider === "openrouter") {
-      return { ...config, modelId: this.modelOverride };
-    }
-    return config;
-  }
-
-  /** The thinking level for the next turn: the queued one-shot override, else settings, clamped to what the model supports. */
-  private thinkingLevelForTurn(settings: AgenticChatSettings): ThinkingLevel {
-    const requested = this.thinkingOverride ?? settings.thinkingLevel;
-    return clampThinkingLevel(requested, this.getActiveThinkingLevels());
-  }
-
-  private async refreshConfiguration(): Promise<void> {
-    const agent = this.requireAgent();
-    const settings = this.getSettings();
-    await this.reloadResources();
-    agent.state.model = buildModel(this.modelConfigForTurn(settings));
-    agent.state.thinkingLevel = this.thinkingLevelForTurn(settings);
-    agent.state.tools = this.buildParentTools();
-    agent.state.systemPrompt = this.composeSystemPrompt(settings);
-    await this.sessionManager.ensureConfiguration(this.sessionDefaults());
-    this.sessionInfo = this.sessionManager.getActiveSessionInfo();
+    const agent = this.agent;
+    const reason = spendCapAbortReason({
+      isStreaming: agent?.state.isStreaming ?? false,
+      spendCapUsd: this.getSettings().notifications.costCapUsd,
+      sessionCostUsd: this.getSessionUsage().cost?.total ?? 0,
+    });
+    if (!reason) return;
+    this.sessionState.setErrorMessage(reason);
+    agent?.abort();
   }
 
   /**
@@ -889,101 +526,28 @@ export class AgentService {
    * error) leaves the transcript untouched so a prompt is never lost.
    */
   private async maybeCompact(): Promise<void> {
-    try {
-      const agent = this.agent;
-      if (!agent) return;
-      const config = compactionConfig(this.getSettings());
-      const contextWindow = agent.state.model?.contextWindow ?? 0;
-      const plan = planCompaction(agent.state.messages, contextWindow, config);
-      if (!plan) return;
-      const summary = await this.summarizeForCompaction(plan.summarize);
-      if (!summary.trim()) return;
-      // Carry the dropped turns' usage onto the summary message so the session
-      // total is preserved on reload/rewind. Include usage already carried by an
-      // earlier summary in this slice, so iterative compaction never loses it.
-      const dropped = collectDroppedUsage(plan.summarize);
-      const newMessages = [buildSummaryMessage(summary, Date.now(), dropped), ...plan.keep];
-      // Persist the rewrite first; only mutate in-memory state once disk succeeds.
-      await this.sessionManager.rewriteMessages(newMessages);
-      this.persisted = new WeakSet<object>();
-      for (const message of newMessages) this.persisted.add(message as object);
-      this.replaceAgent(newMessages);
-      if (this.sessionManager.hasActiveSession()) this.sessionInfo = this.sessionManager.getActiveSessionInfo();
-      this.notifyChange();
-    } catch {
-      // Compaction is an optimization; never let it break the pending prompt.
-    }
+    await maybeCompactAgentTranscript({
+      getTranscript: () => {
+        const agent = this.agent;
+        if (!agent) return null;
+        return {
+          messages: agent.state.messages,
+          contextWindow: agent.state.model?.contextWindow ?? 0,
+        };
+      },
+      compact: (messages, contextWindow) => this.compaction.compact(messages, contextWindow),
+      markPersistedMessages: (messages) => this.sessionEvents.markPersistedMessages(messages),
+      replaceAgent: (messages) => this.parentAgent.replace(messages),
+      refreshActiveSessionInfo: () => this.sessions.refreshInfoIfActive(),
+      notifyChange: () => this.notifyChange(),
+    });
   }
 
-  /**
-   * Produce summary text for compaction. Tests inject a summarizer; production
-   * summarizes through pi's `generateSummary` with the active model. The summary
-   * call's own (small) token cost is not captured by `generateSummary`, so it is
-   * left out of the session total.
-   */
-  private async summarizeForCompaction(messages: AgentMessage[]): Promise<string> {
-    // Bound the summary call so a hung request can't stall the user's prompt.
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), COMPACTION_TIMEOUT_MS);
-    try {
-      if (this.injectedSummarize) return await this.injectedSummarize(messages, controller.signal);
-      const settings = this.getSettings();
-      const apiKey = apiKeyForProvider(settings, settings.provider);
-      if (!apiKey) return "";
-      const model = buildModel(activeModelConfig(settings));
-      const result = await generateSummary(
-        messages,
-        model,
-        COMPACTION_RESERVE_TOKENS,
-        apiKey,
-        { "HTTP-Referer": HTTP_REFERER, "X-Title": X_TITLE },
-        controller.signal,
-        undefined,
-        undefined,
-        settings.thinkingLevel,
-      );
-      return result.ok ? result.value : "";
-    } finally {
-      window.clearTimeout(timer);
+  private recordRecentEvent(event: AgentEvent): void {
+    this.recentEvents.push(summarizeAgentEvent(event));
+    if (this.recentEvents.length > MAX_RECENT_DIAGNOSTIC_EVENTS) {
+      this.recentEvents.splice(0, this.recentEvents.length - MAX_RECENT_DIAGNOSTIC_EVENTS);
     }
-  }
-
-  private async reloadResources(): Promise<void> {
-    const settings = this.getSettings();
-    this.ignoreMatcher = createIgnoreMatcher(parseIgnorePatterns(settings.ignoredGlobs));
-    // One skill concept: load the skills folder plus the deprecated templates
-    // folder (folded in as skills, by name, skills folder winning on conflict).
-    const skills = await loadVaultSkills(this.app, settings.skillsFolder);
-    const legacyTemplates = settings.templatesFolder
-      ? await loadVaultSkills(this.app, settings.templatesFolder)
-      : [];
-    const byName = new Map<string, Skill>();
-    // Vault skills win over built-ins of the same name (added last, kept-first map).
-    for (const skill of [...skills, ...legacyTemplates, ...builtinSkills(settings.web.enabled)]) {
-      if (!byName.has(skill.name)) byName.set(skill.name, skill);
-    }
-    this.skills = [...byName.values()];
-    this.profiles = await loadAgentProfiles(this.app, settings.agentsFolder, settings.enableBuiltinAgents);
-    // Standing instructions (AGENTS.md → CLAUDE.md → GEMINI.md at the vault root): re-read
-    // every turn so agent/user edits land in the next system prompt. The adapter is always
-    // present in production; the guard keeps minimal test harnesses (no adapter) working.
-    const adapter = this.app.vault.adapter;
-    this.instructionsOverlay = adapter ? formatInstructionsOverlay(await loadVaultInstructions(adapter)) : "";
-  }
-
-  private buildStreamFn(): StreamFn {
-    if (this.injectedStreamFn) return this.injectedStreamFn;
-    return (model, context, options) => {
-      const settings = this.getSettings();
-      return streamSimple(model, context, {
-        ...options,
-        temperature: settings.temperature,
-        ...(settings.maxTokens > 0 ? { maxTokens: settings.maxTokens } : {}),
-        timeoutMs: settings.requestTimeoutMs,
-        maxRetries: settings.maxNetworkRetries,
-        headers: { "HTTP-Referer": HTTP_REFERER, "X-Title": X_TITLE, ...(options?.headers ?? {}) },
-      });
-    };
   }
 
   private sessionDefaults(): SessionDefaults {
@@ -1000,68 +564,15 @@ export class AgentService {
   }
 
   private requireAgent(): Agent {
-    if (!this.agent) throw new Error("Agent is not initialized.");
-    return this.agent;
+    return this.parentAgent.requireAgent();
   }
 
   private setError(message: string): void {
-    this.errorMessage = message;
+    this.sessionState.setErrorMessage(message);
     this.notifyChange();
   }
 
   private notifyChange(): void {
-    for (const listener of this.changeListeners) listener();
+    this.listeners.notifyChange();
   }
-}
-
-/**
- * Total usage to carry onto a new summary: the assistant turns being dropped plus
- * any usage an earlier summary in the same slice already carried (iterative
- * compaction), so nothing is lost when the old summary is folded into the new one.
- */
-function collectDroppedUsage(messages: AgentMessage[]): Usage {
-  const total = emptyUsage();
-  const assistant = sumAssistantUsage(messages);
-  if (assistant) addUsage(total, assistant);
-  for (const message of messages) {
-    const carried = getCompactedUsage(message);
-    if (carried) addUsage(total, carried);
-  }
-  return total;
-}
-
-/** Map the persisted (percent-based) compaction settings to a {@link CompactionConfig}. */
-function compactionConfig(settings: AgenticChatSettings): CompactionConfig {
-  const percent = settings.compaction?.thresholdPercent ?? DEFAULT_COMPACTION_CONFIG.thresholdFraction * 100;
-  const thresholdFraction = Math.min(0.95, Math.max(0.5, percent / 100));
-  return {
-    enabled: settings.compaction?.enabled ?? DEFAULT_COMPACTION_CONFIG.enabled,
-    thresholdFraction,
-    keepFraction: DEFAULT_COMPACTION_CONFIG.keepFraction,
-  };
-}
-
-/** System-prompt overlays contributed by the active mode and output style. */
-function promptOverlays(settings: AgenticChatSettings): string[] {
-  return [MODES[settings.mode].promptOverlay, OUTPUT_STYLES[settings.outputStyle].promptOverlay];
-}
-
-/** Resolve the model config for a child, overriding only the model id when given. */
-function childModelConfig(settings: AgenticChatSettings, modelOverride?: string): ModelConfig {
-  const base = activeModelConfig(settings);
-  return modelOverride ? { ...base, modelId: modelOverride } : base;
-}
-
-/**
- * Restrict a child's tools to its profile allowlist. An empty allowlist defaults
- * to the read-only vault tools; when the parent mode forbids writes, mutating
- * tools are stripped regardless of the allowlist.
- */
-export function filterChildTools(tools: AgentTool[], allowlist: string[], readOnly: boolean): AgentTool[] {
-  let allowed =
-    allowlist.length > 0
-      ? tools.filter((tool) => allowlist.includes(tool.name))
-      : tools.filter((tool) => !MUTATING_TOOLS.has(tool.name));
-  if (readOnly) allowed = allowed.filter((tool) => !MUTATING_TOOLS.has(tool.name));
-  return allowed;
 }

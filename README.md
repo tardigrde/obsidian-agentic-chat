@@ -12,14 +12,15 @@ Your notes are yours. This plugin is built so that using AI on them does not mea
 - **Or go fully local.** Switch the provider to Ollama and every prompt, note, and tool result stays on your device. No API key, no network, no cost.
 - **No telemetry.** The plugin collects nothing, phones home to nothing, and ships no analytics. The only network traffic is the model request you trigger, to the provider you chose.
 - **You see everything the agent does.** Every read, search, write, edit, rename, and delete is a visible tool call in the timeline. Mutating actions are gated by an approval policy (default: **ask**), the approval dialog shows a **diff** of the pending change, and deletes go to trash.
-- **Your key stays local.** The OpenRouter API key is stored only in the plugin's `data.json` inside your vault's `.obsidian` folder.
+- **Your secrets stay local.** Provider API keys, web-search keys, MCP auth headers, and OAuth tokens are stored with Obsidian secret storage. The plugin's vault `data.json` keeps only secret IDs and non-secret settings.
 
 > With the strict zero-data-retention default, some models may have no compliant provider on OpenRouter. If a request can't be routed, pick a different model in settings, relax the privacy toggles deliberately, or use Ollama.
 
 ## Features
 
-- **Native sidebar chat** — an Obsidian `ItemView` styled with theme variables (light and dark just work). Tool calls appear as live step cards with elapsed-time timing; reasoning tokens stream into a collapsible section; an animated indicator shows while the agent is working.
-- **Vault tools** — the agent reads and acts on your vault through typed, path-safe tools (see [Vault tools](#vault-tools) for the full list): read/write/edit notes, list/find/grep, traverse backlinks and the local graph, read/write frontmatter as structured data, rename (backlinks preserved), and delete (to trash).
+- **Native sidebar chat** — an Obsidian `ItemView` styled with theme variables (light and dark just work). Tool calls appear as live step cards with elapsed-time timing; reasoning tokens stream into a collapsible section; answers render with Obsidian-style Markdown, including callouts and Mermaid diagrams; an animated indicator shows while the agent is working.
+- **Inline clarification prompts** — when the agent needs a missing detail, it can call `ask_user`; the turn pauses on an inline question with optional answer buttons, then continues from your answer.
+- **Vault tools** — the agent reads and acts on your vault through typed, path-safe tools (see [Vault tools](#vault-tools) for the full list): read/write/edit notes, list/search, traverse backlinks and the local graph, read/write frontmatter as structured data, rename (backlinks preserved), and delete (to trash).
 - **Approval gates with diff preview** — read-only tools run freely; mutating tools are gated **allow / ask / deny**, globally or per tool. "Ask" shows a confirm dialog with the exact arguments **and a line-level diff** of what would change, plus an optional "don't ask again for this tool."
 - **Undo** — `/undo` reverts the agent's most recent vault change (write/edit/delete/rename/frontmatter).
 - **Safe ↔ YOLO toggle** — a single composer switch over the approval gate. **Safe** honors your settings approval policy; **YOLO** is a session master switch that auto-approves all mutating tools (a per-tool *deny* still wins).
@@ -33,7 +34,8 @@ Your notes are yours. This plugin is built so that using AI on them does not mea
 - **Output styles** — switch *how* the assistant talks (default / brainstorm / learning) with `/style`.
 - **Standing instructions (AGENTS.md)** — the agent loads `AGENTS.md` from your vault root (or `CLAUDE.md` / `GEMINI.md` if absent) as standing context on every turn, so the same facts and conventions persist across every conversation. Edit the file yourself, or run `/init` to have the agent curate it surgically (each edit shown as a diff). See [Standing instructions](#standing-instructions-agentsmd).
 - **Web access (opt-in)** — off by default. Turn on *Web access* in settings to give the agent `web_search` (Tavily / Brave / SearXNG backend) and `fetch_url`, plus a built-in `/deep-research` skill. Egress-gated: while it's off the tools aren't registered, so nothing leaves your device for the web. See [Web access & research](#web-access--research).
-- **Composer power tools** — a single unified input card holds the context chips, the textarea, and the bottom toolbar (model · effort · context · folders · Safe↔YOLO), with the session tabs and history/new-chat actions as a nav row above it. Plus inline autocomplete (`/` commands & skills, `@` note mentions), the active note auto-attached as a removable chip, drag-and-drop a note or folder to attach it, copy/retry buttons on every answer, prompt editing (click a sent message to rewind), shell-style up/down command history, a model pill with a per-request model override, and a settings page split into virtual tabs.
+- **MCP tools (opt-in)** — add your own HTTPS Streamable HTTP MCP servers in settings, with no bundled presets. Bearer-token, static-header, and OAuth auth are supported. Discovered remote tools are exposed as `mcp__server__tool`, flow through the approval gate, and return capped text into the model context. No stdio/subprocess transport. See [MCP tools](#mcp-tools).
+- **Composer power tools** — a single unified input card holds the context chips, the textarea, and the bottom toolbar (model · effort · context · folders · Safe↔YOLO), with the session tabs and history/new-chat actions as a nav row above it. Plus inline autocomplete (`/` commands & skills, `@` note mentions, including `@note#heading` / `@note^block` slices), the active note auto-attached as a removable chip (ignored notes are skipped), drag-and-drop or right-click a note/folder/selection to attach it, copy/retry buttons on every answer, prompt editing (click a sent message to rewind), shell-style up/down command history, a model pill with a per-request model override, and a settings page split into virtual tabs.
 
 ## Vault tools
 
@@ -45,11 +47,8 @@ All paths are vault-relative; absolute paths and `..` escapes are rejected, and 
 |---|---|
 | `read` | Read a note's contents. |
 | `ls` | List a folder. |
-| `find` | Find notes by glob or substring path match. |
-| `grep` | Search note contents (with an early-break match cap). |
+| `search` | Search note paths and note contents (with result caps and optional folder scope). |
 | `get_active_note` | Read the note currently open in the editor. |
-| `get_backlinks` | List notes linking *to* a note. |
-| `get_links` | List a note's outbound resolved links. |
 | `local_graph` | A note's immediate neighborhood — inbound (backlinks) and outbound notes. |
 | `get_properties` | Read a note's YAML frontmatter as structured data. |
 
@@ -63,7 +62,7 @@ All paths are vault-relative; absolute paths and `..` escapes are rejected, and 
 | `rename` | Rename or move a note — **inbound wikilinks and backlinks are updated automatically**. |
 | `delete` | Move a note to trash. |
 
-The graph (`get_backlinks` / `get_links` / `local_graph`), frontmatter (`get_properties` / `set_properties`), and link-aware `rename` tools are Obsidian-native: they let the agent traverse the `[[wikilink]]` graph and edit structured metadata reliably instead of brute-grepping or hand-editing raw YAML.
+The `search` meta-tool keeps path and content search behind one model-facing decision surface; the older `find` and `grep` tools remain compatibility implementations for tests/internal surfaces. The graph (`local_graph`), frontmatter (`get_properties` / `set_properties`), and link-aware `rename` tools are Obsidian-native: they let the agent traverse the `[[wikilink]]` graph and edit structured metadata reliably instead of brute-grepping or hand-editing raw YAML. `get_backlinks` and `get_links` also remain compatibility implementations, but the default model-facing surface uses `local_graph` to avoid three overlapping graph tools.
 
 ## Standing instructions (AGENTS.md)
 
@@ -100,16 +99,33 @@ Skills are reusable instruction/capability units in the [agentskills.io](https:/
 Off by default. Enable *Web access* in settings (it carries an egress warning) to register two read-only tools and a research skill:
 
 - **`web_search`** — queries your configured backend (Tavily / Brave / SearXNG; keyed in settings) and returns ranked title/URL/snippet results.
-- **`fetch_url`** — fetches an http(s) page and returns readable text (scripts/markup stripped, entities decoded). A best-effort SSRF guard blocks non-http(s) schemes and localhost/private/link-local hosts.
+- **`fetch_url`** — fetches an http(s) page and returns readable text (scripts/markup stripped, entities decoded). Long pages can be paged with `offset` / `nextOffset`. A best-effort SSRF guard blocks non-http(s) schemes and localhost/private/link-local hosts.
 - **`/deep-research`** — a built-in skill (advertised only while web access is on) that runs a plan → search → read → synthesize → **cite** → save loop and writes a sourced note, requiring inline source links plus a `## Sources` list.
 
 Egress is gated by a single off-by-default setting: while it's off, the web tools aren't registered at all, so nothing can leave your device for the web. When on, search queries and fetched URLs go to your chosen search provider and the fetched sites — **outside** the model-provider privacy boundary.
+
+## MCP tools
+
+Off by default. Enable *MCP* in settings to discover tools from remote MCP servers over HTTPS Streamable HTTP.
+
+- **Transport.** HTTPS only. `stdio`, subprocesses, and insecure `http://` endpoints are intentionally unsupported, so the feature stays mobile-safe and cannot spawn local processes.
+- **Setup.** Use **Add server**, paste the server's HTTPS endpoint, choose auth, then **Test connection** or **Authenticate & test** to discover tools. New installs include no servers or presets.
+- **Authentication.** Generic servers can use no auth, a bearer token, a custom static header, or MCP OAuth. Bearer/static-header secrets and OAuth tokens are stored with Obsidian secret storage.
+- **Tool naming.** Remote tools are exposed as `mcp__<server-id>__<tool-name>` so model tool names are stable and collision-free.
+- **Approval.** Every MCP server has its own allow / ask / deny policy, defaulting to **ask**. Remote tool annotations are not trusted as a safety boundary.
+- **OAuth.** MCP OAuth servers use protected-resource discovery, authorization-server discovery, PKCE, dynamic client registration when available, bearer tokens, refresh tokens, and a re-auth/forget-token flow. OAuth sign-in uses a localhost callback, so sign-in currently requires Obsidian desktop. After sign-in, settings immediately probes tool discovery so a successful login also confirms the server is usable.
+- **Proxy support.** Plugin-owned HTTP proxy settings use Obsidian desktop's Node networking path when configured. On mobile, leave the plugin proxy fields empty and use the device/VPN/network-level routing instead.
+- **Auth storage.** Bearer tokens, static auth header values, and OAuth tokens are stored with Obsidian secret storage. The vault `data.json` stores only secret IDs plus non-secret MCP metadata.
+- **Failure behavior.** MCP discovery, sign-in, token refresh, and tool calls have bounded timeouts, retry OAuth refresh once on rejected tokens, retry refresh with server-advertised scopes on `insufficient_scope`, downgrade the MCP protocol version when initialization rejects the newest advertised version, reopen a Streamable HTTP session once if the server reports that the session expired, and make bounded `Last-Event-ID` resume attempts when SSE delivery ends before the matching JSON-RPC result. If a request is accepted asynchronously (`202`), the client opens the server's SSE stream and waits for the matching result. Each configured server also has a **Test connection** action in settings that lists tools through the same MCP client path used at runtime; runtime diagnostics include per-server URL/auth/token state and categorized discovery errors.
+- **Context control.** MCP text results above the inline budget are stored once as plugin-managed artifacts and the model receives a short preview plus an artifact id. The read-only `read_artifact` and `search_artifact` tools let the model inspect large results in chunks without re-running the remote MCP call. Artifacts are automatically pruned by age/count so plugin storage does not grow without bound. Image/resource payloads are summarized or omitted instead of being dumped raw.
+
+Current limits: tool calls only; MCP resources/prompts/roots/sampling, mobile OAuth redirects, long-lived background MCP event consumers, and rich binary/resource rendering are future work tracked in the roadmap.
 
 ## Disclosures
 
 In the interest of transparency (and the [Obsidian Developer Policies](https://docs.obsidian.md/Developer+policies)):
 
-- **Network use.** When the provider is OpenRouter, your prompt — including any note content you attach or the agent reads, plus tool results — is sent to OpenRouter and the model provider it routes to, subject to the privacy constraints above. With Ollama, requests go only to your configured local server. **Web access** is a separate, off-by-default opt-in: when enabled, search queries and the URLs the agent opens are sent to your chosen search provider (Tavily/Brave/SearXNG) and the fetched sites — outside the model-provider privacy boundary.
+- **Network use.** When the provider is OpenRouter, your prompt — including any note content you attach or the agent reads, plus tool results — is sent to OpenRouter and the model provider it routes to, subject to the privacy constraints above. With Ollama, requests go only to your configured local server. **Web access** is a separate, off-by-default opt-in: when enabled, search queries and the URLs the agent opens are sent to your chosen search provider (Tavily/Brave/SearXNG) and the fetched sites — outside the model-provider privacy boundary. **MCP** is also opt-in: when enabled, MCP tool arguments are sent to the HTTPS MCP servers you configure.
 - **Account & payment.** OpenRouter requires your own account and API key, and hosted models are billed by OpenRouter to that account. The plugin itself is free and takes no payment. Ollama needs no account and is free.
 - **File access.** The agent reads and modifies files in your vault through Obsidian's vault API, only when you prompt it. Mutating actions are gated by the approval policy; deletes move files to trash. Files matched by your ignore list are never exposed to the agent.
 - **Telemetry.** None. No analytics, no tracking, no background network calls.
@@ -144,15 +160,19 @@ For pre-release builds not yet in the community directory, install [BRAT](https:
 1. Run a local Ollama server and pull a tool-capable model.
 2. Set the provider to **Ollama (local)**, then the server URL (default `http://localhost:11434`) and model tag.
 
-The settings page is organized into virtual tabs (General / Models / Privacy / Web / Skills & Agents / Advanced) so it isn't one long scroll.
+For any OpenAI-compatible gateway, set the provider to **OpenAI-compatible**. The **Gateway preset** shortcut fills common base URLs for OpenWebUI, LM Studio, vLLM, llama.cpp, Chutes, and Venice.ai; the transport stays generic, so custom gateways still work by editing the Base URL and Model fields directly.
+
+The settings page is organized into virtual tabs (Models / Agent / Approval / Web / MCP / Notifications / Resources) so it isn't one long scroll.
+
+Behind a corporate proxy on desktop, set **Models → Network proxy → HTTP proxy** to an HTTP proxy URL such as `http://host:port`. Plugin-owned OpenRouter/OpenAI-compatible chat requests, model browsing, web tools, and MCP inherit it. The MCP tab has its own optional override; leave it empty unless a server needs different routing. On mobile, keep the plugin proxy fields empty and use the device/VPN/network-level proxy path instead.
 
 Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 
 ## Usage
 
 - **Send a message.** Type and press Enter (Shift+Enter for a newline). Type `/` for commands and skills or `@` to attach a note — both show an inline autocomplete dropdown.
-- **Context attachments.** The note you're viewing is **auto-attached** as a removable chip (dismiss it to suppress for the session; `/new` resets it). Add more with `@<note>`, **+ Folder** (attaches a folder listing), or by **dragging** a note/folder from the file explorer onto the composer.
-- **Watch the agent work.** Each tool call is a step card you can expand to see arguments and results, with elapsed timing.
+- **Context attachments.** The note you're viewing is **auto-attached** as a removable chip (dismiss it to suppress for the session; `/new` resets it). Ignore-listed notes are not auto-attached. Add more with `@<note>`, `@<note>#<heading>`, `@<note>^<block-id>`, **+ Folder** (attaches a folder listing), by **dragging** a note/folder from the file explorer onto the composer, or from Obsidian context menus: right-click a note/folder or selected editor text and send it to Agentic Chat.
+- **Watch the agent work.** Each tool call is a step card you can expand to see arguments and results, with elapsed timing. Streaming output stays pinned only while you're already at the bottom; scroll up and it will stop yanking the transcript until you return.
 - **Approve changes.** When a mutating tool is gated by "ask", a dialog shows the exact arguments **and a diff** of the change — **Allow** (Enter) or **Deny** (Escape), with an optional "don't ask again for this tool." Flip the composer to **YOLO** to auto-approve for the session, or use `/plan` to lock to read-only.
 - **Undo.** `/undo` reverts the agent's last vault change.
 - **Edit & retry.** Click a sent message to load it back into the composer; sending rewinds the conversation to that point and regenerates. Every answer has copy and retry buttons. Up/Down arrows cycle your sent-message history.
@@ -174,7 +194,7 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/skill [name] [args]` | Run a vault skill (also `/<skill-name>` directly). |
 | `/agent [name] [task]` | Delegate a task to a subagent (no arg = picker). |
 | `/undo` | Undo the last vault change the agent made. |
-| `/status` | Show provider, model, mode, output style, session. |
+| `/status` | Show provider, model, mode, output style, session, MCP servers/tools. |
 | `/usage` | Show token & cost totals. |
 | `/help` | List commands. |
 
@@ -201,24 +221,62 @@ npm run lint       # eslint
 npm run build      # typecheck + production bundle
 ```
 
-The unit suite runs without Obsidian: the `obsidian` package is replaced by a minimal mock via a vitest alias, the model stream by an injected `streamFn`, and the session store by an in-memory adapter. See `AGENTS.md` for architecture notes, and `ROADMAP.md` for planned work.
+The unit suite runs without Obsidian: the `obsidian` package is replaced by a minimal mock via a vitest alias, the model stream by an injected `streamFn`, and the session store by an in-memory adapter. See `AGENTS.md` for architecture notes and `ROADMAP.md` for planned work.
 
 ### End-to-end tests (local only)
 
 A base end-to-end suite drives the plugin inside a **real Obsidian** instance via
 [`wdio-obsidian-service`](https://github.com/jesse-r-s-hines/wdio-obsidian-service) — it
 auto-downloads Obsidian, copies `test/e2e/vault` into a throwaway sandbox, loads this plugin, and
-runs the smoke spec in `test/e2e/specs/`.
+runs the specs in `test/e2e/specs/`. The no-token specs cover Obsidian boot, chat UI wiring,
+session persistence, deterministic approval/write/edit/undo flows, settings UI persistence, and
+existing `data.json` migration.
 
 ```bash
-npm run test:e2e   # builds the plugin, then boots Obsidian and runs the smoke spec
+npm run test:e2e   # builds the plugin, then boots Obsidian and runs the local e2e suite
+npm run test:e2e -- --spec test/e2e/specs/smoke.e2e.ts
+npm run test:e2e:mobile
+npm run test:e2e:matrix -- --spec test/e2e/specs/smoke.e2e.ts
+npm run verify:mobile
 ```
 
 It is **not** part of CI yet (it launches Electron, so it needs a display + cached Obsidian
-downloads). Set `OBSIDIAN_VERSIONS` (e.g. `earliest/earliest latest/latest`) to widen the version
-matrix. Unit tests (vitest) stay the fast inner loop; the e2e suite catches integration seams —
-view registration, the composer card, slash-command routing, the working-dir gate — that the
+downloads). `npm run test:e2e` intentionally runs one Obsidian version at a time; set
+`OBSIDIAN_VERSIONS=earliest/earliest` or another single pair for a targeted run. Use
+`npm run test:e2e:matrix` for supported-version coverage; it runs sequentially across
+`OBSIDIAN_VERSION_MATRIX` or, by default, `earliest/earliest,latest/latest`. Unit tests (vitest)
+stay the fast inner loop; the e2e suite catches integration seams — view registration, settings
+tabs, persistence/migration, composer wiring, slash-command routing, and approval gates — that the
 mocked unit tests can't.
+
+`npm run verify:mobile` is part of `npm run build` and blocks direct Node/Electron
+API usage outside documented desktop-only fallbacks. `npm run test:e2e:mobile`
+builds the e2e bundle, enables `wdio-obsidian-service` mobile emulation, applies
+Chrome phone-sized device metrics, and runs a WDIO smoke to catch mobile layout
+regressions. Real Obsidian Mobile still needs the Android/iOS checklist in
+[MOBILE_TESTING.md](MOBILE_TESTING.md).
+
+Live model-backed e2e specs are opt-in and skip unless their keys are present.
+Use `OPENROUTER_API_KEY` for the OpenRouter guardrail flow, or
+`OPENWEBUI_API_KEY` / `OPENWEBUI_API_KEY_FILE` with `OPENWEBUI_BASE_URL` and
+`OPENWEBUI_MODEL` for an OpenAI-compatible gateway flow. When running behind a
+corporate proxy, keep `NO_PROXY=localhost,127.0.0.1,::1`; the WDIO config keeps
+chromedriver local and passes a normalized proxy setting to Obsidian/Electron.
+When provider transport, model settings, proxy handling, or request formatting
+changes, run `npm run verify:provider-live`; unlike the default e2e command, it
+requires live credentials and fails instead of accepting skipped provider specs.
+
+Live MCP e2e is also opt-in and refuses insecure endpoints:
+
+```bash
+AGENTIC_CHAT_E2E_MCP_URL=https://mcp.example.com/mcp \
+AGENTIC_CHAT_E2E_MCP_TOOL=tool-name \
+AGENTIC_CHAT_E2E_MCP_ARGS_JSON='{"input":"value"}' \
+npm run test:e2e -- --spec test/e2e/specs/mcp-live.e2e.ts
+```
+
+For static-header servers, also set `AGENTIC_CHAT_E2E_MCP_HEADER_NAME` and
+`AGENTIC_CHAT_E2E_MCP_HEADER_VALUE`.
 
 ## Acknowledgements
 

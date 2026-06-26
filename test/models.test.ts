@@ -18,6 +18,7 @@ function config(overrides: Partial<ModelConfig>): ModelConfig {
     modelId: "anthropic/claude-sonnet-4",
     privacy: PRIVACY,
     ollamaBaseUrl: "http://localhost:11434",
+    openaiCompatibleBaseUrl: "http://localhost:3000/api",
     ...overrides,
   };
 }
@@ -231,5 +232,23 @@ describe("buildModel — Ollama", () => {
     expect(model.baseUrl).toBe("http://localhost:11434/v1");
     expect(model.cost.input).toBe(0);
     expect(model.compat?.openRouterRouting).toBeUndefined();
+  });
+});
+
+describe("buildModel — OpenAI-compatible", () => {
+  it("targets the configured chat-completions base URL without OpenRouter routing", () => {
+    const model = buildModel(
+      config({
+        provider: "openai-compatible",
+        modelId: "qwen2.5-coder",
+        openaiCompatibleBaseUrl: "http://localhost:3000/api/",
+      }),
+    );
+    expect(model.provider).toBe("openai-compatible");
+    expect(model.baseUrl).toBe("http://localhost:3000/api");
+    expect(model.reasoning).toBe(false);
+    expect(model.cost.input).toBe(0);
+    expect(model.compat?.openRouterRouting).toBeUndefined();
+    expect(model.compat?.supportsUsageInStreaming).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { MUTATING_TOOLS } from "../tools/vault-tools";
+import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import { type ApprovalPolicy, type ApprovalSettings, resolvePolicy } from "./approval";
 
 /**
