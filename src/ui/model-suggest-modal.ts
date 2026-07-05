@@ -8,7 +8,7 @@ export interface BrowsableModel {
 }
 
 /**
- * Picker over OpenRouter models (already filtered to tool-capable). Uses a plain
+ * Picker over provider models. Uses a plain
  * substring filter so results stay in the alphabetical order they arrive in —
  * a FuzzySuggestModal would reorder matches by fuzzy score.
  */
@@ -17,9 +17,10 @@ export class ModelSuggestModal extends SuggestModal<BrowsableModel> {
     app: App,
     private readonly models: BrowsableModel[],
     private readonly onChoose: (model: BrowsableModel, once: boolean) => void,
+    label = "model",
   ) {
     super(app);
-    this.setPlaceholder("Pick an OpenRouter model (tool-calling capable)…");
+    this.setPlaceholder(`Pick a ${label}…`);
     this.setInstructions([
       { command: "↵", purpose: "switch model" },
       { command: "shift ↵ / shift-click", purpose: "use for next message only" },

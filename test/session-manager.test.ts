@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { deriveAutoName, ObsidianSessionManager } from "../src/session/session-manager";
 import { parseSessionEntries } from "../src/session/jsonl";
+import { runPlanTrackerCommand } from "../src/agent/plan-tracker";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 const DEFAULTS = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" as const };
@@ -15,6 +16,61 @@ function manager(): { sm: ObsidianSessionManager; adapter: MemoryAdapter } {
   const sm = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
   return { sm, adapter };
 }
+
+function scopedManager(): {
+  sm: ObsidianSessionManager;
+  adapter: MemoryAdapter;
+  scope: { projectId?: string; projectName?: string };
+} {
+  const adapter = new MemoryAdapter();
+  const scope: { projectId?: string; projectName?: string } = {};
+  const sm = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", () => scope);
+  return { sm, adapter, scope };
+}
+
+describe("ObsidianSessionManager project sessions", () => {
+  it("tags new sessions with the active project and lists only that project group", async () => {
+    const { sm, adapter, scope } = scopedManager();
+    scope.projectId = "alpha";
+    scope.projectName = "Alpha";
+    const alpha = await sm.createSession(DEFAULTS);
+    await sm.appendMessage(userMessage("alpha prompt"));
+
+    scope.projectId = "beta";
+    scope.projectName = "Beta";
+    const beta = await sm.createSession(DEFAULTS);
+    await sm.appendMessage(userMessage("beta prompt"));
+
+    let sessions = await sm.listSessions();
+    expect(sessions.map((session) => session.id)).toEqual([beta.id]);
+    expect(sessions[0]).toMatchObject({ projectId: "beta", projectName: "Beta" });
+
+    scope.projectId = "alpha";
+    scope.projectName = "Alpha";
+    sessions = await sm.listSessions();
+    expect(sessions.map((session) => session.id)).toEqual([alpha.id]);
+
+    const alphaEntries = parseSessionEntries(adapter.files.get(alpha.path) ?? "");
+    expect(alphaEntries[0]).toMatchObject({
+      type: "session",
+      projectId: "alpha",
+      projectName: "Alpha",
+    });
+  });
+
+  it("keeps vault-wide sessions separate from project sessions", async () => {
+    const { sm, scope } = scopedManager();
+    const vaultWide = await sm.createSession(DEFAULTS);
+    scope.projectId = "alpha";
+    scope.projectName = "Alpha";
+    await sm.createSession(DEFAULTS);
+
+    scope.projectId = undefined;
+    scope.projectName = undefined;
+
+    expect((await sm.listSessions()).map((session) => session.id)).toEqual([vaultWide.id]);
+  });
+});
 
 describe("ObsidianSessionManager.renameSession", () => {
   it("renames the active session in memory", async () => {
@@ -86,6 +142,47 @@ describe("ObsidianSessionManager.rewriteMessages", () => {
       (m) => (m as unknown as { content: [{ text: string }] }).content[0].text,
     );
     expect(texts).toEqual(["fresh"]);
+  });
+
+  it("preserves the latest plan tracker state across a rewrite", async () => {
+    const { sm, adapter } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    await sm.appendMessage(userMessage("first"));
+    const tracked = runPlanTrackerCommand(null, "add Milestone", "2026-06-26T12:00:00.000Z").state;
+    await sm.appendPlanTracker(tracked);
+    await sm.appendMessage(userMessage("second"));
+
+    await sm.rewriteMessages([userMessage("first")]);
+
+    expect(sm.getActivePlanTracker()).toMatchObject({ items: [{ id: "1", title: "Milestone" }] });
+    const entries = parseSessionEntries(adapter.files.get(info.path) ?? "");
+    expect(entries.at(-1)).toMatchObject({ type: "plan_tracker", state: { items: [{ id: "1", title: "Milestone" }] } });
+  });
+});
+
+describe("ObsidianSessionManager plan tracker", () => {
+  it("persists and reloads the active plan tracker", async () => {
+    const { sm } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    const tracked = runPlanTrackerCommand(null, "add Milestone", "2026-06-26T12:00:00.000Z").state;
+    await sm.appendPlanTracker(tracked);
+
+    await sm.createSession(DEFAULTS);
+    await sm.loadSession(info.path);
+
+    expect(sm.getActivePlanTracker()).toMatchObject({
+      title: "Plan tracker",
+      items: [{ id: "1", title: "Milestone", status: "pending", testStatus: "not_run" }],
+    });
+  });
+
+  it("persists a cleared tracker as the latest state", async () => {
+    const { sm } = manager();
+    await sm.createSession(DEFAULTS);
+    await sm.appendPlanTracker(runPlanTrackerCommand(null, "add Milestone", "2026-06-26T12:00:00.000Z").state);
+    await sm.appendPlanTracker(null);
+
+    expect(sm.getActivePlanTracker()).toBeNull();
   });
 });
 

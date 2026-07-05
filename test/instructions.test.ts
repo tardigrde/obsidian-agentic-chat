@@ -3,6 +3,7 @@ import type { DataAdapter } from "obsidian";
 import {
   formatInstructionsOverlay,
   INSTRUCTION_FILES,
+  isInstructionFilePath,
   loadVaultInstructions,
   MAX_INSTRUCTIONS_CHARS,
 } from "../src/agent/instructions";
@@ -38,6 +39,14 @@ describe("loadVaultInstructions", () => {
 
   it("precedence order is AGENTS → CLAUDE → GEMINI", () => {
     expect([...INSTRUCTION_FILES]).toEqual(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);
+  });
+
+  it("recognizes root-level standing-instruction files case-insensitively", () => {
+    expect(isInstructionFilePath("AGENTS.md")).toBe(true);
+    expect(isInstructionFilePath("claude.md")).toBe(true);
+    expect(isInstructionFilePath("GEMINI.md")).toBe(true);
+    expect(isInstructionFilePath("Folder/AGENTS.md")).toBe(false);
+    expect(isInstructionFilePath("Notes.md")).toBe(false);
   });
 
   it("skips a file that fails to read instead of throwing (graceful fallback)", async () => {

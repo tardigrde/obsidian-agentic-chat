@@ -5,6 +5,7 @@ import {
   AgenticChatSettingTab,
   applyOpenAICompatiblePreset,
   apiKeyForProvider,
+  DEFAULT_EXTERNAL_IGNORED_GLOBS,
   DEFAULT_SETTINGS,
   mergeSettings,
   OPENAI_COMPATIBLE_PRESETS,
@@ -13,13 +14,28 @@ import {
 } from "../src/settings";
 import { DEFAULT_OPENAI_COMPATIBLE_BASE_URL } from "../src/llm/models";
 import {
+  DEFAULT_EMBEDDING_SETTINGS,
+  activeEmbeddingModel,
+  embeddingConfigFromSettings,
+} from "../src/retrieval/embeddings";
+import {
   DEFAULT_MCP_SETTINGS,
   createMcpServerSettings,
+  exportMcpServerConfig,
+  importMcpServerConfig,
   mcpOAuthSettingsForServer,
+  mcpServerAuthProblem,
+  mcpServerEndpointProblem,
+  mcpServerSetupSteps,
   normalizeMcpServerId,
   type McpServerSettings,
 } from "../src/mcp/settings";
 import { mcpSecretId } from "../src/secrets/secret-store";
+import {
+  mcpAuthProblem,
+  mcpCredentialResourceChanged,
+  mcpTestButtonState,
+} from "../src/settings-mcp-state";
 
 describe("mergeSettings — working directories", () => {
   it("defaults to an empty working set", () => {
@@ -45,6 +61,39 @@ describe("mergeSettings — working directories", () => {
       approval: { mutating: "ask", perTool: {}, workingDirs: "Notes" as unknown as string[] },
     });
     expect(merged.approval.workingDirs).toEqual([]);
+  });
+});
+
+describe("mergeSettings — external workspace root", () => {
+  it("defaults the external root feature off with ask approval and secret ignores", () => {
+    expect(mergeSettings(null).external).toEqual({
+      enabled: false,
+      rootPath: "",
+      approval: "ask",
+      honorGitignore: true,
+      ignoredGlobs: DEFAULT_EXTERNAL_IGNORED_GLOBS,
+    });
+  });
+
+  it("heals stored external root settings", () => {
+    const merged = mergeSettings({
+      external: {
+        enabled: true,
+        rootPath: " /workspace/code ",
+        approval: "deny",
+        honorGitignore: false,
+        ignoredGlobs: "tmp/\n.env.local",
+      },
+    });
+
+    expect(merged.external).toEqual({
+      enabled: true,
+      rootPath: "/workspace/code",
+      approval: "deny",
+      honorGitignore: false,
+      ignoredGlobs: "tmp/\n.env.local",
+    });
+    expect(mergeSettings({ external: { approval: "wat" } as never }).external.approval).toBe("ask");
   });
 });
 
@@ -122,16 +171,85 @@ describe("mergeSettings — network proxy", () => {
   it("heals global proxy settings", () => {
     const merged = mergeSettings({
       network: {
-        proxyUrl: " http://10.36.148.11:3128/ ",
+        proxyUrl: " http://192.0.2.10:3128/ ",
         noProxy: " localhost, *.internal.example, localhost ",
       },
     });
 
     expect(merged.network).toEqual({
-      proxyUrl: "http://10.36.148.11:3128/",
+      proxyUrl: "http://192.0.2.10:3128/",
       noProxy: "localhost,*.internal.example",
     });
     expect(mergeSettings({ network: { proxyUrl: "socks://proxy:1080", noProxy: "" } }).network.proxyUrl).toBe("");
+  });
+});
+
+describe("mergeSettings — embeddings", () => {
+  it("defaults semantic indexing off and reuses provider credentials", () => {
+    const merged = mergeSettings(null);
+
+    expect(merged.embeddings).toEqual(DEFAULT_EMBEDDING_SETTINGS);
+    expect(activeEmbeddingModel(merged.embeddings)).toBe(DEFAULT_EMBEDDING_SETTINGS.openrouterModel);
+    expect(
+      embeddingConfigFromSettings(merged.embeddings, {
+        openrouterApiKey: "or-key",
+        openaiCompatibleApiKey: "oa-key",
+        privacy: merged.privacy,
+      }),
+    ).toMatchObject({
+      provider: "openrouter",
+      model: DEFAULT_EMBEDDING_SETTINGS.openrouterModel,
+      apiKey: "or-key",
+      privacy: merged.privacy,
+    });
+  });
+
+  it("heals malformed embedding settings to bounded safe values", () => {
+    const merged = mergeSettings({
+      embeddings: {
+        enabled: true,
+        provider: "missing",
+        openrouterModel: "  ",
+        ollamaModel: "  local-embed  ",
+        openaiCompatibleModel: "  custom-embed  ",
+        dimensions: 1_000_000,
+        languageCoverage: "wat",
+        batchSize: 0,
+        maxDocumentChars: 10,
+      } as never,
+    });
+
+    expect(merged.embeddings).toMatchObject({
+      enabled: true,
+      provider: "openrouter",
+      openrouterModel: DEFAULT_EMBEDDING_SETTINGS.openrouterModel,
+      ollamaModel: "local-embed",
+      openaiCompatibleModel: "custom-embed",
+      dimensions: 16_384,
+      languageCoverage: "multilingual",
+      batchSize: 1,
+      maxDocumentChars: 500,
+    });
+  });
+});
+
+describe("mergeSettings — tool budget", () => {
+  it("defaults optional tool dropping on at a low tool-schema threshold", () => {
+    expect(mergeSettings(null).toolBudget).toEqual({
+      enabled: true,
+      thresholdPercent: 2,
+    });
+  });
+
+  it("heals malformed tool budget settings to bounded safe values", () => {
+    expect(mergeSettings({ toolBudget: { enabled: false, thresholdPercent: 999 } }).toolBudget).toEqual({
+      enabled: false,
+      thresholdPercent: 50,
+    });
+    expect(mergeSettings({ toolBudget: { enabled: "yes", thresholdPercent: -10 } as never }).toolBudget).toEqual({
+      enabled: true,
+      thresholdPercent: 1,
+    });
   });
 });
 
@@ -211,20 +329,63 @@ describe("mergeSettings — MCP", () => {
     const merged = mergeSettings({
       mcp: {
         enabled: true,
-        proxyUrl: " http://10.36.148.11:3128/ ",
+        proxyUrl: " http://192.0.2.10:3128/ ",
         noProxy: " localhost, *.internal.example, localhost ",
         servers: [],
       },
     });
 
     expect(merged.mcp).toMatchObject({
-      proxyUrl: "http://10.36.148.11:3128/",
+      proxyUrl: "http://192.0.2.10:3128/",
       noProxy: "localhost,*.internal.example",
     });
 
     expect(
       mergeSettings({ mcp: { enabled: true, proxyUrl: "socks://proxy:1080", servers: [] } as never }).mcp.proxyUrl,
     ).toBe("");
+  });
+
+  it("heals observability settings and proxy overrides", () => {
+    const merged = mergeSettings({
+      observability: {
+        enabled: true,
+        backend: "langfuse",
+        endpoint: " https://langfuse.corp.example/ ",
+        proxyUrl: " http://192.0.2.10:3128/ ",
+        noProxy: " localhost, *.corp.example, localhost ",
+        sampleRate: 150,
+        payloadMode: "full-content",
+      } as never,
+    });
+
+    expect(merged.observability).toMatchObject({
+      enabled: true,
+      backend: "langfuse",
+      endpoint: "https://langfuse.corp.example",
+      proxyUrl: "http://192.0.2.10:3128/",
+      noProxy: "localhost,*.corp.example",
+      sampleRate: 100,
+      payloadMode: "full-content",
+    });
+
+    const healed = mergeSettings({
+      observability: {
+        enabled: true,
+        backend: "bad",
+        endpoint: "file:///tmp/traces",
+        proxyUrl: "socks://proxy:1080",
+        sampleRate: -1,
+        payloadMode: "bad",
+      } as never,
+    });
+
+    expect(healed.observability).toMatchObject({
+      backend: "langfuse",
+      endpoint: "",
+      proxyUrl: "",
+      sampleRate: 0,
+      payloadMode: "metadata",
+    });
   });
 
   it("heals cached MCP tool approval metadata", () => {
@@ -422,15 +583,14 @@ describe("mergeSettings — MCP", () => {
     const server = settings.mcp.servers[0];
     const tab = Object.create(AgenticChatSettingTab.prototype) as {
       clearMcpKnownToolsAndApprovals(settings: AgenticChatSettings, server: McpServerSettings): void;
-      mcpCredentialResourceChanged(previousUrl: string, nextUrl: string): boolean;
     };
 
     tab.clearMcpKnownToolsAndApprovals(settings, server);
 
     expect(server.knownTools).toEqual([]);
     expect(settings.approval.perTool).toEqual({ write: "ask" });
-    expect(tab.mcpCredentialResourceChanged("https://mcp.example.com/mcp?tools=a", "https://mcp.example.com/mcp?tools=b")).toBe(false);
-    expect(tab.mcpCredentialResourceChanged("https://mcp.example.com/mcp", "https://other.example.com/mcp")).toBe(true);
+    expect(mcpCredentialResourceChanged("https://mcp.example.com/mcp?tools=a", "https://mcp.example.com/mcp?tools=b")).toBe(false);
+    expect(mcpCredentialResourceChanged("https://mcp.example.com/mcp", "https://other.example.com/mcp")).toBe(true);
   });
 
   it("clears MCP credentials when endpoint edits pass through invalid URLs", () => {
@@ -465,7 +625,6 @@ describe("mergeSettings — MCP", () => {
         server: McpServerSettings,
         value: string,
       ): { clearedCredentials: boolean; shouldDisplay: boolean };
-      mcpCredentialResourceChanged(previousUrl: string, nextUrl: string): boolean;
     };
 
     const invalid = tab.updateMcpServerEndpoint(settings, server, "not a url");
@@ -474,7 +633,7 @@ describe("mergeSettings — MCP", () => {
     expect(server.authHeaderValue).toBe("");
     expect(server.knownTools).toEqual([]);
     expect(settings.approval.perTool).toEqual({});
-    expect(tab.mcpCredentialResourceChanged("not a url", "https://b.example.com/mcp")).toBe(true);
+    expect(mcpCredentialResourceChanged("not a url", "https://b.example.com/mcp")).toBe(true);
   });
 
   it("enables newly configured MCP servers when a valid endpoint is entered", () => {
@@ -504,18 +663,13 @@ describe("mergeSettings — MCP", () => {
   });
 
   it("validates incomplete MCP static auth locally before connection tests", () => {
-    const tab = Object.create(AgenticChatSettingTab.prototype) as {
-      mcpAuthProblem(server: McpServerSettings): string;
-      mcpTestButtonState(server: McpServerSettings): { problem: string };
-    };
-
     const bearer = createMcpServerSettings({ id: "docs", url: "https://mcp.example.com/mcp", authType: "bearer" });
-    expect(tab.mcpAuthProblem(bearer)).toMatch(/bearer token/i);
-    expect(tab.mcpTestButtonState(bearer).problem).toMatch(/bearer token/i);
+    expect(mcpAuthProblem(bearer)).toMatch(/bearer token/i);
+    expect(mcpTestButtonState(bearer).problem).toMatch(/bearer token/i);
     bearer.authHeaderValue = "token";
-    expect(tab.mcpTestButtonState(bearer).problem).toBe("");
+    expect(mcpTestButtonState(bearer).problem).toBe("");
     expect(
-      tab.mcpAuthProblem(
+      mcpAuthProblem(
         createMcpServerSettings({
           id: "docs",
           url: "https://mcp.example.com/mcp",
@@ -525,6 +679,83 @@ describe("mergeSettings — MCP", () => {
         }),
       ),
     ).toMatch(/header names/i);
+  });
+
+  it("exports MCP server configs without secrets and imports them with fresh secret refs", () => {
+    const server = createMcpServerSettings({
+      id: "docs",
+      name: "Docs MCP",
+      url: "https://mcp.example.com/mcp",
+      authType: "oauth",
+      approval: "allow",
+      knownTools: [{ name: "search", localName: "mcp__docs__search", title: "Search", readOnlyHint: true }],
+    });
+    server.authHeaderName = "X-Secret";
+    server.authHeaderValue = "header-secret";
+    server.oauth = {
+      ...server.oauth,
+      clientId: "client-1",
+      clientSecret: "client-secret",
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      tokenEndpoint: "https://auth.example.com/token",
+      scope: "openid profile",
+    };
+
+    const exported = exportMcpServerConfig(server);
+    const serialized = JSON.stringify(exported);
+
+    expect(serialized).not.toContain("header-secret");
+    expect(serialized).not.toContain("client-secret");
+    expect(serialized).not.toContain("access-token");
+    expect(serialized).not.toContain("refresh-token");
+    expect(exported.knownTools).toEqual([{ name: "search", title: "Search", readOnlyHint: true }]);
+
+    const imported = importMcpServerConfig(exported);
+    expect(imported).toMatchObject({
+      id: "docs",
+      name: "Docs MCP",
+      url: "https://mcp.example.com/mcp",
+      authType: "oauth",
+      approval: "allow",
+      authHeaderValue: "",
+      knownTools: [{ name: "search", title: "Search", readOnlyHint: true }],
+    });
+    expect(imported.oauth).toMatchObject({
+      clientId: "client-1",
+      clientSecret: "",
+      accessToken: "",
+      refreshToken: "",
+      tokenEndpoint: "https://auth.example.com/token",
+      scope: "openid profile",
+    });
+    expect(imported.oauth.accessTokenSecretId).toBe(mcpSecretId("docs", "oauth-access-token"));
+  });
+
+  it("reports setup-guide diagnostics for endpoint, auth, and discovery", () => {
+    const blank = createMcpServerSettings({ id: "mcp" });
+    expect(mcpServerEndpointProblem(blank.url)).toMatch(/Paste an HTTPS/);
+    expect(mcpServerSetupSteps(blank).map((step) => [step.id, step.status])).toEqual([
+      ["endpoint", "action"],
+      ["auth", "complete"],
+      ["discovery", "blocked"],
+    ]);
+
+    const header = createMcpServerSettings({
+      id: "docs",
+      url: "https://mcp.example.com/mcp",
+      authType: "header",
+      authHeaderName: "Bad Header",
+      authHeaderValue: "secret",
+    });
+    expect(mcpServerAuthProblem(header)).toMatch(/header names/i);
+    header.authHeaderName = "X-API-Key";
+    header.knownTools = [{ name: "search", title: "Search", readOnlyHint: false }];
+    expect(mcpServerSetupSteps(header).map((step) => [step.id, step.status])).toEqual([
+      ["endpoint", "complete"],
+      ["auth", "complete"],
+      ["discovery", "complete"],
+    ]);
   });
 
   it("does not throw when clipboard support is missing during OAuth progress", async () => {

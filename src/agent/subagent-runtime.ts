@@ -1,16 +1,23 @@
 import type { App } from "obsidian";
 import { Agent, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
+import { Platform } from "obsidian";
 import type { Usage } from "@earendil-works/pi-ai";
+import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { activeModelConfig, apiKeyForProvider } from "../settings";
 import type { AgenticChatSettings } from "../settings";
 import { buildModel, type ModelConfig } from "../llm/models";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import { createVaultTools } from "../tools/vault-tools";
 import { createSubagentTool } from "../tools/subagent-tool";
+import { createWebTools } from "../tools/web-tools";
+import type { WebFetcher } from "../tools/web-fetch";
+import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
+import { createExternalWorkspaceTools } from "../tools/external-workspace";
 import { ReadMemo } from "../vault/read-memo";
 import { resolveModePolicy } from "./modes";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import type { AgentProfile } from "./subagents";
+import type { AfterToolCallContext, AgentToolCallController, BeforeToolCallContext } from "./tool-call-controller";
 
 export interface SubagentRuntimeOptions {
   app: App;
@@ -18,6 +25,9 @@ export interface SubagentRuntimeOptions {
   getResources: () => AgentRuntimeResources;
   buildStreamFn: () => StreamFn;
   recordUsage: (usage: Usage) => void;
+  webFetch: WebFetcher;
+  artifactStore?: ToolArtifactStoreLike;
+  toolCalls: Pick<AgentToolCallController, "beforeToolCall" | "afterToolCall">;
 }
 
 /**
@@ -31,6 +41,10 @@ export class AgentSubagentRuntime {
   private readonly getResources: () => AgentRuntimeResources;
   private readonly buildStreamFn: () => StreamFn;
   private readonly recordUsage: (usage: Usage) => void;
+  private readonly webFetch: WebFetcher;
+  private readonly artifactStore: ToolArtifactStoreLike | undefined;
+  private readonly toolCalls: Pick<AgentToolCallController, "beforeToolCall" | "afterToolCall">;
+  private childNamespaceCounter = 0;
 
   constructor(options: SubagentRuntimeOptions) {
     this.app = options.app;
@@ -38,6 +52,9 @@ export class AgentSubagentRuntime {
     this.getResources = options.getResources;
     this.buildStreamFn = options.buildStreamFn;
     this.recordUsage = options.recordUsage;
+    this.webFetch = options.webFetch;
+    this.artifactStore = options.artifactStore;
+    this.toolCalls = options.toolCalls;
   }
 
   createTool(): AgentTool {
@@ -52,13 +69,20 @@ export class AgentSubagentRuntime {
   createChildAgent(profile: AgentProfile): Agent {
     const settings = this.getSettings();
     const readOnly = settings.mode === "plan";
-    // Children run without a per-call gate, so a tool the user explicitly denied
-    // (per-tool "deny") must be stripped here. resolveModePolicy gives the same
-    // precedence the parent gate uses (plan > yolo > per-tool override > default).
-    const allowedVaultTools = createVaultTools(this.app, this.getResources().ignoreMatcher, new ReadMemo()).filter(
+    const childNamespace = this.nextChildNamespace();
+    // Strip tools the user explicitly denied before the child is created.
+    // Allowed child calls still flow through the parent tool-call controller.
+    const childTools = [
+      ...createVaultTools(this.app, this.getResources().ignoreMatcher, new ReadMemo()),
+      ...(Platform.isDesktopApp
+        ? createExternalWorkspaceTools(settings.external, { artifactStore: this.artifactStore })
+        : []),
+      ...createWebTools(settings.web, this.webFetch, this.artifactStore),
+      ...createToolArtifactTools(this.artifactStore),
+    ].filter(
       (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
     );
-    const tools = filterChildTools(allowedVaultTools, profile.toolAllowlist ?? [], readOnly);
+    const tools = filterChildTools(childTools, profile.toolAllowlist ?? [], readOnly);
     return new Agent({
       streamFn: this.buildStreamFn(),
       initialState: {
@@ -69,10 +93,15 @@ export class AgentSubagentRuntime {
         messages: [],
       },
       getApiKey: (provider) => apiKeyForProvider(this.getSettings(), provider),
-      // Tools are pre-filtered to the allowlist, so the child needs no per-call
-      // gate: the user already approved the dispatch.
+      beforeToolCall: (context) => this.toolCalls.beforeToolCall(namespaceBeforeToolCall(context, childNamespace)),
+      afterToolCall: (context) => this.toolCalls.afterToolCall(namespaceAfterToolCall(context, childNamespace)),
       toolExecution: "sequential",
     });
+  }
+
+  private nextChildNamespace(): string {
+    this.childNamespaceCounter += 1;
+    return `subagent:${this.childNamespaceCounter}`;
   }
 }
 
@@ -94,4 +123,16 @@ export function filterChildTools(tools: AgentTool[], allowlist: string[], readOn
       : tools.filter((tool) => !MUTATING_TOOLS.has(tool.name));
   if (readOnly) allowed = allowed.filter((tool) => !MUTATING_TOOLS.has(tool.name));
   return allowed;
+}
+
+function namespaceBeforeToolCall(context: BeforeToolCallContext, namespace: string): BeforeToolCallContext {
+  return { ...context, toolCall: { ...context.toolCall, id: namespacedToolCallId(namespace, context.toolCall.id) } };
+}
+
+function namespaceAfterToolCall(context: AfterToolCallContext, namespace: string): AfterToolCallContext {
+  return { ...context, toolCall: { ...context.toolCall, id: namespacedToolCallId(namespace, context.toolCall.id) } };
+}
+
+function namespacedToolCallId(namespace: string, id: string): string {
+  return `${namespace}:${id}`;
 }

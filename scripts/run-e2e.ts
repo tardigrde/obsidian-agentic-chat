@@ -9,6 +9,7 @@ import { parseObsidianVersions } from "wdio-obsidian-service";
 
 const cacheDir = path.resolve(".obsidian-cache");
 const wdioBin = path.resolve("node_modules/@wdio/cli/bin/wdio.js");
+const wdioConfig = process.env.WDIO_CONFIG?.trim() || "./wdio.conf.mts";
 const driverPorts = [9515, 9516, 9517, 9518, 9519, 9520];
 type DriverProcess = ChildProcessByStdio<null, Readable, Readable>;
 
@@ -152,7 +153,7 @@ function runWdio(port: number): Promise<number> {
       "--dns-result-order=ipv4first",
       wdioBin,
       "run",
-      "./wdio.conf.mts",
+      wdioConfig,
       ...process.argv.slice(2),
     ];
     const child = spawn(process.execPath, args, {

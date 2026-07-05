@@ -20,9 +20,11 @@ npm run test:e2e:mobile
 `verify:mobile` is a static and bundle-level gate. It fails if source code adds
 unallowlisted Node/Electron APIs, if the release bundle contains direct
 desktop-only requires, or if the README stops documenting the current
-desktop-only fallbacks:
+mobile/desktop auth and networking behavior:
 
-- MCP OAuth sign-in uses a localhost callback and requires desktop.
+- MCP OAuth sign-in uses a localhost callback on desktop and an
+  `obsidian://agentic-chat-mcp-oauth` callback on mobile when the provider
+  supports app redirects. Localhost-only providers still require desktop.
 - Plugin-owned HTTP proxy settings use desktop Node networking when configured.
 
 `test:e2e:mobile` builds the e2e bundle, boots Obsidian Desktop through the
@@ -73,11 +75,14 @@ Then run this smoke checklist in Obsidian Mobile:
 - Confirm Web and MCP are off by default on a fresh install.
 - Leave plugin proxy fields empty on mobile. Use Android/VPN/network-level proxy
   routing if the device needs a proxy.
-- Confirm MCP OAuth sign-in is not expected to work on mobile; authenticate on
-  desktop first or use bearer/static-header auth for mobile testing.
+- For MCP OAuth on mobile, use a provider/server that accepts the
+  `obsidian://agentic-chat-mcp-oauth` redirect. If it only accepts localhost
+  redirects, authenticate on desktop first or use bearer/static-header auth.
 
 Record the device/emulator, Android version, Obsidian version, plugin version,
-and any failures in the release notes or PR before publishing.
+the smoke date, and any failures in the release notes or PR before publishing.
+For mobile-facing changes, a PR/release without this entry is not considered
+fully mobile-validated even when `test:e2e:mobile` passes.
 
 ## iOS smoke
 
@@ -87,7 +92,8 @@ workspace. Treat iOS as a manual/macOS-backed smoke pass:
 - Sync or manually copy the built plugin assets into the test vault's
   `.obsidian/plugins/agentic-chat/` folder.
 - Run the same smoke checklist as Android.
-- Record the iOS version, Obsidian version, plugin version, and failures.
+- Record the iOS version, Obsidian version, plugin version, smoke date, and
+  failures in the release notes or PR.
 
 ## What desktop cannot prove
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEditPreview } from "../src/agent/edit-preview";
+import { buildEditPreview, buildExactEditPreviewWindow } from "../src/agent/edit-preview";
 
 describe("buildEditPreview", () => {
   it("describes write of a new file", () => {
@@ -35,5 +35,21 @@ describe("buildEditPreview", () => {
 
   it("returns none for non-previewable tools", () => {
     expect(buildEditPreview("read", { path: "n.md" }, "x")).toEqual({ kind: "none" });
+  });
+});
+
+describe("buildExactEditPreviewWindow", () => {
+  it("includes ten real file lines below a middle one-line edit", () => {
+    const content = Array.from({ length: 41 }, (_, index) => `line ${index + 1}`).join("\n");
+    const windowed = buildExactEditPreviewWindow(content, [{ oldText: "line 21", newText: "line twenty-one" }]);
+
+    expect(windowed).not.toBeNull();
+    expect(windowed?.hiddenBefore).toBe(10);
+    expect(windowed?.hiddenAfter).toBe(10);
+    const beforeLines = windowed?.before.split("\n").filter((line) => line.length > 0);
+    expect(beforeLines?.[0]).toBe("line 11");
+    expect(beforeLines?.at(-1)).toBe("line 31");
+    expect(windowed?.after).toContain("line twenty-one");
+    expect(windowed?.after).toContain("line 31");
   });
 });

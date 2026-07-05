@@ -4,6 +4,7 @@ import {
   type AgentCommandPlan,
   resolveAgentCommand,
   resolveInitCommand,
+  resolveInstructionCommand,
   resolveSkillCommand,
 } from "../src/agent/command-dispatcher";
 import type { AgentProfile } from "../src/agent/subagents";
@@ -98,5 +99,23 @@ describe("agent command plans", () => {
 
     expect(prompt).toContain("Curate this vault's standing-instructions file");
     expect(prompt).toContain("AGENTS.md");
+  });
+
+  it("includes user-provided init instructions in the directive", () => {
+    const prompt = expectPrompt(resolveInitCommand(" focus on onboarding notes "));
+
+    expect(prompt).toContain("Additional user instructions");
+    expect(prompt).toContain("<instructions>\nfocus on onboarding notes\n</instructions>");
+  });
+
+  it("resolves an inline standing-instruction capture directive", () => {
+    const prompt = expectPrompt(resolveInstructionCommand(" Prefer concise vault updates. "));
+
+    expect(prompt).toContain("Persist this user-provided standing instruction");
+    expect(prompt).toContain("<instruction>\nPrefer concise vault updates.\n</instruction>");
+  });
+
+  it("requires inline standing-instruction text", () => {
+    expect(expectError(resolveInstructionCommand("   "))).toBe("Add instruction text after #.");
   });
 });

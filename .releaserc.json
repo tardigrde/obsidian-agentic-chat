@@ -4,7 +4,6 @@
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
-    ["@semantic-release/npm", { "npmPublish": false }],
     [
       "@semantic-release/exec",
       { "prepareCmd": "node scripts/version-bump.mjs ${nextRelease.version} && npm run build" }

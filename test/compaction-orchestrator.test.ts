@@ -41,7 +41,7 @@ describe("maybeCompactAgentTranscript", () => {
   it("compacts the active transcript and applies the replacement side effects in order", async () => {
     const events: string[] = [];
 
-    await maybeCompactAgentTranscript(options(events));
+    const compacted = await maybeCompactAgentTranscript(options(events));
 
     expect(events).toEqual([
       "get-transcript",
@@ -51,12 +51,13 @@ describe("maybeCompactAgentTranscript", () => {
       "refresh-session",
       "notify",
     ]);
+    expect(compacted).toBe(true);
   });
 
   it("skips compaction when there is no active transcript", async () => {
     const events: string[] = [];
 
-    await maybeCompactAgentTranscript(
+    const compacted = await maybeCompactAgentTranscript(
       options(events, {
         getTranscript: () => {
           events.push("get-transcript");
@@ -66,12 +67,13 @@ describe("maybeCompactAgentTranscript", () => {
     );
 
     expect(events).toEqual(["get-transcript"]);
+    expect(compacted).toBe(false);
   });
 
   it("does not apply side effects when compaction returns no replacement", async () => {
     const events: string[] = [];
 
-    await maybeCompactAgentTranscript(
+    const compacted = await maybeCompactAgentTranscript(
       options(events, {
         compact: async () => {
           events.push("compact");
@@ -81,12 +83,13 @@ describe("maybeCompactAgentTranscript", () => {
     );
 
     expect(events).toEqual(["get-transcript", "compact"]);
+    expect(compacted).toBe(false);
   });
 
   it("swallows compaction errors so a pending prompt can continue", async () => {
     const events: string[] = [];
 
-    await maybeCompactAgentTranscript(
+    const compacted = await maybeCompactAgentTranscript(
       options(events, {
         compact: async () => {
           events.push("compact");
@@ -96,5 +99,6 @@ describe("maybeCompactAgentTranscript", () => {
     );
 
     expect(events).toEqual(["get-transcript", "compact"]);
+    expect(compacted).toBe(false);
   });
 });

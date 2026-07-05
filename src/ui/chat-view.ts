@@ -1,6 +1,7 @@
 import {
   ItemView,
   Notice,
+  Platform,
   TFile,
   TFolder,
   type WorkspaceLeaf,
@@ -14,14 +15,15 @@ import type { AskUserRequest } from "../tools/ask-user-tool";
 import { isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
-import { activeModelId, THINKING_LEVELS } from "../settings";
-import { listOpenRouterModels } from "../llm/models";
+import { activeModelId, apiKeyForProvider } from "../settings";
+import { listOpenAICompatibleModels, listOpenRouterModels } from "../llm/models";
 import { ModelSuggestModal } from "./model-suggest-modal";
 import { SessionListModal } from "./session-list-modal";
 import { FolderSuggestModal } from "./folder-suggest";
+import { createFetchFromWebFetcher, createProxiedFetcher } from "../mcp/fetcher";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
 import { AssistantBubble } from "./assistant-bubble";
-import { cacheHitPercent, formatCost, formatUsage, safeJson, shortModelLabel } from "./format";
+import { formatDetailedUsage, safeJson } from "./format";
 import { contextLevel, contextPercent } from "./context-bar";
 import {
   assistantUsage,
@@ -44,6 +46,14 @@ import {
 } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
 import { parseDroppedVaultPath } from "./drag-drop";
+import { parseInlineInstruction, parseStreamingSteering, stripContextPreamble } from "./composer-input";
+import {
+  buildModelPillState,
+  folderButtonAriaLabel,
+  formatChromeUsageText,
+  modelProviderLabel,
+  toolBudgetNotificationKey,
+} from "./chrome-state";
 import { ComposerHistory } from "./composer-history";
 import { PromptEditState } from "./prompt-edit-state";
 import { freshChatTabState, type ChatTabWorkingState } from "./chat-tab-state";
@@ -56,39 +66,75 @@ import {
   isTextContextAttachment,
   type ContextAttachment,
 } from "./context-attachments";
-import { resolveCommand, visibleCommands } from "./commands";
+import { parseSlashInput, slashInputTailAfterFirst, visibleCommands } from "./commands";
 import { isPinnedToBottom } from "./scroll-pinning";
-import { normalizeFolderPath } from "../vault/path";
-import { isSummaryMessage } from "../agent/compaction";
+import { formatCompactionSummary, isSummaryMessage } from "../agent/compaction";
+import { isInstructionFilePath } from "../agent/instructions";
+import { steeringStatus } from "../agent/turn-control";
 import { type AgentMode, enterPlan, exitPlan, MODE_ORDER, MODES } from "../agent/modes";
 import {
+  ActiveNoteContextCache,
   type ActiveNoteState,
   autoActiveNotePath,
   effectiveActiveNote,
 } from "./active-note";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
 import {
+  formatToolBudgetDiagnostic,
   formatMcpDiagnosticRows,
   formatMcpDiagnosticSummary,
   formatRuntimeDiagnosticsRows,
 } from "../agent/diagnostics";
+import {
+  buildRelevantNotesPanelState,
+  excludeRelevantNote,
+  loadVaultRetrievalDocuments,
+  pinRelevantNote,
+  type RelevantNotesPanelState,
+  unpinRelevantNote,
+} from "../retrieval/relevant-notes";
+import {
+  OpenAICompatibleEmbeddingProvider,
+  activeEmbeddingModel,
+  embeddingConfigFromSettings,
+} from "../retrieval/embeddings";
+import {
+  readSemanticIndexFile,
+  semanticIndexPath,
+  type SemanticIndexFile,
+} from "../retrieval/semantic-index";
+import {
+  activeProject,
+  describeProject,
+  effectiveProjectSettings,
+  projectLabel,
+  resolveProjectCommand,
+} from "../projects/projects";
+import { memoryPathForApp } from "../tools/memory-tools";
+import { openExternalReference } from "../tools/external-workspace";
+import { planTrackerRows } from "../agent/plan-tracker";
+import { buildPlanTrackerPanelState } from "./plan-tracker-panel";
+import { renderPlanTrackerPanel as renderPlanTrackerPanelDom } from "./plan-tracker-renderer";
+import { renderRelevantNotesPanel } from "./relevant-notes-renderer";
+import { MemoryWorkflowController } from "./memory-workflow-controller";
+import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
+import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
+import { SessionWorkflowController } from "./session-workflow-controller";
+import { WorkingDirectoryWorkflowController } from "./working-directory-workflow-controller";
+import {
+  renderActionPanel,
+  renderErrorPanel,
+  renderInfoPanel,
+  renderSummaryPanel,
+} from "./info-panel-renderer";
+import { renderContextChips } from "./context-chip-renderer";
+import type { ActionRow, WorkflowRenderer } from "./workflow-renderer";
+import { openSystemUrl } from "./open-system-link";
 
 export { VIEW_TYPE_AGENT_CHAT };
 
 /** Context-window fill fractions that trigger a background notification, once each. */
 const CONTEXT_THRESHOLDS = [0.75, 0.9] as const;
-
-/** Strip an attachment `<context>…</context>` preamble for display (used by retry fallback). */
-function stripContextPreamble(text: string): string {
-  return text.replace(/^<context>[\s\S]*?<\/context>\n\n/, "");
-}
-
-interface ActionRow {
-  label: string;
-  detail?: string;
-  icon: string;
-  onClick: () => void;
-}
 
 /** Maximum independent sessions ("tabs") in one chat leaf. */
 const MAX_TABS = 3;
@@ -116,12 +162,14 @@ export class ChatView extends ItemView {
   // the user dismissed the auto chip (suppressed for the session), and — when in
   // plan mode — the posture to restore on /endplan.
   private activeNotePath: string | null = null;
+  private activeNoteCache = new ActiveNoteContextCache();
   private activeNoteSuppressed = false;
   private modeBeforePlan: AgentMode | null = null;
   private bubble: AssistantBubble | null = null;
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
   private notifiedContext = new Set<number>();
   private notifiedCost = false;
+  private notifiedToolBudgetKey: string | null = null;
   // Compaction count last surfaced to the user, so each compaction toasts once.
   private lastCompactionCount = 0;
   // The service fires onChange synchronously during session transitions; this silences
@@ -131,14 +179,22 @@ export class ChatView extends ItemView {
   // Autocomplete state: the active query token and a cached mention candidate list.
   private activeQuery: AcQuery | null = null;
   private mentionCache: MentionCandidate[] | null = null;
+  private queuedPromptArmed = false;
+  private flushingQueuedPrompt = false;
   // Last turn we sent, kept so "retry" re-runs it without re-showing the context preamble.
   private lastSentPrompt: string | null = null;
   private lastSentDisplay: string | null = null;
+  private locallyRenderedUserMessages = 0;
   private editingEl: HTMLElement | null = null;
   private readonly promptEdit = new PromptEditState();
+  // Semantic indexing can outlive the command that starts it; keep one
+  // controller so cancel/running-state checks see the active AbortController.
+  private semanticIndexWorkflow: SemanticIndexWorkflowController | null = null;
 
   private messagesEl!: HTMLElement;
   private emptyStateEl: HTMLElement | null = null;
+  private planTrackerEl!: HTMLElement;
+  private relevantNotesEl!: HTMLElement;
   private chipsEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
   private safeButtonEl!: HTMLButtonElement;
@@ -153,6 +209,7 @@ export class ChatView extends ItemView {
   private stopButton!: HTMLButtonElement;
   private statusEl!: HTMLElement;
   private modelPillEl!: HTMLElement;
+  private projectPillEl!: HTMLButtonElement;
   private effortKnobEl!: HTMLElement;
   private usageEl!: HTMLElement;
   private contextBarEl!: HTMLProgressElement;
@@ -162,6 +219,10 @@ export class ChatView extends ItemView {
   private autoScrollPinned = true;
   private userScrollIntent = false;
   private userScrollIntentTimer: number | null = null;
+  private relevantPinnedPaths = new Set<string>();
+  private relevantExcludedPaths = new Set<string>();
+  private relevantNotesRefreshId = 0;
+  private closed = true;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -191,7 +252,12 @@ export class ChatView extends ItemView {
     return this.tabs[this.activeTabIndex];
   }
 
+  private isLiveTab(tab: ChatTab): boolean {
+    return !this.closed && this.tabs[this.activeTabIndex] === tab;
+  }
+
   async onOpen(): Promise<void> {
+    this.closed = false;
     this.buildLayout();
     // First tab continues the most-recent session (initialize); later tabs each
     // start a fresh session. Each tab's service has its own event subscription.
@@ -200,30 +266,23 @@ export class ChatView extends ItemView {
     // The mention list is cached; drop it whenever the vault's file set changes.
     const invalidate = () => {
       this.mentionCache = null;
+      void this.refreshRelevantNotes();
     };
     this.registerEvent(this.app.vault.on("create", invalidate));
     this.registerEvent(this.app.vault.on("delete", invalidate));
     this.registerEvent(this.app.vault.on("rename", invalidate));
+    this.registerEvent(this.app.vault.on("modify", invalidate));
     // Keep the auto-attached active note in sync as the focused leaf/file changes.
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.syncActiveNote()));
     this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveNote()));
-    this.muteNotifications = true;
-    try {
-      await this.service.initialize();
-    } catch (error) {
-      new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      // Baseline against the continued session so reopening doesn't toast existing crossings.
-      this.resetUsageNotifications(true);
-      this.muteNotifications = false;
-    }
-    this.syncActiveNote();
-    this.renderTranscript(this.service.getMessages());
-    this.syncChrome();
-    this.syncTabStrip();
+    await this.createSessionActivationCoordinator().initializeActiveSession(
+      () => this.service.initialize(),
+      (error) => new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`),
+    );
   }
 
   async onClose(): Promise<void> {
+    this.closed = true;
     this.cancelAutocomplete();
     if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
     this.userScrollIntentTimer = null;
@@ -251,10 +310,6 @@ export class ChatView extends ItemView {
       return;
     }
     const attachment = createTextContextAttachment({ text: selected, sourcePath });
-    if (sourcePath) {
-      this.activeNoteSuppressed = true;
-      if (this.activeNotePath === sourcePath) this.activeNotePath = null;
-    }
     this.pushAttachment(attachment);
     this.inputEl.focus();
   }
@@ -287,14 +342,19 @@ export class ChatView extends ItemView {
     if (!tab) return;
     tab.state = {
       attachments: this.attachments,
+      activeNoteCache: this.activeNoteCache,
       activeNoteSuppressed: this.activeNoteSuppressed,
       draft: this.inputEl.value,
+      queuedPromptArmed: this.queuedPromptArmed,
       sentHistory: this.composerHistory.entries(),
       notifiedContext: this.notifiedContext,
       notifiedCost: this.notifiedCost,
+      notifiedToolBudgetKey: this.notifiedToolBudgetKey,
       lastCompactionCount: this.lastCompactionCount,
       lastSentPrompt: this.lastSentPrompt,
       lastSentDisplay: this.lastSentDisplay,
+      relevantPinnedPaths: [...this.relevantPinnedPaths],
+      relevantExcludedPaths: [...this.relevantExcludedPaths],
     };
   }
 
@@ -304,27 +364,24 @@ export class ChatView extends ItemView {
     if (!tab) return;
     const state = tab.state;
     this.attachments = state.attachments;
+    this.activeNoteCache = state.activeNoteCache;
     this.activeNoteSuppressed = state.activeNoteSuppressed;
+    this.queuedPromptArmed = state.queuedPromptArmed;
     this.composerHistory.load(state.sentHistory);
     this.notifiedContext = state.notifiedContext;
     this.notifiedCost = state.notifiedCost;
+    this.notifiedToolBudgetKey = state.notifiedToolBudgetKey;
     this.lastCompactionCount = state.lastCompactionCount;
     this.lastSentPrompt = state.lastSentPrompt;
     this.lastSentDisplay = state.lastSentDisplay;
+    this.relevantPinnedPaths = new Set(state.relevantPinnedPaths);
+    this.relevantExcludedPaths = new Set(state.relevantExcludedPaths);
     this.setComposerValueQuiet(state.draft);
   }
 
   /** Re-render the transcript + chrome for the active tab (after a switch/close). */
   private renderActiveTab(): void {
-    this.bubble = null;
-    this.endEditing(false);
-    // Don't toast about the incoming tab's already-existing context/cost state.
-    this.muteNotifications = true;
-    this.syncActiveNote();
-    this.renderTranscript(this.service.getMessages());
-    this.syncChrome();
-    this.muteNotifications = false;
-    this.syncTabStrip();
+    this.createSessionActivationCoordinator().renderActiveTab();
   }
 
   private async switchToTab(index: number): Promise<void> {
@@ -348,17 +405,11 @@ export class ChatView extends ItemView {
     this.activeTabIndex = this.tabs.length - 1;
     // Reset the live fields to this fresh tab before any async work renders against them.
     this.loadActiveState();
-    this.muteNotifications = true;
-    try {
+    await this.createSessionActivationCoordinator().initializeFreshTab(
       // A new tab is always a fresh session, never a continuation of tab 0's.
-      await tab.service.newSession();
-      this.resetUsageNotifications();
-    } catch (error) {
-      new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      this.muteNotifications = false;
-    }
-    this.renderActiveTab();
+      () => tab.service.newSession(),
+      (error) => new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`),
+    );
   }
 
   /** `×`: close a tab, disposing its session. Closing the only tab resets it instead. */
@@ -451,7 +502,10 @@ export class ChatView extends ItemView {
 
   private handleTabChange(tab: ChatTab): void {
     this.syncTabStrip();
-    if (tab === this.activeTab) this.syncChrome();
+    if (tab === this.activeTab) {
+      this.syncChrome();
+      void this.flushQueuedPromptIfReady();
+    }
   }
 
   private async askUserForTab(tab: ChatTab, request: AskUserRequest, signal?: AbortSignal): Promise<string> {
@@ -496,6 +550,8 @@ export class ChatView extends ItemView {
         submit.disabled = true;
         controls.addClass("is-answered");
         answerState.setText(`Answered: ${trimmed}`);
+        el.detach();
+        this.scrollToBottom({ force: true });
         resolve(trimmed);
       };
       const onAbort = () => {
@@ -563,7 +619,19 @@ export class ChatView extends ItemView {
       attr: { "aria-label": "Conversation history" },
     });
     setIcon(historyButton, "history");
-    historyButton.addEventListener("click", () => void this.openSessionList());
+    historyButton.addEventListener("click", () => void this.createSessionWorkflow().run(""));
+
+    this.relevantNotesEl = composer.createDiv({
+      cls: "agentic-chat-relevant-notes",
+      attr: { "aria-label": "Related notes" },
+    });
+    this.relevantNotesEl.hide();
+
+    this.planTrackerEl = composer.createDiv({
+      cls: "agentic-chat-plan-tracker",
+      attr: { "aria-label": "Plan tracker" },
+    });
+    this.planTrackerEl.hide();
 
     // The single bordered input card: context row (chips) + textarea + bottom toolbar
     // all live *inside* one rectangle, instead of stacked around a bordered textarea.
@@ -600,6 +668,11 @@ export class ChatView extends ItemView {
     // Programmatic value changes (recall) set `.value` directly without an input event.
     this.inputEl.addEventListener("input", () => {
       this.resetHistoryNav();
+      if (this.queuedPromptArmed && !this.inputEl.value.trim()) {
+        this.queuedPromptArmed = false;
+        this.statusEl.setText("");
+        this.syncChrome();
+      }
       this.scheduleAutocomplete();
     });
     this.inputEl.addEventListener("click", () => this.scheduleAutocomplete());
@@ -621,6 +694,12 @@ export class ChatView extends ItemView {
       attr: { "aria-label": "Switch model" },
     });
     this.modelPillEl.addEventListener("click", () => void this.switchModel());
+
+    this.projectPillEl = toolbarLeft.createEl("button", {
+      cls: "agentic-chat-project-pill",
+      attr: { "aria-label": "Switch project workspace" },
+    });
+    this.projectPillEl.addEventListener("click", () => this.showProjectList());
 
     // Effort knob: click cycles the reasoning level for the next message only.
     this.effortKnobEl = toolbarLeft.createDiv({
@@ -650,7 +729,7 @@ export class ChatView extends ItemView {
       attr: { "aria-label": "Folders: working directory or attach listing" },
     });
     setIcon(this.folderButtonEl, "folder");
-    this.folderButtonEl.addEventListener("click", () => this.showFolderMenu());
+    this.folderButtonEl.addEventListener("click", () => this.createWorkingDirectoryWorkflow().showFolderMenu());
 
     const toolbarRight = toolbar.createDiv({ cls: "agentic-chat-toolbar-right" });
     // Single Safe ↔ YOLO permission toggle (the ask/plan/agent dropdown is retired).
@@ -930,27 +1009,29 @@ export class ChatView extends ItemView {
 
   private syncChrome(): void {
     const { settings } = this.plugin;
+    const effective = effectiveProjectSettings(settings);
     this.syncControls();
     this.modelPillEl.empty();
-    const override = this.service.getModelOverride();
-    const providerLabel = override ? "next only" : modelProviderLabel(settings.provider);
-    const fullModel = override ?? activeModelId(settings);
-    this.modelPillEl.toggleClass("is-override", !!override);
+    const modelPill = buildModelPillState({
+      provider: settings.provider,
+      activeModelId: activeModelId(effective),
+      overrideModelId: this.service.getModelOverride(),
+    });
+    this.modelPillEl.toggleClass("is-override", modelPill.isOverride);
     // Full slug in the tooltip; the pill shows a short label since OpenRouter ids are long.
-    this.modelPillEl.setAttr("title", `${providerLabel} · ${fullModel}`);
-    this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: providerLabel });
-    this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: shortModelLabel(fullModel) });
+    this.modelPillEl.setAttr("title", modelPill.title);
+    if (modelPill.isOverride) this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: modelPill.providerLabel });
+    this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: modelPill.shortModel });
+    this.syncProjectPill();
     this.syncEffortKnob();
-    this.syncFolderButton(settings.approval.workingDirs.length);
+    this.syncFolderButton(effective.approval.workingDirs.length);
+    this.renderPlanTrackerPanel();
 
     const usage = this.service.getSessionUsage();
     const fraction = this.service.getContextFraction();
-    const parts: string[] = [];
-    if (usage.totalTokens > 0) parts.push(formatUsage(usage));
     // Pre-send estimate of what the next request will cost (priced models only).
     const estimate = this.service.estimateNextCost();
-    if (estimate && estimate.usd > 0) parts.push(`next ~${formatCost(estimate.usd)}`);
-    this.usageEl.setText(parts.join(" · "));
+    this.usageEl.setText(formatChromeUsageText(usage, estimate?.usd));
     this.syncContextBar(fraction);
 
     const error = this.service.getError();
@@ -963,12 +1044,18 @@ export class ChatView extends ItemView {
   private syncFolderButton(scopeCount: number): void {
     if (!this.folderButtonEl) return;
     this.folderButtonEl.toggleClass("has-scope", scopeCount > 0);
-    this.folderButtonEl.setAttr(
-      "aria-label",
-      scopeCount > 0
-        ? `Folders · ${scopeCount} working ${scopeCount === 1 ? "directory" : "directories"} granted`
-        : "Folders: working directory or attach listing",
-    );
+    this.folderButtonEl.setAttr("aria-label", folderButtonAriaLabel(scopeCount));
+  }
+
+  private syncProjectPill(): void {
+    if (!this.projectPillEl) return;
+    const project = activeProject(this.plugin.settings.projects);
+    this.projectPillEl.empty();
+    const icon = this.projectPillEl.createSpan({ cls: "agentic-chat-project-icon" });
+    setIcon(icon, project ? "folder-kanban" : "layout-dashboard");
+    this.projectPillEl.createSpan({ cls: "agentic-chat-project-name", text: projectLabel(project) });
+    this.projectPillEl.toggleClass("is-active", !!project);
+    this.projectPillEl.setAttr("title", project ? describeProject(project) : "Vault-wide workspace");
   }
 
   /** Glanceable color-coded context-window fill bar; hidden until usage is known. */
@@ -1019,6 +1106,16 @@ export class ChatView extends ItemView {
         this.notifier.notify("cost", `This conversation has cost $${cost.toFixed(2)} (alert set at $${cap.toFixed(2)}).`);
       }
     }
+    this.checkToolBudgetNotification();
+  }
+
+  private checkToolBudgetNotification(): void {
+    const toolBudget = this.service.getRuntimeDiagnostics().toolBudget;
+    const key = toolBudgetNotificationKey(toolBudget);
+    if (key === null) return;
+    if (key === this.notifiedToolBudgetKey) return;
+    this.notifiedToolBudgetKey = key;
+    this.notifier.notify("info", `Agentic chat: ${formatToolBudgetDiagnostic(toolBudget)}.`);
   }
 
   /** Notify when a turn finishes while the user is working elsewhere. */
@@ -1028,7 +1125,8 @@ export class ChatView extends ItemView {
   }
 
   private setRunning(running: boolean): void {
-    this.sendButton.disabled = running;
+    this.sendButton.disabled = false;
+    this.sendButton.setText(running ? (this.queuedPromptArmed ? "Update" : "Queue") : "Send");
     if (running) {
       this.stopButton.show();
       this.workingEl.show();
@@ -1042,20 +1140,43 @@ export class ChatView extends ItemView {
   // --- submission + slash commands ---
 
   private async submit(): Promise<void> {
-    if (this.service.isStreaming()) return;
     this.cancelAutocomplete();
     this.menu.hide();
     const text = this.inputEl.value.trim();
     if (!text) return;
-    this.pushHistory(text);
 
     const editIndex = this.promptEdit.index;
     this.endEditing(false);
 
+    if (this.service.isStreaming()) {
+      if (parseStreamingSteering(text)) {
+        this.pushHistory(text);
+        this.inputEl.value = "";
+        await this.sendSteeringPrompt(text);
+        return;
+      }
+      if (text.startsWith("#")) {
+        this.renderErrorMessage("Wait for the agent to finish before saving a standing instruction.");
+        return;
+      }
+      if (text.startsWith("/")) {
+        this.renderErrorMessage("Only /steer, /follow-up, and /redirect can run while the agent is responding.");
+        return;
+      }
+      this.queueComposerPrompt();
+      return;
+    }
+
+    this.pushHistory(text);
+    if (text.startsWith("#")) {
+      this.inputEl.value = "";
+      await this.captureInlineInstruction(text);
+      return;
+    }
     if (text.startsWith("/")) {
+      this.inputEl.value = "";
       const handled = await this.handleSlashCommand(text);
       if (handled) {
-        this.inputEl.value = "";
         return;
       }
     }
@@ -1065,6 +1186,31 @@ export class ChatView extends ItemView {
       return;
     }
     await this.sendPrompt(text);
+  }
+
+  private queueComposerPrompt(): void {
+    this.queuedPromptArmed = true;
+    this.statusEl.setText("Queued next.");
+    this.syncChrome();
+  }
+
+  private async flushQueuedPromptIfReady(): Promise<void> {
+    if (!this.queuedPromptArmed || this.flushingQueuedPrompt || this.service.isStreaming()) return;
+    const text = this.inputEl.value.trim();
+    this.queuedPromptArmed = false;
+    if (!text) {
+      this.syncChrome();
+      return;
+    }
+    this.flushingQueuedPrompt = true;
+    try {
+      this.pushHistory(text);
+      this.inputEl.value = "";
+      await this.sendPrompt(text);
+    } finally {
+      this.flushingQueuedPrompt = false;
+      this.syncChrome();
+    }
   }
 
   // --- prompt editing (rewrite a sent user turn) ---
@@ -1165,46 +1311,131 @@ export class ChatView extends ItemView {
   }
 
   private async sendPrompt(text: string): Promise<void> {
+    const tab = this.activeTab;
+    const service = tab.service;
+    const activeNoteCache = this.activeNoteCache;
+    const explicitAttachments = [...this.attachments];
     this.clearEmptyState();
     // Show the auto-attached active note alongside explicit attachments in the user bubble.
     const autoPath = this.effectiveActiveNote();
-    const attachments = [...(autoPath ? [autoPath] : []), ...this.attachments];
-    const context = await this.buildContext();
-    const prompt = context ? `${context}\n\n${text}` : text;
-    // Image attachments ride as multimodal content parts, not text context.
-    const images = await this.loadImageAttachments();
-    this.lastSentPrompt = prompt;
-    this.lastSentDisplay = text;
-    this.renderUserMessage(text, attachments);
-    await this.service.sendPrompt(prompt, images);
+    const attachments = [...(autoPath ? [autoPath] : []), ...explicitAttachments];
+    const messageCountBefore = service.getMessages().length;
+    try {
+      const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache);
+      if (!this.isLiveTab(tab)) {
+        activeNoteCache.discardPending();
+        return;
+      }
+      const prompt = context ? `${context}\n\n${text}` : text;
+      // Image attachments ride as multimodal content parts, not text context.
+      const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
+      if (!this.isLiveTab(tab)) {
+        activeNoteCache.discardPending();
+        return;
+      }
+      this.lastSentPrompt = prompt;
+      this.lastSentDisplay = text;
+      this.renderOutgoingUserMessage(text, attachments);
+      await service.sendPrompt(prompt, images);
+      if (!this.isLiveTab(tab)) {
+        activeNoteCache.discardPending();
+        return;
+      }
+      this.resolveActiveNoteCacheAfterSend(service, activeNoteCache, messageCountBefore);
+    } catch (error) {
+      activeNoteCache.discardPending();
+      if (!this.isLiveTab(tab)) return;
+      throw error;
+    }
     this.showServiceError();
   }
 
+  private async sendSteeringPrompt(rawText: string): Promise<void> {
+    const tab = this.activeTab;
+    const service = tab.service;
+    const activeNoteCache = this.activeNoteCache;
+    const explicitAttachments = [...this.attachments];
+    const autoPath = this.effectiveActiveNote();
+    const steering = parseStreamingSteering(rawText);
+    if (!steering) {
+      this.renderErrorMessage("Add steering text after the command.");
+      return;
+    }
+    this.clearEmptyState();
+    const messageCountBefore = service.getMessages().length;
+    try {
+      const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache);
+      if (!this.isLiveTab(tab)) {
+        activeNoteCache.discardPending();
+        return;
+      }
+      const prompt = context ? `${context}\n\n${steering.text}` : steering.text;
+      const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
+      if (!this.isLiveTab(tab)) {
+        activeNoteCache.discardPending();
+        return;
+      }
+      this.lastSentPrompt = prompt;
+      this.lastSentDisplay = steering.text;
+      this.statusEl.setText(steeringStatus(steering.mode));
+      if (steering.mode === "redirect") await service.redirectPrompt(prompt, images);
+      else if (steering.mode === "follow-up") await service.followUpPrompt(prompt, images);
+      else await service.steerPrompt(prompt, images);
+      if (!this.isLiveTab(tab)) {
+        activeNoteCache.discardPending();
+        return;
+      }
+      this.resolveActiveNoteCacheAfterSend(service, activeNoteCache, messageCountBefore);
+    } catch (error) {
+      activeNoteCache.discardPending();
+      if (!this.isLiveTab(tab)) return;
+      throw error;
+    }
+    this.showServiceError();
+  }
+
+  private resolveActiveNoteCacheAfterSend(
+    service: AgentService,
+    activeNoteCache: ActiveNoteContextCache,
+    messageCountBefore: number,
+  ): void {
+    if (service.getMessages().length > messageCountBefore) {
+      activeNoteCache.commitPending();
+    } else {
+      activeNoteCache.discardPending();
+    }
+  }
+
   /** Encode image attachments as multimodal content parts for the model. */
-  private async loadImageAttachments(): Promise<ImageContent[]> {
+  private async loadImageAttachmentsFor(
+    service: AgentService,
+    attachments: ContextAttachment[],
+  ): Promise<ImageContent[]> {
     return await loadContextImageAttachments({
       app: this.app,
-      attachments: this.attachments,
-      supportsImages: this.service.supportsImages(),
+      attachments,
+      supportsImages: service.supportsImages(),
     });
   }
 
   /** Re-run the conversation's last user turn (inline "Ask again" action). */
   private async retryLast(): Promise<void> {
-    if (this.service.isStreaming()) return;
-    const prompt = this.lastSentPrompt ?? lastUserText(this.service.getMessages());
+    const tab = this.activeTab;
+    const service = tab.service;
+    if (service.isStreaming()) return;
+    const prompt = this.lastSentPrompt ?? lastUserText(service.getMessages());
     if (!prompt) return;
     const display = this.lastSentDisplay ?? stripContextPreamble(prompt);
     this.clearEmptyState();
-    this.renderUserMessage(display, []);
-    await this.service.sendPrompt(prompt);
+    this.renderOutgoingUserMessage(display, []);
+    await service.sendPrompt(prompt);
+    if (!this.isLiveTab(tab)) return;
     this.showServiceError();
   }
 
   private async handleSlashCommand(raw: string): Promise<boolean> {
-    const [word, ...rest] = raw.slice(1).split(/\s+/);
-    const argString = raw.slice(1 + word.length).trim();
-    const command = resolveCommand(word);
+    const input = parseSlashInput(raw);
+    const { word, argString, command } = input;
     if (!command) {
       // A bare /<skill-name> runs that skill directly (built-in commands take
       // precedence — a shadowed skill stays reachable via /skill <name>).
@@ -1226,13 +1457,22 @@ export class ChatView extends ItemView {
         this.runEffort(argString);
         return true;
       case "sessions":
-        await this.openSessionList();
+        await this.createSessionWorkflow().run(argString);
         return true;
       case "model":
         await this.switchModel();
         return true;
       case "status":
         this.showStatus();
+        return true;
+      case "project":
+        await this.runProject(argString);
+        return true;
+      case "memory":
+        await this.createMemoryWorkflow().run(argString);
+        return true;
+      case "semantic-index":
+        await this.runSemanticIndex(argString);
         return true;
       case "diagnostics":
         this.showDiagnostics();
@@ -1241,10 +1481,10 @@ export class ChatView extends ItemView {
         this.showConfig();
         return true;
       case "add-dir":
-        await this.runAddDir(argString);
+        await this.createWorkingDirectoryWorkflow().runAddDir(argString);
         return true;
       case "dirs":
-        this.showWorkingDirs();
+        this.createWorkingDirectoryWorkflow().showWorkingDirs();
         return true;
       case "plan":
         await this.enterPlanMode();
@@ -1252,8 +1492,19 @@ export class ChatView extends ItemView {
       case "endplan":
         await this.exitPlanMode();
         return true;
+      case "todo":
+        await this.runTodo(argString);
+        return true;
+      case "steer":
+      case "follow-up":
+      case "redirect":
+        await this.runSteeringCommand(raw);
+        return true;
       case "usage":
         this.showUsage();
+        return true;
+      case "compact":
+        await this.runCompact(argString);
         return true;
       case "export":
         await this.exportSession();
@@ -1262,16 +1513,16 @@ export class ChatView extends ItemView {
         await this.runUndo();
         return true;
       case "skill":
-        await this.runSkill(rest[0], argString.slice(rest[0]?.length ?? 0).trim());
+        await this.runSkill(input.args[0], slashInputTailAfterFirst(input));
         return true;
       case "agent":
-        await this.runAgent(rest[0], argString.slice(rest[0]?.length ?? 0).trim());
+        await this.runAgent(input.args[0], slashInputTailAfterFirst(input));
         return true;
       case "init":
-        await this.runInit();
+        await this.runInit(argString);
         return true;
       case "template":
-        await this.runTemplate(rest[0], rest.slice(1));
+        await this.runTemplate(input.args[0], [...input.args.slice(1)]);
         return true;
       case "help":
         this.showHelp();
@@ -1281,22 +1532,128 @@ export class ChatView extends ItemView {
     }
   }
 
+  private async runTodo(arg: string): Promise<void> {
+    this.clearEmptyState();
+    const result = await this.service.runPlanTrackerCommand(arg);
+    this.renderPlanTrackerPanel();
+    if (result.error) {
+      this.renderErrorMessage(result.error);
+      return;
+    }
+    this.renderInfoMessage("Plan tracker", planTrackerRows(result.state, result.message));
+  }
+
+  private createSessionWorkflow(): SessionWorkflowController {
+    return new SessionWorkflowController({
+      listSessions: () => this.service.listSessions(),
+      activeSessionPath: () => this.service.getSessionInfo()?.path ?? null,
+      clearSessions: () => this.service.clearSessions(),
+      loadSession: (path) => void this.loadSession(path),
+      deleteSession: (path) => this.service.deleteSession(path),
+      renameSession: (path, name) => this.service.renameSession(path, name),
+      openList: (sessions, activePath, callbacks) => new SessionListModal(this.app, sessions, activePath, callbacks).open(),
+      afterClear: () => this.createSessionActivationCoordinator().afterSessionsCleared(),
+      renderer: this.workflowRenderer(),
+    });
+  }
+
+  private createSessionActivationCoordinator(): SessionActivationCoordinator {
+    return new SessionActivationCoordinator({
+      setMuteNotifications: (muted) => {
+        this.muteNotifications = muted;
+      },
+      resetUsageNotifications: (muteExisting) => this.resetUsageNotifications(muteExisting),
+      resetUiState: (options) => this.resetSessionUiState(options),
+      messages: () => this.service.getMessages(),
+      renderTranscript: (messages) => this.renderTranscript(messages),
+      syncActiveNote: () => this.syncActiveNote(),
+      syncTabStrip: () => this.syncTabStrip(),
+      syncChrome: () => this.syncChrome(),
+      flushQueuedPromptIfReady: () => this.flushQueuedPromptIfReady(),
+    });
+  }
+
+  private resetSessionUiState(options: SessionUiResetOptions): void {
+    if (options.attachments) this.attachments = [];
+    if (options.activeNoteCache) this.activeNoteCache = new ActiveNoteContextCache();
+    if (options.activeNoteSuppression) this.activeNoteSuppressed = false;
+    if (options.lastSent) {
+      this.lastSentPrompt = null;
+      this.lastSentDisplay = null;
+    }
+    if (options.relevantNotes) {
+      this.relevantPinnedPaths = new Set<string>();
+      this.relevantExcludedPaths = new Set<string>();
+    }
+    if (options.history) this.resetHistoryNav();
+    if (options.editing) this.endEditing(false);
+    if (options.bubble) this.bubble = null;
+  }
+
+  private async runSteeringCommand(raw: string): Promise<void> {
+    const steering = parseStreamingSteering(raw);
+    if (!steering) {
+      this.renderErrorMessage("Add text after the command.");
+      return;
+    }
+    if (this.service.isStreaming()) {
+      await this.sendSteeringPrompt(raw);
+      return;
+    }
+    await this.sendPrompt(steering.text);
+  }
+
+  private async captureInlineInstruction(raw: string): Promise<void> {
+    const instruction = parseInlineInstruction(raw);
+    if (!instruction) {
+      this.renderErrorMessage("Add instruction text after #.");
+      return;
+    }
+    this.clearEmptyState();
+    this.renderOutgoingUserMessage(`# ${instruction}`, []);
+    await this.service.invokeInstruction(instruction);
+    this.showServiceError();
+  }
+
   private async runSkill(name: string | undefined, extra: string, display?: string): Promise<void> {
     if (!name) {
       this.showSkillList();
       return;
     }
     this.clearEmptyState();
-    this.renderUserMessage(display ?? `/skill ${name}${extra ? ` ${extra}` : ""}`, []);
+    this.renderOutgoingUserMessage(display ?? `/skill ${name}${extra ? ` ${extra}` : ""}`, []);
     await this.service.invokeSkill(name, extra || undefined);
     this.showServiceError();
   }
 
   /** `/init`: drive the agent to curate the vault's AGENTS.md standing-instructions file. */
-  private async runInit(): Promise<void> {
+  private async runInit(instructions = ""): Promise<void> {
     this.clearEmptyState();
-    this.renderUserMessage("/init", []);
-    await this.service.invokeInit();
+    const display = `/init${instructions.trim() ? ` ${instructions.trim()}` : ""}`;
+    this.renderOutgoingUserMessage(display, []);
+    await this.service.invokeInit(instructions);
+    this.showServiceError();
+  }
+
+  /** `/compact [instructions]`: rewrite older transcript turns into a summary now. */
+  private async runCompact(instructions = ""): Promise<void> {
+    this.clearEmptyState();
+    const display = `/compact${instructions.trim() ? ` ${instructions.trim()}` : ""}`;
+    this.renderOutgoingUserMessage(display, []);
+    const pending = new Notice("Compacting conversation…", 0);
+    let result;
+    try {
+      result = await this.service.compactNow(instructions);
+    } finally {
+      pending.hide();
+    }
+    if (result.compacted) {
+      this.renderTranscript(this.service.getMessages());
+      this.syncChrome();
+      this.renderInfoMessage("Compact", [["result", formatCompactionSummary(result)]]);
+      return;
+    }
+    this.renderInfoMessage("Compact", [["result", result.message]]);
     this.showServiceError();
   }
 
@@ -1352,6 +1709,12 @@ export class ChatView extends ItemView {
   private showEffortList(): void {
     const current = this.service.getActiveThinkingLevel();
     const levels = this.service.getActiveThinkingLevels();
+    if (levels.length <= 1) {
+      this.renderInfoMessage("Effort", [
+        ["off", "The active model only exposes reasoning effort as off."],
+      ]);
+      return;
+    }
     this.renderActionList(
       "Effort",
       `Reasoning effort for your next message · current: ${current}. ` +
@@ -1381,10 +1744,15 @@ export class ChatView extends ItemView {
   private cycleEffort(): void {
     if (this.service.isStreaming()) return;
     const levels = this.service.getActiveThinkingLevels();
+    if (levels.length <= 1) {
+      this.service.setThinkingOverride(null);
+      this.syncEffortKnob();
+      new Notice("Current model does not expose alternate reasoning effort levels.");
+      return;
+    }
     const current = this.service.getActiveThinkingLevel();
-    const base = levels.length > 0 ? levels : THINKING_LEVELS;
-    const index = base.indexOf(current);
-    const next = base[(index + 1) % base.length];
+    const index = levels.indexOf(current);
+    const next = levels[(index + 1) % levels.length];
     // setThinkingOverride notifies, so syncChrome re-renders the knob.
     this.service.setThinkingOverride(next);
   }
@@ -1393,14 +1761,19 @@ export class ChatView extends ItemView {
   private syncEffortKnob(): void {
     if (!this.effortKnobEl) return;
     const level = this.service.getActiveThinkingLevel();
-    const overridden = this.service.getThinkingOverride() !== null;
+    const levels = this.service.getActiveThinkingLevels();
+    const canChange = levels.length > 1;
+    const overridden = canChange && this.service.getThinkingOverride() !== null;
     this.effortKnobEl.empty();
     this.effortKnobEl.createSpan({ cls: "agentic-chat-effort-label", text: "Effort" });
     this.effortKnobEl.createSpan({ cls: "agentic-chat-effort-value", text: level });
     this.effortKnobEl.toggleClass("is-override", overridden);
-    const hint =
-      `Reasoning effort for your next message: ${level}. Click to change. ` +
-      "Switching effort re-processes the prompt once (a cache miss) — affects cost.";
+    this.effortKnobEl.toggleClass("is-unavailable", !canChange);
+    this.effortKnobEl.setAttr("aria-disabled", canChange ? "false" : "true");
+    const hint = canChange
+      ? `Reasoning effort for your next message: ${level}. Click to change. ` +
+        "Switching effort re-processes the prompt once (a cache miss) — affects cost."
+      : "Reasoning effort is off. The active model does not expose alternate reasoning effort levels.";
     this.effortKnobEl.setAttr("title", hint);
     this.effortKnobEl.setAttr("aria-label", hint);
   }
@@ -1431,7 +1804,7 @@ export class ChatView extends ItemView {
       return;
     }
     this.clearEmptyState();
-    this.renderUserMessage(`/agent ${name}${task ? ` ${task}` : ""}`, []);
+    this.renderOutgoingUserMessage(`/agent ${name}${task ? ` ${task}` : ""}`, []);
     await this.service.invokeAgent(name, task);
     this.showServiceError();
   }
@@ -1458,6 +1831,134 @@ export class ChatView extends ItemView {
     );
   }
 
+  /** `/project [name|clear]`: switch the active project workspace and its session group. */
+  private async runProject(arg: string): Promise<void> {
+    this.clearEmptyState();
+    const result = resolveProjectCommand(arg, this.plugin.settings.projects);
+    if (result.action === "list") {
+      this.showProjectList();
+      return;
+    }
+    if (result.action === "error") {
+      this.renderErrorMessage(result.message);
+      return;
+    }
+    await this.activateProject(result.projectId);
+  }
+
+  private showProjectList(): void {
+    this.clearEmptyState();
+    const activeId = this.plugin.settings.projects.activeProjectId;
+    const projects = this.plugin.settings.projects.items;
+    const items: ActionRow[] = [
+      {
+        label: "Vault-wide",
+        detail: activeId ? "Switch back to unscoped vault chat." : "current",
+        icon: "layout-dashboard",
+        onClick: () => void this.activateProject(""),
+      },
+      ...projects.map((project) => ({
+        label: project.name,
+        detail: `${project.id === activeId ? "current · " : ""}${describeProject(project) || "all notes"}`,
+        icon: "folder-kanban",
+        onClick: () => void this.activateProject(project.id),
+      })),
+    ];
+    this.renderActionList("Projects", "Pick a workspace for scoped notes, tools, model/profile, and sessions.", items);
+  }
+
+  private async activateProject(projectId: string): Promise<void> {
+    if (this.service.isStreaming()) {
+      this.renderErrorMessage("Can't switch project while the agent is responding.");
+      return;
+    }
+    if (this.plugin.settings.projects.activeProjectId === projectId) {
+      const project = activeProject(this.plugin.settings.projects);
+      this.renderInfoMessage("Project", [[projectLabel(project), project ? describeProject(project) : "Vault-wide"]]);
+      return;
+    }
+    this.plugin.settings.projects.activeProjectId = projectId;
+    await this.plugin.saveSettings();
+    await this.createSessionActivationCoordinator().continueProjectSession(() => this.service.continueRecentSession());
+    const project = activeProject(this.plugin.settings.projects);
+    this.renderInfoMessage("Project", [[projectLabel(project), project ? describeProject(project) : "Vault-wide"]]);
+  }
+
+  private async runSemanticIndex(arg: string): Promise<void> {
+    await this.semanticIndexWorkflowController().run(arg);
+  }
+
+  private semanticEmbeddingConfig(): ConstructorParameters<typeof OpenAICompatibleEmbeddingProvider>[0] {
+    const settings = this.plugin.settings;
+    return embeddingConfigFromSettings(settings.embeddings, {
+      openrouterApiKey: settings.openrouterApiKey,
+      openaiCompatibleApiKey: settings.openaiCompatibleApiKey,
+      ollamaBaseUrl: settings.ollamaBaseUrl,
+      openaiCompatibleBaseUrl: settings.openaiCompatibleBaseUrl,
+      privacy: settings.privacy,
+    });
+  }
+
+  private async readSemanticIndex(): Promise<SemanticIndexFile | null> {
+    return readSemanticIndexFile(this.app.vault.adapter, this.semanticIndexFilePath());
+  }
+
+  private semanticIndexFilePath(): string {
+    const pluginDir = this.plugin.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.plugin.manifest.id}`;
+    return semanticIndexPath(pluginDir);
+  }
+
+  private semanticIndexWorkflowController(): SemanticIndexWorkflowController {
+    if (this.semanticIndexWorkflow) return this.semanticIndexWorkflow;
+    this.semanticIndexWorkflow = new SemanticIndexWorkflowController({
+      adapter: this.app.vault.adapter,
+      indexPath: () => this.semanticIndexFilePath(),
+      activeProject: () => activeProject(this.plugin.settings.projects),
+      activeNotePath: () => this.activeNotePath,
+      loadDocuments: (scopeFolders) =>
+        loadVaultRetrievalDocuments(this.app, (path) => this.service.isPathIgnored(path), scopeFolders),
+      embeddingConfig: () => this.semanticEmbeddingConfig(),
+      embeddingsEnabled: () => this.plugin.settings.embeddings.enabled,
+      activeEmbeddingModel: () => activeEmbeddingModel(this.plugin.settings.embeddings),
+      batchSize: () => this.plugin.settings.embeddings.batchSize,
+      createEmbedder: () =>
+        new OpenAICompatibleEmbeddingProvider(
+          this.semanticEmbeddingConfig(),
+          createProxiedFetcher(this.plugin.settings.network),
+      ),
+      renderer: this.workflowRenderer(),
+    });
+    return this.semanticIndexWorkflow;
+  }
+
+  private createMemoryWorkflow(): MemoryWorkflowController {
+    return new MemoryWorkflowController({
+      adapter: this.app.vault.adapter,
+      memoryPath: () => memoryPathForApp(this.app),
+      messages: () => this.service.getMessages(),
+      defaultScope: () => (activeProject(this.plugin.settings.projects) ? "project" : "vault"),
+      sessionSource: () => {
+        const session = this.service.getSessionInfo();
+        return session ? `[[Agentic Chat Sessions/${session.id}|Chat session]]` : undefined;
+      },
+      renderer: this.workflowRenderer(),
+      writeExport: async (filename, contents) => {
+        await this.ensureExportFolder();
+        const file = await this.app.vault.create(`${EXPORT_FOLDER}/${filename}`, contents);
+        return file.path;
+      },
+    });
+  }
+
+  private workflowRenderer(): WorkflowRenderer {
+    return {
+      clear: () => this.clearEmptyState(),
+      info: (title, entries) => this.renderInfoMessage(title, entries),
+      error: (message) => this.renderErrorMessage(message),
+      actionList: (title, subtitle, items) => this.renderActionList(title, subtitle, items),
+    };
+  }
+
   private prefillComposer(text: string): void {
     // setComposerValue dispatches the "input" event so autocomplete/composer
     // state stays in sync (a bare `.value =` would not).
@@ -1481,18 +1982,26 @@ export class ChatView extends ItemView {
 
   private showStatus(): void {
     const { settings } = this.plugin;
+    const effective = effectiveProjectSettings(settings);
+    const project = activeProject(settings.projects);
     const session = this.service.getSessionInfo();
     const override = this.service.getModelOverride();
     const effortOverride = this.service.getThinkingOverride();
     const diagnostics = this.service.getRuntimeDiagnostics();
+    const projectRows: Array<[string, string]> = project
+      ? [["Project scope", project.folders.map((folder) => folder || "/").join(", ") || "all notes"]]
+      : [];
     this.clearEmptyState();
     this.renderInfoMessage("Status", [
       ["Provider", settings.provider],
-      ["Model", override ? `${override} (next message only)` : activeModelId(settings)],
+      ["Model", override ? `${override} (next message only)` : activeModelId(effective)],
+      ["Project", projectLabel(project)],
+      ...projectRows,
       ["Mode", MODES[settings.mode].label],
-      ["Output style", OUTPUT_STYLES[settings.outputStyle].label],
+      ["Output style", OUTPUT_STYLES[effective.outputStyle].label],
       ["Thinking", effortOverride ? `${effortOverride} (next message only)` : settings.thinkingLevel],
       ["Approval (mutating)", settings.approval.mutating],
+      ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],
       ["Session", session ? `${session.messageCount} messages` : "(none)"],
       ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
       ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
@@ -1545,21 +2054,15 @@ export class ChatView extends ItemView {
   private showUsage(): void {
     const usage = this.service.getSessionUsage();
     this.clearEmptyState();
-    // Build the rows as a tuple array (renderInfoMessage wants [string, string][]),
-    // inserting the cache row only once a cached prompt has shown up.
-    const rows: Array<[string, string]> = [
-      ["Tokens", String(usage.totalTokens)],
-      ["Cost", formatCost(usage.cost?.total ?? 0)],
-    ];
-    const cacheHit = cacheHitPercent(usage);
-    if (cacheHit !== null) rows.splice(1, 0, ["Cache", `${cacheHit}% prompt-cache hit`]);
     this.renderInfoMessage(
       "Usage",
-      usage.totalTokens > 0 ? rows : [["Usage", "No usage recorded yet for this conversation."]],
+      usage.totalTokens > 0
+        ? formatDetailedUsage(usage, { includesCompactedUsage: true, includesSubagentUsage: true })
+        : [["Usage", "No usage recorded yet for this conversation."]],
     );
   }
 
-  /** `/export`: write the active conversation to a Markdown note and open it. */
+  /** `/export`: write the active conversation to a Markdown note without changing active-note context. */
   private async exportSession(): Promise<void> {
     this.clearEmptyState();
     const messages = this.service.getMessages();
@@ -1569,14 +2072,9 @@ export class ChatView extends ItemView {
     }
     try {
       const markdown = sessionToMarkdown(messages, this.service.getSessionInfo());
-      // getAbstractFileByPath (not getFolderByPath, which needs Obsidian ≥1.5.3) so
-      // the folder check works down to the manifest's minAppVersion.
-      if (!this.app.vault.getAbstractFileByPath(EXPORT_FOLDER)) {
-        await this.app.vault.createFolder(EXPORT_FOLDER);
-      }
+      await this.ensureExportFolder();
       const path = `${EXPORT_FOLDER}/${exportFileName(this.service.getSessionInfo(), Date.now())}`;
       const file = await this.app.vault.create(path, markdown);
-      await this.app.workspace.getLeaf(false).openFile(file);
       this.renderInfoMessage("Export", [["Saved", file.path]]);
     } catch (error) {
       this.renderErrorMessage(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -1594,50 +2092,29 @@ export class ChatView extends ItemView {
     );
   }
 
+  private async ensureExportFolder(): Promise<void> {
+    // getAbstractFileByPath (not getFolderByPath, which needs Obsidian >=1.5.3) so
+    // the folder check works down to the manifest's minAppVersion.
+    if (!this.app.vault.getAbstractFileByPath(EXPORT_FOLDER)) {
+      await this.app.vault.createFolder(EXPORT_FOLDER);
+    }
+  }
+
   /** Render a collapsible info block in the transcript (not sent to the model). */
   private renderInfoMessage(title: string, entries: Array<[string, string]>): void {
-    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
-    const details = el.createEl("details", { cls: "agentic-chat-info-details" });
-    details.open = true;
-    details.createEl("summary", { text: title });
-    const list = details.createEl("ul", { cls: ["agentic-chat-info-body", "agentic-chat-info-list"] });
-    for (const [label, value] of entries) {
-      const item = list.createEl("li");
-      item.createEl("code", { text: label });
-      item.appendText(` — ${value}`);
-    }
+    renderInfoPanel(this.messagesEl, title, entries);
     this.scrollToBottom({ force: true });
   }
 
   /** Render an auto-compaction summary as a collapsed, non-editable transcript block. */
   private renderSummaryMessage(text: string): void {
-    const inner = text.match(/<conversation-summary>\n?([\s\S]*?)\n?<\/conversation-summary>/);
-    const summary = (inner ? inner[1] : text).trim();
-    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
-    const details = el.createEl("details", { cls: "agentic-chat-info-details" });
-    details.createEl("summary", { text: "Summarized earlier conversation" });
-    details.createDiv({ cls: "agentic-chat-info-body", text: summary });
+    renderSummaryPanel(this.messagesEl, text);
     this.scrollToBottom();
   }
 
   /** Render a collapsible block whose rows are clickable buttons (e.g. the skill picker). */
   private renderActionList(title: string, subtitle: string, items: ActionRow[]): void {
-    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
-    const details = el.createEl("details", { cls: "agentic-chat-info-details" });
-    details.open = true;
-    details.createEl("summary", { text: title });
-    const body = details.createDiv({ cls: "agentic-chat-info-body" });
-    if (subtitle) body.createDiv({ cls: "agentic-chat-info-subtitle", text: subtitle });
-    const list = body.createDiv({ cls: "agentic-chat-action-list" });
-    for (const item of items) {
-      const row = list.createEl("button", { cls: "agentic-chat-action-row" });
-      const icon = row.createSpan({ cls: "agentic-chat-action-row-icon" });
-      setIcon(icon, item.icon);
-      const main = row.createDiv({ cls: "agentic-chat-action-row-main" });
-      main.createSpan({ cls: "agentic-chat-action-row-label", text: item.label });
-      if (item.detail) main.createSpan({ cls: "agentic-chat-action-row-detail", text: item.detail });
-      row.addEventListener("click", item.onClick);
-    }
+    renderActionPanel(this.messagesEl, title, subtitle, items);
     this.scrollToBottom();
   }
 
@@ -1649,43 +2126,22 @@ export class ChatView extends ItemView {
   /** Render an error block in the transcript (not sent to the model). */
   private renderErrorMessage(message: string): void {
     this.clearEmptyState();
-    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info", "agentic-chat-info-error"] });
-    const details = el.createEl("details", { cls: "agentic-chat-info-details" });
-    details.open = true;
-    details.createEl("summary", { text: "Error" });
-    details.createDiv({ cls: "agentic-chat-info-body", text: message });
+    renderErrorPanel(this.messagesEl, message);
     this.scrollToBottom();
   }
 
   // --- session + model actions ---
 
   private async newSession(): Promise<void> {
-    this.muteNotifications = true;
+    const coordinator = this.createSessionActivationCoordinator();
     try {
-      await this.service.newSession();
-      this.resetUsageNotifications();
+      await coordinator.startNewConversation(() => this.service.newSession());
     } finally {
-      // Reset the view to a clean empty state regardless of outcome: if the
-      // swap throws, leaving stale attachments/transcript behind is worse than
-      // an empty pane (the service surfaces its own error separately).
-      this.muteNotifications = false;
-      this.attachments = [];
-      // A new conversation re-attaches the active note by default (clear suppression).
-      this.activeNoteSuppressed = false;
-      this.lastSentPrompt = null;
-      this.lastSentDisplay = null;
-      this.resetHistoryNav();
-      this.endEditing(false);
-      this.syncActiveNote();
-      this.bubble = null;
-      this.renderTranscript([]);
       // A new conversation starts in the default (normal) output style.
       if (this.plugin.settings.outputStyle !== DEFAULT_OUTPUT_STYLE) {
         this.plugin.settings.outputStyle = DEFAULT_OUTPUT_STYLE;
         await this.plugin.saveSettings();
       }
-      // The session reset back to unnamed — refresh the tab pill's label.
-      this.syncTabStrip();
     }
   }
 
@@ -1697,6 +2153,7 @@ export class ChatView extends ItemView {
   private resetUsageNotifications(muteExisting = false): void {
     this.notifiedContext = new Set<number>();
     this.notifiedCost = false;
+    this.notifiedToolBudgetKey = null;
     this.lastCompactionCount = this.service.getCompactionCount();
     if (!muteExisting) return;
     const fraction = this.service.getContextFraction();
@@ -1709,16 +2166,7 @@ export class ChatView extends ItemView {
     if (cap > 0 && (this.service.getSessionUsage().cost?.total ?? 0) >= cap) {
       this.notifiedCost = true;
     }
-  }
-
-  private async openSessionList(): Promise<void> {
-    // Hide empty sessions — a conversation with no messages isn't worth listing.
-    const sessions = (await this.service.listSessions()).filter((session) => session.messageCount > 0);
-    new SessionListModal(this.app, sessions, this.service.getSessionInfo()?.path ?? null, {
-      load: (session) => void this.loadSession(session.path),
-      delete: (session) => this.service.deleteSession(session.path),
-      rename: (session, name) => this.service.renameSession(session.path, name),
-    }).open();
+    this.notifiedToolBudgetKey = toolBudgetNotificationKey(this.service.getRuntimeDiagnostics().toolBudget);
   }
 
   private async loadSession(path: string): Promise<void> {
@@ -1731,51 +2179,55 @@ export class ChatView extends ItemView {
       await this.switchToTab(openIn);
       return;
     }
-    this.muteNotifications = true;
-    try {
-      await this.service.loadSession(path);
-      this.resetUsageNotifications(true);
-    } finally {
-      this.muteNotifications = false;
-    }
-    this.lastSentPrompt = null;
-    this.lastSentDisplay = null;
-    this.endEditing(false);
-    this.bubble = null;
-    this.renderTranscript(this.service.getMessages());
-    this.syncTabStrip();
+    await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
   }
 
   private async switchModel(): Promise<void> {
     const { settings } = this.plugin;
-    if (settings.provider !== "openrouter") {
-      this.renderErrorMessage(`Set the ${modelProviderLabel(settings.provider)} model in plugin settings.`);
+    if (settings.provider === "ollama") {
+      this.renderErrorMessage("Set the Ollama model in plugin settings.");
       return;
     }
-    if (!settings.openrouterApiKey) {
-      this.renderErrorMessage("Set your OpenRouter API key in settings first.");
+    const apiKey = apiKeyForProvider(settings, settings.provider);
+    if (!apiKey) {
+      this.renderErrorMessage(`Set your ${modelProviderLabel(settings.provider)} API key in settings first.`);
       return;
     }
     try {
-      const models = (
-        await listOpenRouterModels(settings.openrouterApiKey, {
-          zdr: settings.privacy.requireZDR,
-          denyDataCollection: settings.privacy.denyDataCollection,
-        })
-      )
-        .filter((model) => model.supportsTools)
-        .sort((a, b) => a.id.localeCompare(b.id));
+      const fetchImpl = settings.network.proxyUrl
+        ? createFetchFromWebFetcher(createProxiedFetcher(settings.network))
+        : undefined;
+      const models =
+        settings.provider === "openrouter"
+          ? (
+              await listOpenRouterModels(apiKey, {
+                zdr: settings.privacy.requireZDR,
+                denyDataCollection: settings.privacy.denyDataCollection,
+                fetchImpl,
+                timeoutMs: settings.requestTimeoutMs,
+              })
+            )
+              .filter((model) => model.supportsTools)
+              .sort((a, b) => a.id.localeCompare(b.id))
+          : (
+              await listOpenAICompatibleModels(apiKey, {
+                baseUrl: settings.openaiCompatibleBaseUrl,
+                fetchImpl,
+                timeoutMs: settings.requestTimeoutMs,
+              })
+            ).sort((a, b) => a.id.localeCompare(b.id));
       new ModelSuggestModal(this.app, models, (model, once) => {
         if (once) {
           // Per-request override: use this model for the next prompt only, then revert.
           this.service.setModelOverride(model.id);
         } else {
-          settings.openrouterModel = model.id;
+          if (settings.provider === "openrouter") settings.openrouterModel = model.id;
+          else settings.openaiCompatibleModel = model.id;
           this.service.setModelOverride(null);
           void this.plugin.saveSettings();
         }
         this.syncChrome();
-      }).open();
+      }, `${modelProviderLabel(settings.provider)} model`).open();
     } catch (error) {
       this.renderErrorMessage(error instanceof Error ? error.message : String(error));
     }
@@ -1814,11 +2266,74 @@ export class ChatView extends ItemView {
       isIgnored: (path) => this.service.isPathIgnored(path),
     });
     this.renderChips();
+    void this.refreshRelevantNotes();
+  }
+
+  private async refreshRelevantNotes(): Promise<void> {
+    const refreshId = ++this.relevantNotesRefreshId;
+    const activePath = this.activeNotePath;
+    const project = activeProject(this.plugin.settings.projects);
+    if (!this.relevantNotesEl) return;
+    if (!activePath) {
+      this.renderRelevantNotes(buildRelevantNotesPanelState({ activePath: null, documents: [] }));
+      return;
+    }
+
+    try {
+      const documents = await loadVaultRetrievalDocuments(
+        this.app,
+        (path) => this.service.isPathIgnored(path),
+        project?.folders,
+      );
+      const semanticIndex = await this.readSemanticIndex();
+      if (refreshId !== this.relevantNotesRefreshId) return;
+      this.renderRelevantNotes(
+        buildRelevantNotesPanelState({
+          activePath,
+          documents,
+          ignoreMatcher: (path) => this.service.isPathIgnored(path),
+          scopeFolders: project?.folders,
+          semanticIndex: semanticIndex?.snapshot,
+          controls: this.relevantControls(),
+          maxResults: 5,
+          now: Date.now(),
+        }),
+      );
+    } catch {
+      if (refreshId === this.relevantNotesRefreshId) {
+        this.renderRelevantNotes(buildRelevantNotesPanelState({ activePath, documents: [] }));
+      }
+    }
+  }
+
+  private relevantControls(): { pinnedPaths: string[]; excludedPaths: string[] } {
+    return {
+      pinnedPaths: [...this.relevantPinnedPaths],
+      excludedPaths: [...this.relevantExcludedPaths],
+    };
+  }
+
+  private setRelevantControls(controls: { pinnedPaths?: readonly string[]; excludedPaths?: readonly string[] }): void {
+    this.relevantPinnedPaths = new Set(controls.pinnedPaths ?? []);
+    this.relevantExcludedPaths = new Set(controls.excludedPaths ?? []);
+    void this.refreshRelevantNotes();
+  }
+
+  private renderRelevantNotes(state: RelevantNotesPanelState): void {
+    renderRelevantNotesPanel(this.relevantNotesEl, state, {
+      attach: (path) => this.pushAttachment(path),
+      togglePin: (path, pinned) => {
+        const controls = pinned ? unpinRelevantNote(this.relevantControls(), path) : pinRelevantNote(this.relevantControls(), path);
+        this.setRelevantControls(controls);
+      },
+      exclude: (path) => this.setRelevantControls(excludeRelevantNote(this.relevantControls(), path)),
+    });
   }
 
   /** The active note auto-attached this turn, or null (suppressed / none / already explicit). */
   private effectiveActiveNote(): string | null {
-    return effectiveActiveNote(this.activeNoteState());
+    const active = effectiveActiveNote(this.activeNoteState());
+    return active && isInstructionFilePath(active) ? null : active;
   }
 
   private activeNoteState(): ActiveNoteState {
@@ -1828,189 +2343,84 @@ export class ChatView extends ItemView {
       explicit: this.attachments
         .filter((entry): entry is string => typeof entry === "string")
         .map((entry) => attachmentBasePath(entry)),
+      selectedTextSources: this.attachments
+        .filter(isTextContextAttachment)
+        .map((entry) => entry.sourcePath)
+        .filter((path): path is string => Boolean(path)),
     };
   }
 
+  private renderPlanTrackerPanel(): void {
+    if (!this.planTrackerEl) return;
+    renderPlanTrackerPanelDom(this.planTrackerEl, buildPlanTrackerPanelState(this.service.getPlanTracker()));
+  }
+
   private renderChips(): void {
-    this.chipsEl.empty();
-    // Granted working dirs lead the context row: a persistent permission grant
-    // (auto-run inside, ask outside), distinct from per-message attachments. (C1)
-    for (const dir of this.plugin.settings.approval.workingDirs) {
-      this.renderScopeChip(dir);
-    }
-    // The active note rides as a distinct, removable chip ahead of explicit attachments.
-    const autoPath = this.effectiveActiveNote();
-    if (autoPath) {
-      this.renderChip(autoPath, true, () => {
-        // Dismissing the auto chip suppresses it for the rest of the session.
-        this.activeNoteSuppressed = true;
-        this.activeNotePath = null;
-        this.renderChips();
-      });
-    }
-    for (const entry of this.attachments) {
-      this.renderChip(entry, false, () => {
-        const key = contextAttachmentKey(entry);
-        this.attachments = this.attachments.filter((a) => contextAttachmentKey(a) !== key);
-        this.renderChips();
-      });
-    }
-  }
-
-  private renderChip(entry: ContextAttachment, active: boolean, onRemove: () => void): void {
-    const isText = isTextContextAttachment(entry);
-    const path = typeof entry === "string" ? entry : "";
-    const isFolder = path.startsWith(FOLDER_PREFIX);
-    const isImage = path ? isImagePath(path) : false;
-    const chip = this.chipsEl.createDiv({ cls: active ? ["agentic-chat-chip", "is-active-note"] : ["agentic-chat-chip"] });
-    const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
-    setIcon(icon, isText ? "text-select" : isFolder ? "folder" : isImage ? "image" : "file-text");
-    chip.createSpan({ text: isFolder ? path.slice(FOLDER_PREFIX.length) : contextAttachmentLabel(entry) });
-    if (active) {
-      chip.createSpan({ cls: "agentic-chat-chip-tag", text: "active" });
-      chip.setAttr("title", "The active note is attached automatically — remove to stop for this session.");
-    }
-    const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
-    setIcon(remove, "x");
-    remove.addEventListener("click", onRemove);
-  }
-
-  /** A granted working directory: persistent permission grant, removable to revoke. */
-  private renderScopeChip(dir: string): void {
-    const label = dir === "" ? "/ (vault root)" : dir;
-    const chip = this.chipsEl.createDiv({ cls: ["agentic-chat-chip", "is-scope"] });
-    const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
-    setIcon(icon, "folder-check");
-    chip.createSpan({ text: label });
-    chip.createSpan({ cls: "agentic-chat-chip-tag", text: "scope" });
-    chip.setAttr(
-      "title",
-      "Working directory — the agent auto-runs inside it and asks before touching anything outside. Remove to revoke.",
+    renderContextChips(
+      this.chipsEl,
+      {
+        workingDirs: this.plugin.settings.approval.workingDirs,
+        activeNotePath: this.effectiveActiveNote(),
+        attachments: this.attachments,
+      },
+      {
+        removeWorkingDir: (dir) => void this.createWorkingDirectoryWorkflow().remove(dir),
+        removeActiveNote: () => {
+          this.activeNoteSuppressed = true;
+          this.activeNotePath = null;
+          this.renderChips();
+        },
+        removeAttachment: (entry) => {
+          const key = contextAttachmentKey(entry);
+          this.attachments = this.attachments.filter((a) => contextAttachmentKey(a) !== key);
+          this.renderChips();
+        },
+      },
     );
-    const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
-    setIcon(remove, "x");
-    remove.addEventListener("click", () => void this.removeWorkingDir(dir));
   }
 
   // --- working directories (C1: + Folder / /add-dir scope) ---
 
-  /** Composer folder button: grant a working dir or attach a one-off folder listing. */
-  private showFolderMenu(): void {
-    this.clearEmptyState();
-    this.renderActionList(
-      "Folders",
-      "Grant a working directory (auto-run inside, ask outside) or attach a folder listing as one-off context.",
-      [
-        {
-          label: "Add working directory…",
-          detail: "Auto-run reads/writes inside it; ask before anything outside.",
-          icon: "folder-check",
-          onClick: () => this.pickWorkingDir(),
-        },
-        {
-          label: "Attach folder listing…",
-          detail: "Add a folder's file list to your next message as context.",
-          icon: "folder",
-          onClick: () => this.pickFolderAttachment(),
-        },
-      ],
-    );
-  }
-
-  /** `/dirs`: clickable list of granted working dirs (click an entry to revoke). */
-  private showWorkingDirs(): void {
-    this.clearEmptyState();
-    const dirs = this.plugin.settings.approval.workingDirs;
-    const items: ActionRow[] = [
-      {
-        label: "Add working directory…",
-        detail: "Grant a folder as a working set.",
-        icon: "folder-plus",
-        onClick: () => this.pickWorkingDir(),
+  private createWorkingDirectoryWorkflow(): WorkingDirectoryWorkflowController {
+    const controller = new WorkingDirectoryWorkflowController({
+      workingDirs: () => this.plugin.settings.approval.workingDirs,
+      folderExists: (path) => this.app.vault.getAbstractFileByPath(path) instanceof TFolder,
+      externalRoot: () => this.plugin.settings.external,
+      setExternalRoot: (path) => {
+        this.plugin.settings.external.enabled = path !== null;
+        this.plugin.settings.external.rootPath = path ?? "";
       },
-      ...dirs.map((dir) => ({
-        label: dir === "" ? "/ (vault root)" : dir,
-        detail: "Granted — click to revoke.",
-        icon: "folder-check",
-        onClick: () => void this.removeWorkingDir(dir),
-      })),
-    ];
-    this.renderActionList(
-      "Working directories",
-      dirs.length
-        ? "Auto-run inside these; ask before touching anything outside."
-        : "None granted — reads/writes follow your approval policy everywhere in the vault.",
-      items,
-    );
+      canUseExternalRoot: () => Platform.isDesktopApp,
+      activeFolder: () => activeNoteFolder(this.effectiveActiveNote()),
+      vaultBasePath: () => vaultBasePath(this.app.vault.adapter),
+      saveSettings: () => this.plugin.saveSettings(),
+      afterChange: () => {
+        this.renderChips();
+        this.syncChrome();
+      },
+      pickWorkingDir: () => {
+        new FolderSuggestModal(this.app, (folder) => void controller.add(folder.path)).open();
+      },
+      pickFolderAttachment: () => {
+        new FolderSuggestModal(this.app, (folder) => this.addAttachment(`${FOLDER_PREFIX}${folder.path}`)).open();
+      },
+      renderer: this.workflowRenderer(),
+    });
+    return controller;
   }
 
-  private pickWorkingDir(): void {
-    new FolderSuggestModal(this.app, (folder) => void this.addWorkingDir(folder.path)).open();
-  }
-
-  private pickFolderAttachment(): void {
-    new FolderSuggestModal(this.app, (folder) => this.addAttachment(`${FOLDER_PREFIX}${folder.path}`)).open();
-  }
-
-  /** `/add-dir [path]`: no arg opens a folder picker; an arg grants that folder directly. */
-  private async runAddDir(arg: string): Promise<void> {
-    this.clearEmptyState();
-    if (!arg) {
-      this.pickWorkingDir();
-      return;
-    }
-    await this.addWorkingDir(arg);
-  }
-
-  private async addWorkingDir(path: string): Promise<void> {
-    let normalized: string;
-    try {
-      // The folder picker yields "/" for the vault root, which normalizeFolderPath
-      // rejects as absolute — map it to "" (the whole-vault scope) first.
-      normalized = normalizeFolderPath(path === "/" ? "" : path);
-    } catch {
-      this.renderErrorMessage(`Invalid folder path "${path}".`);
-      return;
-    }
-    // A working directory must be a real folder — reject typos and file paths so a
-    // bogus scope can't silently weaken the boundary. "" is the vault root.
-    if (normalized !== "" && !(this.app.vault.getAbstractFileByPath(normalized) instanceof TFolder)) {
-      this.renderErrorMessage(`"${normalized}" is not a folder in this vault.`);
-      return;
-    }
-    const dirs = this.plugin.settings.approval.workingDirs;
-    if (dirs.includes(normalized)) {
-      this.renderInfoMessage("Working directory", [[normalized || "/ (vault root)", "Already a working directory."]]);
-      return;
-    }
-    dirs.push(normalized);
-    await this.plugin.saveSettings();
-    this.renderChips();
-    this.syncChrome();
-    this.renderInfoMessage("Working directory", [
-      [
-        normalized || "/ (vault root)",
-        "Granted — the agent auto-runs inside it and asks before touching anything outside.",
-      ],
-    ]);
-  }
-
-  private async removeWorkingDir(dir: string): Promise<void> {
-    const dirs = this.plugin.settings.approval.workingDirs;
-    const index = dirs.indexOf(dir);
-    if (index === -1) return;
-    dirs.splice(index, 1);
-    await this.plugin.saveSettings();
-    this.renderChips();
-    this.syncChrome();
-  }
-
-  private async buildContext(): Promise<string> {
+  private async buildContextFor(
+    service: AgentService,
+    attachments: ContextAttachment[],
+    activeNotePath: string | null,
+    activeNoteCache: ActiveNoteContextCache,
+  ): Promise<string> {
     return await buildPromptContext({
       app: this.app,
-      attachments: this.attachments,
-      activeNotePath: this.effectiveActiveNote(),
-      isPathIgnored: (path) => this.service.isPathIgnored(path),
+      attachments,
+      activeNotePath,
+      isPathIgnored: (path) => service.isPathIgnored(path),
+      activeNoteCache,
     });
   }
 
@@ -2064,7 +2474,12 @@ export class ChatView extends ItemView {
     if (usage) bubble.showUsage(usage);
   }
 
-  private renderUserMessage(text: string, attachments: ContextAttachment[], editIndex?: number): void {
+  private renderUserMessage(
+    text: string,
+    attachments: ContextAttachment[],
+    editIndex?: number,
+    options: { forceScroll?: boolean } = {},
+  ): void {
     const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-user"] });
     if (attachments.length > 0) {
       const labels = attachments.map((entry) =>
@@ -2087,7 +2502,12 @@ export class ChatView extends ItemView {
         this.beginEdit(editIndex, stripContextPreamble(text), el);
       });
     }
-    this.scrollToBottom();
+    this.scrollToBottom({ force: options.forceScroll });
+  }
+
+  private renderOutgoingUserMessage(text: string, attachments: ContextAttachment[]): void {
+    this.locallyRenderedUserMessages += 1;
+    this.renderUserMessage(text, attachments, undefined, { forceScroll: true });
   }
 
   // --- rendering: live events ---
@@ -2110,6 +2530,10 @@ export class ChatView extends ItemView {
         this.applyStreamDelta(event.assistantMessageEvent);
         break;
       case "message_end":
+        if (event.message.role === "user") {
+          if (this.locallyRenderedUserMessages > 0) this.locallyRenderedUserMessages -= 1;
+          else this.renderUserMessage(stripContextPreamble(messageText(event.message)), []);
+        }
         if (event.message.role === "assistant") this.finalizeBubble(event.message);
         break;
       case "tool_execution_start":
@@ -2158,8 +2582,21 @@ export class ChatView extends ItemView {
   private newBubble(): AssistantBubble {
     return new AssistantBubble(this.messagesEl, {
       onRetry: () => void this.retryLast(),
+      onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
       onContentChange: () => this.scrollToBottom(),
     });
+  }
+
+  private async openRenderedExternalLink(target: string): Promise<void> {
+    try {
+      if (target.startsWith("external://")) {
+        new Notice(await openExternalReference(this.plugin.settings.external, target));
+        return;
+      }
+      await openSystemUrl(target);
+    } catch (error) {
+      new Notice(`Could not open link: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private ensureBubble(): AssistantBubble {
@@ -2211,8 +2648,12 @@ function lastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
   return -1;
 }
 
-function modelProviderLabel(provider: string): string {
-  if (provider === "ollama") return "Ollama";
-  if (provider === "openai-compatible") return "OpenAI-compatible";
-  return "OpenRouter";
+function activeNoteFolder(path: string | null): string {
+  if (!path) return "";
+  return path.split("/").slice(0, -1).join("/");
+}
+
+function vaultBasePath(adapter: unknown): string | null {
+  const maybeAdapter = adapter as { getBasePath?: () => string };
+  return typeof maybeAdapter.getBasePath === "function" ? maybeAdapter.getBasePath() : null;
 }

@@ -1,4 +1,4 @@
-import type { WebFetcher } from "../tools/web-fetch";
+import type { WebFetcher, WebHttpResponse } from "../tools/web-fetch";
 import {
   DEFAULT_MCP_OAUTH_SETTINGS,
   type McpServerSettings,
@@ -11,6 +11,8 @@ const AUTH_TIMEOUT_MS = 5 * 60 * 1000;
 const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
 export const DEFAULT_MCP_OAUTH_CALLBACK_PORT = 37123;
 export const DEFAULT_MCP_OAUTH_REDIRECT_URI = `http://localhost:${DEFAULT_MCP_OAUTH_CALLBACK_PORT}/oauth/callback`;
+export const MCP_OAUTH_OBSIDIAN_PROTOCOL_ACTION = "agentic-chat-mcp-oauth";
+export const MCP_OAUTH_OBSIDIAN_REDIRECT_URI = `obsidian://${MCP_OAUTH_OBSIDIAN_PROTOCOL_ACTION}`;
 
 interface OAuthProtectedResourceMetadata {
   authorization_servers?: unknown;
@@ -81,6 +83,8 @@ export interface McpOAuthCallbackReceiverOptions {
   http?: NodeHttpModule;
 }
 
+export type McpOAuthProtocolParams = Record<string, string | "true" | undefined>;
+
 export type McpOAuthProgressStage =
   | "discovery"
   | "callback"
@@ -122,7 +126,7 @@ export async function authenticateMcpServer(
   assertPkceSupported(discovery.authServer);
   reportOAuthProgress(options, {
     stage: "callback",
-    message: `Starting localhost OAuth callback for ${server.name}.`,
+    message: `Starting OAuth callback for ${server.name}.`,
   });
 
   const hasManualClient = Boolean(server.oauth.clientId && !server.oauth.dynamicClientRegistration);
@@ -278,7 +282,10 @@ export async function refreshMcpOAuthToken(
     signal,
     requestTimeoutMs,
   );
-  if (response.status < 200 || response.status >= 300) return false;
+  if (response.status < 200 || response.status >= 300) {
+    if (isInvalidRefreshTokenResponse(response)) forgetMcpOAuthTokens(server);
+    return false;
+  }
   const token = parseJsonObject<OAuthTokenResponse>(response.text, "OAuth token refresh response");
   applyOAuthToken(server, token, {
     now: now(),
@@ -312,6 +319,17 @@ export function clearMcpOAuth(server: McpServerSettings): void {
   server.oauth = { ...DEFAULT_MCP_OAUTH_SETTINGS, clientSecretSecretId, accessTokenSecretId, refreshTokenSecretId };
   if (server.authType === "oauth") return;
   server.authType = "oauth";
+}
+
+export function forgetMcpOAuthTokens(server: McpServerSettings): void {
+  server.oauth = {
+    ...server.oauth,
+    accessToken: "",
+    refreshToken: "",
+    expiresAt: 0,
+    scope: "",
+  };
+  if (server.authType !== "oauth") server.authType = "oauth";
 }
 
 export function mcpResourceUri(input: string): string {
@@ -693,6 +711,21 @@ function applyOAuthToken(
   };
 }
 
+function isInvalidRefreshTokenResponse(response: WebHttpResponse): boolean {
+  if (response.status !== 400 && response.status !== 401) return false;
+  const error = oauthErrorCode(response.text);
+  return error === "invalid_grant" || error === "invalid_token";
+}
+
+function oauthErrorCode(text: string): string {
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown };
+    return typeof parsed.error === "string" ? parsed.error : "";
+  } catch {
+    return "";
+  }
+}
+
 async function createPkce(randomBytes: ((size: number) => Uint8Array) | undefined): Promise<{
   verifier: string;
   challenge: string;
@@ -779,6 +812,85 @@ export async function createLoopbackOAuthCallbackReceiver(
     close: () => {
       server.close();
     },
+  };
+}
+
+export class McpOAuthObsidianCallbackBridge {
+  private readonly receivers = new Set<ObsidianProtocolOAuthCallbackReceiver>();
+
+  createReceiver(): McpOAuthCallbackReceiver {
+    const receiver = new ObsidianProtocolOAuthCallbackReceiver(() => {
+      this.receivers.delete(receiver);
+    });
+    this.receivers.add(receiver);
+    return receiver;
+  }
+
+  handleProtocolCallback(params: McpOAuthProtocolParams): boolean {
+    const callback = callbackFromProtocolParams(params);
+    for (const receiver of this.receivers) {
+      if (receiver.receive(callback)) return true;
+    }
+    return false;
+  }
+}
+
+class ObsidianProtocolOAuthCallbackReceiver implements McpOAuthCallbackReceiver {
+  readonly redirectUri = MCP_OAUTH_OBSIDIAN_REDIRECT_URI;
+  private callback: McpOAuthCallback | null = null;
+  private expectedState = "";
+  private waiter: ((callback: McpOAuthCallback) => void) | null = null;
+  private closed = false;
+
+  constructor(private readonly onClose: () => void) {}
+
+  receive(callback: McpOAuthCallback): boolean {
+    if (this.closed) return false;
+    if (this.expectedState && callback.state !== this.expectedState) return false;
+    this.callback = callback;
+    this.waiter?.(callback);
+    return true;
+  }
+
+  async waitForCallback(expectedState: string, timeoutMs: number): Promise<McpOAuthCallback> {
+    this.expectedState = expectedState;
+    let timeoutId: number | undefined;
+    const callback = await new Promise<McpOAuthCallback>((resolve, reject) => {
+      const deliver = (value: McpOAuthCallback): void => {
+        if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+        this.waiter = null;
+        resolve(value);
+      };
+      this.waiter = deliver;
+      timeoutId = window.setTimeout(() => {
+        this.waiter = null;
+        reject(
+          new Error(
+            "Timed out waiting for MCP OAuth callback. If the browser did not return to Obsidian, " +
+              "register the Obsidian redirect URI with the provider or authenticate this server on desktop.",
+          ),
+        );
+      }, timeoutMs);
+      if (this.callback) deliver(this.callback);
+    });
+    if (callback.state !== expectedState) throw new Error("MCP OAuth callback state did not match.");
+    return callback;
+  }
+
+  close(): void {
+    this.closed = true;
+    this.expectedState = "";
+    this.waiter = null;
+    this.onClose();
+  }
+}
+
+function callbackFromProtocolParams(params: McpOAuthProtocolParams): McpOAuthCallback {
+  return {
+    code: stringValue(params.code),
+    state: stringValue(params.state),
+    error: stringValue(params.error) || undefined,
+    errorDescription: stringValue(params.error_description) || stringValue(params.errorDescription) || undefined,
   };
 }
 

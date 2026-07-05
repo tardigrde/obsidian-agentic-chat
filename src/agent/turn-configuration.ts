@@ -46,7 +46,15 @@ export class AgentTurnConfiguration {
   }
 
   setThinkingOverride(level: ThinkingLevel | null): void {
-    this.thinkingOverride = level;
+    if (level === null) {
+      this.thinkingOverride = null;
+      return;
+    }
+    const settings = this.getSettings();
+    const levels = this.getActiveThinkingLevels();
+    const defaultLevel = resolveThinkingLevelForTurn(settings.thinkingLevel, null, levels);
+    const requestedLevel = resolveThinkingLevelForTurn(settings.thinkingLevel, level, levels);
+    this.thinkingOverride = requestedLevel === defaultLevel ? null : requestedLevel;
   }
 
   getThinkingOverride(): ThinkingLevel | null {

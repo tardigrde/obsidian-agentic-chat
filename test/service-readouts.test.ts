@@ -11,10 +11,10 @@ import {
   agentSupportsImages,
 } from "../src/agent/service-readouts";
 
-function assistant(inputTokens: number, totalCost = 0): AgentMessage {
+function assistant(inputTokens: number, totalCost = 0, text = "ok"): AgentMessage {
   return {
     role: "assistant",
-    content: [{ type: "text", text: "ok" }],
+    content: [{ type: "text", text }],
     api: "openai-completions",
     provider: "openrouter",
     model: "test/model",
@@ -59,8 +59,8 @@ function model(overrides: Partial<Model<Api>> = {}): Model<Api> {
 }
 
 describe("agent service readouts", () => {
-  it("reports context fraction from the active model window", () => {
-    expect(agentContextFraction({ messages: [assistant(250)], model: model({ contextWindow: 1_000 }) })).toBe(0.25);
+  it("reports current transcript context fraction from the active model window", () => {
+    expect(agentContextFraction({ messages: [assistant(250, 0, "x".repeat(1_000))], model: model({ contextWindow: 1_000 }) })).toBe(0.25);
     expect(agentContextFraction({ messages: [assistant(250)], model: undefined })).toBeUndefined();
   });
 

@@ -1,5 +1,6 @@
 import type { ApprovalPolicy } from "../agent/approval";
 import { ensureMcpOAuthSecretRefs, mcpSecretId } from "../secrets/secret-store";
+import { isValidHttpHeaderName } from "./http-headers";
 
 export type McpAuthType = "none" | "bearer" | "header" | "oauth";
 type LegacyMcpServerPreset = "generic" | "context7" | "oauth";
@@ -50,6 +51,39 @@ export interface McpKnownToolSettings {
   title: string;
   /** Informational only. The user still chooses the approval policy. */
   readOnlyHint: boolean;
+}
+
+export interface McpServerExportConfig {
+  kind: "agentic-chat.mcp-server";
+  version: 1;
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  authType: McpAuthType;
+  authHeaderName: string;
+  approval: ApprovalPolicy;
+  knownTools: Array<Pick<McpKnownToolSettings, "name" | "title" | "readOnlyHint">>;
+  oauth?: {
+    clientId: string;
+    dynamicClientRegistration: boolean;
+    registeredRedirectUri: string;
+    authorizationServer: string;
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+    registrationEndpoint: string;
+    resourceMetadataUrl: string;
+    scope: string;
+  };
+}
+
+export type McpSetupStepStatus = "complete" | "action" | "blocked";
+
+export interface McpSetupStep {
+  id: "endpoint" | "auth" | "discovery";
+  label: string;
+  status: McpSetupStepStatus;
+  message: string;
 }
 
 export interface McpOAuthSettings {
@@ -217,6 +251,136 @@ export function resetMcpCredentials(server: McpServerSettings): void {
   server.oauth = mcpOAuthSettingsForServer(server.id);
 }
 
+export function exportMcpServerConfig(server: McpServerSettings): McpServerExportConfig {
+  return {
+    kind: "agentic-chat.mcp-server",
+    version: 1,
+    id: server.id,
+    name: server.name,
+    url: server.url,
+    enabled: server.enabled,
+    authType: server.authType,
+    authHeaderName: server.authType === "header" ? server.authHeaderName : "",
+    approval: server.approval,
+    knownTools: server.knownTools.map((tool) => ({
+      name: tool.name,
+      title: tool.title,
+      readOnlyHint: tool.readOnlyHint,
+    })),
+    ...(server.authType === "oauth"
+      ? {
+          oauth: {
+            clientId: server.oauth.clientId,
+            dynamicClientRegistration: server.oauth.dynamicClientRegistration,
+            registeredRedirectUri: server.oauth.registeredRedirectUri,
+            authorizationServer: server.oauth.authorizationServer,
+            authorizationEndpoint: server.oauth.authorizationEndpoint,
+            tokenEndpoint: server.oauth.tokenEndpoint,
+            registrationEndpoint: server.oauth.registrationEndpoint,
+            resourceMetadataUrl: server.oauth.resourceMetadataUrl,
+            scope: server.oauth.scope,
+          },
+        }
+      : {}),
+  };
+}
+
+export function importMcpServerConfig(value: unknown): McpServerSettings {
+  const record = recordValue(value);
+  if (record.kind !== "agentic-chat.mcp-server" || record.version !== 1) {
+    throw new Error("MCP server config must be an agentic-chat.mcp-server v1 object.");
+  }
+  const authType = healAuthType(stringValue(record.authType) as McpAuthType, undefined, undefined);
+  const server = createMcpServerSettings({
+    id: stringValue(record.id) || "mcp",
+    name: stringValue(record.name) || stringValue(record.id) || "MCP server",
+    url: stringValue(record.url),
+    enabled: record.enabled === true,
+    authType,
+    authHeaderName: authType === "header" ? stringValue(record.authHeaderName) : "",
+    approval: healApproval(stringValue(record.approval) as ApprovalPolicy),
+    knownTools: healMcpKnownTools(record.knownTools),
+  });
+  if (authType === "oauth") {
+    const oauth = recordValue(record.oauth);
+    server.oauth = {
+      ...server.oauth,
+      clientId: stringValue(oauth.clientId),
+      dynamicClientRegistration: oauth.dynamicClientRegistration === true,
+      registeredRedirectUri: stringValue(oauth.registeredRedirectUri),
+      authorizationServer: stringValue(oauth.authorizationServer),
+      authorizationEndpoint: stringValue(oauth.authorizationEndpoint),
+      tokenEndpoint: stringValue(oauth.tokenEndpoint),
+      registrationEndpoint: stringValue(oauth.registrationEndpoint),
+      resourceMetadataUrl: stringValue(oauth.resourceMetadataUrl),
+      scope: stringValue(oauth.scope),
+    };
+  }
+  return server;
+}
+
+export function mcpServerEndpointProblem(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed || trimmed === "https://") return "Paste an HTTPS Streamable HTTP endpoint.";
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:") return "MCP server URLs must use https://.";
+    return "";
+  } catch {
+    return "Enter a valid HTTPS MCP server URL.";
+  }
+}
+
+export function mcpServerAuthProblem(server: McpServerSettings): string {
+  if (server.authType === "bearer") {
+    if (!server.authHeaderValue.trim()) return "Enter a bearer token before testing this MCP server.";
+    if (/[\r\n\0]/.test(server.authHeaderValue)) return "Bearer tokens must not contain line breaks or null bytes.";
+    return "";
+  }
+  if (server.authType === "header") {
+    if (!server.authHeaderName.trim()) return "Enter an auth header name before testing this MCP server.";
+    if (!isValidHttpHeaderName(server.authHeaderName)) {
+      return "Auth header names may contain only RFC token characters.";
+    }
+    if (!server.authHeaderValue.trim()) return "Enter an auth header value before testing this MCP server.";
+    if (/[\r\n\0]/.test(server.authHeaderValue)) {
+      return "Auth header values must not contain line breaks or null bytes.";
+    }
+  }
+  return "";
+}
+
+export function mcpServerSetupSteps(server: McpServerSettings): McpSetupStep[] {
+  const endpointProblem = mcpServerEndpointProblem(server.url);
+  const authProblem = mcpServerAuthProblem(server);
+  const canDiscover = !endpointProblem && !authProblem;
+  return [
+    {
+      id: "endpoint",
+      label: "Endpoint",
+      status: endpointProblem ? "action" : "complete",
+      message: endpointProblem || "HTTPS endpoint is valid.",
+    },
+    {
+      id: "auth",
+      label: "Authentication",
+      status: authProblem ? "action" : "complete",
+      message: authProblem || "Authentication settings are locally valid.",
+    },
+    {
+      id: "discovery",
+      label: "Discovery",
+      status: server.knownTools.length > 0 ? "complete" : canDiscover ? "action" : "blocked",
+      message:
+        server.knownTools.length > 0
+          ? `${server.knownTools.length} tool${server.knownTools.length === 1 ? "" : "s"} discovered.`
+          : canDiscover
+            ? "Run Test connection to discover tools."
+            : "Complete endpoint and authentication before discovery.",
+    },
+  ];
+}
+
 function healApproval(value: ApprovalPolicy | undefined): ApprovalPolicy {
   return value === "allow" || value === "ask" || value === "deny" ? value : "ask";
 }
@@ -295,6 +459,10 @@ export function serverIdFromMcpUrl(input: string | undefined): string {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function uniquifyMcpServerIds(servers: McpServerSettings[]): McpServerSettings[] {

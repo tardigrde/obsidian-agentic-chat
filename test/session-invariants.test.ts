@@ -88,6 +88,37 @@ describe("session/event-log invariants", () => {
     assertSessionFile(adapter.files.get(first.path) ?? "", ["keep me"]);
   });
 
+  it("reports artifact ids referenced by saved session messages", async () => {
+    const { manager } = makeManager();
+    await manager.createSession(DEFAULTS);
+    await manager.appendMessage({
+      role: "toolResult",
+      toolName: "fetch_url",
+      content: [{ type: "text", text: "Source artifact: [Research](artifact:artifact-text)" }],
+      details: { sourceArtifactId: "artifact-details" },
+      timestamp: 1,
+    } as unknown as AgentMessage);
+    await manager.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "Earlier conversation was summarized." }],
+      compactionManifest: {
+        artifacts: [{ id: "artifact-manifest" }],
+        externalInspect: [
+          {
+            action: "read",
+            externalRef: "external://src/main.ts",
+            sourceArtifactId: "artifact-external",
+          },
+        ],
+      },
+      timestamp: 2,
+    } as unknown as AgentMessage);
+
+    await expect(manager.listReferencedArtifactIds()).resolves.toEqual(
+      new Set(["artifact-details", "artifact-external", "artifact-manifest", "artifact-text"]),
+    );
+  });
+
   it("persists replayed tool-result turns exactly once and preserves assistant usage on reload", async () => {
     const replay = await runAgentReplay({
       prompt: "Create note.md",

@@ -42,7 +42,19 @@ describe("AgentTurnConfiguration", () => {
     turns.setThinkingOverride("high");
 
     expect(turns.getActiveThinkingLevel()).toBe("low");
-    expect(turns.getThinkingOverride()).toBe("high");
+    expect(turns.getThinkingOverride()).toBeNull();
+  });
+
+  it("does not keep a no-op thinking override", () => {
+    const turns = new AgentTurnConfiguration({
+      getSettings: () => settings({ thinkingLevel: "off" }),
+      resolveSupportedThinkingLevels: () => ["off"],
+    });
+
+    turns.setThinkingOverride("off");
+
+    expect(turns.getActiveThinkingLevel()).toBe("off");
+    expect(turns.getThinkingOverride()).toBeNull();
   });
 
   it("caches supported thinking levels by active model id", () => {

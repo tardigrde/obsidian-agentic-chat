@@ -3,6 +3,12 @@ main.js
 *.js.map
 coverage/
 .DS_Store
+.env
+.env.*
+!.env.example
+DOGFOOD_BUGS.md
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 data.json
 sessions/
 

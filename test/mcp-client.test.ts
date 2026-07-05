@@ -460,6 +460,114 @@ describe("McpHttpClient", () => {
     })).toEqual(["initialize", "initialize", "notifications/initialized", "tools/list"]);
   });
 
+  it("refreshes near-expiry OAuth tokens before sending MCP requests and persists the new token", async () => {
+    const requests: WebHttpRequest[] = [];
+    let saved = 0;
+    const mcpServer = oauthServer();
+    mcpServer.oauth = {
+      ...mcpServer.oauth,
+      clientId: "client-1",
+      accessToken: "old-access",
+      refreshToken: "refresh-1",
+      tokenEndpoint: "https://auth.example.com/token",
+      expiresAt: Date.now() + 500,
+      scope: "openid",
+    };
+    const fetcher = queuedFetcher(
+      [
+        {
+          status: 200,
+          text: JSON.stringify({
+            access_token: "fresh-access",
+            refresh_token: "refresh-2",
+            expires_in: 3600,
+            scope: "openid profile",
+          }),
+          headers: {},
+        },
+        response({ protocolVersion: "2025-11-25" }),
+        { status: 202, text: "", headers: {} },
+        jsonRpc(2, { tools: [{ name: "search" }] }),
+      ],
+      (request) => requests.push(request),
+    );
+
+    const client = new McpHttpClient({
+      server: mcpServer,
+      fetcher,
+      onServerChanged: () => {
+        saved += 1;
+      },
+    });
+
+    await expect(client.listTools()).resolves.toMatchObject([{ name: "search" }]);
+
+    const refreshBody = new URLSearchParams(requests[0].body ?? "");
+    expect(requests[0].url).toBe("https://auth.example.com/token");
+    expect(refreshBody.get("grant_type")).toBe("refresh_token");
+    expect(refreshBody.get("refresh_token")).toBe("refresh-1");
+    expect(mcpServer.oauth).toMatchObject({
+      accessToken: "fresh-access",
+      refreshToken: "refresh-2",
+      scope: "openid profile",
+    });
+    expect(saved).toBe(1);
+    expect(requests.slice(1).map((request) => request.headers?.Authorization)).toEqual([
+      "Bearer fresh-access",
+      "Bearer fresh-access",
+      "Bearer fresh-access",
+    ]);
+  });
+
+  it("persists token cleanup when proactive refresh discovers an invalid grant", async () => {
+    const requests: WebHttpRequest[] = [];
+    let saved = 0;
+    const mcpServer = oauthServer();
+    mcpServer.oauth = {
+      ...mcpServer.oauth,
+      clientId: "client-1",
+      accessToken: "old-access",
+      refreshToken: "bad-refresh",
+      tokenEndpoint: "https://auth.example.com/token",
+      expiresAt: Date.now() + 500,
+      scope: "openid",
+    };
+    const fetcher = queuedFetcher(
+      [
+        { status: 400, text: JSON.stringify({ error: "invalid_grant" }), headers: {} },
+        {
+          status: 401,
+          text: "",
+          headers: {
+            "www-authenticate":
+              'Bearer error="invalid_request", error_description="Authorization header is required"',
+          },
+        },
+      ],
+      (request) => requests.push(request),
+    );
+
+    const client = new McpHttpClient({
+      server: mcpServer,
+      fetcher,
+      onServerChanged: () => {
+        saved += 1;
+      },
+    });
+
+    await expect(client.listTools()).rejects.toThrow(/requires OAuth authentication/i);
+
+    expect(saved).toBe(1);
+    expect(mcpServer.oauth).toMatchObject({
+      accessToken: "",
+      refreshToken: "",
+      expiresAt: 0,
+      scope: "",
+    });
+    expect(requests[0].url).toBe("https://auth.example.com/token");
+    expect(requests[1].headers).not.toHaveProperty("Authorization");
+  });
+
   it("prompts for OAuth authentication when a 401 cannot be refreshed", async () => {
     const mcpServer = oauthServer();
     const fetcher = queuedFetcher([

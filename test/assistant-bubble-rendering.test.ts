@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { enhanceCallouts, renderMermaidBlocks } from "../src/ui/assistant-bubble";
+import { classifyRenderedChatLink, enhanceCallouts, renderMermaidBlocks } from "../src/ui/assistant-bubble";
 
 class FakeClassList {
   private readonly values = new Set<string>();
@@ -167,6 +167,27 @@ afterEach(() => {
 });
 
 describe("assistant markdown rendering helpers", () => {
+  it("classifies rendered vault and external links", () => {
+    expect(classifyRenderedChatLink(anchor({ "data-href": "Notes/Plan.md" }))).toEqual({
+      kind: "vault",
+      target: "Notes/Plan.md",
+    });
+    expect(classifyRenderedChatLink(anchor({ href: "Notes/Plan%20A.md" }))).toEqual({
+      kind: "vault",
+      target: "Notes/Plan A.md",
+    });
+    expect(classifyRenderedChatLink(anchor({ href: "https://example.com/path" }))).toEqual({
+      kind: "external",
+      target: "https://example.com/path",
+    });
+    expect(classifyRenderedChatLink(anchor({ href: "external://src/app.ts" }))).toEqual({
+      kind: "external",
+      target: "external://src/app.ts",
+    });
+    expect(classifyRenderedChatLink(anchor({ href: "artifact:artifact-1" }))).toBeNull();
+    expect(classifyRenderedChatLink(anchor({ href: "#local-heading" }))).toBeNull();
+  });
+
   it("converts Obsidian callout blockquotes when MarkdownRenderer leaves them plain", () => {
     const root = el("div");
     const blockquote = el("blockquote");
@@ -273,3 +294,9 @@ describe("assistant markdown rendering helpers", () => {
     expect(root.children[0].classList.contains("agentic-chat-mermaid-error")).toBe(true);
   });
 });
+
+function anchor(attrs: Record<string, string>): { getAttribute: (name: string) => string | null } {
+  return {
+    getAttribute: (name: string) => attrs[name] ?? null,
+  };
+}

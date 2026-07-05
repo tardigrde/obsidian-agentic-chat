@@ -26,6 +26,7 @@ export interface AgentSessionActionsOptions {
   sessions: AgentSessionActionsRuntime;
   activation: AgentSessionActivationRuntime;
   notifyChange: () => void;
+  afterDelete?: () => void | Promise<void>;
 }
 
 export class AgentSessionActions {
@@ -61,8 +62,25 @@ export class AgentSessionActions {
   async deleteSession(path: string): Promise<void> {
     const active = this.options.sessions.activePath;
     await this.options.sessions.delete(path);
+    await this.options.afterDelete?.();
     if (active === path) await this.newSession();
     else this.options.notifyChange();
+  }
+
+  async clearSessions(): Promise<number> {
+    return this.sessionSwaps.enqueue(async () => {
+      const sessions = await this.options.sessions.list();
+      if (sessions.length === 0) {
+        this.options.notifyChange();
+        return 0;
+      }
+      this.options.activation.detachAgent();
+      for (const session of sessions) await this.options.sessions.delete(session.path);
+      await this.options.afterDelete?.();
+      const { messages } = await this.options.sessions.create();
+      await this.activateSession(messages);
+      return sessions.length;
+    });
   }
 
   async renameSession(path: string, name: string): Promise<void> {

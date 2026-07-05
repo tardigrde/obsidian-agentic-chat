@@ -1,7 +1,8 @@
 import { MarkdownView, TFile, TFolder, type App } from "obsidian";
 import type { ImageContent } from "@earendil-works/pi-ai";
+import { isInstructionFilePath } from "../agent/instructions";
 import { buildAttachmentSection } from "./attachments";
-import { buildActiveNoteSection, MAX_ACTIVE_NOTE_CHARS } from "./active-note";
+import { buildActiveNoteSection, MAX_ACTIVE_NOTE_CHARS, type ActiveNoteContextCache } from "./active-note";
 import { attachmentDisplayPath, parseVaultAttachmentRef } from "./attachment-ref";
 import { FOLDER_PREFIX } from "./autocomplete";
 import { isTextContextAttachment, textContextSection, type ContextAttachment } from "./context-attachments";
@@ -13,6 +14,7 @@ export interface PromptContextOptions {
   attachments: ContextAttachment[];
   activeNotePath: string | null;
   isPathIgnored: (path: string) => boolean;
+  activeNoteCache?: ActiveNoteContextCache;
 }
 
 export interface ImageAttachmentOptions {
@@ -24,7 +26,9 @@ export interface ImageAttachmentOptions {
 /** Build the `<context>` preamble sent before a user prompt. */
 export async function buildPromptContext(options: PromptContextOptions): Promise<string> {
   const sections: string[] = [];
-  if (options.activeNotePath) sections.push(await loadActiveNoteSection(options, options.activeNotePath));
+  if (options.activeNotePath && !isInstructionFilePath(options.activeNotePath)) {
+    sections.push(await loadActiveNoteSection(options, options.activeNotePath));
+  }
 
   for (const entry of options.attachments) {
     if (isTextContextAttachment(entry)) {
@@ -93,18 +97,23 @@ async function loadActiveNoteSection(options: PromptContextOptions, path: string
   }
 
   const file = options.app.vault.getAbstractFileByPath(path);
-  if (!(file instanceof TFile)) {
-    return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
-  }
+  if (!(file instanceof TFile)) return renderActiveNote(options, { path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
 
   let full: string;
   try {
     full = await options.app.vault.cachedRead(file);
   } catch {
-    return buildActiveNoteSection({ path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
+    return renderActiveNote(options, { path, full: null, limit: MAX_ACTIVE_NOTE_CHARS });
   }
   const visibleRange = full.length > MAX_ACTIVE_NOTE_CHARS ? visibleEditorRange(options.app, file) : null;
-  return buildActiveNoteSection({ path, full, visibleRange, limit: MAX_ACTIVE_NOTE_CHARS });
+  return renderActiveNote(options, { path, full, visibleRange, limit: MAX_ACTIVE_NOTE_CHARS });
+}
+
+function renderActiveNote(
+  options: PromptContextOptions,
+  content: Parameters<typeof buildActiveNoteSection>[0],
+): string {
+  return options.activeNoteCache?.render(content) ?? buildActiveNoteSection(content);
 }
 
 function folderListing(options: PromptContextOptions, folderPath: string): string | null {

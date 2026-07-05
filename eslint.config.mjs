@@ -7,21 +7,21 @@ const tsconfigRootDir = fileURLToPath(new URL(".", import.meta.url));
 
 export default tseslint.config(
   {
-    // Build output, deps, and the separate e2e toolchain (its own ESM/wdio types) are never linted.
+    // Build output and deps are never linted.
     ignores: [
       "main.js",
       "node_modules/**",
       "esbuild.config.mjs",
-      "test/e2e/**",
-      "wdio.conf.mjs",
-      "wdio.conf.mts",
+      "docs/.vitepress/cache/**",
+      "docs/.vitepress/dist/**",
+      "logs/**",
       ".obsidian-cache/**",
     ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.ts", "test/**/*.ts", "*.ts", "*.mjs", "scripts/**/*.mjs"],
+    files: ["src/**/*.ts", "test/**/*.ts", "*.ts", "*.mjs", "*.mts", "scripts/**/*.mjs"],
     languageOptions: {
       // The plugin runs in the Obsidian renderer (DOM) on top of Node APIs.
       globals: { ...globals.browser, ...globals.node },
@@ -32,16 +32,21 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" },
       ],
-      // Floating promises are a real bug class in an event-driven agent loop, but
-      // full type-aware linting is the heavier `D2` follow-up — keep the base lean.
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
   {
-    files: ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "vitest.live.config.ts"],
+    files: [
+      "src/**/*.ts",
+      "test/**/*.ts",
+      "scripts/**/*.ts",
+      "vitest.config.ts",
+      "vitest.live.config.ts",
+      "wdio.conf.mts",
+    ],
     languageOptions: {
       parserOptions: {
-        project: "./tsconfig.eslint.json",
+        project: ["./tsconfig.eslint.json", "./tsconfig.e2e.json"],
         tsconfigRootDir,
       },
     },

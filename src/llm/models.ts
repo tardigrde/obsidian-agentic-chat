@@ -100,7 +100,7 @@ function buildOpenRouterModel(config: ModelConfig): Model<"openai-completions"> 
         contextWindow: DEFAULT_CONTEXT_WINDOW,
         maxTokens: DEFAULT_MAX_TOKENS,
       };
-  model.compat = { ...model.compat, openRouterRouting: buildRouting(config.privacy) };
+  model.compat = { ...model.compat, openRouterRouting: buildOpenRouterRouting(config.privacy) };
   return model;
 }
 
@@ -128,7 +128,7 @@ function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completi
     name: config.modelId,
     api: "openai-completions",
     provider: "openai-compatible",
-    baseUrl: normalizeBaseUrl(config.openaiCompatibleBaseUrl, DEFAULT_OPENAI_COMPATIBLE_BASE_URL),
+    baseUrl: normalizeOpenAICompatibleApiBaseUrl(config.openaiCompatibleBaseUrl),
     reasoning: false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -147,7 +147,7 @@ function normalizeBaseUrl(value: string, fallback: string): string {
   return (value.trim() || fallback).replace(/\/+$/, "");
 }
 
-function buildRouting(privacy: PrivacySettings): OpenRouterRouting {
+export function buildOpenRouterRouting(privacy: PrivacySettings): OpenRouterRouting {
   const routing: OpenRouterRouting = { allow_fallbacks: privacy.allowFallbacks };
   if (privacy.denyDataCollection) routing.data_collection = "deny";
   if (privacy.requireZDR) routing.zdr = true;
@@ -173,6 +173,7 @@ export interface OpenRouterModelInfo {
   name: string;
   contextLength: number | null;
   supportsTools: boolean;
+  supportsReasoning?: boolean;
 }
 
 /**
@@ -225,7 +226,7 @@ export async function listOpenRouterModels(
   const timeoutMs = options?.timeoutMs ?? DEFAULT_LIST_TIMEOUT_MS;
   let status: number;
   let payload: {
-    data?: Array<{ id: string; name?: string; context_length?: number; supported_parameters?: string[] }>;
+    data?: Array<ModelListItem>;
   } | null;
   try {
     if (options?.fetchImpl) {
@@ -268,7 +269,95 @@ export async function listOpenRouterModels(
     name: model.name ?? model.id,
     contextLength: model.context_length ?? null,
     supportsTools: (model.supported_parameters ?? []).includes("tools"),
+    supportsReasoning: modelSupportsReasoning(model),
   }));
+}
+
+/**
+ * Fetch a generic OpenAI-compatible `/models` list. Unlike OpenRouter, most
+ * gateways do not expose reliable tool/reasoning metadata, so callers should
+ * present the returned ids as plain model choices instead of inferring feature
+ * support from the catalog.
+ */
+export async function listOpenAICompatibleModels(
+  apiKey: string,
+  options: {
+    baseUrl: string;
+    fetchImpl?: typeof fetch;
+    timeoutMs?: number;
+  },
+): Promise<OpenRouterModelInfo[]> {
+  const url = openAICompatibleModelsUrl(options.baseUrl);
+  const timeoutMs = options.timeoutMs ?? DEFAULT_LIST_TIMEOUT_MS;
+  let status: number;
+  let payload:
+    | {
+        data?: Array<ModelListItem>;
+      }
+    | null;
+  try {
+    if (options.fetchImpl) {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await options.fetchImpl(url, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: controller.signal,
+        });
+        status = response.status;
+        const responsePayload: unknown = await response.json();
+        payload = isModelListPayload(responsePayload) ? responsePayload : null;
+      } finally {
+        window.clearTimeout(timer);
+      }
+    } else {
+      const response = await withTimeout(
+        requestUrl({
+          url,
+          headers: { Authorization: `Bearer ${apiKey}` },
+          throw: false,
+        }),
+        timeoutMs,
+      );
+      status = response.status;
+      payload = response.json as typeof payload;
+    }
+  } catch (error) {
+    if (error instanceof RequestTimeoutError || isAbortError(error)) {
+      throw new ModelListError("Timed out while listing models.", 408);
+    }
+    throw new ModelListError(`Failed to list models: ${(error as Error).message}`);
+  }
+  if (status < 200 || status >= 300) {
+    throw new ModelListError(`Failed to list models (status ${status}).`, status);
+  }
+  return (payload?.data ?? []).map((model) => ({
+    id: model.id,
+    name: model.name ?? model.id,
+    contextLength: model.context_length ?? null,
+    supportsTools: (model.supported_parameters ?? []).includes("tools"),
+    supportsReasoning: modelSupportsReasoning(model),
+  }));
+}
+
+function openAICompatibleModelsUrl(baseUrl: string): string {
+  const normalized = normalizeOpenAICompatibleApiBaseUrl(baseUrl);
+  if (/\/chat\/completions$/i.test(normalized)) return normalized.replace(/\/chat\/completions$/i, "/models");
+  return `${normalized}/models`;
+}
+
+export function normalizeOpenAICompatibleApiBaseUrl(baseUrl: string): string {
+  const normalized = normalizeBaseUrl(baseUrl, DEFAULT_OPENAI_COMPATIBLE_BASE_URL);
+  try {
+    const url = new URL(normalized);
+    if (url.pathname === "" || url.pathname === "/") {
+      url.pathname = "/api";
+      return url.toString().replace(/\/+$/, "");
+    }
+  } catch {
+    // Keep the original normalization for relative or otherwise non-URL test doubles.
+  }
+  return normalized;
 }
 
 class RequestTimeoutError extends Error {}
@@ -280,7 +369,7 @@ function isAbortError(error: unknown): boolean {
 function isModelListPayload(
   value: unknown,
 ): value is {
-  data?: Array<{ id: string; name?: string; context_length?: number; supported_parameters?: string[] }>;
+  data?: ModelListItem[];
 } {
   if (typeof value !== "object" || value === null) return false;
   if (!("data" in value) || value.data === undefined) return true;
@@ -299,9 +388,28 @@ function isModelListPayload(
         (!("supported_parameters" in model) ||
           model.supported_parameters === undefined ||
           (Array.isArray(model.supported_parameters) &&
-            model.supported_parameters.every((parameter: unknown) => typeof parameter === "string"))),
+            model.supported_parameters.every((parameter: unknown) => typeof parameter === "string"))) &&
+        (!("supports_reasoning" in model) ||
+          model.supports_reasoning === undefined ||
+          typeof model.supports_reasoning === "boolean") &&
+        (!("reasoning" in model) || model.reasoning === undefined || typeof model.reasoning === "object"),
     )
   );
+}
+
+interface ModelListItem {
+  id: string;
+  name?: string;
+  context_length?: number;
+  supported_parameters?: string[];
+  supports_reasoning?: boolean;
+  reasoning?: { supported_efforts?: string[] | null } | null;
+}
+
+function modelSupportsReasoning(model: ModelListItem): boolean {
+  if (typeof model.supports_reasoning === "boolean") return model.supports_reasoning;
+  if (model.reasoning && typeof model.reasoning === "object") return true;
+  return (model.supported_parameters ?? []).includes("reasoning");
 }
 
 async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> {

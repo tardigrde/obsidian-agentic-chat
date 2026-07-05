@@ -38,6 +38,7 @@ function makeActivation(agent: Agent | null = null): { activation: AgentSessionA
       clearSessionState: () => events.push("tools:clear"),
     },
     runtimeResources: {
+      clearSessionState: () => events.push("resources:clear"),
       reload: async () => {
         events.push("resources:reload");
       },
@@ -52,7 +53,7 @@ describe("AgentSessionActivation", () => {
 
     await activation.activate([userMessage("loaded")]);
 
-    expect(events).toEqual(["persist:1", "state:reset", "tools:clear", "resources:reload", "replace:1"]);
+    expect(events).toEqual(["persist:1", "state:reset", "tools:clear", "resources:clear", "resources:reload", "replace:1"]);
     expect(activation.currentAgent?.state.messages).toEqual([userMessage("loaded")]);
   });
 
@@ -61,7 +62,7 @@ describe("AgentSessionActivation", () => {
 
     await activation.activate([userMessage("rewound")], { reloadResources: false });
 
-    expect(events).toEqual(["persist:1", "state:reset", "tools:clear", "replace:1"]);
+    expect(events).toEqual(["persist:1", "state:reset", "tools:clear", "resources:clear", "replace:1"]);
   });
 
   it("exposes the live parent agent and detaches it", () => {

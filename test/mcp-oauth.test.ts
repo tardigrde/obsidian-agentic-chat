@@ -5,9 +5,14 @@ import {
   DEFAULT_MCP_OAUTH_CALLBACK_PORT,
   DEFAULT_MCP_OAUTH_REDIRECT_URI,
   discoverMcpOAuthMetadata,
+  forgetMcpOAuthTokens,
+  hasMcpOAuthAccess,
+  MCP_OAUTH_OBSIDIAN_REDIRECT_URI,
+  McpOAuthObsidianCallbackBridge,
   mcpResourceUri,
   parseWwwAuthenticate,
   refreshMcpOAuthToken,
+  shouldRefreshMcpOAuthToken,
   type McpOAuthCallbackReceiver,
 } from "../src/mcp/oauth";
 import { createMcpServerSettings } from "../src/mcp/settings";
@@ -47,6 +52,70 @@ describe("MCP OAuth", () => {
 
   it("exports the stable redirect URI used for manual OAuth client registration", () => {
     expect(DEFAULT_MCP_OAUTH_REDIRECT_URI).toBe("http://localhost:37123/oauth/callback");
+    expect(MCP_OAUTH_OBSIDIAN_REDIRECT_URI).toBe("obsidian://agentic-chat-mcp-oauth");
+  });
+
+  it("delivers Obsidian protocol OAuth callbacks for mobile sign-in", async () => {
+    const bridge = new McpOAuthObsidianCallbackBridge();
+    const receiver = bridge.createReceiver();
+
+    const pending = receiver.waitForCallback("state-1", 1_000);
+    expect(bridge.handleProtocolCallback({ action: "agentic-chat-mcp-oauth", code: "auth-code", state: "state-1" })).toBe(true);
+
+    await expect(pending).resolves.toEqual({ code: "auth-code", state: "state-1", error: undefined, errorDescription: undefined });
+    await receiver.close();
+    expect(bridge.handleProtocolCallback({ action: "agentic-chat-mcp-oauth", code: "late", state: "state-1" })).toBe(false);
+  });
+
+  it("surfaces provider errors from Obsidian protocol OAuth callbacks", async () => {
+    const bridge = new McpOAuthObsidianCallbackBridge();
+    const receiver = bridge.createReceiver();
+
+    const pending = receiver.waitForCallback("state-1", 1_000);
+    expect(
+      bridge.handleProtocolCallback({
+        action: "agentic-chat-mcp-oauth",
+        error: "access_denied",
+        error_description: "User cancelled",
+        state: "state-1",
+      }),
+    ).toBe(true);
+
+    await expect(pending).resolves.toEqual({
+      code: "",
+      state: "state-1",
+      error: "access_denied",
+      errorDescription: "User cancelled",
+    });
+    await receiver.close();
+  });
+
+  it("routes concurrent Obsidian protocol OAuth callbacks by state", async () => {
+    const bridge = new McpOAuthObsidianCallbackBridge();
+    const first = bridge.createReceiver();
+    const second = bridge.createReceiver();
+
+    const firstPending = first.waitForCallback("state-1", 1_000);
+    const secondPending = second.waitForCallback("state-2", 1_000);
+
+    expect(bridge.handleProtocolCallback({ code: "second-code", state: "state-2" })).toBe(true);
+    await expect(secondPending).resolves.toEqual({
+      code: "second-code",
+      state: "state-2",
+      error: undefined,
+      errorDescription: undefined,
+    });
+
+    expect(bridge.handleProtocolCallback({ code: "first-code", state: "state-1" })).toBe(true);
+    await expect(firstPending).resolves.toEqual({
+      code: "first-code",
+      state: "state-1",
+      error: undefined,
+      errorDescription: undefined,
+    });
+
+    await first.close();
+    await second.close();
   });
 
   it("falls back to an ephemeral callback port when the stable port is busy for dynamic clients", async () => {
@@ -421,6 +490,87 @@ describe("MCP OAuth", () => {
     expect(server.oauth.accessToken).toBe("new-access");
     expect(server.oauth.refreshToken).toBe("refresh-2");
     expect(server.oauth.expiresAt).toBe(15_000);
+  });
+
+  it("classifies near-expiry OAuth tokens for refresh before use", () => {
+    const server = createOAuthMcpServer();
+    server.oauth = {
+      ...server.oauth,
+      accessToken: "access",
+      expiresAt: 70_000,
+    };
+
+    expect(hasMcpOAuthAccess(server, 1_000)).toBe(true);
+    expect(shouldRefreshMcpOAuthToken(server, 1_000)).toBe(false);
+    expect(hasMcpOAuthAccess(server, 20_000)).toBe(false);
+    expect(shouldRefreshMcpOAuthToken(server, 20_000)).toBe(true);
+  });
+
+  it("forgets OAuth tokens without deleting client setup or secret references", () => {
+    const server = createOAuthMcpServer();
+    server.knownTools = [{ name: "search", title: "Search", readOnlyHint: false }];
+    server.oauth = {
+      ...server.oauth,
+      clientId: "manual-client",
+      clientSecretSecretId: "secret-client",
+      clientSecret: "manual-secret",
+      dynamicClientRegistration: false,
+      registeredRedirectUri: DEFAULT_MCP_OAUTH_REDIRECT_URI,
+      authorizationServer: "https://auth.example.com",
+      authorizationEndpoint: "https://auth.example.com/authorize",
+      tokenEndpoint: "https://auth.example.com/token",
+      registrationEndpoint: "https://auth.example.com/register",
+      resourceMetadataUrl: OAUTH_MCP_RESOURCE_METADATA_URL,
+      accessTokenSecretId: "secret-access",
+      accessToken: "access",
+      refreshTokenSecretId: "secret-refresh",
+      refreshToken: "refresh",
+      expiresAt: 10_000,
+      scope: "openid profile",
+    };
+
+    forgetMcpOAuthTokens(server);
+
+    expect(server.oauth).toMatchObject({
+      clientId: "manual-client",
+      clientSecretSecretId: "secret-client",
+      clientSecret: "manual-secret",
+      registeredRedirectUri: DEFAULT_MCP_OAUTH_REDIRECT_URI,
+      tokenEndpoint: "https://auth.example.com/token",
+      accessTokenSecretId: "secret-access",
+      accessToken: "",
+      refreshTokenSecretId: "secret-refresh",
+      refreshToken: "",
+      expiresAt: 0,
+      scope: "",
+    });
+    expect(server.knownTools).toEqual([{ name: "search", title: "Search", readOnlyHint: false }]);
+  });
+
+  it("forgets stale OAuth tokens when refresh returns invalid_grant", async () => {
+    const server = createOAuthMcpServer();
+    server.oauth = {
+      ...server.oauth,
+      clientId: "client-1",
+      accessToken: "old-access",
+      refreshToken: "bad-refresh",
+      tokenEndpoint: "https://auth.example.com/token",
+      expiresAt: 1_000,
+      scope: "openid",
+    };
+    const fetcher: WebFetcher = async () => {
+      return json(400, { error: "invalid_grant" });
+    };
+
+    await expect(refreshMcpOAuthToken(server, fetcher, undefined, () => 5_000)).resolves.toBe(false);
+    expect(server.oauth).toMatchObject({
+      clientId: "client-1",
+      tokenEndpoint: "https://auth.example.com/token",
+      accessToken: "",
+      refreshToken: "",
+      expiresAt: 0,
+      scope: "",
+    });
   });
 
   it("accepts OAuth token expiry values encoded as strings", async () => {

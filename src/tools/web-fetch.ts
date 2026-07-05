@@ -1,6 +1,13 @@
 import { requestUrl } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
+import {
+  SourceArtifactDeduper,
+  extractReadableSource,
+  type SourceImportKind,
+  type SourceTextExtractor,
+} from "../retrieval/source-artifacts";
 
 /** A minimal HTTP request the web tools issue. */
 export interface WebHttpRequest {
@@ -29,23 +36,29 @@ export type WebFetcher = (request: WebHttpRequest, signal?: AbortSignal) => Prom
 
 /** Production fetcher over Obsidian's `requestUrl`. */
 export function createObsidianFetcher(): WebFetcher {
-  return async (request) => {
+  return async (request, signal) => {
+    throwIfAborted(signal);
     try {
-      const response = await requestUrl({
-        url: request.url,
-        method: request.method ?? "GET",
-        headers: request.headers,
-        body: request.body,
-        // Handle non-2xx ourselves so a 404/500 becomes a tool error the model
-        // can read, not an exception that aborts the turn.
-        throw: false,
-      });
+      const response = await withAbortSignal(
+        requestUrl({
+          url: request.url,
+          method: request.method ?? "GET",
+          headers: request.headers,
+          body: request.body,
+          // Handle non-2xx ourselves so a 404/500 becomes a tool error the model
+          // can read, not an exception that aborts the turn.
+          throw: false,
+        }),
+        signal,
+      );
+      throwIfAborted(signal);
       const headers: Record<string, string> = {};
       for (const [key, value] of Object.entries(response.headers ?? {})) {
         headers[key.toLowerCase()] = String(value);
       }
       return { status: response.status, text: response.text, headers };
     } catch (error) {
+      if (signal?.aborted || isAbortError(error)) throw error;
       // Offline / DNS failure / TLS error: surface as status 0 with the message
       // so the tool reports a clean error instead of crashing the agent turn.
       return { status: 0, text: error instanceof Error ? error.message : String(error), headers: {} };
@@ -70,6 +83,10 @@ export interface WebFetchConfig {
   fetcher: WebFetcher;
   /** Default cap on returned characters. */
   charLimit: number;
+  /** Optional artifact store used to persist full source imports for citation. */
+  artifactStore?: ToolArtifactStoreLike;
+  /** Optional shared dedupe cache for fetched source imports. */
+  sourceArtifacts?: SourceArtifactDeduper;
 }
 
 const ACCEPT_HEADER = "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8";
@@ -80,6 +97,7 @@ const ACCEPT_HEADER = "text/html,application/xhtml+xml,text/plain,application/js
  * sends the URL off-device, so it is only registered when web access is enabled.
  */
 export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof FetchParameters> {
+  const sourceArtifacts = config.sourceArtifacts ?? new SourceArtifactDeduper();
   return {
     name: "fetch_url",
     label: "Fetch web page",
@@ -92,6 +110,7 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
       const url = normalizeWebUrl(params.url);
       throwIfAborted(signal);
       const response = await config.fetcher({ url, method: "GET", headers: { Accept: ACCEPT_HEADER } }, signal);
+      throwIfAborted(signal);
       if (response.status === 0) {
         throw new Error(`Could not fetch ${url}: ${response.text || "network error"}.`);
       }
@@ -102,17 +121,43 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
       const offset = clampOffset(params.offset);
       const contentType = response.headers["content-type"] ?? "";
       const rendered = renderFetched(url, response.text, contentType, limit, offset);
+      const artifact =
+        config.artifactStore && rendered.sourceText
+          ? await sourceArtifacts.write(config.artifactStore, {
+              url,
+              title: rendered.title || undefined,
+              text: rendered.sourceText,
+              contentType,
+              extractor: rendered.extractor,
+              sourceKind: rendered.sourceKind,
+              mediaUrl: rendered.mediaUrl,
+              transcriptFormat: rendered.transcriptFormat,
+            })
+          : null;
+      const artifactText = artifact
+        ? `${rendered.text}\n\nSource artifact: ${artifact.artifactCitation}${
+            artifact.duplicate ? " (already imported)" : ""
+          }`
+        : rendered.text;
       return {
-        content: [{ type: "text", text: rendered.text }],
+        content: [{ type: "text", text: artifactText }],
         details: {
           url,
           title: rendered.title,
           contentType,
+          extractor: rendered.extractor,
+          sourceKind: rendered.sourceKind,
+          mediaUrl: rendered.mediaUrl,
+          transcriptFormat: rendered.transcriptFormat,
           offset: rendered.offset,
           nextOffset: rendered.nextOffset,
           totalChars: rendered.totalChars,
           truncated: rendered.truncated,
           hasMore: rendered.hasMore,
+          sourceArtifactId: artifact?.metadata.id,
+          sourceArtifactCitation: artifact?.artifactCitation,
+          sourceArtifactDuplicate: artifact?.duplicate,
+          sourceDedupKey: artifact?.provenance.dedupKey,
         },
       };
     },
@@ -122,6 +167,11 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
 interface RenderedPage {
   title: string;
   text: string;
+  sourceText: string;
+  extractor: SourceTextExtractor;
+  sourceKind: SourceImportKind;
+  mediaUrl?: string;
+  transcriptFormat?: string;
   offset: number;
   nextOffset: number | null;
   totalChars: number;
@@ -139,6 +189,9 @@ function renderFetched(url: string, raw: string, contentType: string, limit: num
     return {
       title: "",
       text: `Source: ${url}\n\n[Skipped: "${contentType}" is not text. fetch_url only returns readable text.]`,
+      sourceText: "",
+      extractor: "plain-text",
+      sourceKind: "web",
       offset: 0,
       nextOffset: null,
       totalChars: 0,
@@ -149,7 +202,18 @@ function renderFetched(url: string, raw: string, contentType: string, limit: num
   // Bound the input before the regex passes; note when we had to clip it.
   const clipped = raw.length > MAX_RAW_CHARS;
   const safeRaw = clipped ? raw.slice(0, MAX_RAW_CHARS) : raw;
-  const extracted = html ? extractReadableText(safeRaw) : { title: "", text: safeRaw };
+  const extracted = isTranscriptSource(url, contentType)
+    ? extractTranscriptSource(safeRaw, contentType)
+    : html
+      ? extractReadableSource(safeRaw, contentType)
+      : {
+          title: "",
+          text: safeRaw,
+          extractor: "plain-text" as const,
+          sourceKind: "web" as const,
+          mediaUrl: undefined,
+          transcriptFormat: undefined,
+        };
   const body = extracted.text.trim();
   const start = Math.min(offset, body.length);
   const end = Math.min(start + limit, body.length);
@@ -168,6 +232,11 @@ function renderFetched(url: string, raw: string, contentType: string, limit: num
   return {
     title: extracted.title,
     text: `${header}${range}\n\n${sliced || "(no readable text)"}${note}`,
+    sourceText: body,
+    extractor: extracted.extractor,
+    sourceKind: extracted.sourceKind,
+    mediaUrl: extracted.mediaUrl,
+    transcriptFormat: "transcriptFormat" in extracted ? extracted.transcriptFormat : undefined,
     offset: start,
     nextOffset,
     totalChars: body.length,
@@ -181,15 +250,51 @@ function isTextContentType(contentType: string): boolean {
   return /text\/|json|xml|markdown|javascript|ecmascript|csv|x-yaml|yaml/i.test(contentType);
 }
 
+function isTranscriptSource(url: string, contentType: string): boolean {
+  return /\b(?:text\/vtt|application\/x-subrip)\b/i.test(contentType) || /\.(vtt|srt)(?:[?#]|$)/i.test(url);
+}
+
+function extractTranscriptSource(
+  raw: string,
+  contentType: string,
+): {
+  title: string;
+  text: string;
+  extractor: "transcript-lite";
+  sourceKind: "transcript";
+  mediaUrl?: string;
+  transcriptFormat: string;
+} {
+  const format = /\bsrt\b|x-subrip/i.test(contentType) ? "srt" : "vtt";
+  return {
+    title: "",
+    text: normalizeTranscriptText(raw),
+    extractor: "transcript-lite",
+    sourceKind: "transcript",
+    transcriptFormat: format,
+  };
+}
+
+function normalizeTranscriptText(raw: string): string {
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^WEBVTT(?:\s|$)/i.test(line))
+    .filter((line) => !/^\d+$/.test(line))
+    .filter((line) => !/^\d{1,2}:\d{2}:\d{2}[,.]\d{3}\s+-->\s+\d{1,2}:\d{2}:\d{2}[,.]\d{3}/.test(line))
+    .filter((line) => !/^\d{2}:\d{2}[,.]\d{3}\s+-->\s+\d{2}:\d{2}[,.]\d{3}/.test(line))
+    .filter((line) => !/^NOTE(?:\s|$)/i.test(line))
+    .map((line) => line.replace(/<[^>]+>/g, " "))
+    .join("\n")
+    .replace(/[ \t\f\v\r]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function looksLikeHtml(text: string): boolean {
   return /<(!doctype html|html|head|body|p|div|a|span|h[1-6])\b/i.test(text.slice(0, 2000));
 }
-
-/** Remove these elements wholesale — their contents are never readable text. */
-const STRIP_BLOCKS = /<(script|style|noscript|template|svg|head|nav|footer)\b[^>]*>[\s\S]*?<\/\1>/gi;
-/** Block-level tags converted to a line break so paragraphs don't run together. */
-const BLOCK_TAGS =
-  /<\/?(p|div|section|article|header|main|aside|h[1-6]|li|ul|ol|tr|br|hr|table|blockquote|pre|figure)\b[^>]*>/gi;
 
 /**
  * Extract a page title and readable body text from raw HTML, deterministically
@@ -197,38 +302,8 @@ const BLOCK_TAGS =
  * scripts/styles/markup, decodes common entities, and collapses whitespace.
  */
 export function extractReadableText(html: string): { title: string; text: string } {
-  const title = decodeEntities((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? "").trim());
-  let body = html.replace(/<!--[\s\S]*?-->/g, " ");
-  body = body.replace(STRIP_BLOCKS, " ");
-  body = body.replace(BLOCK_TAGS, "\n");
-  body = body.replace(/<[^>]+>/g, " ");
-  body = decodeEntities(body);
-  body = body.replace(/[ \t\f\v\r]+/g, " ");
-  body = body.replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-  return { title, text: body };
-}
-
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-  mdash: "—",
-  ndash: "–",
-  hellip: "…",
-};
-
-function decodeEntities(input: string): string {
-  return input.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, code: string) => {
-    const lower = code.toLowerCase();
-    if (lower[0] === "#") {
-      const num = lower[1] === "x" ? Number.parseInt(lower.slice(2), 16) : Number.parseInt(lower.slice(1), 10);
-      return Number.isFinite(num) && num > 0 ? String.fromCodePoint(num) : match;
-    }
-    return NAMED_ENTITIES[lower] ?? match;
-  });
+  const extracted = extractReadableSource(html, "text/html");
+  return { title: extracted.title, text: extracted.text };
 }
 
 /**
@@ -307,7 +382,24 @@ function clampOffset(requested: number | undefined): number {
   return Number.isFinite(requested) && (requested as number) > 0 ? Math.floor(requested as number) : 0;
 }
 
-/** Throw if the run was aborted (requestUrl itself takes no signal). */
+/** Throw when a tool run has already been cancelled. */
 export function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new Error("Aborted.");
+}
+
+function withAbortSignal<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return promise;
+  throwIfAborted(signal);
+  let abortListener: (() => void) | undefined;
+  const abortPromise = new Promise<T>((_, reject) => {
+    abortListener = () => reject(new Error("Aborted."));
+    signal.addEventListener("abort", abortListener, { once: true });
+  });
+  return Promise.race([promise, abortPromise]).finally(() => {
+    if (abortListener) signal.removeEventListener("abort", abortListener);
+  });
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && /aborted/i.test(error.message);
 }

@@ -47,6 +47,11 @@ jobs:
             styles.css
 
       - name: Release
-        run: npx semantic-release
+        run: >
+          npx --yes
+          --package semantic-release@25.0.5
+          --package @semantic-release/exec@7.1.0
+          --package @semantic-release/git@10.0.1
+          semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

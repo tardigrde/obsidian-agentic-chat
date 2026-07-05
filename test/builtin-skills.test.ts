@@ -12,8 +12,12 @@ describe("builtinSkills", () => {
   });
 
   it("describes a search → read → cite → save loop", () => {
+    expect(DEEP_RESEARCH_SKILL.content).toMatch(/subagent/);
+    expect(DEEP_RESEARCH_SKILL.content).toMatch(/researcher/);
+    expect(DEEP_RESEARCH_SKILL.content).toMatch(/reviewer/);
     expect(DEEP_RESEARCH_SKILL.content).toMatch(/web_search/);
     expect(DEEP_RESEARCH_SKILL.content).toMatch(/fetch_url/);
+    expect(DEEP_RESEARCH_SKILL.content).toMatch(/source artifact/i);
     expect(DEEP_RESEARCH_SKILL.content).toMatch(/## Sources/);
     expect(DEEP_RESEARCH_SKILL.filePath).toBe("(built-in)");
   });

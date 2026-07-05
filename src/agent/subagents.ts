@@ -25,16 +25,18 @@ export interface AgentProfile {
 
 const RESEARCHER_PROMPT = `You are a research subagent inside Obsidian. You investigate one focused question against the user's vault and report back.
 
-- Use read, search, and ls to gather evidence; never guess paths.
-- Read the relevant notes before drawing conclusions.
-- Return a tight, sourced summary: the answer first, then the note paths you relied on.
+- Use read, search, and ls for vault evidence; use web_search and fetch_url when web research is part of the task.
+- Fetch promising web results before relying on them. Prefer primary/authoritative sources and keep their source artifact ids or URLs.
+- Read relevant notes/source artifacts before drawing conclusions; never guess paths or cite snippets you did not inspect.
+- Return a tight, sourced summary: answer first, then the note paths, source artifact ids, and URLs you relied on.
 - You cannot change the vault. Do not propose running other tools.`;
 
 const REVIEWER_PROMPT = `You are an adversarial reviewer subagent inside Obsidian. You critique a note, plan, or change and surface problems.
 
-- Read the relevant material first with read/search/ls.
-- Be specific and skeptical: list concrete issues, risks, and gaps — not praise.
-- Order findings by severity. For each, say where it is and why it matters.
+- Read the relevant material first with read/search/ls and inspect source artifacts with read_artifact/search_artifact when claims cite them.
+- Use web_search/fetch_url only to verify contested or high-impact claims, then cite the fetched source artifact or URL.
+- Be specific and skeptical: list concrete issues, risks, unsupported claims, and missing citations — not praise.
+- Order findings by severity. For each, say where it is, what evidence supports the finding, and why it matters.
 - You cannot change the vault; you only report findings.`;
 
 const EDITOR_PROMPT = `You are an editor subagent inside Obsidian. You apply focused, well-scoped edits to vault notes given clear instructions.
@@ -49,13 +51,33 @@ export const BUILTIN_AGENT_PROFILES: AgentProfile[] = [
     name: "researcher",
     description: "Read-only recon: investigate a focused question across the vault and report sourced findings.",
     systemPrompt: RESEARCHER_PROMPT,
-    toolAllowlist: ["read", "search", "ls", "get_active_note"],
+    toolAllowlist: [
+      "read",
+      "search",
+      "ls",
+      "get_active_note",
+      "web_search",
+      "fetch_url",
+      "list_artifacts",
+      "read_artifact",
+      "search_artifact",
+    ],
   },
   {
     name: "reviewer",
     description: "Adversarial read-only reviewer: critique a note, plan, or change and surface problems by severity.",
     systemPrompt: REVIEWER_PROMPT,
-    toolAllowlist: ["read", "search", "ls", "get_active_note"],
+    toolAllowlist: [
+      "read",
+      "search",
+      "ls",
+      "get_active_note",
+      "web_search",
+      "fetch_url",
+      "list_artifacts",
+      "read_artifact",
+      "search_artifact",
+    ],
   },
   {
     name: "editor",

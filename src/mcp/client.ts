@@ -362,6 +362,7 @@ export class McpHttpClient {
     }
     if (this.server.authType === "oauth") {
       if (shouldRefreshMcpOAuthToken(this.server)) {
+        const before = oauthTokenStateKey(this.server);
         const refreshed = await refreshMcpOAuthToken(
           this.server,
           this.fetcher,
@@ -369,7 +370,7 @@ export class McpHttpClient {
           Date.now,
           this.requestTimeoutMs,
         );
-        if (refreshed) await this.onServerChanged?.();
+        if (refreshed || before !== oauthTokenStateKey(this.server)) await this.onServerChanged?.();
       }
       if (this.server.oauth.accessToken) {
         headers.Authorization = assertValidHttpHeaderValue(`Bearer ${this.server.oauth.accessToken}`);
@@ -440,6 +441,11 @@ export class McpHttpClient {
 function bearerAuthorizationHeader(value: string): string {
   const trimmed = value.trim();
   return /^Bearer\s+/i.test(trimmed) ? trimmed : `Bearer ${trimmed}`;
+}
+
+function oauthTokenStateKey(server: McpServerSettings): string {
+  const { accessToken, refreshToken, expiresAt, scope } = server.oauth;
+  return JSON.stringify({ accessToken, refreshToken, expiresAt, scope });
 }
 
 export function normalizeMcpUrl(input: string): string {

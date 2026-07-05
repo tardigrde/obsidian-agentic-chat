@@ -19,6 +19,16 @@ function model() {
   });
 }
 
+function rootModel() {
+  return buildModel({
+    provider: "openai-compatible",
+    modelId: "WARN-GLOBAL_kimi-k2.6",
+    privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: false },
+    ollamaBaseUrl: "http://localhost:11434",
+    openaiCompatibleBaseUrl: "https://openwebui.example.com/",
+  });
+}
+
 function openRouterModel() {
   return buildModel({
     provider: "openrouter",
@@ -38,8 +48,11 @@ async function collect(stream: ReturnType<typeof streamOpenAICompatibleViaReques
 describe("streamOpenAICompatibleViaRequestUrl", () => {
   it("adapts a WebFetcher into an OpenAI-compatible requester", async () => {
     let captured: Parameters<WebFetcher>[0] | undefined;
-    const fetcher: WebFetcher = async (request) => {
+    let capturedSignal: AbortSignal | undefined;
+    const controller = new AbortController();
+    const fetcher: WebFetcher = async (request, signal) => {
       captured = request;
+      capturedSignal = signal;
       return {
         status: 200,
         text: "{\"ok\":true}",
@@ -53,6 +66,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
       contentType: "application/json",
       headers: { Authorization: "Bearer test-key" },
       body: "{\"model\":\"x\"}",
+      signal: controller.signal,
     });
 
     expect(captured).toMatchObject({
@@ -61,6 +75,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
       headers: { Authorization: "Bearer test-key", "Content-Type": "application/json" },
       body: "{\"model\":\"x\"}",
     });
+    expect(capturedSignal).toBe(controller.signal);
     expect(response.json).toEqual({ ok: true });
   });
 
@@ -100,6 +115,31 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     expect(events.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"]);
     expect(result.content).toEqual([{ type: "text", text: "pong" }]);
     expect(result.usage.totalTokens).toBe(4);
+  });
+
+  it("posts chat completions under /api for bare OpenWebUI roots", async () => {
+    let captured: OpenAICompatibleRequest | undefined;
+    const requester: OpenAICompatibleRequester = async (request) => {
+      captured = request;
+      return {
+        status: 200,
+        text: "",
+        json: {
+          choices: [{ message: { role: "assistant", content: "pong" }, finish_reason: "stop" }],
+        },
+      };
+    };
+
+    await collect(
+      streamOpenAICompatibleViaRequestUrl(
+        rootModel(),
+        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        { apiKey: "test-key" },
+        requester,
+      ),
+    );
+
+    expect(captured?.url).toBe("https://openwebui.example.com/api/chat/completions");
   });
 
   it("converts tool schemas and emits returned tool calls", async () => {
@@ -166,6 +206,80 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     expect(result.stopReason).toBe("toolUse");
     expect(result.content).toEqual([
       { type: "toolCall", id: "call_read", name: "read", arguments: { path: "Welcome.md" } },
+    ]);
+  });
+
+  it("suppresses provider-returned reasoning content when reasoning is off", async () => {
+    const requester: OpenAICompatibleRequester = async () => ({
+      status: 200,
+      text: "",
+      json: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              reasoning_content: "hidden chain",
+              content: "visible answer",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      },
+    });
+
+    const { events, result } = await collect(
+      streamOpenAICompatibleViaRequestUrl(
+        model(),
+        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        { apiKey: "test-key" },
+        requester,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"]);
+    expect(result.content).toEqual([{ type: "text", text: "visible answer" }]);
+  });
+
+  it("emits provider-returned reasoning content when reasoning is explicitly enabled", async () => {
+    const requester: OpenAICompatibleRequester = async () => ({
+      status: 200,
+      text: "",
+      json: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              reasoning_content: "visible reasoning",
+              content: "visible answer",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      },
+    });
+
+    const { events, result } = await collect(
+      streamOpenAICompatibleViaRequestUrl(
+        model(),
+        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        { apiKey: "test-key", reasoning: "low" },
+        requester,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "start",
+      "thinking_start",
+      "thinking_delta",
+      "thinking_end",
+      "text_start",
+      "text_delta",
+      "text_end",
+      "done",
+    ]);
+    expect(result.content).toEqual([
+      { type: "thinking", thinking: "visible reasoning", thinkingSignature: "reasoning_content" },
+      { type: "text", text: "visible answer" },
     ]);
   });
 
@@ -279,5 +393,70 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     expect(result.stopReason).toBe("error");
     expect(result.errorMessage).toContain("status 401");
     expect(result.errorMessage).toContain("Unauthorized");
+  });
+
+  it("retries transient OpenAI-compatible gateway errors", async () => {
+    let attempts = 0;
+    const requester: OpenAICompatibleRequester = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return {
+          status: 400,
+          text: "{\"detail\":\"Open WebUI: Server Connection Error\"}",
+          json: { detail: "Open WebUI: Server Connection Error" },
+        };
+      }
+      return {
+        status: 200,
+        text: "",
+        json: {
+          choices: [{ message: { role: "assistant", content: "recovered" }, finish_reason: "stop" }],
+        },
+      };
+    };
+
+    const { events, result } = await collect(
+      streamOpenAICompatibleViaRequestUrl(
+        model(),
+        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        { apiKey: "test-key", maxRetries: 1 },
+        requester,
+      ),
+    );
+
+    expect(attempts).toBe(2);
+    expect(events.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"]);
+    expect(result.content).toEqual([{ type: "text", text: "recovered" }]);
+  });
+
+  it("finishes as aborted when the signal fires before requestUrl returns", async () => {
+    let resolveRequest: ((response: Awaited<ReturnType<OpenAICompatibleRequester>>) => void) | undefined;
+    const requester: OpenAICompatibleRequester = () =>
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      });
+    const controller = new AbortController();
+    const pending = collect(
+      streamOpenAICompatibleViaRequestUrl(
+        model(),
+        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        { apiKey: "test-key", signal: controller.signal },
+        requester,
+      ),
+    );
+
+    controller.abort();
+    const { events, result } = await pending;
+    resolveRequest?.({
+      status: 200,
+      text: "",
+      json: {
+        choices: [{ message: { role: "assistant", content: "late" }, finish_reason: "stop" }],
+      },
+    });
+
+    expect(events.map((event) => event.type)).toEqual(["error"]);
+    expect(result.stopReason).toBe("aborted");
+    expect(result.content).toEqual([]);
   });
 });

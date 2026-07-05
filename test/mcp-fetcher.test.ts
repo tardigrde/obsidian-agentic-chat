@@ -7,19 +7,19 @@ describe("MCP proxy fetcher", () => {
     expect(
       shouldProxyMcpRequest(
         "https://team-docs.example.com/mcp",
-        "http://10.36.148.11:3128/",
+        "http://192.0.2.10:3128/",
         "localhost,127.0.0.1",
       ),
     ).toBe(true);
     expect(
       shouldProxyMcpRequest(
         "https://team-docs.example.com/mcp",
-        "http://10.36.148.11:3128/",
+        "http://192.0.2.10:3128/",
         "*.example.com",
       ),
     ).toBe(false);
     expect(
-      shouldProxyMcpRequest("http://mcp.example.com/mcp", "http://10.36.148.11:3128/", ""),
+      shouldProxyMcpRequest("http://mcp.example.com/mcp", "http://192.0.2.10:3128/", ""),
     ).toBe(false);
     expect(
       shouldProxyMcpRequest("https://mcp.example.com/mcp", "socks://proxy.example.com:1080", ""),

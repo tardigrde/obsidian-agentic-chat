@@ -28,18 +28,38 @@ describe("built-in tool contracts", () => {
     const contractNames = BUILTIN_TOOL_CONTRACTS.map((contract) => contract.name);
     const defaultNames = builtinToolContractsForSurface().map((contract) => contract.name);
     expect(defaultNames).toEqual([...DEFAULT_BUILTIN_TOOL_NAMES]);
-    expect(defaultNames).toContain("search");
+    expect(defaultNames).toContain("vault_inspect");
+    expect(defaultNames).not.toContain("ls");
+    expect(defaultNames).not.toContain("search");
     expect(defaultNames).not.toContain("find");
     expect(defaultNames).not.toContain("grep");
+    expect(defaultNames).not.toContain("get_active_note");
     expect(defaultNames).not.toContain("get_backlinks");
     expect(defaultNames).not.toContain("get_links");
-    expect(defaultNames).toContain("local_graph");
+    expect(defaultNames).not.toContain("local_graph");
+    expect(defaultNames).not.toContain("get_properties");
 
     const tools = createVaultTools({} as App);
     expect(tools.map((tool) => tool.name)).toEqual(defaultNames);
 
     const compatibilityTools = createVaultTools({} as App, undefined, undefined, { surface: "compat" });
     expect(compatibilityTools.map((tool) => tool.name)).toEqual(contractNames);
+  });
+
+  it("keeps the default prompt surface smaller than the compatibility surface", () => {
+    const defaultTools = createVaultTools({} as App);
+    const compatibilityTools = createVaultTools({} as App, undefined, undefined, { surface: "compat" });
+    const promptFootprint = (tools: ReturnType<typeof createVaultTools>): number =>
+      JSON.stringify(
+        tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        })),
+      ).length;
+
+    expect(defaultTools.length).toBeLessThan(compatibilityTools.length);
+    expect(promptFootprint(defaultTools)).toBeLessThan(promptFootprint(compatibilityTools));
   });
 
   it("is the source of truth for created tool labels and execution mode", () => {
@@ -63,17 +83,18 @@ describe("built-in tool contracts", () => {
     expect([...MUTATING_TOOLS]).toEqual(mutating);
     expect([...UNDOABLE_TOOLS]).toEqual(undoable);
     expect([...MUTATING_TOOLS]).toEqual(["write", "edit", "rename", "delete", "set_properties"]);
-    expect([...UNDOABLE_TOOLS]).toEqual(["write", "edit", "rename", "delete"]);
+    expect([...UNDOABLE_TOOLS]).toEqual(["write", "edit", "rename", "delete", "set_properties"]);
     for (const tool of UNDOABLE_TOOLS) expect(MUTATING_TOOLS.has(tool)).toBe(true);
 
     expect(isMutatingTool("set_properties")).toBe(true);
     expect(isMutatingTool("get_properties")).toBe(false);
     expect(isUndoableTool("rename")).toBe(true);
-    expect(isUndoableTool("set_properties")).toBe(false);
+    expect(isUndoableTool("set_properties")).toBe(true);
   });
 
   it("pins path arguments and ignore-list semantics for sensitive tools", () => {
     expect(getBuiltinToolContract("read")?.pathArgs).toEqual([{ name: "path", required: true, kind: "file" }]);
+    expect(getBuiltinToolContract("vault_inspect")?.pathArgs).toEqual([{ name: "path", required: false, kind: "search-root" }]);
     expect(getBuiltinToolContract("search")?.pathArgs).toEqual([{ name: "path", required: false, kind: "search-root" }]);
     expect(getBuiltinToolContract("grep")?.pathArgs).toEqual([{ name: "path", required: false, kind: "search-root" }]);
     expect(getBuiltinToolContract("find")?.pathArgs).toEqual([]);
@@ -81,6 +102,7 @@ describe("built-in tool contracts", () => {
       { name: "path", required: true, kind: "file" },
       { name: "newPath", required: true, kind: "destination" },
     ]);
+    expect(getBuiltinToolContract("delete")?.pathArgs).toEqual([{ name: "path", required: true, kind: "file-or-folder" }]);
 
     expect(getBuiltinToolContract("read")?.ignoreBehavior).toBe("target-hidden");
     expect(getBuiltinToolContract("rename")?.ignoreBehavior).toBe("source-and-destination-hidden");
@@ -103,6 +125,7 @@ describe("built-in tool contracts", () => {
     expect(approvalPreviewNeedsContent("set_properties")).toBe(false);
 
     expect(toolApprovalDescription("write")).toMatch(/overwrite a vault file/i);
+    expect(toolApprovalDescription("delete")).toMatch(/file or empty folder/i);
     expect(toolApprovalDescription("web_search")).toMatch(/run the web_search tool/i);
   });
 

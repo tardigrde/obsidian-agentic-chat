@@ -6,7 +6,7 @@
 export class AgentSessionSwapQueue {
   private current: Promise<void> = Promise.resolve();
 
-  enqueue(op: () => Promise<void>): Promise<void> {
+  enqueue<T>(op: () => Promise<T>): Promise<T> {
     const next = this.current.then(op, op);
     this.current = next.then(
       () => undefined,

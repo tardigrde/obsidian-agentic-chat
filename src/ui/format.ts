@@ -30,6 +30,7 @@ export const TOOL_LABELS: Record<string, string> = {
   get_active_note: "Reading active note",
   rename: "Renaming",
   delete: "Deleting",
+  external_inspect: "Inspecting external root",
   subagent: "Dispatching subagents",
 };
 
@@ -76,6 +77,31 @@ export function cacheHitPercent(usage: Usage): number | null {
   return Math.round(((usage.cacheRead ?? 0) / base) * 100);
 }
 
+export interface DetailedUsageOptions {
+  includesCompactedUsage?: boolean;
+  includesSubagentUsage?: boolean;
+}
+
+export function formatDetailedUsage(usage: Usage, options: DetailedUsageOptions = {}): Array<[string, string]> {
+  const promptTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+  const cacheHit = cacheHitPercent(usage);
+  const cost = usage.cost?.total;
+  return [
+    ["Scope", formatUsageScope(options)],
+    ["Total tokens", formatTokenCount(usage.totalTokens)],
+    ["Prompt tokens", formatTokenCount(promptTokens)],
+    ["Fresh input", formatTokenCount(usage.input ?? 0)],
+    ["Cache read", formatTokenCount(usage.cacheRead ?? 0)],
+    ["Cache write", formatTokenCount(usage.cacheWrite ?? 0)],
+    ["Output tokens", formatTokenCount(usage.output ?? 0)],
+    [
+      "Prompt cache hit",
+      cacheHit === null ? "not available yet" : `${cacheHit}% of prompt tokens in this session`,
+    ],
+    ["Cost", typeof cost === "number" ? formatCost(cost) : "not reported by provider"],
+  ];
+}
+
 export function formatUsage(usage: Usage): string {
   const total = usage.cost?.total ?? 0;
   const cost = total > 0 ? ` · ${formatCost(total)}` : "";
@@ -95,4 +121,26 @@ export function formatElapsed(ms: number): string {
   const minutes = Math.floor(ms / 60_000);
   const seconds = Math.round((ms % 60_000) / 1000);
   return `${minutes}m ${seconds}s`;
+}
+
+function formatUsageScope(options: DetailedUsageOptions): string {
+  const included: string[] = [];
+  if (options.includesCompactedUsage) included.push("compacted carried usage");
+  if (options.includesSubagentUsage) included.push("subagent usage");
+  if (included.length === 0) return "Active session";
+  return `Active session, including ${included.join(" and ")}`;
+}
+
+function formatTokenCount(value: number): string {
+  const safe = Number.isFinite(value) && value > 0 ? value : 0;
+  if (safe >= 1_000_000) return `${(safe / 1_000_000).toFixed(2)}M`;
+  if (safe >= 1_000) {
+    const thousands = safe / 1_000;
+    return Number.isInteger(thousands) ? `${thousands}k` : `${trimTrailingZero(thousands.toFixed(1))}k`;
+  }
+  return String(Math.round(safe));
+}
+
+function trimTrailingZero(value: string): string {
+  return value.endsWith(".0") ? value.slice(0, -2) : value;
 }

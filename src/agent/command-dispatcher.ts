@@ -1,6 +1,11 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
 import { buildSkillInvocation } from "../skills/skills";
-import { buildInitInvocation, buildSubagentInvocation, unknownAgentMessage } from "./agent-invocations";
+import {
+  buildInitInvocation,
+  buildInstructionCaptureInvocation,
+  buildSubagentInvocation,
+  unknownAgentMessage,
+} from "./agent-invocations";
 import type { AgentProfile } from "./subagents";
 
 export interface AgentCommandResources {
@@ -34,6 +39,12 @@ export function resolveAgentCommand(resources: AgentCommandResources, name: stri
   return { type: "prompt", prompt: buildSubagentInvocation(name, trimmed) };
 }
 
-export function resolveInitCommand(): AgentCommandPlan {
-  return { type: "prompt", prompt: buildInitInvocation() };
+export function resolveInitCommand(instructions?: string): AgentCommandPlan {
+  return { type: "prompt", prompt: buildInitInvocation(instructions) };
+}
+
+export function resolveInstructionCommand(instruction: string): AgentCommandPlan {
+  const trimmed = instruction.trim();
+  if (!trimmed) return { type: "error", message: "Add instruction text after #." };
+  return { type: "prompt", prompt: buildInstructionCaptureInvocation(trimmed) };
 }

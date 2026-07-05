@@ -4,7 +4,9 @@ import {
   promptRunBlockReason,
   resolveModelConfigForTurn,
   resolveThinkingLevelForTurn,
+  normalizeSteeringText,
   spendCapAbortReason,
+  steeringStatus,
   visibleModelOverride,
 } from "../src/agent/turn-control";
 import type { ModelConfig } from "../src/llm/models";
@@ -69,15 +71,19 @@ describe("turn control", () => {
     );
   });
 
-  it("normalizes and exposes model overrides only for OpenRouter", () => {
+  it("normalizes and exposes model overrides for browseable providers", () => {
     expect(normalizeModelOverride("  anthropic/claude-sonnet  ")).toBe("anthropic/claude-sonnet");
     expect(normalizeModelOverride("   ")).toBeNull();
     expect(visibleModelOverride("openrouter", "anthropic/claude-sonnet")).toBe("anthropic/claude-sonnet");
+    expect(visibleModelOverride("openai-compatible", "WARN-GLOBAL_kimi-k2.6")).toBe("WARN-GLOBAL_kimi-k2.6");
     expect(visibleModelOverride("ollama", "anthropic/claude-sonnet")).toBeNull();
   });
 
-  it("applies model overrides only to OpenRouter turn configs", () => {
+  it("applies model overrides only to browseable provider turn configs", () => {
     expect(resolveModelConfigForTurn(BASE_CONFIG, "anthropic/claude-sonnet").modelId).toBe("anthropic/claude-sonnet");
+    expect(
+      resolveModelConfigForTurn({ ...BASE_CONFIG, provider: "openai-compatible" }, "WARN-GLOBAL_kimi-k2.6").modelId,
+    ).toBe("WARN-GLOBAL_kimi-k2.6");
     expect(resolveModelConfigForTurn({ ...BASE_CONFIG, provider: "ollama" }, "anthropic/claude-sonnet").modelId).toBe(
       "default/model",
     );
@@ -87,5 +93,13 @@ describe("turn control", () => {
     expect(resolveThinkingLevelForTurn("low", "high", ["off", "low", "high"])).toBe("high");
     expect(resolveThinkingLevelForTurn("low", "xhigh", ["off", "low", "medium"])).toBe("medium");
     expect(resolveThinkingLevelForTurn("low", null, ["off", "low", "high"])).toBe("low");
+  });
+
+  it("normalizes steering text and labels steering modes", () => {
+    expect(normalizeSteeringText("  keep citations strict  ")).toBe("keep citations strict");
+    expect(normalizeSteeringText("   ")).toBeNull();
+    expect(steeringStatus("steer")).toBe("Queued for the active turn.");
+    expect(steeringStatus("follow-up")).toBe("Queued as a follow-up.");
+    expect(steeringStatus("redirect")).toBe("Redirecting the active turn.");
   });
 });

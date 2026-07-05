@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { browser } from "@wdio/globals";
+import { redactJsonl, redactValue } from "../../../src/privacy/redaction";
 
 interface TestLike {
   title?: string;
@@ -39,9 +40,6 @@ interface ObsidianDiagnostics {
     content: string;
   };
 }
-
-const SECRET_KEY_PATTERN =
-  /(?:api[-_]?key|access[-_]?token|refresh[-_]?token|auth[-_]?token|^token$|secret|password|bearer|authorization)/i;
 
 export async function collectE2EFailureArtifacts({ test, result, artifactsRoot }: FailureArtifactOptions): Promise<void> {
   if (result.passed) return;
@@ -135,7 +133,17 @@ async function collectObsidianDiagnostics(dir: string): Promise<void> {
         path: diagnostics.latestSession.path,
         modifiedTime: diagnostics.latestSession.modifiedTime,
       });
-      await writeText(path.join(dir, "latest-session.jsonl"), diagnostics.latestSession.content);
+      await writeText(
+        path.join(dir, "latest-session.redacted.jsonl"),
+        redactJsonl(diagnostics.latestSession.content, {
+          maxLength: 500,
+          maxArrayLength: 20,
+          maxObjectKeys: 30,
+          maxDepth: 6,
+          summarizeContent: true,
+          redactHighEntropy: true,
+        }),
+      );
     } else {
       await writeText(path.join(dir, "latest-session-missing.txt"), "No agentic-chat session JSONL was present.\n");
     }
@@ -145,14 +153,14 @@ async function collectObsidianDiagnostics(dir: string): Promise<void> {
 }
 
 function redactSecrets(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => redactSecrets(item));
-  if (!value || typeof value !== "object") return value;
-
-  const result: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) {
-    result[key] = SECRET_KEY_PATTERN.test(key) ? "[REDACTED]" : redactSecrets(item);
-  }
-  return result;
+  return redactValue(value, {
+    maxLength: 500,
+    maxArrayLength: 20,
+    maxObjectKeys: 60,
+    maxDepth: 8,
+    summarizeContent: true,
+    redactHighEntropy: true,
+  });
 }
 
 function serializeError(error: unknown): unknown {

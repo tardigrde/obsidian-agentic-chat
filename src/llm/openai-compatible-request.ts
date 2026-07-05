@@ -14,6 +14,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { convertMessages } from "@earendil-works/pi-ai/openai-completions";
 import type { WebFetcher } from "../tools/web-fetch";
+import { normalizeOpenAICompatibleApiBaseUrl } from "./models";
 
 export interface OpenAICompatibleRequest {
   url: string;
@@ -22,6 +23,7 @@ export interface OpenAICompatibleRequest {
   body?: string;
   contentType?: string;
   throw?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface OpenAICompatibleResponse {
@@ -41,12 +43,15 @@ export function createOpenAICompatibleRequester(fetcher: WebFetcher): OpenAIComp
     if (request.contentType && !hasHeader(headers, "content-type")) {
       headers["Content-Type"] = request.contentType;
     }
-    const response = await fetcher({
-      url: request.url,
-      method: request.method ?? "POST",
-      headers,
-      body: request.body,
-    });
+    const response = await fetcher(
+      {
+        url: request.url,
+        method: request.method ?? "POST",
+        headers,
+        body: request.body,
+      },
+      request.signal,
+    );
     return {
       status: response.status,
       text: response.text,
@@ -90,7 +95,7 @@ export function streamOpenAICompatibleViaRequestUrl(
   model: Model<"openai-completions">,
   context: Context,
   options: SimpleStreamOptions | undefined,
-  requester: OpenAICompatibleRequester = requestUrl as OpenAICompatibleRequester,
+  requester: OpenAICompatibleRequester = defaultOpenAICompatibleRequester,
 ): AssistantMessageEventStream {
   const stream = createAssistantMessageEventStream();
 
@@ -100,13 +105,16 @@ export function streamOpenAICompatibleViaRequestUrl(
     try {
       const apiKey = options?.apiKey?.trim();
       if (!apiKey) throw new Error(`No API key for provider: ${model.provider}`);
+      throwIfRequestAborted(options?.signal);
 
       let payload = buildPayload(model, context, options);
       const nextPayload = await options?.onPayload?.(payload, model);
       if (nextPayload !== undefined) payload = nextPayload as Record<string, unknown>;
+      throwIfRequestAborted(options?.signal);
 
-      const response = await withRequestGuards(
-        requester({
+      const response = await requestCompletionWithRetries(
+        requester,
+        {
           url: chatCompletionsUrl(model.baseUrl),
           method: "POST",
           contentType: "application/json",
@@ -118,11 +126,13 @@ export function streamOpenAICompatibleViaRequestUrl(
           },
           body: JSON.stringify(payload),
           throw: false,
-        }),
-        options?.timeoutMs,
-        options?.signal,
+          signal: options?.signal,
+        },
+        options,
       );
+      throwIfRequestAborted(options?.signal);
       await options?.onResponse?.({ status: response.status, headers: normalizeHeaders(response.headers) }, model);
+      throwIfRequestAborted(options?.signal);
 
       if (response.status < 200 || response.status >= 300) {
         throw new Error(formatStatusError(response));
@@ -136,7 +146,7 @@ export function streamOpenAICompatibleViaRequestUrl(
       output.errorMessage = completion.errorMessage;
 
       stream.push({ type: "start", partial: output });
-      emitThinking(stream, output, completion.thinking);
+      if (options?.reasoning) emitThinking(stream, output, completion.thinking);
       emitText(stream, output, completion.text);
       for (const toolCall of completion.toolCalls) emitToolCall(stream, output, toolCall);
 
@@ -158,6 +168,50 @@ export function streamOpenAICompatibleViaRequestUrl(
   })();
 
   return stream;
+}
+
+const defaultOpenAICompatibleRequester: OpenAICompatibleRequester = (request) => {
+  const { signal: _signal, ...obsidianRequest } = request;
+  return requestUrl(obsidianRequest);
+};
+
+async function requestCompletionWithRetries(
+  requester: OpenAICompatibleRequester,
+  request: OpenAICompatibleRequest,
+  options: SimpleStreamOptions | undefined,
+): Promise<OpenAICompatibleResponse> {
+  const maxRetries = Math.max(0, Math.floor(options?.maxRetries ?? 0));
+  let attempt = 0;
+
+  while (true) {
+    throwIfRequestAborted(options?.signal);
+    try {
+      const response = await withRequestGuards(requester(request), options?.timeoutMs, options?.signal);
+      throwIfRequestAborted(options?.signal);
+      if (attempt >= maxRetries || !isRetryableResponse(response)) return response;
+    } catch (error) {
+      if (options?.signal?.aborted || error instanceof RequestAbortError) throw error;
+      if (attempt >= maxRetries || error instanceof RequestTimeoutError) throw error;
+    }
+
+    await waitForRetryDelay(attempt, options);
+    attempt += 1;
+  }
+}
+
+function isRetryableResponse(response: OpenAICompatibleResponse): boolean {
+  if (response.status === 408 || response.status === 409 || response.status === 425 || response.status === 429) return true;
+  if (response.status >= 500 && response.status <= 599) return true;
+  if (response.status !== 400) return false;
+  return /server connection error|temporar|timeout|upstream|network/i.test(extractErrorDetail(response));
+}
+
+async function waitForRetryDelay(attempt: number, options: SimpleStreamOptions | undefined): Promise<void> {
+  const delayMs = Math.min(2_000, 250 * 2 ** attempt);
+  if (options?.maxRetryDelayMs !== undefined && options.maxRetryDelayMs > 0 && delayMs > options.maxRetryDelayMs) {
+    throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`);
+  }
+  await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
 }
 
 function buildPayload(
@@ -378,7 +432,7 @@ function emitToolCall(stream: AssistantMessageEventStream, output: AssistantMess
 }
 
 function chatCompletionsUrl(baseUrl: string): string {
-  const normalized = baseUrl.replace(/\/+$/, "");
+  const normalized = normalizeOpenAICompatibleApiBaseUrl(baseUrl);
   if (/\/chat\/completions$/i.test(normalized)) return normalized;
   return `${normalized}/chat/completions`;
 }
@@ -413,6 +467,10 @@ async function withRequestGuards<T>(
     if (timer !== undefined) window.clearTimeout(timer);
     if (signal && abortListener) signal.removeEventListener("abort", abortListener);
   }
+}
+
+function throwIfRequestAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new RequestAbortError();
 }
 
 class RequestTimeoutError extends Error {

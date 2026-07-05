@@ -19,6 +19,7 @@ interface SessionToolState {
 }
 
 interface SessionResourceState {
+  clearSessionState(): void;
   reload(): Promise<unknown>;
 }
 
@@ -55,5 +56,6 @@ export class AgentSessionActivation {
     this.options.sessionEvents.markPersistedMessages(messages);
     this.options.sessionState.reset();
     this.options.toolCalls.clearSessionState();
+    this.options.runtimeResources.clearSessionState();
   }
 }

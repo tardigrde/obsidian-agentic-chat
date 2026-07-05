@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { TFile, TFolder, type App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ApprovalAuditInput, CheckpointAuditInput } from "../src/agent/action-audit-log";
+import type { FileCheckpoint } from "../src/agent/file-checkpoints";
 import { AgentToolCallController, type ToolApprovalRequest } from "../src/agent/tool-call-controller";
 import type { AgentProfile } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { createMcpServerSettings } from "../src/mcp/settings";
+import { EXTERNAL_INSPECT_TOOL_NAME } from "../src/tools/external-workspace";
 import { FakeVault } from "./helpers/fake-vault";
 
 function makeController(
@@ -14,6 +17,9 @@ function makeController(
     tools?: AgentTool[];
     profiles?: AgentProfile[];
     app?: App;
+    recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
+    recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
+    recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
   } = {},
 ): { controller: AgentToolCallController; requests: ToolApprovalRequest[]; undoNotifications: { count: number } } {
   const settings: AgenticChatSettings = {
@@ -36,6 +42,9 @@ function makeController(
     onUndoApplied: () => {
       undoNotifications.count += 1;
     },
+    recordApproval: options.recordApproval,
+    recordCheckpoint: options.recordCheckpoint,
+    recordFileCheckpoint: options.recordFileCheckpoint,
   });
   return { controller, requests, undoNotifications };
 }
@@ -106,6 +115,87 @@ describe("AgentToolCallController", () => {
     expect(requests).toEqual([{ toolName: tool.name, label: tool.label, args }]);
   });
 
+  it("prompts external inspections by default even though the tool is read-only", async () => {
+    const tool = { name: EXTERNAL_INSPECT_TOOL_NAME, label: "Inspect external root" } as AgentTool;
+    const { controller, requests } = makeController({
+      settings: {
+        external: {
+          ...DEFAULT_SETTINGS.external,
+          enabled: true,
+          rootPath: "/workspace/code",
+          approval: "ask",
+        },
+      },
+      tools: [tool],
+      confirmToolCall: async () => false,
+    });
+
+    const args = { action: "search", query: "Service" };
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: EXTERNAL_INSPECT_TOOL_NAME },
+      args,
+    });
+
+    expect(decision).toEqual({ block: true, reason: "The user declined this external workspace inspection." });
+    expect(requests).toEqual([{ toolName: EXTERNAL_INSPECT_TOOL_NAME, label: tool.label, args }]);
+  });
+
+  it("auto-approves external inspections only when the external setting allows it", async () => {
+    const { controller, requests } = makeController({
+      settings: {
+        external: {
+          ...DEFAULT_SETTINGS.external,
+          enabled: true,
+          rootPath: "/workspace/code",
+          approval: "allow",
+        },
+      },
+    });
+
+    await expect(
+      controller.beforeToolCall({
+        toolCall: { id: "call-1", name: EXTERNAL_INSPECT_TOOL_NAME },
+        args: { action: "list" },
+      }),
+    ).resolves.toBeUndefined();
+    expect(requests).toEqual([]);
+  });
+
+  it("auto-denies external inspections when the external setting denies it", async () => {
+    const approvals: ApprovalAuditInput[] = [];
+    const { controller, requests } = makeController({
+      settings: {
+        external: {
+          ...DEFAULT_SETTINGS.external,
+          enabled: true,
+          rootPath: "/workspace/code",
+          approval: "deny",
+        },
+      },
+      recordApproval: (input) => {
+        approvals.push(input);
+      },
+    });
+
+    await expect(
+      controller.beforeToolCall({
+        toolCall: { id: "call-1", name: EXTERNAL_INSPECT_TOOL_NAME },
+        args: { action: "list" },
+      }),
+    ).resolves.toEqual({
+      block: true,
+      reason: "External workspace inspection is disabled by your external root approval settings.",
+    });
+    expect(requests).toEqual([]);
+    expect(approvals).toMatchObject([
+      {
+        decision: "denied",
+        toolCallId: "call-1",
+        toolName: EXTERNAL_INSPECT_TOOL_NAME,
+      },
+    ]);
+  });
+
   it("honors MCP deny policy and per-tool allow overrides", async () => {
     const toolName = "mcp__docs__resolve_library_id";
     const baseMcp = {
@@ -139,7 +229,7 @@ describe("AgentToolCallController", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("confirms read-only subagent dispatches when a working set is configured", async () => {
+  it("auto-approves read-only subagent dispatches when a working set is configured", async () => {
     const { controller, requests } = makeController({
       settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes"] } },
       profiles: [
@@ -158,14 +248,8 @@ describe("AgentToolCallController", () => {
       args: { agent: "researcher", task: "look around" },
     });
 
-    expect(decision).toEqual({ block: true, reason: "The user declined to dispatch subagents." });
-    expect(requests).toEqual([
-      {
-        toolName: "subagent",
-        label: "Dispatch subagents (children are not limited to your working directories)",
-        args: { agent: "researcher", task: "look around" },
-      },
-    ]);
+    expect(decision).toBeUndefined();
+    expect(requests).toEqual([]);
   });
 
   it("records undo only after a captured mutating call succeeds", async () => {
@@ -191,6 +275,53 @@ describe("AgentToolCallController", () => {
     expect(await controller.undoLastChange()).toBe("Reverted Notes/a.md.");
     expect(vault.contentOf("Notes/a.md")).toBe("before");
     expect(undoNotifications.count).toBe(1);
+  });
+
+  it("audits approval decisions and pre-change checkpoints", async () => {
+    const { app, vault } = fakeApp();
+    await vault.createFolder("Notes");
+    await vault.create("Notes/a.md", "before");
+    const approvals: ApprovalAuditInput[] = [];
+    const checkpoints: CheckpointAuditInput[] = [];
+    const fileCheckpoints: FileCheckpoint[] = [];
+    const { controller } = makeController({
+      app,
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      confirmToolCall: async () => true,
+      recordApproval: (input) => {
+        approvals.push(input);
+      },
+      recordCheckpoint: (input) => {
+        checkpoints.push(input);
+      },
+      recordFileCheckpoint: (checkpoint) => {
+        fileCheckpoints.push(checkpoint);
+      },
+    });
+
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "write" },
+      args: { path: "Notes/a.md", content: "after", apiKey: "secret" },
+    });
+
+    expect(decision).toBeUndefined();
+    expect(approvals.map((approval) => approval.decision)).toEqual(["requested", "approved"]);
+    expect(approvals.map((approval) => approval.toolCallId)).toEqual(["call-1", "call-1"]);
+    expect(checkpoints).toEqual([
+      {
+        toolCallId: "call-1",
+        toolName: "write",
+        undo: { kind: "content", path: "Notes/a.md", before: "before" },
+      },
+    ]);
+    expect(fileCheckpoints).toEqual([
+      expect.objectContaining({
+        id: "checkpoint-call-1",
+        toolCallId: "call-1",
+        toolName: "write",
+        entries: [{ kind: "content", path: "Notes/a.md", before: "before" }],
+      }),
+    ]);
   });
 
   it("undoes successful mutations newest-first", async () => {

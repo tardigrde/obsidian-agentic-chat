@@ -17,6 +17,13 @@ import type { DataAdapter } from "obsidian";
  */
 export const INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"] as const;
 
+/** True for the root-level standing-instructions file names that are injected implicitly. */
+export function isInstructionFilePath(path: string): boolean {
+  const normalized = path.trim().replace(/^\/+/, "");
+  if (normalized.includes("/")) return false;
+  return INSTRUCTION_FILES.some((name) => name.toLowerCase() === normalized.toLowerCase());
+}
+
 /**
  * Cap on how much of the instruction file is injected into the system prompt. A
  * runaway `/init` or a pasted file can grow large; loading tens of KB into every

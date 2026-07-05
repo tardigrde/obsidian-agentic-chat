@@ -51,6 +51,7 @@ type Cell = {
 };
 
 const READ = "read";
+const VAULT_INSPECT = "vault_inspect";
 const WRITE = "write";
 const IN_SCOPE = { path: "Notes/a.md" };
 const OUT_SCOPE = { path: "Other/a.md" };
@@ -61,6 +62,9 @@ const CELLS: Cell[] = [
   { name: "safe read, no working set → allow", mode: "safe", mutating: "ask", tool: READ, args: IN_SCOPE, expected: "allow" },
   { name: "safe read in-scope → allow", mode: "safe", mutating: "ask", dirs: ["Notes"], tool: READ, args: IN_SCOPE, expected: "allow" },
   { name: "safe read out-of-scope → ask (even reads)", mode: "safe", mutating: "ask", dirs: ["Notes"], tool: READ, args: OUT_SCOPE, expected: "ask" },
+  { name: "safe vault_inspect in-scope path → allow", mode: "safe", mutating: "ask", dirs: ["Notes"], tool: VAULT_INSPECT, args: { action: "search", path: "Notes", query: "x" }, expected: "allow" },
+  { name: "safe vault_inspect pathless search → ask", mode: "safe", mutating: "ask", dirs: ["Notes"], tool: VAULT_INSPECT, args: { action: "search", query: "x" }, expected: "ask" },
+  { name: "safe vault_inspect out-of-scope path → ask", mode: "safe", mutating: "ask", dirs: ["Notes"], tool: VAULT_INSPECT, args: { action: "properties", path: "Other/a.md" }, expected: "ask" },
   { name: "safe pathless call under a working set → ask", mode: "safe", mutating: "ask", dirs: ["Notes"], tool: "find", args: PATHLESS, expected: "ask" },
   { name: "safe mutating, no working set → mutating policy", mode: "safe", mutating: "ask", tool: WRITE, args: IN_SCOPE, expected: "ask" },
   { name: "safe mutating in-scope → allow", mode: "safe", mutating: "allow", dirs: ["Notes"], tool: WRITE, args: IN_SCOPE, expected: "allow" },
@@ -212,14 +216,14 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     return { isError: tr.isError, text };
   }
 
-  it("safe + no working set: a mutating (editor) dispatch prompts once", async () => {
+  it("safe + no working set: a mutating (editor) dispatch does not prompt before child tool calls", async () => {
     const streamFn = scriptedStreamFn([dispatch("editor"), childReply("editor reply"), parentFollowup("all set")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "ask", perTool: {}, workingDirs: [] },
     }, async () => true);
     await service.sendPrompt("edit with a subagent");
-    expect(confirmCalls.count).toBe(1);
+    expect(confirmCalls.count).toBe(0);
     expect(toolResult(service)?.isError).toBe(false);
     expect(toolResult(service)?.text).toContain("editor reply");
   });
@@ -270,14 +274,43 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     expect(toolResult(service)?.isError).toBe(false);
   });
 
-  it("safe + working set: even a read-only (researcher) dispatch is confirmed up front", async () => {
-    const streamFn = scriptedStreamFn([dispatch("researcher"), parentFollowup("ok, not dispatching")]);
+  it("safe + working set: a read-only (researcher) dispatch runs without an up-front prompt", async () => {
+    const streamFn = scriptedStreamFn([dispatch("researcher"), childReply("found scoped notes"), parentFollowup("done")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes"] },
     }, async () => false);
     await service.sendPrompt("research with a subagent under a working set");
+    expect(confirmCalls.count).toBe(0);
+    expect(toolResult(service)?.isError).toBe(false);
+    expect(toolResult(service)?.text).toContain("found scoped notes");
+  });
+
+  it("safe + working set: an editor child write outside the working set is gated at the child call", async () => {
+    const streamFn = scriptedStreamFn([
+      dispatch("editor"),
+      {
+        content: [
+          {
+            type: "toolCall",
+            id: "child-write",
+            name: "write",
+            arguments: { path: "Other/x.md", content: "hi" },
+          } as AssistantMessage["content"][number],
+        ],
+        stopReason: "toolUse" as const,
+      },
+      childReply("child saw the denial"),
+      parentFollowup("done"),
+    ]);
+    const { service, confirmCalls } = makeService(streamFn, {
+      mode: "safe",
+      approval: { mutating: "allow", perTool: {}, workingDirs: ["Notes"] },
+    }, async () => false);
+
+    await service.sendPrompt("edit outside with a subagent under a working set");
+
     expect(confirmCalls.count).toBe(1);
-    expect(toolResult(service)?.isError).toBe(true);
+    expect(toolResult(service)?.text).toContain("child saw the denial");
   });
 });

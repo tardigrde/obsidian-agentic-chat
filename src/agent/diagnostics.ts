@@ -8,6 +8,8 @@ import { activeModelId, type AgenticChatSettings } from "../settings";
 import type { SessionInfo } from "../session/session-manager";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import type { McpServerDiagnostic } from "../mcp/tools";
+import type { ObservabilityExportHealth } from "../observability/agent-observability";
+import type { ToolBudgetSnapshot } from "./tool-budget";
 
 export const MAX_RECENT_DIAGNOSTIC_EVENTS = 30;
 
@@ -31,12 +33,21 @@ export interface AgentRuntimeDiagnostics {
     workingDirs: string[];
   };
   tools: string[];
+  toolBudget: ToolBudgetSnapshot;
   resources: {
     skillCount: number;
     profileCount: number;
     hasInstructionsOverlay: boolean;
     lastReloadAt: string | null;
     mcpServers: McpServerDiagnostic[];
+  };
+  observability: {
+    enabled: boolean;
+    backend: string;
+    endpointConfigured: boolean;
+    payloadMode: string;
+    sampleRate: number;
+    exportHealth: ObservabilityExportHealth;
   };
   state: {
     isStreaming: boolean;
@@ -56,6 +67,7 @@ export interface BuildRuntimeDiagnosticsOptions {
   tools: readonly AgentTool[];
   resources: AgentRuntimeResources;
   resourcesReloadedAt: string | null;
+  toolBudget: ToolBudgetSnapshot;
   modelOverride: string | null;
   thinkingLevel: ThinkingLevel;
   thinkingOverride: ThinkingLevel | null;
@@ -66,6 +78,7 @@ export interface BuildRuntimeDiagnosticsOptions {
   compactionCount: number;
   usage: Usage;
   recentEvents: readonly string[];
+  observabilityHealth: ObservabilityExportHealth;
 }
 
 export function buildRuntimeDiagnostics(options: BuildRuntimeDiagnosticsOptions): AgentRuntimeDiagnostics {
@@ -90,12 +103,21 @@ export function buildRuntimeDiagnostics(options: BuildRuntimeDiagnosticsOptions)
       workingDirs: [...settings.approval.workingDirs],
     },
     tools: options.tools.map((tool) => tool.name),
+    toolBudget: options.toolBudget,
     resources: {
       skillCount: options.resources.skills.length,
       profileCount: options.resources.profiles.length,
       hasInstructionsOverlay: options.resources.instructionsOverlay.trim().length > 0,
       lastReloadAt: options.resourcesReloadedAt,
       mcpServers: options.resources.mcpDiagnostics,
+    },
+    observability: {
+      enabled: settings.observability.enabled,
+      backend: settings.observability.backend,
+      endpointConfigured: settings.observability.endpoint.trim().length > 0,
+      payloadMode: settings.observability.payloadMode,
+      sampleRate: settings.observability.sampleRate,
+      exportHealth: options.observabilityHealth,
     },
     state: {
       isStreaming: options.isStreaming,
@@ -151,10 +173,12 @@ export function formatRuntimeDiagnosticsRows(diagnostics: AgentRuntimeDiagnostic
     ["Mode", diagnostics.mode],
     ["Output style", diagnostics.outputStyle],
     ["Tools", formatList(diagnostics.tools)],
+    ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],
     ["Approval", formatApproval(diagnostics)],
     ["Pending undo", diagnostics.state.canUndo ? "yes" : "no"],
     ["Resources", formatResources(diagnostics)],
     ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
+    ["Observability", formatObservability(diagnostics)],
     ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
     ["Streaming", diagnostics.state.isStreaming ? "yes" : "no"],
     ["Context", diagnostics.state.contextPercent === null ? "unknown" : `${diagnostics.state.contextPercent}%`],
@@ -184,6 +208,38 @@ export function formatMcpDiagnosticRows(servers: readonly McpServerDiagnostic[])
     }
   }
   return rows;
+}
+
+export function formatToolBudgetDiagnostic(toolBudget: ToolBudgetSnapshot): string {
+  if (!toolBudget.enabled) return "off";
+  if (!toolBudget.active) {
+    const current =
+      toolBudget.toolSchemaTokens !== null && toolBudget.contextWindow !== null
+        ? `; current tool schemas ~${toolBudget.toolSchemaTokens} tokens`
+        : "";
+    return `armed at ${toolBudget.thresholdPercent}% tool schemas${current}`;
+  }
+  const trigger =
+    toolBudget.triggeredAtToolSchemaPercent === null
+      ? `${toolBudget.thresholdPercent}%`
+      : `${toolBudget.triggeredAtToolSchemaPercent}%`;
+  const dropped = toolBudget.droppedTools.length === 0
+    ? "no optional tools currently registered"
+    : toolBudget.droppedTools.map((tool) => `${tool.name} (${tool.reason})`).join(", ");
+  return `active after ${trigger} tool schemas; dropped: ${dropped}`;
+}
+
+function formatObservability(diagnostics: AgentRuntimeDiagnostics): string {
+  const obs = diagnostics.observability;
+  if (!obs.enabled) return "off";
+  const configured = obs.endpointConfigured ? "endpoint configured" : "endpoint missing";
+  const health = obs.exportHealth;
+  const exportState =
+    health.attemptedExports === 0
+      ? `no exports yet, dropped ${health.droppedTraces}`
+      : `ok ${health.successfulExports}, failed ${health.failedExports}, dropped ${health.droppedTraces}, last status ${health.lastStatus ?? "n/a"}`;
+  const lastError = health.lastError ? `, last error ${health.lastError}` : "";
+  return `${obs.backend}, ${configured}, ${obs.payloadMode}, sample ${obs.sampleRate}%, ${exportState}${lastError}`;
 }
 
 function formatSession(diagnostics: AgentRuntimeDiagnostics): string {

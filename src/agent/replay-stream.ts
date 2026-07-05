@@ -46,6 +46,8 @@ export interface ReplayStreamOptions {
    * "error" catches drift; "repeat-last" preserves older terse unit-test behavior.
    */
   missingTurn?: "error" | "repeat-last";
+  /** Start replaying from this absolute turn index. Used when a harness rebuilds the stream function mid-session. */
+  initialTurnIndex?: number;
   now?: () => number;
   onCall?: (call: ReplayStreamCall) => void;
 }
@@ -60,7 +62,7 @@ export function createReplayStreamController(
   turns: readonly ReplayTurn[],
   options: ReplayStreamOptions = {},
 ): ReplayStreamController {
-  let nextTurn = 0;
+  let nextTurn = Math.max(0, options.initialTurnIndex ?? 0);
   const calls: ReplayStreamCall[] = [];
   const now = options.now ?? (() => Date.now());
 

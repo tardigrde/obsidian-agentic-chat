@@ -1,5 +1,6 @@
-import { estimateContextTokens, estimateTokens, type AgentMessage } from "@earendil-works/pi-agent-core";
+import { estimateTokens, type AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
+import { collectArtifactIdsFromText } from "../artifacts/artifact-references";
 
 /**
  * Auto-compaction configuration. Fractions are of the model's context window.
@@ -31,9 +32,49 @@ export interface CompactionPlan {
   tokensBefore: number;
 }
 
+export interface CompactionArtifactReference {
+  id: string;
+  citation?: string;
+  sourceToolName?: string;
+}
+
+export interface CompactionExternalInspectReference {
+  action: string;
+  path?: string;
+  externalRef: string;
+  sourceArtifactId?: string;
+  sourceArtifactCitation?: string;
+}
+
+export interface CompactionManifest {
+  artifacts: CompactionArtifactReference[];
+  externalInspect: CompactionExternalInspectReference[];
+}
+
 /** Estimated context tokens the transcript currently occupies. */
 export function estimateContextUsage(messages: AgentMessage[]): number {
-  return estimateContextTokens(messages).tokens;
+  return messages.reduce((total, message) => total + estimateTokens(message), 0);
+}
+
+/**
+ * Format a manual-compaction completion summary comparing context load before and
+ * after the rewrite. When the active model exposes a context window the load is
+ * shown as a percentage (the most actionable signal for the user); otherwise the
+ * raw estimated-token counts are used. Pure so it can be unit-tested without UI.
+ */
+export function formatCompactionSummary(stats: {
+  beforeTokens: number;
+  afterTokens: number;
+  contextWindow: number;
+}): string {
+  const before = Math.round(stats.beforeTokens);
+  const after = Math.round(stats.afterTokens);
+  if (stats.contextWindow > 0) {
+    const beforePct = Math.round((stats.beforeTokens / stats.contextWindow) * 100);
+    const afterPct = Math.round((stats.afterTokens / stats.contextWindow) * 100);
+    return `Compacted. Context load ${beforePct}% → ${afterPct}% (${before.toLocaleString()} → ${after.toLocaleString()} estimated tokens).`;
+  }
+  return `Compacted. ${before.toLocaleString()} → ${after.toLocaleString()} estimated tokens.`;
 }
 
 /**
@@ -88,19 +129,27 @@ export function planCompaction(
  * message converts cleanly for every provider and reads to the model as prior
  * context; the marker makes it identifiable in the transcript and on reload.
  */
-export function buildSummaryMessage(summary: string, timestamp: number, compactedUsage?: Usage): AgentMessage {
+export function buildSummaryMessage(
+  summary: string,
+  timestamp: number,
+  compactedUsage?: Usage,
+  compactionManifest?: CompactionManifest,
+): AgentMessage {
+  const manifest = compactionManifest && hasCompactionManifestEntries(compactionManifest) ? compactionManifest : undefined;
+  const summaryWithManifest = appendCompactionManifest(summary, manifest);
   return {
     role: "user",
     content: [
       {
         type: "text",
-        text: `Earlier conversation was automatically summarized to save context:\n\n<conversation-summary>\n${summary.trim()}\n</conversation-summary>`,
+        text: `Earlier conversation was summarized to save context:\n\n<conversation-summary>\n${summaryWithManifest}\n</conversation-summary>`,
       },
     ],
     timestamp,
     // Carried on the message (not just in memory) so the dropped turns' usage
     // survives JSONL reload and conversation rewind. See AgentService.getSessionUsage.
     ...(compactedUsage ? { compactedUsage } : {}),
+    ...(manifest ? { compactionManifest: manifest } : {}),
   } as AgentMessage;
 }
 
@@ -108,6 +157,27 @@ export function buildSummaryMessage(summary: string, timestamp: number, compacte
 export function getCompactedUsage(message: AgentMessage): Usage | undefined {
   if (!isSummaryMessage(message)) return undefined;
   return (message as { compactedUsage?: Usage }).compactedUsage ?? undefined;
+}
+
+export function getCompactionManifest(message: AgentMessage): CompactionManifest | undefined {
+  if (!isSummaryMessage(message)) return undefined;
+  const manifest = (message as { compactionManifest?: CompactionManifest }).compactionManifest;
+  return manifest && hasCompactionManifestEntries(manifest) ? manifest : undefined;
+}
+
+export function collectCompactionManifest(messages: AgentMessage[]): CompactionManifest {
+  const artifacts = new Map<string, CompactionArtifactReference>();
+  const externalInspect = new Map<string, CompactionExternalInspectReference>();
+
+  for (const message of messages) {
+    mergeCompactionManifest({ artifacts, externalInspect }, getCompactionManifest(message));
+    collectMessageManifest({ artifacts, externalInspect }, message);
+  }
+
+  return {
+    artifacts: [...artifacts.values()],
+    externalInspect: [...externalInspect.values()],
+  };
 }
 
 /** True when a message is a compaction summary produced by {@link buildSummaryMessage}. */
@@ -123,4 +193,123 @@ export function isSummaryMessage(message: AgentMessage): boolean {
       typeof (block as { text?: unknown }).text === "string" &&
       (block as { text: string }).text.includes("<conversation-summary>"),
   );
+}
+
+function appendCompactionManifest(summary: string, manifest: CompactionManifest | undefined): string {
+  const trimmed = summary.trim();
+  if (!manifest) return trimmed;
+  const manifestText = formatCompactionManifestMarkdown(manifest);
+  return manifestText ? `${trimmed}\n\n${manifestText}` : trimmed;
+}
+
+function formatCompactionManifestMarkdown(manifest: CompactionManifest): string {
+  const lines: string[] = [];
+  if (manifest.artifacts.length > 0) {
+    lines.push("## Preserved Artifact References");
+    for (const artifact of manifest.artifacts) {
+      const citation = artifact.citation ?? `artifact:${artifact.id}`;
+      const source = artifact.sourceToolName ? ` (source tool: ${artifact.sourceToolName})` : "";
+      lines.push(`- ${citation}${source}`);
+    }
+  }
+  if (manifest.externalInspect.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("## Preserved External Inspect Cache");
+    for (const entry of manifest.externalInspect) {
+      const artifact = entry.sourceArtifactCitation ? `; artifact: ${entry.sourceArtifactCitation}` : "";
+      lines.push(`- ${entry.action} ${entry.externalRef}${artifact}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function hasCompactionManifestEntries(manifest: CompactionManifest): boolean {
+  return manifest.artifacts.length > 0 || manifest.externalInspect.length > 0;
+}
+
+function mergeCompactionManifest(
+  target: {
+    artifacts: Map<string, CompactionArtifactReference>;
+    externalInspect: Map<string, CompactionExternalInspectReference>;
+  },
+  manifest: CompactionManifest | undefined,
+): void {
+  if (!manifest) return;
+  for (const artifact of manifest.artifacts) addArtifactReference(target.artifacts, artifact);
+  for (const entry of manifest.externalInspect) addExternalInspectReference(target.externalInspect, entry);
+}
+
+function collectMessageManifest(
+  target: {
+    artifacts: Map<string, CompactionArtifactReference>;
+    externalInspect: Map<string, CompactionExternalInspectReference>;
+  },
+  message: AgentMessage,
+): void {
+  const record = message as unknown as Record<string, unknown>;
+  const details = record.details && typeof record.details === "object" ? (record.details as Record<string, unknown>) : {};
+  const toolName = typeof record.toolName === "string" ? record.toolName : undefined;
+  const sourceArtifactId = stringValue(details.sourceArtifactId) ?? stringValue(details.artifactId);
+  const sourceArtifactCitation = stringValue(details.sourceArtifactCitation);
+  if (sourceArtifactId) {
+    addArtifactReference(target.artifacts, {
+      id: sourceArtifactId,
+      citation: sourceArtifactCitation,
+      sourceToolName: toolName,
+    });
+  }
+  for (const id of collectArtifactIdsFromText(messageContentText(message))) {
+    addArtifactReference(target.artifacts, { id, sourceToolName: toolName });
+  }
+  if (toolName === "external_inspect") {
+    const action = stringValue(details.action);
+    const externalRef = stringValue(details.externalRef);
+    if (action && externalRef) {
+      addExternalInspectReference(target.externalInspect, {
+        action,
+        path: stringValue(details.path),
+        externalRef,
+        sourceArtifactId,
+        sourceArtifactCitation,
+      });
+    }
+  }
+}
+
+function addArtifactReference(
+  artifacts: Map<string, CompactionArtifactReference>,
+  artifact: CompactionArtifactReference,
+): void {
+  const existing = artifacts.get(artifact.id);
+  artifacts.set(artifact.id, {
+    id: artifact.id,
+    citation: artifact.citation ?? existing?.citation,
+    sourceToolName: artifact.sourceToolName ?? existing?.sourceToolName,
+  });
+}
+
+function addExternalInspectReference(
+  refs: Map<string, CompactionExternalInspectReference>,
+  entry: CompactionExternalInspectReference,
+): void {
+  const key = `${entry.action} ${entry.externalRef}`;
+  const existing = refs.get(key);
+  refs.set(key, {
+    action: entry.action,
+    path: entry.path ?? existing?.path,
+    externalRef: entry.externalRef,
+    sourceArtifactId: entry.sourceArtifactId ?? existing?.sourceArtifactId,
+    sourceArtifactCitation: entry.sourceArtifactCitation ?? existing?.sourceArtifactCitation,
+  });
+}
+
+function messageContentText(message: AgentMessage): string {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : "")).join("\n");
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
