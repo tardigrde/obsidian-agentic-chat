@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { AgentActiveSessionRuntime } from "../src/agent/active-session-runtime";
 import { ObsidianSessionManager, type SessionDefaults } from "../src/session/session-manager";
+import { runPlanTrackerCommand } from "../src/agent/plan-tracker";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 function userMessage(text: string): AgentMessage {
@@ -75,6 +76,17 @@ describe("AgentActiveSessionRuntime", () => {
     expect(info.path).toBe(runtime.info?.path);
     expect(manager.buildSessionContext().model).toEqual({ provider: "openrouter", modelId: "changed/model" });
     expect(manager.buildSessionContext().thinkingLevel).toBe("high");
+  });
+
+  it("saves and exposes the active plan tracker", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.create();
+    const tracked = runPlanTrackerCommand(null, "add Milestone", "2026-06-26T12:00:00.000Z").state;
+
+    await runtime.savePlanTracker(tracked);
+
+    expect(runtime.getPlanTracker()).toMatchObject({ items: [{ id: "1", title: "Milestone" }] });
+    expect(runtime.info?.updatedAt).toBeTruthy();
   });
 
   it("clears cached info when deleting the active session", async () => {

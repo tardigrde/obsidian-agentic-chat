@@ -2,17 +2,25 @@
 // https://github.com/lhr0909/pi-obsidian
 import type { App, DataAdapter, Plugin } from "obsidian";
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { collectArtifactIdsFromMessages } from "../artifacts/artifact-references";
+import type { ActionAuditEvent } from "../agent/action-audit-log";
+import type { FileCheckpoint } from "../agent/file-checkpoints";
+import type { PlanTrackerState } from "../agent/plan-tracker";
 import { normalizeFolderPath } from "../vault/path";
 import {
+  type ActionAuditSessionEntry,
+  type FileCheckpointSessionEntry,
   buildSessionContext,
   createEntryId,
   createSessionHeader,
   createSessionId,
   getLastLeafId,
+  getLatestPlanTrackerState,
   parseSessionEntries,
   serializeSessionEntries,
   type MessageSessionEntry,
   type ModelChangeSessionEntry,
+  type PlanTrackerSessionEntry,
   type SessionContext,
   type SessionEntry,
   type SessionHeaderEntry,
@@ -32,8 +40,15 @@ export interface SessionInfo {
   createdAt: string;
   updatedAt: string;
   name?: string;
+  projectId?: string;
+  projectName?: string;
   messageCount: number;
   firstMessage: string;
+}
+
+export interface SessionScope {
+  projectId?: string;
+  projectName?: string;
 }
 
 interface SessionFileInfo extends SessionInfo {
@@ -48,21 +63,33 @@ export class ObsidianSessionManager {
   private readonly adapter: DataAdapter;
   private readonly sessionDir: string;
   private readonly cwd: string;
+  private readonly scopeProvider?: () => SessionScope | undefined;
   private sessionFile: string | null = null;
   private entries: SessionEntry[] = [];
   private leafId: string | null = null;
 
-  constructor(adapter: DataAdapter, sessionDir: string, cwd: string) {
+  constructor(
+    adapter: DataAdapter,
+    sessionDir: string,
+    cwd: string,
+    scopeProvider?: () => SessionScope | undefined,
+  ) {
     this.adapter = adapter;
     this.sessionDir = normalizeFolderPath(sessionDir, { allowPluginInternals: true });
     this.cwd = cwd;
+    this.scopeProvider = scopeProvider;
   }
 
-  static forPlugin(app: App, plugin: Plugin): ObsidianSessionManager {
+  static forPlugin(
+    app: App,
+    plugin: Plugin,
+    scopeProvider?: () => SessionScope | undefined,
+  ): ObsidianSessionManager {
     return new ObsidianSessionManager(
       app.vault.adapter,
       getPluginSessionDir(app, plugin),
       `obsidian-vault:${app.vault.getName()}`,
+      scopeProvider,
     );
   }
 
@@ -72,7 +99,7 @@ export class ObsidianSessionManager {
     const timestamp = new Date().toISOString();
     const fileTimestamp = timestamp.replace(/[:.]/g, "-");
     this.sessionFile = `${this.sessionDir}/${fileTimestamp}_${sessionId}.jsonl`;
-    this.entries = [createSessionHeader(sessionId, this.cwd, timestamp)];
+    this.entries = [createSessionHeader(sessionId, this.cwd, timestamp, this.currentScope())];
     this.leafId = null;
     await this.adapter.write(this.sessionFile, serializeSessionEntries(this.entries));
     await this.appendModelChange(defaults.provider, defaults.modelId);
@@ -106,9 +133,11 @@ export class ObsidianSessionManager {
     await this.ensureSessionDirectory();
     const listing = await this.adapter.list(this.sessionDir);
     const sessionFiles = listing.files.filter((path) => path.endsWith(".jsonl"));
+    const scope = this.currentScope();
     const sessions = await Promise.all(sessionFiles.map((path) => this.readSessionInfo(path)));
     return sessions
       .filter((session): session is SessionFileInfo => session !== null)
+      .filter((session) => this.matchesScope(session, scope))
       .sort((left, right) => right.modifiedTime - left.modifiedTime)
       .map(({ modifiedTime: _modifiedTime, ...session }) => session);
   }
@@ -123,6 +152,24 @@ export class ObsidianSessionManager {
       this.entries = [];
       this.leafId = null;
     }
+  }
+
+  async listReferencedArtifactIds(): Promise<Set<string>> {
+    await this.ensureSessionDirectory();
+    const listing = await this.adapter.list(this.sessionDir);
+    const ids = new Set<string>();
+    for (const path of listing.files.filter((file) => file.endsWith(".jsonl"))) {
+      try {
+        const entries = parseSessionEntries(await this.adapter.read(path));
+        const messages = entries
+          .filter((entry): entry is MessageSessionEntry => entry.type === "message")
+          .map((entry) => entry.message);
+        for (const id of collectArtifactIdsFromMessages(messages)) ids.add(id);
+      } catch {
+        // A broken session file should not block artifact cleanup for the rest.
+      }
+    }
+    return ids;
   }
 
   async appendMessage(message: AgentMessage): Promise<string> {
@@ -166,6 +213,36 @@ export class ObsidianSessionManager {
     });
   }
 
+  async appendActionAuditEvent(event: ActionAuditEvent): Promise<string> {
+    return this.appendEntry<ActionAuditSessionEntry>({
+      type: "action_audit",
+      id: createEntryId(this.entries),
+      parentId: this.leafId,
+      timestamp: event.timestamp,
+      event,
+    });
+  }
+
+  async appendFileCheckpoint(checkpoint: FileCheckpoint): Promise<string> {
+    return this.appendEntry<FileCheckpointSessionEntry>({
+      type: "file_checkpoint",
+      id: createEntryId(this.entries),
+      parentId: this.leafId,
+      timestamp: checkpoint.createdAt,
+      checkpoint,
+    });
+  }
+
+  async appendPlanTracker(state: PlanTrackerState | null): Promise<string> {
+    return this.appendEntry<PlanTrackerSessionEntry>({
+      type: "plan_tracker",
+      id: createEntryId(this.entries),
+      parentId: this.leafId,
+      timestamp: new Date().toISOString(),
+      state,
+    });
+  }
+
   /**
    * Rename any session by path — the active one in memory, or another on disk by
    * appending a `session_info` entry to its file.
@@ -200,6 +277,7 @@ export class ObsidianSessionManager {
     const header = this.entries[0];
     if (!header || header.type !== "session") throw new Error("Session file is missing a session header.");
     const sessionName = getSessionName(this.entries);
+    const planTracker = this.getActivePlanTracker();
     const context = this.buildSessionContext();
     const rebuilt: SessionEntry[] = [header];
     let parentId: string | null = null;
@@ -246,6 +324,15 @@ export class ObsidianSessionManager {
         name: sessionName,
       });
     }
+    if (planTracker) {
+      push({
+        type: "plan_tracker",
+        id: createEntryId(rebuilt),
+        parentId,
+        timestamp: new Date().toISOString(),
+        state: planTracker,
+      });
+    }
     await this.adapter.write(this.sessionFile, serializeSessionEntries(rebuilt));
     this.entries = rebuilt;
     this.leafId = parentId;
@@ -253,6 +340,10 @@ export class ObsidianSessionManager {
 
   buildSessionContext(): SessionContext {
     return buildSessionContext(this.entries, this.leafId);
+  }
+
+  getActivePlanTracker(): PlanTrackerState | null {
+    return getLatestPlanTrackerState(this.entries, this.leafId);
   }
 
   hasActiveSession(): boolean {
@@ -310,6 +401,16 @@ export class ObsidianSessionManager {
       return null;
     }
   }
+
+  private currentScope(): SessionScope | undefined {
+    return this.scopeProvider?.();
+  }
+
+  private matchesScope(session: SessionInfo, scope: SessionScope | undefined): boolean {
+    if (!this.scopeProvider) return true;
+    const projectId = scope?.projectId?.trim() || "";
+    return projectId ? session.projectId === projectId : !session.projectId;
+  }
 }
 
 export function getPluginSessionDir(app: App, plugin: Plugin): string {
@@ -329,6 +430,8 @@ function summarizeSession(path: string, entries: SessionEntry[], modifiedTime: n
     createdAt: header.timestamp,
     updatedAt: new Date(getSessionModifiedTime(entries, modifiedTime)).toISOString(),
     name: getSessionName(entries),
+    projectId: header.projectId,
+    projectName: header.projectName,
     messageCount: messageEntries.length,
     firstMessage: getFirstUserMessage(messageEntries) || "(no messages)",
   };

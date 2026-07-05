@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolArtifactMetadata, ToolArtifactStoreLike, ToolArtifactWriteInput } from "../src/artifacts/tool-artifact-store";
+import { parseSourceReference } from "../src/retrieval/citations";
 import {
   createWebFetchTool,
   extractReadableText,
@@ -9,6 +11,8 @@ import {
   type WebHttpResponse,
 } from "../src/tools/web-fetch";
 
+const FIXED_CREATED_AT = "2026-06-26T08:00:00.000Z";
+
 function stubFetcher(
   response: Partial<WebHttpResponse>,
   onRequest?: (request: WebHttpRequest) => void,
@@ -16,6 +20,44 @@ function stubFetcher(
   return async (request) => {
     onRequest?.(request);
     return { status: 200, text: "", headers: {}, ...response };
+  };
+}
+
+function memoryArtifactStore(): { store: ToolArtifactStoreLike; writes: ToolArtifactWriteInput[] } {
+  const writes: ToolArtifactWriteInput[] = [];
+  return {
+    writes,
+    store: {
+      async writeArtifact(input) {
+        writes.push(input);
+        return {
+          id: `artifact-${writes.length}`,
+          label: input.label,
+          sourceToolName: input.sourceToolName,
+          contentType: input.contentType ?? "text/plain",
+          createdAt: FIXED_CREATED_AT,
+          charLength: input.text.length,
+        };
+      },
+      async readArtifact(id) {
+        const index = Number(id.replace(/^artifact-/, "")) - 1;
+        const write = writes[index];
+        if (!write) throw new Error("not found");
+        const metadata: ToolArtifactMetadata = {
+          id,
+          label: write.label,
+          sourceToolName: write.sourceToolName,
+          contentType: write.contentType ?? "text/plain",
+          createdAt: FIXED_CREATED_AT,
+          charLength: write.text.length,
+          dedupKey: write.dedupKey,
+          sourceUrl: write.sourceUrl,
+          sourceKind: write.sourceKind,
+          sourceTextHash: write.sourceTextHash,
+        };
+        return { metadata, text: write.text };
+      },
+    },
   };
 }
 
@@ -101,6 +143,7 @@ describe("fetch_url tool", () => {
     expect(text).toContain("Source: https://example.com/doc");
     expect(text).toContain("Body text.");
     expect(details.title).toBe("Doc");
+    expect(details.extractor).toBe("regex-fallback");
     expect(details.truncated).toBe(false);
   });
 
@@ -183,6 +226,26 @@ describe("fetch_url tool", () => {
     await expect(run(tool, { url: "https://example.com/x" })).rejects.toThrow(/ENOTFOUND/);
   });
 
+  it("passes the abort signal to the fetcher and stops before processing results", async () => {
+    let seenSignal: AbortSignal | undefined;
+    const artifacts = memoryArtifactStore();
+    const fetcher: WebFetcher = (_request, signal) => {
+      seenSignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new Error("Aborted.")), { once: true });
+      });
+    };
+    const tool = createWebFetchTool({ fetcher, charLimit: 10_000, artifactStore: artifacts.store });
+    const controller = new AbortController();
+
+    const pending = tool.execute("call-1", { url: "https://example.com/slow" }, controller.signal);
+    controller.abort();
+
+    await expect(pending).rejects.toThrow(/Aborted/);
+    expect(seenSignal).toBe(controller.signal);
+    expect(artifacts.writes).toHaveLength(0);
+  });
+
   it("skips binary content instead of dumping it", async () => {
     const tool = createWebFetchTool({
       fetcher: stubFetcher({ text: "\x89PNG\r\n\x1a\n…binary…", headers: { "content-type": "image/png" } }),
@@ -214,5 +277,104 @@ describe("fetch_url tool", () => {
     });
     await expect(run(tool, { url: "http://localhost:8080/admin" })).rejects.toThrow(/local or private/i);
     expect(called).toBe(false);
+  });
+
+  it("writes full readable source text to an artifact when an artifact store is available", async () => {
+    const artifacts = memoryArtifactStore();
+    const sourceSentence = "Grounded source text that should remain inspectable and citable.";
+    const sourceBody = `${sourceSentence} `.repeat(12).trim();
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({
+        text: `<html>
+          <head><title>Research Doc</title></head>
+          <body>
+            <nav>Product nav</nav>
+            <main><p>${sourceBody}</p></main>
+          </body>
+        </html>`,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+      charLimit: 30,
+      artifactStore: artifacts.store,
+    });
+
+    const { text, details } = await run(tool, { url: "https://example.com/research" });
+
+    expect(text).toContain("Source artifact: [Research Doc](artifact:artifact-1)");
+    expect(text).toContain("truncated at 500 characters");
+    expect(details).toMatchObject({
+      sourceArtifactId: "artifact-1",
+      sourceArtifactCitation: "[Research Doc](artifact:artifact-1)",
+      sourceArtifactDuplicate: false,
+      extractor: "readability-lite",
+    });
+    expect(artifacts.writes).toHaveLength(1);
+    expect(artifacts.writes[0].label).toBe("Source: Research Doc");
+    expect(artifacts.writes[0].text).toContain(sourceSentence);
+    expect(artifacts.writes[0].text).not.toContain("Product nav");
+    expect(parseSourceReference(String(details.sourceArtifactCitation))).toEqual({
+      type: "artifact",
+      artifactId: "artifact-1",
+      label: "Research Doc",
+    });
+  });
+
+  it("normalizes transcript responses into transcript source artifacts", async () => {
+    const artifacts = memoryArtifactStore();
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({
+        text: [
+          "WEBVTT",
+          "",
+          "00:00:00.000 --> 00:00:02.000",
+          "<v Speaker>Vault agents should cite imported transcripts.</v>",
+          "",
+          "00:00:02.000 --> 00:00:04.000",
+          "Video summaries need inspectable provenance.",
+        ].join("\n"),
+        headers: { "content-type": "text/vtt; charset=utf-8" },
+      }),
+      charLimit: 10_000,
+      artifactStore: artifacts.store,
+    });
+
+    const { text, details } = await run(tool, { url: "https://example.com/talk.vtt" });
+
+    expect(text).toContain("Vault agents should cite imported transcripts.");
+    expect(text).toContain("Video summaries need inspectable provenance.");
+    expect(text).not.toContain("-->");
+    expect(details).toMatchObject({
+      sourceKind: "transcript",
+      transcriptFormat: "vtt",
+      sourceArtifactId: "artifact-1",
+    });
+    expect(artifacts.writes[0]).toMatchObject({
+      sourceKind: "transcript",
+    });
+    expect(artifacts.writes[0].text).toContain("source_kind: transcript");
+    expect(artifacts.writes[0].text).toContain('transcript_format: "vtt"');
+    expect(artifacts.writes[0].text).not.toContain("-->");
+  });
+
+  it("deduplicates repeated fetch source artifacts for the same canonical source", async () => {
+    const artifacts = memoryArtifactStore();
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({
+        text: "<html><head><title>Doc</title></head><body><main><p>Same source body.</p></main></body></html>",
+        headers: { "content-type": "text/html" },
+      }),
+      charLimit: 10_000,
+      artifactStore: artifacts.store,
+    });
+
+    const first = await run(tool, { url: "https://example.com/doc?b=2&a=1#ignored" });
+    const second = await run(tool, { url: "https://example.com/doc?a=1&b=2" });
+
+    expect(artifacts.writes).toHaveLength(1);
+    expect(first.details.sourceArtifactId).toBe("artifact-1");
+    expect(second.details.sourceArtifactId).toBe("artifact-1");
+    expect(first.details.sourceArtifactDuplicate).toBe(false);
+    expect(second.details.sourceArtifactDuplicate).toBe(true);
+    expect(second.text).toContain("Source artifact: [Doc](artifact:artifact-1) (already imported)");
   });
 });

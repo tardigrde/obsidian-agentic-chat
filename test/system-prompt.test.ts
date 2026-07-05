@@ -19,6 +19,9 @@ describe("buildSystemPrompt", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("path-only reference");
     // Don't re-read what's already in context; paginate large reads.
     expect(DEFAULT_SYSTEM_PROMPT).toContain("offset/limit");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("startLine/endLine");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("focused question");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("token usage and context bloat");
     // Ignore-listed (private) paths are off-limits.
     expect(DEFAULT_SYSTEM_PROMPT).toContain("ignore-listed");
   });

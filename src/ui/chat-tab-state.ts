@@ -1,3 +1,4 @@
+import { ActiveNoteContextCache } from "./active-note";
 import type { ContextAttachment } from "./context-attachments";
 
 /**
@@ -7,27 +8,37 @@ import type { ContextAttachment } from "./context-attachments";
  */
 export interface ChatTabWorkingState {
   attachments: ContextAttachment[];
+  activeNoteCache: ActiveNoteContextCache;
   activeNoteSuppressed: boolean;
   draft: string;
+  queuedPromptArmed: boolean;
   sentHistory: string[];
   notifiedContext: Set<number>;
   notifiedCost: boolean;
+  notifiedToolBudgetKey: string | null;
   lastCompactionCount: number;
   lastSentPrompt: string | null;
   lastSentDisplay: string | null;
+  relevantPinnedPaths: string[];
+  relevantExcludedPaths: string[];
 }
 
 /** A clean per-tab working state for a fresh conversation. */
 export function freshChatTabState(): ChatTabWorkingState {
   return {
     attachments: [],
+    activeNoteCache: new ActiveNoteContextCache(),
     activeNoteSuppressed: false,
     draft: "",
+    queuedPromptArmed: false,
     sentHistory: [],
     notifiedContext: new Set<number>(),
     notifiedCost: false,
+    notifiedToolBudgetKey: null,
     lastCompactionCount: 0,
     lastSentPrompt: null,
     lastSentDisplay: null,
+    relevantPinnedPaths: [],
+    relevantExcludedPaths: [],
   };
 }

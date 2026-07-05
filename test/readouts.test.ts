@@ -5,10 +5,10 @@ import { DEFAULT_SETTINGS } from "../src/settings";
 import { buildSummaryMessage } from "../src/agent/compaction";
 import { compactionCount, contextFraction, estimateNextCostReadout } from "../src/agent/readouts";
 
-function assistant(inputTokens: number): AgentMessage {
+function assistant(inputTokens: number, text = "ok"): AgentMessage {
   return {
     role: "assistant",
-    content: [{ type: "text", text: "ok" }],
+    content: [{ type: "text", text }],
     api: "openai-completions",
     provider: "openrouter",
     model: "test/model",
@@ -23,6 +23,18 @@ function assistant(inputTokens: number): AgentMessage {
     stopReason: "stop",
     timestamp: 1,
   };
+}
+
+function assistantWithCache(inputTokens: number, cacheRead: number, cacheWrite = 0): AgentMessage {
+  const message = assistant(inputTokens) as Extract<AgentMessage, { role: "assistant" }>;
+  message.usage = {
+    ...message.usage,
+    input: inputTokens,
+    cacheRead,
+    cacheWrite,
+    totalTokens: inputTokens + cacheRead + cacheWrite,
+  };
+  return message;
 }
 
 function model(cost: Model<Api>["cost"]): Model<Api> {
@@ -41,25 +53,25 @@ function model(cost: Model<Api>["cost"]): Model<Api> {
 }
 
 describe("agent readouts", () => {
-  it("reports context fraction from the latest assistant input usage and clamps at 1", () => {
+  it("reports context fraction from the current transcript estimate and clamps at 1", () => {
     const messages: AgentMessage[] = [
-      assistant(200),
-      { role: "user", content: "next", timestamp: 2 },
-      assistant(1_500),
+      { role: "user", content: "x".repeat(4_000), timestamp: 2 },
+      assistant(1, "y".repeat(4_000)),
     ];
 
     expect(contextFraction(messages, 1_000)).toBe(1);
-    expect(contextFraction(messages, 2_000)).toBe(0.75);
+    expect(contextFraction(messages, 4_000)).toBe(0.5);
     expect(contextFraction(messages, 0)).toBeUndefined();
   });
 
-  it("ignores assistant turns without input usage when reporting context fraction", () => {
-    const messages = [
-      assistant(400),
-      { ...assistant(0), usage: undefined },
-    ] as AgentMessage[];
+  it("returns undefined when there is no transcript content to estimate", () => {
+    expect(contextFraction([], 1_000)).toBeUndefined();
+  });
 
-    expect(contextFraction(messages, 1_000)).toBe(0.4);
+  it("ignores stale provider usage when reporting current context fraction", () => {
+    const messages: AgentMessage[] = [assistantWithCache(10, 490)];
+
+    expect(contextFraction(messages, 1_000)).toBe(0.001);
   });
 
   it("counts automatic compaction summary messages", () => {

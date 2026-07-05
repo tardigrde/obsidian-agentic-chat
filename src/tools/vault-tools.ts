@@ -1,19 +1,41 @@
 import { type App, TFile, TFolder, MarkdownView, parseYaml } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { Type } from "typebox";
 import { applyExactEdits } from "../vault/edit";
 import { getParentPath, normalizeFolderPath, normalizeVaultPath } from "../vault/path";
 import type { IgnoreMatcher } from "../vault/ignore";
 import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../vault/search";
 import { alreadyReadMessage, type ReadMemo } from "../vault/read-memo";
-import { formatTextSlice, readSizeGuardrail, sliceTextByLines, truncateToolOutput } from "../vault/truncate";
 import {
-  builtinToolExecutionMode,
-  builtinToolLabel,
+  formatTextSlice,
+  readSizeGuardrail,
+  resolveLineWindow,
+  sliceTextByLines,
+  truncateToolOutput,
+} from "../vault/truncate";
+import {
   builtinToolContractsForSurface,
   type BuiltinToolName,
   type BuiltinToolSurface,
 } from "./tool-contracts";
+import {
+  ActiveNoteParameters,
+  BacklinksParameters,
+  DeleteParameters,
+  EditParameters,
+  FindParameters,
+  GetPropertiesParameters,
+  GrepParameters,
+  LinksParameters,
+  LocalGraphParameters,
+  LsParameters,
+  ReadParameters,
+  RenameParameters,
+  SearchParameters,
+  SetPropertiesParameters,
+  VaultInspectParameters,
+  WriteParameters,
+  vaultToolDefinition,
+} from "./vault-tool-definitions";
 
 export { MUTATING_TOOLS } from "./tool-contracts";
 
@@ -21,94 +43,6 @@ const TEXT_EXTENSIONS = new Set([
   "md", "txt", "json", "jsonl", "csv", "tsv", "yaml", "yml",
   "css", "js", "ts", "tsx", "jsx", "html", "xml",
 ]);
-
-const ReadParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path to the file, including extension" }),
-  offset: Type.Optional(Type.Number({ description: "1-based line to start reading from" })),
-  limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
-});
-
-const WriteParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path, e.g. Folder/Note.md" }),
-  content: Type.String({ description: "Full file content to write" }),
-});
-
-const EditParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path to the file to edit" }),
-  edits: Type.Array(
-    Type.Object({
-      oldText: Type.String({ description: "Exact text to replace (must occur exactly once)" }),
-      newText: Type.String({ description: "Replacement text" }),
-    }),
-    { description: "One or more exact replacements applied in a single pass" },
-  ),
-});
-
-const LsParameters = Type.Object({
-  path: Type.Optional(Type.String({ description: "Vault-relative folder path; empty for the vault root" })),
-});
-
-const FindParameters = Type.Object({
-  pattern: Type.String({ description: "Case-insensitive substring or simple * and ? glob" }),
-  maxResults: Type.Optional(Type.Number()),
-});
-
-const GrepParameters = Type.Object({
-  pattern: Type.String({ description: "Text or regex to search for in file contents" }),
-  path: Type.Optional(Type.String({ description: "Restrict search to this vault-relative folder" })),
-  caseSensitive: Type.Optional(Type.Boolean()),
-  regex: Type.Optional(Type.Boolean({ description: "Treat pattern as a regular expression" })),
-  maxMatches: Type.Optional(Type.Number()),
-});
-
-const SearchParameters = Type.Object({
-  query: Type.String({ description: "Filename or file text to search for" }),
-  kind: Type.Optional(Type.String({ description: "One of: both, files, content. Defaults to both." })),
-  path: Type.Optional(Type.String({ description: "Restrict search to this vault-relative folder" })),
-  caseSensitive: Type.Optional(Type.Boolean()),
-  regex: Type.Optional(Type.Boolean({ description: "Treat the content query as a regular expression" })),
-  maxResults: Type.Optional(Type.Number({ description: "Maximum file-name matches to return" })),
-  maxMatches: Type.Optional(Type.Number({ description: "Maximum content matches to return" })),
-});
-
-const ActiveNoteParameters = Type.Object({
-  includeContent: Type.Optional(Type.Boolean({ description: "Include the note's text" })),
-  includeSelection: Type.Optional(Type.Boolean({ description: "Include the current editor selection" })),
-});
-
-const RenameParameters = Type.Object({
-  path: Type.String({ description: "Current vault-relative path" }),
-  newPath: Type.String({ description: "New vault-relative path; backlinks are updated automatically" }),
-});
-
-const DeleteParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path to move to trash" }),
-});
-
-const BacklinksParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path of the note to find inbound links to" }),
-});
-
-const LinksParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path of the note whose outbound links to list" }),
-});
-
-const LocalGraphParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path of the note to map the neighborhood of" }),
-});
-
-const GetPropertiesParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path of the note whose frontmatter to read" }),
-});
-
-const SetPropertiesParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path of the note whose frontmatter to update" }),
-  properties: Type.Record(Type.String(), Type.Unknown(), {
-    description:
-      "Key/value pairs to merge into the note's YAML frontmatter. Existing keys are overwritten; " +
-      "keys not listed are left untouched. Pass null as a value to delete that key.",
-  }),
-});
 
 /**
  * All built-in vault tools, bound to the active Obsidian app.
@@ -139,6 +73,7 @@ interface VaultToolFactoryContext {
 
 const VAULT_TOOL_FACTORIES: Record<BuiltinToolName, (context: VaultToolFactoryContext) => AgentTool> = {
   read: ({ app, isIgnored, memo }) => createReadTool(app, isIgnored, memo),
+  vault_inspect: ({ app, isIgnored }) => createVaultInspectTool(app, isIgnored),
   write: ({ app, isIgnored, memo }) => createWriteTool(app, isIgnored, memo),
   edit: ({ app, isIgnored, memo }) => createEditTool(app, isIgnored, memo),
   ls: ({ app, isIgnored }) => createLsTool(app, isIgnored),
@@ -155,44 +90,147 @@ const VAULT_TOOL_FACTORIES: Record<BuiltinToolName, (context: VaultToolFactoryCo
   set_properties: ({ app, isIgnored }) => createSetPropertiesTool(app, isIgnored),
 };
 
+type VaultInspectAction = "list" | "search" | "active_note" | "local_graph" | "properties";
+
+function createVaultInspectTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof VaultInspectParameters> {
+  return {
+    ...vaultToolDefinition("vault_inspect"),
+    execute: async (id, params, signal) => {
+      const action = normalizeVaultInspectAction(params.action);
+      switch (action) {
+        case "list":
+          return runInspectedTool(createLsTool(app, isIgnored), id, { path: params.path }, action, "ls", signal);
+        case "search":
+          return runInspectedTool(
+            createSearchTool(app, isIgnored),
+            id,
+            {
+              query: requiredString(params.query, "query"),
+              kind: params.kind,
+              path: params.path,
+              caseSensitive: params.caseSensitive,
+              regex: params.regex,
+              maxResults: params.maxResults,
+              maxMatches: params.maxMatches,
+            },
+            action,
+            "search",
+            signal,
+          );
+        case "active_note":
+          return runInspectedTool(
+            createActiveNoteTool(app, isIgnored),
+            id,
+            { includeContent: params.includeContent, includeSelection: params.includeSelection },
+            action,
+            "get_active_note",
+            signal,
+          );
+        case "local_graph":
+          return runInspectedTool(
+            createLocalGraphTool(app, isIgnored),
+            id,
+            { path: requiredString(params.path, "path") },
+            action,
+            "local_graph",
+            signal,
+          );
+        case "properties":
+          return runInspectedTool(
+            createGetPropertiesTool(app, isIgnored),
+            id,
+            { path: requiredString(params.path, "path") },
+            action,
+            "get_properties",
+            signal,
+          );
+      }
+    },
+  };
+}
+
+async function runInspectedTool(
+  tool: AgentTool,
+  id: string,
+  params: unknown,
+  action: VaultInspectAction,
+  delegatedTool: BuiltinToolName,
+  signal: AbortSignal | undefined,
+): Promise<AgentToolResult<Record<string, unknown>>> {
+  const result = await tool.execute(id, params as never, signal);
+  return {
+    ...result,
+    details: {
+      inspectAction: action,
+      delegatedTool,
+      ...((result.details ?? {}) as Record<string, unknown>),
+    },
+  };
+}
+
+function normalizeVaultInspectAction(value: unknown): VaultInspectAction {
+  if (
+    value === "list" ||
+    value === "search" ||
+    value === "active_note" ||
+    value === "local_graph" ||
+    value === "properties"
+  ) {
+    return value;
+  }
+  throw new Error("vault_inspect: action must be list, search, active_note, local_graph, or properties.");
+}
+
+function requiredString(value: unknown, name: string): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) throw new Error(`vault_inspect: ${name} is required.`);
+  return text;
+}
+
 function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof ReadParameters> {
   return {
-    name: "read",
-    label: builtinToolLabel("read"),
-    description: "Read a vault-relative Markdown/text file. Use offset and limit for large files.",
-    parameters: ReadParameters,
+    ...vaultToolDefinition("read"),
     execute: async (_id, params) => {
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
+      const range = {
+        startLine: params.startLine,
+        endLine: params.endLine,
+        offset: params.offset,
+        limit: params.limit,
+      };
+      const window = resolveLineWindow(range);
       // De-dup: a repeat read of the same range is handed a short pointer instead
       // of re-injecting the full text, so re-reading can't quietly double a file
       // into the context. Edits invalidate the path, forcing a fresh read.
-      if (memo?.has({ path, offset: params.offset, limit: params.limit })) {
+      if (memo?.has({ path, offset: window.offset, limit: window.limit })) {
         return textResult(alreadyReadMessage(path), { path, deduplicated: true });
       }
       // Size guardrail: refuse a bulk dump of a very large file; guide the model
       // to paginate so one read can't blow the context window.
-      const guidance = readSizeGuardrail({ path, size: file.stat?.size ?? 0, offset: params.offset, limit: params.limit });
+      const guidance = readSizeGuardrail({ path, size: file.stat?.size ?? 0, ...range });
       if (guidance) {
         return textResult(guidance, { path, tooLarge: true });
       }
       const content = await app.vault.cachedRead(file);
-      const slice = sliceTextByLines(content, { offset: params.offset, limit: params.limit });
+      const slice = sliceTextByLines(content, window);
       // Record only after a successful read — a failed/refused read (above) must
       // not poison the memo, or the next identical read would return a stale
       // "already read" pointer instead of retrying.
-      memo?.mark({ path, offset: params.offset, limit: params.limit });
-      return textResult(formatTextSlice(path, slice), { path, totalLines: slice.totalLines, truncated: slice.truncated });
+      memo?.mark({ path, offset: window.offset, limit: window.limit });
+      return textResult(formatTextSlice(path, slice), {
+        path,
+        startLine: slice.startLine,
+        endLine: slice.endLine,
+        totalLines: slice.totalLines,
+        truncated: slice.truncated,
+      });
     },
   };
 }
 
 function createWriteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof WriteParameters> {
   return {
-    name: "write",
-    label: builtinToolLabel("write"),
-    description: "Create or overwrite a vault-relative file. Parent folders are created as needed.",
-    parameters: WriteParameters,
-    executionMode: builtinToolExecutionMode("write"),
+    ...vaultToolDefinition("write"),
     execute: async (_id, params) => {
       const path = normalizeVisibleVaultPath(isIgnored, params.path);
       await ensureParentFolders(app, path);
@@ -216,12 +254,7 @@ function createWriteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): A
 
 function createEditTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof EditParameters> {
   return {
-    name: "edit",
-    label: builtinToolLabel("edit"),
-    description:
-      "Apply exact text replacements to a vault-relative file. Each oldText must match exactly once.",
-    parameters: EditParameters,
-    executionMode: builtinToolExecutionMode("edit"),
+    ...vaultToolDefinition("edit"),
     execute: async (_id, params) => {
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
       await app.vault.process(file, (content) => applyExactEdits(content, params.edits));
@@ -236,10 +269,7 @@ function createEditTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
 
 function createLsTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LsParameters> {
   return {
-    name: "ls",
-    label: builtinToolLabel("ls"),
-    description: "List files and folders at a vault-relative folder path.",
-    parameters: LsParameters,
+    ...vaultToolDefinition("ls"),
     execute: async (_id, params) => {
       const path = normalizeFolderPath(params.path ?? "");
       if (path && isIgnored(path)) throw new Error(`Folder not found: ${path}`);
@@ -260,10 +290,7 @@ function createLsTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LsPa
 
 function createFindTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof FindParameters> {
   return {
-    name: "find",
-    label: builtinToolLabel("find"),
-    description: "Find vault files by case-insensitive substring or simple * and ? glob pattern.",
-    parameters: FindParameters,
+    ...vaultToolDefinition("find"),
     execute: async (_id, params) => {
       const maxResults = params.maxResults ?? 100;
       const matches = app.vault
@@ -288,12 +315,7 @@ type SearchKind = "both" | "files" | "content";
 
 function createSearchTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof SearchParameters> {
   return {
-    name: "search",
-    label: builtinToolLabel("search"),
-    description:
-      "Search vault file names and file contents with one tool. Use kind=files for path discovery, " +
-      "kind=content for text search, or kind=both when unsure.",
-    parameters: SearchParameters,
+    ...vaultToolDefinition("search"),
     execute: async (_id, params) => {
       const query = params.query.trim();
       if (!query) throw new Error("search: provide a non-empty query.");
@@ -329,10 +351,7 @@ function createSearchTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof 
 
 function createGrepTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof GrepParameters> {
   return {
-    name: "grep",
-    label: builtinToolLabel("grep"),
-    description: "Search text files in the vault. Literal by default; set regex true for regular expressions.",
-    parameters: GrepParameters,
+    ...vaultToolDefinition("grep"),
     execute: async (_id, params) => {
       const maxMatches = params.maxMatches ?? 100;
       const rootPath = params.path ? normalizeFolderPath(params.path) : "";
@@ -441,18 +460,18 @@ function formatSearchResults(options: {
 
 function createActiveNoteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof ActiveNoteParameters> {
   return {
-    name: "get_active_note",
-    label: builtinToolLabel("get_active_note"),
-    description:
-      "Return the active note path, with optional selected text and content. Use when the user says 'this note'.",
-    parameters: ActiveNoteParameters,
+    ...vaultToolDefinition("get_active_note"),
     execute: async (_id, params) => {
       const view = app.workspace.getActiveViewOfType(MarkdownView);
-      const file = view?.file;
+      const activeFile = app.workspace.getActiveFile();
+      const file = view?.file ?? activeFile;
       // An ignored active note is treated as if no note were open at all.
-      if (!view || !file || isIgnored(file.path)) throw new Error("No active Markdown note.");
+      if (!file || file.extension !== "md" || isIgnored(file.path)) throw new Error("No active Markdown note.");
       const lines = [`Active note: ${file.path}`];
-      const selection = params.includeSelection ? view.editor.getSelection() : "";
+      const selection =
+        params.includeSelection && view?.file?.path === file.path
+          ? view.editor.getSelection()
+          : "";
       if (params.includeSelection) lines.push("", "Selection:", selection || "(no selection)");
       if (params.includeContent) {
         const content = await app.vault.cachedRead(file);
@@ -465,11 +484,7 @@ function createActiveNoteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typ
 
 function createRenameTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof RenameParameters> {
   return {
-    name: "rename",
-    label: builtinToolLabel("rename"),
-    description: "Rename or move a vault file. Wikilinks and backlinks are updated automatically.",
-    parameters: RenameParameters,
-    executionMode: builtinToolExecutionMode("rename"),
+    ...vaultToolDefinition("rename"),
     execute: async (_id, params) => {
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
       const newPath = normalizeVisibleVaultPath(isIgnored, params.newPath);
@@ -488,26 +503,22 @@ function createRenameTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): 
 
 function createDeleteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof DeleteParameters> {
   return {
-    name: "delete",
-    label: builtinToolLabel("delete"),
-    description: "Move a vault file to trash (recoverable).",
-    parameters: DeleteParameters,
-    executionMode: builtinToolExecutionMode("delete"),
+    ...vaultToolDefinition("delete"),
     execute: async (_id, params) => {
-      const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
-      await app.fileManager.trashFile(file);
+      const { path, entry } = getVisibleVaultEntry(app, isIgnored, params.path);
+      if (entry instanceof TFolder && entry.children.length > 0) {
+        throw new Error(`Folder not empty: ${path}`);
+      }
+      await app.fileManager.trashFile(entry);
       memo?.invalidate(path);
-      return textResult(`Moved ${path} to trash.`, { path });
+      return textResult(`Moved ${path} to trash.`, { path, kind: entry instanceof TFolder ? "folder" : "file" });
     },
   };
 }
 
 function createBacklinksTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof BacklinksParameters> {
   return {
-    name: "get_backlinks",
-    label: builtinToolLabel("get_backlinks"),
-    description: "List notes that link TO a given note (inbound wikilinks).",
-    parameters: BacklinksParameters,
+    ...vaultToolDefinition("get_backlinks"),
     execute: async (_id, params) => {
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
       const sources = getBacklinkSources(app, file).filter((entry) => !isIgnored(entry.path));
@@ -523,10 +534,7 @@ function createBacklinksTool(app: App, isIgnored: IgnoreMatcher): AgentTool<type
 
 function createLinksTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LinksParameters> {
   return {
-    name: "get_links",
-    label: builtinToolLabel("get_links"),
-    description: "List the notes a given note links TO (outbound resolved links).",
-    parameters: LinksParameters,
+    ...vaultToolDefinition("get_links"),
     execute: async (_id, params) => {
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
       const targets = getOutboundLinks(app, file.path).filter((entry) => !isIgnored(entry.path));
@@ -542,11 +550,7 @@ function createLinksTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof L
 
 function createLocalGraphTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LocalGraphParameters> {
   return {
-    name: "local_graph",
-    label: builtinToolLabel("local_graph"),
-    description:
-      "Show a note's immediate neighborhood: inbound (backlinks) and outbound (resolved links) notes.",
-    parameters: LocalGraphParameters,
+    ...vaultToolDefinition("local_graph"),
     execute: async (_id, params) => {
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
       const inbound = getBacklinkSources(app, file).filter((entry) => !isIgnored(entry.path));
@@ -565,10 +569,7 @@ function createLocalGraphTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typ
 
 function createGetPropertiesTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof GetPropertiesParameters> {
   return {
-    name: "get_properties",
-    label: builtinToolLabel("get_properties"),
-    description: "Read a note's YAML frontmatter as structured key/value data.",
-    parameters: GetPropertiesParameters,
+    ...vaultToolDefinition("get_properties"),
     execute: async (_id, params) => {
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
       const frontmatter = await readFrontmatter(app, file);
@@ -581,13 +582,7 @@ function createGetPropertiesTool(app: App, isIgnored: IgnoreMatcher): AgentTool<
 
 function createSetPropertiesTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof SetPropertiesParameters> {
   return {
-    name: "set_properties",
-    label: builtinToolLabel("set_properties"),
-    description:
-      "Merge keys into a note's YAML frontmatter (set/overwrite; pass null to delete a key). " +
-      "Edits the structured frontmatter, never the raw YAML text.",
-    parameters: SetPropertiesParameters,
-    executionMode: builtinToolExecutionMode("set_properties"),
+    ...vaultToolDefinition("set_properties"),
     execute: async (_id, params) => {
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
       const set: string[] = [];
@@ -691,6 +686,13 @@ function normalizeVisibleVaultPath(isIgnored: IgnoreMatcher, path: string): stri
 function getVisibleVaultFile(app: App, isIgnored: IgnoreMatcher, path: string): { path: string; file: TFile } {
   const normalized = normalizeVisibleVaultPath(isIgnored, path);
   return { path: normalized, file: getVaultFile(app, normalized) };
+}
+
+function getVisibleVaultEntry(app: App, isIgnored: IgnoreMatcher, path: string): { path: string; entry: TFile | TFolder } {
+  const normalized = normalizeVisibleVaultPath(isIgnored, path);
+  const entry = app.vault.getAbstractFileByPath(normalized);
+  if (entry instanceof TFile || entry instanceof TFolder) return { path: normalized, entry };
+  throw new Error(`File or folder not found: ${normalized}`);
 }
 
 /**

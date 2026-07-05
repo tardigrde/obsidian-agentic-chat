@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ActiveNoteContextCache,
   autoActiveNotePath,
   buildActiveNoteSection,
   effectiveActiveNote,
@@ -23,6 +24,25 @@ describe("effectiveActiveNote", () => {
     expect(effectiveActiveNote({ activePath: "Notes/A.md", suppressed: false, explicit: ["Notes/A.md"] })).toBeNull();
     // A different explicit attachment doesn't suppress the active note.
     expect(effectiveActiveNote({ activePath: "Notes/A.md", suppressed: false, explicit: ["Other.md"] })).toBe("Notes/A.md");
+  });
+
+  it("suppresses only the note whose selected text is attached", () => {
+    expect(
+      effectiveActiveNote({
+        activePath: "Notes/A.md",
+        suppressed: false,
+        explicit: [],
+        selectedTextSources: ["Notes/A.md"],
+      }),
+    ).toBeNull();
+    expect(
+      effectiveActiveNote({
+        activePath: "Notes/B.md",
+        suppressed: false,
+        explicit: [],
+        selectedTextSources: ["Notes/A.md"],
+      }),
+    ).toBe("Notes/B.md");
   });
 });
 
@@ -84,5 +104,52 @@ describe("buildActiveNoteSection (truncation ladder)", () => {
   it("treats a blank visible range as unavailable", () => {
     const section = buildActiveNoteSection({ path: "A.md", full: "x".repeat(50), visibleRange: "   ", limit: 10 });
     expect(section).toMatch(/by reference/i);
+  });
+});
+
+describe("ActiveNoteContextCache (unchanged-body dedupe)", () => {
+  it("inlines the full body on the first turn and a compact marker once the same body is committed", () => {
+    const cache = new ActiveNoteContextCache();
+    const first = cache.render({ path: "A.md", full: "same body", limit: MAX_ACTIVE_NOTE_CHARS });
+    expect(first).toContain("same body");
+    cache.commitPending();
+    const second = cache.render({ path: "A.md", full: "same body", limit: MAX_ACTIVE_NOTE_CHARS });
+    expect(second).toMatch(/unchanged since it was already attached/i);
+    expect(second).not.toContain("same body");
+  });
+
+  it("re-inlines the body when the note changed between turns", () => {
+    const cache = new ActiveNoteContextCache();
+    cache.render({ path: "A.md", full: "first body", limit: MAX_ACTIVE_NOTE_CHARS });
+    cache.commitPending();
+    const second = cache.render({ path: "A.md", full: "edited body", limit: MAX_ACTIVE_NOTE_CHARS });
+    expect(second).toContain("edited body");
+    expect(second).not.toMatch(/unchanged since/i);
+  });
+
+  it("discarding pending state leaves the previous turn uncached, so the body is inlined again", () => {
+    const cache = new ActiveNoteContextCache();
+    cache.render({ path: "A.md", full: "body", limit: MAX_ACTIVE_NOTE_CHARS });
+    cache.discardPending();
+    const second = cache.render({ path: "A.md", full: "body", limit: MAX_ACTIVE_NOTE_CHARS });
+    expect(second).toContain("body");
+    expect(second).not.toMatch(/unchanged since/i);
+  });
+
+  it("clear() forgets committed bodies", () => {
+    const cache = new ActiveNoteContextCache();
+    cache.render({ path: "A.md", full: "body", limit: MAX_ACTIVE_NOTE_CHARS });
+    cache.commitPending();
+    cache.clear();
+    const second = cache.render({ path: "A.md", full: "body", limit: MAX_ACTIVE_NOTE_CHARS });
+    expect(second).toContain("body");
+  });
+
+  it("tracks distinct notes independently", () => {
+    const cache = new ActiveNoteContextCache();
+    cache.render({ path: "A.md", full: "body-a", limit: MAX_ACTIVE_NOTE_CHARS });
+    cache.commitPending();
+    const b = cache.render({ path: "B.md", full: "body-a", limit: MAX_ACTIVE_NOTE_CHARS });
+    expect(b).toContain("body-a");
   });
 });

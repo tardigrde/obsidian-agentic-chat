@@ -3,6 +3,7 @@ import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 export interface AgentEventHandlerOptions {
   recordMessageEnd: (message: AgentMessage) => Promise<void>;
   recordAgentEnd: (messages: AgentMessage[]) => Promise<void>;
+  recordAuditEvent?: (event: AgentEvent) => Promise<void>;
   enforceSpendCap: () => void;
   setError: (error: unknown) => void;
   emitEvent: (event: AgentEvent) => void;
@@ -12,6 +13,12 @@ export interface AgentEventHandlerOptions {
 }
 
 export async function handleAgentRuntimeEvent(event: AgentEvent, options: AgentEventHandlerOptions): Promise<void> {
+  try {
+    await options.recordAuditEvent?.(event);
+  } catch (error) {
+    options.setError(error);
+  }
+
   try {
     if (event.type === "message_end") {
       await options.recordMessageEnd(event.message);

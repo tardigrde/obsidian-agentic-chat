@@ -10,6 +10,21 @@ export interface DiffStat {
   removed: number;
 }
 
+export interface CompactDiffWindow {
+  lines: DiffLine[];
+  start: number;
+  end: number;
+  total: number;
+  hiddenBefore: number;
+  hiddenAfter: number;
+}
+
+export interface CompactDiffOptions {
+  contextBefore?: number;
+  contextAfter?: number;
+  maxLines?: number;
+}
+
 /**
  * Above this many DP cells (before-lines × after-lines) we skip the line-level
  * LCS and let callers fall back to a summary, so a huge file can't lock the UI
@@ -90,4 +105,39 @@ export function diffStat(lines: DiffLine[]): DiffStat {
     else if (line.op === "remove") removed++;
   }
   return { added, removed };
+}
+
+export function compactDiffLines(lines: DiffLine[], options: CompactDiffOptions = {}): CompactDiffWindow {
+  const total = lines.length;
+  const firstChanged = lines.findIndex((line) => line.op !== "context");
+  if (firstChanged < 0) {
+    return { lines, start: 0, end: total, total, hiddenBefore: 0, hiddenAfter: 0 };
+  }
+
+  let lastChanged = firstChanged;
+  for (let index = total - 1; index > firstChanged; index -= 1) {
+    if (lines[index].op !== "context") {
+      lastChanged = index;
+      break;
+    }
+  }
+
+  const contextBefore = Math.max(0, Math.floor(options.contextBefore ?? 10));
+  const contextAfter = Math.max(0, Math.floor(options.contextAfter ?? 10));
+  const maxLines = options.maxLines === undefined ? undefined : Math.max(1, Math.floor(options.maxLines));
+  const start = Math.max(0, firstChanged - contextBefore);
+  let end = Math.min(total, lastChanged + contextAfter + 1);
+
+  if (maxLines !== undefined && end - start > maxLines) {
+    end = start + maxLines;
+  }
+
+  return {
+    lines: lines.slice(start, end),
+    start,
+    end,
+    total,
+    hiddenBefore: start,
+    hiddenAfter: total - end,
+  };
 }

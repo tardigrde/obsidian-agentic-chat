@@ -31,6 +31,7 @@ export class AgentParentConfigurationRuntime {
 
   build(): ParentAgentRuntimeConfiguration {
     const settings = this.options.getSettings();
+    const model = this.options.turns.buildModelForTurn(settings);
     const subagentTool =
       this.options.runtimeResources.getProfiles().length > 0
         ? this.options.subagents.createTool()
@@ -41,9 +42,11 @@ export class AgentParentConfigurationRuntime {
         settings,
         this.options.turns.getActiveModelId(),
       ),
-      model: this.options.turns.buildModelForTurn(settings),
+      model,
       thinkingLevel: this.options.turns.thinkingLevelForTurn(settings),
-      tools: this.options.runtimeResources.buildParentTools(settings, subagentTool),
+      tools: this.options.runtimeResources.buildParentTools(settings, subagentTool, {
+        contextWindow: model.contextWindow,
+      }),
       getApiKey: (provider) => apiKeyForProvider(this.options.getSettings(), provider),
       beforeToolCall: (context) => this.options.toolCalls.beforeToolCall(context),
       afterToolCall: (context) => this.options.toolCalls.afterToolCall(context),

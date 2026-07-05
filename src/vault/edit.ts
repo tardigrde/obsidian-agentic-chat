@@ -5,7 +5,7 @@ export interface ExactEdit {
   newText: string;
 }
 
-interface ResolvedEdit extends ExactEdit {
+export interface ResolvedEdit extends ExactEdit {
   start: number;
   end: number;
 }
@@ -16,6 +16,10 @@ interface ResolvedEdit extends ExactEdit {
  * semantics so the model gets a clear error instead of silent corruption.
  */
 export function applyExactEdits(content: string, edits: ExactEdit[]): string {
+  return applyResolvedEdits(content, resolveExactEdits(content, edits));
+}
+
+export function resolveExactEdits(content: string, edits: ExactEdit[]): ResolvedEdit[] {
   if (edits.length === 0) {
     throw new Error("At least one edit is required.");
   }
@@ -24,7 +28,7 @@ export function applyExactEdits(content: string, edits: ExactEdit[]): string {
     .map((edit) => resolveEdit(content, edit))
     .sort((left, right) => left.start - right.start);
   assertNoOverlaps(resolvedEdits);
-  return applyResolvedEdits(content, resolvedEdits);
+  return resolvedEdits;
 }
 
 function resolveEdit(content: string, edit: ExactEdit): ResolvedEdit {

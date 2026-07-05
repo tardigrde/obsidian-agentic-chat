@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TFile, type App } from "obsidian";
+import { TFile, TFolder, type App } from "obsidian";
 import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
 import { createVaultTools } from "../src/tools/vault-tools";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -16,8 +16,14 @@ interface FileSpec {
 
 interface VaultSpec {
   files: Record<string, FileSpec>;
+  folders?: string[];
   /** Use a Map shape for getBacklinksForFile().data to exercise the defensive path. */
   backlinksAsMap?: boolean;
+  /** File Obsidian reports as active even when a non-Markdown pane has focus. */
+  activeFile?: string;
+  /** Markdown view file, when the active pane is an editor. */
+  activeViewFile?: string;
+  selection?: string;
 }
 
 /**
@@ -26,8 +32,33 @@ interface VaultSpec {
  */
 function makeApp(spec: VaultSpec): App {
   const files = new Map<string, TFile>();
+  const folders = new Map<string, TFolder>();
   const contents = new Map<string, string>();
   const frontmatterCache = new Map<string, Record<string, unknown>>();
+  const root = new TFolder();
+  root.path = "/";
+  root.name = "";
+  root.children = [];
+  folders.set("/", root);
+
+  function ensureFolder(folderPath: string): TFolder {
+    const normalized = folderPath.replace(/^\/+|\/+$/g, "");
+    const key = normalized || "/";
+    const existing = folders.get(key);
+    if (existing) return existing;
+    const parentPath = normalized.includes("/") ? normalized.slice(0, normalized.lastIndexOf("/")) : "/";
+    const parent = ensureFolder(parentPath);
+    const folder = new TFolder();
+    folder.path = normalized;
+    folder.name = normalized.split("/").pop() ?? normalized;
+    folder.children = [];
+    folder.parent = parent;
+    parent.children.push(folder);
+    folders.set(normalized, folder);
+    return folder;
+  }
+
+  for (const folder of spec.folders ?? []) ensureFolder(folder);
 
   for (const [path, file] of Object.entries(spec.files)) {
     const tfile = new TFile();
@@ -36,6 +67,10 @@ function makeApp(spec: VaultSpec): App {
     tfile.extension = tfile.name.includes(".") ? tfile.name.split(".").pop() ?? "" : "";
     // The read tool guards on file size; surface it so the guardrail is testable.
     (tfile as unknown as { stat: { size: number } }).stat = { size: file.content?.length ?? 0 };
+    const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "/";
+    const parent = ensureFolder(parentPath);
+    tfile.parent = parent;
+    parent.children.push(tfile);
     files.set(path, tfile);
     contents.set(path, file.content ?? "");
     if (file.frontmatter) frontmatterCache.set(path, file.frontmatter);
@@ -60,6 +95,9 @@ function makeApp(spec: VaultSpec): App {
     vault: {
       getFileByPath: (path: string) => files.get(path) ?? null,
       getFiles: () => [...files.values()],
+      getFolderByPath: (path: string) => folders.get(path || "/") ?? null,
+      getAbstractFileByPath: (path: string) => files.get(path) ?? folders.get(path || "/") ?? null,
+      getRoot: () => root,
       cachedRead: async (file: TFile) => contents.get(file.path) ?? "",
     },
     metadataCache: {
@@ -80,7 +118,31 @@ function makeApp(spec: VaultSpec): App {
         fn(current);
         frontmatterCache.set(file.path, current);
       },
-      trashFile: async () => {},
+      trashFile: async (entry: TFile | TFolder) => {
+        if (entry instanceof TFile) {
+          files.delete(entry.path);
+          contents.delete(entry.path);
+        } else {
+          folders.delete(entry.path);
+        }
+        const siblings = entry.parent?.children;
+        const index = siblings?.indexOf(entry) ?? -1;
+        if (siblings && index >= 0) siblings.splice(index, 1);
+      },
+    },
+    workspace: {
+      getActiveFile: () => (spec.activeFile ? files.get(spec.activeFile) ?? null : null),
+      getActiveViewOfType: () => {
+        const file = spec.activeViewFile ? files.get(spec.activeViewFile) ?? null : null;
+        return file
+          ? {
+              file,
+              editor: {
+                getSelection: () => spec.selection ?? "",
+              },
+            }
+          : null;
+      },
     },
   } as unknown as App;
 }
@@ -105,10 +167,107 @@ const ignore = (...paths: string[]): IgnoreMatcher => {
 describe("MUTATING_TOOLS", () => {
   it("includes set_properties but not the read-only graph/property tools", () => {
     expect(MUTATING_TOOLS.has("set_properties")).toBe(true);
+    expect(MUTATING_TOOLS.has("vault_inspect")).toBe(false);
     expect(MUTATING_TOOLS.has("get_properties")).toBe(false);
     expect(MUTATING_TOOLS.has("get_backlinks")).toBe(false);
     expect(MUTATING_TOOLS.has("get_links")).toBe(false);
     expect(MUTATING_TOOLS.has("local_graph")).toBe(false);
+  });
+});
+
+describe("vault_inspect", () => {
+  function getDefaultTool(app: App, name: string, isIgnored?: IgnoreMatcher): AgentTool {
+    const tool = createVaultTools(app, isIgnored).find((candidate) => candidate.name === name);
+    if (!tool) throw new Error(`tool not found: ${name}`);
+    return tool;
+  }
+
+  it("consolidates search into one default read-only meta-tool while hiding ignored paths", async () => {
+    const app = makeApp({
+      files: {
+        "Projects/Needle.md": { content: "first needle" },
+        "Projects/Other.md": { content: "second needle" },
+        "Private/Needle.md": { content: "private needle" },
+      },
+    });
+
+    const { text, details } = await run(getDefaultTool(app, "vault_inspect", ignore("Private/Needle.md")), {
+      action: "search",
+      query: "needle",
+      path: "Projects",
+    });
+
+    expect(text).toContain("File name matches (1):\nProjects/Needle.md");
+    expect(text).toContain("Projects/Other.md:1: second needle");
+    expect(text).not.toContain("Private");
+    expect(details).toMatchObject({
+      inspectAction: "search",
+      delegatedTool: "search",
+      query: "needle",
+      path: "Projects",
+    });
+  });
+
+  it("consolidates local graph and property reads without making them mutating", async () => {
+    const app = makeApp({
+      files: {
+        "Target.md": { frontmatter: { status: "active" }, links: { "Next.md": 1 } },
+        "Next.md": { links: { "Target.md": 1 } },
+      },
+    });
+    const tool = getDefaultTool(app, "vault_inspect");
+
+    const graph = await run(tool, { action: "local_graph", path: "Target.md" });
+    const properties = await run(tool, { action: "properties", path: "Target.md" });
+
+    expect(graph.details).toMatchObject({ inspectAction: "local_graph", delegatedTool: "local_graph" });
+    expect(graph.text).toContain("Inbound (1):");
+    expect(graph.text).toContain("Outbound (1):");
+    expect(properties.details).toMatchObject({ inspectAction: "properties", delegatedTool: "get_properties" });
+    expect(properties.text).toContain('"status": "active"');
+  });
+
+  it("rejects missing action-specific inputs before delegating", async () => {
+    const app = makeApp({ files: { "A.md": { content: "alpha" } } });
+    const tool = getDefaultTool(app, "vault_inspect");
+
+    await expect(run(tool, { action: "search" })).rejects.toThrow(/query is required/i);
+    await expect(run(tool, { action: "properties" })).rejects.toThrow(/path is required/i);
+    await expect(run(tool, { action: "unknown" })).rejects.toThrow(/action must be/i);
+  });
+
+  it("reads the active file even when the chat view owns focus", async () => {
+    const app = makeApp({
+      activeFile: "Scratch.md",
+      files: {
+        "Scratch.md": { content: "# Scratch\n\nThe chat pane is focused.\n" },
+      },
+    });
+    const tool = getDefaultTool(app, "vault_inspect");
+
+    const { text, details } = await run(tool, { action: "active_note", includeContent: true, includeSelection: true });
+
+    expect(text).toContain("Active note: Scratch.md");
+    expect(text).toContain("The chat pane is focused.");
+    expect(text).toContain("Selection:\n(no selection)");
+    expect(details).toMatchObject({
+      inspectAction: "active_note",
+      delegatedTool: "get_active_note",
+      path: "Scratch.md",
+      hasSelection: false,
+    });
+  });
+
+  it("keeps ignored active files hidden", async () => {
+    const app = makeApp({
+      activeFile: "Private.md",
+      files: {
+        "Private.md": { content: "secret" },
+      },
+    });
+    const tool = getDefaultTool(app, "vault_inspect", ignore("Private.md"));
+
+    await expect(run(tool, { action: "active_note", includeContent: true })).rejects.toThrow(/No active Markdown note/);
   });
 });
 
@@ -423,6 +582,20 @@ describe("read — dedup + size guardrail", () => {
     expect(ranged.details.deduplicated).toBeFalsy();
   });
 
+  it("reads explicit startLine/endLine ranges and dedupes equivalent offset/limit ranges", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "one\ntwo\nthree\nfour" } } });
+    const memo = new ReadMemo();
+    const read = createVaultTools(app, undefined, memo).find((t) => t.name === "read")!;
+
+    const first = await run(read, { path: "Note.md", startLine: 2, endLine: 3 });
+    expect(first.text).toContain("Note.md lines 2-3 of 4");
+    expect(first.text).toContain("two\nthree");
+    expect(first.details).toMatchObject({ startLine: 2, endLine: 3, totalLines: 4 });
+
+    const equivalent = await run(read, { path: "Note.md", offset: 2, limit: 2 });
+    expect(equivalent.details.deduplicated).toBe(true);
+  });
+
   it("refuses a bulk read of a very large file with pagination guidance", async () => {
     const app = makeApp({ files: { "Big.md": { content: "x".repeat(60_000) } } });
     const read = createVaultTools(app).find((t) => t.name === "read")!;
@@ -436,6 +609,15 @@ describe("read — dedup + size guardrail", () => {
     const read = createVaultTools(app).find((t) => t.name === "read")!;
     const result = await run(read, { path: "Big.md", offset: 1, limit: 10 });
     expect(result.details.tooLarge).toBeUndefined();
+  });
+
+  it("allows explicit startLine/endLine ranges for a very large file", async () => {
+    const app = makeApp({ files: { "Big.md": { content: "x\n".repeat(60_000) } } });
+    const read = createVaultTools(app).find((t) => t.name === "read")!;
+    const result = await run(read, { path: "Big.md", startLine: 2, endLine: 3 });
+    expect(result.details.tooLarge).toBeUndefined();
+    expect(result.details).toMatchObject({ startLine: 2, endLine: 3, totalLines: 60_001 });
+    expect(result.text).toContain("Big.md lines 2-3");
   });
 
   it("does not memoize a read that fails (missing file), so a retry isn't deduped", async () => {
@@ -453,5 +635,27 @@ describe("read — dedup + size guardrail", () => {
     const result = await run(read, { path: "Big.md" });
     expect(result.details.tooLarge).toBe(true);
     expect(memo.has({ path: "Big.md" })).toBe(false);
+  });
+});
+
+describe("delete", () => {
+  it("moves an empty folder to trash through the delete tool", async () => {
+    const app = makeApp({ folders: ["Empty"], files: {} });
+    const del = getTool(app, "delete");
+
+    const result = await run(del, { path: "Empty" });
+
+    expect(result.text).toBe("Moved Empty to trash.");
+    expect(result.details).toMatchObject({ path: "Empty", kind: "folder" });
+    expect(app.vault.getAbstractFileByPath("Empty")).toBeNull();
+  });
+
+  it("refuses to delete a non-empty folder", async () => {
+    const app = makeApp({ files: { "Full/Note.md": { content: "body" } } });
+    const del = getTool(app, "delete");
+
+    await expect(run(del, { path: "Full" })).rejects.toThrow(/Folder not empty/);
+    expect(app.vault.getAbstractFileByPath("Full")).toBeInstanceOf(TFolder);
+    expect(app.vault.getAbstractFileByPath("Full/Note.md")).toBeInstanceOf(TFile);
   });
 });

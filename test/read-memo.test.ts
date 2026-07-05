@@ -43,6 +43,7 @@ describe("ReadMemo", () => {
 
   it("alreadyReadMessage points back at the path", () => {
     expect(alreadyReadMessage("Folder/Note.md")).toContain("Folder/Note.md");
+    expect(alreadyReadMessage("Folder/Note.md")).toContain("startLine/endLine");
     expect(alreadyReadMessage("Folder/Note.md")).toContain("offset/limit");
   });
 });

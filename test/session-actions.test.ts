@@ -117,7 +117,11 @@ class FakeActivationRuntime implements AgentSessionActivationRuntime {
   }
 }
 
-function makeActions(options: { sessions?: FakeSessionRuntime; agent?: Agent | null } = {}): {
+function makeActions(options: {
+  sessions?: FakeSessionRuntime;
+  agent?: Agent | null;
+  afterDelete?: () => void | Promise<void>;
+} = {}): {
   actions: AgentSessionActions;
   sessions: FakeSessionRuntime;
   events: string[];
@@ -129,6 +133,7 @@ function makeActions(options: { sessions?: FakeSessionRuntime; agent?: Agent | n
     sessions,
     activation,
     notifyChange: () => events.push("notify"),
+    afterDelete: options.afterDelete,
   });
   return { actions, sessions, events };
 }
@@ -188,6 +193,51 @@ describe("AgentSessionActions", () => {
     await actions.deleteSession("sessions/old.jsonl");
 
     expect(sessions.deleted).toEqual(["sessions/old.jsonl"]);
+    expect(sessions.created).toBe(0);
+    expect(events).toEqual(["notify"]);
+  });
+
+  it("runs post-delete cleanup after sessions are removed", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/active.jsonl", [userMessage("active")]);
+    sessions.seed("sessions/old.jsonl", [userMessage("old")]);
+    await sessions.load("sessions/active.jsonl");
+    const cleanupEvents: string[] = [];
+    const { actions } = makeActions({
+      sessions,
+      afterDelete: async () => {
+        cleanupEvents.push(`cleanup:${sessions.deleted.join(",")}`);
+      },
+    });
+
+    await actions.deleteSession("sessions/old.jsonl");
+    await actions.clearSessions();
+
+    expect(cleanupEvents).toEqual([
+      "cleanup:sessions/old.jsonl",
+      "cleanup:sessions/old.jsonl,sessions/active.jsonl",
+    ]);
+  });
+
+  it("clears all listed sessions and activates one replacement session", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/active.jsonl", [userMessage("active")]);
+    sessions.seed("sessions/old.jsonl", [userMessage("old")]);
+    await sessions.load("sessions/active.jsonl");
+    const { actions, events } = makeActions({ sessions });
+
+    await expect(actions.clearSessions()).resolves.toBe(2);
+
+    expect(sessions.deleted).toEqual(["sessions/active.jsonl", "sessions/old.jsonl"]);
+    expect(sessions.created).toBe(1);
+    expect(events).toEqual(["detach", "activate:0:reload", "notify"]);
+  });
+
+  it("notifies without creating a replacement when there are no sessions to clear", async () => {
+    const { actions, sessions, events } = makeActions();
+
+    await expect(actions.clearSessions()).resolves.toBe(0);
+
     expect(sessions.created).toBe(0);
     expect(events).toEqual(["notify"]);
   });

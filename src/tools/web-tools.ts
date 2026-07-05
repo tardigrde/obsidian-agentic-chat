@@ -1,4 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import type { WebSettings } from "../settings";
 import { createWebFetchTool, type WebFetcher } from "./web-fetch";
 import { createWebSearchTool } from "./web-search";
@@ -11,7 +12,7 @@ export const WEB_TOOL_NAMES = new Set(["web_search", "fetch_url"]);
  * The enable toggle is the egress gate: these tools send data off-device, so when
  * it's off they are not registered at all and the model can't reach the network.
  */
-export function createWebTools(settings: WebSettings, fetcher: WebFetcher): AgentTool[] {
+export function createWebTools(settings: WebSettings, fetcher: WebFetcher, artifactStore?: ToolArtifactStoreLike): AgentTool[] {
   if (!settings.enabled) return [];
   return [
     createWebSearchTool({
@@ -21,6 +22,6 @@ export function createWebTools(settings: WebSettings, fetcher: WebFetcher): Agen
       maxResults: settings.maxResults,
       fetcher,
     }),
-    createWebFetchTool({ fetcher, charLimit: settings.fetchCharLimit }),
+    createWebFetchTool({ fetcher, charLimit: settings.fetchCharLimit, artifactStore }),
   ];
 }

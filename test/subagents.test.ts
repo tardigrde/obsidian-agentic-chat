@@ -122,6 +122,12 @@ describe("loadAgentProfiles", () => {
     const profiles = await loadAgentProfiles(app, "", true);
     expect(profiles.map((p) => p.name).sort()).toEqual(["editor", "researcher", "reviewer"]);
     expect(profiles).toHaveLength(BUILTIN_AGENT_PROFILES.length);
+    expect(profiles.find((profile) => profile.name === "researcher")?.toolAllowlist).toEqual(
+      expect.arrayContaining(["web_search", "fetch_url", "read_artifact"]),
+    );
+    expect(profiles.find((profile) => profile.name === "reviewer")?.toolAllowlist).toEqual(
+      expect.arrayContaining(["web_search", "fetch_url", "search_artifact"]),
+    );
   });
 
   it("returns nothing when built-ins are disabled and no folder is set", async () => {
@@ -189,12 +195,13 @@ describe("filterChildTools", () => {
   const names = (subset: ReturnType<typeof createVaultTools>): string[] => subset.map((tool) => tool.name).sort();
 
   it("restricts to the named allowlist", () => {
-    expect(names(filterChildTools(tools, ["read", "search"], false))).toEqual(["read", "search"]);
+    expect(names(filterChildTools(tools, ["read", "vault_inspect"], false))).toEqual(["read", "vault_inspect"]);
   });
 
   it("defaults an empty allowlist to the read-only tools", () => {
     const result = names(filterChildTools(tools, [], false));
     expect(result).toContain("read");
+    expect(result).toContain("vault_inspect");
     expect(result).not.toContain("write");
     expect(result).not.toContain("delete");
   });

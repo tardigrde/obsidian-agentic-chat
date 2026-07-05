@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diffLines, diffStat, diffTooLarge, MAX_DIFF_CELLS } from "../src/vault/diff";
+import { compactDiffLines, diffLines, diffStat, diffTooLarge, MAX_DIFF_CELLS } from "../src/vault/diff";
 
 describe("diffLines", () => {
   it("marks added, removed, and context lines", () => {
@@ -49,5 +49,31 @@ describe("diffTooLarge", () => {
 
   it("allows ordinary-sized inputs", () => {
     expect(diffTooLarge("a\nb\nc", "a\nb\nd")).toBe(false);
+  });
+});
+
+describe("compactDiffLines", () => {
+  it("shows ten context lines around a middle change by default", () => {
+    const before = Array.from({ length: 31 }, (_, index) => `line ${index + 1}`).join("\n");
+    const after = before.replace("line 16", "line sixteen");
+    const windowed = compactDiffLines(diffLines(before, after));
+
+    expect(windowed.hiddenBefore).toBe(5);
+    expect(windowed.hiddenAfter).toBe(5);
+    expect(windowed.lines[0]).toEqual({ op: "context", text: "line 6" });
+    expect(windowed.lines.at(-1)).toEqual({ op: "context", text: "line 26" });
+    expect(windowed.lines.some((line) => line.op === "remove" && line.text === "line 16")).toBe(true);
+    expect(windowed.lines.some((line) => line.op === "add" && line.text === "line sixteen")).toBe(true);
+  });
+
+  it("expands the visible window when callers increase context", () => {
+    const before = Array.from({ length: 31 }, (_, index) => `line ${index + 1}`).join("\n");
+    const after = before.replace("line 16", "line sixteen");
+    const windowed = compactDiffLines(diffLines(before, after), { contextBefore: 20, contextAfter: 20 });
+
+    expect(windowed.hiddenBefore).toBe(0);
+    expect(windowed.hiddenAfter).toBe(0);
+    expect(windowed.lines[0]).toEqual({ op: "context", text: "line 1" });
+    expect(windowed.lines.at(-1)).toEqual({ op: "context", text: "line 31" });
   });
 });

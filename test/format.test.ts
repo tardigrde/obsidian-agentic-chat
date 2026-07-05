@@ -4,6 +4,7 @@ import {
   cacheHitPercent,
   describeCall,
   formatCost,
+  formatDetailedUsage,
   formatElapsed,
   formatUsage,
   safeJson,
@@ -141,5 +142,41 @@ describe("formatUsage", () => {
         usage({ totalTokens: 1000, input: 100, cacheRead: 900, cost: { total: 0.02 } as Usage["cost"] }),
       ),
     ).toBe("1000 tokens · 90% cache · $0.02");
+  });
+});
+
+describe("formatDetailedUsage", () => {
+  const usage = (over: Partial<Usage>): Usage => ({ totalTokens: 0, ...over }) as Usage;
+
+  it("renders an active-session token and cache breakdown with human-readable numbers", () => {
+    expect(
+      formatDetailedUsage(
+        usage({
+          input: 990_000,
+          output: 310_000,
+          cacheRead: 3_100_000,
+          cacheWrite: 30_000,
+          totalTokens: 4_430_000,
+        }),
+        { includesCompactedUsage: true, includesSubagentUsage: true },
+      ),
+    ).toEqual([
+      ["Scope", "Active session, including compacted carried usage and subagent usage"],
+      ["Total tokens", "4.43M"],
+      ["Prompt tokens", "4.12M"],
+      ["Fresh input", "990k"],
+      ["Cache read", "3.10M"],
+      ["Cache write", "30k"],
+      ["Output tokens", "310k"],
+      ["Prompt cache hit", "75% of prompt tokens in this session"],
+      ["Cost", "not reported by provider"],
+    ]);
+  });
+
+  it("distinguishes reported zero cost from missing cost", () => {
+    expect(
+      formatDetailedUsage(usage({ totalTokens: 100, cost: { total: 0 } as Usage["cost"] })).at(-1),
+    ).toEqual(["Cost", "$0.00"]);
+    expect(formatDetailedUsage(usage({ totalTokens: 100 })).at(-1)).toEqual(["Cost", "not reported by provider"]);
   });
 });

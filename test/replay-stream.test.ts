@@ -93,4 +93,17 @@ describe("createReplayStreamController", () => {
     expect(first.content).toEqual([{ type: "text", text: "same" }]);
     expect(second.content).toEqual([{ type: "text", text: "same" }]);
   });
+
+  it("can start from an absolute turn index when a harness rebuilds the stream", async () => {
+    const replay = createReplayStreamController(
+      [replayTextTurn("first"), replayTextTurn("second")],
+      { initialTurnIndex: 1 },
+    );
+
+    const result = await (await replay.streamFn(model(), { messages: [] })).result();
+
+    expect(result.content).toEqual([{ type: "text", text: "second" }]);
+    expect(replay.calls.map((call) => call.index)).toEqual([1]);
+    expect(replay.remainingTurns()).toBe(0);
+  });
 });

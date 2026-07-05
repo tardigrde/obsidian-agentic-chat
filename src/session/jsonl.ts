@@ -1,6 +1,9 @@
 // Adapted from lhr0909/pi-obsidian (Simon Liang), MIT License.
 // https://github.com/lhr0909/pi-obsidian
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ActionAuditEvent } from "../agent/action-audit-log";
+import type { FileCheckpoint } from "../agent/file-checkpoints";
+import { healPlanTrackerState, type PlanTrackerState } from "../agent/plan-tracker";
 
 export const CURRENT_SESSION_VERSION = 1;
 
@@ -10,6 +13,8 @@ export interface SessionHeaderEntry {
   id: string;
   timestamp: string;
   cwd: string;
+  projectId?: string;
+  projectName?: string;
 }
 
 export interface MessageSessionEntry {
@@ -45,12 +50,39 @@ export interface SessionInfoEntry {
   name?: string;
 }
 
+export interface ActionAuditSessionEntry {
+  type: "action_audit";
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+  event: ActionAuditEvent;
+}
+
+export interface FileCheckpointSessionEntry {
+  type: "file_checkpoint";
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+  checkpoint: FileCheckpoint;
+}
+
+export interface PlanTrackerSessionEntry {
+  type: "plan_tracker";
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+  state: PlanTrackerState | null;
+}
+
 export type SessionEntry =
   | SessionHeaderEntry
   | MessageSessionEntry
   | ModelChangeSessionEntry
   | ThinkingLevelChangeSessionEntry
-  | SessionInfoEntry;
+  | SessionInfoEntry
+  | ActionAuditSessionEntry
+  | FileCheckpointSessionEntry
+  | PlanTrackerSessionEntry;
 
 export interface SessionContext {
   messages: AgentMessage[];
@@ -58,8 +90,22 @@ export interface SessionContext {
   thinkingLevel: ThinkingLevel;
 }
 
-export function createSessionHeader(id: string, cwd: string, timestamp = new Date().toISOString()): SessionHeaderEntry {
-  return { type: "session", version: CURRENT_SESSION_VERSION, id, timestamp, cwd };
+export function createSessionHeader(
+  id: string,
+  cwd: string,
+  timestamp = new Date().toISOString(),
+  scope: { projectId?: string; projectName?: string } = {},
+): SessionHeaderEntry {
+  const header: SessionHeaderEntry = {
+    type: "session",
+    version: CURRENT_SESSION_VERSION,
+    id,
+    timestamp,
+    cwd,
+  };
+  if (scope.projectId) header.projectId = scope.projectId;
+  if (scope.projectName) header.projectName = scope.projectName;
+  return header;
 }
 
 export function parseSessionEntries(content: string): SessionEntry[] {
@@ -100,6 +146,16 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
     if (entry.type === "thinking_level_change") thinkingLevel = entry.thinkingLevel;
   }
   return { messages, model, thinkingLevel };
+}
+
+export function getLatestPlanTrackerState(entries: SessionEntry[], leafId?: string | null): PlanTrackerState | null {
+  const byId = indexEntries(entries);
+  const path = getEntryPath(entries, byId, leafId);
+  for (let index = path.length - 1; index >= 0; index -= 1) {
+    const entry = path[index];
+    if (entry?.type === "plan_tracker") return healPlanTrackerState(entry.state);
+  }
+  return null;
 }
 
 export function getLastLeafId(entries: SessionEntry[]): string | null {

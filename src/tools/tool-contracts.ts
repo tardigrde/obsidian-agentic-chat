@@ -1,5 +1,6 @@
 export const BUILTIN_TOOL_NAMES = [
   "read",
+  "vault_inspect",
   "write",
   "edit",
   "ls",
@@ -18,7 +19,7 @@ export const BUILTIN_TOOL_NAMES = [
 
 export type BuiltinToolName = (typeof BUILTIN_TOOL_NAMES)[number];
 
-export type ToolPathKind = "file" | "folder" | "search-root" | "destination";
+export type ToolPathKind = "file" | "folder" | "file-or-folder" | "search-root" | "destination";
 export type ToolExecutionMode = "default" | "sequential";
 export type ToolPreviewKind = "none" | "diff" | "delete" | "rename";
 export type ToolIgnoreBehavior =
@@ -55,6 +56,7 @@ export interface BuiltinToolContract {
 }
 
 const TARGET_FILE: readonly ToolPathArgument[] = [{ name: "path", required: true, kind: "file" }];
+const TARGET_FILE_OR_FOLDER: readonly ToolPathArgument[] = [{ name: "path", required: true, kind: "file-or-folder" }];
 const OPTIONAL_FOLDER: readonly ToolPathArgument[] = [{ name: "path", required: false, kind: "folder" }];
 const OPTIONAL_SEARCH_ROOT: readonly ToolPathArgument[] = [{ name: "path", required: false, kind: "search-root" }];
 const RENAME_PATHS: readonly ToolPathArgument[] = [
@@ -72,6 +74,20 @@ export const BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = [
     ignoreBehavior: "target-hidden",
     approval: {
       description: "The agent wants to read a vault file. Review the path before allowing it.",
+      preview: "none",
+      requiresContent: false,
+    },
+    executionMode: "default",
+  },
+  {
+    name: "vault_inspect",
+    label: "Inspect vault",
+    mutating: false,
+    undoable: false,
+    pathArgs: OPTIONAL_SEARCH_ROOT,
+    ignoreBehavior: "results-filtered",
+    approval: {
+      description: "The agent wants to inspect vault context. Review the target or query before allowing it.",
       preview: "none",
       requiresContent: false,
     },
@@ -108,6 +124,7 @@ export const BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = [
   {
     name: "ls",
     label: "List folder",
+    defaultEnabled: false,
     mutating: false,
     undoable: false,
     pathArgs: OPTIONAL_FOLDER,
@@ -122,6 +139,7 @@ export const BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = [
   {
     name: "search",
     label: "Search vault",
+    defaultEnabled: false,
     mutating: false,
     undoable: false,
     pathArgs: OPTIONAL_SEARCH_ROOT,
@@ -166,6 +184,7 @@ export const BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = [
   {
     name: "get_active_note",
     label: "Get active note",
+    defaultEnabled: false,
     mutating: false,
     undoable: false,
     pathArgs: [],
@@ -193,13 +212,13 @@ export const BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = [
   },
   {
     name: "delete",
-    label: "Delete file",
+    label: "Delete file or empty folder",
     mutating: true,
     undoable: true,
-    pathArgs: TARGET_FILE,
+    pathArgs: TARGET_FILE_OR_FOLDER,
     ignoreBehavior: "target-hidden",
     approval: {
-      description: "The agent wants to move a vault file to trash. Review the deletion before allowing it.",
+      description: "The agent wants to move a vault file or empty folder to trash. Review the deletion before allowing it.",
       preview: "delete",
       requiresContent: true,
     },
@@ -238,6 +257,7 @@ export const BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = [
   {
     name: "local_graph",
     label: "Local graph",
+    defaultEnabled: false,
     mutating: false,
     undoable: false,
     pathArgs: TARGET_FILE,
@@ -252,6 +272,7 @@ export const BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = [
   {
     name: "get_properties",
     label: "Get note properties",
+    defaultEnabled: false,
     mutating: false,
     undoable: false,
     pathArgs: TARGET_FILE,
@@ -267,7 +288,7 @@ export const BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = [
     name: "set_properties",
     label: "Set note properties",
     mutating: true,
-    undoable: false,
+    undoable: true,
     pathArgs: TARGET_FILE,
     ignoreBehavior: "target-hidden",
     approval: {

@@ -4,6 +4,7 @@ import {
   buildModel,
   clampThinkingLevel,
   formatContextWindow,
+  listOpenAICompatibleModels,
   listOpenRouterModels,
   ModelListError,
   supportedThinkingLevels,
@@ -160,7 +161,13 @@ describe("listOpenRouterModels", () => {
         status: 200,
         json: async () => ({
           data: [
-            { id: "moonshotai/kimi-k2.6", name: "Kimi K2.6", context_length: 200_000, supported_parameters: ["tools"] },
+            {
+              id: "moonshotai/kimi-k2.6",
+              name: "Kimi K2.6",
+              context_length: 200_000,
+              supported_parameters: ["tools"],
+              reasoning: { supported_efforts: ["high", "medium", "low"] },
+            },
           ],
         }),
       } as unknown as Response;
@@ -171,7 +178,12 @@ describe("listOpenRouterModels", () => {
     const captured: { url?: string } = {};
     const models = await listOpenRouterModels("key", { fetchImpl: fakeFetch(captured), zdr: true });
     expect(captured.url).toContain("/models?zdr=true");
-    expect(models[0]).toMatchObject({ id: "moonshotai/kimi-k2.6", supportsTools: true, contextLength: 200_000 });
+    expect(models[0]).toMatchObject({
+      id: "moonshotai/kimi-k2.6",
+      supportsTools: true,
+      supportsReasoning: true,
+      contextLength: 200_000,
+    });
   });
 
   it("requests the full catalog when zdr is off", async () => {
@@ -225,6 +237,67 @@ describe("listOpenRouterModels", () => {
   });
 });
 
+describe("listOpenAICompatibleModels", () => {
+  it("lists models from the configured OpenAI-compatible base URL", async () => {
+    const captured: { url?: string } = {};
+    const models = await listOpenAICompatibleModels("key", {
+      baseUrl: "https://llm.example/api/",
+      fetchImpl: (async (url: string) => {
+        captured.url = String(url);
+        return {
+          status: 200,
+          json: async () => ({
+            data: [
+              {
+                id: "WARN-GLOBAL_kimi-k2.6",
+                name: "Kimi K2.6",
+                context_length: 200_000,
+                supported_parameters: ["tools"],
+                supports_reasoning: true,
+              },
+            ],
+          }),
+        } as unknown as Response;
+      }) as unknown as typeof fetch,
+    });
+
+    expect(captured.url).toBe("https://llm.example/api/models");
+    expect(models[0]).toMatchObject({
+      id: "WARN-GLOBAL_kimi-k2.6",
+      name: "Kimi K2.6",
+      contextLength: 200_000,
+      supportsTools: true,
+      supportsReasoning: true,
+    });
+  });
+
+  it("derives /models from a full chat-completions URL", async () => {
+    const captured: { url?: string } = {};
+    await listOpenAICompatibleModels("key", {
+      baseUrl: "https://llm.example/api/chat/completions",
+      fetchImpl: (async (url: string) => {
+        captured.url = String(url);
+        return { status: 200, json: async () => ({ data: [] }) } as unknown as Response;
+      }) as unknown as typeof fetch,
+    });
+
+    expect(captured.url).toBe("https://llm.example/api/models");
+  });
+
+  it("treats a bare gateway root as an OpenWebUI API root", async () => {
+    const captured: { url?: string } = {};
+    await listOpenAICompatibleModels("key", {
+      baseUrl: "https://openwebui.example.com/",
+      fetchImpl: (async (url: string) => {
+        captured.url = String(url);
+        return { status: 200, json: async () => ({ data: [] }) } as unknown as Response;
+      }) as unknown as typeof fetch,
+    });
+
+    expect(captured.url).toBe("https://openwebui.example.com/api/models");
+  });
+});
+
 describe("buildModel — Ollama", () => {
   it("targets the local OpenAI-compatible endpoint at zero cost", () => {
     const model = buildModel(config({ provider: "ollama", modelId: "llama3.1", ollamaBaseUrl: "http://localhost:11434/" }));
@@ -250,5 +323,17 @@ describe("buildModel — OpenAI-compatible", () => {
     expect(model.cost.input).toBe(0);
     expect(model.compat?.openRouterRouting).toBeUndefined();
     expect(model.compat?.supportsUsageInStreaming).toBe(false);
+  });
+
+  it("normalizes a bare OpenWebUI root to its API base", () => {
+    const model = buildModel(
+      config({
+        provider: "openai-compatible",
+        modelId: "WARN-GLOBAL_kimi-k2.6",
+        openaiCompatibleBaseUrl: "https://openwebui.example.com/",
+      }),
+    );
+
+    expect(model.baseUrl).toBe("https://openwebui.example.com/api");
   });
 });

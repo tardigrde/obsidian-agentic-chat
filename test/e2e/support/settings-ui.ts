@@ -178,6 +178,26 @@ export async function clickSettingButton(name: string, buttonText: string): Prom
   );
 }
 
+export async function waitForSettingButton(name: string, buttonText: string): Promise<void> {
+  await waitForSetting(name);
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        ({ settingName, text }) => {
+          const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
+          const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+          const setting = items.find(
+            (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === settingName,
+          );
+          const buttons = Array.from(setting?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+          return buttons.some((candidate) => candidate.innerText.trim() === text);
+        },
+        { settingName: name, text: buttonText },
+      ),
+    { timeout: 5_000, timeoutMsg: `Button "${buttonText}" for setting "${name}" did not render` },
+  );
+}
+
 export async function readAgenticChatSettings<T = Record<string, unknown>>(): Promise<T> {
   return await browser.executeObsidian(async ({ app }, pluginId) => {
     const plugin = (app as unknown as {

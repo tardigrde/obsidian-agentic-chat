@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
 import { FOLDER_PREFIX } from "../src/ui/autocomplete";
-import { MAX_ACTIVE_NOTE_CHARS } from "../src/ui/active-note";
+import { ActiveNoteContextCache, MAX_ACTIVE_NOTE_CHARS } from "../src/ui/active-note";
 import { buildPromptContext, loadImageAttachments, visibleEditorRange } from "../src/ui/context-builder";
 import { createTextContextAttachment, MAX_TEXT_CONTEXT_CHARS } from "../src/ui/context-attachments";
 import { FakeApp } from "./helpers/fake-vault";
@@ -46,6 +46,20 @@ describe("buildPromptContext", () => {
     expect(context).toContain("Private/Secret.md");
     expect(context).toContain("contents are withheld");
     expect(context).not.toContain("TOP SECRET");
+  });
+
+  it("does not serialize root standing-instructions files as automatic active-note context", async () => {
+    const fake = app();
+    await fake.vault.create("AGENTS.md", "standing instructions");
+
+    const context = await buildPromptContext({
+      app: fake,
+      activeNotePath: "AGENTS.md",
+      attachments: [],
+      isPathIgnored: () => false,
+    });
+
+    expect(context).toBe("");
   });
 
   it("serializes heading-level note attachments as a section slice", async () => {
@@ -217,6 +231,92 @@ describe("buildPromptContext", () => {
     expect(context).toContain("visible in the editor");
     expect(context).toContain("visible slice");
     expect(context).not.toContain("x".repeat(MAX_ACTIVE_NOTE_CHARS + 1));
+  });
+
+  it("does not inline an unchanged active note repeatedly", async () => {
+    const fake = app();
+    await fake.vault.create("Iac.md", "stable body");
+    const activeNoteCache = new ActiveNoteContextCache();
+
+    const first = await buildPromptContext({
+      app: fake,
+      activeNotePath: "Iac.md",
+      attachments: [],
+      isPathIgnored: () => false,
+      activeNoteCache,
+    });
+    activeNoteCache.commitPending();
+    const second = await buildPromptContext({
+      app: fake,
+      activeNotePath: "Iac.md",
+      attachments: [],
+      isPathIgnored: () => false,
+      activeNoteCache,
+    });
+
+    expect(first).toContain("stable body");
+    expect(second).toContain('Active note "Iac.md" is unchanged');
+    expect(second).not.toContain("stable body");
+  });
+
+  it("does not treat a rendered active note as sent until the cache is committed", async () => {
+    const fake = app();
+    await fake.vault.create("Iac.md", "stable body");
+    const activeNoteCache = new ActiveNoteContextCache();
+
+    const first = await buildPromptContext({
+      app: fake,
+      activeNotePath: "Iac.md",
+      attachments: [],
+      isPathIgnored: () => false,
+      activeNoteCache,
+    });
+    const secondBeforeCommit = await buildPromptContext({
+      app: fake,
+      activeNotePath: "Iac.md",
+      attachments: [],
+      isPathIgnored: () => false,
+      activeNoteCache,
+    });
+    activeNoteCache.commitPending();
+    const thirdAfterCommit = await buildPromptContext({
+      app: fake,
+      activeNotePath: "Iac.md",
+      attachments: [],
+      isPathIgnored: () => false,
+      activeNoteCache,
+    });
+
+    expect(first).toContain("stable body");
+    expect(secondBeforeCommit).toContain("stable body");
+    expect(thirdAfterCommit).toContain('Active note "Iac.md" is unchanged');
+    expect(thirdAfterCommit).not.toContain("stable body");
+  });
+
+  it("re-inlines an active note after its content changes", async () => {
+    const fake = app();
+    const file = await fake.vault.create("Iac.md", "version one");
+    const activeNoteCache = new ActiveNoteContextCache();
+
+    await buildPromptContext({
+      app: fake,
+      activeNotePath: "Iac.md",
+      attachments: [],
+      isPathIgnored: () => false,
+      activeNoteCache,
+    });
+    activeNoteCache.commitPending();
+    await fake.vault.modify(file, "version two");
+    const changed = await buildPromptContext({
+      app: fake,
+      activeNotePath: "Iac.md",
+      attachments: [],
+      isPathIgnored: () => false,
+      activeNoteCache,
+    });
+
+    expect(changed).toContain("version two");
+    expect(changed).not.toContain("is unchanged");
   });
 
   it("returns an empty string when no context sections are present", async () => {

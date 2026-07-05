@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { discoverMcpOAuthMetadata } from "../src/mcp/oauth";
 import { createMcpServerSettings } from "../src/mcp/settings";
 import { probeMcpServer } from "../src/mcp/tools";
+import { redactText } from "../src/privacy/redaction";
 import type { WebFetcher, WebHttpRequest, WebHttpResponse } from "../src/tools/web-fetch";
 
 const DEFAULT_REMOTE_MCP_URL = "";
@@ -179,7 +180,7 @@ function curlErrorMessage(error: unknown): string {
 }
 
 function redactSecrets(value: string): string {
-  return value.replace(/Bearer\s+\S+/gi, "Bearer [redacted]");
+  return redactText(value, { redactHighEntropy: true });
 }
 
 function parseCurlStatus(headersText: string): number {

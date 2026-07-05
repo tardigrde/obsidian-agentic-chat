@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "name": "agentic-chat-llm-judge",
+  "description": "Opt-in LLM-as-judge eval over dogfood artifacts. Requires --run-judge and configured judge credentials.",
+  "cases": [
+    {
+      "id": "judge.dogfood-response-quality",
+      "type": "llm-judge",
+      "minOverallScore": 4,
+      "minDimensionScore": 3
+    }
+  ]
+}

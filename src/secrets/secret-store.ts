@@ -1,6 +1,11 @@
 import type { App } from "obsidian";
 import type { AgenticChatSettings } from "../settings";
 import type { McpOAuthSettings, McpServerSettings } from "../mcp/settings";
+import {
+  OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID,
+  OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
+  OBSERVABILITY_LANGFUSE_SECRET_KEY_SECRET_ID,
+} from "../observability/settings";
 
 export interface SecretStore {
   getSecret(id: string): string;
@@ -35,6 +40,45 @@ export const OPENROUTER_API_KEY_SECRET_ID = "agentic-chat-openrouter-api-key";
 export const OPENAI_COMPATIBLE_API_KEY_SECRET_ID = "agentic-chat-openai-compatible-api-key";
 export const WEB_SEARCH_API_KEY_SECRET_ID = "agentic-chat-web-search-api-key";
 
+type SettingsSecretSlot = {
+  readonly valuePath: readonly string[];
+  readonly secretIdPath: readonly string[];
+  readonly defaultSecretId: string;
+};
+
+export const SETTINGS_SECRET_SLOTS: readonly SettingsSecretSlot[] = [
+  {
+    valuePath: ["openrouterApiKey"],
+    secretIdPath: ["openrouterApiKeySecretId"],
+    defaultSecretId: OPENROUTER_API_KEY_SECRET_ID,
+  },
+  {
+    valuePath: ["openaiCompatibleApiKey"],
+    secretIdPath: ["openaiCompatibleApiKeySecretId"],
+    defaultSecretId: OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
+  },
+  {
+    valuePath: ["web", "searchApiKey"],
+    secretIdPath: ["web", "searchApiKeySecretId"],
+    defaultSecretId: WEB_SEARCH_API_KEY_SECRET_ID,
+  },
+  {
+    valuePath: ["observability", "langfusePublicKey"],
+    secretIdPath: ["observability", "langfusePublicKeySecretId"],
+    defaultSecretId: OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
+  },
+  {
+    valuePath: ["observability", "langfuseSecretKey"],
+    secretIdPath: ["observability", "langfuseSecretKeySecretId"],
+    defaultSecretId: OBSERVABILITY_LANGFUSE_SECRET_KEY_SECRET_ID,
+  },
+  {
+    valuePath: ["observability", "authHeaderValue"],
+    secretIdPath: ["observability", "authHeaderValueSecretId"],
+    defaultSecretId: OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID,
+  },
+];
+
 export function mcpSecretId(serverId: string, kind: string): string {
   return normalizeSecretId(`agentic-chat-mcp-${serverId}-${kind}`);
 }
@@ -52,18 +96,14 @@ export function normalizeSecretId(input: string): string {
 
 export function hydrateSettingsSecrets(settings: AgenticChatSettings, store: SecretStore): void {
   ensureSecretRefs(settings);
-  hydrateSecretSlot(settings, "openrouterApiKey", settings.openrouterApiKeySecretId, store);
-  hydrateSecretSlot(settings, "openaiCompatibleApiKey", settings.openaiCompatibleApiKeySecretId, store);
-  hydrateSecretSlot(settings.web, "searchApiKey", settings.web.searchApiKeySecretId, store);
+  for (const slot of SETTINGS_SECRET_SLOTS) hydrateSettingsSecretSlot(settings, slot, store);
   for (const server of settings.mcp.servers) hydrateMcpServerSecrets(server, store);
 }
 
 export function settingsForStorage(settings: AgenticChatSettings, store: SecretStore): AgenticChatSettings {
   ensureSecretRefs(settings);
   const stored = cloneSettings(settings);
-  storeSecretSlot(settings, stored, "openrouterApiKey", settings.openrouterApiKeySecretId, store);
-  storeSecretSlot(settings, stored, "openaiCompatibleApiKey", settings.openaiCompatibleApiKeySecretId, store);
-  storeSecretSlot(settings.web, stored.web, "searchApiKey", settings.web.searchApiKeySecretId, store);
+  for (const slot of SETTINGS_SECRET_SLOTS) storeSettingsSecretSlot(settings, stored, slot, store);
   for (let index = 0; index < settings.mcp.servers.length; index += 1) {
     storeMcpServerSecrets(settings.mcp.servers[index], stored.mcp.servers[index], store);
   }
@@ -71,9 +111,9 @@ export function settingsForStorage(settings: AgenticChatSettings, store: SecretS
 }
 
 export function ensureSecretRefs(settings: AgenticChatSettings): void {
-  settings.openrouterApiKeySecretId ||= OPENROUTER_API_KEY_SECRET_ID;
-  settings.openaiCompatibleApiKeySecretId ||= OPENAI_COMPATIBLE_API_KEY_SECRET_ID;
-  settings.web.searchApiKeySecretId ||= WEB_SEARCH_API_KEY_SECRET_ID;
+  for (const slot of SETTINGS_SECRET_SLOTS) {
+    if (!stringAt(settings, slot.secretIdPath).trim()) writePath(settings, slot.secretIdPath, slot.defaultSecretId);
+  }
   for (const server of settings.mcp.servers) ensureMcpServerSecretRefs(server);
 }
 
@@ -124,7 +164,7 @@ function hydrateSecretSlot<T extends Record<K, string>, K extends string>(
   secretId: string,
   store: SecretStore,
 ): void {
-  if (target[key].trim()) return;
+  if (typeof target[key] === "string" && target[key].trim()) return;
   const stored = store.getSecret(secretId).trim();
   if (stored) target[key] = stored as T[K];
 }
@@ -136,8 +176,51 @@ function storeSecretSlot<T extends Record<K, string>, K extends string>(
   secretId: string,
   store: SecretStore,
 ): void {
-  store.setSecret(secretId, runtime[key].trim());
+  const value = typeof runtime[key] === "string" ? runtime[key].trim() : "";
+  store.setSecret(secretId, value);
   stored[key] = "" as T[K];
+}
+
+function hydrateSettingsSecretSlot(settings: AgenticChatSettings, slot: SettingsSecretSlot, store: SecretStore): void {
+  if (stringAt(settings, slot.valuePath).trim()) return;
+  const stored = store.getSecret(stringAt(settings, slot.secretIdPath)).trim();
+  if (stored) writePath(settings, slot.valuePath, stored);
+}
+
+function storeSettingsSecretSlot(
+  runtime: AgenticChatSettings,
+  stored: AgenticChatSettings,
+  slot: SettingsSecretSlot,
+  store: SecretStore,
+): void {
+  const value = stringAt(runtime, slot.valuePath).trim();
+  store.setSecret(stringAt(runtime, slot.secretIdPath), value);
+  writePath(stored, slot.valuePath, "");
+}
+
+function stringAt(root: unknown, path: readonly string[]): string {
+  const value = readPath(root, path);
+  return typeof value === "string" ? value : "";
+}
+
+function readPath(root: unknown, path: readonly string[]): unknown {
+  let current = root;
+  for (const segment of path) {
+    if (!current || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+function writePath(root: unknown, path: readonly string[], value: string): void {
+  if (!root || typeof root !== "object") return;
+  let current = root as Record<string, unknown>;
+  for (const segment of path.slice(0, -1)) {
+    const next = current[segment];
+    if (!next || typeof next !== "object") return;
+    current = next as Record<string, unknown>;
+  }
+  current[path[path.length - 1]] = value;
 }
 
 function cloneSettings(settings: AgenticChatSettings): AgenticChatSettings {

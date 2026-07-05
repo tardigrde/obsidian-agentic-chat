@@ -4,6 +4,7 @@ import {
   formatMcpDiagnosticRows,
   formatMcpDiagnosticSummary,
   formatRuntimeDiagnosticsRows,
+  formatToolBudgetDiagnostic,
   summarizeAgentEvent,
 } from "../src/agent/diagnostics";
 import { replayTextTurn, replayToolCallTurn } from "../src/agent/replay-stream";
@@ -64,6 +65,7 @@ describe("runtime diagnostics", () => {
     });
     expect(diagnostics.tools).toEqual(expect.arrayContaining(["read", "write", "subagent"]));
     expect(diagnostics.resources.lastReloadAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(diagnostics.toolBudget).toMatchObject({ enabled: true, active: false, thresholdPercent: 2 });
     expect(diagnostics.state.canUndo).toBe(false);
     expect(diagnostics.state.lastError).toBeNull();
     expect(diagnostics.recentEvents).toEqual(
@@ -76,7 +78,28 @@ describe("runtime diagnostics", () => {
 
     const rows = formatRuntimeDiagnosticsRows(diagnostics);
     expect(rows).toContainEqual(["Pending undo", "no"]);
+    expect(rows).toContainEqual([
+      "Tool budget",
+      expect.stringMatching(/^armed at 2% tool schemas(?:; current tool schemas ~\d+ tokens)?$/),
+    ]);
     expect(rows.some(([label]) => label === "Recent events")).toBe(true);
+  });
+
+  it("formats active tool budget diagnostics with dropped tool reasons", () => {
+    expect(
+      formatToolBudgetDiagnostic({
+        enabled: true,
+        active: true,
+        thresholdPercent: 2,
+        triggeredAtToolSchemaPercent: 3,
+        toolSchemaTokens: 300,
+        contextWindow: 10_000,
+        droppedTools: [
+          { name: "web_search", reason: "web egress" },
+          { name: "mcp__docs__lookup", reason: "remote MCP" },
+        ],
+      }),
+    ).toBe("active after 3% tool schemas; dropped: web_search (web egress), mcp__docs__lookup (remote MCP)");
   });
 
   it("formats MCP server and tool details for status blocks", () => {

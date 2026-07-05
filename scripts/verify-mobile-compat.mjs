@@ -22,7 +22,21 @@ const desktopOnlyAllowlist = new Map([
     {
       modules: new Set(["http", "electron", "child_process"]),
       globals: new Set(["process", "require", "window.open"]),
-      requiredText: [/OAuth sign-in uses a localhost callback, so sign-in currently requires Obsidian desktop/is],
+      requiredText: [
+        /OAuth sign-in uses a localhost callback on desktop and an `obsidian:\/\/agentic-chat-mcp-oauth` callback on mobile/is,
+        /Providers that require localhost redirects still require Obsidian desktop sign-in/is,
+      ],
+    },
+  ],
+  [
+    "src/tools/external-workspace.ts",
+    {
+      modules: new Set(["fs", "path", "electron"]),
+      globals: new Set(["require"]),
+      requiredText: [
+        /External workspace root tools are desktop-only/is,
+        /They are not registered on mobile/is,
+      ],
     },
   ],
 ]);
@@ -115,7 +129,7 @@ function scanSourceFile(relPath, source) {
   const globalChecks = [
     { label: "Buffer", pattern: /\bBuffer\b/g },
     { label: "require", pattern: /globalThis\.require|typeof\s+require/g },
-    { label: "process", pattern: /typeof\s+process|process\.[A-Za-z_]/g },
+    { label: "process", pattern: /typeof\s+process\b|process\.[A-Za-z_]/g },
     { label: "window.open", pattern: /window\.open\b/g },
   ];
 

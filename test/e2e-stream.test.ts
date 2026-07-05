@@ -57,4 +57,23 @@ describe("createWindowE2EStreamFn", () => {
       },
     ]);
   });
+
+  it("preserves scripted turn progress when the stream function is rebuilt", async () => {
+    const target: E2EStreamTarget = {
+      __AGENTIC_CHAT_E2E_TURNS__: [replayTextTurn("first"), replayTextTurn("second")],
+    };
+
+    const firstStreamFn = createWindowE2EStreamFn({ enabled: true, target });
+    expect((await (await firstStreamFn!(model(), { messages: [] })).result()).content).toEqual([
+      { type: "text", text: "first" },
+    ]);
+
+    const rebuiltStreamFn = createWindowE2EStreamFn({ enabled: true, target });
+    expect((await (await rebuiltStreamFn!(model(), { messages: [] })).result()).content).toEqual([
+      { type: "text", text: "second" },
+    ]);
+
+    expect(target.__AGENTIC_CHAT_E2E_CALLS__).toBe(2);
+    expect(target.__AGENTIC_CHAT_E2E_CALL_LOG__?.map((call) => call.index)).toEqual([0, 1]);
+  });
 });

@@ -1,12 +1,13 @@
 import { App, Modal, Setting, TFile } from "obsidian";
 import type { ToolApprovalRequest } from "../agent/agent-service";
-import { buildEditPreview, type EditPreview } from "../agent/edit-preview";
+import { buildEditPreview, buildExactEditPreviewWindow, type EditPreview } from "../agent/edit-preview";
 import { approvalPreviewNeedsContent, toolApprovalDescription } from "../tools/tool-contracts";
-import { diffLines, diffStat, diffTooLarge } from "../vault/diff";
+import { compactDiffLines, diffLines, diffStat, diffTooLarge, type CompactDiffWindow } from "../vault/diff";
 import { normalizeVaultPath } from "../vault/path";
 
 /** Cap diff lines rendered in the modal so a huge change can't bloat the dialog. */
 const MAX_DIFF_DISPLAY_LINES = 400;
+const DEFAULT_DIFF_CONTEXT_LINES = 10;
 
 export interface ApprovalChoice {
   approved: boolean;
@@ -48,17 +49,20 @@ export class ApprovalModal extends Modal {
     void this.renderPreview(previewEl);
 
     let remember = false;
-    new Setting(contentEl)
+    const rememberSetting = new Setting(contentEl)
       .setName("Don't ask again for this tool")
-      .setDesc("Always allow this tool from now on (changeable in settings).")
+      .setDesc("After you choose Allow or Deny, remember that decision for this tool. Changeable in settings.")
       .addToggle((toggle) => toggle.setValue(false).onChange((value) => (remember = value)));
+    for (const eventName of ["click", "mousedown", "mouseup", "keydown"]) {
+      rememberSetting.settingEl.addEventListener(eventName, (event) => event.stopPropagation());
+    }
 
     new Setting(contentEl)
       .addButton((button) =>
         button
           .setButtonText("Deny")
           .setClass("mod-warning")
-          .onClick(() => this.decide({ approved: false, remember: false })),
+          .onClick(() => this.decide({ approved: false, remember })),
       )
       .addButton((button) =>
         button
@@ -70,7 +74,7 @@ export class ApprovalModal extends Modal {
     // Enter accepts (Escape already dismisses via the default modal handler).
     // Let a focused button handle Enter itself so Tab-to-Deny still works.
     this.scope.register([], "Enter", (event) => {
-      if (this.decided || activeDocument.activeElement instanceof HTMLButtonElement) return;
+      if (this.decided || isInteractiveElement(activeDocument.activeElement)) return;
       event.preventDefault();
       this.decide({ approved: true, remember });
       return false;
@@ -121,11 +125,12 @@ export class ApprovalModal extends Modal {
     if (preview.kind !== "diff") return;
     const verb = preview.isNew ? "Create" : "Edit";
     container.createEl("p", { cls: "agentic-chat-approval-summary", text: `${verb} ${preview.path}` });
-    this.renderDiff(container, preview.before, preview.after);
+    this.renderDiff(container, preview.before, preview.after, preview.edits);
   }
 
   /** Render a line-level diff, or a compact summary when the change is too large. */
-  private renderDiff(container: HTMLElement, before: string, after: string): void {
+  private renderDiff(container: HTMLElement, before: string, after: string, edits?: EditPreviewEdit[]): void {
+    if (edits?.length && this.renderExactEditDiff(container, before, edits)) return;
     if (diffTooLarge(before, after)) {
       const beforeLines = before ? before.split("\n").length : 0;
       const afterLines = after ? after.split("\n").length : 0;
@@ -141,15 +146,105 @@ export class ApprovalModal extends Modal {
       cls: "agentic-chat-approval-summary",
       text: `+${stat.added} −${stat.removed}`,
     });
-    const pre = container.createEl("pre", { cls: "agentic-chat-diff" });
-    const shown = lines.slice(0, MAX_DIFF_DISPLAY_LINES);
-    for (const line of shown) {
+    const diffEl = container.createDiv({ cls: "agentic-chat-diff-window" });
+    let contextBefore = DEFAULT_DIFF_CONTEXT_LINES;
+    let contextAfter = DEFAULT_DIFF_CONTEXT_LINES;
+    const renderWindow = () => {
+      const windowed = compactDiffLines(lines, {
+        contextBefore,
+        contextAfter,
+        maxLines: MAX_DIFF_DISPLAY_LINES,
+      });
+      diffEl.empty();
+      const pre = diffEl.createEl("pre", { cls: "agentic-chat-diff" });
+      this.renderDiffWindow(pre, windowed, {
+        expandAbove: () => {
+          contextBefore += DEFAULT_DIFF_CONTEXT_LINES;
+          renderWindow();
+        },
+        expandBelow: () => {
+          contextAfter += DEFAULT_DIFF_CONTEXT_LINES;
+          renderWindow();
+        },
+      });
+    };
+    renderWindow();
+  }
+
+  private renderExactEditDiff(container: HTMLElement, before: string, edits: EditPreviewEdit[]): boolean {
+    let contextBefore = DEFAULT_DIFF_CONTEXT_LINES;
+    let contextAfter = DEFAULT_DIFF_CONTEXT_LINES;
+    const initial = buildExactEditPreviewWindow(before, edits, { contextBefore, contextAfter });
+    if (!initial) return false;
+    let lines = diffLines(initial.before, initial.after);
+    let stat = diffStat(lines);
+    const summary = container.createEl("p", {
+      cls: "agentic-chat-approval-summary",
+      text: `+${stat.added} −${stat.removed}`,
+    });
+    const diffEl = container.createDiv({ cls: "agentic-chat-diff-window" });
+    const renderWindow = () => {
+      const windowed = buildExactEditPreviewWindow(before, edits, { contextBefore, contextAfter });
+      if (!windowed) return;
+      lines = diffLines(windowed.before, windowed.after);
+      stat = diffStat(lines);
+      summary.setText(`+${stat.added} −${stat.removed}`);
+      diffEl.empty();
+      const pre = diffEl.createEl("pre", { cls: "agentic-chat-diff" });
+      if (windowed.hiddenBefore > 0) {
+        this.renderDiffExpandButton(pre, "above", windowed.hiddenBefore, () => {
+          contextBefore += DEFAULT_DIFF_CONTEXT_LINES;
+          renderWindow();
+        });
+      }
+      for (const line of lines) {
+        const prefix = line.op === "add" ? "+" : line.op === "remove" ? "-" : " ";
+        pre.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
+      }
+      if (windowed.hiddenAfter > 0) {
+        this.renderDiffExpandButton(pre, "below", windowed.hiddenAfter, () => {
+          contextAfter += DEFAULT_DIFF_CONTEXT_LINES;
+          renderWindow();
+        });
+      }
+    };
+    renderWindow();
+    return true;
+  }
+
+  private renderDiffWindow(
+    container: HTMLElement,
+    windowed: CompactDiffWindow,
+    callbacks: { expandAbove: () => void; expandBelow: () => void },
+  ): void {
+    if (windowed.hiddenBefore > 0) {
+      this.renderDiffExpandButton(container, "above", windowed.hiddenBefore, callbacks.expandAbove);
+    }
+    for (const line of windowed.lines) {
       const prefix = line.op === "add" ? "+" : line.op === "remove" ? "-" : " ";
-      pre.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
+      container.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
     }
-    if (lines.length > shown.length) {
-      pre.createDiv({ cls: "agentic-chat-diff-line is-context", text: `… ${lines.length - shown.length} more lines` });
+    if (windowed.hiddenAfter > 0) {
+      this.renderDiffExpandButton(container, "below", windowed.hiddenAfter, callbacks.expandBelow);
     }
+  }
+
+  private renderDiffExpandButton(
+    container: HTMLElement,
+    direction: "above" | "below",
+    hiddenLines: number,
+    onClick: () => void,
+  ): void {
+    const count = Math.min(DEFAULT_DIFF_CONTEXT_LINES, hiddenLines);
+    const button = container.createEl("button", {
+      cls: "agentic-chat-diff-expand",
+      text: `Show ${count} more line${count === 1 ? "" : "s"} ${direction}`,
+    });
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onClick();
+    });
   }
 
   private decide(choice: ApprovalChoice): void {
@@ -157,6 +252,20 @@ export class ApprovalModal extends Modal {
     this.resolve?.(choice);
     this.close();
   }
+}
+
+type EditPreviewEdit = NonNullable<Extract<EditPreview, { kind: "diff" }>["edits"]>[number];
+
+function isInteractiveElement(element: Element | null): boolean {
+  return (
+    element instanceof HTMLButtonElement ||
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement ||
+    element?.getAttribute("role") === "button" ||
+    element?.getAttribute("role") === "checkbox" ||
+    element?.getAttribute("contenteditable") === "true"
+  );
 }
 
 function previewArgs(args: unknown): string {

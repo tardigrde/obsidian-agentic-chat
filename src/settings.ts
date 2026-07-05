@@ -1,46 +1,51 @@
-import { App, Notice, PluginSettingTab, Setting, type ButtonComponent } from "obsidian";
+import { App, Notice, Platform, PluginSettingTab, Setting, type ButtonComponent } from "obsidian";
 import { normalizeFolderPath } from "./vault/path";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type AgenticChatPlugin from "./main";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OLLAMA_BASE_URL,
   listOpenRouterModels,
-  type ModelConfig,
-  type PrivacySettings,
   type ProviderId,
 } from "./llm/models";
-import { type ApprovalPolicy, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
-import { type AgentMode, DEFAULT_MODE, healMode, MODES, TOGGLE_MODES } from "./agent/modes";
-import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
+import { type ApprovalPolicy } from "./agent/approval";
+import { type AgentMode, MODES, TOGGLE_MODES } from "./agent/modes";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { MUTATING_TOOLS } from "./tools/tool-contracts";
 import { createVaultTools } from "./tools/vault-tools";
 import {
   createMcpServerSettings,
-  healMcpSettings,
+  exportMcpServerConfig,
+  importMcpServerConfig,
+  mcpServerSetupSteps,
   nextUniqueMcpServerId,
   normalizeMcpServerId,
-  normalizeMcpNoProxy,
-  normalizeMcpProxyUrl,
   resetMcpCredentials,
   resetMcpServerSecretRefs,
   serverIdFromMcpUrl,
-  type McpKnownToolSettings,
   type McpAuthType,
   type McpServerSettings,
-  type McpSettings,
 } from "./mcp/settings";
 import {
   authenticateMcpServer,
-  clearMcpOAuth,
+  forgetMcpOAuthTokens,
   DEFAULT_MCP_OAUTH_REDIRECT_URI,
   hasMcpOAuthAccess,
+  MCP_OAUTH_OBSIDIAN_REDIRECT_URI,
   type McpOAuthProgressEvent,
 } from "./mcp/oauth";
 import { createFetchFromWebFetcher, createMcpFetcher, createProxiedFetcher } from "./mcp/fetcher";
 import { localMcpToolName, localMcpToolNames, probeMcpServer } from "./mcp/tools";
-import { isValidHttpHeaderName } from "./mcp/http-headers";
+import {
+  formatMcpServerSummary,
+  formatMcpToolApprovalDescription,
+  formatMcpToolSample,
+  mcpAuthProblem,
+  mcpCredentialResourceChanged,
+  mcpEndpointProblem,
+  mcpKnownToolLocalName,
+  mcpSecretIds,
+  mcpTestButtonState,
+} from "./settings-mcp-state";
 import {
   WEB_SEARCH_PROVIDER_LABELS,
   WEB_SEARCH_PROVIDERS,
@@ -49,253 +54,54 @@ import {
 import { FolderSuggestModal } from "./ui/folder-suggest";
 import { ModelSuggestModal } from "./ui/model-suggest-modal";
 import {
-  OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
-  OPENROUTER_API_KEY_SECRET_ID,
-  WEB_SEARCH_API_KEY_SECRET_ID,
-} from "./secrets/secret-store";
+  type ObservabilityBackend,
+  type ObservabilityPayloadMode,
+} from "./observability/settings";
+import {
+  activeEmbeddingModel,
+  DEFAULT_EMBEDDING_SETTINGS,
+  type EmbeddingProviderId,
+  type EmbeddingSettings,
+} from "./retrieval/embeddings";
 
-export interface AgenticChatSettings {
-  provider: ProviderId;
-  /** Secret id in Obsidian secretStorage. */
-  openrouterApiKeySecretId: string;
-  /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
-  openrouterApiKey: string;
-  openrouterModel: string;
-  ollamaBaseUrl: string;
-  ollamaModel: string;
-  openaiCompatibleBaseUrl: string;
-  /** Secret id in Obsidian secretStorage. */
-  openaiCompatibleApiKeySecretId: string;
-  /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
-  openaiCompatibleApiKey: string;
-  openaiCompatibleModel: string;
-  thinkingLevel: ThinkingLevel;
-  temperature: number;
-  /** 0 means "let the provider decide". */
-  maxTokens: number;
-  requestTimeoutMs: number;
-  maxNetworkRetries: number;
-  systemPrompt: string;
-  /**
-   * Session permission posture: `safe` honors the approval policy, `yolo` auto-approves
-   * mutating tools. `plan` (read-only) is reached via the `/plan` command, not this default.
-   */
-  mode: AgentMode;
-  /** How the assistant talks: a built-in system-prompt overlay. */
-  outputStyle: OutputStyle;
-  privacy: PrivacySettings;
-  approval: ApprovalSettings;
-  /** Vault folder scanned for SKILL.md skills/personas. Empty disables skills. */
-  skillsFolder: string;
-  /** Vault folder scanned for reusable prompt templates. Empty disables templates. */
-  templatesFolder: string;
-  /** Vault folder scanned for AGENT.md subagent profiles. Empty disables vault profiles. */
-  agentsFolder: string;
-  /** Include the built-in subagent roster (researcher / reviewer / editor). */
-  enableBuiltinAgents: boolean;
-  /**
-   * Newline-separated gitignore-style globs the agent may never read or see.
-   * Enforced at the tool layer; matched files are invisible, not just denied.
-   */
-  ignoredGlobs: string;
-  /** Background notification preferences (toasts for agent/context/cost signals). */
-  notifications: NotificationSettings;
-  /** Auto-compaction: summarize old turns as the context window fills. */
-  compaction: CompactionSettings;
-  /** Optional plugin-owned HTTP proxy for request paths the plugin controls. */
-  network: NetworkSettings;
-  /** Open-web access: search + fetch tools. Off by default — sends data off-device. */
-  web: WebSettings;
-  /** Remote MCP tools over HTTPS Streamable HTTP. Off by default — sends data off-device. */
-  mcp: McpSettings;
-}
-
-export interface NetworkSettings {
-  /** Optional HTTP proxy URL used by plugin-owned request paths. */
-  proxyUrl: string;
-  /** Comma-separated hosts/domains that bypass the plugin proxy. */
-  noProxy: string;
-}
-
-export interface WebSettings {
-  /**
-   * Master egress gate for web search + fetch. Off by default. When off the web
-   * tools are not registered at all, so the agent cannot reach the network.
-   */
-  enabled: boolean;
-  /** Search backend. Tavily/Brave need an API key; SearXNG needs an instance URL. */
-  searchProvider: WebSearchProvider;
-  /** Secret id in Obsidian secretStorage. */
-  searchApiKeySecretId: string;
-  /** API key for the chosen search provider (Tavily/Brave). */
-  searchApiKey: string;
-  /** Base URL of a self-hosted SearXNG instance (used only when provider is SearXNG). */
-  searxngUrl: string;
-  /** Default number of search results to return (1–10). */
-  maxResults: number;
-  /** Default cap on characters of fetched page text returned to the model. */
-  fetchCharLimit: number;
-}
-
-export interface CompactionSettings {
-  /** Summarize old turns automatically as the context window fills. */
-  enabled: boolean;
-  /** Context fill percent (50–95) at which compaction triggers. */
-  thresholdPercent: number;
-}
-
-export interface NotificationSettings {
-  /** Master switch for background toasts. Errors always show regardless. */
-  enabled: boolean;
-  /** Notify once when session cost crosses this USD amount. 0 disables. */
-  costAlertUsd: number;
-  /** Hard cap: block new turns (and abort the running one) once session cost reaches this USD. 0 disables. */
-  costCapUsd: number;
-}
-
-export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
-
-export const DEFAULT_SETTINGS: AgenticChatSettings = {
-  provider: "openrouter",
-  openrouterApiKeySecretId: OPENROUTER_API_KEY_SECRET_ID,
-  openrouterApiKey: "",
-  openrouterModel: "moonshotai/kimi-k2.6",
-  ollamaBaseUrl: DEFAULT_OLLAMA_BASE_URL,
-  ollamaModel: "llama3.1",
-  openaiCompatibleBaseUrl: DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
-  openaiCompatibleApiKeySecretId: OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
-  openaiCompatibleApiKey: "",
-  openaiCompatibleModel: "",
-  thinkingLevel: "off",
-  temperature: 0.3,
-  maxTokens: 0,
-  requestTimeoutMs: 90_000,
-  maxNetworkRetries: 2,
-  systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  mode: DEFAULT_MODE,
-  outputStyle: DEFAULT_OUTPUT_STYLE,
-  // Strongest privacy out of the box: zero data retention, no prompt
-  // logging/training, and any fallback provider must also satisfy both.
-  privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
-  approval: DEFAULT_APPROVAL_SETTINGS,
-  skillsFolder: "",
-  templatesFolder: "",
-  agentsFolder: "",
-  enableBuiltinAgents: true,
-  ignoredGlobs: "",
-  notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
-  compaction: { enabled: true, thresholdPercent: 80 },
-  network: {
-    proxyUrl: "",
-    noProxy: "localhost,127.0.0.1,::1",
-  },
-  web: {
-    enabled: false,
-    searchProvider: "tavily",
-    searchApiKeySecretId: WEB_SEARCH_API_KEY_SECRET_ID,
-    searchApiKey: "",
-    searxngUrl: "",
-    maxResults: 5,
-    fetchCharLimit: 10_000,
-  },
-  mcp: {
-    enabled: false,
-    proxyUrl: "",
-    noProxy: "localhost,127.0.0.1,::1",
-    servers: [],
-  },
+import {
+  DEFAULT_EXTERNAL_IGNORED_GLOBS,
+  DEFAULT_SETTINGS,
+  PROVIDERS,
+  PROVIDER_LABELS,
+  embeddingModelPlaceholder,
+  type AgenticChatSettings,
+  type NetworkSettings,
+} from "./settings-schema";
+export {
+  DEFAULT_EXTERNAL_IGNORED_GLOBS,
+  DEFAULT_SETTINGS,
+  PROVIDERS,
+  PROVIDER_LABELS,
+  THINKING_LEVELS,
+  activeModelConfig,
+  activeModelId,
+  apiKeyForProvider,
+  embeddingModelPlaceholder,
+  mergeSettings,
+} from "./settings-schema";
+export type {
+  AgenticChatSettings,
+  CompactionSettings,
+  ExternalWorkspaceSettings,
+  NetworkSettings,
+  NotificationSettings,
+  WebSettings,
+} from "./settings-schema";
+const OBSERVABILITY_BACKEND_LABELS: Record<ObservabilityBackend, string> = {
+  langfuse: "Langfuse",
+  otlp: "Generic OTLP",
 };
 
-/** Merge stored settings over defaults, healing nested objects. */
-export function mergeSettings(stored: Partial<AgenticChatSettings> | null | undefined): AgenticChatSettings {
-  return {
-    ...DEFAULT_SETTINGS,
-    ...stored,
-    // Heal enum-like fields so an unknown (or retired ask/plan/agent) value can't break the gate or prompt.
-    provider: healProvider(stored?.provider),
-    openrouterApiKeySecretId: stringSetting(stored?.openrouterApiKeySecretId, OPENROUTER_API_KEY_SECRET_ID),
-    openaiCompatibleApiKeySecretId: stringSetting(
-      stored?.openaiCompatibleApiKeySecretId,
-      OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
-    ),
-    mode: healMode(stored?.mode),
-    outputStyle:
-      stored?.outputStyle && stored.outputStyle in OUTPUT_STYLES ? stored.outputStyle : DEFAULT_OUTPUT_STYLE,
-    privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
-    approval: {
-      ...DEFAULT_SETTINGS.approval,
-      ...(stored?.approval ?? {}),
-      perTool: { ...(stored?.approval?.perTool ?? {}) },
-      // Heal the granted working dirs to a string[] so a malformed persisted value
-      // can't break the gate.
-      workingDirs: Array.isArray(stored?.approval?.workingDirs)
-        ? stored.approval.workingDirs.filter((dir): dir is string => typeof dir === "string")
-        : [],
-    },
-    notifications: { ...DEFAULT_SETTINGS.notifications, ...(stored?.notifications ?? {}) },
-    compaction: { ...DEFAULT_SETTINGS.compaction, ...(stored?.compaction ?? {}) },
-    network: healNetworkSettings(stored?.network),
-    web: {
-      ...DEFAULT_SETTINGS.web,
-      ...(stored?.web ?? {}),
-      // Heal the provider enum so an unknown persisted value can't break search.
-      searchProvider: healSearchProvider(stored?.web?.searchProvider),
-      searchApiKeySecretId: stringSetting(stored?.web?.searchApiKeySecretId, WEB_SEARCH_API_KEY_SECRET_ID),
-    },
-    mcp: healMcpSettings(stored?.mcp),
-  };
-}
-
-function stringSetting(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function healNetworkSettings(stored: Partial<NetworkSettings> | null | undefined): NetworkSettings {
-  return {
-    proxyUrl: normalizeMcpProxyUrl(stored?.proxyUrl),
-    noProxy: normalizeMcpNoProxy(stored?.noProxy),
-  };
-}
-
-function healSearchProvider(stored: WebSearchProvider | undefined): WebSearchProvider {
-  return stored && WEB_SEARCH_PROVIDERS.includes(stored) ? stored : DEFAULT_SETTINGS.web.searchProvider;
-}
-
-function healProvider(stored: ProviderId | undefined): ProviderId {
-  return stored && PROVIDERS.includes(stored) ? stored : DEFAULT_SETTINGS.provider;
-}
-
-/** The model id used for the active provider. */
-export function activeModelId(settings: AgenticChatSettings): string {
-  if (settings.provider === "ollama") return settings.ollamaModel;
-  if (settings.provider === "openai-compatible") return settings.openaiCompatibleModel;
-  return settings.openrouterModel;
-}
-
-/** Resolve the active provider/model into a buildable model config. */
-export function activeModelConfig(settings: AgenticChatSettings): ModelConfig {
-  return {
-    provider: settings.provider,
-    modelId: activeModelId(settings),
-    privacy: settings.privacy,
-    ollamaBaseUrl: settings.ollamaBaseUrl || DEFAULT_OLLAMA_BASE_URL,
-    openaiCompatibleBaseUrl: settings.openaiCompatibleBaseUrl || DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
-  };
-}
-
-/** API key for a provider. Ollama needs no real key but the OpenAI SDK wants a non-empty string. */
-export function apiKeyForProvider(settings: AgenticChatSettings, provider: string): string | undefined {
-  if (provider === "ollama") return "ollama";
-  if (provider === "openai-compatible") return settings.openaiCompatibleApiKey.trim() || undefined;
-  return settings.openrouterApiKey.trim() || undefined;
-}
-
-const PROVIDERS: ProviderId[] = ["openrouter", "ollama", "openai-compatible"];
-
-const PROVIDER_LABELS: Record<ProviderId, string> = {
-  openrouter: "OpenRouter",
-  ollama: "Ollama (local)",
-  "openai-compatible": "OpenAI-compatible",
+const OBSERVABILITY_PAYLOAD_LABELS: Record<ObservabilityPayloadMode, string> = {
+  metadata: "Metadata only",
+  "redacted-previews": "Redacted text previews",
+  "full-content": "Full prompt/output content",
 };
 
 export interface OpenAICompatiblePreset {
@@ -400,6 +206,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     { label: "Approval", render: (el, settings) => this.renderApproval(el, settings) },
     { label: "Web", render: (el, settings) => this.renderWebAccess(el, settings) },
     { label: "MCP", render: (el, settings) => this.renderMcp(el, settings) },
+    { label: "Observability", render: (el, settings) => this.renderObservability(el, settings) },
     { label: "Notifications", render: (el, settings) => this.renderNotifications(el, settings) },
     { label: "Resources", render: (el, settings) => this.renderResources(el, settings) },
   ];
@@ -451,7 +258,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       )
       .addText((text) =>
         text
-          .setPlaceholder("http://10.36.148.11:3128")
+          .setPlaceholder("http://192.0.2.10:3128")
           .setValue(settings.network.proxyUrl)
           .onChange(async (value) => {
             settings.network.proxyUrl = value.trim();
@@ -620,7 +427,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       });
     new Setting(containerEl)
       .setName("Base URL")
-      .setDesc("Base URL for an OpenAI chat-completions compatible gateway. For OpenWebUI, use its /api base URL.")
+      .setDesc("Base URL for an OpenAI chat-completions compatible gateway. Bare OpenWebUI roots are resolved to /api.")
       .addText((text) =>
         text
           .setPlaceholder(DEFAULT_OPENAI_COMPATIBLE_BASE_URL)
@@ -675,17 +482,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         if (settings.mode === "plan") dropdown.addOption("plan", `${MODES.plan.label} (set via /plan)`);
         dropdown.setValue(settings.mode).onChange(async (value) => {
           settings.mode = value as AgentMode;
-          await this.save();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Thinking level")
-      .setDesc("Reasoning effort for models that support it. Has no effect on models without reasoning.")
-      .addDropdown((dropdown) => {
-        for (const level of THINKING_LEVELS) dropdown.addOption(level, level);
-        dropdown.setValue(settings.thinkingLevel).onChange(async (value) => {
-          settings.thinkingLevel = value as ThinkingLevel;
           await this.save();
         });
       });
@@ -778,6 +574,31 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           .setValue(settings.compaction.thresholdPercent)
           .onChange(async (value) => {
             settings.compaction.thresholdPercent = value;
+            await this.save();
+          }),
+      );
+
+    new Setting(containerEl).setName("Tool budget").setHeading();
+    new Setting(containerEl)
+      .setName("Drop optional tools when schemas are large")
+      .setDesc(
+        "When registered tool schemas alone exceed the threshold, hide optional expansion tools such as web, MCP, artifacts, PDF import, and subagents.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.toolBudget.enabled).onChange(async (value) => {
+          settings.toolBudget.enabled = value;
+          await this.save();
+        }),
+      );
+    new Setting(containerEl)
+      .setName("Drop tools when schemas exceed (% of context window)")
+      .setDesc("Low by default so large tool catalogs shed optional tools before tool schemas become expensive.")
+      .addSlider((slider) =>
+        slider
+          .setLimits(1, 50, 1)
+          .setValue(settings.toolBudget.thresholdPercent)
+          .onChange(async (value) => {
+            settings.toolBudget.thresholdPercent = value;
             await this.save();
           }),
       );
@@ -1034,6 +855,11 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setDesc("Add HTTPS Streamable HTTP servers, choose authentication, then test discovery.")
       .setHeading()
       .addButton((button) =>
+        button.setButtonText("Import config").onClick(async () => {
+          await this.importMcpConfigFromClipboard(settings);
+        }),
+      )
+      .addButton((button) =>
         button.setButtonText("Add server").onClick(async () => {
           const id = this.nextMcpServerId(settings, "mcp");
           this.upsertMcpServer(settings, createMcpServerSettings({ id }));
@@ -1055,21 +881,194 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     }
   }
 
+  private renderObservability(containerEl: HTMLElement, settings: AgenticChatSettings): void {
+    new Setting(containerEl).setName("Observability export").setHeading();
+
+    const warning = containerEl.createDiv({ cls: "agentic-chat-settings-warning" });
+    warning.createSpan({ cls: "agentic-chat-settings-warning-icon", text: "i" });
+    warning.createSpan({
+      text:
+        "Observability is opt-in and has no built-in endpoint. When enabled, Agentic Chat exports " +
+        "turn, model, tool, approval, token, and cost metadata to the endpoint you configure. Prompt " +
+        "and answer text is withheld unless you explicitly change payload detail below.",
+    });
+
+    new Setting(containerEl)
+      .setName("Enable observability")
+      .setDesc("Export OTLP/HTTP traces for agent turns. Leave off for the default no-telemetry behavior.")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.observability.enabled).onChange(async (value) => {
+          settings.observability.enabled = value;
+          await this.save();
+          this.display();
+        }),
+      );
+
+    if (!settings.observability.enabled) return;
+
+    new Setting(containerEl)
+      .setName("Backend")
+      .setDesc("Langfuse configures OTLP headers for Langfuse ingestion; generic OTLP accepts a direct /v1/traces endpoint.")
+      .addDropdown((dropdown) => {
+        for (const backend of Object.keys(OBSERVABILITY_BACKEND_LABELS) as ObservabilityBackend[]) {
+          dropdown.addOption(backend, OBSERVABILITY_BACKEND_LABELS[backend]);
+        }
+        dropdown.setValue(settings.observability.backend).onChange(async (value) => {
+          settings.observability.backend = value as ObservabilityBackend;
+          await this.save();
+          this.display();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName(settings.observability.backend === "langfuse" ? "Langfuse base URL" : "OTLP traces endpoint")
+      .setDesc(
+        settings.observability.backend === "langfuse"
+          ? "Corporate/self-hosted Langfuse base URL. The plugin posts to /api/public/otel/v1/traces."
+          : "Full OTLP HTTP/JSON traces endpoint, usually ending in /v1/traces.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder(settings.observability.backend === "langfuse" ? "https://langfuse.example.com" : "https://otel.example.com/v1/traces")
+          .setValue(settings.observability.endpoint)
+          .onChange(async (value) => {
+            settings.observability.endpoint = value.trim();
+            await this.save();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Payload detail")
+      .setDesc(
+        "Metadata only sends timings, model ids, token/cost totals, tool names, approvals, and errors. " +
+        "Text modes send prompt/answer text to the configured backend.",
+      )
+      .addDropdown((dropdown) => {
+        for (const mode of Object.keys(OBSERVABILITY_PAYLOAD_LABELS) as ObservabilityPayloadMode[]) {
+          dropdown.addOption(mode, OBSERVABILITY_PAYLOAD_LABELS[mode]);
+        }
+        dropdown.setValue(settings.observability.payloadMode).onChange(async (value) => {
+          settings.observability.payloadMode = value as ObservabilityPayloadMode;
+          await this.save();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Sample rate")
+      .setDesc("Percentage of agent turns to export.")
+      .addSlider((slider) =>
+        slider
+          .setLimits(0, 100, 1)
+          .setValue(settings.observability.sampleRate)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            settings.observability.sampleRate = value;
+            await this.save();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("HTTP proxy")
+      .setDesc("Optional observability-only override. Leave empty to inherit the global network proxy from the Models tab.")
+      .addText((text) =>
+        text
+          .setPlaceholder("http://host:port")
+          .setValue(settings.observability.proxyUrl)
+          .onChange(async (value) => {
+            settings.observability.proxyUrl = value.trim();
+            await this.save();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("No proxy")
+      .setDesc("Comma-separated hosts/domains that bypass the observability proxy.")
+      .addText((text) =>
+        text
+          .setPlaceholder("localhost,127.0.0.1,::1")
+          .setValue(settings.observability.noProxy)
+          .onChange(async (value) => {
+            settings.observability.noProxy = value.trim();
+            await this.save();
+          }),
+      );
+
+    if (settings.observability.backend === "langfuse") {
+      this.renderSecretInput(containerEl, {
+        name: "Langfuse public key",
+        desc: "Public key for the configured Langfuse project.",
+        placeholder: "pk-lf-...",
+        hasValue: Boolean(settings.observability.langfusePublicKey),
+        onSet: async (value) => {
+          settings.observability.langfusePublicKey = value;
+          await this.save();
+        },
+        onForget: async () => {
+          settings.observability.langfusePublicKey = "";
+          await this.save();
+        },
+      });
+      this.renderSecretInput(containerEl, {
+        name: "Langfuse secret key",
+        desc: "Secret key for the configured Langfuse project.",
+        placeholder: "sk-lf-...",
+        hasValue: Boolean(settings.observability.langfuseSecretKey),
+        onSet: async (value) => {
+          settings.observability.langfuseSecretKey = value;
+          await this.save();
+        },
+        onForget: async () => {
+          settings.observability.langfuseSecretKey = "";
+          await this.save();
+        },
+      });
+      return;
+    }
+
+    new Setting(containerEl)
+      .setName("Auth header name")
+      .setDesc("Optional header name for a generic OTLP backend, e.g. Authorization.")
+      .addText((text) =>
+        text
+          .setPlaceholder("Authorization")
+          .setValue(settings.observability.authHeaderName)
+          .onChange(async (value) => {
+            settings.observability.authHeaderName = value.trim();
+            await this.save();
+          }),
+      );
+
+    this.renderSecretInput(containerEl, {
+      name: "Auth header value",
+      desc: "Optional header value for the generic OTLP backend.",
+      placeholder: "Bearer ...",
+      hasValue: Boolean(settings.observability.authHeaderValue),
+      onSet: async (value) => {
+        settings.observability.authHeaderValue = value;
+        await this.save();
+      },
+      onForget: async () => {
+        settings.observability.authHeaderValue = "";
+        await this.save();
+      },
+    });
+  }
+
   private renderMcpServer(
     containerEl: HTMLElement,
     settings: AgenticChatSettings,
     server: McpServerSettings,
   ): void {
-    const endpointProblem = this.mcpEndpointProblem(server.url);
+    const endpointProblem = mcpEndpointProblem(server.url);
     let testButton: ButtonComponent | undefined;
     const syncTestButton = (): void => {
       if (!testButton) return;
-      const state = this.mcpTestButtonState(server);
+      const state = mcpTestButtonState(server);
       testButton.setButtonText(state.label).setDisabled(Boolean(state.problem));
     };
     const header = new Setting(containerEl)
       .setName(server.name || server.id)
-      .setDesc(this.formatMcpServerSummary(server, endpointProblem))
+      .setDesc(formatMcpServerSummary(server, endpointProblem))
       .setHeading()
       .addToggle((toggle) =>
         toggle.setValue(server.enabled).onChange(async (value) => {
@@ -1082,7 +1081,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         syncTestButton();
         return button
           .onClick(async () => {
-            const state = this.mcpTestButtonState(server);
+            const state = mcpTestButtonState(server);
             if (state.problem) {
               new Notice(state.problem);
               syncTestButton();
@@ -1179,6 +1178,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           }),
       );
 
+    this.renderMcpSetupGuide(containerEl, server);
     this.renderMcpAuthentication(containerEl, server, syncTestButton);
     this.renderMcpToolApprovals(containerEl, settings, server);
   }
@@ -1207,11 +1207,11 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     }
 
     for (const tool of [...server.knownTools].sort((a, b) => a.name.localeCompare(b.name))) {
-      const localName = this.mcpKnownToolLocalName(server, tool);
+      const localName = mcpKnownToolLocalName(server, tool);
       const title = tool.title && tool.title !== tool.name ? `${tool.title} (${tool.name})` : tool.name;
       new Setting(containerEl)
         .setName(title)
-        .setDesc(this.formatMcpToolApprovalDescription(localName, tool))
+        .setDesc(formatMcpToolApprovalDescription(localName, tool))
         .addDropdown((dropdown) =>
           dropdown
             .addOption("default", `Default (${server.approval})`)
@@ -1228,64 +1228,12 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     }
   }
 
-  private formatMcpToolApprovalDescription(localName: string, tool: McpKnownToolSettings): string {
-    return `${localName}${tool.readOnlyHint ? " · read-only hint" : ""}`;
-  }
-
-  private formatMcpServerSummary(server: McpServerSettings, endpointProblem: string): string {
-    const status = server.enabled ? "enabled" : "disabled";
-    const auth = this.formatMcpAuthType(server);
-    const tools =
-      server.knownTools.length > 0
-        ? `${server.knownTools.length} discovered tool${server.knownTools.length === 1 ? "" : "s"}`
-        : "no tools discovered yet";
-    const endpoint = endpointProblem || server.url || "No endpoint configured";
-    return `${endpoint} · ${status} · ${auth} · ${tools}`;
-  }
-
-  private formatMcpAuthType(server: McpServerSettings): string {
-    if (server.authType === "none") return "no auth";
-    if (server.authType === "bearer") return server.authHeaderValue ? "bearer token set" : "bearer token missing";
-    if (server.authType === "header") {
-      return server.authHeaderName && server.authHeaderValue ? `header ${server.authHeaderName}` : "static header incomplete";
-    }
-    return hasMcpOAuthAccess(server) ? "OAuth authenticated" : "OAuth not authenticated";
-  }
-
-  private mcpEndpointProblem(url: string): string {
-    const trimmed = url.trim();
-    if (!trimmed || trimmed === "https://") return "Paste an HTTPS Streamable HTTP endpoint.";
-    try {
-      const parsed = new URL(trimmed);
-      if (parsed.protocol !== "https:") return "MCP server URLs must use https://.";
-      return "";
-    } catch {
-      return "Enter a valid HTTPS MCP server URL.";
-    }
-  }
-
-  private mcpTestButtonState(server: McpServerSettings): {
-    label: string;
-    busyLabel: string;
-    problem: string;
-    needsOAuthSignIn: boolean;
-  } {
-    const needsOAuthSignIn = server.authType === "oauth" && !hasMcpOAuthAccess(server);
-    const problem = this.mcpEndpointProblem(server.url) || (needsOAuthSignIn ? "" : this.mcpAuthProblem(server));
-    return {
-      label: needsOAuthSignIn ? "Authenticate & test" : "Test connection",
-      busyLabel: needsOAuthSignIn ? "Authenticating..." : "Testing...",
-      problem,
-      needsOAuthSignIn,
-    };
-  }
-
   private renderMcpAuthentication(
     containerEl: HTMLElement,
     server: McpServerSettings,
     onAuthChanged: () => void,
   ): void {
-    const authProblem = this.mcpAuthProblem(server);
+    const authProblem = mcpAuthProblem(server);
     new Setting(containerEl)
       .setName("Authentication")
       .setDesc(authProblem || "Choose how this server authenticates. Secrets are stored in Obsidian secret storage.")
@@ -1377,15 +1325,16 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           .setButtonText("Forget token")
           .setDisabled(!server.oauth.accessToken && !server.oauth.refreshToken)
           .onClick(async () => {
-            clearMcpOAuth(server);
+            forgetMcpOAuthTokens(server);
+            server.knownTools = [];
             await this.save();
             this.display();
           }),
       );
 
     new Setting(containerEl)
-      .setName("OAuth redirect URI")
-      .setDesc("Register this URI with MCP OAuth servers that require a manual client setup.")
+      .setName("OAuth desktop redirect URI")
+      .setDesc("Register this localhost URI with MCP OAuth servers for Obsidian desktop sign-in.")
       .addText((text) => text.setValue(DEFAULT_MCP_OAUTH_REDIRECT_URI).setDisabled(true))
       .addButton((button) =>
         button.setButtonText("Copy").onClick(async () => {
@@ -1393,6 +1342,20 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             new Notice("MCP OAuth redirect URI copied.");
           } else {
             new Notice(`MCP OAuth redirect URI: ${DEFAULT_MCP_OAUTH_REDIRECT_URI}`);
+          }
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("OAuth mobile redirect URI")
+      .setDesc("Register this Obsidian URI as an additional redirect when the provider supports mobile app callbacks.")
+      .addText((text) => text.setValue(MCP_OAUTH_OBSIDIAN_REDIRECT_URI).setDisabled(true))
+      .addButton((button) =>
+        button.setButtonText("Copy").onClick(async () => {
+          if (await this.copyToClipboard(MCP_OAUTH_OBSIDIAN_REDIRECT_URI)) {
+            new Notice("MCP OAuth mobile redirect URI copied.");
+          } else {
+            new Notice(`MCP OAuth mobile redirect URI: ${MCP_OAUTH_OBSIDIAN_REDIRECT_URI}`);
           }
         }),
       );
@@ -1429,16 +1392,11 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     });
   }
 
-  private formatMcpToolSample(toolNames: string[]): string {
-    const sample = toolNames.slice(0, 5).join(", ");
-    return sample ? ` (${sample})` : "";
-  }
-
   private async refreshMcpKnownTools(server: McpServerSettings, button?: ButtonComponent): Promise<void> {
     button?.setDisabled(true);
     try {
       const result = await this.probeAndCacheMcpTools(server);
-      const sample = this.formatMcpToolSample(result.toolNames);
+      const sample = formatMcpToolSample(result.toolNames);
       new Notice(
         `${server.name}: refreshed ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"}${sample}.`,
       );
@@ -1451,7 +1409,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   private async probeAndCacheMcpTools(server: McpServerSettings): Promise<Awaited<ReturnType<typeof probeMcpServer>>> {
-    const endpointProblem = this.mcpEndpointProblem(server.url);
+    const endpointProblem = mcpEndpointProblem(server.url);
     if (endpointProblem) throw new Error(endpointProblem);
     const result = await probeMcpServer(server, createMcpFetcher(this.effectiveMcpProxySettings()), {
       onServerChanged: () => this.save(),
@@ -1464,7 +1422,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
   private async testMcpServer(server: McpServerSettings): Promise<void> {
     const result = await this.probeAndCacheMcpTools(server);
-    const sample = this.formatMcpToolSample(result.toolNames);
+    const sample = formatMcpToolSample(result.toolNames);
     new Notice(
       `${server.name}: connected; discovered ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"}${sample}.`,
     );
@@ -1474,6 +1432,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private async authenticateAndProbeMcpServer(server: McpServerSettings): Promise<void> {
     const fetcher = createMcpFetcher(this.effectiveMcpProxySettings());
     await authenticateMcpServer(server, fetcher, {
+      callbackReceiver: Platform.isMobileApp ? this.plugin.createMcpOAuthCallbackReceiver() : undefined,
       onProgress: (event) => this.handleMcpOAuthProgress(server, event),
     });
     const result = await probeMcpServer(server, fetcher, {
@@ -1481,7 +1440,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     });
     server.knownTools = result.tools;
     await this.save();
-    const sample = this.formatMcpToolSample(result.toolNames);
+    const sample = formatMcpToolSample(result.toolNames);
     new Notice(
       `Authenticated ${server.name}; discovered ${result.toolCount} tool${
         result.toolCount === 1 ? "" : "s"
@@ -1551,6 +1510,33 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     }
   }
 
+  private async readFromClipboard(): Promise<string> {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+    if (!clipboard?.readText) return "";
+    try {
+      return await clipboard.readText();
+    } catch {
+      return "";
+    }
+  }
+
+  private async importMcpConfigFromClipboard(settings: AgenticChatSettings): Promise<void> {
+    const raw = await this.readFromClipboard();
+    if (!raw.trim()) {
+      new Notice("Agentic Chat MCP: clipboard does not contain an MCP config.");
+      return;
+    }
+    try {
+      const server = importMcpServerConfig(JSON.parse(raw));
+      this.upsertMcpServer(settings, server);
+      await this.save();
+      new Notice(`${server.name}: imported MCP config.`);
+      this.display();
+    } catch (error) {
+      new Notice(`Agentic Chat MCP: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   private upsertMcpServer(settings: AgenticChatSettings, server: McpServerSettings): void {
     const existing = settings.mcp.servers.find((entry) => entry.id === server.id);
     if (existing) {
@@ -1584,7 +1570,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   ): { clearedCredentials: boolean; shouldDisplay: boolean } {
     const previousUrl = server.url;
     const previousId = server.id;
-    const previousEndpointProblem = this.mcpEndpointProblem(previousUrl);
+    const previousEndpointProblem = mcpEndpointProblem(previousUrl);
     const wasEnabled = server.enabled;
     server.url = value.trim();
     const suggestedId = serverIdFromMcpUrl(server.url);
@@ -1594,16 +1580,16 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     let clearedCredentials = false;
     if (previousUrl.trim() !== server.url.trim()) {
       this.clearMcpKnownToolsAndApprovals(settings, server);
-      if (this.mcpCredentialResourceChanged(previousUrl, server.url)) {
+      if (mcpCredentialResourceChanged(previousUrl, server.url)) {
         resetMcpCredentials(server);
         clearedCredentials = true;
       }
     }
-    if (!this.mcpEndpointProblem(server.url)) server.enabled = true;
+    if (!mcpEndpointProblem(server.url)) server.enabled = true;
     return {
       clearedCredentials,
       shouldDisplay:
-        Boolean(previousEndpointProblem) !== Boolean(this.mcpEndpointProblem(server.url)) ||
+        Boolean(previousEndpointProblem) !== Boolean(mcpEndpointProblem(server.url)) ||
         wasEnabled !== server.enabled ||
         previousId !== server.id,
     };
@@ -1612,16 +1598,16 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private renameMcpServer(settings: AgenticChatSettings, server: McpServerSettings, nextId: string): void {
     const previousId = server.id;
     if (previousId === nextId) return;
-    const previousSecretIds = this.mcpSecretIds(server);
+    const previousSecretIds = mcpSecretIds(server);
     const previousApprovals = this.deleteMcpPerToolApprovals(settings, previousId);
-    const previousLocalNames = server.knownTools.map((tool) => this.mcpKnownToolLocalName(server, tool));
+    const previousLocalNames = server.knownTools.map((tool) => mcpKnownToolLocalName(server, tool));
     server.id = nextId;
     resetMcpServerSecretRefs(server);
-    this.clearSecretIds(previousSecretIds.filter((id) => !this.mcpSecretIds(server).includes(id)));
+    this.clearSecretIds(previousSecretIds.filter((id) => !mcpSecretIds(server).includes(id)));
     this.rebaseMcpKnownToolLocalNames(server);
     for (let index = 0; index < server.knownTools.length; index += 1) {
       const policy = previousApprovals[previousLocalNames[index]];
-      const nextLocalName = this.mcpKnownToolLocalName(server, server.knownTools[index]);
+      const nextLocalName = mcpKnownToolLocalName(server, server.knownTools[index]);
       if (policy) settings.approval.perTool[nextLocalName] = policy;
     }
   }
@@ -1632,16 +1618,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   private clearMcpSecretSlots(server: McpServerSettings): void {
-    this.clearSecretIds(this.mcpSecretIds(server));
-  }
-
-  private mcpSecretIds(server: McpServerSettings): string[] {
-    return [
-      server.authHeaderValueSecretId,
-      server.oauth.clientSecretSecretId,
-      server.oauth.accessTokenSecretId,
-      server.oauth.refreshTokenSecretId,
-    ].filter(Boolean);
+    this.clearSecretIds(mcpSecretIds(server));
   }
 
   private clearSecretIds(secretIds: string[]): void {
@@ -1675,50 +1652,19 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     }
   }
 
-  private mcpKnownToolLocalName(server: McpServerSettings, tool: McpKnownToolSettings): string {
-    return tool.localName || localMcpToolName(server.id, tool.name);
-  }
-
-  private mcpCredentialResourceChanged(previousUrl: string, nextUrl: string): boolean {
-    const previous = this.mcpCredentialResourceState(previousUrl);
-    const next = this.mcpCredentialResourceState(nextUrl);
-    if (previous.kind === "placeholder" && next.kind === "resource") return false;
-    if (previous.kind === "resource" && next.kind === "resource") return previous.value !== next.value;
-    return previous.kind !== next.kind;
-  }
-
-  private mcpCredentialResourceState(value: string): { kind: "placeholder" | "invalid" | "resource"; value?: string } {
-    const trimmed = value.trim();
-    if (!trimmed || trimmed === "https://") return { kind: "placeholder" };
-    try {
-      const parsed = new URL(trimmed);
-      if (parsed.protocol !== "https:") return { kind: "invalid" };
-      parsed.hash = "";
-      parsed.search = "";
-      if (parsed.pathname === "/") parsed.pathname = "";
-      return { kind: "resource", value: parsed.toString().replace(/\/$/, "") };
-    } catch {
-      return { kind: "invalid" };
-    }
-  }
-
-  private mcpAuthProblem(server: McpServerSettings): string {
-    if (server.authType === "bearer") {
-      if (!server.authHeaderValue.trim()) return "Enter a bearer token before testing this MCP server.";
-      if (/[\r\n\0]/.test(server.authHeaderValue)) return "Bearer tokens must not contain line breaks or null bytes.";
-      return "";
-    }
-    if (server.authType === "header") {
-      if (!server.authHeaderName.trim()) return "Enter an auth header name before testing this MCP server.";
-      if (!isValidHttpHeaderName(server.authHeaderName)) {
-        return "Auth header names may contain only RFC token characters.";
-      }
-      if (!server.authHeaderValue.trim()) return "Enter an auth header value before testing this MCP server.";
-      if (/[\r\n\0]/.test(server.authHeaderValue)) {
-        return "Auth header values must not contain line breaks or null bytes.";
-      }
-    }
-    return "";
+  private renderMcpSetupGuide(containerEl: HTMLElement, server: McpServerSettings): void {
+    const description = mcpServerSetupSteps(server)
+      .map((step) => `${step.label}: ${step.status === "complete" ? "done" : step.status} - ${step.message}`)
+      .join(" ");
+    new Setting(containerEl)
+      .setName("Setup guide")
+      .setDesc(description)
+      .addButton((button) =>
+        button.setButtonText("Copy config").onClick(async () => {
+          const copied = await this.copyToClipboard(JSON.stringify(exportMcpServerConfig(server), null, 2));
+          new Notice(copied ? `${server.name}: MCP config copied without secrets.` : `${server.name}: could not copy MCP config.`);
+        }),
+      );
   }
 
   private renderSecretInput(
@@ -1859,6 +1805,108 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       },
     );
 
+    this.renderExternalWorkspace(containerEl, settings);
+
+    new Setting(containerEl).setName("Semantic retrieval").setHeading();
+    new Setting(containerEl)
+      .setName("Embeddings")
+      .setDesc(
+        "Opt-in semantic index configuration. Indexing is still scoped and explicit; provider API keys reuse the Models tab.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.embeddings.enabled).onChange(async (value) => {
+          settings.embeddings.enabled = value;
+          await this.save();
+        }),
+      );
+    new Setting(containerEl)
+      .setName("Embedding provider")
+      .setDesc("OpenRouter for hosted embeddings, Ollama for local embeddings, or the configured OpenAI-compatible gateway.")
+      .addDropdown((dropdown) => {
+        const options: Record<EmbeddingProviderId, string> = {
+          openrouter: "OpenRouter",
+          ollama: "Ollama (local)",
+          "openai-compatible": "OpenAI-compatible",
+        };
+        for (const [value, label] of Object.entries(options)) dropdown.addOption(value, label);
+        dropdown.setValue(settings.embeddings.provider).onChange(async (value) => {
+          settings.embeddings.provider = value as EmbeddingProviderId;
+          await this.save();
+          this.display();
+        });
+      });
+    new Setting(containerEl)
+      .setName("Embedding model")
+      .setDesc(`Active embedding model: ${activeEmbeddingModel(settings.embeddings) || "(none configured)"}.`)
+      .addText((text) =>
+        text
+          .setPlaceholder(embeddingModelPlaceholder(settings.embeddings.provider))
+          .setValue(activeEmbeddingModel(settings.embeddings))
+          .onChange(async (value) => {
+            this.setEmbeddingModel(settings, value);
+            await this.save();
+          }),
+      );
+    new Setting(containerEl)
+      .setName("Vector dimensions")
+      .setDesc("Expected embedding vector size. Provider responses with a different size are rejected before indexing.")
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.setAttribute("min", "16");
+        text.inputEl.setAttribute("max", "16384");
+        text.setValue(String(settings.embeddings.dimensions)).onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          settings.embeddings.dimensions = Number.isFinite(parsed)
+            ? Math.min(16_384, Math.max(16, parsed))
+            : DEFAULT_EMBEDDING_SETTINGS.dimensions;
+          await this.save();
+        });
+      });
+    new Setting(containerEl)
+      .setName("Language coverage")
+      .setDesc("Controls retrieval diagnostics for cross-language search.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("multilingual", "Multilingual")
+          .addOption("monolingual", "Monolingual")
+          .addOption("unknown", "Unknown")
+          .setValue(settings.embeddings.languageCoverage)
+          .onChange(async (value) => {
+            settings.embeddings.languageCoverage = value as EmbeddingSettings["languageCoverage"];
+            await this.save();
+          }),
+      );
+    new Setting(containerEl)
+      .setName("Batch size")
+      .setDesc("Maximum notes per embedding request. Smaller batches are easier to cancel and retry.")
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.setAttribute("min", "1");
+        text.inputEl.setAttribute("max", "256");
+        text.setValue(String(settings.embeddings.batchSize)).onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          settings.embeddings.batchSize = Number.isFinite(parsed)
+            ? Math.min(256, Math.max(1, parsed))
+            : DEFAULT_EMBEDDING_SETTINGS.batchSize;
+          await this.save();
+        });
+      });
+    new Setting(containerEl)
+      .setName("Max indexed characters per note")
+      .setDesc("Upper bound sent to the embedding provider for one note. Keeps cost and accidental data exposure bounded.")
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.setAttribute("min", "500");
+        text.inputEl.setAttribute("max", "200000");
+        text.setValue(String(settings.embeddings.maxDocumentChars)).onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          settings.embeddings.maxDocumentChars = Number.isFinite(parsed)
+            ? Math.min(200_000, Math.max(500, parsed))
+            : DEFAULT_EMBEDDING_SETTINGS.maxDocumentChars;
+          await this.save();
+        });
+      });
+
     new Setting(containerEl).setName("Ignored files").setHeading();
     new Setting(containerEl)
       .setName("Ignore list")
@@ -1874,6 +1922,101 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           await this.save();
         });
       });
+  }
+
+  private renderExternalWorkspace(containerEl: HTMLElement, settings: AgenticChatSettings): void {
+    new Setting(containerEl).setName("External workspace root").setHeading();
+
+    const desktopOnly = !Platform.isDesktopApp;
+    if (desktopOnly) {
+      const warning = containerEl.createDiv({ cls: "agentic-chat-settings-warning" });
+      warning.createSpan({ cls: "agentic-chat-settings-warning-icon", text: "⚠" });
+      warning.createSpan({
+        text: "External workspace root tools are desktop-only. They are never registered on Obsidian mobile.",
+      });
+    }
+
+    new Setting(containerEl)
+      .setName("Enable external root tools")
+      .setDesc(
+        "Desktop-only. Registers the read-only external_inspect tool only when this is enabled and a root path is configured.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setDisabled(desktopOnly)
+          .setValue(settings.external.enabled)
+          .onChange(async (value) => {
+            settings.external.enabled = value;
+            await this.save();
+            this.display();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("External root path")
+      .setDesc("Absolute path to the one external directory the agent may inspect. This is not added to prompt context.")
+      .addText((text) =>
+        text
+          .setDisabled(desktopOnly)
+          .setPlaceholder("/path/to/codebase")
+          .setValue(settings.external.rootPath)
+          .onChange(async (value) => {
+            settings.external.rootPath = value.trim();
+            await this.save();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Approval for external inspection")
+      .setDesc("Read-only external_inspect calls ask by default. Allow or deny only when you deliberately trust the standing policy.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("ask", "Ask each time")
+          .addOption("allow", "Allow automatically")
+          .addOption("deny", "Deny automatically")
+          .setDisabled(desktopOnly)
+          .setValue(settings.external.approval)
+          .onChange(async (value) => {
+            settings.external.approval = value === "allow" || value === "deny" ? value : "ask";
+            await this.save();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Honor .gitignore")
+      .setDesc("Apply root and nested .gitignore files while listing, reading, and searching external files.")
+      .addToggle((toggle) =>
+        toggle
+          .setDisabled(desktopOnly)
+          .setValue(settings.external.honorGitignore)
+          .onChange(async (value) => {
+            settings.external.honorGitignore = value;
+            await this.save();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("External ignore list")
+      .setDesc("One gitignore-style rule per line, scoped to the external root. Separate from the vault ignore list.")
+      .addTextArea((text) => {
+        text.inputEl.rows = 5;
+        text.inputEl.addClass("agentic-chat-system-prompt");
+        text
+          .setDisabled(desktopOnly)
+          .setPlaceholder(DEFAULT_EXTERNAL_IGNORED_GLOBS)
+          .setValue(settings.external.ignoredGlobs)
+          .onChange(async (value) => {
+            settings.external.ignoredGlobs = value;
+            await this.save();
+          });
+      });
+  }
+
+  private setEmbeddingModel(settings: AgenticChatSettings, value: string): void {
+    const model = value.trim();
+    if (settings.embeddings.provider === "ollama") settings.embeddings.ollamaModel = model;
+    else if (settings.embeddings.provider === "openai-compatible") settings.embeddings.openaiCompatibleModel = model;
+    else settings.embeddings.openrouterModel = model;
   }
 
   private folderSetting(

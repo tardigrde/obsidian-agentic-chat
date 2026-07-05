@@ -5,6 +5,7 @@ import type { WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
 import type { ReadMemo } from "../vault/read-memo";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
+import type { ExternalInspectCache } from "../tools/external-workspace";
 import type { AgentProfile } from "./subagents";
 import {
   EMPTY_AGENT_RUNTIME_RESOURCES,
@@ -13,6 +14,16 @@ import {
   loadAgentRuntimeResources,
   type AgentRuntimeResources,
 } from "./runtime-resources";
+import {
+  createToolBudgetState,
+  DEFAULT_TOOL_BUDGET_SETTINGS,
+  resetToolBudgetState,
+  type ToolBudgetSnapshot,
+} from "./tool-budget";
+
+export interface BuildParentToolsOptions {
+  contextWindow?: number;
+}
 
 export interface AgentRuntimeResourceStateOptions {
   app: App;
@@ -27,6 +38,17 @@ export interface AgentRuntimeResourceStateOptions {
 export class AgentRuntimeResourceState {
   private resources: AgentRuntimeResources = EMPTY_AGENT_RUNTIME_RESOURCES;
   private reloadedAt: string | null = null;
+  private readonly toolBudgetState = createToolBudgetState();
+  private readonly externalInspectCache: ExternalInspectCache = new Map();
+  private toolBudgetSnapshot: ToolBudgetSnapshot = {
+    enabled: DEFAULT_TOOL_BUDGET_SETTINGS.enabled,
+    active: false,
+    thresholdPercent: DEFAULT_TOOL_BUDGET_SETTINGS.thresholdPercent,
+    triggeredAtToolSchemaPercent: null,
+    toolSchemaTokens: null,
+    contextWindow: null,
+    droppedTools: [],
+  };
 
   constructor(private readonly options: AgentRuntimeResourceStateOptions) {}
 
@@ -46,8 +68,27 @@ export class AgentRuntimeResourceState {
     return this.resources.profiles;
   }
 
+  getToolBudgetSnapshot(): ToolBudgetSnapshot {
+    return this.toolBudgetSnapshot;
+  }
+
   isPathIgnored(path: string): boolean {
     return this.resources.ignoreMatcher(path);
+  }
+
+  clearSessionState(): void {
+    resetToolBudgetState(this.toolBudgetState);
+    this.externalInspectCache.clear();
+    const settings = this.options.getSettings();
+    this.toolBudgetSnapshot = {
+      enabled: settings.toolBudget.enabled,
+      active: false,
+      thresholdPercent: settings.toolBudget.thresholdPercent,
+      triggeredAtToolSchemaPercent: null,
+      toolSchemaTokens: null,
+      contextWindow: null,
+      droppedTools: [],
+    };
   }
 
   async reload(): Promise<AgentRuntimeResources> {
@@ -66,8 +107,12 @@ export class AgentRuntimeResourceState {
     return composeAgentSystemPrompt(settings, this.resources, this.selfAwarenessOverlay(activeModelId));
   }
 
-  buildParentTools(settings: AgenticChatSettings, subagentTool?: AgentTool): AgentTool[] {
-    return buildAgentParentTools({
+  buildParentTools(
+    settings: AgenticChatSettings,
+    subagentTool?: AgentTool,
+    buildOptions: BuildParentToolsOptions = {},
+  ): AgentTool[] {
+    const result = buildAgentParentTools({
       app: this.options.app,
       settings,
       resources: this.resources,
@@ -76,7 +121,12 @@ export class AgentRuntimeResourceState {
       artifactStore: this.options.artifactStore,
       askUser: this.options.askUser,
       subagentTool,
+      contextWindow: buildOptions.contextWindow,
+      toolBudgetState: this.toolBudgetState,
+      externalInspectCache: this.externalInspectCache,
     });
+    this.toolBudgetSnapshot = result.toolBudget;
+    return result.tools;
   }
 
   private selfAwarenessOverlay(activeModelId: string): string {

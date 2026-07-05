@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "name": "agentic-chat-context-and-dogfood",
+  "description": "Deterministic eval slice for model-visible context, built-in tool metadata, and expensive scripted dogfood artifacts.",
+  "cases": [
+    {
+      "id": "static.default-context",
+      "type": "static-context",
+      "toolSurface": "default",
+      "contextWindow": 128000,
+      "prompt": "Build a concise DevOps knowledge base from the vault and keep context/tool use efficient.",
+      "assertions": [
+        {
+          "type": "context_contains",
+          "text": "Context hygiene",
+          "severity": "error"
+        },
+        {
+          "type": "context_contains",
+          "text": "Do not re-read",
+          "severity": "error"
+        },
+        {
+          "type": "context_contains",
+          "text": "offset/limit",
+          "severity": "error"
+        },
+        {
+          "type": "context_contains",
+          "text": "treat it as a denied action",
+          "severity": "error"
+        },
+        {
+          "type": "prompt_mentions_only_registered_tools",
+          "names": ["read", "search", "ls", "write", "edit", "rename", "delete"],
+          "severity": "error",
+          "message": "Default system prompt names tools that are not registered on the default tool surface."
+        },
+        {
+          "type": "tool_registered",
+          "name": "vault_inspect",
+          "severity": "error"
+        },
+        {
+          "type": "tool_registered",
+          "name": "write",
+          "severity": "error"
+        },
+        {
+          "type": "tool_description_contains",
+          "name": "edit",
+          "text": "exactly once",
+          "severity": "error"
+        },
+        {
+          "type": "tool_description_contains",
+          "name": "write",
+          "text": "frontmatter",
+          "severity": "warning",
+          "message": "Write tool description does not steer frontmatter/property edits toward the structured property tools."
+        },
+        {
+          "type": "max_tool_schema_tokens",
+          "max": 1200,
+          "severity": "warning"
+        },
+        {
+          "type": "max_context_chars",
+          "max": 5000,
+          "severity": "warning"
+        }
+      ]
+    },
+    {
+      "id": "static.external-workspace-context",
+      "type": "static-context",
+      "toolSurface": "default",
+      "externalWorkspace": {
+        "enabled": true,
+        "rootPath": "/workspace/example"
+      },
+      "prompt": "Build a workspace knowledge base from external files without wasting tool calls.",
+      "assertions": [
+        {
+          "type": "context_contains",
+          "text": "Avoid repeating the same external_inspect",
+          "severity": "error"
+        },
+        {
+          "type": "context_contains",
+          "text": "one exact repeat is enough",
+          "severity": "error"
+        },
+        {
+          "type": "context_contains",
+          "text": "external://relative/path",
+          "severity": "error"
+        },
+        {
+          "type": "context_not_contains",
+          "text": "/workspace/example",
+          "severity": "error"
+        },
+        {
+          "type": "tool_registered",
+          "name": "external_inspect",
+          "severity": "error"
+        },
+        {
+          "type": "tool_description_contains",
+          "name": "external_inspect",
+          "text": "reuse prior output",
+          "severity": "error"
+        },
+        {
+          "type": "tool_description_contains",
+          "name": "external_inspect",
+          "text": "do it once",
+          "severity": "error"
+        }
+      ]
+    },
+    {
+      "id": "dogfood.scripted-next-level",
+      "type": "scripted-dogfood",
+      "dogfood": {
+        "spec": "./test/e2e/dogfood/next-level.dogfood.ts",
+        "timeoutMs": 300000,
+        "turnTimeoutMs": 120000
+      },
+      "assertions": [
+        {
+          "type": "dogfood_invariants_pass",
+          "severity": "error"
+        },
+        {
+          "type": "required_tool_started",
+          "name": "vault_inspect",
+          "severity": "error"
+        },
+        {
+          "type": "required_tool_started",
+          "name": "external_inspect",
+          "severity": "error"
+        },
+        {
+          "type": "required_tool_started",
+          "name": "ask_user",
+          "severity": "error"
+        },
+        {
+          "type": "required_tool_started",
+          "name": "search_memory",
+          "severity": "error"
+        },
+        {
+          "type": "max_user_message_chars",
+          "max": 2500,
+          "severity": "error"
+        },
+        {
+          "type": "max_tool_errors",
+          "max": 0,
+          "severity": "warning",
+          "allowedByTool": {
+            "vault_inspect": 1,
+            "external_inspect": 1,
+            "write": 4
+          },
+          "message": "Dogfood trace has unexpected tool errors beyond the intentional sad-path denial cases."
+        },
+        {
+          "type": "max_repeated_external_path_action",
+          "max": 1,
+          "severity": "warning",
+          "allowedKeys": ["read foreign-vault/Imported.md"],
+          "message": "Dogfood trace repeated an exact external path action; review whether this is intentional cache coverage or inefficient tool use."
+        },
+        {
+          "type": "max_duplicate_tool_starts",
+          "max": 1,
+          "severity": "warning",
+          "allowedKeys": [
+            "external_inspect {\"action\":\"read\",\"path\":\"foreign-vault/Imported.md\"}",
+            "vault_inspect {\"action\":\"active_note\",\"includeContent\":true}"
+          ],
+          "message": "Dogfood trace repeated an exact tool call; review whether the model/tool prompt can avoid redundant calls."
+        }
+      ]
+    }
+  ]
+}

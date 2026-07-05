@@ -339,4 +339,33 @@ describe("agentic-chat runtime behavior", function () {
     expect(result.overflowed).toBe(true);
     expect(result.after).toBeLessThanOrEqual(result.before + 4);
   });
+
+  it("force-scrolls back to the bottom when the user sends a new prompt", async function () {
+    await browser.execute(() => {
+      const el = document.querySelector<HTMLElement>(".agentic-chat-messages");
+      if (!el) throw new Error("messages pane not found");
+      for (let index = 0; index < 80; index += 1) {
+        const row = document.createElement("div");
+        row.className = "agentic-chat-message agentic-chat-info";
+        row.textContent = `scroll seed ${index + 1}`;
+        el.appendChild(row);
+      }
+      el.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -120 }));
+      el.scrollTop = 0;
+      el.dispatchEvent(new Event("scroll"));
+    });
+
+    await sendPrompt("new prompt should repin transcript");
+
+    const pinned = await browser.execute(async () => {
+      await new Promise((resolve) =>
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve(undefined))),
+      );
+      const el = document.querySelector<HTMLElement>(".agentic-chat-messages");
+      if (!el) return false;
+      return el.scrollHeight <= el.clientHeight || el.scrollHeight - el.scrollTop - el.clientHeight <= 4;
+    });
+
+    expect(pinned).toBe(true);
+  });
 });

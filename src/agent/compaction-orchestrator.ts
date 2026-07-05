@@ -14,17 +14,19 @@ export interface AgentCompactionOrchestratorOptions {
   notifyChange: () => void;
 }
 
-export async function maybeCompactAgentTranscript(options: AgentCompactionOrchestratorOptions): Promise<void> {
+export async function maybeCompactAgentTranscript(options: AgentCompactionOrchestratorOptions): Promise<boolean> {
   try {
     const transcript = options.getTranscript();
-    if (!transcript) return;
+    if (!transcript) return false;
     const newMessages = await options.compact(transcript.messages, transcript.contextWindow);
-    if (!newMessages) return;
+    if (!newMessages) return false;
     options.markPersistedMessages(newMessages);
     options.replaceAgent(newMessages);
     options.refreshActiveSessionInfo();
     options.notifyChange();
+    return true;
   } catch {
     // Compaction is an optimization; never let it break the pending prompt.
+    return false;
   }
 }

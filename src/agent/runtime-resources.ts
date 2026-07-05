@@ -1,10 +1,13 @@
-import type { App } from "obsidian";
+import { Platform, type App } from "obsidian";
 import type { AgentTool, Skill } from "@earendil-works/pi-agent-core";
 import type { AgenticChatSettings } from "../settings";
 import { loadVaultSkills } from "../skills/skills";
 import { builtinSkills } from "../skills/builtin-skills";
 import { createVaultTools } from "../tools/vault-tools";
 import { createWebTools } from "../tools/web-tools";
+import { createMemoryTools } from "../tools/memory-tools";
+import { createDocumentTools } from "../tools/document-tools";
+import { createExternalWorkspaceTools, type ExternalInspectCache } from "../tools/external-workspace";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
 import { createMcpFetcher } from "../mcp/fetcher";
@@ -16,8 +19,14 @@ import type { ReadMemo } from "../vault/read-memo";
 import { formatInstructionsOverlay, loadVaultInstructions } from "./instructions";
 import { type AgentProfile, formatSubagentsForSystemPrompt, loadAgentProfiles } from "./subagents";
 import { buildSystemPrompt } from "./system-prompt";
+import { formatExternalWorkspaceForSystemPrompt } from "./external-workspace-prompt";
 import { MODES } from "./modes";
 import { OUTPUT_STYLES } from "./output-styles";
+import {
+  applyToolBudget,
+  type ToolBudgetSnapshot,
+  type ToolBudgetState,
+} from "./tool-budget";
 
 export interface AgentRuntimeResources {
   skills: Skill[];
@@ -74,6 +83,7 @@ export function composeAgentSystemPrompt(
     resources.instructionsOverlay,
     MODES[settings.mode].promptOverlay,
     OUTPUT_STYLES[settings.outputStyle].promptOverlay,
+    formatExternalWorkspaceForSystemPrompt(settings.external),
     formatSubagentsForSystemPrompt(resources.profiles),
   ];
   return buildSystemPrompt(settings.systemPrompt, resources.skills, overlays);
@@ -88,14 +98,38 @@ export function buildAgentParentTools(options: {
   artifactStore?: ToolArtifactStoreLike;
   askUser?: AskUserHandler;
   subagentTool?: AgentTool;
-}): AgentTool[] {
+  contextWindow?: number;
+  toolBudgetState?: ToolBudgetState;
+  externalInspectCache?: ExternalInspectCache;
+}): { tools: AgentTool[]; toolBudget: ToolBudgetSnapshot } {
   const tools = createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo);
   if (options.askUser) tools.push(createAskUserTool(options.askUser));
-  tools.push(...createWebTools(options.settings.web, options.webFetch));
+  tools.push(...createMemoryTools(options.app));
+  tools.push(...createDocumentTools(options.app, options.artifactStore));
+  if (Platform.isDesktopApp) {
+    tools.push(
+      ...createExternalWorkspaceTools(options.settings.external, {
+        cache: options.externalInspectCache,
+        artifactStore: options.artifactStore,
+      }),
+    );
+  }
+  tools.push(...createWebTools(options.settings.web, options.webFetch, options.artifactStore));
   tools.push(...createToolArtifactTools(options.artifactStore));
   tools.push(...options.resources.mcpTools);
   if (options.subagentTool) tools.push(options.subagentTool);
-  return tools;
+  const budgeted = applyToolBudget({
+    tools,
+    settings: options.settings.toolBudget,
+    state:
+      options.toolBudgetState ?? {
+        droppedToolNames: new Set<string>(),
+        triggeredAtToolSchemaFraction: null,
+        toolSchemaTokens: null,
+      },
+    contextWindow: options.contextWindow,
+  });
+  return { tools: budgeted.tools, toolBudget: budgeted.snapshot };
 }
 
 async function loadRuntimeSkills(app: App, settings: AgenticChatSettings): Promise<Skill[]> {

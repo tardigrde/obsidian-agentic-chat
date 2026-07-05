@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { type ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
+import type { PlanTrackerState } from "./plan-tracker";
 
 export interface ActiveSessionSnapshot {
   info: SessionInfo;
@@ -37,6 +38,17 @@ export class AgentActiveSessionRuntime {
   async rewriteMessages(messages: AgentMessage[]): Promise<ActiveSessionSnapshot> {
     await this.sessionManager.rewriteMessages(messages);
     return this.snapshot(this.sessionManager.getActiveSessionInfo());
+  }
+
+  getPlanTracker(): PlanTrackerState | null {
+    if (!this.sessionManager.hasActiveSession()) return null;
+    return this.sessionManager.getActivePlanTracker();
+  }
+
+  async savePlanTracker(state: PlanTrackerState | null): Promise<PlanTrackerState | null> {
+    await this.sessionManager.appendPlanTracker(state);
+    this.refreshInfoIfActive();
+    return state;
   }
 
   async ensureConfiguration(): Promise<SessionInfo> {

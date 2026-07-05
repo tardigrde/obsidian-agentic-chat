@@ -35,6 +35,7 @@ export async function runAgentReplay(options: AgentReplayOptions): Promise<Agent
     ...options.settings,
     approval: { ...DEFAULT_SETTINGS.approval, ...(options.settings?.approval ?? {}) },
     web: { ...DEFAULT_SETTINGS.web, ...(options.settings?.web ?? {}) },
+    toolBudget: { ...DEFAULT_SETTINGS.toolBudget, ...(options.settings?.toolBudget ?? {}) },
   };
   const adapter = new MemoryAdapter();
   const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");

@@ -147,7 +147,7 @@ describe("agent runtime resources", () => {
       mcpDiagnostics: [],
     };
     const subagentTool = { name: "subagent", label: "Subagent" } as AgentTool;
-    const tools = buildAgentParentTools({
+    const { tools } = buildAgentParentTools({
       app: { vault: {}, workspace: {} } as unknown as App,
       settings: settings({ web: { enabled: true } }),
       resources,
@@ -161,8 +161,11 @@ describe("agent runtime resources", () => {
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "read",
+        "vault_inspect",
         "write",
         "ask_user",
+        "search_memory",
+        "import_pdf",
         "web_search",
         "fetch_url",
         "read_artifact",
@@ -191,7 +194,7 @@ describe("agent runtime resources", () => {
       mcpFetcher(),
     );
 
-    const tools = buildAgentParentTools({
+    const { tools } = buildAgentParentTools({
       app: { vault: {}, workspace: {} } as unknown as App,
       settings: settings(),
       resources,

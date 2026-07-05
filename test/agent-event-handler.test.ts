@@ -102,6 +102,44 @@ describe("handleAgentRuntimeEvent", () => {
     expect(events).toEqual(["record-agent", "error:write failed", "emit:agent_end", "refresh-session", "notify"]);
   });
 
+  it("captures audit errors but still persists and emits the runtime event", async () => {
+    const events: string[] = [];
+
+    await handleAgentRuntimeEvent(
+      { type: "message_end", message: assistantMessage() },
+      options(events, {
+        recordAuditEvent: async () => {
+          events.push("audit");
+          throw new Error("audit failed");
+        },
+      }),
+    );
+
+    expect(events).toEqual(["audit", "error:audit failed", "record-message:assistant", "enforce-cap", "emit:message_end"]);
+  });
+
+  it("records audit events before tool spend-cap enforcement", async () => {
+    const events: string[] = [];
+    const event: AgentEvent = {
+      type: "tool_execution_end",
+      toolCallId: "call-1",
+      toolName: "read",
+      result: "ok",
+      isError: false,
+    };
+
+    await handleAgentRuntimeEvent(
+      event,
+      options(events, {
+        recordAuditEvent: async (agentEvent) => {
+          events.push(`audit:${agentEvent.type}`);
+        },
+      }),
+    );
+
+    expect(events).toEqual(["audit:tool_execution_end", "enforce-cap", "emit:tool_execution_end"]);
+  });
+
   it("skips session-info refresh when no session is active", async () => {
     const events: string[] = [];
 

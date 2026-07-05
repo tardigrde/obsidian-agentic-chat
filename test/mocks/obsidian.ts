@@ -61,6 +61,10 @@ export async function loadMermaid(): Promise<{ render: () => string }> {
 }
 export function setIcon(): void {}
 
+export const Platform = {
+  isDesktopApp: true,
+};
+
 /** Stub network access: the web tools inject their own fetcher in tests. */
 export function requestUrl(): Promise<{
   status: number;

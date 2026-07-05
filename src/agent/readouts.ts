@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
-import { isSummaryMessage } from "./compaction";
+import { estimateContextUsage, isSummaryMessage } from "./compaction";
 import {
   DEFAULT_EXPECTED_OUTPUT_TOKENS,
   estimateNextRequestCost,
@@ -11,12 +11,9 @@ import {
 
 export function contextFraction(messages: AgentMessage[], contextWindow: number): number | undefined {
   if (contextWindow <= 0) return undefined;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    const input = message.role === "assistant" ? message.usage?.input ?? 0 : 0;
-    if (input > 0) return Math.min(input / contextWindow, 1);
-  }
-  return undefined;
+  const tokens = estimateContextUsage(messages);
+  if (tokens <= 0) return undefined;
+  return Math.min(tokens / contextWindow, 1);
 }
 
 export function compactionCount(messages: AgentMessage[]): number {

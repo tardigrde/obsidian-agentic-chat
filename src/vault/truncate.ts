@@ -3,7 +3,21 @@
 export interface TextSliceOptions {
   offset?: number;
   limit?: number;
+  startLine?: number;
+  endLine?: number;
   maxCharacters?: number;
+}
+
+export interface LineWindowOptions {
+  offset?: number;
+  limit?: number;
+  startLine?: number;
+  endLine?: number;
+}
+
+export interface LineWindow {
+  offset?: number;
+  limit?: number;
 }
 
 export interface TextSlice {
@@ -16,12 +30,24 @@ export interface TextSlice {
 
 const DEFAULT_MAX_CHARS = 50_000;
 
-/** Slice text by 1-based line `offset` and `limit`, capped at `maxCharacters`. */
+/** Normalize legacy offset/limit and explicit startLine/endLine into one read window. */
+export function resolveLineWindow(options: LineWindowOptions = {}): LineWindow {
+  if (options.startLine === undefined && options.endLine === undefined) {
+    return { offset: options.offset, limit: options.limit };
+  }
+  const offset = Math.max(1, Math.floor(options.startLine ?? options.offset ?? 1));
+  if (options.endLine === undefined) return { offset, limit: options.limit };
+  const endLine = Math.max(0, Math.floor(options.endLine));
+  return { offset, limit: Math.max(0, endLine - offset + 1) };
+}
+
+/** Slice text by 1-based line window, capped at `maxCharacters`. */
 export function sliceTextByLines(content: string, options: TextSliceOptions = {}): TextSlice {
+  const window = resolveLineWindow(options);
   const lines = content.split(/\r?\n/);
-  const startLine = Math.max(1, options.offset ?? 1);
+  const startLine = Math.max(1, window.offset ?? 1);
   const startIndex = startLine - 1;
-  const requestedEnd = options.limit === undefined ? lines.length : startIndex + Math.max(0, options.limit);
+  const requestedEnd = window.limit === undefined ? lines.length : startIndex + Math.max(0, window.limit);
   const selectedLines = lines.slice(startIndex, requestedEnd);
   const maxCharacters = options.maxCharacters ?? DEFAULT_MAX_CHARS;
   const joined = selectedLines.join("\n");
@@ -70,14 +96,23 @@ export function readSizeGuardrail(params: {
   size: number;
   offset?: number;
   limit?: number;
+  startLine?: number;
+  endLine?: number;
   maxChars?: number;
 }): string | null {
   const maxChars = params.maxChars ?? READ_BULK_LIMIT;
-  if (params.offset !== undefined || params.limit !== undefined) return null;
+  if (
+    params.offset !== undefined ||
+    params.limit !== undefined ||
+    params.startLine !== undefined ||
+    params.endLine !== undefined
+  ) {
+    return null;
+  }
   if (!Number.isFinite(params.size) || params.size <= maxChars) return null;
   const chars = Math.round(params.size);
   return (
     `"${params.path}" is large (~${chars.toLocaleString()} bytes). Reading it in full risks filling the ` +
-    "context window. Read a slice with offset/limit, or use search to locate the part you need first."
+    "context window. Read a slice with startLine/endLine or offset/limit, or use search to locate the part you need first."
   );
 }

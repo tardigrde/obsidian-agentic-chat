@@ -37,10 +37,12 @@ export function createWindowE2EStreamFn(options: E2EStreamOptions): StreamFn | u
   const target = options.target ?? getWindowE2ETarget();
   if (!target || !Array.isArray(target.__AGENTIC_CHAT_E2E_TURNS__)) return undefined;
 
-  target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-  target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
+  const initialTurnIndex = Math.max(0, target.__AGENTIC_CHAT_E2E_CALLS__ ?? 0);
+  target.__AGENTIC_CHAT_E2E_CALLS__ = initialTurnIndex;
+  target.__AGENTIC_CHAT_E2E_CALL_LOG__ ??= [];
   const controller = createReplayStreamController(target.__AGENTIC_CHAT_E2E_TURNS__, {
     missingTurn: "error",
+    initialTurnIndex,
     onCall: (call) => {
       target.__AGENTIC_CHAT_E2E_CALLS__ = call.index + 1;
       target.__AGENTIC_CHAT_E2E_CALL_LOG__?.push(call);

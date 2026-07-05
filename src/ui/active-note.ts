@@ -17,6 +17,8 @@ export interface ActiveNoteState {
   suppressed: boolean;
   /** Explicitly attached entries; an explicit attachment wins (don't double-attach). */
   explicit: string[];
+  /** Notes whose selected text is already attached; don't also auto-attach the whole note. */
+  selectedTextSources?: string[];
 }
 
 /**
@@ -27,6 +29,7 @@ export function effectiveActiveNote(state: ActiveNoteState): string | null {
   if (state.suppressed) return null;
   if (!state.activePath) return null;
   if (state.explicit.includes(state.activePath)) return null;
+  if (state.selectedTextSources?.includes(state.activePath)) return null;
   return state.activePath;
 }
 
@@ -62,6 +65,48 @@ export interface ActiveNoteContent {
   limit: number;
 }
 
+interface ActiveNoteCacheEntry {
+  renderedBodyHash: string;
+}
+
+/**
+ * Per-session cache for the auto-attached active note. It prevents unchanged
+ * active-note bodies from being injected into every turn while still keeping a
+ * small path reference in context so the model knows which note is active.
+ */
+export class ActiveNoteContextCache {
+  private readonly entries = new Map<string, ActiveNoteCacheEntry>();
+  private readonly pendingEntries = new Map<string, ActiveNoteCacheEntry>();
+
+  render(content: ActiveNoteContent): string {
+    const body = renderedActiveNoteBody(content);
+    if (!body) return buildActiveNoteSection(content);
+
+    const renderedBodyHash = hashActiveNoteBody(body);
+    const previous = this.entries.get(content.path);
+    if (previous?.renderedBodyHash === renderedBodyHash) {
+      return `Active note "${content.path}" is unchanged since it was already attached earlier in this session. Use the read tool to open it if you need the full content.`;
+    }
+
+    this.pendingEntries.set(content.path, { renderedBodyHash });
+    return buildActiveNoteSection(content);
+  }
+
+  commitPending(): void {
+    for (const [path, entry] of this.pendingEntries) this.entries.set(path, entry);
+    this.pendingEntries.clear();
+  }
+
+  discardPending(): void {
+    this.pendingEntries.clear();
+  }
+
+  clear(): void {
+    this.entries.clear();
+    this.pendingEntries.clear();
+  }
+}
+
 /**
  * Truncation ladder for the auto-attached active note:
  *  1. the full note when it fits the budget,
@@ -80,4 +125,19 @@ export function buildActiveNoteSection(content: ActiveNoteContent): string {
     );
   }
   return `Active note "${path}" (attached by reference — too long to inline; use the read tool to open it).`;
+}
+
+function renderedActiveNoteBody(content: ActiveNoteContent): string | null {
+  if (content.full !== null && content.full.length <= content.limit) return content.full;
+  if (content.visibleRange && content.visibleRange.trim()) return content.visibleRange;
+  return null;
+}
+
+function hashActiveNoteBody(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${text.length}:${(hash >>> 0).toString(16)}`;
 }

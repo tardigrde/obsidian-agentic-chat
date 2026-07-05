@@ -1,21 +1,28 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
-import { TFile } from "obsidian";
+import { TFile, TFolder } from "obsidian";
 import { applyUndo, captureUndo, describeUndo } from "../src/agent/undo";
 
 /** Tiny in-memory vault backing the undo capture/apply round-trips. */
-function makeApp(initial: Record<string, string> = {}) {
+function makeApp(initial: Record<string, string> = {}, initialFolders: string[] = []) {
   const files = new Map<string, string>(Object.entries(initial));
-  const folders = new Set<string>();
+  const folders = new Set<string>(initialFolders);
   const fileFor = (path: string): TFile | null => {
     if (!files.has(path)) return null;
     const file = new TFile();
     file.path = path;
     return file;
   };
+  const folderFor = (path: string): TFolder | null => {
+    if (!folders.has(path)) return null;
+    const folder = new TFolder();
+    folder.path = path;
+    folder.children = [];
+    return folder;
+  };
   const app = {
     vault: {
-      getAbstractFileByPath: (p: string) => fileFor(p),
+      getAbstractFileByPath: (p: string) => fileFor(p) ?? folderFor(p),
       cachedRead: async (f: TFile) => files.get(f.path) ?? "",
       read: async (f: TFile) => files.get(f.path) ?? "",
       modify: async (f: TFile, c: string) => void files.set(f.path, c),
@@ -43,7 +50,7 @@ function makeApp(initial: Record<string, string> = {}) {
       trashFile: async (f: TFile) => void files.delete(f.path),
     },
   } as unknown as App;
-  return { app, files };
+  return { app, files, folders };
 }
 
 describe("captureUndo + applyUndo", () => {
@@ -81,6 +88,15 @@ describe("captureUndo + applyUndo", () => {
     expect(files.get("n.md")).toBe("body");
   });
 
+  it("restores a deleted empty folder", async () => {
+    const { app, folders } = makeApp({}, ["Empty"]);
+    const entry = await captureUndo(app, "delete", { path: "Empty" });
+    expect(entry).toEqual({ kind: "delete_folder", path: "Empty" });
+    folders.delete("Empty"); // simulate delete
+    await applyUndo(app, entry!);
+    expect(folders.has("Empty")).toBe(true);
+  });
+
   it("reverses a rename", async () => {
     const { app, files } = makeApp({ "a.md": "body" });
     const entry = await captureUndo(app, "rename", { path: "a.md", newPath: "b.md" });
@@ -99,6 +115,7 @@ describe("captureUndo + applyUndo", () => {
   it("describes pending undos", () => {
     expect(describeUndo({ kind: "rename", from: "a.md", to: "b.md" })).toBe("rename b.md → a.md");
     expect(describeUndo({ kind: "delete", path: "n.md", before: "x" })).toBe("restore n.md");
+    expect(describeUndo({ kind: "delete_folder", path: "Empty" })).toBe("restore folder Empty");
     expect(describeUndo({ kind: "content", path: "n.md", before: null })).toBe("remove n.md");
     expect(describeUndo({ kind: "content", path: "n.md", before: "x" })).toBe("revert n.md");
   });

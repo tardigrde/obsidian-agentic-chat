@@ -77,11 +77,11 @@ Run the live OpenWebUI / OpenAI-compatible e2e only when explicitly validating
 real model calls. It spends tokens and needs the local gateway token:
 
 ```bash
-OPENWEBUI_API_KEY_FILE=/tmp/llm-chat.api-key \
+OPENWEBUI_API_KEY_FILE=/tmp/agentic-chat-openwebui.key \
 OPENWEBUI_BASE_URL=https://llm.example/api \
 OPENWEBUI_MODEL=gemini-3.1-flash-lite \
-HTTP_PROXY=http://10.36.148.11:3128/ \
-HTTPS_PROXY=http://10.36.148.11:3128/ \
+HTTP_PROXY=http://192.0.2.10:3128/ \
+HTTPS_PROXY=http://192.0.2.10:3128/ \
 NO_PROXY=localhost,127.0.0.1,::1 \
 npm run test:e2e -- --spec test/e2e/specs/openwebui-live.e2e.ts
 ```

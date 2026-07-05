@@ -9,6 +9,7 @@ import {
   setSettingSelect,
   setSettingText,
   setSettingToggle,
+  waitForSettingButton,
   waitForAgenticChatSetting,
   waitForSetting,
 } from "../support/settings-ui";
@@ -20,6 +21,17 @@ interface SettingsSnapshot {
   openaiCompatibleModel: string;
   approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
   web: { enabled: boolean; searchProvider: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
+  observability: {
+    enabled: boolean;
+    backend: string;
+    endpoint: string;
+    payloadMode: string;
+    sampleRate: number;
+    proxyUrl: string;
+    noProxy: string;
+    langfusePublicKey: string;
+    langfuseSecretKey: string;
+  };
   mcp: {
     enabled: boolean;
     servers: Array<{
@@ -42,6 +54,8 @@ interface SettingsSnapshot {
 
 const OPENAI_COMPATIBLE_KEY_SECRET_ID = "agentic-chat-openai-compatible-api-key";
 const OPENAI_COMPATIBLE_KEY = "e2e-openai-compatible-key";
+const LANGFUSE_PUBLIC_KEY_SECRET_ID = "agentic-chat-langfuse-public-key";
+const LANGFUSE_SECRET_KEY_SECRET_ID = "agentic-chat-langfuse-secret-key";
 
 async function resetSettingsForUiSpec(): Promise<void> {
   await browser.executeObsidian(async ({ app }, secretId) => {
@@ -60,6 +74,22 @@ async function resetSettingsForUiSpec(): Promise<void> {
       openaiCompatibleModel: string;
       approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
       web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
+      observability: {
+        enabled: boolean;
+        backend: string;
+        endpoint: string;
+        proxyUrl: string;
+        noProxy: string;
+        sampleRate: number;
+        payloadMode: string;
+        langfusePublicKeySecretId?: string;
+        langfusePublicKey: string;
+        langfuseSecretKeySecretId?: string;
+        langfuseSecretKey: string;
+        authHeaderName?: string;
+        authHeaderValueSecretId?: string;
+        authHeaderValue?: string;
+      };
       mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: unknown[] };
       skillsFolder: string;
       templatesFolder: string;
@@ -87,12 +117,30 @@ async function resetSettingsForUiSpec(): Promise<void> {
       noProxy: "localhost,127.0.0.1,::1",
       servers: [],
     };
+    settings.observability = {
+      enabled: false,
+      backend: "langfuse",
+      endpoint: "",
+      proxyUrl: "",
+      noProxy: "localhost,127.0.0.1,::1",
+      sampleRate: 100,
+      payloadMode: "metadata",
+      langfusePublicKeySecretId: "agentic-chat-langfuse-public-key",
+      langfusePublicKey: "",
+      langfuseSecretKeySecretId: "agentic-chat-langfuse-secret-key",
+      langfuseSecretKey: "",
+      authHeaderName: "",
+      authHeaderValueSecretId: "agentic-chat-observability-auth-header-value",
+      authHeaderValue: "",
+    };
     settings.skillsFolder = "";
     settings.templatesFolder = "";
     settings.enableBuiltinAgents = true;
     settings.agentsFolder = "";
     settings.ignoredGlobs = "";
     app.secretStorage?.setSecret?.(secretId, "");
+    app.secretStorage?.setSecret?.("agentic-chat-langfuse-public-key", "");
+    app.secretStorage?.setSecret?.("agentic-chat-langfuse-secret-key", "");
     await plugin.saveSettings?.();
   }, OPENAI_COMPATIBLE_KEY_SECRET_ID);
 }
@@ -177,6 +225,7 @@ describe("agentic-chat settings UI", function () {
     await waitForSetting("Servers");
     await clickSettingButton("Servers", "Add server");
     await waitForSetting("HTTPS endpoint");
+    await waitForSetting("Setup guide");
     await setSettingText("Name", "Docs MCP E2E");
     await setSettingText("HTTPS endpoint", "https://docs.example.com/mcp");
     await waitForSetting("Authentication");
@@ -185,6 +234,7 @@ describe("agentic-chat settings UI", function () {
     await waitForSetting("Auth header");
     await setSettingText("Auth header", "X-E2E-Key");
     await setSettingText("Auth value", "mcp-secret");
+    await waitForSettingButton("Setup guide", "Copy config");
 
     await waitForAgenticChatSetting((settings) => {
       const snapshot = settings as unknown as SettingsSnapshot;
@@ -201,6 +251,43 @@ describe("agentic-chat settings UI", function () {
         server.authHeaderValue === "mcp-secret"
       );
     }, "MCP settings were not persisted from the settings UI");
+  });
+
+  it("persists observability settings through the Observability tab", async function () {
+    await selectSettingsTab("Observability");
+    await setSettingToggle("Enable observability", true);
+    await waitForSetting("Backend");
+    await setSettingSelect("Backend", "langfuse");
+    await waitForSetting("Langfuse base URL");
+    await setSettingText("Langfuse base URL", "https://langfuse.corp.example");
+    await setSettingSelect("Payload detail", "redacted-previews");
+    await setSettingRange("Sample rate", 25);
+    await setSettingText("HTTP proxy", "http://192.0.2.10:3128");
+    await setSettingText("No proxy", "localhost,*.corp.example");
+    await setSettingText("Langfuse public key", "pk-lf-e2e");
+    await setSettingText("Langfuse secret key", "sk-lf-e2e");
+
+    await waitForAgenticChatSetting((settings) => {
+      const snapshot = settings as unknown as SettingsSnapshot;
+      return (
+        snapshot.observability.enabled &&
+        snapshot.observability.backend === "langfuse" &&
+        snapshot.observability.endpoint === "https://langfuse.corp.example" &&
+        snapshot.observability.payloadMode === "redacted-previews" &&
+        snapshot.observability.sampleRate === 25 &&
+        snapshot.observability.proxyUrl === "http://192.0.2.10:3128" &&
+        snapshot.observability.noProxy === "localhost,*.corp.example" &&
+        snapshot.observability.langfusePublicKey === "pk-lf-e2e" &&
+        snapshot.observability.langfuseSecretKey === "sk-lf-e2e"
+      );
+    }, "Observability settings were not persisted from the settings UI");
+
+    expect(await readSecret(LANGFUSE_PUBLIC_KEY_SECRET_ID)).toBe("pk-lf-e2e");
+    expect(await readSecret(LANGFUSE_SECRET_KEY_SECRET_ID)).toBe("sk-lf-e2e");
+    const stored = await readStoredData();
+    const storedObservability = stored.observability as { langfusePublicKey?: string; langfuseSecretKey?: string };
+    expect(storedObservability.langfusePublicKey).toBe("");
+    expect(storedObservability.langfuseSecretKey).toBe("");
   });
 
   it("persists resource folders and ignored globs through the Resources tab", async function () {

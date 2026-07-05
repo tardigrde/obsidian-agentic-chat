@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readSizeGuardrail, READ_BULK_LIMIT, sliceTextByLines } from "../src/vault/truncate";
+import { readSizeGuardrail, READ_BULK_LIMIT, resolveLineWindow, sliceTextByLines } from "../src/vault/truncate";
 
 const sample = "one\ntwo\nthree\nfour\nfive";
 
@@ -14,6 +14,12 @@ describe("sliceTextByLines", () => {
     const slice = sliceTextByLines(sample, { offset: 2, limit: 2 });
     expect(slice.text).toBe("two\nthree");
     expect(slice).toMatchObject({ startLine: 2, endLine: 3, truncated: true });
+  });
+
+  it("honours explicit start and end lines", () => {
+    const slice = sliceTextByLines(sample, { startLine: 2, endLine: 4 });
+    expect(slice.text).toBe("two\nthree\nfour");
+    expect(slice).toMatchObject({ startLine: 2, endLine: 4, truncated: true });
   });
 
   it("reports endLine for the lines actually emitted when the character cap cuts mid-text", () => {
@@ -37,6 +43,16 @@ describe("sliceTextByLines", () => {
     expect(slice.text).toBe("");
     expect(slice.endLine).toBe(slice.startLine - 1);
     expect(slice.truncated).toBe(true);
+  });
+});
+
+describe("resolveLineWindow", () => {
+  it("normalizes startLine/endLine to offset/limit", () => {
+    expect(resolveLineWindow({ startLine: 10, endLine: 20 })).toEqual({ offset: 10, limit: 11 });
+  });
+
+  it("keeps offset/limit when explicit line names are absent", () => {
+    expect(resolveLineWindow({ offset: 3, limit: 7 })).toEqual({ offset: 3, limit: 7 });
   });
 });
 
