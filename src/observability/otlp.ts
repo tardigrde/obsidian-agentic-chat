@@ -154,11 +154,11 @@ function statusToJson(status: OtlpSpan["status"]): unknown {
 }
 
 function base64Encode(value: string): string {
-  if (typeof globalThis.btoa !== "function") {
+  if (typeof window.btoa !== "function") {
     throw new Error("This platform cannot encode Langfuse credentials for Basic auth.");
   }
   const bytes = new TextEncoder().encode(value);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return globalThis.btoa(binary);
+  return window.btoa(binary);
 }

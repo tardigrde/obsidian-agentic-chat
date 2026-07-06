@@ -50,7 +50,7 @@ export function createFetchFromWebFetcher(fetcher: WebFetcher): typeof fetch {
       status: response.status || 599,
       headers: response.headers,
     });
-  }) as typeof fetch;
+  });
 }
 
 export function shouldProxyMcpRequest(requestUrl: string, proxyUrl: string, noProxy: string): boolean {

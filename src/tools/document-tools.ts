@@ -114,7 +114,8 @@ function createImportDocumentTool(
 
       documentKindFromPath(path);
       const data = await readDocumentData(adapter, path);
-      const result = await documentArtifacts.write(artifactStore, {
+      const writeDocumentArtifact = documentArtifacts.write.bind(documentArtifacts);
+      const result = await writeDocumentArtifact(artifactStore, {
         sourcePath: path,
         title,
         maxChunkChars,

@@ -1,6 +1,7 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import globals from "globals";
+import noUnsanitized from "eslint-plugin-no-unsanitized";
 import { fileURLToPath } from "node:url";
 
 const tsconfigRootDir = fileURLToPath(new URL(".", import.meta.url));
@@ -22,6 +23,9 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ["src/**/*.ts", "test/**/*.ts", "*.ts", "*.mjs", "*.mts", "scripts/**/*.mjs"],
+    plugins: {
+      "no-unsanitized": noUnsanitized,
+    },
     languageOptions: {
       // The plugin runs in the Obsidian renderer (DOM) on top of Node APIs.
       globals: { ...globals.browser, ...globals.node },

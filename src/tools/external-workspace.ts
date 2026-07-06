@@ -231,7 +231,7 @@ function externalInspectDuplicateGuard(
   result: AgentToolResult<Record<string, unknown>>,
   hitCount: number,
 ): AgentToolResult<Record<string, unknown>> {
-  const details = (result.details ?? {}) as Record<string, unknown>;
+  const details = (result.details ?? {});
   const action = typeof details.action === "string" ? details.action : "inspect";
   const target = typeof details.externalRef === "string" ? details.externalRef : "this external path";
   const artifactCitation = typeof details.sourceArtifactCitation === "string" ? details.sourceArtifactCitation : "";
@@ -261,7 +261,7 @@ function withExternalInspectCacheHint(
   result: AgentToolResult<Record<string, unknown>>,
   cached: boolean,
 ): AgentToolResult<Record<string, unknown>> {
-  const details = (result.details ?? {}) as Record<string, unknown>;
+  const details = (result.details ?? {});
   const action = typeof details.action === "string" ? details.action : "inspect";
   const target = typeof details.externalRef === "string" ? details.externalRef : "this external path";
   const hint = cached
@@ -487,7 +487,9 @@ async function maybeArtifactizeExternalRead(
   const externalRef = typeof details.externalRef === "string" ? details.externalRef : "external://";
   const label = externalReadArtifactLabel(externalRef, details);
   const sourceTextHash = hashText(text);
-  const dedupKey = `external:${externalRef}:${details.startLine ?? ""}:${details.endLine ?? ""}:${sourceTextHash}`;
+  const startLine = typeof details.startLine === "number" ? details.startLine.toString() : "";
+  const endLine = typeof details.endLine === "number" ? details.endLine.toString() : "";
+  const dedupKey = `external:${externalRef}:${startLine}:${endLine}:${sourceTextHash}`;
   const existing = await artifactStore.findArtifactByDedupKey?.(dedupKey);
   const metadata =
     existing?.metadata ??
@@ -935,9 +937,15 @@ function hashText(text: string): string {
 }
 
 function boundedInt(value: unknown, fallback: number, min: number, max: number): number {
-  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  const parsed = typeof value === "number" ? value : Number.parseInt(stringFromPrimitive(value), 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function stringFromPrimitive(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return value.toString();
+  return "";
 }
 
 function isBinaryData(data: Uint8Array | string): boolean {
@@ -986,7 +994,7 @@ function requireExternalWorkspaceRuntime(): ExternalWorkspaceRuntime {
 }
 
 function optionalNodeRequire(): ((moduleName: string) => unknown) | undefined {
-  const candidate = (globalThis as { require?: (moduleName: string) => unknown }).require;
+  const candidate = (window as { require?: (moduleName: string) => unknown }).require;
   return typeof candidate === "function" ? candidate : undefined;
 }
 

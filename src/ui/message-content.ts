@@ -29,7 +29,7 @@ export function messageText(message: AgentMessage): string {
   if (typeof content === "string") return content;
   return contentBlocks(message)
     .filter((block) => block.type === "text")
-    .map((block) => String(block.text ?? ""))
+    .map((block) => stringFromPrimitive(block.text))
     .join("");
 }
 
@@ -37,7 +37,7 @@ export function messageText(message: AgentMessage): string {
 export function thinkingText(message: AgentMessage): string {
   return contentBlocks(message)
     .filter((block) => block.type === "thinking")
-    .map((block) => String(block.thinking ?? ""))
+    .map((block) => stringFromPrimitive(block.thinking))
     .join("");
 }
 
@@ -52,8 +52,8 @@ export function toolCalls(message: AgentMessage): ToolCallLite[] {
   return contentBlocks(message)
     .filter((block) => block.type === "toolCall")
     .map((block) => ({
-      id: String(block.id ?? ""),
-      name: String(block.name ?? ""),
+      id: stringFromPrimitive(block.id),
+      name: stringFromPrimitive(block.name),
       arguments: (block.arguments as Record<string, unknown>) ?? {},
     }));
 }
@@ -65,8 +65,14 @@ export function toolResultText(result: unknown): string {
   if (!Array.isArray(content)) return "";
   return content
     .filter((block) => (block as { type?: unknown }).type === "text")
-    .map((block) => String((block as { text?: unknown }).text ?? ""))
+    .map((block) => stringFromPrimitive((block as { text?: unknown }).text))
     .join("\n");
+}
+
+function stringFromPrimitive(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return value.toString();
+  return "";
 }
 
 /** A message's usage, but only when it recorded real token counts. */

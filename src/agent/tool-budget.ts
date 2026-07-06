@@ -130,7 +130,7 @@ function snapshotFor(
 }
 
 function normalizeThresholdPercent(value: unknown): number {
-  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  const parsed = typeof value === "number" ? value : Number.parseInt(stringFromPrimitive(value), 10);
   if (!Number.isFinite(parsed)) return DEFAULT_TOOL_BUDGET_SETTINGS.thresholdPercent;
   return Math.min(MAX_THRESHOLD_PERCENT, Math.max(MIN_THRESHOLD_PERCENT, Math.trunc(parsed)));
 }
@@ -138,4 +138,10 @@ function normalizeThresholdPercent(value: unknown): number {
 function normalizeContextWindow(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
   return Math.trunc(value);
+}
+
+function stringFromPrimitive(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return value.toString();
+  return "";
 }

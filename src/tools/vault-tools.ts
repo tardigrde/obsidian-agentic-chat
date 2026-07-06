@@ -157,7 +157,7 @@ async function runInspectedTool(
   delegatedTool: BuiltinToolName,
   signal: AbortSignal | undefined,
 ): Promise<AgentToolResult<Record<string, unknown>>> {
-  const result = await tool.execute(id, params as never, signal);
+  const result = await tool.execute(id, params, signal);
   return {
     ...result,
     details: {

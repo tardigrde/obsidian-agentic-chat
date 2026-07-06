@@ -1,6 +1,6 @@
 {
   "name": "obsidian-agentic-chat",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "description": "Agent-led AI chat in the Obsidian right sidebar, powered by OpenRouter, Ollama, or OpenAI-compatible gateways.",
   "main": "main.js",
   "scripts": {
@@ -25,6 +25,7 @@
     "typecheck": "tsc -noEmit",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit",
     "lint": "eslint .",
+    "lint:obsidian": "eslint -c eslint.config.obsidian.mjs src",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:live": "vitest run --config vitest.live.config.ts",
@@ -62,6 +63,8 @@
     "@wdio/spec-reporter": "^9.29.1",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.4",
+    "eslint-plugin-no-unsanitized": "^4.1.5",
+    "eslint-plugin-obsidianmd": "^0.4.1",
     "globals": "^17.6.0",
     "jiti": "^2.7.0",
     "mocha": "^10.8.2",

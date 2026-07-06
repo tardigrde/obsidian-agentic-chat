@@ -287,7 +287,7 @@ function mcpInputSchema(schema: Record<string, unknown> | undefined): TSchema {
   const normalized = { ...schema };
   if (normalized.type === undefined) normalized.type = "object";
   if (normalized.properties === undefined) normalized.properties = {};
-  return normalized as unknown as TSchema;
+  return normalized;
 }
 
 interface RenderMcpResultOptions {
