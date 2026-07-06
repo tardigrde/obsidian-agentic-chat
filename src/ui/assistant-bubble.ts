@@ -254,7 +254,7 @@ function installRenderedLinkHandlers(
 ): void {
   root.addEventListener("click", (event) => {
     if (event.defaultPrevented) return;
-    if (event instanceof MouseEvent && event.button !== 0) return;
+    if (event.instanceOf(MouseEvent) && event.button !== 0) return;
     const anchor = closestAnchor(event.target);
     if (!anchor) return;
     const link = classifyRenderedChatLink(anchor);
@@ -263,7 +263,7 @@ function installRenderedLinkHandlers(
     event.preventDefault();
     event.stopPropagation();
     if (link.kind === "vault") {
-      void app.workspace.openLinkText(link.target, "", event instanceof MouseEvent && (event.metaKey || event.ctrlKey));
+      void app.workspace.openLinkText(link.target, "", event.instanceOf(MouseEvent) && (event.metaKey || event.ctrlKey));
     } else if (onOpenExternalLink) {
       onOpenExternalLink(link.target);
     } else {
@@ -279,7 +279,7 @@ function installRenderedLinkHandlers(
  * flag a bare browser-open call in the source.
  */
 function defaultExternalLinkOpener(url: string): void {
-  const opener = (globalThis as { open?: (url: string, target?: string, features?: string) => Window | null }).open;
+  const opener = (window as { open?: (url: string, target?: string, features?: string) => Window | null }).open;
   opener?.(url, "_blank", "noopener,noreferrer");
 }
 
@@ -323,7 +323,7 @@ export function enhanceCallouts(root: HTMLElement): void {
       first.remove();
     }
 
-    const callout = activeDocument.createElement("div");
+    const callout = createActiveDiv();
     callout.className = "callout";
     callout.dataset.callout = type;
     if (match[2]) {
@@ -341,6 +341,22 @@ export function enhanceCallouts(root: HTMLElement): void {
   }
 }
 
+function createActiveDiv(): HTMLDivElement {
+  const documentWithHelpers = activeDocument as Document & {
+    createDiv?: () => HTMLDivElement;
+    win?: Window & { createDiv?: () => HTMLDivElement };
+  };
+  if (typeof documentWithHelpers.win?.createDiv === "function") {
+    return documentWithHelpers.win.createDiv();
+  }
+  if (typeof documentWithHelpers.createDiv === "function") {
+    return documentWithHelpers.createDiv();
+  }
+  const doc = activeDocument;
+  const createElement = doc.createElement.bind(doc);
+  return createElement("div");
+}
+
 let mermaidId = 0;
 
 export async function renderMermaidBlocks(root: HTMLElement): Promise<void> {
@@ -356,7 +372,7 @@ export async function renderMermaidBlocks(root: HTMLElement): Promise<void> {
     const pre = code.parentElement;
     if (!pre) continue;
     const source = code.textContent ?? "";
-    const target = activeDocument.createElement("div");
+    const target = createActiveDiv();
     target.className = "agentic-chat-mermaid";
     try {
       const rendered = await mermaid.render(`agentic-chat-mermaid-${mermaidId++}`, source);

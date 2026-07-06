@@ -328,7 +328,7 @@ export class AgentToolCallController {
 
   /** True when any dispatched profile's allowlist includes a mutating tool. */
   private dispatchCanMutate(args: unknown): boolean {
-    const tasks = normalizeTasks((args ?? {}) as Parameters<typeof normalizeTasks>[0]);
+    const tasks = normalizeTasks((args ?? {}));
     return tasks.some((task) => {
       const profile = this.getProfiles().find((candidate) => candidate.name === task.agent);
       return !!profile && profile.toolAllowlist.some((name) => MUTATING_TOOLS.has(name));

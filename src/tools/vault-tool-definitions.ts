@@ -193,7 +193,7 @@ export function vaultToolDefinition<Name extends BuiltinToolName>(name: Name): V
     name,
     label: builtinToolLabel(name),
     description: VAULT_TOOL_DESCRIPTIONS[name],
-    parameters: VAULT_TOOL_PARAMETERS[name] as VaultToolParameterSchemaByName[Name],
+    parameters: VAULT_TOOL_PARAMETERS[name],
     executionMode: builtinToolExecutionMode(name),
   } as VaultToolDefinition<Name>;
 }

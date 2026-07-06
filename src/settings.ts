@@ -960,7 +960,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         slider
           .setLimits(0, 100, 1)
           .setValue(settings.observability.sampleRate)
-          .setDynamicTooltip()
           .onChange(async (value) => {
             settings.observability.sampleRate = value;
             await this.save();

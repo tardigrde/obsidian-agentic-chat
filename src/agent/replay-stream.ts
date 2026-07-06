@@ -93,7 +93,7 @@ export function createReplayStreamController(
       void emitReplayTurn(stream, message, scripted);
     });
     return stream;
-  }) as StreamFn;
+  });
 
   return {
     streamFn,

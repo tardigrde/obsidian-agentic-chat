@@ -83,7 +83,7 @@ export interface McpOAuthCallbackReceiverOptions {
   http?: NodeHttpModule;
 }
 
-export type McpOAuthProtocolParams = Record<string, string | "true" | undefined>;
+export type McpOAuthProtocolParams = Record<string, string | undefined>;
 
 export type McpOAuthProgressStage =
   | "discovery"

@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import type { WebFetcher } from "../tools/web-fetch";
@@ -168,7 +168,7 @@ export class AgentObservabilityRuntime {
       "agentic.model": activeModelIdForSettings(context),
       "agentic.mode": context.mode,
       "agentic.output_style": context.outputStyle,
-      "agentic.thinking_level": context.thinkingLevel as ThinkingLevel,
+      "agentic.thinking_level": context.thinkingLevel,
       "agentic.observability.payload_mode": settings.payloadMode,
     });
     this.active = {
@@ -428,8 +428,8 @@ function hasRequiredAuth(settings: ObservabilitySettings): boolean {
 
 function randomHex(bytes: number): string {
   const buffer = new Uint8Array(bytes);
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(buffer);
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(buffer);
   } else {
     for (let index = 0; index < buffer.length; index += 1) {
       buffer[index] = Math.floor(Math.random() * 256);

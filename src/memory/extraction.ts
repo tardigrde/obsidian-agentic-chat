@@ -183,7 +183,7 @@ function collectMatches(
   for (const match of text.matchAll(pattern)) {
     const capture = cleanCapture(match[1] ?? "");
     if (capture.length < 4 || capture.length > MAX_CAPTURE_LENGTH) continue;
-    onMatch(capture, match as RegExpExecArray);
+    onMatch(capture, match);
   }
 }
 

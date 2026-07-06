@@ -72,8 +72,7 @@ function createSearchMemoryTool(
 }
 
 export function memoryPathForApp(app: App): string {
-  const configDir = (app.vault as { configDir?: string }).configDir ?? ".obsidian";
-  return `${configDir}/plugins/${PLUGIN_ID}/memory/memories.jsonl`;
+  return `${app.vault.configDir}/plugins/${PLUGIN_ID}/memory/memories.jsonl`;
 }
 
 function normalizeLimit(value: number | undefined): number | undefined {

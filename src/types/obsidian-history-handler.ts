@@ -11,7 +11,7 @@ declare module "obsidian" {
     onHistoryBack(): void;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- T is part of the PopoverSuggest generic surface augmented here; not referenced on this line.
   interface PopoverSuggest<T> {
     onHistoryBack(): void;
   }

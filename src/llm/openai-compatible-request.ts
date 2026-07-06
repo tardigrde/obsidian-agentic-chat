@@ -62,7 +62,6 @@ export function createOpenAICompatibleRequester(fetcher: WebFetcher): OpenAIComp
 }
 
 type MessageCompat = Parameters<typeof convertMessages>[2];
-type ErrorReason = Extract<StopReason, "error" | "aborted">;
 
 const MESSAGE_COMPAT: MessageCompat = {
   supportsStore: false,
@@ -162,7 +161,7 @@ export function streamOpenAICompatibleViaRequestUrl(
     } catch (error) {
       output.stopReason = options?.signal?.aborted ? "aborted" : "error";
       output.errorMessage = errorMessage(error);
-      stream.push({ type: "error", reason: output.stopReason as ErrorReason, error: output });
+      stream.push({ type: "error", reason: output.stopReason, error: output });
       stream.end(output);
     }
   })();
@@ -379,7 +378,25 @@ function mapStopReason(reason: unknown, hasToolCalls: boolean): { stopReason: St
   if (reason === "network_error") {
     return { stopReason: "error", errorMessage: "Provider finish_reason: network_error" };
   }
-  return { stopReason: "error", errorMessage: `Provider finish_reason: ${String(reason)}` };
+  return { stopReason: "error", errorMessage: `Provider finish_reason: ${stringFromUnknown(reason)}` };
+}
+
+function stringFromUnknown(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint" ||
+    typeof value === "symbol"
+  ) {
+    return value.toString();
+  }
+  try {
+    const json = JSON.stringify(value);
+    return json ?? Object.prototype.toString.call(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
 }
 
 function createEmptyAssistantMessage(model: Model<"openai-completions">): AssistantMessage {
