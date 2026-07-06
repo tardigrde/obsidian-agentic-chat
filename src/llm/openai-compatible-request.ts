@@ -378,13 +378,25 @@ function mapStopReason(reason: unknown, hasToolCalls: boolean): { stopReason: St
   if (reason === "network_error") {
     return { stopReason: "error", errorMessage: "Provider finish_reason: network_error" };
   }
-  return { stopReason: "error", errorMessage: `Provider finish_reason: ${stringFromPrimitive(reason)}` };
+  return { stopReason: "error", errorMessage: `Provider finish_reason: ${stringFromUnknown(reason)}` };
 }
 
-function stringFromPrimitive(value: unknown): string {
+function stringFromUnknown(value: unknown): string {
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return value.toString();
-  return "";
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint" ||
+    typeof value === "symbol"
+  ) {
+    return value.toString();
+  }
+  try {
+    const json = JSON.stringify(value);
+    return json ?? Object.prototype.toString.call(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
 }
 
 function createEmptyAssistantMessage(model: Model<"openai-completions">): AssistantMessage {

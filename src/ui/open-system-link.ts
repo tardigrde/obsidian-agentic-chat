@@ -16,10 +16,13 @@ export async function openSystemUrl(url: string, runtime: SystemLinkRuntime = de
 }
 
 function defaultSystemLinkRuntime(): SystemLinkRuntime {
-  const win = window as { require?: (moduleName: string) => unknown; open?: Window["open"] };
+  const win =
+    typeof window === "undefined"
+      ? undefined
+      : (window as { require?: (moduleName: string) => unknown; open?: Window["open"] });
   return {
-    require: typeof win.require === "function" ? win.require : undefined,
-    openWindow: (url) => win.open?.(url, "_blank", "noopener,noreferrer") ?? null,
+    require: typeof win?.require === "function" ? win.require : undefined,
+    openWindow: (url) => win?.open?.(url, "_blank", "noopener,noreferrer") ?? null,
   };
 }
 

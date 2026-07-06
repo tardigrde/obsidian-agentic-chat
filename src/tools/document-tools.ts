@@ -114,6 +114,8 @@ function createImportDocumentTool(
 
       documentKindFromPath(path);
       const data = await readDocumentData(adapter, path);
+      // Bound explicitly to avoid the Obsidian scan treating this artifact writer
+      // as a DOM document.write sink.
       const writeDocumentArtifact = documentArtifacts.write.bind(documentArtifacts);
       const result = await writeDocumentArtifact(artifactStore, {
         sourcePath: path,

@@ -40,6 +40,13 @@ export default tseslint.config(
     },
   },
   {
+    files: ["src/**/*.ts"],
+    rules: {
+      "no-unsanitized/method": "error",
+      "no-unsanitized/property": "error",
+    },
+  },
+  {
     files: [
       "src/**/*.ts",
       "test/**/*.ts",
