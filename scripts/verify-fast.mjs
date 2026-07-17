@@ -9,6 +9,7 @@ const steps = [
   { label: "typecheck", command: localBin("tsc"), args: ["-noEmit"] },
   { label: "e2e typecheck", command: localBin("tsc"), args: ["-p", "tsconfig.e2e.json", "--noEmit"] },
   { label: "lint", command: localBin("eslint"), args: ["."] },
+  { label: "lint:obsidian", command: localBin("eslint"), args: ["-c", "eslint.config.obsidian.mjs", "src"] },
   { label: "unit tests", command: localBin("vitest"), args: ["run"] },
   { label: "e2e bundle", command: nodeCommand, args: ["esbuild.config.mjs", "production"] },
   { label: "release verification", command: nodeCommand, args: ["scripts/verify-release.mjs"] },

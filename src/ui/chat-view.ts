@@ -2629,7 +2629,7 @@ export class ChatView extends ItemView {
     return new AssistantBubble(this.messagesEl, {
       onRetry: () => void this.retryLast(),
       onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
-      onOpenNote: (path) => this.app.workspace.openLinkText(path, "", false),
+      onOpenNote: (path) => void this.app.workspace.openLinkText(path, "", false),
       onContentChange: () => this.scrollToBottom(),
     });
   }
