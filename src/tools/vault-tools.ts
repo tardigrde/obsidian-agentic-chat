@@ -256,12 +256,6 @@ function createEditTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
   return {
     ...vaultToolDefinition("edit"),
     execute: async (_id, params) => {
-      const noOps = params.edits.filter((e) => e.oldText === e.newText);
-      if (noOps.length > 0) {
-        throw new Error(
-          "Edit produced no change (oldText === newText). Re-read the current content and choose an oldText that differs from newText.",
-        );
-      }
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
       // Partial-apply: edits that match are applied, failures are reported per-edit
       // so one bad oldText no longer sinks the whole batch. The result is captured

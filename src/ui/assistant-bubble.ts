@@ -257,10 +257,18 @@ export class AssistantBubble {
     if (!details) return;
     if (details.kind === "subagent" && "children" in details && Array.isArray(details.children)) {
       this.renderSubagentChildren(step.body, details.children);
+      this.syncStepCollapsible(step.card, step.body);
+      // Auto-open so live child progress is visible while the step runs.
+      step.card.addClass("is-open");
+      step.card.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
       return;
     }
     if (isAskUserDetails(details)) {
       this.renderAskUserStep(step.body, details);
+      this.syncStepCollapsible(step.card, step.body);
+      // Auto-open so the ask-user state is visible while waiting.
+      step.card.addClass("is-open");
+      step.card.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
     }
   }
 
@@ -340,8 +348,9 @@ export class AssistantBubble {
     const text = message.trim();
     if (!text) return;
     const existing = this.el.querySelector(".agentic-chat-error");
-    if (existing && existing.textContent === text) return;
+    if (existing && existing.getAttr("data-error-text") === text) return;
     const banner = this.el.createDiv({ cls: "agentic-chat-error" });
+    banner.setAttr("data-error-text", text);
     if (text.includes("\n")) {
       const details = banner.createEl("details", { cls: "agentic-chat-error-details" });
       details.createEl("summary", { text: text.split("\n", 1)[0] });

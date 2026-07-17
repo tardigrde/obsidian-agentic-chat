@@ -2464,6 +2464,7 @@ export class ChatView extends ItemView {
     this.messagesEl.empty();
     this.bubble = null;
     this.previousAssistantUsage = undefined;
+    this.lastBubbleError = undefined;
     const toolResults = collectToolResults(messages);
     const lastAssistant = lastIndex(messages, (message) => message.role === "assistant");
     let rendered = 0;
