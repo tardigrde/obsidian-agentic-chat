@@ -48,6 +48,84 @@ export function describeCall(name: string, rawArgs: string): string {
   return detail ? `${label}: ${detail}` : label;
 }
 
+/**
+ * Render tool args as readable `key: value` lines (not raw JSON), each value
+ * collapsed to a single line and truncated. Returns "" for empty/`{}` args so
+ * the caller can omit the Tool-call section entirely. Long values (e.g. an
+ * edit's oldText/newText) are capped so the section stays a few lines.
+ */
+export function formatArgsReadable(rawArgs: string, maxValueChars = 160): string {
+  let args: Record<string, unknown>;
+  try {
+    args = JSON.parse(rawArgs) as Record<string, unknown>;
+  } catch {
+    return "";
+  }
+  const entries = Object.entries(args).filter(([, value]) => value !== undefined && value !== null && value !== "");
+  if (entries.length === 0) return "";
+  return entries
+    .map(([key, value]) => {
+      const raw = typeof value === "string" ? value : safeJson(value);
+      const collapsed = raw.replace(/\s+/g, " ").trim();
+      const shown = collapsed.length > maxValueChars ? `${collapsed.slice(0, maxValueChars)}…` : collapsed;
+      return `${key}: ${shown}`;
+    })
+    .join("\n");
+}
+
+/**
+ * Per-tool readable body for the "Tool call" section. Specialises a few tools so
+ * the body stays short and useful instead of dumping every arg:
+ *  - edit → path + edit count (never the raw oldText/newText, which truncates badly)
+ *  - read / get_active_note → path + optional line range
+ * Other tools fall back to {@link formatArgsReadable} (all key: value lines).
+ */
+export function formatCallBody(name: string, rawArgs: string): string {
+  let args: Record<string, unknown>;
+  try {
+    args = JSON.parse(rawArgs) as Record<string, unknown>;
+  } catch {
+    return "";
+  }
+  if (name === "edit") {
+    const parts: string[] = [];
+    if (typeof args.path === "string" && args.path) parts.push(`path: ${args.path}`);
+    const count = Array.isArray(args.edits) ? args.edits.length : 0;
+    if (count > 0) parts.push(`${count} edit${count === 1 ? "" : "s"}`);
+    return parts.join("\n");
+  }
+  if (name === "read" || name === "get_active_note") {
+    const parts: string[] = [];
+    if (typeof args.path === "string" && args.path) parts.push(`path: ${args.path}`);
+    const offset = typeof args.offset === "number" ? args.offset : undefined;
+    const limit = typeof args.limit === "number" ? args.limit : undefined;
+    if (offset !== undefined || limit !== undefined) {
+      const end = offset !== undefined && limit !== undefined ? offset + limit : "?";
+      parts.push(`lines: ${offset ?? 0}–${end}`);
+    }
+    return parts.join("\n");
+  }
+  return formatArgsReadable(rawArgs);
+}
+
+/** Tools whose success result is just file contents already on disk / in context — hide it. */
+export const HIDE_RESULT_TOOLS = new Set(["read", "get_active_note", "write"]);
+
+/** Tools whose primary arg is a vault path — render it as a clickable link in the step title. */
+export const PATH_TOOLS = new Set(["read", "write", "edit", "delete", "rename", "get_active_note", "ls"]);
+
+/** Extract the vault path (path, else newPath) from tool args, or "" if none/invalid. */
+export function callPath(rawArgs: string): string {
+  try {
+    const args = JSON.parse(rawArgs) as Record<string, unknown>;
+    if (typeof args.path === "string") return args.path;
+    if (typeof args.newPath === "string") return args.newPath;
+  } catch {
+    // malformed args — no path
+  }
+  return "";
+}
+
 /** Stringify tool args, falling back to `{}` on circular/unserialisable values. */
 export function safeJson(value: unknown): string {
   try {
@@ -107,7 +185,38 @@ export function formatUsage(usage: Usage): string {
   const cost = total > 0 ? ` · ${formatCost(total)}` : "";
   const hit = cacheHitPercent(usage);
   const cache = hit === null ? "" : ` · ${hit}% cache`;
-  return `${usage.totalTokens} tokens${cache}${cost}`;
+  return `${formatTokenInteger(usage.totalTokens)} tokens${cache}${cost}`;
+}
+
+/**
+ * Full integer token count with thousands separators (e.g. `3,327,418`). Used for
+ * the cumulative footer so the raw number stops reads as anxiety-inducing noise.
+ */
+export function formatTokenInteger(value: number): string {
+  const safe = Number.isFinite(value) && value > 0 ? value : 0;
+  return Math.round(safe).toLocaleString("en-US");
+}
+
+/**
+ * Per-answer usage as a delta against the previous assistant turn (the "new"
+ * tokens for this answer), since providers report cumulative usage per message.
+ * Tokens and cost are differences (clamped to >= 0); the cache hit ratio is
+ * computed from the delta fields so it describes this turn, not the whole run.
+ * With no previous baseline (first turn, or after a rewind reset) this falls
+ * back to the absolute usage — every token is new on the first answer.
+ */
+export function formatUsageDelta(current: Usage, previous?: Usage): string {
+  if (!previous) return formatUsage(current);
+  const deltaTokens = Math.max(0, (current.totalTokens ?? 0) - (previous.totalTokens ?? 0));
+  const dCacheRead = Math.max(0, (current.cacheRead ?? 0) - (previous.cacheRead ?? 0));
+  const dInput = Math.max(0, (current.input ?? 0) - (previous.input ?? 0));
+  const dCacheWrite = Math.max(0, (current.cacheWrite ?? 0) - (previous.cacheWrite ?? 0));
+  const base = dInput + dCacheRead + dCacheWrite;
+  const hit = base > 0 ? Math.round((dCacheRead / base) * 100) : null;
+  const cache = hit === null ? "" : ` · ${hit}% cache`;
+  const deltaCost = (current.cost?.total ?? 0) - (previous.cost?.total ?? 0);
+  const cost = deltaCost > 0 ? ` · ${formatCost(deltaCost)}` : "";
+  return `${formatTokenInteger(deltaTokens)} tokens${cache}${cost}`;
 }
 
 /**

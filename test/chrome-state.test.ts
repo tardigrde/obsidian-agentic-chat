@@ -3,6 +3,8 @@ import type { Usage } from "@earendil-works/pi-ai";
 import type { ToolBudgetSnapshot } from "../src/agent/tool-budget";
 import {
   buildModelPillState,
+  buildUsageChromeParts,
+  cacheHitTone,
   folderButtonAriaLabel,
   formatChromeUsageText,
   modelProviderLabel,
@@ -50,8 +52,39 @@ describe("chrome state helpers", () => {
       cost: { total: 0.02 },
     } as Usage;
 
-    expect(formatChromeUsageText(usage, 0.004)).toBe("1000 tokens · 90% cache · $0.02 · next ~$0.0040");
+    expect(formatChromeUsageText(usage, 0.004)).toBe("1,000 tokens · 90% cache · $0.02 · next ~$0.0040");
     expect(formatChromeUsageText({ totalTokens: 0 } as Usage, 0)).toBe("");
+  });
+
+  it("maps cache-hit ratios to red/amber/green tones", () => {
+    expect(cacheHitTone(0)).toBe("is-low");
+    expect(cacheHitTone(49)).toBe("is-low");
+    expect(cacheHitTone(50)).toBe("is-mid");
+    expect(cacheHitTone(74)).toBe("is-mid");
+    expect(cacheHitTone(75)).toBe("is-high");
+    expect(cacheHitTone(100)).toBe("is-high");
+  });
+
+  it("builds structured usage parts with a colored cache chip and a tooltip on next-cost", () => {
+    const usage = {
+      totalTokens: 1000,
+      input: 100,
+      cacheRead: 900,
+      cost: { total: 0.02 },
+    } as Usage;
+
+    expect(buildUsageChromeParts(usage, 0.004)).toEqual([
+      { text: "1,000 tokens" },
+      { text: "90% cache", cls: "agentic-chat-cache is-high" },
+      { text: "$0.02" },
+      { text: "next ~$0.0040", cls: "agentic-chat-next-cost", title: "Projected cost of the next request (priced models only)." },
+    ]);
+    // A low cache hit takes the red tone.
+    expect(buildUsageChromeParts({ totalTokens: 100, input: 90, cacheRead: 10 } as Usage)).toEqual([
+      { text: "100 tokens" },
+      { text: "10% cache", cls: "agentic-chat-cache is-low" },
+    ]);
+    expect(buildUsageChromeParts({ totalTokens: 0 } as Usage, 0)).toEqual([]);
   });
 
   it("builds stable folder button labels", () => {

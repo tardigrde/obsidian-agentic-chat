@@ -3,10 +3,13 @@ import type { Usage } from "@earendil-works/pi-ai";
 import {
   cacheHitPercent,
   describeCall,
+  formatArgsReadable,
+  formatCallBody,
   formatCost,
   formatDetailedUsage,
   formatElapsed,
   formatUsage,
+  formatUsageDelta,
   safeJson,
   shortModelLabel,
   truncateText,
@@ -53,6 +56,49 @@ describe("describeCall", () => {
   });
   it("tolerates malformed JSON args", () => {
     expect(describeCall("read", "not json")).toBe("Reading file");
+  });
+});
+
+describe("formatArgsReadable", () => {
+  it("returns empty for empty or {} args so the caller omits the section", () => {
+    expect(formatArgsReadable("{}")).toBe("");
+    expect(formatArgsReadable('{"a":null,"b":""}')).toBe("");
+  });
+  it("returns empty for malformed JSON", () => {
+    expect(formatArgsReadable("not json")).toBe("");
+  });
+  it("renders each arg as a readable key: value line", () => {
+    expect(formatArgsReadable('{"path":"Notes/a.md","limit":10}')).toBe("path: Notes/a.md\nlimit: 10");
+  });
+  it("stringifies non-string values compactly", () => {
+    expect(formatArgsReadable('{"kinds":["a","b"]}')).toBe('kinds: ["a","b"]');
+  });
+  it("collapses whitespace and truncates long values to one line", () => {
+    const long = "x".repeat(300);
+    const out = formatArgsReadable(`{"oldText":"${long}"}`);
+    expect(out).toHaveLength("oldText: ".length + 160 + 1); // 160-char cap + ellipsis
+    expect(out.endsWith("…")).toBe(true);
+    expect(out.includes("\n")).toBe(false);
+  });
+});
+
+describe("formatCallBody", () => {
+  it("renders an edit as path + edit count, never the raw oldText/newText", () => {
+    const args = JSON.stringify({
+      path: "Notes/a.md",
+      edits: [{ oldText: "x".repeat(500), newText: "y".repeat(500) }, { oldText: "a", newText: "b" }],
+    });
+    expect(formatCallBody("edit", args)).toBe("path: Notes/a.md\n2 edits");
+  });
+  it("renders a read as path + line range when present", () => {
+    expect(formatCallBody("read", '{"path":"Notes/a.md","offset":10,"limit":5}')).toBe("path: Notes/a.md\nlines: 10–15");
+    expect(formatCallBody("read", '{"path":"Notes/a.md"}')).toBe("path: Notes/a.md");
+  });
+  it("falls back to readable key:value lines for other tools", () => {
+    expect(formatCallBody("search", '{"query":"TODO"}')).toBe("query: TODO");
+  });
+  it("tolerates malformed JSON", () => {
+    expect(formatCallBody("edit", "not json")).toBe("");
   });
 });
 
@@ -131,6 +177,9 @@ describe("formatUsage", () => {
   it("shows tokens only when there is no cost and no cache", () => {
     expect(formatUsage(usage({ totalTokens: 120 }))).toBe("120 tokens");
   });
+  it("group-thousands the token total so it stops reading as noise", () => {
+    expect(formatUsage(usage({ totalTokens: 3327418 }))).toBe("3,327,418 tokens");
+  });
   it("appends cost when present", () => {
     expect(formatUsage(usage({ totalTokens: 120, cost: { total: 0.5 } as Usage["cost"] }))).toBe(
       "120 tokens · $0.50",
@@ -141,7 +190,31 @@ describe("formatUsage", () => {
       formatUsage(
         usage({ totalTokens: 1000, input: 100, cacheRead: 900, cost: { total: 0.02 } as Usage["cost"] }),
       ),
-    ).toBe("1000 tokens · 90% cache · $0.02");
+    ).toBe("1,000 tokens · 90% cache · $0.02");
+  });
+});
+
+describe("formatUsageDelta", () => {
+  const usage = (over: Partial<Usage>): Usage => ({ totalTokens: 0, ...over }) as Usage;
+
+  it("falls back to absolute usage with no previous baseline", () => {
+    expect(formatUsageDelta(usage({ totalTokens: 120 }))).toBe("120 tokens");
+  });
+  it("shows only the new tokens and cost vs the previous turn", () => {
+    const prev = usage({ totalTokens: 10_000, input: 1000, cacheRead: 9000, cost: { total: 0.1 } as Usage["cost"] });
+    const cur = usage({
+      totalTokens: 12_000,
+      input: 1100,
+      cacheRead: 10_800,
+      cost: { total: 0.14 } as Usage["cost"],
+    });
+    // delta tokens = 2000; cache base = (1100-1000)+(10800-9000)=100+1800=1900 → 1800/1900 ≈ 95%; cost 0.04
+    expect(formatUsageDelta(cur, prev)).toBe("2,000 tokens · 95% cache · $0.04");
+  });
+  it("omits the cache chip when the delta has no cacheable base", () => {
+    const prev = usage({ totalTokens: 10_000, input: 0, cacheRead: 0 });
+    const cur = usage({ totalTokens: 12_000, input: 0, cacheRead: 0 });
+    expect(formatUsageDelta(cur, prev)).toBe("2,000 tokens");
   });
 });
 

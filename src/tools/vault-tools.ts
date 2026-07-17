@@ -1,6 +1,6 @@
 import { type App, TFile, TFolder, MarkdownView, parseYaml } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { applyExactEdits } from "../vault/edit";
+import { applyExactEditsPartial, type EditApplyResult } from "../vault/edit";
 import { getParentPath, normalizeFolderPath, normalizeVaultPath } from "../vault/path";
 import type { IgnoreMatcher } from "../vault/ignore";
 import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../vault/search";
@@ -256,15 +256,50 @@ function createEditTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
   return {
     ...vaultToolDefinition("edit"),
     execute: async (_id, params) => {
+      const noOps = params.edits.filter((e) => e.oldText === e.newText);
+      if (noOps.length > 0) {
+        throw new Error(
+          "Edit produced no change (oldText === newText). Re-read the current content and choose an oldText that differs from newText.",
+        );
+      }
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
-      await app.vault.process(file, (content) => applyExactEdits(content, params.edits));
-      memo?.invalidate(path);
-      return textResult(`Applied ${params.edits.length} edit${params.edits.length === 1 ? "" : "s"} to ${path}.`, {
-        path,
-        editCount: params.edits.length,
+      // Partial-apply: edits that match are applied, failures are reported per-edit
+      // so one bad oldText no longer sinks the whole batch. The result is captured
+      // from the atomic process() transform, which gives us the live file content.
+      let result: EditApplyResult | undefined;
+      await app.vault.process(file, (content) => {
+        result = applyExactEditsPartial(content, params.edits);
+        return result.content;
       });
+      if (!result) throw new Error("Edit could not be applied.");
+      memo?.invalidate(path);
+      return editToolMessage(path, params.edits.length, result);
     },
   };
+}
+
+/** Build the edit tool's result text from a partial-apply outcome. */
+function editToolMessage(path: string, total: number, result: EditApplyResult): AgentToolResult<Record<string, unknown>> {
+  const applied = result.applied.length;
+  const failed = result.failed;
+  if (applied === 0) {
+    // Nothing applied — surface every failure so the model can correct them.
+    return textResult(
+      `Applied 0 of ${total} edits to ${path}; none matched. Failures:\n${formatEditFailures(failed)}`,
+      { path, editCount: 0, failed: failed.length },
+    );
+  }
+  if (failed.length === 0) {
+    return textResult(`Applied ${applied} edit${applied === 1 ? "" : "s"} to ${path}.`, { path, editCount: applied });
+  }
+  return textResult(
+    `Applied ${applied} of ${total} edits to ${path}. ${failed.length} not applied:\n${formatEditFailures(failed)}`,
+    { path, editCount: applied, failed: failed.length },
+  );
+}
+
+function formatEditFailures(failed: { error: string }[]): string {
+  return failed.map((failure) => `- ${failure.error}`).join("\n");
 }
 
 function createLsTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LsParameters> {

@@ -1,3 +1,4 @@
+import type { Menu } from "obsidian";
 import { normalizeFolderPath } from "../vault/path";
 import type { WorkflowRenderer } from "./workflow-renderer";
 
@@ -38,6 +39,26 @@ export class WorkingDirectoryWorkflowController {
           onClick: () => this.options.pickFolderAttachment(),
         },
       ],
+    );
+  }
+
+  /**
+   * Populate an Obsidian Menu (popover) with the same two folder actions, so the
+   * folder pill can surface them as a dropdown anchored at the button instead of
+   * as a chat action card. Titles lead with the benefit for discoverability.
+   */
+  attachFolderMenuItems(menu: Menu): void {
+    menu.addItem((item) =>
+      item
+        .setTitle("Add working directory")
+        .setIcon("folder-check")
+        .onClick(() => this.options.pickWorkingDir()),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle("Attach folder listing")
+        .setIcon("folder")
+        .onClick(() => this.options.pickFolderAttachment()),
     );
   }
 
