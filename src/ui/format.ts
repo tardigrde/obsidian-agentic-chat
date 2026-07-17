@@ -54,14 +54,19 @@ export function describeCall(name: string, rawArgs: string): string {
  * the caller can omit the Tool-call section entirely. Long values (e.g. an
  * edit's oldText/newText) are capped so the section stays a few lines.
  */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function formatArgsReadable(rawArgs: string, maxValueChars = 160): string {
-  let args: Record<string, unknown>;
+  let parsed: unknown;
   try {
-    args = JSON.parse(rawArgs) as Record<string, unknown>;
+    parsed = JSON.parse(rawArgs);
   } catch {
     return "";
   }
-  const entries = Object.entries(args).filter(([, value]) => value !== undefined && value !== null && value !== "");
+  if (!isPlainObject(parsed)) return "";
+  const entries = Object.entries(parsed).filter(([, value]) => value !== undefined && value !== null && value !== "");
   if (entries.length === 0) return "";
   return entries
     .map(([key, value]) => {
@@ -81,24 +86,25 @@ export function formatArgsReadable(rawArgs: string, maxValueChars = 160): string
  * Other tools fall back to {@link formatArgsReadable} (all key: value lines).
  */
 export function formatCallBody(name: string, rawArgs: string): string {
-  let args: Record<string, unknown>;
+  let parsed: unknown;
   try {
-    args = JSON.parse(rawArgs) as Record<string, unknown>;
+    parsed = JSON.parse(rawArgs);
   } catch {
     return "";
   }
+  if (!isPlainObject(parsed)) return "";
   if (name === "edit") {
     const parts: string[] = [];
-    if (typeof args.path === "string" && args.path) parts.push(`path: ${args.path}`);
-    const count = Array.isArray(args.edits) ? args.edits.length : 0;
+    if (typeof parsed.path === "string" && parsed.path) parts.push(`path: ${parsed.path}`);
+    const count = Array.isArray(parsed.edits) ? parsed.edits.length : 0;
     if (count > 0) parts.push(`${count} edit${count === 1 ? "" : "s"}`);
     return parts.join("\n");
   }
   if (name === "read" || name === "get_active_note") {
     const parts: string[] = [];
-    if (typeof args.path === "string" && args.path) parts.push(`path: ${args.path}`);
-    const offset = typeof args.offset === "number" ? args.offset : undefined;
-    const limit = typeof args.limit === "number" ? args.limit : undefined;
+    if (typeof parsed.path === "string" && parsed.path) parts.push(`path: ${parsed.path}`);
+    const offset = typeof parsed.offset === "number" ? parsed.offset : undefined;
+    const limit = typeof parsed.limit === "number" ? parsed.limit : undefined;
     if (offset !== undefined || limit !== undefined) {
       const end = offset !== undefined && limit !== undefined ? offset + limit : "?";
       parts.push(`lines: ${offset ?? 0}–${end}`);
@@ -117,9 +123,10 @@ export const PATH_TOOLS = new Set(["read", "write", "edit", "delete", "rename", 
 /** Extract the vault path (path, else newPath) from tool args, or "" if none/invalid. */
 export function callPath(rawArgs: string): string {
   try {
-    const args = JSON.parse(rawArgs) as Record<string, unknown>;
-    if (typeof args.path === "string") return args.path;
-    if (typeof args.newPath === "string") return args.newPath;
+    const parsed: unknown = JSON.parse(rawArgs);
+    if (!isPlainObject(parsed)) return "";
+    if (typeof parsed.path === "string") return parsed.path;
+    if (typeof parsed.newPath === "string") return parsed.newPath;
   } catch {
     // malformed args — no path
   }
@@ -198,25 +205,12 @@ export function formatTokenInteger(value: number): string {
 }
 
 /**
- * Per-answer usage as a delta against the previous assistant turn (the "new"
- * tokens for this answer), since providers report cumulative usage per message.
- * Tokens and cost are differences (clamped to >= 0); the cache hit ratio is
- * computed from the delta fields so it describes this turn, not the whole run.
- * With no previous baseline (first turn, or after a rewind reset) this falls
- * back to the absolute usage — every token is new on the first answer.
+ * Format a single assistant turn's usage directly. Each message carries its own
+ * per-response usage from the provider; there is no cumulative baseline to
+ * subtract.
  */
-export function formatUsageDelta(current: Usage, previous?: Usage): string {
-  if (!previous) return formatUsage(current);
-  const deltaTokens = Math.max(0, (current.totalTokens ?? 0) - (previous.totalTokens ?? 0));
-  const dCacheRead = Math.max(0, (current.cacheRead ?? 0) - (previous.cacheRead ?? 0));
-  const dInput = Math.max(0, (current.input ?? 0) - (previous.input ?? 0));
-  const dCacheWrite = Math.max(0, (current.cacheWrite ?? 0) - (previous.cacheWrite ?? 0));
-  const base = dInput + dCacheRead + dCacheWrite;
-  const hit = base > 0 ? Math.round((dCacheRead / base) * 100) : null;
-  const cache = hit === null ? "" : ` · ${hit}% cache`;
-  const deltaCost = (current.cost?.total ?? 0) - (previous.cost?.total ?? 0);
-  const cost = deltaCost > 0 ? ` · ${formatCost(deltaCost)}` : "";
-  return `${formatTokenInteger(deltaTokens)} tokens${cache}${cost}`;
+export function formatUsageDelta(current: Usage, _previous?: Usage): string {
+  return formatUsage(current);
 }
 
 /**

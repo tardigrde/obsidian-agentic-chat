@@ -186,9 +186,6 @@ export class ChatView extends ItemView {
   private lastSentPrompt: string | null = null;
   private lastSentDisplay: string | null = null;
   private locallyRenderedUserMessages = 0;
-  // Previous assistant turn's cumulative usage, so the per-answer footer can
-  // render a delta ("new tokens") instead of the running session total.
-  private previousAssistantUsage: Usage | undefined;
   // Last error message rendered inside an assistant bubble. Used to suppress the
   // duplicate standalone error panel that showServiceError() would otherwise
   // emit for the same turn-level error (e.g. "Request was aborted").
@@ -2463,7 +2460,6 @@ export class ChatView extends ItemView {
   private renderTranscript(messages: AgentMessage[]): void {
     this.messagesEl.empty();
     this.bubble = null;
-    this.previousAssistantUsage = undefined;
     this.lastBubbleError = undefined;
     const toolResults = collectToolResults(messages);
     const lastAssistant = lastIndex(messages, (message) => message.role === "assistant");
@@ -2506,10 +2502,14 @@ export class ChatView extends ItemView {
       void bubble.finalizeText(text, this.app, this);
       bubble.showActions({ canRetry: isLast });
     }
+    const errorMessage = (message as { errorMessage?: string }).errorMessage;
+    if (errorMessage) {
+      bubble.showError(errorMessage);
+      if (isLast) this.lastBubbleError = errorMessage;
+    }
     const usage = assistantUsage(message);
     if (usage) {
-      bubble.showUsage(usage, this.previousAssistantUsage);
-      this.previousAssistantUsage = usage;
+      bubble.showUsage(usage);
     }
   }
 
@@ -2620,8 +2620,7 @@ export class ChatView extends ItemView {
     }
     const usage = assistantUsage(message);
     if (usage) {
-      bubble.showUsage(usage, this.previousAssistantUsage);
-      this.previousAssistantUsage = usage;
+      bubble.showUsage(usage);
     }
   }
 

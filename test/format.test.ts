@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Usage } from "@earendil-works/pi-ai";
 import {
   cacheHitPercent,
+  callPath,
   describeCall,
   formatArgsReadable,
   formatCallBody,
@@ -67,6 +68,12 @@ describe("formatArgsReadable", () => {
   it("returns empty for malformed JSON", () => {
     expect(formatArgsReadable("not json")).toBe("");
   });
+  it("returns empty for non-object JSON (null, array, string, number)", () => {
+    expect(formatArgsReadable("null")).toBe("");
+    expect(formatArgsReadable("[]")).toBe("");
+    expect(formatArgsReadable('"value"')).toBe("");
+    expect(formatArgsReadable("42")).toBe("");
+  });
   it("renders each arg as a readable key: value line", () => {
     expect(formatArgsReadable('{"path":"Notes/a.md","limit":10}')).toBe("path: Notes/a.md\nlimit: 10");
   });
@@ -100,6 +107,11 @@ describe("formatCallBody", () => {
   it("tolerates malformed JSON", () => {
     expect(formatCallBody("edit", "not json")).toBe("");
   });
+  it("returns empty for non-object JSON", () => {
+    expect(formatCallBody("edit", "null")).toBe("");
+    expect(formatCallBody("edit", "[]")).toBe("");
+    expect(formatCallBody("edit", "42")).toBe("");
+  });
 });
 
 describe("safeJson", () => {
@@ -129,6 +141,23 @@ describe("formatCost", () => {
   it("collapses negative or non-finite input to $0.00", () => {
     expect(formatCost(-0.005)).toBe("$0.00");
     expect(formatCost(Number.NaN)).toBe("$0.00");
+  });
+});
+
+describe("callPath", () => {
+  it("extracts path from tool args", () => {
+    expect(callPath('{"path":"Notes/a.md"}')).toBe("Notes/a.md");
+    expect(callPath('{"newPath":"Notes/b.md"}')).toBe("Notes/b.md");
+  });
+  it("returns empty for missing or invalid args", () => {
+    expect(callPath("{}")).toBe("");
+    expect(callPath("not json")).toBe("");
+  });
+  it("returns empty for non-object JSON", () => {
+    expect(callPath("null")).toBe("");
+    expect(callPath("[]")).toBe("");
+    expect(callPath('"string"')).toBe("");
+    expect(callPath("42")).toBe("");
   });
 });
 
@@ -197,24 +226,9 @@ describe("formatUsage", () => {
 describe("formatUsageDelta", () => {
   const usage = (over: Partial<Usage>): Usage => ({ totalTokens: 0, ...over }) as Usage;
 
-  it("falls back to absolute usage with no previous baseline", () => {
+  it("delegates to formatUsage (usage is per-response, not cumulative)", () => {
     expect(formatUsageDelta(usage({ totalTokens: 120 }))).toBe("120 tokens");
-  });
-  it("shows only the new tokens and cost vs the previous turn", () => {
-    const prev = usage({ totalTokens: 10_000, input: 1000, cacheRead: 9000, cost: { total: 0.1 } as Usage["cost"] });
-    const cur = usage({
-      totalTokens: 12_000,
-      input: 1100,
-      cacheRead: 10_800,
-      cost: { total: 0.14 } as Usage["cost"],
-    });
-    // delta tokens = 2000; cache base = (1100-1000)+(10800-9000)=100+1800=1900 → 1800/1900 ≈ 95%; cost 0.04
-    expect(formatUsageDelta(cur, prev)).toBe("2,000 tokens · 95% cache · $0.04");
-  });
-  it("omits the cache chip when the delta has no cacheable base", () => {
-    const prev = usage({ totalTokens: 10_000, input: 0, cacheRead: 0 });
-    const cur = usage({ totalTokens: 12_000, input: 0, cacheRead: 0 });
-    expect(formatUsageDelta(cur, prev)).toBe("2,000 tokens");
+    expect(formatUsageDelta(usage({ totalTokens: 50, cacheRead: 50 }), usage({ totalTokens: 100 }))).toBe("50 tokens · 100% cache");
   });
 });
 

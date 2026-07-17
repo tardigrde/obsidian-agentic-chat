@@ -43,7 +43,7 @@ function resolveEdit(content: string, edit: ExactEdit): ResolvedEdit {
 
   const start = content.indexOf(edit.oldText);
   if (start !== -1) {
-    if (content.indexOf(edit.oldText, start + edit.oldText.length) !== -1) {
+    if (content.indexOf(edit.oldText, start + 1) !== -1) {
       throw new Error(`oldText must match exactly once: ${preview(edit.oldText)}`);
     }
     return { ...edit, start, end: start + edit.oldText.length };
@@ -156,7 +156,7 @@ const PLACEHOLDER_PATTERN = /\[(?:EMAIL|PHONE|REDACTED)\]/gi;
 /** Wildcard each placeholder becomes when matching oldText against real content. */
 const PLACEHOLDER_WILDCARDS: Record<string, string> = {
   "[email]": String.raw`[A-Za-z0-9._%'+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`,
-  "[phone]": String.raw`[0-9 +()\-]{4,}`,
+  "[phone]": String.raw`(?=[0-9 +()\-]{4,})(?=.*[0-9])[0-9 +()\-]+`,
   "[redacted]": String.raw`[^\]\[]{0,120}`,
 };
 
@@ -196,15 +196,19 @@ function placeholderMatchRegex(oldText: string): PlaceholderRegex | null {
  * `["[email]"]`, and groups `["alice@ex.com"]`, returns `"mailto:alice@ex.com"`.
  */
 function substitutePlaceholders(text: string, placeholders: string[], groups: string[]): string {
-  let result = text;
+  const replacements = new Map<string, string[]>();
   for (let i = 0; i < placeholders.length; i++) {
     const placeholder = placeholders[i];
     const real = groups[i];
     if (real !== undefined) {
-      result = result.replace(new RegExp(escapeRegExp(placeholder), "gi"), real);
+      const values = replacements.get(placeholder) ?? [];
+      values.push(real);
+      replacements.set(placeholder, values);
     }
   }
-  return result;
+  return text.replace(PLACEHOLDER_PATTERN, (match) => {
+    return replacements.get(match.toLowerCase())?.shift() ?? match;
+  });
 }
 
 function escapeRegExp(value: string): string {

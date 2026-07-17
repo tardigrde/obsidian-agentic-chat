@@ -8,7 +8,6 @@ import {
   formatCallBody,
   formatElapsed,
   formatUsage,
-  formatUsageDelta,
   HIDE_RESULT_TOOLS,
   PATH_TOOLS,
   TOOL_LABELS,
@@ -362,12 +361,11 @@ export class AssistantBubble {
   }
 
   /**
-   * Render the per-answer usage footer. Pass the previous assistant turn's usage
-   * to show only the new tokens for this answer (a delta); omit it for the first
-   * answer / after a rewind reset so the absolute usage shows instead.
+   * Render the per-answer usage footer with the turn's own provider-reported
+   * token count, cache ratio, and cost.
    */
-  showUsage(usage: Usage, previous?: Usage): void {
-    this.footerEl.setText(previous ? formatUsageDelta(usage, previous) : formatUsage(usage));
+  showUsage(usage: Usage): void {
+    this.footerEl.setText(formatUsage(usage));
   }
 
   /** Render the inline action row (copy, and optionally retry). Safe to call once. */
