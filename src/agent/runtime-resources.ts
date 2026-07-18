@@ -10,6 +10,7 @@ import { createDocumentTools } from "../tools/document-tools";
 import { createExternalWorkspaceTools, type ExternalInspectCache } from "../tools/external-workspace";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
+import { createReadSkillTool } from "../tools/read-skill-tool";
 import { createMcpFetcher } from "../mcp/fetcher";
 import { createMcpToolsWithDiagnostics, type McpServerDiagnostic } from "../mcp/tools";
 import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
@@ -117,6 +118,7 @@ export function buildAgentParentTools(options: {
   tools.push(...createWebTools(options.settings.web, options.webFetch, options.artifactStore));
   tools.push(...createToolArtifactTools(options.artifactStore));
   tools.push(...options.resources.mcpTools);
+  tools.push(createReadSkillTool(options.resources.skills));
   if (options.subagentTool) tools.push(options.subagentTool);
   const budgeted = applyToolBudget({
     tools,

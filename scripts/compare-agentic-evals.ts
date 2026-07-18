@@ -425,7 +425,10 @@ function markdownTable(headers: Array<string | number>, rows: Array<Array<string
 }
 
 function markdownCell(value: string | number): string {
-  return String(value).replace(/\|/g, "\\|").replace(/\n/g, " ");
+  return String(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, " ");
 }
 
 function signed(value: number): string {

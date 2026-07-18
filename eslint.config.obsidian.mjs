@@ -37,11 +37,13 @@ export default defineConfig([
     },
     rules: {
       // The plugin targets minAppVersion 1.11.4 (below 1.13.0), where display()
-      // is still the required settings-tab API. Migrating to getSettingDefinitions
-      // is gated on raising minAppVersion to 1.13.0 — tracked separately.
+      // is still required for older clients. Keep no-deprecated off until
+      // minAppVersion is raised and display() is fully removed.
       "@typescript-eslint/no-deprecated": "off",
-      "obsidianmd/settings-tab/no-deprecated-display": "off",
-      "obsidianmd/settings-tab/prefer-setting-definitions": "off",
+      // Setting definitions are now implemented; let the rule warn if they go missing.
+      "obsidianmd/settings-tab/prefer-setting-definitions": "warn",
+      // no-deprecated-display only fires when minAppVersion >= 1.13.0, so safe to warn.
+      "obsidianmd/settings-tab/no-deprecated-display": "warn",
       // Product UI copy intentionally keeps brand/API casing such as OpenRouter,
       // MCP, OAuth, and URL examples; sentence-case cleanup is a separate UX pass.
       "obsidianmd/ui/sentence-case": "off",

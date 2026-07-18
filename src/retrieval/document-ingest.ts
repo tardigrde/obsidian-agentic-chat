@@ -530,48 +530,27 @@ function findEndOfCentralDirectory(bytes: Uint8Array): number {
 }
 
 function htmlToText(input: string): string {
-  return normalizeDocumentText(
-    decodeXmlEntities(
-      input
-        .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
-        .replace(/<[^>]+>/g, " "),
-    ),
-  );
+  const doc = new DOMParser().parseFromString(input, "text/html");
+  return normalizeDocumentText(doc.body.textContent ?? "");
 }
 
 function extractTextTags(xml: string): string {
-  const values = [...xml.matchAll(/<[^:>]*:?t\b[^>]*>([\s\S]*?)<\/[^:>]*:?t>/g)].map((match) => decodeXmlEntities(stripTags(match[1])));
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const values: string[] = [];
+  for (const el of Array.from(doc.getElementsByTagName("*"))) {
+    if (el.localName === "t") values.push(el.textContent ?? "");
+  }
   if (values.length > 0) return normalizeDocumentText(values.join("\n"));
-  return normalizeDocumentText(decodeXmlEntities(stripTags(xml)));
+  return normalizeDocumentText(xml.replace(/<[^>]+>/g, " "));
 }
 
 function extractSpreadsheetSheetText(xml: string): string {
-  const values = [
-    ...xml.matchAll(/<[^:>]*:?t\b[^>]*>([\s\S]*?)<\/[^:>]*:?t>/g),
-    ...xml.matchAll(/<[^:>]*:?v\b[^>]*>([\s\S]*?)<\/[^:>]*:?v>/g),
-  ].map((match) => decodeXmlEntities(stripTags(match[1])));
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const values: string[] = [];
+  for (const el of Array.from(doc.getElementsByTagName("*"))) {
+    if (el.localName === "t" || el.localName === "v") values.push(el.textContent ?? "");
+  }
   return normalizeDocumentText(values.join("\n"));
-}
-
-function stripTags(input: string): string {
-  return input.replace(/<[^>]+>/g, " ");
-}
-
-function decodeXmlEntities(input: string): string {
-  const named: Record<string, string> = {
-    amp: "&",
-    lt: "<",
-    gt: ">",
-    quot: "\"",
-    apos: "'",
-    nbsp: " ",
-  };
-  return input.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (_match, entity: string) => {
-    if (entity.startsWith("#x")) return String.fromCodePoint(Number.parseInt(entity.slice(2), 16));
-    if (entity.startsWith("#")) return String.fromCodePoint(Number.parseInt(entity.slice(1), 10));
-    return named[entity] ?? `&${entity};`;
-  });
 }
 
 function normalizeDocumentText(input: string): string {
