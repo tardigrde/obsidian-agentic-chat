@@ -201,6 +201,7 @@ describe("assistant markdown rendering helpers", () => {
     Object.defineProperty(globalThis, "activeDocument", {
       configurable: true,
       value: {
+        createDiv: () => el("div"),
         createElement: (tagName: string) => el(tagName),
         importNode: <T>(node: T) => node,
       },
@@ -229,6 +230,7 @@ describe("assistant markdown rendering helpers", () => {
     Object.defineProperty(globalThis, "activeDocument", {
       configurable: true,
       value: {
+        createDiv: () => el("div"),
         createElement: (tagName: string) => el(tagName),
         importNode: <T>(node: T) => node,
       },
@@ -272,6 +274,7 @@ describe("assistant markdown rendering helpers", () => {
     Object.defineProperty(globalThis, "activeDocument", {
       configurable: true,
       value: {
+        createDiv: () => el("div"),
         createElement: (tagName: string) => el(tagName),
         importNode: <T>(node: T) => node,
       },

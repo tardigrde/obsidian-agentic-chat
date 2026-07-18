@@ -1,4 +1,4 @@
-import { App, Notice, Platform, PluginSettingTab, Setting, type ButtonComponent } from "obsidian";
+import { App, Notice, Platform, PluginSettingTab, Setting, type ButtonComponent, type SettingDefinitionItem } from "obsidian";
 import { normalizeFolderPath } from "./vault/path";
 import type AgenticChatPlugin from "./main";
 import {
@@ -194,6 +194,10 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
   private async save(): Promise<void> {
     await this.plugin.saveSettings();
+  }
+
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [];
   }
 
   /** Settings grouped into virtual tabs so the page isn't one long scroll. */

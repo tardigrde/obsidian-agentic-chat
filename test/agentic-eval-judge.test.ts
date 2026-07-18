@@ -103,7 +103,7 @@ describe("agentic eval judge", () => {
     expect(packet.conversation.assistantResponses).toEqual(["Done."]);
     expect(packet.generatedNotes[0]).toEqual(expect.objectContaining({ path: "Generated/Oracle.md" }));
     expect(packet.trace.approvalDenials).toEqual([{ key: "write: no", count: 1 }]);
-    expect(packet.promptContext.defaultSystemPromptExcerpt).toContain("treat it as a denied action");
+    expect(packet.promptContext.defaultSystemPromptExcerpt).toContain("read_skill");
     expect(packet.promptContext.externalWorkspaceOverlay).toContain("Avoid repeating the same external_inspect");
     expect(packet.promptContext.externalWorkspaceOverlay).toContain("one exact repeat is enough");
     expect(packet.promptContext.relevantToolDescriptions.external_inspect).toContain("reuse prior output");

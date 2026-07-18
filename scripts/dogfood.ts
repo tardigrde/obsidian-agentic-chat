@@ -166,6 +166,7 @@ async function openVault(): Promise<void> {
   }
 
   try {
+    // codeql[js/shell-command-injection-from-environment] -- vaultPath is URI-encoded; spawn uses array args.
     const child = spawn(command.bin, command.args, {
       detached: true,
       stdio: "ignore",
