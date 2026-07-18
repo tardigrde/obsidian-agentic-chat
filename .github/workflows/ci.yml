@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if [ "${{ github.actor }}" == "dependabot[bot]" ]; then
+          if [[ "${{ github.head_ref }}" == dependabot/* ]]; then
             npm install
           else
             npm ci
