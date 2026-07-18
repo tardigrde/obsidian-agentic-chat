@@ -5,6 +5,7 @@ import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core"
 import { collectArtifactIdsFromMessages } from "../artifacts/artifact-references";
 import type { ActionAuditEvent } from "../agent/action-audit-log";
 import type { FileCheckpoint } from "../agent/file-checkpoints";
+import type { UndoEntry } from "../agent/undo";
 import type { PlanTrackerState } from "../agent/plan-tracker";
 import { normalizeFolderPath } from "../vault/path";
 import {
@@ -67,6 +68,10 @@ export class ObsidianSessionManager {
   private sessionFile: string | null = null;
   private entries: SessionEntry[] = [];
   private leafId: string | null = null;
+  /** Paths whose first full-body checkpoint has already been written this
+   * session. Subsequent checkpoints for the same path are slimmed to
+   * `beforeSummary` to keep the JSONL bounded for long editing sessions. */
+  private fullCheckpointPaths = new Set<string>();
 
   constructor(
     adapter: DataAdapter,
@@ -101,6 +106,7 @@ export class ObsidianSessionManager {
     this.sessionFile = `${this.sessionDir}/${fileTimestamp}_${sessionId}.jsonl`;
     this.entries = [createSessionHeader(sessionId, this.cwd, timestamp, this.currentScope())];
     this.leafId = null;
+    this.fullCheckpointPaths = new Set();
     await this.adapter.write(this.sessionFile, serializeSessionEntries(this.entries));
     await this.appendModelChange(defaults.provider, defaults.modelId);
     await this.appendThinkingLevelChange(defaults.thinkingLevel);
@@ -126,6 +132,7 @@ export class ObsidianSessionManager {
     this.sessionFile = sessionPath;
     this.entries = entries;
     this.leafId = getLastLeafId(entries);
+    this.fullCheckpointPaths = new Set();
     return this.getActiveSessionInfo();
   }
 
@@ -229,7 +236,7 @@ export class ObsidianSessionManager {
       id: createEntryId(this.entries),
       parentId: this.leafId,
       timestamp: checkpoint.createdAt,
-      checkpoint,
+      checkpoint: slimCheckpoint(checkpoint, this.fullCheckpointPaths),
     });
   }
 
@@ -500,4 +507,35 @@ function extractMessageText(message: AgentMessage): string {
     )
     .map((block) => block.text)
     .join("\n");
+}
+
+/**
+ * Drop the full `before` body from every entry after the first checkpoint for a
+ * given path, keeping only `beforeSummary` (hash + length). The in-memory
+ * `FileCheckpoint` is left untouched so `/undo` still has the full body; only
+ * the JSONL serialization is slimmed. The cast on the slimmed entry is local:
+ * the on-disk type has an optional `before` for the same reason (slimmed log
+ * entries omit the body) but the in-memory `UndoEntry` keeps it required.
+ */
+function slimCheckpoint(
+  checkpoint: FileCheckpoint,
+  fullCheckpointPaths: Set<string>,
+): FileCheckpoint {
+  const slimmedEntries = [...checkpoint.entries];
+  let mutated = false;
+  for (let i = 0; i < slimmedEntries.length; i++) {
+    const entry = slimmedEntries[i];
+    if (!entry) continue;
+    if (entry.kind === "rename" || entry.kind === "delete_folder") continue;
+    if (fullCheckpointPaths.has(entry.path) && entry.before !== undefined && entry.before !== null) {
+      const { before: _before, ...rest } = entry;
+      void _before;
+      slimmedEntries[i] = rest as UndoEntry;
+      mutated = true;
+      continue;
+    }
+    fullCheckpointPaths.add(entry.path);
+  }
+  if (!mutated) return checkpoint;
+  return { ...checkpoint, entries: slimmedEntries };
 }

@@ -136,6 +136,18 @@
   font-size: var(--font-ui-small);
 }
 
+/* A multi-line error collapses so only its first line shows until expanded. */
+.agentic-chat-error-details > summary {
+  cursor: pointer;
+}
+
+.agentic-chat-error-details > pre {
+  margin: var(--size-2-2) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--font-smallest);
+}
+
 /* --- Info / slash-command output --- */
 
 .agentic-chat-info {
@@ -334,14 +346,53 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   padding: var(--size-2-2) var(--size-4-2);
-  background-color: var(--background-primary);
+  background-color: var(--background-secondary);
   font-size: var(--font-ui-small);
 }
 
+/* Header row: chevron toggle + status icon + title (+ elapsed time). Only the
+   chevron toggles the body, so a clickable path in the title navigates without
+   collapsing the step. */
 .agentic-chat-step-header {
   display: flex;
   align-items: center;
   gap: var(--size-2-2);
+}
+
+.agentic-chat-step-toggle {
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+/* Keep the chevron column when there's nothing to expand, so titles align. */
+.agentic-chat-step-toggle.is-hidden {
+  visibility: hidden;
+}
+
+.agentic-chat-step-toggle:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.agentic-chat-step-chevron {
+  display: flex;
+  transition: transform 0.12s ease;
+}
+
+.agentic-chat-step-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.agentic-chat-step.is-open .agentic-chat-step-chevron {
+  transform: rotate(90deg);
+}
+
+.agentic-chat-step:not(.is-open) .agentic-chat-step-body {
+  display: none;
 }
 
 .agentic-chat-step-icon {
@@ -377,29 +428,82 @@
   font-size: var(--font-smallest);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.agentic-chat-step-args {
-  display: block;
-  margin-top: var(--size-2-1);
-  color: var(--text-muted);
-  font-size: var(--font-smallest);
-  overflow-wrap: anywhere;
-}
-
-.agentic-chat-step-result {
+/* Body holds the readable Tool-call + Result sections. */
+.agentic-chat-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
   margin-top: var(--size-2-2);
 }
 
-.agentic-chat-step-result > summary {
-  cursor: pointer;
+.agentic-chat-step-section-label {
+  font-size: var(--font-smallest);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  margin-bottom: var(--size-2-1);
+}
+
+.agentic-chat-step-call-args {
   color: var(--text-muted);
+  font-size: var(--font-smallest);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Clickable vault path inside a tool-call section (read/write/edit target). */
+.agentic-chat-step-path-link {
+  color: var(--text-accent);
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.agentic-chat-step-path-link:hover {
+  text-decoration: underline;
+}
+
+/* Compact oldText(−)/newText(+) diff for an edit step (the change itself, no file context). */
+.agentic-chat-step-diff {
+  margin: var(--size-2-2) 0 0;
+  padding: var(--size-2-2);
+  background-color: var(--background-primary);
+  border-radius: var(--radius-s);
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: var(--font-smallest);
+}
+
+.agentic-chat-diff-line {
+  display: flex;
+  gap: var(--size-2-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agentic-chat-diff-line.is-del {
+  color: var(--color-red);
+}
+
+.agentic-chat-diff-line.is-add {
+  color: var(--color-green);
+}
+
+.agentic-chat-diff-marker {
+  opacity: 0.7;
+  user-select: none;
+}
+
+.agentic-chat-diff-elide {
+  color: var(--text-faint);
 }
 
 .agentic-chat-step-result > pre {
-  margin: var(--size-2-2) 0 0;
+  margin: 0;
   padding: var(--size-2-3);
-  background-color: var(--background-secondary);
+  background-color: var(--background-primary);
   border-radius: var(--radius-s);
   white-space: pre-wrap;
   max-height: 240px;
@@ -889,11 +993,15 @@
   gap: var(--size-2-3);
 }
 
+/* Folder affordance, styled as a pill to match the model/project/effort pills
+   in the same toolbar (uniform border, radius, padding). */
 .agentic-chat-attach {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--size-2-1) var(--size-2-2);
+  padding: 2px var(--size-2-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
   background-color: transparent;
   box-shadow: none;
   color: var(--text-muted);
@@ -905,8 +1013,9 @@
   background-color: var(--background-modifier-hover);
 }
 
-/* Accent the folder button while one or more working dirs are granted. */
+/* Accent the folder pill while one or more working dirs are granted. */
 .agentic-chat-attach.has-scope {
+  border-color: var(--interactive-accent);
   color: var(--text-accent);
 }
 
@@ -1069,6 +1178,25 @@
 
 .agentic-chat-usage:empty {
   display: none;
+}
+
+/* Cache-hit color tone on the bottom usage line: red <50%, amber <75%, green ≥75%. */
+.agentic-chat-cache.is-low {
+  color: var(--color-red);
+}
+
+.agentic-chat-cache.is-mid {
+  color: var(--color-yellow);
+}
+
+.agentic-chat-cache.is-high {
+  color: var(--color-green);
+}
+
+/* The next-cost projection is opaque; hint it is hoverable + tooltip explains it. */
+.agentic-chat-next-cost {
+  cursor: help;
+  border-bottom: 1px dotted var(--text-faint);
 }
 
 /* --- Related notes panel --- */

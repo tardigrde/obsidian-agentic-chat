@@ -1,6 +1,6 @@
 import { type App, TFile, TFolder, MarkdownView, parseYaml } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { applyExactEdits } from "../vault/edit";
+import { applyExactEditsPartial, type EditApplyResult } from "../vault/edit";
 import { getParentPath, normalizeFolderPath, normalizeVaultPath } from "../vault/path";
 import type { IgnoreMatcher } from "../vault/ignore";
 import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../vault/search";
@@ -257,14 +257,63 @@ function createEditTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
     ...vaultToolDefinition("edit"),
     execute: async (_id, params) => {
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
-      await app.vault.process(file, (content) => applyExactEdits(content, params.edits));
-      memo?.invalidate(path);
-      return textResult(`Applied ${params.edits.length} edit${params.edits.length === 1 ? "" : "s"} to ${path}.`, {
-        path,
-        editCount: params.edits.length,
+      // Partial-apply: edits that match are applied, failures are reported per-edit
+      // so one bad oldText no longer sinks the whole batch. The result is captured
+      // from the atomic process() transform, which gives us the live file content.
+      let result: EditApplyResult | undefined;
+      await app.vault.process(file, (content) => {
+        result = applyExactEditsPartial(content, params.edits);
+        return result.content;
       });
+      if (!result) throw new Error("Edit could not be applied.");
+      memo?.invalidate(path);
+      return editToolMessage(path, params.edits.length, result);
     },
   };
+}
+
+/** Build the edit tool's result text from a partial-apply outcome. The
+ * `applied`/`failed` arrays in `details` carry the post-placeholder-substitution
+ * oldText/newText (and start/end for applied) so the audit captures what
+ * actually changed — not just an "Applied N edits" placeholder. PII in the
+ * strings is redacted downstream by `redactAuditResult`. */
+function editToolMessage(path: string, total: number, result: EditApplyResult): AgentToolResult<Record<string, unknown>> {
+  const applied = result.applied.length;
+  const failed = result.failed;
+  const details = {
+    path,
+    editCount: applied,
+    failedCount: failed.length,
+    applied: result.applied.map((edit) => ({
+      oldText: edit.oldText,
+      newText: edit.newText,
+      start: edit.start,
+      end: edit.end,
+    })),
+    failed: result.failed.map((failure) => ({
+      oldText: failure.edit.oldText,
+      newText: failure.edit.newText,
+      error: failure.error,
+    })),
+  };
+  if (applied === 0) {
+    // Nothing applied — surface every failure so the model can correct them.
+    return textResult(
+      `Applied 0 of ${total} edits to ${path}; none matched. Failures:\n${formatEditFailures(failed)}`,
+      details,
+    );
+  }
+  if (failed.length === 0) {
+    return textResult(`Applied ${applied} edit${applied === 1 ? "" : "s"} to ${path}.`, details);
+  }
+  return textResult(
+    `Applied ${applied} of ${total} edits to ${path}. ${failed.length} not applied:\n${formatEditFailures(failed)}`,
+    details,
+  );
+}
+
+function formatEditFailures(failed: { error: string }[]): string {
+  return failed.map((failure) => `- ${failure.error}`).join("\n");
 }
 
 function createLsTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LsParameters> {

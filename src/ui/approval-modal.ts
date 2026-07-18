@@ -7,7 +7,7 @@ import { normalizeVaultPath } from "../vault/path";
 
 /** Cap diff lines rendered in the modal so a huge change can't bloat the dialog. */
 const MAX_DIFF_DISPLAY_LINES = 400;
-const DEFAULT_DIFF_CONTEXT_LINES = 10;
+const DEFAULT_DIFF_CONTEXT_LINES = 5;
 
 export interface ApprovalChoice {
   approved: boolean;

@@ -206,7 +206,7 @@ export function buildActionAuditEventFromAgentEvent(
       timestamp,
       toolCallId: event.toolCallId,
       toolName: event.toolName,
-      result: redactAuditValue(event.result),
+      result: redactAuditResult(event.result),
       isError: event.isError,
       touchedFiles: [],
       egress: egressForTool(event.toolName, undefined),
@@ -272,6 +272,17 @@ export function redactAuditValue(value: unknown): unknown {
     maxObjectKeys: MAX_AUDIT_OBJECT_KEYS,
     maxDepth: MAX_AUDIT_DEPTH,
     summarizeContent: true,
+    redactHighEntropy: true,
+  });
+}
+
+export function redactAuditResult(value: unknown): unknown {
+  return redactValue(value, {
+    maxLength: MAX_AUDIT_STRING_LENGTH,
+    maxArrayLength: MAX_AUDIT_ARRAY_LENGTH,
+    maxObjectKeys: MAX_AUDIT_OBJECT_KEYS,
+    maxDepth: MAX_AUDIT_DEPTH,
+    summarizeContent: false,
     redactHighEntropy: true,
   });
 }

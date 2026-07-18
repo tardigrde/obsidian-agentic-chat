@@ -99,6 +99,11 @@ function makeApp(spec: VaultSpec): App {
       getAbstractFileByPath: (path: string) => files.get(path) ?? folders.get(path || "/") ?? null,
       getRoot: () => root,
       cachedRead: async (file: TFile) => contents.get(file.path) ?? "",
+      process: async (file: TFile, fn: (content: string) => string) => {
+        const next = fn(contents.get(file.path) ?? "");
+        contents.set(file.path, next);
+        return next;
+      },
     },
     metadataCache: {
       resolvedLinks,
@@ -657,5 +662,75 @@ describe("delete", () => {
     await expect(run(del, { path: "Full" })).rejects.toThrow(/Folder not empty/);
     expect(app.vault.getAbstractFileByPath("Full")).toBeInstanceOf(TFolder);
     expect(app.vault.getAbstractFileByPath("Full/Note.md")).toBeInstanceOf(TFile);
+  });
+});
+
+describe("edit — audit details", () => {
+  function editTool(app: App) {
+    return createVaultTools(app, undefined).find((t) => t.name === "edit")!;
+  }
+
+  it("captures each applied edit's oldText/newText/start/end in result.details", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "alpha beta gamma\n" } } });
+
+    const { details } = await run(editTool(app), {
+      path: "Note.md",
+      edits: [{ oldText: "beta", newText: "BETA" }],
+    });
+
+    expect(details).toMatchObject({
+      path: "Note.md",
+      editCount: 1,
+      failedCount: 0,
+    });
+    const applied = details.applied as Array<Record<string, unknown>>;
+    expect(applied).toHaveLength(1);
+    expect(applied[0]).toMatchObject({ oldText: "beta", newText: "BETA" });
+    expect(typeof applied[0]?.start).toBe("number");
+    expect(typeof applied[0]?.end).toBe("number");
+    expect(applied[0]?.start).toBe(6);
+    expect(applied[0]?.end).toBe(10);
+    expect(details.failed).toEqual([]);
+  });
+
+  it("captures per-edit failures (and the edit that did apply) in a mixed batch", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "alpha beta gamma\n" } } });
+
+    const { text, details } = await run(editTool(app), {
+      path: "Note.md",
+      edits: [
+        { oldText: "alpha", newText: "ALPHA" },
+        { oldText: "delta", newText: "DELTA" },
+      ],
+    });
+
+    expect(text).toMatch(/Applied 1 of 2/);
+    const applied = details.applied as Array<Record<string, unknown>>;
+    const failed = details.failed as Array<Record<string, unknown>>;
+    expect(applied).toHaveLength(1);
+    expect(applied[0]).toMatchObject({ oldText: "alpha", newText: "ALPHA" });
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toMatchObject({ oldText: "delta", newText: "DELTA" });
+    expect(typeof failed[0]?.error).toBe("string");
+    expect(failed[0]?.error).toMatch(/oldText was not found/);
+    expect(details.editCount).toBe(1);
+    expect(details.failedCount).toBe(1);
+  });
+
+  it("captures every failure with no applied edits", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "alpha beta gamma\n" } } });
+
+    const { text, details } = await run(editTool(app), {
+      path: "Note.md",
+      edits: [{ oldText: "delta", newText: "DELTA" }],
+    });
+
+    expect(text).toMatch(/Applied 0 of 1/);
+    const failed = details.failed as Array<Record<string, unknown>>;
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toMatchObject({ oldText: "delta", newText: "DELTA" });
+    expect(details.applied).toEqual([]);
+    expect(details.editCount).toBe(0);
+    expect(details.failedCount).toBe(1);
   });
 });

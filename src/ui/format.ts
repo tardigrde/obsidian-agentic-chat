@@ -48,6 +48,91 @@ export function describeCall(name: string, rawArgs: string): string {
   return detail ? `${label}: ${detail}` : label;
 }
 
+/**
+ * Render tool args as readable `key: value` lines (not raw JSON), each value
+ * collapsed to a single line and truncated. Returns "" for empty/`{}` args so
+ * the caller can omit the Tool-call section entirely. Long values (e.g. an
+ * edit's oldText/newText) are capped so the section stays a few lines.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function formatArgsReadable(rawArgs: string, maxValueChars = 160): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawArgs);
+  } catch {
+    return "";
+  }
+  if (!isPlainObject(parsed)) return "";
+  const entries = Object.entries(parsed).filter(([, value]) => value !== undefined && value !== null && value !== "");
+  if (entries.length === 0) return "";
+  return entries
+    .map(([key, value]) => {
+      const raw = typeof value === "string" ? value : safeJson(value);
+      const collapsed = raw.replace(/\s+/g, " ").trim();
+      const shown = collapsed.length > maxValueChars ? `${collapsed.slice(0, maxValueChars)}…` : collapsed;
+      return `${key}: ${shown}`;
+    })
+    .join("\n");
+}
+
+/**
+ * Per-tool readable body for the "Tool call" section. Specialises a few tools so
+ * the body stays short and useful instead of dumping every arg:
+ *  - edit → path + edit count (never the raw oldText/newText, which truncates badly)
+ *  - read / get_active_note → path + optional line range
+ * Other tools fall back to {@link formatArgsReadable} (all key: value lines).
+ */
+export function formatCallBody(name: string, rawArgs: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawArgs);
+  } catch {
+    return "";
+  }
+  if (!isPlainObject(parsed)) return "";
+  if (name === "edit") {
+    const parts: string[] = [];
+    if (typeof parsed.path === "string" && parsed.path) parts.push(`path: ${parsed.path}`);
+    const count = Array.isArray(parsed.edits) ? parsed.edits.length : 0;
+    if (count > 0) parts.push(`${count} edit${count === 1 ? "" : "s"}`);
+    return parts.join("\n");
+  }
+  if (name === "read" || name === "get_active_note") {
+    const parts: string[] = [];
+    if (typeof parsed.path === "string" && parsed.path) parts.push(`path: ${parsed.path}`);
+    const offset = typeof parsed.offset === "number" ? parsed.offset : undefined;
+    const limit = typeof parsed.limit === "number" ? parsed.limit : undefined;
+    if (offset !== undefined || limit !== undefined) {
+      const end = offset !== undefined && limit !== undefined ? offset + limit : "?";
+      parts.push(`lines: ${offset ?? 0}–${end}`);
+    }
+    return parts.join("\n");
+  }
+  return formatArgsReadable(rawArgs);
+}
+
+/** Tools whose success result is just file contents already on disk / in context — hide it. */
+export const HIDE_RESULT_TOOLS = new Set(["read", "get_active_note", "write"]);
+
+/** Tools whose primary arg is a vault path — render it as a clickable link in the step title. */
+export const PATH_TOOLS = new Set(["read", "write", "edit", "delete", "rename", "get_active_note", "ls"]);
+
+/** Extract the vault path (path, else newPath) from tool args, or "" if none/invalid. */
+export function callPath(rawArgs: string): string {
+  try {
+    const parsed: unknown = JSON.parse(rawArgs);
+    if (!isPlainObject(parsed)) return "";
+    if (typeof parsed.path === "string") return parsed.path;
+    if (typeof parsed.newPath === "string") return parsed.newPath;
+  } catch {
+    // malformed args — no path
+  }
+  return "";
+}
+
 /** Stringify tool args, falling back to `{}` on circular/unserialisable values. */
 export function safeJson(value: unknown): string {
   try {
@@ -107,7 +192,25 @@ export function formatUsage(usage: Usage): string {
   const cost = total > 0 ? ` · ${formatCost(total)}` : "";
   const hit = cacheHitPercent(usage);
   const cache = hit === null ? "" : ` · ${hit}% cache`;
-  return `${usage.totalTokens} tokens${cache}${cost}`;
+  return `${formatTokenInteger(usage.totalTokens)} tokens${cache}${cost}`;
+}
+
+/**
+ * Full integer token count with thousands separators (e.g. `3,327,418`). Used for
+ * the cumulative footer so the raw number stops reads as anxiety-inducing noise.
+ */
+export function formatTokenInteger(value: number): string {
+  const safe = Number.isFinite(value) && value > 0 ? value : 0;
+  return Math.round(safe).toLocaleString("en-US");
+}
+
+/**
+ * Format a single assistant turn's usage directly. Each message carries its own
+ * per-response usage from the provider; there is no cumulative baseline to
+ * subtract.
+ */
+export function formatUsageDelta(current: Usage, _previous?: Usage): string {
+  return formatUsage(current);
 }
 
 /**

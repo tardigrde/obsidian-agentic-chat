@@ -6,6 +6,7 @@ import {
   buildCheckpointAuditEvent,
   diffSummaryForContent,
   filterActionAuditEvents,
+  redactAuditResult,
   redactAuditValue,
   type ActionAuditEvent,
 } from "../src/agent/action-audit-log";
@@ -155,5 +156,26 @@ describe("AgentActionAuditRecorder", () => {
       beforeCharLength: before.length,
       afterCharLength: after.length,
     });
+  });
+
+  it("B5: redactAuditResult preserves tool result content instead of summarizing it", () => {
+    const result = {
+      content: [
+        { type: "text", text: "Applied 2 edits to Notes/A.md." },
+        { type: "text", text: "Edit 1: replaced old text" },
+      ],
+      ok: true,
+    };
+    const redacted = redactAuditResult(result) as { content: unknown[]; ok: boolean };
+    expect(redacted.ok).toBe(true);
+    expect(redacted.content).toHaveLength(2);
+    expect(redacted.content[0]).toEqual({ type: "text", text: "Applied 2 edits to Notes/A.md." });
+  });
+
+  it("B5: redactAuditValue still summarizes content (old behavior for args)", () => {
+    const args = { path: "Notes/A.md", content: "some body text" };
+    const redacted = redactAuditValue(args) as { path: string; content: string };
+    expect(redacted.path).toBe("Notes/A.md");
+    expect(redacted.content).toBe("[content 14 chars]");
   });
 });

@@ -1,5 +1,6 @@
 import {
   ItemView,
+  Menu,
   Notice,
   Platform,
   TFile,
@@ -8,7 +9,7 @@ import {
   setIcon,
 } from "obsidian";
 import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import type { ImageContent, Usage } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
 import type { AskUserRequest } from "../tools/ask-user-tool";
@@ -49,8 +50,8 @@ import { parseDroppedVaultPath } from "./drag-drop";
 import { parseInlineInstruction, parseStreamingSteering, stripContextPreamble } from "./composer-input";
 import {
   buildModelPillState,
+  buildUsageChromeParts,
   folderButtonAriaLabel,
-  formatChromeUsageText,
   modelProviderLabel,
   toolBudgetNotificationKey,
 } from "./chrome-state";
@@ -185,6 +186,10 @@ export class ChatView extends ItemView {
   private lastSentPrompt: string | null = null;
   private lastSentDisplay: string | null = null;
   private locallyRenderedUserMessages = 0;
+  // Last error message rendered inside an assistant bubble. Used to suppress the
+  // duplicate standalone error panel that showServiceError() would otherwise
+  // emit for the same turn-level error (e.g. "Request was aborted").
+  private lastBubbleError: string | undefined;
   private editingEl: HTMLElement | null = null;
   private readonly promptEdit = new PromptEditState();
   // Semantic indexing can outlive the command that starts it; keep one
@@ -729,7 +734,11 @@ export class ChatView extends ItemView {
       attr: { "aria-label": "Folders: working directory or attach listing" },
     });
     setIcon(this.folderButtonEl, "folder");
-    this.folderButtonEl.addEventListener("click", () => this.createWorkingDirectoryWorkflow().showFolderMenu());
+    this.folderButtonEl.addEventListener("click", (event: MouseEvent) => {
+      const menu = new Menu();
+      this.createWorkingDirectoryWorkflow().attachFolderMenuItems(menu);
+      menu.showAtMouseEvent(event);
+    });
 
     const toolbarRight = toolbar.createDiv({ cls: "agentic-chat-toolbar-right" });
     // Single Safe ↔ YOLO permission toggle (the ask/plan/agent dropdown is retired).
@@ -1031,13 +1040,30 @@ export class ChatView extends ItemView {
     const fraction = this.service.getContextFraction();
     // Pre-send estimate of what the next request will cost (priced models only).
     const estimate = this.service.estimateNextCost();
-    this.usageEl.setText(formatChromeUsageText(usage, estimate?.usd));
+    this.renderUsageChrome(usage, estimate?.usd);
     this.syncContextBar(fraction);
 
     const error = this.service.getError();
     this.setRunning(this.service.isStreaming());
     if (error && !this.service.isStreaming()) this.statusEl.setText("");
     this.checkUsageNotifications();
+  }
+
+  /**
+   * Render the bottom usage line as styled spans — tokens · cache% (colored by
+   * hit ratio) · cost · next ~$X (hover tooltip) — instead of one opaque string,
+   * so the cache chip and the next-cost projection can carry their own styling.
+   */
+  private renderUsageChrome(usage: Usage, nextEstimateUsd?: number): void {
+    const el = this.usageEl;
+    el.empty();
+    const parts = buildUsageChromeParts(usage, nextEstimateUsd);
+    parts.forEach((part, index) => {
+      if (index > 0) el.createSpan({ text: " · " });
+      const span = el.createSpan({ text: part.text });
+      if (part.cls) for (const cls of part.cls.split(" ")) if (cls) span.addClass(cls);
+      if (part.title) span.setAttr("title", part.title);
+    });
   }
 
   /** Accent the folder button while working dirs are granted, and surface the count. */
@@ -1056,6 +1082,9 @@ export class ChatView extends ItemView {
     this.projectPillEl.createSpan({ cls: "agentic-chat-project-name", text: projectLabel(project) });
     this.projectPillEl.toggleClass("is-active", !!project);
     this.projectPillEl.setAttr("title", project ? describeProject(project) : "Vault-wide workspace");
+    // Hide the project pill entirely until a project exists — the default
+    // "Vault-wide" label is noise when projects aren't in use.
+    this.projectPillEl.toggle(!!project);
   }
 
   /** Glanceable color-coded context-window fill bar; hidden until usage is known. */
@@ -2120,7 +2149,9 @@ export class ChatView extends ItemView {
 
   private showServiceError(): void {
     const error = this.service.getError();
-    if (error && !this.service.isStreaming()) this.renderErrorMessage(error);
+    // Skip the standalone error panel when this same error was already rendered
+    // inside the just-finalized assistant bubble (avoids the duplicate block).
+    if (error && !this.service.isStreaming() && error !== this.lastBubbleError) this.renderErrorMessage(error);
   }
 
   /** Render an error block in the transcript (not sent to the model). */
@@ -2429,6 +2460,7 @@ export class ChatView extends ItemView {
   private renderTranscript(messages: AgentMessage[]): void {
     this.messagesEl.empty();
     this.bubble = null;
+    this.lastBubbleError = undefined;
     const toolResults = collectToolResults(messages);
     const lastAssistant = lastIndex(messages, (message) => message.role === "assistant");
     let rendered = 0;
@@ -2470,8 +2502,15 @@ export class ChatView extends ItemView {
       void bubble.finalizeText(text, this.app, this);
       bubble.showActions({ canRetry: isLast });
     }
+    const errorMessage = (message as { errorMessage?: string }).errorMessage;
+    if (errorMessage) {
+      bubble.showError(errorMessage);
+      if (isLast) this.lastBubbleError = errorMessage;
+    }
     const usage = assistantUsage(message);
-    if (usage) bubble.showUsage(usage);
+    if (usage) {
+      bubble.showUsage(usage);
+    }
   }
 
   private renderUserMessage(
@@ -2523,6 +2562,7 @@ export class ChatView extends ItemView {
       case "message_start":
         if (event.message.role === "assistant") {
           this.bubble = this.newBubble();
+          this.lastBubbleError = undefined;
           this.statusEl.setText("Responding…");
         }
         break;
@@ -2574,15 +2614,21 @@ export class ChatView extends ItemView {
       bubble.showActions({ canRetry: true });
     }
     const errorMessage = (message as { errorMessage?: string }).errorMessage;
-    if (errorMessage) bubble.showError(errorMessage);
+    if (errorMessage) {
+      bubble.showError(errorMessage);
+      this.lastBubbleError = errorMessage;
+    }
     const usage = assistantUsage(message);
-    if (usage) bubble.showUsage(usage);
+    if (usage) {
+      bubble.showUsage(usage);
+    }
   }
 
   private newBubble(): AssistantBubble {
     return new AssistantBubble(this.messagesEl, {
       onRetry: () => void this.retryLast(),
       onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
+      onOpenNote: (path) => void this.app.workspace.openLinkText(path, "", false),
       onContentChange: () => this.scrollToBottom(),
     });
   }

@@ -2,12 +2,39 @@ import { type App, TFile, TFolder } from "obsidian";
 import { getParentPath, normalizeVaultPath } from "../vault/path";
 export { UNDOABLE_TOOLS } from "../tools/tool-contracts";
 
-/** A reversible record of one mutating vault tool call. */
+/** Compact fingerprint of a file body for log slimming. The hash is FNV-1a —
+ * not cryptographic, just stable + fast + sync — so it's safe to import in
+ * mobile and runs in the edit path without blocking. */
+export interface FileBodySummary {
+  hash: string;
+  length: number;
+}
+
+/** A reversible record of one mutating vault tool call. `beforeSummary` is
+ * the slim shadow persisted to the session log; the in-memory `before` body
+ * is always set (used by `/undo`). The session-manager drops `before` from
+ * non-first checkpoints before writing to JSONL. */
 export type UndoEntry =
-  | { kind: "content"; path: string; before: string | null } // write/edit; null = file didn't exist
+  | { kind: "content"; path: string; before: string | null; beforeSummary?: FileBodySummary }
   | { kind: "rename"; from: string; to: string }
-  | { kind: "delete"; path: string; before: string }
+  | { kind: "delete"; path: string; before: string; beforeSummary?: FileBodySummary }
   | { kind: "delete_folder"; path: string };
+
+/** FNV-1a 32-bit hash, base-36. Used as a stable fingerprint for file
+ * bodies; collision risk is acceptable for log-slimming diff detection. */
+function fnv1a(body: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < body.length; i++) {
+    hash ^= body.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/** Compute a body summary (hash + length) for log storage. */
+export function summarizeFileBody(body: string): FileBodySummary {
+  return { hash: fnv1a(body), length: body.length };
+}
 
 /**
  * Capture the inverse of a mutating tool call *before* it runs. Best-effort:
@@ -25,13 +52,22 @@ export async function captureUndo(app: App, toolName: string, args: unknown): Pr
     if (!path) return null;
     const entry = app.vault.getAbstractFileByPath(path);
     const content = entry instanceof TFile ? await app.vault.cachedRead(entry) : null;
-    if (toolName === "write") return { kind: "content", path, before: content };
+    if (toolName === "write") {
+      return {
+        kind: "content",
+        path,
+        before: content,
+        beforeSummary: content === null ? undefined : summarizeFileBody(content),
+      };
+    }
     // edit/frontmatter need the file to have existed; nothing to restore otherwise.
     if ((toolName === "edit" || toolName === "set_properties") && content === null) return null;
-    if (toolName === "edit") return { kind: "content", path, before: content };
-    if (toolName === "set_properties") return { kind: "content", path, before: content };
+    if (toolName === "edit" || toolName === "set_properties") {
+      // Narrowed by the early-return above; `?? ""` is just a type-guard, never triggers.
+      return { kind: "content", path, before: content, beforeSummary: summarizeFileBody(content ?? "") };
+    }
     if (toolName === "delete") {
-      if (content !== null) return { kind: "delete", path, before: content };
+      if (content !== null) return { kind: "delete", path, before: content, beforeSummary: summarizeFileBody(content) };
       if (entry instanceof TFolder && entry.children.length === 0) return { kind: "delete_folder", path };
       return null;
     }

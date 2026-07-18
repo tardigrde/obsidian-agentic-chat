@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { Usage } from "@earendil-works/pi-ai";
 import {
   cacheHitPercent,
+  callPath,
   describeCall,
+  formatArgsReadable,
+  formatCallBody,
   formatCost,
   formatDetailedUsage,
   formatElapsed,
   formatUsage,
+  formatUsageDelta,
   safeJson,
   shortModelLabel,
   truncateText,
@@ -56,6 +60,60 @@ describe("describeCall", () => {
   });
 });
 
+describe("formatArgsReadable", () => {
+  it("returns empty for empty or {} args so the caller omits the section", () => {
+    expect(formatArgsReadable("{}")).toBe("");
+    expect(formatArgsReadable('{"a":null,"b":""}')).toBe("");
+  });
+  it("returns empty for malformed JSON", () => {
+    expect(formatArgsReadable("not json")).toBe("");
+  });
+  it("returns empty for non-object JSON (null, array, string, number)", () => {
+    expect(formatArgsReadable("null")).toBe("");
+    expect(formatArgsReadable("[]")).toBe("");
+    expect(formatArgsReadable('"value"')).toBe("");
+    expect(formatArgsReadable("42")).toBe("");
+  });
+  it("renders each arg as a readable key: value line", () => {
+    expect(formatArgsReadable('{"path":"Notes/a.md","limit":10}')).toBe("path: Notes/a.md\nlimit: 10");
+  });
+  it("stringifies non-string values compactly", () => {
+    expect(formatArgsReadable('{"kinds":["a","b"]}')).toBe('kinds: ["a","b"]');
+  });
+  it("collapses whitespace and truncates long values to one line", () => {
+    const long = "x".repeat(300);
+    const out = formatArgsReadable(`{"oldText":"${long}"}`);
+    expect(out).toHaveLength("oldText: ".length + 160 + 1); // 160-char cap + ellipsis
+    expect(out.endsWith("…")).toBe(true);
+    expect(out.includes("\n")).toBe(false);
+  });
+});
+
+describe("formatCallBody", () => {
+  it("renders an edit as path + edit count, never the raw oldText/newText", () => {
+    const args = JSON.stringify({
+      path: "Notes/a.md",
+      edits: [{ oldText: "x".repeat(500), newText: "y".repeat(500) }, { oldText: "a", newText: "b" }],
+    });
+    expect(formatCallBody("edit", args)).toBe("path: Notes/a.md\n2 edits");
+  });
+  it("renders a read as path + line range when present", () => {
+    expect(formatCallBody("read", '{"path":"Notes/a.md","offset":10,"limit":5}')).toBe("path: Notes/a.md\nlines: 10–15");
+    expect(formatCallBody("read", '{"path":"Notes/a.md"}')).toBe("path: Notes/a.md");
+  });
+  it("falls back to readable key:value lines for other tools", () => {
+    expect(formatCallBody("search", '{"query":"TODO"}')).toBe("query: TODO");
+  });
+  it("tolerates malformed JSON", () => {
+    expect(formatCallBody("edit", "not json")).toBe("");
+  });
+  it("returns empty for non-object JSON", () => {
+    expect(formatCallBody("edit", "null")).toBe("");
+    expect(formatCallBody("edit", "[]")).toBe("");
+    expect(formatCallBody("edit", "42")).toBe("");
+  });
+});
+
 describe("safeJson", () => {
   it("serialises plain values", () => {
     expect(safeJson({ a: 1 })).toBe('{"a":1}');
@@ -83,6 +141,23 @@ describe("formatCost", () => {
   it("collapses negative or non-finite input to $0.00", () => {
     expect(formatCost(-0.005)).toBe("$0.00");
     expect(formatCost(Number.NaN)).toBe("$0.00");
+  });
+});
+
+describe("callPath", () => {
+  it("extracts path from tool args", () => {
+    expect(callPath('{"path":"Notes/a.md"}')).toBe("Notes/a.md");
+    expect(callPath('{"newPath":"Notes/b.md"}')).toBe("Notes/b.md");
+  });
+  it("returns empty for missing or invalid args", () => {
+    expect(callPath("{}")).toBe("");
+    expect(callPath("not json")).toBe("");
+  });
+  it("returns empty for non-object JSON", () => {
+    expect(callPath("null")).toBe("");
+    expect(callPath("[]")).toBe("");
+    expect(callPath('"string"')).toBe("");
+    expect(callPath("42")).toBe("");
   });
 });
 
@@ -131,6 +206,9 @@ describe("formatUsage", () => {
   it("shows tokens only when there is no cost and no cache", () => {
     expect(formatUsage(usage({ totalTokens: 120 }))).toBe("120 tokens");
   });
+  it("group-thousands the token total so it stops reading as noise", () => {
+    expect(formatUsage(usage({ totalTokens: 3327418 }))).toBe("3,327,418 tokens");
+  });
   it("appends cost when present", () => {
     expect(formatUsage(usage({ totalTokens: 120, cost: { total: 0.5 } as Usage["cost"] }))).toBe(
       "120 tokens · $0.50",
@@ -141,7 +219,16 @@ describe("formatUsage", () => {
       formatUsage(
         usage({ totalTokens: 1000, input: 100, cacheRead: 900, cost: { total: 0.02 } as Usage["cost"] }),
       ),
-    ).toBe("1000 tokens · 90% cache · $0.02");
+    ).toBe("1,000 tokens · 90% cache · $0.02");
+  });
+});
+
+describe("formatUsageDelta", () => {
+  const usage = (over: Partial<Usage>): Usage => ({ totalTokens: 0, ...over }) as Usage;
+
+  it("delegates to formatUsage (usage is per-response, not cumulative)", () => {
+    expect(formatUsageDelta(usage({ totalTokens: 120 }))).toBe("120 tokens");
+    expect(formatUsageDelta(usage({ totalTokens: 50, cacheRead: 50 }), usage({ totalTokens: 100 }))).toBe("50 tokens · 100% cache");
   });
 });
 
