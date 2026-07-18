@@ -79,7 +79,7 @@
     "wdio-obsidian-service": "^3.1.1"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.79.1",
+    "@earendil-works/pi-agent-core": "0.80.10",
     "@earendil-works/pi-ai": "0.79.1",
     "typebox": "1.1.38"
   },
