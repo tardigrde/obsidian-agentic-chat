@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -18,7 +21,12 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ "${{ github.actor }}" == "dependabot[bot]" ]; then
+            npm install
+          else
+            npm ci
+          fi
 
       - name: Typecheck
         run: npm run typecheck
