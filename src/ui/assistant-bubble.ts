@@ -528,8 +528,7 @@ function createActiveDiv(): HTMLDivElement {
     return documentWithHelpers.createDiv();
   }
   const doc = activeDocument;
-  const createElement = doc.createElement.bind(doc);
-  return createElement("div");
+  return doc.createDiv();
 }
 
 let mermaidId = 0;

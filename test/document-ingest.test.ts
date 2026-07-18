@@ -18,6 +18,52 @@ import {
 import { SourceArtifactDeduper } from "../src/retrieval/source-artifacts";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
+// ponytail: minimal DOMParser polyfill for Node test environment
+class FakeDOMParser {
+  parseFromString(markup: string, type: string) {
+    if (type === "text/html") {
+      let text = markup;
+      for (const tag of ["script", "style"]) {
+        let idx = 0;
+        while (true) {
+          const start = text.toLowerCase().indexOf(`<${tag}`, idx);
+          if (start === -1) break;
+          const end = text.toLowerCase().indexOf(`</${tag}>`, start);
+          if (end === -1) break;
+          text = text.slice(0, start) + " " + text.slice(end + `</${tag}>`.length);
+          idx = start + 1;
+        }
+      }
+      text = text.replace(/<[^>]+>/g, " ");
+      return { body: { textContent: decodeEntities(text) } };
+    }
+    const elements: Array<{ localName: string; textContent: string }> = [];
+    const regex = /<([a-zA-Z0-9_:]+)\b[^>]*>([\s\S]*?)<\/\1>/g;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(markup)) !== null) {
+      const tag = match[1];
+      const localName = tag.includes(":") ? tag.split(":")[1] : tag;
+      const inner = match[2].replace(/<[^>]+>/g, " ");
+      elements.push({ localName, textContent: decodeEntities(inner) });
+      regex.lastIndex = match.index + 1;
+    }
+    return {
+      getElementsByTagName: (_tag: string) => elements,
+    };
+  }
+}
+
+function decodeEntities(input: string): string {
+  return input
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
+(globalThis as unknown as { DOMParser: typeof FakeDOMParser }).DOMParser = FakeDOMParser;
+
 const FIXED_IMPORTED_AT = "2026-06-27T08:00:00.000Z";
 
 function memoryArtifactStore(): { store: ToolArtifactStoreLike; writes: ToolArtifactWriteInput[] } {
