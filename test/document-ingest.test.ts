@@ -54,12 +54,8 @@ class FakeDOMParser {
 }
 
 function decodeEntities(input: string): string {
-  return input
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'");
+  const entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+  return input.replace(/&(?:amp|lt|gt|quot|apos);/g, (m) => entities[m.slice(1, -1)] ?? m);
 }
 
 (globalThis as unknown as { DOMParser: typeof FakeDOMParser }).DOMParser = FakeDOMParser;
