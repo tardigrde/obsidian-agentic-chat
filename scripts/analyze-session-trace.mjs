@@ -686,8 +686,9 @@ function markdownTable(headers, rows) {
 
 function markdownCell(value) {
   return String(value ?? "")
+    .replace(/\\/g, "\\\\")
     .replace(/\|/g, "\\|")
-    .replace(/\n/g, " ");
+    .replace(/\r?\n/g, " ");
 }
 
 function signed(value) {
