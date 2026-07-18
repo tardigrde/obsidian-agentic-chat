@@ -311,7 +311,7 @@ describe("AgentToolCallController", () => {
       {
         toolCallId: "call-1",
         toolName: "write",
-        undo: { kind: "content", path: "Notes/a.md", before: "before" },
+        undo: expect.objectContaining({ kind: "content", path: "Notes/a.md", before: "before" }),
       },
     ]);
     expect(fileCheckpoints).toEqual([
@@ -319,7 +319,9 @@ describe("AgentToolCallController", () => {
         id: "checkpoint-call-1",
         toolCallId: "call-1",
         toolName: "write",
-        entries: [{ kind: "content", path: "Notes/a.md", before: "before" }],
+        entries: [
+          expect.objectContaining({ kind: "content", path: "Notes/a.md", before: "before" }),
+        ],
       }),
     ]);
   });

@@ -57,7 +57,8 @@ describe("captureUndo + applyUndo", () => {
   it("reverts a write over an existing file", async () => {
     const { app, files } = makeApp({ "n.md": "old" });
     const entry = await captureUndo(app, "write", { path: "n.md", content: "new" });
-    expect(entry).toEqual({ kind: "content", path: "n.md", before: "old" });
+    expect(entry).toMatchObject({ kind: "content", path: "n.md", before: "old" });
+    expect(entry?.kind === "content" && entry.beforeSummary?.length).toBe("old".length);
     files.set("n.md", "new"); // simulate the write running
     await applyUndo(app, entry!);
     expect(files.get("n.md")).toBe("old");
@@ -82,7 +83,8 @@ describe("captureUndo + applyUndo", () => {
   it("restores a deleted file", async () => {
     const { app, files } = makeApp({ "n.md": "body" });
     const entry = await captureUndo(app, "delete", { path: "n.md" });
-    expect(entry).toEqual({ kind: "delete", path: "n.md", before: "body" });
+    expect(entry).toMatchObject({ kind: "delete", path: "n.md", before: "body" });
+    expect(entry?.kind === "delete" && entry.beforeSummary?.length).toBe("body".length);
     files.delete("n.md"); // simulate delete
     await applyUndo(app, entry!);
     expect(files.get("n.md")).toBe("body");

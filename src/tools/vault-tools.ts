@@ -272,23 +272,43 @@ function createEditTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
   };
 }
 
-/** Build the edit tool's result text from a partial-apply outcome. */
+/** Build the edit tool's result text from a partial-apply outcome. The
+ * `applied`/`failed` arrays in `details` carry the post-placeholder-substitution
+ * oldText/newText (and start/end for applied) so the audit captures what
+ * actually changed — not just an "Applied N edits" placeholder. PII in the
+ * strings is redacted downstream by `redactAuditResult`. */
 function editToolMessage(path: string, total: number, result: EditApplyResult): AgentToolResult<Record<string, unknown>> {
   const applied = result.applied.length;
   const failed = result.failed;
+  const details = {
+    path,
+    editCount: applied,
+    failedCount: failed.length,
+    applied: result.applied.map((edit) => ({
+      oldText: edit.oldText,
+      newText: edit.newText,
+      start: edit.start,
+      end: edit.end,
+    })),
+    failed: result.failed.map((failure) => ({
+      oldText: failure.edit.oldText,
+      newText: failure.edit.newText,
+      error: failure.error,
+    })),
+  };
   if (applied === 0) {
     // Nothing applied — surface every failure so the model can correct them.
     return textResult(
       `Applied 0 of ${total} edits to ${path}; none matched. Failures:\n${formatEditFailures(failed)}`,
-      { path, editCount: 0, failed: failed.length },
+      details,
     );
   }
   if (failed.length === 0) {
-    return textResult(`Applied ${applied} edit${applied === 1 ? "" : "s"} to ${path}.`, { path, editCount: applied });
+    return textResult(`Applied ${applied} edit${applied === 1 ? "" : "s"} to ${path}.`, details);
   }
   return textResult(
     `Applied ${applied} of ${total} edits to ${path}. ${failed.length} not applied:\n${formatEditFailures(failed)}`,
-    { path, editCount: applied, failed: failed.length },
+    details,
   );
 }
 

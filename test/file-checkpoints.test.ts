@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TFile, TFolder, type App } from "obsidian";
-import { captureUndo } from "../src/agent/undo";
+import { captureUndo, summarizeFileBody } from "../src/agent/undo";
 import {
   createFileCheckpoint,
   createFileCheckpointFromUndo,
@@ -8,7 +8,7 @@ import {
   restoreFileCheckpoint,
 } from "../src/agent/file-checkpoints";
 import { ObsidianSessionManager } from "../src/session/session-manager";
-import { parseSessionEntries } from "../src/session/jsonl";
+import { parseSessionEntries, type SessionEntry } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 const DEFAULTS = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" as const };
@@ -196,6 +196,103 @@ describe("file checkpoints", () => {
     expect(entries.filter((entry) => entry.type === "file_checkpoint")).toEqual([
       expect.objectContaining({ type: "file_checkpoint", checkpoint }),
     ]);
+  });
+
+  it("keeps the full body on the first checkpoint per path, then drops it for subsequent ones", async () => {
+    const adapter = new MemoryAdapter();
+    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const info = await manager.createSession(DEFAULTS);
+
+    const first = createFileCheckpointFromUndo({
+      toolCallId: "call-1",
+      toolName: "write",
+      undo: { kind: "content", path: "Notes/A.md", before: "first body", beforeSummary: summarizeFileBody("first body") },
+      now: () => FIXED_NOW,
+    });
+    const second = createFileCheckpointFromUndo({
+      toolCallId: "call-2",
+      toolName: "write",
+      undo: { kind: "content", path: "Notes/A.md", before: "second body", beforeSummary: summarizeFileBody("second body") },
+      now: () => FIXED_NOW,
+    });
+    const otherFile = createFileCheckpointFromUndo({
+      toolCallId: "call-3",
+      toolName: "write",
+      undo: { kind: "content", path: "Notes/B.md", before: "B body", beforeSummary: summarizeFileBody("B body") },
+      now: () => FIXED_NOW,
+    });
+
+    await manager.appendFileCheckpoint(first);
+    await manager.appendFileCheckpoint(second);
+    await manager.appendFileCheckpoint(otherFile);
+
+    const entries = parseSessionEntries(adapter.files.get(info.path) ?? "")
+      .filter((entry): entry is Extract<SessionEntry, { type: "file_checkpoint" }> => entry.type === "file_checkpoint")
+      .map((entry) => entry.checkpoint);
+
+    expect(entries).toHaveLength(3);
+
+    // First per path: full body preserved for /undo reconstruction.
+    const firstEntry = entries[0]?.entries[0] as { kind: string; before?: string; beforeSummary?: { length: number } };
+    expect(firstEntry.kind).toBe("content");
+    expect(firstEntry.before).toBe("first body");
+    expect(firstEntry.beforeSummary?.length).toBe("first body".length);
+
+    // Second per same path: body dropped, summary kept for audit visibility.
+    const secondEntry = entries[1]?.entries[0] as { kind: string; before?: string; beforeSummary?: { length: number } };
+    expect(secondEntry.kind).toBe("content");
+    expect(secondEntry.before).toBeUndefined();
+    expect(secondEntry.beforeSummary?.length).toBe("second body".length);
+
+    // Different path: first checkpoint is full again.
+    const otherEntry = entries[2]?.entries[0] as { kind: string; before?: string; beforeSummary?: { length: number } };
+    expect(otherEntry.kind).toBe("content");
+    expect(otherEntry.before).toBe("B body");
+
+    // The original in-memory checkpoints (which the controller keeps for /undo)
+    // are untouched: every entry still carries its full body.
+    expect(first.entries[0]).toMatchObject({ before: "first body" });
+    expect(second.entries[0]).toMatchObject({ before: "second body" });
+  });
+
+  it("slims the entry body but leaves rename and delete_folder entries intact", async () => {
+    const adapter = new MemoryAdapter();
+    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const info = await manager.createSession(DEFAULTS);
+
+    // First checkpoint for the path: full body.
+    await manager.appendFileCheckpoint(
+      createFileCheckpoint({
+        toolCallId: "call-1",
+        toolName: "batch",
+        entries: [{ kind: "content", path: "Notes/A.md", before: "old a", beforeSummary: summarizeFileBody("old a") }],
+        now: () => FIXED_NOW,
+      }),
+    );
+
+    // Second: multi-entry — content is slimmed, rename + delete_folder pass through.
+    await manager.appendFileCheckpoint(
+      createFileCheckpoint({
+        toolCallId: "call-2",
+        toolName: "batch",
+        entries: [
+          { kind: "rename", from: "Notes/Old.md", to: "Notes/New.md" },
+          { kind: "content", path: "Notes/A.md", before: "newer a", beforeSummary: summarizeFileBody("newer a") },
+          { kind: "delete_folder", path: "Notes/Empty" },
+        ],
+        now: () => FIXED_NOW,
+      }),
+    );
+
+    const second = parseSessionEntries(adapter.files.get(info.path) ?? "")
+      .filter((entry): entry is Extract<SessionEntry, { type: "file_checkpoint" }> => entry.type === "file_checkpoint")
+      .map((entry) => entry.checkpoint)[1];
+    expect(second?.entries).toHaveLength(3);
+    expect(second?.entries[0]).toEqual({ kind: "rename", from: "Notes/Old.md", to: "Notes/New.md" });
+    const slimContent = second?.entries[1] as { before?: string; beforeSummary?: { length: number } };
+    expect(slimContent.before).toBeUndefined();
+    expect(slimContent.beforeSummary?.length).toBe("newer a".length);
+    expect(second?.entries[2]).toEqual({ kind: "delete_folder", path: "Notes/Empty" });
   });
 
   it("reports partial restore failures without hiding successful restores", async () => {
