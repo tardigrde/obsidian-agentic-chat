@@ -1,8 +1,16 @@
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import { formatSourceReference } from "./citations";
 import { formatFrontmatterScalar, parseFrontmatterFields } from "./frontmatter";
-import { legacyStableTextHash, stableTextHash } from "./source-hash";
-import { findExistingSourceArtifact } from "./source-artifact-dedupe";
+import { stableTextHash } from "./source-hash";
+import {
+  chunkSourceText,
+  formatSourceArtifactChunkBody,
+  legacyTrimmedTextHash,
+  normalizeSourcePath,
+  normalizeSourceText,
+  resolveSourceArtifact,
+  type SourceArtifactCacheValue,
+  type SourceTextChunk,
+} from "./source-ingest";
 
 export const PDF_IMPORT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 export const PDF_IMPORT_SOURCE_TOOL = "agentic-chat.pdf-import";
@@ -18,13 +26,7 @@ export interface PdfExtractionResult {
   warnings: string[];
 }
 
-export interface PdfTextChunk {
-  index: number;
-  anchor: string;
-  start: number;
-  end: number;
-  text: string;
-}
+export type PdfTextChunk = SourceTextChunk;
 
 export interface PdfImportProvenance {
   sourcePath: string;
@@ -56,17 +58,8 @@ export interface PdfImportWriteResult {
   extraction: PdfExtractionResult;
 }
 
-interface CachedPdfImport {
-  metadata: ToolArtifactMetadata;
-  provenance: PdfImportProvenance;
-  artifactCitation: string;
-  text: string;
-  chunks: PdfTextChunk[];
-  extraction: PdfExtractionResult;
-}
+type CachedPdfImport = SourceArtifactCacheValue<PdfImportProvenance, PdfExtractionResult>;
 
-const DEFAULT_MAX_CHUNK_CHARS = 8_000;
-const MIN_CHUNK_CHARS = 40;
 const PDF_HEADER_SEARCH_CHARS = 1024;
 
 export function extractPdfText(input: PdfInput): PdfExtractionResult {
@@ -78,7 +71,7 @@ export function extractPdfText(input: PdfInput): PdfExtractionResult {
   const warnings: string[] = [];
   const literalStrings = extractLiteralStrings(raw).map(decodePdfLiteralString);
   const hexStrings = extractHexStrings(raw).map(decodePdfHexString);
-  const text = normalizePdfText([...literalStrings, ...hexStrings].filter(isUsefulPdfText).join("\n"));
+  const text = normalizeSourceText([...literalStrings, ...hexStrings].filter(isUsefulPdfText).join("\n"));
   const pageCount = countPdfPages(raw);
 
   if (!text) {
@@ -95,58 +88,7 @@ export function extractPdfText(input: PdfInput): PdfExtractionResult {
 }
 
 export function chunkPdfText(text: string, options: { maxChars?: number } = {}): PdfTextChunk[] {
-  const normalized = normalizePdfText(text);
-  if (!normalized) return [];
-  const maxChars = normalizeMaxChunkChars(options.maxChars);
-  const chunks: Array<Omit<PdfTextChunk, "index" | "anchor">> = [];
-  let cursor = 0;
-  let current = "";
-  let currentStart = 0;
-  let currentEnd = 0;
-
-  for (const paragraph of normalized.split(/\n{2,}/)) {
-    const paragraphStart = normalized.indexOf(paragraph, cursor);
-    const safeParagraphStart = paragraphStart === -1 ? cursor : paragraphStart;
-    cursor = safeParagraphStart + paragraph.length;
-
-    if (paragraph.length > maxChars) {
-      flushCurrent();
-      for (let offset = 0; offset < paragraph.length; offset += maxChars) {
-        const segment = paragraph.slice(offset, offset + maxChars).trim();
-        if (!segment) continue;
-        chunks.push({
-          start: safeParagraphStart + offset,
-          end: safeParagraphStart + offset + segment.length,
-          text: segment,
-        });
-      }
-      continue;
-    }
-
-    const separator = current ? "\n\n" : "";
-    if (current && current.length + separator.length + paragraph.length > maxChars) {
-      flushCurrent();
-    }
-    if (!current) currentStart = safeParagraphStart;
-    current = current ? `${current}\n\n${paragraph}` : paragraph;
-    currentEnd = safeParagraphStart + paragraph.length;
-  }
-
-  flushCurrent();
-
-  return chunks.map((chunk, index) => ({
-    ...chunk,
-    index: index + 1,
-    anchor: `pdf-chunk-${index + 1}`,
-  }));
-
-  function flushCurrent(): void {
-    const text = current.trim();
-    if (!text) return;
-    chunks.push({ start: currentStart, end: currentEnd, text });
-    current = "";
-    currentStart = currentEnd;
-  }
+  return chunkSourceText(text, { maxChars: options.maxChars, anchorPrefix: "pdf" });
 }
 
 export function formatPdfImportArtifact(provenance: PdfImportProvenance, chunks: readonly PdfTextChunk[]): string {
@@ -173,12 +115,7 @@ export function formatPdfImportArtifact(provenance: PdfImportProvenance, chunks:
     "## Extracted PDF text",
     "",
   ].filter((line): line is string => line !== null);
-  const body = chunks
-    .map((chunk) => {
-      const range = `characters ${chunk.start}-${Math.max(chunk.start, chunk.end - 1)}`;
-      return [`### Chunk ${chunk.index}`, `<!-- ${chunk.anchor} ${range} -->`, "", chunk.text, "", `^${chunk.anchor}`].join("\n");
-    })
-    .join("\n\n");
+  const body = formatSourceArtifactChunkBody(chunks);
   return `${header.join("\n")}${body || "(no extractable text)"}\n`;
 }
 
@@ -234,52 +171,22 @@ export class PdfArtifactDeduper {
     const extraction = extractPdfText(input.data);
     const chunks = chunkPdfText(extraction.text, { maxChars: input.maxChunkChars });
     const provenance = await createPdfImportProvenance(input, extraction, chunks);
-    const cached = this.byKey.get(provenance.dedupKey);
-    if (cached) return { ...cached, duplicate: true };
-
-    const existing = await findExistingSourceArtifact(store, {
-      dedupKey: provenance.dedupKey,
-      textHash: provenance.textHash,
+    return resolveSourceArtifact({
+      store,
+      cache: this.byKey,
+      provenance,
+      chunks,
+      extraction,
+      citationLabel: input.title || input.sourcePath,
       legacyDedupKeys: [legacyPdfDedupKey(input, extraction)],
       legacyTextHashes: [legacyPdfTextHash(extraction.text)],
-    });
-    if (existing) {
-      const artifactCitation = formatSourceReference({
-        type: "artifact",
-        artifactId: existing.artifact.metadata.id,
-        label: input.title || input.sourcePath,
-      });
-      const persistedProvenance = parsePdfImportProvenance(existing.artifact.text) ?? provenance;
-      const value = {
-        metadata: existing.artifact.metadata,
-        provenance: persistedProvenance,
-        artifactCitation,
-        text: existing.artifact.text,
-        chunks,
-        extraction,
-      };
-      this.byKey.set(provenance.dedupKey, value);
-      return { ...value, duplicate: true };
-    }
-
-    const text = formatPdfImportArtifact(provenance, chunks);
-    const metadata = await store.writeArtifact({
-      label: pdfArtifactLabel(input.title, input.sourcePath),
+      artifactLabel: pdfArtifactLabel(input.title, input.sourcePath),
       sourceToolName: PDF_IMPORT_SOURCE_TOOL,
       contentType: PDF_IMPORT_CONTENT_TYPE,
-      dedupKey: provenance.dedupKey,
       sourceKind: "pdf",
-      sourceTextHash: provenance.textHash,
-      text,
+      formatArtifactText: formatPdfImportArtifact,
+      parseProvenance: parsePdfImportProvenance,
     });
-    const artifactCitation = formatSourceReference({
-      type: "artifact",
-      artifactId: metadata.id,
-      label: input.title || input.sourcePath,
-    });
-    const value = { metadata, provenance, artifactCitation, text, chunks, extraction };
-    this.byKey.set(provenance.dedupKey, value);
-    return { ...value, duplicate: false };
   }
 }
 
@@ -308,7 +215,7 @@ function legacyPdfDedupKey(input: PdfImportWriteInput, extraction: PdfExtraction
 }
 
 function legacyPdfTextHash(text: string): string {
-  return legacyStableTextHash(text.trim());
+  return legacyTrimmedTextHash(text);
 }
 
 function extractLiteralStrings(input: string): string[] {
@@ -411,18 +318,8 @@ function countPdfPages(input: string): number | null {
 }
 
 function isUsefulPdfText(value: string): boolean {
-  const normalized = normalizePdfText(value);
+  const normalized = normalizeSourceText(value);
   return normalized.length >= 2 && /[A-Za-z0-9]/.test(normalized);
-}
-
-function normalizePdfText(input: string): string {
-  return input
-    .split(String.fromCharCode(0))
-    .join("")
-    .replace(/[ \t\f\v\r]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
 
 function pdfInputToBinaryString(input: PdfInput): string {
@@ -434,15 +331,6 @@ function pdfInputToBinaryString(input: PdfInput): string {
     output += String.fromCharCode(...chunk);
   }
   return output;
-}
-
-function normalizeMaxChunkChars(value: number | undefined): number {
-  if (value === undefined || !Number.isFinite(value)) return DEFAULT_MAX_CHUNK_CHARS;
-  return Math.max(MIN_CHUNK_CHARS, Math.trunc(value));
-}
-
-function normalizeSourcePath(value: string): string {
-  return value.trim().replace(/\\/g, "/").replace(/\/+/g, "/").toLowerCase();
 }
 
 function pdfArtifactLabel(title: string | undefined, sourcePath: string): string {

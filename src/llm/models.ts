@@ -223,6 +223,24 @@ export async function listOpenRouterModels(
   if (options?.denyDataCollection) query.set("data_collection", "deny");
   const suffix = query.toString();
   const url = `${baseUrl}/models${suffix ? `?${suffix}` : ""}`;
+  return fetchModelListCatalog(url, apiKey, options);
+}
+
+interface ModelListFetchOptions {
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+}
+
+/**
+ * Fetch and normalize an OpenAI-style `/models` catalog. Uses the injected
+ * `fetchImpl` (with AbortController-based timeout) when provided, otherwise
+ * Obsidian's `requestUrl` wrapped in `withTimeout`.
+ */
+async function fetchModelListCatalog(
+  url: string,
+  apiKey: string,
+  options?: ModelListFetchOptions,
+): Promise<OpenRouterModelInfo[]> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_LIST_TIMEOUT_MS;
   let status: number;
   let payload: {
@@ -288,56 +306,7 @@ export async function listOpenAICompatibleModels(
   },
 ): Promise<OpenRouterModelInfo[]> {
   const url = openAICompatibleModelsUrl(options.baseUrl);
-  const timeoutMs = options.timeoutMs ?? DEFAULT_LIST_TIMEOUT_MS;
-  let status: number;
-  let payload:
-    | {
-        data?: Array<ModelListItem>;
-      }
-    | null;
-  try {
-    if (options.fetchImpl) {
-      const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const response = await options.fetchImpl(url, {
-          headers: { Authorization: `Bearer ${apiKey}` },
-          signal: controller.signal,
-        });
-        status = response.status;
-        const responsePayload: unknown = await response.json();
-        payload = isModelListPayload(responsePayload) ? responsePayload : null;
-      } finally {
-        window.clearTimeout(timer);
-      }
-    } else {
-      const response = await withTimeout(
-        requestUrl({
-          url,
-          headers: { Authorization: `Bearer ${apiKey}` },
-          throw: false,
-        }),
-        timeoutMs,
-      );
-      status = response.status;
-      payload = response.json as typeof payload;
-    }
-  } catch (error) {
-    if (error instanceof RequestTimeoutError || isAbortError(error)) {
-      throw new ModelListError("Timed out while listing models.", 408);
-    }
-    throw new ModelListError(`Failed to list models: ${(error as Error).message}`);
-  }
-  if (status < 200 || status >= 300) {
-    throw new ModelListError(`Failed to list models (status ${status}).`, status);
-  }
-  return (payload?.data ?? []).map((model) => ({
-    id: model.id,
-    name: model.name ?? model.id,
-    contextLength: model.context_length ?? null,
-    supportsTools: (model.supported_parameters ?? []).includes("tools"),
-    supportsReasoning: modelSupportsReasoning(model),
-  }));
+  return fetchModelListCatalog(url, apiKey, options);
 }
 
 function openAICompatibleModelsUrl(baseUrl: string): string {

@@ -4,6 +4,7 @@ import type { ExternalWorkspaceSettings } from "../settings";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { formatSourceReference } from "../retrieval/citations";
 import { parseIgnorePatterns } from "../vault/ignore";
+import { compileGitignorePatternSource } from "../vault/glob-pattern";
 import {
   formatTextSlice,
   readSizeGuardrail,
@@ -744,7 +745,7 @@ function parseIgnoreRuleLines(lines: string[], basePath: string): IgnoreRule[] {
       line = line.slice(1).trim();
     }
     if (!line) continue;
-    const source = compileGitignorePattern(line);
+    const source = compileGitignorePatternSource(line);
     if (!source) continue;
     rules.push({
       basePath,
@@ -754,47 +755,6 @@ function parseIgnoreRuleLines(lines: string[], basePath: string): IgnoreRule[] {
     });
   }
   return rules;
-}
-
-function compileGitignorePattern(pattern: string): string | null {
-  let body = pattern.trim();
-  if (!body) return null;
-  if (body.endsWith("/")) body = body.slice(0, -1);
-  let anchored = false;
-  if (body.startsWith("/")) {
-    anchored = true;
-    body = body.slice(1);
-  }
-  if (!body) return null;
-  const rootScoped = anchored || body.includes("/");
-  const prefix = rootScoped ? "^" : "(?:^|.*/)";
-  return `${prefix}${globToRegExpSource(body)}(?:/.*)?$`;
-}
-
-function globToRegExpSource(glob: string): string {
-  const special = /[.+^${}()|[\]\\]/g;
-  let out = "";
-  for (let index = 0; index < glob.length; index += 1) {
-    const char = glob[index];
-    if (char === "*") {
-      if (glob[index + 1] === "*") {
-        if (glob[index + 2] === "/") {
-          out += "(?:.*/)?";
-          index += 2;
-        } else {
-          out += ".*";
-          index += 1;
-        }
-      } else {
-        out += "[^/]*";
-      }
-    } else if (char === "?") {
-      out += "[^/]";
-    } else {
-      out += char.replace(special, "\\$&");
-    }
-  }
-  return out;
 }
 
 function createSearchMatcher(query: string, caseSensitive: boolean, regex: boolean): { test: (text: string) => boolean } {

@@ -211,32 +211,38 @@ function readUntilEnd(socket: NodeSocket, signal?: AbortSignal): Promise<Buffer>
   return readBufferFromSocket(socket, signal);
 }
 
-function readFromSocket(
+/**
+ * Accumulate socket data into buffers, wiring up the shared end/error/abort
+ * lifecycle. `onData` may signal an early resolution (used to stop as soon as a
+ * full response is buffered); otherwise the collected chunks are `finalize`d on
+ * the `end` event.
+ */
+function collectFromSocket<T>(
   socket: NodeSocket,
-  done: (text: string) => boolean,
-  signal?: AbortSignal,
-  waitForEnd = false,
-): Promise<string> {
+  signal: AbortSignal | undefined,
+  finalize: (chunks: Buffer[]) => T,
+  onData?: (chunks: Buffer[]) => { value: T } | undefined,
+): Promise<T> {
   if (signal?.aborted) return Promise.reject(new Error("Aborted."));
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const chunks: Buffer[] = [];
     const cleanup = (): void => {
-      socket.off?.("data", onData);
+      socket.off?.("data", onDataEvent);
       socket.off?.("end", onEnd);
       socket.off?.("error", onError);
       signal?.removeEventListener("abort", onAbort);
     };
-    const currentText = (): string => Buffer.concat(chunks).toString("utf8");
-    const onData = (chunk: Buffer | string): void => {
+    const onDataEvent = (chunk: Buffer | string): void => {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      if (!waitForEnd && done(currentText())) {
+      const early = onData?.(chunks);
+      if (early) {
         cleanup();
-        resolve(currentText());
+        resolve(early.value);
       }
     };
     const onEnd = (): void => {
       cleanup();
-      resolve(currentText());
+      resolve(finalize(chunks));
     };
     const onError = (error: Error): void => {
       cleanup();
@@ -247,44 +253,35 @@ function readFromSocket(
       destroySocket(socket);
       reject(new Error("Aborted."));
     };
-    socket.on?.("data", onData);
+    socket.on?.("data", onDataEvent);
     socket.once?.("end", onEnd);
     socket.once?.("error", onError);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 
+function readFromSocket(
+  socket: NodeSocket,
+  done: (text: string) => boolean,
+  signal?: AbortSignal,
+  waitForEnd = false,
+): Promise<string> {
+  const currentText = (chunks: Buffer[]): string => Buffer.concat(chunks).toString("utf8");
+  return collectFromSocket(
+    socket,
+    signal,
+    currentText,
+    waitForEnd
+      ? undefined
+      : (chunks) => {
+          const text = currentText(chunks);
+          return done(text) ? { value: text } : undefined;
+        },
+  );
+}
+
 function readBufferFromSocket(socket: NodeSocket, signal?: AbortSignal): Promise<Buffer> {
-  if (signal?.aborted) return Promise.reject(new Error("Aborted."));
-  return new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    const cleanup = (): void => {
-      socket.off?.("data", onData);
-      socket.off?.("end", onEnd);
-      socket.off?.("error", onError);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const onData = (chunk: Buffer | string): void => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    };
-    const onEnd = (): void => {
-      cleanup();
-      resolve(Buffer.concat(chunks));
-    };
-    const onError = (error: Error): void => {
-      cleanup();
-      reject(error);
-    };
-    const onAbort = (): void => {
-      cleanup();
-      destroySocket(socket);
-      reject(new Error("Aborted."));
-    };
-    socket.on?.("data", onData);
-    socket.once?.("end", onEnd);
-    socket.once?.("error", onError);
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
+  return collectFromSocket(socket, signal, (chunks) => Buffer.concat(chunks));
 }
 
 export function parseRawHttpResponse(raw: Buffer): WebHttpResponse {

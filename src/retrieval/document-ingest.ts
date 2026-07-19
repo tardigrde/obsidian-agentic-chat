@@ -1,8 +1,16 @@
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import { formatSourceReference } from "./citations";
 import { formatFrontmatterScalar, parseFrontmatterFields } from "./frontmatter";
-import { legacyStableTextHash, stableTextHash } from "./source-hash";
-import { findExistingSourceArtifact } from "./source-artifact-dedupe";
+import { stableTextHash } from "./source-hash";
+import {
+  chunkSourceText,
+  formatSourceArtifactChunkBody,
+  legacyTrimmedTextHash,
+  normalizeSourcePath,
+  normalizeSourceText,
+  resolveSourceArtifact,
+  type SourceArtifactCacheValue,
+  type SourceTextChunk,
+} from "./source-ingest";
 
 export const DOCUMENT_IMPORT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 export const DOCUMENT_IMPORT_SOURCE_TOOL = "agentic-chat.document-import";
@@ -19,13 +27,7 @@ export interface DocumentExtractionResult {
   warnings: string[];
 }
 
-export interface DocumentTextChunk {
-  index: number;
-  anchor: string;
-  start: number;
-  end: number;
-  text: string;
-}
+export type DocumentTextChunk = SourceTextChunk;
 
 export interface DocumentImportProvenance {
   sourcePath: string;
@@ -58,14 +60,7 @@ export interface DocumentImportWriteResult {
   extraction: DocumentExtractionResult;
 }
 
-interface CachedDocumentImport {
-  metadata: ToolArtifactMetadata;
-  provenance: DocumentImportProvenance;
-  artifactCitation: string;
-  text: string;
-  chunks: DocumentTextChunk[];
-  extraction: DocumentExtractionResult;
-}
+type CachedDocumentImport = SourceArtifactCacheValue<DocumentImportProvenance, DocumentExtractionResult>;
 
 interface ZipEntry {
   name: string;
@@ -78,8 +73,6 @@ interface ZipInflationBudget {
   remainingTotalBytes: number;
 }
 
-const DEFAULT_MAX_CHUNK_CHARS = 8_000;
-const MIN_CHUNK_CHARS = 40;
 export const DOCUMENT_IMPORT_LIMITS = {
   maxArchiveBytes: 50 * 1024 * 1024,
   maxEntries: 4_000,
@@ -114,56 +107,7 @@ export function documentKindFromPath(sourcePath: string): DocumentKind {
 }
 
 export function chunkDocumentText(text: string, options: { maxChars?: number } = {}): DocumentTextChunk[] {
-  const normalized = normalizeDocumentText(text);
-  if (!normalized) return [];
-  const maxChars = normalizeMaxChunkChars(options.maxChars);
-  const chunks: Array<Omit<DocumentTextChunk, "index" | "anchor">> = [];
-  let cursor = 0;
-  let current = "";
-  let currentStart = 0;
-  let currentEnd = 0;
-
-  for (const paragraph of normalized.split(/\n{2,}/)) {
-    const paragraphStart = normalized.indexOf(paragraph, cursor);
-    const safeParagraphStart = paragraphStart === -1 ? cursor : paragraphStart;
-    cursor = safeParagraphStart + paragraph.length;
-
-    if (paragraph.length > maxChars) {
-      flushCurrent();
-      for (let offset = 0; offset < paragraph.length; offset += maxChars) {
-        const segment = paragraph.slice(offset, offset + maxChars).trim();
-        if (!segment) continue;
-        chunks.push({
-          start: safeParagraphStart + offset,
-          end: safeParagraphStart + offset + segment.length,
-          text: segment,
-        });
-      }
-      continue;
-    }
-
-    const separator = current ? "\n\n" : "";
-    if (current && current.length + separator.length + paragraph.length > maxChars) flushCurrent();
-    if (!current) currentStart = safeParagraphStart;
-    current = current ? `${current}\n\n${paragraph}` : paragraph;
-    currentEnd = safeParagraphStart + paragraph.length;
-  }
-
-  flushCurrent();
-
-  return chunks.map((chunk, index) => ({
-    ...chunk,
-    index: index + 1,
-    anchor: `document-chunk-${index + 1}`,
-  }));
-
-  function flushCurrent(): void {
-    const text = current.trim();
-    if (!text) return;
-    chunks.push({ start: currentStart, end: currentEnd, text });
-    current = "";
-    currentStart = currentEnd;
-  }
+  return chunkSourceText(text, { maxChars: options.maxChars, anchorPrefix: "document" });
 }
 
 export function formatDocumentImportArtifact(
@@ -195,12 +139,7 @@ export function formatDocumentImportArtifact(
     "## Extracted document text",
     "",
   ].filter((line): line is string => line !== null);
-  const body = chunks
-    .map((chunk) => {
-      const range = `characters ${chunk.start}-${Math.max(chunk.start, chunk.end - 1)}`;
-      return [`### Chunk ${chunk.index}`, `<!-- ${chunk.anchor} ${range} -->`, "", chunk.text, "", `^${chunk.anchor}`].join("\n");
-    })
-    .join("\n\n");
+  const body = formatSourceArtifactChunkBody(chunks);
   return `${header.join("\n")}${body || "(no extractable text)"}\n`;
 }
 
@@ -251,52 +190,22 @@ export class DocumentArtifactDeduper {
     const extraction = await extractDocumentText(input.data, input.sourcePath);
     const chunks = chunkDocumentText(extraction.text, { maxChars: input.maxChunkChars });
     const provenance = await createDocumentImportProvenance(input, extraction, chunks);
-    const cached = this.byKey.get(provenance.dedupKey);
-    if (cached) return { ...cached, duplicate: true };
-
-    const existing = await findExistingSourceArtifact(store, {
-      dedupKey: provenance.dedupKey,
-      textHash: provenance.textHash,
+    return resolveSourceArtifact({
+      store,
+      cache: this.byKey,
+      provenance,
+      chunks,
+      extraction,
+      citationLabel: input.title || input.sourcePath,
       legacyDedupKeys: [legacyDocumentDedupKey(input, extraction)],
       legacyTextHashes: [legacyDocumentTextHash(extraction.text)],
-    });
-    if (existing) {
-      const artifactCitation = formatSourceReference({
-        type: "artifact",
-        artifactId: existing.artifact.metadata.id,
-        label: input.title || input.sourcePath,
-      });
-      const persistedProvenance = parseDocumentImportProvenance(existing.artifact.text) ?? provenance;
-      const value = {
-        metadata: existing.artifact.metadata,
-        provenance: persistedProvenance,
-        artifactCitation,
-        text: existing.artifact.text,
-        chunks,
-        extraction,
-      };
-      this.byKey.set(provenance.dedupKey, value);
-      return { ...value, duplicate: true };
-    }
-
-    const text = formatDocumentImportArtifact(provenance, chunks);
-    const metadata = await store.writeArtifact({
-      label: documentArtifactLabel(input.title, input.sourcePath, extraction.kind),
+      artifactLabel: documentArtifactLabel(input.title, input.sourcePath, extraction.kind),
       sourceToolName: DOCUMENT_IMPORT_SOURCE_TOOL,
       contentType: DOCUMENT_IMPORT_CONTENT_TYPE,
-      dedupKey: provenance.dedupKey,
       sourceKind: provenance.kind,
-      sourceTextHash: provenance.textHash,
-      text,
+      formatArtifactText: formatDocumentImportArtifact,
+      parseProvenance: parseDocumentImportProvenance,
     });
-    const artifactCitation = formatSourceReference({
-      type: "artifact",
-      artifactId: metadata.id,
-      label: input.title || input.sourcePath,
-    });
-    const value = { metadata, provenance, artifactCitation, text, chunks, extraction };
-    this.byKey.set(provenance.dedupKey, value);
-    return { ...value, duplicate: false };
   }
 }
 
@@ -326,7 +235,7 @@ function legacyDocumentDedupKey(input: DocumentImportWriteInput, extraction: Doc
 }
 
 function legacyDocumentTextHash(text: string): string {
-  return legacyStableTextHash(text.trim());
+  return legacyTrimmedTextHash(text);
 }
 
 async function extractEpubText(entries: readonly ZipEntry[], budget: ZipInflationBudget): Promise<DocumentExtractionResult> {
@@ -341,7 +250,7 @@ async function extractEpubText(entries: readonly ZipEntry[], budget: ZipInflatio
     const text = htmlToText(await entryText(entry, budget));
     if (text) parts.push(text);
   }
-  const text = normalizeDocumentText(parts.join("\n\n"));
+  const text = normalizeSourceText(parts.join("\n\n"));
   if (!text) throw new Error("EPUB contains no extractable text.");
   return {
     text,
@@ -381,7 +290,7 @@ async function extractOfficeOpenXmlText(
     for (const sheet of sheets) parts.push(extractSpreadsheetSheetText(await entryText(sheet, budget)));
     itemCount = Math.max(1, sheets.length);
   }
-  const text = normalizeDocumentText(parts.join("\n\n"));
+  const text = normalizeSourceText(parts.join("\n\n"));
   if (!text) throw new Error(`${kind.toUpperCase()} contains no extractable text.`);
   return {
     text,
@@ -531,7 +440,7 @@ function findEndOfCentralDirectory(bytes: Uint8Array): number {
 
 function htmlToText(input: string): string {
   const doc = new DOMParser().parseFromString(input, "text/html");
-  return normalizeDocumentText(doc.body.textContent ?? "");
+  return normalizeSourceText(doc.body.textContent ?? "");
 }
 
 function extractTextTags(xml: string): string {
@@ -540,8 +449,8 @@ function extractTextTags(xml: string): string {
   for (const el of Array.from(doc.getElementsByTagName("*"))) {
     if (el.localName === "t") values.push(el.textContent ?? "");
   }
-  if (values.length > 0) return normalizeDocumentText(values.join("\n"));
-  return normalizeDocumentText(xml.replace(/<[^>]+>/g, " "));
+  if (values.length > 0) return normalizeSourceText(values.join("\n"));
+  return normalizeSourceText(xml.replace(/<[^<>]+>/g, " "));
 }
 
 function extractSpreadsheetSheetText(xml: string): string {
@@ -550,17 +459,7 @@ function extractSpreadsheetSheetText(xml: string): string {
   for (const el of Array.from(doc.getElementsByTagName("*"))) {
     if (el.localName === "t" || el.localName === "v") values.push(el.textContent ?? "");
   }
-  return normalizeDocumentText(values.join("\n"));
-}
-
-function normalizeDocumentText(input: string): string {
-  return input
-    .split(String.fromCharCode(0))
-    .join("")
-    .replace(/[ \t\f\v\r]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return normalizeSourceText(values.join("\n"));
 }
 
 function documentInputToBytes(input: DocumentInput): Uint8Array {
@@ -586,19 +485,10 @@ function decodeUtf8(bytes: Uint8Array): string {
   return textDecoder.decode(bytes);
 }
 
-function normalizeMaxChunkChars(value: number | undefined): number {
-  if (value === undefined || !Number.isFinite(value)) return DEFAULT_MAX_CHUNK_CHARS;
-  return Math.max(MIN_CHUNK_CHARS, Math.trunc(value));
-}
-
 function extensionOf(sourcePath: string): string {
   const clean = sourcePath.trim().toLowerCase();
   const index = clean.lastIndexOf(".");
   return index === -1 ? "" : clean.slice(index + 1);
-}
-
-function normalizeSourcePath(value: string): string {
-  return value.trim().replace(/\\/g, "/").replace(/\/+/g, "/").toLowerCase();
 }
 
 function documentArtifactLabel(title: string | undefined, sourcePath: string, kind: DocumentKind): string {
