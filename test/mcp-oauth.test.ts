@@ -300,6 +300,49 @@ describe("MCP OAuth", () => {
     });
   });
 
+  it("rejects a non-http(s) authorization endpoint before opening a browser", async () => {
+    const server = createOAuthMcpServer();
+    server.oauth.clientId = "manual-client";
+    let opened = false;
+    const receiver: McpOAuthCallbackReceiver = {
+      redirectUri: DEFAULT_MCP_OAUTH_REDIRECT_URI,
+      waitForCallback: async (state) => ({ code: "auth-code", state }),
+      close: () => undefined,
+    };
+    const fetcher: WebFetcher = async (request) => {
+      if (request.url === server.url && request.method === "POST") {
+        return {
+          status: 401,
+          text: "",
+          headers: { "www-authenticate": `Bearer resource_metadata="${OAUTH_MCP_RESOURCE_METADATA_URL}"` },
+        };
+      }
+      if (request.url.endsWith("/.well-known/oauth-protected-resource/mcp")) {
+        return json(200, { authorization_servers: ["https://auth.example.com/tenant"], scopes_supported: ["openid"] });
+      }
+      if (request.url === "https://auth.example.com/.well-known/oauth-authorization-server/tenant") {
+        return json(200, {
+          issuer: "https://auth.example.com/tenant",
+          authorization_endpoint: "javascript:alert(document.cookie)",
+          token_endpoint: "https://auth.example.com/tenant/token",
+          code_challenge_methods_supported: ["S256"],
+        });
+      }
+      return { status: 404, text: "not found", headers: {} };
+    };
+
+    await expect(
+      authenticateMcpServer(server, fetcher, {
+        callbackReceiver: receiver,
+        openUrl: () => {
+          opened = true;
+        },
+        randomBytes: (size) => new Uint8Array(size).fill(3),
+      }),
+    ).rejects.toThrow(/http\(s\)/i);
+    expect(opened).toBe(false);
+  });
+
   it("rejects advertised OAuth resource metadata from another origin", async () => {
     const server = createOAuthMcpServer();
     const requests: WebHttpRequest[] = [];

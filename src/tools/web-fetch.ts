@@ -91,6 +91,42 @@ export interface WebFetchConfig {
 
 const ACCEPT_HEADER = "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8";
 
+/** Redirect status codes that carry a `Location` header. */
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+/** Cap on redirect hops fetch_url will follow while re-validating each target. */
+const MAX_REDIRECTS = 5;
+
+/**
+ * Fetch a URL, following redirects manually so each hop's target is re-checked
+ * against {@link normalizeWebUrl}. `normalizeWebUrl` only validates the initial
+ * host, but a public page can 3xx to a local/private address; re-validating every
+ * hop keeps redirect-based SSRF from slipping past that gate. Fetchers that
+ * already follow redirects (Obsidian's `requestUrl`) return a non-3xx response,
+ * so this loop is a no-op for them.
+ */
+async function fetchFollowingRedirects(
+  fetcher: WebFetcher,
+  url: string,
+  signal: AbortSignal | undefined,
+): Promise<WebHttpResponse> {
+  let currentUrl = url;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    throwIfAborted(signal);
+    const response = await fetcher({ url: currentUrl, method: "GET", headers: { Accept: ACCEPT_HEADER } }, signal);
+    if (!REDIRECT_STATUSES.has(response.status)) return response;
+    const location = response.headers["location"];
+    if (!location) return response;
+    let resolved: string;
+    try {
+      resolved = new URL(location, currentUrl).toString();
+    } catch {
+      throw new Error(`Redirect from ${currentUrl} pointed at an invalid URL: ${location}`);
+    }
+    currentUrl = normalizeWebUrl(resolved);
+  }
+  throw new Error(`Too many redirects while fetching ${url}.`);
+}
+
 /**
  * The `fetch_url` tool: fetch an http(s) URL and return its readable text. HTML
  * is stripped to plain text; other text types pass through. Read-only, but it
@@ -109,7 +145,7 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
     execute: async (_id, params, signal) => {
       const url = normalizeWebUrl(params.url);
       throwIfAborted(signal);
-      const response = await config.fetcher({ url, method: "GET", headers: { Accept: ACCEPT_HEADER } }, signal);
+      const response = await fetchFollowingRedirects(config.fetcher, url, signal);
       throwIfAborted(signal);
       if (response.status === 0) {
         throw new Error(`Could not fetch ${url}: ${response.text || "network error"}.`);

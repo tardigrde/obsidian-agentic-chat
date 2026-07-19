@@ -356,6 +356,42 @@ describe("fetch_url tool", () => {
     expect(artifacts.writes[0].text).not.toContain("-->");
   });
 
+  it("follows redirects and re-validates each hop against the SSRF gate", async () => {
+    const requested: string[] = [];
+    const fetcher: WebFetcher = async (request): Promise<WebHttpResponse> => {
+      requested.push(request.url);
+      if (request.url === "https://example.com/start") {
+        return { status: 302, text: "", headers: { location: "https://example.com/final" } };
+      }
+      return { status: 200, text: "<p>Arrived.</p>", headers: { "content-type": "text/html" } };
+    };
+    const tool = createWebFetchTool({ fetcher, charLimit: 10_000 });
+    const { text } = await run(tool, { url: "https://example.com/start" });
+    expect(requested).toEqual(["https://example.com/start", "https://example.com/final"]);
+    expect(text).toContain("Arrived.");
+  });
+
+  it("refuses a redirect that points at a local or private address", async () => {
+    const requested: string[] = [];
+    const fetcher: WebFetcher = async (request) => {
+      requested.push(request.url);
+      return { status: 301, text: "", headers: { location: "http://169.254.169.254/latest/meta-data" } };
+    };
+    const tool = createWebFetchTool({ fetcher, charLimit: 10_000 });
+    await expect(run(tool, { url: "https://example.com/redirect" })).rejects.toThrow(/local or private/i);
+    expect(requested).toEqual(["https://example.com/redirect"]);
+  });
+
+  it("stops after too many redirects", async () => {
+    const fetcher: WebFetcher = async (request) => ({
+      status: 302,
+      text: "",
+      headers: { location: `${request.url}/next` },
+    });
+    const tool = createWebFetchTool({ fetcher, charLimit: 10_000 });
+    await expect(run(tool, { url: "https://example.com/loop" })).rejects.toThrow(/too many redirects/i);
+  });
+
   it("deduplicates repeated fetch source artifacts for the same canonical source", async () => {
     const artifacts = memoryArtifactStore();
     const tool = createWebFetchTool({
