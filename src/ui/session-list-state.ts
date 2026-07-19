@@ -37,6 +37,19 @@ export function removeSessionByPath(sessions: SessionInfo[], path: string): Sess
   return sessions.filter((session) => session.path !== path);
 }
 
+/**
+ * Re-insert a session at its original index. Used to undo an optimistic removal
+ * when the underlying delete fails, so the list keeps matching reality. A
+ * no-op when the session is already present (e.g. a retry) to avoid duplicates.
+ */
+export function restoreSessionAt(sessions: SessionInfo[], session: SessionInfo, index: number): SessionInfo[] {
+  if (sessions.some((entry) => entry.path === session.path)) return sessions;
+  const next = [...sessions];
+  const position = index < 0 || index > next.length ? next.length : index;
+  next.splice(position, 0, session);
+  return next;
+}
+
 /** The text prefilled when a row enters inline rename mode. */
 export function sessionRenameDraft(session: SessionInfo): string {
   return session.name?.trim() || session.firstMessage.trim();

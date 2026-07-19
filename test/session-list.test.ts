@@ -5,6 +5,7 @@ import {
   filterSessions,
   removeSessionByPath,
   resolveSessionRename,
+  restoreSessionAt,
   sessionRenameDraft,
   sessionRows,
   sessionTitle,
@@ -85,6 +86,34 @@ describe("session row state helpers", () => {
 
     expect(next.map((item) => item.path)).toEqual(["b"]);
     expect(sessions.map((item) => item.path)).toEqual(["a", "b"]);
+  });
+
+  it("restores an optimistically removed session at its original index", () => {
+    const a = session({ path: "a" });
+    const b = session({ path: "b" });
+    const c = session({ path: "c" });
+    const remaining = removeSessionByPath([a, b, c], "b");
+
+    const restored = restoreSessionAt(remaining, b, 1);
+
+    expect(restored.map((item) => item.path)).toEqual(["a", "b", "c"]);
+    // The input list is not mutated.
+    expect(remaining.map((item) => item.path)).toEqual(["a", "c"]);
+  });
+
+  it("clamps an out-of-range restore index to the end of the list", () => {
+    const a = session({ path: "a" });
+    const b = session({ path: "b" });
+
+    expect(restoreSessionAt([a], b, 5).map((item) => item.path)).toEqual(["a", "b"]);
+    expect(restoreSessionAt([a], b, -1).map((item) => item.path)).toEqual(["a", "b"]);
+  });
+
+  it("does not duplicate a session that is already present", () => {
+    const a = session({ path: "a" });
+    const b = session({ path: "b" });
+
+    expect(restoreSessionAt([a, b], b, 0).map((item) => item.path)).toEqual(["a", "b"]);
   });
 
   it("builds display titles from custom names, first prompts, whitespace, and long text", () => {

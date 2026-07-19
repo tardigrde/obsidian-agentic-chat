@@ -5,6 +5,7 @@ import {
   emptySessionMessage,
   removeSessionByPath,
   resolveSessionRename,
+  restoreSessionAt,
   sessionRenameDraft,
   sessionRows,
 } from "./session-list-state";
@@ -117,18 +118,24 @@ export class SessionListModal extends Modal {
         event.stopPropagation();
         // Optimistically drop the row first: keeps the list responsive and
         // stops a quick second click from deleting the same session twice.
+        const index = this.sessions.findIndex((entry) => entry.path === session.path);
         this.sessions = removeSessionByPath(this.sessions, session.path);
         this.renderList();
-        void this.deleteSession(session);
+        void this.deleteSession(session, index);
       });
     }
   }
 
-  private async deleteSession(session: SessionInfo): Promise<void> {
+  private async deleteSession(session: SessionInfo, index: number): Promise<void> {
     try {
       await this.callbacks.delete(session);
     } catch (error) {
       console.error("Agentic chat: failed to delete session", error);
+      // The optimistic removal was wrong — the session still exists. Put the
+      // row back so the list matches reality and tell the user it failed.
+      this.sessions = restoreSessionAt(this.sessions, session, index);
+      this.renderList();
+      new Notice("Failed to delete conversation.");
     }
   }
 
