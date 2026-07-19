@@ -42,7 +42,7 @@ export interface Frontmatter {
 export function splitFrontmatter(content: string): Frontmatter {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(content);
   if (!match) return { data: {}, body: content };
-  let data: Record<string, unknown> = {};
+  let data: Record<string, unknown>;
   try {
     data = (parseYaml(match[1]) as Record<string, unknown>) ?? {};
   } catch {

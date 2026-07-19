@@ -4,7 +4,7 @@
     "target": "ES2021",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["DOM", "ES2021"],
+    "lib": ["DOM", "ES2021", "ES2022.Error"],
     "types": ["node"],
     "strict": true,
     "noImplicitAny": true,

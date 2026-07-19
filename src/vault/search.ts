@@ -59,7 +59,7 @@ function createLineMatcher(pattern: string, options: GrepOptions): (line: string
     } catch (error) {
       // The pattern comes from the model; surface a clear error instead of
       // letting a raw SyntaxError bubble out of the grep tool.
-      throw new Error(`Invalid regular expression: ${(error as Error).message}`);
+      throw new Error(`Invalid regular expression: ${(error as Error).message}`, { cause: error });
     }
     return (line) => regex.test(line);
   }
