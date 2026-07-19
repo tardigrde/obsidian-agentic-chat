@@ -18,24 +18,46 @@ import {
 import { SourceArtifactDeduper } from "../src/retrieval/source-artifacts";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
-// ponytail: minimal DOMParser polyfill for Node test environment
+// Minimal DOMParser polyfill for the Node test environment. The text/html doc
+// mirrors real browser behavior: textContent includes <script>/<style> bodies
+// until those elements are removed, so tests exercise the same stripping the
+// production code relies on rather than a parser that pre-strips them.
+class FakeHtmlDoc {
+  private html: string;
+  constructor(markup: string) {
+    this.html = markup;
+  }
+  querySelectorAll(selector: string): Array<{ remove: () => void }> {
+    const tags = selector.split(",").map((part) => part.trim().toLowerCase());
+    const blocks: string[] = [];
+    for (const tag of tags) {
+      let idx = 0;
+      while (true) {
+        const start = this.html.toLowerCase().indexOf(`<${tag}`, idx);
+        if (start === -1) break;
+        const close = this.html.toLowerCase().indexOf(`</${tag}>`, start);
+        if (close === -1) break;
+        const end = close + `</${tag}>`.length;
+        blocks.push(this.html.slice(start, end));
+        idx = end;
+      }
+    }
+    return blocks.map((block) => ({
+      remove: () => {
+        this.html = this.html.replace(block, " ");
+      },
+    }));
+  }
+  get body(): { textContent: string } {
+    const html = this.html;
+    return { textContent: decodeEntities(html.replace(/<[^>]+>/g, " ")) };
+  }
+}
+
 class FakeDOMParser {
   parseFromString(markup: string, type: string) {
     if (type === "text/html") {
-      let text = markup;
-      for (const tag of ["script", "style"]) {
-        let idx = 0;
-        while (true) {
-          const start = text.toLowerCase().indexOf(`<${tag}`, idx);
-          if (start === -1) break;
-          const end = text.toLowerCase().indexOf(`</${tag}>`, start);
-          if (end === -1) break;
-          text = text.slice(0, start) + " " + text.slice(end + `</${tag}>`.length);
-          idx = start + 1;
-        }
-      }
-      text = text.replace(/<[^>]+>/g, " ");
-      return { body: { textContent: decodeEntities(text) } };
+      return new FakeHtmlDoc(markup);
     }
     const elements: Array<{ localName: string; textContent: string }> = [];
     const regex = /<([a-zA-Z0-9_:]+)\b[^>]*>([\s\S]*?)<\/\1>/g;
@@ -114,6 +136,21 @@ describe("document source ingestion", () => {
     expect(extracted.text).toContain("Chapter 1");
     expect(extracted.text).toContain("Vault research & citations.");
     expect(extracted.text).toContain("Second chapter text.");
+  });
+
+  it("drops script and style bodies from HTML entries", async () => {
+    const fixture = zipFixture({
+      "mimetype": "application/epub+zip",
+      "OEBPS/chapter1.xhtml":
+        "<html><head><style>.secret{color:red}</style></head>" +
+        "<body><p>Visible prose.</p><script>const leaked = 'do-not-index';</script></body></html>",
+    });
+
+    const extracted = await extractDocumentText(fixture, "Books/scripted.epub");
+
+    expect(extracted.text).toContain("Visible prose.");
+    expect(extracted.text).not.toContain("do-not-index");
+    expect(extracted.text).not.toContain("color:red");
   });
 
   it("extracts text from DOCX document.xml", async () => {
