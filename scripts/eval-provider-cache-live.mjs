@@ -144,6 +144,7 @@ async function fetchWithProxy(rawUrl, options) {
   } catch (error) {
     throw new Error(
       `Provider cache eval could not use proxy ${proxy}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 }
