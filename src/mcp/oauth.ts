@@ -617,6 +617,9 @@ function buildAuthorizationUrl(options: {
   scope: string;
 }): string {
   const url = new URL(options.authorizationEndpoint);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`MCP OAuth authorization endpoint must be an http(s) URL: ${options.authorizationEndpoint}`);
+  }
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", options.clientId);
   url.searchParams.set("redirect_uri", options.redirectUri);
@@ -993,7 +996,7 @@ async function tryOpenWithPlatformBrowser(url: string): Promise<boolean> {
     return (
       (await tryExecFile("rundll32.exe", ["url.dll,FileProtocolHandler", url], "Windows ShellExecute")) ||
       (await tryExecFile("explorer.exe", [url], "Windows explorer.exe")) ||
-      (await tryExecFile("cmd.exe", ["/c", `start "" "${url.replace(/"/g, "%22")}"`], "Windows cmd.exe start"))
+      (await tryExecFile("cmd.exe", ["/c", "start", "", url], "Windows cmd.exe start"))
     );
   }
   if (processLike.platform === "darwin") return tryExecFile("open", [url], "macOS open");
