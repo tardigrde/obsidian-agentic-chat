@@ -529,7 +529,6 @@ function slimCheckpoint(
     if (entry.kind === "rename" || entry.kind === "delete_folder") continue;
     if (fullCheckpointPaths.has(entry.path) && entry.before !== undefined && entry.before !== null) {
       const { before: _before, ...rest } = entry;
-      void _before;
       slimmedEntries[i] = rest as UndoEntry;
       mutated = true;
       continue;

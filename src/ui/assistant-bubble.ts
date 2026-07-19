@@ -482,38 +482,42 @@ function decodeVaultLinkTarget(target: string): string {
 
 export function enhanceCallouts(root: HTMLElement): void {
   for (const blockquote of Array.from(root.querySelectorAll("blockquote"))) {
-    if (blockquote.closest(".callout")) continue;
-    const first = blockquote.firstElementChild as HTMLElement | null;
-    if (!first) continue;
-    const match = /^\s*\[!([A-Za-z0-9_-]+)\]([+-])?\s*(.*)\s*$/.exec(first.textContent?.split(/\r?\n/, 1)[0] ?? "");
-    if (!match) continue;
-
-    const type = match[1].toLowerCase();
-    const title = match[3].trim() || calloutTitle(type);
-    const markerLength = match[0].length;
-    const rest = (first.textContent ?? "").slice(markerLength).trimStart();
-    if (rest) {
-      first.textContent = rest;
-    } else {
-      first.remove();
-    }
-
-    const callout = createActiveDiv();
-    callout.className = "callout";
-    callout.dataset.callout = type;
-    if (match[2]) {
-      callout.classList.add("is-collapsible");
-      callout.dataset.calloutFold = match[2] === "-" ? "-" : "+";
-    }
-
-    const titleEl = callout.createDiv({ cls: "callout-title" });
-    const icon = titleEl.createDiv({ cls: "callout-icon" });
-    setIcon(icon, "info");
-    titleEl.createDiv({ cls: "callout-title-inner", text: title });
-    const contentEl = callout.createDiv({ cls: "callout-content" });
-    while (blockquote.firstChild) contentEl.appendChild(blockquote.firstChild);
-    blockquote.replaceWith(callout);
+    enhanceSingleCallout(blockquote);
   }
+}
+
+function enhanceSingleCallout(blockquote: HTMLElement): void {
+  if (blockquote.closest(".callout")) return;
+  const first = blockquote.firstElementChild as HTMLElement | null;
+  if (!first) return;
+  const match = /^\s*\[!([A-Za-z0-9_-]+)\]([+-])?\s*(.*)\s*$/.exec(first.textContent?.split(/\r?\n/, 1)[0] ?? "");
+  if (!match) return;
+
+  const type = match[1].toLowerCase();
+  const title = match[3].trim() || calloutTitle(type);
+  const markerLength = match[0].length;
+  const rest = (first.textContent ?? "").slice(markerLength).trimStart();
+  if (rest) {
+    first.textContent = rest;
+  } else {
+    first.remove();
+  }
+
+  const callout = createActiveDiv();
+  callout.className = "callout";
+  callout.dataset.callout = type;
+  if (match[2]) {
+    callout.classList.add("is-collapsible");
+    callout.dataset.calloutFold = match[2] === "-" ? "-" : "+";
+  }
+
+  const titleEl = callout.createDiv({ cls: "callout-title" });
+  const icon = titleEl.createDiv({ cls: "callout-icon" });
+  setIcon(icon, "info");
+  titleEl.createDiv({ cls: "callout-title-inner", text: title });
+  const contentEl = callout.createDiv({ cls: "callout-content" });
+  while (blockquote.firstChild) contentEl.appendChild(blockquote.firstChild);
+  blockquote.replaceWith(callout);
 }
 
 function createActiveDiv(): HTMLDivElement {
@@ -543,32 +547,36 @@ export async function renderMermaidBlocks(root: HTMLElement): Promise<void> {
     return;
   }
   for (const code of blocks) {
-    const pre = code.parentElement;
-    if (!pre) continue;
-    const source = code.textContent ?? "";
-    const target = createActiveDiv();
-    target.className = "agentic-chat-mermaid";
-    try {
-      const rendered = await mermaid.render(`agentic-chat-mermaid-${mermaidId++}`, source);
-      const svgMarkup = typeof rendered === "string" ? rendered : rendered.svg;
-      // Parse the SVG into a dedicated document and import the node instead of
-      // assigning to innerHTML — keeps the mermaid output out of an unsanitized
-      // HTML sink (and is the namespace-correct way to insert SVG markup).
-      const svgDocument = new DOMParser().parseFromString(svgMarkup, "image/svg+xml");
-      const svgRoot = svgDocument.documentElement;
-      // Reject malformed Mermaid output — a missing/non-<svg> root or a DOMParser
-      // <parsererror> node — before it reaches the live document. Throwing here
-      // falls into the surrounding catch, which flags the block as a render error.
-      if (!svgRoot || svgRoot.localName.toLowerCase() !== "svg" || svgRoot.querySelector("parsererror")) {
-        throw new Error("Mermaid renderer returned invalid SVG or parser error");
-      }
-      target.replaceChildren(activeDocument.importNode(svgRoot, true));
-      if (typeof rendered !== "string") rendered.bindFunctions?.(target);
-      pre.replaceWith(target);
-    } catch (error) {
-      pre.addClass("agentic-chat-mermaid-error");
-      pre.setAttr("title", error instanceof Error ? error.message : String(error));
+    await renderSingleMermaidBlock(code, mermaid);
+  }
+}
+
+async function renderSingleMermaidBlock(code: HTMLElement, mermaid: MermaidRenderer): Promise<void> {
+  const pre = code.parentElement;
+  if (!pre) return;
+  const source = code.textContent ?? "";
+  const target = createActiveDiv();
+  target.className = "agentic-chat-mermaid";
+  try {
+    const rendered = await mermaid.render(`agentic-chat-mermaid-${mermaidId++}`, source);
+    const svgMarkup = typeof rendered === "string" ? rendered : rendered.svg;
+    // Parse the SVG into a dedicated document and import the node instead of
+    // assigning to innerHTML — keeps the mermaid output out of an unsanitized
+    // HTML sink (and is the namespace-correct way to insert SVG markup).
+    const svgDocument = new DOMParser().parseFromString(svgMarkup, "image/svg+xml");
+    const svgRoot = svgDocument.documentElement;
+    // Reject malformed Mermaid output — a missing/non-<svg> root or a DOMParser
+    // <parsererror> node — before it reaches the live document. Throwing here
+    // falls into the surrounding catch, which flags the block as a render error.
+    if (!svgRoot || svgRoot.localName.toLowerCase() !== "svg" || svgRoot.querySelector("parsererror")) {
+      throw new Error("Mermaid renderer returned invalid SVG or parser error");
     }
+    target.replaceChildren(activeDocument.importNode(svgRoot, true));
+    if (typeof rendered !== "string") rendered.bindFunctions?.(target);
+    pre.replaceWith(target);
+  } catch (error) {
+    pre.addClass("agentic-chat-mermaid-error");
+    pre.setAttr("title", error instanceof Error ? error.message : String(error));
   }
 }
 

@@ -703,8 +703,7 @@ function getOutboundLinks(app: App, sourcePath: string): Array<{ path: string; c
 async function readFrontmatter(app: App, file: TFile): Promise<Record<string, unknown>> {
   const cached = app.metadataCache.getFileCache(file)?.frontmatter;
   if (cached) {
-    const { position, ...rest } = cached as Record<string, unknown>;
-    void position;
+    const { position: _position, ...rest } = cached as Record<string, unknown>;
     return rest;
   }
   const content = await app.vault.cachedRead(file);

@@ -68,14 +68,18 @@ export class SuggestModal {
 export class WorkspaceLeaf {}
 export class MarkdownView {}
 export class MarkdownRenderer {
-  static async render(): Promise<void> {}
+  static async render(): Promise<void> {
+    // No-op stub: the real Obsidian method renders markdown to HTML.
+  }
 }
 export async function loadMermaid(): Promise<{ render: () => string }> {
   return ((globalThis as { __obsidianMockMermaid?: { render: () => string } }).__obsidianMockMermaid ?? {
     render: () => "",
   });
 }
-export function setIcon(): void {}
+export function setIcon(): void {
+  // No-op stub: the real Obsidian method renders an icon into a container.
+}
 
 export const Platform = {
   isDesktopApp: true,

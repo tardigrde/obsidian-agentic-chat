@@ -12,6 +12,11 @@ if (!vaultPath) {
   process.exit(1);
 }
 
+if (/[;&|`$(){}[\]\\*?<>!#]/.test(vaultPath) || vaultPath.includes("\0")) {
+  console.error("Vault path contains unsafe characters.");
+  process.exit(1);
+}
+
 for (const file of files) {
   if (!existsSync(file)) {
     console.error(`${file} does not exist. Run npm run build first.`);

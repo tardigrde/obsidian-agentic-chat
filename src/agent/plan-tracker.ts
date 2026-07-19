@@ -171,6 +171,10 @@ function parsePlanTrackerCommand(input: string): PlanTrackerCommand {
   const [verbRaw, ...rest] = trimmed.split(/\s+/);
   const verb = verbRaw.toLowerCase();
   const restText = trimmed.slice(verbRaw.length).trim();
+  return buildPlanTrackerCommand(verb, verbRaw, rest, restText);
+}
+
+function buildPlanTrackerCommand(verb: string, verbRaw: string, rest: string[], restText: string): PlanTrackerCommand {
   if (verb === "add") {
     return restText ? { type: "add", title: restText } : { type: "error", message: "Usage: /todo add <milestone>" };
   }

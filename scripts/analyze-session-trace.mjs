@@ -663,7 +663,8 @@ function appendTurnSignals(lines, files) {
   }
   if (signals.length === 0) return;
   lines.push("", "## Turns With Signals", "");
-  for (const signal of signals.sort((left, right) => right.signalCount - left.signalCount).slice(0, REPORT_LIMIT)) {
+  const sortedSignals = [...signals].sort((left, right) => right.signalCount - left.signalCount);
+  for (const signal of sortedSignals.slice(0, REPORT_LIMIT)) {
     const turn = signal.turn;
     const parts = [
       `${signal.file} turn ${turn.index}`,

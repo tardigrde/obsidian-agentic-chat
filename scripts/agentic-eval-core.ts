@@ -471,13 +471,6 @@ function validateAssertion(input: unknown, path: string): EvalAssertion {
     case "dogfood_invariants_pass":
       return { ...base, type };
     case "max_repeated_external_path_action":
-      return {
-        ...base,
-        type,
-        max: positiveNumber(assertion.max, `${path}.max`),
-        key: optionalString(assertion.key),
-        allowedKeys: validateOptionalStringArray(assertion.allowedKeys, `${path}.allowedKeys`),
-      };
     case "max_duplicate_tool_starts":
       return {
         ...base,
