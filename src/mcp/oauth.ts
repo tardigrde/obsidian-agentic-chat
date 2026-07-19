@@ -1053,9 +1053,7 @@ function parseJsonObject<T>(text: string, label: string): T {
   try {
     parsed = JSON.parse(text || "{}");
   } catch (error) {
-    throw new Error(`${label} was not valid JSON: ${error instanceof Error ? error.message : String(error)}.`, {
-      cause: error,
-    });
+    throw new Error(`${label} was not valid JSON: ${error instanceof Error ? error.message : String(error)}.`, { cause: error });
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`${label} was not a JSON object.`);
