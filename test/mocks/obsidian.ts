@@ -44,10 +44,18 @@ export class ItemView extends Component {}
 export class Plugin extends Component {}
 export class PluginSettingTab {}
 export class Setting {}
-export class Modal {}
-export class FuzzySuggestModal {}
-export class SuggestModal {
+export class Modal {
+  constructor(public app?: unknown) {}
+}
+export class FuzzySuggestModal {
+  constructor(public app?: unknown) {}
   setPlaceholder(): void {}
+  setInstructions(): void {}
+}
+export class SuggestModal {
+  constructor(public app?: unknown) {}
+  setPlaceholder(): void {}
+  setInstructions(): void {}
 }
 export class WorkspaceLeaf {}
 export class MarkdownView {}
