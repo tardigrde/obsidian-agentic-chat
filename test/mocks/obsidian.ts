@@ -49,13 +49,21 @@ export class Modal {
 }
 export class FuzzySuggestModal {
   constructor(public app?: unknown) {}
-  setPlaceholder(): void {}
-  setInstructions(): void {}
+  setPlaceholder(): void {
+    // No-op stub: the real Obsidian method configures the search input placeholder.
+  }
+  setInstructions(): void {
+    // No-op stub: the real Obsidian method renders the instruction hints.
+  }
 }
 export class SuggestModal {
   constructor(public app?: unknown) {}
-  setPlaceholder(): void {}
-  setInstructions(): void {}
+  setPlaceholder(): void {
+    // No-op stub: the real Obsidian method configures the search input placeholder.
+  }
+  setInstructions(): void {
+    // No-op stub: the real Obsidian method renders the instruction hints.
+  }
 }
 export class WorkspaceLeaf {}
 export class MarkdownView {}
