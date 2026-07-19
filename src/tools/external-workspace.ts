@@ -803,7 +803,9 @@ function createSearchMatcher(query: string, caseSensitive: boolean, regex: boole
     try {
       expression = new RegExp(query, caseSensitive ? "" : "i");
     } catch (error) {
-      throw new Error(`Invalid search regex: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Invalid search regex: ${error instanceof Error ? error.message : String(error)}`, {
+        cause: error,
+      });
     }
     return { test: (text) => expression.test(text) };
   }
@@ -989,6 +991,7 @@ function requireExternalWorkspaceRuntime(): ExternalWorkspaceRuntime {
       `External workspace root tools require Obsidian desktop with filesystem access: ${
         error instanceof Error ? error.message : String(error)
       }`,
+      { cause: error },
     );
   }
 }

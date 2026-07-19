@@ -386,6 +386,7 @@ describe("agentic-chat smoke", function () {
       }, path);
       throw new Error(
         `${error instanceof Error ? error.message : String(error)}; expected prefix ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+        { cause: error },
       );
     }
   });

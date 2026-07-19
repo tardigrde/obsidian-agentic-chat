@@ -358,7 +358,7 @@ async function extractOfficeOpenXmlText(
   budget: ZipInflationBudget,
 ): Promise<DocumentExtractionResult> {
   const parts: string[] = [];
-  let itemCount = 0;
+  let itemCount: number;
   if (kind === "docx") {
     const document = entries.find((entry) => entry.name === "word/document.xml");
     if (!document) throw new Error("DOCX is missing word/document.xml.");

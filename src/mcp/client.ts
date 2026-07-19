@@ -213,7 +213,7 @@ export class McpHttpClient {
           if (method !== "initialize") await this.initialize(signal);
           return this.requestOnce<T>(method, params, signal, false);
         }
-        throw new Error(this.oauthAuthenticationMessage(error.challenge));
+        throw new Error(this.oauthAuthenticationMessage(error.challenge), { cause: error });
       }
       if (retryOnTerminatedSession && error instanceof McpOAuthForbiddenError) {
         const refreshed = await this.refreshOAuthForRequiredScope(error.challenge, signal);
@@ -221,7 +221,7 @@ export class McpHttpClient {
           if (method !== "initialize") await this.initialize(signal);
           return this.requestOnce<T>(method, params, signal, false);
         }
-        throw new Error(this.oauthForbiddenMessage(error.challenge));
+        throw new Error(this.oauthForbiddenMessage(error.challenge), { cause: error });
       }
       if (retryOnTerminatedSession && method !== "initialize" && error instanceof McpSessionTerminatedError) {
         this.sessionId = undefined;
@@ -265,7 +265,7 @@ export class McpHttpClient {
       await this.post({ jsonrpc: JSON_RPC, method, params }, signal);
     } catch (error) {
       if (error instanceof McpOAuthUnauthorizedError) {
-        throw new Error(this.oauthAuthenticationMessage(error.challenge));
+        throw new Error(this.oauthAuthenticationMessage(error.challenge), { cause: error });
       }
       throw error;
     }
