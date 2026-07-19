@@ -301,7 +301,6 @@ function formatList(values: readonly string[]): string {
   return values.length === 0 ? "(none)" : values.join(", ");
 }
 
-function exhaustiveEvent(event: never): string {
-  void event;
+function exhaustiveEvent(_event: never): string {
   return "unknown:event";
 }

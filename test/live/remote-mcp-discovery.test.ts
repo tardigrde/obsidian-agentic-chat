@@ -119,6 +119,10 @@ describe("Remote MCP live discovery", () => {
       expect.arrayContaining([expect.stringMatching(/^(get_time|search_tools|call_tool|call_readonly_tool)$/)]),
     );
   });
+
+  it("has environment variables configured", () => {
+    expect(typeof liveUrl).toBe("string");
+  });
 });
 
 function isNetworkUnavailable(error: unknown): boolean {

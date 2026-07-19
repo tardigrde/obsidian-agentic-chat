@@ -295,39 +295,42 @@ export function touchedFilesForTool(toolName: string, args: unknown): readonly s
 }
 
 export function diffSummaryForTool(toolName: string, args: unknown): ActionAuditDiffSummary | undefined {
-  const raw =
-    args && typeof args === "object"
-      ? (args as { path?: unknown; newPath?: unknown; content?: unknown; edits?: unknown; properties?: unknown })
-      : {};
+  const raw = extractToolArgs(args);
   const path = typeof raw.path === "string" ? normalizePath(raw.path) : undefined;
-  if (toolName === "write") {
-    const after = typeof raw.content === "string" ? raw.content : "";
-    return { kind: "write", path, beforeCharLength: 0, afterCharLength: after.length };
+  switch (toolName) {
+    case "write": return diffSummaryForWrite(raw, path);
+    case "edit": return diffSummaryForEdit(raw, path);
+    case "set_properties": return diffSummaryForSetProperties(raw, path);
+    case "delete": return { kind: "delete", path };
+    case "rename": return diffSummaryForRename(raw, path);
+    default: return undefined;
   }
-  if (toolName === "edit") {
-    return {
-      kind: "edit",
-      path,
-      editCount: Array.isArray(raw.edits) ? raw.edits.length : 0,
-    };
-  }
-  if (toolName === "set_properties") {
-    const properties = raw.properties && typeof raw.properties === "object" ? raw.properties : {};
-    return {
-      kind: "edit",
-      path,
-      editCount: Object.keys(properties).length,
-    };
-  }
-  if (toolName === "delete") return { kind: "delete", path };
-  if (toolName === "rename") {
-    return {
-      kind: "rename",
-      from: path,
-      to: typeof raw.newPath === "string" ? normalizePath(raw.newPath) : undefined,
-    };
-  }
-  return undefined;
+}
+
+function extractToolArgs(args: unknown): Record<string, unknown> {
+  return args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+}
+
+function diffSummaryForWrite(raw: Record<string, unknown>, path: string | undefined): ActionAuditDiffSummary {
+  const after = typeof raw.content === "string" ? raw.content : "";
+  return { kind: "write", path, beforeCharLength: 0, afterCharLength: after.length };
+}
+
+function diffSummaryForEdit(raw: Record<string, unknown>, path: string | undefined): ActionAuditDiffSummary {
+  return { kind: "edit", path, editCount: Array.isArray(raw.edits) ? raw.edits.length : 0 };
+}
+
+function diffSummaryForSetProperties(raw: Record<string, unknown>, path: string | undefined): ActionAuditDiffSummary {
+  const properties = raw.properties && typeof raw.properties === "object" ? raw.properties : {};
+  return { kind: "edit", path, editCount: Object.keys(properties).length };
+}
+
+function diffSummaryForRename(raw: Record<string, unknown>, path: string | undefined): ActionAuditDiffSummary {
+  return {
+    kind: "rename",
+    from: path,
+    to: typeof raw.newPath === "string" ? normalizePath(raw.newPath) : undefined,
+  };
 }
 
 export function diffSummaryForContent(path: string, before: string, after: string): ActionAuditDiffSummary {

@@ -371,14 +371,19 @@ export function mcpServerSetupSteps(server: McpServerSettings): McpSetupStep[] {
       id: "discovery",
       label: "Discovery",
       status: server.knownTools.length > 0 ? "complete" : canDiscover ? "action" : "blocked",
-      message:
-        server.knownTools.length > 0
-          ? `${server.knownTools.length} tool${server.knownTools.length === 1 ? "" : "s"} discovered.`
-          : canDiscover
-            ? "Run Test connection to discover tools."
-            : "Complete endpoint and authentication before discovery.",
+      message: discoveryMessage(server, canDiscover),
     },
   ];
+}
+
+function discoveryMessage(server: McpServerSettings, canDiscover: boolean): string {
+  if (server.knownTools.length > 0) {
+    return `${server.knownTools.length} tool${server.knownTools.length === 1 ? "" : "s"} discovered.`;
+  }
+  if (canDiscover) {
+    return "Run Test connection to discover tools.";
+  }
+  return "Complete endpoint and authentication before discovery.";
 }
 
 function healApproval(value: ApprovalPolicy | undefined): ApprovalPolicy {

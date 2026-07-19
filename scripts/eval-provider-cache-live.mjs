@@ -73,8 +73,10 @@ export function buildStablePrefix(chars) {
     "Keep this block byte-for-byte identical across requests so provider prompt caching can key on it.",
     "The requested answer is intentionally tiny; the large stable prefix is the cacheable payload.",
   ];
-  for (let i = 0; lines.join("\n").length < chars; i += 1) {
+  let i = 0;
+  while (lines.join("\n").length < chars) {
     const id = String(i).padStart(4, "0");
+    i += 1;
     lines.push(
       `CACHE-EVAL-${id}: active-note context delimiter <context> --- </context>; artifact manifest; external_inspect; cacheRead; cacheWrite; compacted summary; stable prefix line.`,
     );

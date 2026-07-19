@@ -162,7 +162,7 @@ function candidatesFromText(text: string): Array<{ kind: "preference" | "fact"; 
       reason: "explicit remember phrase",
     });
   });
-  collectMatches(text, /\b(?:my|our)\s+([A-Za-z][\w -]{2,40})\s+is\s+([^.!?\n]{2,160})/gi, (capture, match) => {
+  collectMatches(text, /\b(?:my|our)\s+([a-z][\w -]{2,40})\s+is\s+([^.!?\n]{2,160})/gi, (capture, match) => {
     const label = match[1]?.trim().toLowerCase();
     const value = match[2]?.trim();
     if (!label || !value) return;
