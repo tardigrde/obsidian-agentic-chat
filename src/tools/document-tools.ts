@@ -5,10 +5,9 @@ import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import {
   DocumentArtifactDeduper,
   documentKindFromPath,
-  type DocumentInput,
   type DocumentImportWriteResult,
 } from "../retrieval/document-ingest";
-import { PdfArtifactDeduper, type PdfInput } from "../retrieval/pdf-ingest";
+import { PdfArtifactDeduper } from "../retrieval/pdf-ingest";
 import { normalizeVaultPath } from "../vault/path";
 
 const ImportPdfParameters = Type.Object({
@@ -48,7 +47,7 @@ function createImportPdfTool(
     execute: async (_id, params) => {
       if (!adapter) throw new Error("Vault adapter is unavailable.");
       const path = normalizePdfPath(String(params.path ?? ""));
-      const data = await readPdfData(adapter, path);
+      const data = await readSourceData(adapter, path);
       const result = await pdfArtifacts.write(artifactStore, {
         sourcePath: path,
         title: normalizeOptionalString(params.title),
@@ -58,22 +57,8 @@ function createImportPdfTool(
       return {
         content: [{ type: "text", text: formatImportPdfResult(result) }],
         details: {
-          path,
-          title: result.provenance.title,
-          sourceArtifactId: result.metadata.id,
-          sourceArtifactCitation: result.artifactCitation,
-          sourceArtifactDuplicate: result.duplicate,
-          sourceDedupKey: result.provenance.dedupKey,
-          extractor: result.provenance.extractor,
+          ...sourceArtifactDetails(path, result),
           pageCount: result.provenance.pageCount,
-          chunkCount: result.provenance.chunkCount,
-          totalChars: result.provenance.sourceTextChars,
-          citationAnchors: result.chunks.map((chunk) => ({
-            anchor: chunk.anchor,
-            label: `Chunk ${chunk.index}`,
-            start: chunk.start,
-            end: chunk.end,
-          })),
         },
       };
     },
@@ -99,7 +84,7 @@ function createImportDocumentTool(
       const title = normalizeOptionalString(params.title);
       const maxChunkChars = normalizeMaxChunkChars(params.maxChunkChars);
       if (path.toLowerCase().endsWith(".pdf")) {
-        const data = await readPdfData(adapter, path);
+        const data = await readSourceData(adapter, path);
         const result = await pdfArtifacts.write(artifactStore, {
           sourcePath: path,
           title,
@@ -113,7 +98,7 @@ function createImportDocumentTool(
       }
 
       documentKindFromPath(path);
-      const data = await readDocumentData(adapter, path);
+      const data = await readSourceData(adapter, path);
       // Bound explicitly to avoid the Obsidian scan treating this artifact writer
       // as a DOM document.write sink.
       const writeDocumentArtifact = documentArtifacts.write.bind(documentArtifacts);
@@ -129,12 +114,6 @@ function createImportDocumentTool(
       };
     },
   };
-}
-
-async function readPdfData(adapter: DataAdapter, path: string): Promise<PdfInput> {
-  const binaryAdapter = adapter as DataAdapter & { readBinary?: (path: string) => Promise<ArrayBuffer> };
-  if (binaryAdapter.readBinary) return binaryAdapter.readBinary(path);
-  return adapter.read(path);
 }
 
 function normalizePdfPath(value: string): string {
@@ -153,7 +132,7 @@ function normalizeDocumentPath(value: string): string {
   return path;
 }
 
-async function readDocumentData(adapter: DataAdapter, path: string): Promise<DocumentInput> {
+async function readSourceData(adapter: DataAdapter, path: string): Promise<ArrayBuffer | string> {
   const binaryAdapter = adapter as DataAdapter & { readBinary?: (path: string) => Promise<ArrayBuffer> };
   if (binaryAdapter.readBinary) return binaryAdapter.readBinary(path);
   return adapter.read(path);
@@ -188,17 +167,23 @@ function formatImportDocumentResult(result: DocumentImportWriteResult): string {
   ].join("\n");
 }
 
-function pdfImportDetails(path: string, result: Awaited<ReturnType<PdfArtifactDeduper["write"]>>): Record<string, unknown> {
+interface SourceArtifactDetailsInput {
+  metadata: { id: string };
+  artifactCitation: string;
+  duplicate: boolean;
+  chunks: ReadonlyArray<{ anchor: string; index: number; start: number; end: number }>;
+  provenance: { title?: string; dedupKey: string; extractor: string; chunkCount: number; sourceTextChars: number };
+}
+
+function sourceArtifactDetails(path: string, result: SourceArtifactDetailsInput): Record<string, unknown> {
   return {
     path,
-    sourceKind: "pdf",
     title: result.provenance.title,
     sourceArtifactId: result.metadata.id,
     sourceArtifactCitation: result.artifactCitation,
     sourceArtifactDuplicate: result.duplicate,
     sourceDedupKey: result.provenance.dedupKey,
     extractor: result.provenance.extractor,
-    pageCount: result.provenance.pageCount,
     chunkCount: result.provenance.chunkCount,
     totalChars: result.provenance.sourceTextChars,
     citationAnchors: result.chunks.map((chunk) => ({
@@ -210,24 +195,18 @@ function pdfImportDetails(path: string, result: Awaited<ReturnType<PdfArtifactDe
   };
 }
 
+function pdfImportDetails(path: string, result: Awaited<ReturnType<PdfArtifactDeduper["write"]>>): Record<string, unknown> {
+  return {
+    ...sourceArtifactDetails(path, result),
+    sourceKind: "pdf",
+    pageCount: result.provenance.pageCount,
+  };
+}
+
 function documentImportDetails(path: string, result: DocumentImportWriteResult): Record<string, unknown> {
   return {
-    path,
+    ...sourceArtifactDetails(path, result),
     sourceKind: result.provenance.kind,
-    title: result.provenance.title,
-    sourceArtifactId: result.metadata.id,
-    sourceArtifactCitation: result.artifactCitation,
-    sourceArtifactDuplicate: result.duplicate,
-    sourceDedupKey: result.provenance.dedupKey,
-    extractor: result.provenance.extractor,
     itemCount: result.provenance.itemCount,
-    chunkCount: result.provenance.chunkCount,
-    totalChars: result.provenance.sourceTextChars,
-    citationAnchors: result.chunks.map((chunk) => ({
-      anchor: chunk.anchor,
-      label: `Chunk ${chunk.index}`,
-      start: chunk.start,
-      end: chunk.end,
-    })),
   };
 }
