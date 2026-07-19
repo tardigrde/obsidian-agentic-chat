@@ -97,7 +97,7 @@ export function compareEvalSummaries(
 ): EvalRunComparison {
   const baselineById = resultsById(baseline.results ?? []);
   const candidateById = resultsById(candidate.results ?? []);
-  const caseIds = [...new Set([...baselineById.keys(), ...candidateById.keys()])].sort();
+  const caseIds = [...new Set([...baselineById.keys(), ...candidateById.keys()])].sort((a, b) => a.localeCompare(b));
   const cases = caseIds.map((id) => compareCase(id, baselineById.get(id), candidateById.get(id)));
   const totals = {
     baseline: sumFindingCounts(cases.map((entry) => entry.baselineFindings)),
@@ -266,7 +266,7 @@ function collectMetrics(value: unknown, prefix: string, output: Record<string, n
 }
 
 function compareMetrics(before: Record<string, number>, after: Record<string, number>): EvalMetricDelta[] {
-  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort((a, b) => a.localeCompare(b));
   return keys
     .map((key) => ({
       key,

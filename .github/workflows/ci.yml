@@ -21,8 +21,10 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
-          if [[ "${{ github.head_ref }}" == dependabot/* ]]; then
+          if [[ "$HEAD_REF" == dependabot/* ]]; then
             npm install
           else
             npm ci

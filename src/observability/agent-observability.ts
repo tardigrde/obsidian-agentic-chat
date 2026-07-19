@@ -428,13 +428,7 @@ function hasRequiredAuth(settings: ObservabilitySettings): boolean {
 
 function randomHex(bytes: number): string {
   const buffer = new Uint8Array(bytes);
-  if (window.crypto?.getRandomValues) {
-    window.crypto.getRandomValues(buffer);
-  } else {
-    for (let index = 0; index < buffer.length; index += 1) {
-      buffer[index] = Math.floor(Math.random() * 256);
-    }
-  }
+  window.crypto.getRandomValues(buffer);
   return Array.from(buffer, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 

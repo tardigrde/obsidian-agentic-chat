@@ -396,7 +396,7 @@ function uniqueLanguages(values: readonly (string | null | undefined)[]): readon
     const normalized = normalizeLanguageCode(value);
     if (normalized) seen.add(normalized);
   }
-  return [...seen].sort();
+  return [...seen].sort((a, b) => a.localeCompare(b));
 }
 
 function roundUsd(value: number): number {

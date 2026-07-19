@@ -262,7 +262,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       )
       .addText((text) =>
         text
-          .setPlaceholder("http://192.0.2.10:3128")
+          .setPlaceholder("https://192.0.2.10:3128")
           .setValue(settings.network.proxyUrl)
           .onChange(async (value) => {
             settings.network.proxyUrl = value.trim();
@@ -833,7 +833,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setDesc("Optional MCP-only override. Leave empty to inherit the global network proxy from the Models tab.")
       .addText((text) =>
         text
-          .setPlaceholder("http://host:port")
+          .setPlaceholder("https://host:port")
           .setValue(settings.mcp.proxyUrl)
           .onChange(async (value) => {
             settings.mcp.proxyUrl = value.trim();
@@ -975,7 +975,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setDesc("Optional observability-only override. Leave empty to inherit the global network proxy from the Models tab.")
       .addText((text) =>
         text
-          .setPlaceholder("http://host:port")
+          .setPlaceholder("https://host:port")
           .setValue(settings.observability.proxyUrl)
           .onChange(async (value) => {
             settings.observability.proxyUrl = value.trim();
