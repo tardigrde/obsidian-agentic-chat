@@ -44,10 +44,26 @@ export class ItemView extends Component {}
 export class Plugin extends Component {}
 export class PluginSettingTab {}
 export class Setting {}
-export class Modal {}
-export class FuzzySuggestModal {}
+export class Modal {
+  constructor(public app?: unknown) {}
+}
+export class FuzzySuggestModal {
+  constructor(public app?: unknown) {}
+  setPlaceholder(): void {
+    // No-op stub: the real Obsidian method configures the search input placeholder.
+  }
+  setInstructions(): void {
+    // No-op stub: the real Obsidian method renders the instruction hints.
+  }
+}
 export class SuggestModal {
-  setPlaceholder(): void {}
+  constructor(public app?: unknown) {}
+  setPlaceholder(): void {
+    // No-op stub: the real Obsidian method configures the search input placeholder.
+  }
+  setInstructions(): void {
+    // No-op stub: the real Obsidian method renders the instruction hints.
+  }
 }
 export class WorkspaceLeaf {}
 export class MarkdownView {}
