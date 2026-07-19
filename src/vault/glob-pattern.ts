@@ -35,7 +35,7 @@ export function globToRegExpSource(glob: string): string {
     } else if (char === "?") {
       out += "[^/]";
     } else {
-      out += char.replace(REGEX_SPECIAL, "\\$&");
+      out += char.replace(REGEX_SPECIAL, String.raw`\$&`);
     }
   }
   return out;

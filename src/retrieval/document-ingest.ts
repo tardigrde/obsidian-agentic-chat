@@ -450,7 +450,7 @@ function extractTextTags(xml: string): string {
     if (el.localName === "t") values.push(el.textContent ?? "");
   }
   if (values.length > 0) return normalizeSourceText(values.join("\n"));
-  return normalizeSourceText(xml.replace(/<[^>]+>/g, " "));
+  return normalizeSourceText(xml.replace(/<[^<>]+>/g, " "));
 }
 
 function extractSpreadsheetSheetText(xml: string): string {

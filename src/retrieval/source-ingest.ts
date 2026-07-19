@@ -22,10 +22,9 @@ export interface SourceTextChunk {
 
 export function normalizeSourceText(input: string): string {
   return input
-    .split(String.fromCharCode(0))
-    .join("")
+    .replaceAll("\0", "")
     .replace(/[ \t\f\v\r]+/g, " ")
-    .replace(/ *\n */g, "\n")
+    .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -36,7 +35,7 @@ export function normalizeMaxChunkChars(value: number | undefined): number {
 }
 
 export function normalizeSourcePath(value: string): string {
-  return value.trim().replace(/\\/g, "/").replace(/\/+/g, "/").toLowerCase();
+  return value.trim().replaceAll("\\", "/").replace(/\/+/g, "/").toLowerCase();
 }
 
 export function legacyTrimmedTextHash(text: string): string {
@@ -51,53 +50,53 @@ export function chunkSourceText(text: string, options: { maxChars?: number; anch
   const normalized = normalizeSourceText(text);
   if (!normalized) return [];
   const maxChars = normalizeMaxChunkChars(options.maxChars);
-  const chunks: Array<Omit<SourceTextChunk, "index" | "anchor">> = [];
-  let cursor = 0;
-  let current = "";
-  let currentStart = 0;
-  let currentEnd = 0;
-
-  for (const paragraph of normalized.split(/\n{2,}/)) {
-    const paragraphStart = normalized.indexOf(paragraph, cursor);
-    const safeParagraphStart = paragraphStart === -1 ? cursor : paragraphStart;
-    cursor = safeParagraphStart + paragraph.length;
-
-    if (paragraph.length > maxChars) {
-      flushCurrent();
-      for (let offset = 0; offset < paragraph.length; offset += maxChars) {
-        const segment = paragraph.slice(offset, offset + maxChars).trim();
-        if (!segment) continue;
-        chunks.push({
-          start: safeParagraphStart + offset,
-          end: safeParagraphStart + offset + segment.length,
-          text: segment,
-        });
-      }
-      continue;
-    }
-
-    const separator = current ? "\n\n" : "";
-    if (current && current.length + separator.length + paragraph.length > maxChars) flushCurrent();
-    if (!current) currentStart = safeParagraphStart;
-    current = current ? `${current}\n\n${paragraph}` : paragraph;
-    currentEnd = safeParagraphStart + paragraph.length;
-  }
-
-  flushCurrent();
-
-  return chunks.map((chunk, index) => ({
+  return buildRawChunks(normalized, maxChars).map((chunk, index) => ({
     ...chunk,
     index: index + 1,
     anchor: `${options.anchorPrefix}-chunk-${index + 1}`,
   }));
+}
 
-  function flushCurrent(): void {
-    const text = current.trim();
-    if (!text) return;
-    chunks.push({ start: currentStart, end: currentEnd, text });
-    current = "";
-    currentStart = currentEnd;
+type RawSourceChunk = Omit<SourceTextChunk, "index" | "anchor">;
+
+function buildRawChunks(normalized: string, maxChars: number): RawSourceChunk[] {
+  const chunks: RawSourceChunk[] = [];
+  let pending: RawSourceChunk | null = null;
+  const flush = (): void => {
+    const text = pending?.text.trim();
+    if (pending && text) chunks.push({ start: pending.start, end: pending.end, text });
+    pending = null;
+  };
+
+  let cursor = 0;
+  for (const paragraph of normalized.split(/\n{2,}/)) {
+    const found = normalized.indexOf(paragraph, cursor);
+    const start = found === -1 ? cursor : found;
+    cursor = start + paragraph.length;
+
+    if (paragraph.length > maxChars) {
+      flush();
+      chunks.push(...splitLargeParagraph(paragraph, start, maxChars));
+      continue;
+    }
+
+    if (pending && pending.text.length + 2 + paragraph.length > maxChars) flush();
+    pending = pending
+      ? { start: pending.start, end: start + paragraph.length, text: `${pending.text}\n\n${paragraph}` }
+      : { start, end: start + paragraph.length, text: paragraph };
   }
+
+  flush();
+  return chunks;
+}
+
+function splitLargeParagraph(paragraph: string, start: number, maxChars: number): RawSourceChunk[] {
+  const chunks: RawSourceChunk[] = [];
+  for (let offset = 0; offset < paragraph.length; offset += maxChars) {
+    const segment = paragraph.slice(offset, offset + maxChars).trim();
+    if (segment) chunks.push({ start: start + offset, end: start + offset + segment.length, text: segment });
+  }
+  return chunks;
 }
 
 /** Render the `### Chunk N` body shared by the importer artifact formatters. */
