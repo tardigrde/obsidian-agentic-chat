@@ -1,8 +1,9 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
+import os from "node:os";
 
 const TURN_TIMEOUT_MS = Number(process.env.DOGFOOD_TURN_TIMEOUT_MS || 120_000);
-const EXTERNAL_ROOT = process.env.DOGFOOD_EXTERNAL_ROOT?.trim() || "/tmp/agentic-chat-dogfood-external-root";
+const EXTERNAL_ROOT = process.env.DOGFOOD_EXTERNAL_ROOT?.trim() || `${os.tmpdir()}/agentic-chat-dogfood-external-root`;
 const SECRET_TEXT = "SYNTHETIC_SECRET_DO_NOT_LEAK";
 
 type ScriptedTurn = {

@@ -20,7 +20,7 @@ for (const file of files) {
 }
 
 const pluginDir = `${vaultPath.replace(/\/+$/, "")}/.obsidian/plugins/agentic-chat`;
-run("adb", ["shell", `mkdir -p ${shellQuote(pluginDir)}`]);
+run("adb", ["shell", "mkdir", "-p", pluginDir]);
 
 for (const file of files) {
   run("adb", ["push", file, `${pluginDir}/${file}`]);
@@ -36,8 +36,4 @@ function run(command, args) {
     process.exit(1);
   }
   if (result.status !== 0) process.exit(result.status ?? 1);
-}
-
-function shellQuote(value) {
-  return `'${value.replace(/'/g, "'\\''")}'`;
 }
