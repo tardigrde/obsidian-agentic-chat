@@ -77,7 +77,7 @@ function hasGlobCharacters(pattern: string): boolean {
 function globToRegExp(pattern: string): RegExp {
   const escaped = pattern
     .replace(REGEX_SPECIAL_CHARS, String.raw`\$&`)
-    .replaceAll("\\*", ".*")
-    .replaceAll("\\?", ".");
+    .replaceAll(String.raw`\*`, ".*")
+    .replaceAll(String.raw`\?`, ".");
   return new RegExp(`^${escaped}$`, "i");
 }

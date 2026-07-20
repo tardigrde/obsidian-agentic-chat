@@ -897,8 +897,8 @@ function trimReferencePunctuation(reference: string): string {
 
 function hashText(text: string): string {
   let hash = 0x811c9dc5;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.codePointAt(index) ?? 0;
+  for (const char of text) {
+    hash ^= char.codePointAt(0) ?? 0;
     hash = Math.imul(hash, 0x01000193);
   }
   return `${text.length}:${(hash >>> 0).toString(16)}`;

@@ -197,7 +197,13 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   private refresh(): void {
-    void this.save().then(() => this.display());
+    void this.save().then(() => this.redraw());
+  }
+
+  private redraw(): void {
+    // ponytail: Obsidian 1.13.0 deprecated PluginSettingTab.display() in favor of
+    // getSettingDefinitions(). Full migration to declarative settings deferred.
+    (this as unknown as { display: () => void }).display();
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
@@ -234,7 +240,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       if (index === this.activeTab) button.addClass("is-active");
       button.addEventListener("click", () => {
         this.activeTab = index;
-        this.display();
+        this.redraw();
       });
     });
     this.tabs[this.activeTab].render(body, settings);
@@ -253,7 +259,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         dropdown.setValue(settings.provider).onChange(async (value) => {
           settings.provider = value as ProviderId;
           await this.save();
-          this.display();
+          this.redraw();
         });
       });
 
@@ -430,7 +436,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           if (!value) return;
           applyOpenAICompatiblePreset(settings, value);
           await this.save();
-          this.display();
+          this.redraw();
         });
       });
     new Setting(containerEl)
@@ -702,7 +708,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             .onClick(async () => {
               settings.approval.workingDirs = settings.approval.workingDirs.filter((entry) => entry !== dir);
               await this.save();
-              this.display();
+              this.redraw();
             }),
         );
     }
@@ -727,7 +733,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         toggle.setValue(settings.web.enabled).onChange(async (value) => {
           settings.web.enabled = value;
           await this.save();
-          this.display();
+          this.redraw();
         }),
       );
 
@@ -743,7 +749,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         dropdown.setValue(settings.web.searchProvider).onChange(async (value) => {
           settings.web.searchProvider = value as WebSearchProvider;
           await this.save();
-          this.display();
+          this.redraw();
         });
       });
 
@@ -826,7 +832,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         toggle.setValue(settings.mcp.enabled).onChange(async (value) => {
           settings.mcp.enabled = value;
           await this.save();
-          this.display();
+          this.redraw();
         }),
       );
 
@@ -872,7 +878,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           const id = this.nextMcpServerId(settings, "mcp");
           this.upsertMcpServer(settings, createMcpServerSettings({ id }));
           await this.save();
-          this.display();
+          this.redraw();
         }),
       );
 
@@ -908,7 +914,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         toggle.setValue(settings.observability.enabled).onChange(async (value) => {
           settings.observability.enabled = value;
           await this.save();
-          this.display();
+          this.redraw();
         }),
       );
 
@@ -924,7 +930,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         dropdown.setValue(settings.observability.backend).onChange(async (value) => {
           settings.observability.backend = value as ObservabilityBackend;
           await this.save();
-          this.display();
+          this.redraw();
         });
       });
 
@@ -1130,7 +1136,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           this.clearMcpSecretSlots(server);
           settings.mcp.servers = settings.mcp.servers.filter((entry) => entry !== server);
           await this.save();
-          this.display();
+          this.redraw();
         }),
     );
 
@@ -1166,7 +1172,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             const result = this.updateMcpServerEndpoint(settings, server, value);
             await this.save();
             if (result.clearedCredentials) new Notice(`${server.name}: cleared MCP credentials for the changed endpoint.`);
-            if (result.shouldDisplay) this.display();
+            if (result.shouldDisplay) this.redraw();
           }),
       );
 
@@ -1255,7 +1261,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             server.authType = value as McpAuthType;
             if (server.authType === "bearer") server.authHeaderName = "";
             await this.save();
-            this.display();
+            this.redraw();
           }),
       );
 
@@ -1338,7 +1344,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             forgetMcpOAuthTokens(server);
             server.knownTools = [];
             await this.save();
-            this.display();
+            this.redraw();
           }),
       );
 
@@ -1410,7 +1416,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       new Notice(
         `${server.name}: refreshed ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"}${sample}.`,
       );
-      this.display();
+      this.redraw();
     } catch (error) {
       new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -1436,7 +1442,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     new Notice(
       `${server.name}: connected; discovered ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"}${sample}.`,
     );
-    this.display();
+    this.redraw();
   }
 
   private async authenticateAndProbeMcpServer(server: McpServerSettings): Promise<void> {
@@ -1456,7 +1462,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         result.toolCount === 1 ? "" : "s"
       }${sample}.`,
     );
-    this.display();
+    this.redraw();
   }
 
   private effectiveMcpProxySettings(): NetworkSettings {
@@ -1541,7 +1547,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       this.upsertMcpServer(settings, server);
       await this.save();
       new Notice(`${server.name}: imported MCP config.`);
-      this.display();
+      this.redraw();
     } catch (error) {
       new Notice(`Agentic Chat MCP: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -1709,7 +1715,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           .onClick(async () => {
             button.setDisabled(true);
             await options.onForget();
-            this.display();
+            this.redraw();
           }),
       );
   }
@@ -1842,7 +1848,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         dropdown.setValue(settings.embeddings.provider).onChange(async (value) => {
           settings.embeddings.provider = value as EmbeddingProviderId;
           await this.save();
-          this.display();
+          this.redraw();
         });
       });
     new Setting(containerEl)
@@ -1958,7 +1964,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             settings.external.enabled = value;
             await this.save();
-            this.display();
+            this.redraw();
           }),
       );
 

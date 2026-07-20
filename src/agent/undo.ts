@@ -24,8 +24,8 @@ export type UndoEntry =
  * bodies; collision risk is acceptable for log-slimming diff detection. */
 function fnv1a(body: string): string {
   let hash = 0x811c9dc5;
-  for (let i = 0; i < body.length; i++) {
-    hash ^= body.codePointAt(i)!;
+  for (const char of body) {
+    hash ^= char.codePointAt(0) ?? 0;
     hash = Math.imul(hash, 0x01000193);
   }
   return (hash >>> 0).toString(36);

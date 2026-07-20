@@ -267,7 +267,7 @@ function cloneToolCall(block: ToolCall): ToolCall {
 }
 
 function cloneJsonObject(value: Record<string, unknown>): Record<string, unknown> {
-  return structuredClone(value) as Record<string, unknown>;
+  return structuredClone(value);
 }
 
 function replayUsage(usage: ReplayUsage = {}): Usage {

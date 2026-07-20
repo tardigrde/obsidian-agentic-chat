@@ -101,10 +101,10 @@ function renderQuickAskDiff(container: HTMLElement, before: string, after: strin
   });
   const pre = container.createEl("pre", { cls: "agentic-chat-diff" });
   const shown = lines.slice(0, MAX_DIFF_DISPLAY_LINES);
-    for (const line of shown) {
-      const prefix = diffPrefix(line.op);
-      pre.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
-    }
+  for (const line of shown) {
+    const prefix = diffPrefix(line.op);
+    pre.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
+  }
   if (lines.length > shown.length) {
     pre.createDiv({ cls: "agentic-chat-diff-line is-context", text: `... ${lines.length - shown.length} more lines` });
   }
