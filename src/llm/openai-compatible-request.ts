@@ -39,7 +39,7 @@ export type OpenAICompatibleRequester = (
 
 export function createOpenAICompatibleRequester(fetcher: WebFetcher): OpenAICompatibleRequester {
   return async (request) => {
-    const headers = { ...(request.headers ?? {}) };
+    const headers = { ...request.headers };
     if (request.contentType && !hasHeader(headers, "content-type")) {
       headers["Content-Type"] = request.contentType;
     }
@@ -118,8 +118,8 @@ export function streamOpenAICompatibleViaRequestUrl(
           method: "POST",
           contentType: "application/json",
           headers: {
-            ...(model.headers ?? {}),
-            ...(options?.headers ?? {}),
+            ...model.headers,
+            ...options?.headers,
             "Content-Type": "application/json",
             Authorization: `Bearer ${apiKey}`,
           },
@@ -510,7 +510,8 @@ function normalizeHeaders(headers: Record<string, string> | undefined): Record<s
 
 function formatStatusError(response: OpenAICompatibleResponse): string {
   const detail = extractErrorDetail(response);
-  return `OpenAI-compatible request failed (status ${response.status})${detail ? `: ${detail}` : "."}`;
+  const suffix = detail ? `: ${detail}` : ".";
+  return `OpenAI-compatible request failed (status ${response.status})${suffix}`;
 }
 
 function extractErrorDetail(response: OpenAICompatibleResponse): string {

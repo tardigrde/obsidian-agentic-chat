@@ -21,9 +21,10 @@ export function formatMcpToolApprovalDescription(localName: string, tool: McpKno
 export function formatMcpServerSummary(server: McpServerSettings, endpointProblem: string): string {
   const status = server.enabled ? "enabled" : "disabled";
   const auth = formatMcpAuthType(server);
+  const toolLabel = server.knownTools.length === 1 ? "tool" : "tools";
   const tools =
     server.knownTools.length > 0
-      ? `${server.knownTools.length} discovered tool${server.knownTools.length === 1 ? "" : "s"}`
+      ? `${server.knownTools.length} discovered ${toolLabel}`
       : "no tools discovered yet";
   const endpoint = endpointProblem || server.url || "No endpoint configured";
   return `${endpoint} · ${status} · ${auth} · ${tools}`;

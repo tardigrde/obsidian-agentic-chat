@@ -747,8 +747,8 @@ async function sha256Base64Url(input: string): Promise<string> {
 
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  for (const byte of bytes) binary += String.fromCodePoint(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
 }
 
 function defaultRandomBytes(size: number): Uint8Array {
@@ -926,7 +926,7 @@ function requireNodeHttp(): NodeHttpModule {
     throw new Error("MCP OAuth sign-in requires Obsidian desktop so Agentic Chat can open a localhost callback.");
   }
   if (typeof http.createServer !== "function") {
-    throw new Error("Could not load Node HTTP support for MCP OAuth callback handling.");
+    throw new TypeError("Could not load Node HTTP support for MCP OAuth callback handling.");
   }
   return http as NodeHttpModule;
 }
@@ -1082,7 +1082,14 @@ function stringValue(value: unknown): string {
 }
 
 function finitePositiveNumber(value: unknown): number {
-  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number.parseFloat(value) : 0;
+  let parsed: number;
+  if (typeof value === "number") {
+    parsed = value;
+  } else if (typeof value === "string") {
+    parsed = Number.parseFloat(value);
+  } else {
+    parsed = 0;
+  }
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 

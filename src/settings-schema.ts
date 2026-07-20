@@ -237,21 +237,21 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
     approval: {
       ...DEFAULT_SETTINGS.approval,
-      ...(stored?.approval ?? {}),
-      perTool: { ...(stored?.approval?.perTool ?? {}) },
+      ...stored?.approval,
+      perTool: { ...stored?.approval?.perTool },
       // Heal the granted working dirs to a string[] so a malformed persisted value
       // can't break the gate.
       workingDirs: Array.isArray(stored?.approval?.workingDirs)
         ? stored.approval.workingDirs.filter((dir): dir is string => typeof dir === "string")
         : [],
     },
-    notifications: { ...DEFAULT_SETTINGS.notifications, ...(stored?.notifications ?? {}) },
-    compaction: { ...DEFAULT_SETTINGS.compaction, ...(stored?.compaction ?? {}) },
+    notifications: { ...DEFAULT_SETTINGS.notifications, ...stored?.notifications },
+    compaction: { ...DEFAULT_SETTINGS.compaction, ...stored?.compaction },
     toolBudget: healToolBudgetSettings(stored?.toolBudget),
     network: healNetworkSettings(stored?.network),
     web: {
       ...DEFAULT_SETTINGS.web,
-      ...(stored?.web ?? {}),
+      ...stored?.web,
       // Heal the provider enum so an unknown persisted value can't break search.
       searchProvider: healSearchProvider(stored?.web?.searchProvider),
       searchApiKeySecretId: stringSetting(stored?.web?.searchApiKeySecretId, WEB_SEARCH_API_KEY_SECRET_ID),

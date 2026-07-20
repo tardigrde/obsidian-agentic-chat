@@ -1,7 +1,5 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { formatSkillInvocation } from "@earendil-works/pi-agent-core";
+import { type AgentTool, type Skill, formatSkillInvocation } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import type { Skill } from "@earendil-works/pi-agent-core";
 
 const ReadSkillParameters = Type.Object({
   name: Type.String({

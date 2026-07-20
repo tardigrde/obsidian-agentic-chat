@@ -118,7 +118,7 @@ export function buildActiveNoteSection(content: ActiveNoteContent): string {
   if (full !== null && full.length <= limit) {
     return `Active note "${path}":\n\n${full}`;
   }
-  if (visibleRange && visibleRange.trim()) {
+  if (visibleRange?.trim()) {
     return (
       `Active note "${path}" (too long to include in full — showing the portion visible in the editor):\n\n` +
       visibleRange
@@ -129,14 +129,14 @@ export function buildActiveNoteSection(content: ActiveNoteContent): string {
 
 function renderedActiveNoteBody(content: ActiveNoteContent): string | null {
   if (content.full !== null && content.full.length <= content.limit) return content.full;
-  if (content.visibleRange && content.visibleRange.trim()) return content.visibleRange;
+  if (content.visibleRange?.trim()) return content.visibleRange;
   return null;
 }
 
 function hashActiveNoteBody(text: string): string {
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
+    hash ^= text.codePointAt(i) ?? 0;
     hash = Math.imul(hash, 0x01000193);
   }
   return `${text.length}:${(hash >>> 0).toString(16)}`;

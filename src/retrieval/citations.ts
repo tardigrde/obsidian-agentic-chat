@@ -166,7 +166,7 @@ function normalizeFragment(fragment: string): NoteSourceFragment | null {
 function normalizeNotePath(value: string): string | undefined {
   const path = value
     .trim()
-    .replace(/\\/g, "/")
+    .replaceAll("\\", "/")
     .replace(/^\/+/, "")
     .replace(/\/+/g, "/");
   if (path.includes(":") || path.includes("[") || path.includes("]")) return undefined;
@@ -217,5 +217,8 @@ function noteTarget(reference: NoteSourceReference): string {
 }
 
 function escapeMarkdownLabel(label: string): string {
-  return label.replace(/\\/g, "\\\\").replace(/\[/g, "\\[").replace(/]/g, "\\]");
+  return label
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll("[", String.raw`\[`)
+    .replaceAll("]", String.raw`\]`);
 }

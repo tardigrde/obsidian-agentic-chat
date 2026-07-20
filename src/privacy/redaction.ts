@@ -8,8 +8,8 @@ const DEFAULT_MAX_DEPTH = 4;
 const SENSITIVE_KEY_PATTERN =
   /(?:api[-_ ]?key|auth(?:orization)?|bearer|client[-_ ]?secret|cookie|password|refresh[-_ ]?token|secret|token)/i;
 const CONTENT_KEY_PATTERN = /^(content|before|after|body|text)$/i;
-const BEARER_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
-const BASIC_PATTERN = /\bBasic\s+[A-Za-z0-9+/=-]{12,}/gi;
+const BEARER_PATTERN = /\bBearer\s+[-A-Za-z0-9._~+/=]{8,}/gi;
+const BASIC_PATTERN = /\bBasic\s+[-A-Za-z0-9+/=]{12,}/gi;
 const PROVIDER_KEY_PATTERN = /\b(?:sk|pk|rk|or)-[A-Za-z0-9._-]{8,}\b/g;
 const ASSIGNMENT_SECRET_PATTERN =
   /\b(api[_ -]?key|access[_ -]?token|auth[_ -]?token|client[_ -]?secret|refresh[_ -]?token|secret|password)\s*[:=]\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^&\s"']+)/gi;

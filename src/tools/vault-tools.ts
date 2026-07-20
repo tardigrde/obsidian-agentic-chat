@@ -236,7 +236,7 @@ function createWriteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): A
       await ensureParentFolders(app, path);
       const existing = app.vault.getAbstractFileByPath(path);
       if (existing instanceof TFolder) {
-        throw new Error(`Cannot write file because a folder exists at ${path}.`);
+        throw new TypeError(`Cannot write file because a folder exists at ${path}.`);
       }
       if (existing instanceof TFile) {
         await app.vault.process(existing, () => params.content);
@@ -515,7 +515,7 @@ function createActiveNoteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typ
       const activeFile = app.workspace.getActiveFile();
       const file = view?.file ?? activeFile;
       // An ignored active note is treated as if no note were open at all.
-      if (!file || file.extension !== "md" || isIgnored(file.path)) throw new Error("No active Markdown note.");
+      if (file?.extension !== "md" || isIgnored(file.path)) throw new Error("No active Markdown note.");
       const lines = [`Active note: ${file.path}`];
       const selection =
         params.includeSelection && view?.file?.path === file.path

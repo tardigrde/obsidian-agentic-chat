@@ -1155,7 +1155,13 @@ export class ChatView extends ItemView {
 
   private setRunning(running: boolean): void {
     this.sendButton.disabled = false;
-    this.sendButton.setText(running ? (this.queuedPromptArmed ? "Update" : "Queue") : "Send");
+    let sendLabel: string;
+    if (running) {
+      sendLabel = this.queuedPromptArmed ? "Update" : "Queue";
+    } else {
+      sendLabel = "Send";
+    }
+    this.sendButton.setText(sendLabel);
     if (running) {
       this.stopButton.show();
       this.workingEl.show();
@@ -1470,7 +1476,8 @@ export class ChatView extends ItemView {
       // precedence — a shadowed skill stays reachable via /skill <name>).
       const skill = this.service.getSkills().find((item) => item.name.toLowerCase() === word.toLowerCase());
       if (skill) {
-        await this.runSkill(skill.name, argString, `/${word}${argString ? ` ${argString}` : ""}`);
+        const argPart = argString ? ` ${argString}` : "";
+        await this.runSkill(skill.name, argString, `/${word}${argPart}`);
         return true;
       }
       return false;
@@ -1551,7 +1558,7 @@ export class ChatView extends ItemView {
         await this.runInit(argString);
         return true;
       case "template":
-        await this.runTemplate(input.args[0], [...input.args.slice(1)]);
+        await this.runTemplate(input.args[0], input.args.slice(1));
         return true;
       case "help":
         this.showHelp();
@@ -1650,7 +1657,8 @@ export class ChatView extends ItemView {
       return;
     }
     this.clearEmptyState();
-    this.renderOutgoingUserMessage(display ?? `/skill ${name}${extra ? ` ${extra}` : ""}`, []);
+    const extraPart = extra ? ` ${extra}` : "";
+    this.renderOutgoingUserMessage(display ?? `/skill ${name}${extraPart}`, []);
     await this.service.invokeSkill(name, extra || undefined);
     this.showServiceError();
   }
@@ -1658,7 +1666,8 @@ export class ChatView extends ItemView {
   /** `/init`: drive the agent to curate the vault's AGENTS.md standing-instructions file. */
   private async runInit(instructions = ""): Promise<void> {
     this.clearEmptyState();
-    const display = `/init${instructions.trim() ? ` ${instructions.trim()}` : ""}`;
+    const initPart = instructions.trim() ? ` ${instructions.trim()}` : "";
+    const display = `/init${initPart}`;
     this.renderOutgoingUserMessage(display, []);
     await this.service.invokeInit(instructions);
     this.showServiceError();
@@ -1667,7 +1676,8 @@ export class ChatView extends ItemView {
   /** `/compact [instructions]`: rewrite older transcript turns into a summary now. */
   private async runCompact(instructions = ""): Promise<void> {
     this.clearEmptyState();
-    const display = `/compact${instructions.trim() ? ` ${instructions.trim()}` : ""}`;
+    const compactPart = instructions.trim() ? ` ${instructions.trim()}` : "";
+    const display = `/compact${compactPart}`;
     this.renderOutgoingUserMessage(display, []);
     const pending = new Notice("Compacting conversation…", 0);
     let result;
@@ -1833,7 +1843,8 @@ export class ChatView extends ItemView {
       return;
     }
     this.clearEmptyState();
-    this.renderOutgoingUserMessage(`/agent ${name}${task ? ` ${task}` : ""}`, []);
+    const taskPart = task ? ` ${task}` : "";
+    this.renderOutgoingUserMessage(`/agent ${name}${taskPart}`, []);
     await this.service.invokeAgent(name, task);
     this.showServiceError();
   }
@@ -2114,10 +2125,10 @@ export class ChatView extends ItemView {
     this.clearEmptyState();
     this.renderInfoMessage(
       "Slash commands",
-      visibleCommands().map((command): [string, string] => [
-        `/${command.name}${command.args ? ` ${command.args}` : ""}`,
-        command.description,
-      ]),
+      visibleCommands().map((command): [string, string] => {
+        const argsPart = command.args ? ` ${command.args}` : "";
+        return [`/${command.name}${argsPart}`, command.description];
+      }),
     );
   }
 
@@ -2646,7 +2657,7 @@ export class ChatView extends ItemView {
   }
 
   private ensureBubble(): AssistantBubble {
-    if (!this.bubble) this.bubble = this.newBubble();
+    this.bubble ??= this.newBubble();
     return this.bubble;
   }
 

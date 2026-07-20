@@ -273,7 +273,7 @@ export class AssistantBubble {
 
   private renderSubagentChildren(card: HTMLElement, children: SubagentChildStatus[]): void {
     let list = card.querySelector<HTMLElement>(".agentic-chat-subagents");
-    if (!list) list = card.createDiv({ cls: "agentic-chat-subagents" });
+    list ??= card.createDiv({ cls: "agentic-chat-subagents" });
     list.empty();
     for (const child of children) {
       const row = list.createEl("details", { cls: ["agentic-chat-subagent", `is-${child.status}`] });
@@ -286,7 +286,7 @@ export class AssistantBubble {
 
   private renderAskUserStep(card: HTMLElement, details: AskUserDetails): void {
     let row = card.querySelector<HTMLElement>(".agentic-chat-step-ask-user");
-    if (!row) row = card.createDiv({ cls: "agentic-chat-step-ask-user" });
+    row ??= card.createDiv({ cls: "agentic-chat-step-ask-user" });
     row.empty();
     row.createDiv({
       cls: "agentic-chat-step-ask-user-status",
@@ -347,7 +347,7 @@ export class AssistantBubble {
     const text = message.trim();
     if (!text) return;
     const existing = this.el.querySelector(".agentic-chat-error");
-    if (existing && existing.getAttr("data-error-text") === text) return;
+    if (existing?.getAttr("data-error-text") === text) return;
     const banner = this.el.createDiv({ cls: "agentic-chat-error" });
     banner.setAttr("data-error-text", text);
     if (text.includes("\n")) {
@@ -403,10 +403,11 @@ export type RenderedChatLink =
 
 export interface RenderedAnchorLike {
   getAttribute(name: string): string | null;
+  dataset: DOMStringMap;
 }
 
 export function classifyRenderedChatLink(anchor: RenderedAnchorLike): RenderedChatLink | null {
-  const dataHref = cleanLinkTarget(anchor.getAttribute("data-href"));
+  const dataHref = cleanLinkTarget(anchor.dataset.href ?? null);
   if (dataHref) return { kind: "vault", target: dataHref };
 
   const href = cleanLinkTarget(anchor.getAttribute("href"));
@@ -464,7 +465,7 @@ function closestAnchor(target: EventTarget | null): HTMLAnchorElement | null {
 
 function cleanLinkTarget(value: string | null): string | null {
   const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
+  return trimmed || null;
 }
 
 function linkScheme(target: string): string | null {
@@ -568,7 +569,7 @@ async function renderSingleMermaidBlock(code: HTMLElement, mermaid: MermaidRende
     // Reject malformed Mermaid output — a missing/non-<svg> root or a DOMParser
     // <parsererror> node — before it reaches the live document. Throwing here
     // falls into the surrounding catch, which flags the block as a render error.
-    if (!svgRoot || svgRoot.localName.toLowerCase() !== "svg" || svgRoot.querySelector("parsererror")) {
+    if (svgRoot?.localName?.toLowerCase() !== "svg" || svgRoot?.querySelector("parsererror")) {
       throw new Error("Mermaid renderer returned invalid SVG or parser error");
     }
     target.replaceChildren(activeDocument.importNode(svgRoot, true));

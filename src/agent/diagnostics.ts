@@ -200,12 +200,14 @@ export function formatRuntimeDiagnosticsRows(diagnostics: AgentRuntimeDiagnostic
 export function formatMcpDiagnosticRows(servers: readonly McpServerDiagnostic[]): Array<[string, string]> {
   const rows: Array<[string, string]> = [];
   for (const server of servers) {
-    rows.push([`MCP server: ${server.serverName}`, formatMcpServerDiagnostic(server)]);
-    rows.push([`MCP URL: ${server.serverName}`, server.url]);
-    rows.push([`MCP auth: ${server.serverName}`, formatMcpAuthDiagnostic(server)]);
-    if (server.status === "ok") {
-      rows.push([`MCP tools: ${server.serverName}`, formatList(server.toolNames)]);
-    }
+    const extra: Array<[string, string]> =
+      server.status === "ok" ? [[`MCP tools: ${server.serverName}`, formatList(server.toolNames)]] : [];
+    rows.push(
+      [`MCP server: ${server.serverName}`, formatMcpServerDiagnostic(server)],
+      [`MCP URL: ${server.serverName}`, server.url],
+      [`MCP auth: ${server.serverName}`, formatMcpAuthDiagnostic(server)],
+      ...extra,
+    );
   }
   return rows;
 }

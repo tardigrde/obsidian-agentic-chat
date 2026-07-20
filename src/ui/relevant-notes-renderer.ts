@@ -89,7 +89,11 @@ export function renderRelevantNotesPanel(
 }
 
 export function relevantNoteFileName(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+  const segments = path.split(/[\\/]/);
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i]) return segments[i];
+  }
+  return path;
 }
 
 export function relevantNotesEmptyText(reason: RelevantNotesPanelState["emptyReason"]): string {

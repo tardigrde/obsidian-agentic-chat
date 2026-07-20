@@ -156,12 +156,14 @@ export function planTrackerRows(state: PlanTrackerState | null, message: string)
   return [
     ["Status", message],
     ["Summary", summarizePlanTracker(state)],
-    ...state.items.map((item): [string, string] => [
-      item.id,
-      `${item.title} · ${PLAN_ITEM_STATUS_LABELS[item.status]} · tests ${PLAN_TEST_STATUS_LABELS[item.testStatus]}${
-        item.checkpointCommit ? ` · commit ${item.checkpointCommit}` : ""
-      }${item.note ? ` · ${item.note}` : ""}`,
-    ]),
+    ...state.items.map((item): [string, string] => {
+      const checkpointPart = item.checkpointCommit ? ` · commit ${item.checkpointCommit}` : "";
+      const notePart = item.note ? ` · ${item.note}` : "";
+      return [
+        item.id,
+        `${item.title} · ${PLAN_ITEM_STATUS_LABELS[item.status]} · tests ${PLAN_TEST_STATUS_LABELS[item.testStatus]}${checkpointPart}${notePart}`,
+      ];
+    }),
   ];
 }
 
@@ -175,38 +177,54 @@ function parsePlanTrackerCommand(input: string): PlanTrackerCommand {
 }
 
 function buildPlanTrackerCommand(verb: string, verbRaw: string, rest: string[], restText: string): PlanTrackerCommand {
-  if (verb === "add") {
-    return restText ? { type: "add", title: restText } : { type: "error", message: "Usage: /todo add <milestone>" };
+  switch (verb) {
+    case "add": return buildAddCommand(restText);
+    case "set": return buildSetCommand(rest);
+    case "test":
+    case "tests": return buildTestCommand(rest);
+    case "commit":
+    case "checkpoint": return buildCommitCommand(rest);
+    case "note": return buildNoteCommand(rest);
+    case "title": return buildTitleCommand(restText);
+    case "clear": return { type: "clear" };
+    default: return { type: "error", message: `Unknown /todo command "${verbRaw}".` };
   }
-  if (verb === "set") {
-    const [id, statusRaw] = rest;
-    const status = parsePlanItemStatus(statusRaw);
-    if (!id || !status) return { type: "error", message: "Usage: /todo set <id> <pending|active|done|blocked>" };
-    return { type: "set", id, status };
-  }
-  if (verb === "test" || verb === "tests") {
-    const [id, statusRaw] = rest;
-    const testStatus = parsePlanTestStatus(statusRaw);
-    if (!id || !testStatus) return { type: "error", message: "Usage: /todo test <id> <not-run|running|passed|failed|skipped>" };
-    return { type: "test", id, testStatus };
-  }
-  if (verb === "commit" || verb === "checkpoint") {
-    const [id, ...commitParts] = rest;
-    const checkpointCommit = commitParts.join(" ").trim();
-    if (!id || !checkpointCommit) return { type: "error", message: "Usage: /todo commit <id> <commit>" };
-    return { type: "commit", id, checkpointCommit };
-  }
-  if (verb === "note") {
-    const [id, ...noteParts] = rest;
-    const note = noteParts.join(" ").trim();
-    if (!id || !note) return { type: "error", message: "Usage: /todo note <id> <note>" };
-    return { type: "note", id, note };
-  }
-  if (verb === "title") {
-    return restText ? { type: "title", title: restText } : { type: "error", message: "Usage: /todo title <name>" };
-  }
-  if (verb === "clear") return { type: "clear" };
-  return { type: "error", message: `Unknown /todo command "${verbRaw}".` };
+}
+
+function buildAddCommand(restText: string): PlanTrackerCommand {
+  return restText ? { type: "add", title: restText } : { type: "error", message: "Usage: /todo add <milestone>" };
+}
+
+function buildSetCommand(rest: string[]): PlanTrackerCommand {
+  const [id, statusRaw] = rest;
+  const status = parsePlanItemStatus(statusRaw);
+  if (!id || !status) return { type: "error", message: "Usage: /todo set <id> <pending|active|done|blocked>" };
+  return { type: "set", id, status };
+}
+
+function buildTestCommand(rest: string[]): PlanTrackerCommand {
+  const [id, statusRaw] = rest;
+  const testStatus = parsePlanTestStatus(statusRaw);
+  if (!id || !testStatus) return { type: "error", message: "Usage: /todo test <id> <not-run|running|passed|failed|skipped>" };
+  return { type: "test", id, testStatus };
+}
+
+function buildCommitCommand(rest: string[]): PlanTrackerCommand {
+  const [id, ...commitParts] = rest;
+  const checkpointCommit = commitParts.join(" ").trim();
+  if (!id || !checkpointCommit) return { type: "error", message: "Usage: /todo commit <id> <commit>" };
+  return { type: "commit", id, checkpointCommit };
+}
+
+function buildNoteCommand(rest: string[]): PlanTrackerCommand {
+  const [id, ...noteParts] = rest;
+  const note = noteParts.join(" ").trim();
+  if (!id || !note) return { type: "error", message: "Usage: /todo note <id> <note>" };
+  return { type: "note", id, note };
+}
+
+function buildTitleCommand(restText: string): PlanTrackerCommand {
+  return restText ? { type: "title", title: restText } : { type: "error", message: "Usage: /todo title <name>" };
 }
 
 function parsePlanItemStatus(value: string | undefined): PlanItemStatus | null {

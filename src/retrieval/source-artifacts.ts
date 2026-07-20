@@ -367,7 +367,7 @@ const NAMED_ENTITIES: Record<string, string> = {
 function decodeEntities(input: string): string {
   return input.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, code: string) => {
     const lower = code.toLowerCase();
-    if (lower[0] === "#") {
+    if (lower.startsWith("#")) {
       const num = lower[1] === "x" ? Number.parseInt(lower.slice(2), 16) : Number.parseInt(lower.slice(1), 10);
       return Number.isFinite(num) && num > 0 ? String.fromCodePoint(num) : match;
     }

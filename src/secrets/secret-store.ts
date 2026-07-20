@@ -224,5 +224,5 @@ function writePath(root: unknown, path: readonly string[], value: string): void 
 }
 
 function cloneSettings(settings: AgenticChatSettings): AgenticChatSettings {
-  return JSON.parse(JSON.stringify(settings)) as AgenticChatSettings;
+  return structuredClone(settings) as AgenticChatSettings;
 }

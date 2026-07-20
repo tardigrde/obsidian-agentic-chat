@@ -11,8 +11,10 @@ export interface VaultAttachmentRef {
 export function parseVaultAttachmentRef(entry: string): VaultAttachmentRef {
   const hash = entry.indexOf("#");
   const caret = entry.indexOf("^");
-  const delimiter =
-    hash === -1 ? caret : caret === -1 ? hash : Math.min(hash, caret);
+  let delimiter: number;
+  if (hash === -1) delimiter = caret;
+  else if (caret === -1) delimiter = hash;
+  else delimiter = Math.min(hash, caret);
   if (delimiter <= 0) return { path: entry, fragment: null };
 
   const path = entry.slice(0, delimiter);
@@ -22,7 +24,7 @@ export function parseVaultAttachmentRef(entry: string): VaultAttachmentRef {
   return {
     path,
     fragment: {
-      type: raw[0] === "#" ? "heading" : "block",
+      type: raw.startsWith("#") ? "heading" : "block",
       value: decodeAttachmentFragment(value),
       raw,
     },

@@ -16,7 +16,7 @@ export function renderInfoPanel(parent: HTMLElement, title: string, entries: Arr
 }
 
 export function renderSummaryPanel(parent: HTMLElement, text: string): HTMLElement {
-  const inner = text.match(/<conversation-summary>\n?([\s\S]*?)\n?<\/conversation-summary>/);
+  const inner = /<conversation-summary>\n?([\s\S]*?)\n?<\/conversation-summary>/.exec(text);
   const summary = (inner ? inner[1] : text).trim();
   const el = parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-info"] });
   const details = el.createEl("details", { cls: "agentic-chat-info-details" });

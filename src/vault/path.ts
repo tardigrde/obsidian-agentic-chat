@@ -14,7 +14,7 @@ export interface VaultPathOptions {
  */
 export function normalizeVaultPath(input: string, options: VaultPathOptions = {}): string {
   const withoutAt = stripLeadingAt(input.trim());
-  const withForwardSlashes = withoutAt.replace(/\\/g, "/");
+  const withForwardSlashes = withoutAt.replaceAll("\\", "/");
 
   if (withForwardSlashes.startsWith("/")) {
     throw new Error("Path must be vault-relative, not absolute.");

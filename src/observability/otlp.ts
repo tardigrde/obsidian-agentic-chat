@@ -55,7 +55,7 @@ export async function exportOtlpSpans(input: OtlpExportInput, fetcher: WebFetche
 
 export function buildOtlpTraceRequest(input: OtlpExportInput): WebHttpRequest {
   const endpoint = observabilityTraceEndpoint(input.settings);
-  if (!endpoint) throw new Error("Observability endpoint is required.");
+  if (!endpoint) throw new TypeError("Observability endpoint is required.");
 
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -81,8 +81,9 @@ export function observabilityAuthHeaders(settings: ObservabilitySettings): Recor
     const publicKey = settings.langfusePublicKey.trim();
     const secretKey = settings.langfuseSecretKey.trim();
     if (!publicKey || !secretKey) return {};
+    const credentials = `${publicKey}:${secretKey}`;
     return {
-      Authorization: `Basic ${base64Encode(`${publicKey}:${secretKey}`)}`,
+      Authorization: `Basic ${base64Encode(credentials)}`,
       "x-langfuse-ingestion-version": "4",
     };
   }
@@ -155,10 +156,10 @@ function statusToJson(status: OtlpSpan["status"]): unknown {
 
 function base64Encode(value: string): string {
   if (typeof window.btoa !== "function") {
-    throw new Error("This platform cannot encode Langfuse credentials for Basic auth.");
+    throw new TypeError("This platform cannot encode Langfuse credentials for Basic auth.");
   }
   const bytes = new TextEncoder().encode(value);
   let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
+  for (const byte of bytes) binary += String.fromCodePoint(byte);
   return window.btoa(binary);
 }

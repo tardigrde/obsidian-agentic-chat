@@ -103,23 +103,23 @@ export function buildAgentParentTools(options: {
   toolBudgetState?: ToolBudgetState;
   externalInspectCache?: ExternalInspectCache;
 }): { tools: AgentTool[]; toolBudget: ToolBudgetSnapshot } {
-  const tools = createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo);
-  if (options.askUser) tools.push(createAskUserTool(options.askUser));
-  tools.push(...createMemoryTools(options.app));
-  tools.push(...createDocumentTools(options.app, options.artifactStore));
-  if (Platform.isDesktopApp) {
-    tools.push(
-      ...createExternalWorkspaceTools(options.settings.external, {
-        cache: options.externalInspectCache,
-        artifactStore: options.artifactStore,
-      }),
-    );
-  }
-  tools.push(...createWebTools(options.settings.web, options.webFetch, options.artifactStore));
-  tools.push(...createToolArtifactTools(options.artifactStore));
-  tools.push(...options.resources.mcpTools);
-  tools.push(createReadSkillTool(options.resources.skills));
-  if (options.subagentTool) tools.push(options.subagentTool);
+  const tools = [
+    ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
+    ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
+    ...createMemoryTools(options.app),
+    ...createDocumentTools(options.app, options.artifactStore),
+    ...(Platform.isDesktopApp
+      ? createExternalWorkspaceTools(options.settings.external, {
+          cache: options.externalInspectCache,
+          artifactStore: options.artifactStore,
+        })
+      : []),
+    ...createWebTools(options.settings.web, options.webFetch, options.artifactStore),
+    ...createToolArtifactTools(options.artifactStore),
+    ...options.resources.mcpTools,
+    createReadSkillTool(options.resources.skills),
+    ...(options.subagentTool ? [options.subagentTool] : []),
+  ];
   const budgeted = applyToolBudget({
     tools,
     settings: options.settings.toolBudget,

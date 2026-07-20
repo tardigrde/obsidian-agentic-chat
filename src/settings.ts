@@ -196,6 +196,10 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     await this.plugin.saveSettings();
   }
 
+  private refresh(): void {
+    void this.save().then(() => this.display());
+  }
+
   getSettingDefinitions(): SettingDefinitionItem[] {
     return [];
   }
@@ -340,7 +344,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
               .sort((a, b) => a.id.localeCompare(b.id));
             new ModelSuggestModal(this.app, models, (model) => {
               settings.openrouterModel = model.id;
-              void this.save().then(() => this.display());
+              this.refresh();
             }).open();
           } catch (error) {
             new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
@@ -674,7 +678,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             const path = folder.path === "/" ? "" : normalizeFolderPath(folder.path);
             if (!dirs.includes(path)) {
               dirs.push(path);
-              void this.save().then(() => this.display());
+              this.refresh();
             }
           }).open();
         }),
@@ -1318,9 +1322,12 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     const authenticated = hasMcpOAuthAccess(server);
     new Setting(containerEl)
       .setName("OAuth status")
+    const scopePart = server.oauth.scope ? ` with scopes: ${server.oauth.scope}` : "";
+    new Setting(containerEl)
+      .setName("OAuth status")
       .setDesc(
         authenticated
-          ? `Authenticated${server.oauth.scope ? ` with scopes: ${server.oauth.scope}` : ""}.`
+          ? `Authenticated${scopePart}.`
           : "Not authenticated. Use the Authenticate & test button in this server's header.",
       )
       .addButton((button) =>

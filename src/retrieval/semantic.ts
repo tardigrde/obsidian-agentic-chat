@@ -39,9 +39,8 @@ export function retrieveSemanticVaultCandidates(input: SemanticRetrievalInput): 
     });
   }
 
-  return candidates
-    .sort((left, right) => right.score - left.score || left.document.path.localeCompare(right.document.path))
-    .slice(0, maxResults);
+  const sorted = [...candidates].sort((left, right) => right.score - left.score || left.document.path.localeCompare(right.document.path));
+  return sorted.slice(0, maxResults);
 }
 
 export function retrieveSemanticCandidatesForDocument(input: {

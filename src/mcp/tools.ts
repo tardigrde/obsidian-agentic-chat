@@ -232,11 +232,12 @@ function createMcpTool(
   localName: string,
 ): AgentTool<TSchema, McpToolDetails> {
   const parameters = mcpInputSchema(remoteTool.inputSchema);
+  const toolDescription = remoteTool.description || `Call ${remoteTool.name} on the ${server.name} MCP server.`;
   return {
     name: localName,
     label: `${server.name}: ${remoteTool.title || remoteTool.name}`,
     description:
-      `${remoteTool.description || `Call ${remoteTool.name} on the ${server.name} MCP server.`}\n\n` +
+      `${toolDescription}\n\n` +
       `Remote MCP tool "${remoteTool.name}" on ${server.name}. Sends the tool arguments to ${server.url}.`,
     parameters,
     execute: async (_id, params, signal) => {

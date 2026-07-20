@@ -220,8 +220,12 @@ function legacyPdfTextHash(text: string): string {
 
 function extractLiteralStrings(input: string): string[] {
   const values: string[] = [];
-  for (let index = 0; index < input.length; index += 1) {
-    if (input[index] !== "(") continue;
+  let index = 0;
+  while (index < input.length) {
+    if (input[index] !== "(") {
+      index += 1;
+      continue;
+    }
     let depth = 1;
     let value = "";
     index += 1;
@@ -247,6 +251,7 @@ function extractLiteralStrings(input: string): string[] {
       value += char;
     }
     if (value) values.push(value);
+    index += 1;
   }
   return values;
 }
@@ -281,7 +286,7 @@ function decodePdfLiteralString(input: string): string {
         octal += input[index + 1 + consumed];
         consumed += 1;
       }
-      output += String.fromCharCode(Number.parseInt(octal, 8));
+      output += String.fromCodePoint(Number.parseInt(octal, 8));
       index += consumed;
       continue;
     }
@@ -307,7 +312,7 @@ function decodePdfHexString(input: string): string {
   for (let index = 0; index < hex.length; index += 2) {
     const pair = hex.slice(index, index + 2).padEnd(2, "0");
     const value = Number.parseInt(pair, 16);
-    if (Number.isFinite(value)) output += String.fromCharCode(value);
+    if (Number.isFinite(value)) output += String.fromCodePoint(value);
   }
   return output;
 }
@@ -328,7 +333,7 @@ function pdfInputToBinaryString(input: PdfInput): string {
   let output = "";
   for (let index = 0; index < bytes.length; index += 8192) {
     const chunk = bytes.slice(index, index + 8192);
-    output += String.fromCharCode(...chunk);
+    output += String.fromCodePoint(...chunk);
   }
   return output;
 }

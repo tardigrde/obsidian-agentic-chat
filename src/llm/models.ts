@@ -222,7 +222,8 @@ export async function listOpenRouterModels(
   if (options?.zdr) query.set("zdr", "true");
   if (options?.denyDataCollection) query.set("data_collection", "deny");
   const suffix = query.toString();
-  const url = `${baseUrl}/models${suffix ? `?${suffix}` : ""}`;
+  const queryPart = suffix ? `?${suffix}` : "";
+  const url = `${baseUrl}/models${queryPart}`;
   return fetchModelListCatalog(url, apiKey, options);
 }
 

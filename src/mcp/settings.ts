@@ -370,10 +370,16 @@ export function mcpServerSetupSteps(server: McpServerSettings): McpSetupStep[] {
     {
       id: "discovery",
       label: "Discovery",
-      status: server.knownTools.length > 0 ? "complete" : canDiscover ? "action" : "blocked",
+      status: discoveryStatus(server, canDiscover),
       message: discoveryMessage(server, canDiscover),
     },
   ];
+}
+
+function discoveryStatus(server: McpServerSettings, canDiscover: boolean): McpSetupStepStatus {
+  if (server.knownTools.length > 0) return "complete";
+  if (canDiscover) return "action";
+  return "blocked";
 }
 
 function discoveryMessage(server: McpServerSettings, canDiscover: boolean): string {

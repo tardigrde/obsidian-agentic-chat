@@ -370,7 +370,7 @@ async function inflateZipEntry(entry: ZipEntry, budget: ZipInflationBudget): Pro
   if (entry.method !== 8) throw new Error(`Unsupported ZIP compression method ${entry.method}.`);
   const Decompression = window.DecompressionStream;
   if (typeof Decompression !== "function") {
-    throw new Error("This platform cannot decompress ZIP-based documents; try importing on desktop or update Obsidian.");
+    throw new TypeError("This platform cannot decompress ZIP-based documents; try importing on desktop or update Obsidian.");
   }
   const buffer = new ArrayBuffer(entry.compressed.byteLength);
   new Uint8Array(buffer).set(entry.compressed);

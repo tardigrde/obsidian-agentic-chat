@@ -215,7 +215,7 @@ async function cachedExternalInspect(
     if (cached.hitCount > 1) return externalInspectDuplicateGuard(cached.result, cached.hitCount);
     const result = {
       ...cached.result,
-      details: { ...(cached.result.details ?? {}), cached: true, cacheHitCount: cached.hitCount },
+      details: { ...cached.result.details, cached: true, cacheHitCount: cached.hitCount },
     };
     return withExternalInspectCacheHint(result, true);
   }
@@ -404,15 +404,16 @@ async function listExternal(
       continue;
     }
     const suffix = child.stats.isDirectory() ? "/" : "";
-    const type = child.stats.isDirectory() ? "dir" : child.stats.isFile() ? "file" : "other";
+    const type = fileType(child.stats);
     const size = child.stats.isFile() ? `, ${child.stats.size} bytes` : "";
     rows.push(`${externalRef(child.relPath)}${suffix} (${type}${size})`);
   }
 
   const truncated = normalizeDirents(entries).length > rows.length + hidden;
+  const emptyHint = resolved.relPath ? "/" : "";
   const text = rows.length
     ? rows.join("\n")
-    : `No visible entries under ${resolved.externalRef}${resolved.relPath ? "/" : ""}.`;
+    : `No visible entries under ${resolved.externalRef}${emptyHint}.`;
   return textResult(truncated ? `${text}\n[Results truncated at ${maxResults} entries.]` : text, {
     action: "list",
     path: resolved.relPath,
@@ -590,9 +591,10 @@ async function searchExternal(
     }
   }
 
+  const emptyHint = root.relPath ? "/" : "";
   const text = results.length
     ? results.map(formatSearchResult).join("\n")
-    : `No external matches for "${options.query}" under ${root.externalRef}${root.relPath ? "/" : ""}.`;
+    : `No external matches for "${options.query}" under ${root.externalRef}${emptyHint}.`;
   return textResult(truncateToolOutput(text), {
     action: "search",
     path: root.relPath,
@@ -771,6 +773,12 @@ function createSearchMatcher(query: string, caseSensitive: boolean, regex: boole
   return { test: (text) => (caseSensitive ? text : text.toLowerCase()).includes(needle) };
 }
 
+function fileType(stats: ExternalStats): string {
+  if (stats.isDirectory()) return "dir";
+  if (stats.isFile()) return "file";
+  return "other";
+}
+
 function normalizeAction(value: unknown): ExternalInspectAction {
   if (value === "list" || value === "read" || value === "search") return value;
   throw new Error("external_inspect: action must be list, read, or search.");
@@ -796,11 +804,11 @@ function requiredString(value: unknown, name: string): string {
 function normalizeExternalPath(context: ExternalContext, rawPath: string): string {
   let text = (rawPath ?? "").trim();
   if (text.startsWith(EXTERNAL_REFERENCE_PREFIX)) text = text.slice(EXTERNAL_REFERENCE_PREFIX.length);
-  text = text.replace(/\\/g, "/");
+  text = text.replaceAll("\\", "/");
   if (!text || text === "/") return "";
   if (isAbsoluteExternalPath(context, text)) {
     const absolute = context.runtime.path.resolve(text);
-    const relative = context.runtime.path.relative(context.rootRealPath, absolute).replace(/\\/g, "/");
+    const relative = context.runtime.path.relative(context.rootRealPath, absolute).replaceAll("\\", "/");
     if (!relative) return "";
     if (relative.startsWith("..") || context.runtime.path.isAbsolute(relative)) {
       throw new Error("external_inspect absolute paths must be inside the configured external root.");
@@ -890,7 +898,7 @@ function trimReferencePunctuation(reference: string): string {
 function hashText(text: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
+    hash ^= text.codePointAt(index) ?? 0;
     hash = Math.imul(hash, 0x01000193);
   }
   return `${text.length}:${(hash >>> 0).toString(16)}`;
