@@ -11,6 +11,7 @@ import {
   loadAgentProfiles,
 } from "../src/agent/subagents";
 import {
+  abortSubagentChild,
   createSubagentTool,
   normalizeTasks,
   type SubagentDetails,
@@ -72,6 +73,39 @@ function hangingStreamFn(): StreamFn {
     const signal = options?.signal;
     if (signal?.aborted) finish();
     else signal?.addEventListener("abort", finish);
+    return stream;
+  }) as unknown as StreamFn;
+}
+
+/** A child stream that emits text_delta chunks so the live transcript is populated. */
+function streamingChildStreamFn(text: string): StreamFn {
+  return ((model: Model<"openai-completions">) => {
+    const stream = createAssistantMessageEventStream();
+    const message = {
+      role: "assistant" as const,
+      content: [{ type: "text" as const, text }],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: { input: 3, output: text.length, cacheRead: 0, cacheWrite: 0, totalTokens: 3 + text.length, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop" as const,
+      timestamp: Date.now(),
+    };
+    queueMicrotask(() => {
+      stream.push({ type: "start", partial: { ...message, content: [] } });
+      for (let i = 0; i < text.length; i += 3) {
+        const chunk = text.slice(i, i + 3);
+        const partialText = text.slice(0, i + 3);
+        stream.push({
+          type: "text_delta",
+          contentIndex: 0,
+          delta: chunk,
+          partial: { ...message, content: [{ type: "text", text: partialText }] },
+        });
+      }
+      stream.push({ type: "done", reason: "stop", message });
+      stream.end(message);
+    });
     return stream;
   }) as unknown as StreamFn;
 }
@@ -302,5 +336,54 @@ describe("createSubagentTool", () => {
     controller.abort();
     const result = await pending;
     expect(result.details.children[0].status).not.toBe("running");
+  });
+
+  it("collects a live transcript and stopId while a child streams", async () => {
+    const updates: SubagentDetails[] = [];
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(streamingChildStreamFn("live result")),
+    });
+    const result = await tool.execute(
+      "call-1",
+      { agent: "researcher", task: "stream" },
+      undefined,
+      (partial) => updates.push(partial.details),
+    );
+    const child = result.details.children[0];
+    expect(child.status).toBe("done");
+    expect(child.stopId).toBe("call-1-0");
+    expect(child.transcript?.length).toBeGreaterThan(0);
+    const textEntries = child.transcript?.filter((e) => e.type === "text") ?? [];
+    expect(textEntries.map((e) => e.text).join("")).toBe("live result");
+  });
+
+  it("lets a caller abort a single child via abortSubagentChild without stopping the whole dispatch", async () => {
+    let created = 0;
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => {
+        const isFirst = created++ === 0;
+        return makeChild(isFirst ? hangingStreamFn() : childStreamFn("ok"));
+      },
+    });
+    const controller = new AbortController();
+    let settled = false;
+    const pending = tool
+      .execute("id", { tasks: [{ agent: "researcher", task: "A" }, { agent: "researcher", task: "B" }] }, controller.signal)
+      .then((result) => {
+        settled = true;
+        return result;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(settled).toBe(false);
+
+    // Abort just the first child by its deterministic stopId.
+    abortSubagentChild("id-0");
+
+    const result = await pending;
+    expect(result.details.children[0].status).not.toBe("running");
+    expect(result.details.children[1].status).toBe("done");
+    controller.abort();
   });
 });

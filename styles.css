@@ -570,6 +570,15 @@
   font-size: var(--font-smallest);
 }
 
+.agentic-chat-subagent-stop {
+  margin-left: var(--size-2-2);
+  padding: 0 var(--size-2-2);
+  font-size: var(--font-ui-smaller);
+  line-height: 1;
+  height: auto;
+  min-height: unset;
+}
+
 @keyframes agentic-chat-spin {
   to {
     transform: rotate(360deg);
