@@ -1,4 +1,3 @@
-import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import { type ApprovalPolicy, type ApprovalSettings, resolvePolicy } from "./approval";
 
 /**
@@ -10,8 +9,9 @@ import { type ApprovalPolicy, type ApprovalSettings, resolvePolicy } from "./app
  * - `safe`  — honor the configured approval policy (per-tool overrides + `approval.mutating`).
  * - `yolo`  — session master auto-approve: force `mutating: "allow"`, but an explicit
  *             per-tool `"deny"` still wins.
- * - `plan`  — read-only (deny every mutating tool) plus the plan-framing overlay. Entered
- *             with `/plan`, exited with `/endplan` (restoring the prior safe/yolo posture).
+ * - `plan`  — read-only (deny every tool except a small allowlist) plus the plan-framing overlay.
+ *             Entered with `/plan`. The model signals completion by ending a message
+ *             with `PLAN_COMPLETE`; the user then clicks "Implement this plan" to exit.
  *
  * Precedence: plan > slider (yolo) > per-tool override > settings default.
  */
@@ -54,11 +54,12 @@ export const MODES: Record<AgentMode, ModeDefinition> = {
     id: "plan",
     label: "Plan",
     icon: "clipboard-list",
-    description: "Read-only: investigate, then propose a step-by-step plan before any writes. /endplan to exit.",
+    description: "Read-only: investigate, then propose a step-by-step plan before any writes. The model signals completion with PLAN_COMPLETE; click Implement to execute.",
     promptOverlay:
-      "You are in **plan mode**: read-only. Gather the information you need, then present a concrete, " +
-      "step-by-step plan before making any changes. Do not write, edit, rename, or delete notes yet — " +
-      "the user will leave plan mode (/endplan) to carry it out.",
+      "You are in **plan mode**: read-only. No tool calls are allowed — gather context from the " +
+      "conversation history only. When your plan is final and ready for implementation, end your " +
+      "message with the exact line `PLAN_COMPLETE`. Do not include this marker until the plan is " +
+      "truly complete and you have gathered all necessary context.",
   },
 };
 
@@ -69,18 +70,18 @@ export interface ModeDecision {
 }
 
 /**
- * Resolve how a tool call is gated under a mode. In **plan** mode every mutating
- * tool is denied with a read-only note (which reaches the model via the
- * `beforeToolCall` gate). **YOLO** forces the mutating default to `allow` (per-tool
- * overrides still apply, so a per-tool `deny` wins). **Safe** defers entirely to the
- * configured approval policy.
+ * Resolve how a tool call is gated under a mode. In **plan** mode every tool
+ * that is not in the read-only allowlist is denied with a read-only note.
+ * **YOLO** forces the mutating default to `allow` (per-tool overrides still
+ * apply, so a per-tool `deny` wins). **Safe** defers entirely to the configured
+ * approval policy.
  */
 export function resolveModePolicy(
   mode: AgentMode,
   approval: ApprovalSettings,
   toolName: string,
 ): ModeDecision {
-  if (mode === "plan" && MUTATING_TOOLS.has(toolName)) {
+  if (mode === "plan" && !READONLY_TOOLS.has(toolName)) {
     return { policy: "deny", reason: planDenyReason(toolName) };
   }
   // YOLO is a session master switch: force the mutating default to allow, but let an
@@ -89,10 +90,28 @@ export function resolveModePolicy(
   return { policy: resolvePolicy(effective, toolName) };
 }
 
+/** Tools permitted in plan mode (everything else is blocked). */
+const READONLY_TOOLS: ReadonlySet<string> = new Set([
+  "read",
+  "vault_inspect",
+  "ls",
+  "search",
+  "find",
+  "grep",
+  "get_active_note",
+  "get_backlinks",
+  "get_links",
+  "local_graph",
+  "get_properties",
+  "search_memory",
+  "web_search",
+  "fetch_url",
+]);
+
 function planDenyReason(toolName: string): string {
   return (
     `Plan mode is read-only, so the "${toolName}" tool is blocked. ` +
-    "Finish gathering context and present a step-by-step plan; the user will leave plan mode to apply it."
+    "Finish gathering context and present a step-by-step plan; signal completion with PLAN_COMPLETE."
   );
 }
 

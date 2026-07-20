@@ -23,6 +23,8 @@ const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
 export interface BubbleActions {
   /** Re-run the conversation's last user turn. */
   onRetry?: () => void;
+  /** Exit plan mode and send the implement prompt. */
+  onImplementPlan?: () => void;
   /** Open an external rendered link such as https:// or external://. */
   onOpenExternalLink?: (target: string) => void;
   /** Open a vault-relative note path shown in a tool-call section (e.g. read/write/edit target). */
@@ -425,11 +427,14 @@ export class AssistantBubble {
     this.footerEl.setText(formatUsage(usage));
   }
 
-  /** Render the inline action row (copy, and optionally retry). Safe to call once. */
-  showActions(opts: { canRetry: boolean }): void {
+  /** Render the inline action row (copy, retry, implement). Safe to call once. */
+  showActions(opts: { canRetry: boolean; canImplement?: boolean }): void {
     if (this.actionsEl.childElementCount > 0) return;
     if (!this.markdown.trim()) return;
     this.actionButton("copy", "Copy response", () => void this.copy());
+    if (opts.canImplement && this.actions.onImplementPlan) {
+      this.actionButton("play", "Implement this plan", this.actions.onImplementPlan);
+    }
     if (opts.canRetry && this.actions.onRetry) {
       this.actionButton("refresh-cw", "Ask again", this.actions.onRetry);
     }

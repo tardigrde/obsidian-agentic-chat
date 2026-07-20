@@ -263,7 +263,7 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     expect(toolResult(service)?.isError).toBe(true);
   });
 
-  it("plan: an editor dispatch runs unattended (children are read-only, dispatch is always safe)", async () => {
+  it("plan: any subagent dispatch is blocked because plan mode is read-only", async () => {
     const streamFn = scriptedStreamFn([dispatch("editor"), childReply("editor read-only reply"), parentFollowup("done")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "plan",
@@ -271,7 +271,8 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     });
     await service.sendPrompt("edit with a subagent in plan");
     expect(confirmCalls.count).toBe(0);
-    expect(toolResult(service)?.isError).toBe(false);
+    expect(toolResult(service)?.isError).toBe(true);
+    expect(toolResult(service)?.text).toMatch(/read-only/i);
   });
 
   it("safe + working set: a read-only (researcher) dispatch runs without an up-front prompt", async () => {

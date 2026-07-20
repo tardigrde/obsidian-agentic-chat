@@ -108,7 +108,7 @@ Run the subagent live dogfood spec alone (needs `OPENROUTER_API_KEY`):
 
 ```bash
 AGENTIC_CHAT_SUBAGENT_DOGFOOD=true \
-OPENROUTER_API_KEY="$(grep -oP '(?<=OPENROUTER_API_KEY=")[^"]+' /home/levente/projects/ai/evals/skill-eval/.env)" \
+OPENROUTER_API_KEY="<paste-your-key-here>" \
 OPENROUTER_MODEL=openrouter/auto \
 npm run test:e2e -- --spec test/e2e/dogfood/subagent-live.dogfood.ts
 ```

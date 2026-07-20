@@ -147,10 +147,15 @@ export class AgentToolCallController {
 
   private async gateToolCall(toolCallId: string, toolName: string, args: unknown): Promise<ToolGateDecision> {
     const settings = this.getSettings();
+    const modeDecision = resolveModePolicy(settings.mode, settings.approval, toolName);
+    if (modeDecision.policy === "deny" && modeDecision.reason) {
+      await this.auditApproval({ decision: "denied", toolCallId, toolName, label: this.labelForTool(toolName), args, reason: modeDecision.reason });
+      return { block: true, reason: modeDecision.reason };
+    }
     if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, toolCallId, args);
     if (toolName === EXTERNAL_INSPECT_TOOL_NAME) return this.gateExternalToolCall(settings, toolCallId, args);
     if (isMcpToolName(toolName)) return this.gateMcpToolCall(settings, toolCallId, toolName, args);
-    const decision = resolveModePolicy(settings.mode, settings.approval, toolName);
+    const decision = modeDecision;
     const { reason } = decision;
     // Working-dir boundary keys off path/newPath args, so only Safe mode (which can scope
     // calls to granted dirs) needs it; YOLO is a session-wide allow and plan is read-only.
@@ -272,10 +277,6 @@ export class AgentToolCallController {
     toolCallId: string,
     args: unknown,
   ): Promise<ToolGateDecision> {
-    if (settings.mode === "plan") {
-      await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
-      return undefined;
-    }
     if (!this.dispatchCanMutate(args)) {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
       return undefined;

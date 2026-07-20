@@ -162,7 +162,7 @@ export class ChatView extends ItemView {
   private attachments: ContextAttachment[] = [];
   // Active-note-attached-by-default state: the current active note's path, whether
   // the user dismissed the auto chip (suppressed for the session), and — when in
-  // plan mode — the posture to restore on /endplan.
+  // plan mode — the posture to restore on abort or implement.
   private activeNotePath: string | null = null;
   private activeNoteCache = new ActiveNoteContextCache();
   private activeNoteSuppressed = false;
@@ -749,10 +749,10 @@ export class ChatView extends ItemView {
     });
     this.safeButtonEl = this.buildModeSegment(this.modeToggleEl, "safe");
     this.yoloButtonEl = this.buildModeSegment(this.modeToggleEl, "yolo");
-    // Plan is sticky (/plan…/endplan); show a clear indicator while it's active.
+    // Plan is sticky (/plan); show a clear indicator while it's active. Click aborts.
     this.planBadgeEl = toolbarRight.createDiv({
       cls: "agentic-chat-plan-badge",
-      attr: { "aria-label": "Plan mode active — read-only. Click or /endplan to exit." },
+      attr: { "aria-label": "Plan mode active — read-only. Click to abort." },
     });
     const planIcon = this.planBadgeEl.createSpan({ cls: "agentic-chat-plan-badge-icon" });
     setIcon(planIcon, MODES.plan.icon);
@@ -946,6 +946,10 @@ export class ChatView extends ItemView {
     // disagree with the system prompt this run started under. Lock it while busy.
     if (this.service.isStreaming()) return;
     if (this.plugin.settings.mode === mode) return;
+    if (this.plugin.settings.mode === "plan" && mode === "yolo") {
+      this.renderErrorMessage("Can't switch to YOLO while in plan mode.");
+      return;
+    }
     this.plugin.settings.mode = mode;
     // Choosing a posture other than plan ends any sticky plan state.
     if (mode !== "plan") this.modeBeforePlan = null;
@@ -962,7 +966,7 @@ export class ChatView extends ItemView {
     }
     const transition = enterPlan(this.plugin.settings.mode);
     if (!transition) {
-      this.renderInfoMessage("Plan", [["Plan", "Already in plan mode. Use /endplan to leave."]]);
+      this.renderInfoMessage("Plan", [["Plan", "Already in plan mode. Click the Plan badge to abort."]]);
       return;
     }
     this.modeBeforePlan = transition.previous;
@@ -970,7 +974,7 @@ export class ChatView extends ItemView {
     this.renderInfoMessage("Plan", [[MODES.plan.label, MODES.plan.description]]);
   }
 
-  /** `/endplan`: leave plan mode, restoring the Safe/YOLO posture in effect before /plan. */
+  /** Leave plan mode, restoring the Safe/YOLO posture in effect before /plan. */
   private async exitPlanMode(): Promise<void> {
     this.clearEmptyState();
     if (this.plugin.settings.mode !== "plan") {
@@ -1525,9 +1529,6 @@ export class ChatView extends ItemView {
         return true;
       case "plan":
         await this.enterPlanMode();
-        return true;
-      case "endplan":
-        await this.exitPlanMode();
         return true;
       case "todo":
         await this.runTodo(argString);
@@ -2510,9 +2511,12 @@ export class ChatView extends ItemView {
       if (result) bubble.endStep(call.id, result.text, result.isError);
     }
     const text = messageText(message);
-    if (text) {
-      void bubble.finalizeText(text, this.app, this);
-      bubble.showActions({ canRetry: isLast });
+    const planning = this.plugin.settings.mode === "plan";
+    const hasPlanComplete = !!(text?.trim().endsWith("PLAN_COMPLETE"));
+    const displayText = hasPlanComplete ? text.trim().replace(/\n?PLAN_COMPLETE\s*$/, "") : text;
+    if (displayText) {
+      void bubble.finalizeText(displayText, this.app, this);
+      bubble.showActions({ canRetry: isLast, canImplement: planning && isLast && hasPlanComplete });
     }
     const errorMessage = (message as { errorMessage?: string }).errorMessage;
     if (errorMessage) {
@@ -2621,9 +2625,12 @@ export class ChatView extends ItemView {
     const bubble = this.bubble;
     if (!bubble) return;
     const text = messageText(message);
-    if (text) {
-      void bubble.finalizeText(text, this.app, this);
-      bubble.showActions({ canRetry: true });
+    const planning = this.plugin.settings.mode === "plan";
+    const hasPlanComplete = !!(text?.trim().endsWith("PLAN_COMPLETE"));
+    const displayText = hasPlanComplete ? text.trim().replace(/\n?PLAN_COMPLETE\s*$/, "") : text;
+    if (displayText) {
+      void bubble.finalizeText(displayText, this.app, this);
+      bubble.showActions({ canRetry: true, canImplement: planning && hasPlanComplete });
     }
     const errorMessage = (message as { errorMessage?: string }).errorMessage;
     if (errorMessage) {
@@ -2639,11 +2646,18 @@ export class ChatView extends ItemView {
   private newBubble(): AssistantBubble {
     return new AssistantBubble(this.messagesEl, {
       onRetry: () => void this.retryLast(),
+      onImplementPlan: () => void this.implementPlan(),
       onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
       onOpenNote: (path) => void this.app.workspace.openLinkText(path, "", false),
       onContentChange: () => this.scrollToBottom(),
       onStopSubagentChild: (id) => abortSubagentChild(id),
     });
+  }
+
+  /** Exit plan mode and send the implement prompt. */
+  private async implementPlan(): Promise<void> {
+    await this.exitPlanMode();
+    await this.sendPrompt("Implement the proposed plan above.");
   }
 
   private async openRenderedExternalLink(target: string): Promise<void> {

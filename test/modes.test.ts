@@ -46,17 +46,22 @@ describe("resolveModePolicy", () => {
     expect(resolveModePolicy("yolo", { mutating: "allow", perTool: { edit: "ask" }, workingDirs: [] }, "edit").policy).toBe("ask");
   });
 
-  it("plan mode denies every mutating tool with a read-only reason, even when approval allows", () => {
+  it("plan mode denies every tool outside the readonly allowlist, even when approval allows", () => {
     for (const tool of MUTATING_TOOLS) {
       const decision = resolveModePolicy("plan", allow, tool);
       expect(decision.policy).toBe("deny");
       expect(decision.reason).toMatch(/read-only/i);
       expect(decision.reason).toMatch(/plan/i);
     }
+    // Subagent dispatch, MCP, and unknown tools are also blocked.
+    expect(resolveModePolicy("plan", allow, "subagent").policy).toBe("deny");
+    expect(resolveModePolicy("plan", allow, "mcp_test").policy).toBe("deny");
+    expect(resolveModePolicy("plan", allow, "import_pdf").policy).toBe("deny");
   });
 
   it("plan and yolo still allow read-only tools", () => {
     expect(resolveModePolicy("plan", allow, "read").policy).toBe("allow");
+    expect(resolveModePolicy("plan", allow, "grep").policy).toBe("allow");
     expect(resolveModePolicy("yolo", allow, "grep").policy).toBe("allow");
   });
 });
