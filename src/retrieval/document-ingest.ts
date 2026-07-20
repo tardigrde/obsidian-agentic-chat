@@ -440,6 +440,11 @@ function findEndOfCentralDirectory(bytes: Uint8Array): number {
 
 function htmlToText(input: string): string {
   const doc = new DOMParser().parseFromString(input, "text/html");
+  // textContent includes the bodies of <script>/<style>/<noscript>, so drop those
+  // elements first — otherwise JS source and CSS leak into the ingested text.
+  for (const el of Array.from(doc.querySelectorAll("script, style, noscript"))) {
+    el.remove();
+  }
   return normalizeSourceText(doc.body.textContent ?? "");
 }
 
