@@ -1,7 +1,7 @@
 {
   "id": "agentic-chat",
   "name": "Agentic Chat",
-  "version": "0.27.4",
+  "version": "0.27.5",
   "minAppVersion": "1.11.4",
   "description": "Privacy-first agentic AI chat in the sidebar. The agent reads, searches, and edits your vault through visible tool calls, using OpenRouter, Ollama, or OpenAI-compatible gateways.",
   "author": "tardigrde",
