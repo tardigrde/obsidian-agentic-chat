@@ -39,8 +39,34 @@ jobs:
       - name: Lint (Obsidian plugin rules)
         run: npm run lint:obsidian
 
-      - name: Unit tests
-        run: npm test
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            echo "## Test Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '
+              .total |
+              to_entries[] |
+              select(.value.pct != null) |
+              "| \(.key | ascii_upcase) | \(.value.pct)% |"
+            ' coverage/coverage-summary.json >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No coverage summary generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Production build
         run: npm run build
