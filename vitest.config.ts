@@ -14,5 +14,10 @@ export default defineConfig({
     // Live tests hit the real OpenRouter API; opt in via `npm run test:live`.
     // The e2e suite (test/e2e/**) runs under wdio, not vitest.
     exclude: ["test/live/**", "test/e2e/**", "node_modules/**"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "html"],
+      reportsDirectory: "./coverage",
+    },
   },
 });
