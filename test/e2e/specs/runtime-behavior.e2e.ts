@@ -226,7 +226,7 @@ describe("agentic-chat runtime behavior", function () {
 
     await runSlashCommand("/plan");
     await expect($(".agentic-chat-plan-badge")).toBeDisplayed();
-    await runSlashCommand("/endplan");
+    await $(".agentic-chat-plan-badge").click();
     await expect($(".agentic-chat-plan-badge")).not.toBeDisplayed();
 
     await runSlashCommand("/undo");

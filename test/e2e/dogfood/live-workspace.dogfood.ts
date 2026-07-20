@@ -806,8 +806,10 @@ describe("agentic-chat live workspace dogfood", function () {
     expect(plan).toContain("Plan");
     expect(plan).toContain("Read-only");
 
-    const endplan = await runSlashCommand("/endplan");
-    expect(endplan).toContain("Mode");
+    const planBadge = await $(".agentic-chat-plan-badge");
+    await expect(planBadge).toBeDisplayed();
+    await planBadge.click();
+    await expect(planBadge).not.toBeDisplayed();
 
     const todoAdd = await runSlashCommand("/todo add Live dogfood slash sweep");
     expect(todoAdd).toContain("Plan tracker");
@@ -1338,7 +1340,7 @@ describe("agentic-chat live workspace dogfood", function () {
         "Group repository profile links by service, application, infrastructure/configuration, and docs/operations areas when those categories are visible.",
         "The DevOps Learning Path should be tailored for a DevOps engineer joining the team, with week-by-week topics, repos to read, commands to try, and open questions.",
         "The Operational Workflows note should cover local dev, CI/release, deployment/runtime, observability, dependency management, and incident handling, using external:// citations.",
-        "The QA note should record that the live harness exercised slash commands, approval allow/deny paths, external_inspect, write/edit/set_properties, session export, memory, semantic-index status, todo, plan/endplan, and undo/export guards where applicable.",
+        "The QA note should record that the live harness exercised slash commands, approval allow/deny paths, external_inspect, write/edit/set_properties, session export, memory, semantic-index status, todo, plan mode, and undo/export guards where applicable.",
         `Only write under ${noteDir}/.`,
       ].join("\n"),
     );

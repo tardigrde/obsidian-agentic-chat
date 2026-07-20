@@ -38,7 +38,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "add-dir", args: "[folder]", description: "grant a working directory (auto-run inside, ask outside)", aliases: ["adddir"] },
   { name: "dirs", description: "list/revoke granted working directories", aliases: ["working-dirs"] },
   { name: "plan", description: "enter read-only plan mode (sticky)" },
-  { name: "endplan", description: "leave plan mode, restoring Safe/YOLO" },
   { name: "todo", args: "[add|set|test|commit]", description: "track milestones, tests, and checkpoint commits", aliases: ["todos"] },
   { name: "steer", args: "[text]", description: "steer the active turn while the agent is responding" },
   { name: "follow-up", args: "[text]", description: "queue a follow-up behind the active turn", aliases: ["followup"] },
