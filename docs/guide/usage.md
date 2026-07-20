@@ -33,6 +33,48 @@ Diff previews color removed lines red and added lines green.
 
 Run `/compact [instructions]` to summarize older turns on demand. The optional instructions are passed to the compaction request so important details survive the summary.
 
+## Project workspaces
+
+Use `/project` to switch between scoped workspaces. Each project can have its own folders, model, style, and tool toggles. `/project clear` returns to vault-wide mode.
+
+When a project is active, sessions and context are scoped to that project automatically.
+
+## Memory
+
+Add long-term memories with `/memory add [kind] [scope] <text>`. Kinds are `preference`, `fact`, `instruction`, or `summary`. Scopes are `global`, `vault`, or `project`.
+
+Review stored memories with `/memory review`. Export them with `/memory export`. Clear everything with `/memory clear --confirm`.
+
+The agent retrieves memories explicitly via the `search_memory` tool; they are never injected automatically.
+
+## Semantic indexing
+
+Run `/semantic-index start` to build a vector index over your current scope (vault, folder, tag, or project). Check status with `/semantic-index status` and estimate cost with `/semantic-index estimate`.
+
+Cancel an in-progress build with `/semantic-index cancel`.
+
+## Todo tracking
+
+Use `/todo add <milestone>` to add a milestone. Update status with `/todo set <id> <pending|active|done|blocked>`. Track tests with `/todo test <id> <not-run|running|passed|failed|skipped>`. Attach checkpoint commits with `/todo commit <id> <commit>`.
+
+The plan tracker panel shows live progress.
+
+## Real-time controls
+
+While the agent is streaming a response, you can:
+
+- `/steer [text]` — steer the current turn mid-stream.
+- `/follow-up [text]` — queue a follow-up message behind the active turn.
+- `/redirect [text]` — stop the active turn and answer the new text instead.
+
+## Export conversations
+
+Run `/export` to save the current conversation as a Markdown note in the vault.
+
+## Reasoning effort
+
+Override the default thinking level for the next message with `/effort [level]` (e.g., `/effort high`). It resets after the next turn.
+
 ## Undo and retry
 
 Use `/undo` to revert the last vault mutation made by the agent.
