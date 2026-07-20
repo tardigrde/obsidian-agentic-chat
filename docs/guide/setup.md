@@ -37,6 +37,21 @@ http://localhost:3000/api
 
 Then paste the gateway bearer token and model id exposed by that gateway.
 
+## Thinking level
+
+Some models support adjustable reasoning effort. Set it in **Settings > Agent > Thinking level**:
+
+| Level | Behavior |
+| --- | --- |
+| `off` | No extra reasoning tokens. |
+| `minimal` | Light internal reasoning. |
+| `low` | Moderate reasoning. |
+| `medium` | Balanced depth. |
+| `high` | Deep reasoning, more tokens. |
+| `xhigh` | Maximum reasoning depth. |
+
+You can also set effort per message with `/effort [level]` in chat.
+
 ## Proxy settings
 
 On desktop, **Models > Network proxy > HTTP proxy** lets plugin-owned model, model-browsing, web, MCP, and observability requests use an HTTP proxy such as:
@@ -46,3 +61,14 @@ http://host:port
 ```
 
 On mobile, leave plugin proxy fields empty and use the device, VPN, or network-level proxy path.
+
+## Semantic retrieval setup
+
+If you want vector-based note search, enable **Settings > Resources > Semantic retrieval**:
+
+1. Choose an embedding provider (OpenRouter, Ollama, or OpenAI-compatible).
+2. Enter the embedding model id.
+3. Set vector dimensions to match the model (default 1536).
+4. Use Ollama for fully local embeddings if you do not want note content sent to a remote provider.
+
+After setup, run `/semantic-index start` in chat to build the index for your current scope.

@@ -40,3 +40,15 @@ Web access sends search queries to the selected search backend and fetched URLs 
 MCP sends tool arguments to the HTTPS MCP servers you configure.
 
 Observability sends trace data to the OTLP or Langfuse endpoint you configure. Metadata-only is the default payload mode.
+
+## Memory privacy
+
+Memories are stored locally in `memories.jsonl` inside the plugin directory. They are never sent to providers unless the agent calls `search_memory` and the result is included in a prompt. You can clear all memories with `/memory clear --confirm`.
+
+## Semantic retrieval privacy
+
+Embedding requests send note text to the configured provider. Use Ollama for fully local embeddings if you want note content to stay on your device. The local vector index lives inside the plugin directory.
+
+## Document import privacy
+
+The `import_pdf` and `import_document` tools extract text from vault files into plugin-managed source artifacts. The extracted text is stored locally in the artifact system and is only sent to the model when the agent reads the artifact.
