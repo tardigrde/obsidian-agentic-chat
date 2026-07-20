@@ -1,4 +1,4 @@
-import { type Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
+import { type Agent, type AgentEvent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { AgentProfile } from "../agent/subagents";
@@ -13,6 +13,11 @@ const MAX_CONCURRENCY = 8;
 /** Per-child summary cap (characters) fed into the parent's context. */
 const PER_CHILD_SUMMARY_CHARS = 8_000;
 
+/** Single line in a child's live transcript. */
+export type SubagentTranscriptEntry =
+  | { type: "text"; text: string }
+  | { type: "tool"; name: string; status: "start" | "end"; isError?: boolean };
+
 /** Live status of one dispatched child, streamed to the UI and returned as details. */
 export interface SubagentChildStatus {
   agent: string;
@@ -20,6 +25,16 @@ export interface SubagentChildStatus {
   status: "running" | "done" | "error";
   /** Final summary text (or the error message) once the child settles. */
   summary?: string;
+  /** Id used to abort just this child. */
+  stopId?: string;
+  /** Live transcript accumulated while the child runs. */
+  transcript?: SubagentTranscriptEntry[];
+}
+
+const activeStops = new Map<string, () => void>();
+export function abortSubagentChild(id: string): void {
+  activeStops.get(id)?.();
+  activeStops.delete(id);
 }
 
 /** Structured details payload for the subagent tool result, consumed by the UI. */
@@ -109,43 +124,37 @@ export function createSubagentTool(
         onUpdate?.({ content: [{ type: "text", text: progressText(statuses) }], details: snapshot(statuses) });
       emit();
 
-      const concurrency = clampConcurrency(params.concurrency ?? defaultConcurrency, tasks.length);
-      await runPool(tasks.length, concurrency, signal, async (index) => {
+      let emitTimer: ReturnType<typeof setTimeout> | null = null;
+      const scheduleEmit = (): void => {
+        if (emitTimer) return;
+        emitTimer = setTimeout(() => {
+          emitTimer = null;
+          emit();
+        }, 150);
+      };
+      const flushEmit = (): void => {
+        if (emitTimer) {
+          clearTimeout(emitTimer);
+          emitTimer = null;
+        }
+        emit();
+      };
+
+      const runChild = async (index: number): Promise<void> => {
         const status = statuses[index];
         const profile = profiles.find((candidate) => candidate.name === tasks[index].agent);
         try {
           if (!profile) throw new Error(`unknown agent "${tasks[index].agent}"`);
-          const child = deps.createChildAgent(profile);
-          const onAbort = (): void => child.abort();
-          signal?.addEventListener("abort", onAbort);
-          // Close the race where the signal fires between the pool's top-of-loop
-          // check and attaching the listener: the listener would never run.
-          if (signal?.aborted) child.abort();
-          try {
-            await child.prompt(tasks[index].task);
-            await child.waitForIdle();
-          } finally {
-            signal?.removeEventListener("abort", onAbort);
-          }
-          const usage = sumAssistantUsage(child.state.messages);
-          if (usage) deps.recordUsage?.(usage);
-          const error = child.state.errorMessage;
-          if (error) {
-            status.status = "error";
-            status.summary = truncateToolOutput(error, PER_CHILD_SUMMARY_CHARS);
-          } else {
-            status.status = "done";
-            status.summary = truncateToolOutput(
-              lastAssistantText(child.state.messages) || "(no output)",
-              PER_CHILD_SUMMARY_CHARS,
-            );
-          }
+          await runSingleChild(deps, status, profile, tasks[index].task, _id, index, signal, scheduleEmit);
         } catch (error) {
           status.status = "error";
           status.summary = error instanceof Error ? error.message : String(error);
         }
-        emit();
-      });
+        flushEmit();
+      };
+
+      const concurrency = clampConcurrency(params.concurrency ?? defaultConcurrency, tasks.length);
+      await runPool(tasks.length, concurrency, signal, runChild);
 
       // If an abort stopped the pool, queued children never entered the worker and
       // would otherwise be reported as still "running" — finalize them.
@@ -156,7 +165,7 @@ export function createSubagentTool(
             status.summary = "aborted";
           }
         }
-        emit();
+        flushEmit();
       }
 
       return {
@@ -190,6 +199,68 @@ export function normalizeTasks(params: {
 function clampConcurrency(requested: number, count: number): number {
   if (!Number.isFinite(requested) || requested < 1) return 1;
   return Math.min(Math.floor(requested), count, MAX_CONCURRENCY);
+}
+
+async function runSingleChild(
+  deps: SubagentToolDeps,
+  status: SubagentChildStatus,
+  profile: AgentProfile,
+  task: string,
+  parentToolCallId: string,
+  index: number,
+  signal: AbortSignal | undefined,
+  scheduleEmit: () => void,
+): Promise<void> {
+  const child = deps.createChildAgent(profile);
+
+  const stopId = `${parentToolCallId}-${index}`;
+  status.stopId = stopId;
+  status.transcript = [];
+  activeStops.set(stopId, () => child.abort());
+
+  const onAbort = (): void => child.abort();
+  signal?.addEventListener("abort", onAbort);
+  if (signal?.aborted) child.abort();
+
+  const unsub = child.subscribe((event: AgentEvent) => {
+    if (!status.transcript) return;
+    if (event.type === "message_update") {
+      const e = event.assistantMessageEvent;
+      if (e.type === "text_delta") {
+        status.transcript.push({ type: "text", text: e.delta });
+        scheduleEmit();
+      }
+    } else if (event.type === "tool_execution_start") {
+      status.transcript.push({ type: "tool", name: event.toolName, status: "start" });
+      scheduleEmit();
+    } else if (event.type === "tool_execution_end") {
+      status.transcript.push({ type: "tool", name: event.toolName, status: "end", isError: event.isError });
+      scheduleEmit();
+    }
+  });
+
+  try {
+    await child.prompt(task);
+    await child.waitForIdle();
+  } finally {
+    unsub();
+    signal?.removeEventListener("abort", onAbort);
+    activeStops.delete(stopId);
+  }
+
+  const usage = sumAssistantUsage(child.state.messages);
+  if (usage) deps.recordUsage?.(usage);
+  const error = child.state.errorMessage;
+  if (error) {
+    status.status = "error";
+    status.summary = truncateToolOutput(error, PER_CHILD_SUMMARY_CHARS);
+  } else {
+    status.status = "done";
+    status.summary = truncateToolOutput(
+      lastAssistantText(child.state.messages) || "(no output)",
+      PER_CHILD_SUMMARY_CHARS,
+    );
+  }
 }
 
 /**

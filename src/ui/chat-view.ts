@@ -13,6 +13,7 @@ import type { ImageContent, Usage } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
 import type { AskUserRequest } from "../tools/ask-user-tool";
+import { abortSubagentChild } from "../tools/subagent-tool";
 import { isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
@@ -2641,6 +2642,7 @@ export class ChatView extends ItemView {
       onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
       onOpenNote: (path) => void this.app.workspace.openLinkText(path, "", false),
       onContentChange: () => this.scrollToBottom(),
+      onStopSubagentChild: (id) => abortSubagentChild(id),
     });
   }
 

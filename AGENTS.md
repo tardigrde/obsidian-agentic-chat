@@ -98,6 +98,21 @@ Failed e2e tests write diagnostics under `logs/e2e-artifacts/`: screenshot,
 browser console logs when available, WDIO result metadata, Obsidian UI text,
 redacted plugin settings, and the latest sandbox session JSONL when one exists.
 
+Run the full dogfood e2e suite (expensive, generates vault + drives real Obsidian):
+
+```bash
+npm run test:e2e:dogfood
+```
+
+Run the subagent live dogfood spec alone (needs `OPENROUTER_API_KEY`):
+
+```bash
+AGENTIC_CHAT_SUBAGENT_DOGFOOD=true \
+OPENROUTER_API_KEY="$(grep -oP '(?<=OPENROUTER_API_KEY=")[^"]+' /home/levente/projects/ai/evals/skill-eval/.env)" \
+OPENROUTER_MODEL=openrouter/auto \
+npm run test:e2e -- --spec test/e2e/dogfood/subagent-live.dogfood.ts
+```
+
 Use single-test commands for tight loops:
 
 ```bash

@@ -29,6 +29,8 @@ export interface BubbleActions {
   onOpenNote?: (path: string) => void;
   /** Called after buffered streaming text/reasoning mutates the bubble. */
   onContentChange?: () => void;
+  /** Abort a single running subagent child by its stopId. */
+  onStopSubagentChild?: (stopId: string) => void;
 }
 
 /** Owns the DOM of a single assistant turn: reasoning, tool steps, text, actions, footer. */
@@ -274,14 +276,69 @@ export class AssistantBubble {
   private renderSubagentChildren(card: HTMLElement, children: SubagentChildStatus[]): void {
     let list = card.querySelector<HTMLElement>(".agentic-chat-subagents");
     list ??= card.createDiv({ cls: "agentic-chat-subagents" });
-    list.empty();
-    for (const child of children) {
-      const row = list.createEl("details", { cls: ["agentic-chat-subagent", `is-${child.status}`] });
-      const summary = row.createEl("summary");
-      summary.createSpan({ cls: "agentic-chat-subagent-name", text: `${child.agent}: ${child.task}` });
-      summary.createSpan({ cls: "agentic-chat-subagent-status", text: SUBAGENT_STATUS_LABEL[child.status] });
-      if (child.summary) row.createEl("pre", { text: truncateText(child.summary, 4_000) });
+    // ponytail: index-based identity assumes stable child order. Add keyed lookup if reordering is introduced.
+    while (list.childElementCount < children.length) {
+      list.createEl("details", { cls: "agentic-chat-subagent" });
     }
+    while (list.childElementCount > children.length) {
+      list.lastElementChild?.remove();
+    }
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      const row = list.children[i] as HTMLDetailsElement;
+      row.className = `agentic-chat-subagent is-${child.status}`;
+      row.open = child.status === "running";
+      this.renderSubagentHeader(row, child);
+      this.renderSubagentBody(row, child);
+    }
+  }
+
+  private renderSubagentHeader(row: HTMLDetailsElement, child: SubagentChildStatus): void {
+    let summary = row.querySelector("summary");
+    if (!summary) summary = row.createEl("summary");
+    const nameText = `${child.agent}: ${truncateText(child.task, 120)}`;
+    const statusText = SUBAGENT_STATUS_LABEL[child.status];
+    const currentName = summary.querySelector<HTMLElement>(".agentic-chat-subagent-name")?.textContent;
+    const currentStatus = summary.querySelector<HTMLElement>(".agentic-chat-subagent-status")?.textContent;
+    if (currentName === nameText && currentStatus === statusText) return;
+    summary.empty();
+    summary.createSpan({ cls: "agentic-chat-subagent-name", text: nameText });
+    summary.createSpan({ cls: "agentic-chat-subagent-status", text: statusText });
+    if (child.status === "running" && child.stopId && this.actions.onStopSubagentChild) {
+      const stopBtn = summary.createEl("button", { cls: "agentic-chat-subagent-stop", text: "Stop" });
+      const id = child.stopId;
+      stopBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.actions.onStopSubagentChild?.(id);
+      });
+    }
+  }
+
+  private renderSubagentBody(row: HTMLDetailsElement, child: SubagentChildStatus): void {
+    let pre = row.querySelector<HTMLPreElement>("pre");
+    if (!pre) pre = row.createEl("pre");
+    if (child.status === "running" && child.transcript && child.transcript.length > 0) {
+      const rendered = Number(pre.dataset.rendered ?? "0");
+      if (rendered < child.transcript.length) {
+        for (let j = rendered; j < child.transcript.length; j++) {
+          pre.appendText(this.formatTranscriptEntry(child.transcript[j]));
+        }
+        pre.dataset.rendered = String(child.transcript.length);
+      }
+    } else if (child.summary) {
+      pre.setText(truncateText(child.summary, 4_000));
+      delete pre.dataset.rendered;
+    } else {
+      pre.empty();
+      delete pre.dataset.rendered;
+    }
+  }
+
+  private formatTranscriptEntry(entry: NonNullable<SubagentChildStatus["transcript"]>[number]): string {
+    if (entry.type === "text") return entry.text;
+    const marker = entry.status === "start" ? "▶" : entry.isError ? "✗" : "✓";
+    return `\n${marker} ${entry.name}\n`;
   }
 
   private renderAskUserStep(card: HTMLElement, details: AskUserDetails): void {
