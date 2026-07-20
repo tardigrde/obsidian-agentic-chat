@@ -135,21 +135,29 @@ export function embeddingConfigFromSettings(
     privacy?: PrivacySettings;
   },
 ): EmbeddingProviderConfig {
+  let apiKey: string | undefined;
+  if (settings.provider === "openrouter") {
+    apiKey = context.openrouterApiKey;
+  } else if (settings.provider === "openai-compatible") {
+    apiKey = context.openaiCompatibleApiKey;
+  } else {
+    apiKey = undefined;
+  }
+
+  let baseUrl: string | undefined;
+  if (settings.provider === "ollama") {
+    baseUrl = context.ollamaBaseUrl;
+  } else if (settings.provider === "openai-compatible") {
+    baseUrl = context.openaiCompatibleBaseUrl;
+  } else {
+    baseUrl = undefined;
+  }
+
   return {
     provider: settings.provider,
     model: activeEmbeddingModel(settings),
-    apiKey:
-      settings.provider === "openrouter"
-        ? context.openrouterApiKey
-        : settings.provider === "openai-compatible"
-          ? context.openaiCompatibleApiKey
-          : undefined,
-    baseUrl:
-      settings.provider === "ollama"
-        ? context.ollamaBaseUrl
-        : settings.provider === "openai-compatible"
-          ? context.openaiCompatibleBaseUrl
-          : undefined,
+    apiKey,
+    baseUrl,
     dimensions: settings.dimensions,
     languageCoverage: settings.languageCoverage,
     batchSize: settings.batchSize,
@@ -447,7 +455,14 @@ function stringSetting(value: unknown, fallback: string, allowEmpty = false): st
 }
 
 function positiveInteger(value: unknown, fallback: number, min: number, max: number): number {
-  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number.parseInt(value, 10) : NaN;
+  let parsed: number;
+  if (typeof value === "number") {
+    parsed = value;
+  } else if (typeof value === "string") {
+    parsed = Number.parseInt(value, 10);
+  } else {
+    parsed = Number.NaN;
+  }
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.floor(parsed)));
 }

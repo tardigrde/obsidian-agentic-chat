@@ -52,7 +52,7 @@ export function sessionToMarkdown(messages: AgentMessage[], info: SessionInfo | 
 /** Filename for an exported session: sanitized title + a UTC timestamp, `.md`. */
 export function exportFileName(info: SessionInfo | undefined, now: number): string {
   const base = sanitizeFileName(info?.name?.trim() || "Agentic chat conversation");
-  const stamp = new Date(now).toISOString().slice(0, 19).replace("T", " ").replace(/:/g, "-");
+  const stamp = new Date(now).toISOString().slice(0, 19).replace("T", " ").replaceAll(":", "-");
   return `${base} ${stamp}.md`;
 }
 
@@ -64,11 +64,11 @@ export function hasExportableTurns(messages: AgentMessage[]): boolean {
 /** Double-quote a YAML scalar, escaping backslashes, quotes, and control whitespace. */
 function yamlString(value: string): string {
   const escaped = value
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/\r/g, "\\r")
-    .replace(/\n/g, "\\n")
-    .replace(/\t/g, "\\t");
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll('"', String.raw`\"`)
+    .replaceAll("\r", String.raw`\r`)
+    .replaceAll("\n", String.raw`\n`)
+    .replaceAll("\t", String.raw`\t`);
   return `"${escaped}"`;
 }
 

@@ -158,7 +158,7 @@ export function addEvidenceSource(
     excerpt: input.excerpt,
     metadata: input.metadata,
   };
-  const existing = ledger.sources.find((candidate) => candidate.key === source.key);
+  const existing = ledger.sources.some((candidate) => candidate.key === source.key);
   const sources = existing
     ? ledger.sources.map((candidate) => (candidate.key === source.key ? mergeSource(candidate, source) : candidate))
     : [...ledger.sources, source];

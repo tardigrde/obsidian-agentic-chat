@@ -172,7 +172,7 @@ function parseToolList(value: unknown): string[] {
 function deriveName(file: TFile): string {
   // An `AGENT.md` is named after its containing folder; a bare note after itself.
   if (file.name.toLowerCase() === "agent.md") {
-    return file.parent && file.parent.path ? file.parent.name : file.basename;
+    return file.parent?.path ? file.parent.name : file.basename;
   }
   return file.basename;
 }

@@ -245,7 +245,7 @@ function findMatches(text: string, query: string, maxMatches: number): ArtifactM
 function lineNumberAt(text: string, offset: number): number {
   let line = 1;
   for (let index = 0; index < offset; index += 1) {
-    if (text.charCodeAt(index) === 10) line += 1;
+    if ((text.codePointAt(index) ?? 0) === 10) line += 1;
   }
   return line;
 }

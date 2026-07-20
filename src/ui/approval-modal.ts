@@ -198,7 +198,7 @@ export class ApprovalModal extends Modal {
         });
       }
       for (const line of lines) {
-        const prefix = line.op === "add" ? "+" : line.op === "remove" ? "-" : " ";
+        const prefix = diffPrefix(line.op);
         pre.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
       }
       if (windowed.hiddenAfter > 0) {
@@ -221,7 +221,7 @@ export class ApprovalModal extends Modal {
       this.renderDiffExpandButton(container, "above", windowed.hiddenBefore, callbacks.expandAbove);
     }
     for (const line of windowed.lines) {
-      const prefix = line.op === "add" ? "+" : line.op === "remove" ? "-" : " ";
+      const prefix = diffPrefix(line.op);
       container.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
     }
     if (windowed.hiddenAfter > 0) {
@@ -275,6 +275,12 @@ function previewArgs(args: unknown): string {
   } catch {
     text = String(args);
   }
-  if (text === undefined) text = "(no arguments)";
+  text ??= "(no arguments)";
   return text.length > 2_000 ? `${text.slice(0, 2_000)}\n…` : text;
+}
+
+function diffPrefix(op: string): string {
+  if (op === "add") return "+";
+  if (op === "remove") return "-";
+  return " ";
 }

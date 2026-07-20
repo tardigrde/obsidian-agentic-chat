@@ -49,7 +49,12 @@ function renderAttachmentChip(
   const isImage = path ? isImagePath(path) : false;
   const chip = parent.createDiv({ cls: active ? ["agentic-chat-chip", "is-active-note"] : ["agentic-chat-chip"] });
   const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
-  setIcon(icon, isText ? "text-select" : isFolder ? "folder" : isImage ? "image" : "file-text");
+  let iconName: string;
+  if (isText) iconName = "text-select";
+  else if (isFolder) iconName = "folder";
+  else if (isImage) iconName = "image";
+  else iconName = "file-text";
+  setIcon(icon, iconName);
   chip.createSpan({ text: isFolder ? path.slice(FOLDER_PREFIX.length) : contextAttachmentLabel(entry) });
   if (active) {
     chip.createSpan({ cls: "agentic-chat-chip-tag", text: "active" });

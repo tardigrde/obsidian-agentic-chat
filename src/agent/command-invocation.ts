@@ -1,5 +1,5 @@
-import type { AgentCommandResources } from "./command-dispatcher";
 import {
+  type AgentCommandResources,
   type AgentCommandPlan,
   resolveAgentCommand,
   resolveInitCommand,

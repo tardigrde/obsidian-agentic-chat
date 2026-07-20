@@ -15,7 +15,7 @@ export interface E2EStreamTarget {
 
 export interface E2EStreamOptions {
   enabled: boolean;
-  target?: E2EStreamTarget | undefined;
+  target?: E2EStreamTarget;
 }
 
 declare global {

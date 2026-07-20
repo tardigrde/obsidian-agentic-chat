@@ -28,8 +28,8 @@ export function resolveSkillCommand(
 }
 
 export function resolveAgentCommand(resources: AgentCommandResources, name: string, task: string): AgentCommandPlan {
-  const profile = resources.profiles.find((item) => item.name === name);
-  if (!profile) {
+  const hasProfile = resources.profiles.some((item) => item.name === name);
+  if (!hasProfile) {
     return { type: "error", message: unknownAgentMessage(name, resources.profiles, resources.skills) };
   }
   const trimmed = task.trim();

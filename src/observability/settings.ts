@@ -55,15 +55,14 @@ export const DEFAULT_OBSERVABILITY_SETTINGS: ObservabilitySettings = {
   authHeaderValue: "",
 };
 
-const OBSERVABILITY_BACKENDS: ObservabilityBackend[] = ["langfuse", "otlp"];
-const OBSERVABILITY_PAYLOAD_MODES: ObservabilityPayloadMode[] = ["metadata", "redacted-previews", "full-content"];
+const OBSERVABILITY_BACKENDS = new Set<ObservabilityBackend>(["langfuse", "otlp"]);
+const OBSERVABILITY_PAYLOAD_MODES = new Set<ObservabilityPayloadMode>(["metadata", "redacted-previews", "full-content"]);
 
 export function healObservabilitySettings(
   stored: Partial<ObservabilitySettings> | null | undefined,
 ): ObservabilitySettings {
   return {
     ...DEFAULT_OBSERVABILITY_SETTINGS,
-    ...(stored ?? {}),
     enabled: stored?.enabled === true,
     backend: healBackend(stored?.backend),
     endpoint: normalizeObservabilityEndpoint(stored?.endpoint),
@@ -99,13 +98,13 @@ export function normalizeLangfuseOtlpTraceEndpoint(baseUrl: string): string {
 }
 
 function healBackend(value: unknown): ObservabilityBackend {
-  return OBSERVABILITY_BACKENDS.includes(value as ObservabilityBackend)
+  return OBSERVABILITY_BACKENDS.has(value as ObservabilityBackend)
     ? (value as ObservabilityBackend)
     : DEFAULT_OBSERVABILITY_SETTINGS.backend;
 }
 
 function healPayloadMode(value: unknown): ObservabilityPayloadMode {
-  return OBSERVABILITY_PAYLOAD_MODES.includes(value as ObservabilityPayloadMode)
+  return OBSERVABILITY_PAYLOAD_MODES.has(value as ObservabilityPayloadMode)
     ? (value as ObservabilityPayloadMode)
     : DEFAULT_OBSERVABILITY_SETTINGS.payloadMode;
 }

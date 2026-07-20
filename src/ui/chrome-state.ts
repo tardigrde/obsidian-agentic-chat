@@ -80,9 +80,9 @@ export function buildUsageChromeParts(usage: Usage, nextEstimateUsd?: number): U
 }
 
 export function folderButtonAriaLabel(scopeCount: number): string {
-  return scopeCount > 0
-    ? `Folders · ${scopeCount} working ${scopeCount === 1 ? "directory" : "directories"} granted`
-    : "Folders: working directory or attach listing";
+  if (scopeCount === 0) return "Folders: working directory or attach listing";
+  const noun = scopeCount === 1 ? "directory" : "directories";
+  return `Folders · ${scopeCount} working ${noun} granted`;
 }
 
 export function toolBudgetNotificationKey(toolBudget: ToolBudgetSnapshot): string | null {

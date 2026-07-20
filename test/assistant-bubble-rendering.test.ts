@@ -298,8 +298,15 @@ describe("assistant markdown rendering helpers", () => {
   });
 });
 
-function anchor(attrs: Record<string, string>): { getAttribute: (name: string) => string | null } {
+function anchor(attrs: Record<string, string>): { getAttribute: (name: string) => string | null; dataset: Record<string, string> } {
+  const dataset: Record<string, string> = {};
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key.startsWith("data-")) {
+      dataset[key.slice(5)] = value;
+    }
+  }
   return {
     getAttribute: (name: string) => attrs[name] ?? null,
+    dataset,
   };
 }

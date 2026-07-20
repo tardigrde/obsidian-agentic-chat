@@ -290,7 +290,7 @@ function normalizeResolvedVaultFolder(path: string, original: string): ResolvedW
 
 function resolveVaultFolderSegments(input: string, baseFolder: string): string | null {
   const segments = pathSegments(baseFolder);
-  for (const segment of input.replace(/\\/g, "/").split("/")) {
+  for (const segment of input.replaceAll("\\", "/").split("/")) {
     if (!segment || segment === ".") continue;
     if (segment === "..") {
       if (segments.length === 0) return null;
@@ -304,7 +304,7 @@ function resolveVaultFolderSegments(input: string, baseFolder: string): string |
 
 function pathSegments(path: string | null | undefined): string[] {
   return (path ?? "")
-    .replace(/\\/g, "/")
+    .replaceAll("\\", "/")
     .split("/")
     .filter((segment) => segment && segment !== ".");
 }
@@ -330,7 +330,7 @@ function relativePathInsideBase(path: string, basePath: string): string | null {
 }
 
 function normalizeFilesystemPath(path: string): string {
-  let normalized = path.trim().replace(/\\/g, "/").replace(/\/+/g, "/");
+  let normalized = path.trim().replaceAll("\\", "/").replace(/\/+/g, "/");
   while (normalized.length > 1 && normalized.endsWith("/") && !/^[A-Za-z]:\/$/.test(normalized)) {
     normalized = normalized.slice(0, -1);
   }

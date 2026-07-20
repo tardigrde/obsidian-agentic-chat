@@ -378,7 +378,7 @@ function stringField(value: unknown, key: string): string | undefined {
 }
 
 function normalizePath(path: string): string {
-  return path.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
+  return path.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+/g, "/");
 }
 
 function truncateString(value: string): string {

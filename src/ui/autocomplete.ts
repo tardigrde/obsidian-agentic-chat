@@ -133,11 +133,12 @@ function suggestCommands(
 ): AcItem[] {
   const scoredCommands = commands.map((command): Scored<AcItem> => {
     const names = [command.name, ...(command.aliases ?? [])];
+    const argsPart = command.args ? ` ${command.args}` : "";
     return {
       score: bestMatchScore(query, names),
       item: {
         kind: "command",
-        label: `/${command.name}${command.args ? ` ${command.args}` : ""}`,
+        label: `/${command.name}${argsPart}`,
         detail: command.description,
         icon: "terminal",
         value: command.name,
@@ -199,8 +200,10 @@ function suggestMentions(query: string, files: MentionCandidate[]): AcItem[] {
 function parseMentionQuery(query: string): { lookup: string; suffix: string } {
   const hash = query.indexOf("#");
   const caret = query.indexOf("^");
-  const delimiter =
-    hash === -1 ? caret : caret === -1 ? hash : Math.min(hash, caret);
+  let delimiter: number;
+  if (hash === -1) delimiter = caret;
+  else if (caret === -1) delimiter = hash;
+  else delimiter = Math.min(hash, caret);
   if (delimiter < 0) return { lookup: query, suffix: "" };
   const lookup = query.slice(0, delimiter).trimEnd();
   const suffix = query.slice(delimiter).trim();

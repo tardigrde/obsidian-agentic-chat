@@ -170,10 +170,9 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
               transcriptFormat: rendered.transcriptFormat,
             })
           : null;
+      const duplicateHint = artifact?.duplicate ? " (already imported)" : "";
       const artifactText = artifact
-        ? `${rendered.text}\n\nSource artifact: ${artifact.artifactCitation}${
-            artifact.duplicate ? " (already imported)" : ""
-          }`
+        ? `${rendered.text}\n\nSource artifact: ${artifact.artifactCitation}${duplicateHint}`
         : rendered.text;
       return {
         content: [{ type: "text", text: artifactText }],
@@ -238,18 +237,28 @@ function renderFetched(url: string, raw: string, contentType: string, limit: num
   // Bound the input before the regex passes; note when we had to clip it.
   const clipped = raw.length > MAX_RAW_CHARS;
   const safeRaw = clipped ? raw.slice(0, MAX_RAW_CHARS) : raw;
-  const extracted = isTranscriptSource(url, contentType)
-    ? extractTranscriptSource(safeRaw, contentType)
-    : html
-      ? extractReadableSource(safeRaw, contentType)
-      : {
-          title: "",
-          text: safeRaw,
-          extractor: "plain-text" as const,
-          sourceKind: "web" as const,
-          mediaUrl: undefined,
-          transcriptFormat: undefined,
-        };
+  let extracted: ReturnType<typeof extractReadableSource> | ReturnType<typeof extractTranscriptSource> | {
+    title: string;
+    text: string;
+    extractor: "plain-text";
+    sourceKind: "web";
+    mediaUrl: undefined;
+    transcriptFormat: undefined;
+  };
+  if (isTranscriptSource(url, contentType)) {
+    extracted = extractTranscriptSource(safeRaw, contentType);
+  } else if (html) {
+    extracted = extractReadableSource(safeRaw, contentType);
+  } else {
+    extracted = {
+      title: "",
+      text: safeRaw,
+      extractor: "plain-text",
+      sourceKind: "web",
+      mediaUrl: undefined,
+      transcriptFormat: undefined,
+    };
+  }
   const body = extracted.text.trim();
   const start = Math.min(offset, body.length);
   const end = Math.min(start + limit, body.length);

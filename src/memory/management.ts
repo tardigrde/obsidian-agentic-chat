@@ -55,7 +55,8 @@ export function consolidateDuplicateMemories(records: readonly MemoryRecord[]): 
     consolidations.push({ keptId: kept.id, mergedIds: duplicates.map((record) => record.id) });
   }
 
-  return { records: output.sort(compareMemoryIds), consolidations };
+  const sorted = [...output].sort(compareMemoryIds);
+  return { records: sorted, consolidations };
 }
 
 export function ageStaleMemories(
@@ -110,11 +111,12 @@ export function deleteMemory(records: readonly MemoryRecord[], id: string): Dele
 
 export function migrateMemoryRecords(records: readonly MemoryRecord[], options: { now: number }): MemoryRecord[] {
   return records.map((record) => {
-    const provenance = record.provenance?.length
-      ? record.provenance
-      : record.source
-        ? [{ source: record.source, extractedAt: record.createdAt ?? new Date(options.now).toISOString() }]
-        : undefined;
+    let provenance: typeof record.provenance | undefined;
+    if (record.provenance?.length) {
+      provenance = record.provenance;
+    } else if (record.source) {
+      provenance = [{ source: record.source, extractedAt: record.createdAt ?? new Date(options.now).toISOString() }];
+    }
     return {
       ...record,
       enabled: record.enabled ?? true,
@@ -127,13 +129,15 @@ export function explainMemoryProvenance(record: MemoryRecord): string {
   const lines = [`Memory ${record.id}`, `${record.kind} (${record.scope})`, record.text];
   if (record.source) lines.push(`Source: ${formatSource(record.source)}`);
   for (const entry of record.provenance ?? []) {
-    lines.push(`Provenance: ${formatSource(entry.source)}${entry.extractedAt ? ` at ${entry.extractedAt}` : ""}`);
+    const provenanceSuffix = entry.extractedAt ? ` at ${entry.extractedAt}` : "";
+    lines.push(`Provenance: ${formatSource(entry.source)}${provenanceSuffix}`);
     if (entry.note) lines.push(`Note: ${entry.note}`);
   }
   if (record.supersedes?.length) lines.push(`Supersedes: ${record.supersedes.join(", ")}`);
   if (record.stale) lines.push("Status: stale");
   if (record.enabled === false) {
-    lines.push(`Status: forgotten${record.forgottenAt ? ` at ${record.forgottenAt}` : ""}`);
+    const forgottenSuffix = record.forgottenAt ? ` at ${record.forgottenAt}` : "";
+    lines.push(`Status: forgotten${forgottenSuffix}`);
     if (record.forgetReason) lines.push(`Reason: ${record.forgetReason}`);
   }
   if (record.confidence !== undefined) lines.push(`Confidence: ${record.confidence}`);

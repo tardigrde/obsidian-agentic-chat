@@ -22,11 +22,7 @@ export class QuickAskModal extends Modal {
 
     contentEl.createEl("p", {
       cls: "agentic-chat-quick-ask-target",
-      text: this.target.path
-        ? `${this.target.kind === "selection" ? "Selection" : "Line"} in ${this.target.path}`
-        : this.target.kind === "selection"
-          ? "Selection"
-          : "Line",
+      text: buildQuickAskTargetText(this.target),
     });
 
     const input = contentEl.createEl("textarea", {
@@ -75,6 +71,18 @@ export class QuickAskModal extends Modal {
   }
 }
 
+function buildQuickAskTargetText(target: QuickAskTarget): string {
+  if (!target.path) return target.kind === "selection" ? "Selection" : "Line";
+  const kindLabel = target.kind === "selection" ? "Selection" : "Line";
+  return `${kindLabel} in ${target.path}`;
+}
+
+function diffPrefix(op: string): string {
+  if (op === "add") return "+";
+  if (op === "remove") return "-";
+  return " ";
+}
+
 function renderQuickAskDiff(container: HTMLElement, before: string, after: string): void {
   if (diffTooLarge(before, after)) {
     const beforeLines = before ? before.split("\n").length : 0;
@@ -94,7 +102,7 @@ function renderQuickAskDiff(container: HTMLElement, before: string, after: strin
   const pre = container.createEl("pre", { cls: "agentic-chat-diff" });
   const shown = lines.slice(0, MAX_DIFF_DISPLAY_LINES);
   for (const line of shown) {
-    const prefix = line.op === "add" ? "+" : line.op === "remove" ? "-" : " ";
+    const prefix = diffPrefix(line.op);
     pre.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
   }
   if (lines.length > shown.length) {

@@ -43,7 +43,7 @@ function resolveEdit(content: string, edit: ExactEdit): ResolvedEdit {
 
   const start = content.indexOf(edit.oldText);
   if (start !== -1) {
-    if (content.indexOf(edit.oldText, start + 1) !== -1) {
+    if (content.includes(edit.oldText, start + 1)) {
       throw new Error(`oldText must match exactly once: ${preview(edit.oldText)}`);
     }
     return { ...edit, start, end: start + edit.oldText.length };
@@ -212,7 +212,7 @@ function substitutePlaceholders(text: string, placeholders: string[], groups: st
 }
 
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
 function preview(text: string): string {

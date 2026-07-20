@@ -75,6 +75,6 @@ function normalizeBlockId(value: string): string {
 }
 
 function lineHasBlockId(line: string, blockId: string): boolean {
-  const escaped = blockId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?:^|\\s)\\^${escaped}(?:\\s*)$`).test(line.trim());
+  const escaped = blockId.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  return new RegExp(String.raw`(?:^|\s)\^${escaped}(?:\s*)$`).test(line.trim());
 }

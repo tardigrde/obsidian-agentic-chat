@@ -107,8 +107,8 @@ export function describeProject(project: AgentProject): string {
     project.folders.length ? `folders: ${project.folders.map((folder) => folder || "/").join(", ")}` : "all notes",
     project.modelId ? `model: ${project.modelId}` : "",
     project.profile ? `profile: ${OUTPUT_STYLES[project.profile].label}` : "",
-    project.tools?.web !== undefined ? `web: ${project.tools.web ? "on" : "off"}` : "",
-    project.tools?.mcp !== undefined ? `MCP: ${project.tools.mcp ? "on" : "off"}` : "",
+    project.tools?.web !== undefined ? `web: ${formatOnOff(project.tools.web)}` : "",
+    project.tools?.mcp !== undefined ? `MCP: ${formatOnOff(project.tools.mcp)}` : "",
   ].filter(Boolean);
   return parts.join(" · ");
 }
@@ -125,6 +125,10 @@ function projectPrompt(basePrompt: string, project: AgentProject): string {
     "Use project scope as the default working context. Ask before crossing project boundaries.",
   ].filter(Boolean);
   return lines.join("\n");
+}
+
+function formatOnOff(value: boolean): string {
+  return value ? "on" : "off";
 }
 
 function isClearProjectCommand(input: string): boolean {

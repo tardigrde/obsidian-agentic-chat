@@ -358,7 +358,7 @@ function resolveLinkedPath(link: string, byPath: Map<string, RetrievalDocument>)
 }
 
 function normalizeLinkedTarget(target: string): string | undefined {
-  const trimmed = target.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
+  const trimmed = target.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+/g, "/");
   return trimmed || undefined;
 }
 
@@ -367,7 +367,7 @@ function normalizeTag(value: string): string {
 }
 
 function normalizePath(path: string): string {
-  return path.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/").toLowerCase();
+  return path.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+/g, "/").toLowerCase();
 }
 
 function normalizedSet(paths: readonly string[] | undefined): Set<string> {

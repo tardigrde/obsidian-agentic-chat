@@ -48,7 +48,7 @@ export class AgentStreamRuntime {
         ...(settings.maxTokens > 0 ? { maxTokens: settings.maxTokens } : {}),
         timeoutMs: settings.requestTimeoutMs,
         maxRetries: settings.maxNetworkRetries,
-        headers: { "HTTP-Referer": HTTP_REFERER, "X-Title": X_TITLE, ...(options?.headers ?? {}) },
+        headers: { "HTTP-Referer": HTTP_REFERER, "X-Title": X_TITLE, ...(options?.headers) },
       };
       const proxiedRequester = settings.network.proxyUrl
         ? createOpenAICompatibleRequester(createProxiedFetcher(settings.network))

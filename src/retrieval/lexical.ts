@@ -214,7 +214,7 @@ function graphText(paths: readonly string[] | undefined): string {
 }
 
 function normalizePath(path: string): string {
-  return path.trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/").toLowerCase();
+  return path.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+/g, "/").toLowerCase();
 }
 
 function compareResults(left: LexicalVaultQaResult, right: LexicalVaultQaResult): number {

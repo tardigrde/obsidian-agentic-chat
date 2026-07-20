@@ -176,7 +176,8 @@ async function establishProxyTunnel(
   const response = await readUntilHeaders(socket, signal);
   const status = /^HTTP\/\S+\s+(\d+)/i.exec(response)?.[1];
   if (status !== "200") {
-    throw new Error(`proxy CONNECT failed (${status ? `HTTP ${status}` : "invalid response"}).`);
+    const statusText = status ? `HTTP ${status}` : "invalid response";
+    throw new Error(`proxy CONNECT failed (${statusText}).`);
   }
 }
 
@@ -364,7 +365,8 @@ function proxyPort(proxy: URL): number {
 
 function proxyAuthorization(proxy: URL): string {
   if (!proxy.username && !proxy.password) return "";
-  return `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString("base64")}`;
+  const credentials = `${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`;
+  return `Basic ${Buffer.from(credentials).toString("base64")}`;
 }
 
 function headerName(key: string): string {
