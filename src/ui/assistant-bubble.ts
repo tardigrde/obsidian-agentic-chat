@@ -10,6 +10,7 @@ import {
   formatUsage,
   HIDE_RESULT_TOOLS,
   PATH_TOOLS,
+  safeJson,
   TOOL_LABELS,
   truncateText,
 } from "./format";
@@ -62,8 +63,8 @@ export class AssistantBubble {
     private readonly actions: BubbleActions = {},
   ) {
     this.el = parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-assistant"] });
-    this.stepsEl = this.el.createDiv({ cls: "agentic-chat-steps" });
     this.textEl = this.el.createDiv({ cls: ["agentic-chat-text", "is-streaming"] });
+    this.stepsEl = this.el.createDiv({ cls: "agentic-chat-steps" });
     this.actionsEl = this.el.createDiv({ cls: "agentic-chat-actions" });
     this.footerEl = this.el.createDiv({ cls: "agentic-chat-footer" });
   }
@@ -320,7 +321,7 @@ export class AssistantBubble {
   private renderSubagentBody(row: HTMLDetailsElement, child: SubagentChildStatus): void {
     let pre = row.querySelector<HTMLPreElement>("pre");
     if (!pre) pre = row.createEl("pre");
-    if (child.status === "running" && child.transcript && child.transcript.length > 0) {
+    if (child.transcript && child.transcript.length > 0) {
       const rendered = Number(pre.dataset.rendered ?? "0");
       if (rendered < child.transcript.length) {
         for (let j = rendered; j < child.transcript.length; j++) {
@@ -328,18 +329,25 @@ export class AssistantBubble {
         }
         pre.dataset.rendered = String(child.transcript.length);
       }
+    }
+    if (child.status === "running") {
+      delete pre.dataset.hasSummary;
     } else if (child.summary) {
-      pre.setText(truncateText(child.summary, 4_000));
-      delete pre.dataset.rendered;
-    } else {
-      pre.empty();
-      delete pre.dataset.rendered;
+      if (!pre.dataset.hasSummary) {
+        pre.appendText("\n———\n");
+        pre.appendText(truncateText(child.summary, 4_000));
+        pre.dataset.hasSummary = "true";
+      }
     }
   }
 
   private formatTranscriptEntry(entry: NonNullable<SubagentChildStatus["transcript"]>[number]): string {
     if (entry.type === "text") return entry.text;
     const marker = entry.status === "start" ? "▶" : entry.isError ? "✗" : "✓";
+    if (entry.status === "start" && entry.args !== undefined) {
+      const label = describeCall(entry.name, safeJson(entry.args));
+      return `\n${marker} ${label}\n`;
+    }
     return `\n${marker} ${entry.name}\n`;
   }
 
