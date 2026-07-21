@@ -87,14 +87,7 @@ import {
   formatMcpDiagnosticSummary,
   formatRuntimeDiagnosticsRows,
 } from "../agent/diagnostics";
-import {
-  buildRelevantNotesPanelState,
-  excludeRelevantNote,
-  loadVaultRetrievalDocuments,
-  pinRelevantNote,
-  type RelevantNotesPanelState,
-  unpinRelevantNote,
-} from "../retrieval/relevant-notes";
+import { loadVaultRetrievalDocuments } from "../retrieval/relevant-notes";
 import {
   OpenAICompatibleEmbeddingProvider,
   activeEmbeddingModel,
@@ -117,7 +110,6 @@ import { openExternalReference } from "../tools/external-workspace";
 import { planTrackerRows } from "../agent/plan-tracker";
 import { buildPlanTrackerPanelState } from "./plan-tracker-panel";
 import { renderPlanTrackerPanel as renderPlanTrackerPanelDom } from "./plan-tracker-renderer";
-import { renderRelevantNotesPanel } from "./relevant-notes-renderer";
 import { MemoryWorkflowController } from "./memory-workflow-controller";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
@@ -200,11 +192,8 @@ export class ChatView extends ItemView {
   private messagesEl!: HTMLElement;
   private emptyStateEl: HTMLElement | null = null;
   private planTrackerEl!: HTMLElement;
-  private relevantNotesEl!: HTMLElement;
   private chipsEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
-  private safeButtonEl!: HTMLButtonElement;
-  private yoloButtonEl!: HTMLButtonElement;
   private modeToggleEl!: HTMLElement;
   private planBadgeEl!: HTMLElement;
   private menu!: AutocompleteMenu;
@@ -225,9 +214,6 @@ export class ChatView extends ItemView {
   private autoScrollPinned = true;
   private userScrollIntent = false;
   private userScrollIntentTimer: number | null = null;
-  private relevantPinnedPaths = new Set<string>();
-  private relevantExcludedPaths = new Set<string>();
-  private relevantNotesRefreshId = 0;
   private closed = true;
 
   constructor(
@@ -272,7 +258,6 @@ export class ChatView extends ItemView {
     // The mention list is cached; drop it whenever the vault's file set changes.
     const invalidate = () => {
       this.mentionCache = null;
-      void this.refreshRelevantNotes();
     };
     this.registerEvent(this.app.vault.on("create", invalidate));
     this.registerEvent(this.app.vault.on("delete", invalidate));
@@ -359,8 +344,6 @@ export class ChatView extends ItemView {
       lastCompactionCount: this.lastCompactionCount,
       lastSentPrompt: this.lastSentPrompt,
       lastSentDisplay: this.lastSentDisplay,
-      relevantPinnedPaths: [...this.relevantPinnedPaths],
-      relevantExcludedPaths: [...this.relevantExcludedPaths],
     };
   }
 
@@ -380,8 +363,6 @@ export class ChatView extends ItemView {
     this.lastCompactionCount = state.lastCompactionCount;
     this.lastSentPrompt = state.lastSentPrompt;
     this.lastSentDisplay = state.lastSentDisplay;
-    this.relevantPinnedPaths = new Set(state.relevantPinnedPaths);
-    this.relevantExcludedPaths = new Set(state.relevantExcludedPaths);
     this.setComposerValueQuiet(state.draft);
   }
 
@@ -627,12 +608,6 @@ export class ChatView extends ItemView {
     setIcon(historyButton, "history");
     historyButton.addEventListener("click", () => void this.createSessionWorkflow().run(""));
 
-    this.relevantNotesEl = composer.createDiv({
-      cls: "agentic-chat-relevant-notes",
-      attr: { "aria-label": "Related notes" },
-    });
-    this.relevantNotesEl.hide();
-
     this.planTrackerEl = composer.createDiv({
       cls: "agentic-chat-plan-tracker",
       attr: { "aria-label": "Plan tracker" },
@@ -742,13 +717,28 @@ export class ChatView extends ItemView {
     });
 
     const toolbarRight = toolbar.createDiv({ cls: "agentic-chat-toolbar-right" });
+
     // Single Safe ↔ YOLO permission toggle (the ask/plan/agent dropdown is retired).
     this.modeToggleEl = toolbarRight.createDiv({
       cls: "agentic-chat-mode-toggle",
-      attr: { role: "group", "aria-label": "Permission mode" },
+      attr: { role: "switch", tabindex: "0", "aria-label": "YOLO mode", "aria-checked": "false" },
     });
-    this.safeButtonEl = this.buildModeSegment(this.modeToggleEl, "safe");
-    this.yoloButtonEl = this.buildModeSegment(this.modeToggleEl, "yolo");
+    const modeTrack = this.modeToggleEl.createDiv({ cls: "agentic-chat-mode-track" });
+    modeTrack.createDiv({ cls: "agentic-chat-mode-knob" });
+    this.modeToggleEl.createSpan({ cls: "agentic-chat-mode-label", text: "YOLO" });
+    const toggleMode = () => {
+      if (this.service.isStreaming() || this.plugin.settings.mode === "plan") return;
+      const target = this.plugin.settings.mode === "yolo" ? "safe" : "yolo";
+      void this.setMode(target);
+    };
+    this.modeToggleEl.addEventListener("click", toggleMode);
+    this.modeToggleEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleMode();
+      }
+    });
+
     // Plan is sticky (/plan); show a clear indicator while it's active. Click aborts.
     this.planBadgeEl = toolbarRight.createDiv({
       cls: "agentic-chat-plan-badge",
@@ -759,16 +749,14 @@ export class ChatView extends ItemView {
     this.planBadgeEl.createSpan({ text: "Plan" });
     this.planBadgeEl.addEventListener("click", () => void this.exitPlanMode());
     this.planBadgeEl.hide();
-    // Output style is no longer a composer control — switch it with /style.
 
-    const buttonRow = composer.createDiv({ cls: "agentic-chat-buttons" });
-    this.workingEl = buttonRow.createDiv({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
+    this.workingEl = toolbarRight.createDiv({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
     this.workingEl.hide();
-    this.statusEl = buttonRow.createDiv({ cls: "agentic-chat-status" });
-    this.stopButton = buttonRow.createEl("button", { cls: ["agentic-chat-stop", "mod-warning"], text: "Stop" });
+    this.statusEl = toolbarRight.createDiv({ cls: "agentic-chat-status" });
+    this.stopButton = toolbarRight.createEl("button", { cls: ["agentic-chat-stop", "mod-warning"], text: "Stop" });
     this.stopButton.hide();
     this.stopButton.addEventListener("click", () => this.service.abort());
-    this.sendButton = buttonRow.createEl("button", { cls: ["agentic-chat-send", "mod-cta"], text: "Send" });
+    this.sendButton = toolbarRight.createEl("button", { cls: ["agentic-chat-send", "mod-cta"], text: "Send" });
     this.sendButton.addEventListener("click", () => void this.submit());
 
     // Token/cost readout on its own muted line; hidden until there's usage.
@@ -930,17 +918,6 @@ export class ChatView extends ItemView {
 
   // --- composer controls (Safe ↔ YOLO toggle + sticky plan) ---
 
-  /** One segment of the Safe ↔ YOLO toggle. */
-  private buildModeSegment(parent: HTMLElement, mode: "safe" | "yolo"): HTMLButtonElement {
-    const button = parent.createEl("button", {
-      cls: "agentic-chat-mode-seg",
-      text: MODES[mode].label,
-      attr: { "aria-label": MODES[mode].description, title: MODES[mode].description },
-    });
-    button.addEventListener("click", () => void this.setMode(mode));
-    return button;
-  }
-
   private async setMode(mode: AgentMode): Promise<void> {
     // Mode is evaluated live by the tool gate; changing it mid-stream would
     // disagree with the system prompt this run started under. Lock it while busy.
@@ -1009,11 +986,10 @@ export class ChatView extends ItemView {
     const { settings } = this.plugin;
     const streaming = this.service.isStreaming();
     const planning = settings.mode === "plan";
-    this.safeButtonEl.toggleClass("is-active", settings.mode === "safe");
-    this.yoloButtonEl.toggleClass("is-active", settings.mode === "yolo");
-    this.safeButtonEl.disabled = streaming || planning;
-    this.yoloButtonEl.disabled = streaming || planning;
+    this.modeToggleEl.toggleClass("is-active", settings.mode === "yolo");
     this.modeToggleEl.toggleClass("is-planning", planning);
+    this.modeToggleEl.toggleClass("is-disabled", streaming || planning);
+    this.modeToggleEl.setAttr("aria-checked", String(settings.mode === "yolo"));
     this.planBadgeEl.toggle(planning);
     // Effort can't change mid-turn (it would disagree with the in-flight request).
     this.effortKnobEl?.toggleClass("is-disabled", streaming);
@@ -1618,10 +1594,6 @@ export class ChatView extends ItemView {
     if (options.lastSent) {
       this.lastSentPrompt = null;
       this.lastSentDisplay = null;
-    }
-    if (options.relevantNotes) {
-      this.relevantPinnedPaths = new Set<string>();
-      this.relevantExcludedPaths = new Set<string>();
     }
     if (options.history) this.resetHistoryNav();
     if (options.editing) this.endEditing(false);
@@ -2310,68 +2282,6 @@ export class ChatView extends ItemView {
       isIgnored: (path) => this.service.isPathIgnored(path),
     });
     this.renderChips();
-    void this.refreshRelevantNotes();
-  }
-
-  private async refreshRelevantNotes(): Promise<void> {
-    const refreshId = ++this.relevantNotesRefreshId;
-    const activePath = this.activeNotePath;
-    const project = activeProject(this.plugin.settings.projects);
-    if (!this.relevantNotesEl) return;
-    if (!activePath) {
-      this.renderRelevantNotes(buildRelevantNotesPanelState({ activePath: null, documents: [] }));
-      return;
-    }
-
-    try {
-      const documents = await loadVaultRetrievalDocuments(
-        this.app,
-        (path) => this.service.isPathIgnored(path),
-        project?.folders,
-      );
-      const semanticIndex = await this.readSemanticIndex();
-      if (refreshId !== this.relevantNotesRefreshId) return;
-      this.renderRelevantNotes(
-        buildRelevantNotesPanelState({
-          activePath,
-          documents,
-          ignoreMatcher: (path) => this.service.isPathIgnored(path),
-          scopeFolders: project?.folders,
-          semanticIndex: semanticIndex?.snapshot,
-          controls: this.relevantControls(),
-          maxResults: 5,
-          now: Date.now(),
-        }),
-      );
-    } catch {
-      if (refreshId === this.relevantNotesRefreshId) {
-        this.renderRelevantNotes(buildRelevantNotesPanelState({ activePath, documents: [] }));
-      }
-    }
-  }
-
-  private relevantControls(): { pinnedPaths: string[]; excludedPaths: string[] } {
-    return {
-      pinnedPaths: [...this.relevantPinnedPaths],
-      excludedPaths: [...this.relevantExcludedPaths],
-    };
-  }
-
-  private setRelevantControls(controls: { pinnedPaths?: readonly string[]; excludedPaths?: readonly string[] }): void {
-    this.relevantPinnedPaths = new Set(controls.pinnedPaths ?? []);
-    this.relevantExcludedPaths = new Set(controls.excludedPaths ?? []);
-    void this.refreshRelevantNotes();
-  }
-
-  private renderRelevantNotes(state: RelevantNotesPanelState): void {
-    renderRelevantNotesPanel(this.relevantNotesEl, state, {
-      attach: (path) => this.pushAttachment(path),
-      togglePin: (path, pinned) => {
-        const controls = pinned ? unpinRelevantNote(this.relevantControls(), path) : pinRelevantNote(this.relevantControls(), path);
-        this.setRelevantControls(controls);
-      },
-      exclude: (path) => this.setRelevantControls(excludeRelevantNote(this.relevantControls(), path)),
-    });
   }
 
   /** The active note auto-attached this turn, or null (suppressed / none / already explicit). */

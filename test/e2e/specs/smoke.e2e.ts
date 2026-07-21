@@ -129,22 +129,7 @@ describe("agentic-chat smoke", function () {
     );
   });
 
-  it("surfaces related notes for the active note without a model call", async function () {
-    await browser.executeObsidian(async ({ app, obsidian }) => {
-      const file = app.vault.getAbstractFileByPath("Welcome.md");
-      if (!(file instanceof obsidian.TFile)) throw new Error("Welcome.md fixture is missing");
-      await app.workspace.getLeaf(false).openFile(file);
-    });
-    const panel = await $(".agentic-chat-relevant-notes");
-    await panel.waitForDisplayed();
-    await browser.waitUntil(
-      async () => (await panel.getText()).includes("Related.md"),
-      { timeout: 5_000, timeoutMsg: "related notes panel did not suggest the linked note" },
-    );
-    await expect(panel).toHaveText(/Related\.md/);
-  });
-
-  it("switches project workspace and scopes related notes", async function () {
+  it("switches project workspace", async function () {
     await browser.executeObsidian(async ({ app, obsidian }) => {
       const plugin = (app as unknown as {
         plugins?: {
@@ -214,16 +199,6 @@ describe("agentic-chat smoke", function () {
     expect(status).toContain("Alpha Project");
     expect(status).toContain("Projects/Alpha");
     expect(status).toContain("openai/gpt-4o-mini");
-
-    const panel = await $(".agentic-chat-relevant-notes");
-    await panel.waitForDisplayed();
-    await browser.waitUntil(
-      async () => {
-        const text = await panel.getText();
-        return text.includes("Alpha Related.md") && !text.includes("Beta Related.md");
-      },
-      { timeout: 5_000, timeoutMsg: "project-scoped related notes did not stay inside Projects/Alpha" },
-    );
   });
 
   it("forgets a saved memory through the memory manager", async function () {
