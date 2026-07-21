@@ -1,74 +1,7 @@
 import type { App, TFile } from "obsidian";
 import type { IgnoreMatcher } from "../vault/ignore";
-import { applyRetrievalRankingControls, buildRetrievalDiagnostics } from "./diagnostics";
-import { retrieveLexicalVaultCandidates } from "./lexical";
 import type { RetrievalDocument } from "./policy";
 import { isPathInProjectScope } from "../projects/projects";
-import type { EmbeddingIndexSnapshot } from "./embeddings";
-import { mergeSemanticCandidates, retrieveSemanticCandidatesForDocument } from "./semantic";
-
-export interface RelevantNotesControls {
-  pinnedPaths?: readonly string[];
-  excludedPaths?: readonly string[];
-}
-
-export interface RelevantNoteSuggestion {
-  path: string;
-  title: string;
-  score: number;
-  snippets: readonly string[];
-  why: readonly string[];
-  pinned: boolean;
-}
-
-export type RelevantNotesEmptyReason =
-  | "no-active-note"
-  | "active-note-ignored"
-  | "active-note-missing"
-  | "no-related-notes";
-
-export interface RelevantNotesPanelState {
-  activePath: string | null;
-  suggestions: readonly RelevantNoteSuggestion[];
-  ignoredCount: number;
-  emptyReason: RelevantNotesEmptyReason | null;
-}
-
-export interface RelevantNotesStateInput {
-  activePath: string | null;
-  documents: readonly RetrievalDocument[];
-  ignoreMatcher?: IgnoreMatcher;
-  controls?: RelevantNotesControls;
-  scopeFolders?: readonly string[];
-  semanticIndex?: EmbeddingIndexSnapshot | null;
-  maxResults?: number;
-  now?: number;
-}
-
-const DEFAULT_RELEVANT_NOTES_LIMIT = 5;
-const QUERY_CONTENT_TERM_LIMIT = 80;
-const RELEVANT_NOTES_STOPWORDS = new Set([
-  "about",
-  "after",
-  "also",
-  "and",
-  "are",
-  "but",
-  "for",
-  "from",
-  "has",
-  "have",
-  "into",
-  "md",
-  "not",
-  "note",
-  "notes",
-  "see",
-  "that",
-  "the",
-  "this",
-  "with",
-]);
 
 export async function loadVaultRetrievalDocuments(
   app: App,
@@ -90,105 +23,6 @@ export async function loadVaultRetrievalDocuments(
     ),
   );
   return withBacklinks(documents);
-}
-
-export function buildRelevantNotesPanelState(input: RelevantNotesStateInput): RelevantNotesPanelState {
-  const documents = withBacklinks(
-    input.documents.filter((document) => isPathInProjectScope(document.path, input.scopeFolders ?? [])),
-  );
-  if (!input.activePath) {
-    return emptyState(null, "no-active-note", 0);
-  }
-  if (input.ignoreMatcher?.(input.activePath)) {
-    return emptyState(input.activePath, "active-note-ignored", 0);
-  }
-
-  const activePath = normalizePath(input.activePath);
-  const active = documents.find((document) => normalizePath(document.path) === activePath);
-  if (!active) {
-    return emptyState(input.activePath, "active-note-missing", 0);
-  }
-
-  const searchable = documents.filter((document) => normalizePath(document.path) !== activePath);
-  const lexicalResponse = retrieveLexicalVaultCandidates(
-    {
-      text: relevantNotesQuerySeed(active),
-      activePath: input.activePath,
-      maxResults: Math.max(searchable.length, input.maxResults ?? DEFAULT_RELEVANT_NOTES_LIMIT),
-      now: input.now,
-    },
-    {
-      documents: searchable,
-      ignoreMatcher: input.ignoreMatcher,
-      maxResults: Math.max(searchable.length, input.maxResults ?? DEFAULT_RELEVANT_NOTES_LIMIT),
-      maxSnippetsPerDocument: 1,
-    },
-  );
-  const response = mergeSemanticCandidates(
-    lexicalResponse,
-    retrieveSemanticCandidatesForDocument({
-      seed: active,
-      documents: searchable,
-      snapshot: input.semanticIndex,
-      maxResults: Math.max(searchable.length, input.maxResults ?? DEFAULT_RELEVANT_NOTES_LIMIT),
-    }),
-    { maxResults: Math.max(searchable.length, input.maxResults ?? DEFAULT_RELEVANT_NOTES_LIMIT) },
-  );
-  const controlled = applyRetrievalRankingControls(response.results, input.controls).slice(
-    0,
-    input.maxResults ?? DEFAULT_RELEVANT_NOTES_LIMIT,
-  );
-  const diagnostics = buildRetrievalDiagnostics(
-    { ...response, results: controlled, totalMatches: controlled.length },
-    { controls: input.controls },
-  );
-  const pinned = normalizedSet(input.controls?.pinnedPaths);
-  const suggestions = diagnostics.results.map((result) => {
-    const source = controlled.find((candidate) => candidate.document.path === result.path);
-    return {
-      path: result.path,
-      title: result.title,
-      score: result.score,
-      snippets: source?.snippets ?? [],
-      why: result.why,
-      pinned: pinned.has(normalizePath(result.path)),
-    };
-  });
-
-  return {
-    activePath: input.activePath,
-    suggestions,
-    ignoredCount: response.ignoredCount,
-    emptyReason: suggestions.length === 0 ? "no-related-notes" : null,
-  };
-}
-
-export function pinRelevantNote(controls: RelevantNotesControls, path: string): RelevantNotesControls {
-  const normalized = normalizePath(path);
-  const pinned = normalizedSet(controls.pinnedPaths);
-  pinned.add(normalized);
-  return {
-    pinnedPaths: [...pinned],
-    excludedPaths: [...normalizedSet(controls.excludedPaths)].filter((entry) => entry !== normalized),
-  };
-}
-
-export function unpinRelevantNote(controls: RelevantNotesControls, path: string): RelevantNotesControls {
-  const normalized = normalizePath(path);
-  return {
-    pinnedPaths: [...normalizedSet(controls.pinnedPaths)].filter((entry) => entry !== normalized),
-    excludedPaths: [...normalizedSet(controls.excludedPaths)],
-  };
-}
-
-export function excludeRelevantNote(controls: RelevantNotesControls, path: string): RelevantNotesControls {
-  const normalized = normalizePath(path);
-  const excluded = normalizedSet(controls.excludedPaths);
-  excluded.add(normalized);
-  return {
-    pinnedPaths: [...normalizedSet(controls.pinnedPaths)].filter((entry) => entry !== normalized),
-    excludedPaths: [...excluded],
-  };
 }
 
 export function markdownToRetrievalDocument(input: {
@@ -233,43 +67,6 @@ function withBacklinks(documents: readonly RetrievalDocument[]): RetrievalDocume
     ...document,
     backlinks: backlinks.get(normalizePath(document.path)) ?? [],
   }));
-}
-
-function relevantNotesQuerySeed(active: RetrievalDocument): string {
-  return [
-    active.title,
-    ...(active.tags ?? []),
-    ...(active.aliases ?? []),
-    ...(active.links ?? []).map(linkSeedTerm),
-    ...(active.backlinks ?? []).map(linkSeedTerm),
-    frontmatterText(active.frontmatter),
-    importantContentTerms(active.content).join(" "),
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function importantContentTerms(content: string): readonly string[] {
-  const terms = new Set<string>();
-  const searchable = content.replace(/\[\[([^\]|#^]+)(?:[#^|][^\]]*)?]]/g, (_match, target: string) =>
-    linkSeedTerm(target),
-  );
-  for (const match of searchable.toLowerCase().matchAll(/[\p{L}\p{N}][\p{L}\p{N}/_-]*/gu)) {
-    const term = match[0];
-    if (term.length < 3 || RELEVANT_NOTES_STOPWORDS.has(term)) continue;
-    terms.add(term);
-    if (terms.size >= QUERY_CONTENT_TERM_LIMIT) break;
-  }
-  return [...terms];
-}
-
-function linkSeedTerm(path: string): string {
-  return path
-    .split("/")
-    .pop()
-    ?.replace(/\.md$/i, "")
-    .replace(/[_-]+/g, " ")
-    .trim() ?? "";
 }
 
 function splitFrontmatter(content: string): {
@@ -368,18 +165,4 @@ function normalizeTag(value: string): string {
 
 function normalizePath(path: string): string {
   return path.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+/g, "/").toLowerCase();
-}
-
-function normalizedSet(paths: readonly string[] | undefined): Set<string> {
-  return new Set((paths ?? []).map(normalizePath));
-}
-
-function frontmatterText(frontmatter: RetrievalDocument["frontmatter"]): string {
-  return Object.entries(frontmatter ?? {})
-    .map(([key, value]) => `${key} ${Array.isArray(value) ? value.join(" ") : String(value)}`)
-    .join(" ");
-}
-
-function emptyState(activePath: string | null, emptyReason: RelevantNotesEmptyReason, ignoredCount: number): RelevantNotesPanelState {
-  return { activePath, suggestions: [], ignoredCount, emptyReason };
 }

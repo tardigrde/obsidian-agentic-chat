@@ -5,7 +5,6 @@ export interface SessionUiResetOptions {
   activeNoteSuppression?: boolean;
   activeNoteCache?: boolean;
   lastSent?: boolean;
-  relevantNotes?: boolean;
   history?: boolean;
   editing?: boolean;
   bubble?: boolean;
@@ -28,7 +27,6 @@ const CLEAN_CONVERSATION_RESET: SessionUiResetOptions = {
   activeNoteSuppression: true,
   activeNoteCache: true,
   lastSent: true,
-  relevantNotes: true,
   history: true,
   editing: true,
   bubble: true,

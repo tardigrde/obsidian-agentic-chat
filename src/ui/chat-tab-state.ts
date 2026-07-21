@@ -19,8 +19,6 @@ export interface ChatTabWorkingState {
   lastCompactionCount: number;
   lastSentPrompt: string | null;
   lastSentDisplay: string | null;
-  relevantPinnedPaths: string[];
-  relevantExcludedPaths: string[];
 }
 
 /** A clean per-tab working state for a fresh conversation. */
@@ -38,7 +36,5 @@ export function freshChatTabState(): ChatTabWorkingState {
     lastCompactionCount: 0,
     lastSentPrompt: null,
     lastSentDisplay: null,
-    relevantPinnedPaths: [],
-    relevantExcludedPaths: [],
   };
 }
