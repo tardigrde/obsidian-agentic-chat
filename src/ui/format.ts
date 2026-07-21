@@ -115,7 +115,7 @@ export function formatCallBody(name: string, rawArgs: string): string {
 }
 
 /** Tools whose success result is just file contents already on disk / in context — hide it. */
-export const HIDE_RESULT_TOOLS = new Set(["read", "get_active_note", "write"]);
+export const HIDE_RESULT_TOOLS = new Set(["read", "get_active_note", "write", "subagent"]);
 
 /** Tools whose primary arg is a vault path — render it as a clickable link in the step title. */
 export const PATH_TOOLS = new Set(["read", "write", "edit", "delete", "rename", "get_active_note", "ls"]);

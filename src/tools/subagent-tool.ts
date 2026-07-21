@@ -16,7 +16,7 @@ const PER_CHILD_SUMMARY_CHARS = 8_000;
 /** Single line in a child's live transcript. */
 export type SubagentTranscriptEntry =
   | { type: "text"; text: string }
-  | { type: "tool"; name: string; status: "start" | "end"; isError?: boolean };
+  | { type: "tool"; name: string; status: "start" | "end"; args?: unknown; isError?: boolean };
 
 /** Live status of one dispatched child, streamed to the UI and returned as details. */
 export interface SubagentChildStatus {
@@ -124,17 +124,17 @@ export function createSubagentTool(
         onUpdate?.({ content: [{ type: "text", text: progressText(statuses) }], details: snapshot(statuses) });
       emit();
 
-      let emitTimer: ReturnType<typeof setTimeout> | null = null;
+      let emitTimer: number | null = null;
       const scheduleEmit = (): void => {
         if (emitTimer) return;
-        emitTimer = setTimeout(() => {
+        emitTimer = window.setTimeout(() => {
           emitTimer = null;
           emit();
         }, 150);
       };
       const flushEmit = (): void => {
         if (emitTimer) {
-          clearTimeout(emitTimer);
+          window.clearTimeout(emitTimer);
           emitTimer = null;
         }
         emit();
@@ -231,7 +231,7 @@ async function runSingleChild(
         scheduleEmit();
       }
     } else if (event.type === "tool_execution_start") {
-      status.transcript.push({ type: "tool", name: event.toolName, status: "start" });
+      status.transcript.push({ type: "tool", name: event.toolName, status: "start", args: event.args });
       scheduleEmit();
     } else if (event.type === "tool_execution_end") {
       status.transcript.push({ type: "tool", name: event.toolName, status: "end", isError: event.isError });
