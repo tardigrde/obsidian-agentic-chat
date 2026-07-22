@@ -21,17 +21,6 @@ const disabledE2EStreamPath = path.join(process.cwd(), "src", "agent", "e2e-stre
  * provider and probes Node.js APIs. The plugin only supports the
  * openai-completions transport, so expose a browser-safe subset at bundle time.
  */
-const piAiModelsStubPath = path.join(process.cwd(), "src", "vendor", "pi-ai-models-stub.js");
-
-const piAiModelsStub = {
-  name: "pi-ai-models-stub",
-  setup(build) {
-    build.onResolve({ filter: /models\.generated\.js$/ }, (args) => {
-      if (!args.importer.includes("pi-ai")) return undefined;
-      return { path: piAiModelsStubPath };
-    });
-  },
-};
 
 const piAiMobileEntry = {
   name: "pi-ai-mobile-entry",
@@ -84,7 +73,7 @@ const context = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/main.ts"],
   bundle: true,
-  plugins: [piAiModelsStub, piAiMobileEntry, e2eStreamBuildGate],
+  plugins: [piAiMobileEntry, e2eStreamBuildGate],
   external: [
     "obsidian",
     "electron",
