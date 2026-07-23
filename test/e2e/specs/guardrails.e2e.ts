@@ -6,9 +6,9 @@ import { before, describe, it } from "mocha";
  * because they need a real model turn — the approval gate/modal, a full
  * agent→tool→vault-write round trip, and the OpenRouter streaming path end to end.
  *
- * Gated on `OPENROUTER_API_KEY` (it spends real tokens). Run locally, never in CI:
+ * Gated on `AGENTIC_CHAT_API_KEY` (it spends real tokens). Run locally, never in CI:
  *
- *   OPENROUTER_API_KEY=sk-... npm run test:e2e -- --spec test/e2e/specs/guardrails.e2e.ts
+ *   AGENTIC_CHAT_API_KEY=sk-... npm run test:e2e -- --spec test/e2e/specs/guardrails.e2e.ts
  *
  * Without the key the whole suite `skip`s, so it stays inert in a key-less local
  * run. It is excluded from the tsc/eslint/vitest gates (see tsconfig.e2e.json) and
@@ -43,38 +43,46 @@ async function runSlashCommand(command: string): Promise<void> {
 }
 
 /**
- * Inject the OpenRouter key into the plugin's settings before the chat view mounts,
+ * Inject the API key into the plugin's settings before the chat view mounts,
  * so the AgentService is constructed against a configured provider. Also pins Safe
  * mode + mutating=ask so a `write` routes through the approval modal. Returns true
  * if the plugin was found and configured.
  */
-async function configureProvider(key: string): Promise<boolean> {
-  return await browser.executeObsidian(async ({ app }, apiKey) => {
+async function configureProvider(config: { apiKey: string; baseUrl: string; model: string }): Promise<boolean> {
+  return await browser.executeObsidian(async ({ app }, liveConfig) => {
     const plugin = (app as unknown as {
       plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }> };
     }).plugins?.plugins?.["agentic-chat"];
     if (!plugin?.settings) return false;
     const settings = plugin.settings as {
-      openrouterApiKey: string;
       provider: string;
+      openaiCompatibleApiKey: string;
+      openaiCompatibleBaseUrl: string;
+      openaiCompatibleModel: string;
       mode: string;
       approval: { mutating: string };
     };
-    settings.openrouterApiKey = apiKey;
-    settings.provider = "openrouter";
+    settings.provider = "openai-compatible";
+    settings.openaiCompatibleApiKey = liveConfig.apiKey;
+    settings.openaiCompatibleBaseUrl = liveConfig.baseUrl;
+    settings.openaiCompatibleModel = liveConfig.model;
     settings.mode = "safe";
     settings.approval.mutating = "ask";
     await plugin.saveSettings?.();
     return true;
-  }, key);
+  }, config);
 }
 
 describe("agentic-chat guardrails (model-backed)", function () {
   before(async function () {
-    const key = process.env.OPENROUTER_API_KEY;
-    if (!key) this.skip(); // No key → no tokens spent; suite stays inert.
+    const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
+    if (!apiKey) this.skip(); // No key → no tokens spent; suite stays inert.
 
-    const configured = await configureProvider(key);
+    const configured = await configureProvider({
+      apiKey,
+      baseUrl: process.env.AGENTIC_CHAT_BASE_URL?.trim() || "https://openrouter.ai/api/v1",
+      model: process.env.AGENTIC_CHAT_MODEL?.trim() || "openrouter/auto",
+    });
     if (!configured) throw new Error("agentic-chat plugin not found in the test vault");
     await openChat();
   });
@@ -160,7 +168,7 @@ describe("agentic-chat guardrails (model-backed)", function () {
 
   // Clean up the note we created so repeated local runs stay idempotent.
   after(async function () {
-    if (!process.env.OPENROUTER_API_KEY) return;
+    if (!process.env.AGENTIC_CHAT_API_KEY) return;
     await browser.executeObsidian(async ({ app, obsidian }, paths) => {
       const file = app.vault.getAbstractFileByPath(paths.write);
       if (file instanceof obsidian.TFile) await app.vault.trash(file, true);

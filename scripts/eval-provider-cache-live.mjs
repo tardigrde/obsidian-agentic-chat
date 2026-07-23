@@ -26,23 +26,23 @@ function intEnv(name, fallback) {
 }
 
 function readApiKey() {
-  const inline = envValue(process.env, "OPENAI_COMPATIBLE_API_KEY", "OPENWEBUI_API_KEY");
+  const inline = envValue(process.env, "AGENTIC_CHAT_API_KEY", "OPENAI_COMPATIBLE_API_KEY", "OPENWEBUI_API_KEY");
   if (inline) return inline;
 
-  const file = envValue(process.env, "OPENAI_COMPATIBLE_API_KEY_FILE", "OPENWEBUI_API_KEY_FILE");
+  const file = envValue(process.env, "AGENTIC_CHAT_API_KEY_FILE", "OPENAI_COMPATIBLE_API_KEY_FILE", "OPENWEBUI_API_KEY_FILE");
   if (!file) return undefined;
   const value = readFileSync(file, "utf8").trim();
   return value || undefined;
 }
 
 function requiredConfig() {
-  const baseUrl = envValue(process.env, "OPENAI_COMPATIBLE_BASE_URL", "OPENWEBUI_BASE_URL");
-  const model = envValue(process.env, "OPENAI_COMPATIBLE_MODEL", "OPENWEBUI_MODEL");
+  const baseUrl = envValue(process.env, "AGENTIC_CHAT_BASE_URL", "OPENAI_COMPATIBLE_BASE_URL", "OPENWEBUI_BASE_URL");
+  const model = envValue(process.env, "AGENTIC_CHAT_MODEL", "OPENAI_COMPATIBLE_MODEL", "OPENWEBUI_MODEL");
   const apiKey = readApiKey();
   const missing = [];
-  if (!apiKey) missing.push("OPENAI_COMPATIBLE_API_KEY or OPENAI_COMPATIBLE_API_KEY_FILE (fallback: OPENWEBUI_API_KEY or OPENWEBUI_API_KEY_FILE)");
-  if (!baseUrl) missing.push("OPENAI_COMPATIBLE_BASE_URL (fallback: OPENWEBUI_BASE_URL)");
-  if (!model) missing.push("OPENAI_COMPATIBLE_MODEL (fallback: OPENWEBUI_MODEL)");
+  if (!apiKey) missing.push("AGENTIC_CHAT_API_KEY or AGENTIC_CHAT_API_KEY_FILE");
+  if (!baseUrl) missing.push("AGENTIC_CHAT_BASE_URL");
+  if (!model) missing.push("AGENTIC_CHAT_MODEL");
   if (missing.length > 0) {
     throw new Error(`Missing live provider-cache eval inputs:\n- ${missing.join("\n- ")}`);
   }

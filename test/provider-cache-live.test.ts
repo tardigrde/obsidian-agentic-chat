@@ -85,14 +85,14 @@ describe("provider-cache live eval helpers", () => {
     expect(
       evalModule.parseEnvFile(`
         # comment
-        export OPENWEBUI_BASE_URL="https://llm.example/api"
-        OPENWEBUI_MODEL='model/id'
-        OPENWEBUI_API_KEY=secret # local comment
+        export AGENTIC_CHAT_BASE_URL="https://openrouter.ai/api/v1"
+        AGENTIC_CHAT_MODEL='openrouter/auto'
+        AGENTIC_CHAT_API_KEY=secret # local comment
       `),
     ).toEqual({
-      OPENWEBUI_BASE_URL: "https://llm.example/api",
-      OPENWEBUI_MODEL: "model/id",
-      OPENWEBUI_API_KEY: "secret",
+      AGENTIC_CHAT_BASE_URL: "https://openrouter.ai/api/v1",
+      AGENTIC_CHAT_MODEL: "openrouter/auto",
+      AGENTIC_CHAT_API_KEY: "secret",
     });
   });
 

@@ -3,13 +3,13 @@ import { browser, expect, $ } from "@wdio/globals";
 import { before, describe, it } from "mocha";
 
 /**
- * Live OpenWebUI / OpenAI-compatible e2e: gated on OPENWEBUI_API_KEY or
- * OPENWEBUI_API_KEY_FILE because it spends real tokens and depends on a reachable
- * gateway. It validates the Obsidian requestUrl transport path, not OpenRouter.
+ * Live OpenAI-compatible e2e: gated on AGENTIC_CHAT_API_KEY because it spends
+ * real tokens and depends on a reachable gateway. Validates the Obsidian
+ * requestUrl transport path.
  */
 
-const DEFAULT_BASE_URL = "https://llm.example/api";
-const DEFAULT_MODEL = "gemini-3.1-flash-lite";
+const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
+const DEFAULT_MODEL = "openrouter/auto";
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
@@ -24,16 +24,16 @@ async function sendPrompt(prompt: string): Promise<void> {
 }
 
 function readApiKey(): string | undefined {
-  const inline = process.env.OPENWEBUI_API_KEY?.trim();
+  const inline = process.env.AGENTIC_CHAT_API_KEY?.trim();
   if (inline) return inline;
 
-  const file = process.env.OPENWEBUI_API_KEY_FILE?.trim();
+  const file = process.env.AGENTIC_CHAT_API_KEY_FILE?.trim();
   if (!file) return undefined;
   const fromFile = readFileSync(file, "utf8").trim();
   return fromFile || undefined;
 }
 
-async function configureOpenWebUI(config: { apiKey: string; baseUrl: string; model: string }): Promise<boolean> {
+async function configureProvider(config: { apiKey: string; baseUrl: string; model: string }): Promise<boolean> {
   return await browser.executeObsidian(async ({ app }, liveConfig) => {
     const plugin = (app as unknown as {
       plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }> };
@@ -93,15 +93,15 @@ async function waitForAssistantText(pattern: RegExp, timeoutMsg: string): Promis
   return await renderedAssistantText();
 }
 
-describe("agentic-chat OpenWebUI live", function () {
+describe("agentic-chat OpenAI-compatible live", function () {
   before(async function () {
     const apiKey = readApiKey();
     if (!apiKey) this.skip();
 
-    const configured = await configureOpenWebUI({
+    const configured = await configureProvider({
       apiKey,
-      baseUrl: process.env.OPENWEBUI_BASE_URL?.trim() || DEFAULT_BASE_URL,
-      model: process.env.OPENWEBUI_MODEL?.trim() || DEFAULT_MODEL,
+      baseUrl: process.env.AGENTIC_CHAT_BASE_URL?.trim() || DEFAULT_BASE_URL,
+      model: process.env.AGENTIC_CHAT_MODEL?.trim() || DEFAULT_MODEL,
     });
     if (!configured) throw new Error("agentic-chat plugin not found in the test vault");
     await openChat();

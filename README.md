@@ -297,9 +297,8 @@ regressions. Real Obsidian Mobile still needs the Android/iOS checklist in
 [MOBILE_TESTING.md](MOBILE_TESTING.md).
 
 Live model-backed e2e specs are opt-in and skip unless their keys are present.
-Use `OPENROUTER_API_KEY` for the OpenRouter guardrail flow, or
-`OPENWEBUI_API_KEY` / `OPENWEBUI_API_KEY_FILE` with `OPENWEBUI_BASE_URL` and
-`OPENWEBUI_MODEL` for an OpenAI-compatible gateway flow. When running behind a
+Set `AGENTIC_CHAT_API_KEY`, `AGENTIC_CHAT_BASE_URL`, and `AGENTIC_CHAT_MODEL`
+for any OpenAI-compatible gateway (OpenRouter, OpenWebUI, local proxy, etc.). When running behind a
 corporate proxy, keep `NO_PROXY=localhost,127.0.0.1,::1`; the WDIO config keeps
 chromedriver local and passes a normalized proxy setting to Obsidian/Electron.
 When provider transport, model settings, proxy handling, or request formatting

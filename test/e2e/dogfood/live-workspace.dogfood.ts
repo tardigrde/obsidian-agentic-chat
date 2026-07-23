@@ -125,10 +125,10 @@ type McpSettingsSnapshot = {
 };
 
 function readApiKey(): string | undefined {
-  const inline = optionalEnv("AGENTIC_CHAT_LIVE_API_KEY", "OPENWEBUI_API_KEY");
+  const inline = optionalEnv("AGENTIC_CHAT_API_KEY", "AGENTIC_CHAT_LIVE_API_KEY", "OPENWEBUI_API_KEY");
   if (inline) return inline;
 
-  const file = optionalEnv("AGENTIC_CHAT_LIVE_API_KEY_FILE", "OPENWEBUI_API_KEY_FILE");
+  const file = optionalEnv("AGENTIC_CHAT_API_KEY_FILE", "AGENTIC_CHAT_LIVE_API_KEY_FILE", "OPENWEBUI_API_KEY_FILE");
   if (!file) return undefined;
   const value = readFileSync(file, "utf8").trim();
   return value || undefined;
@@ -716,8 +716,8 @@ function liveDogfoodReportManifest(options: {
 }
 
 describe("agentic-chat live workspace dogfood", function () {
-  const baseUrl = optionalEnv("AGENTIC_CHAT_LIVE_BASE_URL", "OPENWEBUI_BASE_URL") ?? "";
-  const model = optionalEnv("AGENTIC_CHAT_LIVE_MODEL", "OPENWEBUI_MODEL") ?? "";
+  const baseUrl = optionalEnv("AGENTIC_CHAT_BASE_URL", "AGENTIC_CHAT_LIVE_BASE_URL", "OPENWEBUI_BASE_URL") ?? "";
+  const model = optionalEnv("AGENTIC_CHAT_MODEL", "AGENTIC_CHAT_LIVE_MODEL", "OPENWEBUI_MODEL") ?? "";
   const externalRoot = optionalEnv("AGENTIC_CHAT_LIVE_EXTERNAL_ROOT", "EXTERNAL_ROOT") ?? "";
   const noteDir = process.env.DOGFOOD_NOTE_DIR?.trim() || DEFAULT_NOTE_DIR;
   const workspaceLabel = process.env.DOGFOOD_WORKSPACE_LABEL?.trim() || "workspace";

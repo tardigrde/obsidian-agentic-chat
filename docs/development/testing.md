@@ -148,14 +148,12 @@ Live model-backed specs are opt-in because they spend tokens and need local cred
 npm run verify:provider-live
 ```
 
-`verify:provider-live` runs the OpenRouter guardrail e2e, the OpenAI-compatible
+`verify:provider-live` runs the guardrail e2e, the OpenAI-compatible
 gateway e2e, and `npm run eval:provider-cache-live`. The provider-cache eval
 sends the same large stable prompt prefix several times with tiny completions;
 the first request may be a cache miss, but at least one later request must report
-`cacheRead` tokens. Set `OPENWEBUI_API_KEY` or `OPENWEBUI_API_KEY_FILE`,
-`OPENWEBUI_BASE_URL`, and `OPENWEBUI_MODEL`; the cache eval also accepts
-`OPENAI_COMPATIBLE_API_KEY`, `OPENAI_COMPATIBLE_API_KEY_FILE`,
-`OPENAI_COMPATIBLE_BASE_URL`, and `OPENAI_COMPATIBLE_MODEL`. It can load a local
+`cacheRead` tokens. Set `AGENTIC_CHAT_API_KEY` or `AGENTIC_CHAT_API_KEY_FILE`,
+`AGENTIC_CHAT_BASE_URL`, and `AGENTIC_CHAT_MODEL`. It can load a local
 dotenv file directly:
 
 ```bash
@@ -168,7 +166,7 @@ The broader live-provider gate accepts the same env-file option:
 npm run verify:provider-live -- --env-file .env
 ```
 
-Use the live OpenWebUI or MCP e2e specs only when validating real external calls.
+Use the live e2e specs only when validating real external calls.
 When running a live dogfood spec through `test:e2e:dogfood`, pass
 `--skip-post-invariants` and let the live spec write its own report; the default
 post-run invariant oracle is scoped to the synthetic scripted dogfood manifest.
