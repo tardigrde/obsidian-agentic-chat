@@ -69,9 +69,9 @@ The assistant should use the plugin like a real user:
 Before starting an optional live run, obtain these from the user:
 
 ```text
-AGENTIC_CHAT_LIVE_BASE_URL       OpenAI-compatible base URL, usually ending in /api
-AGENTIC_CHAT_LIVE_MODEL          Model id exposed by the gateway
-AGENTIC_CHAT_LIVE_API_KEY_FILE   Local file containing the bearer token
+AGENTIC_CHAT_BASE_URL            OpenAI-compatible base URL, usually ending in /api
+AGENTIC_CHAT_MODEL               Model id exposed by the gateway
+AGENTIC_CHAT_API_KEY_FILE        Local file containing the bearer token
 AGENTIC_CHAT_LIVE_EXTERNAL_ROOT  Workspace root to inspect
 TARGET_VAULT                     Vault to open for the live run
 ```
@@ -86,9 +86,9 @@ set +a
 export AGENTIC_CHAT_LIVE_DOGFOOD=true
 export TARGET_VAULT="$HOME/AgenticChatDogfoodVault"
 export AGENTIC_CHAT_LIVE_EXTERNAL_ROOT="$HOME/workspace"
-export AGENTIC_CHAT_LIVE_API_KEY_FILE="/tmp/agentic-chat-live.key"
-export AGENTIC_CHAT_LIVE_BASE_URL="https://llm.example/api"
-export AGENTIC_CHAT_LIVE_MODEL="model-id"
+export AGENTIC_CHAT_API_KEY_FILE="/tmp/agentic-chat.key"
+export AGENTIC_CHAT_BASE_URL="https://openrouter.ai/api/v1"
+export AGENTIC_CHAT_MODEL="openrouter/auto"
 export NO_PROXY="localhost,127.0.0.1,::1"
 ```
 
@@ -187,9 +187,9 @@ Expected settings:
 
 ```text
 Provider: OpenAI-compatible
-Base URL: AGENTIC_CHAT_LIVE_BASE_URL
-API key: contents of AGENTIC_CHAT_LIVE_API_KEY_FILE
-Model: AGENTIC_CHAT_LIVE_MODEL
+Base URL: AGENTIC_CHAT_BASE_URL
+API key: contents of AGENTIC_CHAT_API_KEY_FILE
+Model: AGENTIC_CHAT_MODEL
 Mode: Safe
 External workspace root: enabled
 External root path: AGENTIC_CHAT_LIVE_EXTERNAL_ROOT
@@ -199,7 +199,7 @@ External ignore list: keep secret defaults, add repo-specific noise only if need
 ```
 
 If setting the API key through automation, read the key from
-`AGENTIC_CHAT_LIVE_API_KEY_FILE` at runtime and write it only through plugin settings or
+`AGENTIC_CHAT_API_KEY_FILE` at runtime and write it only through plugin settings or
 secret storage. Never log the key.
 
 ## Scenario Plan

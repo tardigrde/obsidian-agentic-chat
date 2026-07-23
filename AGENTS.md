@@ -60,7 +60,7 @@ full local suite without spending tokens, clear the live key so the model-backed
 guardrail spec skips:
 
 ```bash
-OPENROUTER_API_KEY= npm run test:e2e
+AGENTIC_CHAT_API_KEY= npm run test:e2e
 ```
 
 `test:e2e` uses `node --import tsx` instead of the `tsx` CLI so the runner does
@@ -73,16 +73,13 @@ a top-level command:
 rtk npm run test:e2e -- --spec test/e2e/specs/smoke.e2e.ts
 ```
 
-Run the live OpenWebUI / OpenAI-compatible e2e only when explicitly validating
-real model calls. It spends tokens and needs the local gateway token:
+Run the live OpenAI-compatible e2e only when explicitly validating
+real model calls. It spends tokens:
 
 ```bash
-OPENWEBUI_API_KEY_FILE=/tmp/agentic-chat-openwebui.key \
-OPENWEBUI_BASE_URL=https://llm.example/api \
-OPENWEBUI_MODEL=gemini-3.1-flash-lite \
-HTTP_PROXY=http://192.0.2.10:3128/ \
-HTTPS_PROXY=http://192.0.2.10:3128/ \
-NO_PROXY=localhost,127.0.0.1,::1 \
+AGENTIC_CHAT_API_KEY=sk-or-... \
+AGENTIC_CHAT_BASE_URL=https://openrouter.ai/api/v1 \
+AGENTIC_CHAT_MODEL=openrouter/auto \
 npm run test:e2e -- --spec test/e2e/specs/openwebui-live.e2e.ts
 ```
 
@@ -104,12 +101,12 @@ Run the full dogfood e2e suite (expensive, generates vault + drives real Obsidia
 npm run test:e2e:dogfood
 ```
 
-Run the subagent live dogfood spec alone (needs `OPENROUTER_API_KEY`):
+Run the subagent live dogfood spec alone (needs `AGENTIC_CHAT_API_KEY`):
 
 ```bash
 AGENTIC_CHAT_SUBAGENT_DOGFOOD=true \
-OPENROUTER_API_KEY="<paste-your-key-here>" \
-OPENROUTER_MODEL=openrouter/auto \
+AGENTIC_CHAT_API_KEY="<paste-your-key-here>" \
+AGENTIC_CHAT_MODEL=openrouter/auto \
 npm run test:e2e -- --spec test/e2e/dogfood/subagent-live.dogfood.ts
 ```
 
@@ -140,7 +137,7 @@ Environment variables are allowed for scripts and future live harnesses, but not
 ```bash
 AGENTIC_CHAT_VAULT=~/MyTestVault
 OBSIDIAN_VAULT=~/MyTestVault
-OPENWEBUI_BASE_URL=http://localhost:3000/api
-OPENWEBUI_API_KEY=...
-OPENWEBUI_MODEL=...
+AGENTIC_CHAT_BASE_URL=https://openrouter.ai/api/v1
+AGENTIC_CHAT_API_KEY=...
+AGENTIC_CHAT_MODEL=...
 ```

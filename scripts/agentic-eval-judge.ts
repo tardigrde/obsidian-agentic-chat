@@ -120,10 +120,10 @@ export async function resolveJudgeConfig(options: {
 }): Promise<{ config?: JudgeConfig; redacted: RedactedJudgeConfig }> {
   const envFile = await readDotEnv(path.join(options.cwd, ".env"));
   const merged: EnvSource = { ...envFile, ...(options.env ?? process.env) };
-  const baseUrl = firstEnv(merged, "AGENTIC_EVAL_JUDGE_BASE_URL", "OPENWEBUI_BASE_URL");
-  const model = firstEnv(merged, "AGENTIC_EVAL_JUDGE_MODEL", "OPENWEBUI_MODEL");
-  const inlineApiKey = firstEnv(merged, "AGENTIC_EVAL_JUDGE_API_KEY", "OPENWEBUI_API_KEY");
-  const keyFile = firstEnv(merged, "AGENTIC_EVAL_JUDGE_API_KEY_FILE", "OPENWEBUI_API_KEY_FILE");
+  const baseUrl = firstEnv(merged, "AGENTIC_CHAT_BASE_URL", "AGENTIC_EVAL_JUDGE_BASE_URL", "OPENWEBUI_BASE_URL");
+  const model = firstEnv(merged, "AGENTIC_CHAT_JUDGE_MODEL", "AGENTIC_CHAT_MODEL", "AGENTIC_EVAL_JUDGE_MODEL", "OPENWEBUI_MODEL");
+  const inlineApiKey = firstEnv(merged, "AGENTIC_CHAT_API_KEY", "AGENTIC_EVAL_JUDGE_API_KEY", "OPENWEBUI_API_KEY", "OPENROUTER_API_KEY");
+  const keyFile = firstEnv(merged, "AGENTIC_CHAT_API_KEY_FILE", "AGENTIC_EVAL_JUDGE_API_KEY_FILE", "OPENWEBUI_API_KEY_FILE");
   const apiKey = inlineApiKey || (keyFile ? await readSecretFile(keyFile) : undefined);
   const proxyUrl = firstEnv(
     merged,
@@ -135,9 +135,9 @@ export async function resolveJudgeConfig(options: {
   const timeoutMs = positiveInteger(firstEnv(merged, "AGENTIC_EVAL_JUDGE_TIMEOUT_MS"), DEFAULT_TIMEOUT_MS);
   const maxTokens = positiveInteger(firstEnv(merged, "AGENTIC_EVAL_JUDGE_MAX_TOKENS"), DEFAULT_MAX_TOKENS);
   const missing = [
-    ...(baseUrl ? [] : ["AGENTIC_EVAL_JUDGE_BASE_URL or OPENWEBUI_BASE_URL"]),
-    ...(model ? [] : ["AGENTIC_EVAL_JUDGE_MODEL or OPENWEBUI_MODEL"]),
-    ...(apiKey ? [] : ["AGENTIC_EVAL_JUDGE_API_KEY, AGENTIC_EVAL_JUDGE_API_KEY_FILE, OPENWEBUI_API_KEY, or OPENWEBUI_API_KEY_FILE"]),
+    ...(baseUrl ? [] : ["AGENTIC_CHAT_BASE_URL"]),
+    ...(model ? [] : ["AGENTIC_CHAT_MODEL or AGENTIC_CHAT_JUDGE_MODEL"]),
+    ...(apiKey ? [] : ["AGENTIC_CHAT_API_KEY or AGENTIC_CHAT_API_KEY_FILE"]),
   ];
 
   const redacted: RedactedJudgeConfig = {

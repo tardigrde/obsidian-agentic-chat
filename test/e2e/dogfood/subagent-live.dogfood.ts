@@ -4,8 +4,9 @@ import { before, describe, it } from "mocha";
 const TURN_TIMEOUT_MS = Number(process.env.DOGFOOD_TURN_TIMEOUT_MS || 120_000);
 
 describe("agentic-chat subagent live dogfood", function () {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  const model = process.env.AGENTIC_CHAT_LIVE_MODEL || "openrouter/auto";
+  const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
+  const baseUrl = process.env.AGENTIC_CHAT_BASE_URL?.trim() || "https://openrouter.ai/api/v1";
+  const model = process.env.AGENTIC_CHAT_MODEL?.trim() || "openrouter/auto";
 
   before(async function () {
     if (process.env.AGENTIC_CHAT_SUBAGENT_DOGFOOD !== "true") this.skip();
@@ -18,21 +19,23 @@ describe("agentic-chat subagent live dogfood", function () {
       if (!plugin?.settings) return false;
       const settings = plugin.settings as {
         provider: string;
-        openrouterApiKey: string;
-        openrouterModel: string;
+        openaiCompatibleApiKey: string;
+        openaiCompatibleBaseUrl: string;
+        openaiCompatibleModel: string;
         mode: string;
         enableBuiltinAgents: boolean;
         approval: { mutating: string };
       };
-      settings.provider = "openrouter";
-      settings.openrouterApiKey = liveConfig.apiKey;
-      settings.openrouterModel = liveConfig.model;
+      settings.provider = "openai-compatible";
+      settings.openaiCompatibleApiKey = liveConfig.apiKey;
+      settings.openaiCompatibleBaseUrl = liveConfig.baseUrl;
+      settings.openaiCompatibleModel = liveConfig.model;
       settings.mode = "safe";
       settings.approval.mutating = "allow";
       settings.enableBuiltinAgents = true;
       await plugin.saveSettings?.();
       return true;
-    }, { apiKey, model });
+    }, { apiKey, baseUrl, model });
 
     if (!configured) throw new Error("agentic-chat plugin not found in the dogfood vault");
     await browser.executeObsidianCommand("agentic-chat:open-chat");

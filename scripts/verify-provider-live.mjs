@@ -5,17 +5,17 @@ import { hasAnyEnv, loadEnvFileFromArgs } from "./live-env.mjs";
 
 const liveProviderSpecs = [
   {
-    label: "OpenRouter guardrail flow",
+    label: "OpenAI-compatible guardrail flow",
     spec: "test/e2e/specs/guardrails.e2e.ts",
-    env: ["OPENROUTER_API_KEY"],
-    command: "OPENROUTER_API_KEY=... npm run test:e2e -- --spec test/e2e/specs/guardrails.e2e.ts",
+    env: ["AGENTIC_CHAT_API_KEY", "AGENTIC_CHAT_API_KEY_FILE"],
+    command: "AGENTIC_CHAT_API_KEY=... AGENTIC_CHAT_BASE_URL=... AGENTIC_CHAT_MODEL=... npm run test:e2e -- --spec test/e2e/specs/guardrails.e2e.ts",
   },
   {
-    label: "OpenAI-compatible OpenWebUI flow",
+    label: "OpenAI-compatible live flow",
     spec: "test/e2e/specs/openwebui-live.e2e.ts",
-    env: ["OPENWEBUI_API_KEY", "OPENWEBUI_API_KEY_FILE"],
+    env: ["AGENTIC_CHAT_API_KEY", "AGENTIC_CHAT_API_KEY_FILE"],
     command:
-      "OPENWEBUI_API_KEY_FILE=/tmp/agentic-chat-openwebui.key OPENWEBUI_BASE_URL=... OPENWEBUI_MODEL=... npm run test:e2e -- --spec test/e2e/specs/openwebui-live.e2e.ts",
+      "AGENTIC_CHAT_API_KEY=... AGENTIC_CHAT_BASE_URL=... AGENTIC_CHAT_MODEL=... npm run test:e2e -- --spec test/e2e/specs/openwebui-live.e2e.ts",
   },
 ];
 
@@ -25,13 +25,11 @@ const liveProviderScripts = [
     script: "scripts/eval-provider-cache-live.mjs",
     npmScript: "eval:provider-cache-live",
     env: [
-      "OPENAI_COMPATIBLE_API_KEY",
-      "OPENAI_COMPATIBLE_API_KEY_FILE",
-      "OPENWEBUI_API_KEY",
-      "OPENWEBUI_API_KEY_FILE",
+      "AGENTIC_CHAT_API_KEY",
+      "AGENTIC_CHAT_API_KEY_FILE",
     ],
     command:
-      "OPENWEBUI_API_KEY_FILE=/tmp/agentic-chat-openwebui.key OPENWEBUI_BASE_URL=... OPENWEBUI_MODEL=... npm run eval:provider-cache-live",
+      "AGENTIC_CHAT_API_KEY=... AGENTIC_CHAT_BASE_URL=... AGENTIC_CHAT_MODEL=... npm run eval:provider-cache-live",
   },
 ];
 
