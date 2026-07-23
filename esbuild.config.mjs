@@ -12,7 +12,7 @@ Third-party notices: https://github.com/tardigrde/obsidian-agentic-chat/blob/mai
 const production = process.argv[2] === "production";
 const outfile = process.env.AGENTIC_CHAT_OUTFILE || "main.js";
 const enableE2EStream = !production || process.env.AGENTIC_CHAT_ENABLE_E2E_STREAM === "1";
-const piAiProviderPath = fileURLToPath(import.meta.resolve("@earendil-works/pi-ai/openai-completions"));
+const piAiProviderPath = fileURLToPath(import.meta.resolve("@earendil-works/pi-ai/api/openai-completions"));
 const piAiDistDir = path.dirname(path.dirname(piAiProviderPath));
 const disabledE2EStreamPath = path.join(process.cwd(), "src", "agent", "e2e-stream-disabled.ts");
 
@@ -33,7 +33,7 @@ const piAiMobileEntry = {
       loader: "js",
       resolveDir: process.cwd(),
       contents: `
-        export { getModels } from ${JSON.stringify(path.join(piAiDistDir, "models.js"))};
+        export { createModels, createProvider } from ${JSON.stringify(path.join(piAiDistDir, "models.js"))};
         export {
           EventStream,
           AssistantMessageEventStream,
@@ -41,20 +41,34 @@ const piAiMobileEntry = {
         } from ${JSON.stringify(path.join(piAiDistDir, "utils/event-stream.js"))};
         export { parseStreamingJson } from ${JSON.stringify(path.join(piAiDistDir, "utils/json-parse.js"))};
         export { validateToolArguments } from ${JSON.stringify(path.join(piAiDistDir, "utils/validation.js"))};
-        import {
-          streamOpenAICompletions,
-          streamSimpleOpenAICompletions
-        } from ${JSON.stringify(piAiProviderPath)};
-        export const stream = streamOpenAICompletions;
-        export const streamSimple = streamSimpleOpenAICompletions;
-        export async function complete(model, context, options) {
-          return streamOpenAICompletions(model, context, options).result();
-        }
-        export async function completeSimple(model, context, options) {
-          return streamSimpleOpenAICompletions(model, context, options).result();
-        }
+        export { uuidv7 } from ${JSON.stringify(path.join(piAiDistDir, "utils/uuid.js"))};
+        export { contentText } from ${JSON.stringify(path.join(piAiDistDir, "utils/text.js"))};
+        export { retryAssistantCall } from ${JSON.stringify(path.join(piAiDistDir, "utils/retry.js"))};
       `,
     }));
+  },
+};
+
+/**
+ * pi-ai's provider-env util carries a Bun sandbox fallback that requires
+ * node:fs. Obsidian never runs under Bun, so substitute the browser-safe
+ * override + process.env resolution and keep node:fs out of the bundle.
+ */
+const piAiProviderEnvStub = {
+  name: "pi-ai-provider-env-stub",
+  setup(build) {
+    const providerEnvPath = path.join(piAiDistDir, "utils", "provider-env.js");
+    build.onLoad({ filter: /utils[\\/]provider-env\.js$/ }, (args) => {
+      if (path.resolve(args.path) !== path.resolve(providerEnvPath)) return undefined;
+      return {
+        loader: "js",
+        contents: `
+          export function getProviderEnvValue(name, env) {
+            return env?.[name] || (typeof process !== "undefined" ? process.env[name] : undefined) || undefined;
+          }
+        `,
+      };
+    });
   },
 };
 
@@ -73,7 +87,7 @@ const context = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/main.ts"],
   bundle: true,
-  plugins: [piAiMobileEntry, e2eStreamBuildGate],
+  plugins: [piAiMobileEntry, piAiProviderEnvStub, e2eStreamBuildGate],
   external: [
     "obsidian",
     "electron",

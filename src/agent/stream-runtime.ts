@@ -1,16 +1,21 @@
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { streamSimple, type Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessageEventStream, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import {
   createOpenAICompatibleRequester,
   streamOpenAICompatibleViaRequestUrl,
 } from "../llm/openai-compatible-request";
+import { sharedAgentModels } from "../llm/providers";
 import { createProxiedFetcher } from "../mcp/fetcher";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
 
-type StreamSimpleFn = typeof streamSimple;
+export type StreamSimpleFn = (
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+) => AssistantMessageEventStream;
 type OpenAICompatibleStreamFn = typeof streamOpenAICompatibleViaRequestUrl;
 
 export interface AgentStreamRuntimeOptions {
@@ -34,7 +39,8 @@ export class AgentStreamRuntime {
   constructor(options: AgentStreamRuntimeOptions) {
     this.getSettings = options.getSettings;
     this.injectedStreamFn = options.streamFn;
-    this.streamSimpleFn = options.streamSimpleFn ?? streamSimple;
+    this.streamSimpleFn =
+      options.streamSimpleFn ?? ((model, context, streamOptions) => sharedAgentModels().streamSimple(model, context, streamOptions));
     this.openAICompatibleStreamFn = options.openAICompatibleStreamFn ?? streamOpenAICompatibleViaRequestUrl;
   }
 
