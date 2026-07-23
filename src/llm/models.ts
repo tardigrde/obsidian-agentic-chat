@@ -1,6 +1,8 @@
-import { getModels, type Model, type OpenAICompletionsCompat, type OpenRouterRouting } from "@earendil-works/pi-ai";
+import { type Model, type OpenAICompletionsCompat, type OpenRouterRouting } from "@earendil-works/pi-ai";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { requestUrl } from "obsidian";
+import { resolveModelInfoSync, resolveModelPricingSync } from "./pricing-cache";
+export { initPricingCache } from "./pricing-cache";
 
 /** Canonical reasoning-effort ladder, lowest → highest, in UI order. */
 export const THINKING_LEVEL_ORDER: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -85,21 +87,21 @@ export function buildModel(config: ModelConfig): Model<"openai-completions"> {
 }
 
 function buildOpenRouterModel(config: ModelConfig): Model<"openai-completions"> {
-  const base = findCatalogModel("openrouter", config.modelId);
-  const model: Model<"openai-completions"> = base
-    ? { ...base }
-    : {
-        id: config.modelId,
-        name: config.modelId,
-        api: "openai-completions",
-        provider: "openrouter",
-        baseUrl: OPENROUTER_BASE_URL,
-        reasoning: true,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: DEFAULT_CONTEXT_WINDOW,
-        maxTokens: DEFAULT_MAX_TOKENS,
-      };
+  const pricing = resolveModelPricingSync("openrouter", config.modelId);
+  const info = resolveModelInfoSync("openrouter", config.modelId);
+  const model: Model<"openai-completions"> = {
+    id: config.modelId,
+    name: info?.n ?? config.modelId,
+    api: "openai-completions",
+    provider: "openrouter",
+    baseUrl: OPENROUTER_BASE_URL,
+    reasoning: info ? info.re === 1 : true,
+    input: ["text"],
+    cost: { input: pricing.input, output: pricing.output, cacheRead: pricing.cacheRead, cacheWrite: pricing.cacheWrite },
+    contextWindow: info?.c ?? DEFAULT_CONTEXT_WINDOW,
+    maxTokens: info?.m ?? DEFAULT_MAX_TOKENS,
+    ...(info?.tlm ? { thinkingLevelMap: info.tlm } : {}),
+  };
   model.compat = { ...model.compat, openRouterRouting: buildOpenRouterRouting(config.privacy) };
   return model;
 }
@@ -123,6 +125,7 @@ function buildOllamaModel(config: ModelConfig): Model<"openai-completions"> {
 }
 
 function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completions"> {
+  const pricing = resolveModelPricingSync("openai-compatible", config.modelId);
   return {
     id: config.modelId,
     name: config.modelId,
@@ -131,7 +134,7 @@ function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completi
     baseUrl: normalizeOpenAICompatibleApiBaseUrl(config.openaiCompatibleBaseUrl),
     reasoning: false,
     input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    cost: { input: pricing.input, output: pricing.output, cacheRead: pricing.cacheRead, cacheWrite: pricing.cacheWrite },
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     maxTokens: DEFAULT_MAX_TOKENS,
     compat: {
@@ -154,19 +157,7 @@ export function buildOpenRouterRouting(privacy: PrivacySettings): OpenRouterRout
   return routing;
 }
 
-function findCatalogModel(provider: "openrouter", id: string): Model<"openai-completions"> | undefined {
-  try {
-    return getModels(provider).find((model) => model.id === id);
-  } catch {
-    return undefined;
-  }
-}
 
-/** Per-million-token costs for a model id, if pi-ai's catalog knows it. */
-export function catalogCost(provider: ProviderId, id: string): Model<"openai-completions">["cost"] | undefined {
-  if (provider !== "openrouter") return undefined;
-  return findCatalogModel("openrouter", id)?.cost;
-}
 
 export interface OpenRouterModelInfo {
   id: string;

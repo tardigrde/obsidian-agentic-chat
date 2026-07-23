@@ -12,12 +12,14 @@ import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi
 import type { ImageContent, Usage } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
+import type { RequestCostEstimate } from "../agent/cost";
 import type { AskUserRequest } from "../tools/ask-user-tool";
 import { abortSubagentChild } from "../tools/subagent-tool";
 import { isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, apiKeyForProvider } from "../settings";
+import { isPricingUnknown } from "../llm/pricing-cache";
 import { listOpenAICompatibleModels, listOpenRouterModels } from "../llm/models";
 import { ModelSuggestModal } from "./model-suggest-modal";
 import { SessionListModal } from "./session-list-modal";
@@ -1021,7 +1023,14 @@ export class ChatView extends ItemView {
     const fraction = this.service.getContextFraction();
     // Pre-send estimate of what the next request will cost (priced models only).
     const estimate = this.service.estimateNextCost();
-    this.renderUsageChrome(usage, estimate?.usd);
+    const provider = effective.provider;
+    const modelId = activeModelId(effective);
+    const sessionCostUnknown =
+      provider !== "ollama" &&
+      usage.totalTokens > 0 &&
+      (usage.cost?.total ?? 0) === 0 &&
+      isPricingUnknown(provider as "openrouter" | "openai-compatible", modelId);
+    this.renderUsageChrome(usage, estimate, sessionCostUnknown);
     this.syncContextBar(fraction);
 
     const error = this.service.getError();
@@ -1035,10 +1044,10 @@ export class ChatView extends ItemView {
    * hit ratio) · cost · next ~$X (hover tooltip) — instead of one opaque string,
    * so the cache chip and the next-cost projection can carry their own styling.
    */
-  private renderUsageChrome(usage: Usage, nextEstimateUsd?: number): void {
+  private renderUsageChrome(usage: Usage, nextEstimate?: RequestCostEstimate, sessionCostUnknown = false): void {
     const el = this.usageEl;
     el.empty();
-    const parts = buildUsageChromeParts(usage, nextEstimateUsd);
+    const parts = buildUsageChromeParts(usage, nextEstimate, sessionCostUnknown);
     parts.forEach((part, index) => {
       if (index > 0) el.createSpan({ text: " · " });
       const span = el.createSpan({ text: part.text });

@@ -41,9 +41,12 @@ describe("buildModel — OpenRouter", () => {
     expect(model.compat?.openRouterRouting).toEqual({ allow_fallbacks: true });
   });
 
-  it("carries catalog pricing for a known model", () => {
+  it("starts at zero cost until the live pricing cache is populated", () => {
     const model = buildModel(config({}));
-    expect(model.cost.input).toBeGreaterThan(0);
+    // The static catalog is stubbed out; pricing is fetched lazily from
+    // OpenRouter and stored in a local cache file. Until that first fetch
+    // the model carries $0, which the UI signals with $?.
+    expect(model.cost.input).toBe(0);
   });
 
   it("synthesizes a model for ids missing from the catalog", () => {

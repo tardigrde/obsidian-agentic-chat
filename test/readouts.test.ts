@@ -84,15 +84,16 @@ describe("agent readouts", () => {
     expect(compactionCount(messages)).toBe(2);
   });
 
-  it("returns undefined for unpriced next-cost estimates", () => {
-    expect(
-      estimateNextCostReadout({
-        messages: [{ role: "user", content: "hello", timestamp: 1 }],
-        model: model({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }),
-        settings: DEFAULT_SETTINGS,
-        systemPrompt: "system",
-      }),
-    ).toBeUndefined();
+  it("returns an unknown-marker for models with no cached pricing", () => {
+    const result = estimateNextCostReadout({
+      messages: [{ role: "user", content: "hello", timestamp: 1 }],
+      model: model({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }),
+      settings: DEFAULT_SETTINGS,
+      systemPrompt: "system",
+    });
+    expect(result).toBeDefined();
+    expect(result?.usd).toBe(0);
+    expect(result?.isUnknown).toBe(true);
   });
 
   it("uses configured maxTokens when estimating next request cost", () => {

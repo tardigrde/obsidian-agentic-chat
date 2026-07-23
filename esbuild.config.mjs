@@ -15,6 +15,7 @@ const enableE2EStream = !production || process.env.AGENTIC_CHAT_ENABLE_E2E_STREA
 const piAiProviderPath = fileURLToPath(import.meta.resolve("@earendil-works/pi-ai/openai-completions"));
 const piAiDistDir = path.dirname(path.dirname(piAiProviderPath));
 const disabledE2EStreamPath = path.join(process.cwd(), "src", "agent", "e2e-stream-disabled.ts");
+const piAiModelsStubPath = path.join(process.cwd(), "src", "vendor", "pi-ai-models-stub.js");
 
 /**
  * pi-agent-core imports the broad pi-ai entry point, which registers every
@@ -69,11 +70,21 @@ const e2eStreamBuildGate = {
   },
 };
 
+const piAiModelsStub = {
+  name: "pi-ai-models-stub",
+  setup(build) {
+    build.onResolve({ filter: /models\.generated\.js$/ }, (args) => {
+      if (!args.importer.includes("pi-ai")) return undefined;
+      return { path: piAiModelsStubPath };
+    });
+  },
+};
+
 const context = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/main.ts"],
   bundle: true,
-  plugins: [piAiMobileEntry, e2eStreamBuildGate],
+  plugins: [piAiMobileEntry, piAiModelsStub, e2eStreamBuildGate],
   external: [
     "obsidian",
     "electron",
