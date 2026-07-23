@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
+import { isPricingUnknown } from "../llm/pricing-cache";
 import { estimateContextUsage, isSummaryMessage } from "./compaction";
 import {
   DEFAULT_EXPECTED_OUTPUT_TOKENS,
@@ -27,7 +28,14 @@ export function estimateNextCostReadout(params: {
   systemPrompt: string;
 }): RequestCostEstimate | undefined {
   const { messages, model, settings, systemPrompt } = params;
-  if (!model || !hasPricing(model.cost)) return undefined;
+  if (!model) return undefined;
   const expectedOutput = settings.maxTokens > 0 ? settings.maxTokens : DEFAULT_EXPECTED_OUTPUT_TOKENS;
+  if (!hasPricing(model.cost)) {
+    // Ollama is known-free (provider === "ollama"); others with zero cost may be unknown.
+    if (model.provider !== "ollama" && isPricingUnknown(model.provider as "openrouter" | "openai-compatible", model.id)) {
+      return { ...estimateNextRequestCost(messages, model.cost, expectedOutput, systemPrompt), isUnknown: true };
+    }
+    return undefined;
+  }
   return estimateNextRequestCost(messages, model.cost, expectedOutput, systemPrompt);
 }
