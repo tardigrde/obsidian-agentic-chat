@@ -1,7 +1,8 @@
 import { type Model, type OpenAICompletionsCompat, type OpenRouterRouting } from "@earendil-works/pi-ai";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { requestUrl } from "obsidian";
-import { initPricingCache, resolveModelInfoSync, resolveModelPricingSync } from "./pricing-cache";
+import { resolveModelInfoSync, resolveModelPricingSync } from "./pricing-cache";
+export { initPricingCache } from "./pricing-cache";
 
 /** Canonical reasoning-effort ladder, lowest → highest, in UI order. */
 export const THINKING_LEVEL_ORDER: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -77,8 +78,6 @@ export const DEFAULT_OPENAI_COMPATIBLE_BASE_URL = "http://localhost:3000/api";
 
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 8_192;
-
-export { initPricingCache } from "./pricing-cache";
 
 /** Build the pi-ai model the agent streams through, applying privacy routing. */
 export function buildModel(config: ModelConfig): Model<"openai-completions"> {
