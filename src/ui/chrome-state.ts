@@ -34,7 +34,7 @@ export function buildModelPillState(input: {
   };
 }
 
-export function formatChromeUsageText(usage: Usage, nextEstimate?: RequestCostEstimate): string {
+export function formatChromeUsageText(usage: Usage, nextEstimate?: RequestCostEstimate, sessionCostUnknown = false): string {
   const parts: string[] = [];
   if (usage.totalTokens > 0) parts.push(formatUsage(usage));
   if (nextEstimate !== undefined) {
@@ -67,14 +67,21 @@ export interface UsageChromePart {
  * [tooltip]), so the view can render each piece as its own styled span instead of
  * one opaque string. Returns [] when there is nothing to show.
  */
-export function buildUsageChromeParts(usage: Usage, nextEstimate?: RequestCostEstimate): UsageChromePart[] {
+export function buildUsageChromeParts(usage: Usage, nextEstimate?: RequestCostEstimate, sessionCostUnknown = false): UsageChromePart[] {
   const parts: UsageChromePart[] = [];
   if (usage.totalTokens > 0) {
     parts.push({ text: `${formatTokenInteger(usage.totalTokens)} tokens` });
     const hit = cacheHitPercent(usage);
     if (hit !== null) parts.push({ text: `${hit}% cache`, cls: `agentic-chat-cache ${cacheHitTone(hit)}` });
     const cost = usage.cost?.total;
-    if (typeof cost === "number" && cost > 0) parts.push({ text: formatCost(cost) });
+    if (typeof cost === "number" && cost > 0) {
+      parts.push({ text: formatCost(cost) });
+    } else if (sessionCostUnknown) {
+      parts.push({
+        text: "$?",
+        title: "Pricing data unavailable for this model. Try again later or check your connection.",
+      });
+    }
   }
   if (nextEstimate !== undefined) {
     if (nextEstimate.isUnknown) {

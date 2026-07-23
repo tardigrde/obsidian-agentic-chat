@@ -234,7 +234,7 @@ function compactifyModels(data: Array<Record<string, unknown>>): Record<string, 
       pr,
       pw,
       t: supportedParams?.includes("tools") ? 1 : 0,
-      re: !!(reasoning || supportedParams?.includes("reasoning")) ? 1 : 0,
+      re: (reasoning || supportedParams?.includes("reasoning")) ? 1 : 0,
       tlm: buildThinkingLevelMap(reasoning),
     };
   }
