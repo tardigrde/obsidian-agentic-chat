@@ -1,4 +1,5 @@
 import type { Usage } from "@earendil-works/pi-ai";
+import type { RequestCostEstimate } from "../agent/cost";
 import type { ToolBudgetSnapshot } from "../agent/tool-budget";
 import { cacheHitPercent, formatCost, formatTokenInteger, formatUsage, shortModelLabel } from "./format";
 
@@ -33,10 +34,16 @@ export function buildModelPillState(input: {
   };
 }
 
-export function formatChromeUsageText(usage: Usage, nextEstimateUsd?: number): string {
+export function formatChromeUsageText(usage: Usage, nextEstimate?: RequestCostEstimate): string {
   const parts: string[] = [];
   if (usage.totalTokens > 0) parts.push(formatUsage(usage));
-  if (nextEstimateUsd !== undefined && nextEstimateUsd > 0) parts.push(`next ~${formatCost(nextEstimateUsd)}`);
+  if (nextEstimate !== undefined) {
+    if (nextEstimate.isUnknown) {
+      parts.push("next ~$?");
+    } else if (nextEstimate.usd > 0) {
+      parts.push(`next ~${formatCost(nextEstimate.usd)}`);
+    }
+  }
   return parts.join(" · ");
 }
 
@@ -60,7 +67,7 @@ export interface UsageChromePart {
  * [tooltip]), so the view can render each piece as its own styled span instead of
  * one opaque string. Returns [] when there is nothing to show.
  */
-export function buildUsageChromeParts(usage: Usage, nextEstimateUsd?: number): UsageChromePart[] {
+export function buildUsageChromeParts(usage: Usage, nextEstimate?: RequestCostEstimate): UsageChromePart[] {
   const parts: UsageChromePart[] = [];
   if (usage.totalTokens > 0) {
     parts.push({ text: `${formatTokenInteger(usage.totalTokens)} tokens` });
@@ -69,12 +76,20 @@ export function buildUsageChromeParts(usage: Usage, nextEstimateUsd?: number): U
     const cost = usage.cost?.total;
     if (typeof cost === "number" && cost > 0) parts.push({ text: formatCost(cost) });
   }
-  if (nextEstimateUsd !== undefined && nextEstimateUsd > 0) {
-    parts.push({
-      text: `next ~${formatCost(nextEstimateUsd)}`,
-      cls: "agentic-chat-next-cost",
-      title: "Projected cost of the next request (priced models only).",
-    });
+  if (nextEstimate !== undefined) {
+    if (nextEstimate.isUnknown) {
+      parts.push({
+        text: "next ~$?",
+        cls: "agentic-chat-next-cost",
+        title: "Pricing data unavailable for this model. Try again later or check your connection.",
+      });
+    } else if (nextEstimate.usd > 0) {
+      parts.push({
+        text: `next ~${formatCost(nextEstimate.usd)}`,
+        cls: "agentic-chat-next-cost",
+        title: "Projected cost of the next request (priced models only).",
+      });
+    }
   }
   return parts;
 }

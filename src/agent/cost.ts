@@ -12,6 +12,8 @@ export interface RequestCostEstimate {
   outputTokens: number;
   /** Estimated USD cost; 0 when the model has no pricing. */
   usd: number;
+  /** True when pricing data is missing so the UI can show $? instead of $0. */
+  isUnknown?: boolean;
 }
 
 /** Assumed output tokens when the user hasn't set an explicit max. */
