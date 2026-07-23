@@ -4,10 +4,11 @@ import {
   type AgentMessage,
   type StreamFn,
 } from "@earendil-works/pi-agent-core";
-import { streamSimple, type Model, type Usage } from "@earendil-works/pi-ai";
+import type { Model, Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelConfig, apiKeyForProvider } from "../settings";
 import { buildModel } from "../llm/models";
+import { sharedAgentModels } from "../llm/providers";
 import type { ObsidianSessionManager } from "../session/session-manager";
 import { addUsage, emptyUsage, sumAssistantUsage } from "./usage";
 import {
@@ -159,7 +160,9 @@ export class AgentCompactionRuntime {
   constructor(options: AgentCompactionRuntimeOptions) {
     this.getSettings = options.getSettings;
     this.sessionManager = options.sessionManager;
-    this.buildStreamFn = options.buildStreamFn ?? (() => streamSimple);
+    this.buildStreamFn =
+      options.buildStreamFn ??
+      (() => (model, context, streamOptions) => sharedAgentModels().streamSimple(model, context, streamOptions));
     this.injectedSummarize = options.summarize;
   }
 

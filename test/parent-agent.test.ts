@@ -90,7 +90,7 @@ describe("createParentAgent", () => {
       stopReason: "stop" as const,
       timestamp: 2,
     };
-    agent.streamFn = () => {
+    agent.streamFunction = () => {
       queueMicrotask(() => {
         stream.push({ type: "start", partial: { ...message, content: [] } });
         stream.push({ type: "done", reason: "stop", message });

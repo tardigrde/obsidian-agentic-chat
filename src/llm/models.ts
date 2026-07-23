@@ -1,17 +1,18 @@
-import { getModels, type Model, type OpenAICompletionsCompat, type OpenRouterRouting } from "@earendil-works/pi-ai";
+import type { Model, OpenAICompletionsCompat, OpenRouterRouting } from "@earendil-works/pi-ai";
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { requestUrl } from "obsidian";
 
 /** Canonical reasoning-effort ladder, lowest → highest, in UI order. */
-export const THINKING_LEVEL_ORDER: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+export const THINKING_LEVEL_ORDER: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /**
  * Thinking levels a model actually supports, in UI order. A model without
  * `reasoning` only ever offers `"off"`. For reasoning models, a `thinkingLevelMap`
  * entry explicitly set to `null` marks that level as unsupported (per the pi-ai
  * contract); missing entries use provider defaults and stay available — except
- * `"xhigh"`, which is opt-in: a map without an explicit `xhigh` entry does NOT
- * advertise it (mirrors pi-ai's own `getSupportedThinkingLevels`). With no map
+ * `"xhigh"` and `"max"`, which are opt-in: a map without an explicit entry does
+ * NOT advertise them (mirrors pi-ai's own `getSupportedThinkingLevels`). With no map
  * at all every level is offered (the provider applies its own default).
  * `"off"` is always available — it means "don't request reasoning".
  */
@@ -24,9 +25,9 @@ export function supportedThinkingLevels(
   return THINKING_LEVEL_ORDER.filter((level) => {
     const mapped = map[level];
     if (mapped === null) return false;
-    // xhigh is opt-in: it must have an explicit map entry, otherwise the
-    // provider ignores/rejects it — so never advertise it on a missing key.
-    if (level === "xhigh") return mapped !== undefined;
+    // xhigh and max are opt-in: they must have an explicit map entry, otherwise
+    // the provider ignores/rejects them — so never advertise them on a missing key.
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
     return true;
   });
 }
@@ -85,7 +86,7 @@ export function buildModel(config: ModelConfig): Model<"openai-completions"> {
 }
 
 function buildOpenRouterModel(config: ModelConfig): Model<"openai-completions"> {
-  const base = findCatalogModel("openrouter", config.modelId);
+  const base = findOpenRouterCatalogModel(config.modelId);
   const model: Model<"openai-completions"> = base
     ? { ...base }
     : {
@@ -154,9 +155,12 @@ export function buildOpenRouterRouting(privacy: PrivacySettings): OpenRouterRout
   return routing;
 }
 
-function findCatalogModel(provider: "openrouter", id: string): Model<"openai-completions"> | undefined {
+let openrouterCatalog: readonly Model<"openai-completions">[] | undefined;
+
+function findOpenRouterCatalogModel(id: string): Model<"openai-completions"> | undefined {
   try {
-    return getModels(provider).find((model) => model.id === id);
+    openrouterCatalog ??= openrouterProvider().getModels();
+    return openrouterCatalog.find((model) => model.id === id);
   } catch {
     return undefined;
   }
@@ -165,7 +169,7 @@ function findCatalogModel(provider: "openrouter", id: string): Model<"openai-com
 /** Per-million-token costs for a model id, if pi-ai's catalog knows it. */
 export function catalogCost(provider: ProviderId, id: string): Model<"openai-completions">["cost"] | undefined {
   if (provider !== "openrouter") return undefined;
-  return findCatalogModel("openrouter", id)?.cost;
+  return findOpenRouterCatalogModel(id)?.cost;
 }
 
 export interface OpenRouterModelInfo {
