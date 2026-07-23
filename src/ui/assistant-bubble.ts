@@ -85,7 +85,7 @@ export class AssistantBubble {
       const details = this.el.createEl("details", { cls: "agentic-chat-reasoning" });
       details.createEl("summary", { text: "Reasoning" });
       this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
-      this.el.insertBefore(details, this.stepsEl);
+      this.el.insertBefore(details, this.textEl);
     }
     this.pendingReasoning += delta;
     this.scheduleFlush();
