@@ -2,17 +2,19 @@ import { requestUrl } from "obsidian";
 import {
   createAssistantMessageEventStream,
   parseStreamingJson,
+  type Api,
   type AssistantMessage,
   type AssistantMessageEventStream,
   type Context,
   type Model,
+  type ProviderStreams,
   type SimpleStreamOptions,
   type StopReason,
   type Tool,
   type ToolCall,
   type Usage,
 } from "@earendil-works/pi-ai";
-import { convertMessages } from "@earendil-works/pi-ai/openai-completions";
+import { convertMessages } from "@earendil-works/pi-ai/api/openai-completions";
 import type { WebFetcher } from "../tools/web-fetch";
 import { normalizeOpenAICompatibleApiBaseUrl } from "./models";
 
@@ -74,6 +76,8 @@ const MESSAGE_COMPAT: MessageCompat = {
   requiresThinkingAsText: false,
   requiresReasoningContentOnAssistantMessages: false,
   thinkingFormat: "openai",
+  chatTemplateKwargs: {},
+  sessionAffinityFormat: "openai",
   openRouterRouting: {},
   vercelGatewayRouting: {},
   zaiToolStream: false,
@@ -167,6 +171,20 @@ export function streamOpenAICompatibleViaRequestUrl(
   })();
 
   return stream;
+}
+
+/**
+ * `ProviderStreams` implementation for custom providers whose requests must go
+ * through Obsidian's `requestUrl` (non-streaming) instead of fetch-based SSE.
+ */
+export function obsidianOpenAICompletionsApi(): ProviderStreams {
+  return {
+    stream: () => {
+      throw new Error("Raw streaming is not supported by the Obsidian requestUrl fallback; use streamSimple.");
+    },
+    streamSimple: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
+      streamOpenAICompatibleViaRequestUrl(model as Model<"openai-completions">, context, options),
+  };
 }
 
 const defaultOpenAICompatibleRequester: OpenAICompatibleRequester = (request) => {

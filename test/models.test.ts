@@ -87,6 +87,7 @@ describe("supportedThinkingLevels", () => {
       "medium",
       "high",
       "xhigh",
+      "max",
     ]);
   });
 

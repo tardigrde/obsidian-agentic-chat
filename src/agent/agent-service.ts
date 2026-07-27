@@ -72,7 +72,7 @@ export interface AgentServiceOptions {
   sessionManager: ObsidianSessionManager;
   /** Resolve an "ask" approval gate; returns true to allow the tool call. */
   confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
-  /** Injected for tests; production wraps pi-ai streamSimple. */
+  /** Injected for tests; production streams through the pi-ai Models runtime. */
   streamFn?: StreamFn;
   /** Injected for tests; production summarizes through the chat stream runtime. */
   summarize?: SummarizeFn;

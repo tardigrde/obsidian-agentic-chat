@@ -9,7 +9,7 @@ import {
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { buildModel } from "../src/llm/models";
-import { AgentStreamRuntime } from "../src/agent/stream-runtime";
+import { AgentStreamRuntime, type StreamSimpleFn } from "../src/agent/stream-runtime";
 import type { streamOpenAICompatibleViaRequestUrl } from "../src/llm/openai-compatible-request";
 
 type CapturedCall = {
@@ -67,10 +67,10 @@ describe("AgentStreamRuntime", () => {
 
   it("maps settings into stream options and lets caller headers override defaults", () => {
     const calls: CapturedCall[] = [];
-    const streamSimpleFn = ((model, context, options) => {
+    const streamSimpleFn: StreamSimpleFn = (model, context, options) => {
       calls.push({ model, context, options });
       return stream();
-    }) as typeof import("@earendil-works/pi-ai").streamSimple;
+    };
     const runtime = new AgentStreamRuntime({ getSettings: () => settings(), streamSimpleFn });
     const context: Context = { messages: [{ role: "user", content: "hello", timestamp: 1 }] };
     const signal = new AbortController().signal;
@@ -102,10 +102,10 @@ describe("AgentStreamRuntime", () => {
 
   it("omits maxTokens when the setting delegates output length to the provider", () => {
     const calls: CapturedCall[] = [];
-    const streamSimpleFn = ((model, context, options) => {
+    const streamSimpleFn: StreamSimpleFn = (model, context, options) => {
       calls.push({ model, context, options });
       return stream();
-    }) as typeof import("@earendil-works/pi-ai").streamSimple;
+    };
     const runtime = new AgentStreamRuntime({ getSettings: () => settings({ maxTokens: 0 }), streamSimpleFn });
 
     void runtime.buildStreamFn()(openRouterModel(), { messages: [] });
@@ -116,10 +116,10 @@ describe("AgentStreamRuntime", () => {
   it("routes OpenAI-compatible chat completions through the Obsidian requestUrl fallback", () => {
     const simpleCalls: CapturedCall[] = [];
     const compatibleCalls: CompatibleCapturedCall[] = [];
-    const streamSimpleFn = ((model, context, options) => {
+    const streamSimpleFn: StreamSimpleFn = (model, context, options) => {
       simpleCalls.push({ model, context, options });
       return stream();
-    }) as typeof import("@earendil-works/pi-ai").streamSimple;
+    };
     const openAICompatibleStreamFn: typeof streamOpenAICompatibleViaRequestUrl = (model, context, options, requester) => {
       compatibleCalls.push({ model, context, options, requester });
       return stream();
@@ -143,10 +143,10 @@ describe("AgentStreamRuntime", () => {
   it("routes OpenRouter through the requestUrl fallback when a global proxy is configured", () => {
     const simpleCalls: CapturedCall[] = [];
     const compatibleCalls: CompatibleCapturedCall[] = [];
-    const streamSimpleFn = ((model, context, options) => {
+    const streamSimpleFn: StreamSimpleFn = (model, context, options) => {
       simpleCalls.push({ model, context, options });
       return stream();
-    }) as typeof import("@earendil-works/pi-ai").streamSimple;
+    };
     const openAICompatibleStreamFn: typeof streamOpenAICompatibleViaRequestUrl = (model, context, options, requester) => {
       compatibleCalls.push({ model, context, options, requester });
       return stream();
