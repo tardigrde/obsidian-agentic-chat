@@ -33,9 +33,9 @@ export function initPricingCache(app: App, plugin: Plugin): void {
   vaultAdapter = app.vault.adapter;
   const pluginDir = plugin.manifest.dir ?? `${app.vault.configDir}/plugins/${plugin.manifest.id}`;
   cacheFilePath = `${pluginDir}/pricing-cache.json`;
-  // Kick off a silent load so the in-memory cache is warm before the first
-  // pricing lookup. If the file doesn't exist yet the async path will fetch it.
-  void loadCacheIntoMemory();
+  // Warm the in-memory cache and, when the file is missing or stale, kick off a
+  // background network refresh so pricing is populated on a fresh install.
+  void getCache();
 }
 
 /** Resolve full model info synchronously from the in-memory cache. */
@@ -113,12 +113,13 @@ function findInCache(cache: PricingCache, provider: string, modelId: string): Co
   // Exact match
   if (cache.models[modelId]) return cache.models[modelId];
 
-  // For openai-compatible, try suffix match (e.g. "gpt-4o" → "openai/gpt-4o")
+  // For openai-compatible, try suffix match (e.g. "gpt-4o" → "openai/gpt-4o").
+  // Only trust an unambiguous match: if several providers share the suffix we
+  // can't tell which price applies, so fall through to unknown rather than
+  // guessing an arbitrary insertion-order-dependent entry.
   if (provider === "openai-compatible" && !modelId.includes("/")) {
-    for (const key of Object.keys(cache.models)) {
-      const suffix = key.slice(key.lastIndexOf("/") + 1);
-      if (suffix === modelId) return cache.models[key];
-    }
+    const matches = Object.keys(cache.models).filter((key) => key.slice(key.lastIndexOf("/") + 1) === modelId);
+    if (matches.length === 1) return cache.models[matches[0]];
   }
 
   return undefined;
@@ -178,7 +179,8 @@ async function fetchAndStoreCache(): Promise<PricingCache> {
     await writeCache(cache);
     memoryCache = cache;
     return cache;
-  } catch {
+  } catch (error) {
+    console.warn("Agentic Chat: failed to refresh OpenRouter pricing cache.", error);
     // On failure, keep stale memory cache if available
     if (memoryCache) return memoryCache;
     return { fetchedAt: 0, models: {} };
