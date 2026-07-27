@@ -1,10 +1,11 @@
 import { type App, TFile, TFolder, MarkdownView, parseYaml } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { applyExactEditsPartial, type EditApplyResult } from "../vault/edit";
+import { diffLines, diffStat, diffTooLarge } from "../vault/diff";
 import { getParentPath, normalizeFolderPath, normalizeVaultPath } from "../vault/path";
 import type { IgnoreMatcher } from "../vault/ignore";
 import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../vault/search";
-import { alreadyReadMessage, type ReadMemo } from "../vault/read-memo";
+import { alreadyReadMessage, cachedReadMessage, type ReadMemo } from "../vault/read-memo";
 import {
   formatTextSlice,
   readSizeGuardrail,
@@ -199,12 +200,26 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
         limit: params.limit,
       };
       const window = resolveLineWindow(range);
-      // De-dup: a repeat read of the same range is handed a short pointer instead
-      // of re-injecting the full text, so re-reading can't quietly double a file
-      // into the context. Edits invalidate the path, forcing a fresh read.
-      if (memo?.has({ path, offset: window.offset, limit: window.limit })) {
+      const readKey = { path, offset: window.offset, limit: window.limit };
+      const mtime = file.stat?.mtime ?? 0;
+
+      // De-dup: a repeat read of the same range in the same turn is handed a
+      // short pointer so the prompt can't quietly double a file.
+      if (memo?.has(readKey)) {
         return textResult(alreadyReadMessage(path), { path, deduplicated: true });
       }
+
+      // Harness-side cache: when the file has not changed since the last read
+      // of this range, serve the stored slice with zero I/O cost.
+      const cached = memo?.getCached(readKey, mtime);
+      if (cached) {
+        return textResult(cachedReadMessage(path, cached.timestamp) + cached.content, {
+          path,
+          cached: true,
+          timestamp: cached.timestamp,
+        });
+      }
+
       // Size guardrail: refuse a bulk dump of a very large file; guide the model
       // to paginate so one read can't blow the context window.
       const guidance = readSizeGuardrail({ path, size: file.stat?.size ?? 0, ...range });
@@ -216,7 +231,8 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       // Record only after a successful read — a failed/refused read (above) must
       // not poison the memo, or the next identical read would return a stale
       // "already read" pointer instead of retrying.
-      memo?.mark({ path, offset: window.offset, limit: window.limit });
+      memo?.mark(readKey);
+      memo?.cache(readKey, mtime, formatTextSlice(path, slice));
       return textResult(formatTextSlice(path, slice), {
         path,
         startLine: slice.startLine,
@@ -260,14 +276,16 @@ function createEditTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       // Partial-apply: edits that match are applied, failures are reported per-edit
       // so one bad oldText no longer sinks the whole batch. The result is captured
       // from the atomic process() transform, which gives us the live file content.
+      let before = "";
       let result: EditApplyResult | undefined;
       await app.vault.process(file, (content) => {
+        before = content;
         result = applyExactEditsPartial(content, params.edits);
         return result.content;
       });
       if (!result) throw new Error("Edit could not be applied.");
       memo?.invalidate(path);
-      return editToolMessage(path, params.edits.length, result);
+      return editToolMessage(path, params.edits.length, result, before);
     },
   };
 }
@@ -276,10 +294,18 @@ function createEditTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
  * `applied`/`failed` arrays in `details` carry the post-placeholder-substitution
  * oldText/newText (and start/end for applied) so the audit captures what
  * actually changed — not just an "Applied N edits" placeholder. PII in the
- * strings is redacted downstream by `redactAuditResult`. */
-function editToolMessage(path: string, total: number, result: EditApplyResult): AgentToolResult<Record<string, unknown>> {
+ * strings is redacted downstream by `redactAuditResult`.
+ * When `before` is provided, a concise diff summary is appended so the model
+ * can see what changed without issuing a separate read. */
+function editToolMessage(
+  path: string,
+  total: number,
+  result: EditApplyResult,
+  before?: string,
+): AgentToolResult<Record<string, unknown>> {
   const applied = result.applied.length;
   const failed = result.failed;
+  const diffSummary = before !== undefined ? buildEditDiffSummary(before, result.content) : "";
   const details = {
     path,
     editCount: applied,
@@ -304,12 +330,51 @@ function editToolMessage(path: string, total: number, result: EditApplyResult): 
     );
   }
   if (failed.length === 0) {
-    return textResult(`Applied ${applied} edit${applied === 1 ? "" : "s"} to ${path}.`, details);
+    const base = `Applied ${applied} edit${applied === 1 ? "" : "s"} to ${path}.`;
+    return textResult(diffSummary ? `${base}\n\n${diffSummary}` : base, details);
   }
-  return textResult(
-    `Applied ${applied} of ${total} edits to ${path}. ${failed.length} not applied:\n${formatEditFailures(failed)}`,
-    details,
-  );
+  const base = `Applied ${applied} of ${total} edits to ${path}. ${failed.length} not applied:\n${formatEditFailures(failed)}`;
+  return textResult(diffSummary ? `${base}\n\n${diffSummary}` : base, details);
+}
+
+/** Produce a concise diff summary (≤20 lines) of the changed regions. */
+function buildEditDiffSummary(before: string, after: string): string {
+  if (before === after) return "";
+  if (diffTooLarge(before, after)) {
+    const beforeLines = before.split(/\r?\n/).length;
+    const afterLines = after.split(/\r?\n/).length;
+    return `Diff: ${beforeLines} → ${afterLines} lines (too large to inline).`;
+  }
+  const lines = diffLines(before, after);
+  const stat = diffStat(lines);
+  const hunks: string[] = [];
+  let currentHunk: string[] = [];
+  const flush = () => {
+    if (currentHunk.length > 0) {
+      hunks.push(currentHunk.join("\n"));
+      currentHunk = [];
+    }
+  };
+  for (const line of lines) {
+    if (line.op === "context") {
+      if (currentHunk.length > 0 && currentHunk[currentHunk.length - 1].startsWith(" ")) {
+        currentHunk.push(` ${line.text}`);
+      } else {
+        flush();
+      }
+    } else {
+      const prefix = line.op === "add" ? "+" : "-";
+      currentHunk.push(`${prefix} ${line.text}`);
+    }
+  }
+  flush();
+  const header = `Diff summary (+${stat.added}/-${stat.removed} lines):`;
+  if (hunks.length === 0) return header;
+  const joined = hunks.join("\n\n");
+  const maxPreview = 20;
+  const preview = joined.split("\n").slice(0, maxPreview).join("\n");
+  const omitted = joined.split("\n").length - maxPreview;
+  return `${header}\n${preview}${omitted > 0 ? `\n... (${omitted} more lines)` : ""}`;
 }
 
 function formatEditFailures(failed: { error: string }[]): string {

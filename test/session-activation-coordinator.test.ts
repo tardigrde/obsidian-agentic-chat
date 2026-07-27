@@ -86,6 +86,7 @@ describe("SessionActivationCoordinator", () => {
       activeNoteSuppression: true,
       lastSent: true,
       activeNoteCache: true,
+      contextCache: true,
       history: true,
       editing: true,
       bubble: true,
@@ -109,7 +110,7 @@ describe("SessionActivationCoordinator", () => {
       "chrome",
       "tabs",
     ]);
-    expect(ctx.resets).toEqual([{ lastSent: true, activeNoteCache: true, editing: true, bubble: true }]);
+    expect(ctx.resets).toEqual([{ lastSent: true, activeNoteCache: true, contextCache: true, editing: true, bubble: true }]);
   });
 
   it("continues project sessions with attachment and active-note reset", async () => {
@@ -131,7 +132,7 @@ describe("SessionActivationCoordinator", () => {
       "chrome",
     ]);
     expect(ctx.resets).toEqual([
-      { attachments: true, activeNoteSuppression: true, activeNoteCache: true, lastSent: true, editing: true },
+      { attachments: true, activeNoteSuppression: true, activeNoteCache: true, contextCache: true, lastSent: true, editing: true },
     ]);
   });
 
@@ -146,6 +147,7 @@ describe("SessionActivationCoordinator", () => {
       activeNoteSuppression: true,
       lastSent: true,
       activeNoteCache: true,
+      contextCache: true,
       history: true,
       editing: true,
       bubble: true,

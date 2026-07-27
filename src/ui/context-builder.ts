@@ -15,12 +15,85 @@ export interface PromptContextOptions {
   activeNotePath: string | null;
   isPathIgnored: (path: string) => boolean;
   activeNoteCache?: ActiveNoteContextCache;
+  contextCache?: PromptContextCache;
 }
 
 export interface ImageAttachmentOptions {
   app: App;
   attachments: ContextAttachment[];
   supportsImages: boolean;
+}
+
+/**
+ * Per-session cache for the full `<context>` preamble. Prevents unchanged
+ * context blocks from being injected into every turn while still keeping a
+ * one-line reference so the model knows which files are attached.
+ */
+export class PromptContextCache {
+  private lastHash: string | null = null;
+  private lastContext: string | null = null;
+  private pendingHash: string | null = null;
+  private pendingContext: string | null = null;
+
+  /** Return a compressed reference when the context is unchanged. */
+  compress(context: string): string {
+    if (!context) return context;
+    const hash = hashContext(context);
+    this.pendingHash = hash;
+    this.pendingContext = context;
+
+    if (this.lastHash === hash) {
+      const paths = extractAttachedPaths(context);
+      return `<context unchanged since previous turn. Attached: ${paths.join(", ") || "(none)"}. Use the read tool to open any attached note if you need the full content.</context>`;
+    }
+
+    return context;
+  }
+
+  commit(): void {
+    if (this.pendingHash !== null) {
+      this.lastHash = this.pendingHash;
+      this.lastContext = this.pendingContext;
+    }
+    this.pendingHash = null;
+    this.pendingContext = null;
+  }
+
+  discard(): void {
+    this.pendingHash = null;
+    this.pendingContext = null;
+  }
+
+  clear(): void {
+    this.lastHash = null;
+    this.lastContext = null;
+    this.discard();
+  }
+}
+
+function hashContext(text: string): string {
+  let hash = 0x811c9dc5;
+  for (const char of text) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${text.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function extractAttachedPaths(context: string): string[] {
+  const paths: string[] = [];
+  // Match "Active note \"path\"" or "Contents of note \"path\"" or "Folder listing for \"path\""
+  const regex = /(?:Active note|Contents of note|Folder listing for) "([^"]+)"/g;
+  let match;
+  while ((match = regex.exec(context)) !== null) {
+    paths.push(match[1]);
+  }
+  // Also match selected text sources
+  const selectedRegex = /Selected text from "([^"]+)"/g;
+  while ((match = selectedRegex.exec(context)) !== null) {
+    paths.push(match[1]);
+  }
+  return [...new Set(paths)];
 }
 
 /** Build the `<context>` preamble sent before a user prompt. */
@@ -45,7 +118,8 @@ export async function buildPromptContext(options: PromptContextOptions): Promise
   }
 
   if (sections.length === 0) return "";
-  return `<context>\nThe user attached the following from their vault:\n\n${sections.join("\n\n---\n\n")}\n</context>`;
+  const context = `<context>\nThe user attached the following from their vault:\n\n${sections.join("\n\n---\n\n")}\n</context>`;
+  return options.contextCache?.compress(context) ?? context;
 }
 
 /** Encode image attachments as multimodal content parts for the model. */

@@ -1,10 +1,9 @@
 import {
   convertToLlm,
-  serializeConversation,
   type AgentMessage,
   type StreamFn,
 } from "@earendil-works/pi-agent-core";
-import type { Model, Usage } from "@earendil-works/pi-ai";
+import { contentText, type Model, type Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelConfig, apiKeyForProvider } from "../settings";
 import { buildModel } from "../llm/models";
@@ -300,6 +299,67 @@ export class AgentCompactionRuntime {
       window.clearTimeout(timer);
     }
   }
+}
+
+/** Higher truncation threshold for tool results during compaction serialization.
+ * The upstream default is 2K chars; we raise it to 8K so the summarizer sees
+ * enough of large read outputs to retain useful context. */
+const COMPACTION_TOOL_RESULT_MAX_CHARS = 8_000;
+
+function safeJsonStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? "undefined";
+  } catch {
+    return "[unserializable]";
+  }
+}
+
+function truncateForSummary(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const truncatedChars = text.length - maxChars;
+  return `${text.slice(0, maxChars)}\n\n[... ${truncatedChars} more characters truncated]`;
+}
+
+/** Serialize LLM messages to plain text for summarization prompts.
+ * Copied from pi-agent-core with a higher tool-result truncation budget. */
+function serializeConversation(messages: AgentMessage[]): string {
+  const parts: string[] = [];
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      const text = contentText(msg.content, "");
+      if (text) parts.push(`[User]: ${text}`);
+    } else if (msg.role === "assistant") {
+      const assistant = msg;
+      const thinkingParts: string[] = [];
+      const toolCalls: string[] = [];
+      for (const block of assistant.content) {
+        if (block.type === "thinking") {
+          thinkingParts.push(block.thinking);
+        } else if (block.type === "toolCall") {
+          const args = block.arguments;
+          const argsStr = Object.entries(args as Record<string, unknown>)
+            .map(([k, v]) => `${k}=${safeJsonStringify(v)}`)
+            .join(", ");
+          toolCalls.push(`${block.name}(${argsStr})`);
+        }
+      }
+      if (thinkingParts.length > 0) {
+        parts.push(`[Assistant thinking]: ${thinkingParts.join("\n")}`);
+      }
+      if (assistant.content.some((block) => block.type === "text")) {
+        parts.push(`[Assistant]: ${contentText(assistant.content)}`);
+      }
+      if (toolCalls.length > 0) {
+        parts.push(`[Assistant tool calls]: ${toolCalls.join("; ")}`);
+      }
+    } else if (msg.role === "toolResult") {
+      const text = contentText(msg.content, "");
+      if (text) {
+        parts.push(`[Tool result]: ${truncateForSummary(text, COMPACTION_TOOL_RESULT_MAX_CHARS)}`);
+      }
+    }
+  }
+  return parts.join("\n\n");
 }
 
 async function generateSummaryWithStream(
