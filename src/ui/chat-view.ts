@@ -1029,7 +1029,7 @@ export class ChatView extends ItemView {
       provider !== "ollama" &&
       usage.totalTokens > 0 &&
       (usage.cost?.total ?? 0) === 0 &&
-      isPricingUnknown(provider as "openrouter" | "openai-compatible", modelId);
+      isPricingUnknown(provider, modelId);
     this.renderUsageChrome(usage, estimate, sessionCostUnknown);
     this.syncContextBar(fraction);
 

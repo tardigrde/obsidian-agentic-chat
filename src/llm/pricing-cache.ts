@@ -143,14 +143,20 @@ async function getCache(): Promise<PricingCache> {
   return memoryCache ?? { fetchedAt: 0, models: {} };
 }
 
+function isPricingCache(value: unknown): value is PricingCache {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.fetchedAt === "number" && typeof candidate.models === "object" && candidate.models !== null;
+}
+
 async function loadCacheIntoMemory(): Promise<void> {
   if (memoryCache) return;
   if (!cacheFilePath || !vaultAdapter) return;
   try {
     const raw = await vaultAdapter.read(cacheFilePath);
     if (!raw) return;
-    const parsed: PricingCache = JSON.parse(raw);
-    if (typeof parsed.fetchedAt !== "number" || typeof parsed.models !== "object") return;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isPricingCache(parsed)) return;
     memoryCache = parsed;
   } catch {
     // File missing or corrupt — will be fetched later
@@ -172,7 +178,7 @@ async function fetchAndStoreCache(): Promise<PricingCache> {
     await writeCache(cache);
     memoryCache = cache;
     return cache;
-  } catch (error) {
+  } catch {
     // On failure, keep stale memory cache if available
     if (memoryCache) return memoryCache;
     return { fetchedAt: 0, models: {} };

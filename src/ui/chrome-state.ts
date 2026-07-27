@@ -36,7 +36,11 @@ export function buildModelPillState(input: {
 
 export function formatChromeUsageText(usage: Usage, nextEstimate?: RequestCostEstimate, sessionCostUnknown = false): string {
   const parts: string[] = [];
-  if (usage.totalTokens > 0) parts.push(formatUsage(usage));
+  if (usage.totalTokens > 0) {
+    parts.push(formatUsage(usage));
+    const cost = usage.cost?.total;
+    if (!(typeof cost === "number" && cost > 0) && sessionCostUnknown) parts.push("$?");
+  }
   if (nextEstimate !== undefined) {
     if (nextEstimate.isUnknown) {
       parts.push("next ~$?");
