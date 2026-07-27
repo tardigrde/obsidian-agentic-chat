@@ -52,8 +52,14 @@ describe("chrome state helpers", () => {
       cost: { total: 0.02 },
     } as Usage;
 
-    expect(formatChromeUsageText(usage, 0.004)).toBe("1,000 tokens · 90% cache · $0.02 · next ~$0.0040");
-    expect(formatChromeUsageText({ totalTokens: 0 } as Usage, 0)).toBe("");
+    expect(formatChromeUsageText(usage, { inputTokens: 100, outputTokens: 50, usd: 0.004 })).toBe(
+      "1,000 tokens · 90% cache · $0.02 · next ~$0.0040",
+    );
+    expect(formatChromeUsageText({ totalTokens: 0 } as Usage, { inputTokens: 0, outputTokens: 0, usd: 0 })).toBe("");
+    // Unknown pricing renders $? instead of hiding the row
+    expect(formatChromeUsageText(usage, { inputTokens: 100, outputTokens: 50, usd: 0, isUnknown: true })).toBe(
+      "1,000 tokens · 90% cache · $0.02 · next ~$?",
+    );
   });
 
   it("maps cache-hit ratios to red/amber/green tones", () => {
@@ -73,7 +79,7 @@ describe("chrome state helpers", () => {
       cost: { total: 0.02 },
     } as Usage;
 
-    expect(buildUsageChromeParts(usage, 0.004)).toEqual([
+    expect(buildUsageChromeParts(usage, { inputTokens: 100, outputTokens: 50, usd: 0.004 })).toEqual([
       { text: "1,000 tokens" },
       { text: "90% cache", cls: "agentic-chat-cache is-high" },
       { text: "$0.02" },
@@ -84,7 +90,14 @@ describe("chrome state helpers", () => {
       { text: "100 tokens" },
       { text: "10% cache", cls: "agentic-chat-cache is-low" },
     ]);
-    expect(buildUsageChromeParts({ totalTokens: 0 } as Usage, 0)).toEqual([]);
+    expect(buildUsageChromeParts({ totalTokens: 0 } as Usage, { inputTokens: 0, outputTokens: 0, usd: 0 })).toEqual([]);
+    // Unknown pricing renders $? with a tooltip
+    expect(buildUsageChromeParts(usage, { inputTokens: 100, outputTokens: 50, usd: 0, isUnknown: true })).toEqual([
+      { text: "1,000 tokens" },
+      { text: "90% cache", cls: "agentic-chat-cache is-high" },
+      { text: "$0.02" },
+      { text: "next ~$?", cls: "agentic-chat-next-cost", title: "Pricing data unavailable for this model. Try again later or check your connection." },
+    ]);
   });
 
   it("builds stable folder button labels", () => {
