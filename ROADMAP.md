@@ -88,34 +88,12 @@ Only pending items. Done work is removed to keep the doc small.
 - **Files**: `src/tools/vault-tools.ts`
 - **Effort**: S
 
-### B9 · Smarter read retention — avoid re-read loops
-- **Problem**: Read results are truncated to ~2K chars in message history. A 22KB file read once becomes invisible after a few turns, forcing 30× re-reads (flash) or 8× (pro). This burns tokens AND time.
-- **Concern**: Keeping full files in context *permanently* bloats the window forever and becomes stale after edits.
-- **Revised approach** (recommended):
-  1. **Increase the history truncation threshold** for read tool results from ~2K to ~8K–16K chars. Still bounded, but the model retains enough to reference without re-reading for most edits.
-  2. **Serve re-reads from a harness-side cache** when the file hasn't changed (hash/mtime check). The tool result says `"Served from cache — file unchanged since last read at [time]"`. Zero API token cost for cached re-reads.
-  3. **After an edit, send a concise diff** (changed lines only) instead of requiring a full re-read to verify. The model already issued the edit; it only needs confirmation of what changed.
-- **Connection to B11**: Both reduce context bloat. B9 keeps useful content; B11 removes useless boilerplate. Together they free window space for actual reasoning.
-- **Files**: `src/agent/agent-service.ts` (context assembly limits), `src/tools/vault-tools.ts` (read cache), `src/vault/edit.ts` (post-edit diff).
-- **Acceptance**: Re-read count for an unchanged file drops by ≥80%; context window usage stays flat or lower (because 1× 8K read beats 10× 2K re-reads + boilerplate).
-- **Effort**: M
-- **Deps**: B6 (guard should trigger cache serve)
-
 ### B10 · Per-edit approval within edit batches — DEFERRED
 - **Problem**: A 6-edit batch was denied because user disagreed with 1 scope.
 - **Assessment**: Only happened once in the audited session. B3b (partial apply on technical failure) already prevents the main pain point. A full per-edit approval UI is high complexity for rare occurrence.
 - **Action**: Skip for now. Revisit if batch-denial becomes a frequent pattern.
 - **Effort**: M (if ever done)
 - **Deps**: B3b
-
-### B11 · Compress repeated context boilerplate
-- **Problem**: `<context>…too large to inline…</context>` repeats every turn (~150–200 chars × 40 turns = ~6–8K tokens of pure noise).
-- **Goal**: One-line hint or compact reference.
-- **Approach**: Replace multi-line placeholder with `[context: see prior turn]` or drop entirely when unchanged.
-- **Files**: `src/agent/agent-service.ts`, `src/agent/prompts.ts`
-- **Acceptance**: Boilerplate per turn drops by ≥50%.
-- **Effort**: S
-- **Deps**: none
 
 ### B12 · Better grounding / intent anchoring
 - **Problem**: Flash edited 6 unrelated places for a 1-section request.
@@ -165,6 +143,6 @@ Only pending items. Done work is removed to keep the doc small.
 
 ## Recommended order
 
-B3a → B3b → B3c → B3d → B9 (smarter retention + cache + diff) → B11 (boilerplate) → B2 → B4 → B5 → B6 → B12 → C5 → E10 → F6/F8 → A7.
+B3a → B3b → B3c → B3d → B2 → B4 → B5 → B6 → B12 → C5 → E10 → F6/F8 → A7.
 
-**B3a is the single highest-leverage fix** — it prevents the edit-match failure loop. **B9 is the highest-leverage new finding** — it cuts re-read waste without permanently bloating context.
+**B3a is the single highest-leverage fix** — it prevents the edit-match failure loop.
