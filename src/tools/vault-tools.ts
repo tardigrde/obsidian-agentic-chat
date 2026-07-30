@@ -347,34 +347,42 @@ function buildEditDiffSummary(before: string, after: string): string {
   }
   const lines = diffLines(before, after);
   const stat = diffStat(lines);
+  const hunks = collectDiffHunks(lines);
+  const header = `Diff summary (+${stat.added}/-${stat.removed} lines):`;
+  if (hunks.length === 0) return header;
+  return `${header}\n${formatDiffPreview(hunks, 20)}`;
+}
+
+function collectDiffHunks(lines: { op: string; text: string }[]): string[] {
   const hunks: string[] = [];
-  let currentHunk: string[] = [];
+  let current: string[] = [];
   const flush = () => {
-    if (currentHunk.length > 0) {
-      hunks.push(currentHunk.join("\n"));
-      currentHunk = [];
+    if (current.length > 0) {
+      hunks.push(current.join("\n"));
+      current = [];
     }
   };
   for (const line of lines) {
     if (line.op === "context") {
-      if (currentHunk.length > 0 && currentHunk[currentHunk.length - 1].startsWith(" ")) {
-        currentHunk.push(` ${line.text}`);
+      if (current.length > 0 && current[current.length - 1].startsWith(" ")) {
+        current.push(` ${line.text}`);
       } else {
         flush();
       }
     } else {
       const prefix = line.op === "add" ? "+" : "-";
-      currentHunk.push(`${prefix} ${line.text}`);
+      current.push(`${prefix} ${line.text}`);
     }
   }
   flush();
-  const header = `Diff summary (+${stat.added}/-${stat.removed} lines):`;
-  if (hunks.length === 0) return header;
+  return hunks;
+}
+
+function formatDiffPreview(hunks: string[], maxLines: number): string {
   const joined = hunks.join("\n\n");
-  const maxPreview = 20;
-  const preview = joined.split("\n").slice(0, maxPreview).join("\n");
-  const omitted = joined.split("\n").length - maxPreview;
-  return `${header}\n${preview}${omitted > 0 ? `\n... (${omitted} more lines)` : ""}`;
+  const preview = joined.split("\n").slice(0, maxLines).join("\n");
+  const omitted = joined.split("\n").length - maxLines;
+  return `${preview}${omitted > 0 ? `\n... (${omitted} more lines)` : ""}`;
 }
 
 function formatEditFailures(failed: { error: string }[]): string {

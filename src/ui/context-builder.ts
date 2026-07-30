@@ -30,19 +30,14 @@ export interface ImageAttachmentOptions {
  * one-line reference so the model knows which files are attached.
  */
 export class PromptContextCache {
-  private lastHash: string | null = null;
   private lastContext: string | null = null;
-  private pendingHash: string | null = null;
   private pendingContext: string | null = null;
 
   /** Return a compressed reference when the context is unchanged. */
   compress(context: string): string {
-    if (!context) return context;
-    const hash = hashContext(context);
-    this.pendingHash = hash;
     this.pendingContext = context;
 
-    if (this.lastHash === hash) {
+    if (context && this.lastContext === context) {
       const paths = extractAttachedPaths(context);
       return `<context unchanged since previous turn. Attached: ${paths.join(", ") || "(none)"}. Use the read tool to open any attached note if you need the full content.</context>`;
     }
@@ -51,33 +46,20 @@ export class PromptContextCache {
   }
 
   commit(): void {
-    if (this.pendingHash !== null) {
-      this.lastHash = this.pendingHash;
+    if (this.pendingContext !== null) {
       this.lastContext = this.pendingContext;
     }
-    this.pendingHash = null;
     this.pendingContext = null;
   }
 
   discard(): void {
-    this.pendingHash = null;
     this.pendingContext = null;
   }
 
   clear(): void {
-    this.lastHash = null;
     this.lastContext = null;
     this.discard();
   }
-}
-
-function hashContext(text: string): string {
-  let hash = 0x811c9dc5;
-  for (const char of text) {
-    hash ^= char.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `${text.length}:${(hash >>> 0).toString(16)}`;
 }
 
 function extractAttachedPaths(context: string): string[] {
@@ -117,7 +99,10 @@ export async function buildPromptContext(options: PromptContextOptions): Promise
     }
   }
 
-  if (sections.length === 0) return "";
+  if (sections.length === 0) {
+    options.contextCache?.compress("");
+    return "";
+  }
   const context = `<context>\nThe user attached the following from their vault:\n\n${sections.join("\n\n---\n\n")}\n</context>`;
   return options.contextCache?.compress(context) ?? context;
 }

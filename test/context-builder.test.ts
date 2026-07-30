@@ -421,4 +421,14 @@ describe("PromptContextCache", () => {
     const cache = new PromptContextCache();
     expect(cache.compress("")).toBe("");
   });
+
+  it("returns full context after clear", () => {
+    const cache = new PromptContextCache();
+    const context = "<context>Active note \"Note.md\"</context>";
+    cache.compress(context);
+    cache.commit();
+    expect(cache.compress(context)).toContain("context unchanged since previous turn");
+    cache.clear();
+    expect(cache.compress(context)).toBe(context);
+  });
 });

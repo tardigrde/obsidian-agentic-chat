@@ -325,41 +325,71 @@ function truncateForSummary(text: string, maxChars: number): string {
 function serializeConversation(messages: AgentMessage[]): string {
   const parts: string[] = [];
   for (const msg of messages) {
-    if (msg.role === "user") {
-      const text = contentText(msg.content, "");
-      if (text) parts.push(`[User]: ${text}`);
-    } else if (msg.role === "assistant") {
-      const assistant = msg;
-      const thinkingParts: string[] = [];
-      const toolCalls: string[] = [];
-      for (const block of assistant.content) {
-        if (block.type === "thinking") {
-          thinkingParts.push(block.thinking);
-        } else if (block.type === "toolCall") {
-          const args = block.arguments;
-          const argsStr = Object.entries(args as Record<string, unknown>)
-            .map(([k, v]) => `${k}=${safeJsonStringify(v)}`)
-            .join(", ");
-          toolCalls.push(`${block.name}(${argsStr})`);
-        }
-      }
-      if (thinkingParts.length > 0) {
-        parts.push(`[Assistant thinking]: ${thinkingParts.join("\n")}`);
-      }
-      if (assistant.content.some((block) => block.type === "text")) {
-        parts.push(`[Assistant]: ${contentText(assistant.content)}`);
-      }
-      if (toolCalls.length > 0) {
-        parts.push(`[Assistant tool calls]: ${toolCalls.join("; ")}`);
-      }
-    } else if (msg.role === "toolResult") {
-      const text = contentText(msg.content, "");
-      if (text) {
-        parts.push(`[Tool result]: ${truncateForSummary(text, COMPACTION_TOOL_RESULT_MAX_CHARS)}`);
-      }
-    }
+    const part = serializeMessage(msg);
+    if (part) parts.push(part);
   }
   return parts.join("\n\n");
+}
+
+function serializeMessage(msg: AgentMessage): string | undefined {
+  switch (msg.role) {
+    case "user":
+      return serializeUserMessage((msg as unknown as { content: Parameters<typeof contentText>[0] }).content);
+    case "assistant":
+      return serializeAssistantMessage((msg as unknown as { content: Parameters<typeof contentText>[0] }).content);
+    case "toolResult":
+      return serializeToolResultMessage((msg as unknown as { content: Parameters<typeof contentText>[0] }).content);
+    default:
+      return undefined;
+  }
+}
+
+function serializeUserMessage(content: Parameters<typeof contentText>[0]): string | undefined {
+  const text = contentText(content, "");
+  return text ? `[User]: ${text}` : undefined;
+}
+
+function serializeAssistantMessage(content: Parameters<typeof contentText>[0]): string | undefined {
+  const parts: string[] = [];
+  const thinking = serializeAssistantThinking(content);
+  if (thinking) parts.push(thinking);
+  const hasText = Array.isArray(content) && content.some((b) => (b as { type?: string }).type === "text");
+  if (hasText) parts.push(`[Assistant]: ${contentText(content)}`);
+  const toolCalls = serializeAssistantToolCalls(content);
+  if (toolCalls) parts.push(toolCalls);
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
+}
+
+function serializeAssistantThinking(content: Parameters<typeof contentText>[0]): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const thinkingParts: string[] = [];
+  for (const block of content) {
+    if ((block as { type?: string }).type === "thinking") {
+      thinkingParts.push((block as { thinking: string }).thinking);
+    }
+  }
+  return thinkingParts.length > 0 ? `[Assistant thinking]: ${thinkingParts.join("\n")}` : undefined;
+}
+
+function serializeAssistantToolCalls(content: Parameters<typeof contentText>[0]): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const toolCalls: string[] = [];
+  for (const block of content) {
+    if ((block as { type?: string }).type === "toolCall") {
+      const tc = block as { name: string; arguments: Record<string, unknown> };
+      const argsStr = Object.entries(tc.arguments)
+        .map(([k, v]) => `${k}=${safeJsonStringify(v)}`)
+        .join(", ");
+      toolCalls.push(`${tc.name}(${argsStr})`);
+    }
+  }
+  return toolCalls.length > 0 ? `[Assistant tool calls]: ${toolCalls.join("; ")}` : undefined;
+}
+
+function serializeToolResultMessage(content: Parameters<typeof contentText>[0]): string | undefined {
+  const text = contentText(content, "");
+  if (!text) return undefined;
+  return `[Tool result]: ${truncateForSummary(text, COMPACTION_TOOL_RESULT_MAX_CHARS)}`;
 }
 
 async function generateSummaryWithStream(
