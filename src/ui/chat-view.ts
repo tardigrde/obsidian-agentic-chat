@@ -61,7 +61,7 @@ import {
 import { ComposerHistory } from "./composer-history";
 import { PromptEditState } from "./prompt-edit-state";
 import { freshChatTabState, type ChatTabWorkingState } from "./chat-tab-state";
-import { buildPromptContext, loadImageAttachments as loadContextImageAttachments } from "./context-builder";
+import { buildPromptContext, loadImageAttachments as loadContextImageAttachments, PromptContextCache } from "./context-builder";
 import { attachmentBasePath } from "./attachment-ref";
 import {
   contextAttachmentKey,
@@ -159,6 +159,7 @@ export class ChatView extends ItemView {
   // plan mode — the posture to restore on abort or implement.
   private activeNotePath: string | null = null;
   private activeNoteCache = new ActiveNoteContextCache();
+  private contextCache = new PromptContextCache();
   private activeNoteSuppressed = false;
   private modeBeforePlan: AgentMode | null = null;
   private bubble: AssistantBubble | null = null;
@@ -336,6 +337,7 @@ export class ChatView extends ItemView {
     tab.state = {
       attachments: this.attachments,
       activeNoteCache: this.activeNoteCache,
+      contextCache: this.contextCache,
       activeNoteSuppressed: this.activeNoteSuppressed,
       draft: this.inputEl.value,
       queuedPromptArmed: this.queuedPromptArmed,
@@ -356,6 +358,7 @@ export class ChatView extends ItemView {
     const state = tab.state;
     this.attachments = state.attachments;
     this.activeNoteCache = state.activeNoteCache;
+    this.contextCache = state.contextCache;
     this.activeNoteSuppressed = state.activeNoteSuppressed;
     this.queuedPromptArmed = state.queuedPromptArmed;
     this.composerHistory.load(state.sentHistory);
@@ -1339,6 +1342,7 @@ export class ChatView extends ItemView {
     const tab = this.activeTab;
     const service = tab.service;
     const activeNoteCache = this.activeNoteCache;
+    const contextCache = this.contextCache;
     const explicitAttachments = [...this.attachments];
     this.clearEmptyState();
     // Show the auto-attached active note alongside explicit attachments in the user bubble.
@@ -1346,9 +1350,10 @@ export class ChatView extends ItemView {
     const attachments = [...(autoPath ? [autoPath] : []), ...explicitAttachments];
     const messageCountBefore = service.getMessages().length;
     try {
-      const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache);
+      const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache, contextCache);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
+        contextCache.discard();
         return;
       }
       const prompt = context ? `${context}\n\n${text}` : text;
@@ -1356,6 +1361,7 @@ export class ChatView extends ItemView {
       const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
+        contextCache.discard();
         return;
       }
       this.lastSentPrompt = prompt;
@@ -1364,11 +1370,14 @@ export class ChatView extends ItemView {
       await service.sendPrompt(prompt, images);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
+        contextCache.discard();
         return;
       }
       this.resolveActiveNoteCacheAfterSend(service, activeNoteCache, messageCountBefore);
+      this.resolveContextCacheAfterSend(service, contextCache, messageCountBefore);
     } catch (error) {
       activeNoteCache.discardPending();
+      contextCache.discard();
       if (!this.isLiveTab(tab)) return;
       throw error;
     }
@@ -1379,6 +1388,7 @@ export class ChatView extends ItemView {
     const tab = this.activeTab;
     const service = tab.service;
     const activeNoteCache = this.activeNoteCache;
+    const contextCache = this.contextCache;
     const explicitAttachments = [...this.attachments];
     const autoPath = this.effectiveActiveNote();
     const steering = parseStreamingSteering(rawText);
@@ -1389,15 +1399,17 @@ export class ChatView extends ItemView {
     this.clearEmptyState();
     const messageCountBefore = service.getMessages().length;
     try {
-      const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache);
+      const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache, contextCache);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
+        contextCache.discard();
         return;
       }
       const prompt = context ? `${context}\n\n${steering.text}` : steering.text;
       const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
+        contextCache.discard();
         return;
       }
       this.lastSentPrompt = prompt;
@@ -1408,11 +1420,14 @@ export class ChatView extends ItemView {
       else await service.steerPrompt(prompt, images);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
+        contextCache.discard();
         return;
       }
       this.resolveActiveNoteCacheAfterSend(service, activeNoteCache, messageCountBefore);
+      this.resolveContextCacheAfterSend(service, contextCache, messageCountBefore);
     } catch (error) {
       activeNoteCache.discardPending();
+      contextCache.discard();
       if (!this.isLiveTab(tab)) return;
       throw error;
     }
@@ -1428,6 +1443,18 @@ export class ChatView extends ItemView {
       activeNoteCache.commitPending();
     } else {
       activeNoteCache.discardPending();
+    }
+  }
+
+  private resolveContextCacheAfterSend(
+    service: AgentService,
+    contextCache: PromptContextCache,
+    messageCountBefore: number,
+  ): void {
+    if (service.getMessages().length > messageCountBefore) {
+      contextCache.commit();
+    } else {
+      contextCache.discard();
     }
   }
 
@@ -1599,6 +1626,7 @@ export class ChatView extends ItemView {
   private resetSessionUiState(options: SessionUiResetOptions): void {
     if (options.attachments) this.attachments = [];
     if (options.activeNoteCache) this.activeNoteCache = new ActiveNoteContextCache();
+    if (options.contextCache) this.contextCache = new PromptContextCache();
     if (options.activeNoteSuppression) this.activeNoteSuppressed = false;
     if (options.lastSent) {
       this.lastSentPrompt = null;
@@ -2377,6 +2405,7 @@ export class ChatView extends ItemView {
     attachments: ContextAttachment[],
     activeNotePath: string | null,
     activeNoteCache: ActiveNoteContextCache,
+    contextCache: PromptContextCache,
   ): Promise<string> {
     return await buildPromptContext({
       app: this.app,
@@ -2384,6 +2413,7 @@ export class ChatView extends ItemView {
       activeNotePath,
       isPathIgnored: (path) => service.isPathIgnored(path),
       activeNoteCache,
+      contextCache,
     });
   }
 

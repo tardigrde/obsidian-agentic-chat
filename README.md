@@ -1,5 +1,7 @@
 # Agentic Chat for Obsidian
 
+> **Experimental — under heavy development.** APIs, settings, and behavior change frequently. Pin a version if you need stability.
+
 A **privacy-first, agent-led AI chat** in Obsidian's right sidebar. Instead of a plain chatbot, you get an agent that *acts on your vault*: it reads, searches, writes, edits, renames, traverses links, and reads/writes frontmatter through typed tools — and every tool call is rendered inline in the chat, so you always see exactly what the agent is doing.
 
 It runs entirely inside Obsidian on **desktop and mobile**, built on the [pi](https://pi.dev) agent packages. Use it with hosted models through [OpenRouter](https://openrouter.ai) — locked to **zero-data-retention** providers by default — or with a fully local [Ollama](https://ollama.com) server where nothing ever leaves your machine.

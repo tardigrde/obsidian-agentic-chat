@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ChatView } from "../src/ui/chat-view";
 import { ActiveNoteContextCache } from "../src/ui/active-note";
+import { PromptContextCache } from "../src/ui/context-builder";
 
 describe("ChatView async lifecycle", () => {
   it("does not touch active tab service after the view closes during send", async () => {
@@ -10,6 +11,7 @@ describe("ChatView async lifecycle", () => {
       activeNotePath: null,
       activeNoteSuppressed: false,
       activeNoteCache: new ActiveNoteContextCache(),
+      contextCache: new PromptContextCache(),
       closed: false,
       activeTabIndex: 0,
       clearEmptyState: vi.fn(),
