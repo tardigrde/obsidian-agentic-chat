@@ -30,6 +30,10 @@ interface CachedRead {
 
 export class ReadMemo {
   private readonly seen = new Set<string>();
+  // TODO: contentCache may be redundant — same-session dedup already handled by
+  // `seen`, and Obsidian's cachedRead is fast enough that cross-session
+  // caching may not save measurable tokens or latency. Evaluate removing this
+  // if profiling shows no benefit over a plain re-read.
   private readonly contentCache = new Map<string, CachedRead>();
 
   /** Whether this exact (path, range) was already served this session. */
