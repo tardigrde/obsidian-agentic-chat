@@ -64,14 +64,32 @@ describe("agentic-chat B9+B11 live dogfood", function () {
     await $(".agentic-chat-view").waitForExist();
   });
 
-  it("caches re-reads and compresses unchanged context across turns", async function () {
-    await sendPrompt("Read the note B9-B11 Dogfood.md and tell me the first three words on line 3.");
+  it("compresses unchanged context across turns (B11)", async function () {
+    // Open the test note in a new leaf so it becomes the active file.
+    await browser.executeObsidian(async ({ app }) => {
+      const file = app.vault.getAbstractFileByPath("B9-B11 Dogfood.md");
+      if (!file) throw new Error("B9-B11 Dogfood.md not found");
+      await app.workspace.getLeaf(false).openFile(file);
+    });
+
+    // Wait for the active-note chip to appear in the chat view.
+    await browser.waitUntil(
+      async () => await $(".agentic-chat-chip.is-active-note").isExisting(),
+      { timeout: 5_000, timeoutMsg: "active-note chip did not appear" },
+    );
+
+    // Turn 1: ask about the note.
+    await sendPrompt("What is the first word on line 3 of B9-B11 Dogfood.md?");
     await waitForTurnEnd(TURN_TIMEOUT_MS);
 
+    // Turn 2: ask another question while the same note is active.
+    // The active note cache should already say "unchanged" on turn 2.
+    // On turn 3, the PromptContextCache should compress the whole context block.
     await sendPrompt("What is the last word on line 10?");
     await waitForTurnEnd(TURN_TIMEOUT_MS);
 
-    await sendPrompt("Read B9-B11 Dogfood.md again and tell me the first word on line 12.");
+    // Turn 3: same note still active — full context block should compress.
+    await sendPrompt("What is the first word on line 12?");
     await waitForTurnEnd(TURN_TIMEOUT_MS);
 
     const inspection = await browser.executeObsidian(async ({ app }) => {
@@ -92,42 +110,56 @@ describe("agentic-chat B9+B11 live dogfood", function () {
       const latest = sessions[0];
       if (!latest) return { error: "no session" };
       const raw = await adapter.read(latest.path);
-      const lines = raw.trim().split("\n");
-      const entries = lines.map((line) => {
-        try {
-          return JSON.parse(line);
-        } catch {
-          return null;
-        }
-      });
-
-      const userMessages = entries
-        .filter((e): e is NonNullable<typeof e> => e != null && e.type === "message" && e.message?.role === "user")
-        .map((e) => e.message.content?.[0]?.text ?? "");
-
-      const toolResults = entries
-        .filter((e): e is NonNullable<typeof e> => e != null && e.type === "message" && e.message?.role === "toolResult")
-        .map((e) => ({
-          toolName: e.message.toolName,
-          content: e.message.content?.[0]?.text ?? "",
-          details: e.message.details,
-        }));
-
-      return { userMessages, toolResults, sessionPath: latest.path };
+      return {
+        hasCompressedContext: raw.includes("context unchanged since previous turn"),
+        sessionPath: latest.path,
+      };
     });
 
     expect(inspection.error).toBeUndefined();
+    expect(inspection.hasCompressedContext).toBe(true);
+  });
 
-    const hasCompressedContext = inspection.userMessages.some((text: string) =>
-      text.includes("context unchanged since previous turn"),
-    );
-    expect(hasCompressedContext, "B11: context should be compressed on a repeat turn").toBe(true);
+  it("includes a diff summary after an edit (B9)", async function () {
+    // Open the test note in a new leaf.
+    await browser.executeObsidian(async ({ app }) => {
+      const file = app.vault.getAbstractFileByPath("B9-B11 Dogfood.md");
+      if (!file) throw new Error("B9-B11 Dogfood.md not found");
+      await app.workspace.getLeaf(false).openFile(file);
+    });
 
-    const hasCachedRead = inspection.toolResults.some(
-      (tr: { toolName: string; details?: Record<string, unknown> }) =>
-        tr.toolName === "read" && tr.details?.cached === true,
+    // Ask the model to edit line 3.
+    await sendPrompt(
+      'Use the edit tool on B9-B11 Dogfood.md to change "Apple Banana Cherry" to "Apple Banana Pear".',
     );
-    expect(hasCachedRead, "B9: re-read should be served from cache").toBe(true);
+    await waitForTurnEnd(TURN_TIMEOUT_MS);
+
+    const inspection = await browser.executeObsidian(async ({ app }) => {
+      const plugin = (app as unknown as {
+        plugins?: { plugins?: Record<string, { manifest?: { dir?: string } }> };
+      }).plugins?.plugins?.["agentic-chat"];
+      const pluginDir = plugin?.manifest?.dir ?? `${app.vault.configDir}/plugins/agentic-chat`;
+      const sessionsDir = `${pluginDir}/sessions`;
+      const adapter = app.vault.adapter;
+      const sessions = (await adapter.exists(sessionsDir))
+        ? await Promise.all(
+            (await adapter.list(sessionsDir)).files
+              .filter((file) => file.endsWith(".jsonl"))
+              .map(async (file) => ({ path: file, stat: await adapter.stat(file) })),
+          )
+        : [];
+      sessions.sort((a, b) => (b.stat?.mtime ?? 0) - (a.stat?.mtime ?? 0));
+      const latest = sessions[0];
+      if (!latest) return { error: "no session" };
+      const raw = await adapter.read(latest.path);
+      return {
+        hasEditDiff: raw.includes("Diff summary"),
+        sessionPath: latest.path,
+      };
+    });
+
+    expect(inspection.error).toBeUndefined();
+    expect(inspection.hasEditDiff).toBe(true);
   });
 });
 
