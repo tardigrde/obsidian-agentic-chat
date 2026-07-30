@@ -1,7 +1,12 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { before, describe, it } from "mocha";
-
-const TURN_TIMEOUT_MS = Number(process.env.DOGFOOD_TURN_TIMEOUT_MS || 120_000);
+import {
+  configureLivePlugin,
+  readLatestSessionRaw,
+  sendPrompt,
+  TURN_TIMEOUT_MS,
+  waitForTurnEnd,
+} from "./dogfood-helpers";
 
 describe("agentic-chat B9+B11 live dogfood", function () {
   const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
@@ -12,30 +17,7 @@ describe("agentic-chat B9+B11 live dogfood", function () {
     if (process.env.AGENTIC_CHAT_B9B11_DOGFOOD !== "true") this.skip();
     if (!apiKey) this.skip();
 
-    const configured = await browser.executeObsidian(async ({ app }, liveConfig) => {
-      const plugin = (app as unknown as {
-        plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }> };
-      }).plugins?.plugins?.["agentic-chat"];
-      if (!plugin?.settings) return false;
-      const settings = plugin.settings as {
-        provider: string;
-        openaiCompatibleApiKey: string;
-        openaiCompatibleBaseUrl: string;
-        openaiCompatibleModel: string;
-        mode: string;
-        approval: { mutating: string };
-      };
-      settings.provider = "openai-compatible";
-      settings.openaiCompatibleApiKey = liveConfig.apiKey;
-      settings.openaiCompatibleBaseUrl = liveConfig.baseUrl;
-      settings.openaiCompatibleModel = liveConfig.model;
-      settings.mode = "safe";
-      settings.approval.mutating = "allow";
-      await plugin.saveSettings?.();
-      return true;
-    }, { apiKey, baseUrl, model });
-
-    if (!configured) throw new Error("agentic-chat plugin not found in the dogfood vault");
+    await configureLivePlugin({ apiKey, baseUrl, model });
 
     await browser.executeObsidian(async ({ app }) => {
       const notePath = "B9-B11 Dogfood.md";
@@ -66,9 +48,9 @@ describe("agentic-chat B9+B11 live dogfood", function () {
 
   it("compresses unchanged context across turns (B11)", async function () {
     // Open the test note in a new leaf so it becomes the active file.
-    await browser.executeObsidian(async ({ app }) => {
+    await browser.executeObsidian(async ({ app, obsidian }) => {
       const file = app.vault.getAbstractFileByPath("B9-B11 Dogfood.md");
-      if (!file) throw new Error("B9-B11 Dogfood.md not found");
+      if (!(file instanceof obsidian.TFile)) throw new Error("B9-B11 Dogfood.md not found");
       await app.workspace.getLeaf(false).openFile(file);
     });
 
@@ -92,39 +74,16 @@ describe("agentic-chat B9+B11 live dogfood", function () {
     await sendPrompt("What is the first word on line 12?");
     await waitForTurnEnd(TURN_TIMEOUT_MS);
 
-    const inspection = await browser.executeObsidian(async ({ app }) => {
-      const plugin = (app as unknown as {
-        plugins?: { plugins?: Record<string, { manifest?: { dir?: string } }> };
-      }).plugins?.plugins?.["agentic-chat"];
-      const pluginDir = plugin?.manifest?.dir ?? `${app.vault.configDir}/plugins/agentic-chat`;
-      const sessionsDir = `${pluginDir}/sessions`;
-      const adapter = app.vault.adapter;
-      const sessions = (await adapter.exists(sessionsDir))
-        ? await Promise.all(
-            (await adapter.list(sessionsDir)).files
-              .filter((file) => file.endsWith(".jsonl"))
-              .map(async (file) => ({ path: file, stat: await adapter.stat(file) })),
-          )
-        : [];
-      sessions.sort((a, b) => (b.stat?.mtime ?? 0) - (a.stat?.mtime ?? 0));
-      const latest = sessions[0];
-      if (!latest) return { error: "no session" };
-      const raw = await adapter.read(latest.path);
-      return {
-        hasCompressedContext: raw.includes("context unchanged since previous turn"),
-        sessionPath: latest.path,
-      };
-    });
-
-    expect(inspection.error).toBeUndefined();
-    expect(inspection.hasCompressedContext).toBe(true);
+    const raw = await readLatestSessionRaw();
+    expect(raw.length).toBeGreaterThan(0);
+    expect(raw).toContain("context unchanged since previous turn");
   });
 
   it("includes a diff summary after an edit (B9)", async function () {
     // Open the test note in a new leaf.
-    await browser.executeObsidian(async ({ app }) => {
+    await browser.executeObsidian(async ({ app, obsidian }) => {
       const file = app.vault.getAbstractFileByPath("B9-B11 Dogfood.md");
-      if (!file) throw new Error("B9-B11 Dogfood.md not found");
+      if (!(file instanceof obsidian.TFile)) throw new Error("B9-B11 Dogfood.md not found");
       await app.workspace.getLeaf(false).openFile(file);
     });
 
@@ -134,54 +93,8 @@ describe("agentic-chat B9+B11 live dogfood", function () {
     );
     await waitForTurnEnd(TURN_TIMEOUT_MS);
 
-    const inspection = await browser.executeObsidian(async ({ app }) => {
-      const plugin = (app as unknown as {
-        plugins?: { plugins?: Record<string, { manifest?: { dir?: string } }> };
-      }).plugins?.plugins?.["agentic-chat"];
-      const pluginDir = plugin?.manifest?.dir ?? `${app.vault.configDir}/plugins/agentic-chat`;
-      const sessionsDir = `${pluginDir}/sessions`;
-      const adapter = app.vault.adapter;
-      const sessions = (await adapter.exists(sessionsDir))
-        ? await Promise.all(
-            (await adapter.list(sessionsDir)).files
-              .filter((file) => file.endsWith(".jsonl"))
-              .map(async (file) => ({ path: file, stat: await adapter.stat(file) })),
-          )
-        : [];
-      sessions.sort((a, b) => (b.stat?.mtime ?? 0) - (a.stat?.mtime ?? 0));
-      const latest = sessions[0];
-      if (!latest) return { error: "no session" };
-      const raw = await adapter.read(latest.path);
-      return {
-        hasEditDiff: raw.includes("Diff summary"),
-        sessionPath: latest.path,
-      };
-    });
-
-    expect(inspection.error).toBeUndefined();
-    expect(inspection.hasEditDiff).toBe(true);
+    const raw = await readLatestSessionRaw();
+    expect(raw.length).toBeGreaterThan(0);
+    expect(raw).toContain("Diff summary");
   });
 });
-
-async function sendPrompt(text: string): Promise<void> {
-  await browser.execute((value) => {
-    const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
-    const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
-    if (!textarea || !send) throw new Error("agentic-chat composer is not mounted");
-    textarea.value = value;
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    send.click();
-  }, text);
-}
-
-async function waitForTurnEnd(timeoutMs: number): Promise<void> {
-  await browser.waitUntil(
-    async () => {
-      const stopVisible = await $(".agentic-chat-stop").isDisplayed().catch(() => false);
-      const approvalOpen = await $(".agentic-chat-approval").isExisting().catch(() => false);
-      const askUserOpen = await $(".agentic-chat-ask-user").isExisting().catch(() => false);
-      return !stopVisible && !approvalOpen && !askUserOpen;
-    },
-    { timeout: timeoutMs, timeoutMsg: "turn did not finish" },
-  );
-}

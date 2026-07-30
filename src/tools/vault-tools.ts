@@ -213,6 +213,7 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       // of this range, serve the stored slice with zero I/O cost.
       const cached = memo?.getCached(readKey, mtime);
       if (cached) {
+        memo?.mark(readKey);
         return textResult(cachedReadMessage(path, cached.timestamp) + cached.content, {
           path,
           cached: true,
