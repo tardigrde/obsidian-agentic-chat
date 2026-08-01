@@ -56,6 +56,8 @@ export interface CoverageMatch {
 }
 
 const MAX_COVERAGE_QUOTE = 600;
+/** Per-path cap on recorded windows so heavy pagination can't bloat the memo. */
+const MAX_COVERAGE_WINDOWS_PER_PATH = 32;
 
 export class ReadMemo {
   private readonly seen = new Set<string>();
@@ -88,7 +90,36 @@ export class ReadMemo {
    */
   recordCoverage(key: { path: string; startLine: number; endLine: number; content: string }, mtime: number, full: boolean): void {
     const windows = this.coverage.get(key.path) ?? [];
+    // A window already covered by an equal-or-wider window at the same mtime
+    // adds nothing — unless the new window is a *full* read, which upgrades any
+    // contained non-full window (only a full window can satisfy to-end reads).
+    if (
+      windows.some(
+        (existing) =>
+          existing.mtime === mtime &&
+          existing.start <= key.startLine &&
+          key.endLine <= existing.end &&
+          (existing.full || !full),
+      )
+    ) {
+      return;
+    }
+    if (full) {
+      for (let index = windows.length - 1; index >= 0; index--) {
+        const existing = windows[index];
+        if (
+          existing.mtime === mtime &&
+          !existing.full &&
+          existing.start >= key.startLine &&
+          key.endLine <= existing.end
+        ) {
+          windows.splice(index, 1);
+        }
+      }
+    }
     windows.push({ start: key.startLine, end: key.endLine, full, content: key.content, mtime });
+    // Keep the newest windows; the oldest are least relevant to a rolling session.
+    if (windows.length > MAX_COVERAGE_WINDOWS_PER_PATH) windows.shift();
     this.coverage.set(key.path, windows);
   }
 
@@ -103,6 +134,10 @@ export class ReadMemo {
     for (const window of windows) {
       if (window.mtime !== mtime) continue;
       if (window.start > request.start) continue;
+      // A degenerate request (limit 0, inverted startLine>endLine) or a to-end
+      // request starting past the served window is not covered: the lines asked
+      // for were never served.
+      if (request.start > window.end) continue;
       if (request.toEnd ? !window.full : request.end > window.end) continue;
       // Prefer the tightest containing window so the quote is most relevant.
       if (!best || window.end - window.start < best.end - best.start) best = window;

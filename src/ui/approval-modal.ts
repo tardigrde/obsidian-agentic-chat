@@ -109,7 +109,13 @@ export class ApprovalModal extends Modal {
     this.scope.register([], "Enter", (event) => {
       if (this.decided || isInteractiveElement(activeDocument.activeElement)) return;
       event.preventDefault();
-      this.decide({ approved: true, remember });
+      if (this.denyArmed) {
+        // Focus left the reason field (e.g. the user clicked the diff preview):
+        // Enter must confirm the in-progress deny, not approve the call.
+        this.decide({ approved: false, remember, reason: reasonInput.value.trim() || undefined });
+      } else {
+        this.decide({ approved: true, remember });
+      }
       return false;
     });
   }

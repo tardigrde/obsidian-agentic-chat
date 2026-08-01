@@ -105,6 +105,41 @@ describe("ReadMemo", () => {
     expect(capped?.quote).toMatch(/…$/);
   });
 
+  it("coverageFor does not cover a to-end request starting past the served window", () => {
+    const memo = new ReadMemo();
+    memo.recordCoverage({ path: "Note.md", startLine: 1, endLine: 10, content: windowContent(1, 10) }, 5, true);
+    expect(memo.coverageFor({ path: "Note.md", start: 20, end: 0, toEnd: true }, 5)).toBeNull();
+  });
+
+  it("recordCoverage skips windows fully inside an already-served window at the same mtime", () => {
+    const memo = new ReadMemo();
+    memo.recordCoverage({ path: "Note.md", startLine: 1, endLine: 10, content: windowContent(1, 10) }, 5, false);
+    memo.recordCoverage({ path: "Note.md", startLine: 3, endLine: 6, content: windowContent(3, 6) }, 5, false);
+    // Both a 3-6 request and a 1-2 request are answered from the single window.
+    expect(memo.coverageFor({ path: "Note.md", start: 3, end: 6, toEnd: false }, 5)?.quote).toBe(
+      "line3\nline4\nline5\nline6",
+    );
+    expect(memo.coverageFor({ path: "Note.md", start: 1, end: 2, toEnd: false }, 5)).not.toBeNull();
+  });
+
+  it("recordCoverage keeps only the newest windows per path", () => {
+    const memo = new ReadMemo();
+    for (let i = 1; i <= 40; i++) {
+      const start = i * 10;
+      memo.recordCoverage({ path: "Note.md", startLine: start, endLine: start + 9, content: windowContent(start, start + 9) }, 5, false);
+    }
+    // The oldest window (10-19) was evicted; the newest (400-409) is still there.
+    expect(memo.coverageFor({ path: "Note.md", start: 10, end: 19, toEnd: false }, 5)).toBeNull();
+    expect(memo.coverageFor({ path: "Note.md", start: 400, end: 409, toEnd: false }, 5)).not.toBeNull();
+  });
+
+  it("recordCoverage lets a full read upgrade a contained non-full window", () => {
+    const memo = new ReadMemo();
+    memo.recordCoverage({ path: "Note.md", startLine: 1, endLine: 10, content: windowContent(1, 10) }, 5, false);
+    memo.recordCoverage({ path: "Note.md", startLine: 1, endLine: 10, content: windowContent(1, 10) }, 5, true);
+    expect(memo.coverageFor({ path: "Note.md", start: 1, end: 0, toEnd: true }, 5)?.full).toBe(true);
+  });
+
   it("invalidate drops coverage for the named path", () => {
     const memo = new ReadMemo();
     memo.recordCoverage({ path: "Note.md", startLine: 1, endLine: 10, content: "x" }, 5, false);
