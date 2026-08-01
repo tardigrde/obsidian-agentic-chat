@@ -3,7 +3,7 @@ import { TFile, TFolder, type App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ApprovalAuditInput, CheckpointAuditInput } from "../src/agent/action-audit-log";
 import type { FileCheckpoint } from "../src/agent/file-checkpoints";
-import { AgentToolCallController, type ToolApprovalRequest } from "../src/agent/tool-call-controller";
+import { AgentToolCallController, type ToolApprovalRequest, type UserApprovalChoice } from "../src/agent/tool-call-controller";
 import type { AgentProfile } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { createMcpServerSettings } from "../src/mcp/settings";
@@ -13,7 +13,7 @@ import { FakeVault } from "./helpers/fake-vault";
 function makeController(
   options: {
     settings?: Partial<AgenticChatSettings>;
-    confirmToolCall?: (request: ToolApprovalRequest) => Promise<boolean>;
+    confirmToolCall?: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
     tools?: AgentTool[];
     profiles?: AgentProfile[];
     app?: App;
@@ -35,7 +35,7 @@ function makeController(
     getSettings: () => settings,
     confirmToolCall: async (request) => {
       requests.push(request);
-      return options.confirmToolCall ? options.confirmToolCall(request) : true;
+      return options.confirmToolCall ? options.confirmToolCall(request) : { approved: true, remember: false };
     },
     getTools: () => options.tools ?? [{ name: "write", label: "Write file" } as AgentTool],
     getProfiles: () => options.profiles ?? [],
@@ -72,7 +72,7 @@ describe("AgentToolCallController", () => {
   it("prompts ask-policy tool calls with the registered tool label", async () => {
     const { controller, requests } = makeController({
       settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
-      confirmToolCall: async () => false,
+      confirmToolCall: async () => ({ approved: false, remember: false }),
     });
 
     const decision = await controller.beforeToolCall({
@@ -83,6 +83,48 @@ describe("AgentToolCallController", () => {
     expect(decision).toEqual({ block: true, reason: "The user declined this action." });
     expect(requests).toEqual([{ toolName: "write", label: "Write file", args: { path: "Notes/a.md", content: "hi" } }]);
     expect(controller.canUndo()).toBe(false);
+  });
+
+  it("echoes the user's deny reason back to the agent", async () => {
+    const approvals: ApprovalAuditInput[] = [];
+    const { controller, requests } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      confirmToolCall: async () => ({ approved: false, remember: false, reason: "Wrong file — edit Notes/b.md instead" }),
+      recordApproval: (input) => {
+        approvals.push(input);
+      },
+    });
+
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "write" },
+      args: { path: "Notes/a.md", content: "hi" },
+    });
+
+    expect(decision).toEqual({ block: true, reason: "Wrong file — edit Notes/b.md instead" });
+    expect(requests).toHaveLength(1);
+    const denied = approvals.find((approval) => approval.decision === "denied");
+    expect(denied?.reason).toBe("Wrong file — edit Notes/b.md instead");
+  });
+
+  it("falls back to the generic denial message when the user gives no reason", async () => {
+    const approvals: ApprovalAuditInput[] = [];
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      confirmToolCall: async () => ({ approved: false, remember: false }),
+      recordApproval: (input) => {
+        approvals.push(input);
+      },
+    });
+
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "write" },
+      args: { path: "Notes/a.md", content: "hi" },
+    });
+
+    expect(decision).toEqual({ block: true, reason: "The user declined this action." });
+    expect(approvals.find((approval) => approval.decision === "denied")?.reason).toBe(
+      "The user declined this action.",
+    );
   });
 
   it("prompts MCP tool calls through the server egress policy", async () => {
@@ -102,7 +144,7 @@ describe("AgentToolCallController", () => {
         },
       },
       tools: [tool],
-      confirmToolCall: async () => false,
+      confirmToolCall: async () => ({ approved: false, remember: false }),
     });
 
     const args = { libraryName: "obsidian" };
@@ -127,7 +169,7 @@ describe("AgentToolCallController", () => {
         },
       },
       tools: [tool],
-      confirmToolCall: async () => false,
+      confirmToolCall: async () => ({ approved: false, remember: false }),
     });
 
     const args = { action: "search", query: "Service" };
@@ -240,7 +282,7 @@ describe("AgentToolCallController", () => {
           toolAllowlist: ["read", "grep", "find"],
         },
       ],
-      confirmToolCall: async () => false,
+      confirmToolCall: async () => ({ approved: false, remember: false }),
     });
 
     const decision = await controller.beforeToolCall({
@@ -287,7 +329,7 @@ describe("AgentToolCallController", () => {
     const { controller } = makeController({
       app,
       settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
-      confirmToolCall: async () => true,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
       recordApproval: (input) => {
         approvals.push(input);
       },

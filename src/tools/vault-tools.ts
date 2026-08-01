@@ -5,7 +5,7 @@ import { diffLines, diffStat, diffTooLarge } from "../vault/diff";
 import { getParentPath, normalizeFolderPath, normalizeVaultPath } from "../vault/path";
 import type { IgnoreMatcher } from "../vault/ignore";
 import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../vault/search";
-import { alreadyReadMessage, cachedReadMessage, type ReadMemo } from "../vault/read-memo";
+import { alreadyReadMessage, cachedReadMessage, coveredReadMessage, type ReadMemo, type RequestedWindow } from "../vault/read-memo";
 import {
   formatTextSlice,
   readSizeGuardrail,
@@ -221,6 +221,14 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
         });
       }
 
+      // Redundant-range guard: the requested lines were already served this
+      // session (exactly or inside a wider range) and the file is unchanged, so
+      // hand the model a pointer plus the prior content instead of re-pulling.
+      const covered = memo?.coverageFor(requestedWindow(path, range), mtime);
+      if (covered) {
+        return textResult(coveredReadMessage(path, covered), { path, deduplicated: true, covered: true });
+      }
+
       // Size guardrail: refuse a bulk dump of a very large file; guide the model
       // to paginate so one read can't blow the context window.
       const guidance = readSizeGuardrail({ path, size: file.stat?.size ?? 0, ...range });
@@ -234,6 +242,11 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       // "already read" pointer instead of retrying.
       memo?.mark(readKey);
       memo?.cache(readKey, mtime, formatTextSlice(path, slice));
+      memo?.recordCoverage(
+        { path, startLine: slice.startLine, endLine: slice.endLine, content: slice.text },
+        mtime,
+        slice.startLine === 1 && slice.endLine === slice.totalLines && !slice.truncated,
+      );
       return textResult(formatTextSlice(path, slice), {
         path,
         startLine: slice.startLine,
@@ -844,6 +857,21 @@ function getSearchableFiles(app: App, rootPath: string, isIgnored: IgnoreMatcher
     .filter((file) => !isIgnored(file.path))
     .filter((file) => !rootPath || file.path === rootPath || file.path.startsWith(`${rootPath}/`))
     .sort((left, right) => left.path.localeCompare(right.path));
+}
+
+/**
+ * Express a read request as a 1-based line window for the coverage guard.
+ * A request with no limit runs to the end of the file, which only a previous
+ * full read can satisfy.
+ */
+function requestedWindow(
+  path: string,
+  range: { offset?: number; limit?: number; startLine?: number; endLine?: number },
+): RequestedWindow {
+  const window = resolveLineWindow(range);
+  const start = Math.max(1, window.offset ?? 1);
+  if (window.limit === undefined) return { path, start, end: Number.POSITIVE_INFINITY, toEnd: true };
+  return { path, start, end: start + Math.max(0, window.limit) - 1, toEnd: false };
 }
 
 function textResult(text: string, details: Record<string, unknown>): AgentToolResult<Record<string, unknown>> {

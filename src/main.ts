@@ -28,7 +28,7 @@ import {
 } from "./mcp/oauth";
 import { ObsidianSessionManager } from "./session/session-manager";
 import { initPricingCache } from "./llm/pricing-cache";
-import { ApprovalModal } from "./ui/approval-modal";
+import { ApprovalModal, type ApprovalChoice } from "./ui/approval-modal";
 import { ChatView } from "./ui/chat-view";
 import { buildQuickAskTarget } from "./ui/quick-ask";
 import { QuickAskModal } from "./ui/quick-ask-modal";
@@ -198,12 +198,12 @@ export default class AgenticChatPlugin extends Plugin {
   }
 
   /** Show the approval dialog and persist a remembered allow/deny choice after the user decides. */
-  private async confirmToolCall(request: ToolApprovalRequest): Promise<boolean> {
+  private async confirmToolCall(request: ToolApprovalRequest): Promise<ApprovalChoice> {
     const choice = await new ApprovalModal(this.app, request).ask();
     if (applyRememberedApprovalChoice(this.settings, request.toolName, choice)) {
       await this.saveSettings();
     }
-    return choice.approved;
+    return choice;
   }
 
   async activateView(): Promise<void> {

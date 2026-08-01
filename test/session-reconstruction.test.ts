@@ -211,7 +211,7 @@ describe("exact-once persistence (WeakSet de-dupe)", () => {
       app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
       getSettings: () => settings,
       sessionManager,
-      confirmToolCall: async () => true,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
       streamFn,
     });
     return { service, adapter };

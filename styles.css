@@ -1444,6 +1444,19 @@
   font-size: var(--font-smallest);
 }
 
+.agentic-chat-deny-reason {
+  margin: var(--size-4-2) 0 var(--size-2-2);
+}
+
+.agentic-chat-deny-reason-input {
+  width: 100%;
+  min-height: 48px;
+  padding: var(--size-2-2);
+  font: inherit;
+  font-size: var(--font-ui-small);
+  border-radius: var(--radius-s);
+}
+
 .agentic-chat-diff {
   max-height: 360px;
   overflow: auto;

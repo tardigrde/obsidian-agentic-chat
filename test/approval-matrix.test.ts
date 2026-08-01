@@ -4,6 +4,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
+import type { UserApprovalChoice } from "../src/agent/tool-call-controller";
 import { type ApprovalPolicy, type ApprovalSettings } from "../src/agent/approval";
 import { type AgentMode, resolveModePolicy } from "../src/agent/modes";
 import { resolveWorkingDirPolicy } from "../src/agent/working-dir";
@@ -132,7 +133,7 @@ function scriptedStreamFn(
 function makeService(
   streamFn: StreamFn,
   settings: Partial<AgenticChatSettings>,
-  confirmToolCall: () => Promise<boolean> = async () => true,
+  confirmToolCall: () => Promise<UserApprovalChoice> = async () => ({ approved: true, remember: false }),
 ): { service: AgentService; confirmCalls: { count: number } } {
   const merged: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
@@ -166,7 +167,7 @@ describe("approval matrix: end-to-end cross-checks through gateToolCall", () => 
       mode: "safe",
       approval: { mutating: "ask", perTool: { write: "allow" }, workingDirs: ["Notes"] },
       // confirm() returns false, yet the call was gated to ask because of the boundary.
-    }, async () => false);
+    }, async () => ({ approved: false, remember: false }));
     await service.sendPrompt("write outside");
     expect(confirmCalls.count).toBe(1);
   });
@@ -221,7 +222,7 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "ask", perTool: {}, workingDirs: [] },
-    }, async () => true);
+    }, async () => ({ approved: true, remember: false }));
     await service.sendPrompt("edit with a subagent");
     expect(confirmCalls.count).toBe(0);
     expect(toolResult(service)?.isError).toBe(false);
@@ -280,7 +281,7 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes"] },
-    }, async () => false);
+    }, async () => ({ approved: false, remember: false }));
     await service.sendPrompt("research with a subagent under a working set");
     expect(confirmCalls.count).toBe(0);
     expect(toolResult(service)?.isError).toBe(false);
@@ -307,7 +308,7 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "allow", perTool: {}, workingDirs: ["Notes"] },
-    }, async () => false);
+    }, async () => ({ approved: false, remember: false }));
 
     await service.sendPrompt("edit outside with a subagent under a working set");
 
