@@ -1,5 +1,6 @@
 import { ActiveNoteContextCache } from "./active-note";
 import type { ContextAttachment } from "./context-attachments";
+import { PromptContextCache } from "./context-builder";
 
 /**
  * Per-conversation working state. While a tab is active these values live on
@@ -9,6 +10,7 @@ import type { ContextAttachment } from "./context-attachments";
 export interface ChatTabWorkingState {
   attachments: ContextAttachment[];
   activeNoteCache: ActiveNoteContextCache;
+  contextCache: PromptContextCache;
   activeNoteSuppressed: boolean;
   draft: string;
   queuedPromptArmed: boolean;
@@ -26,6 +28,7 @@ export function freshChatTabState(): ChatTabWorkingState {
   return {
     attachments: [],
     activeNoteCache: new ActiveNoteContextCache(),
+    contextCache: new PromptContextCache(),
     activeNoteSuppressed: false,
     draft: "",
     queuedPromptArmed: false,

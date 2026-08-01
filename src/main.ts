@@ -27,6 +27,7 @@ import {
   type McpOAuthCallbackReceiver,
 } from "./mcp/oauth";
 import { ObsidianSessionManager } from "./session/session-manager";
+import { initPricingCache } from "./llm/pricing-cache";
 import { ApprovalModal } from "./ui/approval-modal";
 import { ChatView } from "./ui/chat-view";
 import { buildQuickAskTarget } from "./ui/quick-ask";
@@ -46,6 +47,7 @@ export default class AgenticChatPlugin extends Plugin {
   async onload(): Promise<void> {
     this.secretStore = new ObsidianSecretStore(this.app);
     await this.loadSettings();
+    initPricingCache(this.app, this);
 
     this.registerView(VIEW_TYPE_AGENT_CHAT, (leaf) => new ChatView(leaf, this));
     this.registerObsidianProtocolHandler(MCP_OAUTH_OBSIDIAN_PROTOCOL_ACTION, (params) => {

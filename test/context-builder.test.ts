@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
 import { FOLDER_PREFIX } from "../src/ui/autocomplete";
 import { ActiveNoteContextCache, MAX_ACTIVE_NOTE_CHARS } from "../src/ui/active-note";
-import { buildPromptContext, loadImageAttachments, visibleEditorRange } from "../src/ui/context-builder";
+import { buildPromptContext, loadImageAttachments, visibleEditorRange, PromptContextCache } from "../src/ui/context-builder";
 import { createTextContextAttachment, MAX_TEXT_CONTEXT_CHARS } from "../src/ui/context-attachments";
 import { FakeApp } from "./helpers/fake-vault";
 
@@ -364,5 +364,71 @@ describe("visibleEditorRange", () => {
     } as unknown as typeof fake.workspace;
 
     expect(visibleEditorRange(fake, file)).toBeNull();
+  });
+});
+
+describe("PromptContextCache", () => {
+  it("returns full context on first call", () => {
+    const cache = new PromptContextCache();
+    const context = "<context>Active note \"Note.md\"</context>";
+    const result = cache.compress(context);
+    expect(result).toBe(context);
+  });
+
+  it("compresses unchanged context on second call after commit", () => {
+    const cache = new PromptContextCache();
+    const context = "<context>Active note \"Note.md\"</context>";
+    cache.compress(context);
+    cache.commit();
+    const result = cache.compress(context);
+    expect(result).toContain("context unchanged since previous turn");
+    expect(result).toContain("Note.md");
+    expect(result).not.toContain("Active note");
+  });
+
+  it("returns full context again after discard", () => {
+    const cache = new PromptContextCache();
+    const context = "<context>Active note \"Note.md\"</context>";
+    cache.compress(context);
+    cache.discard();
+    const result = cache.compress(context);
+    expect(result).toBe(context);
+  });
+
+  it("returns full context when content changes", () => {
+    const cache = new PromptContextCache();
+    const first = "<context>Active note \"Note.md\"</context>";
+    cache.compress(first);
+    cache.commit();
+    const second = "<context>Active note \"Other.md\"</context>";
+    const result = cache.compress(second);
+    expect(result).toBe(second);
+  });
+
+  it("extracts multiple attached paths for the compressed message", () => {
+    const cache = new PromptContextCache();
+    const context =
+      '<context>Active note "A.md"\n\n---\n\nContents of note "B.md"\n\n---\n\nFolder listing for "C"</context>';
+    cache.compress(context);
+    cache.commit();
+    const result = cache.compress(context);
+    expect(result).toContain("A.md");
+    expect(result).toContain("B.md");
+    expect(result).toContain("C");
+  });
+
+  it("returns empty string unchanged", () => {
+    const cache = new PromptContextCache();
+    expect(cache.compress("")).toBe("");
+  });
+
+  it("returns full context after clear", () => {
+    const cache = new PromptContextCache();
+    const context = "<context>Active note \"Note.md\"</context>";
+    cache.compress(context);
+    cache.commit();
+    expect(cache.compress(context)).toContain("context unchanged since previous turn");
+    cache.clear();
+    expect(cache.compress(context)).toBe(context);
   });
 });

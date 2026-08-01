@@ -4,6 +4,7 @@ export interface SessionUiResetOptions {
   attachments?: boolean;
   activeNoteSuppression?: boolean;
   activeNoteCache?: boolean;
+  contextCache?: boolean;
   lastSent?: boolean;
   history?: boolean;
   editing?: boolean;
@@ -26,6 +27,7 @@ const CLEAN_CONVERSATION_RESET: SessionUiResetOptions = {
   attachments: true,
   activeNoteSuppression: true,
   activeNoteCache: true,
+  contextCache: true,
   lastSent: true,
   history: true,
   editing: true,
@@ -95,7 +97,7 @@ export class SessionActivationCoordinator {
 
   async loadConversation(loadSession: () => Promise<void>): Promise<void> {
     await this.runMuted(loadSession, true);
-    this.options.resetUiState({ lastSent: true, activeNoteCache: true, editing: true, bubble: true });
+    this.options.resetUiState({ lastSent: true, activeNoteCache: true, contextCache: true, editing: true, bubble: true });
     this.options.renderTranscript(this.options.messages());
     this.options.syncChrome();
     this.options.syncTabStrip();
@@ -106,6 +108,7 @@ export class SessionActivationCoordinator {
       attachments: true,
       activeNoteSuppression: true,
       activeNoteCache: true,
+      contextCache: true,
       lastSent: true,
       editing: true,
     });
