@@ -108,10 +108,17 @@ export class ReadMemo {
       if (!best || window.end - window.start < best.end - best.start) best = window;
     }
     if (!best) return null;
+    // Quote the *requested* slice of the served window (line offsets into the
+    // served content), so a request for later lines still sees its text even
+    // when the whole window is wide or the quote cap cuts it.
+    const lines = best.content.split("\n");
+    const from = request.start - best.start;
+    const to = request.toEnd ? undefined : request.end - best.start + 1;
+    const requestedContent = lines.slice(from, to).join("\n");
     const content =
-      best.content.length > MAX_COVERAGE_QUOTE
-        ? `${best.content.slice(0, MAX_COVERAGE_QUOTE)}\n…`
-        : best.content;
+      requestedContent.length > MAX_COVERAGE_QUOTE
+        ? `${requestedContent.slice(0, MAX_COVERAGE_QUOTE)}\n…`
+        : requestedContent;
     return { full: best.full, quote: content };
   }
 
