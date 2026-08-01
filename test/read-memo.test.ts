@@ -133,11 +133,13 @@ describe("ReadMemo", () => {
     expect(memo.coverageFor({ path: "Note.md", start: 400, end: 409, toEnd: false }, 5)).not.toBeNull();
   });
 
-  it("recordCoverage lets a full read upgrade a contained non-full window", () => {
+  it("recordCoverage lets a full read upgrade contained non-full windows", () => {
     const memo = new ReadMemo();
-    memo.recordCoverage({ path: "Note.md", startLine: 1, endLine: 10, content: windowContent(1, 10) }, 5, false);
-    memo.recordCoverage({ path: "Note.md", startLine: 1, endLine: 10, content: windowContent(1, 10) }, 5, true);
+    memo.recordCoverage({ path: "Note.md", startLine: 10, endLine: 20, content: windowContent(10, 20) }, 5, false);
+    memo.recordCoverage({ path: "Note.md", startLine: 1, endLine: 50, content: windowContent(1, 50) }, 5, true);
     expect(memo.coverageFor({ path: "Note.md", start: 1, end: 0, toEnd: true }, 5)?.full).toBe(true);
+    // The contained partial window was removed; the wider full read answers.
+    expect(memo.coverageFor({ path: "Note.md", start: 12, end: 14, toEnd: false }, 5)?.full).toBe(true);
   });
 
   it("invalidate drops coverage for the named path", () => {

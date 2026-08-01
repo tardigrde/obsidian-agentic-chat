@@ -478,7 +478,8 @@ function startApprovalPump(noteDir: string, decisions: ApprovalDecision[], optio
           // Deny is two-step: the first click arms the optional reason field,
           // so confirm (without a reason) to actually deny.
           const confirmDeny = await modal.$("button=Confirm Deny");
-          if (await confirmDeny.isExisting()) await confirmDeny.click();
+          await confirmDeny.waitForExist({ timeout: 5_000 });
+          await confirmDeny.click();
         }
         await browser.pause(250);
       }

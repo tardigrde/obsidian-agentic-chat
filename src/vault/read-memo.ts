@@ -111,7 +111,7 @@ export class ReadMemo {
           existing.mtime === mtime &&
           !existing.full &&
           existing.start >= key.startLine &&
-          key.endLine <= existing.end
+          existing.end <= key.endLine
         ) {
           windows.splice(index, 1);
         }
