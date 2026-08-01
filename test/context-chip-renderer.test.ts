@@ -5,7 +5,7 @@ import { renderContextChips, renderPendingQueueChip } from "../src/ui/context-ch
 
 class FakeElement {
   readonly children: FakeElement[] = [];
-  readonly listeners: Record<string, Array<() => void>> = {};
+  readonly listeners: Record<string, Array<(event?: { key: string; preventDefault: () => void }) => void>> = {};
   private text = "";
   private readonly classes = new Set<string>();
   private readonly attrs = new Map<string, string>();
@@ -41,12 +41,16 @@ class FakeElement {
     return this.attrs.get(name);
   }
 
-  addEventListener(type: string, listener: () => void): void {
+  addEventListener(type: string, listener: (event?: { key: string; preventDefault: () => void }) => void): void {
     this.listeners[type] = [...(this.listeners[type] ?? []), listener];
   }
 
   click(): void {
     for (const listener of this.listeners.click ?? []) listener();
+  }
+
+  keydown(key: string): void {
+    for (const listener of this.listeners.keydown ?? []) listener({ key, preventDefault: () => {} });
   }
 
   findAllByClass(cls: string): FakeElement[] {
@@ -167,5 +171,22 @@ describe("context chip renderer", () => {
     parent.findAllByClass("agentic-chat-chip-remove")[0].click();
 
     expect(cancelled).toBe(1);
+  });
+
+  it("exposes the pending chip remove control to keyboards", () => {
+    const parent = root();
+    let cancelled = 0;
+
+    renderPendingQueueChip(parent as unknown as HTMLElement, { text: "queued" }, { cancel: () => { cancelled += 1; } });
+
+    const remove = parent.findAllByClass("agentic-chat-chip-remove")[0];
+    expect(remove.attr("role")).toBe("button");
+    expect(remove.attr("tabindex")).toBe("0");
+    expect(remove.attr("aria-label")).toBe("Cancel queued prompt");
+
+    remove.keydown("Enter");
+    remove.keydown(" ");
+    remove.keydown("Tab");
+    expect(cancelled).toBe(2);
   });
 });

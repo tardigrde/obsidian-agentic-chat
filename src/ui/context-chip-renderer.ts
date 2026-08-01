@@ -96,7 +96,15 @@ export function renderPendingQueueChip(
     "title",
     "Sends when the agent finishes. Remove to cancel — the draft stays in the composer.",
   );
-  const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
+  const remove = chip.createSpan({
+    cls: "agentic-chat-chip-remove",
+    attr: { role: "button", tabindex: "0", "aria-label": "Cancel queued prompt" },
+  });
   setIcon(remove, "x");
   remove.addEventListener("click", callbacks.cancel);
+  remove.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    callbacks.cancel();
+  });
 }

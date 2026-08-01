@@ -1,6 +1,6 @@
 # Agentic Chat — Roadmap
 
-Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01.)
+Only pending items. Done work is removed to keep the doc small. (B1 was completed and removed on 2026-08-01.)
 
 - **Status**: living document
 - **Created**: 2026-07-17
