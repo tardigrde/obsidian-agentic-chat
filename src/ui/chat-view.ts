@@ -123,7 +123,7 @@ import {
   renderInfoPanel,
   renderSummaryPanel,
 } from "./info-panel-renderer";
-import { renderContextChips } from "./context-chip-renderer";
+import { renderContextChips, renderPendingQueueChip } from "./context-chip-renderer";
 import type { ActionRow, WorkflowRenderer } from "./workflow-renderer";
 import { openSystemUrl } from "./open-system-link";
 
@@ -654,10 +654,14 @@ export class ChatView extends ItemView {
     // Programmatic value changes (recall) set `.value` directly without an input event.
     this.inputEl.addEventListener("input", () => {
       this.resetHistoryNav();
-      if (this.queuedPromptArmed && !this.inputEl.value.trim()) {
-        this.queuedPromptArmed = false;
-        this.statusEl.setText("");
-        this.syncChrome();
+      if (this.queuedPromptArmed) {
+        const stillQueued = Boolean(this.inputEl.value.trim());
+        if (!stillQueued) {
+          this.queuedPromptArmed = false;
+          this.statusEl.setText("");
+          this.syncChrome();
+        }
+        this.renderChips();
       }
       this.scheduleAutocomplete();
     });
@@ -1219,6 +1223,7 @@ export class ChatView extends ItemView {
   private queueComposerPrompt(): void {
     this.queuedPromptArmed = true;
     this.statusEl.setText("Queued next.");
+    this.renderChips();
     this.syncChrome();
   }
 
@@ -1226,6 +1231,7 @@ export class ChatView extends ItemView {
     if (!this.queuedPromptArmed || this.flushingQueuedPrompt || this.service.isStreaming()) return;
     const text = this.inputEl.value.trim();
     this.queuedPromptArmed = false;
+    this.renderChips();
     if (!text) {
       this.syncChrome();
       return;
@@ -1237,6 +1243,7 @@ export class ChatView extends ItemView {
       await this.sendPrompt(text);
     } finally {
       this.flushingQueuedPrompt = false;
+      this.renderChips();
       this.syncChrome();
     }
   }
@@ -2368,6 +2375,22 @@ export class ChatView extends ItemView {
         },
       },
     );
+    if (this.queuedPromptArmed) {
+      const text = this.inputEl.value.trim();
+      if (text) {
+        renderPendingQueueChip(this.chipsEl, { text }, { cancel: () => this.cancelQueuedPrompt() });
+      }
+    }
+  }
+
+  /** Un-arm a queued prompt, keeping the draft in the composer for editing. */
+  private cancelQueuedPrompt(): void {
+    if (!this.queuedPromptArmed) return;
+    this.queuedPromptArmed = false;
+    this.statusEl.setText("");
+    this.renderChips();
+    this.syncChrome();
+    this.inputEl.focus();
   }
 
   // --- working directories (C1: + Folder / /add-dir scope) ---

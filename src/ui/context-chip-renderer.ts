@@ -5,6 +5,7 @@ import {
   isTextContextAttachment,
   type ContextAttachment,
 } from "./context-attachments";
+import { truncateText } from "./format";
 import { isImagePath } from "./image-attachments";
 import { formatWorkingDirLabel } from "./working-directory-workflow-controller";
 
@@ -78,4 +79,24 @@ function renderScopeChip(parent: HTMLElement, dir: string, onRemove: () => void)
   const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
   setIcon(remove, "x");
   remove.addEventListener("click", onRemove);
+}
+
+/** A prompt queued while the agent is busy; preview + cancel affordance. */
+export function renderPendingQueueChip(
+  parent: HTMLElement,
+  state: { text: string },
+  callbacks: { cancel: () => void },
+): void {
+  const chip = parent.createDiv({ cls: ["agentic-chat-chip", "is-pending"] });
+  const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
+  setIcon(icon, "timer");
+  chip.createSpan({ cls: "agentic-chat-chip-tag", text: "queued" });
+  chip.createSpan({ cls: "agentic-chat-chip-text", text: truncateText(state.text, 80) });
+  chip.setAttr(
+    "title",
+    "Sends when the agent finishes. Remove to cancel — the draft stays in the composer.",
+  );
+  const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
+  setIcon(remove, "x");
+  remove.addEventListener("click", callbacks.cancel);
 }
