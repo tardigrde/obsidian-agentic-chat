@@ -783,6 +783,23 @@
   color: var(--text-error);
 }
 
+/* A prompt queued while the agent is busy: dashed warning outline, preview text. */
+.agentic-chat-chip.is-pending {
+  border-style: dashed;
+  border-color: var(--text-warning);
+}
+
+.agentic-chat-chip.is-pending .agentic-chat-chip-tag {
+  color: var(--text-warning);
+}
+
+.agentic-chat-chip-text {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agentic-chat-input-wrap {
   position: relative;
   flex: 1 1 auto;

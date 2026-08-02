@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { FOLDER_PREFIX } from "../src/ui/autocomplete";
 import type { ContextAttachment } from "../src/ui/context-attachments";
-import { renderContextChips } from "../src/ui/context-chip-renderer";
+import { renderContextChips, renderPendingQueueChip } from "../src/ui/context-chip-renderer";
 
 class FakeElement {
   readonly children: FakeElement[] = [];
-  readonly listeners: Record<string, Array<() => void>> = {};
+  readonly listeners: Record<string, Array<(event?: { key: string; preventDefault: () => void }) => void>> = {};
   private text = "";
   private readonly classes = new Set<string>();
   private readonly attrs = new Map<string, string>();
@@ -41,12 +41,16 @@ class FakeElement {
     return this.attrs.get(name);
   }
 
-  addEventListener(type: string, listener: () => void): void {
+  addEventListener(type: string, listener: (event?: { key: string; preventDefault: () => void }) => void): void {
     this.listeners[type] = [...(this.listeners[type] ?? []), listener];
   }
 
   click(): void {
     for (const listener of this.listeners.click ?? []) listener();
+  }
+
+  keydown(key: string): void {
+    for (const listener of this.listeners.keydown ?? []) listener({ key, preventDefault: () => {} });
   }
 
   findAllByClass(cls: string): FakeElement[] {
@@ -132,5 +136,57 @@ describe("context chip renderer", () => {
     for (const remove of parent.findAllByClass("agentic-chat-chip-remove")) remove.click();
 
     expect(events).toEqual(["dir:Notes", "active", `attachment:${attachment}`]);
+  });
+
+  it("renders the queued prompt as a pending chip with a preview", () => {
+    const parent = root();
+
+    renderPendingQueueChip(parent as unknown as HTMLElement, { text: "fix the typo in section 3" }, { cancel: () => {} });
+
+    const chips = parent.findAllByClass("agentic-chat-chip");
+    expect(chips).toHaveLength(1);
+    const chip = chips[0];
+    expect(chip.className).toContain("is-pending");
+    expect(chipTextParts(chip)).toEqual(["queued", "fix the typo in section 3"]);
+    expect(chip.attr("title")).toBe("Sends when the agent finishes. Remove to cancel — the draft stays in the composer.");
+  });
+
+  it("truncates a long queued preview", () => {
+    const parent = root();
+
+    renderPendingQueueChip(parent as unknown as HTMLElement, { text: "x".repeat(200) }, { cancel: () => {} });
+
+    const preview = parent.findAllByClass("agentic-chat-chip-text");
+    expect(preview).toHaveLength(1);
+    expect(preview[0].textContent).toHaveLength(81);
+    expect(preview[0].textContent.endsWith("…")).toBe(true);
+  });
+
+  it("wires the pending chip remove button to cancel", () => {
+    const parent = root();
+    let cancelled = 0;
+
+    renderPendingQueueChip(parent as unknown as HTMLElement, { text: "queued" }, { cancel: () => { cancelled += 1; } });
+
+    parent.findAllByClass("agentic-chat-chip-remove")[0].click();
+
+    expect(cancelled).toBe(1);
+  });
+
+  it("exposes the pending chip remove control to keyboards", () => {
+    const parent = root();
+    let cancelled = 0;
+
+    renderPendingQueueChip(parent as unknown as HTMLElement, { text: "queued" }, { cancel: () => { cancelled += 1; } });
+
+    const remove = parent.findAllByClass("agentic-chat-chip-remove")[0];
+    expect(remove.attr("role")).toBe("button");
+    expect(remove.attr("tabindex")).toBe("0");
+    expect(remove.attr("aria-label")).toBe("Cancel queued prompt");
+
+    remove.keydown("Enter");
+    remove.keydown(" ");
+    remove.keydown("Tab");
+    expect(cancelled).toBe(2);
   });
 });

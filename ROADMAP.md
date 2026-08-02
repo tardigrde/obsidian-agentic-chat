@@ -1,6 +1,6 @@
 # Agentic Chat — Roadmap
 
-Only pending items. Done work is removed to keep the doc small. (B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01.)
+Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01.)
 
 - **Status**: living document
 - **Created**: 2026-07-17
@@ -34,11 +34,6 @@ Only pending items. Done work is removed to keep the doc small. (B2, B3a–d, B4
 ---
 
 ## Group B — Agent-loop correctness
-
-### B1 · Soft message queueing: pending chip (polish existing)
-- **Problem**: Queue + flush exist (`chat-view.ts:1219-1242`, per-tab state) but only the send button/status text signal a queued prompt — no pending chip, and flush semantics are untested in the UI.
-- **Goal**: Pending chip rendered while a prompt waits; flush on tab switch is visible and predictable.
-- **Effort**: S–M
 
 ### B10 · Per-edit approval within edit batches — DEFERRED
 - **Problem**: A 6-edit batch was denied because user disagreed with 1 scope.
@@ -76,4 +71,4 @@ Only pending items. Done work is removed to keep the doc small. (B2, B3a–d, B4
 
 ## Recommended order
 
-B1 → B12 → E10 → F8 → A7.
+B12 → E10 → F8 → A7.
