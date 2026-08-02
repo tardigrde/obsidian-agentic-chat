@@ -4,6 +4,7 @@ import type { AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
+import type { UserApprovalChoice } from "../src/agent/tool-call-controller";
 import type { AskUserHandler, AskUserRequest } from "../src/tools/ask-user-tool";
 import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
@@ -202,7 +203,7 @@ async function persistedActionAuditEvents(adapter: MemoryAdapter, service: Agent
 
 function makeService(
   streamFn: StreamFn,
-  confirmToolCall: () => Promise<boolean> = async () => true,
+  confirmToolCall: () => Promise<UserApprovalChoice> = async () => ({ approved: true, remember: false }),
   app: App = minimalApp(),
   askUser?: AskUserHandler,
   observabilityFetch?: WebFetcher,
@@ -268,7 +269,7 @@ describe("AgentService", () => {
       requests.push(request);
       return { status: 200, text: "", headers: {} };
     };
-    const { service, settings } = makeService(cannedStreamFn("Hello from the agent."), async () => true, minimalApp(), undefined, fetcher);
+    const { service, settings } = makeService(cannedStreamFn("Hello from the agent."), async () => ({ approved: true, remember: false }), minimalApp(), undefined, fetcher);
     settings.observability = {
       ...DEFAULT_SETTINGS.observability,
       enabled: true,
@@ -342,7 +343,7 @@ describe("AgentService", () => {
         app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
         getSettings: () => settings,
         sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test"),
-        confirmToolCall: async () => true,
+        confirmToolCall: async () => ({ approved: true, remember: false }),
         streamFn: cannedStreamFn("reply"),
       });
 
@@ -385,7 +386,7 @@ describe("AgentService", () => {
       app: minimalApp(),
       getSettings: () => first.settings,
       sessionManager: secondSessionManager,
-      confirmToolCall: async () => true,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
       streamFn: cannedStreamFn("unused"),
     });
 
@@ -433,7 +434,7 @@ describe("AgentService", () => {
       },
       workspace: {},
     } as unknown as App;
-    const { service } = makeService(streamFn, async () => true, app);
+    const { service } = makeService(streamFn, async () => ({ approved: true, remember: false }), app);
 
     await service.sendPrompt("Use the normal prompt context");
 
@@ -484,7 +485,7 @@ describe("AgentService", () => {
       sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", () =>
         projectSessionScope(settings.projects),
       ),
-      confirmToolCall: async () => true,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
       streamFn,
     });
 
@@ -516,7 +517,7 @@ describe("AgentService", () => {
       { content: [{ type: "text", text: "I will use Notes." }], stopReason: "stop" },
     ]);
     let asked: AskUserRequest | undefined;
-    const { service } = makeService(streamFn, async () => true, minimalApp(), async (request) => {
+    const { service } = makeService(streamFn, async () => ({ approved: true, remember: false }), minimalApp(), async (request) => {
       asked = request;
       return "Notes";
     });
@@ -538,7 +539,7 @@ describe("AgentService", () => {
       { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "Undo/New.md", content: "created" } }], stopReason: "toolUse" },
       { content: [{ type: "text", text: "Wrote it." }], stopReason: "stop" },
     ]);
-    const { service } = makeService(streamFn, async () => true, app);
+    const { service } = makeService(streamFn, async () => ({ approved: true, remember: false }), app);
 
     await service.sendPrompt("create undoable note");
     expect(vault.contentOf("Undo/New.md")).toBe("created");
@@ -556,7 +557,7 @@ describe("AgentService", () => {
       { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "Undo/Load.md", content: "created" } }], stopReason: "toolUse" },
       { content: [{ type: "text", text: "Wrote it." }], stopReason: "stop" },
     ]);
-    const { service, adapter } = makeService(streamFn, async () => true, app);
+    const { service, adapter } = makeService(streamFn, async () => ({ approved: true, remember: false }), app);
 
     await service.sendPrompt("keep this session");
     const firstPath = service.getSessionInfo()?.path as string;
@@ -584,7 +585,7 @@ describe("AgentService", () => {
       { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "Undo/Rewind.md", content: "created" } }], stopReason: "toolUse" },
       { content: [{ type: "text", text: "Wrote it." }], stopReason: "stop" },
     ]);
-    const { service } = makeService(streamFn, async () => true, app);
+    const { service } = makeService(streamFn, async () => ({ approved: true, remember: false }), app);
 
     await service.sendPrompt("create undoable note");
     expect(vault.contentOf("Undo/Rewind.md")).toBe("created");
@@ -601,7 +602,7 @@ describe("AgentService", () => {
       { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "note.md", content: "hi" } }], stopReason: "toolUse" },
       { content: [{ type: "text", text: "Understood, I won't write it." }], stopReason: "stop" },
     ]);
-    const { service } = makeService(streamFn, async () => false);
+    const { service } = makeService(streamFn, async () => ({ approved: false, remember: false }));
     await service.sendPrompt("Create note.md");
 
     const messages = service.getMessages();
@@ -622,7 +623,7 @@ describe("AgentService", () => {
       { content: [{ type: "text", text: "Read-only — here's what I would write." }], stopReason: "stop" },
     ]);
     // Approval allows mutating and the user would confirm — plan mode must still block.
-    const { service, settings } = makeService(streamFn, async () => true);
+    const { service, settings } = makeService(streamFn, async () => ({ approved: true, remember: false }));
     settings.mode = "plan";
     settings.approval = { mutating: "allow", perTool: {}, workingDirs: [] };
     await service.sendPrompt("Create note.md");
@@ -642,7 +643,7 @@ describe("AgentService", () => {
     ]);
     // YOLO forces mutating→allow, but the per-tool deny on `write` must override it,
     // and never prompt the user even though confirmToolCall would say yes.
-    const { service, settings } = makeService(streamFn, async () => true);
+    const { service, settings } = makeService(streamFn, async () => ({ approved: true, remember: false }));
     settings.mode = "yolo";
     settings.approval = { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] };
     await service.sendPrompt("Create note.md");
@@ -665,7 +666,7 @@ describe("AgentService", () => {
     let confirmCalls = 0;
     const { service, settings } = makeService(streamFn, async () => {
       confirmCalls += 1;
-      return false;
+      return { approved: false, remember: false };
     });
     settings.mode = "safe";
     // Even with mutating set to allow, a target outside the working set must prompt.
@@ -682,7 +683,7 @@ describe("AgentService", () => {
     let confirmCalls = 0;
     const { service, settings } = makeService(streamFn, async () => {
       confirmCalls += 1;
-      return true;
+      return { approved: true, remember: false };
     });
     settings.mode = "safe";
     // Default mutating "ask" is overridden to auto-run because the target is in-scope.
@@ -699,7 +700,7 @@ describe("AgentService", () => {
     let confirmCalls = 0;
     const { service, settings } = makeService(streamFn, async () => {
       confirmCalls += 1;
-      return false;
+      return { approved: false, remember: false };
     });
     settings.mode = "safe";
     // A read is normally free, but with a working set configured an out-of-scope read asks (S2).
@@ -741,7 +742,7 @@ describe("AgentService", () => {
     let confirmCalls = 0;
     const { service, settings } = makeService(streamFn, async () => {
       confirmCalls += 1;
-      return false;
+      return { approved: false, remember: false };
     });
     settings.mode = "safe";
     settings.approval = { mutating: "allow", perTool: {}, workingDirs: ["Notes"] };
@@ -825,7 +826,7 @@ describe("AgentService", () => {
       app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
       getSettings: () => settings,
       sessionManager,
-      confirmToolCall: async () => true,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
       streamFn: bigUsageStream,
       summarize: async () => {
         summarizeCalls += 1;
@@ -855,7 +856,7 @@ describe("AgentService", () => {
       app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
       getSettings: () => settings,
       sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test"),
-      confirmToolCall: async () => true,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
       streamFn: bigUsageStream,
       summarize: async () => "unused",
     });
@@ -899,7 +900,7 @@ describe("AgentService", () => {
       app: minimalApp(),
       getSettings: () => settings,
       sessionManager,
-      confirmToolCall: async () => true,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
       streamFn: cannedStreamFn("ok"),
       summarize: async () => "Manual summary.",
     });
@@ -1052,7 +1053,7 @@ describe("AgentService", () => {
       { content: [{ type: "toolCall", id: "c1", name: "write", arguments: { path: "n.md", content: "x" } }], stopReason: "toolUse", costTotal: 0.02 },
       { content: [{ type: "text", text: "should not run" }], stopReason: "stop", costTotal: 0.02 },
     ]);
-    const { service, settings } = makeService(stream, async () => true);
+    const { service, settings } = makeService(stream, async () => ({ approved: true, remember: false }));
     settings.notifications.costCapUsd = 0.01;
 
     await service.sendPrompt("go"); // cost is 0 at send time, so the turn starts

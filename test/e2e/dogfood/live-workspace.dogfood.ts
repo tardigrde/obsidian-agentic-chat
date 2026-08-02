@@ -474,6 +474,13 @@ function startApprovalPump(noteDir: string, decisions: ApprovalDecision[], optio
           !forcedDeny && (allowExternal || allowDogfoodMutation || allowExactPathMutation) ? "allow" : "deny";
         decisions.push({ title, action: resolvedAction });
         await modal.$(`button=${resolvedAction === "allow" ? "Allow" : "Deny"}`).click();
+        if (resolvedAction === "deny") {
+          // Deny is two-step: the first click arms the optional reason field,
+          // so confirm (without a reason) to actually deny.
+          const confirmDeny = await modal.$("button=Confirm Deny");
+          await confirmDeny.waitForExist({ timeout: 5_000 });
+          await confirmDeny.click();
+        }
         await browser.pause(250);
       }
       const askUser = await $(".agentic-chat-ask-user");

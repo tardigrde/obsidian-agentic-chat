@@ -441,6 +441,10 @@ async function denyApprovalAndWaitForNextTarget(path: string): Promise<void> {
   const deny = await modal.$("button=Deny");
   await deny.waitForExist({ timeout: 5_000 });
   await deny.click();
+  // Deny is two-step: the first click arms the optional reason field.
+  const confirmDeny = await modal.$("button=Confirm Deny");
+  await confirmDeny.waitForExist({ timeout: 5_000 });
+  await confirmDeny.click();
   await browser.waitUntil(
     async () => {
       const next = await $(".agentic-chat-approval");

@@ -32,7 +32,7 @@ import { AgentActiveSessionRuntime } from "./active-session-runtime";
 import { ParentAgentRuntime } from "./parent-agent-runtime";
 import { AgentParentConfigurationRuntime } from "./parent-agent-configuration";
 import { AgentSessionLocalState } from "./session-local-state";
-import { AgentToolCallController, type ToolApprovalRequest } from "./tool-call-controller";
+import { AgentToolCallController, type ToolApprovalRequest, type UserApprovalChoice } from "./tool-call-controller";
 import { AgentSessionEventRecorder } from "./session-event-recorder";
 import { AgentActionAuditRecorder } from "./action-audit-log";
 import { AgentFileCheckpointRecorder } from "./file-checkpoints";
@@ -70,8 +70,8 @@ export interface AgentServiceOptions {
   app: App;
   getSettings: () => AgenticChatSettings;
   sessionManager: ObsidianSessionManager;
-  /** Resolve an "ask" approval gate; returns true to allow the tool call. */
-  confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
+  /** Resolve an "ask" approval gate; returns the user's decision. */
+  confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   /** Injected for tests; production streams through the pi-ai Models runtime. */
   streamFn?: StreamFn;
   /** Injected for tests; production summarizes through the chat stream runtime. */

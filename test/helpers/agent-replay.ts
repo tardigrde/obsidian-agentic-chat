@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import { AgentService } from "../../src/agent/agent-service";
+import type { UserApprovalChoice } from "../../src/agent/tool-call-controller";
 import {
   createReplayStreamController,
   type ReplayStreamCall,
@@ -15,7 +16,7 @@ export interface AgentReplayOptions {
   prompt?: string;
   settings?: Partial<AgenticChatSettings>;
   app?: App;
-  confirmToolCall?: () => Promise<boolean>;
+  confirmToolCall?: () => Promise<UserApprovalChoice>;
 }
 
 export interface AgentReplayResult {
@@ -44,7 +45,7 @@ export async function runAgentReplay(options: AgentReplayOptions): Promise<Agent
     app: options.app ?? minimalApp(),
     getSettings: () => settings,
     sessionManager,
-    confirmToolCall: options.confirmToolCall ?? (async () => true),
+    confirmToolCall: options.confirmToolCall ?? (async () => ({ approved: true, remember: false })),
     streamFn: replay.streamFn,
   });
   const events: AgentEvent[] = [];

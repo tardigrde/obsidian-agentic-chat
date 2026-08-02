@@ -578,13 +578,46 @@ describe("read — dedup + size guardrail", () => {
     expect(second.text).not.toContain("hello world");
   });
 
-  it("treats a different range as a fresh read (pagination is not deduped)", async () => {
+  it("dedupes a range contained inside an earlier read and quotes the prior content", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "line1\nline2\nline3" } } });
+    const memo = new ReadMemo();
+    const read = createVaultTools(app, undefined, memo).find((t) => t.name === "read")!;
+    const first = await run(read, { path: "Note.md" });
+    expect(first.text).toContain("line2");
+    const contained = await run(read, { path: "Note.md", offset: 2, limit: 1 });
+    expect(contained.details.deduplicated).toBe(true);
+    expect(contained.details.covered).toBe(true);
+    expect(contained.text).toContain("Re-reading");
+    expect(contained.text).not.toContain("Note.md lines");
+    expect(contained.text).toContain("Previously served content");
+    expect(contained.text).toContain("line2");
+  });
+
+  it("still allows a range outside the earlier read (pagination is not deduped)", async () => {
     const app = makeApp({ files: { "Note.md": { content: "line1\nline2" } } });
     const memo = new ReadMemo();
     const read = createVaultTools(app, undefined, memo).find((t) => t.name === "read")!;
-    await run(read, { path: "Note.md" });
-    const ranged = await run(read, { path: "Note.md", offset: 1, limit: 1 });
-    expect(ranged.details.deduplicated).toBeFalsy();
+    const first = await run(read, { path: "Note.md", offset: 1, limit: 1 });
+    expect(first.text).toContain("line1");
+    const next = await run(read, { path: "Note.md", offset: 2, limit: 1 });
+    expect(next.details.deduplicated).toBeFalsy();
+    expect(next.text).toContain("line2");
+  });
+
+  it("dedupes a sub-range only when the file has not changed since the wider read", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "a\nb\nc\nd" } } });
+    const memo = new ReadMemo();
+    const read = createVaultTools(app, undefined, memo).find((t) => t.name === "read")!;
+    await run(read, { path: "Note.md", offset: 1, limit: 3 });
+    // The file changed on disk: the wider read's content is stale, so re-read.
+    const file = app.vault.getAbstractFileByPath("Note.md") as TFile;
+    (file as unknown as { stat: { size: number; mtime: number } }).stat = {
+      size: 20,
+      mtime: 7,
+    };
+    const afterChange = await run(read, { path: "Note.md", offset: 1, limit: 2 });
+    expect(afterChange.details.deduplicated).toBeFalsy();
+    expect(afterChange.text).toContain("b");
   });
 
   it("reads explicit startLine/endLine ranges and dedupes equivalent offset/limit ranges", async () => {

@@ -26,6 +26,15 @@ export interface ToolApprovalRequest {
 
 export type ToolGateDecision = { block: true; reason: string } | undefined;
 
+/** A user's decision on an approval prompt, with an optional deny reason. */
+export interface UserApprovalChoice {
+  approved: boolean;
+  /** Persist this decision for the tool (sets a per-tool "allow" override). */
+  remember: boolean;
+  /** Optional reason the user typed when denying; echoed back to the agent. */
+  reason?: string;
+}
+
 export interface BeforeToolCallContext {
   toolCall: {
     id: string;
@@ -44,7 +53,7 @@ export interface AfterToolCallContext {
 interface ToolCallControllerOptions {
   app: App;
   getSettings: () => AgenticChatSettings;
-  confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
+  confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   getTools: () => AgentTool[];
   getProfiles: () => AgentProfile[];
   onUndoApplied: () => void;
@@ -60,7 +69,7 @@ interface ToolCallControllerOptions {
 export class AgentToolCallController {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
-  private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<boolean>;
+  private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   private readonly getTools: () => AgentTool[];
   private readonly getProfiles: () => AgentProfile[];
   private readonly onUndoApplied: () => void;
@@ -176,12 +185,14 @@ export class AgentToolCallController {
       await this.auditApproval({ decision: "denied", toolCallId, toolName, label, args, reason: denial });
       return { block: true, reason: denial };
     }
-    const approved = await this.confirmWithAudit(
+    const choice = await this.confirmWithAudit(
       { toolName, label, args },
       toolCallId,
       "The user declined this action.",
     );
-    return approved ? undefined : { block: true, reason: "The user declined this action." };
+    return choice.approved
+      ? undefined
+      : { block: true, reason: choice.reason ?? "The user declined this action." };
   }
 
   private async gateExternalToolCall(
@@ -224,12 +235,14 @@ export class AgentToolCallController {
       });
       return { block: true, reason };
     }
-    const approved = await this.confirmWithAudit(
+    const choice = await this.confirmWithAudit(
       { toolName: EXTERNAL_INSPECT_TOOL_NAME, label, args },
       toolCallId,
       "The user declined this external workspace inspection.",
     );
-    return approved ? undefined : { block: true, reason: "The user declined this external workspace inspection." };
+    return choice.approved
+      ? undefined
+      : { block: true, reason: choice.reason ?? "The user declined this external workspace inspection." };
   }
 
   private async gateMcpToolCall(
@@ -249,12 +262,14 @@ export class AgentToolCallController {
       await this.auditApproval({ decision: "denied", toolCallId, toolName, label, args, reason });
       return { block: true, reason };
     }
-    const approved = await this.confirmWithAudit(
+    const choice = await this.confirmWithAudit(
       { toolName, label, args },
       toolCallId,
       "The user declined this MCP tool call.",
     );
-    return approved ? undefined : { block: true, reason: "The user declined this MCP tool call." };
+    return choice.approved
+      ? undefined
+      : { block: true, reason: choice.reason ?? "The user declined this MCP tool call." };
   }
 
   private resolveMcpPolicy(settings: AgenticChatSettings, toolName: string): ApprovalPolicy {
@@ -299,7 +314,7 @@ export class AgentToolCallController {
     request: ToolApprovalRequest,
     toolCallId: string,
     deniedReason: string,
-  ): Promise<boolean> {
+  ): Promise<UserApprovalChoice> {
     await this.auditApproval({
       decision: "requested",
       toolCallId,
@@ -307,16 +322,16 @@ export class AgentToolCallController {
       label: request.label,
       args: request.args,
     });
-    const approved = await this.confirmToolCall(request);
+    const choice = await this.confirmToolCall(request);
     await this.auditApproval({
-      decision: approved ? "approved" : "denied",
+      decision: choice.approved ? "approved" : "denied",
       toolCallId,
       toolName: request.toolName,
       label: request.label,
       args: request.args,
-      reason: approved ? undefined : deniedReason,
+      reason: choice.approved ? undefined : (choice.reason ?? deniedReason),
     });
-    return approved;
+    return choice;
   }
 
   private async auditApproval(input: ApprovalAuditInput): Promise<void> {

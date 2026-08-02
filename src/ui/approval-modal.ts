@@ -1,5 +1,6 @@
-import { App, Modal, Setting, TFile } from "obsidian";
+import { App, ButtonComponent, Modal, Setting, TFile } from "obsidian";
 import type { ToolApprovalRequest } from "../agent/agent-service";
+import type { UserApprovalChoice } from "../agent/tool-call-controller";
 import { buildEditPreview, buildExactEditPreviewWindow, type EditPreview } from "../agent/edit-preview";
 import { approvalPreviewNeedsContent, toolApprovalDescription } from "../tools/tool-contracts";
 import { compactDiffLines, diffLines, diffStat, diffTooLarge, type CompactDiffWindow } from "../vault/diff";
@@ -9,16 +10,11 @@ import { normalizeVaultPath } from "../vault/path";
 const MAX_DIFF_DISPLAY_LINES = 400;
 const DEFAULT_DIFF_CONTEXT_LINES = 5;
 
-export interface ApprovalChoice {
-  approved: boolean;
-  /** Remember this decision for the tool (sets a per-tool "allow" override). */
-  remember: boolean;
-}
-
 /** Confirm dialog shown when a tool's approval policy is "ask". */
 export class ApprovalModal extends Modal {
   private decided = false;
-  private resolve: ((choice: ApprovalChoice) => void) | null = null;
+  private denyArmed = false;
+  private resolve: ((choice: UserApprovalChoice) => void) | null = null;
 
   constructor(
     app: App,
@@ -27,7 +23,7 @@ export class ApprovalModal extends Modal {
     super(app);
   }
 
-  ask(): Promise<ApprovalChoice> {
+  ask(): Promise<UserApprovalChoice> {
     return new Promise((resolve) => {
       this.resolve = resolve;
       this.open();
@@ -57,13 +53,43 @@ export class ApprovalModal extends Modal {
       rememberSetting.settingEl.addEventListener(eventName, (event) => event.stopPropagation());
     }
 
+    // Two-step deny: the first click arms the flow and reveals an optional
+    // reason field; the second (or Enter in the field) confirms the denial so
+    // the agent learns *why* instead of the generic "user declined" string.
+    let denyButton: ButtonComponent | undefined;
+    const denyReasonEl = contentEl.createDiv({ cls: "agentic-chat-deny-reason" });
+    denyReasonEl.hide();
+    const reasonInput = denyReasonEl.createEl("textarea", {
+      cls: "agentic-chat-deny-reason-input",
+      attr: { placeholder: "Optional reason sent to the agent", rows: "2" },
+    });
+    reasonInput.addEventListener("keydown", (event) => {
+      if (!denyButton) return;
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        this.decide({ approved: false, remember, reason: reasonInput.value.trim() || undefined });
+      } else if (event.key === "Escape") {
+        // Revert the in-progress deny instead of closing the whole modal.
+        event.stopPropagation();
+        this.disarmDeny(denyButton, denyReasonEl, reasonInput);
+      }
+    });
+
     new Setting(contentEl)
-      .addButton((button) =>
+      .addButton((button) => {
+        denyButton = button;
         button
           .setButtonText("Deny")
           .setClass("mod-warning")
-          .onClick(() => this.decide({ approved: false, remember })),
-      )
+          .onClick(() => {
+            if (!denyButton) return;
+            if (this.denyArmed) {
+              this.decide({ approved: false, remember, reason: reasonInput.value.trim() || undefined });
+            } else {
+              this.armDeny(denyButton, denyReasonEl, reasonInput);
+            }
+          });
+      })
       .addButton((button) =>
         button
           .setButtonText("Allow")
@@ -76,9 +102,29 @@ export class ApprovalModal extends Modal {
     this.scope.register([], "Enter", (event) => {
       if (this.decided || isInteractiveElement(activeDocument.activeElement)) return;
       event.preventDefault();
-      this.decide({ approved: true, remember });
+      if (this.denyArmed) {
+        // Focus left the reason field (e.g. the user clicked the diff preview):
+        // Enter must confirm the in-progress deny, not approve the call.
+        this.decide({ approved: false, remember, reason: reasonInput.value.trim() || undefined });
+      } else {
+        this.decide({ approved: true, remember });
+      }
       return false;
     });
+  }
+
+  private armDeny(button: ButtonComponent, container: HTMLElement, input: HTMLTextAreaElement): void {
+    this.denyArmed = true;
+    container.show();
+    button.setButtonText("Confirm Deny");
+    input.focus();
+  }
+
+  private disarmDeny(button: ButtonComponent, container: HTMLElement, input: HTMLTextAreaElement): void {
+    this.denyArmed = false;
+    container.hide();
+    button.setButtonText("Deny");
+    input.value = "";
   }
 
   onClose(): void {
@@ -247,7 +293,7 @@ export class ApprovalModal extends Modal {
     });
   }
 
-  private decide(choice: ApprovalChoice): void {
+  private decide(choice: UserApprovalChoice): void {
     this.decided = true;
     this.resolve?.(choice);
     this.close();
