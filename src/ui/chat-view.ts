@@ -178,6 +178,8 @@ export class ChatView extends ItemView {
   private mentionCache: MentionCandidate[] | null = null;
   private queuedPromptArmed = false;
   private flushingQueuedPrompt = false;
+  /** Last preview rendered in the pending queue chip; gates no-op chip re-renders while typing. */
+  private pendingChipPreview: string | null = null;
   // Last turn we sent, kept so "retry" re-runs it without re-showing the context preamble.
   private lastSentPrompt: string | null = null;
   private lastSentDisplay: string | null = null;
@@ -652,16 +654,21 @@ export class ChatView extends ItemView {
     });
     // Real user typing both refreshes autocomplete and abandons history navigation.
     // Programmatic value changes (recall) set `.value` directly without an input event.
-    this.inputEl.addEventListener("input", () => {
+    this.inputEl.addEventListener("input", (event) => {
       this.resetHistoryNav();
-      if (this.queuedPromptArmed) {
-        const stillQueued = Boolean(this.inputEl.value.trim());
-        if (!stillQueued) {
+      // Composition (IME) inputs may briefly leave the value empty; don't drop a
+      // queued prompt mid-composition — the trailing non-composing input event
+      // reconciles the state.
+      if (this.queuedPromptArmed && !(event as InputEvent).isComposing) {
+        const text = this.inputEl.value.trim();
+        if (!text) {
           this.queuedPromptArmed = false;
           this.statusEl.setText("");
           this.syncChrome();
+          this.renderChips();
+        } else if (text !== this.pendingChipPreview) {
+          this.renderChips();
         }
-        this.renderChips();
       }
       this.scheduleAutocomplete();
     });
@@ -2380,6 +2387,9 @@ export class ChatView extends ItemView {
       if (text) {
         renderPendingQueueChip(this.chipsEl, { text }, { cancel: () => this.cancelQueuedPrompt() });
       }
+      this.pendingChipPreview = text || null;
+    } else {
+      this.pendingChipPreview = null;
     }
   }
 
