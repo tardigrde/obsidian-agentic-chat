@@ -12,6 +12,7 @@ import {
   resolveLineWindow,
   sliceTextByLines,
   truncateToolOutput,
+  type LineWindow,
 } from "../vault/truncate";
 import {
   builtinToolContractsForSurface,
@@ -224,7 +225,7 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       // Redundant-range guard: the requested lines were already served this
       // session (exactly or inside a wider range) and the file is unchanged, so
       // hand the model a pointer plus the prior content instead of re-pulling.
-      const covered = memo?.coverageFor(requestedWindow(path, range), mtime);
+      const covered = memo?.coverageFor(requestedWindow(path, window), mtime);
       if (covered) {
         return textResult(coveredReadMessage(path, covered), { path, deduplicated: true, covered: true });
       }
@@ -860,15 +861,11 @@ function getSearchableFiles(app: App, rootPath: string, isIgnored: IgnoreMatcher
 }
 
 /**
- * Express a read request as a 1-based line window for the coverage guard.
- * A request with no limit runs to the end of the file, which only a previous
+ * Express a resolved line window as the 1-based window the coverage guard tracks.
+ * A window with no limit runs to the end of the file, which only a previous
  * full read can satisfy.
  */
-function requestedWindow(
-  path: string,
-  range: { offset?: number; limit?: number; startLine?: number; endLine?: number },
-): RequestedWindow {
-  const window = resolveLineWindow(range);
+function requestedWindow(path: string, window: LineWindow): RequestedWindow {
   const start = Math.max(1, window.offset ?? 1);
   if (window.limit === undefined) return { path, start, end: Number.POSITIVE_INFINITY, toEnd: true };
   return { path, start, end: start + Math.max(0, window.limit) - 1, toEnd: false };

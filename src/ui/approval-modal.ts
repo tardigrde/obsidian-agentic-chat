@@ -1,5 +1,6 @@
 import { App, ButtonComponent, Modal, Setting, TFile } from "obsidian";
 import type { ToolApprovalRequest } from "../agent/agent-service";
+import type { UserApprovalChoice } from "../agent/tool-call-controller";
 import { buildEditPreview, buildExactEditPreviewWindow, type EditPreview } from "../agent/edit-preview";
 import { approvalPreviewNeedsContent, toolApprovalDescription } from "../tools/tool-contracts";
 import { compactDiffLines, diffLines, diffStat, diffTooLarge, type CompactDiffWindow } from "../vault/diff";
@@ -9,19 +10,11 @@ import { normalizeVaultPath } from "../vault/path";
 const MAX_DIFF_DISPLAY_LINES = 400;
 const DEFAULT_DIFF_CONTEXT_LINES = 5;
 
-export interface ApprovalChoice {
-  approved: boolean;
-  /** Remember this decision for the tool (sets a per-tool "allow" override). */
-  remember: boolean;
-  /** Optional reason the user typed when denying; echoed back to the agent. */
-  reason?: string;
-}
-
 /** Confirm dialog shown when a tool's approval policy is "ask". */
 export class ApprovalModal extends Modal {
   private decided = false;
   private denyArmed = false;
-  private resolve: ((choice: ApprovalChoice) => void) | null = null;
+  private resolve: ((choice: UserApprovalChoice) => void) | null = null;
 
   constructor(
     app: App,
@@ -30,7 +23,7 @@ export class ApprovalModal extends Modal {
     super(app);
   }
 
-  ask(): Promise<ApprovalChoice> {
+  ask(): Promise<UserApprovalChoice> {
     return new Promise((resolve) => {
       this.resolve = resolve;
       this.open();
@@ -300,7 +293,7 @@ export class ApprovalModal extends Modal {
     });
   }
 
-  private decide(choice: ApprovalChoice): void {
+  private decide(choice: UserApprovalChoice): void {
     this.decided = true;
     this.resolve?.(choice);
     this.close();
