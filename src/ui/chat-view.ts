@@ -376,6 +376,10 @@ export class ChatView extends ItemView {
   /** Re-render the transcript + chrome for the active tab (after a switch/close). */
   private renderActiveTab(): void {
     this.createSessionActivationCoordinator().renderActiveTab();
+    // Chips depend on the tab state just restored by loadActiveState(); the
+    // coordinator only syncs chrome, so re-render them here or a queued-prompt
+    // chip (and context chips) would stay stale/invisible after a tab switch.
+    this.renderChips();
   }
 
   private async switchToTab(index: number): Promise<void> {
