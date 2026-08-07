@@ -4,6 +4,8 @@ import {
   clickSettingButton,
   openAgenticChatSettings,
   readAgenticChatSettings,
+  readSecret,
+  readStoredData,
   selectSettingsTab,
   setSettingRange,
   setSettingSelect,
@@ -143,19 +145,6 @@ async function resetSettingsForUiSpec(): Promise<void> {
     app.secretStorage?.setSecret?.("agentic-chat-langfuse-secret-key", "");
     await plugin.saveSettings?.();
   }, OPENAI_COMPATIBLE_KEY_SECRET_ID);
-}
-
-async function readSecret(id: string): Promise<string> {
-  return await browser.executeObsidian(async ({ app }, secretId) => {
-    return (app as unknown as { secretStorage?: { getSecret?: (id: string) => string | null | undefined } }).secretStorage?.getSecret?.(secretId) ?? "";
-  }, id);
-}
-
-async function readStoredData(): Promise<Record<string, unknown>> {
-  return await browser.executeObsidian(async ({ app }) => {
-    const raw = await app.vault.adapter.read(`${app.vault.configDir}/plugins/agentic-chat/data.json`);
-    return JSON.parse(raw) as Record<string, unknown>;
-  });
 }
 
 describe("agentic-chat settings UI", function () {

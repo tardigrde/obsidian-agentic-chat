@@ -1,6 +1,6 @@
 import { $, browser, expect } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
-import { openAgenticChatSettings, selectSettingsTab, waitForSetting } from "../support/settings-ui";
+import { openAgenticChatSettings, closeAgenticChatSettings, selectSettingsTab, waitForSetting } from "../support/settings-ui";
 
 const VIEW_TYPE_AGENT_CHAT = "agentic-chat-chat-view";
 const MOBILE_WIDTH = Number(process.env.AGENTIC_CHAT_E2E_VIEWPORT_WIDTH || 390);
@@ -248,7 +248,7 @@ describe("agentic-chat mobile viewport", function () {
     await waitForSetting("Skills folder");
     await assertFits(".agentic-chat-settings-tabs", "settings tabs");
     await assertFits(".agentic-chat-settings-tabbody", "settings body");
-    await closeOpenModals();
+    await closeAgenticChatSettings();
     await openChat();
   });
 
