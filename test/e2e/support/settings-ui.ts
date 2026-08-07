@@ -2,7 +2,35 @@ import { $, browser } from "@wdio/globals";
 
 const PLUGIN_ID = "agentic-chat";
 
+// Obsidian 1.13+ opens Settings in a separate popout window while the chat view
+// stays in the main window. The DOM helpers below must query the popout, and
+// app-level reads (executeObsidian) must run from the main window, so keep both
+// handles and switch as needed.
+let mainWindowId: string | undefined;
+let settingsWindowId: string | undefined;
+
+async function focusMainWindow(): Promise<void> {
+  if (mainWindowId && (await browser.getWindowHandles()).includes(mainWindowId)) {
+    await browser.switchToWindow(mainWindowId);
+  }
+}
+
+async function focusSettingsWindow(): Promise<void> {
+  if (settingsWindowId) await browser.switchToWindow(settingsWindowId);
+}
+
+/** Run an app-level (Obsidian API) callback from the main window. */
+async function fromMainWindow<T>(fn: () => Promise<T>): Promise<T> {
+  await focusMainWindow();
+  try {
+    return await fn();
+  } finally {
+    if (settingsWindowId) await focusSettingsWindow();
+  }
+}
+
 export async function openAgenticChatSettings(): Promise<void> {
+  mainWindowId = await browser.getWindowHandle();
   const opened = await browser.executeObsidian(async ({ app }, pluginId) => {
     const settings = (app as unknown as {
       setting?: {
@@ -26,10 +54,26 @@ export async function openAgenticChatSettings(): Promise<void> {
     }, "Agentic Chat");
   }
 
+  // Follow the settings into its popout window on Obsidian 1.13+.
+  const handles = await browser.getWindowHandles();
+  settingsWindowId = handles.find((handle) => handle !== mainWindowId) ?? mainWindowId;
+  await focusSettingsWindow();
+
   await $(".agentic-chat-settings-tabs").waitForExist();
 }
 
+export async function closeAgenticChatSettings(): Promise<void> {
+  await focusSettingsWindow();
+  await browser.execute(() => {
+    for (const close of Array.from(document.querySelectorAll<HTMLElement>(".modal-close-button"))) close.click();
+    for (const backdrop of Array.from(document.querySelectorAll<HTMLElement>(".modal-bg"))) backdrop.click();
+  });
+  settingsWindowId = undefined;
+  await focusMainWindow();
+}
+
 export async function selectSettingsTab(label: string): Promise<void> {
+  await focusSettingsWindow();
   await browser.execute((tabLabel) => {
     const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".agentic-chat-settings-tab"));
     const tab = tabs.find((candidate) => candidate.innerText.trim() === tabLabel);
@@ -48,6 +92,7 @@ export async function selectSettingsTab(label: string): Promise<void> {
 }
 
 export async function waitForSetting(name: string): Promise<void> {
+  await focusSettingsWindow();
   await browser.waitUntil(
     async () =>
       await browser.execute((settingName) => {
@@ -81,6 +126,7 @@ export async function setSettingSelect(name: string, value: string): Promise<voi
 }
 
 export async function setSettingText(name: string, value: string): Promise<void> {
+  await focusSettingsWindow();
   await waitForSetting(name);
   await browser.execute(
     ({ settingName, nextValue }) => {
@@ -104,6 +150,7 @@ export async function setSettingText(name: string, value: string): Promise<void>
 }
 
 export async function setSettingRange(name: string, value: number): Promise<void> {
+  await focusSettingsWindow();
   await waitForSetting(name);
   await browser.execute(
     ({ settingName, nextValue }) => {
@@ -124,6 +171,7 @@ export async function setSettingRange(name: string, value: number): Promise<void
 }
 
 export async function setSettingToggle(name: string, checked: boolean): Promise<void> {
+  await focusSettingsWindow();
   await waitForSetting(name);
   await browser.execute(
     ({ settingName, nextChecked }) => {
@@ -199,13 +247,32 @@ export async function waitForSettingButton(name: string, buttonText: string): Pr
 }
 
 export async function readAgenticChatSettings<T = Record<string, unknown>>(): Promise<T> {
-  return await browser.executeObsidian(async ({ app }, pluginId) => {
-    const plugin = (app as unknown as {
-      plugins?: { plugins?: Record<string, { settings?: unknown }> };
-    }).plugins?.plugins?.[pluginId];
-    if (!plugin) throw new Error("agentic-chat plugin not found");
-    return JSON.parse(JSON.stringify(plugin.settings)) as T;
-  }, PLUGIN_ID);
+  return await fromMainWindow(async () => {
+    return await browser.executeObsidian(async ({ app }, pluginId) => {
+      const plugin = (app as unknown as {
+        plugins?: { plugins?: Record<string, { settings?: unknown }> };
+      }).plugins?.plugins?.[pluginId];
+      if (!plugin) throw new Error("agentic-chat plugin not found");
+      return JSON.parse(JSON.stringify(plugin.settings)) as T;
+    }, PLUGIN_ID);
+  });
+}
+
+export async function readSecret(id: string): Promise<string> {
+  return await fromMainWindow(async () => {
+    return await browser.executeObsidian(async ({ app }, secretId) => {
+      return (app as unknown as { secretStorage?: { getSecret?: (id: string) => string | null | undefined } }).secretStorage?.getSecret?.(secretId) ?? "";
+    }, id);
+  });
+}
+
+export async function readStoredData(): Promise<Record<string, unknown>> {
+  return await fromMainWindow(async () => {
+    return await browser.executeObsidian(async ({ app }) => {
+      const raw = await app.vault.adapter.read(`${app.vault.configDir}/plugins/agentic-chat/data.json`);
+      return JSON.parse(raw) as Record<string, unknown>;
+    });
+  });
 }
 
 export async function waitForAgenticChatSetting(
