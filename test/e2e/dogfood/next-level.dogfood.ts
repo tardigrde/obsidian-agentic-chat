@@ -685,8 +685,6 @@ describe("agentic-chat next-level dogfood", function () {
       "restricted final",
       "metamorphic clarify",
       "metamorphic final",
-      "cache replay",
-      "cache final",
       "chaos denied tools",
       "chaos final",
       "post reload refine",

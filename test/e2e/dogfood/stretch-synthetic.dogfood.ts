@@ -445,7 +445,8 @@ describe("agentic-chat stretched synthetic dogfood", function () {
     expect(diagnostics).toContain("Tool budget");
     expect(diagnostics).toContain("active");
 
-    await runPrompt("Try to write while chaos settings deny it.");
+    const chaosPrompt = "Try to write while chaos settings deny it.";
+    await runPrompt(chaosPrompt);
     expect(await noteExists("Dogfood Output/Chaos Should Not Exist.md")).toBe(false);
 
     const stats = await sessionStats();
