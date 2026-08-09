@@ -18,6 +18,19 @@ describe("agentic-chat subagent live dogfood", function () {
 
     await configureLivePlugin({ apiKey, baseUrl, model, enableBuiltinAgents: true });
 
+    // Disable the tool budget: this spec validates live subagent dispatch, and the
+    // budget (default 2% of the context window) silently drops optional tools such
+    // as `subagent` once the full tool schema grows past the threshold.
+    await browser.executeObsidian(async ({ app }) => {
+      const plugin = (app as unknown as {
+        plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }> };
+      }).plugins?.plugins?.["agentic-chat"];
+      if (!plugin?.settings) return;
+      const settings = plugin.settings as { toolBudget: { enabled: boolean; thresholdPercent: number } };
+      settings.toolBudget = { enabled: false, thresholdPercent: 2 };
+      await plugin.saveSettings?.();
+    });
+
     await browser.executeObsidianCommand("agentic-chat:open-chat");
     await $(".agentic-chat-view").waitForExist();
   });
