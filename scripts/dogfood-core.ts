@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, realpath, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 
 export const DOGFOOD_MANIFEST_VERSION = 1;
@@ -15,7 +15,6 @@ export interface DogfoodManifest {
   runId: string;
   createdAt: string;
   vaultPath: string;
-  externalRoot: string;
   secretText: string;
   expectedActiveNote: string;
   ignoredGlobs: string[];
@@ -23,14 +22,11 @@ export interface DogfoodManifest {
   deniedMutationPaths: string[];
   requiredTools: string[];
   requiredGeneratedNotes: DogfoodGeneratedNoteExpectation[];
-  repeatedExternalReads: Array<{ path: string; minCount: number }>;
-  maxRepeatedExternalReadCount?: number;
   maxUserMessageChars: number;
 }
 
 export interface GenerateDogfoodVaultOptions {
   vaultPath: string;
-  externalRoot: string;
   runId?: string;
   secretText?: string;
 }
@@ -52,7 +48,6 @@ export interface DogfoodInvariantResult {
     toolStarts: Record<string, number>;
     approvalDecisions: Record<string, number>;
     toolErrors: Record<string, number>;
-    repeatedExternalReads: Record<string, number>;
     cacheHits: number;
     mutationApprovals: number;
     checkpoints: number;
@@ -93,7 +88,6 @@ type ToolDiff =
 
 export async function generateDogfoodVault(options: GenerateDogfoodVaultOptions): Promise<DogfoodManifest> {
   const vaultPath = path.resolve(options.vaultPath);
-  const externalRoot = path.resolve(options.externalRoot);
   const runId = options.runId ?? timestampRunId();
   const secretText = options.secretText ?? DEFAULT_DOGFOOD_SECRET;
   const manifest: DogfoodManifest = {
@@ -101,7 +95,6 @@ export async function generateDogfoodVault(options: GenerateDogfoodVaultOptions)
     runId,
     createdAt: new Date().toISOString(),
     vaultPath,
-    externalRoot,
     secretText,
     expectedActiveNote: "Dogfood Scratch.md",
     ignoredGlobs: ["Restricted/**", "*.secret.md"],
@@ -120,7 +113,6 @@ export async function generateDogfoodVault(options: GenerateDogfoodVaultOptions)
       "rename",
       "delete",
       "set_properties",
-      "external_inspect",
       "search_memory",
       "ask_user",
     ],
@@ -128,7 +120,7 @@ export async function generateDogfoodVault(options: GenerateDogfoodVaultOptions)
       {
         path: "Generated/Oracle.md",
         frontmatter: true,
-        requiredSubstrings: ["source: external://foreign-vault/Imported.md", "[[Generated/Oracle Companion]]", "verified: true"],
+        requiredSubstrings: ["# Oracle", "[[Generated/Oracle Companion]]", "verified: true"],
       },
       {
         path: "Generated/Oracle Companion.md",
@@ -161,14 +153,11 @@ export async function generateDogfoodVault(options: GenerateDogfoodVaultOptions)
         requiredSubstrings: ["Scripted replay continued after /new."],
       },
     ],
-    repeatedExternalReads: [{ path: "foreign-vault/Imported.md", minCount: 2 }],
     maxUserMessageChars: 2_500,
   };
 
   await mkdir(vaultPath, { recursive: true });
-  await mkdir(externalRoot, { recursive: true });
   await seedVault(vaultPath, manifest);
-  await seedExternalRoot(externalRoot, secretText);
   await writeManifest(manifest);
   return manifest;
 }
@@ -181,7 +170,6 @@ export async function loadDogfoodManifest(manifestPath: string): Promise<Dogfood
   return {
     ...manifest,
     vaultPath: path.resolve(manifest.vaultPath),
-    externalRoot: path.resolve(manifest.externalRoot),
   };
 }
 
@@ -193,7 +181,6 @@ export async function assertDogfoodInvariants(manifestOrPath: DogfoodManifest | 
   const toolStarts: Record<string, number> = {};
   const approvalDecisions: Record<string, number> = {};
   const toolErrors: Record<string, number> = {};
-  const repeatedExternalReads: Record<string, number> = {};
   const approvedMutationToolCalls = new Set<string>();
   const checkpointToolCalls = new Set<string>();
   const completedToolCalls = new Set<string>();
@@ -243,11 +230,6 @@ export async function assertDogfoodInvariants(manifestOrPath: DogfoodManifest | 
 
     if (event.category === "tool_call" && event.action === "start" && event.toolName) {
       toolStarts[event.toolName] = (toolStarts[event.toolName] ?? 0) + 1;
-      if (event.toolName === "external_inspect") {
-        const action = typeof event.args?.action === "string" ? event.args.action : "";
-        const targetPath = typeof event.args?.path === "string" ? event.args.path : "";
-        if (action === "read") repeatedExternalReads[targetPath] = (repeatedExternalReads[targetPath] ?? 0) + 1;
-      }
     }
 
     if (event.category === "tool_call" && event.action === "end" && event.toolName) {
@@ -297,27 +279,6 @@ export async function assertDogfoodInvariants(manifestOrPath: DogfoodManifest | 
     findings.push(error("context", `Max user message was ${maxUserMessageChars} chars, over limit ${manifest.maxUserMessageChars}.`));
   }
 
-  for (const expected of manifest.repeatedExternalReads) {
-    const count = repeatedExternalReads[expected.path] ?? 0;
-    if (count < expected.minCount) {
-      findings.push(error("cache", `Expected ${expected.path} to be read at least ${expected.minCount} times; saw ${count}.`));
-    }
-  }
-  if (manifest.repeatedExternalReads.length > 0 && cacheHits === 0) {
-    findings.push(error("cache", "No visible cached tool result was recorded."));
-  }
-  if (manifest.maxRepeatedExternalReadCount !== undefined) {
-    for (const [targetPath, count] of Object.entries(repeatedExternalReads)) {
-      if (count > manifest.maxRepeatedExternalReadCount) {
-        findings.push(
-          warning(
-            "tool-efficiency",
-            `External read ${targetPath} was repeated ${count} times, over warning threshold ${manifest.maxRepeatedExternalReadCount}.`,
-          ),
-        );
-      }
-    }
-  }
 
   for (const deniedPath of manifest.deniedMutationPaths) {
     if (await exists(path.join(manifest.vaultPath, deniedPath))) {
@@ -361,7 +322,6 @@ export async function assertDogfoodInvariants(manifestOrPath: DogfoodManifest | 
       toolStarts,
       approvalDecisions,
       toolErrors,
-      repeatedExternalReads,
       cacheHits,
       mutationApprovals,
       checkpoints,
@@ -385,7 +345,6 @@ export function formatDogfoodReport(result: DogfoodInvariantResult): string {
     `Status: ${result.ok ? "pass" : "fail"}`,
     `Created: ${result.manifest.createdAt}`,
     `Vault: ${result.manifest.vaultPath}`,
-    `External root: ${result.manifest.externalRoot}`,
     "",
     "## Sessions",
     ...result.sessionFiles.map((file) => `- ${file}`),
@@ -406,9 +365,6 @@ export function formatDogfoodReport(result: DogfoodInvariantResult): string {
     "",
     "## Tool Errors",
     ...objectRows(result.metrics.toolErrors),
-    "",
-    "## Repeated External Reads",
-    ...objectRows(result.metrics.repeatedExternalReads),
     "",
     "## Findings",
     ...(result.findings.length === 0
@@ -463,31 +419,10 @@ async function seedVault(vaultPath: string, manifest: DogfoodManifest): Promise<
   })}\n`);
 }
 
-async function seedExternalRoot(externalRoot: string, secretText: string): Promise<void> {
-  await writeText(externalRoot, "foreign-vault/Imported.md", "# Imported\n\nThis is a migration source note for synthetic dogfood.\n");
-  await writeText(externalRoot, "repos/service-a/README.md", "# service-a\n\nDevOps service with Kubernetes, Terraform, and CI notes.\n");
-  await writeText(externalRoot, "repos/service-a/package.json", "{\n  \"name\": \"service-a\",\n  \"scripts\": { \"test\": \"vitest\" }\n}\n");
-  await writeText(externalRoot, "repos/service-a/.gitignore", "ignored-by-git.txt\n");
-  await writeText(externalRoot, "repos/service-a/ignored-by-git.txt", "This should be hidden when honorGitignore is true.\n");
-  await writeText(externalRoot, "repos/service-b/Chart.yaml", "apiVersion: v2\nname: service-b\nversion: 0.1.0\n");
-  await writeText(externalRoot, "secrets/.env", `TOKEN=${secretText}\n`);
-  await createSymlinkIfPossible(externalRoot, "repos/service-a/self-root-link", externalRoot);
-}
-
 async function writeText(root: string, relativePath: string, content: string): Promise<void> {
   const target = path.join(root, relativePath);
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, content, "utf8");
-}
-
-async function createSymlinkIfPossible(root: string, relativePath: string, target: string): Promise<void> {
-  const linkPath = path.join(root, relativePath);
-  try {
-    await mkdir(path.dirname(linkPath), { recursive: true });
-    await symlink(target, linkPath, "dir");
-  } catch {
-    // Symlinks are an adversarial bonus, not a required fixture on every platform.
-  }
 }
 
 async function sessionJsonlFiles(vaultPath: string): Promise<string[]> {
@@ -580,14 +515,8 @@ function objectRows(values: Record<string, number>): string[] {
 }
 
 function roughEdgeFollowUps(result: DogfoodInvariantResult): string[] {
-  const repeated = Object.entries(result.metrics.repeatedExternalReads)
-    .filter(([, count]) => count > 1)
-    .sort((a, b) => b[1] - a[1]);
   const failedTools = Object.entries(result.metrics.toolErrors).sort((a, b) => b[1] - a[1]);
   const rows = [
-    repeated.length
-      ? `- Review repeated external reads: ${repeated.map(([key, count]) => `${key} (${count})`).join(", ")}.`
-      : "- No repeated external reads crossed the reporting threshold.",
     failedTools.length
       ? `- Review expected vs unexpected tool errors: ${failedTools.map(([key, count]) => `${key} (${count})`).join(", ")}.`
       : "- No tool errors were recorded.",

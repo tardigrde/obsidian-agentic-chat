@@ -19,7 +19,6 @@ You have these tool categories. Each is callable via function call when present 
 - **Documents** (optional): import_pdf, import_document.
 - **MCP** (optional): remote tools from configured MCP servers.
 - **Ask-user**: ask_user — ask the user a question with optional choices.
-- **External workspace** (desktop only, optional): external_inspect — read/list/search an external root directory.
 - **Read-skill**: read_skill — load the full body of any skill by name, including this one.
 
 ## Edit semantics

@@ -1,9 +1,7 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
-import os from "node:os";
 
 const TURN_TIMEOUT_MS = Number(process.env.DOGFOOD_TURN_TIMEOUT_MS || 120_000);
-const EXTERNAL_ROOT = process.env.DOGFOOD_EXTERNAL_ROOT?.trim() || `${os.tmpdir()}/agentic-chat-dogfood-external-root`;
 const SECRET_TEXT = "SYNTHETIC_SECRET_DO_NOT_LEAK";
 
 type ScriptedTurn = {
@@ -107,7 +105,7 @@ async function transcriptText(): Promise<string> {
 }
 
 async function configurePlugin(): Promise<boolean> {
-  return await browser.executeObsidian(async ({ app }, externalRoot) => {
+  return await browser.executeObsidian(async ({ app }) => {
     const plugin = (app as unknown as {
       plugins?: { plugins?: Record<string, SettingsPlugin> };
     }).plugins?.plugins?.["agentic-chat"];
@@ -119,7 +117,6 @@ async function configurePlugin(): Promise<boolean> {
       enableBuiltinAgents: boolean;
       ignoredGlobs: string;
       approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
-      external: { enabled: boolean; rootPath: string; approval: string; honorGitignore: boolean; ignoredGlobs: string };
       toolBudget: { enabled: boolean; thresholdPercent: number };
       web: { enabled: boolean };
       mcp: { enabled: boolean; servers: unknown[]; proxyUrl: string; noProxy: string };
@@ -132,18 +129,13 @@ async function configurePlugin(): Promise<boolean> {
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};
     settings.approval.workingDirs = [];
-    settings.external.enabled = true;
-    settings.external.rootPath = externalRoot;
-    settings.external.approval = "allow";
-    settings.external.honorGitignore = true;
-    settings.external.ignoredGlobs = [".env", ".env.*", "*.key", "*.pem"].join("\n");
     settings.toolBudget.enabled = false;
     settings.toolBudget.thresholdPercent = 25;
     settings.web.enabled = false;
     settings.mcp = { enabled: false, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] };
     await plugin.saveSettings?.();
     return true;
-  }, EXTERNAL_ROOT);
+  });
 }
 
 async function setChaosSettings(): Promise<void> {
@@ -154,11 +146,9 @@ async function setChaosSettings(): Promise<void> {
     if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
     const settings = plugin.settings as {
       approval: { perTool: Record<string, string> };
-      external: { approval: string };
       toolBudget: { enabled: boolean; thresholdPercent: number };
     };
     settings.approval.perTool = { ...settings.approval.perTool, write: "deny" };
-    settings.external.approval = "deny";
     settings.toolBudget.enabled = true;
     settings.toolBudget.thresholdPercent = 1;
     await plugin.saveSettings?.();
@@ -173,11 +163,9 @@ async function restoreSafeSettings(): Promise<void> {
     if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
     const settings = plugin.settings as {
       approval: { perTool: Record<string, string> };
-      external: { approval: string };
       toolBudget: { enabled: boolean; thresholdPercent: number };
     };
     settings.approval.perTool = {};
-    settings.external.approval = "allow";
     settings.toolBudget.enabled = false;
     settings.toolBudget.thresholdPercent = 25;
     await plugin.saveSettings?.();
@@ -342,9 +330,6 @@ function scriptedTurns(): ScriptedTurn[] {
       { id: "m-props", name: "vault_inspect", args: { action: "properties", path: "Messy/Home.md" } },
       { id: "m-read", name: "read", args: { path: "Messy/Home.md" } },
       { id: "m-memory", name: "search_memory", args: { query: "DevOps knowledge-base", scope: "vault", maxResults: 3 } },
-      { id: "m-ext-list", name: "external_inspect", args: { action: "list", path: "" } },
-      { id: "m-ext-read", name: "external_inspect", args: { action: "read", path: "foreign-vault/Imported.md" } },
-      { id: "m-ext-search", name: "external_inspect", args: { action: "search", path: "", query: "migration source", kind: "content", maxMatches: 5 } },
       {
         id: "m-write",
         name: "write",
@@ -363,10 +348,6 @@ function scriptedTurns(): ScriptedTurn[] {
       { id: "m-delete", name: "delete", args: { path: "Messy/Duplicate stale.md" } },
     ]),
     textTurn("matrix final", "Synthetic matrix complete."),
-    toolBatch("cache replay", [
-      { id: "cache-read-foreign", name: "external_inspect", args: { action: "read", path: "foreign-vault/Imported.md" } },
-    ]),
-    textTurn("cache final", "External cache replay complete."),
     toolBatch("restricted active note", [
       { id: "r-active", name: "vault_inspect", args: { action: "active_note", includeContent: true } },
     ]),
@@ -380,7 +361,6 @@ function scriptedTurns(): ScriptedTurn[] {
     ]),
     textTurn("ask final", "Clarification was honored; cleanup stayed scoped."),
     toolBatch("chaos denied tools", [
-      { id: "c-ext-deny", name: "external_inspect", args: { action: "read", path: "foreign-vault/Imported.md" } },
       { id: "c-write-deny", name: "write", args: { path: "Dogfood Output/Chaos Should Not Exist.md", content: "denied" } },
     ]),
     textTurn("chaos final", "Chaos settings denied risky tools cleanly."),
@@ -415,18 +395,6 @@ function scriptedTurns(): ScriptedTurn[] {
       { id: "l-graph", name: "vault_inspect", args: { action: "local_graph", path: "Long Workflow/Index.md" } },
     ]),
     textTurn("long refine final", "Long workflow refined and stale duplicate removed."),
-    toolBatch("migration import", [
-      { id: "x-read-foreign", name: "external_inspect", args: { action: "read", path: "foreign-vault/Imported.md" } },
-      {
-        id: "x-write-import",
-        name: "write",
-        args: {
-          path: "Imported/Foreign Vault Imported.md",
-          content: "---\ntags: [dogfood, migration]\nsource: external://foreign-vault/Imported.md\n---\n# Imported\nMigrated from external foreign vault.\n",
-        },
-      },
-    ]),
-    textTurn("migration final", "Cross-vault import finished."),
   ];
 }
 
@@ -449,16 +417,9 @@ describe("agentic-chat stretched synthetic dogfood", function () {
     expect(matrix).toContain("verified: true");
 
     const toolNames = (await scriptedToolNamesByCall())[0] ?? [];
-    for (const expected of ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "external_inspect", "search_memory", "ask_user"]) {
+    for (const expected of ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "search_memory", "ask_user"]) {
       expect(toolNames).toContain(expected);
     }
-  });
-
-  it("observes repeated external reads as cache hits", async function () {
-    await runPrompt("Read the same external imported note again to verify cache observability.");
-
-    const raw = await latestSessionText();
-    expect(raw).toContain('"cached":true');
   });
 
   it("keeps ignored active notes private in restricted vault shape", async function () {
@@ -484,11 +445,10 @@ describe("agentic-chat stretched synthetic dogfood", function () {
     expect(diagnostics).toContain("Tool budget");
     expect(diagnostics).toContain("active");
 
-    await runPrompt("Try an external read and write while chaos settings deny them.");
+    await runPrompt("Try to write while chaos settings deny it.");
     expect(await noteExists("Dogfood Output/Chaos Should Not Exist.md")).toBe(false);
 
     const stats = await sessionStats();
-    expect(stats.approvalDecisions["external_inspect:denied"]).toBeGreaterThanOrEqual(1);
     expect(stats.approvalDecisions["write:denied"]).toBeGreaterThanOrEqual(1);
 
     await restoreSafeSettings();
@@ -513,21 +473,11 @@ describe("agentic-chat stretched synthetic dogfood", function () {
     expect(await readNote("Long Workflow/Index.md")).toContain("Refined with useful detail");
   });
 
-  it("imports a note from a foreign vault-shaped external root", async function () {
-    await runPrompt("Import the selected note from the external foreign vault into this vault.");
-
-    expect(await noteExists("Imported/Foreign Vault Imported.md")).toBe(true);
-    const imported = await readNote("Imported/Foreign Vault Imported.md");
-    expect(imported).toContain("external://foreign-vault/Imported.md");
-  });
-
   it("keeps replay and observability evidence within rough-edge thresholds", async function () {
     const labels = await scriptedCallLabels();
     expect(labels).toEqual([
       "matrix tools",
       "matrix final",
-      "cache replay",
-      "cache final",
       "restricted active note",
       "restricted final",
       "ambiguous ask",
@@ -538,20 +488,16 @@ describe("agentic-chat stretched synthetic dogfood", function () {
       "long create final",
       "long refine",
       "long refine final",
-      "migration import",
-      "migration final",
     ]);
 
     const raw = await latestSessionText();
-    expect(raw).toContain('"cached":true');
     expect(raw).not.toContain(SECRET_TEXT);
 
     const stats = await sessionStats();
     expect(stats.maxUserMessageChars).toBeLessThan(2_500);
-    for (const tool of ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "external_inspect", "search_memory", "ask_user"]) {
+    for (const tool of ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "search_memory", "ask_user"]) {
       expect(stats.toolStarts[tool]).toBeGreaterThanOrEqual(1);
     }
-    expect(stats.toolErrors.external_inspect).toBeGreaterThanOrEqual(1);
     expect(stats.toolErrors.write).toBeGreaterThanOrEqual(1);
   });
 

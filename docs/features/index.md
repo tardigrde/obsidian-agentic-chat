@@ -70,7 +70,7 @@ Agentic Chat turns the Obsidian sidebar into an agent workspace rather than a pl
 - Optional web search and URL fetch.
 - Optional HTTPS Streamable HTTP MCP tools.
 - Optional OTLP or Langfuse observability export.
-- Artifact system for large tool outputs and external inspection cache entries.
+- Artifact system for large tool outputs.
 - `read_skill` tool to load full skill content on demand.
 
 ## Todo tracking

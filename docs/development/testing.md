@@ -35,7 +35,7 @@ rtk npm run test:e2e -- --spec test/e2e/specs/smoke.e2e.ts
 ## Dogfood e2e
 
 `npm run test:e2e:dogfood` is the expensive high-coverage e2e target. It
-generates a fresh adversarial vault plus external workspace under
+generates a fresh adversarial vault under
 `logs/dogfood-runs/<run-id>/`, launches real Obsidian through WDIO, drives the
 scripted dogfood scenario, then asserts the dogfood invariant oracle and writes a
 run report.
@@ -86,7 +86,7 @@ Use the same dogfood run id when you want to isolate static prompt/tool metadata
 changes. Use separate dogfood run ids when the candidate also changes live or
 scripted behavior. Add `--fail-on-regression` to the compare command for CI jobs
 that should reject extra findings, larger context/tool schemas, more duplicate
-tool calls, more repeated external path actions, more tool errors, or lost cache
+tool calls, more tool errors, or lost cache
 hits.
 
 ## Deterministic replay
@@ -124,7 +124,7 @@ npm run analyze:session -- logs/dogfood-runs/<run-id>/vault/.obsidian/plugins/ag
 
 The JSON output is stable enough for eval assertions. The Markdown output is
 for human triage and highlights per-turn token use, cache hits, active note
-context, repeated `external_inspect` path actions, duplicate exact tool calls,
+context, duplicate exact tool calls,
 approval denials, and tool errors.
 
 Compare two dogfood runs when validating a prompt/tool-description change:
@@ -166,9 +166,7 @@ The broader live-provider gate accepts the same env-file option:
 npm run verify:provider-live -- --env-file .env
 ```
 
-Use the live e2e specs only when validating real external calls.
+Use the live e2e specs only when validating real model calls.
 When running a live dogfood spec through `test:e2e:dogfood`, pass
 `--skip-post-invariants` and let the live spec write its own report; the default
 post-run invariant oracle is scoped to the synthetic scripted dogfood manifest.
-Live dogfood manifests can set `maxRepeatedExternalReadCount` to surface
-repeated `external_inspect` reads as warnings without failing the run.

@@ -5,7 +5,6 @@ import type { WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
 import type { ReadMemo } from "../vault/read-memo";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import type { ExternalInspectCache } from "../tools/external-workspace";
 import type { AgentProfile } from "./subagents";
 import {
   EMPTY_AGENT_RUNTIME_RESOURCES,
@@ -39,7 +38,6 @@ export class AgentRuntimeResourceState {
   private resources: AgentRuntimeResources = EMPTY_AGENT_RUNTIME_RESOURCES;
   private reloadedAt: string | null = null;
   private readonly toolBudgetState = createToolBudgetState();
-  private readonly externalInspectCache: ExternalInspectCache = new Map();
   private toolBudgetSnapshot: ToolBudgetSnapshot = {
     enabled: DEFAULT_TOOL_BUDGET_SETTINGS.enabled,
     active: false,
@@ -78,7 +76,6 @@ export class AgentRuntimeResourceState {
 
   clearSessionState(): void {
     resetToolBudgetState(this.toolBudgetState);
-    this.externalInspectCache.clear();
     const settings = this.options.getSettings();
     this.toolBudgetSnapshot = {
       enabled: settings.toolBudget.enabled,
@@ -123,7 +120,6 @@ export class AgentRuntimeResourceState {
       subagentTool,
       contextWindow: buildOptions.contextWindow,
       toolBudgetState: this.toolBudgetState,
-      externalInspectCache: this.externalInspectCache,
     });
     this.toolBudgetSnapshot = result.toolBudget;
     return result.tools;

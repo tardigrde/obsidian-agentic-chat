@@ -5,7 +5,6 @@ import {
   AgenticChatSettingTab,
   applyOpenAICompatiblePreset,
   apiKeyForProvider,
-  DEFAULT_EXTERNAL_IGNORED_GLOBS,
   DEFAULT_SETTINGS,
   mergeSettings,
   OPENAI_COMPATIBLE_PRESETS,
@@ -61,39 +60,6 @@ describe("mergeSettings — working directories", () => {
       approval: { mutating: "ask", perTool: {}, workingDirs: "Notes" as unknown as string[] },
     });
     expect(merged.approval.workingDirs).toEqual([]);
-  });
-});
-
-describe("mergeSettings — external workspace root", () => {
-  it("defaults the external root feature off with ask approval and secret ignores", () => {
-    expect(mergeSettings(null).external).toEqual({
-      enabled: false,
-      rootPath: "",
-      approval: "ask",
-      honorGitignore: true,
-      ignoredGlobs: DEFAULT_EXTERNAL_IGNORED_GLOBS,
-    });
-  });
-
-  it("heals stored external root settings", () => {
-    const merged = mergeSettings({
-      external: {
-        enabled: true,
-        rootPath: " /workspace/code ",
-        approval: "deny",
-        honorGitignore: false,
-        ignoredGlobs: "tmp/\n.env.local",
-      },
-    });
-
-    expect(merged.external).toEqual({
-      enabled: true,
-      rootPath: "/workspace/code",
-      approval: "deny",
-      honorGitignore: false,
-      ignoredGlobs: "tmp/\n.env.local",
-    });
-    expect(mergeSettings({ external: { approval: "wat" } as never }).external.approval).toBe("ask");
   });
 });
 

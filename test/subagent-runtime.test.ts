@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import * as path from "node:path";
+import { rm } from "node:fs/promises";
 import type { App } from "obsidian";
 import type { Model } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
@@ -58,14 +55,7 @@ afterEach(async () => {
   }
 });
 
-async function tempDir(): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), "agentic-chat-subagent-"));
-  tempRoots.push(root);
-  return root;
-}
-
-const artifactStore: ToolArtifactStoreLike = {
-  async writeArtifact(input) {
+const artifactStore: ToolArtifactStoreLike = {  async writeArtifact(input) {
     return {
       id: "artifact-1",
       label: input.label,
@@ -101,28 +91,6 @@ const artifactStore: ToolArtifactStoreLike = {
     ];
   },
 };
-
-function recordingArtifactStore(): ToolArtifactStoreLike & { writes: Array<{ sourceToolName: string; pinned?: boolean }> } {
-  const writes: Array<{ sourceToolName: string; pinned?: boolean }> = [];
-  return {
-    writes,
-    async writeArtifact(input) {
-      writes.push({ sourceToolName: input.sourceToolName, pinned: input.pinned });
-      return {
-        id: `artifact-${writes.length}`,
-        label: input.label,
-        sourceToolName: input.sourceToolName,
-        contentType: input.contentType ?? "text/plain",
-        createdAt: "2026-07-02T00:00:00.000Z",
-        charLength: input.text.length,
-        pinned: input.pinned === true,
-      };
-    },
-    async readArtifact() {
-      throw new Error("not implemented");
-    },
-  };
-}
 
 function cannedChildStream(text: string): StreamFn {
   return ((model: Model<"openai-completions">) => {
@@ -260,47 +228,6 @@ describe("AgentSubagentRuntime", () => {
     ]);
   });
 
-  it("passes the artifact store into child external_inspect tools", async () => {
-    const root = await tempDir();
-    await mkdir(path.join(root, "src"));
-    await writeFile(
-      path.join(root, "src", "large.txt"),
-      Array.from({ length: 600 }, (_, index) => `line ${index + 1} ${"x".repeat(40)}`).join("\n"),
-    );
-    const profile: AgentProfile = {
-      name: "researcher",
-      description: "Research",
-      systemPrompt: "research",
-      toolAllowlist: ["external_inspect", "read_artifact", "search_artifact"],
-    };
-    const store = recordingArtifactStore();
-    const previousRequire = (globalThis as { require?: unknown }).require;
-    (globalThis as { require?: unknown }).require = createRequire(import.meta.url);
-    try {
-      const runtime = makeRuntime({
-        settings: settings({
-          external: { ...DEFAULT_SETTINGS.external, enabled: true, rootPath: root },
-        }),
-        profiles: [profile],
-        artifactStore: store,
-      });
-      const child = runtime.createChildAgent(profile);
-      const tool = child.state.tools.find((item) => item.name === "external_inspect");
-      expect(tool).toBeTruthy();
-
-      const result = await tool!.execute("call-1", { action: "read", path: "src/large.txt" } as never, undefined);
-
-      expect(store.writes).toHaveLength(1);
-      expect(store.writes[0]).toMatchObject({ sourceToolName: "external_inspect", pinned: true });
-      expect(result.details).toMatchObject({ sourceArtifactId: "artifact-1" });
-    } finally {
-      if (previousRequire === undefined) {
-        delete (globalThis as { require?: unknown }).require;
-      } else {
-        (globalThis as { require?: unknown }).require = previousRequire;
-      }
-    }
-  });
 
   it("keeps web tools out of children when web access is disabled", () => {
     const profile: AgentProfile = {

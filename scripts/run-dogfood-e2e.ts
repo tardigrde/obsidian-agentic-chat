@@ -23,13 +23,11 @@ async function main(): Promise<void> {
   const reportDir = path.resolve(args["report-dir"] ?? DEFAULT_REPORT_DIR);
   const runDir = path.resolve(args["run-dir"] ?? path.join(reportDir, runId));
   const vaultPath = path.resolve(args.vault ?? path.join(runDir, "vault"));
-  const externalRoot = path.resolve(args["external-root"] ?? path.join(runDir, "external-root"));
   const spec = args.spec ?? DEFAULT_SPEC;
 
   await mkdir(runDir, { recursive: true });
   const manifest = await generateDogfoodVault({
     vaultPath,
-    externalRoot,
     runId,
     secretText: args.secret,
   });
@@ -37,13 +35,11 @@ async function main(): Promise<void> {
 
   console.log(`Dogfood run: ${runId}`);
   console.log(`Vault: ${vaultPath}`);
-  console.log(`External root: ${externalRoot}`);
   console.log(`Manifest: ${manifestPath}`);
 
   const e2eExitCode = await runE2e({
     manifestPath,
     vaultPath,
-    externalRoot,
     spec,
     timeoutMs: args["timeout-ms"],
     turnTimeoutMs: args["turn-timeout-ms"],
@@ -66,7 +62,6 @@ async function main(): Promise<void> {
 function runE2e(options: {
   manifestPath: string;
   vaultPath: string;
-  externalRoot: string;
   spec: string;
   timeoutMs?: string;
   turnTimeoutMs?: string;
@@ -81,7 +76,6 @@ function runE2e(options: {
         DOGFOOD_COPY: "false",
         DOGFOOD_SPEC: options.spec,
         DOGFOOD_FIXTURE_MANIFEST: options.manifestPath,
-        DOGFOOD_EXTERNAL_ROOT: options.externalRoot,
         DOGFOOD_TIMEOUT_MS: options.timeoutMs ?? process.env.DOGFOOD_TIMEOUT_MS ?? "300000",
         DOGFOOD_TURN_TIMEOUT_MS: options.turnTimeoutMs ?? process.env.DOGFOOD_TURN_TIMEOUT_MS ?? "120000",
         NO_PROXY: mergeNoProxy(process.env.NO_PROXY),

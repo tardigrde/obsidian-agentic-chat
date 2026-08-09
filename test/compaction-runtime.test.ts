@@ -150,18 +150,9 @@ describe("AgentCompactionRuntime", () => {
             sourceToolName: "external_inspect",
           },
         ],
-        externalInspect: [
-          {
-            action: "read",
-            path: "src/large.txt",
-            externalRef: "external://src/large.txt",
-            sourceArtifactId: "artifact-1",
-          },
-        ],
       },
     });
     expect(JSON.stringify(compacted![0])).toContain("Preserved Artifact References");
-    expect(JSON.stringify(compacted![0])).toContain("Preserved External Inspect Cache");
 
     const persistedSummary = parseSessionEntries(adapter.files.get(path) ?? "").find((entry) => entry.type === "message");
     expect(persistedSummary).toMatchObject({
@@ -169,7 +160,6 @@ describe("AgentCompactionRuntime", () => {
       message: {
         compactionManifest: {
           artifacts: [{ id: "artifact-1" }],
-          externalInspect: [{ externalRef: "external://src/large.txt" }],
         },
       },
     });

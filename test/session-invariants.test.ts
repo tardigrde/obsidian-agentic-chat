@@ -103,19 +103,12 @@ describe("session/event-log invariants", () => {
       content: [{ type: "text", text: "Earlier conversation was summarized." }],
       compactionManifest: {
         artifacts: [{ id: "artifact-manifest" }],
-        externalInspect: [
-          {
-            action: "read",
-            externalRef: "external://src/main.ts",
-            sourceArtifactId: "artifact-external",
-          },
-        ],
       },
       timestamp: 2,
     } as unknown as AgentMessage);
 
     await expect(manager.listReferencedArtifactIds()).resolves.toEqual(
-      new Set(["artifact-details", "artifact-external", "artifact-manifest", "artifact-text"]),
+      new Set(["artifact-details", "artifact-manifest", "artifact-text"]),
     );
   });
 

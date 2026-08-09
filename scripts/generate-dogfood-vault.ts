@@ -4,10 +4,8 @@ import { generateDogfoodVault, writeManifest } from "./dogfood-core";
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const vaultPath = requiredArg(args, "vault");
-  const externalRoot = requiredArg(args, "external-root");
   const manifest = await generateDogfoodVault({
     vaultPath,
-    externalRoot,
     runId: args["run-id"],
     secretText: args.secret,
   });

@@ -82,7 +82,6 @@ const MESSAGE_COMPAT: MessageCompat = {
   vercelGatewayRouting: {},
   zaiToolStream: false,
   supportsStrictMode: false,
-  supportsOpenAIGrammarTools: false,
   sendSessionAffinityHeaders: false,
   supportsLongCacheRetention: false,
 };

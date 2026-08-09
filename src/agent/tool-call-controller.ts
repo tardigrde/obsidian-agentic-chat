@@ -10,7 +10,6 @@ import {
 import type { ApprovalPolicy } from "./approval";
 import { isMcpToolName, mcpServerIdFromToolName } from "../mcp/tools";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
-import { EXTERNAL_INSPECT_TOOL_NAME } from "../tools/external-workspace";
 import { SUBAGENT_TOOL_NAME, normalizeTasks } from "../tools/subagent-tool";
 import type { AgentProfile } from "./subagents";
 import { resolveModePolicy } from "./modes";
@@ -162,7 +161,6 @@ export class AgentToolCallController {
       return { block: true, reason: modeDecision.reason };
     }
     if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, toolCallId, args);
-    if (toolName === EXTERNAL_INSPECT_TOOL_NAME) return this.gateExternalToolCall(settings, toolCallId, args);
     if (isMcpToolName(toolName)) return this.gateMcpToolCall(settings, toolCallId, toolName, args);
     const decision = modeDecision;
     const { reason } = decision;
@@ -193,56 +191,6 @@ export class AgentToolCallController {
     return choice.approved
       ? undefined
       : { block: true, reason: choice.reason ?? "The user declined this action." };
-  }
-
-  private async gateExternalToolCall(
-    settings: AgenticChatSettings,
-    toolCallId: string,
-    args: unknown,
-  ): Promise<ToolGateDecision> {
-    const label = this.labelForTool(EXTERNAL_INSPECT_TOOL_NAME);
-    if (!settings.external.enabled || !settings.external.rootPath.trim()) {
-      const reason = "External workspace root tools are disabled or not configured.";
-      await this.auditApproval({
-        decision: "denied",
-        toolCallId,
-        toolName: EXTERNAL_INSPECT_TOOL_NAME,
-        label,
-        args,
-        reason,
-      });
-      return { block: true, reason };
-    }
-    if (settings.external.approval === "allow") {
-      await this.auditApproval({
-        decision: "auto-approved",
-        toolCallId,
-        toolName: EXTERNAL_INSPECT_TOOL_NAME,
-        label,
-        args,
-      });
-      return undefined;
-    }
-    if (settings.external.approval === "deny") {
-      const reason = "External workspace inspection is disabled by your external root approval settings.";
-      await this.auditApproval({
-        decision: "denied",
-        toolCallId,
-        toolName: EXTERNAL_INSPECT_TOOL_NAME,
-        label,
-        args,
-        reason,
-      });
-      return { block: true, reason };
-    }
-    const choice = await this.confirmWithAudit(
-      { toolName: EXTERNAL_INSPECT_TOOL_NAME, label, args },
-      toolCallId,
-      "The user declined this external workspace inspection.",
-    );
-    return choice.approved
-      ? undefined
-      : { block: true, reason: choice.reason ?? "The user declined this external workspace inspection." };
   }
 
   private async gateMcpToolCall(

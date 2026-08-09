@@ -40,7 +40,7 @@ describe("tool budget", () => {
         "write",
         "ask_user",
         "search_memory",
-        "external_inspect",
+        "get_active_note",
         "import_pdf",
         "import_document",
         "web_search",
@@ -62,7 +62,7 @@ describe("tool budget", () => {
       "write",
       "ask_user",
       "search_memory",
-      "external_inspect",
+      "get_active_note",
     ]);
     expect(result.snapshot).toMatchObject({
       active: true,
@@ -129,7 +129,7 @@ describe("tool budget", () => {
     expect(toolBudgetDropReason("write")).toBeNull();
     expect(toolBudgetDropReason("ask_user")).toBeNull();
     expect(toolBudgetDropReason("search_memory")).toBeNull();
-    expect(toolBudgetDropReason("external_inspect")).toBeNull();
+    expect(toolBudgetDropReason("get_active_note")).toBeNull();
     expect(toolBudgetDropReason("web_search")).toBe("web egress");
     expect(toolBudgetDropReason("mcp__docs__lookup")).toBe("remote MCP");
   });

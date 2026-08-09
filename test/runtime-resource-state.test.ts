@@ -1,15 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import * as path from "node:path";
+import { rm } from "node:fs/promises";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { App, DataAdapter } from "obsidian";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { AgentRuntimeResourceState } from "../src/agent/runtime-resource-state";
 import { ReadMemo } from "../src/vault/read-memo";
 import type { WebFetcher } from "../src/tools/web-fetch";
-import type { ToolArtifactStoreLike, ToolArtifactWriteInput } from "../src/artifacts/tool-artifact-store";
+import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import { FakeApp } from "./helpers/fake-vault";
 
 function fakeAdapter(files: Record<string, string>): DataAdapter {
@@ -55,34 +52,6 @@ afterEach(async () => {
   }
 });
 
-async function tempDir(): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), "agentic-chat-runtime-"));
-  tempRoots.push(root);
-  return root;
-}
-
-function artifactStore(): ToolArtifactStoreLike & { writes: ToolArtifactWriteInput[] } {
-  const writes: ToolArtifactWriteInput[] = [];
-  return {
-    writes,
-    async writeArtifact(input) {
-      writes.push(input);
-      return {
-        id: `artifact-${writes.length}`,
-        label: input.label,
-        sourceToolName: input.sourceToolName,
-        contentType: input.contentType ?? "text/plain",
-        createdAt: "2026-07-02T00:00:00.000Z",
-        charLength: input.text.length,
-        pinned: input.pinned === true,
-      };
-    },
-    async readArtifact() {
-      throw new Error("not implemented");
-    },
-  };
-}
-
 function makeState(app: App, currentSettings: AgenticChatSettings, store?: ToolArtifactStoreLike): {
   state: AgentRuntimeResourceState;
 } {
@@ -94,11 +63,6 @@ function makeState(app: App, currentSettings: AgenticChatSettings, store?: ToolA
     artifactStore: store,
   });
   return { state };
-}
-
-async function runTool(tool: AgentTool, params: unknown): Promise<{ details: Record<string, unknown> }> {
-  const result = await tool.execute("call-1", params as never, undefined);
-  return { details: (result.details ?? {}) as Record<string, unknown> };
 }
 
 describe("AgentRuntimeResourceState", () => {
@@ -164,102 +128,6 @@ describe("AgentRuntimeResourceState", () => {
     expect(toolNames).toEqual(expect.arrayContaining(["read", "vault_inspect", "write", "web_search", "fetch_url", "subagent"]));
   });
 
-  it("registers external_inspect only when the external root is configured", async () => {
-    const currentSettings = settings({
-      external: {
-        ...DEFAULT_SETTINGS.external,
-        enabled: true,
-        rootPath: "/workspace/code",
-      },
-    });
-    const { state } = makeState(await seededApp(), currentSettings);
-    await state.reload();
-
-    expect(state.buildParentTools(currentSettings).map((tool) => tool.name)).toContain("external_inspect");
-    expect(state.composeSystemPrompt(currentSettings, "test/model")).toContain("external://relative/path");
-    expect(state.composeSystemPrompt(currentSettings, "test/model")).toContain("startLine/endLine");
-    expect(state.composeSystemPrompt(currentSettings, "test/model")).toContain("Avoid repeating the same external_inspect");
-    expect(state.composeSystemPrompt(currentSettings, "test/model")).not.toContain("/workspace/code");
-  });
-
-  it("keeps external_inspect cache across routine resource reloads within a session", async () => {
-    const root = await tempDir();
-    await mkdir(path.join(root, "src"));
-    await writeFile(path.join(root, "src", "app.ts"), "export const value = 1;\n");
-    const currentSettings = settings({
-      external: {
-        ...DEFAULT_SETTINGS.external,
-        enabled: true,
-        rootPath: root,
-      },
-    });
-    const previousRequire = (globalThis as { require?: unknown }).require;
-    (globalThis as { require?: unknown }).require = createRequire(import.meta.url);
-    try {
-      const { state } = makeState(await seededApp(), currentSettings);
-      await state.reload();
-      const firstTool = state.buildParentTools(currentSettings).find((tool) => tool.name === "external_inspect");
-      expect(firstTool).toBeTruthy();
-
-      const first = await runTool(firstTool as AgentTool, { action: "read", path: "src/app.ts" });
-      expect(first.details.cached).toBeUndefined();
-
-      await state.reload();
-      const secondTool = state.buildParentTools(currentSettings).find((tool) => tool.name === "external_inspect");
-      expect(secondTool).toBeTruthy();
-      const second = await runTool(secondTool as AgentTool, { action: "read", path: "src/app.ts" });
-      expect(second.details.cached).toBe(true);
-
-      state.clearSessionState();
-      const afterResetTool = state.buildParentTools(currentSettings).find((tool) => tool.name === "external_inspect");
-      expect(afterResetTool).toBeTruthy();
-      const afterReset = await runTool(afterResetTool as AgentTool, { action: "read", path: "src/app.ts" });
-      expect(afterReset.details.cached).toBeUndefined();
-    } finally {
-      if (previousRequire === undefined) {
-        delete (globalThis as { require?: unknown }).require;
-      } else {
-        (globalThis as { require?: unknown }).require = previousRequire;
-      }
-    }
-  });
-
-  it("passes the artifact store into parent external_inspect tools", async () => {
-    const root = await tempDir();
-    await mkdir(path.join(root, "src"));
-    await writeFile(
-      path.join(root, "src", "large.txt"),
-      Array.from({ length: 600 }, (_, index) => `line ${index + 1} ${"x".repeat(40)}`).join("\n"),
-    );
-    const currentSettings = settings({
-      external: {
-        ...DEFAULT_SETTINGS.external,
-        enabled: true,
-        rootPath: root,
-      },
-    });
-    const store = artifactStore();
-    const previousRequire = (globalThis as { require?: unknown }).require;
-    (globalThis as { require?: unknown }).require = createRequire(import.meta.url);
-    try {
-      const { state } = makeState(await seededApp(), currentSettings, store);
-      await state.reload();
-      const tool = state.buildParentTools(currentSettings).find((item) => item.name === "external_inspect");
-      expect(tool).toBeTruthy();
-
-      const result = await runTool(tool as AgentTool, { action: "read", path: "src/large.txt" });
-
-      expect(store.writes).toHaveLength(1);
-      expect(store.writes[0]).toMatchObject({ sourceToolName: "external_inspect", pinned: true });
-      expect(result.details).toMatchObject({ sourceArtifactId: "artifact-1" });
-    } finally {
-      if (previousRequire === undefined) {
-        delete (globalThis as { require?: unknown }).require;
-      } else {
-        (globalThis as { require?: unknown }).require = previousRequire;
-      }
-    }
-  });
 
   it("drops optional parent tools when tool schemas exceed the budget threshold", async () => {
     const currentSettings = settings({ enableBuiltinAgents: true, web: { enabled: true } });

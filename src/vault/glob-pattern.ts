@@ -1,7 +1,6 @@
-// Shared gitignore-style glob compilation used by vault ignore lists
-// (src/vault/ignore.ts) and the external-workspace tool
-// (src/tools/external-workspace.ts). Keeping one implementation avoids the two
-// call sites drifting apart on subtle matching semantics.
+// Shared gitignore-style glob compilation used by the vault ignore list
+// (src/vault/ignore.ts). Keeping one implementation avoids call sites drifting
+// apart on subtle matching semantics.
 
 const REGEX_SPECIAL = /[.+^${}()|[\]\\]/g;
 

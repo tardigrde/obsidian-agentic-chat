@@ -72,55 +72,6 @@
       ]
     },
     {
-      "id": "static.external-workspace-context",
-      "type": "static-context",
-      "toolSurface": "default",
-      "externalWorkspace": {
-        "enabled": true,
-        "rootPath": "/workspace/example"
-      },
-      "prompt": "Build a workspace knowledge base from external files without wasting tool calls.",
-      "assertions": [
-        {
-          "type": "context_contains",
-          "text": "Avoid repeating the same external_inspect",
-          "severity": "error"
-        },
-        {
-          "type": "context_contains",
-          "text": "one exact repeat is enough",
-          "severity": "error"
-        },
-        {
-          "type": "context_contains",
-          "text": "external://relative/path",
-          "severity": "error"
-        },
-        {
-          "type": "context_not_contains",
-          "text": "/workspace/example",
-          "severity": "error"
-        },
-        {
-          "type": "tool_registered",
-          "name": "external_inspect",
-          "severity": "error"
-        },
-        {
-          "type": "tool_description_contains",
-          "name": "external_inspect",
-          "text": "reuse prior output",
-          "severity": "error"
-        },
-        {
-          "type": "tool_description_contains",
-          "name": "external_inspect",
-          "text": "do it once",
-          "severity": "error"
-        }
-      ]
-    },
-    {
       "id": "dogfood.scripted-next-level",
       "type": "scripted-dogfood",
       "dogfood": {
@@ -136,11 +87,6 @@
         {
           "type": "required_tool_started",
           "name": "vault_inspect",
-          "severity": "error"
-        },
-        {
-          "type": "required_tool_started",
-          "name": "external_inspect",
           "severity": "error"
         },
         {
@@ -164,24 +110,15 @@
           "severity": "warning",
           "allowedByTool": {
             "vault_inspect": 1,
-            "external_inspect": 1,
             "write": 4
           },
           "message": "Dogfood trace has unexpected tool errors beyond the intentional sad-path denial cases."
-        },
-        {
-          "type": "max_repeated_external_path_action",
-          "max": 1,
-          "severity": "warning",
-          "allowedKeys": ["read foreign-vault/Imported.md"],
-          "message": "Dogfood trace repeated an exact external path action; review whether this is intentional cache coverage or inefficient tool use."
         },
         {
           "type": "max_duplicate_tool_starts",
           "max": 1,
           "severity": "warning",
           "allowedKeys": [
-            "external_inspect {\"action\":\"read\",\"path\":\"foreign-vault/Imported.md\"}",
             "vault_inspect {\"action\":\"active_note\",\"includeContent\":true}"
           ],
           "message": "Dogfood trace repeated an exact tool call; review whether the model/tool prompt can avoid redundant calls."

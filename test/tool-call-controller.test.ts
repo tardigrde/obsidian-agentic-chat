@@ -7,7 +7,6 @@ import { AgentToolCallController, type ToolApprovalRequest, type UserApprovalCho
 import type { AgentProfile } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { createMcpServerSettings } from "../src/mcp/settings";
-import { EXTERNAL_INSPECT_TOOL_NAME } from "../src/tools/external-workspace";
 import { FakeVault } from "./helpers/fake-vault";
 
 function makeController(
@@ -157,86 +156,6 @@ describe("AgentToolCallController", () => {
     expect(requests).toEqual([{ toolName: tool.name, label: tool.label, args }]);
   });
 
-  it("prompts external inspections by default even though the tool is read-only", async () => {
-    const tool = { name: EXTERNAL_INSPECT_TOOL_NAME, label: "Inspect external root" } as AgentTool;
-    const { controller, requests } = makeController({
-      settings: {
-        external: {
-          ...DEFAULT_SETTINGS.external,
-          enabled: true,
-          rootPath: "/workspace/code",
-          approval: "ask",
-        },
-      },
-      tools: [tool],
-      confirmToolCall: async () => ({ approved: false, remember: false }),
-    });
-
-    const args = { action: "search", query: "Service" };
-    const decision = await controller.beforeToolCall({
-      toolCall: { id: "call-1", name: EXTERNAL_INSPECT_TOOL_NAME },
-      args,
-    });
-
-    expect(decision).toEqual({ block: true, reason: "The user declined this external workspace inspection." });
-    expect(requests).toEqual([{ toolName: EXTERNAL_INSPECT_TOOL_NAME, label: tool.label, args }]);
-  });
-
-  it("auto-approves external inspections only when the external setting allows it", async () => {
-    const { controller, requests } = makeController({
-      settings: {
-        external: {
-          ...DEFAULT_SETTINGS.external,
-          enabled: true,
-          rootPath: "/workspace/code",
-          approval: "allow",
-        },
-      },
-    });
-
-    await expect(
-      controller.beforeToolCall({
-        toolCall: { id: "call-1", name: EXTERNAL_INSPECT_TOOL_NAME },
-        args: { action: "list" },
-      }),
-    ).resolves.toBeUndefined();
-    expect(requests).toEqual([]);
-  });
-
-  it("auto-denies external inspections when the external setting denies it", async () => {
-    const approvals: ApprovalAuditInput[] = [];
-    const { controller, requests } = makeController({
-      settings: {
-        external: {
-          ...DEFAULT_SETTINGS.external,
-          enabled: true,
-          rootPath: "/workspace/code",
-          approval: "deny",
-        },
-      },
-      recordApproval: (input) => {
-        approvals.push(input);
-      },
-    });
-
-    await expect(
-      controller.beforeToolCall({
-        toolCall: { id: "call-1", name: EXTERNAL_INSPECT_TOOL_NAME },
-        args: { action: "list" },
-      }),
-    ).resolves.toEqual({
-      block: true,
-      reason: "External workspace inspection is disabled by your external root approval settings.",
-    });
-    expect(requests).toEqual([]);
-    expect(approvals).toMatchObject([
-      {
-        decision: "denied",
-        toolCallId: "call-1",
-        toolName: EXTERNAL_INSPECT_TOOL_NAME,
-      },
-    ]);
-  });
 
   it("honors MCP deny policy and per-tool allow overrides", async () => {
     const toolName = "mcp__docs__resolve_library_id";

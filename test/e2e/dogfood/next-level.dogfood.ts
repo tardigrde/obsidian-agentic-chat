@@ -54,10 +54,6 @@ function scriptedTurns(): ScriptedTurn[] {
       { id: "o-read", name: "read", args: { path: "Odd Files/Invalid Frontmatter.md" } },
       { id: "o-read-range", name: "read", args: { path: "Odd Files/Invalid Frontmatter.md", startLine: 1, endLine: 3 } },
       { id: "o-memory", name: "search_memory", args: { query: "DevOps knowledge-base", scope: "vault", maxResults: 3 } },
-      { id: "o-ext-list", name: "external_inspect", args: { action: "list", path: "repos" } },
-      { id: "o-ext-read", name: "external_inspect", args: { action: "read", path: "foreign-vault/Imported.md" } },
-      { id: "o-ext-read-range", name: "external_inspect", args: { action: "read", path: "foreign-vault/Imported.md", startLine: 1, endLine: 2 } },
-      { id: "o-ext-search", name: "external_inspect", args: { action: "search", path: "repos", query: "service-a", kind: "content", maxMatches: 5 } },
       {
         id: "o-write",
         name: "write",
@@ -66,7 +62,6 @@ function scriptedTurns(): ScriptedTurn[] {
           content: [
             "---",
             "tags: [dogfood, oracle]",
-            "source: external://foreign-vault/Imported.md",
             "---",
             "# Oracle",
             "Initial oracle body.",
@@ -109,12 +104,7 @@ function scriptedTurns(): ScriptedTurn[] {
       },
     ]),
     textTurn("metamorphic final", "Ambiguous cleanup was clarified and stayed scoped."),
-    toolBatch("cache replay", [
-      { id: "cache-read", name: "external_inspect", args: { action: "read", path: "foreign-vault/Imported.md" } },
-    ]),
-    textTurn("cache final", "External cache replay complete."),
     toolBatch("chaos denied tools", [
-      { id: "c-ext-deny", name: "external_inspect", args: { action: "read", path: "foreign-vault/Imported.md" } },
       { id: "c-write-deny", name: "write", args: { path: "Generated/Denied Should Not Exist.md", content: "denied" } },
     ]),
     textTurn("chaos final", "Chaos settings denied risky tools cleanly."),
@@ -269,7 +259,6 @@ async function configurePlugin(manifest: DogfoodManifest): Promise<boolean> {
       enableBuiltinAgents: boolean;
       ignoredGlobs: string;
       approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
-      external: { enabled: boolean; rootPath: string; approval: string; honorGitignore: boolean; ignoredGlobs: string };
       toolBudget: { enabled: boolean; thresholdPercent: number };
       web: { enabled: boolean };
       mcp: { enabled: boolean; servers: unknown[]; proxyUrl: string; noProxy: string };
@@ -282,18 +271,13 @@ async function configurePlugin(manifest: DogfoodManifest): Promise<boolean> {
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};
     settings.approval.workingDirs = [];
-    settings.external.enabled = true;
-    settings.external.rootPath = payload.externalRoot;
-    settings.external.approval = "allow";
-    settings.external.honorGitignore = true;
-    settings.external.ignoredGlobs = [".env", ".env.*", "*.key", "*.pem", "secrets/**"].join("\n");
     settings.toolBudget.enabled = false;
     settings.toolBudget.thresholdPercent = 25;
     settings.web.enabled = false;
     settings.mcp = { enabled: false, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] };
     await plugin.saveSettings?.();
     return true;
-  }, { pluginId: PLUGIN_ID, ignoredGlobs: manifest.ignoredGlobs, externalRoot: manifest.externalRoot });
+  }, { pluginId: PLUGIN_ID, ignoredGlobs: manifest.ignoredGlobs });
 }
 
 async function setChaosSettings(): Promise<void> {
@@ -304,11 +288,9 @@ async function setChaosSettings(): Promise<void> {
     if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
     const settings = plugin.settings as {
       approval: { perTool: Record<string, string> };
-      external: { approval: string };
       toolBudget: { enabled: boolean; thresholdPercent: number };
     };
     settings.approval.perTool = { ...settings.approval.perTool, write: "deny" };
-    settings.external.approval = "deny";
     settings.toolBudget.enabled = true;
     settings.toolBudget.thresholdPercent = 1;
     await plugin.saveSettings?.();
@@ -339,12 +321,10 @@ async function restoreSafeSettings(): Promise<void> {
     if (!plugin?.settings) return;
     const settings = plugin.settings as {
       approval: { mutating: string; perTool: Record<string, string> };
-      external: { approval: string };
       toolBudget: { enabled: boolean; thresholdPercent: number };
     };
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};
-    settings.external.approval = "allow";
     settings.toolBudget.enabled = false;
     settings.toolBudget.thresholdPercent = 25;
     await plugin.saveSettings?.();
@@ -563,7 +543,6 @@ describe("agentic-chat next-level dogfood", function () {
     expect(await noteExists("Generated/Delete Me.md")).toBe(false);
     expect(await noteExists(EMPTY_FOLDER_DELETE_PATH)).toBe(false);
     const oracle = await readNote("Generated/Oracle.md");
-    expect(oracle).toContain("source: external://foreign-vault/Imported.md");
     expect(oracle).toContain("verified: true");
   });
 
@@ -585,19 +564,13 @@ describe("agentic-chat next-level dogfood", function () {
     expect(await transcriptText()).toContain("Ambiguous cleanup was clarified");
   });
 
-  it("observes a repeated external read as a cache hit", async function () {
-    await runPrompt("Read the same imported external note again and report whether it is cached.");
-
-    expect(await latestSessionText()).toContain('"cached":true');
-  });
-
   it("applies chaos settings, denies risky tools, and restores defaults", async function () {
     await setChaosSettings();
     const diagnostics = await runSlashCommand("/diagnostics");
     expect(diagnostics).toContain("Tool budget");
     expect(diagnostics).toContain("active");
 
-    await runPrompt("Try an external read and write while settings deny them.");
+    await runPrompt("Try to write while settings deny it.");
     expect(await noteExists("Generated/Denied Should Not Exist.md")).toBe(false);
     await restoreSafeSettings();
   });
