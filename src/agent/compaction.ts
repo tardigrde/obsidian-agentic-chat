@@ -38,17 +38,8 @@ export interface CompactionArtifactReference {
   sourceToolName?: string;
 }
 
-export interface CompactionExternalInspectReference {
-  action: string;
-  path?: string;
-  externalRef: string;
-  sourceArtifactId?: string;
-  sourceArtifactCitation?: string;
-}
-
 export interface CompactionManifest {
   artifacts: CompactionArtifactReference[];
-  externalInspect: CompactionExternalInspectReference[];
 }
 
 /** Estimated context tokens the transcript currently occupies. */
@@ -167,16 +158,14 @@ export function getCompactionManifest(message: AgentMessage): CompactionManifest
 
 export function collectCompactionManifest(messages: AgentMessage[]): CompactionManifest {
   const artifacts = new Map<string, CompactionArtifactReference>();
-  const externalInspect = new Map<string, CompactionExternalInspectReference>();
 
   for (const message of messages) {
-    mergeCompactionManifest({ artifacts, externalInspect }, getCompactionManifest(message));
-    collectMessageManifest({ artifacts, externalInspect }, message);
+    mergeCompactionManifest({ artifacts }, getCompactionManifest(message));
+    collectMessageManifest({ artifacts }, message);
   }
 
   return {
     artifacts: [...artifacts.values()],
-    externalInspect: [...externalInspect.values()],
   };
 }
 
@@ -212,37 +201,26 @@ function formatCompactionManifestMarkdown(manifest: CompactionManifest): string 
       lines.push(`- ${citation}${source}`);
     }
   }
-  if (manifest.externalInspect.length > 0) {
-    if (lines.length > 0) lines.push("");
-    lines.push("## Preserved External Inspect Cache");
-    for (const entry of manifest.externalInspect) {
-      const artifact = entry.sourceArtifactCitation ? `; artifact: ${entry.sourceArtifactCitation}` : "";
-      lines.push(`- ${entry.action} ${entry.externalRef}${artifact}`);
-    }
-  }
   return lines.join("\n");
 }
 
 function hasCompactionManifestEntries(manifest: CompactionManifest): boolean {
-  return manifest.artifacts.length > 0 || manifest.externalInspect.length > 0;
+  return manifest.artifacts.length > 0;
 }
 
 function mergeCompactionManifest(
   target: {
     artifacts: Map<string, CompactionArtifactReference>;
-    externalInspect: Map<string, CompactionExternalInspectReference>;
   },
   manifest: CompactionManifest | undefined,
 ): void {
   if (!manifest) return;
   for (const artifact of manifest.artifacts) addArtifactReference(target.artifacts, artifact);
-  for (const entry of manifest.externalInspect) addExternalInspectReference(target.externalInspect, entry);
 }
 
 function collectMessageManifest(
   target: {
     artifacts: Map<string, CompactionArtifactReference>;
-    externalInspect: Map<string, CompactionExternalInspectReference>;
   },
   message: AgentMessage,
 ): void {
@@ -261,19 +239,6 @@ function collectMessageManifest(
   for (const id of collectArtifactIdsFromText(messageContentText(message))) {
     addArtifactReference(target.artifacts, { id, sourceToolName: toolName });
   }
-  if (toolName === "external_inspect") {
-    const action = stringValue(details.action);
-    const externalRef = stringValue(details.externalRef);
-    if (action && externalRef) {
-      addExternalInspectReference(target.externalInspect, {
-        action,
-        path: stringValue(details.path),
-        externalRef,
-        sourceArtifactId,
-        sourceArtifactCitation,
-      });
-    }
-  }
 }
 
 function addArtifactReference(
@@ -285,21 +250,6 @@ function addArtifactReference(
     id: artifact.id,
     citation: artifact.citation ?? existing?.citation,
     sourceToolName: artifact.sourceToolName ?? existing?.sourceToolName,
-  });
-}
-
-function addExternalInspectReference(
-  refs: Map<string, CompactionExternalInspectReference>,
-  entry: CompactionExternalInspectReference,
-): void {
-  const key = `${entry.action} ${entry.externalRef}`;
-  const existing = refs.get(key);
-  refs.set(key, {
-    action: entry.action,
-    path: entry.path ?? existing?.path,
-    externalRef: entry.externalRef,
-    sourceArtifactId: entry.sourceArtifactId ?? existing?.sourceArtifactId,
-    sourceArtifactCitation: entry.sourceArtifactCitation ?? existing?.sourceArtifactCitation,
   });
 }
 

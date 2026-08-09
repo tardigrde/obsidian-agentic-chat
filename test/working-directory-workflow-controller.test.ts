@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  formatExternalRootLabel,
   formatWorkingDirLabel,
   WorkingDirectoryWorkflowController,
 } from "../src/ui/working-directory-workflow-controller";
@@ -27,14 +26,11 @@ function makeController(
     folders?: string[];
     activeFolder?: string;
     vaultBasePath?: string;
-    externalAvailable?: boolean;
-    externalRoot?: { enabled: boolean; rootPath: string };
   } = {},
 ): {
   controller: WorkingDirectoryWorkflowController;
   calls: RenderCall[];
   dirs: string[];
-  externalRoot: { enabled: boolean; rootPath: string };
   saved: string[];
   changed: string[];
   picks: string[];
@@ -42,26 +38,18 @@ function makeController(
   const calls: RenderCall[] = [];
   const dirs = options.dirs ?? [];
   const folders = new Set(options.folders ?? ["Notes", "Projects/Alpha"]);
-  const externalRoot = options.externalRoot ?? { enabled: false, rootPath: "" };
   const saved: string[] = [];
   const changed: string[] = [];
   const picks: string[] = [];
   return {
     calls,
     dirs,
-    externalRoot,
     saved,
     changed,
     picks,
     controller: new WorkingDirectoryWorkflowController({
       workingDirs: () => dirs,
       folderExists: (path) => folders.has(path),
-      externalRoot: () => externalRoot,
-      setExternalRoot: (path) => {
-        externalRoot.enabled = path !== null;
-        externalRoot.rootPath = path ?? "";
-      },
-      canUseExternalRoot: () => options.externalAvailable ?? false,
       activeFolder: () => options.activeFolder ?? "",
       vaultBasePath: () => options.vaultBasePath ?? null,
       saveSettings: async () => {
@@ -138,31 +126,7 @@ describe("WorkingDirectoryWorkflowController", () => {
     expect(root.dirs).toEqual([""]);
   });
 
-  it("configures an external workspace root for absolute filesystem paths outside the vault", async () => {
-    const outside = makeController({
-      vaultBasePath: "/home/alex/NotesVault",
-      externalAvailable: true,
-    });
-
-    await outside.controller.add("/home/alex/workspace");
-
-    expect(outside.dirs).toEqual([]);
-    expect(outside.externalRoot).toEqual({ enabled: true, rootPath: "/home/alex/workspace" });
-    expect(outside.saved).toEqual(["save"]);
-    expect(outside.changed).toEqual(["changed"]);
-    expect(outside.calls).toContainEqual({
-      type: "info",
-      title: "External workspace root",
-      entries: [
-        [
-          "/home/alex/workspace",
-          "Enabled - the agent can inspect it read-only with approval using external_inspect.",
-        ],
-      ],
-    });
-  });
-
-  it("keeps rejecting outside absolute filesystem paths when external roots are unavailable", async () => {
+  it("rejects outside absolute filesystem paths", async () => {
     const outside = makeController({
       vaultBasePath: "/home/alex/NotesVault",
     });
@@ -204,7 +168,7 @@ describe("WorkingDirectoryWorkflowController", () => {
   });
 
   it("renders folder actions and delegates pickers", () => {
-    const ctx = makeController({ dirs: ["Notes", ""], externalRoot: { enabled: true, rootPath: "/workspace/code" } });
+    const ctx = makeController({ dirs: ["Notes", ""] });
 
     ctx.controller.showFolderMenu();
     const menu = ctx.calls.find((call): call is Extract<RenderCall, { type: "actions" }> => call.type === "actions");
@@ -215,12 +179,7 @@ describe("WorkingDirectoryWorkflowController", () => {
     ctx.calls.length = 0;
     ctx.controller.showWorkingDirs();
     const list = ctx.calls.find((call): call is Extract<RenderCall, { type: "actions" }> => call.type === "actions");
-    expect(list?.items.map((item) => item.label)).toEqual([
-      "Add working directory...",
-      "Notes",
-      "/ (vault root)",
-      "/workspace/code",
-    ]);
+    expect(list?.items.map((item) => item.label)).toEqual(["Add working directory...", "Notes", "/ (vault root)"]);
   });
 
   it("removes an existing grant and ignores absent grants", async () => {
@@ -234,19 +193,8 @@ describe("WorkingDirectoryWorkflowController", () => {
     expect(ctx.changed).toEqual(["changed"]);
   });
 
-  it("removes a configured external workspace root", async () => {
-    const ctx = makeController({ externalRoot: { enabled: true, rootPath: "/workspace/code" } });
-
-    await ctx.controller.removeExternalRoot();
-
-    expect(ctx.externalRoot).toEqual({ enabled: false, rootPath: "" });
-    expect(ctx.saved).toEqual(["save"]);
-    expect(ctx.changed).toEqual(["changed"]);
-  });
-
   it("formats root and folder labels", () => {
     expect(formatWorkingDirLabel("")).toBe("/ (vault root)");
     expect(formatWorkingDirLabel("Notes")).toBe("Notes");
-    expect(formatExternalRootLabel("/workspace/code/")).toBe("/workspace/code");
   });
 });

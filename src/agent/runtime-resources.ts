@@ -1,4 +1,4 @@
-import { Platform, type App } from "obsidian";
+import { type App } from "obsidian";
 import type { AgentTool, Skill } from "@earendil-works/pi-agent-core";
 import type { AgenticChatSettings } from "../settings";
 import { loadVaultSkills } from "../skills/skills";
@@ -7,7 +7,6 @@ import { createVaultTools } from "../tools/vault-tools";
 import { createWebTools } from "../tools/web-tools";
 import { createMemoryTools } from "../tools/memory-tools";
 import { createDocumentTools } from "../tools/document-tools";
-import { createExternalWorkspaceTools, type ExternalInspectCache } from "../tools/external-workspace";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
 import { createReadSkillTool } from "../tools/read-skill-tool";
@@ -20,7 +19,6 @@ import type { ReadMemo } from "../vault/read-memo";
 import { formatInstructionsOverlay, loadVaultInstructions } from "./instructions";
 import { type AgentProfile, formatSubagentsForSystemPrompt, loadAgentProfiles } from "./subagents";
 import { buildSystemPrompt } from "./system-prompt";
-import { formatExternalWorkspaceForSystemPrompt } from "./external-workspace-prompt";
 import { MODES } from "./modes";
 import { OUTPUT_STYLES } from "./output-styles";
 import {
@@ -84,7 +82,6 @@ export function composeAgentSystemPrompt(
     resources.instructionsOverlay,
     MODES[settings.mode].promptOverlay,
     OUTPUT_STYLES[settings.outputStyle].promptOverlay,
-    formatExternalWorkspaceForSystemPrompt(settings.external),
     formatSubagentsForSystemPrompt(resources.profiles),
   ];
   return buildSystemPrompt(settings.systemPrompt, resources.skills, overlays);
@@ -101,19 +98,12 @@ export function buildAgentParentTools(options: {
   subagentTool?: AgentTool;
   contextWindow?: number;
   toolBudgetState?: ToolBudgetState;
-  externalInspectCache?: ExternalInspectCache;
 }): { tools: AgentTool[]; toolBudget: ToolBudgetSnapshot } {
   const tools = [
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
     ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
     ...createMemoryTools(options.app),
     ...createDocumentTools(options.app, options.artifactStore),
-    ...(Platform.isDesktopApp
-      ? createExternalWorkspaceTools(options.settings.external, {
-          cache: options.externalInspectCache,
-          artifactStore: options.artifactStore,
-        })
-      : []),
     ...createWebTools(options.settings.web, options.webFetch, options.artifactStore),
     ...createToolArtifactTools(options.artifactStore),
     ...options.resources.mcpTools,

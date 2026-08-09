@@ -30,7 +30,6 @@ export const TOOL_LABELS: Record<string, string> = {
   get_active_note: "Reading active note",
   rename: "Renaming",
   delete: "Deleting",
-  external_inspect: "Inspecting external root",
   subagent: "Dispatching subagents",
 };
 

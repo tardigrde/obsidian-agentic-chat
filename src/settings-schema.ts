@@ -6,7 +6,7 @@ import {
   type PrivacySettings,
   type ProviderId,
 } from "./llm/models";
-import { type ApprovalPolicy, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
+import { type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
 import { type AgentMode, DEFAULT_MODE, healMode } from "./agent/modes";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
@@ -87,8 +87,6 @@ export interface AgenticChatSettings {
   web: WebSettings;
   /** Remote MCP tools over HTTPS Streamable HTTP. Off by default — sends data off-device. */
   mcp: McpSettings;
-  /** Desktop-only read-only file inspection for one configured external root. */
-  external: ExternalWorkspaceSettings;
   /** Optional project workspaces that scope notes, tools, model/profile, and sessions. */
   projects: ProjectSettings;
   /** Optional semantic retrieval index configuration. Uses existing provider secrets. */
@@ -124,19 +122,6 @@ export interface WebSettings {
   fetchCharLimit: number;
 }
 
-export interface ExternalWorkspaceSettings {
-  /** Master switch. When off, no external root tools are registered. */
-  enabled: boolean;
-  /** Absolute filesystem path to the one external root directory. */
-  rootPath: string;
-  /** Approval policy for read-only external_inspect calls. Defaults to ask. */
-  approval: ApprovalPolicy;
-  /** Also apply root and nested .gitignore files under the external root. */
-  honorGitignore: boolean;
-  /** Newline-separated gitignore-style globs scoped to the external root. */
-  ignoredGlobs: string;
-}
-
 export interface CompactionSettings {
   /** Summarize old turns automatically as the context window fills. */
   enabled: boolean;
@@ -154,8 +139,6 @@ export interface NotificationSettings {
 }
 
 export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
-
-export const DEFAULT_EXTERNAL_IGNORED_GLOBS = [".env", ".env.*", "*.pem", "*.key", ".ssh/"].join("\n");
 
 export const DEFAULT_SETTINGS: AgenticChatSettings = {
   provider: "openrouter",
@@ -207,13 +190,6 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
     noProxy: "localhost,127.0.0.1,::1",
     servers: [],
   },
-  external: {
-    enabled: false,
-    rootPath: "",
-    approval: "ask",
-    honorGitignore: true,
-    ignoredGlobs: DEFAULT_EXTERNAL_IGNORED_GLOBS,
-  },
   projects: DEFAULT_PROJECT_SETTINGS,
   embeddings: DEFAULT_EMBEDDING_SETTINGS,
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
@@ -257,28 +233,9 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       searchApiKeySecretId: stringSetting(stored?.web?.searchApiKeySecretId, WEB_SEARCH_API_KEY_SECRET_ID),
     },
     mcp: healMcpSettings(stored?.mcp),
-    external: healExternalWorkspaceSettings(stored?.external),
     projects: healProjectSettings(stored?.projects),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
-  };
-}
-
-function healExternalWorkspaceSettings(
-  stored: Partial<ExternalWorkspaceSettings> | null | undefined,
-): ExternalWorkspaceSettings {
-  const approval: ApprovalPolicy =
-    stored?.approval === "allow" || stored?.approval === "deny" || stored?.approval === "ask"
-      ? stored.approval
-      : DEFAULT_SETTINGS.external.approval;
-  return {
-    enabled: typeof stored?.enabled === "boolean" ? stored.enabled : DEFAULT_SETTINGS.external.enabled,
-    rootPath: typeof stored?.rootPath === "string" ? stored.rootPath.trim() : DEFAULT_SETTINGS.external.rootPath,
-    approval,
-    honorGitignore:
-      typeof stored?.honorGitignore === "boolean" ? stored.honorGitignore : DEFAULT_SETTINGS.external.honorGitignore,
-    ignoredGlobs:
-      typeof stored?.ignoredGlobs === "string" ? stored.ignoredGlobs : DEFAULT_SETTINGS.external.ignoredGlobs,
   };
 }
 

@@ -19,13 +19,7 @@ export interface StaticContextEvalCase {
   systemPrompt?: string;
   toolSurface?: "default" | "compat";
   contextWindow?: number;
-  externalWorkspace?: StaticExternalWorkspaceConfig;
   assertions: EvalAssertion[];
-}
-
-export interface StaticExternalWorkspaceConfig {
-  enabled?: boolean;
-  rootPath?: string;
 }
 
 export interface ScriptedDogfoodEvalCase {
@@ -361,10 +355,6 @@ function validateCase(input: unknown, index: number): AgenticEvalCase {
       systemPrompt: optionalString(evalCase.systemPrompt),
       toolSurface: evalCase.toolSurface === "compat" ? "compat" : "default",
       contextWindow: optionalPositiveNumber(evalCase.contextWindow, `suite.cases[${index}].contextWindow`),
-      externalWorkspace: validateStaticExternalWorkspaceConfig(
-        evalCase.externalWorkspace,
-        `suite.cases[${index}].externalWorkspace`,
-      ),
       assertions,
     };
   }
@@ -400,18 +390,6 @@ function validateDogfoodConfig(input: unknown, path: string): ScriptedDogfoodEva
     spec: optionalString(config.spec),
     timeoutMs: optionalPositiveNumber(config.timeoutMs, `${path}.timeoutMs`),
     turnTimeoutMs: optionalPositiveNumber(config.turnTimeoutMs, `${path}.turnTimeoutMs`),
-  };
-}
-
-function validateStaticExternalWorkspaceConfig(
-  input: unknown,
-  path: string,
-): StaticContextEvalCase["externalWorkspace"] {
-  if (input === undefined) return undefined;
-  const config = objectValue(input, path);
-  return {
-    enabled: typeof config.enabled === "boolean" ? config.enabled : undefined,
-    rootPath: optionalString(config.rootPath),
   };
 }
 

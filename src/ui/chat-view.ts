@@ -2,7 +2,6 @@ import {
   ItemView,
   Menu,
   Notice,
-  Platform,
   TFile,
   TFolder,
   type WorkspaceLeaf,
@@ -108,7 +107,6 @@ import {
   resolveProjectCommand,
 } from "../projects/projects";
 import { memoryPathForApp } from "../tools/memory-tools";
-import { openExternalReference } from "../tools/external-workspace";
 import { planTrackerRows } from "../agent/plan-tracker";
 import { buildPlanTrackerPanelState } from "./plan-tracker-panel";
 import { renderPlanTrackerPanel as renderPlanTrackerPanelDom } from "./plan-tracker-renderer";
@@ -2413,12 +2411,6 @@ export class ChatView extends ItemView {
     const controller = new WorkingDirectoryWorkflowController({
       workingDirs: () => this.plugin.settings.approval.workingDirs,
       folderExists: (path) => this.app.vault.getAbstractFileByPath(path) instanceof TFolder,
-      externalRoot: () => this.plugin.settings.external,
-      setExternalRoot: (path) => {
-        this.plugin.settings.external.enabled = path !== null;
-        this.plugin.settings.external.rootPath = path ?? "";
-      },
-      canUseExternalRoot: () => Platform.isDesktopApp,
       activeFolder: () => activeNoteFolder(this.effectiveActiveNote()),
       vaultBasePath: () => vaultBasePath(this.app.vault.adapter),
       saveSettings: () => this.plugin.saveSettings(),
@@ -2648,10 +2640,6 @@ export class ChatView extends ItemView {
 
   private async openRenderedExternalLink(target: string): Promise<void> {
     try {
-      if (target.startsWith("external://")) {
-        new Notice(await openExternalReference(this.plugin.settings.external, target));
-        return;
-      }
       await openSystemUrl(target);
     } catch (error) {
       new Notice(`Could not open link: ${error instanceof Error ? error.message : String(error)}`);

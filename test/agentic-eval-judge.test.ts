@@ -79,7 +79,6 @@ describe("agentic eval judge", () => {
       runId: "run",
       createdAt: "2026-07-01T00:00:00.000Z",
       vaultPath: path.join(runDir, "vault"),
-      externalRoot: path.join(runDir, "external"),
       secretText: "secret",
       expectedActiveNote: "Dogfood Scratch.md",
       ignoredGlobs: [],
@@ -87,7 +86,6 @@ describe("agentic eval judge", () => {
       deniedMutationPaths: [],
       requiredTools: [],
       requiredGeneratedNotes: [{ path: "Generated/Oracle.md", frontmatter: false, requiredSubstrings: [] }],
-      repeatedExternalReads: [],
       maxUserMessageChars: 1000,
     };
 
@@ -104,10 +102,6 @@ describe("agentic eval judge", () => {
     expect(packet.generatedNotes[0]).toEqual(expect.objectContaining({ path: "Generated/Oracle.md" }));
     expect(packet.trace.approvalDenials).toEqual([{ key: "write: no", count: 1 }]);
     expect(packet.promptContext.defaultSystemPromptExcerpt).toContain("read_skill");
-    expect(packet.promptContext.externalWorkspaceOverlay).toContain("Avoid repeating the same external_inspect");
-    expect(packet.promptContext.externalWorkspaceOverlay).toContain("one exact repeat is enough");
-    expect(packet.promptContext.relevantToolDescriptions.external_inspect).toContain("reuse prior output");
-    expect(packet.promptContext.relevantToolDescriptions.external_inspect).toContain("do it once");
   });
 
   it("returns cached judge results without making a provider request", async () => {
@@ -121,7 +115,7 @@ describe("agentic eval judge", () => {
       conversation: { userPrompts: [], assistantResponses: [] },
       generatedNotes: [],
       trace: { duplicateToolStarts: [], repeatedExternalPathActions: [], approvalDenials: [] },
-      promptContext: { defaultSystemPromptExcerpt: "", externalWorkspaceOverlay: "", relevantToolDescriptions: {} },
+      promptContext: { defaultSystemPromptExcerpt: "", relevantToolDescriptions: {} },
       rubric: [],
     };
     const prompt = judgePrompt(packet);

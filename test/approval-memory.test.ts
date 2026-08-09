@@ -4,13 +4,11 @@ import {
   approvalPolicyForRememberedChoice,
 } from "../src/agent/approval-memory";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
-import { EXTERNAL_INSPECT_TOOL_NAME } from "../src/tools/external-workspace";
 
 function settings(): AgenticChatSettings {
   return {
     ...DEFAULT_SETTINGS,
     approval: { ...DEFAULT_SETTINGS.approval, perTool: {}, workingDirs: [] },
-    external: { ...DEFAULT_SETTINGS.external, enabled: true, rootPath: "/workspace/code", approval: "ask" },
   };
 }
 
@@ -24,7 +22,7 @@ describe("approval memory", () => {
     expect(current.approval.perTool).toEqual({});
   });
 
-  it("persists the final allow or deny decision for regular tools", () => {
+  it("persists the final allow or deny decision for tools", () => {
     const allow = settings();
     expect(applyRememberedApprovalChoice(allow, "write", { approved: true, remember: true })).toBe(true);
     expect(allow.approval.perTool.write).toBe("allow");
@@ -32,21 +30,5 @@ describe("approval memory", () => {
     const deny = settings();
     expect(applyRememberedApprovalChoice(deny, "write", { approved: false, remember: true })).toBe(true);
     expect(deny.approval.perTool.write).toBe("deny");
-  });
-
-  it("persists the final allow or deny decision for external inspection", () => {
-    const allow = settings();
-    expect(
-      applyRememberedApprovalChoice(allow, EXTERNAL_INSPECT_TOOL_NAME, { approved: true, remember: true }),
-    ).toBe(true);
-    expect(allow.external.approval).toBe("allow");
-    expect(allow.approval.perTool).toEqual({});
-
-    const deny = settings();
-    expect(
-      applyRememberedApprovalChoice(deny, EXTERNAL_INSPECT_TOOL_NAME, { approved: false, remember: true }),
-    ).toBe(true);
-    expect(deny.external.approval).toBe("deny");
-    expect(deny.approval.perTool).toEqual({});
   });
 });

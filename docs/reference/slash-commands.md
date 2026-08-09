@@ -11,8 +11,8 @@ Slash commands run locally and are not sent to the model.
 | `/effort [level]` | Set reasoning effort for the next message (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). Alias: `/thinking`. |
 | `/config` | Switch permission mode. |
 | `/mode` | Alias for `/config`. |
-| `/add-dir [folder]` | Grant a vault working directory. On desktop, an absolute folder outside the vault configures the external workspace root instead. Without an argument, opens a vault folder picker. |
-| `/dirs` | List or revoke granted working directories and the configured external workspace root. |
+| `/add-dir [folder]` | Grant a vault working directory. Without an argument, opens a vault folder picker. |
+| `/dirs` | List or revoke granted working directories. |
 | `/plan` | Enter sticky read-only planning mode. |
 | `/endplan` | Leave planning mode and restore the prior posture. |
 | `/compact [instructions]` | Summarize older turns now. Optional instructions are passed to the compaction request. |

@@ -65,7 +65,6 @@ import {
 } from "./retrieval/embeddings";
 
 import {
-  DEFAULT_EXTERNAL_IGNORED_GLOBS,
   DEFAULT_SETTINGS,
   PROVIDERS,
   PROVIDER_LABELS,
@@ -74,7 +73,6 @@ import {
   type NetworkSettings,
 } from "./settings-schema";
 export {
-  DEFAULT_EXTERNAL_IGNORED_GLOBS,
   DEFAULT_SETTINGS,
   PROVIDERS,
   PROVIDER_LABELS,
@@ -88,7 +86,6 @@ export {
 export type {
   AgenticChatSettings,
   CompactionSettings,
-  ExternalWorkspaceSettings,
   NetworkSettings,
   NotificationSettings,
   WebSettings,
@@ -1821,8 +1818,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       },
     );
 
-    this.renderExternalWorkspace(containerEl, settings);
-
     new Setting(containerEl).setName("Semantic retrieval").setHeading();
     new Setting(containerEl)
       .setName("Embeddings")
@@ -1937,94 +1932,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           settings.ignoredGlobs = value;
           await this.save();
         });
-      });
-  }
-
-  private renderExternalWorkspace(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("External workspace root").setHeading();
-
-    const desktopOnly = !Platform.isDesktopApp;
-    if (desktopOnly) {
-      const warning = containerEl.createDiv({ cls: "agentic-chat-settings-warning" });
-      warning.createSpan({ cls: "agentic-chat-settings-warning-icon", text: "⚠" });
-      warning.createSpan({
-        text: "External workspace root tools are desktop-only. They are never registered on Obsidian mobile.",
-      });
-    }
-
-    new Setting(containerEl)
-      .setName("Enable external root tools")
-      .setDesc(
-        "Desktop-only. Registers the read-only external_inspect tool only when this is enabled and a root path is configured.",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setDisabled(desktopOnly)
-          .setValue(settings.external.enabled)
-          .onChange(async (value) => {
-            settings.external.enabled = value;
-            await this.save();
-            this.redraw();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("External root path")
-      .setDesc("Absolute path to the one external directory the agent may inspect. This is not added to prompt context.")
-      .addText((text) =>
-        text
-          .setDisabled(desktopOnly)
-          .setPlaceholder("/path/to/codebase")
-          .setValue(settings.external.rootPath)
-          .onChange(async (value) => {
-            settings.external.rootPath = value.trim();
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Approval for external inspection")
-      .setDesc("Read-only external_inspect calls ask by default. Allow or deny only when you deliberately trust the standing policy.")
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("ask", "Ask each time")
-          .addOption("allow", "Allow automatically")
-          .addOption("deny", "Deny automatically")
-          .setDisabled(desktopOnly)
-          .setValue(settings.external.approval)
-          .onChange(async (value) => {
-            settings.external.approval = value === "allow" || value === "deny" ? value : "ask";
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Honor .gitignore")
-      .setDesc("Apply root and nested .gitignore files while listing, reading, and searching external files.")
-      .addToggle((toggle) =>
-        toggle
-          .setDisabled(desktopOnly)
-          .setValue(settings.external.honorGitignore)
-          .onChange(async (value) => {
-            settings.external.honorGitignore = value;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("External ignore list")
-      .setDesc("One gitignore-style rule per line, scoped to the external root. Separate from the vault ignore list.")
-      .addTextArea((text) => {
-        text.inputEl.rows = 5;
-        text.inputEl.addClass("agentic-chat-system-prompt");
-        text
-          .setDisabled(desktopOnly)
-          .setPlaceholder(DEFAULT_EXTERNAL_IGNORED_GLOBS)
-          .setValue(settings.external.ignoredGlobs)
-          .onChange(async (value) => {
-            settings.external.ignoredGlobs = value;
-            await this.save();
-          });
       });
   }
 

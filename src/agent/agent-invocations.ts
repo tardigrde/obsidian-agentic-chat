@@ -15,7 +15,6 @@ export function buildInitInvocation(instructions?: string): string {
     "Request at most one mutation. If that edit or write is denied, do not retry the same change and do not ask the user for broader permission; report that the update was declined.",
     "Keep it concise: this file is injected into every conversation.",
     "Describe folder and note paths relative to the vault root, and do not suggest recreating the vault's own name as a nested folder inside the vault.",
-    "Keep citation guidance self-consistent: if you mention the external workspace, cite external files as relative `external://path` references and never as absolute filesystem paths.",
   ];
   const trimmed = instructions?.trim();
   if (trimmed) parts.push("Additional user instructions for this initialization:", `<instructions>\n${trimmed}\n</instructions>`);

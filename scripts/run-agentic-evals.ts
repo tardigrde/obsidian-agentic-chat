@@ -5,10 +5,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_SYSTEM_PROMPT } from "../src/agent/default-system-prompt";
-import { formatExternalWorkspaceForSystemPrompt } from "../src/agent/external-workspace-prompt";
 import { estimateToolDefinitionTokens } from "../src/agent/tool-budget";
-import type { ExternalWorkspaceSettings } from "../src/settings";
-import { createExternalWorkspaceTools } from "../src/tools/external-workspace";
 import { BUILTIN_TOOL_NAMES, type BuiltinToolSurface } from "../src/tools/tool-contracts";
 import { vaultToolDefinitionsForSurface } from "../src/tools/vault-tool-definitions";
 import {
@@ -144,13 +141,8 @@ async function runStaticContextCase(evalCase: StaticContextEvalCase, outDir: str
 function createStaticContextSnapshot(evalCase: StaticContextEvalCase): StaticContextSnapshot {
   const baseSystemPrompt = evalCase.systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT;
   const userPrompt = evalCase.prompt ?? "";
-  const externalSettings = staticExternalWorkspaceSettings(evalCase);
-  const externalPrompt = formatExternalWorkspaceForSystemPrompt(externalSettings);
-  const systemPrompt = [baseSystemPrompt, externalPrompt].filter(Boolean).join("\n\n");
-  const tools = [
-    ...vaultToolDefinitionsForSurface(evalCase.toolSurface as BuiltinToolSurface | undefined),
-    ...createExternalWorkspaceTools(externalSettings),
-  ];
+  const systemPrompt = baseSystemPrompt;
+  const tools = vaultToolDefinitionsForSurface(evalCase.toolSurface as BuiltinToolSurface | undefined);
   const contextMessages = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
@@ -167,16 +159,6 @@ function createStaticContextSnapshot(evalCase: StaticContextEvalCase): StaticCon
       description: tool.description,
       parameters: tool.parameters,
     })),
-  };
-}
-
-function staticExternalWorkspaceSettings(evalCase: StaticContextEvalCase): ExternalWorkspaceSettings {
-  return {
-    enabled: evalCase.externalWorkspace?.enabled === true,
-    rootPath: evalCase.externalWorkspace?.rootPath ?? "",
-    approval: "ask",
-    honorGitignore: true,
-    ignoredGlobs: "",
   };
 }
 

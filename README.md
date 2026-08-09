@@ -40,7 +40,6 @@ Your notes are yours. This plugin is built so that using AI on them does not mea
 - **Undo** — `/undo` reverts the agent's most recent vault change (write/edit/delete/rename/frontmatter).
 - **Safe ↔ YOLO toggle** — a single composer switch over the approval gate. **Safe** honors your settings approval policy; **YOLO** is a session master switch that auto-approves all mutating tools (a per-tool *deny* still wins).
 - **Working directories** — grant folders as a working set (composer folder button, `/add-dir`, or settings). In Safe mode the agent then **auto-runs reads/writes inside** them and **asks before touching anything outside** — even reads. Granted folders show as removable "scope" chips; `/dirs` lists/revokes them. Empty = approval applies vault-wide. (The ignore list still wins inside a granted folder.)
-- **External workspace root (desktop-only)** — optionally grant one filesystem directory outside the vault from settings or with `/add-dir /absolute/path` for read-only `external_inspect` list/read/search calls. It is not prompt context, is not a vault working directory, and uses passive `external://relative/path` citations instead of Obsidian links. External workspace root tools are desktop-only and they are not registered on mobile.
 - **Plan mode** — `/plan` enters a sticky, read-only planning state (all mutations blocked) until `/endplan` restores your prior Safe/YOLO posture. A "Plan" badge shows in the composer while active.
 - **Ignore list** — gitignore-style globs (e.g. `Private/`, `*.secret.md`, `**/diary/**`) name notes the agent can never touch. Enforced at the tool layer: matching files are invisible to *every* tool — they report as "not found", so the agent can't read, list, search, or edit them.
 - **Conversation history** — every chat is stored as JSONL under the plugin folder and resumed on reload. Browse, search/filter, reopen, rename, delete, export, or clear past conversations; sessions are auto-titled from the first prompt. Works on mobile (no SQLite, no Node `fs`).
@@ -284,7 +283,7 @@ tabs, persistence/migration, composer wiring, slash-command routing, and approva
 mocked unit tests can't.
 
 `npm run test:e2e:dogfood` is the expensive high-coverage dogfood target. It
-generates a fresh adversarial vault plus external workspace under
+generates a fresh adversarial vault under
 `logs/dogfood-runs/<run-id>/`, installs the current plugin into that vault,
 drives real Obsidian through WDIO, and fails if the dogfood invariant oracle or
 the generated run report finds a product regression. It uses a deterministic

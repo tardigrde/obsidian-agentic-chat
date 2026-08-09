@@ -180,10 +180,7 @@ describe("assistant markdown rendering helpers", () => {
       kind: "external",
       target: "https://example.com/path",
     });
-    expect(classifyRenderedChatLink(anchor({ href: "external://src/app.ts" }))).toEqual({
-      kind: "external",
-      target: "external://src/app.ts",
-    });
+    expect(classifyRenderedChatLink(anchor({ href: "external://src/app.ts" }))).toBeNull();
     expect(classifyRenderedChatLink(anchor({ href: "artifact:artifact-1" }))).toBeNull();
     expect(classifyRenderedChatLink(anchor({ href: "#local-heading" }))).toBeNull();
   });

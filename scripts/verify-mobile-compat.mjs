@@ -28,17 +28,6 @@ const desktopOnlyAllowlist = new Map([
       ],
     },
   ],
-  [
-    "src/tools/external-workspace.ts",
-    {
-      modules: new Set(["fs", "path", "electron"]),
-      globals: new Set(["require"]),
-      requiredText: [
-        /External workspace root tools are desktop-only/is,
-        /They are not registered on mobile/is,
-      ],
-    },
-  ],
 ]);
 
 const forbiddenModules = new Set([

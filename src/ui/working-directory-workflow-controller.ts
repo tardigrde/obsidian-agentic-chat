@@ -5,9 +5,6 @@ import type { WorkflowRenderer } from "./workflow-renderer";
 export interface WorkingDirectoryWorkflowControllerOptions {
   workingDirs: () => string[];
   folderExists: (path: string) => boolean;
-  externalRoot?: () => ExternalRootState;
-  setExternalRoot?: (path: string | null) => void;
-  canUseExternalRoot?: () => boolean;
   activeFolder?: () => string | null | undefined;
   vaultBasePath?: () => string | null | undefined;
   saveSettings: () => Promise<void>;
@@ -65,11 +62,9 @@ export class WorkingDirectoryWorkflowController {
   showWorkingDirs(): void {
     this.options.renderer.clear();
     const dirs = this.options.workingDirs();
-    const externalRoot = this.options.externalRoot?.();
-    const hasExternalRoot = Boolean(externalRoot?.enabled && externalRoot.rootPath.trim());
     this.options.renderer.actionList(
       "Working directories",
-      formatDirectoryListSubtitle(dirs.length, hasExternalRoot),
+      formatDirectoryListSubtitle(dirs.length),
       [
         {
           label: "Add working directory...",
@@ -83,16 +78,6 @@ export class WorkingDirectoryWorkflowController {
           icon: "folder-check",
           onClick: () => void this.remove(dir),
         })),
-        ...(hasExternalRoot && externalRoot
-          ? [
-              {
-                label: formatExternalRootLabel(externalRoot.rootPath),
-                detail: "External workspace root - click to revoke.",
-                icon: "folder-search",
-                onClick: () => void this.removeExternalRoot(),
-              },
-            ]
-          : []),
       ],
     );
   }
@@ -109,10 +94,6 @@ export class WorkingDirectoryWorkflowController {
   async add(path: string): Promise<void> {
     const resolved = this.resolveInput(path);
     if (resolved === null) return;
-    if (resolved.kind === "external-root") {
-      await this.addExternalRoot(resolved.path);
-      return;
-    }
 
     const normalized = resolved.path;
     if (normalized !== "" && !this.options.folderExists(normalized)) {
@@ -135,32 +116,6 @@ export class WorkingDirectoryWorkflowController {
     ]);
   }
 
-  async addExternalRoot(path: string): Promise<void> {
-    if (!this.canConfigureExternalRoot()) {
-      this.options.renderer.error(`External workspace roots are desktop-only and are unavailable in this vault.`);
-      return;
-    }
-    const normalized = displayFsPath(path);
-    const current = this.options.externalRoot?.();
-    const currentPath = current?.rootPath ? displayFsPath(current.rootPath) : "";
-    if (current?.enabled && currentPath === normalized) {
-      this.options.renderer.info("External workspace root", [[normalized, "Already configured."]]);
-      return;
-    }
-
-    this.options.setExternalRoot?.(normalized);
-    await this.options.saveSettings();
-    this.options.afterChange();
-    this.options.renderer.info("External workspace root", [
-      [
-        normalized,
-        current?.enabled && currentPath
-          ? `Replaced ${currentPath}. The agent can inspect the new root read-only with approval.`
-          : "Enabled - the agent can inspect it read-only with approval using external_inspect.",
-      ],
-    ]);
-  }
-
   async remove(dir: string): Promise<void> {
     const dirs = this.options.workingDirs();
     const index = dirs.indexOf(dir);
@@ -170,18 +125,10 @@ export class WorkingDirectoryWorkflowController {
     this.options.afterChange();
   }
 
-  async removeExternalRoot(): Promise<void> {
-    if (!this.options.setExternalRoot) return;
-    this.options.setExternalRoot(null);
-    await this.options.saveSettings();
-    this.options.afterChange();
-  }
-
-  private resolveInput(path: string): ResolvedAddDirectorySuccess | null {
-    const resolved = resolveAddDirectoryInput(path, {
+  private resolveInput(path: string): { path: string } | null {
+    const resolved = resolveWorkingDirectoryInput(path, {
       activeFolder: this.options.activeFolder?.() ?? "",
       vaultBasePath: this.options.vaultBasePath?.() ?? null,
-      allowExternalRoot: this.canConfigureExternalRoot(),
     });
     if ("error" in resolved) {
       this.options.renderer.error(resolved.error);
@@ -189,32 +136,15 @@ export class WorkingDirectoryWorkflowController {
     }
     return resolved;
   }
-
-  private canConfigureExternalRoot(): boolean {
-    return Boolean(this.options.setExternalRoot && (this.options.canUseExternalRoot?.() ?? false));
-  }
 }
 
 export function formatWorkingDirLabel(dir: string): string {
   return dir === "" ? "/ (vault root)" : dir;
 }
 
-export function formatExternalRootLabel(path: string): string {
-  return displayFsPath(path);
-}
-
-function formatDirectoryListSubtitle(workingDirCount: number, hasExternalRoot: boolean): string {
-  if (workingDirCount > 0 && hasExternalRoot) {
-    return "Auto-run inside working directories; inspect the external root read-only with approval.";
-  }
+function formatDirectoryListSubtitle(workingDirCount: number): string {
   if (workingDirCount > 0) return "Auto-run inside these; ask before touching anything outside.";
-  if (hasExternalRoot) return "No working directories granted; the external root is read-only with approval.";
   return "None granted - reads/writes follow your approval policy everywhere in the vault.";
-}
-
-export interface ExternalRootState {
-  enabled: boolean;
-  rootPath: string;
 }
 
 export interface WorkingDirectoryPathContext {
@@ -225,35 +155,16 @@ export interface WorkingDirectoryPathContext {
 }
 
 export type ResolvedWorkingDirectoryInput = { path: string } | { error: string };
-export type ResolvedAddDirectorySuccess =
-  | { kind: "working-directory"; path: string }
-  | { kind: "external-root"; path: string };
-export type ResolvedAddDirectoryInput = ResolvedAddDirectorySuccess | { error: string };
 
 export function resolveWorkingDirectoryInput(
   input: string,
   context: WorkingDirectoryPathContext = {},
 ): ResolvedWorkingDirectoryInput {
-  const resolved = resolveAddDirectoryInput(input, { ...context, allowExternalRoot: false });
-  if ("error" in resolved) return resolved;
-  if (resolved.kind === "external-root") {
-    return { error: `Folder path "${input}" points outside this vault.` };
-  }
-  return { path: resolved.path };
-}
-
-function resolveAddDirectoryInput(
-  input: string,
-  context: WorkingDirectoryPathContext & { allowExternalRoot?: boolean } = {},
-): ResolvedAddDirectoryInput {
   const raw = input.trim();
-  if (!raw || raw === "/") return { kind: "working-directory", path: "" };
+  if (!raw || raw === "/") return { path: "" };
 
   if (isAbsoluteFilesystemPath(raw)) {
-    const resolved = resolveAbsoluteFolderInput(raw, context.vaultBasePath);
-    if (!("error" in resolved)) return { kind: "working-directory", path: resolved.path };
-    if (context.allowExternalRoot) return { kind: "external-root", path: displayFsPath(raw) };
-    return resolved;
+    return resolveAbsoluteFolderInput(raw, context.vaultBasePath);
   }
 
   const base = isActiveFolderRelative(raw) ? context.activeFolder ?? "" : "";
@@ -261,9 +172,7 @@ function resolveAddDirectoryInput(
   if (resolved === null) {
     return { error: `Folder path "${input}" points outside this vault.` };
   }
-  const normalized = normalizeResolvedVaultFolder(resolved, input);
-  if ("error" in normalized) return normalized;
-  return { kind: "working-directory", path: normalized.path };
+  return normalizeResolvedVaultFolder(resolved, input);
 }
 
 function resolveAbsoluteFolderInput(input: string, vaultBasePath: string | null | undefined): ResolvedWorkingDirectoryInput {

@@ -78,7 +78,7 @@ export function buildStablePrefix(chars) {
     const id = String(i).padStart(4, "0");
     i += 1;
     lines.push(
-      `CACHE-EVAL-${id}: active-note context delimiter <context> --- </context>; artifact manifest; external_inspect; cacheRead; cacheWrite; compacted summary; stable prefix line.`,
+      `CACHE-EVAL-${id}: active-note context delimiter <context> --- </context>; artifact manifest; cacheRead; cacheWrite; compacted summary; stable prefix line.`,
     );
   }
   return lines.join("\n").slice(0, chars);

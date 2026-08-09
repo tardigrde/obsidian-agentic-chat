@@ -28,7 +28,6 @@ describe("dogfood core", () => {
     const root = await tempDir();
     const manifest = await generateDogfoodVault({
       vaultPath: path.join(root, "vault"),
-      externalRoot: path.join(root, "external"),
       runId: "unit-dogfood",
     });
     await writeGeneratedNotes(manifest);
@@ -38,7 +37,6 @@ describe("dogfood core", () => {
     const reportPath = await writeDogfoodRunReport(result, path.join(root, "reports"));
 
     expect(result.ok).toBe(true);
-    expect(result.metrics.cacheHits).toBe(1);
     expect(result.metrics.toolStarts.write).toBeGreaterThanOrEqual(1);
     expect(reportPath).toContain("unit-dogfood-summary.md");
   });
@@ -47,7 +45,6 @@ describe("dogfood core", () => {
     const root = await tempDir();
     const manifest = await generateDogfoodVault({
       vaultPath: path.join(root, "vault"),
-      externalRoot: path.join(root, "external"),
       runId: "unit-dogfood-leak",
     });
     await writeGeneratedNotes(manifest);
@@ -63,29 +60,6 @@ describe("dogfood core", () => {
       expect.objectContaining({ area: "privacy", message: "Restricted secret marker leaked into session JSONL." }),
     );
   });
-
-  it("warns when external reads exceed an opt-in repeat threshold", async () => {
-    const root = await tempDir();
-    const manifest = await generateDogfoodVault({
-      vaultPath: path.join(root, "vault"),
-      externalRoot: path.join(root, "external"),
-      runId: "unit-dogfood-repeated-reads",
-    });
-    manifest.maxRepeatedExternalReadCount = 1;
-    await writeGeneratedNotes(manifest);
-    await writeSession(manifest, validSessionEntries(manifest));
-
-    const result = await assertDogfoodInvariants(manifest);
-
-    expect(result.ok).toBe(true);
-    expect(result.findings).toContainEqual(
-      expect.objectContaining({
-        severity: "warning",
-        area: "tool-efficiency",
-        message: "External read foreign-vault/Imported.md was repeated 2 times, over warning threshold 1.",
-      }),
-    );
-  });
 });
 
 async function writeGeneratedNotes(manifest: DogfoodManifest): Promise<void> {
@@ -95,7 +69,6 @@ async function writeGeneratedNotes(manifest: DogfoodManifest): Promise<void> {
     [
       "---",
       "tags: [dogfood, oracle]",
-      "source: external://foreign-vault/Imported.md",
       "verified: true",
       "---",
       "# Oracle",
@@ -151,34 +124,14 @@ async function writeSession(manifest: DogfoodManifest, entries: unknown[]): Prom
 }
 
 function validSessionEntries(_manifest: DogfoodManifest): unknown[] {
-  const toolNames = [
-    "read",
-    "vault_inspect",
-    "write",
-    "edit",
-    "rename",
-    "delete",
-    "set_properties",
-    "external_inspect",
-    "search_memory",
-    "ask_user",
-  ];
+  const toolNames = ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "search_memory", "ask_user"];
   return [
     { type: "message", message: { role: "user", content: [{ type: "text", text: 'Active note "Dogfood Scratch.md":\n# Scratch' }] } },
     { type: "message", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } },
     ...toolNames.map((toolName, index) => ({
       type: "action_audit",
-      event: { category: "tool_call", action: "start", toolName, toolCallId: `tool-${index}`, args: toolName === "external_inspect" ? { action: "list", path: "" } : {} },
+      event: { category: "tool_call", action: "start", toolName, toolCallId: `tool-${index}`, args: {} },
     })),
-    {
-      type: "action_audit",
-      event: { category: "tool_call", action: "start", toolName: "external_inspect", toolCallId: "ext-1", args: { action: "read", path: "foreign-vault/Imported.md" } },
-    },
-    {
-      type: "action_audit",
-      event: { category: "tool_call", action: "start", toolName: "external_inspect", toolCallId: "ext-2", args: { action: "read", path: "foreign-vault/Imported.md" } },
-    },
-    { type: "message", message: { role: "toolResult", toolCallId: "ext-2", toolName: "external_inspect", details: { cached: true } } },
     ...mutationTriplet("write-1", "write", { kind: "write", path: "Generated/Oracle.md" }),
     ...mutationTriplet("set-props-1", "set_properties", { kind: "edit", path: "Generated/Oracle.md" }),
     ...mutationTriplet("edit-1", "edit", { kind: "edit", path: "Generated/Oracle.md" }),

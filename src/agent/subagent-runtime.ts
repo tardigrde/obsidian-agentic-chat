@@ -1,6 +1,5 @@
 import type { App } from "obsidian";
 import { Agent, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
-import { Platform } from "obsidian";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { activeModelConfig, apiKeyForProvider } from "../settings";
@@ -12,7 +11,6 @@ import { createSubagentTool } from "../tools/subagent-tool";
 import { createWebTools } from "../tools/web-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
-import { createExternalWorkspaceTools } from "../tools/external-workspace";
 import { ReadMemo } from "../vault/read-memo";
 import { resolveModePolicy } from "./modes";
 import type { AgentRuntimeResources } from "./runtime-resources";
@@ -74,9 +72,6 @@ export class AgentSubagentRuntime {
     // Allowed child calls still flow through the parent tool-call controller.
     const childTools = [
       ...createVaultTools(this.app, this.getResources().ignoreMatcher, new ReadMemo()),
-      ...(Platform.isDesktopApp
-        ? createExternalWorkspaceTools(settings.external, { artifactStore: this.artifactStore })
-        : []),
       ...createWebTools(settings.web, this.webFetch, this.artifactStore),
       ...createToolArtifactTools(this.artifactStore),
     ].filter(

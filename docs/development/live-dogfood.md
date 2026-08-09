@@ -5,7 +5,7 @@ Obsidian instance, a real vault, and a real installed copy of the plugin. It is
 intended for Codex or another automation agent operating this repository.
 
 The default productized target is deterministic and open-source friendly. It
-generates a throwaway vault plus external workspace, drives Obsidian through
+generates a throwaway adversarial vault, drives Obsidian through
 WDIO, then asserts a dogfood oracle over the resulting vault and session JSONL.
 
 ```bash
@@ -22,14 +22,12 @@ Default deterministic target:
 
 ```text
 Vault:         generated under logs/dogfood-runs/<run-id>/vault
-External root: generated under logs/dogfood-runs/<run-id>/external-root
 Provider:      scripted replay model
 ```
 
 The assistant should use the plugin like a real user:
 
 - Configure the provider and model path used by the scenario.
-- Enable an external workspace root.
 - Ask the agent to explore, summarize, and write notes into the vault.
 - Approve and deny real tool calls.
 - Record every UI, approval, session, tool, and model-call problem with enough
@@ -72,7 +70,6 @@ Before starting an optional live run, obtain these from the user:
 AGENTIC_CHAT_BASE_URL            OpenAI-compatible base URL, usually ending in /api
 AGENTIC_CHAT_MODEL               Model id exposed by the gateway
 AGENTIC_CHAT_API_KEY_FILE        Local file containing the bearer token
-AGENTIC_CHAT_LIVE_EXTERNAL_ROOT  Workspace root to inspect
 TARGET_VAULT                     Vault to open for the live run
 ```
 
@@ -85,7 +82,6 @@ set +a
 
 export AGENTIC_CHAT_LIVE_DOGFOOD=true
 export TARGET_VAULT="$HOME/AgenticChatDogfoodVault"
-export AGENTIC_CHAT_LIVE_EXTERNAL_ROOT="$HOME/workspace"
 export AGENTIC_CHAT_API_KEY_FILE="/tmp/agentic-chat.key"
 export AGENTIC_CHAT_BASE_URL="https://openrouter.ai/api/v1"
 export AGENTIC_CHAT_MODEL="openrouter/auto"
@@ -191,11 +187,6 @@ Base URL: AGENTIC_CHAT_BASE_URL
 API key: contents of AGENTIC_CHAT_API_KEY_FILE
 Model: AGENTIC_CHAT_MODEL
 Mode: Safe
-External workspace root: enabled
-External root path: AGENTIC_CHAT_LIVE_EXTERNAL_ROOT
-External inspection approval: ask, unless deliberately testing remembered allow/deny
-Honor .gitignore: on
-External ignore list: keep secret defaults, add repo-specific noise only if needed
 ```
 
 If setting the API key through automation, read the key from
@@ -210,31 +201,29 @@ workflow bugs, not to finish the whole knowledge base in one prompt.
 Recommended first prompts:
 
 ```text
-Use the external workspace root to inspect the configured workspace. First list the top-level repos
-and write a short note at Agentic Chat Dogfood/workspace-index.md with repo names and
-one-line guesses. Ask before writing.
+Explore the vault and write a short index note at Agentic Chat Dogfood/index.md
+listing the main folders and notes with one-line guesses. Ask before writing.
 ```
 
 ```text
-Search the external root for package.json, pyproject.toml, go.mod, Cargo.toml,
-and README.md. Summarize the repo technology map in
-Agentic Chat Dogfood/workspace-tech-map.md. Use external:// citations.
+Summarize the vault's technology/topic map at
+Agentic Chat Dogfood/tech-map.md. Search and read the relevant notes first.
 ```
 
 ```text
-Pick one repo from the index, inspect its README and config files, then create a
-repo profile note under Agentic Chat Dogfood/repos/. Include purpose, entry
+Pick one topic cluster from the index, read its notes, then create a
+topic profile note under Agentic Chat Dogfood/topics/. Include purpose, entry
 points, local commands, and unknowns.
 ```
 
 ```text
-Continue the repo profile, but deny one external_inspect approval and then
+Continue the topic profile, but deny one edit approval and then
 continue with a narrower request. Record whether the UI recovers cleanly.
 ```
 
 Exercise these workflows deliberately:
 
-- external root list/read/search
+- vault list/read/search
 - approval modal allow, deny, remembered allow, remembered deny
 - long transcript reload
 - `/dirs`
@@ -263,7 +252,7 @@ should include:
 - failed tool calls grouped by tool and error
 - notes created, edited, renamed, deleted, and left stale
 - generated-note quality checks: frontmatter, required sections,
-  `external://` sources, unresolved backlinks, and placeholder language
+  unresolved backlinks, and placeholder language
 
 Prefer writing the summary to a local file such as:
 
@@ -290,12 +279,12 @@ Add focused scenarios that each run in their own conversation/session:
 - Unclear instructions:
   - "clean this up" without a target
   - "delete the bad notes" without naming files
-  - "use the repo" without saying whether the user means the vault or external
-    root
+  - "use the repo" without saying whether the user means the vault or a linked
+    working directory
   - verify the agent asks a clarifying question or behaves conservatively
 - Approval recovery:
   - deny a write and verify the agent does not retry the same mutation
-  - deny external inspection and continue with a narrower request
+  - deny a working-directory read and continue with a narrower request
   - deny delete and ask for a summary-only cleanup
   - change approval settings mid-session and verify behavior changes
 - Context attachment:
@@ -343,7 +332,7 @@ notes:
 - build the knowledge base
 - read its own generated notes
 - identify gaps or contradictions
-- refine notes based on concrete external files
+- refine notes based on concrete vault sources
 - remove unused or duplicated notes
 - fix backlinks and overview indexes
 - produce a final QA note explaining what was verified and what remains unknown
@@ -395,7 +384,7 @@ Then run sad paths that a naive user is likely to hit:
 - try invalid or empty model values and verify the UI recovers cleanly
 - give unclear requests such as "clean this up", "delete the bad notes", or
   "use the repo" and verify the agent asks or behaves conservatively
-- deny external inspection, write, edit, and delete approvals in separate
+- deny write, edit, and delete approvals in separate
   sessions and check for duplicate retries
 - change approval settings mid-session, verify behavior changes, then restore
   the safe defaults
@@ -409,7 +398,7 @@ Cover feature areas that are easy to miss in basic dogfood:
   recovery
 - slash commands beyond `/status`, especially commands that mutate session,
   note, directory, or export state
-- settings toggles for tool approvals, external roots, model controls, and
+- settings toggles for tool approvals, model controls, and
   context behavior
 - long-running workflows that create notes, read them back, refine them, remove
   stale or duplicated notes, and repair backlinks
@@ -435,16 +424,13 @@ model tokens:
 - run against a fresh throwaway vault, not only the normal dogfood vault
 - seed multiple vault shapes: empty folders, messy duplicates, large notes,
   ignored/restricted notes, multilingual filenames, and existing memory records
-- use a foreign vault-shaped external root so import workflows are exercised
-  without risking real workspace files
 - script the model to force each default tool at least once: read,
   vault_inspect, write, edit, rename, delete, set_properties,
-  external_inspect, search_memory, and ask_user
-- repeat an external list/read across turns and assert a visible cache hit
-- change approval, external-root, and tool-budget settings mid-run; verify the
+  search_memory, and ask_user
+- change approval and tool-budget settings mid-run; verify the
   harness behavior changes, then restore defaults
 - include sad paths that should fail safely: ignored active note, denied
-  external read, denied write, unclear cleanup, and missing/empty context
+  write, unclear cleanup, and missing/empty context
 - run a long workflow that creates notes, reads them back, refines them, deletes
   stale notes, checks backlinks/local graph, exports the session, and continues
   from the intended active note
@@ -469,10 +455,9 @@ only from more hand-written happy paths. Build this in layers.
    - mutations only touch allowed roots and every mutation has an approval
      decision, checkpoint, and final tool result
    - denied tools do not create files, mutate frontmatter, or leave partial
-     notes
-   - repeated unchanged external list/read calls produce observable cache hits
+      notes
    - active-note context matches the intended note after exports, session
-     switches, reloads, and slash commands
+      switches, reloads, and slash commands
    - generated notes have valid frontmatter, sources, backlinks, and no broken
      internal links
    - context size, tool count, repeated-call count, and failed-tool count stay
@@ -493,9 +478,8 @@ only from more hand-written happy paths. Build this in layers.
    - ignored folders that contain tempting relevant content and obvious secret
      markers
    - partial plugin state, old session files, memory records, and exported
-     transcripts
-   - external roots with symlinks, `.gitignore`, nested repo manifests, and
-     foreign-vault layouts
+      transcripts
+   - working directories with nested scopes and vault-relative paths
 
 3. Run metamorphic prompts.
 
@@ -563,7 +547,7 @@ only from more hand-written happy paths. Build this in layers.
 
    Each dogfood run should write a concise report artifact with:
 
-   - run id, vault, external root, provider, model, plugin version, and commit
+   - run id, vault, provider, model, plugin version, and commit
    - scenario timeline and pass/fail status
    - tool-call table, repeated-call clusters, and cache hit/miss table
    - mutation ledger with approvals, checkpoints, and final file state
@@ -613,7 +597,7 @@ Force feature crossovers that users naturally create:
 
 - change model/provider mid-session, send a prompt, then restore the original
   model and verify recovery
-- attach files, active notes, folder listings, memory, and external roots in the
+- attach files, active notes, folder listings, and memory in the
   same run, then check which context actually reached the model
 - run `/plan`, `/endplan`, `/todo`, `/steer`, `/follow-up`, `/new`,
   `/sessions`, `/memory`, `/export`, `/undo`, `/diagnostics`, and `/config`
@@ -638,7 +622,7 @@ Attack the sad paths deliberately:
 Improve observability so failures are cheaper to mine:
 
 - write a per-turn context ledger with active note, attached files, memory hits,
-  external snippets, token estimate, and cache hit/miss evidence
+  token estimate, and cache hit/miss evidence
 - record approval lifecycle events separately from tool starts so modal-close,
   double-click, and settings-race behavior is obvious in traces
 - cluster repeated tool calls by normalized operation and path, not just by raw
@@ -663,11 +647,10 @@ Use this template for each finding:
 
 Severity: critical | high | medium | low
 Status: new | reproed | fixed | needs-test | deferred
-Area: approvals | external root | settings | sessions | rendering | model | docs | other
+Area: approvals | working dirs | settings | sessions | rendering | model | docs | other
 
 Environment:
 - Vault:
-- External root:
 - Provider:
 - Model:
 - Plugin commit:

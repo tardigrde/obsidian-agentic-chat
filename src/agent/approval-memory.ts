@@ -1,5 +1,4 @@
 import type { AgenticChatSettings } from "../settings";
-import { EXTERNAL_INSPECT_TOOL_NAME } from "../tools/external-workspace";
 import type { ApprovalPolicy } from "./approval";
 
 export interface RememberableApprovalChoice {
@@ -19,10 +18,6 @@ export function applyRememberedApprovalChoice(
 ): boolean {
   const policy = approvalPolicyForRememberedChoice(choice);
   if (!policy) return false;
-  if (toolName === EXTERNAL_INSPECT_TOOL_NAME) {
-    settings.external.approval = policy;
-  } else {
-    settings.approval.perTool[toolName] = policy;
-  }
+  settings.approval.perTool[toolName] = policy;
   return true;
 }

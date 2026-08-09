@@ -36,7 +36,6 @@ import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
 import { effectiveProjectSettings, projectSessionScope } from "./projects/projects";
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
-import { firstExternalReference, openExternalReference } from "./tools/external-workspace";
 
 declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
 
@@ -75,12 +74,6 @@ export default class AgenticChatPlugin extends Plugin {
       id: "quick-ask-inline-edit",
       name: "Quick Ask inline edit",
       editorCallback: (editor, info) => this.openQuickAskInlineEdit(editor, info),
-    });
-
-    this.addCommand({
-      id: "open-selected-external-reference",
-      name: "Open selected external:// reference",
-      editorCallback: (editor) => void this.openSelectedExternalReference(editor),
     });
 
     this.registerContextMenus();
@@ -179,23 +172,6 @@ export default class AgenticChatPlugin extends Plugin {
     new QuickAskModal(this.app, target, (proposal) => {
       editor.replaceRange(proposal.replacement, proposal.target.from, proposal.target.to);
     }).open();
-  }
-
-  private async openSelectedExternalReference(editor: Editor): Promise<void> {
-    const selection = editor.getSelection().trim();
-    const cursor = editor.getCursor();
-    const line = selection || editor.getLine(cursor.line);
-    const reference = firstExternalReference(line, selection ? undefined : cursor.ch);
-    if (!reference) {
-      new Notice("Select or place the cursor on an external:// reference.");
-      return;
-    }
-    try {
-      const message = await openExternalReference(this.settings.external, reference);
-      new Notice(message);
-    } catch (error) {
-      new Notice(`Agentic Chat: ${error instanceof Error ? error.message : String(error)}`);
-    }
   }
 
   /** Show the approval dialog and persist a remembered allow/deny choice after the user decides. */

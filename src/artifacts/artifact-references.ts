@@ -21,9 +21,6 @@ export function collectArtifactIdsFromMessage(message: AgentMessage): Set<string
   for (const artifact of arrayValue(manifest?.artifacts)) {
     addString(ids, objectValue(artifact)?.id);
   }
-  for (const entry of arrayValue(manifest?.externalInspect)) {
-    addString(ids, objectValue(entry)?.sourceArtifactId);
-  }
   return ids;
 }
 
