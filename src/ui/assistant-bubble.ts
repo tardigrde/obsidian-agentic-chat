@@ -26,7 +26,7 @@ export interface BubbleActions {
   onRetry?: () => void;
   /** Exit plan mode and send the implement prompt. */
   onImplementPlan?: () => void;
-  /** Open an external rendered link such as https:// or external://. */
+  /** Open an external rendered link such as https://. */
   onOpenExternalLink?: (target: string) => void;
   /** Open a vault-relative note path shown in a tool-call section (e.g. read/write/edit target). */
   onOpenNote?: (path: string) => void;
@@ -485,7 +485,7 @@ export function classifyRenderedChatLink(anchor: RenderedAnchorLike): RenderedCh
 
   const scheme = linkScheme(href);
   if (scheme) {
-    if (scheme === "http" || scheme === "https" || scheme === "external") return { kind: "external", target: href };
+    if (scheme === "http" || scheme === "https") return { kind: "external", target: href };
     return null;
   }
 

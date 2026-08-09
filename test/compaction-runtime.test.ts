@@ -103,25 +103,24 @@ describe("AgentCompactionRuntime", () => {
     expect(entries.filter((entry) => entry.type === "message")).toHaveLength(compacted!.length);
   });
 
-  it("preserves artifact and external-inspect cache references on the summary message", async () => {
+  it("preserves artifact cache references on the summary message", async () => {
     const { adapter, runtime, path } = await setup();
     const artifactResult = {
       role: "toolResult",
-      toolName: "external_inspect",
-      toolCallId: "ext-1",
+      toolName: "read",
+      toolCallId: "read-1",
       isError: false,
       content: [
         {
           type: "text",
-          text: "External read artifact: [external://src/large.txt lines 1-600](artifact:artifact-1)",
+          text: "Read result: [src/large.txt lines 1-600](artifact:artifact-1)",
         },
       ],
       details: {
         action: "read",
         path: "src/large.txt",
-        externalRef: "external://src/large.txt",
         sourceArtifactId: "artifact-1",
-        sourceArtifactCitation: "[external://src/large.txt lines 1-600](artifact:artifact-1)",
+        sourceArtifactCitation: "[src/large.txt lines 1-600](artifact:artifact-1)",
         cached: true,
       },
       timestamp: 2,
@@ -146,8 +145,8 @@ describe("AgentCompactionRuntime", () => {
         artifacts: [
           {
             id: "artifact-1",
-            citation: "[external://src/large.txt lines 1-600](artifact:artifact-1)",
-            sourceToolName: "external_inspect",
+            citation: "[src/large.txt lines 1-600](artifact:artifact-1)",
+            sourceToolName: "read",
           },
         ],
       },

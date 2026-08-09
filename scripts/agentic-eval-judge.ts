@@ -185,7 +185,6 @@ export async function buildJudgePacket(options: {
       },
       knownIntentionalNoise: [
         "Some write tool errors are intentional approval-denial sad paths.",
-        "The repeated external read of foreign-vault/Imported.md is intentional cache coverage.",
         "Repeated active-note inspection can be intentional when separate dogfood turns verify context boundaries.",
       ],
     },
