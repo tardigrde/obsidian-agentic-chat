@@ -32,7 +32,6 @@
         },
         {
           "type": "prompt_mentions_only_registered_tools",
-          "names": ["read", "search", "ls", "write", "edit", "rename", "delete"],
           "severity": "error",
           "message": "Default system prompt names tools that are not registered on the default tool surface."
         },

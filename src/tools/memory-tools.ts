@@ -12,10 +12,10 @@ import {
 } from "../memory/memory";
 
 const SearchMemoryParameters = Type.Object({
-  query: Type.String({ description: "Memory query. Required; memories are never injected automatically." }),
-  kind: Type.Optional(Type.String({ description: "Optional memory kind: preference, fact, instruction, or summary." })),
-  scope: Type.Optional(Type.String({ description: "Optional scope: global or vault. Project memories are filtered until project context is active." })),
-  maxResults: Type.Optional(Type.Number({ description: "Maximum memories to return. Defaults to 8." })),
+  query: Type.String({ description: "search text; memories are never injected unless searched" }),
+  kind: Type.Optional(Type.String({ description: "preference|fact|instruction|summary" })),
+  scope: Type.Optional(Type.String({ description: "global|vault" })),
+  maxResults: Type.Optional(Type.Number({ description: "max results (default 8)" })),
 });
 
 export interface MemoryToolsOptions {
@@ -35,7 +35,7 @@ function createSearchMemoryTool(
     name: "search_memory",
     label: "Search memory",
     description:
-      "Explicitly search plugin-managed long-term memories and return matching memories with source citations when available. " +
+      "Search stored long-term memories and return matches with citations. " +
       "Memories are never added to context unless this tool is called.",
     parameters: SearchMemoryParameters,
     execute: async (_id, params) => {

@@ -26,16 +26,16 @@ function createListArtifactsTool(store: ToolArtifactStoreLike): AgentTool {
     name: "list_artifacts",
     label: "List artifacts",
     description:
-      "List recent plugin-managed artifacts by metadata. Use this to find imported source artifacts before reading or exporting one.",
+      "List recent artifacts by metadata. Find an imported artifact before reading or exporting it.",
     parameters: Type.Object({
       sourceKind: Type.Optional(
-        Type.String({ description: "Optional source kind filter, such as web, pdf, epub, docx, pptx, or xlsx." }),
+        Type.String({ description: "kind filter: web, pdf, epub, docx, pptx, xlsx" }),
       ),
       limit: Type.Optional(
         Type.Integer({
           minimum: 1,
           maximum: MAX_LIST_LIMIT,
-          description: `Maximum artifacts to list. Defaults to ${DEFAULT_LIST_LIMIT}.`,
+          description: `max artifacts (default ${DEFAULT_LIST_LIMIT})`,
         }),
       ),
     }),
@@ -64,16 +64,15 @@ function createReadArtifactTool(store: ToolArtifactStoreLike): AgentTool {
     name: "read_artifact",
     label: "Read artifact",
     description:
-      "Read a plugin-managed artifact that was returned by a previous tool call. " +
-      "Use this to inspect large MCP results by id without re-running the remote tool.",
+      "Read a stored artifact (from a previous tool call) by id, e.g. a large MCP result, without re-running it.",
     parameters: Type.Object({
-      id: Type.String({ description: "Artifact id from a previous tool result." }),
-      offset: Type.Optional(Type.Integer({ minimum: 0, description: "0-based character offset to start reading from." })),
+      id: Type.String({ description: "artifact id from a previous result" }),
+      offset: Type.Optional(Type.Integer({ minimum: 0, description: "0-based char offset" })),
       limit: Type.Optional(
         Type.Integer({
           minimum: 1,
           maximum: MAX_READ_LIMIT,
-          description: `Maximum characters to read. Defaults to ${DEFAULT_READ_LIMIT}.`,
+          description: `max chars (default ${DEFAULT_READ_LIMIT})`,
         }),
       ),
     }),
@@ -103,16 +102,15 @@ function createSearchArtifactTool(store: ToolArtifactStoreLike): AgentTool {
     name: "search_artifact",
     label: "Search artifact",
     description:
-      "Search a plugin-managed artifact that was returned by a previous tool call. " +
-      "Use this to locate terms inside large MCP results before reading a chunk.",
+      "Search a stored artifact (from a previous tool call) by id for a term before reading a chunk.",
     parameters: Type.Object({
-      id: Type.String({ description: "Artifact id from a previous tool result." }),
-      query: Type.String({ minLength: 1, description: "Case-insensitive text to search for." }),
+      id: Type.String({ description: "artifact id from a previous result" }),
+      query: Type.String({ minLength: 1, description: "case-insensitive text to find" }),
       maxMatches: Type.Optional(
         Type.Integer({
           minimum: 1,
           maximum: MAX_SEARCH_MATCHES,
-          description: `Maximum matches to return. Defaults to ${DEFAULT_SEARCH_MATCHES}.`,
+          description: `max matches (default ${DEFAULT_SEARCH_MATCHES})`,
         }),
       ),
     }),
@@ -144,15 +142,15 @@ function createExportArtifactTool(store: ToolArtifactStoreLike): AgentTool {
     name: "export_artifact",
     label: "Export artifact",
     description:
-      "Return a bounded export payload for a plugin-managed artifact. This is read-only; write the returned text with the normal write tool if the user wants it saved in the vault.",
+      "Return a bounded export of a stored artifact (read-only). Use write to save it into the vault.",
     parameters: Type.Object({
-      id: Type.String({ description: "Artifact id from a previous tool result." }),
-      format: Type.Optional(Type.String({ description: 'Export format: "markdown" or "json". Defaults to markdown.' })),
+      id: Type.String({ description: "artifact id from a previous result" }),
+      format: Type.Optional(Type.String({ description: "markdown|json" })),
       limit: Type.Optional(
         Type.Integer({
           minimum: 1,
           maximum: MAX_EXPORT_LIMIT,
-          description: `Maximum artifact characters to include. Defaults to ${DEFAULT_EXPORT_LIMIT}.`,
+          description: `max chars (default ${DEFAULT_EXPORT_LIMIT})`,
         }),
       ),
     }),

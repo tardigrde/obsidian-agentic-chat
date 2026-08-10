@@ -18,12 +18,11 @@ export interface AskUserDetails {
 
 const AskUserParameters = Type.Object({
   question: Type.String({
-    description:
-      "A concise clarification question for the user. Ask only when the answer materially changes what you should do.",
+    description: "clear, concise question; only when the answer changes what you do",
   }),
   choices: Type.Optional(
     Type.Array(Type.String(), {
-      description: "Optional short answer choices to render as buttons. Leave empty for a free-form answer.",
+      description: "optional answer choices; empty = free-form",
     }),
   ),
 });
@@ -33,9 +32,8 @@ export function createAskUserTool(askUser: AskUserHandler): AgentTool<typeof Ask
     name: "ask_user",
     label: "Ask user",
     description:
-      "Pause and ask the user a clarification question, then continue with their answer. " +
-      "Use this instead of guessing when the missing detail materially affects the task. " +
-      "Provide optional short choices when there are clear alternatives.",
+      "Pause and ask the user a clarifying question, then continue with their answer. " +
+      "Use instead of guessing when a missing detail affects the task; offer short choices when clear alternatives exist.",
     parameters: AskUserParameters,
     executionMode: "sequential",
     execute: async (_id, params, signal, onUpdate) => {

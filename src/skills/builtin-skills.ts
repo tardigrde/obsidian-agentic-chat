@@ -11,7 +11,7 @@ Consult this skill proactively when: the user is unhappy with how the agent is w
 
 You have these tool categories. Each is callable via function call when present in your active tool set; some may be dropped by the tool budget (see below).
 
-- **Vault**: read, vault_inspect, write, edit, rename, delete, set_properties, ls, search, grep, find, get_active_note, get_backlinks, get_links, local_graph, get_properties.
+- **Vault**: read, vault_inspect, write, edit, rename, delete, set_properties. vault_inspect covers listing folders, searching names/content, the active note, local graph, and frontmatter. Standalone ls, search, grep, find, get_active_note, get_backlinks, get_links, local_graph, and get_properties exist only in compatibility mode — they are not in your active tool set.
 - **Web** (optional): web_search, fetch_url.
 - **Subagent** (optional): subagent — delegate focused subtasks to specialist child agents. Max 20 tasks per dispatch, 8 concurrency, sequential execution mode. Do not spawn subagents after being told not to.
 - **Artifacts** (optional): list_artifacts, read_artifact, search_artifact, export_artifact.
@@ -43,7 +43,7 @@ You have these tool categories. Each is callable via function call when present 
 - Attachments and the active note may appear in the prompt as path-only references when they are large or restricted. If you only see a path and need the contents, call read.
 - Do not re-read a note whose content is already in this conversation just to "check" — it is above.
 - Use vault_inspect or a bounded read (startLine/endLine or offset/limit) when you need a specific part of a large file.
-- Pay attention to token usage and context bloat. Prefer search, listings, and bounded reads first.
+- Pay attention to token usage and context bloat. Prefer vault_inspect for vault lookups and bounded reads first.
 
 ## Paths and privacy
 

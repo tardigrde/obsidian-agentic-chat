@@ -11,15 +11,15 @@ import { PdfArtifactDeduper } from "../retrieval/pdf-ingest";
 import { normalizeVaultPath } from "../vault/path";
 
 const ImportPdfParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path to a PDF file." }),
-  title: Type.Optional(Type.String({ description: "Optional human-readable title for the imported PDF artifact." })),
-  maxChunkChars: Type.Optional(Type.Number({ description: "Maximum characters per stored artifact chunk. Defaults to 8000." })),
+  path: Type.String({ description: "vault-relative PDF path" }),
+  title: Type.Optional(Type.String({ description: "artifact title" })),
+  maxChunkChars: Type.Optional(Type.Number({ description: "chunk size (default 8000)" })),
 });
 
 const ImportDocumentParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path to a PDF, EPUB, DOCX, PPTX, or XLSX file." }),
-  title: Type.Optional(Type.String({ description: "Optional human-readable title for the imported source artifact." })),
-  maxChunkChars: Type.Optional(Type.Number({ description: "Maximum characters per stored artifact chunk. Defaults to 8000." })),
+  path: Type.String({ description: "vault-relative source file" }),
+  title: Type.Optional(Type.String({ description: "artifact title" })),
+  maxChunkChars: Type.Optional(Type.Number({ description: "chunk size (default 8000)" })),
 });
 
 export function createDocumentTools(app: App, artifactStore: ToolArtifactStoreLike | undefined): AgentTool[] {
@@ -41,8 +41,8 @@ function createImportPdfTool(
     name: "import_pdf",
     label: "Import PDF",
     description:
-      "Extract text from a vault PDF into a plugin-managed source artifact with provenance and citation anchors. " +
-      "Returns the artifact citation instead of dumping the full PDF text into context.",
+      "Extract text from a vault PDF into an artifact with citation anchors; " +
+      "returns the artifact citation, not the full text.",
     parameters: ImportPdfParameters,
     execute: async (_id, params) => {
       if (!adapter) throw new Error("Vault adapter is unavailable.");
@@ -75,8 +75,8 @@ function createImportDocumentTool(
     name: "import_document",
     label: "Import document",
     description:
-      "Extract text from a vault PDF, EPUB, DOCX, PPTX, or XLSX file into a plugin-managed source artifact with provenance and citation anchors. " +
-      "Returns the artifact citation instead of dumping the full document text into context. Legacy binary Office files (.doc/.ppt/.xls) are unsupported.",
+      "Extract text from a vault PDF/EPUB/DOCX/PPTX/XLSX into an artifact with citation anchors; " +
+      "returns the artifact citation, not the full text. Legacy .doc/.ppt/.xls unsupported.",
     parameters: ImportDocumentParameters,
     execute: async (_id, params) => {
       if (!adapter) throw new Error("Vault adapter is unavailable.");

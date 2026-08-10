@@ -60,21 +60,21 @@ export interface SubagentToolDeps {
 }
 
 const TaskSpec = Type.Object({
-  agent: Type.String({ description: "Name of the subagent profile to run" }),
-  task: Type.String({ description: "The focused task for this subagent" }),
+  agent: Type.String({ description: "profile name" }),
+  task: Type.String({ description: "task to delegate" }),
 });
 
 const SubagentParameters = Type.Object({
-  agent: Type.Optional(Type.String({ description: "Profile name for a single dispatch" })),
-  task: Type.Optional(Type.String({ description: "Task for a single dispatch" })),
+  agent: Type.Optional(Type.String({ description: "profile name" })),
+  task: Type.Optional(Type.String({ description: "task to delegate" })),
   tasks: Type.Optional(
     Type.Array(TaskSpec, {
       maxItems: MAX_TASKS,
-      description: `Several subagents to run in parallel, each {agent, task} (max ${MAX_TASKS})`,
+      description: `parallel dispatches (max ${MAX_TASKS})`,
     }),
   ),
   concurrency: Type.Optional(
-    Type.Number({ description: `Max subagents to run at once (default 3, capped at ${MAX_CONCURRENCY})` }),
+    Type.Number({ description: `max parallel (default 3, capped at ${MAX_CONCURRENCY})` }),
   ),
 });
 
@@ -92,9 +92,8 @@ export function createSubagentTool(
     name: SUBAGENT_TOOL_NAME,
     label: "Dispatch subagents",
     description:
-      "Delegate focused subtasks to specialist subagents, each running in its own isolated context and " +
-      "returning a summary. Pass {agent, task} for one, or {tasks: [{agent, task}, ...]} to run several in " +
-      "parallel. Available subagents are listed in the system prompt under \"Subagents\".",
+      "Run one or more specialist subagents in isolated contexts; each returns a summary. " +
+      "Single: {agent, task}. Parallel: {tasks:[{agent, task}, ...]}. Profiles are in the system prompt.",
     parameters: SubagentParameters,
     // Dispatch is a heavyweight, stateful action; keep it out of parallel batches
     // with other tools so its own fan-out controls concurrency.
