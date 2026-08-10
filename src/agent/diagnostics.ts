@@ -23,6 +23,7 @@ export interface AgentRuntimeDiagnostics {
   provider: string;
   model: string;
   modelOverride: string | null;
+  contextWindow: number | null;
   thinkingLevel: ThinkingLevel;
   thinkingOverride: ThinkingLevel | null;
   mode: string;
@@ -69,6 +70,7 @@ export interface BuildRuntimeDiagnosticsOptions {
   resourcesReloadedAt: string | null;
   toolBudget: ToolBudgetSnapshot;
   modelOverride: string | null;
+  contextWindow: number | null;
   thinkingLevel: ThinkingLevel;
   thinkingOverride: ThinkingLevel | null;
   isStreaming: boolean;
@@ -93,6 +95,8 @@ export function buildRuntimeDiagnostics(options: BuildRuntimeDiagnosticsOptions)
     provider: settings.provider,
     model: options.modelOverride ?? activeModelId(settings),
     modelOverride: options.modelOverride,
+    /** Resolved context window for the active model (null when unknown). */
+    contextWindow: options.contextWindow,
     thinkingLevel: options.thinkingLevel,
     thinkingOverride: options.thinkingOverride,
     mode: settings.mode,

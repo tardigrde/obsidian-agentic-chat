@@ -104,6 +104,37 @@ describe("tool budget", () => {
     expect(result.snapshot).toMatchObject({ active: false, droppedTools: [] });
   });
 
+  it("fail-opens (keeps every tool) when the context window is unknown", () => {
+    const state = createToolBudgetState();
+    const result = applyToolBudget({
+      tools: tools([
+        "read",
+        "write",
+        "web_search",
+        "fetch_url",
+        "read_artifact",
+        "search_artifact",
+        "subagent",
+      ]),
+      settings,
+      state,
+      // 0 / undefined / negative all mean "unknown" — never guess a window and
+      // silently drop optional tools.
+      contextWindow: 0,
+    });
+
+    expect(result.tools.map((tool) => tool.name)).toEqual([
+      "read",
+      "write",
+      "web_search",
+      "fetch_url",
+      "read_artifact",
+      "search_artifact",
+      "subagent",
+    ]);
+    expect(result.snapshot).toMatchObject({ active: false, droppedTools: [], contextWindow: null });
+  });
+
   it("disabling the budget clears session drops", () => {
     const state = createToolBudgetState();
     applyToolBudget({

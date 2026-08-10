@@ -401,6 +401,7 @@ export class AgentService {
       resourcesReloadedAt: this.runtimeResources.lastReloadAt,
       toolBudget: this.runtimeResources.getToolBudgetSnapshot(),
       modelOverride: this.getModelOverride(),
+      contextWindow: this.turns.buildModelForTurn().contextWindow || null,
       thinkingLevel: this.getActiveThinkingLevel(),
       thinkingOverride: this.getThinkingOverride(),
       isStreaming: this.isStreaming(),

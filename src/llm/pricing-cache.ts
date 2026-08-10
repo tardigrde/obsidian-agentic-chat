@@ -109,6 +109,16 @@ export function isPricingUnknown(
   return !findInCache(cache, provider, modelId);
 }
 
+/** Test-only: seed the in-memory catalog cache without a network fetch. */
+export function seedPricingCacheForTests(models: Record<string, CompactModelInfo>): void {
+  memoryCache = { fetchedAt: Date.now(), models };
+}
+
+/** Test-only: clear the in-memory catalog cache back to the unknown state. */
+export function clearPricingCacheForTests(): void {
+  memoryCache = null;
+}
+
 function findInCache(cache: PricingCache, provider: string, modelId: string): CompactModelInfo | undefined {
   // Exact match
   if (cache.models[modelId]) return cache.models[modelId];

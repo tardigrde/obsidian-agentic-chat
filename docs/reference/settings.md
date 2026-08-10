@@ -26,6 +26,16 @@ Configure standing instructions, output style, compaction, memory, subagent prof
 - **Context window** — Auto-compaction settings: summarize older turns automatically as the context window fills.
 - **Tool budget** — Drop optional tools when registered tool schemas exceed a threshold percent of the context window.
 
+### Context-window resolution
+
+OpenRouter models use the live `/models` catalog for their context window. For the
+OpenAI-compatible provider, the plugin tries the OpenRouter catalog for the same
+model slug (exact, or an unambiguous suffix match); otherwise the window is treated
+as **unknown**. Unknown windows keep every tool (the tool budget never drops) and
+disable auto-compaction rather than guessing 128k and silently dropping optional
+tools. If your gateway exposes a window different from OpenRouter's, set the
+provider's **Context window (tokens)** setting (0 = auto-detect).
+
 ## Approval
 
 Set the default mode, mutating-tool policy, per-tool overrides, working directories, and ignore patterns.

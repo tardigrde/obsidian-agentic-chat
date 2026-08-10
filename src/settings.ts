@@ -474,6 +474,23 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             await this.save();
           }),
       );
+    new Setting(containerEl)
+      .setName("Context window (tokens)")
+      .setDesc(
+        "Optional. 0 auto-detects from the OpenRouter catalog for the same model slug (best effort) and keeps every " +
+          "tool when unknown. Set the real value (e.g. 128000) if your gateway exposes a different window than " +
+          "OpenRouter; this drives the tool budget and auto-compaction.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("0 = auto-detect")
+          .setValue(settings.openaiCompatibleContextWindow > 0 ? String(settings.openaiCompatibleContextWindow) : "")
+          .onChange(async (value) => {
+            const parsed = Number.parseInt(value, 10);
+            settings.openaiCompatibleContextWindow = Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
+            await this.save();
+          }),
+      );
   }
 
   private renderAgent(containerEl: HTMLElement, settings: AgenticChatSettings): void {

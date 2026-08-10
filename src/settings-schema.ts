@@ -46,6 +46,13 @@ export interface AgenticChatSettings {
   /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
+  /**
+   * Optional context-window override for the OpenAI-compatible provider. 0 means
+   * "auto-detect": try the OpenRouter catalog for the same model slug (exact or
+   * confident suffix match), else treat the window as unknown. Unknown windows
+   * keep all tools (the tool budget never drops) and disable auto-compaction.
+   */
+  openaiCompatibleContextWindow: number;
   thinkingLevel: ThinkingLevel;
   temperature: number;
   /** 0 means "let the provider decide". */
@@ -151,6 +158,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   openaiCompatibleApiKeySecretId: OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
   openaiCompatibleApiKey: "",
   openaiCompatibleModel: "",
+  openaiCompatibleContextWindow: 0,
   thinkingLevel: "off",
   temperature: 0.3,
   maxTokens: 0,
@@ -208,6 +216,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
     ),
     mode: healMode(stored?.mode),
+    openaiCompatibleContextWindow: healContextWindow(stored?.openaiCompatibleContextWindow),
     outputStyle:
       stored?.outputStyle && stored.outputStyle in OUTPUT_STYLES ? stored.outputStyle : DEFAULT_OUTPUT_STYLE,
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
@@ -241,6 +250,12 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
 
 function stringSetting(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+/** Heal the context-window override: 0 = auto-detect, otherwise a positive integer. */
+function healContextWindow(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value));
 }
 
 function healNetworkSettings(stored: Partial<NetworkSettings> | null | undefined): NetworkSettings {
@@ -279,6 +294,7 @@ export function activeModelConfig(settings: AgenticChatSettings): ModelConfig {
     privacy: settings.privacy,
     ollamaBaseUrl: settings.ollamaBaseUrl || DEFAULT_OLLAMA_BASE_URL,
     openaiCompatibleBaseUrl: settings.openaiCompatibleBaseUrl || DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+    openaiCompatibleContextWindow: settings.openaiCompatibleContextWindow,
   };
 }
 
