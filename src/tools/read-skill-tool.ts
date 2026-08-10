@@ -3,7 +3,7 @@ import { Type } from "typebox";
 
 const ReadSkillParameters = Type.Object({
   name: Type.String({
-    description: "Exact skill name from the available_skills listing in the system prompt",
+    description: "exact skill name from the available_skills listing",
   }),
 });
 
@@ -18,8 +18,7 @@ export function createReadSkillTool(skills: Skill[]): AgentTool<typeof ReadSkill
     name: "read_skill",
     label: "Read skill",
     description:
-      "Load the full instructions of a skill by its exact name. Use this when a skill description matches " +
-      "your current task and you need the detailed body. Pass the exact `name` from the `<available_skills>` listing.",
+      "Load a skill's full instructions by its exact name from the available_skills listing.",
     parameters: ReadSkillParameters,
     execute: async (_id, params) => {
       const skill = skills.find((s) => s.name === params.name);

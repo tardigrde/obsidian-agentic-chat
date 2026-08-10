@@ -9,107 +9,105 @@ import {
 } from "./tool-contracts";
 
 export const ReadParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path to the file, including extension" }),
-  startLine: Type.Optional(Type.Number({ description: "1-based first line to read. Alias for offset." })),
-  endLine: Type.Optional(Type.Number({ description: "1-based last line to read, inclusive." })),
-  offset: Type.Optional(Type.Number({ description: "1-based line to start reading from" })),
-  limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+  path: Type.String({ description: "vault-relative path" }),
+  startLine: Type.Optional(Type.Number({ description: "first line, 1-based (alias of offset)" })),
+  endLine: Type.Optional(Type.Number({ description: "last line, 1-based inclusive" })),
+  offset: Type.Optional(Type.Number({ description: "start line, 1-based" })),
+  limit: Type.Optional(Type.Number({ description: "max lines" })),
 });
 
 export const VaultInspectParameters = Type.Object({
   action: Type.String({
-    description: "One of: list, search, active_note, local_graph, properties.",
+    description: "list|search|active_note|local_graph|properties",
   }),
-  path: Type.Optional(Type.String({ description: "Vault-relative file/folder path when the action needs a target." })),
-  query: Type.Optional(Type.String({ description: "Search query for action=search." })),
-  kind: Type.Optional(Type.String({ description: "For action=search: both, files, or content. Defaults to both." })),
-  includeContent: Type.Optional(Type.Boolean({ description: "For action=active_note: include note text." })),
-  includeSelection: Type.Optional(Type.Boolean({ description: "For action=active_note: include selected text." })),
-  caseSensitive: Type.Optional(Type.Boolean({ description: "For action=search." })),
-  regex: Type.Optional(Type.Boolean({ description: "For action=search: treat query as a regular expression." })),
-  maxResults: Type.Optional(Type.Number({ description: "For action=search: maximum file-name matches." })),
-  maxMatches: Type.Optional(Type.Number({ description: "For action=search: maximum content matches." })),
+  path: Type.Optional(Type.String({ description: "target path" })),
+  query: Type.Optional(Type.String({ description: "search text" })),
+  kind: Type.Optional(Type.String({ description: "both|files|content" })),
+  includeContent: Type.Optional(Type.Boolean({ description: "include note text" })),
+  includeSelection: Type.Optional(Type.Boolean({ description: "include selected text" })),
+  caseSensitive: Type.Optional(Type.Boolean({ description: "case-sensitive" })),
+  regex: Type.Optional(Type.Boolean({ description: "treat query as regex" })),
+  maxResults: Type.Optional(Type.Number({ description: "max filename matches" })),
+  maxMatches: Type.Optional(Type.Number({ description: "max content matches" })),
 });
 
 export const WriteParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path, e.g. Folder/Note.md" }),
-  content: Type.String({ description: "Full file content to write" }),
+  path: Type.String({ description: "vault-relative path" }),
+  content: Type.String({ description: "full file content" }),
 });
 
 export const EditParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path to the file to edit" }),
+  path: Type.String({ description: "vault-relative path" }),
   edits: Type.Array(
     Type.Object({
-      oldText: Type.String({ description: "Exact text to replace (must occur exactly once)" }),
-      newText: Type.String({ description: "Replacement text" }),
+      oldText: Type.String({ description: "exact text to replace (must occur exactly once)" }),
+      newText: Type.String({ description: "replacement text" }),
     }),
-    { description: "One or more exact replacements applied in a single pass" },
+    { description: "exact replacements, applied in one pass" },
   ),
 });
 
 export const LsParameters = Type.Object({
-  path: Type.Optional(Type.String({ description: "Vault-relative folder path; empty for the vault root" })),
+  path: Type.Optional(Type.String({ description: "folder path; empty = vault root" })),
 });
 
 export const FindParameters = Type.Object({
-  pattern: Type.String({ description: "Case-insensitive substring or simple * and ? glob" }),
+  pattern: Type.String({ description: "case-insensitive substring or * / ? glob" }),
   maxResults: Type.Optional(Type.Number()),
 });
 
 export const GrepParameters = Type.Object({
-  pattern: Type.String({ description: "Text or regex to search for in file contents" }),
-  path: Type.Optional(Type.String({ description: "Restrict search to this vault-relative folder" })),
+  pattern: Type.String({ description: "text or regex to find" }),
+  path: Type.Optional(Type.String({ description: "restrict to folder" })),
   caseSensitive: Type.Optional(Type.Boolean()),
-  regex: Type.Optional(Type.Boolean({ description: "Treat pattern as a regular expression" })),
+  regex: Type.Optional(Type.Boolean({ description: "treat pattern as regex" })),
   maxMatches: Type.Optional(Type.Number()),
 });
 
 export const SearchParameters = Type.Object({
-  query: Type.String({ description: "Filename or file text to search for" }),
-  kind: Type.Optional(Type.String({ description: "One of: both, files, content. Defaults to both." })),
-  path: Type.Optional(Type.String({ description: "Restrict search to this vault-relative folder" })),
+  query: Type.String({ description: "filename or text to find" }),
+  kind: Type.Optional(Type.String({ description: "both|files|content" })),
+  path: Type.Optional(Type.String({ description: "restrict to folder" })),
   caseSensitive: Type.Optional(Type.Boolean()),
-  regex: Type.Optional(Type.Boolean({ description: "Treat the content query as a regular expression" })),
-  maxResults: Type.Optional(Type.Number({ description: "Maximum file-name matches to return" })),
-  maxMatches: Type.Optional(Type.Number({ description: "Maximum content matches to return" })),
+  regex: Type.Optional(Type.Boolean({ description: "treat query as regex" })),
+  maxResults: Type.Optional(Type.Number({ description: "max filename matches" })),
+  maxMatches: Type.Optional(Type.Number({ description: "max content matches" })),
 });
 
 export const ActiveNoteParameters = Type.Object({
-  includeContent: Type.Optional(Type.Boolean({ description: "Include the note's text" })),
-  includeSelection: Type.Optional(Type.Boolean({ description: "Include the current editor selection" })),
+  includeContent: Type.Optional(Type.Boolean({ description: "include note text" })),
+  includeSelection: Type.Optional(Type.Boolean({ description: "include selection" })),
 });
 
 export const RenameParameters = Type.Object({
-  path: Type.String({ description: "Current vault-relative path" }),
-  newPath: Type.String({ description: "New vault-relative path; backlinks are updated automatically" }),
+  path: Type.String({ description: "current path" }),
+  newPath: Type.String({ description: "new path; links update automatically" }),
 });
 
 export const DeleteParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path to move to trash" }),
+  path: Type.String({ description: "path to trash" }),
 });
 
 export const BacklinksParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path of the note to find inbound links to" }),
+  path: Type.String({ description: "note to find inbound links to" }),
 });
 
 export const LinksParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path of the note whose outbound links to list" }),
+  path: Type.String({ description: "note whose outbound links to list" }),
 });
 
 export const LocalGraphParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path of the note to map the neighborhood of" }),
+  path: Type.String({ description: "note whose neighborhood to map" }),
 });
 
 export const GetPropertiesParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path of the note whose frontmatter to read" }),
+  path: Type.String({ description: "note whose frontmatter to read" }),
 });
 
 export const SetPropertiesParameters = Type.Object({
-  path: Type.String({ description: "Vault-relative path of the note whose frontmatter to update" }),
+  path: Type.String({ description: "note whose frontmatter to update" }),
   properties: Type.Record(Type.String(), Type.Unknown(), {
-    description:
-      "Key/value pairs to merge into the note's YAML frontmatter. Existing keys are overwritten; " +
-      "keys not listed are left untouched. Pass null as a value to delete that key.",
+    description: "key/value pairs to merge; null deletes the key",
   }),
 });
 
@@ -140,33 +138,31 @@ export type VaultToolDefinition<Name extends BuiltinToolName = BuiltinToolName> 
     : never;
 
 const VAULT_TOOL_DESCRIPTIONS: Record<BuiltinToolName, string> = {
-  read:
-    "Read a vault-relative Markdown/text file. For large files or focused questions, prefer a range with startLine/endLine or offset/limit.",
+  read: "Read a vault file. For large files, use startLine/endLine or offset/limit ranges.",
   vault_inspect:
-    "Read-only meta-tool for vault context. Use action=list, search, active_note, local_graph, or properties. " +
-    "Ignored paths remain hidden and working-directory approval still applies to path/pathless calls.",
+    "Read-only vault inspection: list folders, search names/content, inspect the active note, map links, read frontmatter. " +
+    "Ignored paths stay hidden; working-directory approval still applies.",
   write:
-    "Create or overwrite a vault-relative file. Parent folders are created as needed. " +
+    "Create or overwrite a vault file; parent folders are auto-created. " +
     "For frontmatter-only changes, prefer set_properties.",
   edit:
-    "Apply exact text replacements to a vault-relative file. Each oldText must match exactly once.",
-  ls: "List files and folders at a vault-relative folder path.",
+    "Apply exact text replacements to a vault file. Each oldText must match exactly once.",
+  ls: "List files and folders in a vault folder.",
   search:
-    "Search vault file names and file contents with one tool. Use kind=files for path discovery, " +
-    "kind=content for text search, or kind=both when unsure.",
-  find: "Find vault files by case-insensitive substring or simple * and ? glob pattern.",
-  grep: "Search text files in the vault. Literal by default; set regex true for regular expressions.",
+    "Search vault file names and text in one tool. kind: both, files, or content.",
+  find: "Find vault files by substring or * / ? glob.",
+  grep: "Search vault file text. Literal by default; set regex to treat the pattern as a regular expression.",
   get_active_note:
-    "Return the active note path, with optional selected text and content. Use when the user says 'this note'.",
-  rename: "Rename or move a vault file. Wikilinks and backlinks are updated automatically.",
+    "Return the active note path and optional text/selection. Use when the user says 'this note'.",
+  rename: "Rename or move a vault file; wikilinks and backlinks update automatically.",
   delete: "Move a vault file or empty folder to trash (recoverable).",
-  get_backlinks: "List notes that link TO a given note (inbound wikilinks).",
-  get_links: "List the notes a given note links TO (outbound resolved links).",
-  local_graph: "Show a note's immediate neighborhood: inbound (backlinks) and outbound (resolved links) notes.",
-  get_properties: "Read a note's YAML frontmatter as structured key/value data.",
+  get_backlinks: "List notes that link TO a note (inbound wikilinks).",
+  get_links: "List the notes a note links TO (outbound resolved links).",
+  local_graph: "Show a note's inbound and outbound link neighborhood.",
+  get_properties: "Read a note's YAML frontmatter as structured data.",
   set_properties:
     "Merge keys into a note's YAML frontmatter (set/overwrite; pass null to delete a key). " +
-    "Edits the structured frontmatter, never the raw YAML text.",
+    "Edits structured frontmatter, never raw YAML text.",
 };
 
 const VAULT_TOOL_PARAMETERS: VaultToolParameterSchemaByName = {

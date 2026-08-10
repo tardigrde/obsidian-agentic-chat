@@ -71,6 +71,32 @@ describe("agentic eval core", () => {
     ]);
   });
 
+  it("checks every known tool name when the assertion omits an explicit names list", () => {
+    const evalCase: StaticContextEvalCase = {
+      id: "static",
+      type: "static-context",
+      assertions: [{ type: "prompt_mentions_only_registered_tools", severity: "error" }],
+    };
+    const snapshot: StaticContextSnapshot = {
+      systemPrompt: "Use read, grep, and find proactively.",
+      userPrompt: "",
+      contextChars: 100,
+      toolSchemaTokens: 20,
+      knownToolNames: ["read", "search", "ls", "grep", "find"],
+      tools: [{ name: "read", description: "Read a file." }],
+    };
+
+    const result = evaluateStaticContextCase(evalCase, snapshot);
+
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        area: "prompt-tools",
+        message: "System prompt mentions unavailable tool(s): grep, find.",
+      }),
+    ]);
+  });
+
   it("reports missing tool-description guidance", () => {
     const evalCase: StaticContextEvalCase = {
       id: "descriptions",

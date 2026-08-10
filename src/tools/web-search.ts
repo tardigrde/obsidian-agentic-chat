@@ -114,8 +114,8 @@ const ADAPTERS: Record<WebSearchProvider, ProviderAdapter> = {
 };
 
 const SearchParameters = Type.Object({
-  query: Type.String({ description: "The search query" }),
-  maxResults: Type.Optional(Type.Number({ description: `Number of results to return (1-${MAX_RESULTS})` })),
+  query: Type.String({ description: "search query" }),
+  maxResults: Type.Optional(Type.Number({ description: `results (1-${MAX_RESULTS})` })),
 });
 
 /**
@@ -129,8 +129,7 @@ export function createWebSearchTool(config: WebSearchConfig): AgentTool<typeof S
     label: "Web search",
     description:
       "Search the web and return ranked results (title, URL, snippet). " +
-      "Follow up with fetch_url to read a result in full. " +
-      "Sends the query off-device. Keep the result URLs so you can cite them.",
+      "Read a result in full via fetch_url. Sends the query off-device; keep URLs to cite.",
     parameters: SearchParameters,
     execute: async (_id, params, signal) => {
       const adapter = ADAPTERS[config.provider];

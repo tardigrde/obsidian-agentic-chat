@@ -67,15 +67,14 @@ export function createObsidianFetcher(): WebFetcher {
 }
 
 const FetchParameters = Type.Object({
-  url: Type.String({ description: "Absolute http(s) URL to fetch" }),
+  url: Type.String({ description: "http(s) URL" }),
   offset: Type.Optional(
     Type.Number({
-      description:
-        "Character offset into the extracted readable text. Use the returned nextOffset to read the next window of a truncated page.",
+      description: "char offset; use returned nextOffset to page through truncated text",
     }),
   ),
   maxChars: Type.Optional(
-    Type.Number({ description: "Maximum characters of extracted text to return" }),
+    Type.Number({ description: "max chars to return" }),
   ),
 });
 
@@ -138,9 +137,8 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
     name: "fetch_url",
     label: "Fetch web page",
     description:
-      "Fetch an http(s) URL and return its readable text (HTML is stripped to plain text). " +
-      "Use it to read a result from web_search, or a URL the user gave you. " +
-      "Sends the URL off-device. Cite the source URL for any claim you draw from a page.",
+      "Fetch an http(s) URL and return readable text (HTML stripped). " +
+      "Read a web_search result or a URL the user gave. Sends the URL off-device; cite it for any claim.",
     parameters: FetchParameters,
     execute: async (_id, params, signal) => {
       const url = normalizeWebUrl(params.url);
