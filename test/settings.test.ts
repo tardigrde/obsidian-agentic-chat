@@ -70,6 +70,23 @@ describe("settings — OpenAI-compatible provider", () => {
     expect(merged.openaiCompatibleBaseUrl).toBe(DEFAULT_OPENAI_COMPATIBLE_BASE_URL);
     expect(merged.openaiCompatibleApiKey).toBe("");
     expect(merged.openaiCompatibleModel).toBe("");
+    expect(merged.openaiCompatibleContextWindow).toBe(0);
+  });
+
+  it("heals the context-window override to 0 for missing or malformed values", () => {
+    expect(mergeSettings({ openaiCompatibleContextWindow: -5 }).openaiCompatibleContextWindow).toBe(0);
+    expect(mergeSettings({ openaiCompatibleContextWindow: 1.7 }).openaiCompatibleContextWindow).toBe(1);
+    expect(mergeSettings({ openaiCompatibleContextWindow: "big" as unknown as number }).openaiCompatibleContextWindow).toBe(0);
+    expect(mergeSettings({ openaiCompatibleContextWindow: 32_000 }).openaiCompatibleContextWindow).toBe(32_000);
+  });
+
+  it("carries the context-window override into the model config", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      provider: "openai-compatible" as const,
+      openaiCompatibleContextWindow: 64_000,
+    };
+    expect(activeModelConfig(settings).openaiCompatibleContextWindow).toBe(64_000);
   });
 
   it("uses the generic provider model id and API key when selected", () => {

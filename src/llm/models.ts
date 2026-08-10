@@ -70,6 +70,8 @@ export interface ModelConfig {
   ollamaBaseUrl: string;
   /** Base URL whose `/chat/completions` endpoint follows the OpenAI chat completions API. */
   openaiCompatibleBaseUrl: string;
+  /** Context-window override for OpenAI-compatible (0 = auto-detect / unknown). */
+  openaiCompatibleContextWindow?: number;
 }
 
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -126,6 +128,13 @@ function buildOllamaModel(config: ModelConfig): Model<"openai-completions"> {
 
 function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completions"> {
   const pricing = resolveModelPricingSync("openai-compatible", config.modelId);
+  const info = resolveModelInfoSync("openai-compatible", config.modelId);
+  // Context window: explicit override wins; else try the OpenRouter catalog for
+  // the same slug (exact, or an unambiguous suffix match); else 0 = unknown.
+  // An unknown window keeps every tool (the tool budget fail-opens) and disables
+  // auto-compaction — better than guessing 128k and silently dropping tools.
+  const override = config.openaiCompatibleContextWindow ?? 0;
+  const contextWindow = override > 0 ? override : info?.c && info.c > 0 ? info.c : 0;
   return {
     id: config.modelId,
     name: config.modelId,
@@ -135,7 +144,7 @@ function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completi
     reasoning: false,
     input: ["text"],
     cost: { input: pricing.input, output: pricing.output, cacheRead: pricing.cacheRead, cacheWrite: pricing.cacheWrite },
-    contextWindow: DEFAULT_CONTEXT_WINDOW,
+    contextWindow,
     maxTokens: DEFAULT_MAX_TOKENS,
     compat: {
       supportsReasoningEffort: false,

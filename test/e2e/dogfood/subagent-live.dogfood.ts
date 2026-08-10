@@ -16,23 +16,34 @@ describe("agentic-chat subagent live dogfood", function () {
     if (process.env.AGENTIC_CHAT_SUBAGENT_DOGFOOD !== "true") this.skip();
     if (!apiKey) this.skip();
 
-    await configureLivePlugin({ apiKey, baseUrl, model, enableBuiltinAgents: true });
-
-    // Disable the tool budget: this spec validates live subagent dispatch, and the
-    // budget (default 2% of the context window) silently drops optional tools such
-    // as `subagent` once the full tool schema grows past the threshold.
-    await browser.executeObsidian(async ({ app }) => {
-      const plugin = (app as unknown as {
-        plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }> };
-      }).plugins?.plugins?.["agentic-chat"];
-      if (!plugin?.settings) return;
-      const settings = plugin.settings as { toolBudget: { enabled: boolean; thresholdPercent: number } };
-      settings.toolBudget = { enabled: false, thresholdPercent: 2 };
-      await plugin.saveSettings?.();
-    });
+    await configureLivePlugin({ apiKey, baseUrl, model, provider: "openrouter", enableBuiltinAgents: true });
 
     await browser.executeObsidianCommand("agentic-chat:open-chat");
     await $(".agentic-chat-view").waitForExist();
+
+    // The tool budget drops `subagent` only if the resolved context window is small
+    // relative to the schema. On the OpenRouter provider the window comes from the
+    // live /models catalog (e.g. deepseek-v4-flash-0731 = 1M), so the subagent tool
+    // stays. Wait for the catalog to be resolved before prompting so the first turn
+    // is not built against the 128k fallback.
+    await browser.waitUntil(
+      async () => {
+        const contextWindow = await browser.executeObsidian(async ({ app }) => {
+          const leaf = (app.workspace as unknown as {
+            getLeavesOfType: (type: string) => Array<{ view?: unknown }>;
+          }).getLeavesOfType("agentic-chat-chat-view")[0];
+          const view = leaf?.view as
+            | { service?: { getRuntimeDiagnostics?: () => { contextWindow?: number | null } } }
+            | undefined;
+          return view?.service?.getRuntimeDiagnostics?.().contextWindow ?? null;
+        });
+        return typeof contextWindow === "number" && contextWindow > 0 && contextWindow !== 128_000;
+      },
+      {
+        timeout: 20_000,
+        timeoutMsg: `context window was not resolved from the OpenRouter catalog (model ${model})`,
+      },
+    );
   });
 
   it("dispatches a subagent and renders its live inline transcript", async function () {

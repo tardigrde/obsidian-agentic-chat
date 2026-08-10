@@ -10,6 +10,7 @@ import {
   supportedThinkingLevels,
   type ModelConfig,
 } from "../src/llm/models";
+import { clearPricingCacheForTests, seedPricingCacheForTests } from "../src/llm/pricing-cache";
 
 const PRIVACY = { denyDataCollection: true, requireZDR: true, allowFallbacks: false };
 
@@ -339,5 +340,101 @@ describe("buildModel — OpenAI-compatible", () => {
     );
 
     expect(model.baseUrl).toBe("https://openwebui.example.com/api");
+  });
+
+  it("falls back to an unknown context window (0) when nothing is resolved", () => {
+    clearPricingCacheForTests();
+    const model = buildModel(
+      config({
+        provider: "openai-compatible",
+        modelId: "local/qwen2.5-coder",
+        openaiCompatibleBaseUrl: "http://localhost:3000/api",
+      }),
+    );
+
+    expect(model.contextWindow).toBe(0);
+    // Unknown windows must not trip the tool budget (applyToolBudget fail-opens
+    // on non-positive context windows) and must keep reasoning off.
+    expect(model.reasoning).toBe(false);
+  });
+
+  it("uses the explicit context-window override when set", () => {
+    clearPricingCacheForTests();
+    const model = buildModel(
+      config({
+        provider: "openai-compatible",
+        modelId: "local/qwen2.5-coder",
+        openaiCompatibleBaseUrl: "http://localhost:3000/api",
+        openaiCompatibleContextWindow: 32_000,
+      }),
+    );
+
+    expect(model.contextWindow).toBe(32_000);
+  });
+
+  it("resolves the context window from the OpenRouter catalog by exact or unambiguous suffix match", () => {
+    seedPricingCacheForTests({
+      "deepseek/deepseek-v4-flash-0731": {
+        id: "deepseek/deepseek-v4-flash-0731",
+        n: "DeepSeek V4 Flash 0731",
+        c: 1_048_576,
+        m: 384_000,
+        pi: 0,
+        po: 0,
+        pr: 0,
+        pw: 0,
+        t: 1,
+        re: 0,
+        tlm: null,
+      },
+      "openai/gpt-4o": {
+        id: "openai/gpt-4o",
+        n: "GPT-4o",
+        c: 128_000,
+        m: 16_384,
+        pi: 0,
+        po: 0,
+        pr: 0,
+        pw: 0,
+        t: 1,
+        re: 0,
+        tlm: null,
+      },
+    });
+
+    // Exact match.
+    expect(
+      buildModel(
+        config({
+          provider: "openai-compatible",
+          modelId: "deepseek/deepseek-v4-flash-0731",
+          openaiCompatibleBaseUrl: "https://openrouter.ai/api/v1",
+        }),
+      ).contextWindow,
+    ).toBe(1_048_576);
+
+    // Unambiguous bare-slug suffix match.
+    expect(
+      buildModel(
+        config({
+          provider: "openai-compatible",
+          modelId: "gpt-4o",
+          openaiCompatibleBaseUrl: "http://localhost:3000/api",
+        }),
+      ).contextWindow,
+    ).toBe(128_000);
+
+    // Unknown model id → unknown context window (0), never the guessed 128k.
+    expect(
+      buildModel(
+        config({
+          provider: "openai-compatible",
+          modelId: "not/on/openrouter",
+          openaiCompatibleBaseUrl: "http://localhost:3000/api",
+        }),
+      ).contextWindow,
+    ).toBe(0);
+
+    clearPricingCacheForTests();
   });
 });

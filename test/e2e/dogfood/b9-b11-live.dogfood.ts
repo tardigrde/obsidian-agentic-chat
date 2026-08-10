@@ -17,7 +17,7 @@ describe("agentic-chat B9+B11 live dogfood", function () {
     if (process.env.AGENTIC_CHAT_B9B11_DOGFOOD !== "true") this.skip();
     if (!apiKey) this.skip();
 
-    await configureLivePlugin({ apiKey, baseUrl, model });
+    await configureLivePlugin({ apiKey, baseUrl, model, provider: "openrouter" });
 
     await browser.executeObsidian(async ({ app }) => {
       const notePath = "B9-B11 Dogfood.md";
