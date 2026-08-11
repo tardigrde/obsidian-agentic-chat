@@ -40,9 +40,12 @@ describe("resolveCommand", () => {
   });
   it("resolves an alias to its canonical command", () => {
     expect(resolveCommand("history")?.name).toBe("sessions");
-    expect(resolveCommand("diag")?.name).toBe("doctor");
-    expect(resolveCommand("diagnostics")?.name).toBe("doctor");
     expect(resolveCommand("followup")?.name).toBe("follow-up");
+  });
+  it("drops the retired diagnostics/diag aliases", () => {
+    expect(resolveCommand("diag")).toBeUndefined();
+    expect(resolveCommand("diagnostics")).toBeUndefined();
+    expect(resolveCommand("doctor")?.name).toBe("doctor");
   });
   it("exposes /style as its own command (not a /config alias)", () => {
     expect(resolveCommand("style")?.name).toBe("style");

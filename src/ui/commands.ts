@@ -33,7 +33,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "project", args: "[name|clear]", description: "switch project workspace", aliases: ["projects"] },
   { name: "memory", args: "[add|review|manage|export|clear]", description: "add, review, export, or clear stored memories" },
   { name: "semantic-index", args: "[status|estimate|start|cancel]", description: "manage scoped semantic indexing", aliases: ["semindex"] },
-  { name: "doctor", description: "audit runtime health, agent plugins, and MCP configs", aliases: ["diagnostics", "diag"] },
+  { name: "doctor", description: "audit runtime health, agent plugins, and MCP configs" },
   { name: "config", description: "switch permission mode (Safe / YOLO)", aliases: ["mode"] },
   { name: "add-dir", args: "[folder]", description: "grant a working directory (auto-run inside, ask outside)", aliases: ["adddir"] },
   { name: "dirs", description: "list/revoke granted working directories", aliases: ["working-dirs"] },
@@ -52,13 +52,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "agent", args: "[name] [task]", description: "delegate a task to a subagent" },
   { name: "init", args: "[instructions]", description: "curate the vault's AGENTS.md standing-instructions file" },
   { name: "help", description: "show this list" },
-  {
-    name: "template",
-    args: "[name] [args]",
-    description: "deprecated alias for /skill",
-    takesSkillArg: true,
-    hidden: true,
-  },
 ];
 
 /** Commands shown in menus and `/help` (deprecated/internal ones excluded). */

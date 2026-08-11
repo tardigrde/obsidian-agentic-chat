@@ -253,8 +253,7 @@ export function mcpServerFromPluginEntry(
  * Merge derived plugin servers with persisted client-owned state. The plugin's
  * mcp.json is authoritative for url/name/headers; everything the user
  * configured (enabled, approval, auth, knownTools, oauth) is preserved by id.
- * Persisted plugin-owned records for servers no plugin declares anymore are
- * dropped; user-owned records (legacy servers kept by the migration) survive.
+ * Persisted records for servers no plugin declares anymore are dropped.
  */
 export function mergePluginMcpServers(
   persisted: readonly McpServerSettings[],
@@ -262,7 +261,7 @@ export function mergePluginMcpServers(
 ): McpServerSettings[] {
   const byId = new Map<string, McpServerSettings>();
   for (const server of persisted) byId.set(server.id, server);
-  const merged = derived.map((server) => {
+  return derived.map((server) => {
     const record = byId.get(server.id);
     if (!record) return server;
     return {
@@ -274,9 +273,6 @@ export function mergePluginMcpServers(
       pluginRoot: server.pluginRoot,
     };
   });
-  const derivedIds = new Set(derived.map((server) => server.id));
-  const retained = persisted.filter((server) => server.source !== "plugin" && !derivedIds.has(server.id));
-  return [...retained, ...merged];
 }
 
 /** Persist a client-owned record for every derived server (prunes orphans). */

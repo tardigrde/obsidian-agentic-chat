@@ -48,7 +48,7 @@ export interface McpServerSettings {
    */
   headers: Record<string, string>;
   /** Where this server configuration came from. */
-  source: "user" | "plugin" | "generated";
+  source: "user" | "plugin";
   /** Vault path of the plugin package that declared this server, when plugin-sourced. */
   pluginRoot?: string;
 }
@@ -425,8 +425,8 @@ function healHeaderMap(value: unknown): Record<string, string> {
   return headers;
 }
 
-function healServerSource(value: unknown): "user" | "plugin" | "generated" {
-  return value === "plugin" || value === "generated" ? value : "user";
+function healServerSource(value: unknown): "user" | "plugin" {
+  return value === "plugin" ? "plugin" : "user";
 }
 
 function healMcpKnownTools(value: unknown): McpKnownToolSettings[] {

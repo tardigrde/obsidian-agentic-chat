@@ -566,7 +566,7 @@ describe("agentic-chat next-level dogfood", function () {
 
   it("applies chaos settings, denies risky tools, and restores defaults", async function () {
     await setChaosSettings();
-    const diagnostics = await runSlashCommand("/diagnostics");
+    const diagnostics = await runSlashCommand("/doctor");
     expect(diagnostics).toContain("Tool budget");
     expect(diagnostics).toContain("active");
 

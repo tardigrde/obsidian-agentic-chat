@@ -110,7 +110,7 @@ Skills are reusable instruction/capability units in the [agentskills.io](https:/
 
 - **Where they come from.** Plugins in the vault's `.agentic-plugins/` folder (Agent Plugins 1.0.0 packages) contribute `skills/<name>/SKILL.md` files, alongside the built-in skills. Plugin skills load first; a plugin skill wins a name collision. They're listed to the model with **only** their name + description (progressive disclosure); the full body is loaded only when a skill is invoked.
 - **How to run them.** `/skill <name> [args]`, or directly as `/<name>` (built-in commands win a name collision; the skill stays reachable via `/skill <name>`). Auto-loaded skills appear in the `/` autocomplete popup.
-- **Arguments.** A skill body can use `$ARGUMENTS` (all args) or `$1`, `$2`, … (positional). This absorbs the old "prompt template" concept — a template is just a skill that takes arguments. `/template` still works as a deprecated alias for `/skill`.
+- **Arguments.** A skill body can use `$ARGUMENTS` (all args) or `$1`, `$2`, … (positional). This absorbs the old "prompt template" concept — a template is just a skill that takes arguments.
 - **Audit.** `/doctor` checks every plugin package against the Agent Plugins 1.0.0 spec and reports skills, MCP servers, and violations.
 
 ## Web access & research

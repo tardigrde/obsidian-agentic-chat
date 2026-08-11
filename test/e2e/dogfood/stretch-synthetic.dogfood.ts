@@ -441,7 +441,7 @@ describe("agentic-chat stretched synthetic dogfood", function () {
 
   it("survives chaos settings and then restores safe behavior", async function () {
     await setChaosSettings();
-    const diagnostics = await runSlashCommand("/diagnostics");
+    const diagnostics = await runSlashCommand("/doctor");
     expect(diagnostics).toContain("Tool budget");
     expect(diagnostics).toContain("active");
 

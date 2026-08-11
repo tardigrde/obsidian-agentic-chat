@@ -1588,9 +1588,6 @@ export class ChatView extends ItemView {
       case "init":
         await this.runInit(argString);
         return true;
-      case "template":
-        await this.runTemplate(input.args[0], input.args.slice(1));
-        return true;
       case "help":
         this.showHelp();
         return true;
@@ -2069,19 +2066,6 @@ export class ChatView extends ItemView {
     this.setComposerValue(text);
     this.inputEl.focus();
     this.inputEl.setSelectionRange(text.length, text.length);
-  }
-
-  /** `/template` is retired: templates are now skills (with $ARGUMENTS support). */
-  private async runTemplate(name: string | undefined, args: string[]): Promise<void> {
-    this.clearEmptyState();
-    this.renderInfoMessage("Deprecated", [
-      ["/template", "is now /skill — templates load as skills with $ARGUMENTS/$1 support."],
-    ]);
-    if (!name) {
-      this.showSkillList();
-      return;
-    }
-    await this.runSkill(name, args.join(" "));
   }
 
   private showStatus(): void {

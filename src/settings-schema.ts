@@ -279,8 +279,6 @@ function healPluginSettings(stored: Partial<PluginSettings> | null | undefined):
   return {
     folder: typeof stored?.folder === "string" && stored.folder.trim() ? stored.folder.trim() : DEFAULT_PLUGINS_FOLDER,
     enabled,
-    migratedLegacy: stored?.migratedLegacy === true,
-    skillsMigrated: stored?.skillsMigrated === true,
   };
 }
 
