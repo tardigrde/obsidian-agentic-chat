@@ -33,7 +33,7 @@ The settings UI writes real packages for you:
 ## Managing plugins
 
 - **Resources tab → Installed plugins** — per-plugin enable toggles, spec-compliance status, component counts, and open-folder shortcuts.
-- **`/doctor`** in chat — audits every package: manifest validation, skill counts, MCP server counts, skipped transports, and any spec violations.
+- **`/doctor`** in chat — one health panel: aggregate status, then every package audited (manifest validation, skill counts, MCP server counts, skipped transports, and any spec violations) plus full runtime diagnostics.
 
 ## Spec compliance
 

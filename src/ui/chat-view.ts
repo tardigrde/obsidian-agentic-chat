@@ -1544,9 +1544,6 @@ export class ChatView extends ItemView {
       case "semantic-index":
         await this.runSemanticIndex(argString);
         return true;
-      case "diagnostics":
-        this.showDiagnostics();
-        return true;
       case "doctor":
         await this.runDoctor();
         return true;
@@ -1602,6 +1599,10 @@ export class ChatView extends ItemView {
     }
   }
 
+  /**
+   * `/doctor`: one health panel for everything that matters — an aggregate
+   * status line, the agent-plugin audit, then the full runtime diagnostics.
+   */
   private async runDoctor(): Promise<void> {
     this.clearEmptyState();
     const service = this.plugin.pluginService;
@@ -1609,20 +1610,28 @@ export class ChatView extends ItemView {
     try {
       plugins = await service.reload();
     } catch (error) {
-      this.renderErrorMessage(`Agent plugin audit failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.renderErrorMessage(`Doctor audit failed: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
-    if (plugins.length === 0) {
-      const folder = this.plugin.settings.plugins.folder || ".agentic-plugins";
-      this.renderInfoMessage("Doctor", [
-        ["Agent plugins", `No plugin packages found in ${folder}. Generate one from the MCP settings tab.`],
-      ]);
-      return;
+    const folder = this.plugin.settings.plugins.folder || ".agentic-plugins";
+    const pluginAudit =
+      plugins.length === 0
+        ? `No plugin packages found in ${folder}. Generate one from the MCP settings tab.`
+        : service.auditText(plugins);
+    const diagnostics = this.service.getRuntimeDiagnostics();
+    const issues: string[] = [];
+    const failedPlugins = plugins.filter((plugin) => plugin.auditStatus === "failed").length;
+    if (failedPlugins > 0) issues.push(`${failedPlugins} of ${plugins.length} agent plugin(s) need attention`);
+    const failedMcp = diagnostics.resources.mcpServers.filter((server) => server.status === "error").length;
+    if (failedMcp > 0) issues.push(`${failedMcp} MCP server(s) failing`);
+    if (diagnostics.state.lastError) issues.push("last run ended in an error");
+    if (diagnostics.observability.enabled && diagnostics.observability.exportHealth.failedExports > 0) {
+      issues.push("observability exports failing");
     }
-    const failures = plugins.filter((plugin) => plugin.auditStatus === "failed").length;
     this.renderInfoMessage("Doctor", [
-      ["Status", failures === 0 ? "All agent plugins OK." : `${failures} of ${plugins.length} plugin(s) need attention.`],
-      ["Audit", service.auditText(plugins)],
+      ["Status", issues.length === 0 ? "All OK." : `${issues.join("; ")}.`],
+      ["Agent plugins", pluginAudit],
+      ...formatRuntimeDiagnosticsRows(diagnostics),
     ]);
   }
 
@@ -2101,11 +2110,6 @@ export class ChatView extends ItemView {
       ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
       ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
     ]);
-  }
-
-  private showDiagnostics(): void {
-    this.clearEmptyState();
-    this.renderInfoMessage("Diagnostics", formatRuntimeDiagnosticsRows(this.service.getRuntimeDiagnostics()));
   }
 
   /** `/config`: clickable mode picker, applied in-pane. Output style lives under /style. */

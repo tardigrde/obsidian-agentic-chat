@@ -227,7 +227,7 @@ Exercise these workflows deliberately:
 - approval modal allow, deny, remembered allow, remembered deny
 - long transcript reload
 - `/dirs`
-- `/status` and `/diagnostics`
+- `/status` and `/doctor`
 - model switcher and effort control
 - note write/edit with diff approval
 - session reopen/rename/export
@@ -600,7 +600,7 @@ Force feature crossovers that users naturally create:
 - attach files, active notes, folder listings, and memory in the
   same run, then check which context actually reached the model
 - run `/plan`, `/endplan`, `/todo`, `/steer`, `/follow-up`, `/new`,
-  `/sessions`, `/memory`, `/export`, `/undo`, `/diagnostics`, and `/config`
+  `/sessions`, `/memory`, `/export`, `/undo`, `/doctor`, and `/config`
   around real tool calls instead of as isolated command smoke tests
 - start long workflows that create notes, refine them, delete unused ones, check
   backlinks/local graph, export the transcript, reload the plugin, then continue
