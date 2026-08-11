@@ -35,7 +35,7 @@ async function seededApp(): Promise<App> {
   await app.vault.createFolder(".agentic-plugins");
   await app.vault.createFolder(".agentic-plugins/tools");
   await app.vault.createFolder(".agentic-plugins/tools/skills");
-  await app.vault.createFolder(".agentic-plugins/tools/skills/deep");
+  await app.vault.createFolder(".agentic-plugins/tools/skills/deep-research");
   await app.vault.create(
     ".agentic-plugins/tools/plugin.json",
     JSON.stringify({
@@ -46,7 +46,7 @@ async function seededApp(): Promise<App> {
     }),
   );
   await app.vault.create(
-    ".agentic-plugins/tools/skills/deep/SKILL.md",
+    ".agentic-plugins/tools/skills/deep-research/SKILL.md",
     "---\nname: deep-research\ndescription: Custom deep research\n---\nCustom research body.",
   );
   (app.vault as unknown as { adapter: DataAdapter }).adapter = fakeAdapter({

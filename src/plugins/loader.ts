@@ -156,7 +156,14 @@ async function loadPluginSkills(
   rootPath: string,
   reports: PluginReportItem[],
 ): Promise<{ skills: Skill[]; skillReports: PluginReportItem[] }> {
-  const skillsDir = folderEntry(app, `${rootPath}/skills`);
+  const skillsPath = `${rootPath}/skills`;
+  const skillsEntry = app.vault.getAbstractFileByPath(skillsPath);
+  if (skillsEntry && !(skillsEntry instanceof TFolder)) {
+    const message = `skills/ exists but is not a directory; skills are disabled for this plugin.`;
+    reports.push({ severity: "error", message });
+    return { skills: [], skillReports: [{ severity: "error", message }] };
+  }
+  const skillsDir = folderEntry(app, skillsPath);
   if (!skillsDir) return { skills: [], skillReports: [] };
   const skillReports: PluginReportItem[] = [];
   const skills: Skill[] = [];
@@ -176,9 +183,15 @@ async function loadPluginSkills(
       reports.push({ severity: "error", message });
       continue;
     }
-    const parsed = parseSkillMarkdown(raw, skillFile.path, dir.name);
+    const parsed = parseSkillMarkdown(raw, skillFile.path);
     if (!parsed.skill) {
       const message = `skills/${dir.name}/SKILL.md: ${parsed.problems.join(" ")} Skill skipped.`;
+      skillReports.push({ severity: "error", message });
+      reports.push({ severity: "error", message });
+      continue;
+    }
+    if (parsed.skill.name !== dir.name) {
+      const message = `skills/${dir.name}/SKILL.md: name "${parsed.skill.name}" must match the skill directory name; skill skipped.`;
       skillReports.push({ severity: "error", message });
       reports.push({ severity: "error", message });
       continue;
@@ -199,7 +212,14 @@ async function loadPluginMcp(
   pluginName: string,
   reports: PluginReportItem[],
 ): Promise<{ mcpValidation: PluginMcpValidation | null; mcpServers: McpServerSettings[] }> {
-  const mcpFile = fileEntry(app, `${rootPath}/mcp.json`);
+  const mcpPath = `${rootPath}/mcp.json`;
+  const mcpEntry = app.vault.getAbstractFileByPath(mcpPath);
+  if (mcpEntry && !(mcpEntry instanceof TFile)) {
+    const message = "mcp.json exists but is not a file; MCP is disabled for this plugin.";
+    reports.push({ severity: "error", message });
+    return { mcpValidation: null, mcpServers: [] };
+  }
+  const mcpFile = fileEntry(app, mcpPath);
   if (!mcpFile) return { mcpValidation: null, mcpServers: [] };
   const raw = await readFile(app, mcpFile);
   if (raw === null) {

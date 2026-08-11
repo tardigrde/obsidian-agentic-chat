@@ -96,15 +96,38 @@ describe("loadPlugins", () => {
     expect(plugin.skillReports[0]?.message).toMatch(/SKILL.md is missing/);
   });
 
-  it("skips a skill with empty body", async () => {
+  it("accepts a frontmatter-only skill (empty body is valid)", async () => {
     const app = await seed();
     await addPlugin(app, "tools", {
       "plugin.json": manifest("tools"),
-      "skills/empty/SKILL.md": "---\nname: empty\n---\n",
+      "skills/minimal/SKILL.md": "---\nname: minimal\ndescription: Does nothing yet\n---\n",
+    });
+    const plugin = byName(await loadPlugins(app), "tools");
+    expect(plugin.auditStatus).toBe("ok");
+    expect(plugin.skills.map((skill) => skill.name)).toEqual(["minimal"]);
+    expect(plugin.skills[0]?.content).toBe("");
+  });
+
+  it("skips a skill missing a name and stays partial", async () => {
+    const app = await seed();
+    await addPlugin(app, "tools", {
+      "plugin.json": manifest("tools"),
+      "skills/noname/SKILL.md": "---\ndescription: No name here\n---\nBody.",
     });
     const plugin = byName(await loadPlugins(app), "tools");
     expect(plugin.auditStatus).toBe("partial");
-    expect(plugin.skillReports[0]?.message).toMatch(/empty body/);
+    expect(plugin.skillReports[0]?.message).toMatch(/"name" frontmatter/);
+  });
+
+  it("skips a skill whose name does not match its directory", async () => {
+    const app = await seed();
+    await addPlugin(app, "tools", {
+      "plugin.json": manifest("tools"),
+      "skills/mismatch/SKILL.md": "---\nname: other-name\ndescription: Mismatched\n---\nBody.",
+    });
+    const plugin = byName(await loadPlugins(app), "tools");
+    expect(plugin.auditStatus).toBe("partial");
+    expect(plugin.skillReports[0]?.message).toMatch(/must match the skill directory name/);
   });
 
   it("derives streamable-http MCP servers with stable ids", async () => {
@@ -147,7 +170,7 @@ describe("loadPlugins", () => {
     await addPlugin(app, "half", {
       "plugin.json": manifest("half"),
       "mcp.json": "{ not json",
-      "skills/one/SKILL.md": "---\nname: one\n---\nBody.",
+      "skills/one/SKILL.md": "---\nname: one\ndescription: First skill\n---\nBody.",
     });
     const plugin = byName(await loadPlugins(app), "half");
     expect(plugin.skills.map((skill) => skill.name)).toEqual(["one"]);

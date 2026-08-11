@@ -67,6 +67,23 @@ Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d
 - **Files**: `src/settings.ts`, `src/mcp/tools.ts:85-99`
 - **Effort**: M
 
+### F9 · stdio + SSE transports for agent plugins (spec conformance)
+- **Problem**: The Agent Plugins spec says a conformant client supports at least one of `stdio`/`streamable-http` and *should support both*; the `sse` transport is optional but documented. This client loads only `streamable-http` entries (everything else is skipped + reported). `stdio` is currently impossible even though the vendored schema validates `command`/`args`/`env`/`cwd` forms.
+- **Goal**: Load `stdio` entries (and optionally `sse`) with the spec's command/cwd rules and `${PLUGIN_ROOT}` / `${PLUGIN_DATA}` expansion, behind the existing approval/permission model.
+- **Approach**: Subprocess transport (no Node `child_process` on mobile — desktop-gated like other host-only features); expand variables textually per spec; keep the boundary that `command` is one token; PLUGIN_DATA = plugin folder data dir.
+- **Files**: `src/plugins/loader.ts` (derive stdio servers), `src/mcp/` (subprocess client), `src/settings.ts` (per-server spawn approval)
+- **Acceptance**: A `stdio` plugin package appears in `/doctor`, its tools flow through approval, and the settings UI shows a connection state.
+- **Open Qs**: Do we want per-server sandbox (working-dir gating) or global permission prompt? Reference `F8` for the connect-only philosophy.
+- **Effort**: L
+- **Deps**: S10 (state map), F8
+
+### F10 · Skill resource loading (scripts / references / assets)
+- **Problem**: Agent Skills defines `scripts/`, `references/`, `assets/` conventions and relative file references; this client exposes only the `SKILL.md` body (via `read_skill`). Skills that reference other files cannot be executed fully.
+- **Goal**: On-demand loading of skill files (progressive disclosure) with relative-path resolution confined to the skill root, gated by the existing read-approval policy.
+- **Files**: `src/skills/skills.ts` (skill registry + root path), `src/agent/runtime-resources.ts`, `src/tools/vault-tools.ts` (path confinement)
+- **Effort**: M
+- **Deps**: none
+
 ---
 
 ## Group S — Settings & feature consolidation
@@ -116,8 +133,18 @@ thin (or absent) here.
 - **Effort**: M
 - **Deps**: S6
 
+### S10 · Decouple client-owned MCP state from server shape
+- **Problem**: `settings.mcp.servers` persists a full *copy* of each plugin-derived server (shape + client state merged by id via `mergePluginMcpServers`/`syncMcpServers`). The package is meant to be the single source of truth for server shape, but the copy can diverge: the settings tab renders `settings.mcp.servers` while the runtime re-derives from packages per turn, and the sync/prune/merge machinery exists only to paper over that duplication. State is also keyed by derived id, so renaming a package entry or plugin loses client state.
+- **Goal**: Packages define server shape; client-owned state (enabled, approval, authType/header refs, knownTools, oauth) lives in a separate id-keyed map (e.g. `settings.plugins.mcpState[id]`). Drop `syncMcpServers` and the merge; the settings tab and runtime both derive from packages + state map, so they cannot diverge.
+- **Approach**: migrate the state out of `settings.mcp.servers` into the map (one-time heal), derive `McpServerSettings` on load, keep secret refs unchanged.
+- **Files**: `src/plugins/loader.ts` (merge/sync removal), `src/mcp/settings.ts` (heal), `src/settings.ts` (MCP tab render), `src/agent/runtime-resources.ts`, `src/settings-schema.ts`
+- **Acceptance**: editing a package's mcp.json immediately changes the UI and runtime list; toggles/approval survive package edits; no orphan-prune path remains.
+- **Open Qs**: rename server key in a package — should state follow a stable "plugin:key" identity or the package-defined name?
+- **Effort**: M–L
+- **Deps**: none
+
 ---
 
 ## Recommended order
 
-B12 → E10 → F8 → A7. (Group S is a backlog for a dedicated consolidation session, not ordered.)
+B12 → E10 → F8 → A7. (Group S is a backlog for a dedicated consolidation session, not ordered. S10 should precede F9 since the state map is the base for stdio server state.)

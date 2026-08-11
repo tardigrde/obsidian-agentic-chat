@@ -25,7 +25,7 @@ async function seededApp(): Promise<App> {
   await app.vault.createFolder(".agentic-plugins");
   await app.vault.createFolder(".agentic-plugins/tools");
   await app.vault.createFolder(".agentic-plugins/tools/skills");
-  await app.vault.createFolder(".agentic-plugins/tools/skills/summarize");
+  await app.vault.createFolder(".agentic-plugins/tools/skills/deep-research");
   await app.vault.create(
     ".agentic-plugins/tools/plugin.json",
     JSON.stringify({
@@ -36,7 +36,7 @@ async function seededApp(): Promise<App> {
     }),
   );
   await app.vault.create(
-    ".agentic-plugins/tools/skills/summarize/SKILL.md",
+    ".agentic-plugins/tools/skills/deep-research/SKILL.md",
     "---\nname: deep-research\ndescription: Custom deep research\n---\nCustom research body.",
   );
   (app.vault as unknown as { adapter: DataAdapter }).adapter = fakeAdapter({
@@ -118,7 +118,7 @@ describe("agent runtime resources", () => {
     expect(resources.skills.map((skill) => skill.name)).toContain("self-knowledge");
     // Plugin skills win over built-ins of the same name.
     expect(resources.skills.find((skill) => skill.name === "deep-research")?.filePath).toBe(
-      ".agentic-plugins/tools/skills/summarize/SKILL.md",
+      ".agentic-plugins/tools/skills/deep-research/SKILL.md",
     );
     expect(resources.profiles.map((profile) => profile.name).sort()).toEqual(["editor", "researcher", "reviewer"]);
     expect(resources.instructionsOverlay).toContain("## Project instructions");
