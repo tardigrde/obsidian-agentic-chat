@@ -36,6 +36,7 @@ import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
 import { effectiveProjectSettings, projectSessionScope } from "./projects/projects";
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
+import { PluginService } from "./plugins/service";
 
 declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
 
@@ -43,6 +44,11 @@ export default class AgenticChatPlugin extends Plugin {
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
   private secretStore!: ObsidianSecretStore;
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
+  readonly pluginService = new PluginService(
+    this.app,
+    () => this.settings,
+    () => this.saveSettings(),
+  );
 
   async onload(): Promise<void> {
     this.secretStore = new ObsidianSecretStore(this.app);
@@ -55,6 +61,22 @@ export default class AgenticChatPlugin extends Plugin {
         new Notice("Agentic Chat MCP OAuth: no sign-in flow is waiting for this callback.");
       }
     });
+
+    // One-shot migration: earlier versions configured MCP servers directly in
+    // settings; those become a "legacy-mcp" plugin package so the plugin
+    // directory stays the single source of truth.
+    void this.pluginService
+      .migrateLegacyMcpServers(this.settings)
+      .then((result) => {
+        if (result.migrated > 0) {
+          new Notice(
+            `Agentic Chat: migrated ${result.migrated} MCP server(s) into the legacy-mcp agent plugin. Re-authorize if needed.`,
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn("Agentic chat: legacy MCP migration failed", error);
+      });
 
     this.addRibbonIcon("messages-square", "Open agentic chat", () => void this.activateView());
 

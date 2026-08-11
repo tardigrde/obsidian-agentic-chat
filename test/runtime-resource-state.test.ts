@@ -32,9 +32,21 @@ function settings(overrides: SettingsOverrides = {}): AgenticChatSettings {
 
 async function seededApp(): Promise<App> {
   const app = new FakeApp();
-  await app.vault.createFolder("Skills");
+  await app.vault.createFolder(".agentic-plugins");
+  await app.vault.createFolder(".agentic-plugins/tools");
+  await app.vault.createFolder(".agentic-plugins/tools/skills");
+  await app.vault.createFolder(".agentic-plugins/tools/skills/deep");
   await app.vault.create(
-    "Skills/deep.md",
+    ".agentic-plugins/tools/plugin.json",
+    JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      name: "tools",
+      version: "1.0.0",
+      description: "Vault tools",
+    }),
+  );
+  await app.vault.create(
+    ".agentic-plugins/tools/skills/deep/SKILL.md",
     "---\nname: deep-research\ndescription: Custom deep research\n---\nCustom research body.",
   );
   (app.vault as unknown as { adapter: DataAdapter }).adapter = fakeAdapter({
@@ -79,7 +91,6 @@ describe("AgentRuntimeResourceState", () => {
     const { state } = makeState(
       await seededApp(),
       settings({
-        skillsFolder: "Skills",
         enableBuiltinAgents: true,
         ignoredGlobs: "Private/**",
         web: { enabled: true },
@@ -96,7 +107,7 @@ describe("AgentRuntimeResourceState", () => {
   });
 
   it("composes the system prompt with the current model identity and loaded resources", async () => {
-    const currentSettings = settings({ skillsFolder: "Skills", enableBuiltinAgents: true, mode: "plan" });
+    const currentSettings = settings({ enableBuiltinAgents: true, mode: "plan" });
     const { state } = makeState(
       await seededApp(),
       currentSettings,

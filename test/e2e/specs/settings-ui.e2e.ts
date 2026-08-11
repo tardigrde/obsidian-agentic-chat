@@ -10,6 +10,7 @@ import {
   setSettingRange,
   setSettingSelect,
   setSettingText,
+  setSettingTextByPlaceholder,
   setSettingToggle,
   waitForSettingButton,
   waitForAgenticChatSetting,
@@ -45,15 +46,14 @@ interface SettingsSnapshot {
       authHeaderName: string;
       authHeaderValue: string;
       approval: string;
+      source: string;
     }>;
   };
-  skillsFolder: string;
-  templatesFolder: string;
+  plugins: { folder: string };
   enableBuiltinAgents: boolean;
   agentsFolder: string;
   ignoredGlobs: string;
 }
-
 const OPENAI_COMPATIBLE_KEY_SECRET_ID = "agentic-chat-openai-compatible-api-key";
 const OPENAI_COMPATIBLE_KEY = "e2e-openai-compatible-key";
 const LANGFUSE_PUBLIC_KEY_SECRET_ID = "agentic-chat-langfuse-public-key";
@@ -93,8 +93,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
         authHeaderValue?: string;
       };
       mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: unknown[] };
-      skillsFolder: string;
-      templatesFolder: string;
+      plugins: { folder: string; enabled: Record<string, boolean>; migratedLegacy: boolean };
       enableBuiltinAgents: boolean;
       agentsFolder: string;
       ignoredGlobs: string;
@@ -135,8 +134,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
       authHeaderValueSecretId: "agentic-chat-observability-auth-header-value",
       authHeaderValue: "",
     };
-    settings.skillsFolder = "";
-    settings.templatesFolder = "";
+    settings.plugins = { folder: ".agentic-plugins", enabled: {}, migratedLegacy: true };
     settings.enableBuiltinAgents = true;
     settings.agentsFolder = "";
     settings.ignoredGlobs = "";
@@ -208,16 +206,14 @@ describe("agentic-chat settings UI", function () {
     }, "Web settings were not persisted from the settings UI");
   });
 
-  it("persists a generic MCP server through the MCP tab", async function () {
+  it("generates a plugin package and persists its MCP server through the MCP tab", async function () {
     await selectSettingsTab("MCP");
     await setSettingToggle("Enable MCP", true);
-    await waitForSetting("Servers");
-    await clickSettingButton("Servers", "Add server");
-    await waitForSetting("HTTPS endpoint");
+    await waitForSetting("Add MCP server");
+    await setSettingText("Add MCP server", "docs");
+    await setSettingTextByPlaceholder("https://mcp.example.com/mcp", "https://docs.example.com/mcp");
+    await clickSettingButton("Add MCP server", "Generate plugin");
     await waitForSetting("Setup guide");
-    await setSettingText("Name", "Docs MCP E2E");
-    await setSettingText("HTTPS endpoint", "https://docs.example.com/mcp");
-    await waitForSetting("Authentication");
     await setSettingSelect("Approval", "allow");
     await setSettingSelect("Authentication", "header");
     await waitForSetting("Auth header");
@@ -230,8 +226,8 @@ describe("agentic-chat settings UI", function () {
       const server = snapshot.mcp.servers[0];
       return (
         snapshot.mcp.enabled &&
-        server?.name === "Docs MCP E2E" &&
-        server.id === "docs" &&
+        server?.name === "docs: docs" &&
+        server.id === "plugin_docs_docs" &&
         server.url === "https://docs.example.com/mcp" &&
         server.enabled &&
         server.approval === "allow" &&
@@ -279,17 +275,15 @@ describe("agentic-chat settings UI", function () {
     expect(storedObservability.langfuseSecretKey).toBe("");
   });
 
-  it("persists resource folders and ignored globs through the Resources tab", async function () {
+  it("persists plugin folder, subagent folder, and ignored globs through the Resources tab", async function () {
     await selectSettingsTab("Resources");
-    await setSettingText("Skills folder", "Skills");
-    await setSettingText("Prompt templates folder (deprecated)", "Templates");
+    await setSettingText("Plugins folder", ".agentic-plugins-e2e");
     await setSettingToggle("Built-in subagents", false);
     await setSettingText("Subagents folder", "Agents");
     await setSettingText("Ignore list", "Private/\n*.secret.md");
 
     const settings = await readAgenticChatSettings<SettingsSnapshot>();
-    expect(settings.skillsFolder).toBe("Skills");
-    expect(settings.templatesFolder).toBe("Templates");
+    expect(settings.plugins.folder).toBe(".agentic-plugins-e2e");
     expect(settings.enableBuiltinAgents).toBe(false);
     expect(settings.agentsFolder).toBe("Agents");
     expect(settings.ignoredGlobs).toBe("Private/\n*.secret.md");

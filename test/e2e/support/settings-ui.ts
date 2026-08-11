@@ -207,6 +207,23 @@ export async function setSettingToggle(name: string, checked: boolean): Promise<
   );
 }
 
+export async function setSettingTextByPlaceholder(placeholder: string, value: string): Promise<void> {
+  await focusSettingsWindow();
+  await browser.execute(
+    ({ inputPlaceholder, nextValue }) => {
+      const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
+      const input = Array.from(root.querySelectorAll<HTMLInputElement>("input:not([type='range'])"))
+        .find((candidate) => candidate.placeholder.trim() === inputPlaceholder);
+      if (!input) throw new Error(`Text input with placeholder "${inputPlaceholder}" not found`);
+      input.focus();
+      input.value = nextValue;
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: nextValue }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    { inputPlaceholder: placeholder, nextValue: value },
+  );
+}
+
 export async function clickSettingButton(name: string, buttonText: string): Promise<void> {
   await waitForSetting(name);
   await browser.execute(

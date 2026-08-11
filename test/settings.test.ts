@@ -300,6 +300,8 @@ describe("mergeSettings — MCP", () => {
           authHeaderName: "X-API-Key",
           authHeaderValueSecretId: mcpSecretId("context_7", "auth-header-value"),
           authHeaderValue: "secret",
+          headers: {},
+          source: "user",
           oauth: mcpOAuthSettingsForServer("context_7"),
           approval: "ask",
           knownTools: [],

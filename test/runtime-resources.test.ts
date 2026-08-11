@@ -3,7 +3,6 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { App, DataAdapter } from "obsidian";
 import { ReadMemo } from "../src/vault/read-memo";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
-import { createMcpServerSettings } from "../src/mcp/settings";
 import {
   buildAgentParentTools,
   composeAgentSystemPrompt,
@@ -23,15 +22,22 @@ function fakeAdapter(files: Record<string, string>): DataAdapter {
 
 async function seededApp(): Promise<App> {
   const app = new FakeApp();
-  await app.vault.createFolder("Skills");
-  await app.vault.createFolder("Templates");
+  await app.vault.createFolder(".agentic-plugins");
+  await app.vault.createFolder(".agentic-plugins/tools");
+  await app.vault.createFolder(".agentic-plugins/tools/skills");
+  await app.vault.createFolder(".agentic-plugins/tools/skills/summarize");
   await app.vault.create(
-    "Skills/deep.md",
-    "---\nname: deep-research\ndescription: Custom deep research\n---\nCustom research body.",
+    ".agentic-plugins/tools/plugin.json",
+    JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      name: "tools",
+      version: "1.0.0",
+      description: "Demo tools",
+    }),
   );
   await app.vault.create(
-    "Templates/legacy.md",
-    "---\nname: Legacy\ndescription: Legacy template\n---\nLegacy body.",
+    ".agentic-plugins/tools/skills/summarize/SKILL.md",
+    "---\nname: deep-research\ndescription: Custom deep research\n---\nCustom research body.",
   );
   (app.vault as unknown as { adapter: DataAdapter }).adapter = fakeAdapter({
     "AGENTS.md": "# Vault instructions\n- be precise",
@@ -98,12 +104,10 @@ function mcpFetcher(): WebFetcher {
 }
 
 describe("agent runtime resources", () => {
-  it("loads skills, legacy templates, built-ins, profiles, instructions, and ignore rules", async () => {
+  it("loads plugin skills, built-ins, profiles, instructions, and ignore rules", async () => {
     const resources = await loadAgentRuntimeResources(
       await seededApp(),
       settings({
-        skillsFolder: "Skills",
-        templatesFolder: "Templates",
         enableBuiltinAgents: true,
         ignoredGlobs: "Private/**",
         web: { enabled: true },
@@ -111,10 +115,11 @@ describe("agent runtime resources", () => {
     );
 
     expect(resources.skills.map((skill) => skill.name)).toContain("deep-research");
-    expect(resources.skills.map((skill) => skill.name)).toContain("Legacy");
-    // Vault skills are loaded before built-ins, so a vault skill with the same
-    // name shadows the built-in skill.
-    expect(resources.skills.find((skill) => skill.name === "deep-research")?.filePath).toBe("Skills/deep.md");
+    expect(resources.skills.map((skill) => skill.name)).toContain("self-knowledge");
+    // Plugin skills win over built-ins of the same name.
+    expect(resources.skills.find((skill) => skill.name === "deep-research")?.filePath).toBe(
+      ".agentic-plugins/tools/skills/summarize/SKILL.md",
+    );
     expect(resources.profiles.map((profile) => profile.name).sort()).toEqual(["editor", "researcher", "reviewer"]);
     expect(resources.instructionsOverlay).toContain("## Project instructions");
     expect(resources.instructionsOverlay).toContain("# Vault instructions");
@@ -125,7 +130,7 @@ describe("agent runtime resources", () => {
   it("composes the system prompt from a loaded resource snapshot", async () => {
     const resources = await loadAgentRuntimeResources(
       await seededApp(),
-      settings({ skillsFolder: "Skills", enableBuiltinAgents: true }),
+      settings({ enableBuiltinAgents: true }),
     );
 
     const prompt = composeAgentSystemPrompt(settings({ mode: "plan" }), resources, "Identity: test agent.");
@@ -140,6 +145,7 @@ describe("agent runtime resources", () => {
   it("builds parent tools from the loaded resource snapshot", () => {
     const resources: AgentRuntimeResources = {
       skills: [],
+      plugins: [],
       profiles: [],
       instructionsOverlay: "",
       ignoreMatcher: () => false,
@@ -175,55 +181,68 @@ describe("agent runtime resources", () => {
     );
   });
 
-  it("includes discovered MCP tools in the parent tool snapshot", async () => {
-    const resources = await loadAgentRuntimeResources(
-      await seededApp(),
-      settings({
-        mcp: {
-          enabled: true,
-          proxyUrl: "",
-          noProxy: "localhost,127.0.0.1,::1",
-          servers: [
-            {
-              ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
-              approval: "ask",
-            },
-          ],
-        },
+  it("includes discovered MCP tools from plugins in the parent tool snapshot", async () => {
+    const app = await seededApp();
+    await app.vault.createFolder(".agentic-plugins/mcp-server");
+    await app.vault.create(
+      ".agentic-plugins/mcp-server/plugin.json",
+      JSON.stringify({
+        $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        name: "mcp-server",
       }),
+    );
+    await app.vault.create(
+      ".agentic-plugins/mcp-server/mcp.json",
+      JSON.stringify({
+        $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+        mcpServers: { docs: { type: "streamable-http", url: "https://mcp.example.com/mcp" } },
+      }),
+    );
+    const resources = await loadAgentRuntimeResources(
+      app,
+      settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] } }),
       mcpFetcher(),
     );
 
     const { tools } = buildAgentParentTools({
       app: { vault: {}, workspace: {} } as unknown as App,
-      settings: settings(),
+      settings: settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] } }),
       resources,
       readMemo: new ReadMemo(),
       webFetch: noopFetcher,
     });
 
-    expect(tools.map((tool) => tool.name)).toContain("mcp__docs__resolve_library_id");
+    expect(tools.map((tool) => tool.name)).toContain("mcp__plugin_mcp_server_docs__resolve_library_id");
   });
 
-  it("keeps MCP discovery failures in runtime diagnostics", async () => {
-    const resources = await loadAgentRuntimeResources(
-      await seededApp(),
-      settings({
-        mcp: {
-          enabled: true,
-          proxyUrl: "",
-          noProxy: "localhost,127.0.0.1,::1",
-          servers: [{ ...createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }), approval: "ask" }],
-        },
+  it("keeps MCP discovery failures from plugin servers in runtime diagnostics", async () => {
+    const app = await seededApp();
+    await app.vault.createFolder(".agentic-plugins/mcp-server");
+    await app.vault.create(
+      ".agentic-plugins/mcp-server/plugin.json",
+      JSON.stringify({
+        $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        name: "mcp-server",
       }),
+    );
+    await app.vault.create(
+      ".agentic-plugins/mcp-server/mcp.json",
+      JSON.stringify({
+        $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+        mcpServers: { docs: { type: "streamable-http", url: "https://mcp.example.com/mcp" } },
+      }),
+    );
+    const resources = await loadAgentRuntimeResources(
+      app,
+      settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] } }),
       async () => ({ status: 500, text: "server down", headers: {} }),
     );
 
     expect(resources.mcpTools).toEqual([]);
     expect(resources.mcpDiagnostics).toEqual([
       expect.objectContaining({
-        serverId: "docs",
-        serverName: "Docs MCP",
+        serverId: "plugin_mcp_server_docs",
+        serverName: "mcp-server: docs",
         status: "error",
         toolCount: 0,
         error: expect.stringMatching(/HTTP 500/),

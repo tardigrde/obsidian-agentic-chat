@@ -1,35 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { App } from "obsidian";
 import type { Skill } from "@earendil-works/pi-agent-core";
-import { buildSkillInvocation, loadVaultSkills } from "../src/skills/skills";
-import { FakeApp } from "./helpers/fake-vault";
-
-async function seed(): Promise<App> {
-  const app = new FakeApp();
-  await app.vault.createFolder("Skills");
-  await app.vault.create(
-    "Skills/summarize.md",
-    "---\nname: Summarize\ndescription: Summarize the active note\n---\nWrite a 3-bullet summary.",
-  );
-  return app as unknown as App;
-}
-
-describe("loadVaultSkills", () => {
-  it("parses frontmatter name/description and keeps the body as content", async () => {
-    const skills = await loadVaultSkills(await seed(), "Skills");
-    expect(skills).toHaveLength(1);
-    expect(skills[0]).toMatchObject({
-      name: "Summarize",
-      description: "Summarize the active note",
-      filePath: "Skills/summarize.md",
-    });
-    expect(skills[0].content).toContain("3-bullet summary");
-  });
-
-  it("returns nothing when no folder is configured", async () => {
-    expect(await loadVaultSkills(await seed(), "")).toEqual([]);
-  });
-});
+import { buildSkillInvocation } from "../src/skills/skills";
 
 describe("buildSkillInvocation", () => {
   const skill = (content: string): Skill => ({

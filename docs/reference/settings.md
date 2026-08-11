@@ -54,7 +54,9 @@ Enable web access and configure Tavily, Brave, or SearXNG credentials and endpoi
 
 ## MCP
 
-Enable remote MCP, add HTTPS Streamable HTTP servers, choose auth, test discovery, and set per-server approval policy.
+Enable remote MCP, generate agent plugin packages for HTTPS Streamable HTTP servers, choose auth, test discovery, and set per-server approval policy.
+
+MCP servers now live inside **agent plugins** (`.agentic-plugins/` by default) — the plugins folder is the single source of truth. The MCP tab's **Add MCP server** form writes a real plugin package (`plugin.json` + `mcp.json`); endpoint and headers come from the package, while authentication, approval, and enable state stay client-owned.
 
 Supported auth modes:
 
@@ -84,12 +86,11 @@ Configure cost alerts, spend caps, and related usage notifications.
 
 ## Resources
 
-Inspect runtime resources such as MCP tools, artifacts, retrieval state, and diagnostics surfaced by the plugin.
+Inspect runtime resources such as agent plugins, MCP tools, artifacts, retrieval state, and diagnostics surfaced by the plugin.
 
 Also includes:
 
-- **Skills folder** — Vault folder scanned for `SKILL.md` files.
-- **Templates folder** — Deprecated. Files here load as skills via `/skill`.
+- **Agent plugins** — Vault folder scanned for agent plugin packages (`plugin.json` + `skills/` + `mcp.json`), with per-plugin enable toggles and open-folder shortcuts. See [Agent Plugins](../features/agent-plugins.md).
 - **Subagents** — Enable built-in subagents and configure a vault folder for `AGENT.md` profiles.
 
 ## Semantic retrieval

@@ -70,6 +70,7 @@ import {
   type ContextAttachment,
 } from "./context-attachments";
 import { parseSlashInput, slashInputTailAfterFirst, visibleCommands } from "./commands";
+import type { LoadedPlugin } from "../plugins/loader";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { formatCompactionSummary, isSummaryMessage } from "../agent/compaction";
 import { isInstructionFilePath } from "../agent/instructions";
@@ -1546,6 +1547,9 @@ export class ChatView extends ItemView {
       case "diagnostics":
         this.showDiagnostics();
         return true;
+      case "doctor":
+        await this.runDoctor();
+        return true;
       case "config":
         this.showConfig();
         return true;
@@ -1596,6 +1600,30 @@ export class ChatView extends ItemView {
       default:
         return false;
     }
+  }
+
+  private async runDoctor(): Promise<void> {
+    this.clearEmptyState();
+    const service = this.plugin.pluginService;
+    let plugins: LoadedPlugin[];
+    try {
+      plugins = await service.reload();
+    } catch (error) {
+      this.renderErrorMessage(`Agent plugin audit failed: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    if (plugins.length === 0) {
+      const folder = this.plugin.settings.plugins.folder || ".agentic-plugins";
+      this.renderInfoMessage("Doctor", [
+        ["Agent plugins", `No plugin packages found in ${folder}. Generate one from the MCP settings tab.`],
+      ]);
+      return;
+    }
+    const failures = plugins.filter((plugin) => plugin.auditStatus === "failed").length;
+    this.renderInfoMessage("Doctor", [
+      ["Status", failures === 0 ? "All agent plugins OK." : `${failures} of ${plugins.length} plugin(s) need attention.`],
+      ["Audit", service.auditText(plugins)],
+    ]);
   }
 
   private async runTodo(arg: string): Promise<void> {

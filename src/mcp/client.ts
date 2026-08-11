@@ -346,11 +346,12 @@ export class McpHttpClient {
   }
 
   private async headers(signal?: AbortSignal): Promise<Record<string, string>> {
-    const headers: Record<string, string> = {
-      Accept: ACCEPT,
-      "Content-Type": "application/json",
-      "MCP-Protocol-Version": this.protocolVersion,
-    };
+    // Plugin-declared literal headers first; client-generated headers below take
+    // precedence per the Agent Plugins spec (client HTTP/MCP/auth headers win).
+    const headers: Record<string, string> = { ...this.server.headers };
+    headers.Accept = ACCEPT;
+    headers["Content-Type"] = "application/json";
+    headers["MCP-Protocol-Version"] = this.protocolVersion;
     if (this.sessionId) headers["MCP-Session-Id"] = this.sessionId;
     if (this.server.authType === "header" && this.server.authHeaderName && this.server.authHeaderValue) {
       headers[assertValidHttpHeaderName(this.server.authHeaderName)] = assertValidHttpHeaderValue(

@@ -1,6 +1,6 @@
 # Agentic Chat — Roadmap
 
-Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01.)
+Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01; S9 completed and removed on 2026-08-11.)
 
 - **Status**: living document
 - **Created**: 2026-07-17
@@ -106,7 +106,7 @@ thin (or absent) here.
 - **Deps**: none
 
 ### S7 · Deprecated settings surface lingers
-- **Problem**: `templatesFolder` (deprecated, "templates are now skills") still exists in schema + settings UI + a hidden `/template` alias; every secret has a dual plaintext `*ApiKey` + `*SecretId` pair with migration fallback fields still persisted.
+- **Problem**: every secret still has a dual plaintext `*ApiKey` + `*SecretId` pair with migration fallback fields persisted. (`templatesFolder` was removed in S9.)
 - **Effort**: S
 - **Deps**: none
 
@@ -115,12 +115,6 @@ thin (or absent) here.
 - **Approach (tentative)**: keep the child-agent runtime and the `subagent` tool; drop the `AGENT.md` profile authoring surface and built-in roster in favor of subagents that inherit from the parent (system prompt override via invocation, same tool/approval controls); possibly ship one built-in "Explorer" agent for scoped read-only tasks. Reconcile with S6 naming.
 - **Effort**: M
 - **Deps**: S6
-
-### S9 · Follow the agent-plugins.org standard
-- **Problem**: the harness is built against no public standard, making it harder for external agent tooling to interoperate. [agent-plugins.org](https://agent-plugins.org/) is now an open standard for agent plugins; the [client-implementers](https://agent-plugins.org/client-implementers) section is the most relevant part for this plugin.
-- **Approach (tentative)**: audit the harness surface (skills, subagents, tool registration, session model) against the standard's client-implementer guidance and adopt what fits.
-- **Effort**: M
-- **Deps**: none
 
 ---
 

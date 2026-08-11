@@ -34,6 +34,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "memory", args: "[add|review|manage|export|clear]", description: "add, review, export, or clear stored memories" },
   { name: "semantic-index", args: "[status|estimate|start|cancel]", description: "manage scoped semantic indexing", aliases: ["semindex"] },
   { name: "diagnostics", description: "show dev runtime diagnostics", aliases: ["diag"] },
+  { name: "doctor", description: "audit agent plugins (skills, MCP configs) for spec violations" },
   { name: "config", description: "switch permission mode (Safe / YOLO)", aliases: ["mode"] },
   { name: "add-dir", args: "[folder]", description: "grant a working directory (auto-run inside, ask outside)", aliases: ["adddir"] },
   { name: "dirs", description: "list/revoke granted working directories", aliases: ["working-dirs"] },

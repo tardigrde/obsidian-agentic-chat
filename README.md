@@ -108,9 +108,10 @@ Invoke directly with `/agent <name> <task>`, or `/agent` with no argument to pic
 
 Skills are reusable instruction/capability units in the [agentskills.io](https://agentskills.io) `SKILL.md` format:
 
-- **Where they come from.** Drop `SKILL.md` files into the vault folder set in settings. They're listed to the model with **only** their name + description (progressive disclosure); the full body is loaded only when a skill is invoked.
+- **Where they come from.** Plugins in the vault's `.agentic-plugins/` folder (Agent Plugins 1.0.0 packages) contribute `skills/<name>/SKILL.md` files, alongside the built-in skills. Built-ins load first; a plugin skill wins a name collision. They're listed to the model with **only** their name + description (progressive disclosure); the full body is loaded only when a skill is invoked.
 - **How to run them.** `/skill <name> [args]`, or directly as `/<name>` (built-in commands win a name collision; the skill stays reachable via `/skill <name>`). Auto-loaded skills appear in the `/` autocomplete popup.
 - **Arguments.** A skill body can use `$ARGUMENTS` (all args) or `$1`, `$2`, … (positional). This absorbs the old "prompt template" concept — a template is just a skill that takes arguments. `/template` still works as a deprecated alias for `/skill`.
+- **Audit.** `/doctor` checks every plugin package against the Agent Plugins 1.0.0 spec and reports skills, MCP servers, and violations.
 
 ## Web access & research
 
@@ -127,7 +128,7 @@ Egress is gated by a single off-by-default setting: while it's off, the web tool
 Off by default. Enable *MCP* in settings to discover tools from remote MCP servers over HTTPS Streamable HTTP.
 
 - **Transport.** HTTPS only. `stdio`, subprocesses, and insecure `http://` endpoints are intentionally unsupported, so the feature stays mobile-safe and cannot spawn local processes.
-- **Setup.** Use **Add server**, paste the server's HTTPS endpoint, choose auth, then **Test connection** or **Authenticate & test** to discover tools. New installs include no servers or presets.
+- **Setup.** In the MCP tab, **Add MCP server** writes a real agent plugin package (`plugin.json` + `mcp.json`) for the endpoint you enter — packages, not settings, own endpoints after creation. Then choose auth and **Test connection** or **Authenticate & test** to discover tools. New installs include no servers or presets.
 - **Authentication.** Generic servers can use no auth, a bearer token, a custom static header, or MCP OAuth. Bearer/static-header secrets and OAuth tokens are stored with Obsidian secret storage.
 - **Tool naming.** Remote tools are exposed as `mcp__<server-id>__<tool-name>` so model tool names are stable and collision-free.
 - **Approval.** Every MCP server has its own allow / ask / deny policy, defaulting to **ask**. Remote tool annotations are not trusted as a safety boundary.

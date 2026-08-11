@@ -1,6 +1,8 @@
 import { App, Notice, Platform, PluginSettingTab, Setting, type ButtonComponent, type SettingDefinitionItem } from "obsidian";
 import { normalizeFolderPath } from "./vault/path";
 import type AgenticChatPlugin from "./main";
+import { syncMcpServers } from "./plugins/loader";
+import type { LoadedPlugin } from "./plugins/loader";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OLLAMA_BASE_URL,
@@ -13,9 +15,7 @@ import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { MUTATING_TOOLS } from "./tools/tool-contracts";
 import { createVaultTools } from "./tools/vault-tools";
 import {
-  createMcpServerSettings,
   exportMcpServerConfig,
-  importMcpServerConfig,
   mcpServerSetupSteps,
   nextUniqueMcpServerId,
   normalizeMcpServerId,
@@ -222,6 +222,21 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     { label: "Resources", render: (el, settings) => this.renderResources(el, settings) },
   ];
   private activeTab = 0;
+  private pluginsLoadedOnce = false;
+  private pendingMcpServerName = "";
+  private pendingMcpServerUrl = "";
+
+  /** Trigger an async plugin load once; redraw when it lands so rows appear. */
+  private ensurePluginsLoaded(): void {
+    if (this.pluginsLoadedOnce) return;
+    this.pluginsLoadedOnce = true;
+    void this.plugin.pluginService
+      .load()
+      .catch((error: unknown) => {
+        console.warn("Agentic chat: could not load agent plugins", error);
+      })
+      .then(() => this.redraw());
+  }
 
   display(): void {
     const { containerEl } = this;
@@ -878,28 +893,62 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           }),
       );
 
+    this.ensurePluginsLoaded();
+
     new Setting(containerEl)
-      .setName("Servers")
-      .setDesc("Add HTTPS Streamable HTTP servers, choose authentication, then test discovery.")
+      .setName("Add MCP server")
+      .setDesc(
+        "Writes a real agent plugin package (plugin.json + mcp.json) into the plugins folder. " +
+          "Packages, not settings, own server endpoints after creation.",
+      )
       .setHeading()
-      .addButton((button) =>
-        button.setButtonText("Import config").onClick(async () => {
-          await this.importMcpConfigFromClipboard(settings);
-        }),
+      .addText((text) =>
+        text
+          .setPlaceholder("Server name")
+          .setValue(this.pendingMcpServerName)
+          .onChange((value) => {
+            this.pendingMcpServerName = value;
+          }),
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("https://mcp.example.com/mcp")
+          .setValue(this.pendingMcpServerUrl)
+          .onChange((value) => {
+            this.pendingMcpServerUrl = value;
+          }),
       )
       .addButton((button) =>
-        button.setButtonText("Add server").onClick(async () => {
-          const id = this.nextMcpServerId(settings, "mcp");
-          this.upsertMcpServer(settings, createMcpServerSettings({ id }));
-          await this.save();
+        button.setButtonText("Generate plugin").onClick(async () => {
+          const url = this.pendingMcpServerUrl.trim();
+          const name = this.pendingMcpServerName.trim();
+          if (!name || !url) {
+            new Notice("Agentic Chat MCP: enter a server name and an HTTPS endpoint.");
+            return;
+          }
+          try {
+            if (new URL(url).protocol !== "https:") throw new Error("only HTTPS endpoints are supported");
+          } catch (error) {
+            new Notice(`Agentic Chat MCP: ${error instanceof Error ? error.message : String(error)}`);
+            return;
+          }
+          const result = await this.plugin.pluginService.generateMcpServerPackage({ serverName: name, url });
+          this.pendingMcpServerName = "";
+          this.pendingMcpServerUrl = "";
+          new Notice(`Agentic Chat MCP: created plugin package at ${result.rootPath}.`);
           this.redraw();
         }),
       );
 
+    const pluginServers = this.plugin.pluginService.getLoaded().flatMap((plugin) => plugin.mcpServers);
+    if (pluginServers.length > 0) {
+      syncMcpServers(settings, pluginServers);
+    }
+
     if (settings.mcp.servers.length === 0) {
       containerEl.createDiv({
         cls: "setting-item-description",
-        text: "No MCP servers configured. Add a server, paste its HTTPS endpoint, choose auth, then test connection to discover tools.",
+        text: "No MCP servers. Generate a plugin package above, or add a plugin folder with an mcp.json inside the plugin folder.",
       });
       return;
     }
@@ -1086,6 +1135,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     settings: AgenticChatSettings,
     server: McpServerSettings,
   ): void {
+    const pluginManaged = server.source === "plugin";
     const endpointProblem = mcpEndpointProblem(server.url);
     let testButton: ButtonComponent | undefined;
     const syncTestButton = (): void => {
@@ -1095,7 +1145,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     };
     const header = new Setting(containerEl)
       .setName(server.name || server.id)
-      .setDesc(formatMcpServerSummary(server, endpointProblem))
+      .setDesc(formatMcpServerSummary(server, endpointProblem) + (pluginManaged ? ` (managed by ${server.pluginRoot})` : ""))
       .setHeading()
       .addToggle((toggle) =>
         toggle.setValue(server.enabled).onChange(async (value) => {
@@ -1145,6 +1195,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       button
         .setButtonText("Remove")
         .setClass("mod-warning")
+        .setDisabled(pluginManaged)
         .onClick(async () => {
           this.deleteMcpPerToolApprovals(settings, server.id);
           this.clearMcpSecretSlots(server);
@@ -1154,25 +1205,39 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         }),
     );
 
+    if (pluginManaged) {
+      containerEl.createDiv({
+        cls: "setting-item-description",
+        text: `This server lives in the "${pluginManaged ? server.pluginRoot : ""}" agent plugin package. ` +
+          "Endpoint and headers come from its mcp.json; remove the package folder to delete it.",
+      });
+    }
+
     new Setting(containerEl)
       .setName("Name")
       .setDesc("Shown in tool labels and approval prompts.")
       .addText((text) =>
-        text.setValue(server.name).onChange(async (value) => {
-          server.name = value.trim() || server.id;
-          await this.save();
-        }),
+        text
+          .setDisabled(pluginManaged)
+          .setValue(server.name)
+          .onChange(async (value) => {
+            server.name = value.trim() || server.id;
+            await this.save();
+          }),
       );
 
     new Setting(containerEl)
       .setName("Server id")
       .setDesc("Advanced. Used in local tool names: mcp__<id>__<tool>.")
       .addText((text) =>
-        text.setValue(server.id).onChange(async (value) => {
-          const next = normalizeMcpServerId(value);
-          this.renameMcpServer(settings, server, this.nextMcpServerId(settings, next, server));
-          await this.save();
-        }),
+        text
+          .setDisabled(pluginManaged)
+          .setValue(server.id)
+          .onChange(async (value) => {
+            const next = normalizeMcpServerId(value);
+            this.renameMcpServer(settings, server, this.nextMcpServerId(settings, next, server));
+            await this.save();
+          }),
       );
 
     new Setting(containerEl)
@@ -1180,6 +1245,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setDesc(endpointProblem || "Streamable HTTP endpoint. Query parameters are preserved.")
       .addText((text) =>
         text
+          .setDisabled(pluginManaged)
           .setPlaceholder("https://mcp.example.com/mcp")
           .setValue(server.url)
           .onChange(async (value) => {
@@ -1550,23 +1616,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     }
   }
 
-  private async importMcpConfigFromClipboard(settings: AgenticChatSettings): Promise<void> {
-    const raw = await this.readFromClipboard();
-    if (!raw.trim()) {
-      new Notice("Agentic Chat MCP: clipboard does not contain an MCP config.");
-      return;
-    }
-    try {
-      const server = importMcpServerConfig(JSON.parse(raw));
-      this.upsertMcpServer(settings, server);
-      await this.save();
-      new Notice(`${server.name}: imported MCP config.`);
-      this.redraw();
-    } catch (error) {
-      new Notice(`Agentic Chat MCP: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
   private upsertMcpServer(settings: AgenticChatSettings, server: McpServerSettings): void {
     const existing = settings.mcp.servers.find((entry) => entry.id === server.id);
     if (existing) {
@@ -1788,30 +1837,30 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   private renderResources(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Skills & templates").setHeading();
+    new Setting(containerEl).setName("Agent plugins").setHeading();
+
+    const desc = containerEl.createDiv({ cls: "setting-item-description" });
+    desc.createSpan({
+      text:
+        "Plugins are packages in the vault that contribute skills and MCP servers. They follow the " +
+        "Agent Plugins 1.0.0 specification and are the single source of truth for skills and MCP. " +
+        "Skill precedence: built-ins, then plugins.",
+    });
 
     this.folderSetting(
       containerEl,
-      "Skills folder",
-      "Vault folder scanned for SKILL.md files (skills and personas). Leave empty to disable.",
-      settings.skillsFolder,
+      "Plugins folder",
+      "Vault folder scanned for agent plugin packages (plugin.json + skills/ + mcp.json).",
+      settings.plugins.folder,
       async (value) => {
-        settings.skillsFolder = value;
+        settings.plugins.folder = value;
+        this.plugin.pluginService.invalidate();
         await this.save();
+        this.redraw();
       },
     );
 
-    this.folderSetting(
-      containerEl,
-      "Prompt templates folder (deprecated)",
-      "Deprecated: templates are now skills. Files here load as skills and run via /skill " +
-        "(with $ARGUMENTS/$1 support). Move them into the skills folder; this setting will be removed.",
-      settings.templatesFolder,
-      async (value) => {
-        settings.templatesFolder = value;
-        await this.save();
-      },
-    );
+    this.renderPluginsList(containerEl, settings);
 
     new Setting(containerEl).setName("Subagents").setHeading();
     new Setting(containerEl)
@@ -1950,6 +1999,70 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           await this.save();
         });
       });
+  }
+
+  private renderPluginsList(containerEl: HTMLElement, settings: AgenticChatSettings): void {
+    this.ensurePluginsLoaded();
+    const plugins = this.plugin.pluginService.getLoaded();
+    if (plugins.length === 0) {
+      containerEl.createDiv({
+        cls: "setting-item-description",
+        text: "No agent plugins found. Packages live in the plugins folder; see the MCP tab to generate one from a server endpoint.",
+      });
+      return;
+    }
+
+    new Setting(containerEl).setName("Installed plugins").setHeading();
+    for (const plugin of plugins) {
+      this.renderPluginRow(containerEl, settings, plugin);
+    }
+  }
+
+  private renderPluginRow(containerEl: HTMLElement, settings: AgenticChatSettings, plugin: LoadedPlugin): void {
+    const components = [
+      `${plugin.skills.length} skill${plugin.skills.length === 1 ? "" : "s"}`,
+      `${plugin.mcpServers.length} MCP server${plugin.mcpServers.length === 1 ? "" : "s"}`,
+    ].join(", ");
+    const status = plugin.enabled ? plugin.auditStatus : "disabled";
+
+    new Setting(containerEl)
+      .setName(plugin.name)
+      .setDesc(
+        `${plugin.rootPath} — ${status}, ${components}${plugin.version ? `, v${plugin.version}` : ""}` +
+          (plugin.manifestProblem ? ` — ${plugin.manifestProblem}` : "") +
+          (plugin.reports.length > 0 ? ` — ${plugin.reports.map((report) => report.message).join("; ")}` : ""),
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(plugin.enabled).onChange(async (value) => {
+          const enabled = { ...settings.plugins.enabled };
+          if (value) delete enabled[plugin.name];
+          else enabled[plugin.name] = false;
+          settings.plugins.enabled = enabled;
+          this.plugin.pluginService.invalidate();
+          await this.save();
+          this.redraw();
+        }),
+      )
+      .addButton((button) =>
+        button.setButtonText("Open folder").onClick(() => {
+          void this.openInVault(plugin.rootPath);
+        }),
+      );
+  }
+
+  private openInVault(path: string): void {
+    const entry = this.app.vault.getAbstractFileByPath(path);
+    if (!entry) {
+      new Notice(`Agentic Chat: ${path} no longer exists.`);
+      return;
+    }
+    const fileExplorer = this.app.workspace.getLeavesOfType("file-explorer")[0];
+    if (fileExplorer) {
+      void fileExplorer.openFile(entry as never);
+      return;
+    }
+    const vault = this.app.vault as unknown as { open?: (path: string) => Promise<void> };
+    if (vault.open) void vault.open(`/${path}`);
   }
 
   private setEmbeddingModel(settings: AgenticChatSettings, value: string): void {

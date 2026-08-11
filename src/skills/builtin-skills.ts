@@ -1,9 +1,22 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
+import { parseSkillMarkdown } from "./skill-format";
 
 /** Marker `filePath` for skills that ship with the plugin (no vault file backs them). */
 export const BUILTIN_SKILL_LOCATION = "(built-in)";
 
-const SELF_KNOWLEDGE_CONTENT = `# Self-knowledge
+/**
+ * Built-ins are full Agent Skills documents (frontmatter + body) parsed through
+ * the same `parseSkillMarkdown` primitive as plugin-loaded skills, so every
+ * skill in the plugin conforms to the same schema.
+ */
+const SELF_KNOWLEDGE_DOC = `---
+name: self-knowledge
+description: >-
+  Plugin self-knowledge: tools inventory, edit semantics, constraints, error
+  patterns, doomloop guards, and plugin URLs. Consult when stuck or when the
+  user is unhappy.
+---
+# Self-knowledge
 
 Consult this skill proactively when: the user is unhappy with how the agent is working, you see repeated tool-call errors on the same operation, a doomloop is detected, or you are asked about your own capabilities, constraints, or plugin identity.
 
@@ -75,7 +88,13 @@ You have these tool categories. Each is callable via function call when present 
 
 When a user reports a bug or unexpected behavior, you can point them to the issues URL above to open a new issue.`;
 
-const DEEP_RESEARCH_CONTENT = `# Deep research
+const DEEP_RESEARCH_DOC = `---
+name: deep-research
+description: >-
+  Multi-step web research: plan, search, read sources, then write a cited
+  research note into the vault. Requires web access.
+---
+# Deep research
 
 Run a subagent-backed research loop on the open web and capture the findings as a cited note in the vault. You are the supervisor: plan the investigation, dispatch children with the \`subagent\` tool, verify their evidence, synthesize the final note, then save it.
 
@@ -96,22 +115,13 @@ Constraints:
 - If web access fails or returns nothing useful, say so plainly rather than inventing sources.`;
 
 /** The self-knowledge skill: plugin capabilities, constraints, error patterns, doomloop guards, and URLs. Always available. */
-export const SELF_KNOWLEDGE_SKILL: Skill = {
-  name: "self-knowledge",
-  description:
-    "Plugin self-knowledge: tools inventory, edit semantics, constraints, error patterns, doomloop guards, and plugin URLs. Consult when stuck or when the user is unhappy.",
-  content: SELF_KNOWLEDGE_CONTENT,
-  filePath: BUILTIN_SKILL_LOCATION,
-};
+export const SELF_KNOWLEDGE_SKILL: Skill = parseSkillMarkdown(
+  SELF_KNOWLEDGE_DOC,
+  BUILTIN_SKILL_LOCATION,
+).skill as Skill;
 
 /** The deep-research skill: plan → search → read → synthesize → cite → save. */
-export const DEEP_RESEARCH_SKILL: Skill = {
-  name: "deep-research",
-  description:
-    "Multi-step web research: plan, search, read sources, then write a cited research note into the vault. Requires web access.",
-  content: DEEP_RESEARCH_CONTENT,
-  filePath: BUILTIN_SKILL_LOCATION,
-};
+export const DEEP_RESEARCH_SKILL: Skill = parseSkillMarkdown(DEEP_RESEARCH_DOC, BUILTIN_SKILL_LOCATION).skill as Skill;
 
 /**
  * Skills that ship with the plugin (no vault folder needed).

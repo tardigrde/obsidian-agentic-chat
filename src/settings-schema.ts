@@ -10,6 +10,8 @@ import { type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approv
 import { type AgentMode, DEFAULT_MODE, healMode } from "./agent/modes";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
+import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from "./plugins/settings";
+import { DEFAULT_PLUGINS_FOLDER } from "./plugins/loader";
 import { healMcpSettings, normalizeMcpNoProxy, normalizeMcpProxyUrl, type McpSettings } from "./mcp/settings";
 import { WEB_SEARCH_PROVIDERS, type WebSearchProvider } from "./tools/web-search";
 import {
@@ -69,10 +71,8 @@ export interface AgenticChatSettings {
   outputStyle: OutputStyle;
   privacy: PrivacySettings;
   approval: ApprovalSettings;
-  /** Vault folder scanned for SKILL.md skills/personas. Empty disables skills. */
-  skillsFolder: string;
-  /** Vault folder scanned for reusable prompt templates. Empty disables templates. */
-  templatesFolder: string;
+  /** Agent Plugins packages loaded from a vault folder. */
+  plugins: PluginSettings;
   /** Vault folder scanned for AGENT.md subagent profiles. Empty disables vault profiles. */
   agentsFolder: string;
   /** Include the built-in subagent roster (researcher / reviewer / editor). */
@@ -171,8 +171,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   // logging/training, and any fallback provider must also satisfy both.
   privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
   approval: DEFAULT_APPROVAL_SETTINGS,
-  skillsFolder: "",
-  templatesFolder: "",
+  plugins: DEFAULT_PLUGIN_SETTINGS,
   agentsFolder: "",
   enableBuiltinAgents: true,
   ignoredGlobs: "",
@@ -242,6 +241,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       searchApiKeySecretId: stringSetting(stored?.web?.searchApiKeySecretId, WEB_SEARCH_API_KEY_SECRET_ID),
     },
     mcp: healMcpSettings(stored?.mcp),
+    plugins: healPluginSettings(stored?.plugins),
     projects: healProjectSettings(stored?.projects),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
@@ -267,6 +267,20 @@ function healNetworkSettings(stored: Partial<NetworkSettings> | null | undefined
 
 function healSearchProvider(stored: WebSearchProvider | undefined): WebSearchProvider {
   return stored && WEB_SEARCH_PROVIDERS.includes(stored) ? stored : DEFAULT_SETTINGS.web.searchProvider;
+}
+
+function healPluginSettings(stored: Partial<PluginSettings> | null | undefined): PluginSettings {
+  const enabled: Record<string, boolean> = {};
+  if (stored?.enabled && typeof stored.enabled === "object" && !Array.isArray(stored.enabled)) {
+    for (const [name, value] of Object.entries(stored.enabled)) {
+      enabled[name] = value === true;
+    }
+  }
+  return {
+    folder: typeof stored?.folder === "string" && stored.folder.trim() ? stored.folder.trim() : DEFAULT_PLUGINS_FOLDER,
+    enabled,
+    migratedLegacy: stored?.migratedLegacy === true,
+  };
 }
 
 function healProvider(stored: ProviderId | undefined): ProviderId {

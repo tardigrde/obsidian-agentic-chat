@@ -41,6 +41,15 @@ export interface McpServerSettings {
   approval: ApprovalPolicy;
   /** Last discovered tools, cached only to render per-tool approval controls. */
   knownTools: McpKnownToolSettings[];
+  /**
+   * Literal headers from a plugin's mcp.json. Client-generated headers
+   * (MCP protocol, auth) take precedence per the Agent Plugins spec.
+   */
+  headers: Record<string, string>;
+  /** Where this server configuration came from. */
+  source: "user" | "plugin" | "generated";
+  /** Vault path of the plugin package that declared this server, when plugin-sourced. */
+  pluginRoot?: string;
 }
 
 export interface McpKnownToolSettings {
@@ -169,6 +178,9 @@ function healMcpServer(server: Partial<McpServerSettings> | null | undefined): M
     oauth: healOAuthSettings(server.oauth, id),
     approval: healApproval(server.approval),
     knownTools: healMcpKnownTools(server.knownTools),
+    headers: healHeaderMap(server.headers),
+    source: healServerSource(server.source),
+    ...(typeof server.pluginRoot === "string" && server.pluginRoot.trim() ? { pluginRoot: server.pluginRoot.trim() } : {}),
   };
 }
 
@@ -189,6 +201,11 @@ export function createMcpServerSettings(
     oauth: healOAuthSettings(overrides.oauth, id),
     approval: healApproval(overrides.approval),
     knownTools: healMcpKnownTools(overrides.knownTools),
+    headers: healHeaderMap(overrides.headers),
+    source: overrides.source ?? "user",
+    ...(typeof overrides.pluginRoot === "string" && overrides.pluginRoot.trim()
+      ? { pluginRoot: overrides.pluginRoot.trim() }
+      : {}),
   };
 }
 
@@ -394,6 +411,19 @@ function discoveryMessage(server: McpServerSettings, canDiscover: boolean): stri
 
 function healApproval(value: ApprovalPolicy | undefined): ApprovalPolicy {
   return value === "allow" || value === "ask" || value === "deny" ? value : "ask";
+}
+
+function healHeaderMap(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const headers: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof item === "string") headers[key] = item;
+  }
+  return headers;
+}
+
+function healServerSource(value: unknown): "user" | "plugin" | "generated" {
+  return value === "plugin" || value === "generated" ? value : "user";
 }
 
 function healMcpKnownTools(value: unknown): McpKnownToolSettings[] {
