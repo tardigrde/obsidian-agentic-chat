@@ -16,7 +16,7 @@ Plugins live in `.agentic-plugins/` at the vault root (configurable in Settings 
     └── mcp.json             # optional: mcpServers map
 ```
 
-- **Skills** — each folder under `skills/` holds a `SKILL.md`. The frontmatter `name` and `description` feed the skill registry; the body is the skill content. Built-in skills load first, and a plugin skill of the same name wins.
+- **Skills** — each folder under `skills/` holds a `SKILL.md`. The frontmatter `name` and `description` feed the skill registry; the body is the skill content. Plugin skills load first, so a plugin skill of the same name shadows a built-in.
 - **MCP** — `mcp.json` declares `mcpServers` (currently `streamable-http` only). Servers whose transport is unsupported are skipped; valid ones load with their persisted client state (enable toggle, approval, auth, OAuth) preserved by id. Tool names use the id `mcp__plugin_<name>_<key>__<tool>`.
 
 A plugin with only an `mcp.json` (no skills) is valid — MCP-only plugins are allowed by the spec.

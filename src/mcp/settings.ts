@@ -1,6 +1,7 @@
 import type { ApprovalPolicy } from "../agent/approval";
 import { ensureMcpOAuthSecretRefs, mcpSecretId } from "../secrets/secret-store";
 import { isValidHttpHeaderName } from "./http-headers";
+import { isLoopbackHost } from "../plugins/manifest";
 
 export type McpAuthType = "none" | "bearer" | "header" | "oauth";
 type LegacyMcpServerPreset = "generic" | "context7" | "oauth";
@@ -338,13 +339,14 @@ export function importMcpServerConfig(value: unknown): McpServerSettings {
 
 export function mcpServerEndpointProblem(url: string): string {
   const trimmed = url.trim();
-  if (!trimmed || trimmed === "https://") return "Paste an HTTPS Streamable HTTP endpoint.";
+  if (!trimmed || trimmed === "https://") return "Paste an HTTPS (or loopback HTTP) Streamable HTTP endpoint.";
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:") return "MCP server URLs must use https://.";
-    return "";
+    if (parsed.protocol === "https:") return "";
+    if (parsed.protocol === "http:" && isLoopbackHost(parsed.hostname)) return "";
+    return "MCP server URLs must use https:// (loopback hosts may use http://).";
   } catch {
-    return "Enter a valid HTTPS MCP server URL.";
+    return "Enter a valid HTTPS (or loopback HTTP) MCP server URL.";
   }
 }
 
@@ -417,6 +419,7 @@ function healHeaderMap(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const headers: Record<string, string> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (key.toLowerCase() === "authorization") continue;
     if (typeof item === "string") headers[key] = item;
   }
   return headers;

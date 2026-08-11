@@ -176,6 +176,14 @@ describe("validateMcpConfig", () => {
     expect(result.servers[0]?.problems.join(" ")).toMatch(/repeated under different casing/);
   });
 
+  it("rejects a client-managed authorization header", () => {
+    const result = validateMcpConfig(
+      mcpDoc({ s: { type: "streamable-http", url: "https://x.example/mcp", headers: { Authorization: "Bearer x" } } }),
+      AGENT_PLUGINS_MCP_SCHEMA_ID,
+    );
+    expect(result.servers[0]?.problems.join(" ")).toMatch(/authorization.*managed by the client/);
+  });
+
   it("rejects a mismatched $schema version", () => {
     const result = validateMcpConfig(mcpDoc({}), "https://agent-plugins.org/schemas/0.9.0/mcp.schema.json");
     expect(result.ok).toBe(false);

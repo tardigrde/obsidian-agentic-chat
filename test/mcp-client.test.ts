@@ -370,6 +370,19 @@ describe("McpHttpClient", () => {
     expect(() => normalizeMcpUrl("http://mcp.example.com/mcp")).toThrow(/must use https/i);
   });
 
+  it("allows loopback http endpoints", async () => {
+    const fetcher: WebFetcher = async () => {
+      throw new Error("unexpected fetch");
+    };
+    const client = new McpHttpClient({
+      server: server({ url: "http://127.0.0.1:3000/mcp" }),
+      fetcher,
+    });
+    expect(normalizeMcpUrl("http://127.0.0.1:3000/mcp")).toBe("http://127.0.0.1:3000/mcp");
+    expect(normalizeMcpUrl("http://localhost:3000/mcp")).toMatch(/^http:\/\/localhost:3000/);
+    await expect(client.listTools()).rejects.toThrow(/unexpected fetch/);
+  });
+
   it("sends OAuth bearer tokens for authenticated MCP servers", async () => {
     const requests: WebHttpRequest[] = [];
     const mcpServer = oauthServer();

@@ -60,6 +60,12 @@ const LANGFUSE_PUBLIC_KEY_SECRET_ID = "agentic-chat-langfuse-public-key";
 const LANGFUSE_SECRET_KEY_SECRET_ID = "agentic-chat-langfuse-secret-key";
 
 async function resetSettingsForUiSpec(): Promise<void> {
+  await browser.executeObsidian(async ({ app }) => {
+    // Remove the generated package from a previous run so the MCP tab's
+    // "Generate plugin" always produces the canonical "docs" package.
+    const previous = app.vault.getAbstractFileByPath(".agentic-plugins/docs");
+    if (previous) await app.vault.delete(previous, true);
+  });
   await browser.executeObsidian(async ({ app }, secretId) => {
     const plugin = (app as unknown as {
       plugins?: {

@@ -419,6 +419,9 @@ function validateMcpHeaders(headers: Record<string, string>, problems: string[])
       problems.push(`invalid header "${name}": ${error instanceof Error ? error.message : String(error)}`);
     }
     const lower = name.toLowerCase();
+    if (lower === "authorization") {
+      problems.push('header "authorization" is managed by the client; declare other headers instead.');
+    }
     if (seenLower.has(lower)) {
       problems.push(`header "${name}" is repeated under different casing.`);
     }

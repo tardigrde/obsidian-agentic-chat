@@ -3,6 +3,7 @@ import type { McpServerSettings } from "./settings";
 import { parseWwwAuthenticate, refreshMcpOAuthToken, shouldRefreshMcpOAuthToken } from "./oauth";
 import { DEFAULT_MCP_HTTP_TIMEOUT_MS, fetchWithMcpTimeout } from "./http";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
+import { isLoopbackHost } from "../plugins/manifest";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
 const MCP_PROTOCOL_VERSION_FALLBACKS = ["2025-06-18", "2024-11-05"] as const;
@@ -346,9 +347,15 @@ export class McpHttpClient {
   }
 
   private async headers(signal?: AbortSignal): Promise<Record<string, string>> {
-    // Plugin-declared literal headers first; client-generated headers below take
-    // precedence per the Agent Plugins spec (client HTTP/MCP/auth headers win).
-    const headers: Record<string, string> = { ...this.server.headers };
+    // Client-generated HTTP/MCP/auth headers take precedence per the Agent
+    // Plugins spec, so a plugin-declared header that collides with one of
+    // those names (case-insensitively) is dropped instead of being sent
+    // alongside its differently-cased twin.
+    const clientManaged = new Set(["accept", "content-type", "mcp-protocol-version", "mcp-session-id", "authorization"]);
+    const headers: Record<string, string> = {};
+    for (const [name, value] of Object.entries(this.server.headers)) {
+      if (!clientManaged.has(name.toLowerCase())) headers[name] = value;
+    }
     headers.Accept = ACCEPT;
     headers["Content-Type"] = "application/json";
     headers["MCP-Protocol-Version"] = this.protocolVersion;
@@ -456,7 +463,8 @@ export function normalizeMcpUrl(input: string): string {
   } catch {
     throw new Error(`Invalid MCP server URL: ${input}`);
   }
-  if (parsed.protocol !== "https:") {
+  // Loopback hosts may use plain http (matches the Agent Plugins manifest rule).
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopbackHost(parsed.hostname))) {
     throw new Error(`MCP server URLs must use https: ${input}`);
   }
   return parsed.toString();

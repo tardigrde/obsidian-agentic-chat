@@ -140,10 +140,33 @@ export class PluginService {
     // user can keep using them, and never mark the migration as done.
     if (migratable.length === 0) return { migrated: 0, skipped };
 
+    const expectedMcpServers: Record<string, unknown> = {};
+    for (const { server, key } of migratable) {
+      expectedMcpServers[key] = { type: "streamable-http", url: server.url };
+    }
+
     const existing = await this.findExistingPluginDir("legacy-mcp");
-    const pluginName = existing ?? (await this.nextAvailablePluginName("legacy-mcp"));
-    const rootPath = `${this.pluginsFolder()}/${pluginName}`;
-    if (!existing) {
+    let pluginName: string;
+    let rootPath: string;
+    if (existing) {
+      const candidateRoot = `${this.pluginsFolder()}/${existing}`;
+      // Only reuse the leftover package when it does not already carry a
+      // different mcp.json; a user-authored "legacy-mcp" package is never
+      // overwritten. A missing mcp.json means a crash before its write — fill it.
+      const reusable = await this.packageReusableForMcpServers(candidateRoot, expectedMcpServers);
+      if (reusable) {
+        pluginName = existing;
+        rootPath = candidateRoot;
+      } else {
+        pluginName = await this.nextAvailablePluginName("legacy-mcp");
+        rootPath = `${this.pluginsFolder()}/${pluginName}`;
+      }
+    } else {
+      pluginName = await this.nextAvailablePluginName("legacy-mcp");
+      rootPath = `${this.pluginsFolder()}/${pluginName}`;
+    }
+
+    if (!this.app.vault.getAbstractFileByPath(`${rootPath}/plugin.json`)) {
       await this.ensureFolder(rootPath);
       await this.app.vault.create(
         `${rootPath}/plugin.json`,
@@ -162,20 +185,19 @@ export class PluginService {
 
     const mcpPath = `${rootPath}/mcp.json`;
     if (!this.app.vault.getAbstractFileByPath(mcpPath)) {
-      const mcpServers: Record<string, unknown> = {};
-      for (const { server, key } of migratable) {
-        mcpServers[key] = { type: "streamable-http", url: server.url };
-      }
       await this.app.vault.create(
         mcpPath,
-        `${JSON.stringify({ $schema: AGENT_PLUGINS_MCP_SCHEMA_ID, mcpServers }, null, 2)}\n`,
+        `${JSON.stringify({ $schema: AGENT_PLUGINS_MCP_SCHEMA_ID, mcpServers: expectedMcpServers }, null, 2)}\n`,
       );
     }
 
-    // Remap persisted client-owned state to the derived ids. Files already
+    // Remap client-owned state to the derived ids; servers that cannot run
+    // under an agent plugin stay untouched in settings (and in use). Files
     // exist at this point, so a crash after the save leaves a consistent
     // package and a rerun on the next boot reuses it.
-    settings.mcp.servers = migratable.map(({ server, key }) => remapLegacyServer(server, pluginName, key, rootPath));
+    settings.mcp.servers = classified.map(({ server, key }) =>
+      isMigratableLegacyUrl(server.url) ? remapLegacyServer(server, pluginName, key, rootPath) : server,
+    );
     settings.plugins.migratedLegacy = true;
     await this.saveSettings?.();
     this.invalidate();
@@ -226,7 +248,10 @@ export class PluginService {
           continue;
         }
         const name = stringField(data, "name") ?? deriveSkillName(file);
-        if (seenNames.has(name)) continue;
+        if (seenNames.has(name)) {
+          skipped += 1;
+          continue;
+        }
         seenNames.add(name);
         documents.push({ name, description: stringField(data, "description") ?? name, content: body });
       }
@@ -340,6 +365,26 @@ export class PluginService {
     const dir = root.children.find((child): child is TFolder => child instanceof TFolder && child.name === base);
     if (!dir) return null;
     return this.app.vault.getAbstractFileByPath(`${dir.path}/plugin.json`) ? dir.name : null;
+  }
+
+  /**
+   * True when an existing package can be reused by a migration run: either it
+   * has no mcp.json yet (crash before its write) or it declares exactly the
+   * servers the run would write. A package with a different mcp.json is
+   * treated as user-authored and never overwritten.
+   */
+  private async packageReusableForMcpServers(rootPath: string, expected: Record<string, unknown>): Promise<boolean> {
+    const entry = this.app.vault.getAbstractFileByPath(`${rootPath}/mcp.json`);
+    if (!entry) return true;
+    if (!(entry instanceof TFile)) return false;
+    let parsed: { mcpServers?: unknown } | null;
+    try {
+      parsed = JSON.parse(await this.app.vault.cachedRead(entry)) as { mcpServers?: unknown };
+    } catch {
+      return false;
+    }
+    if (!parsed || typeof parsed.mcpServers !== "object" || parsed.mcpServers === null) return false;
+    return JSON.stringify(parsed.mcpServers) === JSON.stringify(expected);
   }
 
   /**

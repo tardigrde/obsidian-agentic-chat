@@ -49,7 +49,8 @@ function byName(plugins: LoadedPlugin[], name: string): LoadedPlugin {
 
 describe("loadPlugins", () => {
   it("returns [] for a missing plugins folder", async () => {
-    expect(await loadPlugins(await seed())).toEqual([]);
+    const app = new FakeApp() as unknown as App;
+    expect(await loadPlugins(app)).toEqual([]);
   });
 
   it("rejects a plugin with a missing manifest", async () => {
@@ -208,9 +209,29 @@ describe("mergePluginMcpServers / syncMcpServers", () => {
     ];
     const persisted = [
       ...derived,
-      { ...createMcpServerSettings({ id: "orphan", name: "Orphan", url: "https://orphan.example/mcp" }), headers: {} },
+      {
+        ...createMcpServerSettings({ id: "orphan", name: "Orphan", url: "https://orphan.example/mcp" }),
+        source: "plugin" as const,
+        headers: {},
+      },
     ];
     expect(mergePluginMcpServers(persisted, derived).map((server) => server.id)).toEqual(["plugin_a_b"]);
+  });
+
+  it("retains user-sourced persisted servers alongside derived ones", () => {
+    const derived = [
+      {
+        ...createMcpServerSettings({ id: "plugin_a_b", name: "a: b", url: "https://a.example/mcp" }),
+        source: "plugin" as const,
+        headers: {},
+      },
+    ];
+    const persisted = [
+      { ...createMcpServerSettings({ id: "user-keep", name: "Keep", url: "http://intranet.example/mcp" }), headers: {} },
+      ...derived,
+    ];
+    const merged = mergePluginMcpServers(persisted, derived);
+    expect(merged.map((server) => server.id)).toEqual(["user_keep", "plugin_a_b"]);
   });
 
   it("syncMcpServers writes the merged list back", () => {

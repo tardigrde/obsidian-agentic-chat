@@ -74,8 +74,9 @@ export async function loadAgentRuntimeResources(
     ? settings.mcp
     : { proxyUrl: settings.network.proxyUrl, noProxy: settings.network.noProxy };
   // Plugin mcp.json is the source of truth for server shape; persisted
-  // client-owned state (enable, approval, auth) is merged by id.
-  const pluginServers = plugins.flatMap((plugin) => plugin.mcpServers);
+  // client-owned state (enable, approval, auth) is merged by id. Servers of
+  // disabled plugins are excluded from the runtime tool set.
+  const pluginServers = plugins.filter((plugin) => plugin.enabled).flatMap((plugin) => plugin.mcpServers);
   const mcpServers = mergePluginMcpServers(settings.mcp.servers, pluginServers);
   const mcp = webFetch
     ? await createMcpToolsWithDiagnostics(

@@ -4,7 +4,8 @@ import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { PluginService } from "../src/plugins/service";
 import { pluginMcpServerId } from "../src/plugins/loader";
 import { createMcpServerSettings } from "../src/mcp/settings";
-import { FakeApp } from "./helpers/fake-vault";
+import { AGENT_PLUGINS_SCHEMA_ID } from "../src/plugins/manifest";
+import { FakeApp, FakeVault } from "./helpers/fake-vault";
 
 async function seed(): Promise<App> {
   const app = new FakeApp();
@@ -91,12 +92,34 @@ describe("PluginService.migrateLegacyMcpServers", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it("keeps skipped servers in settings when some servers migrate", async () => {
+    const app = await seed();
+    const current = settings({
+      mcp: {
+        ...DEFAULT_SETTINGS.mcp,
+        servers: [
+          legacyServer("prod", "https://api.example.com/mcp"),
+          legacyServer("insecure", "http://intranet.example.com/mcp"),
+        ],
+      },
+    });
+    const result = await serviceFor(app, current).migrateLegacyMcpServers(current);
+
+    expect(result).toEqual({ migrated: 1, skipped: ["insecure"] });
+    expect(current.mcp.servers.map((server) => server.id)).toEqual([
+      pluginMcpServerId("legacy-mcp", "prod"),
+      "insecure",
+    ]);
+    const skipped = current.mcp.servers.find((server) => server.id === "insecure");
+    expect(skipped).toMatchObject({ url: "http://intranet.example.com/mcp", source: "user", enabled: true });
+  });
+
   it("does not create a duplicate package when a crashed run left one behind", async () => {
     const app = await seed();
     await app.vault.createFolder(".agentic-plugins/legacy-mcp");
     await app.vault.create(
       ".agentic-plugins/legacy-mcp/plugin.json",
-      JSON.stringify({ $schema: "https://agent-plugins.org/schemas/plugin/1.0.0", name: "legacy-mcp" }),
+      JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "legacy-mcp" }),
     );
     const current = settings({
       mcp: {
@@ -110,6 +133,35 @@ describe("PluginService.migrateLegacyMcpServers", () => {
     expect(current.mcp.servers[0]?.pluginRoot).toBe(".agentic-plugins/legacy-mcp");
     expect(app.vault.getAbstractFileByPath(".agentic-plugins/legacy-mcp-2/plugin.json")).toBeNull();
     expect(app.vault.getAbstractFileByPath(".agentic-plugins/legacy-mcp/mcp.json")).not.toBeNull();
+  });
+
+  it("does not reuse a user-authored legacy-mcp package whose servers differ", async () => {
+    const app = await seed();
+    await app.vault.createFolder(".agentic-plugins/legacy-mcp");
+    await app.vault.create(
+      ".agentic-plugins/legacy-mcp/plugin.json",
+      JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "legacy-mcp" }),
+    );
+    await app.vault.create(
+      ".agentic-plugins/legacy-mcp/mcp.json",
+      JSON.stringify({
+        $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+        mcpServers: { other: { type: "streamable-http", url: "https://other.example/mcp" } },
+      }),
+    );
+    const current = settings({
+      mcp: {
+        ...DEFAULT_SETTINGS.mcp,
+        servers: [legacyServer("prod", "https://api.example.com/mcp")],
+      },
+    });
+    const result = await serviceFor(app, current).migrateLegacyMcpServers(current);
+
+    expect(result.migrated).toBe(1);
+    expect(current.mcp.servers[0]?.pluginRoot).toBe(".agentic-plugins/legacy-mcp-2");
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/legacy-mcp-2/mcp.json")).not.toBeNull();
+    const legacyVault = app.vault as unknown as FakeVault;
+    expect(legacyVault.contentOf(".agentic-plugins/legacy-mcp/mcp.json")).toContain("other.example");
   });
 
   it("is a no-op after the migration flag is set", async () => {
@@ -206,7 +258,7 @@ describe("PluginService.migrateLegacySkillsFolder", () => {
     await app.vault.createFolder(".agentic-plugins/agentic-skills");
     await app.vault.create(
       ".agentic-plugins/agentic-skills/plugin.json",
-      JSON.stringify({ $schema: "https://agent-plugins.org/schemas/plugin/1.0.0", name: "agentic-skills" }),
+      JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "agentic-skills" }),
     );
     await app.vault.createFolder(".agentic-plugins/agentic-skills/skills");
     await app.vault.createFolder(".agentic-plugins/agentic-skills/skills/alpha");

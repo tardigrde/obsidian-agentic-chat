@@ -1,8 +1,9 @@
-import { App, Notice, Platform, PluginSettingTab, Setting, type ButtonComponent, type SettingDefinitionItem } from "obsidian";
+import { App, Notice, Platform, PluginSettingTab, Setting, TFile, TFolder, type ButtonComponent, type SettingDefinitionItem } from "obsidian";
 import { normalizeFolderPath } from "./vault/path";
 import type AgenticChatPlugin from "./main";
 import { syncMcpServers } from "./plugins/loader";
 import type { LoadedPlugin } from "./plugins/loader";
+import { validateMcpUrl } from "./plugins/manifest";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OLLAMA_BASE_URL,
@@ -923,11 +924,11 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           const url = this.pendingMcpServerUrl.trim();
           const name = this.pendingMcpServerName.trim();
           if (!name || !url) {
-            new Notice("Agentic Chat MCP: enter a server name and an HTTPS endpoint.");
+            new Notice("Agentic Chat MCP: enter a server name and an HTTPS (or loopback HTTP) endpoint.");
             return;
           }
           try {
-            if (new URL(url).protocol !== "https:") throw new Error("only HTTPS endpoints are supported");
+            if (validateMcpUrl(url) !== null) throw new Error("only HTTPS (or loopback HTTP) endpoints are supported");
           } catch (error) {
             new Notice(`Agentic Chat MCP: ${error instanceof Error ? error.message : String(error)}`);
             return;
@@ -935,6 +936,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           const result = await this.plugin.pluginService.generateMcpServerPackage({ serverName: name, url });
           this.pendingMcpServerName = "";
           this.pendingMcpServerUrl = "";
+          // The package is new; drop the once-only load guard so the next
+          // redraw picks it up from the vault.
+          this.pluginsLoadedOnce = false;
           new Notice(`Agentic Chat MCP: created plugin package at ${result.rootPath}.`);
           this.redraw();
         }),
@@ -1209,7 +1213,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       containerEl.createDiv({
         cls: "setting-item-description",
         text: `This server lives in the "${pluginManaged ? server.pluginRoot : ""}" agent plugin package. ` +
-          "Endpoint and headers come from its mcp.json; remove the package folder to delete it.",
+          "Its endpoint and literal headers come from mcp.json; authentication is configured client-side " +
+          "and stays with this plugin. Remove the package folder to delete the server.",
       });
     }
 
@@ -1242,7 +1247,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("HTTPS endpoint")
-      .setDesc(endpointProblem || "Streamable HTTP endpoint. Query parameters are preserved.")
+      .setDesc(endpointProblem || "Streamable HTTP endpoint. Query parameters are preserved. Loopback hosts may use http://.")
       .addText((text) =>
         text
           .setDisabled(pluginManaged)
@@ -1844,7 +1849,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       text:
         "Plugins are packages in the vault that contribute skills and MCP servers. They follow the " +
         "Agent Plugins 1.0.0 specification and are the single source of truth for skills and MCP. " +
-        "Skill precedence: built-ins, then plugins.",
+        "Skill precedence: plugin skills win over built-ins of the same name.",
     });
 
     this.folderSetting(
@@ -1855,6 +1860,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       async (value) => {
         settings.plugins.folder = value;
         this.plugin.pluginService.invalidate();
+        this.pluginsLoadedOnce = false;
         await this.save();
         this.redraw();
       },
@@ -2039,6 +2045,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           else enabled[plugin.name] = false;
           settings.plugins.enabled = enabled;
           this.plugin.pluginService.invalidate();
+          this.pluginsLoadedOnce = false;
           await this.save();
           this.redraw();
         }),
@@ -2056,12 +2063,26 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       new Notice(`Agentic Chat: ${path} no longer exists.`);
       return;
     }
-    const fileExplorer = this.app.workspace.getLeavesOfType("file-explorer")[0];
-    if (fileExplorer) {
-      void fileExplorer.openFile(entry as never);
+    const vault = this.app.vault as unknown as { open?: (path: string) => Promise<void> };
+    if (entry instanceof TFolder) {
+      // WorkspaceLeaf.openFile only accepts files; folders get revealed in
+      // the File Explorer view when one exists.
+      const fileExplorer = this.app.workspace.getLeavesOfType("file-explorer")[0];
+      const view = fileExplorer?.view as { revealInFolder?: (folder: TFolder) => void } | undefined;
+      if (fileExplorer && view?.revealInFolder) {
+        void this.app.workspace.revealLeaf(fileExplorer);
+        view.revealInFolder(entry);
+        return;
+      }
+      if (vault.open) void vault.open(`/${path}`);
       return;
     }
-    const vault = this.app.vault as unknown as { open?: (path: string) => Promise<void> };
+    if (!(entry instanceof TFile)) return;
+    const fileExplorer = this.app.workspace.getLeavesOfType("file-explorer")[0];
+    if (fileExplorer) {
+      void fileExplorer.openFile(entry);
+      return;
+    }
     if (vault.open) void vault.open(`/${path}`);
   }
 
