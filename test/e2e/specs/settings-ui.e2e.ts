@@ -93,7 +93,12 @@ async function resetSettingsForUiSpec(): Promise<void> {
         authHeaderValue?: string;
       };
       mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: unknown[] };
-      plugins: { folder: string; enabled: Record<string, boolean>; migratedLegacy: boolean };
+      plugins: {
+        folder: string;
+        enabled: Record<string, boolean>;
+        migratedLegacy: boolean;
+        skillsMigrated: boolean;
+      };
       enableBuiltinAgents: boolean;
       agentsFolder: string;
       ignoredGlobs: string;
@@ -134,7 +139,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
       authHeaderValueSecretId: "agentic-chat-observability-auth-header-value",
       authHeaderValue: "",
     };
-    settings.plugins = { folder: ".agentic-plugins", enabled: {}, migratedLegacy: true };
+    settings.plugins = { folder: ".agentic-plugins", enabled: {}, migratedLegacy: true, skillsMigrated: true };
     settings.enableBuiltinAgents = true;
     settings.agentsFolder = "";
     settings.ignoredGlobs = "";

@@ -250,14 +250,6 @@ export function validateMcpConfig(raw: string, expectedSchemaId: string): Plugin
       reports,
     };
   }
-  if (schema !== AGENT_PLUGINS_MCP_SCHEMA_ID) {
-    return {
-      ok: false,
-      reason: `mcp.json targets unsupported Agent Plugins schema "${String(schema)}".`,
-      servers: [],
-      reports,
-    };
-  }
 
   const mcpServers = value.mcpServers;
   if (!isRecord(mcpServers)) {

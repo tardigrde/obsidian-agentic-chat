@@ -44,6 +44,7 @@ export default class AgenticChatPlugin extends Plugin {
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
   private secretStore!: ObsidianSecretStore;
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
+  private pendingSkillsMigration: { skillsFolder?: string; templatesFolder?: string } | null = null;
   readonly pluginService = new PluginService(
     this.app,
     () => this.settings,
@@ -68,14 +69,32 @@ export default class AgenticChatPlugin extends Plugin {
     void this.pluginService
       .migrateLegacyMcpServers(this.settings)
       .then((result) => {
+        const parts: string[] = [];
+        if (result.migrated > 0) {
+          parts.push(`migrated ${result.migrated} MCP server(s) into the legacy-mcp agent plugin. Re-authorize if needed.`);
+        }
+        if (result.skipped.length > 0) {
+          parts.push(`skipped ${result.skipped.length} server(s) that cannot run under an agent plugin: ${result.skipped.join(", ")}.`);
+        }
+        if (parts.length > 0) new Notice(`Agentic Chat: ${parts.join(" ")}`);
+      })
+      .catch((error: unknown) => {
+        console.warn("Agentic chat: legacy MCP migration failed", error);
+      });
+
+    // One-shot migration: the old skills/templates vault folders become an
+    // "agentic-skills" plugin package.
+    void this.pluginService
+      .migrateLegacySkillsFolder(this.settings, this.pendingSkillsMigration ?? {})
+      .then((result) => {
         if (result.migrated > 0) {
           new Notice(
-            `Agentic Chat: migrated ${result.migrated} MCP server(s) into the legacy-mcp agent plugin. Re-authorize if needed.`,
+            `Agentic Chat: migrated ${result.migrated} skill(s) from the skills/templates folders into the agentic-skills agent plugin.`,
           );
         }
       })
       .catch((error: unknown) => {
-        console.warn("Agentic chat: legacy MCP migration failed", error);
+        console.warn("Agentic chat: legacy skills migration failed", error);
       });
 
     this.addRibbonIcon("messages-square", "Open agentic chat", () => void this.activateView());
@@ -220,6 +239,18 @@ export default class AgenticChatPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     const stored = (await this.loadData()) as Partial<AgenticChatSettings> | null;
+    // The legacy skills/templates folders were removed from the schema; capture
+    // them before healing drops the unknown keys so the one-shot migration can
+    // move those documents into an agent plugin package.
+    const raw = stored as Record<string, unknown> | null;
+    const legacyFolder = (key: string): string | undefined => {
+      const value = raw?.[key];
+      return typeof value === "string" && value.trim() ? value.trim() : undefined;
+    };
+    this.pendingSkillsMigration = {
+      skillsFolder: legacyFolder("skillsFolder"),
+      templatesFolder: legacyFolder("templatesFolder"),
+    };
     this.settings = mergeSettings(stored);
     hydrateSettingsSecrets(this.settings, this.secretStore);
     await this.saveSettings();

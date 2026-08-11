@@ -26,7 +26,9 @@ A plugin with only an `mcp.json` (no skills) is valid — MCP-only plugins are a
 The settings UI writes real packages for you:
 
 - **MCP tab → Add MCP server** — enter a server name and HTTPS endpoint, hit **Generate plugin**, and a package is created with that server's `plugin.json` + `mcp.json`. You then configure authentication, approval, and enable state from the same tab; endpoint and headers remain owned by the package.
-- Earlier versions of the plugin stored MCP servers directly in settings. On upgrade, those servers are migrated once into a `legacy-mcp` package with their client-owned state remapped; re-authorize if needed.
+- Earlier versions of the plugin stored MCP servers directly in settings. On upgrade, HTTPS (and loopback-HTTP) servers are migrated once into a `legacy-mcp` package with their client-owned state remapped; re-authorize if needed. Servers that cannot run under an agent plugin (for example `http://` on a non-loopback host) are left in place and reported in a notice.
+- Earlier versions also loaded skills and templates from vault folders set in settings. Those documents are migrated once into an `agentic-skills` package (templates only when no skill of the same name exists); the folder settings themselves are removed.
+- Both migrations are crash-safe: a package left behind by an interrupted run is reused, never duplicated.
 
 ## Managing plugins
 

@@ -1,13 +1,14 @@
-import { type App, TFolder } from "obsidian";
+import { type App, TFile, TFolder } from "obsidian";
 import { type AgenticChatSettings } from "../settings";
 import { createMcpServerSettings, normalizeMcpServerId, type McpServerSettings } from "../mcp/settings";
+import { splitFrontmatter, stringField } from "../skills/skills";
 import {
   DEFAULT_PLUGINS_FOLDER,
   loadPlugins,
   pluginMcpServerId,
   type LoadedPlugin,
 } from "./loader";
-import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, slugifyPluginName } from "./manifest";
+import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, isLoopbackHost, slugifyPluginName } from "./manifest";
 
 export interface GenerateMcpPackageResult {
   /** Vault path of the generated package directory. */
@@ -21,6 +22,15 @@ export interface GenerateMcpPackageResult {
 export interface LegacyMigrationResult {
   /** Number of legacy MCP servers converted into the "legacy-mcp" package. */
   migrated: number;
+  /** Names of legacy servers that cannot run under an agent plugin and were left in place. */
+  skipped: string[];
+}
+
+export interface SkillsMigrationResult {
+  /** Number of legacy skill/template documents converted into the "agentic-skills" package. */
+  migrated: number;
+  /** Number of documents skipped (empty body or unreadable). */
+  skipped: number;
 }
 
 /**
@@ -106,61 +116,162 @@ export class PluginService {
   /**
    * One-shot migration: convert persisted legacy MCP servers into a
    * "legacy-mcp" package and remap client-owned state (enabled, approval,
-   * knownTools, auth records) to the derived server ids.
+   * knownTools, auth records) to the derived server ids. HTTPS and
+   * loopback-HTTP servers migrate; other schemes are left in place and
+   * reported. Reuses a package left behind by a crashed run instead of
+   * creating a duplicate, and only marks the migration done when settings
+   * are persisted after the package exists.
    */
   async migrateLegacyMcpServers(settings: AgenticChatSettings): Promise<LegacyMigrationResult> {
     const legacy = settings.mcp.servers;
-    if (settings.plugins.migratedLegacy || legacy.length === 0) return { migrated: 0 };
-
-    const pluginName = await this.nextAvailablePluginName("legacy-mcp");
-    const rootPath = `${this.pluginsFolder()}/${pluginName}`;
-    await this.ensureFolder(rootPath);
-    await this.app.vault.create(
-      `${rootPath}/plugin.json`,
-      `${JSON.stringify(
-        {
-          $schema: AGENT_PLUGINS_SCHEMA_ID,
-          name: pluginName,
-          version: "1.0.0",
-          description: "MCP servers migrated from an earlier version of Agentic Chat.",
-        },
-        null,
-        2,
-      )}\n`,
-    );
+    if (settings.plugins.migratedLegacy || legacy.length === 0) return { migrated: 0, skipped: [] };
 
     const usedKeys = new Set<string>();
-    const servers = legacy
-      .map((server) => {
-        const key = nextUniqueKey(normalizeMcpServerId(server.name || server.id) || "mcp", usedKeys);
-        return { server, key };
-      })
-      .filter(({ server }) => {
-        try {
-          const parsed = new URL(server.url);
-          return parsed.protocol === "https:";
-        } catch {
-          return false;
-        }
-      });
+    const classified = legacy.map((server) => ({
+      server,
+      key: nextUniqueKey(normalizeMcpServerId(server.name || server.id) || "mcp", usedKeys),
+    }));
+    const migratable = classified.filter(({ server }) => isMigratableLegacyUrl(server.url));
+    const skipped = classified
+      .filter(({ server }) => !isMigratableLegacyUrl(server.url))
+      .map(({ server }) => server.name || server.id);
 
-    if (servers.length > 0) {
+    // Nothing we can carry over: keep the legacy settings untouched so the
+    // user can keep using them, and never mark the migration as done.
+    if (migratable.length === 0) return { migrated: 0, skipped };
+
+    const existing = await this.findExistingPluginDir("legacy-mcp");
+    const pluginName = existing ?? (await this.nextAvailablePluginName("legacy-mcp"));
+    const rootPath = `${this.pluginsFolder()}/${pluginName}`;
+    if (!existing) {
+      await this.ensureFolder(rootPath);
+      await this.app.vault.create(
+        `${rootPath}/plugin.json`,
+        `${JSON.stringify(
+          {
+            $schema: AGENT_PLUGINS_SCHEMA_ID,
+            name: pluginName,
+            version: "1.0.0",
+            description: "MCP servers migrated from an earlier version of Agentic Chat.",
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    }
+
+    const mcpPath = `${rootPath}/mcp.json`;
+    if (!this.app.vault.getAbstractFileByPath(mcpPath)) {
       const mcpServers: Record<string, unknown> = {};
-      for (const { server, key } of servers) {
+      for (const { server, key } of migratable) {
         mcpServers[key] = { type: "streamable-http", url: server.url };
       }
       await this.app.vault.create(
-        `${rootPath}/mcp.json`,
+        mcpPath,
         `${JSON.stringify({ $schema: AGENT_PLUGINS_MCP_SCHEMA_ID, mcpServers }, null, 2)}\n`,
       );
     }
 
-    // Remap persisted client-owned state to the derived ids.
-    settings.mcp.servers = servers.map(({ server, key }) => remapLegacyServer(server, pluginName, key, rootPath));
+    // Remap persisted client-owned state to the derived ids. Files already
+    // exist at this point, so a crash after the save leaves a consistent
+    // package and a rerun on the next boot reuses it.
+    settings.mcp.servers = migratable.map(({ server, key }) => remapLegacyServer(server, pluginName, key, rootPath));
     settings.plugins.migratedLegacy = true;
     await this.saveSettings?.();
     this.invalidate();
-    return { migrated: servers.length };
+    return { migrated: migratable.length, skipped };
+  }
+
+  /**
+   * One-shot migration: earlier versions loaded skills (and templates) from
+   * vault folders configured in settings. Those documents are copied into an
+   * "agentic-skills" plugin package, keeping the plugin folder the single
+   * source of truth. Templates only migrate when no skill of the same name
+   * exists (the old precedence), skills are copied preserving frontmatter
+   * name/description. Crash-idempotent: a package left behind by a crashed
+   * run is reused and already-written documents are skipped.
+   */
+  async migrateLegacySkillsFolder(
+    settings: AgenticChatSettings,
+    legacy: { skillsFolder?: string; templatesFolder?: string },
+  ): Promise<SkillsMigrationResult> {
+    if (settings.plugins.skillsMigrated) return { migrated: 0, skipped: 0 };
+
+    const folders: string[] = [];
+    if (legacy.skillsFolder?.trim()) folders.push(legacy.skillsFolder.trim());
+    if (legacy.templatesFolder?.trim()) folders.push(legacy.templatesFolder.trim());
+
+    if (folders.length === 0) {
+      settings.plugins.skillsMigrated = true;
+      await this.saveSettings?.();
+      return { migrated: 0, skipped: 0 };
+    }
+
+    const documents: Array<{ name: string; description: string; content: string }> = [];
+    let skipped = 0;
+    const seenNames = new Set<string>();
+    for (const folder of folders) {
+      for (const file of this.legacySkillFiles(folder)) {
+        let raw: string;
+        try {
+          raw = await this.app.vault.cachedRead(file);
+        } catch (error) {
+          console.warn(`Agentic chat: could not read skill file ${file.path}`, error);
+          skipped += 1;
+          continue;
+        }
+        const { data, body } = splitFrontmatter(raw);
+        if (!body.trim()) {
+          skipped += 1;
+          continue;
+        }
+        const name = stringField(data, "name") ?? deriveSkillName(file);
+        if (seenNames.has(name)) continue;
+        seenNames.add(name);
+        documents.push({ name, description: stringField(data, "description") ?? name, content: body });
+      }
+    }
+
+    if (documents.length === 0) {
+      settings.plugins.skillsMigrated = true;
+      await this.saveSettings?.();
+      return { migrated: 0, skipped };
+    }
+
+    const existing = await this.findExistingPluginDir("agentic-skills");
+    const pluginName = existing ?? (await this.nextAvailablePluginName("agentic-skills"));
+    const rootPath = `${this.pluginsFolder()}/${pluginName}`;
+    if (!existing) {
+      await this.ensureFolder(rootPath);
+      await this.app.vault.create(
+        `${rootPath}/plugin.json`,
+        `${JSON.stringify(
+          {
+            $schema: AGENT_PLUGINS_SCHEMA_ID,
+            name: pluginName,
+            version: "1.0.0",
+            description: "Skills migrated from the Agentic Chat skills and templates folders.",
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    }
+
+    const usedDirs = new Set<string>();
+    for (const document of documents) {
+      const dir = uniqueSkillDir(document.name, usedDirs);
+      const target = `${rootPath}/skills/${dir}/SKILL.md`;
+      if (!this.app.vault.getAbstractFileByPath(target)) {
+        await this.ensureFolder(`${rootPath}/skills/${dir}`);
+        await this.app.vault.create(target, formatSkillDocument(document));
+      }
+    }
+
+    settings.plugins.skillsMigrated = true;
+    await this.saveSettings?.();
+    this.invalidate();
+    return { migrated: documents.length, skipped };
   }
 
   /**
@@ -217,6 +328,35 @@ export class PluginService {
     }
     return `${base}-${Date.now()}`;
   }
+
+  /**
+   * Reuse a package directory created by an earlier migration run that died
+   * before persisting settings, so a retry never produces duplicates.
+   */
+  private async findExistingPluginDir(seed: string): Promise<string | null> {
+    const base = slugifyPluginName(seed);
+    const root = this.app.vault.getAbstractFileByPath(this.pluginsFolder());
+    if (!(root instanceof TFolder)) return null;
+    const dir = root.children.find((child): child is TFolder => child instanceof TFolder && child.name === base);
+    if (!dir) return null;
+    return this.app.vault.getAbstractFileByPath(`${dir.path}/plugin.json`) ? dir.name : null;
+  }
+
+  /**
+   * Files the legacy folder loader picked up: any SKILL.md under the folder
+   * plus direct Markdown children (mirrors the pre-plugin loader).
+   */
+  private legacySkillFiles(folder: string): TFile[] {
+    const normalized = folder.replace(/\/+$/, "");
+    return this.app.vault
+      .getMarkdownFiles()
+      .filter((file) => {
+        if (normalized && file.path !== normalized && !file.path.startsWith(`${normalized}/`)) return false;
+        if (file.name.toLowerCase() === "skill.md") return true;
+        return (file.parent?.path ?? "") === normalized;
+      })
+      .sort((a, b) => a.path.localeCompare(b.path));
+  }
 }
 
 function remapLegacyServer(
@@ -242,6 +382,48 @@ function remapLegacyServer(
     source: "generated",
     pluginRoot,
   };
+}
+
+/** HTTPS, or HTTP on a loopback host: the transports an agent plugin can run. */
+function isMigratableLegacyUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:") return true;
+    return parsed.protocol === "http:" && isLoopbackHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Legacy skill naming: a SKILL.md is named after its folder, a note after itself. */
+function deriveSkillName(file: TFile): string {
+  if (file.name.toLowerCase() === "skill.md") {
+    return file.parent && file.parent.path ? file.parent.name : file.basename;
+  }
+  return file.basename;
+}
+
+/** Safe filesystem name for a skill directory (names stay in frontmatter). */
+function uniqueSkillDir(name: string, used: Set<string>): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  const base = slug || "skill";
+  let candidate = base;
+  for (let index = 2; used.has(candidate) && index < 100; index += 1) {
+    candidate = `${base}-${index}`;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+/** Rebuild a SKILL.md document preserving the legacy frontmatter values. */
+function formatSkillDocument(document: { name: string; description: string; content: string }): string {
+  const nameLine = `name: ${JSON.stringify(document.name)}`;
+  const descriptionLine = `description: ${JSON.stringify(document.description)}`;
+  return `---\n${nameLine}\n${descriptionLine}\n---\n${document.content}`;
 }
 
 function nextUniqueKey(base: string, used: Set<string>): string {
