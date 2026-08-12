@@ -1606,6 +1606,10 @@ export class ChatView extends ItemView {
     let plugins: LoadedPlugin[];
     try {
       plugins = await service.reload();
+      // Diagnostics come from the active session's runtime resources, which
+      // only reload per turn; refresh them so the audit and the health rows
+      // describe the same vault state.
+      await this.service.reloadRuntimeResources();
     } catch (error) {
       this.renderErrorMessage(`Doctor audit failed: ${error instanceof Error ? error.message : String(error)}`);
       return;

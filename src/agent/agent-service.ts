@@ -49,6 +49,7 @@ import {
 } from "./service-listeners";
 import { AgentStreamRuntime } from "./stream-runtime";
 import { AgentRuntimeResourceState } from "./runtime-resource-state";
+import type { AgentRuntimeResources } from "./runtime-resources";
 import { AgentSubagentRuntime } from "./subagent-runtime";
 import { AgentPromptTurnRuntime, type PromptTurnRun } from "./prompt-turn-runtime";
 import {
@@ -388,6 +389,14 @@ export class AgentService {
   /** Number of times this session has been auto-compacted (for one-shot UI notices). */
   getCompactionCount(): number {
     return agentCompactionCount({ messages: this.getMessages() });
+  }
+
+  /**
+   * Re-read vault-backed runtime resources (plugins, skills, profiles, MCP
+   * servers) so diagnostics and the next turn reflect the current vault.
+   */
+  async reloadRuntimeResources(): Promise<AgentRuntimeResources> {
+    return this.runtimeResources.reload();
   }
 
   getRuntimeDiagnostics(): AgentRuntimeDiagnostics {
