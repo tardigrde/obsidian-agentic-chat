@@ -17,15 +17,27 @@ export interface ParsedSkill {
   problems: string[];
 }
 
-const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-/** Agent Skills `name` constraints: 1-64 chars of lowercase a-z/0-9/hyphens, no edge or double hyphens. */
+/**
+ * Agent Skills `name` constraints per the spec + reference validator:
+ * 1-64 code points, NFKC-normalized Unicode lowercase letters/numbers and
+ * hyphens, no edge or consecutive hyphens.
+ */
 export function skillNameProblem(name: string): string | null {
-  if (name.length < 1 || name.length > 64) {
+  const length = [...name].length;
+  if (length < 1 || length > 64) {
     return "Skill name must be 1-64 characters.";
   }
-  if (!SKILL_NAME_PATTERN.test(name)) {
-    return "Skill name may contain only lowercase a-z, 0-9, and hyphens, without leading, trailing, or consecutive hyphens.";
+  if (name !== name.toLowerCase()) {
+    return "Skill name must be lowercase.";
+  }
+  if (name.startsWith("-") || name.endsWith("-")) {
+    return "Skill name cannot start or end with a hyphen.";
+  }
+  if (name.includes("--")) {
+    return "Skill name cannot contain consecutive hyphens.";
+  }
+  if (!/^[\p{L}\p{N}-]+$/u.test(name)) {
+    return "Skill name may contain only Unicode letters, numbers, and hyphens.";
   }
   return null;
 }
@@ -36,7 +48,10 @@ export function parseSkillMarkdown(raw: string, filePath: string): ParsedSkill {
   if (!name) {
     return { skill: null, problems: ['SKILL.md is missing a "name" frontmatter field.'] };
   }
-  const nameProblem = skillNameProblem(name);
+  // NFKC per the spec's reference validator; the directory comparison in the
+  // loader uses the same normalization.
+  const normalizedName = name.normalize("NFKC");
+  const nameProblem = skillNameProblem(normalizedName);
   if (nameProblem) {
     return { skill: null, problems: [nameProblem] };
   }
@@ -44,11 +59,11 @@ export function parseSkillMarkdown(raw: string, filePath: string): ParsedSkill {
   if (!description) {
     return { skill: null, problems: ['SKILL.md is missing a "description" frontmatter field.'] };
   }
-  if (description.length > 1024) {
+  if ([...description].length > 1024) {
     return { skill: null, problems: ['SKILL.md "description" must be at most 1024 characters.'] };
   }
   return {
-    skill: { name, description, content: body, filePath },
+    skill: { name: normalizedName, description, content: body, filePath },
     problems: [],
   };
 }

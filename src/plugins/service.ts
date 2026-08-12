@@ -4,6 +4,8 @@ import { normalizeMcpServerId } from "../mcp/settings";
 import {
   DEFAULT_PLUGINS_FOLDER,
   loadPlugins,
+  mcpServerFromPluginEntry,
+  mergePluginMcpServers,
   type LoadedPlugin,
 } from "./loader";
 import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, slugifyPluginName } from "./manifest";
@@ -92,6 +94,21 @@ export class PluginService {
         2,
       )}\n`,
     );
+    // The vault file tree may not reflect brand-new folders immediately (or
+    // at all on some platforms), so don't wait for a reload to expose the
+    // server: persist the derived record now, keyed by the stable id the
+    // loader will derive on its next scan.
+    const derived = mcpServerFromPluginEntry(pluginName, rootPath, {
+      key: serverKey,
+      transport: "streamable-http",
+      url: input.url,
+      headers: {},
+      problems: [],
+    });
+    const settings = this.getSettings();
+    const existingPluginServers = settings.mcp.servers.filter((server) => server.source === "plugin");
+    settings.mcp.servers = mergePluginMcpServers(settings.mcp.servers, [...existingPluginServers, derived]);
+    await this.saveSettings?.();
     this.invalidate();
     return { rootPath, pluginName, serverKey };
   }

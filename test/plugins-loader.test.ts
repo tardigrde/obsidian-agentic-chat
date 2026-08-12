@@ -85,6 +85,17 @@ describe("loadPlugins", () => {
     expect(plugin.skills[0]?.content).toMatch(/summarize it/);
   });
 
+  it("loads Unicode skill names and matches the directory after NFKC", async () => {
+    const app = await seed();
+    await addPlugin(app, "tools", {
+      "plugin.json": manifest("tools"),
+      "skills/分析/SKILL.md": "---\nname: 分析\ndescription: 分析笔记\n---\n分析。",
+      "skills/ｓｕｍ/SKILL.md": "---\nname: sum\ndescription: Sum things\n---\nSum.",
+    });
+    const skills = byName(await loadPlugins(app), "tools").skills;
+    expect(skills.map((skill) => skill.name).sort()).toEqual(["sum", "分析"]);
+  });
+
   it("skips a skill directory without SKILL.md and stays partial", async () => {
     const app = await seed();
     await addPlugin(app, "tools", {
@@ -189,6 +200,34 @@ describe("loadPlugins", () => {
     expect(byName(await loadPlugins(app), "hdrs").mcpServers[0]?.headers).toEqual({ "X-Tenant": "public" });
   });
 
+  it("falls back to the adapter when the vault tree misses the plugins folder", async () => {
+    const app = new FakeApp() as unknown as App;
+    (app.vault as unknown as { adapter: { list: (p: string) => Promise<{ folders: string[]; files: string[] }>; read: (p: string) => Promise<string> } }).adapter = {
+      list: async (path: string) => {
+        if (path === ".agentic-plugins") return { folders: [".agentic-plugins/disk-only"], files: [] };
+        if (path === ".agentic-plugins/disk-only/skills") return { folders: [".agentic-plugins/disk-only/skills/summarize"], files: [] };
+        return { folders: [], files: [] };
+      },
+      read: async (path: string) => {
+        const files: Record<string, string> = {
+          ".agentic-plugins/disk-only/plugin.json": manifest("disk-only"),
+          ".agentic-plugins/disk-only/mcp.json": mcpDoc({
+            api: { type: "streamable-http", url: "https://disk.example/mcp" },
+          }),
+          ".agentic-plugins/disk-only/skills/summarize/SKILL.md":
+            "---\nname: summarize\ndescription: Summarize\n---\nBody.",
+        };
+        if (!(path in files)) throw new Error(`no such file: ${path}`);
+        return files[path] ?? "";
+      },
+    };
+    const plugins = await loadPlugins(app);
+    const plugin = byName(plugins, "disk-only");
+    expect(plugin.auditStatus).toBe("ok");
+    expect(plugin.skills.map((skill) => skill.name)).toEqual(["summarize"]);
+    expect(plugin.mcpServers.map((server) => server.id)).toEqual([pluginMcpServerId("disk-only", "api")]);
+  });
+
   it("honors the per-plugin enable map", async () => {
     const app = await seed();
     await addPlugin(app, "on", { "plugin.json": manifest("on") });
@@ -203,7 +242,7 @@ describe("mergePluginMcpServers / syncMcpServers", () => {
   it("preserves persisted client-owned state by stable id", () => {
     const derived = [
       {
-        ...createMcpServerSettings({ id: "plugin_corp_deployment_api", name: "corp: deployment-api", url: "https://a.example/mcp" }),
+        ...createMcpServerSettings({ id: pluginMcpServerId("corp", "deployment-api"), name: "corp: deployment-api", url: "https://a.example/mcp" }),
         source: "plugin" as const,
         pluginRoot: ".agentic-plugins/corp",
         headers: {},
@@ -248,5 +287,13 @@ describe("mergePluginMcpServers / syncMcpServers", () => {
     ];
     syncMcpServers(settings, derived);
     expect(settings.mcp.servers).toHaveLength(1);
+  });
+
+  it("distinguishes plugin id pairs whose slugs collide", () => {
+    expect(pluginMcpServerId("a", "b_c")).not.toBe(pluginMcpServerId("a_b", "c"));
+    expect(pluginMcpServerId("acme", "docs-api")).not.toBe(pluginMcpServerId("acme-docs", "api"));
+    const long = "x".repeat(30);
+    expect(pluginMcpServerId(long, "a")).not.toBe(pluginMcpServerId(long, "b"));
+    expect(pluginMcpServerId("docs", "docs")).toBe("plugin_docs_docs_8932e260");
   });
 });

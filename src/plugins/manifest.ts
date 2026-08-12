@@ -124,23 +124,8 @@ export function validatePluginManifest(raw: string): PluginManifestValidation {
     }
   }
 
-  const schema = value["$schema"];
-  if (schema !== AGENT_PLUGINS_SCHEMA_ID) {
-    if (typeof schema !== "string") {
-      return {
-        manifest: null,
-        fatal: 'plugin.json must declare a "$schema" string.',
-        reports,
-      };
-    }
-    return {
-      manifest: null,
-      fatal:
-        `plugin.json targets unsupported Agent Plugins schema "${schema}". ` +
-        `This client supports ${AGENT_PLUGINS_VERSION} (${AGENT_PLUGINS_SCHEMA_ID}).`,
-      reports,
-    };
-  }
+  const schemaProblem = manifestSchemaProblem(value);
+  if (schemaProblem) return { manifest: null, fatal: schemaProblem, reports };
 
   const nameValue = value.name;
   if (typeof nameValue !== "string" || !validatePluginName(nameValue)) {
@@ -177,34 +162,41 @@ export function validatePluginManifest(raw: string): PluginManifestValidation {
   };
 }
 
+function manifestSchemaProblem(value: Record<string, unknown>): string | null {
+  const schema = value["$schema"];
+  if (schema === AGENT_PLUGINS_SCHEMA_ID) return null;
+  if (typeof schema !== "string") return 'plugin.json must declare a "$schema" string.';
+  return (
+    `plugin.json targets unsupported Agent Plugins schema "${schema}". ` +
+    `This client supports ${AGENT_PLUGINS_VERSION} (${AGENT_PLUGINS_SCHEMA_ID}).`
+  );
+}
+
+const FATAL_STRING_FIELDS: ReadonlyArray<{ field: string; message: string }> = [
+  { field: "version", message: 'plugin.json "version" must be a string.' },
+  { field: "description", message: 'plugin.json "description" must be a string.' },
+  { field: "homepage", message: 'plugin.json "homepage" must be a string.' },
+  { field: "repository", message: 'plugin.json "repository" must be a string.' },
+  { field: "license", message: 'plugin.json "license" must be a string.' },
+];
+
 /** Returns the fatal violation message for a known top-level field, or null. */
 function firstFatalFieldViolation(value: Record<string, unknown>, reports: PluginReportItem[]): string | null {
-  const check = (field: string, valid: boolean, message: string): string | null => {
-    if (valid) return null;
-    reports.push({ severity: "error", message });
-    return message;
-  };
-
-  if (value.version !== undefined && typeof value.version !== "string") {
-    return check("version", false, 'plugin.json "version" must be a string.');
-  }
-  if (value.description !== undefined && typeof value.description !== "string") {
-    return check("description", false, 'plugin.json "description" must be a string.');
-  }
-  if (value.homepage !== undefined && typeof value.homepage !== "string") {
-    return check("homepage", false, 'plugin.json "homepage" must be a string.');
-  }
-  if (value.repository !== undefined && typeof value.repository !== "string") {
-    return check("repository", false, 'plugin.json "repository" must be a string.');
-  }
-  if (value.license !== undefined && typeof value.license !== "string") {
-    return check("license", false, 'plugin.json "license" must be a string.');
+  for (const { field, message } of FATAL_STRING_FIELDS) {
+    if (value[field] !== undefined && typeof value[field] !== "string") {
+      reports.push({ severity: "error", message });
+      return message;
+    }
   }
   if (value.keywords !== undefined && !isStringArray(value.keywords)) {
-    return check("keywords", false, 'plugin.json "keywords" must be an array of strings.');
+    const message = 'plugin.json "keywords" must be an array of strings.';
+    reports.push({ severity: "error", message });
+    return message;
   }
   if (value.author !== undefined && !isAuthorObject(value.author)) {
-    return check("author", false, 'plugin.json "author" must be an object with only name, email, and url strings.');
+    const message = 'plugin.json "author" must be an object with only name, email, and url strings.';
+    reports.push({ severity: "error", message });
+    return message;
   }
   if (value.extensions !== undefined && !isRecord(value.extensions)) {
     // Non-object extensions is explicitly non-fatal: report + ignore.
@@ -274,13 +266,12 @@ export function validateMcpConfig(raw: string, expectedSchemaId: string): Plugin
 
 function validateMcpServerEntry(key: string, value: unknown, reports: PluginReportItem[]): PluginMcpServer {
   const problems: string[] = [];
-  const record = isRecord(value) ? (value as Record<string, unknown>) : null;
-  if (!record) {
+  if (!isRecord(value)) {
     problems.push("server entry must be an object.");
     reports.push({ severity: "error", message: `mcp.json server "${key}" is not an object; skipped.` });
     return { key, transport: "streamable-http", problems };
   }
-
+  const record = value as Record<string, unknown>;
   const transport = record.type;
   if (transport !== "stdio" && transport !== "streamable-http" && transport !== "sse") {
     problems.push(`unknown transport type "${String(transport)}".`);
@@ -288,37 +279,40 @@ function validateMcpServerEntry(key: string, value: unknown, reports: PluginRepo
     return { key, transport: "streamable-http", problems };
   }
 
-  const allowedFields =
-    transport === "stdio"
-      ? new Set(["type", "command", "args", "env", "cwd"])
-      : new Set(["type", "url", "headers"]);
-  for (const field of Object.keys(record)) {
-    if (!allowedFields.has(field)) {
-      problems.push(`unknown or misplaced field "${field}" for ${transport}.`);
-    }
-  }
-
+  problems.push(...misplacedFieldProblems(record, transport));
   if (transport === "stdio") {
     validateStdioEntry(key, record, problems, reports);
   } else {
-    validateRemoteEntry(key, record as Record<string, unknown>, problems, reports);
+    validateRemoteEntry(key, record, problems, reports);
   }
-
   if (problems.length > 0) {
     reports.push({ severity: "error", message: `mcp.json server "${key}" is invalid; skipped.` });
   }
+  return { key, transport, ...entryRecordFields(record), problems };
+}
+
+function misplacedFieldProblems(record: Record<string, unknown>, transport: McpTransport): string[] {
+  const allowed =
+    transport === "stdio" ? new Set(["type", "command", "args", "env", "cwd"]) : new Set(["type", "url", "headers"]);
+  const problems: string[] = [];
+  for (const field of Object.keys(record)) {
+    if (!allowed.has(field)) {
+      problems.push(`unknown or misplaced field "${field}" for ${transport}.`);
+    }
+  }
+  return problems;
+}
+
+function entryRecordFields(record: Record<string, unknown>): Omit<PluginMcpServer, "key" | "transport" | "problems"> {
   return {
-    key,
-    transport,
     ...(typeof record.url === "string" ? { url: record.url } : {}),
     ...(isStringRecord(record.headers) ? { headers: record.headers as Record<string, string> } : {}),
     ...(typeof record.command === "string" ? { command: record.command } : {}),
     ...(Array.isArray(record.args) && record.args.every((arg) => typeof arg === "string")
-      ? { args: record.args as string[] }
+      ? { args: record.args }
       : {}),
     ...(isStringRecord(record.env) ? { env: record.env as Record<string, string> } : {}),
     ...(typeof record.cwd === "string" ? { cwd: record.cwd } : {}),
-    problems,
   };
 }
 
@@ -338,16 +332,7 @@ function validateStdioEntry(
     problems.push('stdio "args" must be an array of strings.');
   }
   if (record.env !== undefined) {
-    if (!isStringRecord(record.env)) {
-      problems.push('stdio "env" must be an object of strings.');
-    } else {
-      const env = record.env as Record<string, string>;
-      for (const envKey of Object.keys(env)) {
-        if (envKey === "PLUGIN_ROOT" || envKey === "PLUGIN_DATA") {
-          problems.push(`stdio "env" must not override the reserved variable ${envKey}.`);
-        }
-      }
-    }
+    validateStdioEnv(key, record.env, problems);
   }
   if (record.cwd !== undefined) {
     const cwd = record.cwd;
@@ -362,6 +347,19 @@ function validateStdioEntry(
       severity: "info",
       message: `mcp.json server "${key}" uses stdio, which this client does not support; skipped.`,
     });
+  }
+}
+
+function validateStdioEnv(key: string, envValue: unknown, problems: string[]): void {
+  if (!isStringRecord(envValue)) {
+    problems.push('stdio "env" must be an object of strings.');
+    return;
+  }
+  const env = envValue as Record<string, string>;
+  for (const envKey of Object.keys(env)) {
+    if (envKey === "PLUGIN_ROOT" || envKey === "PLUGIN_DATA") {
+      problems.push(`stdio "env" must not override the reserved variable ${envKey}.`);
+    }
   }
 }
 
@@ -479,7 +477,8 @@ export function slugifyPluginName(input: string): string {
     .replace(/[^a-z0-9.]+/g, "-")
     .replace(/--+/g, "-")
     .replace(/\.\.+/g, ".")
-    .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "")
+    .replace(/^[^a-z0-9]+/, "")
+    .replace(/[^a-z0-9]+$/, "")
     .slice(0, 64);
   if (validatePluginName(slugged)) return slugged;
   return "plugin";

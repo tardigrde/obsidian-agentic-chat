@@ -1,6 +1,48 @@
 import { describe, expect, it } from "vitest";
 import type { Skill } from "@earendil-works/pi-agent-core";
 import { buildSkillInvocation } from "../src/skills/skills";
+import { parseSkillMarkdown, skillNameProblem } from "../src/skills/skill-format";
+
+describe("parseSkillMarkdown", () => {
+  it("parses name/description and keeps the body as content", () => {
+    const parsed = parseSkillMarkdown("---\nname: summarize\ndescription: Summarize things\n---\nBody.", "SKILL.md");
+    expect(parsed.skill).toMatchObject({ name: "summarize", description: "Summarize things", content: "Body." });
+    expect(parsed.problems).toEqual([]);
+  });
+
+  it("accepts Unicode lowercase skill names per the spec", () => {
+    const parsed = parseSkillMarkdown("---\nname: 分析\ndescription: 分析笔记\n---\n分析。", "SKILL.md");
+    expect(parsed.skill?.name).toBe("分析");
+    expect(parsed.problems).toEqual([]);
+  });
+
+  it("NFKC-normalizes the skill name", () => {
+    const parsed = parseSkillMarkdown("---\nname: ｓｕｍ\ndescription: ok\n---\nBody.", "SKILL.md");
+    expect(parsed.skill?.name).toBe("sum");
+  });
+
+  it("rejects uppercase names, leading/trailing/double hyphens, and disallowed characters", () => {
+    expect(skillNameProblem("Analysis")).toMatch(/lowercase/);
+    expect(skillNameProblem("-analysis")).toMatch(/hyphen/);
+    expect(skillNameProblem("analysis-")).toMatch(/hyphen/);
+    expect(skillNameProblem("a--b")).toMatch(/hyphen/);
+    expect(skillNameProblem("a b")).toMatch(/letters, numbers/);
+  });
+
+  it("counts length limits by code points, not UTF-16 units", () => {
+    expect(skillNameProblem("𝟙".repeat(64))).toBeNull();
+    expect(skillNameProblem("𝟙".repeat(65))).toMatch(/1-64/);
+    const doc = `---\nname: ok\ndescription: ${"😀".repeat(1024)}\n---\nBody.`;
+    expect(parseSkillMarkdown(doc, "SKILL.md").problems).toEqual([]);
+    const tooLong = `---\nname: ok\ndescription: ${"😀".repeat(1025)}\n---\nBody.`;
+    expect(parseSkillMarkdown(tooLong, "SKILL.md").problems[0]).toMatch(/1024/);
+  });
+
+  it("rejects missing name or description", () => {
+    expect(parseSkillMarkdown("---\ndescription: only desc\n---\nBody.", "SKILL.md").problems[0]).toMatch(/"name"/);
+    expect(parseSkillMarkdown("---\nname: ok\n---\nBody.", "SKILL.md").problems[0]).toMatch(/"description"/);
+  });
+});
 
 describe("buildSkillInvocation", () => {
   const skill = (content: string): Skill => ({

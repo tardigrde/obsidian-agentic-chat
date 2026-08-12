@@ -2030,14 +2030,15 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       `${plugin.mcpServers.length} MCP server${plugin.mcpServers.length === 1 ? "" : "s"}`,
     ].join(", ");
     const status = plugin.enabled ? plugin.auditStatus : "disabled";
+    const detail = `${plugin.rootPath} — ${status}, ${components}`;
+    const extra = [];
+    if (plugin.version) extra.push(`, v${plugin.version}`);
+    if (plugin.manifestProblem) extra.push(` — ${plugin.manifestProblem}`);
+    if (plugin.reports.length > 0) extra.push(` — ${plugin.reports.map((report) => report.message).join("; ")}`);
 
     new Setting(containerEl)
       .setName(plugin.name)
-      .setDesc(
-        `${plugin.rootPath} — ${status}, ${components}${plugin.version ? `, v${plugin.version}` : ""}` +
-          (plugin.manifestProblem ? ` — ${plugin.manifestProblem}` : "") +
-          (plugin.reports.length > 0 ? ` — ${plugin.reports.map((report) => report.message).join("; ")}` : ""),
-      )
+      .setDesc(detail + extra.join(""))
       .addToggle((toggle) =>
         toggle.setValue(plugin.enabled).onChange(async (value) => {
           const enabled = { ...settings.plugins.enabled };
@@ -2052,7 +2053,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       )
       .addButton((button) =>
         button.setButtonText("Open folder").onClick(() => {
-          void this.openInVault(plugin.rootPath);
+          this.openInVault(plugin.rootPath);
         }),
       );
   }

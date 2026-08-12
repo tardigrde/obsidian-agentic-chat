@@ -360,6 +360,11 @@ export class McpHttpClient {
     headers["Content-Type"] = "application/json";
     headers["MCP-Protocol-Version"] = this.protocolVersion;
     if (this.sessionId) headers["MCP-Session-Id"] = this.sessionId;
+    await this.applyAuthHeaders(headers, signal);
+    return headers;
+  }
+
+  private async applyAuthHeaders(headers: Record<string, string>, signal?: AbortSignal): Promise<void> {
     if (this.server.authType === "header" && this.server.authHeaderName && this.server.authHeaderValue) {
       headers[assertValidHttpHeaderName(this.server.authHeaderName)] = assertValidHttpHeaderValue(
         this.server.authHeaderValue,
@@ -384,7 +389,6 @@ export class McpHttpClient {
         headers.Authorization = assertValidHttpHeaderValue(`Bearer ${this.server.oauth.accessToken}`);
       }
     }
-    return headers;
   }
 
   private async refreshOAuthAfterUnauthorized(signal?: AbortSignal): Promise<boolean> {

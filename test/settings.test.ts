@@ -29,7 +29,7 @@ import {
   normalizeMcpServerId,
   type McpServerSettings,
 } from "../src/mcp/settings";
-import { mcpSecretId } from "../src/secrets/secret-store";
+import { mcpSecretId, normalizeSecretId } from "../src/secrets/secret-store";
 import {
   mcpAuthProblem,
   mcpCredentialResourceChanged,
@@ -233,6 +233,21 @@ describe("mergeSettings — tool budget", () => {
       enabled: true,
       thresholdPercent: 1,
     });
+  });
+});
+
+describe("normalizeSecretId", () => {
+  it("keeps short ids unchanged and caps long ids at 64 chars with a stable hash", () => {
+    expect(normalizeSecretId("agentic-chat-mcp-docs-oauth-client-secret")).toBe(
+      "agentic-chat-mcp-docs-oauth-client-secret",
+    );
+    const long = normalizeSecretId(
+      "agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-client-secret",
+    );
+    expect(long.length).toBeLessThanOrEqual(64);
+    expect(long).toMatch(/^agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-cli-[a-f0-9]{8}$/);
+    expect(normalizeSecretId("agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-client-secret")).toBe(long);
+    expect(long).not.toBe(normalizeSecretId("agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-access-token"));
   });
 });
 

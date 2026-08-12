@@ -88,10 +88,25 @@ export function normalizeSecretId(input: string): string {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 120);
+    .replace(/^-+|-+$/g, "");
   if (!normalized) throw new Error("Secret id must not be empty.");
-  return normalized;
+  // Obsidian's native secret store caps ids at 64 chars. Truncating the tail
+  // would collapse the distinguishing kind suffix (auth-header-value vs
+  // oauth-client-secret), so long ids keep a readable prefix plus a stable
+  // FNV-1a hash of the full id.
+  if (normalized.length <= 64) return normalized;
+  const hash = fnv1a32(normalized);
+  return `${normalized.slice(0, 55)}-${hash}`;
+}
+
+/** FNV-1a 32-bit hex; stable across reloads and machines. */
+function fnv1a32(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 export function hydrateSettingsSecrets(settings: AgenticChatSettings, store: SecretStore): void {

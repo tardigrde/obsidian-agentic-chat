@@ -2,7 +2,6 @@ import { type App, TFolder, TFile } from "obsidian";
 import type { Skill } from "@earendil-works/pi-agent-core";
 import {
   createMcpServerSettings,
-  normalizeMcpServerId,
   type McpServerSettings,
 } from "../mcp/settings";
 import { parseSkillMarkdown } from "../skills/skill-format";
@@ -62,32 +61,53 @@ export async function loadPlugins(app: App, options: PluginLoadOptions = {}): Pr
   const folder = options.folder ?? DEFAULT_PLUGINS_FOLDER;
   // Minimal test harnesses only stub vault.on(); treat that as an absent folder.
   if (typeof app.vault.getAbstractFileByPath !== "function") return [];
-  const root = folderEntry(app, folder);
-  if (!root) return [];
-  const pluginDirs = (root.children ?? []).filter((child): child is TFolder => child instanceof TFolder);
+  const dirs = await listPluginDirectories(app, folder);
   const plugins: LoadedPlugin[] = [];
-  for (const dir of pluginDirs.sort((a, b) => a.path.localeCompare(b.path))) {
-    plugins.push(await loadPluginDir(app, dir, folder, options.enabledPlugins ?? {}));
+  for (const dirPath of dirs) {
+    plugins.push(await loadPluginDir(app, dirPath, options.enabledPlugins ?? {}));
   }
   return plugins;
 }
 
+/**
+ * Immediate subdirectories of the plugins folder. The vault file tree is the
+ * fast path; when it misses the folder (brand-new dot folders, external sync
+ * the watcher hasn't indexed yet), fall back to the adapter's disk listing.
+ */
+async function listPluginDirectories(app: App, folder: string): Promise<string[]> {
+  const root = folderEntry(app, folder);
+  if (root) {
+    return (root.children ?? [])
+      .filter((child): child is TFolder => child instanceof TFolder)
+      .map((child) => child.path)
+      .sort((a, b) => a.localeCompare(b));
+  }
+  try {
+    const listing = await app.vault.adapter.list(folder);
+    return (listing?.folders ?? [])
+      .map((entry) => entry.replace(/^\/+/, "").replace(/\/+$/, ""))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
 async function loadPluginDir(
   app: App,
-  dir: TFolder,
-  baseFolder: string,
+  rootPath: string,
   enabledPlugins: Record<string, boolean>,
 ): Promise<LoadedPlugin> {
-  const rootPath = dir.path;
+  const dirName = rootPath.split("/").filter(Boolean).at(-1) ?? rootPath;
   const validation = await readPluginManifest(app, rootPath);
   const reports: PluginReportItem[] = [];
   if (validation.fatal) {
     reports.push({ severity: "error", message: validation.fatal });
     return {
       rootPath,
-      name: dir.name,
+      name: dirName,
       manifestProblem: validation.fatal,
-      enabled: enabledPlugins[dir.name] !== false,
+      enabled: enabledPlugins[dirName] !== false,
       skills: [],
       skillReports: [],
       mcpValidation: null,
@@ -128,14 +148,9 @@ async function readPluginManifest(
   app: App,
   rootPath: string,
 ): Promise<{ manifest: PluginManifest | null; fatal: string | null; reports: PluginReportItem[] }> {
-  const file = fileEntry(app, `${rootPath}/plugin.json`);
-  if (!file) {
-    const message = "plugin.json is missing; the plugin root must contain a manifest.";
-    return { manifest: null, fatal: message, reports: [{ severity: "error", message }] };
-  }
-  const raw = await readFile(app, file);
+  const raw = await readVaultFile(app, `${rootPath}/plugin.json`);
   if (raw === null) {
-    const message = "plugin.json could not be read.";
+    const message = "plugin.json is missing; the plugin root must contain a manifest.";
     return { manifest: null, fatal: message, reports: [{ severity: "error", message }] };
   }
   const validation = validatePluginManifest(raw);
@@ -163,35 +178,27 @@ async function loadPluginSkills(
     reports.push({ severity: "error", message });
     return { skills: [], skillReports: [{ severity: "error", message }] };
   }
-  const skillsDir = folderEntry(app, skillsPath);
-  if (!skillsDir) return { skills: [], skillReports: [] };
+  const entries = await listSubdirectories(app, skillsPath);
   const skillReports: PluginReportItem[] = [];
   const skills: Skill[] = [];
-  const entries = (skillsDir.children ?? []).filter((child): child is TFolder => child instanceof TFolder);
-  for (const dir of entries.sort((a, b) => a.path.localeCompare(b.path))) {
-    const skillFile = fileEntry(app, `${dir.path}/SKILL.md`);
-    if (!skillFile) {
-      const message = `skills/${dir.name}/SKILL.md is missing; skill skipped.`;
-      skillReports.push({ severity: "error", message });
-      reports.push({ severity: "error", message });
-      continue;
-    }
-    const raw = await readFile(app, skillFile);
+  for (const dirPath of entries) {
+    const dirName = dirPath.split("/").filter(Boolean).at(-1) ?? dirPath;
+    const raw = await readVaultFile(app, `${dirPath}/SKILL.md`);
     if (raw === null) {
-      const message = `skills/${dir.name}/SKILL.md could not be read; skill skipped.`;
+      const message = `skills/${dirName}/SKILL.md is missing; skill skipped.`;
       skillReports.push({ severity: "error", message });
       reports.push({ severity: "error", message });
       continue;
     }
-    const parsed = parseSkillMarkdown(raw, skillFile.path);
+    const parsed = parseSkillMarkdown(raw, `${dirPath}/SKILL.md`);
     if (!parsed.skill) {
-      const message = `skills/${dir.name}/SKILL.md: ${parsed.problems.join(" ")} Skill skipped.`;
+      const message = `skills/${dirName}/SKILL.md: ${parsed.problems.join(" ")} Skill skipped.`;
       skillReports.push({ severity: "error", message });
       reports.push({ severity: "error", message });
       continue;
     }
-    if (parsed.skill.name !== dir.name) {
-      const message = `skills/${dir.name}/SKILL.md: name "${parsed.skill.name}" must match the skill directory name; skill skipped.`;
+    if (parsed.skill.name !== dirName.normalize("NFKC")) {
+      const message = `skills/${dirName}/SKILL.md: name "${parsed.skill.name}" must match the skill directory name; skill skipped.`;
       skillReports.push({ severity: "error", message });
       reports.push({ severity: "error", message });
       continue;
@@ -219,12 +226,8 @@ async function loadPluginMcp(
     reports.push({ severity: "error", message });
     return { mcpValidation: null, mcpServers: [] };
   }
-  const mcpFile = fileEntry(app, mcpPath);
-  if (!mcpFile) return { mcpValidation: null, mcpServers: [] };
-  const raw = await readFile(app, mcpFile);
+  const raw = await readVaultFile(app, mcpPath);
   if (raw === null) {
-    const message = "mcp.json could not be read; MCP is disabled for this plugin.";
-    reports.push({ severity: "error", message });
     return { mcpValidation: null, mcpServers: [] };
   }
   const validation = validateMcpConfig(raw, AGENT_PLUGINS_MCP_SCHEMA_ID);
@@ -246,7 +249,28 @@ function isDerivableServer(entry: PluginMcpServer): boolean {
 
 /** Stable id: plugin name + entry key, namespaced so it cannot collide with user ids. */
 export function pluginMcpServerId(pluginName: string, entryKey: string): string {
-  return normalizeMcpServerId(`plugin:${pluginName}:${entryKey}`);
+  const raw = `plugin:${pluginName}:${entryKey}`;
+  const slug = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 23)
+    .replace(/^_+|_+$/g, "");
+  // Distinct (plugin, key) pairs can sanitize to the same slug (separators,
+  // casing, and the 32-char cap in normalizeMcpServerId all collapse), so the
+  // readable part is disambiguated with a stable hash of the raw pair.
+  return `${slug}_${stableIdHash(raw)}`;
+}
+
+/** FNV-1a 32-bit hex; stable across reloads and machines. */
+function stableIdHash(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 export function mcpServerFromPluginEntry(
@@ -313,11 +337,44 @@ function fileEntry(app: App, path: string): TFile | null {
   return entry instanceof TFile ? entry : null;
 }
 
-async function readFile(app: App, file: TFile): Promise<string | null> {
+/** Immediate subdirectories of a vault folder, tree-first with an adapter fallback. */
+async function listSubdirectories(app: App, path: string): Promise<string[]> {
+  const entry = folderEntry(app, path);
+  if (entry) {
+    return (entry.children ?? [])
+      .filter((child): child is TFolder => child instanceof TFolder)
+      .map((child) => child.path)
+      .sort((a, b) => a.localeCompare(b));
+  }
   try {
-    return await app.vault.cachedRead(file);
+    const listing = await app.vault.adapter.list(path);
+    return (listing?.folders ?? [])
+      .map((entryPath) => entryPath.replace(/^\/+/, "").replace(/\/+$/, ""))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Read a vault file through the file tree when the tree has it (cachedRead),
+ * or straight from the adapter when the tree is stale (brand-new folders,
+ * external sync the watcher has not indexed yet).
+ */
+async function readVaultFile(app: App, path: string): Promise<string | null> {
+  const file = fileEntry(app, path);
+  if (file) {
+    try {
+      return await app.vault.cachedRead(file);
+    } catch (error) {
+      console.warn(`Agentic chat: could not read ${path}`, error);
+    }
+  }
+  try {
+    return await app.vault.adapter.read(path);
   } catch (error) {
-    console.warn(`Agentic chat: could not read ${file.path}`, error);
+    if (file) console.warn(`Agentic chat: could not read ${path} from disk`, error);
     return null;
   }
 }

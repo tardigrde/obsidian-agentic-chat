@@ -212,7 +212,7 @@ describe("agent runtime resources", () => {
       webFetch: noopFetcher,
     });
 
-    expect(tools.map((tool) => tool.name)).toContain("mcp__plugin_mcp_server_docs__resolve_library_id");
+    expect(tools.map((tool) => tool.name)).toContain("mcp__plugin_mcp_server_docs_49d18a21__resolve_library_id");
   });
 
   it("keeps MCP discovery failures from plugin servers in runtime diagnostics", async () => {
@@ -241,7 +241,7 @@ describe("agent runtime resources", () => {
     expect(resources.mcpTools).toEqual([]);
     expect(resources.mcpDiagnostics).toEqual([
       expect.objectContaining({
-        serverId: "plugin_mcp_server_docs",
+        serverId: "plugin_mcp_server_docs_49d18a21",
         serverName: "mcp-server: docs",
         status: "error",
         toolCount: 0,
