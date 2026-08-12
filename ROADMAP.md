@@ -67,16 +67,6 @@ Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d
 - **Files**: `src/settings.ts`, `src/mcp/tools.ts:85-99`
 - **Effort**: M
 
-### F9 · stdio + SSE transports for agent plugins (spec conformance)
-- **Problem**: The Agent Plugins spec says a conformant client supports at least one of `stdio`/`streamable-http` and *should support both*; the `sse` transport is optional but documented. This client loads only `streamable-http` entries (everything else is skipped + reported). `stdio` is currently impossible even though the vendored schema validates `command`/`args`/`env`/`cwd` forms.
-- **Goal**: Load `stdio` entries (and optionally `sse`) with the spec's command/cwd rules and `${PLUGIN_ROOT}` / `${PLUGIN_DATA}` expansion, behind the existing approval/permission model.
-- **Approach**: Subprocess transport (no Node `child_process` on mobile — desktop-gated like other host-only features); expand variables textually per spec; keep the boundary that `command` is one token; PLUGIN_DATA = plugin folder data dir.
-- **Files**: `src/plugins/loader.ts` (derive stdio servers), `src/mcp/` (subprocess client), `src/settings.ts` (per-server spawn approval)
-- **Acceptance**: A `stdio` plugin package appears in `/doctor`, its tools flow through approval, and the settings UI shows a connection state.
-- **Open Qs**: Do we want per-server sandbox (working-dir gating) or global permission prompt? Reference `F8` for the connect-only philosophy.
-- **Effort**: L
-- **Deps**: S10 (state map), F8
-
 ### F10 · Skill resource loading (scripts / references / assets)
 - **Problem**: Agent Skills defines `scripts/`, `references/`, `assets/` conventions and relative file references; this client exposes only the `SKILL.md` body (via `read_skill`). Skills that reference other files cannot be executed fully.
 - **Goal**: On-demand loading of skill files (progressive disclosure) with relative-path resolution confined to the skill root, gated by the existing read-approval policy.
@@ -147,4 +137,4 @@ thin (or absent) here.
 
 ## Recommended order
 
-B12 → E10 → F8 → A7. (Group S is a backlog for a dedicated consolidation session, not ordered. S10 should precede F9 since the state map is the base for stdio server state.)
+B12 → E10 → F8 → A7. (Group S is a backlog for a dedicated consolidation session, not ordered.)
