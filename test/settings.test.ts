@@ -244,10 +244,16 @@ describe("normalizeSecretId", () => {
     const long = normalizeSecretId(
       "agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-client-secret",
     );
-    expect(long.length).toBeLessThanOrEqual(64);
-    expect(long).toMatch(/^agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-cli-[a-f0-9]{8}$/);
+    expect(long.length).toBe(64);
+    expect(long).toMatch(/^agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-[a-f0-9]{12}$/);
     expect(normalizeSecretId("agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-client-secret")).toBe(long);
-    expect(long).not.toBe(normalizeSecretId("agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-access-token"));
+  });
+
+  it("distinguishes long ids that share the retained prefix", () => {
+    const a = normalizeSecretId("agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-client-secret");
+    const b = normalizeSecretId("agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-access-token");
+    expect(b.slice(0, 51)).toBe(a.slice(0, 51));
+    expect(b.slice(-12)).not.toBe(a.slice(-12));
   });
 });
 

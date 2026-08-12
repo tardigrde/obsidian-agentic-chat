@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import type { AgenticChatSettings } from "../settings";
 import type { McpOAuthSettings, McpServerSettings } from "../mcp/settings";
+import { sha256Hex } from "../utils/sha256";
 import {
   OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID,
   OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
@@ -92,21 +93,10 @@ export function normalizeSecretId(input: string): string {
   if (!normalized) throw new Error("Secret id must not be empty.");
   // Obsidian's native secret store caps ids at 64 chars. Truncating the tail
   // would collapse the distinguishing kind suffix (auth-header-value vs
-  // oauth-client-secret), so long ids keep a readable prefix plus a stable
-  // FNV-1a hash of the full id.
+  // oauth-client-secret), so long ids keep a readable prefix plus a truncated
+  // SHA-256 of the full id.
   if (normalized.length <= 64) return normalized;
-  const hash = fnv1a32(normalized);
-  return `${normalized.slice(0, 55)}-${hash}`;
-}
-
-/** FNV-1a 32-bit hex; stable across reloads and machines. */
-function fnv1a32(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return `${normalized.slice(0, 51)}-${sha256Hex(normalized).slice(0, 12)}`;
 }
 
 export function hydrateSettingsSecrets(settings: AgenticChatSettings, store: SecretStore): void {

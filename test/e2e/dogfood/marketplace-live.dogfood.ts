@@ -1,6 +1,6 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { before, describe, it } from "mocha";
-import { mkdtemp, readFile, readdir, stat } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
@@ -28,15 +28,63 @@ import {
  *
  * Env overrides:
  *   AGENTIC_CHAT_MARKETPLACE_URL   git URL to clone (default: https://github.com/tardigrde/ai-marketplace.git)
- *   AGENTIC_CHAT_MARKETPLACE_REF   git ref to clone (default: main)
+ *   AGENTIC_CHAT_MARKETPLACE_REF   git ref to clone (default: 20bedd4 — bump deliberately after reviewing the package)
  *   AGENTIC_CHAT_MARKETPLACE_PATH  use a local checkout instead of cloning (offline development)
  */
+const MARKETPLACE_URL = "https://github.com/tardigrde/ai-marketplace.git";
+/** Reviewed immutable marketplace revision; the env override is the update mechanism. */
+const MARKETPLACE_REF = "20bedd4";
+
+function runCommand(command: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: "inherit" });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${command} exited with code ${code}`));
+    });
+  });
+}
+
+/** Wait for the agent to finish so local slash commands are accepted. */
+async function waitForAgentIdle(timeout = TURN_TIMEOUT_MS): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const stop = await $(".agentic-chat-stop");
+    if (!(await stop.isDisplayed())) return;
+    // Some gateways never send the trailing stream close; terminate the run.
+    await stop.click();
+    await browser.pause(500);
+  }
+  throw new Error("agent never finished responding");
+}
+
+/** Send a prompt and wait for the turn to start AND finish. */
+async function runTurn(prompt: string): Promise<void> {
+  await sendPrompt(prompt);
+  await $(".agentic-chat-stop").waitForExist({
+    timeout: 30_000,
+    timeoutMsg: "turn never started (runtime resources may be slow to load)",
+  });
+  await waitForAgentIdle();
+}
+
+/** Latest visible chat text. */
+async function chatText(): Promise<string> {
+  return await browser.execute(() => document.querySelector(".agentic-chat-view")?.textContent ?? "");
+}
+
+async function openChat(): Promise<void> {
+  await browser.executeObsidianCommand("agentic-chat:open-chat");
+  await $(".agentic-chat-view").waitForExist();
+}
+
 describe("agentic-chat marketplace live dogfood", function () {
   const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
   const baseUrl = process.env.AGENTIC_CHAT_BASE_URL?.trim() || "https://openrouter.ai/api/v1";
   const model = process.env.AGENTIC_CHAT_MODEL?.trim() || "openrouter/auto";
-  const marketplaceUrl = process.env.AGENTIC_CHAT_MARKETPLACE_URL?.trim() || "https://github.com/tardigrde/ai-marketplace.git";
-  const marketplaceRef = process.env.AGENTIC_CHAT_MARKETPLACE_REF?.trim() || "main";
+  const marketplaceUrl = process.env.AGENTIC_CHAT_MARKETPLACE_URL?.trim() || MARKETPLACE_URL;
+  const marketplaceRef = process.env.AGENTIC_CHAT_MARKETPLACE_REF?.trim() || MARKETPLACE_REF;
   const localMarketplaceRoot = process.env.AGENTIC_CHAT_MARKETPLACE_PATH?.trim();
   let sweRoot: string;
 
@@ -49,37 +97,24 @@ describe("agentic-chat marketplace live dogfood", function () {
     }
     const scratch = await mkdtemp(path.join(tmpdir(), "agentic-chat-marketplace-"));
     const cloneDir = path.join(scratch, "ai-marketplace");
-    await runCommand("git", [
-      "clone",
-      "--depth",
-      "1",
-      "--branch",
-      marketplaceRef,
-      "--single-branch",
-      marketplaceUrl,
-      cloneDir,
-    ]);
+    // Clone without checkout, then check out the ref — works for both branch
+    // names and commit SHAs (the pinned default).
+    await runCommand("git", ["clone", "--no-checkout", marketplaceUrl, cloneDir]);
+    await runCommand("git", ["-C", cloneDir, "checkout", marketplaceRef]);
     return path.join(cloneDir, "plugins", "swe");
-  }
-
-  function runCommand(command: string, args: string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(command, args, { stdio: "inherit" });
-      child.on("error", reject);
-      child.on("close", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`${command} exited with code ${code}`));
-      });
-    });
   }
 
   /** Package files (vault-relative path → content) read from the marketplace repo. */
   async function readSwePackage(): Promise<Array<[string, string]>> {
     const files: Array<[string, string]> = [];
     const walk = async (vaultRel: string, fsPath: string): Promise<void> => {
-      if ((await stat(fsPath)).isDirectory()) {
-        for (const entry of (await readdir(fsPath)).sort()) {
-          await walk(`${vaultRel}/${entry}`, path.join(fsPath, entry));
+      const entry = await lstat(fsPath);
+      if (entry.isSymbolicLink()) {
+        throw new Error(`Marketplace package contains a symbolic link: ${fsPath}`);
+      }
+      if (entry.isDirectory()) {
+        for (const child of (await readdir(fsPath)).sort()) {
+          await walk(`${vaultRel}/${child}`, path.join(fsPath, child));
         }
         return;
       }
@@ -87,39 +122,6 @@ describe("agentic-chat marketplace live dogfood", function () {
     };
     await walk(".agentic-plugins/swe", sweRoot);
     return files;
-  }
-
-  /** Wait for the agent to finish so local slash commands are accepted. */
-  async function waitForAgentIdle(timeout = TURN_TIMEOUT_MS): Promise<void> {
-    const deadline = Date.now() + timeout;
-    while (Date.now() < deadline) {
-      const stop = await $(".agentic-chat-stop");
-      if (!(await stop.isDisplayed())) return;
-      // Some gateways never send the trailing stream close; terminate the run.
-      await stop.click();
-      await browser.pause(500);
-    }
-    throw new Error("agent never finished responding");
-  }
-
-  /** Send a prompt and wait for the turn to start AND finish. */
-  async function runTurn(prompt: string): Promise<void> {
-    await sendPrompt(prompt);
-    await $(".agentic-chat-stop").waitForExist({
-      timeout: 30_000,
-      timeoutMsg: "turn never started (runtime resources may be slow to load)",
-    });
-    await waitForAgentIdle();
-  }
-
-  /** Latest visible chat text. */
-  async function chatText(): Promise<string> {
-    return await browser.execute(() => document.querySelector(".agentic-chat-view")?.textContent ?? "");
-  }
-
-  async function openChat(): Promise<void> {
-    await browser.executeObsidianCommand("agentic-chat:open-chat");
-    await $(".agentic-chat-view").waitForExist();
   }
 
   before(async function () {
@@ -131,15 +133,22 @@ describe("agentic-chat marketplace live dogfood", function () {
     // 2. Configure the live provider so the AgentService is built against it.
     await configureLivePlugin({ apiKey, baseUrl, model, provider: "openai-compatible" });
 
-    // 2. Install the real package from the marketplace repo into the vault.
+    // 3. Install the real package from the marketplace repo into the vault.
     //    The running session's file tree does not pick up brand-new dot
     //    folders, so the loader's adapter fallback (which reads the real
     //    disk state) is what surfaces the package here — same path a user
     //    hitting a stale tree would take.
     const files = await readSwePackage();
     await browser.executeObsidian(async ({ app }, packageFiles) => {
+      // Make the install idempotent: drop a previous run's package from disk
+      // (the tree cannot see it, so the adapter removes it).
+      try {
+        await app.vault.adapter.rmdir(".agentic-plugins", true);
+      } catch {
+        // Nothing installed yet.
+      }
       const created = new Set<string>();
-      for (const [vaultRel, content] of packageFiles) {
+      const ensureParentFolders = async (vaultRel: string): Promise<void> => {
         const segments = vaultRel.split("/");
         let current = "";
         for (let index = 0; index < segments.length - 1; index += 1) {
@@ -150,16 +159,19 @@ describe("agentic-chat marketplace live dogfood", function () {
             try {
               await app.vault.createFolder(current);
             } catch {
-              // Already on disk (the vault tree does not track brand-new
-              // dot folders, so the existence check above can miss it).
+              // Already on disk (the vault tree does not track brand-new dot
+              // folders, so the existence check above can miss it).
             }
           }
         }
+      };
+      for (const [vaultRel, content] of packageFiles) {
+        await ensureParentFolders(vaultRel);
         await app.vault.create(vaultRel, content);
       }
     }, files);
 
-    // 3. Open the chat view, then wait until the package actually loads.
+    // 4. Open the chat view, then wait until the package actually loads.
     await openChat();
     await browser.waitUntil(
       async () => {

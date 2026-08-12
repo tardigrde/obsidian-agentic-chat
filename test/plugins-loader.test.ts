@@ -294,6 +294,6 @@ describe("mergePluginMcpServers / syncMcpServers", () => {
     expect(pluginMcpServerId("acme", "docs-api")).not.toBe(pluginMcpServerId("acme-docs", "api"));
     const long = "x".repeat(30);
     expect(pluginMcpServerId(long, "a")).not.toBe(pluginMcpServerId(long, "b"));
-    expect(pluginMcpServerId("docs", "docs")).toBe("plugin_docs_docs_8932e260");
+    expect(pluginMcpServerId("docs", "docs")).toBe("plugin_docs_docs_889dfa93cd1a");
   });
 });

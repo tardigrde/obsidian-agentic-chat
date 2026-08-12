@@ -236,7 +236,7 @@ describe("agentic-chat settings UI", function () {
       return (
         snapshot.mcp.enabled &&
         server?.name === "docs: docs" &&
-        server.id === "plugin_docs_docs_8932e260" &&
+        server.id === "plugin_docs_docs_889dfa93cd1a" &&
         server.url === "https://docs.example.com/mcp" &&
         server.enabled &&
         server.approval === "allow" &&

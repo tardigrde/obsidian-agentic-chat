@@ -5,6 +5,7 @@ import {
   type McpServerSettings,
 } from "../mcp/settings";
 import { parseSkillMarkdown } from "../skills/skill-format";
+import { sha256Hex } from "../utils/sha256";
 import {
   AGENT_PLUGINS_MCP_SCHEMA_ID,
   type PluginMcpServer,
@@ -71,26 +72,28 @@ export async function loadPlugins(app: App, options: PluginLoadOptions = {}): Pr
 
 /**
  * Immediate subdirectories of the plugins folder. The vault file tree is the
- * fast path; when it misses the folder (brand-new dot folders, external sync
- * the watcher hasn't indexed yet), fall back to the adapter's disk listing.
+ * fast path, but its `children` can be stale (brand-new dot folders, external
+ * sync the watcher has not indexed yet), so adapter-discovered directories
+ * are merged in deterministically. Missing folder is valid absence (§6.2).
  */
 async function listPluginDirectories(app: App, folder: string): Promise<string[]> {
   const root = folderEntry(app, folder);
+  const dirs = new Set<string>();
   if (root) {
-    return (root.children ?? [])
-      .filter((child): child is TFolder => child instanceof TFolder)
-      .map((child) => child.path)
-      .sort((a, b) => a.localeCompare(b));
+    for (const child of root.children ?? []) {
+      if (child instanceof TFolder) dirs.add(child.path);
+    }
   }
   try {
     const listing = await app.vault.adapter.list(folder);
-    return (listing?.folders ?? [])
-      .map((entry) => entry.replace(/^\/+/, "").replace(/\/+$/, ""))
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b));
+    for (const entry of listing?.folders ?? []) {
+      const normalized = trimEdges(entry, (char) => char !== "/");
+      if (normalized) dirs.add(normalized);
+    }
   } catch {
-    return [];
+    // Adapter unavailable or folder absent; tree results (if any) still stand.
   }
+  return [...dirs].sort((a, b) => a.localeCompare(b));
 }
 
 async function loadPluginDir(
@@ -98,7 +101,8 @@ async function loadPluginDir(
   rootPath: string,
   enabledPlugins: Record<string, boolean>,
 ): Promise<LoadedPlugin> {
-  const dirName = rootPath.split("/").filter(Boolean).at(-1) ?? rootPath;
+  const segments = rootPath.split("/");
+  const dirName = segments[segments.length - 1] ?? rootPath;
   const validation = await readPluginManifest(app, rootPath);
   const reports: PluginReportItem[] = [];
   if (validation.fatal) {
@@ -182,7 +186,8 @@ async function loadPluginSkills(
   const skillReports: PluginReportItem[] = [];
   const skills: Skill[] = [];
   for (const dirPath of entries) {
-    const dirName = dirPath.split("/").filter(Boolean).at(-1) ?? dirPath;
+    const segments = dirPath.split("/");
+    const dirName = segments[segments.length - 1] ?? dirPath;
     const raw = await readVaultFile(app, `${dirPath}/SKILL.md`);
     if (raw === null) {
       const message = `skills/${dirName}/SKILL.md is missing; skill skipped.`;
@@ -250,27 +255,23 @@ function isDerivableServer(entry: PluginMcpServer): boolean {
 /** Stable id: plugin name + entry key, namespaced so it cannot collide with user ids. */
 export function pluginMcpServerId(pluginName: string, entryKey: string): string {
   const raw = `plugin:${pluginName}:${entryKey}`;
-  const slug = raw
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 23)
-    .replace(/^_+|_+$/g, "");
+  const slug = trimEdges(
+    raw
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/_+/g, "_")
+      .slice(0, 19),
+    (char) => char !== "_",
+  );
   // Distinct (plugin, key) pairs can sanitize to the same slug (separators,
   // casing, and the 32-char cap in normalizeMcpServerId all collapse), so the
-  // readable part is disambiguated with a stable hash of the raw pair.
+  // readable part is disambiguated with a truncated SHA-256 of the raw pair.
   return `${slug}_${stableIdHash(raw)}`;
 }
 
-/** FNV-1a 32-bit hex; stable across reloads and machines. */
+/** Truncated SHA-256 hex; stable across reloads and machines. */
 function stableIdHash(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return sha256Hex(input).slice(0, 12);
 }
 
 export function mcpServerFromPluginEntry(
@@ -337,24 +338,34 @@ function fileEntry(app: App, path: string): TFile | null {
   return entry instanceof TFile ? entry : null;
 }
 
-/** Immediate subdirectories of a vault folder, tree-first with an adapter fallback. */
+/** Immediate subdirectories of a vault folder, tree-first merged with the adapter. */
 async function listSubdirectories(app: App, path: string): Promise<string[]> {
   const entry = folderEntry(app, path);
+  const dirs = new Set<string>();
   if (entry) {
-    return (entry.children ?? [])
-      .filter((child): child is TFolder => child instanceof TFolder)
-      .map((child) => child.path)
-      .sort((a, b) => a.localeCompare(b));
+    for (const child of entry.children ?? []) {
+      if (child instanceof TFolder) dirs.add(child.path);
+    }
   }
   try {
     const listing = await app.vault.adapter.list(path);
-    return (listing?.folders ?? [])
-      .map((entryPath) => entryPath.replace(/^\/+/, "").replace(/\/+$/, ""))
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b));
+    for (const entryPath of listing?.folders ?? []) {
+      const normalized = trimEdges(entryPath, (char) => char !== "/");
+      if (normalized) dirs.add(normalized);
+    }
   } catch {
-    return [];
+    // Adapter unavailable or folder absent; tree results (if any) still stand.
   }
+  return [...dirs].sort((a, b) => a.localeCompare(b));
+}
+
+/** Trim leading/trailing characters that fail `keep` (regex-free, linear). */
+function trimEdges(input: string, keep: (char: string) => boolean): string {
+  let start = 0;
+  let end = input.length;
+  while (start < end && !keep(input[start] ?? "")) start += 1;
+  while (end > start && !keep(input[end - 1] ?? "")) end -= 1;
+  return input.slice(start, end);
 }
 
 /**

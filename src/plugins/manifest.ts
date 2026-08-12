@@ -146,19 +146,23 @@ export function validatePluginManifest(raw: string): PluginManifestValidation {
   }
 
   return {
-    manifest: {
-      name: nameValue,
-      ...(typeof value.version === "string" ? { version: value.version } : {}),
-      ...(typeof value.description === "string" ? { description: value.description } : {}),
-      ...(isAuthorObject(value.author) ? { author: value.author as PluginManifestAuthor } : {}),
-      ...(typeof value.homepage === "string" ? { homepage: value.homepage } : {}),
-      ...(typeof value.repository === "string" ? { repository: value.repository } : {}),
-      ...(typeof value.license === "string" ? { license: value.license } : {}),
-      ...(isStringArray(value.keywords) ? { keywords: value.keywords as string[] } : {}),
-      ...(isRecord(value.extensions) ? { extensions: value.extensions as Record<string, unknown> } : {}),
-    },
+    manifest: manifestFromFields(value, nameValue),
     fatal: null,
     reports,
+  };
+}
+
+function manifestFromFields(value: Record<string, unknown>, nameValue: string): PluginManifest {
+  return {
+    name: nameValue,
+    ...(typeof value.version === "string" ? { version: value.version } : {}),
+    ...(typeof value.description === "string" ? { description: value.description } : {}),
+    ...(isAuthorObject(value.author) ? { author: value.author as PluginManifestAuthor } : {}),
+    ...(typeof value.homepage === "string" ? { homepage: value.homepage } : {}),
+    ...(typeof value.repository === "string" ? { repository: value.repository } : {}),
+    ...(typeof value.license === "string" ? { license: value.license } : {}),
+    ...(isStringArray(value.keywords) ? { keywords: value.keywords as string[] } : {}),
+    ...(isRecord(value.extensions) ? { extensions: value.extensions as Record<string, unknown> } : {}),
   };
 }
 
@@ -472,16 +476,25 @@ export function validatePluginName(name: string): boolean {
 
 /** Slugify a user-supplied server/plugin name into a valid plugin name. */
 export function slugifyPluginName(input: string): string {
-  const slugged = input
-    .toLowerCase()
-    .replace(/[^a-z0-9.]+/g, "-")
-    .replace(/--+/g, "-")
-    .replace(/\.\.+/g, ".")
-    .replace(/^[^a-z0-9]+/, "")
-    .replace(/[^a-z0-9]+$/, "")
-    .slice(0, 64);
+  const slugged = trimNonAlnumEdges(
+    input
+      .toLowerCase()
+      .replace(/[^a-z0-9.]+/g, "-")
+      .replace(/--+/g, "-")
+      .replace(/\.\.+/g, "."),
+  ).slice(0, 64);
   if (validatePluginName(slugged)) return slugged;
   return "plugin";
+}
+
+/** Trim leading/trailing characters outside [a-z0-9] (regex-free, linear). */
+function trimNonAlnumEdges(input: string): string {
+  const keep = (char: string): boolean => (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
+  let start = 0;
+  let end = input.length;
+  while (start < end && !keep(input[start] ?? "")) start += 1;
+  while (end > start && !keep(input[end - 1] ?? "")) end -= 1;
+  return input.slice(start, end);
 }
 
 function isRecord(value: unknown): boolean {

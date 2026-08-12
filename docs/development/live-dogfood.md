@@ -759,10 +759,12 @@ AGENTIC_CHAT_MODEL=openrouter/auto \
 npm run test:e2e:dogfood -- --spec test/e2e/dogfood/marketplace-live.dogfood.ts
 ```
 
-Overrides: `AGENTIC_CHAT_MARKETPLACE_URL` (git URL, default
-`https://github.com/tardigrde/ai-marketplace.git`), `AGENTIC_CHAT_MARKETPLACE_REF`
-(default `main`), and `AGENTIC_CHAT_MARKETPLACE_PATH` (use a local checkout
-instead of cloning, for offline development).
+The default revision is pinned to the reviewed marketplace commit `20bedd4`
+(immutable), so the fixture cannot change under the test. To update the
+package deliberately, bump `MARKETPLACE_REF` in the spec after reviewing the
+new marketplace revision. Overrides: `AGENTIC_CHAT_MARKETPLACE_URL` (git
+URL) and `AGENTIC_CHAT_MARKETPLACE_PATH` (use a local checkout instead of
+cloning, for offline development).
 
 Keep the marketplace package spec-conformant: `plugin.json` and `mcp.json`
 must pass the vendored schemas, every `skills/<name>/SKILL.md` name must match
