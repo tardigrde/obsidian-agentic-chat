@@ -42,6 +42,20 @@ async function runSlashCommand(command: string): Promise<void> {
   await sendPrompt(command);
 }
 
+/** Wait for the agent to finish streaming so local commands are accepted. */
+async function waitForAgentIdle(timeout = 60_000): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const stop = await $(".agentic-chat-stop");
+    if (!(await stop.isDisplayed())) return;
+    // Some gateways never send the trailing stream close; terminate the run
+    // explicitly so the checkpointed write stays undoable.
+    await stop.click();
+    await browser.pause(500);
+  }
+  throw new Error("agent never finished responding");
+}
+
 /**
  * Inject the API key into the plugin's settings before the chat view mounts,
  * so the AgentService is constructed against a configured provider. Also pins Safe
@@ -115,6 +129,7 @@ describe("agentic-chat guardrails (model-backed)", function () {
     }, NOTE_PATH);
     expect(body).toContain(NOTE_BODY);
 
+    await waitForAgentIdle();
     await runSlashCommand("/undo");
     await browser.waitUntil(
       async () =>
@@ -152,6 +167,7 @@ describe("agentic-chat guardrails (model-backed)", function () {
       { timeout: 90_000, timeoutMsg: "approved edit never updated the note" },
     );
 
+    await waitForAgentIdle();
     await runSlashCommand("/undo");
     await browser.waitUntil(
       async () => {
