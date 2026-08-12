@@ -741,6 +741,33 @@ Live dogfood findings should become deterministic coverage when possible:
 
 Do not turn a flaky live-model path into mandatory CI.
 
+## Marketplace Package Dogfood (M1)
+
+`test/e2e/dogfood/marketplace-live.dogfood.ts` installs a real Agent Plugins
+1.0.0 package — the `swe` plugin from
+[tardigrde/ai-marketplace](https://github.com/tardigrde/ai-marketplace)
+(`plugins/swe/plugin.json` + `skills/*/SKILL.md` + `mcp.json`) — into the
+dogfood vault's `.agentic-plugins/`, then drives a live model through a
+`/skill` invocation, a Context7 MCP tool round trip, and a `/doctor` audit.
+The package is cloned from GitHub by default so the test is reproducible on
+any machine. It spends real tokens and needs the live key:
+
+```bash
+AGENTIC_CHAT_API_KEY=sk-or-... \
+AGENTIC_CHAT_BASE_URL=https://openrouter.ai/api/v1 \
+AGENTIC_CHAT_MODEL=openrouter/auto \
+npm run test:e2e:dogfood -- --spec test/e2e/dogfood/marketplace-live.dogfood.ts
+```
+
+Overrides: `AGENTIC_CHAT_MARKETPLACE_URL` (git URL, default
+`https://github.com/tardigrde/ai-marketplace.git`), `AGENTIC_CHAT_MARKETPLACE_REF`
+(default `main`), and `AGENTIC_CHAT_MARKETPLACE_PATH` (use a local checkout
+instead of cloning, for offline development).
+
+Keep the marketplace package spec-conformant: `plugin.json` and `mcp.json`
+must pass the vendored schemas, every `skills/<name>/SKILL.md` name must match
+its directory, and headers in `mcp.json` must never be credentials.
+
 ## Session End Checklist
 
 At the end of a dogfood run:
