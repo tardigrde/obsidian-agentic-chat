@@ -276,9 +276,16 @@ function healPluginSettings(stored: Partial<PluginSettings> | null | undefined):
       enabled[name] = value === true;
     }
   }
+  const sources: Record<string, string> = {};
+  if (stored?.sources && typeof stored.sources === "object" && !Array.isArray(stored.sources)) {
+    for (const [name, value] of Object.entries(stored.sources)) {
+      if (typeof value === "string" && value.trim()) sources[name] = value.trim();
+    }
+  }
   return {
     folder: typeof stored?.folder === "string" && stored.folder.trim() ? stored.folder.trim() : DEFAULT_PLUGINS_FOLDER,
     enabled,
+    sources,
   };
 }
 

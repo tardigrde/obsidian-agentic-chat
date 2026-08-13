@@ -259,4 +259,48 @@ describe("agentic-chat marketplace live dogfood", function () {
       { timeout: 30_000, timeoutMsg: "/doctor did not report the swe package and its context7 server" },
     );
   });
+
+  it("materializes the builtins package with the install-plugin skill", async function () {
+    await waitForAgentIdle();
+    const present = await browser.executeObsidian(async ({ app }) => {
+      const base = ".agentic-plugins/builtins";
+      const docs = [
+        "plugin.json",
+        "README.md",
+        "skills/self-knowledge/SKILL.md",
+        "skills/install-plugin/SKILL.md",
+      ];
+      for (const rel of docs) {
+        if (!app.vault.getAbstractFileByPath(`${base}/${rel}`)) return false;
+      }
+      return true;
+    });
+    expect(present).toBe(true);
+
+    const skillNames = await browser.executeObsidian(async ({ app }) => {
+      const plugin = (app as unknown as {
+        plugins?: { plugins?: Record<string, { pluginService?: { reload?: () => Promise<unknown[]> } }> };
+      }).plugins?.plugins?.["agentic-chat"];
+      const loaded = (await plugin?.pluginService?.reload?.()) ?? [];
+      return (loaded as Array<{ name?: string }>).flatMap((entry) =>
+        entry.name === "builtins" ? (entry as { skills?: Array<{ name?: string }> }).skills?.map((skill) => skill.name) ?? [] : [],
+      );
+    });
+    expect(skillNames).toContain("install-plugin");
+    expect(skillNames).toContain("self-knowledge");
+  });
+
+  it("drives the install-plugin skill through a live model turn", async function () {
+    this.timeout(TURN_TIMEOUT_MS + 60_000);
+    await sendPrompt("How do I install a skill from a GitHub repo? Use the /skill install-plugin guidance.");
+    await $(".agentic-chat-stop").waitForExist({ timeout: 30_000, timeoutMsg: "install-plugin turn never started" });
+    await browser.waitUntil(
+      async () => {
+        const text = await chatText();
+        return /settings|install/i.test(text);
+      },
+      { timeout: TURN_TIMEOUT_MS, timeoutMsg: "install-plugin skill turn did not produce guidance" },
+    );
+    await waitForAgentIdle();
+  });
 });

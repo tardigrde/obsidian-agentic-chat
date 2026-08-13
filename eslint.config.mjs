@@ -17,6 +17,7 @@ export default tseslint.config(
       "docs/.vitepress/dist/**",
       "logs/**",
       ".obsidian-cache/**",
+      "src/vendor/**",
     ],
   },
   js.configs.recommended,

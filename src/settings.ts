@@ -1,7 +1,7 @@
 import { App, Notice, Platform, PluginSettingTab, Setting, TFile, TFolder, type ButtonComponent, type SettingDefinitionItem } from "obsidian";
 import { normalizeFolderPath } from "./vault/path";
 import type AgenticChatPlugin from "./main";
-import { syncMcpServers } from "./plugins/loader";
+import { DEFAULT_PLUGINS_FOLDER, syncMcpServers } from "./plugins/loader";
 import type { LoadedPlugin } from "./plugins/loader";
 import { validateMcpUrl } from "./plugins/manifest";
 import {
@@ -53,6 +53,8 @@ import {
   type WebSearchProvider,
 } from "./tools/web-search";
 import { FolderSuggestModal } from "./ui/folder-suggest";
+import { InstallPluginModal, noticeInstallResult } from "./ui/install-plugin-modal";
+import { NewSkillModal } from "./ui/new-skill-modal";
 import { ModelSuggestModal } from "./ui/model-suggest-modal";
 import {
   type ObservabilityBackend,
@@ -1852,6 +1854,36 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         "Skill precedence: plugin skills win over built-ins of the same name.",
     });
 
+    new Setting(containerEl)
+      .setName("Import")
+      .addButton((button) =>
+        button
+          .setButtonText("Install plugin…")
+          .setCta()
+          .onClick(() => this.openInstallModal()),
+      )
+      .addButton((button) =>
+        button.setButtonText("New skill…").onClick(() => {
+          new NewSkillModal(this.app, this.plugin.pluginService, (result) => {
+            noticeInstallResult(result);
+            this.pluginsLoadedOnce = false;
+            void this.save().then(() => this.redraw());
+          }).open();
+        }),
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Repair built-ins")
+          .setDisabled(!this.builtinsPackageExists(settings))
+          .onClick(async () => {
+            await this.plugin.pluginService.repairBuiltins();
+            new Notice("Built-in skill package recreated.");
+            this.pluginsLoadedOnce = false;
+            await this.save();
+            this.redraw();
+          }),
+      );
+
     this.folderSetting(
       containerEl,
       "Plugins folder",
@@ -2013,7 +2045,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     if (plugins.length === 0) {
       containerEl.createDiv({
         cls: "setting-item-description",
-        text: "No agent plugins found. Packages live in the plugins folder; see the MCP tab to generate one from a server endpoint.",
+        text:
+          "No agent plugins found. Use “Install plugin…” to bring one in from GitHub or an archive " +
+          "(Claude/Copilot/VS Code packages are converted automatically), or “New skill…” to scaffold your own.",
       });
       return;
     }
@@ -2030,7 +2064,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       `${plugin.mcpServers.length} MCP server${plugin.mcpServers.length === 1 ? "" : "s"}`,
     ].join(", ");
     const status = plugin.enabled ? plugin.auditStatus : "disabled";
-    const detail = `${plugin.rootPath} — ${status}, ${components}`;
+    const source = settings.plugins.sources[plugin.name];
+    let detail = `${plugin.rootPath} — ${status}, ${components}`;
+    if (source) detail += `\nSource: ${source}`;
     const extra = [];
     if (plugin.version) extra.push(`, v${plugin.version}`);
     if (plugin.manifestProblem) extra.push(` — ${plugin.manifestProblem}`);
@@ -2055,7 +2091,40 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         button.setButtonText("Open folder").onClick(() => {
           this.openInVault(plugin.rootPath);
         }),
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Remove")
+          .setWarning()
+          .onClick(async () => {
+            await this.plugin.pluginService.removePackage(plugin.name);
+            new Notice(`Removed agent plugin "${plugin.name}".`);
+            this.pluginsLoadedOnce = false;
+            await this.save();
+            this.redraw();
+          }),
       );
+  }
+
+  private openInstallModal(): void {
+    new InstallPluginModal(
+      this.app,
+      this.plugin.pluginService,
+      (result) => {
+        noticeInstallResult(result);
+        this.pluginsLoadedOnce = false;
+        void this.save().then(() => this.redraw());
+      },
+      (_message) => {
+        // The modal surfaces errors inline; nothing else to do here.
+      },
+    ).open();
+  }
+
+  private builtinsPackageExists(settings: AgenticChatSettings): boolean {
+    const folder = settings.plugins.folder.trim() || DEFAULT_PLUGINS_FOLDER;
+    const entry = this.app.vault.getAbstractFileByPath(`${folder}/builtins`);
+    return entry instanceof TFolder;
   }
 
   private openInVault(path: string): void {

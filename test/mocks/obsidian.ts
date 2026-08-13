@@ -91,6 +91,7 @@ export function requestUrl(): Promise<{
   text: string;
   json: unknown;
   headers: Record<string, string>;
+  arrayBuffer?: ArrayBuffer;
 }> {
   return Promise.reject(new Error("requestUrl is not available in tests"));
 }
