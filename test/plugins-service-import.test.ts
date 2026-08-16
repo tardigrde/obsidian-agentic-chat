@@ -262,6 +262,21 @@ describe("PluginService.scaffoldSkill", () => {
     const plugins = await service.reload();
     expect(plugins[0]?.skills.map((s) => s.name)).toEqual(["release-notes"]);
   });
+
+  it("rejects names without any letter or digit", async () => {
+    const { app } = await seed();
+    const service = serviceFor(app, settings());
+    await expect(service.scaffoldSkill({ name: "!!!", description: "", body: "# x\n" }))
+      .rejects.toThrow(/letter or digit/);
+  });
+
+  it("reports whether a package name is already installed", async () => {
+    const { app } = await seed();
+    const service = serviceFor(app, settings());
+    expect(await service.packageExists("release-notes")).toBe(false);
+    await service.scaffoldSkill({ name: "Release Notes", description: "", body: "# x\n" });
+    expect(await service.packageExists("release-notes")).toBe(true);
+  });
 });
 
 /** Minimal tar archive (ustar, no gzip) for the fetcher fixture. */

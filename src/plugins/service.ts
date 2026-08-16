@@ -207,7 +207,15 @@ export class PluginService {
    * Scaffold a single-skill package from the New skill wizard: a spec-valid
    * plugin.json + skills/<name>/SKILL.md, installed through the same writer.
    */
+  /** True when a package with this exact name is already installed. */
+  async packageExists(name: string): Promise<boolean> {
+    return this.vaultWriter().folderExists(`${this.pluginsFolder()}/${name}`);
+  }
+
   async scaffoldSkill(input: { name: string; description: string; body: string }): Promise<InstallResult> {
+    if (!/[a-z0-9]/i.test(input.name)) {
+      throw new Error("Skill name must contain at least one letter or digit.");
+    }
     const name = slugifyPluginName(input.name);
     if (!name) throw new Error("Skill name must contain at least one letter or digit.");
     const result = await installPackage(

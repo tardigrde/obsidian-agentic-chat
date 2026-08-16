@@ -79,6 +79,10 @@ export class NewSkillModal extends Modal {
         const description = (descriptionInput?.value ?? "").trim();
         const body = (bodyInput?.value ?? SKILL_TEMPLATE).trim();
         try {
+          const existing = await this.pluginService.packageExists(slugifyPluginName(name));
+          if (existing && !confirm(`A plugin named "${slugifyPluginName(name)}" already exists. Replace it with this new skill package?`)) {
+            return;
+          }
           const result = await this.pluginService.scaffoldSkill({ name, description, body });
           this.onInstalled(result);
           this.close();

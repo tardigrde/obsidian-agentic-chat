@@ -109,9 +109,25 @@ async function replaceIntoPlace(writer: PackageWriter, stage: string, target: st
   // The loader skips the stage folder? It does not filter hidden folders today,
   // so a leftover stage would be picked up as a broken package. Clean it up.
   const existing = await folderExists(writer, target);
-  if (existing) await writer.removeFolder(target);
-  await renameFolder(writer, stage, target);
-  return existing;
+  if (!existing) {
+    await renameFolder(writer, stage, target);
+    return false;
+  }
+  // Move the old package aside first so a failed rename can restore it; the
+  // backup uses the sweepable `.importing-` prefix so a crash mid-sequence is
+  // still cleaned up by the next reload.
+  const parent = target.slice(0, target.lastIndexOf("/"));
+  const name = target.slice(target.lastIndexOf("/") + 1);
+  const backup = `${parent}/.importing-backup-${name}`;
+  await renameFolder(writer, target, backup);
+  try {
+    await renameFolder(writer, stage, target);
+  } catch (error) {
+    await renameFolder(writer, backup, target);
+    throw error;
+  }
+  await writer.removeFolder(backup);
+  return true;
 }
 
 async function folderExists(writer: PackageWriter, path: string): Promise<boolean> {
