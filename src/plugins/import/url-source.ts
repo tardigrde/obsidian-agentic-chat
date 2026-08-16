@@ -165,6 +165,7 @@ export async function resolveImportSource(
 ): Promise<ResolvedSource> {
   if (parsed.kind === "archive-url") {
     const response = await fetcher.fetchBytes(parsed.url);
+    assertSuccess(response, parsed.url);
     const bytes = response.bytes;
     if (!bytes || bytes.length === 0) {
       throw new Error(`Could not download ${parsed.url} (HTTP ${response.status ?? 0}).`);
@@ -176,6 +177,7 @@ export async function resolveImportSource(
   if (parsed.path) {
     const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${parsed.ref}/${parsed.path}`;
     const response = await fetcher.fetchBytes(rawUrl);
+    assertSuccess(response, rawUrl);
     const bytes = response.bytes;
     if (!bytes || bytes.length === 0) {
       throw new Error(`Could not download ${rawUrl} (HTTP ${response.status ?? 0}).`);
@@ -187,6 +189,7 @@ export async function resolveImportSource(
 
   const tarballUrl = `https://codeload.github.com/${owner}/${repo}/tar.gz/${parsed.ref ?? "HEAD"}`;
   const response = await fetcher.fetchBytes(tarballUrl);
+  assertSuccess(response, tarballUrl);
   const bytes = response.bytes;
   if (!bytes || bytes.length === 0) {
     throw new Error(`Could not download ${tarballUrl} (HTTP ${response.status ?? 0}).`);
@@ -197,6 +200,13 @@ export async function resolveImportSource(
     tree = keepSubtree(tree, parsed.path);
   }
   return { tree, label: `github:${owner}/${repo}` };
+}
+
+/** Reject non-2xx HTTP answers (404 pages would otherwise install as content). */
+function assertSuccess(response: { status?: number }, url: string): void {
+  if (response.status !== undefined && (response.status < 200 || response.status >= 300)) {
+    throw new Error(`Could not download ${url} (HTTP ${response.status}).`);
+  }
 }
 
 /** Strip the single leading directory (owner-repo-<sha>) GitHub archives add. */

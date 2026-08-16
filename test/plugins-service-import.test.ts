@@ -5,6 +5,7 @@ import { PluginService } from "../src/plugins/service";
 import { pluginMcpServerId } from "../src/plugins/loader";
 import { AGENT_PLUGINS_SCHEMA_ID } from "../src/plugins/manifest";
 import { FakeApp, FakeVault } from "./helpers/fake-vault";
+import { gzipSync } from "../src/vendor/fflate";
 
 async function seed(): Promise<{ app: App; vault: FakeVault }> {
   const app = new FakeApp();
@@ -143,6 +144,50 @@ describe("PluginService.installFromSource", () => {
     const result = await service.installFromSource("owner/repo", fetcher);
     expect(result.name).toBe("demo");
     expect(vault.contentOf(".agentic-plugins/demo/plugin.json")).toContain(AGENT_PLUGINS_SCHEMA_ID);
+  });
+
+  it("keeps the native manifest verbatim for root-level packages and persists provenance without MCP", async () => {
+    const { app, vault } = await seed();
+    const current = settings();
+    const service = serviceFor(app, current);
+    const manifest = {
+      $schema: AGENT_PLUGINS_SCHEMA_ID,
+      name: "rootly",
+      version: "1.2.3",
+      description: "Native root-level package",
+    };
+    const tarball = gzipSync(makeTar({
+      "rootly/plugin.json": JSON.stringify(manifest),
+      "rootly/skills/rootly/SKILL.md": "---\nname: rootly\ndescription: R\n---\n# Rootly",
+      "rootly/README.md": "# Rootly",
+    }));
+    const fetcher = {
+      fetchBytes: async (url: string) => {
+        expect(url).toBe("https://codeload.github.com/owner/repo/tar.gz/HEAD");
+        return { status: 200, bytes: tarball, contentType: "application/gzip" };
+      },
+    };
+    const result = await service.installFromSource("owner/repo", fetcher);
+    expect(result.name).toBe("rootly");
+    expect(JSON.parse(vault.contentOf(".agentic-plugins/rootly/plugin.json") as string)).toEqual(manifest);
+    expect(current.plugins.sources["rootly"]).toBe("github:owner/repo");
+    expect(current.mcp.servers).toHaveLength(0);
+  });
+
+  it("rejects HTTP failures instead of installing error pages", async () => {
+    const { app } = await seed();
+    const service = serviceFor(app, settings());
+    const fetcher = {
+      fetchBytes: async () =>
+        ({ status: 404, bytes: ENCODER.encode("<html>Not Found</html>"), contentType: "text/html" }),
+    };
+    await expect(service.installFromSource("https://github.com/owner/repo/blob/main/skills/x/SKILL.md", fetcher))
+      .rejects.toThrow(/HTTP 404/);
+    const fetcher404 = {
+      fetchBytes: async () =>
+        ({ status: 404, bytes: ENCODER.encode("<html>Not Found</html>"), contentType: "text/html" }),
+    };
+    await expect(service.installFromSource("https://github.com/owner/repo", fetcher404)).rejects.toThrow(/HTTP 404/);
   });
 
   it("fetches a single raw SKILL.md for blob-style URLs", async () => {

@@ -185,13 +185,20 @@ export class PluginService {
     if (!converted.name || !converted.name.trim()) {
       throw new Error("Could not determine a package name from this source.");
     }
+    if (sniffed.candidates.length > 1) {
+      converted.warnings.push(
+        `Found ${sniffed.candidates.length} packages in this source; installed ${converted.name}.`,
+      );
+    }
+    const manifestPath = candidate.root ? `${candidate.root}/plugin.json` : "plugin.json";
     const result = await installPackage(this.vaultWriter(), {
       converted,
       pluginsFolder: this.pluginsFolder(),
-      ...(converted.native ? { nativeManifest: decodeUtf8(tree.get(`${candidate.root}/plugin.json`) as Uint8Array) } : {}),
+      ...(converted.native ? { nativeManifest: decodeUtf8(tree.get(manifestPath) as Uint8Array) } : {}),
     });
     this.recordSource(result.name, label);
     await this.recordPluginMcp(result.name, converted);
+    if (converted.mcpEntries.length === 0) await this.saveSettings?.();
     this.invalidate();
     return result;
   }

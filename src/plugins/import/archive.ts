@@ -25,7 +25,9 @@ export function safeArchivePath(raw: string): string | null {
   let path = raw.replace(/\\/g, "/").trim();
   while (path.startsWith("./")) path = path.slice(2);
   if (!path || path.endsWith("/") || path.includes("/./")) return null;
-  if (path.startsWith("/") || path.includes("..") || /^[A-Za-z]:/.test(path)) return null;
+  if (path.startsWith("/") || path.includes("/../") || path === ".." || path.startsWith("../") || /^[A-Za-z]:/.test(path)) {
+    return null;
+  }
   for (let index = 0; index < path.length; index += 1) {
     const code = path.charCodeAt(index);
     if (code <= 0x1f || code === 0x7f) return null;
@@ -37,12 +39,15 @@ export function safeArchivePath(raw: string): string | null {
 export function extractZip(bytes: Uint8Array): FileTree {
   const trees: FileTree = new Map();
   let total = 0;
+  let accepted = 0;
   const unzipped = unzipSync(bytes, {
     filter: (entry) => {
       const path = safeArchivePath(entry.name);
       if (path === null || entry.originalSize > ARCHIVE_LIMITS.singleFileBytes) return false;
       total += entry.originalSize;
-      return total <= ARCHIVE_LIMITS.totalBytes && trees.size < ARCHIVE_LIMITS.maxEntries;
+      const ok = total <= ARCHIVE_LIMITS.totalBytes && accepted < ARCHIVE_LIMITS.maxEntries;
+      if (ok) accepted += 1;
+      return ok;
     },
   });
   for (const [rawPath, content] of Object.entries(unzipped)) {
@@ -53,12 +58,25 @@ export function extractZip(bytes: Uint8Array): FileTree {
 }
 
 /**
- * Decompress a gzipped tarball into a guarded file tree. Handles ustar/GNU
- * (long-name 'L' headers) and pax ('x' path= records) layouts, skips
- * symlinks/hardlinks/directories, and ignores all path metadata safely.
+ * Decompress a gzipped tarball into a guarded file tree. Reads the gzip
+ * trailer's ISIZE field (uncompressed length, little-endian, minus the 18-byte
+ * header/trailer minimum) to reject bombs before inflation; the inflated
+ * length is checked again as a backstop. Handles ustar/GNU (long-name 'L'
+ * headers) and pax ('x' path= records) layouts, skips symlinks/hardlinks/
+ * directories, and ignores all path metadata safely.
  */
 export function extractTarGz(bytes: Uint8Array): FileTree {
-  return parseTar(gunzipSync(bytes));
+  if (bytes.length >= 18) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset + bytes.byteLength - 4, 4);
+    if (view.getUint32(0, true) > ARCHIVE_LIMITS.totalBytes) {
+      throw new Error(`Refusing archive that claims to expand beyond ${ARCHIVE_LIMITS.totalBytes} bytes.`);
+    }
+  }
+  const inflated = gunzipSync(bytes);
+  if (inflated.length > ARCHIVE_LIMITS.totalBytes) {
+    throw new Error(`Archive expands beyond ${ARCHIVE_LIMITS.totalBytes} bytes.`);
+  }
+  return parseTar(inflated);
 }
 
 /** Extract an archive whose kind is known from the source URL. */

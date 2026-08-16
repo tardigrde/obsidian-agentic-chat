@@ -272,8 +272,13 @@ function convertMcp(
     // A top-level mcp.json that manifests don't reference (rare); parse it too.
     const raw = tree.get(`${prefix}mcp.json`);
     const parsed = raw ? parseJson(raw) : null;
+    if (raw && parsed === null) {
+      warnings.push("mcp.json is not valid JSON; the file was not imported.");
+    }
     const servers = parsed ? (parsed.mcpServers ?? parsed.servers) : null;
-    if (servers !== null && typeof servers === "object") {
+    if (servers === null || (typeof servers === "object" && Object.keys(servers as Record<string, unknown>).length === 0)) {
+      if (raw) warnings.push("mcp.json declares no MCP servers; the file was not imported.");
+    } else if (servers !== null && typeof servers === "object") {
       for (const [key, value] of Object.entries(servers as Record<string, unknown>)) {
         const entry = value as Record<string, unknown>;
         const url = typeof entry.url === "string" ? entry.url : "";
@@ -287,6 +292,8 @@ function convertMcp(
                 : undefined,
             warnings: [],
           });
+        } else {
+          warnings.push(`MCP server "${key}": no URL; skipped.`);
         }
       }
     }
