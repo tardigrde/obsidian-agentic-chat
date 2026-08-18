@@ -2064,7 +2064,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       `${plugin.mcpServers.length} MCP server${plugin.mcpServers.length === 1 ? "" : "s"}`,
     ].join(", ");
     const status = plugin.enabled ? plugin.auditStatus : "disabled";
-    const source = settings.plugins.sources[plugin.name];
+    const source = settings.plugins.sources?.[plugin.name];
     let detail = `${plugin.rootPath} — ${status}, ${components}`;
     if (source) detail += `\nSource: ${source}`;
     const extra = [];

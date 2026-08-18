@@ -92,6 +92,8 @@ export class FakeVault {
 
   /** Adapter-like surface the plugin touches directly (list/read/rename/rmdir). */
   readonly adapter: FakeVaultAdapter = {
+    exists: async (path: string): Promise<boolean> =>
+      this.folders.has(path) || this.files.has(path),
     list: async (path: string): Promise<{ folders: string[]; files: string[] }> => {
       const normalized = path === "/" ? "" : path.replace(/\/+$/, "");
       const prefix = normalized ? `${normalized}/` : "";
@@ -211,6 +213,7 @@ export class FakeVault {
 }
 
 type FakeVaultAdapter = {
+  exists(path: string): Promise<boolean>;
   list(path: string): Promise<{ folders: string[]; files: string[] }>;
   read(path: string): Promise<string>;
   write(path: string, content: string): Promise<void>;

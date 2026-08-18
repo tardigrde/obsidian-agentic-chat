@@ -85,6 +85,7 @@ export class InstallPluginModal extends Modal {
     try {
       const result = await this.pluginService.installFromSource(url);
       this.onInstalled(result);
+      this.close();
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
       this.onError(error instanceof Error ? error.message : String(error));
@@ -148,6 +149,7 @@ export class InstallPluginModal extends Modal {
     try {
       const result = await this.pluginService.installFromTree(tree, label);
       this.onInstalled(result);
+      this.close();
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
       this.onError(error instanceof Error ? error.message : String(error));

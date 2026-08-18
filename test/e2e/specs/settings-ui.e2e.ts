@@ -104,6 +104,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
       plugins: {
         folder: string;
         enabled: Record<string, boolean>;
+        sources: Record<string, string>;
       };
       enableBuiltinAgents: boolean;
       agentsFolder: string;
@@ -145,7 +146,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
       authHeaderValueSecretId: "agentic-chat-observability-auth-header-value",
       authHeaderValue: "",
     };
-    settings.plugins = { folder: ".agentic-plugins", enabled: {} };
+    settings.plugins = { folder: ".agentic-plugins", enabled: {}, sources: {} };
     settings.enableBuiltinAgents = true;
     settings.agentsFolder = "";
     settings.ignoredGlobs = "";

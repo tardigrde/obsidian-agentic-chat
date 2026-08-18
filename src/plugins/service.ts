@@ -373,7 +373,10 @@ export class PluginService {
         await app.vault.adapter.rmdir(path, true);
         pruneTreeFolder(app, path);
       },
-      folderExists: async (path) => app.vault.getAbstractFileByPath(path) instanceof TFolder,
+      folderExists: async (path) => {
+        if (app.vault.getAbstractFileByPath(path) instanceof TFolder) return true;
+        return app.vault.adapter.exists(path).catch(() => false);
+      },
       renameFolder: async (from, to) => {
         await app.vault.adapter.rename(from, to);
       },
@@ -390,9 +393,12 @@ export class PluginService {
     let current = "";
     for (const segment of segments) {
       current = current ? `${current}/${segment}` : segment;
-      if (!(this.app.vault.getAbstractFileByPath(current) instanceof TFolder)) {
-        await this.app.vault.createFolder(current);
-      }
+      if (this.app.vault.getAbstractFileByPath(current) instanceof TFolder) continue;
+      // The vault's live tree does not index dot-folders (e.g. .agentic-plugins)
+      // created outside the session; trust the adapter when the folder is on
+      // disk, or vault.createFolder throws "Folder already exists.".
+      if (await this.app.vault.adapter.exists(current)) continue;
+      await this.app.vault.createFolder(current);
     }
   }
 
