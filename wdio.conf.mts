@@ -133,6 +133,18 @@ export const config: WebdriverIO.Config = {
         // WSL can expose IPv6 loopback oddly; force Obsidian's DevTools endpoint
         // onto IPv4 so chromedriver does not exit with "IPv6 port not available".
         "--remote-debugging-address=127.0.0.1",
+        // Headless run (display-less CI): AGENTIC_CHAT_E2E_HEADLESS=1 with a
+        // complete local X/GTK/NSS lib stack (LD_LIBRARY_PATH) drives Obsidian
+        // offscreen. Note: WebDriver getText() reads the accessibility tree,
+        // which headless ozone does not build — assert via executeObsidian /
+        // DOM textContent in headless mode, and run the full suite on a display.
+        ...(process.env.AGENTIC_CHAT_E2E_HEADLESS === "1"
+          ? [
+              "--ozone-platform=headless",
+              "--disable-gpu",
+              "--disable-dev-shm-usage",
+            ]
+          : []),
         ...obsidianProxyArgs(),
         ...viewportArgs(),
       ],
