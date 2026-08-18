@@ -263,6 +263,12 @@ describe("agentic-chat marketplace live dogfood", function () {
   it("materializes the builtins package with the install-plugin skill", async function () {
     await waitForAgentIdle();
     const present = await browser.executeObsidian(async ({ app }) => {
+      const plugin = (app as unknown as {
+        plugins?: { plugins?: Record<string, { pluginService?: { ensureBuiltinsMaterialized?: () => Promise<boolean> } }> };
+      }).plugins?.plugins?.["agentic-chat"];
+      // The before-hook rmdir's .agentic-plugins to reset the swe install, so
+      // recreate the builtins package the way a user would via Repair built-ins.
+      await plugin?.pluginService?.ensureBuiltinsMaterialized?.();
       const base = ".agentic-plugins/builtins";
       const docs = [
         "plugin.json",
@@ -294,10 +300,30 @@ describe("agentic-chat marketplace live dogfood", function () {
     this.timeout(TURN_TIMEOUT_MS + 60_000);
     await sendPrompt("How do I install a skill from a GitHub repo? Use the /skill install-plugin guidance.");
     await $(".agentic-chat-stop").waitForExist({ timeout: 30_000, timeoutMsg: "install-plugin turn never started" });
+    // chatText() covers the whole transcript (including the prompt above), so
+    // scope the assertion to the last assistant message instead.
     await browser.waitUntil(
       async () => {
-        const text = await chatText();
-        return /settings|install/i.test(text);
+        const raw = await readLatestSessionRaw();
+        const messages = raw
+          .split("\n")
+          .map((line) => {
+            try {
+              return JSON.parse(line) as { role?: string; content?: unknown };
+            } catch {
+              return null;
+            }
+          })
+          .filter((entry): entry is { role: string; content?: unknown } => entry !== null && entry.role === "assistant");
+        const last = messages[messages.length - 1];
+        if (!last) return false;
+        const text =
+          typeof last.content === "string"
+            ? last.content
+            : Array.isArray(last.content)
+              ? last.content.map((block) => (typeof block === "string" ? block : (block as { text?: string }).text ?? "")).join("\n")
+              : "";
+        return /Resources|agent-plugins\.org|owner\/repo/i.test(text);
       },
       { timeout: TURN_TIMEOUT_MS, timeoutMsg: "install-plugin skill turn did not produce guidance" },
     );
