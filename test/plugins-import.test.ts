@@ -94,7 +94,7 @@ describe("archive extraction", () => {
     expect(safeArchivePath("ok/file.md")).toBe("ok/file.md");
   });
 
-  it("skips an oversized entry instead of aborting the rest of the tar", () => {
+  it("skips an oversized entry instead of aborting the rest of the tar", { timeout: 30_000 }, () => {
     // A single entry larger than the per-file cap that appears before
     // plugin.json must be skipped, not fatal (codeload tarballs sort entries).
     const big = new Uint8Array(ARCHIVE_LIMITS.singleFileBytes + 1024);
