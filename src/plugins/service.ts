@@ -10,6 +10,7 @@ import {
   type InstallResult,
   type PackageWriter,
 } from "./import/install";
+import { collectLegacyVaultSkills } from "./import/migrate-legacy-skills";
 import { sniffSource } from "./import/sniff";
 import {
   createObsidianBytesFetcher,
@@ -328,6 +329,52 @@ export class PluginService {
   async repairBuiltins(): Promise<void> {
     await this.vaultWriter().removeFolder(`${this.pluginsFolder()}/builtins`);
     await this.ensureBuiltinsMaterialized();
+  }
+
+  /**
+   * One-time upgrade migration: materialize legacy `skillsFolder` /
+   * `templatesFolder` vault skills into a real `legacy-skills` package so no
+   * configured skills silently disappear after the Agent Plugins migration.
+   * Only when the package is absent (never overwrites user edits); returns
+   * false when there is nothing to preserve.
+   */
+  async materializeLegacySkills(folders: string[]): Promise<boolean> {
+    const writer = this.vaultWriter();
+    const target = `${this.pluginsFolder()}/legacy-skills`;
+    if (await writer.folderExists(target)) return false;
+    const skills = await collectLegacyVaultSkills(this.app, folders);
+    if (skills.length === 0) return false;
+
+    const files: Map<string, Uint8Array> = new Map();
+    const usedDirs = new Set<string>();
+    for (const skill of skills) {
+      const base = slugifyPluginName(skill.name) || "skill";
+      let dir = base;
+      for (let index = 2; usedDirs.has(dir); index += 1) dir = `${base}-${index}`;
+      usedDirs.add(dir);
+      const description = skill.description.trim() || `${dir} skill.`;
+      const doc = `---\nname: ${JSON.stringify(dir)}\ndescription: ${JSON.stringify(description)}\n---\n\n${skill.body.trim()}\n`;
+      files.set(`skills/${dir}/SKILL.md`, new TextEncoder().encode(doc));
+    }
+
+    await writer.ensureFolder(`${target}/skills`);
+    for (const [rel, bytes] of files) {
+      await writer.writeFile(`${target}/${rel}`, bytes);
+    }
+    await writer.writeFile(
+      `${target}/plugin.json`,
+      scaffoldManifest(
+        "legacy-skills",
+        "Skills from the vault skills/templates folders, migrated when Agent Plugins became the single source of truth.",
+      ),
+    );
+    await writer.writeFile(
+      `${target}/README.md`,
+      "This package holds the skills that used to live in the settings' Skills folder / Prompt templates folder. " +
+        "Edit or remove it freely; the migration only creates it once and never overwrites your edits.\n",
+    );
+    this.invalidate();
+    return true;
   }
 
   /** Remove leftover `.importing-*` stage folders a crashed install may have left. */

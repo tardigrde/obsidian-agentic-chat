@@ -15,7 +15,7 @@ import { extractArchive, looksGzip, looksZip, type ArchiveKind, type FileTree } 
  * Anything else is rejected with an explicit reason, never silently misread.
  */
 export type ParsedImportSource =
-  | { kind: "github"; owner: string; repo: string; ref?: string; path?: string }
+  | { kind: "github"; owner: string; repo: string; ref?: string; path?: string; remainder?: string; mode?: "tree" | "blob" | "raw" }
   | { kind: "archive-url"; url: string; kindHint?: ArchiveKind };
 
 export function parseImportSource(input: string): { parsed: ParsedImportSource } | { error: string } {
@@ -48,12 +48,26 @@ export function parseImportSource(input: string): { parsed: ParsedImportSource }
       const rest = segments.slice(2);
       if (rest.length === 0) return { parsed: { kind: "github", owner, repo } };
       const mode = rest[0];
+      // Direct archive links (e.g. /releases/download/v1.0/pkg.zip) are valid
+      // import sources even though they are not /tree /blob /raw /archive.
+      if (mode !== "tree" && mode !== "blob" && mode !== "raw") {
+        const hint = archiveKindFromPath(url.pathname);
+        if (hint) return { parsed: { kind: "archive-url", url: url.toString(), kindHint: hint } };
+      }
       const refAndPath = rest.slice(1).join("/");
       if (mode === "tree") {
         if (!refAndPath) return { parsed: { kind: "github", owner, repo } };
         const [ref, ...pathParts] = refAndPath.split("/");
         return {
-          parsed: { kind: "github", owner, repo, ref, path: pathParts.join("/") || undefined },
+          parsed: {
+            kind: "github",
+            owner,
+            repo,
+            ref,
+            path: pathParts.join("/") || undefined,
+            remainder: refAndPath,
+            mode: "tree",
+          },
         };
       }
       if (mode === "blob" || mode === "raw") {
@@ -61,7 +75,9 @@ export function parseImportSource(input: string): { parsed: ParsedImportSource }
         if (!ref || pathParts.length === 0) {
           return { error: `GitHub "${mode}" URLs must include a ref and a file path (${trimmed}).` };
         }
-        return { parsed: { kind: "github", owner, repo, ref, path: pathParts.join("/") } };
+        return {
+          parsed: { kind: "github", owner, repo, ref, path: pathParts.join("/"), remainder: refAndPath, mode },
+        };
       }
       if (mode === "archive") {
         return archiveHintFromUrl(url.toString()) ?? {
@@ -69,7 +85,7 @@ export function parseImportSource(input: string): { parsed: ParsedImportSource }
         };
       }
       return {
-        error: `Unknown GitHub URL shape "${mode}" in ${trimmed}. Supported: owner/repo, /tree/<ref>[/path], /blob/<ref>/<path>, /archive/<...>.zip|.tar.gz.`,
+        error: `Unknown GitHub URL shape "${mode}" in ${trimmed}. Supported: owner/repo, /tree/<ref>[/path], /blob/<ref>/<path>, /archive/<...>.zip|.tar.gz, and direct archive links.`,
       };
     }
     return { error: `A GitHub URL must include at least owner and repository (${trimmed}).` };
@@ -82,8 +98,10 @@ export function parseImportSource(input: string): { parsed: ParsedImportSource }
         error: `raw.githubusercontent.com URLs must be owner/repo/<ref>/<path...> (${trimmed}).`,
       };
     }
-    const [owner, repo, ref, ...pathParts] = segments;
-    return { parsed: { kind: "github", owner, repo, ref, path: pathParts.join("/") } };
+    const [owner, repo, ...rest] = segments;
+    return {
+      parsed: { kind: "github", owner, repo, ref: rest[0], path: rest.slice(1).join("/"), remainder: rest.join("/") },
+    };
   }
 
   if (host === "codeload.github.com") {
@@ -174,8 +192,11 @@ export async function resolveImportSource(
   }
 
   const { owner, repo } = parsed;
-  if (parsed.path) {
-    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${parsed.ref}/${parsed.path}`;
+  if (parsed.path && parsed.mode !== "tree") {
+    // raw.githubusercontent.com/<owner>/<repo>/<ref>/<path> resolves the ref by
+    // the longest matching branch/tag prefix server-side, so the ref/path split
+    // does not affect the fetched URL — a single fetch suffices.
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${parsed.remainder ?? `${parsed.ref}/${parsed.path}`}`;
     const response = await fetcher.fetchBytes(rawUrl);
     assertSuccess(response, rawUrl);
     const bytes = response.bytes;
@@ -187,19 +208,40 @@ export async function resolveImportSource(
     return { tree, label: `github:${owner}/${repo}` };
   }
 
-  const tarballUrl = `https://codeload.github.com/${owner}/${repo}/tar.gz/${parsed.ref ?? "HEAD"}`;
-  const response = await fetcher.fetchBytes(tarballUrl);
-  assertSuccess(response, tarballUrl);
-  const bytes = response.bytes;
-  if (!bytes || bytes.length === 0) {
-    throw new Error(`Could not download ${tarballUrl} (HTTP ${response.status ?? 0}).`);
+  // Repository snapshot (optionally under a subfolder): download the codeload
+  // tarball for the longest matching ref, falling back to shorter refs so
+  // branch/tag names containing slashes (e.g. /tree/feature/foo/skills) are
+  // not misparsed into a 404.
+  const tarballCandidates = refPathCandidates(parsed.remainder ?? parsed.ref ?? "HEAD");
+  let lastStatus: number | undefined;
+  for (const candidate of tarballCandidates) {
+    const tarballUrl = `https://codeload.github.com/${owner}/${repo}/tar.gz/${candidate.ref}`;
+    const response = await fetcher.fetchBytes(tarballUrl);
+    lastStatus = response.status;
+    if (response.status !== undefined && (response.status < 200 || response.status >= 300)) continue;
+    const bytes = response.bytes;
+    if (!bytes || bytes.length === 0) continue;
+    let tree = extractArchive(bytes, "tar.gz");
+    tree = stripSingleTopLevelDir(tree);
+    if (candidate.path) tree = keepSubtree(tree, candidate.path);
+    return { tree, label: `github:${owner}/${repo}` };
   }
-  let tree = extractArchive(bytes, "tar.gz");
-  tree = stripSingleTopLevelDir(tree);
-  if (parsed.path) {
-    tree = keepSubtree(tree, parsed.path);
+  throw new Error(`Could not download a snapshot of ${owner}/${repo} (HTTP ${lastStatus ?? 0}).`);
+}
+
+/**
+ * All (ref, path) splits of a GitHub tree remainder, ordered by the longest
+ * ref first to match GitHub's own longest-prefix resolution (branches and
+ * tags may contain slashes, e.g. feature/foo).
+ */
+function refPathCandidates(remainder: string): Array<{ ref: string; path?: string }> {
+  const parts = remainder.split("/").filter(Boolean);
+  const candidates: Array<{ ref: string; path?: string }> = [];
+  for (let refLen = parts.length; refLen >= 1; refLen -= 1) {
+    const path = parts.slice(refLen).join("/") || undefined;
+    candidates.push({ ref: parts.slice(0, refLen).join("/"), path });
   }
-  return { tree, label: `github:${owner}/${repo}` };
+  return candidates;
 }
 
 /** Reject non-2xx HTTP answers (404 pages would otherwise install as content). */

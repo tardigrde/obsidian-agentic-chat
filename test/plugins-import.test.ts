@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { gzipSync, zipSync } from "../src/vendor/fflate";
-import { extractArchive, extractTarGz, safeArchivePath } from "../src/plugins/import/archive";
-import { parseImportSource } from "../src/plugins/import/url-source";
+import { extractArchive, extractTarGz, safeArchivePath, ARCHIVE_LIMITS } from "../src/plugins/import/archive";
+import {
+  parseImportSource,
+  resolveImportSource,
+  type ImportBytesFetcher,
+} from "../src/plugins/import/url-source";
 import { sniffSource } from "../src/plugins/import/sniff";
 import { sanitizeSkillDoc } from "../src/plugins/import/convert";
 
@@ -76,7 +80,46 @@ describe("archive extraction", () => {
     expect(safeArchivePath("dir/")).toBeNull();
     expect(safeArchivePath("ok/file.md")).toBe("ok/file.md");
   });
+
+  it("skips an oversized entry instead of aborting the rest of the tar", () => {
+    // A single entry larger than the per-file cap that appears before
+    // plugin.json must be skipped, not fatal (codeload tarballs sort entries).
+    const big = new Uint8Array(ARCHIVE_LIMITS.singleFileBytes + 1024);
+    big.fill(0x61);
+    const tar = makeTarGzDirect([
+      { name: "assets/huge.bin", content: big },
+      { name: "pkg/plugin.json", content: ENCODER.encode("{}") },
+    ]);
+    const tree = extractTarGz(gzipWrap(tar));
+    expect(tree.has("assets/huge.bin")).toBe(false);
+    expect(new TextDecoder().decode(tree.get("pkg/plugin.json"))).toBe("{}");
+  });
 });
+
+/** Direct tar builder that supports binary entries without nested-array blowup. */
+function makeTarGzDirect(entries: Array<{ name: string; content: Uint8Array }>): Uint8Array {
+  const total =
+    entries.reduce((sum, entry) => sum + 512 + Math.ceil(entry.content.length / 512) * 512, 0) + 1024;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const { name, content } of entries) {
+    const header = new Uint8Array(512);
+    writeAscii(header, 0, name.slice(0, 100));
+    writeAscii(header, 100, "0000644\0");
+    writeAscii(header, 108, "0000000\0");
+    writeAscii(header, 116, "0000000\0");
+    writeAscii(header, 124, octal(content.length, 11) + "\0");
+    writeAscii(header, 136, "00000000000\0");
+    writeAscii(header, 148, "00000000000\0");
+    header[156] = 0x30;
+    writeAscii(header, 257, "ustar\0" + "00");
+    out.set(header, offset);
+    offset += 512;
+    out.set(content, offset);
+    offset += Math.ceil(content.length / 512) * 512;
+  }
+  return out;
+}
 
 describe("parseImportSource", () => {
   it("accepts owner/repo shorthand", () => {
@@ -113,6 +156,50 @@ describe("parseImportSource", () => {
     expect("error" in parseImportSource("not a url")).toBe(true);
     expect("error" in parseImportSource("https://github.com/a/b/issues/1")).toBe(true);
     expect("error" in parseImportSource("")).toBe(true);
+  });
+
+  it("keeps the full remainder for tree/blob URLs with slash-containing refs", () => {
+    expect(parseImportSource("https://github.com/a/b/tree/feature/foo/skills")).toMatchObject({
+      parsed: { kind: "github", owner: "a", repo: "b", ref: "feature", path: "foo/skills", remainder: "feature/foo/skills" },
+    });
+    expect(parseImportSource("https://github.com/a/b/blob/release/1.2/skills/x/SKILL.md")).toMatchObject({
+      parsed: { kind: "github", owner: "a", repo: "b", ref: "release", path: "1.2/skills/x/SKILL.md", remainder: "release/1.2/skills/x/SKILL.md" },
+    });
+  });
+
+  it("accepts GitHub release-asset archive URLs", () => {
+    expect(parseImportSource("https://github.com/a/b/releases/download/v1.0/pkg.zip")).toMatchObject({
+      parsed: { kind: "archive-url", kindHint: "zip" },
+    });
+  });
+
+  it("resolves tree refs with slashes longest-ref-first", async () => {
+    const repoTar = gzipWrap(makeTarGz({ "repo-sha/foo/skills/a.md": "# A", "repo-sha/README.md": "# R" }));
+    const fetcher: ImportBytesFetcher = {
+      fetchBytes: async (url) => {
+        if (url.includes("/tar.gz/feature/foo/skills")) return { status: 404, bytes: undefined, contentType: undefined };
+        if (url.includes("/tar.gz/feature/foo")) return { status: 404, bytes: undefined, contentType: undefined };
+        if (url.includes("/tar.gz/feature")) return { status: 200, bytes: repoTar, contentType: "application/gzip" };
+        return { status: 404, bytes: undefined, contentType: undefined };
+      },
+    };
+    const resolved = await resolveImportSource(
+      { kind: "github", owner: "a", repo: "b", ref: "feature", path: "foo/skills", remainder: "feature/foo/skills", mode: "tree" },
+      fetcher,
+    );
+    expect([...resolved.tree.keys()].sort()).toEqual(["a.md"]);
+  });
+
+  it("falls back through refs and throws a clear error when none exist", async () => {
+    const fetcher: ImportBytesFetcher = {
+      fetchBytes: async () => ({ status: 404, bytes: undefined, contentType: undefined }),
+    };
+    await expect(
+      resolveImportSource(
+        { kind: "github", owner: "a", repo: "b", ref: "missing", remainder: "missing/x", mode: "tree" },
+        fetcher,
+      ),
+    ).rejects.toThrow(/Could not download a snapshot/);
   });
 });
 

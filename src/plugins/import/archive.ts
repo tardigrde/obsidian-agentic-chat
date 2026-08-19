@@ -107,11 +107,19 @@ function parseTar(data: Uint8Array): FileTree {
     const rawName = headerText(header, 0, 100);
     if (!rawName) break;
     const size = parseOctal(headerText(header, 124, 12));
-    if (!Number.isFinite(size) || size < 0 || size > ARCHIVE_LIMITS.singleFileBytes) break;
+    if (!Number.isFinite(size) || size < 0) break;
     const dataStart = offset + 512;
     if (dataStart + size > data.length) break;
     const type = header[156];
     const prefix = headerText(header, 345, 155) || "";
+    // Oversized single entries are skipped, not fatal: codeload tarballs list
+    // entries alphabetically, so a large asset (e.g. assets/huge.bin) can
+    // precede plugin.json and must not abort the whole parse. Bomb protection
+    // is still enforced via the cumulative total below.
+    if (size > ARCHIVE_LIMITS.singleFileBytes) {
+      offset = dataStart + Math.ceil(size / 512) * 512;
+      continue;
+    }
     if (type === 0x4c) {
       pendingName = headerText(data, dataStart, size) || null;
     } else if (type === 0x78 || type === 0x67) {

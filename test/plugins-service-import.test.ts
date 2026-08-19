@@ -314,6 +314,36 @@ describe("PluginService.scaffoldSkill", () => {
   });
 });
 
+describe("PluginService.materializeLegacySkills", () => {
+  it("migrates a legacy skills folder into a loadable package", async () => {
+    const { app, vault } = await seed();
+    await vault.create("skills/my-skill/SKILL.md", "---\nname: My Skill\ndescription: Legacy skill\n---\n# Body\n");
+    await vault.create("skills/top-note.md", "---\nname: top-note\ndescription: A note\n---\nTop body");
+    await vault.create("skills/deep/other.md", "not a direct child, must be ignored");
+
+    const service = serviceFor(app, settings());
+    expect(await service.materializeLegacySkills(["skills"])).toBe(true);
+
+    const plugins = await service.reload();
+    const pkg = plugins.find((plugin) => plugin.name === "legacy-skills");
+    expect(pkg?.auditStatus).toBe("ok");
+    expect(pkg?.skills.map((skill) => skill.name).sort()).toEqual(["my-skill", "top-note"]);
+  });
+
+  it("does not overwrite an existing legacy-skills package", async () => {
+    const { app, vault } = await seed();
+    await vault.create(".agentic-plugins/legacy-skills/plugin.json", '{"$schema":"x","name":"legacy-skills"}');
+    const service = serviceFor(app, settings());
+    expect(await service.materializeLegacySkills(["skills"])).toBe(false);
+  });
+
+  it("returns false when the folders hold no skills", async () => {
+    const { app } = await seed();
+    const service = serviceFor(app, settings());
+    expect(await service.materializeLegacySkills(["nonexistent"])).toBe(false);
+  });
+});
+
 /** Minimal tar archive (ustar, no gzip) for the fetcher fixture. */
 function makeTar(files: Record<string, string>): Uint8Array {
   const blocks: number[][] = [];
