@@ -125,8 +125,8 @@ function candidateName(tree: FileTree, root: string): string {
 function parseJson(bytes: Uint8Array | undefined): Record<string, unknown> | null {
   if (!bytes) return null;
   try {
-    const value = JSON.parse(DECODER.decode(bytes));
-    return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : null;
+    const parsed: unknown = JSON.parse(DECODER.decode(bytes));
+    return parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
   } catch {
     return null;
   }

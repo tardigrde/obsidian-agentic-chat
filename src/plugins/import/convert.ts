@@ -187,7 +187,7 @@ export function sanitizeSkillDoc(doc: string, dirName: string, warnings: string[
   let frontmatter: Record<string, unknown> = {};
   try {
     // Obsidian's parseYaml (js-yaml) is the same parser the plugin uses for skills.
-    const parsed = parseYaml(match[1]);
+    const parsed = parseYaml(match[1]) as unknown;
     if (parsed !== null && typeof parsed === "object") frontmatter = parsed as Record<string, unknown>;
   } catch {
     warnings.push(`skills/${dirName}/SKILL.md frontmatter is not valid YAML; rewrote it to name + description only.`);
@@ -198,7 +198,9 @@ export function sanitizeSkillDoc(doc: string, dirName: string, warnings: string[
     if (value === undefined) continue;
     if (key === "name") {
       if (typeof value !== "string" || value !== dirName) {
-        warnings.push(`skills/${dirName}/SKILL.md name "${String(value)}" renamed to the directory name "${dirName}".`);
+        warnings.push(
+          `skills/${dirName}/SKILL.md name "${typeof value === "string" ? value : JSON.stringify(value)}" renamed to the directory name "${dirName}".`,
+        );
         kept.push(`name: ${yamlScalar(dirName)}`);
       } else {
         kept.push(`name: ${yamlScalar(dirName)}`);
@@ -276,7 +278,7 @@ function convertMcp(
       warnings.push("mcp.json is not valid JSON; the file was not imported.");
     }
     const servers = parsed ? (parsed.mcpServers ?? parsed.servers) : null;
-    if (servers === null || (typeof servers === "object" && Object.keys(servers as Record<string, unknown>).length === 0)) {
+    if (servers === null || (typeof servers === "object" && Object.keys(servers).length === 0)) {
       if (raw) warnings.push("mcp.json declares no MCP servers; the file was not imported.");
     } else if (servers !== null && typeof servers === "object") {
       for (const [key, value] of Object.entries(servers as Record<string, unknown>)) {
@@ -354,8 +356,8 @@ function collectRootFiles(tree: FileTree, prefix: string, skills: ConvertedSkill
 function parseJson(bytes: Uint8Array | undefined): Record<string, unknown> | null {
   if (!bytes) return null;
   try {
-    const value = JSON.parse(DECODER.decode(bytes));
-    return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : null;
+    const parsed: unknown = JSON.parse(DECODER.decode(bytes));
+    return parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
   } catch {
     return null;
   }

@@ -137,7 +137,7 @@ export function createObsidianBytesFetcher(): ImportBytesFetcher {
       } catch {
         bytes = undefined;
       }
-      const headers = (response.headers ?? {}) as Record<string, string>;
+      const headers = response.headers ?? {};
       return {
         status: response.status,
         bytes,
