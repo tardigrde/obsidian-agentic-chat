@@ -155,7 +155,7 @@ function convertSkills(tree: FileTree, prefix: string, warnings: string[]): Conv
     }
     skillDirs.add(rest.slice(0, slash));
   }
-  for (const dir of [...skillDirs].sort()) {
+  for (const dir of [...skillDirs].sort((a, b) => a.localeCompare(b))) {
     const base = `${prefix}skills/${dir}`;
     const doc = tree.get(`${base}/SKILL.md`);
     if (!doc) {

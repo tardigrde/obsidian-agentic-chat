@@ -145,7 +145,7 @@ function findDeepPackages(tree: FileTree): SniffedCandidate[] {
     }
   }
   const packages: SniffedCandidate[] = [];
-  for (const dir of [...dirs].sort()) {
+  for (const dir of [...dirs].sort((a, b) => a.localeCompare(b))) {
     const found = manifestAtRoot(subtreeAt(tree, dir));
     if (found) {
       packages.push(candidate(tree, dir, found.format, found.isAgentPlugins));
