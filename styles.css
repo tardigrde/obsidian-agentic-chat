@@ -1570,6 +1570,71 @@
   width: 100%;
 }
 
+/* --- Settings → Resources: Agent plugins sections --- */
+
+/* The settings body must never let a row push the pane wider than the window;
+   children handle their own wrapping/ellipsis instead. */
+.agentic-chat-settings-tabbody {
+  min-width: 0;
+}
+
+/* The three Import actions (Install plugin…, New skill…, Repair built-ins)
+   flow onto a second line when they do not fit instead of clipping labels. */
+.agentic-chat-plugins-import .setting-item-control {
+  flex-wrap: wrap;
+  gap: var(--size-2-2);
+  align-items: center;
+}
+
+/* Installed-plugin rows: the title takes the remaining free width (no more
+   hostile "b…" truncation), the meta line wraps cleanly, and the toggle plus
+   buttons stay vertically centred on a touch-friendly row. */
+.agentic-chat-plugin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) 0;
+  border-top: 1px solid var(--background-modifier-border);
+  min-height: 48px;
+}
+
+.agentic-chat-plugin-main {
+  min-width: 0;
+}
+
+.agentic-chat-plugin-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+}
+
+.agentic-chat-plugin-meta {
+  margin-top: 2px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.agentic-chat-plugin-meta-extra {
+  opacity: 0.9;
+}
+
+.agentic-chat-plugin-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--size-2-2);
+  flex: 0 0 auto;
+}
+
+.agentic-chat-plugin-controls .checkbox-container {
+  flex: 0 0 auto;
+}
+
 /* --- Inline result actions (copy / retry) --- */
 
 .agentic-chat-actions {

@@ -128,8 +128,15 @@ async function loadPluginDir(
   const { mcpValidation, mcpServers } = await loadPluginMcp(app, rootPath, parsed.name, reports);
 
   const enabled = enabledPlugins[parsed.name] !== false;
+  // "partial" whenever a component was skipped or rejected: skill reports,
+  // error reports (e.g. mcp.json is not a file), an invalid mcp.json, or any
+  // server entry that is invalid or uses an unsupported transport. An empty
+  // mcpServers object is valid absence and stays "ok".
+  const skippedMcpEntry =
+    mcpValidation !== null &&
+    mcpValidation.servers.some((entry) => entry.problems.length > 0 || !isDerivableServer(entry));
   const status: PluginAuditStatus =
-    skillReports.length > 0 || (mcpValidation !== null && (!mcpValidation.ok || mcpValidation.servers.length === 0))
+    skillReports.length > 0 || reports.some((report) => report.severity === "error") || skippedMcpEntry
       ? "partial"
       : "ok";
   return {
@@ -298,7 +305,13 @@ export function mcpServerFromPluginEntry(
  * Merge derived plugin servers with persisted client-owned state. The plugin's
  * mcp.json is authoritative for url/name/headers; everything the user
  * configured (enabled, approval, auth, knownTools, oauth) is preserved by id.
- * Persisted records for servers no plugin declares anymore are dropped.
+ * Persisted records for servers no plugin declares anymore are dropped from
+ * the returned list.
+ *
+ * Matched records are updated in place and returned by identity: the runtime
+ * holds these very records, so mutations the MCP client makes while running
+ * (OAuth token refreshes, forgotten tokens) land in settings and persist on
+ * the next save instead of being written to a detached copy.
  */
 export function mergePluginMcpServers(
   persisted: readonly McpServerSettings[],
@@ -309,14 +322,12 @@ export function mergePluginMcpServers(
   return derived.map((server) => {
     const record = byId.get(server.id);
     if (!record) return server;
-    return {
-      ...record,
-      url: server.url,
-      name: server.name,
-      headers: server.headers,
-      source: server.source,
-      pluginRoot: server.pluginRoot,
-    };
+    record.url = server.url;
+    record.name = server.name;
+    record.headers = server.headers;
+    record.source = server.source;
+    record.pluginRoot = server.pluginRoot;
+    return record;
   });
 }
 

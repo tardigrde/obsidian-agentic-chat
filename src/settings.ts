@@ -1,4 +1,4 @@
-import { App, Notice, Platform, PluginSettingTab, Setting, TFile, TFolder, type ButtonComponent, type SettingDefinitionItem } from "obsidian";
+import { App, ButtonComponent, Notice, Platform, PluginSettingTab, Setting, TFile, TFolder, ToggleComponent, type SettingDefinitionItem } from "obsidian";
 import { normalizeFolderPath } from "./vault/path";
 import type AgenticChatPlugin from "./main";
 import { DEFAULT_PLUGINS_FOLDER, syncMcpServers } from "./plugins/loader";
@@ -231,7 +231,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
   /** Trigger an async plugin load once; redraw when it lands so rows appear. */
   private ensurePluginsLoaded(): void {
-    if (this.pluginsLoadedOnce) return;
+    if (this.pluginsLoadedOnce && this.plugin.pluginService.hasCache()) return;
     this.pluginsLoadedOnce = true;
     void this.plugin.pluginService
       .load()
@@ -931,18 +931,20 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           }
           try {
             if (validateMcpUrl(url) !== null) throw new Error("only HTTPS (or loopback HTTP) endpoints are supported");
+            // Package creation can fail mid-write (stale file tree, an
+            // externally synced folder of the same name, interrupted writes);
+            // surface it instead of dropping the rejection on the floor.
+            const result = await this.plugin.pluginService.generateMcpServerPackage({ serverName: name, url });
+            this.pendingMcpServerName = "";
+            this.pendingMcpServerUrl = "";
+            // The package is new; drop the once-only load guard so the next
+            // redraw picks it up from the vault.
+            this.pluginsLoadedOnce = false;
+            new Notice(`Agentic Chat MCP: created plugin package at ${result.rootPath}.`);
+            this.redraw();
           } catch (error) {
             new Notice(`Agentic Chat MCP: ${error instanceof Error ? error.message : String(error)}`);
-            return;
           }
-          const result = await this.plugin.pluginService.generateMcpServerPackage({ serverName: name, url });
-          this.pendingMcpServerName = "";
-          this.pendingMcpServerUrl = "";
-          // The package is new; drop the once-only load guard so the next
-          // redraw picks it up from the vault.
-          this.pluginsLoadedOnce = false;
-          new Notice(`Agentic Chat MCP: created plugin package at ${result.rootPath}.`);
-          this.redraw();
         }),
       );
 
@@ -1856,6 +1858,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Import")
+      .setClass("agentic-chat-plugins-import")
       .addButton((button) =>
         button
           .setButtonText("Install plugin…")
@@ -2059,51 +2062,55 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   private renderPluginRow(containerEl: HTMLElement, settings: AgenticChatSettings, plugin: LoadedPlugin): void {
-    const components = [
-      `${plugin.skills.length} skill${plugin.skills.length === 1 ? "" : "s"}`,
-      `${plugin.mcpServers.length} MCP server${plugin.mcpServers.length === 1 ? "" : "s"}`,
-    ].join(", ");
-    const status = plugin.enabled ? plugin.auditStatus : "disabled";
-    const source = settings.plugins.sources?.[plugin.name];
-    let detail = `${plugin.rootPath} — ${status}, ${components}`;
-    if (source) detail += `\nSource: ${source}`;
-    const extra = [];
-    if (plugin.version) extra.push(`, v${plugin.version}`);
-    if (plugin.manifestProblem) extra.push(` — ${plugin.manifestProblem}`);
-    if (plugin.reports.length > 0) extra.push(` — ${plugin.reports.map((report) => report.message).join("; ")}`);
+    const row = containerEl.createDiv({ cls: "agentic-chat-plugin-row" });
 
-    new Setting(containerEl)
-      .setName(plugin.name)
-      .setDesc(detail + extra.join(""))
-      .addToggle((toggle) =>
-        toggle.setValue(plugin.enabled).onChange(async (value) => {
-          const enabled = { ...settings.plugins.enabled };
-          if (value) delete enabled[plugin.name];
-          else enabled[plugin.name] = false;
-          settings.plugins.enabled = enabled;
-          this.plugin.pluginService.invalidate();
-          this.pluginsLoadedOnce = false;
-          await this.save();
-          this.redraw();
-        }),
-      )
-      .addButton((button) =>
-        button.setButtonText("Open folder").onClick(() => {
-          this.openInVault(plugin.rootPath);
-        }),
-      )
-      .addButton((button) =>
-        button
-          .setButtonText("Remove")
-          .setWarning()
-          .onClick(async () => {
-            await this.plugin.pluginService.removePackage(plugin.name);
-            new Notice(`Removed agent plugin "${plugin.name}".`);
-            this.pluginsLoadedOnce = false;
-            await this.save();
-            this.redraw();
-          }),
-      );
+    const main = row.createDiv({ cls: "agentic-chat-plugin-main" });
+    main.createDiv({ cls: "agentic-chat-plugin-name", text: plugin.name });
+
+    const status = plugin.enabled ? plugin.auditStatus : "disabled";
+    const typeCounts =
+      `${plugin.skills.length} skill${plugin.skills.length === 1 ? "" : "s"}, ` +
+      `${plugin.mcpServers.length} MCP server${plugin.mcpServers.length === 1 ? "" : "s"}`;
+    const meta = main.createDiv({ cls: "agentic-chat-plugin-meta" });
+    meta.createSpan({ text: `${plugin.rootPath} — ${status}, ${typeCounts}` });
+    const extra: string[] = [];
+    if (plugin.version) extra.push(`v${plugin.version}`);
+    if (plugin.manifestProblem) extra.push(plugin.manifestProblem);
+    if (plugin.reports.length > 0) extra.push(plugin.reports.map((report) => report.message).join("; "));
+    const source = settings.plugins.sources?.[plugin.name];
+    if (source) extra.push(`Source: ${source}`);
+    if (extra.length > 0) {
+      const tail = meta.createSpan({ cls: "agentic-chat-plugin-meta-extra" });
+      tail.createSpan({ text: ` — ${extra.join(" · ")}` });
+    }
+
+    const controls = row.createDiv({ cls: "agentic-chat-plugin-controls" });
+    new ToggleComponent(controls)
+      .setValue(plugin.enabled)
+      .setTooltip(`Enable ${plugin.name}`)
+      .onChange(async (value) => {
+        const enabled = { ...settings.plugins.enabled };
+        if (value) delete enabled[plugin.name];
+        else enabled[plugin.name] = false;
+        settings.plugins.enabled = enabled;
+        this.plugin.pluginService.invalidate();
+        this.pluginsLoadedOnce = false;
+        await this.save();
+        this.redraw();
+      });
+    new ButtonComponent(controls)
+      .setButtonText("Open folder")
+      .onClick(() => this.openInVault(plugin.rootPath));
+    new ButtonComponent(controls)
+      .setButtonText("Remove")
+      .setWarning()
+      .onClick(async () => {
+        await this.plugin.pluginService.removePackage(plugin.name);
+        new Notice(`Removed agent plugin "${plugin.name}".`);
+        this.pluginsLoadedOnce = false;
+        await this.save();
+        this.redraw();
+      });
   }
 
   private openInstallModal(): void {

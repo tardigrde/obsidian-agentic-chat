@@ -104,3 +104,30 @@ describe("PluginService.auditText", () => {
     expect(JSON.parse(raw)).toMatchObject({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "docs" });
   });
 });
+
+describe("PluginService cache invalidation", () => {
+  it("invalidateFor drops the cache only for paths inside the plugins folder", async () => {
+    const app = await seed();
+    await app.vault.createFolder(".agentic-plugins/docs");
+    const current = settings();
+    const service = serviceFor(app, current);
+
+    await service.load();
+    expect(service.hasCache()).toBe(true);
+
+    expect(service.invalidateFor("Notes/elsewhere.md")).toBe(false);
+    expect(service.hasCache()).toBe(true);
+
+    expect(service.invalidateFor(".agentic-plugins/docs/plugin.json")).toBe(true);
+    expect(service.hasCache()).toBe(false);
+    expect(service.getLoaded()).toEqual([]);
+  });
+
+  it("invalidateFor matches the folder itself", async () => {
+    const app = await seed();
+    const service = serviceFor(app, settings());
+    await service.load();
+    expect(service.invalidateFor(".agentic-plugins")).toBe(true);
+    expect(service.hasCache()).toBe(false);
+  });
+});

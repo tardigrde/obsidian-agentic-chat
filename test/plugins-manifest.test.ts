@@ -96,7 +96,8 @@ describe("validatePluginManifest", () => {
       JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "x", extensions: "nope" }),
     );
     expect(result.fatal).toBeNull();
-    expect(result.reports.some((report) => report.message.includes("extensions"))).toBe(true);
+    const extensionReports = result.reports.filter((report) => report.message.includes("extensions"));
+    expect(extensionReports).toHaveLength(1);
   });
 
   it("rejects an author object with extra fields", () => {

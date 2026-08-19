@@ -91,6 +91,15 @@ export default class AgenticChatPlugin extends Plugin {
 
     this.registerContextMenus();
     this.addSettingTab(new AgenticChatSettingTab(this.app, this));
+
+    // Vault edits touching the plugins folder invalidate the plugin cache so
+    // the settings tab and /doctor re-scan on the next render instead of
+    // showing a stale tree (external sync, hand-edited manifests).
+    const invalidateFor = (file: { path: string }) => this.pluginService.invalidateFor(file.path);
+    this.registerEvent(this.app.vault.on("modify", invalidateFor));
+    this.registerEvent(this.app.vault.on("create", invalidateFor));
+    this.registerEvent(this.app.vault.on("delete", invalidateFor));
+    this.registerEvent(this.app.vault.on("rename", invalidateFor));
   }
 
   /**

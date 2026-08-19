@@ -69,8 +69,24 @@ export class PluginService {
     return this.cache ?? [];
   }
 
+  /** True while the cache holds a scanned plugin list (valid or empty). */
+  hasCache(): boolean {
+    return this.cache !== null;
+  }
+
   invalidate(): void {
     this.cache = null;
+  }
+
+  /**
+   * Drop the cache when a vault path inside the plugins folder changed.
+   * Returns true when the cache was invalidated for that path.
+   */
+  invalidateFor(path: string): boolean {
+    const folder = this.pluginsFolder().replace(/\/+$/, "");
+    if (path !== folder && !path.startsWith(`${folder}/`)) return false;
+    this.cache = null;
+    return true;
   }
 
   /**

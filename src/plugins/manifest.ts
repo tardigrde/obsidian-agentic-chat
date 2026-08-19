@@ -141,10 +141,6 @@ export function validatePluginManifest(raw: string): PluginManifestValidation {
   const fatalField = firstFatalFieldViolation(value, reports);
   if (fatalField) return { manifest: null, fatal: fatalField, reports };
 
-  if (value.extensions !== undefined && !isRecord(value.extensions)) {
-    reports.push({ severity: "warning", message: 'plugin.json "extensions" is not an object; ignored.' });
-  }
-
   return {
     manifest: manifestFromFields(value, nameValue),
     fatal: null,

@@ -236,6 +236,37 @@ describe("loadPlugins", () => {
     expect(byName(plugins, "on").enabled).toBe(true);
     expect(byName(plugins, "off").enabled).toBe(false);
   });
+
+  it("marks a plugin partial when mcp.json is a folder", async () => {
+    const app = await seed();
+    await addPlugin(app, "weird", { "plugin.json": manifest("weird") });
+    await app.vault.createFolder(".agentic-plugins/weird/mcp.json");
+    const plugin = byName(await loadPlugins(app), "weird");
+    expect(plugin.auditStatus).toBe("partial");
+    expect(plugin.reports.some((report) => report.message.includes("mcp.json"))).toBe(true);
+  });
+
+  it("stays ok with an empty mcpServers object (valid absence)", async () => {
+    const app = await seed();
+    await addPlugin(app, "bare", {
+      "plugin.json": manifest("bare"),
+      "mcp.json": JSON.stringify({ $schema: AGENT_PLUGINS_MCP_SCHEMA_ID, mcpServers: {} }),
+    });
+    const plugin = byName(await loadPlugins(app), "bare");
+    expect(plugin.auditStatus).toBe("ok");
+    expect(plugin.mcpServers).toEqual([]);
+  });
+
+  it("marks a plugin partial when a server entry is invalid", async () => {
+    const app = await seed();
+    await addPlugin(app, "broken", {
+      "plugin.json": manifest("broken"),
+      "mcp.json": mcpDoc({ api: { type: "streamable-http", url: "not-a-url" } }),
+    });
+    const plugin = byName(await loadPlugins(app), "broken");
+    expect(plugin.auditStatus).toBe("partial");
+    expect(plugin.mcpServers).toEqual([]);
+  });
 });
 
 describe("mergePluginMcpServers / syncMcpServers", () => {
@@ -287,6 +318,38 @@ describe("mergePluginMcpServers / syncMcpServers", () => {
     ];
     syncMcpServers(settings, derived);
     expect(settings.mcp.servers).toHaveLength(1);
+  });
+
+  it("returns matched persisted records by identity so runtime mutations persist", () => {
+    const persisted = [
+      {
+        ...createMcpServerSettings({ id: "plugin_a_b", name: "a: b", url: "https://a.example/mcp" }),
+        source: "plugin" as const,
+        headers: {},
+        oauth: {
+          ...createMcpServerSettings().oauth,
+          accessToken: "",
+          refreshToken: "r0",
+          expiresAt: 0,
+        },
+      },
+    ];
+    const derived = [
+      {
+        ...createMcpServerSettings({ id: "plugin_a_b", name: "a: b", url: "https://b.example/mcp" }),
+        source: "plugin" as const,
+        headers: { "X-Tenant": "v2" },
+      },
+    ];
+    const merged = mergePluginMcpServers(persisted, derived);
+    expect(merged[0]).toBe(persisted[0]);
+    expect(merged[0]?.url).toBe("https://b.example/mcp");
+    expect(merged[0]?.headers).toEqual({ "X-Tenant": "v2" });
+
+    // The runtime reassigns `oauth` in place during token refreshes; the
+    // persisted record must observe it (same object identity).
+    merged[0].oauth = { ...merged[0].oauth, accessToken: "fresh", refreshToken: "r1", expiresAt: 1234 };
+    expect(persisted[0].oauth.accessToken).toBe("fresh");
   });
 
   it("distinguishes plugin id pairs whose slugs collide", () => {

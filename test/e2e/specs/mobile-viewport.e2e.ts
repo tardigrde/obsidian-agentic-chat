@@ -130,6 +130,7 @@ async function seedMobileState(): Promise<void> {
     const adapter = app.vault.adapter as unknown as {
       list: (path: string) => Promise<{ files: string[]; folders: string[] }>;
       mkdir: (path: string) => Promise<void>;
+      exists: (path: string) => Promise<boolean>;
       remove: (path: string) => Promise<void>;
       write: (path: string, data: string) => Promise<void>;
     };
@@ -158,6 +159,32 @@ async function seedMobileState(): Promise<void> {
       `${sessionsDir}/2026-06-25T00-01-00-000Z_mobile-beta.jsonl`,
       session("mobile-beta", "Mobile Beta", "beta prompt", "beta answer", "2026-06-25T00:01:00.000Z"),
     );
+
+    // Seed one agent plugin package so the Resources tab renders a real
+    // installed-plugin row and the narrow-viewport row layout is exercised.
+    const pluginRoot = ".agentic-plugins/mobile-demo";
+    const ensureDirs = async (rel: string[]) => {
+      let current = "";
+      for (const segment of rel) {
+        current = current ? `${current}/${segment}` : segment;
+        if (!(await adapter.exists(current))) await adapter.mkdir(current);
+      }
+    };
+    await ensureDirs(pluginRoot.split("/"));
+    const pluginFiles = [
+      ["plugin.json", JSON.stringify({
+        $schema: "https://agent-plugins.dev/schema/v1.0.0/plugin.schema.json",
+        name: "mobile-demo",
+        version: "1.0.0",
+        description: "Mobile viewport row-layout sample",
+      }, null, 2) + "\n"],
+      ["skills/hello/SKILL.md", "---\nname: hello\ndescription: Sample skill for the mobile demo package.\n---\n# Hello\n\nA tiny sample skill.\n"],
+    ];
+    const skillParent = `${pluginRoot}/skills/hello`;
+    await ensureDirs(skillParent.split("/"));
+    for (const [rel, content] of pluginFiles) {
+      await adapter.write(`${pluginRoot}/${rel}`, content);
+    }
   }, MOBILE_WRITE_PATH);
 }
 
@@ -245,7 +272,16 @@ describe("agentic-chat mobile viewport", function () {
     await selectSettingsTab("MCP");
     await waitForSetting("Enable MCP");
     await selectSettingsTab("Resources");
-    await waitForSetting("Skills folder");
+    await waitForSetting("Subagents folder");
+    // The seeded agent plugin must render an installed-plugin row so the
+    // narrow-viewport row layout (title + controls) is actually exercised.
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() =>
+          document.querySelector(".agentic-chat-settings-tabbody")?.textContent?.includes("mobile-demo") ?? false,
+        ),
+      { timeout: 10_000, timeoutMsg: "seeded agent plugin row did not render in Resources at phone width" },
+    );
     await assertFits(".agentic-chat-settings-tabs", "settings tabs");
     await assertFits(".agentic-chat-settings-tabbody", "settings body");
     await closeAgenticChatSettings();

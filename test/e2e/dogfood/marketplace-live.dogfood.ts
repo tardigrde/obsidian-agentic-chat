@@ -262,6 +262,9 @@ describe("agentic-chat marketplace live dogfood", function () {
 
   it("materializes the builtins package with the install-plugin skill", async function () {
     await waitForAgentIdle();
+    // The vault tree never indexes brand-new dot-folder files (see the loader's
+    // adapter fallback), so verify the materialized package through the adapter —
+    // the same layer the before-hook writes and the loader reads through.
     const present = await browser.executeObsidian(async ({ app }) => {
       const plugin = (app as unknown as {
         plugins?: { plugins?: Record<string, { pluginService?: { ensureBuiltinsMaterialized?: () => Promise<boolean> } }> };
@@ -276,10 +279,14 @@ describe("agentic-chat marketplace live dogfood", function () {
         "skills/self-knowledge/SKILL.md",
         "skills/install-plugin/SKILL.md",
       ];
-      for (const rel of docs) {
-        if (!app.vault.getAbstractFileByPath(`${base}/${rel}`)) return false;
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        const onDisk = await Promise.all(
+          docs.map((rel) => app.vault.adapter.exists(`${base}/${rel}`).catch(() => false)),
+        );
+        if (onDisk.every(Boolean)) return true;
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      return true;
+      return false;
     });
     expect(present).toBe(true);
 
@@ -300,31 +307,28 @@ describe("agentic-chat marketplace live dogfood", function () {
     this.timeout(TURN_TIMEOUT_MS + 60_000);
     await sendPrompt("How do I install a skill from a GitHub repo? Use the /skill install-plugin guidance.");
     await $(".agentic-chat-stop").waitForExist({ timeout: 30_000, timeoutMsg: "install-plugin turn never started" });
-    // chatText() covers the whole transcript (including the prompt above), so
-    // scope the assertion to the last assistant message instead.
+    // A gateway that omits the trailing stream close leaves the turn aborted,
+    // so the assistant message is never persisted to the session file — read
+    // the live DOM instead. Snapshot the assistant-bubble count right after the
+    // prompt so an earlier turn's bubble (e.g. package install / context7) can't
+    // satisfy the match, and require this turn's own bubble to carry the text.
+    const bubbleCount = await browser.execute(
+      () => document.querySelectorAll(".agentic-chat-assistant").length,
+    );
     await browser.waitUntil(
-      async () => {
-        const raw = await readLatestSessionRaw();
-        const messages = raw
-          .split("\n")
-          .map((line) => {
-            try {
-              return JSON.parse(line) as { role?: string; content?: unknown };
-            } catch {
-              return null;
+      async () =>
+        await browser.execute(
+          (count) => {
+            const bubbles = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-assistant"));
+            for (let index = bubbles.length - 1; index >= count; index -= 1) {
+              const text = bubbles[index]?.innerText ?? "";
+              if (!text.trim()) continue;
+              return /Resources|agent-plugins\.org|owner\/repo/i.test(text);
             }
-          })
-          .filter((entry): entry is { role: string; content?: unknown } => entry !== null && entry.role === "assistant");
-        const last = messages[messages.length - 1];
-        if (!last) return false;
-        const text =
-          typeof last.content === "string"
-            ? last.content
-            : Array.isArray(last.content)
-              ? last.content.map((block) => (typeof block === "string" ? block : (block as { text?: string }).text ?? "")).join("\n")
-              : "";
-        return /Resources|agent-plugins\.org|owner\/repo/i.test(text);
-      },
+            return false;
+          },
+          bubbleCount,
+        ),
       { timeout: TURN_TIMEOUT_MS, timeoutMsg: "install-plugin skill turn did not produce guidance" },
     );
     await waitForAgentIdle();
