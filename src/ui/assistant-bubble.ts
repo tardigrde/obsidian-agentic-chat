@@ -57,6 +57,17 @@ export class AssistantBubble {
   private pendingText = "";
   private pendingReasoning = "";
   private flushHandle: number | null = null;
+  // Pixel-grid "thinking" loader shown while the model streams nothing yet.
+  private loadingEl: HTMLElement | null = null;
+  private loadingTimerHandle: number | null = null;
+  private loadingStart = 0;
+  // Reasoning header state (status pill + live elapsed timer).
+  private reasoningLabelEl: HTMLElement | null = null;
+  private reasoningTimeEl: HTMLElement | null = null;
+  private reasoningTimerHandle: number | null = null;
+  private reasoningStart = 0;
+  // Distinct vault paths touched by tool calls this turn, rendered as source chips.
+  private readonly sourcePaths = new Set<string>();
 
   constructor(
     parent: HTMLElement,
@@ -80,12 +91,24 @@ export class AssistantBubble {
   appendReasoning(delta: string): void {
     if (this.markdown) return;
     // Create the reasoning container eagerly so the structure is in place; the
-    // text itself is buffered and flushed with the rest on the next frame.
+    // text itself is buffered and flushed with the rest on the next frame. The
+    // header carries a status pill (pulsing dot + "Thinking") and a live elapsed
+    // timer while the trace streams; both settle on finalizeText.
     if (!this.reasoningBody) {
       const details = this.el.createEl("details", { cls: "agentic-chat-reasoning" });
-      details.createEl("summary", { text: "Reasoning" });
+      const summary = details.createEl("summary", { cls: "agentic-chat-reasoning-summary" });
+      const chevron = summary.createSpan({ cls: "agentic-chat-reasoning-chevron" });
+      setIcon(chevron, "chevron-right");
+      const pill = summary.createSpan({ cls: "agentic-chat-reasoning-pill" });
+      pill.createSpan({ cls: "agentic-chat-reasoning-dot" });
+      this.reasoningLabelEl = pill.createSpan({ cls: "agentic-chat-reasoning-label", text: "Thinking" });
+      this.reasoningTimeEl = summary.createSpan({ cls: "agentic-chat-reasoning-time" });
       this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
       this.el.insertBefore(details, this.textEl);
+      this.reasoningStart = performance.now();
+      this.reasoningTimerHandle = window.setInterval(() => {
+        this.reasoningTimeEl?.setText(formatElapsed(performance.now() - this.reasoningStart));
+      }, 100);
     }
     this.pendingReasoning += delta;
     this.scheduleFlush();
@@ -114,6 +137,77 @@ export class AssistantBubble {
       changed = true;
     }
     if (changed) this.actions.onContentChange?.();
+  }
+
+  /**
+   * Show the pixel-grid "thinking" loader at the top of the bubble (beautifului
+   * Loading State port: 3x3 chevron wavefront + shimmer label + mono elapsed
+   * timer). Idempotent — a second call is a no-op.
+   */
+  showLoading(label = "Thinking"): void {
+    if (this.loadingEl) return;
+    const loading = this.el.createDiv({ cls: "agentic-chat-loading" });
+    const grid = loading.createDiv({ cls: "agentic-chat-loading-grid" });
+    // Chevron wavefront: delay = (col + |row - 1|) * 90ms, so two fronts sweep.
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        const cell = grid.createSpan({ cls: "agentic-chat-loading-cell" });
+        cell.style.setProperty("animation-delay", `${(col + Math.abs(row - 1)) * 90}ms`);
+      }
+    }
+    loading.createSpan({ cls: "agentic-chat-loading-label", text: label });
+    const timeEl = loading.createSpan({ cls: "agentic-chat-loading-time" });
+    this.loadingStart = performance.now();
+    timeEl.setText(formatElapsed(0));
+    this.loadingTimerHandle = window.setInterval(() => {
+      timeEl.setText(formatElapsed(performance.now() - this.loadingStart));
+    }, 100);
+    this.el.insertBefore(loading, this.el.firstChild);
+    this.loadingEl = loading;
+  }
+
+  /** Remove the loading block and stop its timer (no-op when absent). */
+  clearLoading(): void {
+    if (this.loadingTimerHandle !== null) {
+      window.clearInterval(this.loadingTimerHandle);
+      this.loadingTimerHandle = null;
+    }
+    this.loadingEl?.remove();
+    this.loadingEl = null;
+  }
+
+  /** Free live timers (loading + reasoning) without touching the rendered DOM. */
+  dispose(): void {
+    this.clearLoading();
+    this.stopReasoningTimer();
+  }
+
+  /** Stop the reasoning elapsed timer, keeping the last rendered value. */
+  private stopReasoningTimer(): void {
+    if (this.reasoningTimerHandle !== null) {
+      window.clearInterval(this.reasoningTimerHandle);
+      this.reasoningTimerHandle = null;
+    }
+  }
+
+  /**
+   * Settle the reasoning header into its done state. A near-instant settle
+   * (<100ms, i.e. a history re-render where the full trace is appended then
+   * finalized in one tick) collapses to the static "Reasoning" label with no
+   * timer; a live stream keeps "Thought" + the final elapsed time.
+   */
+  private settleReasoning(): void {
+    this.stopReasoningTimer();
+    if (!this.reasoningBody || !this.reasoningLabelEl) return;
+    const elapsed = performance.now() - this.reasoningStart;
+    if (elapsed < 100) {
+      this.reasoningLabelEl.setText("Reasoning");
+      this.reasoningTimeEl?.setText("");
+    } else {
+      this.reasoningLabelEl.setText("Thought");
+      this.reasoningTimeEl?.setText(formatElapsed(elapsed));
+    }
+    this.reasoningBody.closest("details")?.addClass("is-done");
   }
 
   startStep(id: string, name: string, rawArgs: string): void {
@@ -147,6 +241,10 @@ export class AssistantBubble {
     this.renderCallSection(body, name, rawArgs);
     this.syncStepCollapsible(card, body);
     this.steps.set(id, { card, icon, body, name, startedAt: performance.now() });
+    // Record the tool's vault target (if any) so finalized turns can surface a
+    // compact list of source files as chips under the response text.
+    const path = callPath(rawArgs);
+    if (path) this.sourcePaths.add(path);
   }
 
   /** Toggle a step's body open/closed and reflect state on the chevron + aria. */
@@ -394,6 +492,7 @@ export class AssistantBubble {
       this.flushHandle = null;
     }
     this.flushBuffers();
+    this.clearLoading();
     this.markdown = markdown;
     this.textEl.empty();
     this.textEl.removeClass("is-streaming");
@@ -402,6 +501,34 @@ export class AssistantBubble {
     enhanceCallouts(this.textEl);
     installRenderedLinkHandlers(this.textEl, app, this.actions.onOpenExternalLink);
     await renderMermaidBlocks(this.textEl);
+    this.settleReasoning();
+    this.renderSourceChips();
+  }
+
+  /**
+   * Render the per-turn source chips (vault files the tool calls touched) under
+   * the finalized text. Deduped, capped, clickable → onOpenNote.
+   */
+  private renderSourceChips(): void {
+    if (this.sourcePaths.size === 0) return;
+    const container = this.el.createDiv({ cls: "agentic-chat-sources" });
+    container.createSpan({ cls: "agentic-chat-sources-label", text: "Sources" });
+    const paths = [...this.sourcePaths].slice(0, MAX_SOURCE_CHIPS);
+    for (const path of paths) {
+      const chip = container.createEl("button", {
+        cls: "agentic-chat-source-chip",
+        attr: { type: "button", role: "link", title: path, "aria-label": `Open ${path}` },
+      });
+      const icon = chip.createSpan({ cls: "agentic-chat-source-chip-icon" });
+      setIcon(icon, "file-text");
+      chip.createSpan({ cls: "agentic-chat-source-chip-name", text: sourceChipName(path) });
+      chip.addEventListener("click", () => this.actions.onOpenNote?.(path));
+    }
+    const remaining = this.sourcePaths.size - paths.length;
+    if (remaining > 0) {
+      container.createSpan({ cls: "agentic-chat-sources-more", text: `+${remaining}` });
+    }
+    this.el.insertBefore(container, this.actionsEl);
   }
 
   /**
@@ -470,6 +597,17 @@ export class AssistantBubble {
 export type RenderedChatLink =
   | { kind: "vault"; target: string }
   | { kind: "external"; target: string };
+
+/** Cap the per-turn source-chip row so it can't dominate a long tool-heavy turn. */
+const MAX_SOURCE_CHIPS = 8;
+
+/** Short display name for a source chip: the last path segment (full path in the title). */
+export function sourceChipName(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return trimmed;
+  const last = trimmed.split("/").filter(Boolean).at(-1);
+  return last || trimmed;
+}
 
 export interface RenderedAnchorLike {
   getAttribute(name: string): string | null;

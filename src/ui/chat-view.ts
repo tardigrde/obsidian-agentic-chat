@@ -162,6 +162,9 @@ export class ChatView extends ItemView {
   private activeNoteSuppressed = false;
   private modeBeforePlan: AgentMode | null = null;
   private bubble: AssistantBubble | null = null;
+  // Delayed "thinking" loader inside the assistant bubble: armed on message_start,
+  // cleared on the first streamed delta / tool start / turn end (anti-flicker gate).
+  private loadingTimer: number | null = null;
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
   private notifiedContext = new Set<number>();
   private notifiedCost = false;
@@ -2569,21 +2572,26 @@ export class ChatView extends ItemView {
     switch (event.type) {
       case "agent_start":
         this.clearEmptyState();
+        this.clearPendingLoading();
+        this.bubble?.dispose();
         this.bubble = null;
         this.setRunning(true);
         this.statusEl.setText("Thinking…");
         break;
       case "message_start":
         if (event.message.role === "assistant") {
+          this.bubble?.dispose();
           this.bubble = this.newBubble();
           this.lastBubbleError = undefined;
           this.statusEl.setText("Responding…");
+          this.scheduleLoading();
         }
         break;
       case "message_update":
         this.applyStreamDelta(event.assistantMessageEvent);
         break;
       case "message_end":
+        this.clearPendingLoading();
         if (event.message.role === "user") {
           if (this.locallyRenderedUserMessages > 0) this.locallyRenderedUserMessages -= 1;
           else this.renderUserMessage(stripContextPreamble(messageText(event.message)), []);
@@ -2592,6 +2600,8 @@ export class ChatView extends ItemView {
         break;
       case "tool_execution_start":
         this.statusEl.setText(`Running ${event.toolName}…`);
+        this.clearPendingLoading();
+        this.bubble?.clearLoading();
         this.ensureBubble().startStep(event.toolCallId, event.toolName, safeJson(event.args));
         break;
       case "tool_execution_update":
@@ -2601,6 +2611,8 @@ export class ChatView extends ItemView {
         this.ensureBubble().endStep(event.toolCallId, toolResultText(event.result), event.isError);
         break;
       case "agent_end":
+        this.clearPendingLoading();
+        this.bubble?.clearLoading();
         this.setRunning(false);
         this.statusEl.setText("");
         this.syncChrome();
@@ -2617,6 +2629,25 @@ export class ChatView extends ItemView {
     if (!bubble) return;
     if (event.type === "text_delta" && event.delta) bubble.appendText(event.delta);
     else if (event.type === "thinking_delta" && event.delta) bubble.appendReasoning(event.delta);
+    else return;
+    this.clearPendingLoading();
+    bubble.clearLoading();
+  }
+
+  /** Arm the bubble's "thinking" loader, gated ~150ms so fast turns never flash it. */
+  private scheduleLoading(): void {
+    this.clearPendingLoading();
+    this.loadingTimer = window.setTimeout(() => {
+      this.loadingTimer = null;
+      this.bubble?.showLoading();
+    }, 150);
+  }
+
+  private clearPendingLoading(): void {
+    if (this.loadingTimer !== null) {
+      window.clearTimeout(this.loadingTimer);
+      this.loadingTimer = null;
+    }
   }
 
   private finalizeBubble(message: AgentMessage): void {
