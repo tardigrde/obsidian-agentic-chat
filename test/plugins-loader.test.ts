@@ -405,6 +405,36 @@ describe("mergePluginMcpServers / syncMcpServers", () => {
     expect(persisted[0].oauth.accessToken).toBe("fresh");
   });
 
+  it("clears client-owned auth state when a plugin moves a server URL", () => {
+    const id = pluginMcpServerId("corp", "api");
+    const persisted = [
+      {
+        ...createMcpServerSettings({ id, name: "corp: api", url: "https://a.example/mcp" }),
+        source: "plugin" as const,
+        headers: {},
+        oauth: {
+          ...createMcpServerSettings().oauth,
+          accessToken: "tok-a",
+          refreshToken: "refresh-a",
+          expiresAt: 1234,
+        },
+        authHeaderValue: "secret-a",
+      },
+    ];
+    const derived = [
+      {
+        ...createMcpServerSettings({ id, name: "corp: api", url: "https://b.example/mcp" }),
+        source: "plugin" as const,
+        headers: {},
+      },
+    ];
+    const merged = mergePluginMcpServers(persisted, derived);
+    expect(merged[0]?.url).toBe("https://b.example/mcp");
+    expect(merged[0]?.oauth.accessToken).toBe("");
+    expect(merged[0]?.oauth.refreshToken).toBe("");
+    expect(merged[0]?.authHeaderValue).toBe("");
+  });
+
   it("distinguishes plugin id pairs whose slugs collide", () => {
     expect(pluginMcpServerId("a", "b_c")).not.toBe(pluginMcpServerId("a_b", "c"));
     expect(pluginMcpServerId("acme", "docs-api")).not.toBe(pluginMcpServerId("acme-docs", "api"));

@@ -275,6 +275,11 @@ export class McpHttpClient {
 
   private async post(body: JsonRpcRequest, signal?: AbortSignal): Promise<WebHttpResponse> {
     if (signal?.aborted) throw new Error("Aborted.");
+    // Obsidian's requestUrl follows redirects internally and exposes no manual
+    // redirect mode, so intermediate hops cannot be re-validated here. The MCP
+    // URL policy (https-only except loopback, never link-local/metadata hosts)
+    // bounds the blast radius; a hostile server that redirects to a private
+    // host is already the endpoint the user approved.
     const url = normalizeMcpUrl(this.server.url);
     const response = await fetchWithMcpTimeout(
       this.fetcher,

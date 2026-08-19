@@ -327,7 +327,9 @@ export function mcpServerFromPluginEntry(
  * Matched records are updated in place and returned by identity: the runtime
  * holds these very records, so mutations the MCP client makes while running
  * (OAuth token refreshes, forgotten tokens) land in settings and persist on
- * the next save instead of being written to a detached copy.
+ * the next save instead of being written to a detached copy. When a plugin
+ * moves a server's URL, client-owned auth state is cleared so tokens minted
+ * for the old host are never replayed to the new one.
  */
 export function mergePluginMcpServers(
   persisted: readonly McpServerSettings[],
@@ -338,11 +340,18 @@ export function mergePluginMcpServers(
   const mergedDerived = derived.map((server) => {
     const record = byId.get(server.id);
     if (!record) return server;
+    const urlChanged = record.url !== server.url;
     record.url = server.url;
     record.name = server.name;
     record.headers = server.headers;
     record.source = server.source;
     record.pluginRoot = server.pluginRoot;
+    if (urlChanged) {
+      // A token/secret minted for the old endpoint must never be replayed to
+      // a new one; drop client-owned auth state when the plugin moves a URL.
+      record.oauth = { ...record.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
+      record.authHeaderValue = "";
+    }
     return record;
   });
   const userPersisted = persisted.filter((server) => server.source !== "plugin");
