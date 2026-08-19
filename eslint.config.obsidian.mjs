@@ -21,6 +21,7 @@ export default defineConfig([
       "test/**",
       "scripts/**",
       "esbuild.config.mjs",
+      "src/vendor/**",
     ],
   },
   ...obsidianmd.configs.recommended,

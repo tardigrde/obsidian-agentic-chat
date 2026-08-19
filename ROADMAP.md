@@ -1,6 +1,6 @@
 # Agentic Chat — Roadmap
 
-Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01.)
+Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01; S9 completed and removed on 2026-08-11.)
 
 - **Status**: living document
 - **Created**: 2026-07-17
@@ -67,6 +67,13 @@ Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d
 - **Files**: `src/settings.ts`, `src/mcp/tools.ts:85-99`
 - **Effort**: M
 
+### F10 · Skill resource loading (scripts / references / assets)
+- **Problem**: Agent Skills defines `scripts/`, `references/`, `assets/` conventions and relative file references; this client exposes only the `SKILL.md` body (via `read_skill`). Skills that reference other files cannot be executed fully.
+- **Goal**: On-demand loading of skill files (progressive disclosure) with relative-path resolution confined to the skill root, gated by the existing read-approval policy.
+- **Files**: `src/skills/skills.ts` (skill registry + root path), `src/agent/runtime-resources.ts`, `src/tools/vault-tools.ts` (path confinement)
+- **Effort**: M
+- **Deps**: none
+
 ---
 
 ## Group S — Settings & feature consolidation
@@ -106,7 +113,7 @@ thin (or absent) here.
 - **Deps**: none
 
 ### S7 · Deprecated settings surface lingers
-- **Problem**: `templatesFolder` (deprecated, "templates are now skills") still exists in schema + settings UI + a hidden `/template` alias; every secret has a dual plaintext `*ApiKey` + `*SecretId` pair with migration fallback fields still persisted.
+- **Problem**: every secret still has a dual plaintext `*ApiKey` + `*SecretId` pair with migration fallback fields persisted. (`templatesFolder` was removed in S9.)
 - **Effort**: S
 - **Deps**: none
 
@@ -116,10 +123,14 @@ thin (or absent) here.
 - **Effort**: M
 - **Deps**: S6
 
-### S9 · Follow the agent-plugins.org standard
-- **Problem**: the harness is built against no public standard, making it harder for external agent tooling to interoperate. [agent-plugins.org](https://agent-plugins.org/) is now an open standard for agent plugins; the [client-implementers](https://agent-plugins.org/client-implementers) section is the most relevant part for this plugin.
-- **Approach (tentative)**: audit the harness surface (skills, subagents, tool registration, session model) against the standard's client-implementer guidance and adopt what fits.
-- **Effort**: M
+### S10 · Decouple client-owned MCP state from server shape
+- **Problem**: `settings.mcp.servers` persists a full *copy* of each plugin-derived server (shape + client state merged by id via `mergePluginMcpServers`/`syncMcpServers`). The package is meant to be the single source of truth for server shape, but the copy can diverge: the settings tab renders `settings.mcp.servers` while the runtime re-derives from packages per turn, and the sync/prune/merge machinery exists only to paper over that duplication. State is also keyed by derived id, so renaming a package entry or plugin loses client state.
+- **Goal**: Packages define server shape; client-owned state (enabled, approval, authType/header refs, knownTools, oauth) lives in a separate id-keyed map (e.g. `settings.plugins.mcpState[id]`). Drop `syncMcpServers` and the merge; the settings tab and runtime both derive from packages + state map, so they cannot diverge.
+- **Approach**: migrate the state out of `settings.mcp.servers` into the map (one-time heal), derive `McpServerSettings` on load, keep secret refs unchanged.
+- **Files**: `src/plugins/loader.ts` (merge/sync removal), `src/mcp/settings.ts` (heal), `src/settings.ts` (MCP tab render), `src/agent/runtime-resources.ts`, `src/settings-schema.ts`
+- **Acceptance**: editing a package's mcp.json immediately changes the UI and runtime list; toggles/approval survive package edits; no orphan-prune path remains.
+- **Open Qs**: rename server key in a package — should state follow a stable "plugin:key" identity or the package-defined name?
+- **Effort**: M–L
 - **Deps**: none
 
 ---

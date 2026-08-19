@@ -1,6 +1,7 @@
 import type { ApprovalPolicy } from "../agent/approval";
 import { ensureMcpOAuthSecretRefs, mcpSecretId } from "../secrets/secret-store";
 import { isValidHttpHeaderName } from "./http-headers";
+import { mcpUrlProblem } from "../utils/host-policy";
 
 export type McpAuthType = "none" | "bearer" | "header" | "oauth";
 type LegacyMcpServerPreset = "generic" | "context7" | "oauth";
@@ -41,6 +42,15 @@ export interface McpServerSettings {
   approval: ApprovalPolicy;
   /** Last discovered tools, cached only to render per-tool approval controls. */
   knownTools: McpKnownToolSettings[];
+  /**
+   * Literal headers from a plugin's mcp.json. Client-generated headers
+   * (MCP protocol, auth) take precedence per the Agent Plugins spec.
+   */
+  headers: Record<string, string>;
+  /** Where this server configuration came from. */
+  source: "user" | "plugin";
+  /** Vault path of the plugin package that declared this server, when plugin-sourced. */
+  pluginRoot?: string;
 }
 
 export interface McpKnownToolSettings {
@@ -169,6 +179,9 @@ function healMcpServer(server: Partial<McpServerSettings> | null | undefined): M
     oauth: healOAuthSettings(server.oauth, id),
     approval: healApproval(server.approval),
     knownTools: healMcpKnownTools(server.knownTools),
+    headers: healHeaderMap(server.headers),
+    source: healServerSource(server.source),
+    ...(typeof server.pluginRoot === "string" && server.pluginRoot.trim() ? { pluginRoot: server.pluginRoot.trim() } : {}),
   };
 }
 
@@ -189,6 +202,11 @@ export function createMcpServerSettings(
     oauth: healOAuthSettings(overrides.oauth, id),
     approval: healApproval(overrides.approval),
     knownTools: healMcpKnownTools(overrides.knownTools),
+    headers: healHeaderMap(overrides.headers),
+    source: overrides.source ?? "user",
+    ...(typeof overrides.pluginRoot === "string" && overrides.pluginRoot.trim()
+      ? { pluginRoot: overrides.pluginRoot.trim() }
+      : {}),
   };
 }
 
@@ -285,50 +303,10 @@ export function exportMcpServerConfig(server: McpServerSettings): McpServerExpor
   };
 }
 
-export function importMcpServerConfig(value: unknown): McpServerSettings {
-  const record = recordValue(value);
-  if (record.kind !== "agentic-chat.mcp-server" || record.version !== 1) {
-    throw new Error("MCP server config must be an agentic-chat.mcp-server v1 object.");
-  }
-  const authType = healAuthType(stringValue(record.authType) as McpAuthType, undefined, undefined);
-  const server = createMcpServerSettings({
-    id: stringValue(record.id) || "mcp",
-    name: stringValue(record.name) || stringValue(record.id) || "MCP server",
-    url: stringValue(record.url),
-    enabled: record.enabled === true,
-    authType,
-    authHeaderName: authType === "header" ? stringValue(record.authHeaderName) : "",
-    approval: healApproval(stringValue(record.approval) as ApprovalPolicy),
-    knownTools: healMcpKnownTools(record.knownTools),
-  });
-  if (authType === "oauth") {
-    const oauth = recordValue(record.oauth);
-    server.oauth = {
-      ...server.oauth,
-      clientId: stringValue(oauth.clientId),
-      dynamicClientRegistration: oauth.dynamicClientRegistration === true,
-      registeredRedirectUri: stringValue(oauth.registeredRedirectUri),
-      authorizationServer: stringValue(oauth.authorizationServer),
-      authorizationEndpoint: stringValue(oauth.authorizationEndpoint),
-      tokenEndpoint: stringValue(oauth.tokenEndpoint),
-      registrationEndpoint: stringValue(oauth.registrationEndpoint),
-      resourceMetadataUrl: stringValue(oauth.resourceMetadataUrl),
-      scope: stringValue(oauth.scope),
-    };
-  }
-  return server;
-}
-
 export function mcpServerEndpointProblem(url: string): string {
   const trimmed = url.trim();
-  if (!trimmed || trimmed === "https://") return "Paste an HTTPS Streamable HTTP endpoint.";
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:") return "MCP server URLs must use https://.";
-    return "";
-  } catch {
-    return "Enter a valid HTTPS MCP server URL.";
-  }
+  if (!trimmed || trimmed === "https://") return "Paste an HTTPS (or loopback HTTP) Streamable HTTP endpoint.";
+  return mcpUrlProblem(trimmed) ?? "";
 }
 
 export function mcpServerAuthProblem(server: McpServerSettings): string {
@@ -394,6 +372,20 @@ function discoveryMessage(server: McpServerSettings, canDiscover: boolean): stri
 
 function healApproval(value: ApprovalPolicy | undefined): ApprovalPolicy {
   return value === "allow" || value === "ask" || value === "deny" ? value : "ask";
+}
+
+function healHeaderMap(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const headers: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (key.toLowerCase() === "authorization") continue;
+    if (typeof item === "string") headers[key] = item;
+  }
+  return headers;
+}
+
+function healServerSource(value: unknown): "user" | "plugin" {
+  return value === "plugin" ? "plugin" : "user";
 }
 
 function healMcpKnownTools(value: unknown): McpKnownToolSettings[] {
@@ -470,10 +462,6 @@ export function serverIdFromMcpUrl(input: string | undefined): string {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function uniquifyMcpServerIds(servers: McpServerSettings[]): McpServerSettings[] {

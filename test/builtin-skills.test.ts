@@ -2,14 +2,18 @@ import { describe, expect, it } from "vitest";
 import { builtinSkills, DEEP_RESEARCH_SKILL, SELF_KNOWLEDGE_SKILL } from "../src/skills/builtin-skills";
 
 describe("builtinSkills", () => {
-  it("offers self-knowledge when web access is off", () => {
+  it("offers self-knowledge and install-plugin when web access is off", () => {
     const skills = builtinSkills(false);
-    expect(skills.map((skill) => skill.name)).toEqual(["self-knowledge"]);
+    expect(skills.map((skill) => skill.name)).toEqual(["self-knowledge", "install-plugin"]);
   });
 
-  it("offers self-knowledge and deep-research when web access is on", () => {
+  it("adds deep-research when web access is on", () => {
     const skills = builtinSkills(true);
-    expect(skills.map((skill) => skill.name)).toEqual(["self-knowledge", "deep-research"]);
+    expect(skills.map((skill) => skill.name)).toEqual(["self-knowledge", "deep-research", "install-plugin"]);
+  });
+
+  it("documented install-plugin usage matches the import flows", () => {
+    expect(builtinSkills(true).find((skill) => skill.name === "install-plugin")?.content).toMatch(/Install plugin/);
   });
 
   it("describes a search → read → cite → save loop", () => {

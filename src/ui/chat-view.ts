@@ -70,6 +70,7 @@ import {
   type ContextAttachment,
 } from "./context-attachments";
 import { parseSlashInput, slashInputTailAfterFirst, visibleCommands } from "./commands";
+import type { LoadedPlugin } from "../plugins/loader";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { formatCompactionSummary, isSummaryMessage } from "../agent/compaction";
 import { isInstructionFilePath } from "../agent/instructions";
@@ -1543,8 +1544,8 @@ export class ChatView extends ItemView {
       case "semantic-index":
         await this.runSemanticIndex(argString);
         return true;
-      case "diagnostics":
-        this.showDiagnostics();
+      case "doctor":
+        await this.runDoctor();
         return true;
       case "config":
         this.showConfig();
@@ -1587,15 +1588,52 @@ export class ChatView extends ItemView {
       case "init":
         await this.runInit(argString);
         return true;
-      case "template":
-        await this.runTemplate(input.args[0], input.args.slice(1));
-        return true;
       case "help":
         this.showHelp();
         return true;
       default:
         return false;
     }
+  }
+
+  /**
+   * `/doctor`: one health panel for everything that matters — an aggregate
+   * status line, the agent-plugin audit, then the full runtime diagnostics.
+   */
+  private async runDoctor(): Promise<void> {
+    this.clearEmptyState();
+    const service = this.plugin.pluginService;
+    let plugins: LoadedPlugin[];
+    try {
+      plugins = await service.reload();
+      // Diagnostics come from the active session's runtime resources, which
+      // only reload per turn; refresh them so the audit and the health rows
+      // describe the same vault state.
+      await this.service.reloadRuntimeResources();
+    } catch (error) {
+      this.renderErrorMessage(`Doctor audit failed: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    const folder = this.plugin.settings.plugins.folder || ".agentic-plugins";
+    const pluginAudit =
+      plugins.length === 0
+        ? `No plugin packages found in ${folder}. Generate one from the MCP settings tab.`
+        : service.auditText(plugins);
+    const diagnostics = this.service.getRuntimeDiagnostics();
+    const issues: string[] = [];
+    const failedPlugins = plugins.filter((plugin) => plugin.auditStatus === "failed").length;
+    if (failedPlugins > 0) issues.push(`${failedPlugins} of ${plugins.length} agent plugin(s) need attention`);
+    const failedMcp = diagnostics.resources.mcpServers.filter((server) => server.status === "error").length;
+    if (failedMcp > 0) issues.push(`${failedMcp} MCP server(s) failing`);
+    if (diagnostics.state.lastError) issues.push("last run ended in an error");
+    if (diagnostics.observability.enabled && diagnostics.observability.exportHealth.failedExports > 0) {
+      issues.push("observability exports failing");
+    }
+    this.renderInfoMessage("Doctor", [
+      ["Status", issues.length === 0 ? "All OK." : `${issues.join("; ")}.`],
+      ["Agent plugins", pluginAudit],
+      ...formatRuntimeDiagnosticsRows(diagnostics),
+    ]);
   }
 
   private async runTodo(arg: string): Promise<void> {
@@ -2034,19 +2072,6 @@ export class ChatView extends ItemView {
     this.inputEl.setSelectionRange(text.length, text.length);
   }
 
-  /** `/template` is retired: templates are now skills (with $ARGUMENTS support). */
-  private async runTemplate(name: string | undefined, args: string[]): Promise<void> {
-    this.clearEmptyState();
-    this.renderInfoMessage("Deprecated", [
-      ["/template", "is now /skill — templates load as skills with $ARGUMENTS/$1 support."],
-    ]);
-    if (!name) {
-      this.showSkillList();
-      return;
-    }
-    await this.runSkill(name, args.join(" "));
-  }
-
   private showStatus(): void {
     const { settings } = this.plugin;
     const effective = effectiveProjectSettings(settings);
@@ -2073,11 +2098,6 @@ export class ChatView extends ItemView {
       ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
       ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
     ]);
-  }
-
-  private showDiagnostics(): void {
-    this.clearEmptyState();
-    this.renderInfoMessage("Diagnostics", formatRuntimeDiagnosticsRows(this.service.getRuntimeDiagnostics()));
   }
 
   /** `/config`: clickable mode picker, applied in-pane. Output style lives under /style. */

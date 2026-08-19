@@ -32,6 +32,5 @@ Slash commands run locally and are not sent to the model.
 | `/follow-up [text]` | Queue a follow-up behind the active turn. Alias: `/followup`. |
 | `/redirect [text]` | Stop the active turn and answer this instead. |
 | `/export` | Save this conversation as a Markdown note in the vault. |
-| `/diagnostics` | Show dev runtime diagnostics. Alias: `/diag`. |
+| `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List available commands. |
-| `/template [name] [args]` | Deprecated alias for `/skill`. Hidden from `/help`. |

@@ -21,7 +21,6 @@ import {
   DEFAULT_MCP_SETTINGS,
   createMcpServerSettings,
   exportMcpServerConfig,
-  importMcpServerConfig,
   mcpOAuthSettingsForServer,
   mcpServerAuthProblem,
   mcpServerEndpointProblem,
@@ -29,7 +28,7 @@ import {
   normalizeMcpServerId,
   type McpServerSettings,
 } from "../src/mcp/settings";
-import { mcpSecretId } from "../src/secrets/secret-store";
+import { mcpSecretId, normalizeSecretId } from "../src/secrets/secret-store";
 import {
   mcpAuthProblem,
   mcpCredentialResourceChanged,
@@ -236,6 +235,27 @@ describe("mergeSettings — tool budget", () => {
   });
 });
 
+describe("normalizeSecretId", () => {
+  it("keeps short ids unchanged and caps long ids at 64 chars with a stable hash", () => {
+    expect(normalizeSecretId("agentic-chat-mcp-docs-oauth-client-secret")).toBe(
+      "agentic-chat-mcp-docs-oauth-client-secret",
+    );
+    const long = normalizeSecretId(
+      "agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-client-secret",
+    );
+    expect(long.length).toBe(64);
+    expect(long).toMatch(/^agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-[a-f0-9]{12}$/);
+    expect(normalizeSecretId("agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-client-secret")).toBe(long);
+  });
+
+  it("distinguishes long ids that share the retained prefix", () => {
+    const a = normalizeSecretId("agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-client-secret");
+    const b = normalizeSecretId("agentic-chat-mcp-plugin-swe-context7-8932e260-oauth-access-token");
+    expect(b.slice(0, 51)).toBe(a.slice(0, 51));
+    expect(b.slice(-12)).not.toBe(a.slice(-12));
+  });
+});
+
 describe("mergeSettings — MCP", () => {
   it("defaults MCP off with no servers", () => {
     expect(mergeSettings(null).mcp).toEqual(DEFAULT_MCP_SETTINGS);
@@ -300,6 +320,8 @@ describe("mergeSettings — MCP", () => {
           authHeaderName: "X-API-Key",
           authHeaderValueSecretId: mcpSecretId("context_7", "auth-header-value"),
           authHeaderValue: "secret",
+          headers: {},
+          source: "user",
           oauth: mcpOAuthSettingsForServer("context_7"),
           approval: "ask",
           knownTools: [],
@@ -664,7 +686,7 @@ describe("mergeSettings — MCP", () => {
     ).toMatch(/header names/i);
   });
 
-  it("exports MCP server configs without secrets and imports them with fresh secret refs", () => {
+  it("exports MCP server configs without secrets", () => {
     const server = createMcpServerSettings({
       id: "docs",
       name: "Docs MCP",
@@ -693,26 +715,6 @@ describe("mergeSettings — MCP", () => {
     expect(serialized).not.toContain("access-token");
     expect(serialized).not.toContain("refresh-token");
     expect(exported.knownTools).toEqual([{ name: "search", title: "Search", readOnlyHint: true }]);
-
-    const imported = importMcpServerConfig(exported);
-    expect(imported).toMatchObject({
-      id: "docs",
-      name: "Docs MCP",
-      url: "https://mcp.example.com/mcp",
-      authType: "oauth",
-      approval: "allow",
-      authHeaderValue: "",
-      knownTools: [{ name: "search", title: "Search", readOnlyHint: true }],
-    });
-    expect(imported.oauth).toMatchObject({
-      clientId: "client-1",
-      clientSecret: "",
-      accessToken: "",
-      refreshToken: "",
-      tokenEndpoint: "https://auth.example.com/token",
-      scope: "openid profile",
-    });
-    expect(imported.oauth.accessTokenSecretId).toBe(mcpSecretId("docs", "oauth-access-token"));
   });
 
   it("reports setup-guide diagnostics for endpoint, auth, and discovery", () => {

@@ -36,6 +36,7 @@ import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
 import { effectiveProjectSettings, projectSessionScope } from "./projects/projects";
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
+import { PluginService } from "./plugins/service";
 
 declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
 
@@ -43,11 +44,23 @@ export default class AgenticChatPlugin extends Plugin {
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
   private secretStore!: ObsidianSecretStore;
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
+  readonly pluginService = new PluginService(
+    this.app,
+    () => this.settings,
+    () => this.saveSettings(),
+  );
 
   async onload(): Promise<void> {
     this.secretStore = new ObsidianSecretStore(this.app);
     await this.loadSettings();
     initPricingCache(this.app, this);
+
+    // Materialize the plugin's own skills as an editable Agent Plugins package
+    // on first load (only when absent; never overwrites edits). Fire-and-forget:
+    // failures must not block plugin startup.
+    void this.pluginService.ensureBuiltinsMaterialized().catch((error: unknown) => {
+      console.warn("Agentic chat: could not materialize built-in agent plugins", error);
+    });
 
     this.registerView(VIEW_TYPE_AGENT_CHAT, (leaf) => new ChatView(leaf, this));
     this.registerObsidianProtocolHandler(MCP_OAUTH_OBSIDIAN_PROTOCOL_ACTION, (params) => {
@@ -78,6 +91,15 @@ export default class AgenticChatPlugin extends Plugin {
 
     this.registerContextMenus();
     this.addSettingTab(new AgenticChatSettingTab(this.app, this));
+
+    // Vault edits touching the plugins folder invalidate the plugin cache so
+    // the settings tab and /doctor re-scan on the next render instead of
+    // showing a stale tree (external sync, hand-edited manifests).
+    const invalidateFor = (file: { path: string }) => this.pluginService.invalidateFor(file.path);
+    this.registerEvent(this.app.vault.on("modify", invalidateFor));
+    this.registerEvent(this.app.vault.on("create", invalidateFor));
+    this.registerEvent(this.app.vault.on("delete", invalidateFor));
+    this.registerEvent(this.app.vault.on("rename", invalidateFor));
   }
 
   /**
@@ -198,12 +220,52 @@ export default class AgenticChatPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     const stored = (await this.loadData()) as Partial<AgenticChatSettings> | null;
+    // Capture legacy skills/templates folder settings BEFORE the first save
+    // rewrites data.json in the new schema (mergeSettings drops those keys),
+    // so the one-time migration below can preserve the user's skills.
+    const legacySkillFolders = legacySkillFolderPaths(stored);
     this.settings = mergeSettings(stored);
     hydrateSettingsSecrets(this.settings, this.secretStore);
+    if (legacySkillFolders.length > 0) {
+      // Run the migration before persisting the new schema: if it fails we
+      // skip the save, so data.json keeps the legacy keys and the migration
+      // retries on the next load instead of permanently losing the user's
+      // skills. Bounded one-time cost, only for configured legacy folders.
+      const migrated = await this.tryMigrateLegacySkillFolders(legacySkillFolders);
+      if (!migrated) return;
+    }
     await this.saveSettings();
+  }
+
+  /** Best-effort one-time migration of pre-plugins skills folders. Returns false when it failed and should be retried. */
+  private async tryMigrateLegacySkillFolders(folders: string[]): Promise<boolean> {
+    try {
+      const created = await this.pluginService.materializeLegacySkills(folders);
+      if (created) {
+        new Notice(
+          "Agentic Chat: migrated your Skills/Templates folders into an editable 'legacy-skills' plugin package.",
+        );
+      }
+      return true;
+    } catch (error) {
+      console.warn("Agentic chat: could not migrate legacy skills folders", error);
+      return false;
+    }
   }
 
   async saveSettings(): Promise<void> {
     await this.saveData(settingsForStorage(this.settings, this.secretStore));
   }
+}
+
+/** Raw legacy skills/templates folder values from pre-plugins stored settings. */
+function legacySkillFolderPaths(stored: Partial<AgenticChatSettings> | null | undefined): string[] {
+  if (!stored || typeof stored !== "object") return [];
+  const raw = stored as unknown as Record<string, unknown>;
+  const folders: string[] = [];
+  for (const key of ["skillsFolder", "templatesFolder"]) {
+    const value = raw[key];
+    if (typeof value === "string" && value.trim()) folders.push(value.trim());
+  }
+  return folders;
 }

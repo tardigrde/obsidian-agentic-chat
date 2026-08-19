@@ -24,7 +24,8 @@ describe("visibleCommands", () => {
   it("hides deprecated/internal commands", () => {
     const names = visibleCommands().map((c) => c.name);
     expect(names).toContain("skill");
-    expect(names).toContain("diagnostics");
+    expect(names).toContain("doctor");
+    expect(names).not.toContain("diagnostics");
     expect(names).toContain("steer");
     expect(names).toContain("follow-up");
     expect(names).toContain("redirect");
@@ -39,8 +40,12 @@ describe("resolveCommand", () => {
   });
   it("resolves an alias to its canonical command", () => {
     expect(resolveCommand("history")?.name).toBe("sessions");
-    expect(resolveCommand("diag")?.name).toBe("diagnostics");
     expect(resolveCommand("followup")?.name).toBe("follow-up");
+  });
+  it("drops the retired diagnostics/diag aliases", () => {
+    expect(resolveCommand("diag")).toBeUndefined();
+    expect(resolveCommand("diagnostics")).toBeUndefined();
+    expect(resolveCommand("doctor")?.name).toBe("doctor");
   });
   it("exposes /style as its own command (not a /config alias)", () => {
     expect(resolveCommand("style")?.name).toBe("style");

@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import type { AgenticChatSettings } from "../settings";
 import type { McpOAuthSettings, McpServerSettings } from "../mcp/settings";
+import { sha256Hex } from "../utils/sha256";
 import {
   OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID,
   OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
@@ -16,7 +17,14 @@ export class ObsidianSecretStore implements SecretStore {
   constructor(private readonly app: App) {}
 
   getSecret(id: string): string {
-    return this.app.secretStorage.getSecret(normalizeSecretId(id)) ?? "";
+    const normalized = normalizeSecretId(id);
+    const value = this.app.secretStorage.getSecret(normalized) ?? "";
+    if (value) return value;
+    // Backward compat: pre-plugins ids were truncated to 120 chars instead of
+    // hashed, so a long id stored under the old scheme resolves differently.
+    const legacy = legacySecretId(id);
+    if (legacy !== normalized) return this.app.secretStorage.getSecret(legacy) ?? "";
+    return "";
   }
 
   setSecret(id: string, value: string): void {
@@ -28,7 +36,12 @@ export class MemorySecretStore implements SecretStore {
   readonly secrets = new Map<string, string>();
 
   getSecret(id: string): string {
-    return this.secrets.get(normalizeSecretId(id)) ?? "";
+    const normalized = normalizeSecretId(id);
+    const value = this.secrets.get(normalized) ?? "";
+    if (value) return value;
+    const legacy = legacySecretId(id);
+    if (legacy !== normalized) return this.secrets.get(legacy) ?? "";
+    return "";
   }
 
   setSecret(id: string, value: string): void {
@@ -83,15 +96,29 @@ export function mcpSecretId(serverId: string, kind: string): string {
   return normalizeSecretId(`agentic-chat-mcp-${serverId}-${kind}`);
 }
 
-export function normalizeSecretId(input: string): string {
-  const normalized = input
+/** Sanitize a secret id to Obsidian-safe characters (no length cap). */
+function sanitizeSecretId(input: string): string {
+  return input
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 120);
+    .replace(/^-+|-+$/g, "");
+}
+
+export function normalizeSecretId(input: string): string {
+  const normalized = sanitizeSecretId(input);
   if (!normalized) throw new Error("Secret id must not be empty.");
-  return normalized;
+  // Obsidian's native secret store caps ids at 64 chars. Truncating the tail
+  // would collapse the distinguishing kind suffix (auth-header-value vs
+  // oauth-client-secret), so long ids keep a readable prefix plus a truncated
+  // SHA-256 of the full id.
+  if (normalized.length <= 64) return normalized;
+  return `${normalized.slice(0, 51)}-${sha256Hex(normalized).slice(0, 12)}`;
+}
+
+/** The id the pre-plugins secret store used (sanitized, truncated to 120 chars). */
+export function legacySecretId(input: string): string {
+  return sanitizeSecretId(input).slice(0, 120);
 }
 
 export function hydrateSettingsSecrets(settings: AgenticChatSettings, store: SecretStore): void {

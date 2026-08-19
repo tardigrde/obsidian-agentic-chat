@@ -32,6 +32,7 @@ function settings(overrides: Partial<AgenticChatSettings> = {}): AgenticChatSett
 function resources(profiles: AgentProfile[] = [PROFILE]): AgentRuntimeResources {
   return {
     skills: [],
+    plugins: [],
     profiles,
     instructionsOverlay: "",
     ignoreMatcher: () => false,

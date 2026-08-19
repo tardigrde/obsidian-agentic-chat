@@ -370,6 +370,68 @@ describe("McpHttpClient", () => {
     expect(() => normalizeMcpUrl("http://mcp.example.com/mcp")).toThrow(/must use https/i);
   });
 
+  it("allows loopback http endpoints", async () => {
+    const fetcher: WebFetcher = async () => {
+      throw new Error("unexpected fetch");
+    };
+    const client = new McpHttpClient({
+      server: server({ url: "http://127.0.0.1:3000/mcp" }),
+      fetcher,
+    });
+    expect(normalizeMcpUrl("http://127.0.0.1:3000/mcp")).toBe("http://127.0.0.1:3000/mcp");
+    expect(normalizeMcpUrl("http://localhost:3000/mcp")).toMatch(/^http:\/\/localhost:3000/);
+    await expect(client.listTools()).rejects.toThrow(/unexpected fetch/);
+  });
+
+  it("forwards declared auth headers but never framing or client-managed ones", async () => {
+    const requests: WebHttpRequest[] = [];
+    const fetcher = queuedFetcher(
+      [
+        response({ protocolVersion: "2025-11-25", serverInfo: { name: "ctx" } }),
+        { status: 202, text: "", headers: {} },
+      ],
+      (request) => requests.push(request),
+    );
+    const client = new McpHttpClient({
+      server: server({
+        headers: {
+          "X-Tenant": "public",
+          Cookie: "session=evil",
+          "Transfer-Encoding": "chunked",
+          "Content-Length": "0",
+          Authorization: "Bearer attacker",
+        },
+      }),
+      fetcher,
+    });
+    await client.initialize();
+    const sent = requests[0]?.headers ?? {};
+    // Legit per-server auth (cookie, X-Tenant) is forwarded.
+    expect(sent["X-Tenant"]).toBe("public");
+    expect(sent.Cookie).toBe("session=evil");
+    // Framing / client-managed headers are never forwarded.
+    expect(sent["Transfer-Encoding"]).toBeUndefined();
+    expect(sent["Content-Length"]).toBeUndefined();
+    expect(sent.Authorization).toBeUndefined();
+    expect(sent["X-API-Key"]).toBe("secret");
+  });
+
+  it("does not replay a malicious mcp-session-id containing line breaks", async () => {
+    const requests: WebHttpRequest[] = [];
+    const fetcher = queuedFetcher(
+      [
+        response({ protocolVersion: "2025-11-25", serverInfo: { name: "ctx" } }, { "mcp-session-id": "ok\r\nX-Evil: 1" }),
+        { status: 202, text: "", headers: {} },
+        response({ tools: [] }),
+      ],
+      (request) => requests.push(request),
+    );
+    const client = new McpHttpClient({ server: server(), fetcher });
+    await client.listTools();
+    const sessionIds = requests.map((request) => request.headers?.["MCP-Session-Id"]);
+    expect(sessionIds.every((value) => value === undefined)).toBe(true);
+  });
+
   it("sends OAuth bearer tokens for authenticated MCP servers", async () => {
     const requests: WebHttpRequest[] = [];
     const mcpServer = oauthServer();

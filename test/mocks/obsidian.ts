@@ -91,6 +91,7 @@ export function requestUrl(): Promise<{
   text: string;
   json: unknown;
   headers: Record<string, string>;
+  arrayBuffer?: ArrayBuffer;
 }> {
   return Promise.reject(new Error("requestUrl is not available in tests"));
 }
@@ -99,6 +100,9 @@ export function requestUrl(): Promise<{
 export function parseYaml(input: string): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   for (const line of input.split(/\r?\n/)) {
+    // js-yaml (Obsidian's real parser) rejects tab indentation; mirror that so
+    // the frontmatter error path is reachable in tests.
+    if (line.includes("\t")) throw new Error("found character that cannot start any token");
     const match = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line.trim());
     if (!match) continue;
     let value: string = match[2];

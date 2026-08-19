@@ -49,6 +49,7 @@ function parentTools(): AgentTool[] {
     settings: { ...DEFAULT_SETTINGS, web: { ...DEFAULT_SETTINGS.web, enabled: true } },
     resources: {
       skills: [],
+      plugins: [],
       profiles: [],
       instructionsOverlay: "",
       ignoreMatcher: () => false,

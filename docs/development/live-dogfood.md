@@ -227,7 +227,7 @@ Exercise these workflows deliberately:
 - approval modal allow, deny, remembered allow, remembered deny
 - long transcript reload
 - `/dirs`
-- `/status` and `/diagnostics`
+- `/status` and `/doctor`
 - model switcher and effort control
 - note write/edit with diff approval
 - session reopen/rename/export
@@ -600,7 +600,7 @@ Force feature crossovers that users naturally create:
 - attach files, active notes, folder listings, and memory in the
   same run, then check which context actually reached the model
 - run `/plan`, `/endplan`, `/todo`, `/steer`, `/follow-up`, `/new`,
-  `/sessions`, `/memory`, `/export`, `/undo`, `/diagnostics`, and `/config`
+  `/sessions`, `/memory`, `/export`, `/undo`, `/doctor`, and `/config`
   around real tool calls instead of as isolated command smoke tests
 - start long workflows that create notes, refine them, delete unused ones, check
   backlinks/local graph, export the transcript, reload the plugin, then continue
@@ -740,6 +740,35 @@ Live dogfood findings should become deterministic coverage when possible:
   exposes a deterministic product bug.
 
 Do not turn a flaky live-model path into mandatory CI.
+
+## Marketplace Package Dogfood (M1)
+
+`test/e2e/dogfood/marketplace-live.dogfood.ts` installs a real Agent Plugins
+1.0.0 package — the `swe` plugin from
+[tardigrde/ai-marketplace](https://github.com/tardigrde/ai-marketplace)
+(`plugins/swe/plugin.json` + `skills/*/SKILL.md` + `mcp.json`) — into the
+dogfood vault's `.agentic-plugins/`, then drives a live model through a
+`/skill` invocation, a Context7 MCP tool round trip, and a `/doctor` audit.
+The package is cloned from GitHub by default so the test is reproducible on
+any machine. It spends real tokens and needs the live key:
+
+```bash
+AGENTIC_CHAT_API_KEY=sk-or-... \
+AGENTIC_CHAT_BASE_URL=https://openrouter.ai/api/v1 \
+AGENTIC_CHAT_MODEL=openrouter/auto \
+npm run test:e2e:dogfood -- --spec test/e2e/dogfood/marketplace-live.dogfood.ts
+```
+
+The default revision is pinned to the reviewed marketplace commit `20bedd4`
+(immutable), so the fixture cannot change under the test. To update the
+package deliberately, bump `MARKETPLACE_REF` in the spec after reviewing the
+new marketplace revision. Overrides: `AGENTIC_CHAT_MARKETPLACE_URL` (git
+URL) and `AGENTIC_CHAT_MARKETPLACE_PATH` (use a local checkout instead of
+cloning, for offline development).
+
+Keep the marketplace package spec-conformant: `plugin.json` and `mcp.json`
+must pass the vendored schemas, every `skills/<name>/SKILL.md` name must match
+its directory, and headers in `mcp.json` must never be credentials.
 
 ## Session End Checklist
 

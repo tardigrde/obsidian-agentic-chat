@@ -1,5 +1,7 @@
-import { browser, expect } from "@wdio/globals";
+import { browser, expect, $ } from "@wdio/globals";
 import { before, describe, it } from "mocha";
+import { createServer } from "node:http";
+import { zipSync } from "../../../src/vendor/fflate";
 import {
   clickSettingButton,
   openAgenticChatSettings,
@@ -10,6 +12,7 @@ import {
   setSettingRange,
   setSettingSelect,
   setSettingText,
+  setSettingTextByPlaceholder,
   setSettingToggle,
   waitForSettingButton,
   waitForAgenticChatSetting,
@@ -45,21 +48,26 @@ interface SettingsSnapshot {
       authHeaderName: string;
       authHeaderValue: string;
       approval: string;
+      source: string;
     }>;
   };
-  skillsFolder: string;
-  templatesFolder: string;
+  plugins: { folder: string; sources?: Record<string, string> };
   enableBuiltinAgents: boolean;
   agentsFolder: string;
   ignoredGlobs: string;
 }
-
 const OPENAI_COMPATIBLE_KEY_SECRET_ID = "agentic-chat-openai-compatible-api-key";
 const OPENAI_COMPATIBLE_KEY = "e2e-openai-compatible-key";
 const LANGFUSE_PUBLIC_KEY_SECRET_ID = "agentic-chat-langfuse-public-key";
 const LANGFUSE_SECRET_KEY_SECRET_ID = "agentic-chat-langfuse-secret-key";
 
 async function resetSettingsForUiSpec(): Promise<void> {
+  await browser.executeObsidian(async ({ app }) => {
+    // Remove the generated package from a previous run so the MCP tab's
+    // "Generate plugin" always produces the canonical "docs" package.
+    const previous = app.vault.getAbstractFileByPath(".agentic-plugins/docs");
+    if (previous) await app.vault.delete(previous, true);
+  });
   await browser.executeObsidian(async ({ app }, secretId) => {
     const plugin = (app as unknown as {
       plugins?: {
@@ -93,8 +101,11 @@ async function resetSettingsForUiSpec(): Promise<void> {
         authHeaderValue?: string;
       };
       mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: unknown[] };
-      skillsFolder: string;
-      templatesFolder: string;
+      plugins: {
+        folder: string;
+        enabled: Record<string, boolean>;
+        sources: Record<string, string>;
+      };
       enableBuiltinAgents: boolean;
       agentsFolder: string;
       ignoredGlobs: string;
@@ -135,8 +146,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
       authHeaderValueSecretId: "agentic-chat-observability-auth-header-value",
       authHeaderValue: "",
     };
-    settings.skillsFolder = "";
-    settings.templatesFolder = "";
+    settings.plugins = { folder: ".agentic-plugins", enabled: {}, sources: {} };
     settings.enableBuiltinAgents = true;
     settings.agentsFolder = "";
     settings.ignoredGlobs = "";
@@ -208,16 +218,14 @@ describe("agentic-chat settings UI", function () {
     }, "Web settings were not persisted from the settings UI");
   });
 
-  it("persists a generic MCP server through the MCP tab", async function () {
+  it("generates a plugin package and persists its MCP server through the MCP tab", async function () {
     await selectSettingsTab("MCP");
     await setSettingToggle("Enable MCP", true);
-    await waitForSetting("Servers");
-    await clickSettingButton("Servers", "Add server");
-    await waitForSetting("HTTPS endpoint");
+    await waitForSetting("Add MCP server");
+    await setSettingText("Add MCP server", "docs");
+    await setSettingTextByPlaceholder("https://mcp.example.com/mcp", "https://docs.example.com/mcp");
+    await clickSettingButton("Add MCP server", "Generate plugin");
     await waitForSetting("Setup guide");
-    await setSettingText("Name", "Docs MCP E2E");
-    await setSettingText("HTTPS endpoint", "https://docs.example.com/mcp");
-    await waitForSetting("Authentication");
     await setSettingSelect("Approval", "allow");
     await setSettingSelect("Authentication", "header");
     await waitForSetting("Auth header");
@@ -230,8 +238,8 @@ describe("agentic-chat settings UI", function () {
       const server = snapshot.mcp.servers[0];
       return (
         snapshot.mcp.enabled &&
-        server?.name === "Docs MCP E2E" &&
-        server.id === "docs" &&
+        server?.name === "docs: docs" &&
+        server.id === "plugin_docs_docs_889dfa93cd1a" &&
         server.url === "https://docs.example.com/mcp" &&
         server.enabled &&
         server.approval === "allow" &&
@@ -240,6 +248,89 @@ describe("agentic-chat settings UI", function () {
         server.authHeaderValue === "mcp-secret"
       );
     }, "MCP settings were not persisted from the settings UI");
+  });
+
+  it("installs a plugin package from an archive URL through the Install plugin modal", async function () {
+    this.timeout(30_000);
+    const encoder = new TextEncoder();
+    const packageZip = zipSync({
+      "plugin.json": encoder.encode(
+        JSON.stringify({
+          $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+          name: "my-tool",
+          version: "1.0.0",
+          description: "E2E import fixture",
+        }),
+      ),
+      "skills/my-tool/SKILL.md": encoder.encode("---\nname: my-tool\ndescription: E2E import fixture skill\n---\n# My tool\n\nUse it well."),
+      "mcp.json": encoder.encode(
+        JSON.stringify({
+          $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+          mcpServers: { files: { type: "streamable-http", url: "https://mcp.example.com/mcp" } },
+        }),
+      ),
+    });
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/zip" });
+      res.end(Buffer.from(packageZip));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("archive server did not bind");
+    const archiveUrl = `http://127.0.0.1:${address.port}/my-tool.zip`;
+    try {
+      await selectSettingsTab("Resources");
+      await clickSettingButton("Import", "Install plugin…");
+      await browser.waitUntil(
+        async () => (await $(".agentic-chat-install-url").isExisting()),
+        { timeout: 5_000, timeoutMsg: "Install plugin modal did not open" },
+      );
+      // The modal lives outside the settings tab body, so drive it with
+      // whole-document queries in the settings window.
+      await browser.execute(
+        (url) => {
+          const input = Array.from(document.querySelectorAll<HTMLInputElement>("input.agentic-chat-install-url"));
+          if (input.length === 0) throw new Error("Install URL input not found");
+          const target = input[input.length - 1] as HTMLInputElement;
+          target.value = url;
+          target.dispatchEvent(new Event("input", { bubbles: true }));
+          target.dispatchEvent(new Event("change", { bubbles: true }));
+        },
+        archiveUrl,
+      );
+      await browser.execute(() => {
+        const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".setting-item button"))
+          .find((candidate) => candidate.innerText.trim() === "Install");
+        if (!button) throw new Error("Install button not found in modal");
+        button.click();
+      });
+
+      await waitForAgenticChatSetting(
+        (settings) => (settings as unknown as SettingsSnapshot).plugins.sources?.["my-tool"] === archiveUrl,
+        "Imported package source was not persisted",
+      );
+      await waitForAgenticChatSetting((settings) => {
+        const snapshot = settings as unknown as SettingsSnapshot;
+        const entry = snapshot.mcp.servers.find((candidate) => candidate.id.startsWith("plugin_my_tool_"));
+        return entry?.enabled === false && entry?.source === "plugin";
+      }, "Imported MCP server did not persist disabled by default");
+
+      await browser.waitUntil(
+        async () => !(await $(".agentic-chat-install-url").isExisting()),
+        { timeout: 5_000, timeoutMsg: "Install plugin modal did not close" },
+      );
+      await browser.waitUntil(
+        async () =>
+          await browser.execute(() => {
+            const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
+            const text = root.textContent ?? "";
+            return text.includes("my-tool") && text.includes("Source:");
+          }),
+        { timeout: 5_000, timeoutMsg: "Installed package row did not render in Resources" },
+      );
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("persists observability settings through the Observability tab", async function () {
@@ -279,17 +370,15 @@ describe("agentic-chat settings UI", function () {
     expect(storedObservability.langfuseSecretKey).toBe("");
   });
 
-  it("persists resource folders and ignored globs through the Resources tab", async function () {
+  it("persists plugin folder, subagent folder, and ignored globs through the Resources tab", async function () {
     await selectSettingsTab("Resources");
-    await setSettingText("Skills folder", "Skills");
-    await setSettingText("Prompt templates folder (deprecated)", "Templates");
+    await setSettingText("Plugins folder", ".agentic-plugins-e2e");
     await setSettingToggle("Built-in subagents", false);
     await setSettingText("Subagents folder", "Agents");
     await setSettingText("Ignore list", "Private/\n*.secret.md");
 
     const settings = await readAgenticChatSettings<SettingsSnapshot>();
-    expect(settings.skillsFolder).toBe("Skills");
-    expect(settings.templatesFolder).toBe("Templates");
+    expect(settings.plugins.folder).toBe(".agentic-plugins-e2e");
     expect(settings.enableBuiltinAgents).toBe(false);
     expect(settings.agentsFolder).toBe("Agents");
     expect(settings.ignoredGlobs).toBe("Private/\n*.secret.md");

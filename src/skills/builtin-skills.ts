@@ -1,9 +1,22 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
+import { parseSkillMarkdown } from "./skill-format";
 
 /** Marker `filePath` for skills that ship with the plugin (no vault file backs them). */
 export const BUILTIN_SKILL_LOCATION = "(built-in)";
 
-const SELF_KNOWLEDGE_CONTENT = `# Self-knowledge
+/**
+ * Built-ins are full Agent Skills documents (frontmatter + body) parsed through
+ * the same `parseSkillMarkdown` primitive as plugin-loaded skills, so every
+ * skill in the plugin conforms to the same schema.
+ */
+const SELF_KNOWLEDGE_DOC = `---
+name: self-knowledge
+description: >-
+  Plugin self-knowledge: tools inventory, edit semantics, constraints, error
+  patterns, doomloop guards, and plugin URLs. Consult when stuck or when the
+  user is unhappy.
+---
+# Self-knowledge
 
 Consult this skill proactively when: the user is unhappy with how the agent is working, you see repeated tool-call errors on the same operation, a doomloop is detected, or you are asked about your own capabilities, constraints, or plugin identity.
 
@@ -75,7 +88,13 @@ You have these tool categories. Each is callable via function call when present 
 
 When a user reports a bug or unexpected behavior, you can point them to the issues URL above to open a new issue.`;
 
-const DEEP_RESEARCH_CONTENT = `# Deep research
+const DEEP_RESEARCH_DOC = `---
+name: deep-research
+description: >-
+  Multi-step web research: plan, search, read sources, then write a cited
+  research note into the vault. Requires web access.
+---
+# Deep research
 
 Run a subagent-backed research loop on the open web and capture the findings as a cited note in the vault. You are the supervisor: plan the investigation, dispatch children with the \`subagent\` tool, verify their evidence, synthesize the final note, then save it.
 
@@ -95,28 +114,95 @@ Constraints:
 - If \`subagent\` is unavailable, say you are falling back to a single-agent research loop and still use \`web_search\`, \`fetch_url\`, source artifacts, citations, and verification.
 - If web access fails or returns nothing useful, say so plainly rather than inventing sources.`;
 
+const INSTALL_PLUGIN_DOC = `---
+name: install-plugin
+description: >-
+  Install an agent plugin (Agent Plugins 1.0.0 packages that add skills or MCP
+  servers) from a GitHub URL, a local folder, or an archive. Consult when the
+  user wants new skills, a new MCP server, or asks about agent plugins.
+---
+
+# Install plugin
+
+Agent plugins are packages in the vault's plugins folder (default \`.agentic-plugins\`). Each package has a \`plugin.json\` (Agent Plugins 1.0.0 \`$schema\`), optional \`mcp.json\`, and a \`skills/\` directory holding one folder per skill (\`skills/<name>/SKILL.md\`). The Resources tab in plugin settings lists them.
+
+## How the user installs a plugin
+
+The settings Resources tab has an **Install plugin** button. It accepts:
+
+- A GitHub URL: \`owner/repo\`, \`https://github.com/owner/repo\`, \`/tree/<ref>[/subfolder]\`, \`/blob/<ref>/<path>\` (single skill file), \`/archive/<...>.zip|.tar.gz\`, or a direct \`.zip\`/\`.tar.gz\`/\`.tgz\` URL.
+- A folder picked from the vault (desktop only).
+- An archive downloaded to the vault.
+
+Claude/Copilot/VS Code plugin packages are converted automatically: skills are copied whole (scripts, references, assets), stdio MCP servers are skipped (Obsidian cannot run subprocesses), \`http\` servers become \`streamable-http\`, and \`${"\u0024"}{CLAUDE_PLUGIN_ROOT}\` becomes \`${"\u0024"}{PLUGIN_ROOT}\`.
+
+## Supporting the user
+
+- If the user names a plugin to install, prefer pointing them at the **Install plugin** button over editing files by hand. It converts, sanitizes skill frontmatter, and writes a spec-valid package.
+- To install from a repository subfolder (e.g. a repo with many plugins), use the \`/tree/<ref>/<subfolder>\` form of the GitHub URL.
+- After install, tell the user the plugin now appears in the Resources tab and that MCP servers from imported plugins start **disabled** until enabled in the MCP tab.
+- The plugins folder is a dot-folder: hidden in the file explorer. Use **Open folder** on a plugin row to reveal it, or tell the user to toggle "Show hidden files" in Obsidian's explorer menu.
+
+## Authoring plugins
+
+A minimal package:
+
+\`\`\`
+.agentic-plugins/my-plugin/
+  plugin.json     # $schema + name + version + description
+  skills/
+    my-skill/
+      SKILL.md    # frontmatter: name, description (+ license/compatibility/metadata/allowed-tools)
+      scripts/    # optional helpers
+      references/ # optional reference docs
+\`\`\`
+
+\`plugin.json\` example:
+
+\`\`\`json
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "description": "Does the thing."
+}
+\`\`\`
+
+Skill \`name\` frontmatter must equal the skill folder name; other frontmatter fields are ignored. When the user wants a new skill of their own, suggest the **New skill** wizard on the Resources tab instead of hand-writing files.
+
+## Limits
+
+- Only \`streamable-http\` MCP servers run inside Obsidian (no stdio subprocesses, no \`command\` entries).
+- \`commands/*.md\` and \`hooks/\` from Claude plugins are not loadable and are dropped on import (with a report).
+- Marketplace catalogs (\`marketplace.json\`) are shown as pick lists for \`./\`-relative entries only; git/npm/archive sources are listed but not fetched.`;
+
 /** The self-knowledge skill: plugin capabilities, constraints, error patterns, doomloop guards, and URLs. Always available. */
-export const SELF_KNOWLEDGE_SKILL: Skill = {
-  name: "self-knowledge",
-  description:
-    "Plugin self-knowledge: tools inventory, edit semantics, constraints, error patterns, doomloop guards, and plugin URLs. Consult when stuck or when the user is unhappy.",
-  content: SELF_KNOWLEDGE_CONTENT,
-  filePath: BUILTIN_SKILL_LOCATION,
-};
+export const SELF_KNOWLEDGE_SKILL: Skill = parseSkillMarkdown(
+  SELF_KNOWLEDGE_DOC,
+  BUILTIN_SKILL_LOCATION,
+).skill as Skill;
 
 /** The deep-research skill: plan → search → read → synthesize → cite → save. */
-export const DEEP_RESEARCH_SKILL: Skill = {
-  name: "deep-research",
-  description:
-    "Multi-step web research: plan, search, read sources, then write a cited research note into the vault. Requires web access.",
-  content: DEEP_RESEARCH_CONTENT,
-  filePath: BUILTIN_SKILL_LOCATION,
-};
+export const DEEP_RESEARCH_SKILL: Skill = parseSkillMarkdown(DEEP_RESEARCH_DOC, BUILTIN_SKILL_LOCATION).skill as Skill;
+
+/** The install-plugin skill: how to bring agent plugins into the vault. Always available. */
+export const INSTALL_PLUGIN_SKILL: Skill = parseSkillMarkdown(INSTALL_PLUGIN_DOC, BUILTIN_SKILL_LOCATION).skill as Skill;
 
 /**
  * Skills that ship with the plugin (no vault folder needed).
- * Self-knowledge is always present; deep-research is gated on web access.
+ * Self-knowledge and install-plugin are always present; deep-research is
+ * gated on web access. The same documents are materialized to the vault as
+ * the `builtins` agent plugin package when that package is absent.
  */
 export function builtinSkills(webEnabled: boolean): Skill[] {
-  return webEnabled ? [SELF_KNOWLEDGE_SKILL, DEEP_RESEARCH_SKILL] : [SELF_KNOWLEDGE_SKILL];
+  return webEnabled
+    ? [SELF_KNOWLEDGE_SKILL, DEEP_RESEARCH_SKILL, INSTALL_PLUGIN_SKILL]
+    : [SELF_KNOWLEDGE_SKILL, INSTALL_PLUGIN_SKILL];
 }
+
+/** Source documents for the materialized `builtins` package. */
+export const BUILTIN_SKILL_DOCS: ReadonlyArray<{ name: string; doc: string }> = [
+  { name: "self-knowledge", doc: SELF_KNOWLEDGE_DOC },
+  { name: "deep-research", doc: DEEP_RESEARCH_DOC },
+  { name: "install-plugin", doc: INSTALL_PLUGIN_DOC },
+];
