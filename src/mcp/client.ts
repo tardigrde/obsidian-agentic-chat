@@ -356,9 +356,9 @@ export class McpHttpClient {
     // Client-generated HTTP/MCP/auth headers take precedence per the Agent
     // Plugins spec, so a plugin-declared header that collides with one of
     // those names (case-insensitively) is dropped instead of being sent
-    // alongside its differently-cased twin. Hop-by-hop and request-shaping
-    // headers are never forwarded from plugin/server config: the client owns
-    // framing and connection handling.
+    // alongside its differently-cased twin. Framing and connection headers are
+    // never forwarded from plugin/server config. (Cookie is deliberately
+    // allowed: cookie-based auth on MCP gateways is a real pattern.)
     const clientManaged = new Set([
       "accept",
       "content-type",
@@ -372,7 +372,6 @@ export class McpHttpClient {
       "connection",
       "keep-alive",
       "upgrade",
-      "cookie",
       "trailer",
       "te",
       "proxy-authenticate",

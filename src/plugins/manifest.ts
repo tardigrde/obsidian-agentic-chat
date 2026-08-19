@@ -381,7 +381,7 @@ function validateRemoteEntry(
     if (!isStringRecord(record.headers)) {
       problems.push('"headers" must be an object of strings.');
     } else {
-      validateMcpHeaders(record.headers as Record<string, string>, problems);
+      validateMcpHeaders(record.headers as Record<string, string>, problems, reports);
     }
   }
   const transport = record.type as McpTransport;
@@ -398,8 +398,8 @@ export function validateMcpUrl(url: string): string | null {
   return mcpUrlProblem(url);
 }
 
-/** Headers plugins may never declare: the client owns framing/connection/hop-by-hop headers. */
-const BLOCKED_HEADER_NAMES = new Set([
+/** Headers plugins may never declare: the client owns framing, connection, and hop-by-hop headers. */
+const HARD_BLOCKED_HEADERS = new Set([
   "authorization",
   "host",
   "content-length",
@@ -408,14 +408,23 @@ const BLOCKED_HEADER_NAMES = new Set([
   "connection",
   "keep-alive",
   "upgrade",
-  "cookie",
   "trailer",
   "te",
   "proxy-authenticate",
   "proxy-authorization",
 ]);
 
-function validateMcpHeaders(headers: Record<string, string>, problems: string[]): void {
+/**
+ * Protocol headers the client always sets itself; a plugin declaring them is
+ * pointless but harmless — the client drops them and the entry still loads.
+ */
+const SOFT_MANAGED_HEADERS = new Set(["accept", "content-type", "mcp-protocol-version", "mcp-session-id"]);
+
+function validateMcpHeaders(
+  headers: Record<string, string>,
+  problems: string[],
+  reports: PluginReportItem[],
+): void {
   const seenLower = new Set<string>();
   for (const [name, value] of Object.entries(headers)) {
     try {
@@ -425,8 +434,13 @@ function validateMcpHeaders(headers: Record<string, string>, problems: string[])
       problems.push(`invalid header "${name}": ${error instanceof Error ? error.message : String(error)}`);
     }
     const lower = name.toLowerCase();
-    if (BLOCKED_HEADER_NAMES.has(lower)) {
+    if (HARD_BLOCKED_HEADERS.has(lower)) {
       problems.push(`header "${lower}" is managed by the client; declare other headers instead.`);
+    } else if (SOFT_MANAGED_HEADERS.has(lower)) {
+      reports.push({
+        severity: "warning",
+        message: `header "${lower}" is managed by the client and will be dropped; the entry still loads.`,
+      });
     }
     if (seenLower.has(lower)) {
       problems.push(`header "${name}" is repeated under different casing.`);

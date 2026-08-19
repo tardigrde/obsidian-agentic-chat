@@ -383,7 +383,7 @@ describe("McpHttpClient", () => {
     await expect(client.listTools()).rejects.toThrow(/unexpected fetch/);
   });
 
-  it("never forwards client-managed or hop-by-hop headers from plugin config", async () => {
+  it("forwards declared auth headers but never framing or client-managed ones", async () => {
     const requests: WebHttpRequest[] = [];
     const fetcher = queuedFetcher(
       [
@@ -406,8 +406,10 @@ describe("McpHttpClient", () => {
     });
     await client.initialize();
     const sent = requests[0]?.headers ?? {};
+    // Legit per-server auth (cookie, X-Tenant) is forwarded.
     expect(sent["X-Tenant"]).toBe("public");
-    expect(sent.Cookie).toBeUndefined();
+    expect(sent.Cookie).toBe("session=evil");
+    // Framing / client-managed headers are never forwarded.
     expect(sent["Transfer-Encoding"]).toBeUndefined();
     expect(sent["Content-Length"]).toBeUndefined();
     expect(sent.Authorization).toBeUndefined();

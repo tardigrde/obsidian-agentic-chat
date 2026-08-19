@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentTool, Skill } from "@earendil-works/pi-agent-core";
 import type { App, DataAdapter } from "obsidian";
 import { ReadMemo } from "../src/vault/read-memo";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import {
   buildAgentParentTools,
   composeAgentSystemPrompt,
+  EMPTY_AGENT_RUNTIME_RESOURCES,
   loadAgentRuntimeResources,
   type AgentRuntimeResources,
 } from "../src/agent/runtime-resources";
@@ -164,6 +165,18 @@ describe("agent runtime resources", () => {
     const prompt = composeAgentSystemPrompt(settings(), resources, "");
     expect(prompt).toContain("SECURITY BOUNDARY");
     expect(prompt).toMatch(/untrusted content/i);
+  });
+
+  it("does not flag first-party packages (builtins/legacy-skills) as untrusted", () => {
+    const skill: Skill = { name: "my-skill", description: "d", content: "body", filePath: "pkg" };
+    const resources: AgentRuntimeResources = {
+      ...EMPTY_AGENT_RUNTIME_RESOURCES,
+      plugins: [
+        { name: "builtins", enabled: true, skills: [skill], mcpServers: [], reports: [], skillReports: [] } as never,
+        { name: "legacy-skills", enabled: true, skills: [skill], mcpServers: [], reports: [], skillReports: [] } as never,
+      ],
+    };
+    expect(composeAgentSystemPrompt(settings(), resources, "")).not.toContain("SECURITY BOUNDARY");
   });
 
   it("builds parent tools from the loaded resource snapshot", () => {

@@ -226,14 +226,19 @@ export default class AgenticChatPlugin extends Plugin {
     const legacySkillFolders = legacySkillFolderPaths(stored);
     this.settings = mergeSettings(stored);
     hydrateSettingsSecrets(this.settings, this.secretStore);
-    await this.saveSettings();
     if (legacySkillFolders.length > 0) {
-      await this.migrateLegacySkillFolders(legacySkillFolders);
+      // Run the migration before persisting the new schema: if it fails we
+      // skip the save, so data.json keeps the legacy keys and the migration
+      // retries on the next load instead of permanently losing the user's
+      // skills. Bounded one-time cost, only for configured legacy folders.
+      const migrated = await this.tryMigrateLegacySkillFolders(legacySkillFolders);
+      if (!migrated) return;
     }
+    await this.saveSettings();
   }
 
-  /** Best-effort one-time migration of pre-plugins skills folders; never blocks startup. */
-  private async migrateLegacySkillFolders(folders: string[]): Promise<void> {
+  /** Best-effort one-time migration of pre-plugins skills folders. Returns false when it failed and should be retried. */
+  private async tryMigrateLegacySkillFolders(folders: string[]): Promise<boolean> {
     try {
       const created = await this.pluginService.materializeLegacySkills(folders);
       if (created) {
@@ -241,8 +246,10 @@ export default class AgenticChatPlugin extends Plugin {
           "Agentic Chat: migrated your Skills/Templates folders into an editable 'legacy-skills' plugin package.",
         );
       }
+      return true;
     } catch (error) {
       console.warn("Agentic chat: could not migrate legacy skills folders", error);
+      return false;
     }
   }
 

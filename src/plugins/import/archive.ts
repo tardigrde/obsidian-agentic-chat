@@ -33,6 +33,11 @@ export function safeArchivePath(raw: string): string | null {
   if (path.startsWith("/") || path.includes("/../") || path === ".." || path.startsWith("../") || /^[A-Za-z]:/.test(path)) {
     return null;
   }
+  // Any single segment that is `.` or `..`, ends in a dot or space, or is a
+  // Windows reserved device name is also rejected. These are valid names on
+  // Linux/macOS, but an installed package may be synced to a Windows vault
+  // where they break or shadow devices — a deliberate cross-platform safety
+  // tradeoff for names that are vanishingly rare in real packages.
   for (const segment of path.split("/")) {
     if (!segment || segment === "." || segment === "..") return null;
     if (/[. ]$/.test(segment)) return null;

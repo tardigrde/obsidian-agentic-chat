@@ -19,9 +19,9 @@ export function isLoopbackHost(hostname: string): boolean {
 /**
  * Hosts that are never a legitimate MCP endpoint and are the classic SSRF
  * targets: the unspecified/any addresses, cloud metadata and link-local
- * (169.254/16, fe80::/10), and unique-local (fc00::/7). RFC1918 LAN hosts are
- * intentionally NOT blocked so private MCP deployments keep working — MCP
- * endpoints are user-configured/approved, unlike the model-driven fetch_url.
+ * (169.254/16, fe80::/10). RFC1918/ULA private LAN hosts are intentionally NOT
+ * blocked so private MCP deployments keep working — MCP endpoints are
+ * user-configured/approved, unlike the model-driven fetch_url.
  */
 export function isNonRoutableHost(hostname: string): boolean {
   let host = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
@@ -40,7 +40,8 @@ export function isNonRoutableHost(hostname: string): boolean {
     if (a === 169 && Number(v4[2]) === 254) return true;
     return false;
   }
-  if (/^f[cd][0-9a-f]*:/.test(host)) return true;
+  // IPv6 link-local only; unique-local (fc00::/7, the ULA analog of RFC1918)
+  // is allowed like the private IPv4 ranges.
   if (/^fe[89ab][0-9a-f]*:/.test(host)) return true;
   return false;
 }

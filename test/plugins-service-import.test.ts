@@ -180,6 +180,26 @@ describe("PluginService.installFromTree", () => {
     expect(plugins[0]?.mcpServers.map((server) => server.id)).toEqual([pluginMcpServerId("native-mcp", "docs")]);
   });
 
+  it("keeps a native package's mcp.json verbatim even when nothing converts", async () => {
+    const { app, vault } = await seed();
+    const service = serviceFor(app, settings());
+    const mcpJson = JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      mcpServers: { legacy: { type: "sse", url: "" } },
+    });
+    await service.installFromTree(
+      new Map([
+        ["plugin.json", ENCODER.encode(JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "native-empty" }))],
+        ["mcp.json", ENCODER.encode(mcpJson)],
+      ]),
+      "github:example/native-empty",
+    );
+    // The verbatim mcp.json must survive even though zero servers converted.
+    expect(vault.contentOf(".agentic-plugins/native-empty/mcp.json")).toBe(`${mcpJson}\n`);
+    const plugins = await service.reload();
+    expect(plugins[0]?.mcpServers).toEqual([]);
+  });
+
   it("installs a bare single-skill tree under a skills folder", async () => {
     const { app, vault } = await seed();
     const current = settings();

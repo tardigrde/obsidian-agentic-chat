@@ -63,10 +63,11 @@ export async function installPackage(writer: PackageWriter, options: InstallPack
       files += 1;
     }
   }
-  if (converted.mcpEntries.length > 0) {
-    // Native packages keep their original mcp.json (unsupported transports are
-    // preserved and reported by the loader); converted packages are regenerated
-    // from the entries the converter kept.
+  // A native package keeps its original mcp.json whenever it exists, even if
+  // the converter derived zero entries (e.g. all transports unsupported or the
+  // file is invalid): the loader must see it to report the problem. Converted
+  // packages are regenerated from the entries the converter kept.
+  if (converted.mcpEntries.length > 0 || options.nativeMcpJson) {
     const mcpJson =
       options.nativeMcpJson ??
       JSON.stringify(

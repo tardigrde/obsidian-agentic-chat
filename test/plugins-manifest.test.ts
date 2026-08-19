@@ -185,6 +185,27 @@ describe("validateMcpConfig", () => {
     expect(result.servers[0]?.problems.join(" ")).toMatch(/authorization.*managed by the client/);
   });
 
+  it("rejects framing headers but allows cookie and warns on soft-managed protocol headers", () => {
+    const framing = validateMcpConfig(
+      mcpDoc({ s: { type: "streamable-http", url: "https://x.example/mcp", headers: { "Transfer-Encoding": "chunked" } } }),
+      AGENT_PLUGINS_MCP_SCHEMA_ID,
+    );
+    expect(framing.servers[0]?.problems.join(" ")).toMatch(/transfer-encoding.*managed by the client/);
+
+    const cookieOk = validateMcpConfig(
+      mcpDoc({ s: { type: "streamable-http", url: "https://x.example/mcp", headers: { Cookie: "session=abc" } } }),
+      AGENT_PLUGINS_MCP_SCHEMA_ID,
+    );
+    expect(cookieOk.servers[0]?.problems).toEqual([]);
+
+    const soft = validateMcpConfig(
+      mcpDoc({ s: { type: "streamable-http", url: "https://x.example/mcp", headers: { "Content-Type": "text/xml" } } }),
+      AGENT_PLUGINS_MCP_SCHEMA_ID,
+    );
+    expect(soft.servers[0]?.problems).toEqual([]);
+    expect(soft.reports.some((report) => report.severity === "warning" && report.message.includes("content-type"))).toBe(true);
+  });
+
   it("rejects a mismatched $schema version", () => {
     const result = validateMcpConfig(mcpDoc({}), "https://agent-plugins.org/schemas/0.9.0/mcp.schema.json");
     expect(result.ok).toBe(false);
@@ -286,15 +307,15 @@ describe("validateMcpUrl", () => {
   it("rejects https to cloud-metadata and link-local hosts", () => {
     expect(validateMcpUrl("https://169.254.169.254/mcp")).toMatch(/link-local|cloud-metadata|non-routable/);
     expect(validateMcpUrl("https://[fe80::1]:443/mcp")).toMatch(/link-local|cloud-metadata|non-routable/);
-    expect(validateMcpUrl("https://[fc00::1]:443/mcp")).toMatch(/link-local|cloud-metadata|non-routable/);
     expect(validateMcpUrl("https://0.0.0.0/mcp")).toMatch(/link-local|cloud-metadata|non-routable/);
   });
 
-  it("still allows https to loopback and private LAN hosts", () => {
+  it("still allows https to loopback and private LAN hosts (IPv4 + IPv6 ULA)", () => {
     expect(validateMcpUrl("https://localhost:8443/mcp")).toBeNull();
     expect(validateMcpUrl("https://127.0.0.1:8443/mcp")).toBeNull();
     expect(validateMcpUrl("https://10.0.0.5/mcp")).toBeNull();
     expect(validateMcpUrl("https://192.168.1.10/mcp")).toBeNull();
+    expect(validateMcpUrl("https://[fd00::1]:8443/mcp")).toBeNull();
   });
 });
 
