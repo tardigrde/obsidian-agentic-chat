@@ -1,6 +1,6 @@
 {
   "name": "obsidian-agentic-chat",
-  "version": "0.34.1",
+  "version": "0.35.0",
   "description": "Agent-led AI chat in the Obsidian right sidebar, powered by OpenRouter, Ollama, or OpenAI-compatible gateways.",
   "main": "main.js",
   "scripts": {
