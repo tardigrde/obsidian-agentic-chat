@@ -2,6 +2,7 @@ import { App, Modal, Notice, Platform, Setting } from "obsidian";
 import type { PluginService } from "../plugins/service";
 import type { InstallResult } from "../plugins/import/install";
 import { extractArchive, looksGzip, looksZip, safeArchivePath, type FileTree } from "../plugins/import/archive";
+import { reRootTree } from "../plugins/import/shared";
 import { stripSingleTopLevelDir } from "../plugins/import/url-source";
 import { sniffSource, type MarketplaceSourceEntry } from "../plugins/import/sniff";
 
@@ -18,7 +19,6 @@ export class InstallPluginModal extends Modal {
     app: App,
     private readonly pluginService: PluginService,
     private readonly onInstalled: (result: InstallResult) => void,
-    private readonly onError: (message: string) => void,
   ) {
     super(app);
     this.setTitle("Install agent plugin");
@@ -88,7 +88,6 @@ export class InstallPluginModal extends Modal {
       this.close();
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
-      this.onError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -156,7 +155,6 @@ export class InstallPluginModal extends Modal {
       this.close();
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : String(error), "error");
-      this.onError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -178,12 +176,7 @@ export class InstallPluginModal extends Modal {
           .setDesc(`./${folder}`)
           .addButton((button) =>
             button.setButtonText("Install").setCta().onClick(() => {
-              const subtree: FileTree = new Map();
-              for (const [path, bytes] of tree) {
-                if (path === folder) continue;
-                if (path.startsWith(`${folder}/`)) subtree.set(path.slice(folder.length + 1), bytes);
-              }
-              void this.installTree(subtree, `marketplace:${name}/${folder}`);
+              void this.installTree(reRootTree(tree, folder), `marketplace:${name}/${folder}`);
             }),
           );
       } else {

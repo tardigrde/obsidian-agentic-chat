@@ -303,40 +303,6 @@ export function exportMcpServerConfig(server: McpServerSettings): McpServerExpor
   };
 }
 
-export function importMcpServerConfig(value: unknown): McpServerSettings {
-  const record = recordValue(value);
-  if (record.kind !== "agentic-chat.mcp-server" || record.version !== 1) {
-    throw new Error("MCP server config must be an agentic-chat.mcp-server v1 object.");
-  }
-  const authType = healAuthType(stringValue(record.authType) as McpAuthType, undefined, undefined);
-  const server = createMcpServerSettings({
-    id: stringValue(record.id) || "mcp",
-    name: stringValue(record.name) || stringValue(record.id) || "MCP server",
-    url: stringValue(record.url),
-    enabled: record.enabled === true,
-    authType,
-    authHeaderName: authType === "header" ? stringValue(record.authHeaderName) : "",
-    approval: healApproval(stringValue(record.approval) as ApprovalPolicy),
-    knownTools: healMcpKnownTools(record.knownTools),
-  });
-  if (authType === "oauth") {
-    const oauth = recordValue(record.oauth);
-    server.oauth = {
-      ...server.oauth,
-      clientId: stringValue(oauth.clientId),
-      dynamicClientRegistration: oauth.dynamicClientRegistration === true,
-      registeredRedirectUri: stringValue(oauth.registeredRedirectUri),
-      authorizationServer: stringValue(oauth.authorizationServer),
-      authorizationEndpoint: stringValue(oauth.authorizationEndpoint),
-      tokenEndpoint: stringValue(oauth.tokenEndpoint),
-      registrationEndpoint: stringValue(oauth.registrationEndpoint),
-      resourceMetadataUrl: stringValue(oauth.resourceMetadataUrl),
-      scope: stringValue(oauth.scope),
-    };
-  }
-  return server;
-}
-
 export function mcpServerEndpointProblem(url: string): string {
   const trimmed = url.trim();
   if (!trimmed || trimmed === "https://") return "Paste an HTTPS (or loopback HTTP) Streamable HTTP endpoint.";
@@ -496,10 +462,6 @@ export function serverIdFromMcpUrl(input: string | undefined): string {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function uniquifyMcpServerIds(servers: McpServerSettings[]): McpServerSettings[] {

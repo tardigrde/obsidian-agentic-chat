@@ -7,6 +7,7 @@ import {
   type ArchiveKind,
   type FileTree,
 } from "./archive";
+import { reRootTree } from "./shared";
 
 /** Cap on a single import download; extraction limits apply after this check. */
 const MAX_DOWNLOAD_BYTES = ARCHIVE_LIMITS.totalBytes;
@@ -246,7 +247,7 @@ export async function resolveImportSource(
     if (!bytes || bytes.length === 0) continue;
     let tree = extractArchive(bytes, "tar.gz");
     tree = stripSingleTopLevelDir(tree);
-    if (candidate.path) tree = keepSubtree(tree, candidate.path);
+    if (candidate.path) tree = reRootTree(tree, candidate.path);
     return { tree, label: `github:${owner}/${repo}` };
   }
   throw new Error(`Could not download a snapshot of ${owner}/${repo} (HTTP ${lastStatus ?? 0}).`);
@@ -287,16 +288,6 @@ export function stripSingleTopLevelDir(tree: FileTree): FileTree {
     else return tree;
   }
   return stripped;
-}
-
-/** Keep only files under `prefix`, re-rooted at the prefix boundary. */
-function keepSubtree(tree: FileTree, prefix: string): FileTree {
-  const rooted = prefix.replace(/\/+$/, "") + "/";
-  const subtree: FileTree = new Map();
-  for (const [path, bytes] of tree) {
-    if (path.startsWith(rooted)) subtree.set(path.slice(rooted.length), bytes);
-  }
-  return subtree;
 }
 
 /** Extract with kind detection (zip magic / gzip magic) when the URL was ambiguous. */

@@ -38,6 +38,7 @@ export class NewSkillModal extends Modal {
     let nameInput: HTMLInputElement | null = null;
     let descriptionInput: HTMLInputElement | null = null;
     let bodyInput: HTMLTextAreaElement | null = null;
+    let bodyTouched = false;
 
     new Setting(contentEl)
       .setName("Skill name")
@@ -46,9 +47,10 @@ export class NewSkillModal extends Modal {
         nameInput = text.inputEl;
         text.setPlaceholder("e.g. release-notes");
         text.inputEl.addEventListener("input", () => {
+          // Keep the template heading in sync while the user renames before
+          // they have edited the body; once the body is touched, never clobber it.
           const slug = slugifyPluginName(nameInput?.value ?? "");
-          if (bodyInput && bodyInput.value === SKILL_TEMPLATE.replace("{{name}}", "").trim()) {
-            // Keep the template in sync when the user renames before editing.
+          if (bodyInput && !bodyTouched) {
             bodyInput.value = SKILL_TEMPLATE.replace("{{name}}", slug || "my-skill");
           }
         });
@@ -67,6 +69,9 @@ export class NewSkillModal extends Modal {
         bodyInput.rows = 14;
         bodyInput.addClass("agentic-chat-skill-body");
         text.setValue(SKILL_TEMPLATE.replace("{{name}}", "my-skill"));
+        bodyInput.addEventListener("input", () => {
+          bodyTouched = true;
+        });
       });
 
     new Setting(contentEl).addButton((button) => {

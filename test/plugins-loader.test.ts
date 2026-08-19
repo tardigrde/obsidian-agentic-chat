@@ -59,6 +59,16 @@ describe("loadPlugins", () => {
     const plugins = await loadPlugins(app);
     expect(plugins[0]?.auditStatus).toBe("failed");
     expect(plugins[0]?.manifestProblem).toMatch(/plugin.json is missing/);
+    // The fatal message must surface exactly once in the reports.
+    expect(plugins[0]?.reports.filter((report) => report.message.includes("plugin.json is missing"))).toHaveLength(1);
+  });
+
+  it("never loads .importing-* stage folders as real plugins", async () => {
+    const app = await seed();
+    await addPlugin(app, "real", { "plugin.json": manifest("real") });
+    await addPlugin(app, ".importing-backup-real", { "plugin.json": manifest("real") });
+    const plugins = await loadPlugins(app);
+    expect(plugins.map((plugin) => plugin.name)).toEqual(["real"]);
   });
 
   it("rejects a plugin with a fatal manifest violation and keeps others", async () => {

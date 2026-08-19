@@ -75,25 +75,33 @@ export async function loadPlugins(app: App, options: PluginLoadOptions = {}): Pr
  * fast path, but its `children` can be stale (brand-new dot folders, external
  * sync the watcher has not indexed yet), so adapter-discovered directories
  * are merged in deterministically. Missing folder is valid absence (§6.2).
+ * `.importing-*` stage folders from in-flight or crashed installs are never
+ * treated as real packages.
  */
 async function listPluginDirectories(app: App, folder: string): Promise<string[]> {
   const root = folderEntry(app, folder);
   const dirs = new Set<string>();
   if (root) {
     for (const child of root.children ?? []) {
-      if (child instanceof TFolder) dirs.add(child.path);
+      if (child instanceof TFolder && !isImportStageDir(child.name)) dirs.add(child.path);
     }
   }
   try {
     const listing = await app.vault.adapter.list(folder);
     for (const entry of listing?.folders ?? []) {
       const normalized = trimEdges(entry, (char) => char !== "/");
-      if (normalized) dirs.add(normalized);
+      const dirName = normalized.split("/").pop() ?? normalized;
+      if (normalized && !isImportStageDir(dirName)) dirs.add(normalized);
     }
   } catch {
     // Adapter unavailable or folder absent; tree results (if any) still stand.
   }
   return [...dirs].sort((a, b) => a.localeCompare(b));
+}
+
+/** True for `.importing-*` install stage/backup folders. */
+function isImportStageDir(dirName: string): boolean {
+  return dirName.startsWith(".importing-");
 }
 
 async function loadPluginDir(
@@ -161,8 +169,9 @@ async function readPluginManifest(
 ): Promise<{ manifest: PluginManifest | null; fatal: string | null; reports: PluginReportItem[] }> {
   const raw = await readVaultFile(app, `${rootPath}/plugin.json`);
   if (raw === null) {
-    const message = "plugin.json is missing; the plugin root must contain a manifest.";
-    return { manifest: null, fatal: message, reports: [{ severity: "error", message }] };
+    // Fatal only: loadPluginDir reports the message once (as both fatal and an
+    // error report), so returning it here too would duplicate /doctor output.
+    return { manifest: null, fatal: "plugin.json is missing; the plugin root must contain a manifest.", reports: [] };
   }
   const validation = validatePluginManifest(raw);
   return {

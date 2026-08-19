@@ -21,7 +21,6 @@ import {
   DEFAULT_MCP_SETTINGS,
   createMcpServerSettings,
   exportMcpServerConfig,
-  importMcpServerConfig,
   mcpOAuthSettingsForServer,
   mcpServerAuthProblem,
   mcpServerEndpointProblem,
@@ -687,7 +686,7 @@ describe("mergeSettings — MCP", () => {
     ).toMatch(/header names/i);
   });
 
-  it("exports MCP server configs without secrets and imports them with fresh secret refs", () => {
+  it("exports MCP server configs without secrets", () => {
     const server = createMcpServerSettings({
       id: "docs",
       name: "Docs MCP",
@@ -716,26 +715,6 @@ describe("mergeSettings — MCP", () => {
     expect(serialized).not.toContain("access-token");
     expect(serialized).not.toContain("refresh-token");
     expect(exported.knownTools).toEqual([{ name: "search", title: "Search", readOnlyHint: true }]);
-
-    const imported = importMcpServerConfig(exported);
-    expect(imported).toMatchObject({
-      id: "docs",
-      name: "Docs MCP",
-      url: "https://mcp.example.com/mcp",
-      authType: "oauth",
-      approval: "allow",
-      authHeaderValue: "",
-      knownTools: [{ name: "search", title: "Search", readOnlyHint: true }],
-    });
-    expect(imported.oauth).toMatchObject({
-      clientId: "client-1",
-      clientSecret: "",
-      accessToken: "",
-      refreshToken: "",
-      tokenEndpoint: "https://auth.example.com/token",
-      scope: "openid profile",
-    });
-    expect(imported.oauth.accessTokenSecretId).toBe(mcpSecretId("docs", "oauth-access-token"));
   });
 
   it("reports setup-guide diagnostics for endpoint, auth, and discovery", () => {

@@ -42,6 +42,12 @@ describe("parseSkillMarkdown", () => {
     expect(parseSkillMarkdown("---\ndescription: only desc\n---\nBody.", "SKILL.md").problems[0]).toMatch(/"name"/);
     expect(parseSkillMarkdown("---\nname: ok\n---\nBody.", "SKILL.md").problems[0]).toMatch(/"description"/);
   });
+
+  it("reports invalid YAML frontmatter instead of a misleading missing-name error", () => {
+    const parsed = parseSkillMarkdown("---\nname: tab\tbroken\n---\nBody.", "SKILL.md");
+    expect(parsed.skill).toBeNull();
+    expect(parsed.problems[0]).toMatch(/not valid YAML/);
+  });
 });
 
 describe("buildSkillInvocation", () => {

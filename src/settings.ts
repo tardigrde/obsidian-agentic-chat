@@ -1618,33 +1618,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     }
   }
 
-  private async readFromClipboard(): Promise<string> {
-    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
-    if (!clipboard?.readText) return "";
-    try {
-      return await clipboard.readText();
-    } catch {
-      return "";
-    }
-  }
-
-  private upsertMcpServer(settings: AgenticChatSettings, server: McpServerSettings): void {
-    const existing = settings.mcp.servers.find((entry) => entry.id === server.id);
-    if (existing) {
-      const oauth = { ...server.oauth, ...existing.oauth };
-      oauth.clientSecretSecretId ||= server.oauth.clientSecretSecretId;
-      oauth.accessTokenSecretId ||= server.oauth.accessTokenSecretId;
-      oauth.refreshTokenSecretId ||= server.oauth.refreshTokenSecretId;
-      Object.assign(existing, server, {
-        authHeaderValueSecretId: existing.authHeaderValueSecretId || server.authHeaderValueSecretId,
-        authHeaderValue: existing.authHeaderValue,
-        oauth,
-      });
-    } else {
-      settings.mcp.servers.push(server);
-    }
-  }
-
   private nextMcpServerId(
     settings: AgenticChatSettings,
     base: string,
@@ -2117,18 +2090,11 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   private openInstallModal(): void {
-    new InstallPluginModal(
-      this.app,
-      this.plugin.pluginService,
-      (result) => {
-        noticeInstallResult(result);
-        this.pluginsLoadedOnce = false;
-        void this.save().then(() => this.redraw());
-      },
-      (_message) => {
-        // The modal surfaces errors inline; nothing else to do here.
-      },
-    ).open();
+    new InstallPluginModal(this.app, this.plugin.pluginService, (result) => {
+      noticeInstallResult(result);
+      this.pluginsLoadedOnce = false;
+      void this.save().then(() => this.redraw());
+    }).open();
   }
 
   private builtinsPackageExists(settings: AgenticChatSettings): boolean {

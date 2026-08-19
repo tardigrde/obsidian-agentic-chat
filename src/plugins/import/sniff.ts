@@ -1,4 +1,5 @@
 import type { FileTree } from "./archive";
+import { parseJson, reRootTree, skillNameFromDoc } from "./shared";
 
 /** The package format a source directory is written in. */
 export type ManifestFormat = "agent-plugins" | "claude" | "codex" | "vscode" | "none";
@@ -73,7 +74,7 @@ export function sniffSource(tree: FileTree): SniffResult {
     return {
       kind: "package",
       candidates: [
-        { root: "", name: skillNameFromDoc(tree.get("SKILL.md") as Uint8Array), format: "none", isAgentPlugins: false },
+        { root: "", name: skillNameFromDoc(tree.get("SKILL.md")) ?? "skill", format: "none", isAgentPlugins: false },
       ],
     };
   }
@@ -122,16 +123,6 @@ function candidateName(tree: FileTree, root: string): string {
   return root ? root.split("/").pop() ?? root : "(root)";
 }
 
-function parseJson(bytes: Uint8Array | undefined): Record<string, unknown> | null {
-  if (!bytes) return null;
-  try {
-    const parsed: unknown = JSON.parse(DECODER.decode(bytes));
-    return parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Depth≤2 subdirectory scan for packages placed under a folder (repo layouts
  * like `plugins/<name>/plugin.json` or `skills/<name>/SKILL.md`).
@@ -146,7 +137,7 @@ function findDeepPackages(tree: FileTree): SniffedCandidate[] {
   }
   const packages: SniffedCandidate[] = [];
   for (const dir of [...dirs].sort((a, b) => a.localeCompare(b))) {
-    const found = manifestAtRoot(subtreeAt(tree, dir));
+    const found = manifestAtRoot(reRootTree(tree, dir));
     if (found) {
       packages.push(candidate(tree, dir, found.format, found.isAgentPlugins));
     } else if (tree.has(`${dir}/SKILL.md`)) {
@@ -159,16 +150,6 @@ function findDeepPackages(tree: FileTree): SniffedCandidate[] {
     }
   }
   return packages;
-}
-
-/** Re-root the tree at `dir` (paths inside keep their relative form). */
-function subtreeAt(tree: FileTree, dir: string): FileTree {
-  const prefix = `${dir}/`;
-  const subtree: FileTree = new Map();
-  for (const [path, bytes] of tree) {
-    if (path.startsWith(prefix)) subtree.set(path.slice(prefix.length), bytes);
-  }
-  return subtree;
 }
 
 function findMarketplace(tree: FileTree): { kind: "marketplace"; name: string; sources: MarketplaceSourceEntry[] } | null {
@@ -197,13 +178,4 @@ function marketplaceSources(parsed: Record<string, unknown>): MarketplaceSourceE
     else entries.push({ kind: "remote", name, source });
   }
   return entries;
-}
-
-/** Best-effort name of a bare skill document, from its `name:` frontmatter. */
-function skillNameFromDoc(bytes: Uint8Array): string {
-  const text = DECODER.decode(bytes).slice(0, 2000);
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
-  if (!match) return "skill";
-  const name = /^name:\s*(.+)$/m.exec(match[1]);
-  return (name?.[1] ?? "skill").trim().replace(/['"]/g, "");
 }

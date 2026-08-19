@@ -238,10 +238,12 @@ describe("sniffSource", () => {
     const claude = sniffSource(
       treeOf({ ".claude-plugin/plugin.json": JSON.stringify({ name: "c" }), "skills/c/SKILL.md": "# c" }),
     );
+    expect(claude.kind).toBe("package");
     if (claude.kind === "package") expect(claude.candidates[0]).toMatchObject({ format: "claude" });
     const codex = sniffSource(
       treeOf({ ".codex-plugin/plugin.json": JSON.stringify({ name: "d" }), "skills/d/SKILL.md": "# d" }),
     );
+    expect(codex.kind).toBe("package");
     if (codex.kind === "package") expect(codex.candidates[0]).toMatchObject({ format: "codex" });
   });
 
@@ -252,6 +254,7 @@ describe("sniffSource", () => {
         "plugins/my-tool/skills/my-tool/SKILL.md": "# t",
       }),
     );
+    expect(result.kind).toBe("package");
     if (result.kind === "package") {
       expect(result.candidates.map((c) => c.root)).toContain("plugins/my-tool");
     }
@@ -276,6 +279,7 @@ describe("sniffSource", () => {
 
   it("accepts a bare root SKILL.md and reports nothing useful otherwise", () => {
     const bare = sniffSource(treeOf({ "SKILL.md": "---\nname: solo\n---" }));
+    expect(bare.kind).toBe("package");
     if (bare.kind === "package") expect(bare.candidates[0].root).toBe("");
     const nothing = sniffSource(treeOf({ "readme.txt": "hi" }));
     expect(nothing.kind).toBe("nothing");

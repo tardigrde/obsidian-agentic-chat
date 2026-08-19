@@ -142,6 +142,44 @@ describe("PluginService.installFromTree", () => {
     expect(manifest.version).toBe("3.0.0");
   });
 
+  it("keeps helper files when installing a bare root SKILL.md package", async () => {
+    const { app, vault } = await seed();
+    const service = serviceFor(app, settings());
+    await service.installFromTree(
+      new Map([
+        ["SKILL.md", ENCODER.encode("---\nname: my-skill\ndescription: D\n---\nBody")],
+        ["scripts/run.sh", ENCODER.encode("#!/bin/sh")],
+        ["node_modules/ignored.js", ENCODER.encode("x")],
+      ]),
+      "local folder",
+    );
+    expect(vault.contentOf(".agentic-plugins/my-skill/skills/my-skill/scripts/run.sh")).toBe("#!/bin/sh");
+    expect(vault.contentOf(".agentic-plugins/my-skill/skills/my-skill/node_modules/ignored.js")).toBeUndefined();
+  });
+
+  it("keeps a native package's mcp.json verbatim, unsupported transports included", async () => {
+    const { app, vault } = await seed();
+    const service = serviceFor(app, settings());
+    const mcpJson = JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      mcpServers: {
+        docs: { type: "streamable-http", url: "https://mcp.example.com/mcp" },
+        legacy: { type: "sse", url: "https://sse.example.com/stream" },
+      },
+    });
+    await service.installFromTree(
+      new Map([
+        ["plugin.json", ENCODER.encode(JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "native-mcp" }))],
+        ["mcp.json", ENCODER.encode(mcpJson)],
+      ]),
+      "github:example/native-mcp",
+    );
+    expect(vault.contentOf(".agentic-plugins/native-mcp/mcp.json")).toBe(`${mcpJson}\n`);
+    const plugins = await service.reload();
+    expect(plugins[0]?.auditStatus).toBe("partial");
+    expect(plugins[0]?.mcpServers.map((server) => server.id)).toEqual([pluginMcpServerId("native-mcp", "docs")]);
+  });
+
   it("installs a bare single-skill tree under a skills folder", async () => {
     const { app, vault } = await seed();
     const current = settings();

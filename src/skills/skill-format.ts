@@ -43,7 +43,10 @@ export function skillNameProblem(name: string): string | null {
 }
 
 export function parseSkillMarkdown(raw: string, filePath: string): ParsedSkill {
-  const { data, body } = splitFrontmatter(raw);
+  const { data, body, parseProblem } = splitFrontmatter(raw);
+  if (parseProblem) {
+    return { skill: null, problems: [parseProblem] };
+  }
   const name = stringField(data, "name");
   if (!name) {
     return { skill: null, problems: ['SKILL.md is missing a "name" frontmatter field.'] };

@@ -210,10 +210,11 @@ export class PluginService {
         `Found ${sniffed.candidates.length} packages in this source; installed ${converted.name}.`,
       );
     }
-    // Native manifests are installed verbatim, so validate them before they are
-    // written: a bad manifest must fail the import, not land in the vault and
-    // only be rejected by the loader on the next scan.
+    // Native manifests and mcp.json are installed verbatim, so validate them
+    // before they are written: a bad manifest must fail the import, not land
+    // in the vault and only be rejected by the loader on the next scan.
     let nativeManifest: string | undefined;
+    let nativeMcpJson: string | undefined;
     if (converted.native) {
       const manifestPath = candidate.manifestPath ?? (candidate.root ? `${candidate.root}/plugin.json` : "plugin.json");
       const manifestBytes = tree.get(manifestPath);
@@ -223,11 +224,14 @@ export class PluginService {
       if (validation.fatal) {
         throw new Error(`The plugin package's plugin.json is invalid: ${validation.fatal}`);
       }
+      const mcpBytes = tree.get(`${candidate.root ? `${candidate.root}/` : ""}mcp.json`);
+      if (mcpBytes) nativeMcpJson = decodeUtf8(mcpBytes);
     }
     const result = await installPackage(this.vaultWriter(), {
       converted,
       pluginsFolder: this.pluginsFolder(),
       ...(nativeManifest ? { nativeManifest } : {}),
+      ...(nativeMcpJson ? { nativeMcpJson } : {}),
     });
     this.recordSource(result.name, label);
     await this.recordPluginMcp(result.name, converted);

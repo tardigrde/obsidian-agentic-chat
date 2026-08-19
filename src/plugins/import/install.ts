@@ -1,5 +1,4 @@
 import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, slugifyPluginName } from "../manifest";
-import type { FileTree } from "./archive";
 import type { ConvertedPackage } from "./convert";
 
 /** Minimal vault write surface so installs run against the real vault or a test double. */
@@ -21,6 +20,8 @@ export interface InstallPackageOptions {
   converted: ConvertedPackage;
   /** Native raw plugin.json to pass through (mutually exclusive with converted.manifest fields). */
   nativeManifest?: string;
+  /** Native raw mcp.json to pass through verbatim (keeps unsupported entries for the loader to report). */
+  nativeMcpJson?: string;
   /** Vault folder the packages live in (".agentic-plugins"). */
   pluginsFolder: string;
 }
@@ -63,9 +64,12 @@ export async function installPackage(writer: PackageWriter, options: InstallPack
     }
   }
   if (converted.mcpEntries.length > 0) {
-    await writer.writeFile(
-      `${stage}/mcp.json`,
-      `${JSON.stringify(
+    // Native packages keep their original mcp.json (unsupported transports are
+    // preserved and reported by the loader); converted packages are regenerated
+    // from the entries the converter kept.
+    const mcpJson =
+      options.nativeMcpJson ??
+      JSON.stringify(
         {
           $schema: AGENT_PLUGINS_MCP_SCHEMA_ID,
           mcpServers: Object.fromEntries(
@@ -77,8 +81,8 @@ export async function installPackage(writer: PackageWriter, options: InstallPack
         },
         null,
         2,
-      )}\n`,
-    );
+      );
+    await writer.writeFile(`${stage}/mcp.json`, `${mcpJson}\n`);
     files += 1;
   }
   for (const [rel, bytes] of converted.rootFiles) {
@@ -106,11 +110,11 @@ export async function installPackage(writer: PackageWriter, options: InstallPack
 
 /** Move the staged package onto the target, replacing any existing package. */
 async function replaceIntoPlace(writer: PackageWriter, stage: string, target: string): Promise<boolean> {
-  // The loader skips the stage folder? It does not filter hidden folders today,
-  // so a leftover stage would be picked up as a broken package. Clean it up.
-  const existing = await folderExists(writer, target);
+  // The loader skips `.importing-` stage folders, so a leftover stage is never
+  // picked up as a broken package; still clean it up defensively.
+  const existing = await writer.folderExists(target);
   if (!existing) {
-    await renameFolder(writer, stage, target);
+    await writer.renameFolder(stage, target);
     return false;
   }
   // Move the old package aside first so a failed rename can restore it; the
@@ -119,23 +123,15 @@ async function replaceIntoPlace(writer: PackageWriter, stage: string, target: st
   const parent = target.slice(0, target.lastIndexOf("/"));
   const name = target.slice(target.lastIndexOf("/") + 1);
   const backup = `${parent}/.importing-backup-${name}`;
-  await renameFolder(writer, target, backup);
+  await writer.renameFolder(target, backup);
   try {
-    await renameFolder(writer, stage, target);
+    await writer.renameFolder(stage, target);
   } catch (error) {
-    await renameFolder(writer, backup, target);
+    await writer.renameFolder(backup, target);
     throw error;
   }
   await writer.removeFolder(backup);
   return true;
-}
-
-async function folderExists(writer: PackageWriter, path: string): Promise<boolean> {
-  return writer.folderExists(path);
-}
-
-async function renameFolder(writer: PackageWriter, from: string, to: string): Promise<void> {
-  await writer.renameFolder(from, to);
 }
 
 /** Build the plugin.json text for converted (non-native) packages. */
@@ -167,6 +163,3 @@ export function scaffoldManifest(name: string, description: string): string {
     2,
   )}\n`;
 }
-
-export { slugifyPluginName };
-export type { FileTree };

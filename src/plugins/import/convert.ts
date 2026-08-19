@@ -1,6 +1,7 @@
 import { parseYaml } from "obsidian";
 import type { FileTree } from "./archive";
 import type { SniffedCandidate } from "./sniff";
+import { parseJson, skillNameFromDoc } from "./shared";
 
 /** Subdirectories of a foreign layout that never carry loadable content. */
 const FOREIGN_DIRS = new Set([
@@ -64,8 +65,7 @@ export function convertToAgentPlugin(tree: FileTree, candidate: SniffedCandidate
   const warnings: string[] = [];
 
   if (candidate.isAgentPlugins) {
-    const native = convertNative(tree, prefix, candidate);
-    return { ...native, warnings: [...warnings, ...native.warnings] };
+    return convertNative(tree, prefix, candidate);
   }
 
   // Claude/Codex/VS Code layouts keep plugin.json under a dot-directory but
@@ -117,7 +117,9 @@ function convertSingleSkill(tree: FileTree, prefix: string, name: string, warnin
   for (const [path, bytes] of tree) {
     if (!path.startsWith(prefix) || path === `${prefix}SKILL.md`) continue;
     const rel = prefix ? path.slice(prefix.length) : path;
-    if (!rel.includes("/")) files.set(rel, bytes);
+    const top = rel.split("/")[0] ?? "";
+    if (FOREIGN_DIRS.has(top)) continue;
+    files.set(rel, bytes);
   }
   return [{ name, files, warnings: [] }];
 }
@@ -131,14 +133,9 @@ function hasDir(tree: FileTree, prefix: string, rel: string): boolean {
   return false;
 }
 
-/** Best-effort skill name from a bare document's `name:` frontmatter. */
-export function skillNameFromDoc(bytes: Uint8Array | undefined): string | null {
-  if (!bytes) return null;
-  const text = DECODER.decode(bytes.slice(0, 2000));
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
-  if (!match) return null;
-  const name = /^name:\s*(.+)$/m.exec(match[1]);
-  return name?.[1] ? name[1].trim().replace(/['"]/g, "") : null;
+/** Serialize a frontmatter value as JSON (valid YAML for scalars and collections). */
+function yamlScalar(value: unknown): string {
+  return JSON.stringify(value);
 }
 
 /** Copy whole skill directories (`skills/<name>/SKILL.md` + scripts/references/assets). */
@@ -214,12 +211,6 @@ export function sanitizeSkillDoc(doc: string, dirName: string, warnings: string[
   }
   const body = doc.slice(match[0].length).replace(/^\r?\n/, "");
   return `---\n${kept.join("\n")}\n---\n\n${body.trimStart()}`;
-}
-
-/** Serialize a frontmatter value as JSON (valid YAML for scalars and collections). */
-function yamlScalar(value: unknown): string {
-  if (typeof value === "string") return JSON.stringify(value);
-  return JSON.stringify(value);
 }
 
 /** Extract MCP server entries from the source manifest (Claude/Copilot/VS Code shapes). */
@@ -351,16 +342,6 @@ function collectRootFiles(tree: FileTree, prefix: string, skills: ConvertedSkill
     files.set(rel, bytes);
   }
   return files;
-}
-
-function parseJson(bytes: Uint8Array | undefined): Record<string, unknown> | null {
-  if (!bytes) return null;
-  try {
-    const parsed: unknown = JSON.parse(DECODER.decode(bytes));
-    return parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
 }
 
 function manifestName(manifest: Record<string, unknown> | null, root: string): string {

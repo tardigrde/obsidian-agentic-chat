@@ -36,6 +36,8 @@ export function buildSkillInvocation(skill: Skill, argString?: string): string {
 export interface Frontmatter {
   data: Record<string, unknown>;
   body: string;
+  /** Set when frontmatter exists but failed to parse as YAML. */
+  parseProblem?: string;
 }
 
 export function splitFrontmatter(content: string): Frontmatter {
@@ -44,10 +46,11 @@ export function splitFrontmatter(content: string): Frontmatter {
   let data: Record<string, unknown>;
   try {
     data = (parseYaml(match[1]) as Record<string, unknown>) ?? {};
-  } catch {
-    data = {};
+    return { data, body: content.slice(match[0].length).trimStart() };
+  } catch (error) {
+    const detail = error instanceof Error && error.message ? ` (${error.message})` : "";
+    return { data: {}, body: content.slice(match[0].length).trimStart(), parseProblem: `frontmatter is not valid YAML${detail}` };
   }
-  return { data, body: content.slice(match[0].length).trimStart() };
 }
 
 export function stringField(data: Record<string, unknown>, key: string): string | undefined {
