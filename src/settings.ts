@@ -235,6 +235,14 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     this.pluginsLoadedOnce = true;
     void this.plugin.pluginService
       .load()
+      .then((plugins) => {
+        // Materialize derived plugin MCP servers into settings once per plugin
+        // load (not during render): the MCP tab and /doctor then show merged
+        // state, and user-configured servers are always preserved by the merge.
+        const pluginServers = plugins.flatMap((plugin) => plugin.mcpServers);
+        if (pluginServers.length > 0) syncMcpServers(this.plugin.settings, pluginServers);
+        return plugins;
+      })
       .catch((error: unknown) => {
         console.warn("Agentic chat: could not load agent plugins", error);
       })
@@ -947,11 +955,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           }
         }),
       );
-
-    const pluginServers = this.plugin.pluginService.getLoaded().flatMap((plugin) => plugin.mcpServers);
-    if (pluginServers.length > 0) {
-      syncMcpServers(settings, pluginServers);
-    }
 
     if (settings.mcp.servers.length === 0) {
       containerEl.createDiv({
@@ -2105,7 +2108,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setButtonText("Remove")
       .setWarning()
       .onClick(async () => {
-        await this.plugin.pluginService.removePackage(plugin.name);
+        await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
         new Notice(`Removed agent plugin "${plugin.name}".`);
         this.pluginsLoadedOnce = false;
         await this.save();

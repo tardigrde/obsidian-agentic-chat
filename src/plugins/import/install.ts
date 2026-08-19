@@ -140,9 +140,14 @@ async function renameFolder(writer: PackageWriter, from: string, to: string): Pr
 
 /** Build the plugin.json text for converted (non-native) packages. */
 function convertedManifest(converted: ConvertedPackage): string {
+  // The package folder is slugified (installPackage); the written manifest
+  // name must use the same slug or the loader's own validatePluginName
+  // rejects the package and nothing loads. Foreign plugins frequently carry
+  // display names (spaces, capitals) that are not valid Agent Plugins names.
+  const name = slugifyPluginName(converted.name) || "plugin";
   const manifest: Record<string, unknown> = {
     $schema: AGENT_PLUGINS_SCHEMA_ID,
-    name: converted.name,
+    name,
     version: converted.version ?? "1.0.0",
     description: converted.description ?? "",
   };

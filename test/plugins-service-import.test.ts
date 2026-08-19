@@ -79,6 +79,28 @@ describe("PluginService.installFromTree", () => {
     expect(result.warnings.some((w) => w.includes("headersHelper"))).toBe(true);
   });
 
+  it("slugs a foreign display name so the installed package passes its own validation", async () => {
+    const { app, vault } = await seed();
+    const current = settings();
+    const service = serviceFor(app, current);
+    const tree = new Map<string, Uint8Array>([
+      [
+        ".claude-plugin/plugin.json",
+        ENCODER.encode(JSON.stringify({ name: "My Awesome Plugin", version: "1.0.0", mcpServers: {} })),
+      ],
+      ["skills/my-awesome-plugin/SKILL.md", ENCODER.encode("---\nname: my-awesome-plugin\ndescription: D\n---\nBody")],
+    ]);
+    const result = await service.installFromTree(tree, "github:example/my-awesome-plugin");
+
+    expect(result.name).toBe("my-awesome-plugin");
+    const manifest = JSON.parse(vault.contentOf(".agentic-plugins/my-awesome-plugin/plugin.json") as string);
+    expect(manifest.name).toBe("my-awesome-plugin");
+    const plugins = await service.reload();
+    expect(plugins[0]).toMatchObject({ name: "my-awesome-plugin", auditStatus: "ok" });
+    expect(plugins[0]?.skills.map((skill) => skill.name)).toEqual(["my-awesome-plugin"]);
+    expect(current.plugins.sources["my-awesome-plugin"]).toBe("github:example/my-awesome-plugin");
+  });
+
   it("records the source label and persists imported MCP servers disabled by default", async () => {
     const { app } = await seed();
     const current = settings();
@@ -246,9 +268,22 @@ describe("PluginService.removePackage", () => {
     await service.installFromTree(claudePluginTree(), "github:example/docs-helper");
     expect(app.vault.getAbstractFileByPath(".agentic-plugins/docs-helper/plugin.json")).not.toBeNull();
 
-    await service.removePackage("docs-helper");
+    await service.removePackage("docs-helper", ".agentic-plugins/docs-helper");
     expect(app.vault.getAbstractFileByPath(".agentic-plugins/docs-helper")).toBeNull();
     expect(current.mcp.servers.filter((s) => s.source === "plugin")).toHaveLength(0);
+    expect(current.plugins.sources["docs-helper"]).toBeUndefined();
+  });
+
+  it("removes by rootPath, so a renamed folder is removed instead of a guessed path", async () => {
+    const { app } = await seed();
+    const current = settings();
+    const service = serviceFor(app, current);
+    await service.installFromTree(claudePluginTree(), "github:example/docs-helper");
+    // Simulate the folder having been renamed on disk after install.
+    await app.vault.adapter.rename(".agentic-plugins/docs-helper", ".agentic-plugins/docs-helper-renamed");
+
+    await service.removePackage("docs-helper", ".agentic-plugins/docs-helper-renamed");
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/docs-helper-renamed")).toBeNull();
     expect(current.plugins.sources["docs-helper"]).toBeUndefined();
   });
 });

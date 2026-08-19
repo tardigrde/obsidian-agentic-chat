@@ -292,7 +292,7 @@ describe("mergePluginMcpServers / syncMcpServers", () => {
     expect(merged[0]?.knownTools).toHaveLength(1);
   });
 
-  it("drops persisted records for servers no plugin declares", () => {
+  it("drops persisted plugin records for servers no plugin declares", () => {
     const derived = [
       {
         ...createMcpServerSettings({ id: "plugin_a_b", name: "a: b", url: "https://a.example/mcp" }),
@@ -302,9 +302,52 @@ describe("mergePluginMcpServers / syncMcpServers", () => {
     ];
     const persisted = [
       ...derived,
-      { ...createMcpServerSettings({ id: "orphan", name: "Orphan", url: "https://orphan.example/mcp" }), headers: {} },
+      {
+        ...createMcpServerSettings({ id: "orphan", name: "Orphan", url: "https://orphan.example/mcp" }),
+        source: "plugin" as const,
+        headers: {},
+      },
     ];
     expect(mergePluginMcpServers(persisted, derived).map((server) => server.id)).toEqual(["plugin_a_b"]);
+  });
+
+  it("preserves user-configured servers alongside derived plugin servers", () => {
+    const userServer = {
+      ...createMcpServerSettings({ id: "my-user-server", name: "User", url: "https://user.example/mcp" }),
+      source: "user" as const,
+      headers: {},
+    };
+    const derived = [
+      {
+        ...createMcpServerSettings({ id: pluginMcpServerId("corp", "api"), name: "corp: api", url: "https://a.example/mcp" }),
+        source: "plugin" as const,
+        pluginRoot: ".agentic-plugins/corp",
+        headers: {},
+      },
+    ];
+    const persisted = [
+      { ...userServer },
+      { ...derived[0], enabled: false },
+      {
+        ...createMcpServerSettings({ id: "orphan-plugin", name: "Orphan", url: "https://orphan.example/mcp" }),
+        source: "plugin" as const,
+        headers: {},
+      },
+    ];
+    const merged = mergePluginMcpServers(persisted, derived);
+    expect(merged.map((server) => server.id)).toEqual(["my_user_server", derived[0].id]);
+    expect(merged[0]).toMatchObject({ source: "user", url: "https://user.example/mcp" });
+    expect(merged[1]).toMatchObject({ enabled: false, source: "plugin" });
+  });
+
+  it("keeps user servers even when there are no plugin servers", () => {
+    const userServer = {
+      ...createMcpServerSettings({ id: "my-user-server", name: "User", url: "https://user.example/mcp" }),
+      source: "user" as const,
+      headers: {},
+    };
+    const merged = mergePluginMcpServers([{ ...userServer }], []);
+    expect(merged.map((server) => server.id)).toEqual(["my_user_server"]);
   });
 
   it("syncMcpServers writes the merged list back", () => {

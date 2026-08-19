@@ -269,9 +269,14 @@ export class PluginService {
     return result;
   }
 
-  /** Remove a package and prune its plugin-sourced MCP records. */
-  async removePackage(name: string): Promise<void> {
-    const rootPath = `${this.pluginsFolder()}/${name}`;
+  /**
+   * Remove a package and prune its plugin-sourced MCP records. The vault
+   * folder is derived from `rootPath` (the loader's reported package path),
+   * not the manifest name: a folder may legitimately differ from the name
+   * (renamed folder, imported packages whose folder is slugified), and
+   * deleting by name would remove the wrong path and orphan the package.
+   */
+  async removePackage(name: string, rootPath: string): Promise<void> {
     await this.vaultWriter().removeFolder(rootPath);
     const settings = this.getSettings();
     settings.mcp.servers = settings.mcp.servers.filter((server) => server.source !== "plugin" || server.pluginRoot !== rootPath);
