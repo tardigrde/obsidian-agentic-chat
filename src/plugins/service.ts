@@ -25,7 +25,7 @@ import {
   mergePluginMcpServers,
   type LoadedPlugin,
 } from "./loader";
-import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, slugifyPluginName } from "./manifest";
+import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, slugifyPluginName, validatePluginManifest } from "./manifest";
 
 export interface GenerateMcpPackageResult {
   /** Vault path of the generated package directory. */
@@ -139,6 +139,9 @@ export class PluginService {
       headers: {},
       problems: [],
     });
+    // The generator is an explicit opt-in: the new server starts enabled
+    // (unlike imported/plugin-declared servers, which default to disabled).
+    derived.enabled = true;
     const settings = this.getSettings();
     const existingPluginServers = settings.mcp.servers.filter((server) => server.source === "plugin");
     settings.mcp.servers = mergePluginMcpServers(settings.mcp.servers, [...existingPluginServers, derived]);
@@ -207,11 +210,24 @@ export class PluginService {
         `Found ${sniffed.candidates.length} packages in this source; installed ${converted.name}.`,
       );
     }
-    const manifestPath = candidate.root ? `${candidate.root}/plugin.json` : "plugin.json";
+    // Native manifests are installed verbatim, so validate them before they are
+    // written: a bad manifest must fail the import, not land in the vault and
+    // only be rejected by the loader on the next scan.
+    let nativeManifest: string | undefined;
+    if (converted.native) {
+      const manifestPath = candidate.manifestPath ?? (candidate.root ? `${candidate.root}/plugin.json` : "plugin.json");
+      const manifestBytes = tree.get(manifestPath);
+      if (!manifestBytes) throw new Error("The native plugin package has no plugin.json to install.");
+      nativeManifest = decodeUtf8(manifestBytes);
+      const validation = validatePluginManifest(nativeManifest);
+      if (validation.fatal) {
+        throw new Error(`The plugin package's plugin.json is invalid: ${validation.fatal}`);
+      }
+    }
     const result = await installPackage(this.vaultWriter(), {
       converted,
       pluginsFolder: this.pluginsFolder(),
-      ...(converted.native ? { nativeManifest: decodeUtf8(tree.get(manifestPath) as Uint8Array) } : {}),
+      ...(nativeManifest ? { nativeManifest } : {}),
     });
     this.recordSource(result.name, label);
     await this.recordPluginMcp(result.name, converted);
@@ -408,6 +424,10 @@ export class PluginService {
         problems: [],
       }),
       enabled: false,
+      // Plugin literal headers are not persisted to data.json: the merge re-
+      // derives them from the package's mcp.json at runtime, so persisting
+      // them would only duplicate package content into the settings file.
+      headers: {},
     }));
     const settings = this.getSettings();
     settings.mcp.servers = mergePluginMcpServers(settings.mcp.servers, derived);

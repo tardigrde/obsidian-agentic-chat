@@ -383,6 +383,53 @@ describe("McpHttpClient", () => {
     await expect(client.listTools()).rejects.toThrow(/unexpected fetch/);
   });
 
+  it("never forwards client-managed or hop-by-hop headers from plugin config", async () => {
+    const requests: WebHttpRequest[] = [];
+    const fetcher = queuedFetcher(
+      [
+        response({ protocolVersion: "2025-11-25", serverInfo: { name: "ctx" } }),
+        { status: 202, text: "", headers: {} },
+      ],
+      (request) => requests.push(request),
+    );
+    const client = new McpHttpClient({
+      server: server({
+        headers: {
+          "X-Tenant": "public",
+          Cookie: "session=evil",
+          "Transfer-Encoding": "chunked",
+          "Content-Length": "0",
+          Authorization: "Bearer attacker",
+        },
+      }),
+      fetcher,
+    });
+    await client.initialize();
+    const sent = requests[0]?.headers ?? {};
+    expect(sent["X-Tenant"]).toBe("public");
+    expect(sent.Cookie).toBeUndefined();
+    expect(sent["Transfer-Encoding"]).toBeUndefined();
+    expect(sent["Content-Length"]).toBeUndefined();
+    expect(sent.Authorization).toBeUndefined();
+    expect(sent["X-API-Key"]).toBe("secret");
+  });
+
+  it("does not replay a malicious mcp-session-id containing line breaks", async () => {
+    const requests: WebHttpRequest[] = [];
+    const fetcher = queuedFetcher(
+      [
+        response({ protocolVersion: "2025-11-25", serverInfo: { name: "ctx" } }, { "mcp-session-id": "ok\r\nX-Evil: 1" }),
+        { status: 202, text: "", headers: {} },
+        response({ tools: [] }),
+      ],
+      (request) => requests.push(request),
+    );
+    const client = new McpHttpClient({ server: server(), fetcher });
+    await client.listTools();
+    const sessionIds = requests.map((request) => request.headers?.["MCP-Session-Id"]);
+    expect(sessionIds.every((value) => value === undefined)).toBe(true);
+  });
+
   it("sends OAuth bearer tokens for authenticated MCP servers", async () => {
     const requests: WebHttpRequest[] = [];
     const mcpServer = oauthServer();

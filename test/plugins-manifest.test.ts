@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_PLUGINS_MCP_SCHEMA_ID,
   AGENT_PLUGINS_SCHEMA_ID,
-  isLoopbackHost,
   isSingleExecutableToken,
   slugifyPluginName,
   validCwdForm,
@@ -11,6 +10,7 @@ import {
   validatePluginManifest,
   validatePluginName,
 } from "../src/plugins/manifest";
+import { isLoopbackHost } from "../src/utils/host-policy";
 
 const MINIMAL_MANIFEST = JSON.stringify({
   $schema: AGENT_PLUGINS_SCHEMA_ID,
@@ -281,6 +281,20 @@ describe("validateMcpUrl", () => {
     expect(validateMcpUrl("https://x.example/mcp#frag")).toMatch(/fragment/);
     expect(validateMcpUrl("ftp://x.example/mcp")).toMatch(/http/);
     expect(validateMcpUrl("not a url")).toMatch(/valid absolute URL/);
+  });
+
+  it("rejects https to cloud-metadata and link-local hosts", () => {
+    expect(validateMcpUrl("https://169.254.169.254/mcp")).toMatch(/link-local|cloud-metadata|non-routable/);
+    expect(validateMcpUrl("https://[fe80::1]:443/mcp")).toMatch(/link-local|cloud-metadata|non-routable/);
+    expect(validateMcpUrl("https://[fc00::1]:443/mcp")).toMatch(/link-local|cloud-metadata|non-routable/);
+    expect(validateMcpUrl("https://0.0.0.0/mcp")).toMatch(/link-local|cloud-metadata|non-routable/);
+  });
+
+  it("still allows https to loopback and private LAN hosts", () => {
+    expect(validateMcpUrl("https://localhost:8443/mcp")).toBeNull();
+    expect(validateMcpUrl("https://127.0.0.1:8443/mcp")).toBeNull();
+    expect(validateMcpUrl("https://10.0.0.5/mcp")).toBeNull();
+    expect(validateMcpUrl("https://192.168.1.10/mcp")).toBeNull();
   });
 });
 

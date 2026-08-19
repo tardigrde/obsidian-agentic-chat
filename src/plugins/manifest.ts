@@ -16,6 +16,7 @@
  *   transport the client does not support are skipped (not errors).
  */
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "../mcp/http-headers";
+import { mcpUrlProblem } from "../utils/host-policy";
 
 /** Canonical plugin manifest schema identifier for Agent Plugins 1.0.0. */
 export const AGENT_PLUGINS_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
@@ -394,22 +395,25 @@ function validateRemoteEntry(
 
 /** Absolute HTTP(S) URL, no user info or fragment; non-loopback hosts require HTTPS. */
 export function validateMcpUrl(url: string): string | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return '"url" must be a valid absolute URL.';
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    return '"url" must use http:// or https://.';
-  }
-  if (parsed.username || parsed.password) return '"url" must not contain user information.';
-  if (parsed.hash) return '"url" must not contain a fragment.';
-  if (parsed.protocol === "http:" && !isLoopbackHost(parsed.hostname)) {
-    return "non-loopback " + '"url" values must use https://.';
-  }
-  return null;
+  return mcpUrlProblem(url);
 }
+
+/** Headers plugins may never declare: the client owns framing/connection/hop-by-hop headers. */
+const BLOCKED_HEADER_NAMES = new Set([
+  "authorization",
+  "host",
+  "content-length",
+  "content-encoding",
+  "transfer-encoding",
+  "connection",
+  "keep-alive",
+  "upgrade",
+  "cookie",
+  "trailer",
+  "te",
+  "proxy-authenticate",
+  "proxy-authorization",
+]);
 
 function validateMcpHeaders(headers: Record<string, string>, problems: string[]): void {
   const seenLower = new Set<string>();
@@ -421,8 +425,8 @@ function validateMcpHeaders(headers: Record<string, string>, problems: string[])
       problems.push(`invalid header "${name}": ${error instanceof Error ? error.message : String(error)}`);
     }
     const lower = name.toLowerCase();
-    if (lower === "authorization") {
-      problems.push('header "authorization" is managed by the client; declare other headers instead.');
+    if (BLOCKED_HEADER_NAMES.has(lower)) {
+      problems.push(`header "${lower}" is managed by the client; declare other headers instead.`);
     }
     if (seenLower.has(lower)) {
       problems.push(`header "${name}" is repeated under different casing.`);
@@ -445,17 +449,6 @@ export function validCwdForm(cwd: string): boolean {
   if (cwd === "${PLUGIN_ROOT}" || cwd.startsWith("${PLUGIN_ROOT}/")) return true;
   if (cwd === "${PLUGIN_DATA}" || cwd.startsWith("${PLUGIN_DATA}/")) return true;
   return false;
-}
-
-/** Loopback hosts: "localhost" or an IP literal in a loopback range (127/8, ::1). */
-export function isLoopbackHost(hostname: string): boolean {
-  const lower = hostname.toLowerCase();
-  if (lower === "localhost") return true;
-  if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(lower)) {
-    const first = Number.parseInt(lower.split(".")[0] ?? "0", 10);
-    return first === 127;
-  }
-  return lower === "::1" || lower === "[::1]";
 }
 
 /**

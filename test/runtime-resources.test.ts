@@ -11,7 +11,24 @@ import {
 } from "../src/agent/runtime-resources";
 import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import type { WebFetcher } from "../src/tools/web-fetch";
+import { createMcpServerSettings } from "../src/mcp/settings";
+import { pluginMcpServerId } from "../src/plugins/loader";
 import { FakeApp } from "./helpers/fake-vault";
+
+/** A persisted, user-enabled record for the seeded mcp-server plugin. */
+function enabledPluginServer(): ReturnType<typeof createMcpServerSettings> {
+  return {
+    ...createMcpServerSettings({
+      id: pluginMcpServerId("mcp-server", "docs"),
+      name: "mcp-server: docs",
+      url: "https://mcp.example.com/mcp",
+      enabled: true,
+    }),
+    source: "plugin",
+    pluginRoot: ".agentic-plugins/mcp-server",
+    headers: {},
+  };
+}
 
 function fakeAdapter(files: Record<string, string>): DataAdapter {
   return {
@@ -142,6 +159,13 @@ describe("agent runtime resources", () => {
     expect(prompt).toContain("read-only");
   });
 
+  it("marks plugin-contributed skill bodies as untrusted in the system prompt", async () => {
+    const resources = await loadAgentRuntimeResources(await seededApp(), settings());
+    const prompt = composeAgentSystemPrompt(settings(), resources, "");
+    expect(prompt).toContain("SECURITY BOUNDARY");
+    expect(prompt).toMatch(/untrusted content/i);
+  });
+
   it("builds parent tools from the loaded resource snapshot", () => {
     const resources: AgentRuntimeResources = {
       skills: [],
@@ -200,7 +224,7 @@ describe("agent runtime resources", () => {
     );
     const resources = await loadAgentRuntimeResources(
       app,
-      settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] } }),
+      settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [enabledPluginServer()] } }),
       mcpFetcher(),
     );
 
@@ -212,7 +236,7 @@ describe("agent runtime resources", () => {
       webFetch: noopFetcher,
     });
 
-    expect(tools.map((tool) => tool.name)).toContain("mcp__plugin_mcp_server_d_288a384fa100__resolve_library_id");
+    expect(tools.map((tool) => tool.name)).toContain(`mcp__${enabledPluginServer().id}__resolve_library_id`);
   });
 
   it("keeps MCP discovery failures from plugin servers in runtime diagnostics", async () => {
@@ -234,14 +258,14 @@ describe("agent runtime resources", () => {
     );
     const resources = await loadAgentRuntimeResources(
       app,
-      settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] } }),
+      settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [enabledPluginServer()] } }),
       async () => ({ status: 500, text: "server down", headers: {} }),
     );
 
     expect(resources.mcpTools).toEqual([]);
     expect(resources.mcpDiagnostics).toEqual([
       expect.objectContaining({
-        serverId: "plugin_mcp_server_d_288a384fa100",
+        serverId: enabledPluginServer().id,
         serverName: "mcp-server: docs",
         status: "error",
         toolCount: 0,

@@ -3,13 +3,14 @@ import type { McpServerSettings } from "./settings";
 import { parseWwwAuthenticate, refreshMcpOAuthToken, shouldRefreshMcpOAuthToken } from "./oauth";
 import { DEFAULT_MCP_HTTP_TIMEOUT_MS, fetchWithMcpTimeout } from "./http";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
-import { isLoopbackHost } from "../plugins/manifest";
+import { mcpUrlProblem } from "../utils/host-policy";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
 const MCP_PROTOCOL_VERSION_FALLBACKS = ["2025-06-18", "2024-11-05"] as const;
 const MCP_MAX_SSE_RESUME_ATTEMPTS = 3;
 const JSON_RPC = "2.0";
 const ACCEPT = "application/json, text/event-stream";
+const MAX_SESSION_ID_LENGTH = 1024;
 
 export interface McpToolDefinition {
   name: string;
@@ -287,7 +288,7 @@ export class McpHttpClient {
       signal,
       this.requestTimeoutMs,
     );
-    const sessionId = response.headers["mcp-session-id"];
+    const sessionId = sanitizeMcpSessionId(response.headers["mcp-session-id"]);
     if (sessionId) this.sessionId = sessionId;
     if (response.status === 0) {
       throw new Error(`MCP ${this.server.name} request failed: ${response.text || "network error"}.`);
@@ -325,7 +326,7 @@ export class McpHttpClient {
       signal,
       this.requestTimeoutMs,
     );
-    const sessionId = response.headers["mcp-session-id"];
+    const sessionId = sanitizeMcpSessionId(response.headers["mcp-session-id"]);
     if (sessionId) this.sessionId = sessionId;
     if (response.status === 0) {
       throw new Error(`MCP ${this.server.name} SSE resume failed: ${response.text || "network error"}.`);
@@ -350,8 +351,28 @@ export class McpHttpClient {
     // Client-generated HTTP/MCP/auth headers take precedence per the Agent
     // Plugins spec, so a plugin-declared header that collides with one of
     // those names (case-insensitively) is dropped instead of being sent
-    // alongside its differently-cased twin.
-    const clientManaged = new Set(["accept", "content-type", "mcp-protocol-version", "mcp-session-id", "authorization"]);
+    // alongside its differently-cased twin. Hop-by-hop and request-shaping
+    // headers are never forwarded from plugin/server config: the client owns
+    // framing and connection handling.
+    const clientManaged = new Set([
+      "accept",
+      "content-type",
+      "mcp-protocol-version",
+      "mcp-session-id",
+      "authorization",
+      "host",
+      "content-length",
+      "content-encoding",
+      "transfer-encoding",
+      "connection",
+      "keep-alive",
+      "upgrade",
+      "cookie",
+      "trailer",
+      "te",
+      "proxy-authenticate",
+      "proxy-authorization",
+    ]);
     const headers: Record<string, string> = {};
     for (const [name, value] of Object.entries(this.server.headers)) {
       if (!clientManaged.has(name.toLowerCase())) headers[name] = value;
@@ -455,6 +476,18 @@ function bearerAuthorizationHeader(value: string): string {
   return /^Bearer\s+/i.test(trimmed) ? trimmed : `Bearer ${trimmed}`;
 }
 
+/**
+ * A server-controlled `mcp-session-id` is replayed verbatim into later
+ * requests, so it must not carry line breaks/null bytes (header injection)
+ * or unbounded length. Invalid values are ignored rather than replayed.
+ */
+function sanitizeMcpSessionId(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if (/[\r\n\0]/.test(value)) return undefined;
+  if (value.length > MAX_SESSION_ID_LENGTH) return undefined;
+  return value;
+}
+
 function oauthTokenStateKey(server: McpServerSettings): string {
   const { accessToken, refreshToken, expiresAt, scope } = server.oauth;
   return JSON.stringify({ accessToken, refreshToken, expiresAt, scope });
@@ -467,10 +500,10 @@ export function normalizeMcpUrl(input: string): string {
   } catch {
     throw new Error(`Invalid MCP server URL: ${input}`);
   }
-  // Loopback hosts may use plain http (matches the Agent Plugins manifest rule).
-  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopbackHost(parsed.hostname))) {
-    throw new Error(`MCP server URLs must use https: ${input}`);
-  }
+  // Shared MCP endpoint policy: https for routable hosts, http only for
+  // loopback, never non-routable (cloud-metadata/link-local) targets.
+  const problem = mcpUrlProblem(input.trim());
+  if (problem) throw new Error(`MCP server URL rejected: ${problem} (${input})`);
   return parsed.toString();
 }
 

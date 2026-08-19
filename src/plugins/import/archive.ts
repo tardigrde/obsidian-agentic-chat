@@ -15,11 +15,16 @@ export const ARCHIVE_LIMITS = {
 
 export type ArchiveKind = "zip" | "tar.gz";
 
+/** Windows reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9). */
+const WINDOWS_RESERVED_BASE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+
 /**
  * Normalize and vet a path extracted from an archive. Returns null when the
  * path is unsafe (absolute, parent-traversal, drive-qualified, empty, or a
  * directory marker); backslashes are normalized to forward slashes because
- * some ZIP creators use Windows separators.
+ * some ZIP creators use Windows separators. Any single segment that is `.` or
+ * `..`, ends in a dot or space, or is a Windows reserved device name is also
+ * rejected, so odd-but-passing paths can never escape or collide weirdly.
  */
 export function safeArchivePath(raw: string): string | null {
   let path = raw.replace(/\\/g, "/").trim();
@@ -27,6 +32,11 @@ export function safeArchivePath(raw: string): string | null {
   if (!path || path.endsWith("/") || path.includes("/./")) return null;
   if (path.startsWith("/") || path.includes("/../") || path === ".." || path.startsWith("../") || /^[A-Za-z]:/.test(path)) {
     return null;
+  }
+  for (const segment of path.split("/")) {
+    if (!segment || segment === "." || segment === "..") return null;
+    if (/[. ]$/.test(segment)) return null;
+    if (WINDOWS_RESERVED_BASE.test(segment)) return null;
   }
   for (let index = 0; index < path.length; index += 1) {
     const code = path.charCodeAt(index);

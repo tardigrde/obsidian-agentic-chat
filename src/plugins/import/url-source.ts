@@ -1,5 +1,15 @@
 import { requestUrl } from "obsidian";
-import { extractArchive, looksGzip, looksZip, type ArchiveKind, type FileTree } from "./archive";
+import {
+  ARCHIVE_LIMITS,
+  extractArchive,
+  looksGzip,
+  looksZip,
+  type ArchiveKind,
+  type FileTree,
+} from "./archive";
+
+/** Cap on a single import download; extraction limits apply after this check. */
+const MAX_DOWNLOAD_BYTES = ARCHIVE_LIMITS.totalBytes;
 
 /**
  * Where an importable package lives, per the accepted URL grammar:
@@ -149,17 +159,30 @@ export function createObsidianBytesFetcher(): ImportBytesFetcher {
   const fetcher: ImportBytesFetcher = {
     fetchBytes: async (url: string) => {
       const response = await requestUrl({ url, throw: false });
+      const headers = response.headers ?? {};
+      const declared = Number.parseInt(
+        typeof headers["content-length"] === "string" ? headers["content-length"] : "",
+        10,
+      );
+      if (Number.isFinite(declared) && declared > MAX_DOWNLOAD_BYTES) {
+        throw new Error(
+          `Refusing to download ${url}: server declares ${declared} bytes, over the ${MAX_DOWNLOAD_BYTES} byte limit.`,
+        );
+      }
       let bytes: Uint8Array | undefined;
       try {
         if (response.arrayBuffer) bytes = new Uint8Array(response.arrayBuffer);
       } catch {
         bytes = undefined;
       }
-      const headers = response.headers ?? {};
+      if (bytes && bytes.length > MAX_DOWNLOAD_BYTES) {
+        throw new Error(`Refusing to use ${url}: ${bytes.length} bytes exceeds the ${MAX_DOWNLOAD_BYTES} byte limit.`);
+      }
+      const contentType = typeof headers["content-type"] === "string" ? headers["content-type"] : undefined;
       return {
         status: response.status,
         bytes,
-        contentType: typeof headers["content-type"] === "string" ? headers["content-type"] : undefined,
+        contentType,
       };
     },
   };

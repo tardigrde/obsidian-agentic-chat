@@ -81,6 +81,19 @@ describe("archive extraction", () => {
     expect(safeArchivePath("ok/file.md")).toBe("ok/file.md");
   });
 
+  it("rejects trailing .., dot/space segments, and Windows reserved names", () => {
+    expect(safeArchivePath("a/b/..")).toBeNull();
+    expect(safeArchivePath("a//..")).toBeNull();
+    expect(safeArchivePath("a/./b.md")).toBeNull();
+    expect(safeArchivePath("a/b./c.md")).toBeNull();
+    expect(safeArchivePath("a/b /c.md")).toBeNull();
+    expect(safeArchivePath("CON")).toBeNull();
+    expect(safeArchivePath("skills/NUL/SKILL.md")).toBeNull();
+    expect(safeArchivePath("a/COM1.txt")).toBeNull();
+    expect(safeArchivePath("a/lpt9.bin")).toBeNull();
+    expect(safeArchivePath("ok/file.md")).toBe("ok/file.md");
+  });
+
   it("skips an oversized entry instead of aborting the rest of the tar", () => {
     // A single entry larger than the per-file cap that appears before
     // plugin.json must be skipped, not fatal (codeload tarballs sort entries).

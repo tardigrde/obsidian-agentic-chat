@@ -101,6 +101,20 @@ describe("PluginService.installFromTree", () => {
     expect(current.plugins.sources["my-awesome-plugin"]).toBe("github:example/my-awesome-plugin");
   });
 
+  it("rejects a native package whose manifest fails validation at install time", async () => {
+    const { app, vault } = await seed();
+    const service = serviceFor(app, settings());
+    const tree = new Map<string, Uint8Array>([
+      [
+        "plugin.json",
+        ENCODER.encode(JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "My Native Plugin" })),
+      ],
+      ["skills/x/SKILL.md", ENCODER.encode("---\nname: x\ndescription: D\n---\nBody")],
+    ]);
+    await expect(service.installFromTree(tree, "github:example/native")).rejects.toThrow(/plugin.json is invalid/);
+    expect(vault.contentOf(".agentic-plugins/my-native-plugin/plugin.json")).toBeUndefined();
+  });
+
   it("records the source label and persists imported MCP servers disabled by default", async () => {
     const { app } = await seed();
     const current = settings();

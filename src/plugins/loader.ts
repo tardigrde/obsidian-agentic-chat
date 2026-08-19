@@ -291,7 +291,11 @@ export function mcpServerFromPluginEntry(
       id: pluginMcpServerId(pluginName, entry.key),
       name: `${pluginName}: ${entry.key}`,
       url: entry.url ?? "",
-      enabled: true,
+      // Plugin MCP servers start disabled (D11) — for imported packages the
+      // import flow reinforces this, and hand-authored mcp.json servers are
+      // not silently enabled just by appearing on disk. The "Add MCP server"
+      // generator opts in explicitly.
+      enabled: false,
       approval: "ask",
       authType: "none",
     }),

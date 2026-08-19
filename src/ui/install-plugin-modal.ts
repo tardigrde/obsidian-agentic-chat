@@ -1,7 +1,7 @@
 import { App, Modal, Notice, Platform, Setting } from "obsidian";
 import type { PluginService } from "../plugins/service";
 import type { InstallResult } from "../plugins/import/install";
-import { extractArchive, looksGzip, looksZip, type FileTree } from "../plugins/import/archive";
+import { extractArchive, looksGzip, looksZip, safeArchivePath, type FileTree } from "../plugins/import/archive";
 import { stripSingleTopLevelDir } from "../plugins/import/url-source";
 import { sniffSource, type MarketplaceSourceEntry } from "../plugins/import/sniff";
 
@@ -107,7 +107,11 @@ export class InstallPluginModal extends Modal {
       const tree: FileTree = new Map();
       for (const file of entries) {
         const relative = file.webkitRelativePath ?? file.name;
-        tree.set(relative, new Uint8Array(await file.arrayBuffer()));
+        // Normalize through the same guard used for archive paths so the
+        // install pipeline never sees `.`/`..`/reserved segments.
+        const safe = safeArchivePath(relative);
+        if (!safe) continue;
+        tree.set(safe, new Uint8Array(await file.arrayBuffer()));
       }
       await this.installTree(tree, "Local folder");
     };
