@@ -68,6 +68,9 @@ export class AssistantBubble {
   private reasoningStart = 0;
   // Distinct vault paths touched by tool calls this turn, rendered as source chips.
   private readonly sourcePaths = new Set<string>();
+  // Guard so the settle/chip chrome runs once per bubble even when both the
+  // text and no-text finalize paths (or a later agent_end) touch the same turn.
+  private finalized = false;
 
   constructor(
     parent: HTMLElement,
@@ -242,9 +245,13 @@ export class AssistantBubble {
     this.syncStepCollapsible(card, body);
     this.steps.set(id, { card, icon, body, name, startedAt: performance.now() });
     // Record the tool's vault target (if any) so finalized turns can surface a
-    // compact list of source files as chips under the response text.
-    const path = callPath(rawArgs);
-    if (path) this.sourcePaths.add(path);
+    // compact list of source files as chips under the response text. Only
+    // read-style tools count as sources — writes are outputs, deletes/renames
+    // point at moved paths, and ls targets a folder.
+    if (SOURCE_TOOLS.has(name)) {
+      const path = callPath(rawArgs);
+      if (path) this.sourcePaths.add(path);
+    }
   }
 
   /** Toggle a step's body open/closed and reflect state on the chevron + aria. */
@@ -501,6 +508,23 @@ export class AssistantBubble {
     enhanceCallouts(this.textEl);
     installRenderedLinkHandlers(this.textEl, app, this.actions.onOpenExternalLink);
     await renderMermaidBlocks(this.textEl);
+    this.finalizeChrome();
+  }
+
+  /**
+   * Settle a turn that produced no rendered text (abort, model error, or a
+   * text-less tool-only message): stop live timers and flip the reasoning pill
+   * to its static state, but never render markdown. Idempotent.
+   */
+  finalizeWithoutText(): void {
+    this.clearLoading();
+    this.finalizeChrome();
+  }
+
+  /** One-time settle of the turn chrome (reasoning pill + source chips). */
+  private finalizeChrome(): void {
+    if (this.finalized) return;
+    this.finalized = true;
     this.settleReasoning();
     this.renderSourceChips();
   }
@@ -601,12 +625,18 @@ export type RenderedChatLink =
 /** Cap the per-turn source-chip row so it can't dominate a long tool-heavy turn. */
 const MAX_SOURCE_CHIPS = 8;
 
+/** Tools whose target file counts as a "source" (its contents were read into context). */
+const SOURCE_TOOLS = new Set(["read", "get_active_note", "edit"]);
+
 /** Short display name for a source chip: the last path segment (full path in the title). */
 export function sourceChipName(path: string): string {
   const trimmed = path.trim();
   if (!trimmed) return trimmed;
-  const last = trimmed.split("/").filter(Boolean).at(-1);
-  return last || trimmed;
+  const segments = trimmed.split("/");
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i]) return segments[i];
+  }
+  return trimmed;
 }
 
 export interface RenderedAnchorLike {

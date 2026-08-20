@@ -282,6 +282,9 @@ export class ChatView extends ItemView {
   async onClose(): Promise<void> {
     this.closed = true;
     this.cancelAutocomplete();
+    this.clearPendingLoading();
+    this.bubble?.dispose();
+    this.bubble = null;
     if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
     this.userScrollIntentTimer = null;
     // The view owns its tab services; dispose them so no detached agent keeps running.
@@ -2518,6 +2521,8 @@ export class ChatView extends ItemView {
     if (displayText) {
       void bubble.finalizeText(displayText, this.app, this);
       bubble.showActions({ canRetry: isLast, canImplement: planning && isLast && hasPlanComplete });
+    } else {
+      bubble.finalizeWithoutText();
     }
     const errorMessage = (message as { errorMessage?: string }).errorMessage;
     if (errorMessage) {
@@ -2613,6 +2618,7 @@ export class ChatView extends ItemView {
       case "agent_end":
         this.clearPendingLoading();
         this.bubble?.clearLoading();
+        this.bubble?.finalizeWithoutText();
         this.setRunning(false);
         this.statusEl.setText("");
         this.syncChrome();
@@ -2629,7 +2635,8 @@ export class ChatView extends ItemView {
     if (!bubble) return;
     if (event.type === "text_delta" && event.delta) bubble.appendText(event.delta);
     else if (event.type === "thinking_delta" && event.delta) bubble.appendReasoning(event.delta);
-    else return;
+    // Any message_update means the model is producing output (text, reasoning,
+    // or tool-call args), so the "streaming nothing yet" loader can go.
     this.clearPendingLoading();
     bubble.clearLoading();
   }
@@ -2660,6 +2667,8 @@ export class ChatView extends ItemView {
     if (displayText) {
       void bubble.finalizeText(displayText, this.app, this);
       bubble.showActions({ canRetry: true, canImplement: planning && hasPlanComplete });
+    } else {
+      bubble.finalizeWithoutText();
     }
     const errorMessage = (message as { errorMessage?: string }).errorMessage;
     if (errorMessage) {
