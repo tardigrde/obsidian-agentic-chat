@@ -118,6 +118,7 @@ describe("agentic-chat beautifului polish", function () {
       },
       { timeout: 2_000, timeoutMsg: "first streamed token never rendered" },
     );
+    await emit({ type: "agent_end" });
   });
 
   it("never flashes the loader when the first delta arrives inside the gate", async function () {
@@ -146,6 +147,7 @@ describe("agentic-chat beautifului polish", function () {
       },
       { timeout: 2_000, timeoutMsg: "in-gate delta never rendered" },
     );
+    await emit({ type: "agent_end" });
   });
 
   it("live reasoning settles to Thought with a final elapsed timer once the turn renders", async function () {
@@ -172,6 +174,7 @@ describe("agentic-chat beautifului polish", function () {
     expect(settledTime.time.length).toBeGreaterThan(0);
     const settledDot = await probe({ key: "count", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning.is-done .agentic-chat-reasoning-dot svg", all: true });
     expect(settledDot.count.length).toBe(1);
+    await emit({ type: "agent_end" });
   });
 
   it("history-style near-instant turns collapse to a static Reasoning pill with no timer", async function () {
@@ -197,6 +200,7 @@ describe("agentic-chat beautifului polish", function () {
     const settledTime = await probe({ key: "time", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning-time" });
     if (settled.label === "Reasoning") expect(settledTime.time).toBe("");
     else expect(settledTime.time.length).toBeGreaterThan(0);
+    await emit({ type: "agent_end" });
   });
 
   it("renders deduped source chips only for read-style tools and opens the note on click", async function () {
@@ -232,6 +236,7 @@ describe("agentic-chat beautifului polish", function () {
         ),
       { timeout: 5_000, timeoutMsg: "clicking a source chip did not open its note" },
     );
+    await emit({ type: "agent_end" });
   });
 
   it("caps the chip row at 8 with a +N overflow counter", async function () {

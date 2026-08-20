@@ -55,13 +55,39 @@ describe(ENABLED ? "agentic-chat design audit" : "agentic-chat design audit (dis
   }
 
   it("captures the full design journey screenshots", async function () {
-    const dir = path.join(AUDIT_ROOT, new Date().toISOString().replace(/[:.]/g, "-"));
+    const mode = (process.env.AGENTIC_CHAT_DESIGN_AUDIT_MODE ?? "sidebar").trim() || "sidebar";
+    const dir = path.join(AUDIT_ROOT, `${new Date().toISOString().replace(/[:.]/g, "-")}-${mode}`);
     mkdirSync(dir, { recursive: true });
 
-    await browser.executeObsidianCommand("agentic-chat:open-chat");
+    if (mode === "fullscreen") {
+      // Make the chat the ONLY instance and open it in the main area so the pane
+      // is as wide as Obsidian allows (the right sidebar one is detached first).
+      await browser.executeObsidian(async ({ app }, viewType) => {
+        app.workspace.detachLeavesOfType(viewType);
+        const leaf = app.workspace.getLeaf(true);
+        if (leaf) {
+          try {
+            await leaf.setViewState({ type: viewType, active: true });
+            void app.workspace.revealLeaf(leaf);
+          } catch {
+            // fall back to the open-chat command below
+          }
+        }
+      }, VIEW_TYPE_AGENT_CHAT);
+    }
+    if (!(await $(".agentic-chat-view").isExisting())) {
+      await browser.executeObsidianCommand("agentic-chat:open-chat");
+    }
     await $(".agentic-chat-view").waitForExist();
     try {
-      await browser.setWindowSize(1440, 940);
+      const width = mode === "mobile" ? 390 : 1440;
+      const height = mode === "mobile" ? 844 : 940;
+      await browser.setWindowSize(width, height);
+      if (mode === "mobile") {
+        await browser.execute(() => {
+          document.documentElement.style.zoom = "1";
+        });
+      }
     } catch {
       // window resizing is best-effort on the Obsidian runtime
     }

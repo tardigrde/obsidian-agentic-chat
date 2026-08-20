@@ -38,6 +38,37 @@
   height: 32px;
 }
 
+.agentic-chat-empty-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--size-2-2);
+  margin-top: var(--size-2-1);
+}
+
+.agentic-chat-empty-suggestion {
+  padding: 5px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: background-color 150ms, border-color 150ms, color 150ms;
+}
+
+.agentic-chat-empty-suggestion:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.agentic-chat-empty-suggestion:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
 .agentic-chat-message {
   border-radius: var(--radius-m);
   max-width: 100%;
@@ -118,16 +149,6 @@
 .agentic-chat-mermaid-error {
   border-left: 3px solid var(--text-error);
   padding-left: var(--size-2-3);
-}
-
-.agentic-chat-footer {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
-  margin-top: var(--size-2-3);
-}
-
-.agentic-chat-footer:empty {
-  display: none;
 }
 
 .agentic-chat-error {
@@ -434,12 +455,29 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Per-turn timeline (E10): reasoning trace + tool steps share one container and
+   a single continuous left rail, sized by ResizeObserver to hug the content. */
+.agentic-chat-timeline {
+  position: relative;
+  padding-left: 14px;
+  margin-bottom: var(--size-2-1);
+}
+
+.agentic-chat-timeline-rail {
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  width: 1px;
+  background-color: var(--background-modifier-border);
+  border-radius: 1px;
+  pointer-events: none;
+  transition: height 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
 .agentic-chat-reasoning-body {
   white-space: pre-wrap;
   color: var(--text-muted);
-  border-left: 1px solid var(--background-modifier-border);
-  padding-left: var(--size-4-2);
-  margin-left: var(--size-2-2);
+  padding-left: 0;
   margin-top: var(--size-2-1);
   font-size: 12px;
   line-height: 1.5;
@@ -546,15 +584,19 @@
 }
 
 /* Users with OS-level reduced motion get no flashing loader, shimmer, pop-in,
-   or pulsing status dots. */
+   pulsing status dots, working spinner, or trace pulse. */
 @media (prefers-reduced-motion: reduce) {
   .agentic-chat-loading-cell,
   .agentic-chat-loading-label,
   .agentic-chat-reasoning-dot,
   .agentic-chat-step.is-running .agentic-chat-step-icon svg,
   .agentic-chat-step.is-done .agentic-chat-step-icon,
-  .agentic-chat-step.is-error .agentic-chat-step-icon {
+  .agentic-chat-step.is-error .agentic-chat-step-icon,
+  .agentic-chat-working,
+  .agentic-chat-subagent-status,
+  .agentic-chat-timeline-rail {
     animation: none;
+    transition: none;
   }
 }
 
@@ -786,9 +828,15 @@
 
 /* Clickable vault path inside a tool-call section (read/write/edit target). */
 .agentic-chat-step-path-link {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
   color: var(--text-accent);
   cursor: pointer;
-  word-break: break-all;
+  word-break: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .agentic-chat-step-path-link:hover {
@@ -1256,17 +1304,18 @@
   margin-left: auto;
 }
 
-/* --- Effort knob (per-message reasoning level) --- */
+/* --- Effort knob (per-message reasoning level), right segment of the model pill --- */
 
 .agentic-chat-effort {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: center;
   gap: var(--size-2-1);
-  padding: 2px var(--size-2-3);
-  border: 1px solid var(--background-modifier-border);
+  padding: 2px 6px;
   border-radius: var(--radius-l);
   cursor: pointer;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .agentic-chat-effort:hover {
@@ -1274,7 +1323,7 @@
 }
 
 .agentic-chat-effort.is-override {
-  border-color: var(--interactive-accent);
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
 }
 
 .agentic-chat-effort.is-unavailable {
@@ -1287,11 +1336,13 @@
   opacity: 0.5;
 }
 
-.agentic-chat-effort-label {
-  font-size: var(--font-smallest);
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.agentic-chat-model-pill:focus-visible,
+.agentic-chat-effort:focus-visible,
+.agentic-chat-project-pill:focus-visible,
+.agentic-chat-send:focus-visible,
+.agentic-chat-stop:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
 }
 
 .agentic-chat-effort-value {
@@ -1308,7 +1359,11 @@
 .agentic-chat-mode-toggle {
   display: inline-flex;
   align-items: center;
-  gap: var(--size-2-2);
+  gap: 1px;
+  padding: 1px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background-color: var(--background-secondary);
   cursor: pointer;
 }
 
@@ -1319,44 +1374,30 @@
   cursor: default;
 }
 
-.agentic-chat-mode-track {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  border-radius: 9px;
-  background-color: var(--background-modifier-border);
-  transition: background-color 120ms ease;
-  flex: 0 0 auto;
-}
-
-.agentic-chat-mode-toggle.is-active .agentic-chat-mode-track {
-  background-color: var(--interactive-accent);
-}
-
-.agentic-chat-mode-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background-color: var(--text-on-accent);
-  transition: transform 120ms ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-}
-
-.agentic-chat-mode-toggle.is-active .agentic-chat-mode-knob {
-  transform: translateX(14px);
-}
-
-.agentic-chat-mode-label {
+.agentic-chat-mode-seg {
+  padding: 2px 8px;
+  border-radius: 999px;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
   user-select: none;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-.agentic-chat-mode-toggle.is-active .agentic-chat-mode-label {
-  color: var(--text-accent);
+.agentic-chat-mode-toggle:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+/* Safe is the active segment by default; YOLO lights up instead when enabled. */
+.agentic-chat-mode-toggle:not(.is-active) .agentic-chat-mode-seg:nth-child(1) {
+  background-color: var(--background-primary);
+  box-shadow: 0 0 0 1px var(--background-modifier-border);
+  color: var(--text-normal);
+}
+
+.agentic-chat-mode-toggle.is-active .agentic-chat-mode-seg:nth-child(2) {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
 }
 
 .agentic-chat-plan-badge {
@@ -1374,37 +1415,6 @@
 .agentic-chat-plan-badge-icon svg {
   width: 12px;
   height: 12px;
-}
-
-/* Folder affordance, styled as a pill to match the model/project/effort pills
-   in the same toolbar (uniform border, radius, padding). */
-.agentic-chat-attach {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px var(--size-2-3);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-l);
-  background-color: transparent;
-  box-shadow: none;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.agentic-chat-attach:hover {
-  color: var(--text-normal);
-  background-color: var(--background-modifier-hover);
-}
-
-/* Accent the folder pill while one or more working dirs are granted. */
-.agentic-chat-attach.has-scope {
-  border-color: var(--interactive-accent);
-  color: var(--text-accent);
-}
-
-.agentic-chat-attach svg {
-  width: 15px;
-  height: 15px;
 }
 
 .agentic-chat-status {
@@ -1473,27 +1483,45 @@
   --ctx-fill: var(--color-red);
 }
 
-/* --- Model pill --- */
+/* --- Model + effort in one two-sided pill --- */
+
+.agentic-chat-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
+  background-color: var(--background-secondary);
+  max-width: min(22rem, 70%);
+  overflow: hidden;
+}
+
+.agentic-chat-model-divider {
+  width: 1px;
+  height: 12px;
+  flex: 0 0 auto;
+  background-color: var(--background-modifier-border);
+  margin: 0 1px;
+}
 
 .agentic-chat-model-pill {
   display: inline-flex;
   align-items: center;
   gap: var(--size-2-2);
-  padding: 2px var(--size-2-3);
-  border: 1px solid var(--background-modifier-border);
+  padding: 2px 6px;
   border-radius: var(--radius-l);
   cursor: pointer;
-  max-width: min(16rem, 45%);
-  overflow: hidden;
+  min-width: 0;
 }
 
 .agentic-chat-model-pill:hover {
   background-color: var(--background-modifier-hover);
 }
 
-/* One-shot per-request model override: highlight so it's clearly temporary. */
 .agentic-chat-model-pill.is-override {
-  border-color: var(--interactive-accent);
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
+  border-radius: var(--radius-l);
 }
 
 .agentic-chat-model-pill.is-override .agentic-chat-model-provider {
@@ -1574,12 +1602,6 @@
 
 .agentic-chat-cache.is-high {
   color: var(--color-green);
-}
-
-/* The next-cost projection is opaque; hint it is hoverable + tooltip explains it. */
-.agentic-chat-next-cost {
-  cursor: help;
-  border-bottom: 1px dotted var(--text-faint);
 }
 
 /* --- Plan tracker panel --- */

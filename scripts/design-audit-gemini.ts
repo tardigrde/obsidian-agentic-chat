@@ -148,12 +148,24 @@ function listImages(): string[] {
   return files;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function downscale(source: string): string {
   const out = path.join(tmpdir(), `agentic-audit-${process.pid}-${path.basename(source)}.png`);
   try {
     execFileSync("magick", [source, "-resize", "1150x>", "-strip", "-quality", "88", out]);
   } catch {
-    execFileSync("convert", [source, "-resize", "1150x>", "-strip", "-quality", "88", out]);
+    try {
+      execFileSync("convert", [source, "-resize", "1150x>", "-strip", "-quality", "88", out]);
+    } catch (error) {
+      throw new Error(
+        "ImageMagick (`magick`/`convert`) is required to downscale audit screenshots before sending. " +
+          `Install it or stub the resize step. Original error: ${errorMessage(error)}`,
+        { cause: error },
+      );
+    }
   }
   return out;
 }

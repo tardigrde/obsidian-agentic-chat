@@ -58,6 +58,23 @@ export function cacheHitTone(hit: number): "is-low" | "is-mid" | "is-high" {
   return "is-high";
 }
 
+/**
+ * Bottom-usage line parts for the CURRENT turn only (Claude Code style): tokens ·
+ * cache% [colored] · cost, shown collapsed — the full detail lives in a hover
+ * tooltip. Session-wide cumulative totals are intentionally NOT shown here.
+ */
+export function buildTurnUsageChromeParts(usage: Usage): UsageChromePart[] {
+  const parts: UsageChromePart[] = [];
+  if (usage.totalTokens > 0) {
+    parts.push({ text: `${formatTokenInteger(usage.totalTokens)} tokens` });
+    const hit = cacheHitPercent(usage);
+    if (hit !== null) parts.push({ text: `${hit}% cache`, cls: `agentic-chat-cache ${cacheHitTone(hit)}` });
+    const cost = usage.cost?.total;
+    if (typeof cost === "number" && cost > 0) parts.push({ text: formatCost(cost) });
+  }
+  return parts;
+}
+
 export interface UsageChromePart {
   text: string;
   /** Space-separated class names (e.g. the cache color tone). */

@@ -3,6 +3,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import type { ToolBudgetSnapshot } from "../src/agent/tool-budget";
 import {
   buildModelPillState,
+  buildTurnUsageChromeParts,
   buildUsageChromeParts,
   cacheHitTone,
   folderButtonAriaLabel,
@@ -97,6 +98,27 @@ describe("chrome state helpers", () => {
       { text: "90% cache", cls: "agentic-chat-cache is-high" },
       { text: "$0.02" },
       { text: "next ~$?", cls: "agentic-chat-next-cost", title: "Pricing data unavailable for this model. Try again later or check your connection." },
+    ]);
+  });
+
+  it("builds the collapsed current-turn usage parts without session totals", () => {
+    const usage = {
+      totalTokens: 1_047,
+      input: 900,
+      cacheRead: 810,
+      output: 147,
+      cost: { total: 0.017, input: 0.01, output: 0.007 },
+    } as Usage;
+    expect(buildTurnUsageChromeParts(usage)).toEqual([
+      { text: "1,047 tokens" },
+      { text: "47% cache", cls: "agentic-chat-cache is-low" },
+      { text: "$0.02" },
+    ]);
+    // No next-estimate projection, no session-wide cumulative line, no cost when unknown.
+    expect(buildTurnUsageChromeParts({ totalTokens: 0 } as Usage)).toEqual([]);
+    expect(buildTurnUsageChromeParts({ totalTokens: 100, input: 90 } as Usage)).toEqual([
+      { text: "100 tokens" },
+      { text: "0% cache", cls: "agentic-chat-cache is-low" },
     ]);
   });
 
