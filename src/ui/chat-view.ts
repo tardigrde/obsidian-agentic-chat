@@ -2613,7 +2613,12 @@ export class ChatView extends ItemView {
         this.ensureBubble().updateStep(event.toolCallId, event.partialResult);
         break;
       case "tool_execution_end":
-        this.ensureBubble().endStep(event.toolCallId, toolResultText(event.result), event.isError);
+        this.ensureBubble().endStep(
+          event.toolCallId,
+          toolResultText(event.result),
+          event.isError,
+          event.result,
+        );
         break;
       case "agent_end":
         this.clearPendingLoading();

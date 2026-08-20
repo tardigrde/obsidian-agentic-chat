@@ -468,7 +468,7 @@ export class AssistantBubble {
     if (details.answer) row.createDiv({ cls: "agentic-chat-step-ask-user-answer", text: truncateText(details.answer, 400) });
   }
 
-  endStep(id: string, result: string, isError: boolean): void {
+  endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
     step.card.removeClass("is-running");
@@ -479,6 +479,13 @@ export class AssistantBubble {
       cls: "agentic-chat-step-time",
       text: formatElapsed(performance.now() - step.startedAt),
     });
+    // get_active_note carries its target path in the RESULT, not the args, so
+    // harvest it here (startStep can only see args). Other source tools expose
+    // the path in their args and were already captured.
+    if (!isError && step.name === "get_active_note" && resultObject !== undefined) {
+      const path = callPath(safeJson(resultObject));
+      if (path) this.sourcePaths.add(path);
+    }
     // Result/Error as a body section. A read/write/get_active_note success result
     // is just file contents (already on disk / in context), so hide it; errors
     // always show. Re-sync the chevron: it only appears once the body has content.
@@ -504,11 +511,14 @@ export class AssistantBubble {
     this.textEl.empty();
     this.textEl.removeClass("is-streaming");
     this.textEl.addClass("markdown-rendered");
+    // Settle chrome synchronously (before any await) so a later agent_end can
+    // never double-settle or stamp the timers at a stale moment. Idempotent via
+    // the finalized guard.
+    this.finalizeChrome();
     await MarkdownRenderer.render(app, markdown, this.textEl, "", component);
     enhanceCallouts(this.textEl);
     installRenderedLinkHandlers(this.textEl, app, this.actions.onOpenExternalLink);
     await renderMermaidBlocks(this.textEl);
-    this.finalizeChrome();
   }
 
   /**
@@ -541,7 +551,7 @@ export class AssistantBubble {
     for (const path of paths) {
       const chip = container.createEl("button", {
         cls: "agentic-chat-source-chip",
-        attr: { type: "button", role: "link", title: path, "aria-label": `Open ${path}` },
+        attr: { type: "button", title: path, "aria-label": `Open ${path}` },
       });
       const icon = chip.createSpan({ cls: "agentic-chat-source-chip-icon" });
       setIcon(icon, "file-text");
@@ -574,6 +584,18 @@ export class AssistantBubble {
       details.createEl("pre", { text });
     } else {
       banner.setText(text);
+    }
+    // A text+error turn already carries the "Ask again" action row; only add an
+    // inline banner Retry for text-less failures so there is one action, one way.
+    if (this.actions.onRetry && !this.markdown) {
+      const retry = banner.createEl("button", {
+        cls: "agentic-chat-error-retry",
+        attr: { type: "button", "aria-label": "Retry the failed request" },
+      });
+      const icon = retry.createSpan();
+      setIcon(icon, "refresh-cw");
+      retry.createSpan({ text: "Retry" });
+      retry.addEventListener("click", () => this.actions.onRetry?.());
     }
     this.el.insertBefore(banner, this.actionsEl);
   }
