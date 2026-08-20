@@ -150,14 +150,14 @@ describe("agentic-chat beautifului polish", function () {
     await emit({ type: "agent_end" });
   });
 
-  it("live reasoning settles to Thought with a final elapsed timer once the turn renders", async function () {
+  it("live reasoning settles to Reasoned with a final elapsed timer once the answer streams", async function () {
     await startAssistantTurn();
     await emit(streamDelta("thinking_delta", "trace reasoning step one"));
 
     const present = await probe({ key: "text", selector: ".agentic-chat-reasoning" });
     expect(present.text.length).toBeGreaterThan(0);
     const label = await probe({ key: "label", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning-label" });
-    expect(label.label).toBe("Thinking");
+    expect(label.label).toBe("Reasoning");
     const done = await probe({ key: "cls", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning", attr: "class" });
     expect(done.cls).not.toContain("is-done");
 
@@ -169,7 +169,7 @@ describe("agentic-chat beautifului polish", function () {
 
     await $(".agentic-chat-reasoning.is-done").waitForExist({ timeout: 2_000, timeoutMsg: "reasoning never settled" });
     const settled = await probe({ key: "label", selector: ".agentic-chat-reasoning.is-done .agentic-chat-reasoning-label" });
-    expect(settled.label).toBe("Thought");
+    expect(settled.label).toBe("Reasoned");
     const settledTime = await probe({ key: "time", selector: ".agentic-chat-reasoning-time" });
     expect(settledTime.time.length).toBeGreaterThan(0);
     const settledDot = await probe({ key: "count", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning.is-done .agentic-chat-reasoning-dot svg", all: true });
@@ -177,7 +177,7 @@ describe("agentic-chat beautifului polish", function () {
     await emit({ type: "agent_end" });
   });
 
-  it("history-style near-instant turns collapse to a static Reasoning pill with no timer", async function () {
+  it("history-style near-instant turns collapse to a static Reasoned pill with no timer", async function () {
     await browser.executeObsidian(
       async ({ app }, viewType, events) => {
         const view = app.workspace.getLeavesOfType(viewType)[0]?.view as unknown as {
@@ -196,10 +196,9 @@ describe("agentic-chat beautifului polish", function () {
 
     await $(".agentic-chat-reasoning.is-done").waitForExist({ timeout: 2_000, timeoutMsg: "reasoning never settled" });
     const settled = await probe({ key: "label", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning.is-done .agentic-chat-reasoning-label" });
-    expect(["Reasoning", "Thought"]).toContain(settled.label);
+    expect(settled.label).toBe("Reasoned");
     const settledTime = await probe({ key: "time", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning-time" });
-    if (settled.label === "Reasoning") expect(settledTime.time).toBe("");
-    else expect(settledTime.time.length).toBeGreaterThan(0);
+    expect(settledTime.time).toBe("");
     await emit({ type: "agent_end" });
   });
 

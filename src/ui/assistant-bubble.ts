@@ -65,6 +65,7 @@ export class AssistantBubble {
   private reasoningTimeEl: HTMLElement | null = null;
   private reasoningTimerHandle: number | null = null;
   private reasoningStart = 0;
+  private reasoningSettled = false;
   // Distinct vault paths touched by tool calls this turn, rendered as source chips.
   private readonly sourcePaths = new Set<string>();
   // Per-step source path (for SOURCE_TOOLS) so an errored call can retract its chip.
@@ -93,6 +94,10 @@ export class AssistantBubble {
     // markdown, so a stray event can't append raw text over the final output.
     if (this.markdown) return;
     this.pendingText += delta;
+    // The answer has STARTED streaming → the reasoning trace is done. Settle the
+    // pill now (green "Reasoned" + check) instead of waiting for agent_end, so a
+    // turn with finished tools + streaming text never shows a purple "Thinking".
+    if (this.reasoningBody && !this.reasoningSettled) this.settleReasoning();
     this.scheduleFlush();
   }
 
@@ -109,7 +114,7 @@ export class AssistantBubble {
       setIcon(chevron, "chevron-right");
       const pill = summary.createSpan({ cls: "agentic-chat-reasoning-pill" });
       this.reasoningDotEl = pill.createSpan({ cls: "agentic-chat-reasoning-dot" });
-      this.reasoningLabelEl = pill.createSpan({ cls: "agentic-chat-reasoning-label", text: "Thinking" });
+      this.reasoningLabelEl = pill.createSpan({ cls: "agentic-chat-reasoning-label", text: "Reasoning" });
       this.reasoningTimeEl = summary.createSpan({ cls: "agentic-chat-reasoning-time" });
       this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
       this.ensureTimeline();
@@ -225,25 +230,22 @@ export class AssistantBubble {
   }
 
   /**
-   * Settle the reasoning header into its done state. A near-instant settle
-   * (<100ms, i.e. a history re-render where the full trace is appended then
-   * finalized in one tick) collapses to the static "Reasoning" label with no
-   * timer; a live stream keeps "Thought" + the final elapsed time.
+   * Settle the reasoning header into its done state: one stable label, green
+   * check capsule, and (for a live turn) the final elapsed time. Idempotent —
+   * can be triggered early by the first streamed answer text, or late by an
+   * agent_end / no-text finalize.
    */
   private settleReasoning(): void {
     this.stopReasoningTimer();
-    if (!this.reasoningBody || !this.reasoningLabelEl) return;
+    if (this.reasoningSettled || !this.reasoningBody) return;
+    this.reasoningSettled = true;
     const elapsed = performance.now() - this.reasoningStart;
-    if (elapsed < 100) {
-      this.reasoningLabelEl.setText("Reasoning");
-      this.reasoningTimeEl?.setText("");
-    } else {
-      this.reasoningLabelEl.setText("Thought");
-      this.reasoningTimeEl?.setText(formatElapsed(elapsed));
-    }
-    // Settled reasoning now uses the SAME "completed" primitive as tool steps:
-    // a green-tint capsule with a check icon (no more plain green dot vs green
-    // check split in the status grammar).
+    this.reasoningLabelEl?.setText("Reasoned");
+    // A live stream keeps the final elapsed time; a near-instant/static trace
+    // shows none.
+    this.reasoningTimeEl?.setText(elapsed < 100 ? "" : formatElapsed(elapsed));
+    // Settled reasoning uses the SAME "completed" primitive as tool steps:
+    // a green-tint capsule with a check (no plain green dot vs green check split).
     if (this.reasoningDotEl) setIcon(this.reasoningDotEl, "check");
     this.reasoningBody.closest("details")?.addClass("is-done");
   }
@@ -254,6 +256,10 @@ export class AssistantBubble {
     // and only the chevron toggles the body — so clicking the path link opens
     // the note without collapsing the step. Raw arg JSON is never shown inline.
     const card = this.stepsEl.createDiv({ cls: ["agentic-chat-step", "is-running"] });
+    // External MCP server calls get a distinct visual cue (tinted border + a
+    // human "MCP · <tool>" label) so they never read as local vault tools.
+    const isMcp = name.startsWith("mcp__");
+    if (isMcp) card.addClass("is-mcp");
     const header = card.createDiv({ cls: "agentic-chat-step-header" });
     const toggle = header.createSpan({
       cls: "agentic-chat-step-toggle",
@@ -275,6 +281,7 @@ export class AssistantBubble {
     setIcon(icon, "loader-2");
     const nameEl = header.createSpan({ cls: "agentic-chat-step-name" });
     this.renderStepTitle(nameEl, name, rawArgs);
+    if (isMcp) nameEl.setAttr("title", name);
     const body = card.createDiv({ cls: "agentic-chat-step-body" });
     this.renderCallSection(body, name, rawArgs);
     this.syncStepCollapsible(card, body);
@@ -310,6 +317,12 @@ export class AssistantBubble {
 
   /** Render the header title: a readable label, with a clickable vault path for path-bearing tools. */
   private renderStepTitle(nameEl: HTMLElement, name: string, rawArgs: string): void {
+    if (name.startsWith("mcp__")) {
+      // "mcp__<server>__<tool>" → human "MCP · <tool>"; full id in the tooltip.
+      const segments = name.split("__");
+      nameEl.appendText(`MCP · ${segments.at(-1) ?? name}`);
+      return;
+    }
     if (PATH_TOOLS.has(name)) {
       nameEl.appendText(TOOL_LABELS[name] ?? `Running ${name}`);
       const path = callPath(rawArgs);

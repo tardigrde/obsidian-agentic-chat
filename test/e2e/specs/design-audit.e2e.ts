@@ -159,7 +159,38 @@ describe(ENABLED ? "agentic-chat design audit" : "agentic-chat design audit (dis
     await emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "1. **Daily review** — open the vault each morning.\n2. **Inbox zero** — file new notes same-day.\n3. **Weekly recap** — revisit the index on Sundays." }] } });
     await emit({ type: "agent_end" });
 
-    // 11. error state bubble
+    // 11. subagent dispatch + MCP tool call turn (visualization check)
+    await emit(userEnd("Investigate the vault layout and report what you find."));
+    await emit({ type: "agent_start" });
+    await emit({ type: "message_start", message: { role: "assistant", content: [] } });
+    await emit(streamDelta("thinking_delta", "I will dispatch an explorer subagent to map the vault, then query the code search tool."));
+    await emit(toolStart("t-sub", "subagent", { agent: "explorer", task: "Inspect the vault layout and flag anything unusual" }));
+    await emit({
+      type: "tool_execution_update",
+      toolCallId: "t-sub",
+      partialResult: {
+        details: {
+          kind: "subagent",
+          children: [
+            { agent: "explorer", task: "List all Markdown files", status: "running", stopId: "sub-1", transcript: [{ type: "text", text: "Scanning vault…" }], summary: "" },
+            { agent: "explorer", task: "Read the index note", status: "done", transcript: [{ type: "text", text: "read Notes/Index.md" }], summary: "Read 120 lines." },
+          ],
+        },
+      },
+    });
+    await shot("12-subagent-live", ".agentic-chat-subagents");
+    await emit(toolEnd("t-sub", "Explorer finished: 12 notes found, layout is tidy."));
+    await shot("12-subagent-done", ".agentic-chat-subagent.is-done");
+    await emit(streamDelta("text_delta", "The explorer subagent finished and the layout looks tidy."));
+    await emit(toolStart("t-mcp", "mcp__github__search_repos", { query: "obsidian agent" }));
+    await emit(toolEnd("t-mcp", "2 repositories matched your query."));
+    await shot("13-mcp-call", ".agentic-chat-step");
+    await emit(streamDelta("text_delta", " Two repositories matched the code-search query."));
+    await emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "The explorer subagent finished and the layout looks tidy. Two repositories matched the code-search query." }] } });
+    await emit({ type: "agent_end" });
+    await shot("13-finish-subagent-mcp", ".agentic-chat-assistant:last-child");
+
+    // 12. error state bubble
     await emit(userEnd("This prompt will fail on purpose"));
     await emit({ type: "agent_start" });
     await emit({ type: "message_start", message: { role: "assistant", content: [] } });
@@ -167,7 +198,7 @@ describe(ENABLED ? "agentic-chat design audit" : "agentic-chat design audit (dis
     await emit({ type: "agent_end" });
     await shot("10-error-state", ".agentic-chat-error");
 
-    // 12. final transcript overview
+    // 13. final transcript overview
     await browser.execute(() => {
       const messages = document.querySelector<HTMLElement>(".agentic-chat-messages");
       if (messages) messages.scrollTop = messages.scrollHeight;
