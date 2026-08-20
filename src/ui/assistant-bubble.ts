@@ -63,6 +63,7 @@ export class AssistantBubble {
   private loadingStart = 0;
   // Reasoning header state (status pill + live elapsed timer).
   private reasoningLabelEl: HTMLElement | null = null;
+  private reasoningDotEl: HTMLElement | null = null;
   private reasoningTimeEl: HTMLElement | null = null;
   private reasoningTimerHandle: number | null = null;
   private reasoningStart = 0;
@@ -103,7 +104,7 @@ export class AssistantBubble {
       const chevron = summary.createSpan({ cls: "agentic-chat-reasoning-chevron" });
       setIcon(chevron, "chevron-right");
       const pill = summary.createSpan({ cls: "agentic-chat-reasoning-pill" });
-      pill.createSpan({ cls: "agentic-chat-reasoning-dot" });
+      this.reasoningDotEl = pill.createSpan({ cls: "agentic-chat-reasoning-dot" });
       this.reasoningLabelEl = pill.createSpan({ cls: "agentic-chat-reasoning-label", text: "Thinking" });
       this.reasoningTimeEl = summary.createSpan({ cls: "agentic-chat-reasoning-time" });
       this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
@@ -210,6 +211,10 @@ export class AssistantBubble {
       this.reasoningLabelEl.setText("Thought");
       this.reasoningTimeEl?.setText(formatElapsed(elapsed));
     }
+    // Settled reasoning now uses the SAME "completed" primitive as tool steps:
+    // a green-tint capsule with a check icon (no more plain green dot vs green
+    // check split in the status grammar).
+    if (this.reasoningDotEl) setIcon(this.reasoningDotEl, "check");
     this.reasoningBody.closest("details")?.addClass("is-done");
   }
 

@@ -394,20 +394,33 @@
 }
 
 .agentic-chat-reasoning-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 6px;
   height: 6px;
+  flex-shrink: 0;
   border-radius: 50%;
   background-color: var(--interactive-accent);
+}
+
+.agentic-chat-reasoning-dot svg {
+  width: 10px;
+  height: 10px;
 }
 
 .agentic-chat-reasoning:not(.is-done) .agentic-chat-reasoning-dot {
   animation: agentic-chat-records-pulse 1.8s cubic-bezier(0.23, 1, 0.32, 1) infinite;
 }
 
+/* Settled reasoning uses the same "completed" capsule as tool-step icons:
+   green tint well + check icon + pop-in. */
 .agentic-chat-reasoning.is-done .agentic-chat-reasoning-dot {
-  background-color: var(--text-success);
-  animation: none;
-  opacity: 0.8;
+  width: 14px;
+  height: 14px;
+  background-color: oklch(70.5% 0.154 153.814 / 0.14);
+  color: var(--text-success);
+  animation: agentic-chat-pop-in 300ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .agentic-chat-reasoning-label {

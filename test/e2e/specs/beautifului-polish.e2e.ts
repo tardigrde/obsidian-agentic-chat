@@ -170,6 +170,8 @@ describe("agentic-chat beautifului polish", function () {
     expect(settled.label).toBe("Thought");
     const settledTime = await probe({ key: "time", selector: ".agentic-chat-reasoning-time" });
     expect(settledTime.time.length).toBeGreaterThan(0);
+    const settledDot = await probe({ key: "count", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning.is-done .agentic-chat-reasoning-dot svg", all: true });
+    expect(settledDot.count.length).toBe(1);
   });
 
   it("history-style near-instant turns collapse to a static Reasoning pill with no timer", async function () {
