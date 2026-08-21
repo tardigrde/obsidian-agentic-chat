@@ -167,10 +167,12 @@ export function createSubagentTool(
       }
       flushEmit();
 
-      // A failed/stopped child must surface as a failed tool call so the parent
-      // turn renders the Dispatch step as an error, never a green check.
-      if (status.status === "error" || status.status === "aborted") {
-        throw new Error(`Subagent "${agent}" ${status.status === "error" ? "failed" : "was stopped"}: ${status.summary ?? ""}`);
+      // A failed child surfaces as a failed tool call so the Dispatch step
+      // renders red. A *stopped* child returns a normal result instead: the
+      // parent must not feel pressure to re-dispatch a task the user just
+      // stopped — the step still renders as stopped via its child statuses.
+      if (status.status === "error") {
+        throw new Error(`Subagent "${agent}" failed: ${status.summary ?? "unknown error"}`);
       }
 
       return {
@@ -326,17 +328,15 @@ async function runSingleChild(
   }
 
   const error = child.state.errorMessage;
-  if (error) {
-    if (timedOut) {
-      status.status = "error";
-      status.summary = `Timed out after ${maxSeconds}s`;
-    } else if (signal?.aborted || stoppedLocally) {
-      status.status = "aborted";
-      status.summary = "Stopped by user";
-    } else {
-      status.status = "error";
-      status.summary = truncateToolOutput(error, PER_CHILD_SUMMARY_CHARS);
-    }
+  if (timedOut) {
+    status.status = "error";
+    status.summary = `Timed out after ${maxSeconds}s`;
+  } else if (signal?.aborted || stoppedLocally) {
+    status.status = "aborted";
+    status.summary = "Stopped by user";
+  } else if (error) {
+    status.status = "error";
+    status.summary = truncateToolOutput(error, PER_CHILD_SUMMARY_CHARS);
   } else {
     status.status = "done";
     status.summary = truncateToolOutput(

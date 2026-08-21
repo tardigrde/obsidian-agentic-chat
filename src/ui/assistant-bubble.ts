@@ -24,6 +24,13 @@ const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
   aborted: "stopped",
 };
 
+/** Extract the child statuses from a subagent tool result (details snapshot). */
+function subagentChildrenFromResult(resultObject: unknown): SubagentChildStatus[] {
+  const details = (resultObject as { details?: { kind?: string; children?: SubagentChildStatus[] } } | undefined)
+    ?.details;
+  return details?.kind === "subagent" && Array.isArray(details.children) ? details.children : [];
+}
+
 /** Per-step DOM + identity kept on the bubble for live updates and settle. */
 interface StepEntry {
   card: HTMLElement;
@@ -565,6 +572,15 @@ export class AssistantBubble {
   endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
+    // A subagent dispatch whose children failed or were stopped returns a
+    // normal tool result (so the parent won't re-dispatch), but the step must
+    // still read as an error — derive it from the child statuses.
+    if (step.name === "subagent") {
+      const children = subagentChildrenFromResult(resultObject);
+      if (children.some((child) => child.status === "error" || child.status === "aborted")) {
+        isError = true;
+      }
+    }
     step.card.removeClass("is-running");
     step.card.addClass(isError ? "is-error" : "is-done");
     setIcon(step.icon, isError ? "x-circle" : "check-circle-2");

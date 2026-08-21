@@ -2002,7 +2002,6 @@ export class ChatView extends ItemView {
     const { settings } = this.plugin;
     const session = this.service.getSessionInfo();
     const override = this.service.getModelOverride();
-    const effortOverride = this.service.getThinkingOverride();
     const diagnostics = this.service.getRuntimeDiagnostics();
     this.clearEmptyState();
     this.renderInfoMessage("Status", [
@@ -2010,7 +2009,7 @@ export class ChatView extends ItemView {
       ["Model", override ? `${override} (next message only)` : activeModelId(settings)],
       ["Mode", MODES[settings.mode].label],
       ["Output style", OUTPUT_STYLES[settings.outputStyle].label],
-      ["Thinking", effortOverride ? `${effortOverride} (next message only)` : settings.thinkingLevel],
+      ["Thinking", settings.thinkingLevel],
       ["Approval (mutating)", settings.approval.mutating],
       ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],
       ["Session", session ? `${session.messageCount} messages` : "(none)"],

@@ -392,10 +392,13 @@ describe("createSubagentTool", () => {
     // Abort just the first dispatch by its stopId (== its tool call id).
     abortSubagentChild("call-a");
 
-    const secondResult = await second;
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    // A stopped child settles as a normal (non-error) result marked "aborted" —
+    // the step renders red via its child status, but the parent is not nudged
+    // to re-dispatch the task the user just stopped.
+    expect(firstResult.details.children[0].status).toBe("aborted");
+    expect(firstResult.details.children[0].summary).toBe("Stopped by user");
     expect(secondResult.details.children[0].status).toBe("done");
-    // A stopped child surfaces as an aborted tool call (red step), not a green check.
-    await expect(first).rejects.toThrow(/was stopped/i);
     controller.abort();
   });
 
@@ -409,7 +412,7 @@ describe("createSubagentTool", () => {
     );
   });
 
-  it("marks a parent-stopped child as aborted and rejects the dispatch call", async () => {
+  it("marks a parent-stopped child as aborted without rejecting the dispatch", async () => {
     const controller = new AbortController();
     const tool = createSubagentTool({
       getProfiles: () => [RESEARCHER],
@@ -418,7 +421,23 @@ describe("createSubagentTool", () => {
     const pending = tool.execute("call-s", { agent: "researcher", task: "hang" }, controller.signal);
     await new Promise((resolve) => setTimeout(resolve, 25));
     controller.abort();
-    await expect(pending).rejects.toThrow(/was stopped/i);
+    const result = await pending;
+    expect(result.details.children[0].status).toBe("aborted");
+  });
+
+  it("marks a stopped child as aborted even when the stream finishes cleanly", async () => {
+    // A provider stream may end normally on abort (no errorMessage). The stop
+    // flags must win so the child never settles as a green-check "done".
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(hangingStreamFn()),
+    });
+    const controller = new AbortController();
+    const pending = tool.execute("call-c", { agent: "researcher", task: "hang" }, controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    controller.abort();
+    const result = await pending;
+    expect(result.details.children[0].status).toBe("aborted");
   });
 
   it("auto-aborts a child that runs past the configured timeout", async () => {
