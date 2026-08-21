@@ -21,6 +21,15 @@ const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
   error: "failed",
 };
 
+/** Per-step DOM + identity kept on the bubble for live updates and settle. */
+interface StepEntry {
+  card: HTMLElement;
+  icon: HTMLElement;
+  body: HTMLElement;
+  name: string;
+  startedAt: number;
+}
+
 export interface BubbleActions {
   /** Re-run the conversation's last user turn. */
   onRetry?: () => void;
@@ -44,13 +53,7 @@ export class AssistantBubble {
   private readonly actionsEl: HTMLElement;
   private reasoningBody: HTMLElement | null = null;
   private markdown = "";
-  private readonly steps = new Map<string, {
-    card: HTMLElement;
-    icon: HTMLElement;
-    body: HTMLElement;
-    name: string;
-    startedAt: number;
-  }>();
+  private readonly steps = new Map<string, StepEntry>();
   // Streaming deltas are buffered and flushed once per animation frame, so a fast
   // token stream causes one DOM mutation/reflow per frame instead of one per token.
   private pendingText = "";
@@ -442,12 +445,27 @@ export class AssistantBubble {
     const running = children.some((child) => child.status === "running");
     const queued = !running && children.some((child) => child.status === "queued");
     const failed = children.some((child) => child.status === "error");
-    pill.setText(running ? "Running…" : queued ? "Queued…" : failed ? "Failed" : "Done");
+    let text: string;
+    let stateClass: string;
+    if (running) {
+      text = "Running…";
+      stateClass = "is-running";
+    } else if (queued) {
+      text = "Queued…";
+      stateClass = "is-queued";
+    } else if (failed) {
+      text = "Failed";
+      stateClass = "is-error";
+    } else {
+      text = "Done";
+      stateClass = "is-done";
+    }
+    pill.setText(text);
     pill.removeClass("is-running");
     pill.removeClass("is-done");
     pill.removeClass("is-error");
     pill.removeClass("is-queued");
-    pill.addClass(running ? "is-running" : queued ? "is-queued" : failed ? "is-error" : "is-done");
+    pill.addClass(stateClass);
   }
 
   private renderSubagentHeader(row: HTMLDetailsElement, child: SubagentChildStatus): void {
@@ -532,22 +550,10 @@ export class AssistantBubble {
     // harvest it here (startStep can only see args). Live calls pass the raw
     // result object; history replay passes only the rendered text, whose first
     // line is `Active note: <path>` — parse that so replay chips match live.
-    if (step.name === "get_active_note" && !isError) {
-      const fromObject = resultObject !== undefined ? callPath(safeJson(resultObject)) : "";
-      const path = fromObject || activeNotePathFromText(result);
-      if (path) {
-        this.sourcePaths.add(path);
-        this.stepSourcePath.set(id, path);
-      }
-    }
+    if (!isError) this.harvestActiveNotePath(step, result, resultObject, id);
     // A failed tool call is not a citation: retract its source chip and keep the
     // step expanded so the human can see WHY it failed (no hidden error reason).
-    if (isError) {
-      const sourcePath = this.stepSourcePath.get(id);
-      if (sourcePath) this.sourcePaths.delete(sourcePath);
-      step.card.addClass("is-open");
-      step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
-    }
+    if (isError) this.retractFailedSource(step, id);
     // Result/Error as a body section. A read/write/get_active_note success result
     // is just file contents (already on disk / in context), so hide it; errors
     // always show. Re-sync the chevron: it only appears once the body has content.
@@ -558,6 +564,25 @@ export class AssistantBubble {
       resultSection.createEl("pre", { text: truncateText(result, 4_000) });
     }
     this.syncStepCollapsible(step.card.parentElement ?? step.card, step.body);
+  }
+
+  /** Record a successful get_active_note's target as a source chip. */
+  private harvestActiveNotePath(step: StepEntry, result: string, resultObject: unknown, id: string): void {
+    if (step.name !== "get_active_note") return;
+    const fromObject = resultObject !== undefined ? callPath(safeJson(resultObject)) : "";
+    const path = fromObject || activeNotePathFromText(result);
+    if (path) {
+      this.sourcePaths.add(path);
+      this.stepSourcePath.set(id, path);
+    }
+  }
+
+  /** A failed call is not a citation: revoke its source chip and expand the step. */
+  private retractFailedSource(step: StepEntry, id: string): void {
+    const sourcePath = this.stepSourcePath.get(id);
+    if (sourcePath) this.sourcePaths.delete(sourcePath);
+    step.card.addClass("is-open");
+    step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
   }
 
   async finalizeText(markdown: string, app: App, component: Component): Promise<void> {

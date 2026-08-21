@@ -9,7 +9,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-if [ -f .env ]; then set -a; source .env; set +a; fi
+if [[ -f .env ]]; then set -a; source .env; set +a; fi
 
 SPEC="${1:-}"
 MODE="${2:-}"
@@ -25,7 +25,7 @@ case "$SPEC" in
     ;;
   audit)
     export AGENTIC_CHAT_DESIGN_AUDIT=1
-    if [ -n "$MODE" ]; then export AGENTIC_CHAT_DESIGN_AUDIT_MODE="$MODE"; fi
+    if [[ -n "$MODE" ]]; then export AGENTIC_CHAT_DESIGN_AUDIT_MODE="$MODE"; fi
     exec npm run test:e2e -- --spec test/e2e/specs/design-audit.e2e.ts
     ;;
   "")

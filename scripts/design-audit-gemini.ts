@@ -22,7 +22,7 @@ const LOAD_ENV_FILE = argValue(process.argv, "--env-file") ?? ".env";
 if (existsSync(path.resolve(LOAD_ENV_FILE))) applyEnvFile(path.resolve(LOAD_ENV_FILE), process.env);
 
 const API_KEY = process.env.AGENTIC_CHAT_API_KEY?.trim();
-const BASE_URL = (process.env.AGENTIC_CHAT_BASE_URL?.trim() || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+const BASE_URL = trimTrailingSlashes(process.env.AGENTIC_CHAT_BASE_URL?.trim() || "https://openrouter.ai/api/v1");
 const MODEL = process.env.AGENTIC_CHAT_AUDIT_MODEL?.trim() || "google/gemini-3.5-flash-lite";
 const AUDIT_DIR = path.resolve(argValue(process.argv, "--audit-dir") ?? path.join("logs", "design-audit"));
 const DO_FOLLOW_UP = process.argv.includes("--follow-up");
@@ -152,12 +152,21 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Strip trailing slashes without a regex (a lone "/" root is preserved). */
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 1 && value[end - 1] === "/") end -= 1;
+  return value.slice(0, end);
+}
+
 function downscale(source: string): string {
   const out = path.join(tmpdir(), `agentic-audit-${process.pid}-${path.basename(source)}.png`);
   try {
+    // NOSONAR:S4036 — ImageMagick is a fixed dev dependency resolved via PATH; this is a local audit tool, not a privileged service.
     execFileSync("magick", [source, "-resize", "1150x>", "-strip", "-quality", "88", out]);
   } catch {
     try {
+      // NOSONAR:S4036 — same rationale as the magick branch above.
       execFileSync("convert", [source, "-resize", "1150x>", "-strip", "-quality", "88", out]);
     } catch (error) {
       throw new Error(
@@ -201,7 +210,10 @@ function pickImages(images: { dir: string; file: string }[]): { dir: string; fil
   for (const entry of images) {
     const base = path.basename(entry.file);
     const state = base.replace(/\.(crop|view|full)\.png$/, "");
-    const rank = base.endsWith(".crop.png") ? 0 : base.endsWith(".view.png") ? 1 : 2;
+    let rank: number;
+    if (base.endsWith(".crop.png")) rank = 0;
+    else if (base.endsWith(".view.png")) rank = 1;
+    else rank = 2;
     const bucket = byState.get(state) ?? [];
     bucket.push({ file: entry.file, rank });
     byState.set(state, bucket);
@@ -266,8 +278,14 @@ function parseJson<T>(raw: string): T {
 function mdSummary(key: string, result: AuditResult): string {
   const lines: string[] = [`# Agentic-chat design audit`, `\n**Model:** ${key}`, `**Date:** ${new Date().toISOString()}`, ``];
   if (result.overview) lines.push(`## Overview\n\n${result.overview}\n`);
-  if (result.strengths?.length) lines.push(`## Strengths\n${result.strengths.map((s) => `- ${s}`).join("\n")}\n`);
-  if (result.global_issues?.length) lines.push(`## Global issues\n${result.global_issues.map((s) => `- ${s}`).join("\n")}\n`);
+  if (result.strengths?.length) {
+    const strengths = result.strengths.map((item) => `- ${item}`).join("\n");
+    lines.push(`## Strengths\n${strengths}\n`);
+  }
+  if (result.global_issues?.length) {
+    const globalIssues = result.global_issues.map((item) => `- ${item}`).join("\n");
+    lines.push(`## Global issues\n${globalIssues}\n`);
+  }
   for (const per of result.per_image ?? []) {
     lines.push(`## ${per.image}\n`);
     for (const finding of per.findings ?? []) {
@@ -278,7 +296,8 @@ function mdSummary(key: string, result: AuditResult): string {
     lines.push("");
   }
   if (result.quick_wins?.length) {
-    lines.push(`## Quick wins\n${result.quick_wins.map((w) => `- [${w.effort}] ${w.fix}`).join("\n")}\n`);
+    const quickWins = result.quick_wins.map((win) => `- [${win.effort}] ${win.fix}`).join("\n");
+    lines.push(`## Quick wins\n${quickWins}\n`);
   }
   if (result.priorities?.length) {
     lines.push(`## Priorities\n`);
@@ -327,7 +346,8 @@ Audit: ${raw}`;
     requests += 1;
     const patch = parseJson<{ patch_steps?: { selector: string; change: string; issue: string }[] }>(followRaw);
     writeFileSync(path.join(dir, "patch.json"), JSON.stringify(patch, null, 2), "utf8");
-    console.log(`\n# Design patch\n${(patch.patch_steps ?? []).map((step) => `- **${step.selector}** — ${step.change} (_${step.issue}_)`).join("\n")}\n`);
+    const patchLines = (patch.patch_steps ?? []).map((step) => `- **${step.selector}** — ${step.change} (_${step.issue}_)`).join("\n");
+    console.log(`\n# Design patch\n${patchLines}\n`);
   }
 
   if (DO_REVAMP && requests < MAX_REQUESTS) {
