@@ -70,6 +70,7 @@ const MESSAGE_COMPAT: MessageCompat = {
   supportsDeveloperRole: false,
   supportsReasoningEffort: false,
   supportsUsageInStreaming: false,
+  supportsFinishReason: true,
   maxTokensField: "max_tokens",
   requiresToolResultName: false,
   requiresAssistantAfterToolResult: false,
@@ -77,6 +78,7 @@ const MESSAGE_COMPAT: MessageCompat = {
   requiresReasoningContentOnAssistantMessages: false,
   thinkingFormat: "openai",
   chatTemplateKwargs: {},
+  chatTemplateArgs: {},
   sessionAffinityFormat: "openai",
   openRouterRouting: {},
   vercelGatewayRouting: {},
@@ -161,7 +163,9 @@ export function streamOpenAICompatibleViaRequestUrl(
         throw new Error("Request was aborted");
       }
 
-      stream.push({ type: "done", reason: output.stopReason, message: output });
+      // `pending` only occurs on partial streaming messages; a completed
+      // non-streaming response always has a terminal reason. Map it defensively.
+      stream.push({ type: "done", reason: output.stopReason === "pending" ? "stop" : output.stopReason, message: output });
       stream.end(output);
     } catch (error) {
       output.stopReason = options?.signal?.aborted ? "aborted" : "error";
