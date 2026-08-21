@@ -51,7 +51,7 @@ describe("createParentAgent", () => {
     expect(agent.state.tools.map((tool) => tool.name)).toEqual(["noop"]);
     expect(agent.state.messages).toEqual(messages);
     expect(agent.sessionId).toBe("session-1");
-    expect(agent.toolExecution).toBe("sequential");
+    expect(agent.toolExecution).toBe("parallel");
     unsubscribe();
   });
 

@@ -7,7 +7,6 @@ import {
   describeCall,
   formatCallBody,
   formatElapsed,
-  formatUsage,
   HIDE_RESULT_TOOLS,
   PATH_TOOLS,
   safeJson,
@@ -16,10 +15,20 @@ import {
 } from "./format";
 
 const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
+  queued: "queued",
   running: "running…",
   done: "done",
   error: "failed",
 };
+
+/** Per-step DOM + identity kept on the bubble for live updates and settle. */
+interface StepEntry {
+  card: HTMLElement;
+  icon: HTMLElement;
+  body: HTMLElement;
+  name: string;
+  startedAt: number;
+}
 
 export interface BubbleActions {
   /** Re-run the conversation's last user turn. */
@@ -36,27 +45,41 @@ export interface BubbleActions {
   onStopSubagentChild?: (stopId: string) => void;
 }
 
-/** Owns the DOM of a single assistant turn: reasoning, tool steps, text, actions, footer. */
+/** Owns the DOM of a single assistant turn: reasoning, tool steps, text, actions. */
 export class AssistantBubble {
   private readonly el: HTMLElement;
   private readonly stepsEl: HTMLElement;
   private readonly textEl: HTMLElement;
   private readonly actionsEl: HTMLElement;
-  private readonly footerEl: HTMLElement;
   private reasoningBody: HTMLElement | null = null;
   private markdown = "";
-  private readonly steps = new Map<string, {
-    card: HTMLElement;
-    icon: HTMLElement;
-    body: HTMLElement;
-    name: string;
-    startedAt: number;
-  }>();
+  private readonly steps = new Map<string, StepEntry>();
   // Streaming deltas are buffered and flushed once per animation frame, so a fast
   // token stream causes one DOM mutation/reflow per frame instead of one per token.
   private pendingText = "";
   private pendingReasoning = "";
   private flushHandle: number | null = null;
+  // Reasoning header state: the pill IS the turn's status — "Thinking" with a
+  // pulsing dot while the model works, flipping to a green check "Thought" the
+  // moment the answer starts streaming. Mounted eagerly at message_start.
+  private reasoningLabelEl: HTMLElement | null = null;
+  private reasoningDotEl: HTMLElement | null = null;
+  private reasoningTimeEl: HTMLElement | null = null;
+  private reasoningTimerHandle: number | null = null;
+  private reasoningStart = 0;
+  private reasoningSettled = false;
+  // Distinct vault paths touched by tool calls this turn, rendered as source chips.
+  private readonly sourcePaths = new Set<string>();
+  // Per-step source path (for SOURCE_TOOLS) so an errored call can retract its chip.
+  private readonly stepSourcePath = new Map<string, string>();
+  // Guard so the settle/chip chrome runs once per bubble even when both the
+  // text and no-text finalize paths (or a later agent_end) touch the same turn.
+  private finalized = false;
+  // Per-turn timeline (E10): reasoning trace + tool steps share one container with
+  // a continuous left rail whose height is kept in sync via a ResizeObserver.
+  private timelineEl: HTMLElement | null = null;
+  private railEl: HTMLElement | null = null;
+  private timelineObserver: ResizeObserver | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -66,7 +89,6 @@ export class AssistantBubble {
     this.textEl = this.el.createDiv({ cls: ["agentic-chat-text", "is-streaming"] });
     this.stepsEl = this.el.createDiv({ cls: "agentic-chat-steps" });
     this.actionsEl = this.el.createDiv({ cls: "agentic-chat-actions" });
-    this.footerEl = this.el.createDiv({ cls: "agentic-chat-footer" });
   }
 
   appendText(delta: string): void {
@@ -74,21 +96,49 @@ export class AssistantBubble {
     // markdown, so a stray event can't append raw text over the final output.
     if (this.markdown) return;
     this.pendingText += delta;
+    // The answer has STARTED streaming → the reasoning trace is done. Settle the
+    // pill now (green check "Thought") instead of waiting for agent_end, so a
+    // turn with finished tools + streaming text never shows a purple "Thinking".
+    if (this.reasoningBody && !this.reasoningSettled) this.settleReasoning();
     this.scheduleFlush();
   }
 
   appendReasoning(delta: string): void {
     if (this.markdown) return;
-    // Create the reasoning container eagerly so the structure is in place; the
-    // text itself is buffered and flushed with the rest on the next frame.
-    if (!this.reasoningBody) {
-      const details = this.el.createEl("details", { cls: "agentic-chat-reasoning" });
-      details.createEl("summary", { text: "Reasoning" });
-      this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
-      this.el.insertBefore(details, this.textEl);
-    }
+    if (!this.reasoningBody) this.ensureReasoningShell();
     this.pendingReasoning += delta;
     this.scheduleFlush();
+  }
+
+  /**
+   * Mount the turn's status pill ("Thinking" · pulsing dot · live timer) at
+   * message_start, before any reasoning or text has streamed. The reasoning
+   * trace appears under it once thinking_delta arrives; on the first answer text
+   * the pill settles to a green-check "Thought" (see settleReasoning).
+   */
+  beginThinking(): void {
+    if (this.markdown || this.reasoningBody) return;
+    this.ensureReasoningShell();
+  }
+
+  private ensureReasoningShell(): void {
+    if (this.reasoningBody) return;
+    const details = this.el.createEl("details", { cls: "agentic-chat-reasoning" });
+    const summary = details.createEl("summary", { cls: "agentic-chat-reasoning-summary" });
+    const chevron = summary.createSpan({ cls: "agentic-chat-reasoning-chevron" });
+    setIcon(chevron, "chevron-right");
+    const pill = summary.createSpan({ cls: "agentic-chat-reasoning-pill" });
+    this.reasoningDotEl = pill.createSpan({ cls: "agentic-chat-reasoning-dot" });
+    this.reasoningLabelEl = pill.createSpan({ cls: "agentic-chat-reasoning-label", text: "Thinking" });
+    this.reasoningTimeEl = summary.createSpan({ cls: "agentic-chat-reasoning-time" });
+    this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
+    this.ensureTimeline();
+    const stepsRef = this.timelineEl?.querySelector(".agentic-chat-steps") ?? null;
+    this.timelineEl?.insertBefore(details, stepsRef);
+    this.reasoningStart = performance.now();
+    this.reasoningTimerHandle = window.setInterval(() => {
+      this.reasoningTimeEl?.setText(formatElapsed(performance.now() - this.reasoningStart));
+    }, 100);
   }
 
   /** Schedule a single buffered flush on the next animation frame. */
@@ -116,14 +166,70 @@ export class AssistantBubble {
     if (changed) this.actions.onContentChange?.();
   }
 
+  /** Free live timers (reasoning) without touching the rendered DOM. */
+  dispose(): void {
+    this.stopReasoningTimer();
+    // NOTE: the timeline ResizeObserver stays attached — history bubbles remain
+    // interactive (reasoning/step toggles must keep the rail hugging content).
+  }
+
+  /**
+   * Lazily create the per-turn timeline container (reasoning + steps share one
+   * pixel rail). Inserted above the text so it reads as "how the agent got here",
+   * then the answer. Rail height tracks the container via ResizeObserver so the
+   * line hugs the visible blocks whether they're collapsed or expanded.
+   */
+  private ensureTimeline(): void {
+    if (this.timelineEl) return;
+    const timeline = this.el.createDiv({ cls: "agentic-chat-timeline" });
+    this.railEl = timeline.createDiv({ cls: "agentic-chat-timeline-rail" });
+    this.el.insertBefore(timeline, this.textEl);
+    this.timelineEl = timeline;
+    this.timelineObserver = new ResizeObserver(() => this.updateRail());
+    this.timelineObserver.observe(timeline);
+    this.updateRail();
+  }
+
+  private updateRail(): void {
+    if (!this.timelineEl || !this.railEl) return;
+    this.railEl.style.height = `${this.timelineEl.clientHeight}px`;
+  }
+
+  /** Stop the reasoning elapsed timer, keeping the last rendered value. */
+  private stopReasoningTimer(): void {
+    if (this.reasoningTimerHandle !== null) {
+      window.clearInterval(this.reasoningTimerHandle);
+      this.reasoningTimerHandle = null;
+    }
+  }
+
+  /**
+   * Settle the reasoning header into its done state: one stable label, green
+   * check capsule, and (for a live turn) the final elapsed time. Idempotent —
+   * can be triggered early by the first streamed answer text, or late by an
+   * agent_end / no-text finalize.
+   */
+  private settleReasoning(): void {
+    this.stopReasoningTimer();
+    if (this.reasoningSettled || !this.reasoningBody) return;
+    this.reasoningSettled = true;
+    const elapsed = performance.now() - this.reasoningStart;
+    this.reasoningLabelEl?.setText("Thought");
+    // A live stream keeps the final elapsed time; a near-instant/static trace
+    // (history re-render) shows none.
+    this.reasoningTimeEl?.setText(elapsed < 100 ? "" : formatElapsed(elapsed));
+    // Same "completed" primitive as tool steps: green-tint capsule + check.
+    if (this.reasoningDotEl) setIcon(this.reasoningDotEl, "check-circle-2");
+    this.reasoningBody.closest("details")?.addClass("is-done");
+  }
+
   startStep(id: string, name: string, rawArgs: string): void {
-    // A step is a manual collapsible (not native <details>): the header carries
-    // a chevron toggle + status icon + a readable label with a clickable path,
-    // and only the chevron toggles the body — so clicking the path link opens
-    // the note without collapsing the step. Raw arg JSON is never shown inline.
-    const card = this.stepsEl.createDiv({ cls: ["agentic-chat-step", "is-running"] });
-    const header = card.createDiv({ cls: "agentic-chat-step-header" });
-    const toggle = header.createSpan({
+    // A step is a manual collapsible row sharing ONE anatomy with the reasoning
+    // pill: [‹ chevron] [card]. Only the outside chevron toggles the body — so a
+    // clickable path inside the header navigates without collapsing the step.
+    // Raw arg JSON is never shown inline.
+    const row = this.stepsEl.createDiv({ cls: "agentic-chat-step-row" });
+    const toggle = row.createSpan({
       cls: "agentic-chat-step-toggle",
       attr: { role: "button", tabindex: "0", "aria-expanded": "false", "aria-label": "Toggle details" },
     });
@@ -131,39 +237,64 @@ export class AssistantBubble {
     setIcon(chevron, "chevron-right");
     toggle.addEventListener("click", (event) => {
       event.stopPropagation();
-      this.toggleStep(card);
+      this.toggleStep(row);
     });
     toggle.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        this.toggleStep(card);
+        this.toggleStep(row);
       }
     });
+    const card = row.createDiv({ cls: ["agentic-chat-step", "is-running"] });
+    const header = card.createDiv({ cls: "agentic-chat-step-header" });
     const icon = header.createSpan({ cls: "agentic-chat-step-icon" });
     setIcon(icon, "loader-2");
     const nameEl = header.createSpan({ cls: "agentic-chat-step-name" });
     this.renderStepTitle(nameEl, name, rawArgs);
+    if (name.startsWith("mcp__")) nameEl.setAttr("title", name);
     const body = card.createDiv({ cls: "agentic-chat-step-body" });
     this.renderCallSection(body, name, rawArgs);
-    this.syncStepCollapsible(card, body);
+    this.syncStepCollapsible(row, body);
+    this.ensureTimeline();
+    if (this.stepsEl.parentElement !== this.timelineEl) this.timelineEl?.appendChild(this.stepsEl);
     this.steps.set(id, { card, icon, body, name, startedAt: performance.now() });
+    // Record the tool's vault target (if any) so finalized turns can surface a
+    // compact list of source files as chips under the response text. Only
+    // read-style tools count as sources — writes are outputs, deletes/renames
+    // point at moved paths, and ls targets a folder. The per-step path lets an
+    // errored call revoke its chip (a failed read is NOT a citation).
+    if (SOURCE_TOOLS.has(name)) {
+      const path = callPath(rawArgs);
+      if (path) {
+        this.sourcePaths.add(path);
+        this.stepSourcePath.set(id, path);
+      }
+    }
   }
 
   /** Toggle a step's body open/closed and reflect state on the chevron + aria. */
-  private toggleStep(card: HTMLElement): void {
+  private toggleStep(row: HTMLElement): void {
+    const card = row.querySelector(".agentic-chat-step");
+    if (!card) return;
     const open = card.classList.toggle("is-open");
-    card.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", String(open));
+    row.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", String(open));
   }
 
   /** Hide the chevron + collapse affordance when the body has nothing to show. */
-  private syncStepCollapsible(card: HTMLElement, body: HTMLElement): void {
-    const toggle = card.querySelector<HTMLElement>(".agentic-chat-step-toggle");
+  private syncStepCollapsible(row: HTMLElement, body: HTMLElement): void {
+    const toggle = row.querySelector<HTMLElement>(".agentic-chat-step-toggle");
     if (!toggle) return;
     toggle.toggleClass("is-hidden", body.childElementCount === 0);
   }
 
   /** Render the header title: a readable label, with a clickable vault path for path-bearing tools. */
   private renderStepTitle(nameEl: HTMLElement, name: string, rawArgs: string): void {
+    if (name.startsWith("mcp__")) {
+      // "mcp__<server>__<tool>" → human "MCP · <tool>"; full id in the tooltip.
+      const segments = name.split("__");
+      nameEl.appendText(`MCP · ${segments.at(-1) ?? name}`);
+      return;
+    }
     if (PATH_TOOLS.has(name)) {
       nameEl.appendText(TOOL_LABELS[name] ?? `Running ${name}`);
       const path = callPath(rawArgs);
@@ -217,7 +348,11 @@ export class AssistantBubble {
       return;
     }
     const link = parent.createEl("a", { cls: "agentic-chat-step-path-link", attr: { href: "#", role: "button" } });
-    link.setText(path);
+    // Middle-truncate long vault paths (keep the head/basename readable) instead
+    // of ellipsis-ing only the tail, which hides the distinguishing filename.
+    const display = path.length > 36 ? middleEllipsis(path, 36) : path;
+    link.setText(display);
+    link.setAttr("title", path);
     link.addEventListener("click", (event) => {
       event.preventDefault();
       this.actions.onOpenNote?.(path);
@@ -261,18 +396,18 @@ export class AssistantBubble {
     if (!details) return;
     if (details.kind === "subagent" && "children" in details && Array.isArray(details.children)) {
       this.renderSubagentChildren(step.body, details.children);
-      this.syncStepCollapsible(step.card, step.body);
+      if (step.card.parentElement) this.syncStepCollapsible(step.card.parentElement, step.body);
       // Auto-open so live child progress is visible while the step runs.
       step.card.addClass("is-open");
-      step.card.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
+      step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
       return;
     }
     if (isAskUserDetails(details)) {
       this.renderAskUserStep(step.body, details);
-      this.syncStepCollapsible(step.card, step.body);
+      if (step.card.parentElement) this.syncStepCollapsible(step.card.parentElement, step.body);
       // Auto-open so the ask-user state is visible while waiting.
       step.card.addClass("is-open");
-      step.card.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
+      step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
     }
   }
 
@@ -288,12 +423,49 @@ export class AssistantBubble {
     }
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
-      const row = list.children[i] as HTMLDetailsElement;
-      row.className = `agentic-chat-subagent is-${child.status}`;
-      row.open = child.status === "running";
-      this.renderSubagentHeader(row, child);
-      this.renderSubagentBody(row, child);
+      const childRow = list.children[i] as HTMLDetailsElement;
+      childRow.className = `agentic-chat-subagent is-${child.status}`;
+      childRow.open = child.status === "running";
+      this.renderSubagentHeader(childRow, child);
+      this.renderSubagentBody(childRow, child);
     }
+    // Aggregate child state into ONE status pill on the step header so a card
+    // never reads "stoppable" and "done" at the same time (Stop only ever
+    // accompanies a still-running aggregate; done/failed have none).
+    this.renderSubagentAggregate(card, children);
+  }
+
+  private renderSubagentAggregate(card: HTMLElement, children: SubagentChildStatus[]): void {
+    // `card` is the step BODY; the status pill lives in the step HEADER, which is
+    // a child of the step card (the body's parent).
+    const header = card.parentElement?.querySelector<HTMLElement>(".agentic-chat-step-header");
+    if (!header) return;
+    let pill = header.querySelector<HTMLElement>(".agentic-chat-step-status");
+    pill ??= header.createSpan({ cls: "agentic-chat-step-status" });
+    const running = children.some((child) => child.status === "running");
+    const queued = !running && children.some((child) => child.status === "queued");
+    const failed = children.some((child) => child.status === "error");
+    let text: string;
+    let stateClass: string;
+    if (running) {
+      text = "Running…";
+      stateClass = "is-running";
+    } else if (queued) {
+      text = "Queued…";
+      stateClass = "is-queued";
+    } else if (failed) {
+      text = "Failed";
+      stateClass = "is-error";
+    } else {
+      text = "Done";
+      stateClass = "is-done";
+    }
+    pill.setText(text);
+    pill.removeClass("is-running");
+    pill.removeClass("is-done");
+    pill.removeClass("is-error");
+    pill.removeClass("is-queued");
+    pill.addClass(stateClass);
   }
 
   private renderSubagentHeader(row: HTMLDetailsElement, child: SubagentChildStatus): void {
@@ -363,7 +535,7 @@ export class AssistantBubble {
     if (details.answer) row.createDiv({ cls: "agentic-chat-step-ask-user-answer", text: truncateText(details.answer, 400) });
   }
 
-  endStep(id: string, result: string, isError: boolean): void {
+  endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
     step.card.removeClass("is-running");
@@ -374,6 +546,14 @@ export class AssistantBubble {
       cls: "agentic-chat-step-time",
       text: formatElapsed(performance.now() - step.startedAt),
     });
+    // get_active_note carries its target path in the RESULT, not the args, so
+    // harvest it here (startStep can only see args). Live calls pass the raw
+    // result object; history replay passes only the rendered text, whose first
+    // line is `Active note: <path>` — parse that so replay chips match live.
+    if (!isError) this.harvestActiveNotePath(step, result, resultObject, id);
+    // A failed tool call is not a citation: retract its source chip and keep the
+    // step expanded so the human can see WHY it failed (no hidden error reason).
+    if (isError) this.retractFailedSource(step, id);
     // Result/Error as a body section. A read/write/get_active_note success result
     // is just file contents (already on disk / in context), so hide it; errors
     // always show. Re-sync the chevron: it only appears once the body has content.
@@ -383,7 +563,26 @@ export class AssistantBubble {
       resultSection.createDiv({ cls: "agentic-chat-step-section-label", text: isError ? "Error" : "Result" });
       resultSection.createEl("pre", { text: truncateText(result, 4_000) });
     }
-    this.syncStepCollapsible(step.card, step.body);
+    this.syncStepCollapsible(step.card.parentElement ?? step.card, step.body);
+  }
+
+  /** Record a successful get_active_note's target as a source chip. */
+  private harvestActiveNotePath(step: StepEntry, result: string, resultObject: unknown, id: string): void {
+    if (step.name !== "get_active_note") return;
+    const fromObject = resultObject !== undefined ? callPath(safeJson(resultObject)) : "";
+    const path = fromObject || activeNotePathFromText(result);
+    if (path) {
+      this.sourcePaths.add(path);
+      this.stepSourcePath.set(id, path);
+    }
+  }
+
+  /** A failed call is not a citation: revoke its source chip and expand the step. */
+  private retractFailedSource(step: StepEntry, id: string): void {
+    const sourcePath = this.stepSourcePath.get(id);
+    if (sourcePath) this.sourcePaths.delete(sourcePath);
+    step.card.addClass("is-open");
+    step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
   }
 
   async finalizeText(markdown: string, app: App, component: Component): Promise<void> {
@@ -398,10 +597,57 @@ export class AssistantBubble {
     this.textEl.empty();
     this.textEl.removeClass("is-streaming");
     this.textEl.addClass("markdown-rendered");
+    // Settle chrome synchronously (before any await) so a later agent_end can
+    // never double-settle or stamp the timers at a stale moment. Idempotent via
+    // the finalized guard.
+    this.finalizeChrome();
     await MarkdownRenderer.render(app, markdown, this.textEl, "", component);
     enhanceCallouts(this.textEl);
     installRenderedLinkHandlers(this.textEl, app, this.actions.onOpenExternalLink);
     await renderMermaidBlocks(this.textEl);
+  }
+
+  /**
+   * Settle a turn that produced no rendered text (abort, model error, or a
+   * text-less tool-only message): stop live timers and flip the reasoning pill
+   * to its static state, but never render markdown. Idempotent.
+   */
+  finalizeWithoutText(): void {
+    this.finalizeChrome();
+  }
+
+  /** One-time settle of the turn chrome (reasoning pill + source chips). */
+  private finalizeChrome(): void {
+    if (this.finalized) return;
+    this.finalized = true;
+    this.settleReasoning();
+    this.renderSourceChips();
+  }
+
+  /**
+   * Render the per-turn source chips (vault files the tool calls touched) under
+   * the finalized text. Deduped, capped, clickable → onOpenNote.
+   */
+  private renderSourceChips(): void {
+    if (this.sourcePaths.size === 0) return;
+    const container = this.el.createDiv({ cls: "agentic-chat-sources" });
+    container.createSpan({ cls: "agentic-chat-sources-label", text: "Sources" });
+    const paths = [...this.sourcePaths].slice(0, MAX_SOURCE_CHIPS);
+    for (const path of paths) {
+      const chip = container.createEl("button", {
+        cls: "agentic-chat-source-chip",
+        attr: { type: "button", title: path, "aria-label": `Open ${path}` },
+      });
+      const icon = chip.createSpan({ cls: "agentic-chat-source-chip-icon" });
+      setIcon(icon, "file-text");
+      chip.createSpan({ cls: "agentic-chat-source-chip-name", text: sourceChipName(path) });
+      chip.addEventListener("click", () => this.actions.onOpenNote?.(path));
+    }
+    const remaining = this.sourcePaths.size - paths.length;
+    if (remaining > 0) {
+      container.createSpan({ cls: "agentic-chat-sources-more", text: `+${remaining}` });
+    }
+    this.el.insertBefore(container, this.actionsEl);
   }
 
   /**
@@ -424,15 +670,28 @@ export class AssistantBubble {
     } else {
       banner.setText(text);
     }
+    // A text+error turn already carries the "Ask again" action row; only add an
+    // inline banner Retry for text-less failures so there is one action, one way.
+    if (this.actions.onRetry && !this.markdown) {
+      const retry = banner.createEl("button", {
+        cls: "agentic-chat-error-retry",
+        attr: { type: "button", "aria-label": "Retry the failed request" },
+      });
+      const icon = retry.createSpan();
+      setIcon(icon, "refresh-cw");
+      retry.createSpan({ text: "Retry" });
+      retry.addEventListener("click", () => this.actions.onRetry?.());
+    }
     this.el.insertBefore(banner, this.actionsEl);
   }
 
   /**
-   * Render the per-answer usage footer with the turn's own provider-reported
-   * token count, cache ratio, and cost.
+   * Per-turn usage footers are retired: the current turn's tokens/cache/cost now
+   * live in the single collapsed bottom bar. Kept as a no-op so the live and
+   * history-replay callers keep working.
    */
-  showUsage(usage: Usage): void {
-    this.footerEl.setText(formatUsage(usage));
+  showUsage(_usage: Usage): void {
+    // no-op — usage is shown in the view's single bottom bar
   }
 
   /** Render the inline action row (copy, retry, implement). Safe to call once. */
@@ -470,6 +729,36 @@ export class AssistantBubble {
 export type RenderedChatLink =
   | { kind: "vault"; target: string }
   | { kind: "external"; target: string };
+
+/** Cap the per-turn source-chip row so it can't dominate a long tool-heavy turn. */
+const MAX_SOURCE_CHIPS = 8;
+
+/** Tools whose target file counts as a "source" (its contents were read into context). */
+const SOURCE_TOOLS = new Set(["read", "get_active_note", "edit"]);
+
+/** Short display name for a source chip: the last path segment (full path in the title). */
+export function sourceChipName(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return trimmed;
+  const segments = trimmed.split("/");
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i]) return segments[i];
+  }
+  return trimmed;
+}
+
+/** Truncate from both ends, keeping the head and tail readable (vault paths). */
+function middleEllipsis(value: string, max: number): string {
+  if (value.length <= max) return value;
+  const keep = Math.floor((max - 1) / 2);
+  return `${value.slice(0, keep)}…${value.slice(value.length - keep)}`;
+}
+
+/** `get_active_note`'s rendered result starts with `Active note: <path>`. */
+function activeNotePathFromText(text: string): string {
+  const match = /^Active note: (.+)$/m.exec(text);
+  return match?.[1]?.trim() ?? "";
+}
 
 export interface RenderedAnchorLike {
   getAttribute(name: string): string | null;

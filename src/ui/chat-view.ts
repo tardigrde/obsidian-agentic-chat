@@ -1,6 +1,5 @@
 import {
   ItemView,
-  Menu,
   Notice,
   TFile,
   TFolder,
@@ -11,14 +10,12 @@ import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi
 import type { ImageContent, Usage } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
-import type { RequestCostEstimate } from "../agent/cost";
 import type { AskUserRequest } from "../tools/ask-user-tool";
 import { abortSubagentChild } from "../tools/subagent-tool";
 import { isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, apiKeyForProvider } from "../settings";
-import { isPricingUnknown } from "../llm/pricing-cache";
 import { listOpenAICompatibleModels, listOpenRouterModels } from "../llm/models";
 import { ModelSuggestModal } from "./model-suggest-modal";
 import { SessionListModal } from "./session-list-modal";
@@ -26,7 +23,7 @@ import { FolderSuggestModal } from "./folder-suggest";
 import { createFetchFromWebFetcher, createProxiedFetcher } from "../mcp/fetcher";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
 import { AssistantBubble } from "./assistant-bubble";
-import { formatDetailedUsage, safeJson } from "./format";
+import { formatDetailedUsage, formatUsage, safeJson } from "./format";
 import { contextLevel, contextPercent } from "./context-bar";
 import {
   assistantUsage,
@@ -52,8 +49,7 @@ import { parseDroppedVaultPath } from "./drag-drop";
 import { parseInlineInstruction, parseStreamingSteering, stripContextPreamble } from "./composer-input";
 import {
   buildModelPillState,
-  buildUsageChromeParts,
-  folderButtonAriaLabel,
+  buildTurnUsageChromeParts,
   modelProviderLabel,
   toolBudgetNotificationKey,
 } from "./chrome-state";
@@ -187,6 +183,8 @@ export class ChatView extends ItemView {
   // duplicate standalone error panel that showServiceError() would otherwise
   // emit for the same turn-level error (e.g. "Request was aborted").
   private lastBubbleError: string | undefined;
+  // Last completed turn's usage, shown collapsed in the single bottom bar.
+  private lastTurnUsage: Usage | null = null;
   private editingEl: HTMLElement | null = null;
   private readonly promptEdit = new PromptEditState();
   // Semantic indexing can outlive the command that starts it; keep one
@@ -214,7 +212,6 @@ export class ChatView extends ItemView {
   private contextBarEl!: HTMLProgressElement;
   private contextPercentEl!: HTMLElement;
   private workingEl!: HTMLElement;
-  private folderButtonEl!: HTMLButtonElement;
   private autoScrollPinned = true;
   private userScrollIntent = false;
   private userScrollIntentTimer: number | null = null;
@@ -279,6 +276,8 @@ export class ChatView extends ItemView {
   async onClose(): Promise<void> {
     this.closed = true;
     this.cancelAutocomplete();
+    this.bubble?.dispose();
+    this.bubble = null;
     if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
     this.userScrollIntentTimer = null;
     // The view owns its tab services; dispose them so no detached agent keeps running.
@@ -684,25 +683,23 @@ export class ChatView extends ItemView {
       this.menu.hide();
     });
 
-    // Bottom toolbar (in-card): model · effort · context · folder-context on the
-    // left; the Safe ↔ YOLO toggle (+ sticky plan badge) on the right — design ref.
+    // Bottom toolbar (in-card): model+effort pill · context on the left; the
+    // Safe ↔ YOLO segmented toggle (+ sticky plan badge) on the right — design ref.
     const toolbar = field.createDiv({ cls: "agentic-chat-toolbar" });
     const toolbarLeft = toolbar.createDiv({ cls: "agentic-chat-toolbar-left" });
 
-    this.modelPillEl = toolbarLeft.createDiv({
+    // Model + reasoning effort share ONE two-sided pill: model on the left, the
+    // effort level value on the right (no "Effort" label — the value is enough).
+    const modelGroup = toolbarLeft.createDiv({ cls: "agentic-chat-model" });
+    this.modelPillEl = modelGroup.createDiv({
       cls: "agentic-chat-model-pill",
       attr: { "aria-label": "Switch model" },
     });
     this.modelPillEl.addEventListener("click", () => void this.switchModel());
-
-    this.projectPillEl = toolbarLeft.createEl("button", {
-      cls: "agentic-chat-project-pill",
-      attr: { "aria-label": "Switch project workspace" },
-    });
-    this.projectPillEl.addEventListener("click", () => this.showProjectList());
+    modelGroup.createSpan({ cls: "agentic-chat-model-divider", attr: { "aria-hidden": "true" } });
 
     // Effort knob: click cycles the reasoning level for the next message only.
-    this.effortKnobEl = toolbarLeft.createDiv({
+    this.effortKnobEl = modelGroup.createDiv({
       cls: "agentic-chat-effort",
       attr: { role: "button", tabindex: "0" },
     });
@@ -714,6 +711,12 @@ export class ChatView extends ItemView {
       }
     });
 
+    this.projectPillEl = toolbarLeft.createEl("button", {
+      cls: "agentic-chat-project-pill",
+      attr: { "aria-label": "Switch project workspace" },
+    });
+    this.projectPillEl.addEventListener("click", () => this.showProjectList());
+
     this.contextBarEl = toolbarLeft.createEl("progress", {
       cls: "agentic-chat-ctx-bar",
       attr: { "aria-label": "Context window used", max: "100", value: "0" },
@@ -722,29 +725,20 @@ export class ChatView extends ItemView {
     this.contextBarEl.hide();
     this.contextPercentEl.hide();
 
-    // Folder affordance ("dir. context"): grant a working directory (auto-run inside,
-    // ask outside) or attach a one-off folder listing as context. (C1)
-    this.folderButtonEl = toolbarLeft.createEl("button", {
-      cls: "agentic-chat-attach",
-      attr: { "aria-label": "Folders: working directory or attach listing" },
-    });
-    setIcon(this.folderButtonEl, "folder");
-    this.folderButtonEl.addEventListener("click", (event: MouseEvent) => {
-      const menu = new Menu();
-      this.createWorkingDirectoryWorkflow().attachFolderMenuItems(menu);
-      menu.showAtMouseEvent(event);
-    });
-
     const toolbarRight = toolbar.createDiv({ cls: "agentic-chat-toolbar-right" });
 
-    // Single Safe ↔ YOLO permission toggle (the ask/plan/agent dropdown is retired).
+    // Single Safe ↔ YOLO permission toggle as a segmented pill (beautifului
+    // Prompt Bar pattern); the ask/plan/agent dropdown is retired.
     this.modeToggleEl = toolbarRight.createDiv({
       cls: "agentic-chat-mode-toggle",
-      attr: { role: "switch", tabindex: "0", "aria-label": "YOLO mode", "aria-checked": "false" },
+      attr: { role: "switch", tabindex: "0", "aria-label": "Safe ↔ YOLO mode", "aria-checked": "false" },
     });
-    const modeTrack = this.modeToggleEl.createDiv({ cls: "agentic-chat-mode-track" });
-    modeTrack.createDiv({ cls: "agentic-chat-mode-knob" });
-    this.modeToggleEl.createSpan({ cls: "agentic-chat-mode-label", text: "YOLO" });
+    this.modeToggleEl.createSpan({ cls: "agentic-chat-mode-seg", text: "Safe" });
+    this.modeToggleEl.createSpan({ cls: "agentic-chat-mode-seg", text: "YOLO" });
+    this.modeToggleEl.setAttr(
+      "title",
+      "Safe: ask before every edit and action. YOLO: run without asking (for trusted vaults).",
+    );
     const toggleMode = () => {
       if (this.service.isStreaming() || this.plugin.settings.mode === "plan") return;
       const target = this.plugin.settings.mode === "yolo" ? "safe" : "yolo";
@@ -854,6 +848,21 @@ export class ChatView extends ItemView {
       cls: "agentic-chat-empty-text",
       text: "Ask anything about your vault. The agent can read, search, write, and edit notes — every tool call is shown inline. Type / for commands or @ to attach a note.",
     });
+    // Suggested prompts fill the empty surface with a low-effort starting point
+    // (teaches / and @ without a manual) instead of a big vertical void.
+    const suggestions = [
+      "Read the active note and summarize it",
+      "List notes changed in the last week",
+      "Draft a weekly overview of my vault",
+    ];
+    const row = this.emptyStateEl.createDiv({ cls: "agentic-chat-empty-suggestions" });
+    for (const suggestion of suggestions) {
+      const chip = row.createEl("button", { cls: "agentic-chat-empty-suggestion", text: suggestion });
+      chip.addEventListener("click", () => {
+        this.inputEl.value = suggestion;
+        void this.submit();
+      });
+    }
   }
 
   private clearEmptyState(): void {
@@ -1033,21 +1042,10 @@ export class ChatView extends ItemView {
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: modelPill.shortModel });
     this.syncProjectPill();
     this.syncEffortKnob();
-    this.syncFolderButton(effective.approval.workingDirs.length);
     this.renderPlanTrackerPanel();
 
-    const usage = this.service.getSessionUsage();
     const fraction = this.service.getContextFraction();
-    // Pre-send estimate of what the next request will cost (priced models only).
-    const estimate = this.service.estimateNextCost();
-    const provider = effective.provider;
-    const modelId = activeModelId(effective);
-    const sessionCostUnknown =
-      provider !== "ollama" &&
-      usage.totalTokens > 0 &&
-      (usage.cost?.total ?? 0) === 0 &&
-      isPricingUnknown(provider, modelId);
-    this.renderUsageChrome(usage, estimate, sessionCostUnknown);
+    this.renderUsageChrome();
     this.syncContextBar(fraction);
 
     const error = this.service.getError();
@@ -1057,27 +1055,28 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Render the bottom usage line as styled spans — tokens · cache% (colored by
-   * hit ratio) · cost · next ~$X (hover tooltip) — instead of one opaque string,
-   * so the cache chip and the next-cost projection can carry their own styling.
+   * Render the bottom usage line for the CURRENT turn only (Claude Code style):
+   * collapsed `5.7k tokens · 86% cache · $0.17`, with the full per-turn detail in
+   * the hover tooltip. Session-wide cumulative totals are dropped from the chrome
+   * line (they still drive the cost/context notifications).
    */
-  private renderUsageChrome(usage: Usage, nextEstimate?: RequestCostEstimate, sessionCostUnknown = false): void {
+  private renderUsageChrome(): void {
     const el = this.usageEl;
     el.empty();
-    const parts = buildUsageChromeParts(usage, nextEstimate, sessionCostUnknown);
+    const turn = this.lastTurnUsage;
+    const session = this.service.getSessionUsage();
+    if (!turn || session.totalTokens === 0) {
+      el.hide();
+      return;
+    }
+    el.show();
+    el.setAttr("title", `${formatUsage(turn)} · current turn`);
+    const parts = buildTurnUsageChromeParts(turn);
     parts.forEach((part, index) => {
       if (index > 0) el.createSpan({ text: " · " });
       const span = el.createSpan({ text: part.text });
       if (part.cls) for (const cls of part.cls.split(" ")) if (cls) span.addClass(cls);
-      if (part.title) span.setAttr("title", part.title);
     });
-  }
-
-  /** Accent the folder button while working dirs are granted, and surface the count. */
-  private syncFolderButton(scopeCount: number): void {
-    if (!this.folderButtonEl) return;
-    this.folderButtonEl.toggleClass("has-scope", scopeCount > 0);
-    this.folderButtonEl.setAttr("aria-label", folderButtonAriaLabel(scopeCount));
   }
 
   private syncProjectPill(): void {
@@ -1869,7 +1868,6 @@ export class ChatView extends ItemView {
     const canChange = levels.length > 1;
     const overridden = canChange && this.service.getThinkingOverride() !== null;
     this.effortKnobEl.empty();
-    this.effortKnobEl.createSpan({ cls: "agentic-chat-effort-label", text: "Effort" });
     this.effortKnobEl.createSpan({ cls: "agentic-chat-effort-value", text: level });
     this.effortKnobEl.toggleClass("is-override", overridden);
     this.effortKnobEl.toggleClass("is-unavailable", !canChange);
@@ -2501,6 +2499,10 @@ export class ChatView extends ItemView {
     isLast: boolean,
   ): void {
     const bubble = this.newBubble();
+    // Mirror the live path: every assistant turn gets its Thinking → Thought
+    // status pill (mount eagerly, settle on finalize) so history replay renders
+    // identically to the live stream for text-only turns too.
+    bubble.beginThinking();
     const reasoning = thinkingText(message);
     if (reasoning) bubble.appendReasoning(reasoning);
     for (const call of toolCalls(message)) {
@@ -2515,6 +2517,8 @@ export class ChatView extends ItemView {
     if (displayText) {
       void bubble.finalizeText(displayText, this.app, this);
       bubble.showActions({ canRetry: isLast, canImplement: planning && isLast && hasPlanComplete });
+    } else {
+      bubble.finalizeWithoutText();
     }
     const errorMessage = (message as { errorMessage?: string }).errorMessage;
     if (errorMessage) {
@@ -2523,6 +2527,7 @@ export class ChatView extends ItemView {
     }
     const usage = assistantUsage(message);
     if (usage) {
+      this.lastTurnUsage = usage;
       bubble.showUsage(usage);
     }
   }
@@ -2569,15 +2574,18 @@ export class ChatView extends ItemView {
     switch (event.type) {
       case "agent_start":
         this.clearEmptyState();
+        this.bubble?.dispose();
         this.bubble = null;
         this.setRunning(true);
-        this.statusEl.setText("Thinking…");
         break;
       case "message_start":
         if (event.message.role === "assistant") {
+          this.bubble?.dispose();
           this.bubble = this.newBubble();
           this.lastBubbleError = undefined;
-          this.statusEl.setText("Responding…");
+          // The Thinking pill IS the turn's status: mount it immediately so any
+          // latency between here and the first token reads as "Thinking…".
+          this.bubble.beginThinking();
         }
         break;
       case "message_update":
@@ -2591,16 +2599,21 @@ export class ChatView extends ItemView {
         if (event.message.role === "assistant") this.finalizeBubble(event.message);
         break;
       case "tool_execution_start":
-        this.statusEl.setText(`Running ${event.toolName}…`);
         this.ensureBubble().startStep(event.toolCallId, event.toolName, safeJson(event.args));
         break;
       case "tool_execution_update":
         this.ensureBubble().updateStep(event.toolCallId, event.partialResult);
         break;
       case "tool_execution_end":
-        this.ensureBubble().endStep(event.toolCallId, toolResultText(event.result), event.isError);
+        this.ensureBubble().endStep(
+          event.toolCallId,
+          toolResultText(event.result),
+          event.isError,
+          event.result,
+        );
         break;
       case "agent_end":
+        this.bubble?.finalizeWithoutText();
         this.setRunning(false);
         this.statusEl.setText("");
         this.syncChrome();
@@ -2629,6 +2642,8 @@ export class ChatView extends ItemView {
     if (displayText) {
       void bubble.finalizeText(displayText, this.app, this);
       bubble.showActions({ canRetry: true, canImplement: planning && hasPlanComplete });
+    } else {
+      bubble.finalizeWithoutText();
     }
     const errorMessage = (message as { errorMessage?: string }).errorMessage;
     if (errorMessage) {
@@ -2637,6 +2652,7 @@ export class ChatView extends ItemView {
     }
     const usage = assistantUsage(message);
     if (usage) {
+      this.lastTurnUsage = usage;
       bubble.showUsage(usage);
     }
   }

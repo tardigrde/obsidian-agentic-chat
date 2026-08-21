@@ -45,18 +45,18 @@ describe("shortModelLabel", () => {
 
 describe("describeCall", () => {
   it("captions a known tool with its path argument", () => {
-    expect(describeCall("read", '{"path":"Notes/a.md"}')).toBe("Reading file: Notes/a.md");
+    expect(describeCall("read", '{"path":"Notes/a.md"}')).toBe("Read: Notes/a.md");
   });
   it("prefers pattern, then newPath, when no path is present", () => {
-    expect(describeCall("search", '{"query":"TODO"}')).toBe("Searching: TODO");
-    expect(describeCall("grep", '{"pattern":"TODO"}')).toBe("Searching: TODO");
-    expect(describeCall("rename", '{"newPath":"b.md"}')).toBe("Renaming: b.md");
+    expect(describeCall("search", '{"query":"TODO"}')).toBe("Search: TODO");
+    expect(describeCall("grep", '{"pattern":"TODO"}')).toBe("Search: TODO");
+    expect(describeCall("rename", '{"newPath":"b.md"}')).toBe("Rename: b.md");
   });
   it("falls back to a generic label for unknown tools", () => {
     expect(describeCall("mystery", "{}")).toBe("Running mystery");
   });
   it("tolerates malformed JSON args", () => {
-    expect(describeCall("read", "not json")).toBe("Reading file");
+    expect(describeCall("read", "not json")).toBe("Read");
   });
 });
 

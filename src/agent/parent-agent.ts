@@ -45,7 +45,11 @@ export function createParentAgent(options: ParentAgentOptions): ParentAgentHandl
     beforeToolCall: options.beforeToolCall,
     afterToolCall: options.afterToolCall,
     sessionId: options.sessionId,
-    toolExecution: "sequential",
+    // N `subagent` calls in one message run concurrently; the subagent tool's
+    // own semaphore caps the fan-out. Stateful/interactive tools (ask-user)
+    // declare executionMode "sequential", which the SDK honours by serializing
+    // any batch that contains them.
+    toolExecution: "parallel",
   });
   return {
     agent,

@@ -7,9 +7,8 @@ import { truncateToolOutput } from "../vault/truncate";
 
 export const SUBAGENT_TOOL_NAME = "subagent";
 
-/** Hard ceilings so a single dispatch cannot fan out unboundedly. */
-const MAX_TASKS = 20;
-const MAX_CONCURRENCY = 8;
+/** Hard cap on how many Dispatch calls run concurrently in one parent turn. */
+const MAX_CONCURRENCY = 10;
 /** Per-child summary cap (characters) fed into the parent's context. */
 const PER_CHILD_SUMMARY_CHARS = 8_000;
 
@@ -22,7 +21,7 @@ export type SubagentTranscriptEntry =
 export interface SubagentChildStatus {
   agent: string;
   task: string;
-  status: "running" | "done" | "error";
+  status: "queued" | "running" | "done" | "error";
   /** Final summary text (or the error message) once the child settles. */
   summary?: string;
   /** Id used to abort just this child. */
@@ -55,73 +54,52 @@ export interface SubagentToolDeps {
   createChildAgent: (profile: AgentProfile) => Agent;
   /** Report a finished child's token usage for session cost accounting. */
   recordUsage?: (usage: Usage) => void;
-  /** Default cap on how many children run at once. */
-  defaultConcurrency?: number;
 }
 
-const TaskSpec = Type.Object({
+const SubagentParameters = Type.Object({
   agent: Type.String({ description: "profile name" }),
   task: Type.String({ description: "task to delegate" }),
 });
 
-const SubagentParameters = Type.Object({
-  agent: Type.Optional(Type.String({ description: "profile name" })),
-  task: Type.Optional(Type.String({ description: "task to delegate" })),
-  tasks: Type.Optional(
-    Type.Array(TaskSpec, {
-      maxItems: MAX_TASKS,
-      description: `parallel dispatches (max ${MAX_TASKS})`,
-    }),
-  ),
-  concurrency: Type.Optional(
-    Type.Number({ description: `max parallel (default 3, capped at ${MAX_CONCURRENCY})` }),
-  ),
-});
-
 /**
- * The `subagent` dispatch tool: spawns focused child agents that run in isolated
- * contexts and return summaries. Single (`{agent, task}`) or parallel (`{tasks}`).
- * Children run concurrently up to a cap; the parent abort signal cancels them all,
- * and live status streams to the UI via `onUpdate`.
+ * The `subagent` dispatch tool: spawns one focused child agent in an isolated
+ * context and returns its summary. Strict 1:1 — one call = one subagent; to
+ * delegate several tasks, make several `subagent` calls in one message (the
+ * parent loop runs them concurrently, capped at {@link MAX_CONCURRENCY} in
+ * flight; the rest queue). The parent abort signal cancels every child, and
+ * live status streams to the UI via `onUpdate`.
  */
 export function createSubagentTool(
   deps: SubagentToolDeps,
 ): AgentTool<typeof SubagentParameters, SubagentDetails> {
-  const defaultConcurrency = deps.defaultConcurrency ?? 3;
+  // One slot pool per tool instance (and createTool() builds a fresh instance
+  // per parent turn), so the cap is per-run, not global.
+  const slots = createSlotPool(MAX_CONCURRENCY);
   return {
     name: SUBAGENT_TOOL_NAME,
-    label: "Dispatch subagents",
+    label: "Dispatch subagent",
     description:
-      "Run one or more specialist subagents in isolated contexts; each returns a summary. " +
-      "Single: {agent, task}. Parallel: {tasks:[{agent, task}, ...]}. Profiles are in the system prompt.",
+      "Run one specialist subagent in an isolated context; it returns a summary. " +
+      "One call = one subagent ({agent, task}). To delegate several tasks, make several " +
+      "subagent calls in one message — they run in parallel (up to 10 at once). " +
+      "Profiles are in the system prompt.",
     parameters: SubagentParameters,
-    // Dispatch is a heavyweight, stateful action; keep it out of parallel batches
-    // with other tools so its own fan-out controls concurrency.
-    executionMode: "sequential",
-    execute: async (_id, params, signal, onUpdate) => {
-      const tasks = normalizeTasks(params);
-      if (tasks.length === 0) {
-        throw new Error('subagent: provide either {agent, task} or a non-empty {tasks: [...]}.');
-      }
-      if (tasks.length > MAX_TASKS) {
-        throw new Error(`subagent: too many tasks (${tasks.length}); dispatch at most ${MAX_TASKS} at once.`);
+    execute: async (toolCallId, params, signal, onUpdate) => {
+      const agent = params.agent?.trim();
+      const task = params.task?.trim();
+      if (!agent || !task) {
+        throw new Error("subagent: provide both {agent, task}.");
       }
       const profiles = deps.getProfiles();
-      for (const task of tasks) {
-        if (!profiles.some((profile) => profile.name === task.agent)) {
-          const available = profiles.map((profile) => profile.name).join(", ") || "(none)";
-          throw new Error(`subagent: unknown agent "${task.agent}". Available: ${available}.`);
-        }
+      const profile = profiles.find((candidate) => candidate.name === agent);
+      if (!profile) {
+        const available = profiles.map((candidate) => candidate.name).join(", ") || "(none)";
+        throw new Error(`subagent: unknown agent "${agent}". Available: ${available}.`);
       }
 
-      const statuses: SubagentChildStatus[] = tasks.map((task) => ({
-        agent: task.agent,
-        task: task.task,
-        status: "running",
-      }));
+      const status: SubagentChildStatus = { agent, task, status: "queued" };
       const emit = (): void =>
-        onUpdate?.({ content: [{ type: "text", text: progressText(statuses) }], details: snapshot(statuses) });
-      emit();
+        onUpdate?.({ content: [{ type: "text", text: progressText(status) }], details: snapshot([status]) });
 
       let emitTimer: number | null = null;
       const scheduleEmit = (): void => {
@@ -139,65 +117,107 @@ export function createSubagentTool(
         emit();
       };
 
-      const runChild = async (index: number): Promise<void> => {
-        const status = statuses[index];
-        const profile = profiles.find((candidate) => candidate.name === tasks[index].agent);
-        try {
-          if (!profile) throw new Error(`unknown agent "${tasks[index].agent}"`);
-          await runSingleChild(deps, status, profile, tasks[index].task, _id, index, signal, scheduleEmit);
-        } catch (error) {
-          status.status = "error";
-          status.summary = error instanceof Error ? error.message : String(error);
-        }
+      try {
+        // Surface the "queued" pill only while actually waiting for a slot — an
+        // immediate grant (under the cap) never flashes it.
+        await acquireSlot(slots, signal, () => {
+          status.status = "queued";
+          emit();
+        });
+      } catch {
+        status.status = "error";
+        status.summary = "aborted";
         flushEmit();
-      };
-
-      const concurrency = clampConcurrency(params.concurrency ?? defaultConcurrency, tasks.length);
-      await runPool(tasks.length, concurrency, signal, runChild);
-
-      // If an abort stopped the pool, queued children never entered the worker and
-      // would otherwise be reported as still "running" — finalize them.
-      if (signal?.aborted) {
-        for (const status of statuses) {
-          if (status.status === "running") {
-            status.status = "error";
-            status.summary = "aborted";
-          }
-        }
-        flushEmit();
+        return {
+          content: [{ type: "text", text: truncateToolOutput(`Subagent "${agent}" aborted before it started.`) }],
+          details: snapshot([status]),
+        };
       }
 
+      status.status = "running";
+      emit();
+      try {
+        await runSingleChild(deps, status, profile, task, toolCallId, signal, scheduleEmit);
+      } catch (error) {
+        status.status = "error";
+        status.summary = error instanceof Error ? error.message : String(error);
+      } finally {
+        releaseSlot(slots);
+      }
+      flushEmit();
+
       return {
-        content: [{ type: "text", text: truncateToolOutput(mergeSummaries(statuses)) }],
-        details: snapshot(statuses),
+        content: [{ type: "text", text: truncateToolOutput(mergeSummaries([status])) }],
+        details: snapshot([status]),
       };
     },
   };
 }
 
-/** Resolve the requested tasks from either the single or parallel call shape. */
-export function normalizeTasks(params: {
-  agent?: string;
-  task?: string;
-  tasks?: SubagentTask[];
-}): SubagentTask[] {
-  // The model can emit a malformed call (tasks as a non-array, or items missing
-  // agent/task), so guard rather than trusting the shape.
-  if (Array.isArray(params.tasks) && params.tasks.length > 0) {
-    return params.tasks
-      .filter((task) => task && typeof task.agent === "string" && typeof task.task === "string")
-      .map((task) => ({ agent: task.agent.trim(), task: task.task.trim() }))
-      .filter((task) => task.agent.length > 0 && task.task.length > 0);
-  }
+/**
+ * Resolve the single requested task, tolerating malformed model output (blank
+ * agent/task collapse to no-op). Retained for approval gating, which inspects
+ * the profile of the target agent before the dispatch runs.
+ */
+export function normalizeTasks(params: { agent?: string; task?: string }): SubagentTask[] {
   const agent = params.agent?.trim();
   const task = params.task?.trim();
   if (agent && task) return [{ agent, task }];
   return [];
 }
 
-function clampConcurrency(requested: number, count: number): number {
-  if (!Number.isFinite(requested) || requested < 1) return 1;
-  return Math.min(Math.floor(requested), count, MAX_CONCURRENCY);
+/** Concurrency slot pool shared by all `subagent` calls of one tool instance. */
+interface SlotPool {
+  limit: number;
+  active: number;
+  waiters: Array<() => void>;
+}
+
+function createSlotPool(limit: number): SlotPool {
+  return { limit, active: 0, waiters: [] };
+}
+
+/**
+ * Grab a concurrency slot. When the pool is full, `onQueued` fires
+ * synchronously and the returned promise resolves once a slot frees; if the
+ * signal aborts first it rejects (the queued dispatch settles as aborted
+ * without ever starting a child).
+ */
+function acquireSlot(
+  pool: SlotPool,
+  signal: AbortSignal | undefined,
+  onQueued?: () => void,
+): Promise<void> {
+  if (pool.active < pool.limit) {
+    pool.active += 1;
+    return Promise.resolve();
+  }
+  onQueued?.();
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => {
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const waiter = (): void => {
+      cleanup();
+      resolve();
+    };
+    const onAbort = (): void => {
+      const index = pool.waiters.indexOf(waiter);
+      if (index >= 0) pool.waiters.splice(index, 1);
+      cleanup();
+      reject(new Error("subagent: dispatch aborted while queued"));
+    };
+    pool.waiters.push(waiter);
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Free a slot: promote the next queued waiter, or decrement the active count. */
+function releaseSlot(pool: SlotPool): void {
+  const next = pool.waiters.shift();
+  if (next) next();
+  else pool.active -= 1;
 }
 
 async function runSingleChild(
@@ -206,13 +226,13 @@ async function runSingleChild(
   profile: AgentProfile,
   task: string,
   parentToolCallId: string,
-  index: number,
   signal: AbortSignal | undefined,
   scheduleEmit: () => void,
 ): Promise<void> {
   const child = deps.createChildAgent(profile);
 
-  const stopId = `${parentToolCallId}-${index}`;
+  // 1:1 means the tool call id is a stable, unique stop id for this child.
+  const stopId = parentToolCallId;
   status.stopId = stopId;
   status.transcript = [];
   activeStops.set(stopId, () => child.abort());
@@ -262,55 +282,21 @@ async function runSingleChild(
   }
 }
 
-/**
- * Run `worker(index)` for indices 0..count-1 with at most `limit` in flight.
- * Stops pulling new work once the signal aborts (in-flight children are aborted
- * by their own listeners and settle normally).
- */
-async function runPool(
-  count: number,
-  limit: number,
-  signal: AbortSignal | undefined,
-  worker: (index: number) => Promise<void>,
-): Promise<void> {
-  let next = 0;
-  const runners = Array.from({ length: Math.min(limit, count) }, async () => {
-    for (;;) {
-      if (signal?.aborted) return;
-      const index = next++;
-      if (index >= count) return;
-      await worker(index);
-    }
-  });
-  await Promise.all(runners);
-}
-
 function snapshot(statuses: SubagentChildStatus[]): SubagentDetails {
   return { kind: "subagent", children: statuses.map((status) => ({ ...status })) };
 }
 
-function progressText(statuses: SubagentChildStatus[]): string {
-  const done = statuses.filter((status) => status.status !== "running").length;
-  return `Running subagents (${done}/${statuses.length} done)…`;
+function progressText(status: SubagentChildStatus): string {
+  if (status.status === "queued") return `Queued subagent "${status.agent}"…`;
+  if (status.status === "running") return `Running subagent "${status.agent}"…`;
+  return `Subagent "${status.agent}" finished`;
 }
 
 function mergeSummaries(statuses: SubagentChildStatus[]): string {
-  if (statuses.length === 1) {
-    const only = statuses[0];
-    return only.status === "error"
-      ? `Subagent "${only.agent}" failed: ${only.summary ?? "unknown error"}`
-      : only.summary ?? "(no output)";
-  }
-  return statuses
-    .map((status) => {
-      const heading = `### ${status.agent}: ${status.task}`;
-      const body =
-        status.status === "error"
-          ? `(failed) ${status.summary ?? "unknown error"}`
-          : status.summary ?? "(no output)";
-      return `${heading}\n\n${body}`;
-    })
-    .join("\n\n");
+  const only = statuses[0];
+  return only.status === "error"
+    ? `Subagent "${only.agent}" failed: ${only.summary ?? "unknown error"}`
+    : only.summary ?? "(no output)";
 }
 
 /** Extract the text of the last assistant message in a child transcript. */

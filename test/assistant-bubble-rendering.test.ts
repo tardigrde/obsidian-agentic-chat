@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { classifyRenderedChatLink, enhanceCallouts, renderMermaidBlocks } from "../src/ui/assistant-bubble";
+import { classifyRenderedChatLink, enhanceCallouts, renderMermaidBlocks, sourceChipName } from "../src/ui/assistant-bubble";
 
 class FakeClassList {
   private readonly values = new Set<string>();
@@ -167,6 +167,15 @@ afterEach(() => {
 });
 
 describe("assistant markdown rendering helpers", () => {
+  it("derives a compact source-chip name from a vault path", () => {
+    expect(sourceChipName("Notes/Plan.md")).toBe("Plan.md");
+    expect(sourceChipName("Projects/Alpha/Home.md")).toBe("Home.md");
+    expect(sourceChipName("readme")).toBe("readme");
+    expect(sourceChipName("")).toBe("");
+    expect(sourceChipName("   ")).toBe("");
+    expect(sourceChipName("dir/")).toBe("dir");
+  });
+
   it("classifies rendered vault and external links", () => {
     expect(classifyRenderedChatLink(anchor({ "data-href": "Notes/Plan.md" }))).toEqual({
       kind: "vault",
