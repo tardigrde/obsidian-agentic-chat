@@ -180,23 +180,48 @@ describe(ENABLED ? "agentic-chat design audit" : "agentic-chat design audit (dis
     await emit({ type: "agent_start" });
     await emit({ type: "message_start", message: { role: "assistant", content: [] } });
     await emit(streamDelta("thinking_delta", "I will dispatch an explorer subagent to map the vault, then query the code search tool."));
-    await emit(toolStart("t-sub", "subagent", { agent: "explorer", task: "Inspect the vault layout and flag anything unusual" }));
+    await emit(toolStart("t-sub-1", "subagent", { agent: "explorer", task: "List all Markdown files" }));
+    await emit(toolStart("t-sub-2", "subagent", { agent: "explorer", task: "Read the index note" }));
     await emit({
       type: "tool_execution_update",
-      toolCallId: "t-sub",
+      toolCallId: "t-sub-1",
       partialResult: {
         details: {
           kind: "subagent",
           children: [
             { agent: "explorer", task: "List all Markdown files", status: "running", stopId: "sub-1", transcript: [{ type: "text", text: "Scanning vault…" }], summary: "" },
+          ],
+        },
+      },
+    });
+    await emit({
+      type: "tool_execution_update",
+      toolCallId: "t-sub-2",
+      partialResult: {
+        details: {
+          kind: "subagent",
+          children: [
             { agent: "explorer", task: "Read the index note", status: "done", transcript: [{ type: "text", text: "read Notes/Index.md" }], summary: "Read 120 lines." },
           ],
         },
       },
     });
-    await shot("12-subagent-live", ".agentic-chat-subagents");
-    await emit(toolEnd("t-sub", "Explorer finished: 12 notes found, layout is tidy."));
-    await shot("12-subagent-done", ".agentic-chat-subagent.is-done");
+    await shot("12-subagent-live", ".agentic-chat-assistant:last-child");
+    await emit({
+      type: "tool_execution_update",
+      toolCallId: "t-sub-1",
+      partialResult: {
+        details: {
+          kind: "subagent",
+          children: [
+            { agent: "explorer", task: "List all Markdown files", status: "done", transcript: [{ type: "text", text: "Scanning vault…" }], summary: "Found 12 notes." },
+          ],
+        },
+      },
+    });
+    await emit(toolEnd("t-sub-1", "Explorer finished: 12 notes found"));
+    await emit(toolEnd("t-sub-2", "Read complete: 120 lines"));
+    await shot("12-subagent-done", ".agentic-chat-assistant:last-child");
     await emit(streamDelta("text_delta", "The explorer subagent finished and the layout looks tidy."));
     await emit(toolStart("t-mcp", "mcp__github__search_repos", { query: "obsidian agent" }));
     await emit(toolEnd("t-mcp", "2 repositories matched your query."));

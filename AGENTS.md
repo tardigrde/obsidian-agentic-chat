@@ -95,6 +95,18 @@ Failed e2e tests write diagnostics under `logs/e2e-artifacts/`: screenshot,
 browser console logs when available, WDIO result metadata, Obsidian UI text,
 redacted plugin settings, and the latest sandbox session JSONL when one exists.
 
+Capture deterministic design-audit screenshots (no API key, 1:1 Dispatch blocks: 1 subagent = 1 block):
+
+```bash
+npm run test:e2e:audit                # sidebar (default 300px)
+npm run test:e2e:audit:wide           # 760px wide
+npm run test:e2e:audit:mobile         # 390px
+npm run test:e2e:audit:fullscreen     # fullscreen pane
+# or: AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=wide npm run test:e2e -- --spec test/e2e/specs/design-audit.e2e.ts
+```
+
+Screenshots land in `logs/design-audit/<ts>-<mode>/` (`logs/` is gitignored): 42 PNGs per mode (`.full.png` window, `.view.png` chat pane, `.crop.png` close-up).
+
 Run the full dogfood e2e suite (expensive, generates vault + drives real Obsidian):
 
 ```bash

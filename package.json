@@ -39,6 +39,11 @@
     "pretest:e2e:mobile": "npm run build:e2e",
     "test:e2e:mobile": "node scripts/run-e2e-mobile.mjs",
     "test:e2e:matrix": "node scripts/run-e2e-matrix.mjs",
+    "test:e2e:audit": "AGENTIC_CHAT_DESIGN_AUDIT=1 node --import tsx scripts/run-e2e.ts --spec test/e2e/specs/design-audit.e2e.ts",
+    "test:e2e:audit:sidebar": "AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=sidebar node --import tsx scripts/run-e2e.ts --spec test/e2e/specs/design-audit.e2e.ts",
+    "test:e2e:audit:fullscreen": "AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=fullscreen node --import tsx scripts/run-e2e.ts --spec test/e2e/specs/design-audit.e2e.ts",
+    "test:e2e:audit:mobile": "AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=mobile node --import tsx scripts/run-e2e.ts --spec test/e2e/specs/design-audit.e2e.ts",
+    "test:e2e:audit:wide": "AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=wide node --import tsx scripts/run-e2e.ts --spec test/e2e/specs/design-audit.e2e.ts",
     "verify:mobile": "node scripts/verify-mobile-compat.mjs",
     "check:remote-mcp": "node --import tsx scripts/check-remote-mcp.ts"
   },
