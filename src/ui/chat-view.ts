@@ -1924,15 +1924,14 @@ export class ChatView extends ItemView {
       // scope from vault context. `/project` alone just lists the current state.
       const activeId = this.plugin.settings.projects.activeProjectId;
       const projects = this.plugin.settings.projects.items;
-      this.renderInfoMessage(
-        "Projects",
-        projects.length === 0
-          ? [["(none)", "No projects configured. Add one in settings, then run /project <name>."]]
-          : projects.map((project) => [
-              project.name,
-              `${project.id === activeId ? "current · " : ""}${describeProject(project) || "all notes"}`,
-            ]),
-      );
+      const rows: Array<[string, string]> = [
+        ["Vault-wide", activeId ? "Switch back to unscoped vault chat." : "current"],
+        ...projects.map((project): [string, string] => [
+          project.name,
+          `${project.id === activeId ? "current · " : ""}${describeProject(project) || "all notes"}`,
+        ]),
+      ];
+      this.renderInfoMessage("Projects", rows);
       return;
     }
     if (result.action === "error") {
