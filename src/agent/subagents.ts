@@ -114,7 +114,8 @@ export function formatSubagentsForSystemPrompt(profiles: AgentProfile[]): string
     "## Subagents",
     "",
     "You can delegate focused subtasks to these specialist subagents with the `subagent` tool. " +
-      "Each runs in its own isolated context and returns a summary; pass `tasks` to run several in parallel. " +
+      "One call runs one subagent ({agent, task}); make several `subagent` calls in one message " +
+      "to run several in parallel (up to 10 at once). " +
       "Delegate work that is self-contained (research, review, bulk edits) to keep your own context clean.",
     "",
     ...lines,

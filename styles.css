@@ -762,6 +762,10 @@
   color: var(--text-error);
 }
 
+.agentic-chat-step-status.is-queued {
+  color: var(--text-muted);
+}
+
 /* Body holds the readable Tool-call + Result sections. */
 .agentic-chat-step-body {
   display: flex;
@@ -892,6 +896,11 @@
 .agentic-chat-subagent.is-error .agentic-chat-subagent-status {
   color: var(--text-error);
   border-color: var(--text-error);
+}
+
+.agentic-chat-subagent.is-queued .agentic-chat-subagent-status {
+  color: var(--text-muted);
+  border-color: var(--background-modifier-border);
 }
 
 .agentic-chat-step-ask-user {

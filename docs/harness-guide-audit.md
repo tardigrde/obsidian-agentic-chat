@@ -130,7 +130,7 @@ behavior.
 | # | Principle | Current behavior | Status | Rationale / evidence |
 |---|-----------|-----------------|--------|----------------------|
 | 51 | Explicit context lifecycle (reset vs compaction) | Compaction only; manual `/compact`; no auto-reset | partial | Reset would be lossy for users who expect to scroll back; compaction is the chosen path. Add reset as a slash command if it becomes a recurring ask |
-| 52 | Cap everything (max turns, max re-plans, max iterations) | Spend cap (`costCapUsd`) and per-session cost readout; no per-turn re-plan loop | compliant | Spend cap is the universal cap; a subagent fan-out is bounded by `defaultConcurrency` |
+| 52 | Cap everything (max turns, max re-plans, max iterations) | Spend cap (`costCapUsd`) and per-session cost readout; no per-turn re-plan loop | compliant | Spend cap is the universal cap; parallel `subagent` dispatches are capped at 10 concurrent per turn |
 | 53 | Never let the generator grade its own exam | No generator/evaluator split; subagent "evaluator" is just a subagent with different tools, sharing the same model | deviates | Without a separate model role, evaluator + generator bias is real. A future `reviewer` profile or a model-routed eval would address this; not needed at current scope |
 | 54 | Planner → Generator → Evaluator pipeline | Parent + subagent roughly fills the planner/generator slot; no separate evaluator | deviates | Same as 53 |
 | 55 | Decomposition happens early | Parent decides whether to delegate in a single turn; no explicit planner step | partial | The model self-decomposes; works for the typical short task, weaker for true long-running pipelines |

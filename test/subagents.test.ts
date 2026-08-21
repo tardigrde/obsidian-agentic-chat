@@ -202,25 +202,17 @@ describe("formatSubagentsForSystemPrompt", () => {
 });
 
 describe("normalizeTasks", () => {
-  it("accepts the parallel and single shapes and rejects empties", () => {
-    expect(normalizeTasks({ tasks: [{ agent: "a", task: "t" }] })).toEqual([{ agent: "a", task: "t" }]);
+  it("accepts a single task and rejects empties", () => {
     expect(normalizeTasks({ agent: "a", task: "t" })).toEqual([{ agent: "a", task: "t" }]);
     expect(normalizeTasks({})).toEqual([]);
-    expect(normalizeTasks({ tasks: [] })).toEqual([]);
     expect(normalizeTasks({ agent: "a" })).toEqual([]);
+    expect(normalizeTasks({ task: "t" })).toEqual([]);
   });
 
-  it("guards against malformed model output", () => {
-    // tasks emitted as a non-array, or items missing agent/task, must not throw.
-    expect(normalizeTasks({ tasks: "nope" } as unknown as { tasks?: never })).toEqual([]);
-    expect(
-      normalizeTasks({ tasks: [{ agent: "a" }, { agent: "b", task: "t" }] } as unknown as {
-        tasks?: { agent: string; task: string }[];
-      }),
-    ).toEqual([{ agent: "b", task: "t" }]);
-    // Blank / whitespace-only agent or task is rejected (trimmed then filtered).
+  it("guards against blank agent or task", () => {
     expect(normalizeTasks({ agent: "researcher", task: "  " })).toEqual([]);
-    expect(normalizeTasks({ tasks: [{ agent: " ", task: "t" }] })).toEqual([]);
+    expect(normalizeTasks({ agent: "  ", task: "t" })).toEqual([]);
+    expect(normalizeTasks({ agent: "a", task: "t" })).toEqual([{ agent: "a", task: "t" }]);
   });
 });
 
@@ -269,42 +261,18 @@ describe("createSubagentTool", () => {
     expect(updates[0].children[0].status).toBe("running");
   });
 
-  it("runs several children in parallel and merges their summaries", async () => {
-    const usages: { totalTokens: number }[] = [];
-    const tool = createSubagentTool({
-      getProfiles: () => [RESEARCHER],
-      createChildAgent: () => makeChild(childStreamFn("ok")),
-      recordUsage: (usage) => usages.push(usage),
-    });
-    const result = await tool.execute(
-      "id",
-      { tasks: [{ agent: "researcher", task: "A" }, { agent: "researcher", task: "B" }] },
-      undefined,
-    );
-    const text = firstText(result.content);
-    expect(text).toContain("### researcher: A");
-    expect(text).toContain("### researcher: B");
-    expect(result.details.children).toHaveLength(2);
-    expect(result.details.children.every((child) => child.status === "done")).toBe(true);
-    expect(usages).toHaveLength(2);
-  });
-
   it("throws on an unknown agent and on an empty request", async () => {
     const tool = createSubagentTool({
       getProfiles: () => [RESEARCHER],
       createChildAgent: () => makeChild(childStreamFn("x")),
     });
     await expect(tool.execute("id", { agent: "ghost", task: "x" }, undefined)).rejects.toThrow(/unknown agent/i);
-    await expect(tool.execute("id", {}, undefined)).rejects.toThrow(/provide either/i);
-  });
-
-  it("rejects a fan-out beyond the hard task cap", async () => {
-    const tool = createSubagentTool({
-      getProfiles: () => [RESEARCHER],
-      createChildAgent: () => makeChild(childStreamFn("x")),
-    });
-    const tasks = Array.from({ length: 21 }, (_, i) => ({ agent: "researcher", task: `t${i}` }));
-    await expect(tool.execute("id", { tasks }, undefined)).rejects.toThrow(/too many tasks/i);
+    await expect(tool.execute("id", { agent: "researcher", task: "" }, undefined)).rejects.toThrow(
+      /provide both \{agent, task\}/i,
+    );
+    await expect(tool.execute("id", { agent: "", task: "x" }, undefined)).rejects.toThrow(
+      /provide both \{agent, task\}/i,
+    );
   });
 
   it("truncates an oversized child summary before it reaches the parent", async () => {
@@ -352,13 +320,13 @@ describe("createSubagentTool", () => {
     );
     const child = result.details.children[0];
     expect(child.status).toBe("done");
-    expect(child.stopId).toBe("call-1-0");
+    expect(child.stopId).toBe("call-1");
     expect(child.transcript?.length).toBeGreaterThan(0);
     const textEntries = child.transcript?.filter((e) => e.type === "text") ?? [];
     expect(textEntries.map((e) => e.text).join("")).toBe("live result");
   });
 
-  it("lets a caller abort a single child via abortSubagentChild without stopping the whole dispatch", async () => {
+  it("lets a caller abort one dispatch without stopping its siblings", async () => {
     let created = 0;
     const tool = createSubagentTool({
       getProfiles: () => [RESEARCHER],
@@ -368,22 +336,45 @@ describe("createSubagentTool", () => {
       },
     });
     const controller = new AbortController();
-    let settled = false;
-    const pending = tool
-      .execute("id", { tasks: [{ agent: "researcher", task: "A" }, { agent: "researcher", task: "B" }] }, controller.signal)
-      .then((result) => {
-        settled = true;
-        return result;
-      });
+    const first = tool.execute("call-a", { agent: "researcher", task: "A" }, controller.signal);
+    const second = tool.execute("call-b", { agent: "researcher", task: "B" }, controller.signal);
     await new Promise((resolve) => setTimeout(resolve, 25));
-    expect(settled).toBe(false);
 
-    // Abort just the first child by its deterministic stopId.
-    abortSubagentChild("id-0");
+    // Abort just the first dispatch by its stopId (== its tool call id).
+    abortSubagentChild("call-a");
 
-    const result = await pending;
-    expect(result.details.children[0].status).not.toBe("running");
-    expect(result.details.children[1].status).toBe("done");
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult.details.children[0].status).not.toBe("running");
+    expect(secondResult.details.children[0].status).toBe("done");
     controller.abort();
+  });
+
+  it("caps concurrent dispatches at 10 and queues the rest, promoting on stop", async () => {
+    let created = 0;
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => {
+        created += 1;
+        return makeChild(hangingStreamFn());
+      },
+    });
+    const controller = new AbortController();
+    const calls = Array.from({ length: 12 }, (_, i) =>
+      tool.execute(`call-${i}`, { agent: "researcher", task: `t${i}` }, controller.signal),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Only the cap's worth of children ever started; the rest are queued.
+    expect(created).toBe(10);
+
+    // Stopping one running child frees a slot and promotes a queued dispatch.
+    abortSubagentChild("call-0");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(created).toBe(11);
+
+    // Aborting the parent settles the running children and rejects the queued one.
+    controller.abort();
+    const results = await Promise.all(calls);
+    expect(results).toHaveLength(12);
+    expect(results.every((result) => result.details.children[0].status !== "running")).toBe(true);
   });
 });

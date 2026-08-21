@@ -15,6 +15,7 @@ import {
 } from "./format";
 
 const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
+  queued: "queued",
   running: "running…",
   done: "done",
   error: "failed",
@@ -439,12 +440,14 @@ export class AssistantBubble {
     let pill = header.querySelector<HTMLElement>(".agentic-chat-step-status");
     pill ??= header.createSpan({ cls: "agentic-chat-step-status" });
     const running = children.some((child) => child.status === "running");
+    const queued = !running && children.some((child) => child.status === "queued");
     const failed = children.some((child) => child.status === "error");
-    pill.setText(running ? "Running…" : failed ? "Failed" : "Done");
+    pill.setText(running ? "Running…" : queued ? "Queued…" : failed ? "Failed" : "Done");
     pill.removeClass("is-running");
     pill.removeClass("is-done");
     pill.removeClass("is-error");
-    pill.addClass(running ? "is-running" : failed ? "is-error" : "is-done");
+    pill.removeClass("is-queued");
+    pill.addClass(running ? "is-running" : queued ? "is-queued" : failed ? "is-error" : "is-done");
   }
 
   private renderSubagentHeader(row: HTMLDetailsElement, child: SubagentChildStatus): void {

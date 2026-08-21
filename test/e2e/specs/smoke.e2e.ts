@@ -256,11 +256,12 @@ describe("agentic-chat smoke", function () {
   });
 
   it("renders a dynamic effort knob clamped to supported levels", async function () {
-    // Dynamic effort (shipped this batch): the knob only offers levels the active
-    // model supports. The rendered value must be a member of the canonical set.
+    // Dynamic effort: the knob only offers levels the active model supports and
+    // carries the level as its own label (no separate "Effort" text). The
+    // rendered value must be a member of the canonical set.
     const knob = await $(".agentic-chat-effort");
     await knob.waitForExist();
-    await expect($(".agentic-chat-effort-label")).toHaveText(/effort/i);
+    await expect($(".agentic-chat-effort-value")).toExist();
     const readEffortValue = async (): Promise<string> =>
       browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-effort-value")?.innerText.trim() ?? "");
     const value = await readEffortValue();
