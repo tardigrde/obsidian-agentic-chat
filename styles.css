@@ -903,6 +903,13 @@
   border-color: var(--background-modifier-border);
 }
 
+/* Subtle completion readout under the child name: duration · tokens · cost. */
+.agentic-chat-subagent-meta {
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
 .agentic-chat-step-ask-user {
   margin-top: var(--size-2-2);
   color: var(--text-muted);

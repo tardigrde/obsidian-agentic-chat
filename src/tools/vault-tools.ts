@@ -193,7 +193,14 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
   return {
     ...vaultToolDefinition("read"),
     execute: async (_id, params) => {
-      const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
+      const path = normalizeVisibleVaultPath(isIgnored, params.path);
+      // A folder path is a common guess; give an actionable error instead of a
+      // misleading "File not found" so the model lists the folder and moves on.
+      const entry = app.vault.getAbstractFileByPath(path);
+      if (entry instanceof TFolder) {
+        throw new Error(`${path} is a folder — use ls to list its contents.`);
+      }
+      const file = getVaultFile(app, path);
       const range = {
         startLine: params.startLine,
         endLine: params.endLine,
@@ -203,7 +210,6 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       const window = resolveLineWindow(range);
       const readKey = { path, offset: window.offset, limit: window.limit };
       const mtime = file.stat?.mtime ?? 0;
-
       // De-dup: a repeat read of the same range in the same turn is handed a
       // short pointer so the prompt can't quietly double a file.
       if (memo?.has(readKey)) {

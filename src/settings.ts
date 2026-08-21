@@ -1900,6 +1900,22 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         await this.save();
       },
     );
+    new Setting(containerEl)
+      .setName("Subagent timeout")
+      .setDesc(
+        "Auto-stop a subagent that runs longer than this many seconds (0 disables). " +
+          "The child is aborted and the Dispatch step settles as stopped.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("0 = disabled")
+          .setValue(settings.subagentTimeoutSeconds > 0 ? String(settings.subagentTimeoutSeconds) : "")
+          .onChange(async (value) => {
+            const parsed = Math.trunc(Number(value));
+            settings.subagentTimeoutSeconds = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+            await this.save();
+          }),
+      );
 
     new Setting(containerEl).setName("Semantic retrieval").setHeading();
     new Setting(containerEl)

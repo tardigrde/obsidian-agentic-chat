@@ -566,6 +566,13 @@ describe("set_properties", () => {
 });
 
 describe("read — dedup + size guardrail", () => {
+  it("returns an actionable error when the target is a folder, not a note", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "hello" } }, folders: ["Inbox"] });
+    const read = createVaultTools(app).find((t) => t.name === "read")!;
+    await expect(run(read, { path: "Inbox/" })).rejects.toThrow(/is a folder — use ls/i);
+    await expect(run(read, { path: "Inbox" })).rejects.toThrow(/is a folder — use ls/i);
+  });
+
   it("returns content on the first read, a pointer on the second identical read", async () => {
     const app = makeApp({ files: { "Note.md": { content: "hello world" } } });
     const memo = new ReadMemo();

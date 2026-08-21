@@ -76,6 +76,8 @@ export interface AgenticChatSettings {
   agentsFolder: string;
   /** Include the built-in subagent roster (researcher / reviewer / editor). */
   enableBuiltinAgents: boolean;
+  /** Auto-abort a subagent after this many seconds. 0 disables the timeout. */
+  subagentTimeoutSeconds: number;
   /**
    * Newline-separated gitignore-style globs the agent may never read or see.
    * Enforced at the tool layer; matched files are invisible, not just denied.
@@ -171,6 +173,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   plugins: DEFAULT_PLUGIN_SETTINGS,
   agentsFolder: "",
   enableBuiltinAgents: true,
+  subagentTimeoutSeconds: 0,
   ignoredGlobs: "",
   notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
   compaction: { enabled: true, thresholdPercent: 80 },
@@ -242,6 +245,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     },
     mcp: healMcpSettings(stored?.mcp),
     plugins: healPluginSettings(stored?.plugins),
+    subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
   };
@@ -253,6 +257,12 @@ function stringSetting(value: unknown, fallback: string): string {
 
 /** Heal the context-window override: 0 = auto-detect, otherwise a positive integer. */
 function healContextWindow(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value));
+}
+
+/** Heal the subagent auto-abort timeout: whole seconds, 0 = disabled. */
+function healSubagentTimeout(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
   return Math.max(0, Math.trunc(value));
 }

@@ -6,7 +6,9 @@ import {
   callPath,
   describeCall,
   formatCallBody,
+  formatCost,
   formatElapsed,
+  formatTokenInteger,
   HIDE_RESULT_TOOLS,
   PATH_TOOLS,
   safeJson,
@@ -19,6 +21,7 @@ const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
   running: "running…",
   done: "done",
   error: "failed",
+  aborted: "stopped",
 };
 
 /** Per-step DOM + identity kept on the bubble for live updates and settle. */
@@ -445,6 +448,7 @@ export class AssistantBubble {
     const running = children.some((child) => child.status === "running");
     const queued = !running && children.some((child) => child.status === "queued");
     const failed = children.some((child) => child.status === "error");
+    const stopped = !failed && children.some((child) => child.status === "aborted");
     let text: string;
     let stateClass: string;
     if (running) {
@@ -455,6 +459,9 @@ export class AssistantBubble {
       stateClass = "is-queued";
     } else if (failed) {
       text = "Failed";
+      stateClass = "is-error";
+    } else if (stopped) {
+      text = "Stopped";
       stateClass = "is-error";
     } else {
       text = "Done";
@@ -473,12 +480,21 @@ export class AssistantBubble {
     if (!summary) summary = row.createEl("summary");
     const nameText = `${child.agent}: ${truncateText(child.task, 120)}`;
     const statusText = SUBAGENT_STATUS_LABEL[child.status];
+    const metaText = this.subagentMetaText(child);
     const currentName = summary.querySelector<HTMLElement>(".agentic-chat-subagent-name")?.textContent;
     const currentStatus = summary.querySelector<HTMLElement>(".agentic-chat-subagent-status")?.textContent;
-    if (currentName === nameText && currentStatus === statusText) return;
+    const currentMeta = summary.querySelector<HTMLElement>(".agentic-chat-subagent-meta")?.textContent;
+    // Absent meta renders as "" (queued/running); compare normalized so a
+    // settled header with no meta isn't rebuilt on every live emit.
+    if (currentName === nameText && currentStatus === statusText && (currentMeta ?? "") === metaText) return;
     summary.empty();
     summary.createSpan({ cls: "agentic-chat-subagent-name", text: nameText });
     summary.createSpan({ cls: "agentic-chat-subagent-status", text: statusText });
+    // Small, subtle completion readout once the child settles: how long it ran,
+    // how many tokens it used, and the approximate cost (when priced).
+    if (metaText) {
+      summary.createSpan({ cls: "agentic-chat-subagent-meta", text: metaText });
+    }
     if (child.status === "running" && child.stopId && this.actions.onStopSubagentChild) {
       const stopBtn = summary.createEl("button", { cls: "agentic-chat-subagent-stop", text: "Stop" });
       const id = child.stopId;
@@ -488,6 +504,17 @@ export class AssistantBubble {
         this.actions.onStopSubagentChild?.(id);
       });
     }
+  }
+
+  private subagentMetaText(child: SubagentChildStatus): string {
+    if (child.status === "queued" || child.status === "running") return "";
+    const parts: string[] = [];
+    if (child.durationMs !== undefined) parts.push(formatElapsed(child.durationMs));
+    if (child.usage && child.usage.totalTokens > 0) {
+      parts.push(`${formatTokenInteger(child.usage.totalTokens)} tok`);
+      if (child.usage.costUsd > 0) parts.push(formatCost(child.usage.costUsd));
+    }
+    return parts.join(" · ");
   }
 
   private renderSubagentBody(row: HTMLDetailsElement, child: SubagentChildStatus): void {

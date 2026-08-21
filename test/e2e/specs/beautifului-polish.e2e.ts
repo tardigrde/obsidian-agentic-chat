@@ -65,8 +65,8 @@ function toolStart(id: string, name: string, args: Record<string, unknown>): Rec
   return { type: "tool_execution_start", toolCallId: id, toolName: name, args };
 }
 
-function toolEnd(id: string): Record<string, unknown> {
-  return { type: "tool_execution_end", toolCallId: id, result: { output: "ok" }, isError: false };
+function toolEnd(id: string, resultText = "ok", isError = false): Record<string, unknown> {
+  return { type: "tool_execution_end", toolCallId: id, result: { output: resultText }, isError };
 }
 
 function assistantEndText(text: string): Record<string, unknown> {
@@ -300,7 +300,15 @@ describe("agentic-chat beautifului polish", function () {
     await emit({
       type: "tool_execution_update",
       toolCallId: "t-sub",
-      partialResult: { details: { kind: "subagent", children: childrenFor(["done", "done"]) } },
+      partialResult: {
+        details: {
+          kind: "subagent",
+          children: [
+            { agent: "explorer", task: "task 1", status: "done", transcript: [], summary: "summary", durationMs: 125_000, usage: { input: 4_000, output: 800, totalTokens: 4_800, costUsd: 0.012 } },
+            { agent: "explorer", task: "task 2", status: "done", transcript: [], summary: "summary", durationMs: 90_000, usage: { input: 2_000, output: 500, totalTokens: 2_500, costUsd: 0.006 } },
+          ],
+        },
+      },
     });
     await browser.waitUntil(
       async () => {
@@ -311,7 +319,34 @@ describe("agentic-chat beautifului polish", function () {
     );
     const stopsDone = await probe({ key: "stop", selector: ".agentic-chat-assistant:last-child .agentic-chat-subagent .agentic-chat-subagent-stop", all: true });
     expect(stopsDone.stop.length).toBe(0);
+    // Settled children carry a subtle duration · tokens · cost readout.
+    const meta = await probe({ key: "meta", selector: ".agentic-chat-assistant:last-child .agentic-chat-subagent-meta", all: true });
+    expect(meta.meta.length).toBe(2);
+    for (const line of meta.meta) {
+      expect(line).toMatch(/tok/);
+      expect(line).toContain("$");
+    }
     await emit(toolEnd("t-sub"));
+    await emit(assistantEndEmpty());
+    await emit({ type: "agent_end" });
+  });
+
+  it("labels a stopped child as stopped, not failed, and never shows a green check on the Dispatch step", async function () {
+    await startAssistantTurn();
+    await emit(toolStart("t-stop", "subagent", { agent: "explorer", task: "hang" }));
+    await emit({
+      type: "tool_execution_update",
+      toolCallId: "t-stop",
+      partialResult: { details: { kind: "subagent", children: [{ agent: "explorer", task: "hang", status: "aborted", transcript: [], summary: "Stopped by user" }] } },
+    });
+    const status = await probe({ key: "status", selector: ".agentic-chat-assistant:last-child .agentic-chat-subagent-status" });
+    expect(status.status).toBe("stopped");
+    const pill = await probe({ key: "pill", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-status" });
+    expect(pill.pill).toBe("Stopped");
+    // The Dispatch step itself settles as an error (x-circle), never a check.
+    await emit(toolEnd("t-stop", "Subagent was stopped: Stopped by user", true));
+    const icon = await probe({ key: "icon", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-icon svg", attr: "class" });
+    expect(icon.icon).toContain("x-circle");
     await emit(assistantEndEmpty());
     await emit({ type: "agent_end" });
   });
