@@ -54,6 +54,7 @@ export interface AgenticChatSettings {
    * keep all tools (the tool budget never drops) and disable auto-compaction.
    */
   openaiCompatibleContextWindow: number;
+  /** Reasoning effort for your messages, set via the composer knob or `/effort`. */
   thinkingLevel: ThinkingLevel;
   temperature: number;
   /** 0 means "let the provider decide". */

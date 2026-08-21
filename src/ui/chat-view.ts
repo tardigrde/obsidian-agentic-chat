@@ -695,11 +695,11 @@ export class ChatView extends ItemView {
       cls: "agentic-chat-effort",
       attr: { role: "button", tabindex: "0" },
     });
-    this.effortKnobEl.addEventListener("click", () => this.cycleEffort());
+    this.effortKnobEl.addEventListener("click", () => void this.cycleEffort());
     this.effortKnobEl.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        this.cycleEffort();
+        void this.cycleEffort();
       }
     });
 
@@ -1775,7 +1775,7 @@ export class ChatView extends ItemView {
       this.renderErrorMessage(`Unknown or unsupported effort "${arg}". Options: ${levels.join(", ")}.`);
       return;
     }
-    this.chooseEffort(level);
+    void this.chooseEffort(level);
   }
 
   /** Clickable effort picker. The subtitle warns that switching costs a one-time cache miss. */
@@ -1796,25 +1796,25 @@ export class ChatView extends ItemView {
         label: id,
         detail: id === current ? "current" : "",
         icon: "gauge",
-        onClick: () => this.chooseEffort(id),
+        onClick: () => void this.chooseEffort(id),
       })),
     );
   }
 
-  /** Apply a one-shot effort override for the next message only (reverts to the saved default). */
-  private chooseEffort(level: ThinkingLevel): void {
+  /** Apply an effort level for the next message and remember it (persisted). */
+  private async chooseEffort(level: ThinkingLevel): Promise<void> {
     if (this.service.isStreaming()) {
       this.renderErrorMessage("Can't change effort while the agent is responding.");
       return;
     }
-    this.service.setThinkingOverride(level);
+    await this.persistEffortLevel(level);
     this.renderInfoMessage("Effort", [
-      [level, "Applies to your next message only, then reverts to the saved default."],
+      [level, "Saved. Applies to your next message; switching effort re-processes the prompt once (a cache miss) — affects cost."],
     ]);
   }
 
-  /** Composer effort knob: cycle to the next supported reasoning level for the next message only. */
-  private cycleEffort(): void {
+  /** Composer effort knob: cycle to the next supported reasoning level for the next message. */
+  private async cycleEffort(): Promise<void> {
     if (this.service.isStreaming()) return;
     const levels = this.service.getActiveThinkingLevels();
     if (levels.length <= 1) {
@@ -1826,8 +1826,17 @@ export class ChatView extends ItemView {
     const current = this.service.getActiveThinkingLevel();
     const index = levels.indexOf(current);
     const next = levels[(index + 1) % levels.length];
-    // setThinkingOverride notifies, so syncChrome re-renders the knob.
-    this.service.setThinkingOverride(next);
+    await this.persistEffortLevel(next);
+  }
+
+  /** Persist the chosen effort level and repaint the knob (no one-shot override split). */
+  private async persistEffortLevel(level: ThinkingLevel): Promise<void> {
+    if (this.plugin.settings.thinkingLevel === level) return;
+    this.plugin.settings.thinkingLevel = level;
+    this.service.setThinkingOverride(null);
+    // Repaint instantly; persistence lands in the background.
+    this.syncChrome();
+    await this.plugin.saveSettings();
   }
 
   /** Render the composer effort knob from the level the next message will use. */
@@ -1836,14 +1845,17 @@ export class ChatView extends ItemView {
     const level = this.service.getActiveThinkingLevel();
     const levels = this.service.getActiveThinkingLevels();
     const canChange = levels.length > 1;
-    const overridden = canChange && this.service.getThinkingOverride() !== null;
     this.effortKnobEl.empty();
     this.effortKnobEl.createSpan({ cls: "agentic-chat-effort-value", text: level });
-    this.effortKnobEl.toggleClass("is-override", overridden);
     this.effortKnobEl.toggleClass("is-unavailable", !canChange);
     this.effortKnobEl.setAttr("aria-disabled", canChange ? "false" : "true");
+    // Position on the model's supported ladder (0..1) so the knob reads as a
+    // low→max scale, uniformly colored per step — no override split.
+    const index = Math.max(0, levels.indexOf(level));
+    const step = levels.length > 1 ? index / (levels.length - 1) : 0;
+    this.effortKnobEl.style.setProperty("--effort-step", String(step));
     const hint = canChange
-      ? `Reasoning effort for your next message: ${level}. Click to change. ` +
+      ? `Reasoning effort for your messages: ${level}. Click to change. ` +
         "Switching effort re-processes the prompt once (a cache miss) — affects cost."
       : "Reasoning effort is off. The active model does not expose alternate reasoning effort levels.";
     this.effortKnobEl.setAttr("title", hint);
