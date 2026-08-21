@@ -60,11 +60,11 @@ describe(ENABLED ? "agentic-chat design audit" : "agentic-chat design audit (dis
     mkdirSync(dir, { recursive: true });
 
     if (mode === "fullscreen") {
-      // Make the chat the ONLY instance and open it in the main area so the pane
-      // is as wide as Obsidian allows (the right sidebar one is detached first).
+      // Replace the MAIN-area leaf's view with the chat (detach any sidebar
+      // instance first) so the pane spans the whole window — true fullscreen.
       await browser.executeObsidian(async ({ app }, viewType) => {
         app.workspace.detachLeavesOfType(viewType);
-        const leaf = app.workspace.getLeaf(true);
+        const leaf = app.workspace.getLeaf(false);
         if (leaf) {
           try {
             await leaf.setViewState({ type: viewType, active: true });
@@ -91,6 +91,22 @@ describe(ENABLED ? "agentic-chat design audit" : "agentic-chat design audit (dis
     } catch {
       // window resizing is best-effort on the Obsidian runtime
     }
+    if (mode === "wide") {
+      // Widen whatever split actually hosts the chat (Obsidian's fullscreen
+      // keeps splitting beside the note, so pin the hosting split wide instead).
+      await browser.execute(() => {
+        const leaf = Array.from(document.querySelectorAll<HTMLElement>(".workspace-leaf")).find((entry) =>
+          entry.querySelector(".agentic-chat-view"),
+        );
+        const host = leaf?.closest<HTMLElement>(".workspace-split") ?? null;
+        if (host) {
+          host.style.flex = "0 0 760px";
+          host.style.width = "760px";
+          host.style.minWidth = "760px";
+        }
+      });
+      await browser.pause(400);
+    }
 
     const shot = async (name: string, cropSelector?: string): Promise<void> => {
       await browser.pause(120);
@@ -110,11 +126,11 @@ describe(ENABLED ? "agentic-chat design audit" : "agentic-chat design audit (dis
     await emit(userEnd("Read the Welcome note and give me a three-line summary of it."));
     await shot("02-user-bubble");
 
-    // 3. thinking loader (after the 150ms anti-flicker gate)
+    // 3. Thinking pill mounts immediately at message_start (the turn's status)
     await emit({ type: "agent_start" });
     await emit({ type: "message_start", message: { role: "assistant", content: [] } });
-    await $(".agentic-chat-loading").waitForExist({ timeout: 2_000 });
-    await shot("03-thinking-loader", ".agentic-chat-loading");
+    await $(".agentic-chat-reasoning").waitForExist({ timeout: 2_000 });
+    await shot("03-thinking-pill", ".agentic-chat-reasoning-pill");
 
     // 4. live reasoning pill + trace
     await emit(streamDelta("thinking_delta", "I will read the Welcome note, extract its key sections, and summarise into three tight bullet lines."));

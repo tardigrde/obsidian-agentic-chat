@@ -483,82 +483,6 @@
   line-height: 1.5;
 }
 
-/* --- Thinking loader (beautifului Loading State port) --- */
-
-.agentic-chat-loading {
-  display: flex;
-  align-items: center;
-  gap: var(--size-2-3);
-  width: fit-content;
-  padding: var(--size-2-2) 0;
-  margin-bottom: var(--size-2-2);
-}
-
-.agentic-chat-loading-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 4px);
-  grid-template-rows: repeat(3, 4px);
-  gap: 1.5px;
-  width: 15px;
-  height: 15px;
-}
-
-.agentic-chat-loading-cell {
-  width: 4px;
-  height: 4px;
-  border-radius: 1px;
-  background-color: var(--text-normal);
-  opacity: 0.15;
-  animation: agentic-chat-pixel-on 650ms cubic-bezier(0.23, 1, 0.32, 1) infinite;
-}
-
-.agentic-chat-loading-label {
-  background-image: linear-gradient(
-    90deg,
-    var(--text-faint) 35%,
-    var(--text-normal) 50%,
-    var(--text-faint) 65%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: agentic-chat-shimmer-text 1.4s linear infinite;
-  font-size: 13px;
-  font-weight: var(--font-medium);
-}
-
-.agentic-chat-loading-time {
-  font-family: var(--font-monospace);
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-  margin-left: var(--size-2-1);
-}
-
-@keyframes agentic-chat-pixel-on {
-  0%,
-  100% {
-    opacity: 0.15;
-  }
-  18%,
-  42% {
-    opacity: 1;
-  }
-  62% {
-    opacity: 0.15;
-  }
-}
-
-@keyframes agentic-chat-shimmer-text {
-  0% {
-    background-position: 150% center;
-  }
-  100% {
-    background-position: -50% center;
-  }
-}
-
 /* Beautiful UI primitives: check/error capsule pop-in + calm status pulse. */
 @keyframes agentic-chat-pop-in {
   0% {
@@ -583,11 +507,9 @@
   }
 }
 
-/* Users with OS-level reduced motion get no flashing loader, shimmer, pop-in,
-   pulsing status dots, working spinner, or trace pulse. */
+/* Users with OS-level reduced motion get no pop-in, pulsing status dots,
+   working spinner, subagent pulse, or trace rail transition. */
 @media (prefers-reduced-motion: reduce) {
-  .agentic-chat-loading-cell,
-  .agentic-chat-loading-label,
   .agentic-chat-reasoning-dot,
   .agentic-chat-step.is-running .agentic-chat-step-icon svg,
   .agentic-chat-step.is-done .agentic-chat-step-icon,
@@ -689,6 +611,8 @@
 }
 
 .agentic-chat-step {
+  flex: 1;
+  min-width: 0;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   padding: var(--size-2-2) var(--size-4-2);
@@ -712,9 +636,17 @@
   min-height: 32px;
 }
 
+.agentic-chat-step-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* Chevron lives OUTSIDE the card (left), matching the reasoning pill anatomy. */
 .agentic-chat-step-toggle {
   display: flex;
   align-items: center;
+  margin-top: 8px;
   color: var(--text-faint);
   border-radius: var(--radius-s);
   cursor: pointer;
@@ -740,26 +672,16 @@
   height: 12px;
 }
 
-.agentic-chat-step.is-open .agentic-chat-step-chevron {
+.agentic-chat-step-row:has(.agentic-chat-step.is-open) .agentic-chat-step-chevron {
   transform: rotate(90deg);
-}
-
-/* External MCP server calls: tinted border + accent icon so they read as a
-   distinct tool class from local vault tools (Muse review). */
-.agentic-chat-step.is-mcp {
-  border-color: color-mix(in srgb, var(--interactive-accent) 30%, var(--background-modifier-border));
-}
-
-.agentic-chat-step.is-mcp .agentic-chat-step-icon {
-  color: var(--interactive-accent);
 }
 
 .agentic-chat-step:not(.is-open) .agentic-chat-step-body {
   display: none;
 }
 
-/* Unified 14px status well: ring spinner while running, tinted capsule when
-   done/error (Beautiful UI Task Rows grammar). */
+/* Unified status well: ring spinner while running, tinted capsule when
+   done/error — the same check/X icon family as the reasoning pill. */
 .agentic-chat-step-icon {
   display: flex;
   align-items: center;
@@ -770,9 +692,10 @@
   color: var(--text-muted);
 }
 
-.agentic-chat-step-icon svg {
-  width: 14px;
-  height: 14px;
+.agentic-chat-step-icon svg,
+.agentic-chat-reasoning-dot svg {
+  width: 12px;
+  height: 12px;
 }
 
 .agentic-chat-step.is-running .agentic-chat-step-icon svg {
@@ -811,6 +734,32 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* Aggregated subagent status pill: one label + state per card, so "Stop" and
+   "Done" never appear together on the same unit. */
+.agentic-chat-step-status {
+  margin-left: var(--size-2-2);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--font-smallest);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  background-color: var(--background-modifier-hover);
+}
+
+.agentic-chat-step-status.is-running {
+  color: var(--text-accent);
+}
+
+.agentic-chat-step-status.is-done {
+  color: var(--color-green);
+}
+
+.agentic-chat-step-status.is-error {
+  color: var(--text-error);
 }
 
 /* Body holds the readable Tool-call + Result sections. */

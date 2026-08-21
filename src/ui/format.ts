@@ -20,17 +20,17 @@ export function shortModelLabel(modelId: string): string {
 
 /** Human labels for the vault tools, used to caption tool-step cards. */
 export const TOOL_LABELS: Record<string, string> = {
-  read: "Reading file",
-  write: "Writing file",
-  edit: "Editing file",
-  ls: "Listing folder",
-  search: "Searching",
-  find: "Finding files",
-  grep: "Searching",
-  get_active_note: "Reading active note",
-  rename: "Renaming",
-  delete: "Deleting",
-  subagent: "Dispatching subagents",
+  read: "Read",
+  write: "Write",
+  edit: "Edit",
+  ls: "List",
+  search: "Search",
+  find: "Find",
+  grep: "Search",
+  get_active_note: "Use active note",
+  rename: "Rename",
+  delete: "Delete",
+  subagent: "Dispatch",
 };
 
 /** Caption a tool call: a friendly label plus the most relevant path/pattern arg. */

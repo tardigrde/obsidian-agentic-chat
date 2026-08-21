@@ -55,11 +55,9 @@ export class AssistantBubble {
   private pendingText = "";
   private pendingReasoning = "";
   private flushHandle: number | null = null;
-  // Pixel-grid "thinking" loader shown while the model streams nothing yet.
-  private loadingEl: HTMLElement | null = null;
-  private loadingTimerHandle: number | null = null;
-  private loadingStart = 0;
-  // Reasoning header state (status pill + live elapsed timer).
+  // Reasoning header state: the pill IS the turn's status — "Thinking" with a
+  // pulsing dot while the model works, flipping to a green check "Thought" the
+  // moment the answer starts streaming. Mounted eagerly at message_start.
   private reasoningLabelEl: HTMLElement | null = null;
   private reasoningDotEl: HTMLElement | null = null;
   private reasoningTimeEl: HTMLElement | null = null;
@@ -103,30 +101,40 @@ export class AssistantBubble {
 
   appendReasoning(delta: string): void {
     if (this.markdown) return;
-    // Create the reasoning container eagerly so the structure is in place; the
-    // text itself is buffered and flushed with the rest on the next frame. The
-    // header carries a status pill (pulsing dot + "Thinking") and a live elapsed
-    // timer while the trace streams; both settle on finalizeText.
-    if (!this.reasoningBody) {
-      const details = this.el.createEl("details", { cls: "agentic-chat-reasoning" });
-      const summary = details.createEl("summary", { cls: "agentic-chat-reasoning-summary" });
-      const chevron = summary.createSpan({ cls: "agentic-chat-reasoning-chevron" });
-      setIcon(chevron, "chevron-right");
-      const pill = summary.createSpan({ cls: "agentic-chat-reasoning-pill" });
-      this.reasoningDotEl = pill.createSpan({ cls: "agentic-chat-reasoning-dot" });
-      this.reasoningLabelEl = pill.createSpan({ cls: "agentic-chat-reasoning-label", text: "Reasoning" });
-      this.reasoningTimeEl = summary.createSpan({ cls: "agentic-chat-reasoning-time" });
-      this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
-      this.ensureTimeline();
-      const stepsRef = this.timelineEl?.querySelector(".agentic-chat-steps") ?? null;
-      this.timelineEl?.insertBefore(details, stepsRef);
-      this.reasoningStart = performance.now();
-      this.reasoningTimerHandle = window.setInterval(() => {
-        this.reasoningTimeEl?.setText(formatElapsed(performance.now() - this.reasoningStart));
-      }, 100);
-    }
+    if (!this.reasoningBody) this.ensureReasoningShell();
     this.pendingReasoning += delta;
     this.scheduleFlush();
+  }
+
+  /**
+   * Mount the turn's status pill ("Thinking" · pulsing dot · live timer) at
+   * message_start, before any reasoning or text has streamed. The reasoning
+   * trace appears under it once thinking_delta arrives; on the first answer text
+   * the pill settles to a green-check "Thought" (see settleReasoning).
+   */
+  beginThinking(): void {
+    if (this.markdown || this.reasoningBody) return;
+    this.ensureReasoningShell();
+  }
+
+  private ensureReasoningShell(): void {
+    if (this.reasoningBody) return;
+    const details = this.el.createEl("details", { cls: "agentic-chat-reasoning" });
+    const summary = details.createEl("summary", { cls: "agentic-chat-reasoning-summary" });
+    const chevron = summary.createSpan({ cls: "agentic-chat-reasoning-chevron" });
+    setIcon(chevron, "chevron-right");
+    const pill = summary.createSpan({ cls: "agentic-chat-reasoning-pill" });
+    this.reasoningDotEl = pill.createSpan({ cls: "agentic-chat-reasoning-dot" });
+    this.reasoningLabelEl = pill.createSpan({ cls: "agentic-chat-reasoning-label", text: "Thinking" });
+    this.reasoningTimeEl = summary.createSpan({ cls: "agentic-chat-reasoning-time" });
+    this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
+    this.ensureTimeline();
+    const stepsRef = this.timelineEl?.querySelector(".agentic-chat-steps") ?? null;
+    this.timelineEl?.insertBefore(details, stepsRef);
+    this.reasoningStart = performance.now();
+    this.reasoningTimerHandle = window.setInterval(() => {
+      this.reasoningTimeEl?.setText(formatElapsed(performance.now() - this.reasoningStart));
+    }, 100);
   }
 
   /** Schedule a single buffered flush on the next animation frame. */
@@ -154,46 +162,8 @@ export class AssistantBubble {
     if (changed) this.actions.onContentChange?.();
   }
 
-  /**
-   * Show the pixel-grid "thinking" loader at the top of the bubble (beautifului
-   * Loading State port: 3x3 chevron wavefront + shimmer label + mono elapsed
-   * timer). Idempotent — a second call is a no-op.
-   */
-  showLoading(label = "Thinking"): void {
-    if (this.loadingEl) return;
-    const loading = this.el.createDiv({ cls: "agentic-chat-loading" });
-    const grid = loading.createDiv({ cls: "agentic-chat-loading-grid" });
-    // Chevron wavefront: delay = (col + |row - 1|) * 90ms, so two fronts sweep.
-    for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < 3; col++) {
-        const cell = grid.createSpan({ cls: "agentic-chat-loading-cell" });
-        cell.style.setProperty("animation-delay", `${(col + Math.abs(row - 1)) * 90}ms`);
-      }
-    }
-    loading.createSpan({ cls: "agentic-chat-loading-label", text: label });
-    const timeEl = loading.createSpan({ cls: "agentic-chat-loading-time" });
-    this.loadingStart = performance.now();
-    timeEl.setText(formatElapsed(0));
-    this.loadingTimerHandle = window.setInterval(() => {
-      timeEl.setText(formatElapsed(performance.now() - this.loadingStart));
-    }, 100);
-    this.el.insertBefore(loading, this.el.firstChild);
-    this.loadingEl = loading;
-  }
-
-  /** Remove the loading block and stop its timer (no-op when absent). */
-  clearLoading(): void {
-    if (this.loadingTimerHandle !== null) {
-      window.clearInterval(this.loadingTimerHandle);
-      this.loadingTimerHandle = null;
-    }
-    this.loadingEl?.remove();
-    this.loadingEl = null;
-  }
-
-  /** Free live timers (loading + reasoning) without touching the rendered DOM. */
+  /** Free live timers (reasoning) without touching the rendered DOM. */
   dispose(): void {
-    this.clearLoading();
     this.stopReasoningTimer();
     // NOTE: the timeline ResizeObserver stays attached — history bubbles remain
     // interactive (reasoning/step toggles must keep the rail hugging content).
@@ -240,28 +210,22 @@ export class AssistantBubble {
     if (this.reasoningSettled || !this.reasoningBody) return;
     this.reasoningSettled = true;
     const elapsed = performance.now() - this.reasoningStart;
-    this.reasoningLabelEl?.setText("Reasoned");
+    this.reasoningLabelEl?.setText("Thought");
     // A live stream keeps the final elapsed time; a near-instant/static trace
-    // shows none.
+    // (history re-render) shows none.
     this.reasoningTimeEl?.setText(elapsed < 100 ? "" : formatElapsed(elapsed));
-    // Settled reasoning uses the SAME "completed" primitive as tool steps:
-    // a green-tint capsule with a check (no plain green dot vs green check split).
-    if (this.reasoningDotEl) setIcon(this.reasoningDotEl, "check");
+    // Same "completed" primitive as tool steps: green-tint capsule + check.
+    if (this.reasoningDotEl) setIcon(this.reasoningDotEl, "check-circle-2");
     this.reasoningBody.closest("details")?.addClass("is-done");
   }
 
   startStep(id: string, name: string, rawArgs: string): void {
-    // A step is a manual collapsible (not native <details>): the header carries
-    // a chevron toggle + status icon + a readable label with a clickable path,
-    // and only the chevron toggles the body — so clicking the path link opens
-    // the note without collapsing the step. Raw arg JSON is never shown inline.
-    const card = this.stepsEl.createDiv({ cls: ["agentic-chat-step", "is-running"] });
-    // External MCP server calls get a distinct visual cue (tinted border + a
-    // human "MCP · <tool>" label) so they never read as local vault tools.
-    const isMcp = name.startsWith("mcp__");
-    if (isMcp) card.addClass("is-mcp");
-    const header = card.createDiv({ cls: "agentic-chat-step-header" });
-    const toggle = header.createSpan({
+    // A step is a manual collapsible row sharing ONE anatomy with the reasoning
+    // pill: [‹ chevron] [card]. Only the outside chevron toggles the body — so a
+    // clickable path inside the header navigates without collapsing the step.
+    // Raw arg JSON is never shown inline.
+    const row = this.stepsEl.createDiv({ cls: "agentic-chat-step-row" });
+    const toggle = row.createSpan({
       cls: "agentic-chat-step-toggle",
       attr: { role: "button", tabindex: "0", "aria-expanded": "false", "aria-label": "Toggle details" },
     });
@@ -269,22 +233,24 @@ export class AssistantBubble {
     setIcon(chevron, "chevron-right");
     toggle.addEventListener("click", (event) => {
       event.stopPropagation();
-      this.toggleStep(card);
+      this.toggleStep(row);
     });
     toggle.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        this.toggleStep(card);
+        this.toggleStep(row);
       }
     });
+    const card = row.createDiv({ cls: ["agentic-chat-step", "is-running"] });
+    const header = card.createDiv({ cls: "agentic-chat-step-header" });
     const icon = header.createSpan({ cls: "agentic-chat-step-icon" });
     setIcon(icon, "loader-2");
     const nameEl = header.createSpan({ cls: "agentic-chat-step-name" });
     this.renderStepTitle(nameEl, name, rawArgs);
-    if (isMcp) nameEl.setAttr("title", name);
+    if (name.startsWith("mcp__")) nameEl.setAttr("title", name);
     const body = card.createDiv({ cls: "agentic-chat-step-body" });
     this.renderCallSection(body, name, rawArgs);
-    this.syncStepCollapsible(card, body);
+    this.syncStepCollapsible(row, body);
     this.ensureTimeline();
     if (this.stepsEl.parentElement !== this.timelineEl) this.timelineEl?.appendChild(this.stepsEl);
     this.steps.set(id, { card, icon, body, name, startedAt: performance.now() });
@@ -303,14 +269,16 @@ export class AssistantBubble {
   }
 
   /** Toggle a step's body open/closed and reflect state on the chevron + aria. */
-  private toggleStep(card: HTMLElement): void {
+  private toggleStep(row: HTMLElement): void {
+    const card = row.querySelector(".agentic-chat-step");
+    if (!card) return;
     const open = card.classList.toggle("is-open");
-    card.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", String(open));
+    row.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", String(open));
   }
 
   /** Hide the chevron + collapse affordance when the body has nothing to show. */
-  private syncStepCollapsible(card: HTMLElement, body: HTMLElement): void {
-    const toggle = card.querySelector<HTMLElement>(".agentic-chat-step-toggle");
+  private syncStepCollapsible(row: HTMLElement, body: HTMLElement): void {
+    const toggle = row.querySelector<HTMLElement>(".agentic-chat-step-toggle");
     if (!toggle) return;
     toggle.toggleClass("is-hidden", body.childElementCount === 0);
   }
@@ -424,18 +392,18 @@ export class AssistantBubble {
     if (!details) return;
     if (details.kind === "subagent" && "children" in details && Array.isArray(details.children)) {
       this.renderSubagentChildren(step.body, details.children);
-      this.syncStepCollapsible(step.card, step.body);
+      if (step.card.parentElement) this.syncStepCollapsible(step.card.parentElement, step.body);
       // Auto-open so live child progress is visible while the step runs.
       step.card.addClass("is-open");
-      step.card.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
+      step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
       return;
     }
     if (isAskUserDetails(details)) {
       this.renderAskUserStep(step.body, details);
-      this.syncStepCollapsible(step.card, step.body);
+      if (step.card.parentElement) this.syncStepCollapsible(step.card.parentElement, step.body);
       // Auto-open so the ask-user state is visible while waiting.
       step.card.addClass("is-open");
-      step.card.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
+      step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
     }
   }
 
@@ -451,12 +419,30 @@ export class AssistantBubble {
     }
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
-      const row = list.children[i] as HTMLDetailsElement;
-      row.className = `agentic-chat-subagent is-${child.status}`;
-      row.open = child.status === "running";
-      this.renderSubagentHeader(row, child);
-      this.renderSubagentBody(row, child);
+      const childRow = list.children[i] as HTMLDetailsElement;
+      childRow.className = `agentic-chat-subagent is-${child.status}`;
+      childRow.open = child.status === "running";
+      this.renderSubagentHeader(childRow, child);
+      this.renderSubagentBody(childRow, child);
     }
+    // Aggregate child state into ONE status pill on the step header so a card
+    // never reads "stoppable" and "done" at the same time (Stop only ever
+    // accompanies a still-running aggregate; done/failed have none).
+    this.renderSubagentAggregate(card, children);
+  }
+
+  private renderSubagentAggregate(card: HTMLElement, children: SubagentChildStatus[]): void {
+    const header = card.querySelector<HTMLElement>(".agentic-chat-step-header");
+    if (!header) return;
+    let pill = header.querySelector<HTMLElement>(".agentic-chat-step-status");
+    pill ??= header.createSpan({ cls: "agentic-chat-step-status" });
+    const running = children.some((child) => child.status === "running");
+    const failed = children.some((child) => child.status === "error");
+    pill.setText(running ? "Running…" : failed ? "Failed" : "Done");
+    pill.removeClass("is-running");
+    pill.removeClass("is-done");
+    pill.removeClass("is-error");
+    pill.addClass(running ? "is-running" : failed ? "is-error" : "is-done");
   }
 
   private renderSubagentHeader(row: HTMLDetailsElement, child: SubagentChildStatus): void {
@@ -555,7 +541,7 @@ export class AssistantBubble {
       const sourcePath = this.stepSourcePath.get(id);
       if (sourcePath) this.sourcePaths.delete(sourcePath);
       step.card.addClass("is-open");
-      step.card.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
+      step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
     }
     // Result/Error as a body section. A read/write/get_active_note success result
     // is just file contents (already on disk / in context), so hide it; errors
@@ -566,7 +552,7 @@ export class AssistantBubble {
       resultSection.createDiv({ cls: "agentic-chat-step-section-label", text: isError ? "Error" : "Result" });
       resultSection.createEl("pre", { text: truncateText(result, 4_000) });
     }
-    this.syncStepCollapsible(step.card, step.body);
+    this.syncStepCollapsible(step.card.parentElement ?? step.card, step.body);
   }
 
   async finalizeText(markdown: string, app: App, component: Component): Promise<void> {
@@ -577,7 +563,6 @@ export class AssistantBubble {
       this.flushHandle = null;
     }
     this.flushBuffers();
-    this.clearLoading();
     this.markdown = markdown;
     this.textEl.empty();
     this.textEl.removeClass("is-streaming");
@@ -598,7 +583,6 @@ export class AssistantBubble {
    * to its static state, but never render markdown. Idempotent.
    */
   finalizeWithoutText(): void {
-    this.clearLoading();
     this.finalizeChrome();
   }
 
