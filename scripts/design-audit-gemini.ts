@@ -162,12 +162,10 @@ function trimTrailingSlashes(value: string): string {
 function downscale(source: string): string {
   const out = path.join(tmpdir(), `agentic-audit-${process.pid}-${path.basename(source)}.png`);
   try {
-    // NOSONAR:S4036 — ImageMagick is a fixed dev dependency resolved via PATH; this is a local audit tool, not a privileged service.
-    execFileSync("magick", [source, "-resize", "1150x>", "-strip", "-quality", "88", out]);
+    execFileSync("magick", [source, "-resize", "1150x>", "-strip", "-quality", "88", out]); // NOSONAR:S4036 — ImageMagick is a fixed dev dependency resolved via PATH; local audit tool, not a privileged service
   } catch {
     try {
-      // NOSONAR:S4036 — same rationale as the magick branch above.
-      execFileSync("convert", [source, "-resize", "1150x>", "-strip", "-quality", "88", out]);
+      execFileSync("convert", [source, "-resize", "1150x>", "-strip", "-quality", "88", out]); // NOSONAR:S4036 — same rationale as the magick branch above
     } catch (error) {
       throw new Error(
         "ImageMagick (`magick`/`convert`) is required to downscale audit screenshots before sending. " +
