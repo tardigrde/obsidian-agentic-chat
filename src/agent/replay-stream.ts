@@ -189,7 +189,13 @@ async function emitReplayTurn(
   if (message.stopReason === "error" || message.stopReason === "aborted") {
     stream.push({ type: "error", reason: message.stopReason, error: message });
   } else {
-    stream.push({ type: "done", reason: message.stopReason, message });
+    // `pending` only occurs on partial streaming messages; replayed turns are
+    // always completed. Map it defensively to a terminal done reason.
+    stream.push({
+      type: "done",
+      reason: message.stopReason === "pending" ? "stop" : message.stopReason,
+      message,
+    });
   }
   stream.end(message);
 }
