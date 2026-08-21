@@ -192,7 +192,6 @@ describe("agentic-chat smoke", function () {
     });
 
     await runSlashCommand("/project alpha");
-    await expect($(".agentic-chat-project-pill")).toHaveText(/Alpha Project/);
 
     await runSlashCommand("/status");
     const status = await latestInfoText();

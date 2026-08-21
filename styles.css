@@ -1247,7 +1247,7 @@
   white-space: nowrap;
 }
 
-/* --- Bottom toolbar (model · effort · context · folder | Safe↔YOLO) --- */
+/* --- Bottom toolbar (model · effort · context | Safe↔YOLO) --- */
 
 .agentic-chat-toolbar {
   display: flex;
@@ -1306,7 +1306,6 @@
 
 .agentic-chat-model-pill:focus-visible,
 .agentic-chat-effort:focus-visible,
-.agentic-chat-project-pill:focus-visible,
 .agentic-chat-send:focus-visible,
 .agentic-chat-stop:focus-visible {
   outline: 2px solid var(--interactive-accent);
@@ -1506,41 +1505,6 @@
 .agentic-chat-model-name {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.agentic-chat-project-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--size-2-1);
-  padding: 2px var(--size-2-3);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-l);
-  background-color: transparent;
-  box-shadow: none;
-  cursor: pointer;
-  max-width: 36%;
-  overflow: hidden;
-}
-
-.agentic-chat-project-pill:hover {
-  background-color: var(--background-modifier-hover);
-}
-
-.agentic-chat-project-pill.is-active {
-  border-color: var(--interactive-accent);
-  color: var(--text-accent);
-}
-
-.agentic-chat-project-icon svg {
-  width: 13px;
-  height: 13px;
-}
-
-.agentic-chat-project-name {
-  font-size: var(--font-ui-smaller);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
