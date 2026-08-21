@@ -2499,6 +2499,10 @@ export class ChatView extends ItemView {
     isLast: boolean,
   ): void {
     const bubble = this.newBubble();
+    // Mirror the live path: every assistant turn gets its Thinking → Thought
+    // status pill (mount eagerly, settle on finalize) so history replay renders
+    // identically to the live stream for text-only turns too.
+    bubble.beginThinking();
     const reasoning = thinkingText(message);
     if (reasoning) bubble.appendReasoning(reasoning);
     for (const call of toolCalls(message)) {

@@ -275,6 +275,47 @@ describe("agentic-chat beautifului polish", function () {
     expect(text.text).toBe("");
   });
 
+  it("shows a single aggregated subagent status pill with exclusive Stop/Done", async function () {
+    await startAssistantTurn();
+    await emit(toolStart("t-sub", "subagent", { agent: "explorer", task: "map the vault" }));
+    const childrenFor = (statuses: ("running" | "done")[]) =>
+      statuses.map((status, index) => ({
+        agent: "explorer",
+        task: `task ${index + 1}`,
+        status,
+        ...(status === "running" ? { stopId: `s${index}` } : {}),
+        transcript: [] as never[],
+        summary: status === "done" ? "summary" : "",
+      }));
+    await emit({
+      type: "tool_execution_update",
+      toolCallId: "t-sub",
+      partialResult: { details: { kind: "subagent", children: childrenFor(["running", "done"]) } },
+    });
+    const runningPill = await probe({ key: "status", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-status" });
+    expect(runningPill.status).toBe("Running…");
+    const stopsRunning = await probe({ key: "stop", selector: ".agentic-chat-assistant:last-child .agentic-chat-subagent .agentic-chat-subagent-stop", all: true });
+    expect(stopsRunning.stop.length).toBe(1);
+
+    await emit({
+      type: "tool_execution_update",
+      toolCallId: "t-sub",
+      partialResult: { details: { kind: "subagent", children: childrenFor(["done", "done"]) } },
+    });
+    await browser.waitUntil(
+      async () => {
+        const pill = await probe({ key: "status", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-status" });
+        return pill.status === "Done";
+      },
+      { timeout: 2_000, timeoutMsg: "aggregate pill never flipped to Done" },
+    );
+    const stopsDone = await probe({ key: "stop", selector: ".agentic-chat-assistant:last-child .agentic-chat-subagent .agentic-chat-subagent-stop", all: true });
+    expect(stopsDone.stop.length).toBe(0);
+    await emit(toolEnd("t-sub"));
+    await emit(assistantEndEmpty());
+    await emit({ type: "agent_end" });
+  });
+
   it("aborting mid-thinking settles the pill and leaves no loader behind", async function () {
     await startAssistantTurn();
     await browser.pause(200);

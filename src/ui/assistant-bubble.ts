@@ -93,7 +93,7 @@ export class AssistantBubble {
     if (this.markdown) return;
     this.pendingText += delta;
     // The answer has STARTED streaming → the reasoning trace is done. Settle the
-    // pill now (green "Reasoned" + check) instead of waiting for agent_end, so a
+    // pill now (green check "Thought") instead of waiting for agent_end, so a
     // turn with finished tools + streaming text never shows a purple "Thinking".
     if (this.reasoningBody && !this.reasoningSettled) this.settleReasoning();
     this.scheduleFlush();
@@ -432,7 +432,9 @@ export class AssistantBubble {
   }
 
   private renderSubagentAggregate(card: HTMLElement, children: SubagentChildStatus[]): void {
-    const header = card.querySelector<HTMLElement>(".agentic-chat-step-header");
+    // `card` is the step BODY; the status pill lives in the step HEADER, which is
+    // a child of the step card (the body's parent).
+    const header = card.parentElement?.querySelector<HTMLElement>(".agentic-chat-step-header");
     if (!header) return;
     let pill = header.querySelector<HTMLElement>(".agentic-chat-step-status");
     pill ??= header.createSpan({ cls: "agentic-chat-step-status" });
