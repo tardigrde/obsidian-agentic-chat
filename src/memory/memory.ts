@@ -8,7 +8,7 @@ import {
 import { tokenizeRetrievalQuery } from "../retrieval/lexical";
 
 export type MemoryKind = "preference" | "fact" | "instruction" | "summary";
-export type MemoryScope = "global" | "vault" | "project";
+export type MemoryScope = "global" | "vault";
 
 export interface MemoryProvenanceEntry {
   source: string;
@@ -66,7 +66,7 @@ export interface MemorySearchResponse {
 const DEFAULT_ALLOWED_SCOPES: readonly MemoryScope[] = ["global", "vault"];
 const DEFAULT_MAX_RESULTS = 8;
 const MEMORY_KINDS = new Set<MemoryKind>(["preference", "fact", "instruction", "summary"]);
-const MEMORY_SCOPES = new Set<MemoryScope>(["global", "vault", "project"]);
+const MEMORY_SCOPES = new Set<MemoryScope>(["global", "vault"]);
 
 export async function loadMemoryRecords(adapter: DataAdapter | undefined, path: string): Promise<MemoryRecord[]> {
   if (!adapter || !(await adapter.exists(path))) return [];

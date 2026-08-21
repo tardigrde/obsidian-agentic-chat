@@ -20,13 +20,6 @@ export const FAKE_MEMORY_FIXTURE: readonly MemoryRecord[] = [
     confidence: 0.8,
   },
   {
-    id: "mem-project-secret",
-    kind: "fact",
-    scope: "project",
-    text: "Project-only memory should not appear without project scope.",
-    tags: ["project"],
-  },
-  {
     id: "mem-disabled",
     kind: "preference",
     scope: "global",

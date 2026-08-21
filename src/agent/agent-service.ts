@@ -330,10 +330,11 @@ export class AgentService {
   }
 
   /**
-   * Set (or clear) a one-shot thinking level applied to the next prompt only, then
-   * reverted — so effort can be raised for one hard prompt without changing the
-   * saved default. Changing effort mid-conversation re-processes the prompt prefix
-   * (a one-time cache miss); the composer knob's tooltip warns about that cost.
+   * Set (or clear) the reasoning level applied to the next prompt. The composer
+   * knob now persists the level via settings (no one-shot override); this remains
+   * as the low-level hook to push a level or clear a stale one before a turn.
+   * Changing effort mid-conversation re-processes the prompt prefix (a one-time
+   * cache miss); the composer knob's tooltip warns about that cost.
    */
   setThinkingOverride(level: ThinkingLevel | null): void {
     this.turns.setThinkingOverride(level);

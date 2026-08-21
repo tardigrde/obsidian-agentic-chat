@@ -6,7 +6,9 @@ import {
   callPath,
   describeCall,
   formatCallBody,
+  formatCost,
   formatElapsed,
+  formatTokenInteger,
   HIDE_RESULT_TOOLS,
   PATH_TOOLS,
   safeJson,
@@ -19,7 +21,15 @@ const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
   running: "running…",
   done: "done",
   error: "failed",
+  aborted: "stopped",
 };
+
+/** Extract the child statuses from a subagent tool result (details snapshot). */
+function subagentChildrenFromResult(resultObject: unknown): SubagentChildStatus[] {
+  const details = (resultObject as { details?: { kind?: string; children?: SubagentChildStatus[] } } | undefined)
+    ?.details;
+  return details?.kind === "subagent" && Array.isArray(details.children) ? details.children : [];
+}
 
 /** Per-step DOM + identity kept on the bubble for live updates and settle. */
 interface StepEntry {
@@ -445,6 +455,7 @@ export class AssistantBubble {
     const running = children.some((child) => child.status === "running");
     const queued = !running && children.some((child) => child.status === "queued");
     const failed = children.some((child) => child.status === "error");
+    const stopped = !failed && children.some((child) => child.status === "aborted");
     let text: string;
     let stateClass: string;
     if (running) {
@@ -455,6 +466,9 @@ export class AssistantBubble {
       stateClass = "is-queued";
     } else if (failed) {
       text = "Failed";
+      stateClass = "is-error";
+    } else if (stopped) {
+      text = "Stopped";
       stateClass = "is-error";
     } else {
       text = "Done";
@@ -473,12 +487,21 @@ export class AssistantBubble {
     if (!summary) summary = row.createEl("summary");
     const nameText = `${child.agent}: ${truncateText(child.task, 120)}`;
     const statusText = SUBAGENT_STATUS_LABEL[child.status];
+    const metaText = this.subagentMetaText(child);
     const currentName = summary.querySelector<HTMLElement>(".agentic-chat-subagent-name")?.textContent;
     const currentStatus = summary.querySelector<HTMLElement>(".agentic-chat-subagent-status")?.textContent;
-    if (currentName === nameText && currentStatus === statusText) return;
+    const currentMeta = summary.querySelector<HTMLElement>(".agentic-chat-subagent-meta")?.textContent;
+    // Absent meta renders as "" (queued/running); compare normalized so a
+    // settled header with no meta isn't rebuilt on every live emit.
+    if (currentName === nameText && currentStatus === statusText && (currentMeta ?? "") === metaText) return;
     summary.empty();
     summary.createSpan({ cls: "agentic-chat-subagent-name", text: nameText });
     summary.createSpan({ cls: "agentic-chat-subagent-status", text: statusText });
+    // Small, subtle completion readout once the child settles: how long it ran,
+    // how many tokens it used, and the approximate cost (when priced).
+    if (metaText) {
+      summary.createSpan({ cls: "agentic-chat-subagent-meta", text: metaText });
+    }
     if (child.status === "running" && child.stopId && this.actions.onStopSubagentChild) {
       const stopBtn = summary.createEl("button", { cls: "agentic-chat-subagent-stop", text: "Stop" });
       const id = child.stopId;
@@ -488,6 +511,17 @@ export class AssistantBubble {
         this.actions.onStopSubagentChild?.(id);
       });
     }
+  }
+
+  private subagentMetaText(child: SubagentChildStatus): string {
+    if (child.status === "queued" || child.status === "running") return "";
+    const parts: string[] = [];
+    if (child.durationMs !== undefined) parts.push(formatElapsed(child.durationMs));
+    if (child.usage && child.usage.totalTokens > 0) {
+      parts.push(`${formatTokenInteger(child.usage.totalTokens)} tok`);
+      if (child.usage.costUsd > 0) parts.push(formatCost(child.usage.costUsd));
+    }
+    return parts.join(" · ");
   }
 
   private renderSubagentBody(row: HTMLDetailsElement, child: SubagentChildStatus): void {
@@ -538,6 +572,15 @@ export class AssistantBubble {
   endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
+    // A subagent dispatch whose children failed or were stopped returns a
+    // normal tool result (so the parent won't re-dispatch), but the step must
+    // still read as an error — derive it from the child statuses.
+    if (step.name === "subagent") {
+      const children = subagentChildrenFromResult(resultObject);
+      if (children.some((child) => child.status === "error" || child.status === "aborted")) {
+        isError = true;
+      }
+    }
     step.card.removeClass("is-running");
     step.card.addClass(isError ? "is-error" : "is-done");
     setIcon(step.icon, isError ? "x-circle" : "check-circle-2");

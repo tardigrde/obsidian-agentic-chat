@@ -30,7 +30,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "sessions", args: "[clear --confirm]", description: "browse or clear past conversations", aliases: ["history"] },
   { name: "model", description: "switch model" },
   { name: "status", description: "show provider, model, session, MCP" },
-  { name: "project", args: "[name|clear]", description: "switch project workspace", aliases: ["projects"] },
   { name: "memory", args: "[add|review|manage|export|clear]", description: "add, review, export, or clear stored memories" },
   { name: "semantic-index", args: "[status|estimate|start|cancel]", description: "manage scoped semantic indexing", aliases: ["semindex"] },
   { name: "doctor", description: "audit runtime health, agent plugins, and MCP configs" },

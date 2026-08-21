@@ -903,6 +903,13 @@
   border-color: var(--background-modifier-border);
 }
 
+/* Subtle completion readout under the child name: duration · tokens · cost. */
+.agentic-chat-subagent-meta {
+  font-size: var(--font-smallest);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
 .agentic-chat-step-ask-user {
   margin-top: var(--size-2-2);
   color: var(--text-muted);
@@ -1290,10 +1297,6 @@
   background-color: var(--background-modifier-hover);
 }
 
-.agentic-chat-effort.is-override {
-  box-shadow: inset 0 0 0 1px var(--interactive-accent);
-}
-
 .agentic-chat-effort.is-unavailable {
   cursor: default;
   opacity: 0.72;
@@ -1312,13 +1315,15 @@
   outline-offset: 1px;
 }
 
+/* Effort value reads as a low→max scale: muted at the bottom step, ramping
+   toward the accent at the top, uniform across levels (no override split). */
 .agentic-chat-effort-value {
   font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
-}
-
-.agentic-chat-effort.is-override .agentic-chat-effort-value {
-  color: var(--text-accent);
+  color: color-mix(
+    in oklab,
+    var(--text-muted),
+    var(--interactive-accent) calc(var(--effort-step, 0) * 60%)
+  );
 }
 
 /* --- Permission mode (YOLO toggle + sticky plan badge) --- */

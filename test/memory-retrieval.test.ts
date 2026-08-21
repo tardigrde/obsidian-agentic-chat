@@ -51,7 +51,7 @@ describe("memory retrieval", () => {
     );
 
     expect(response.matches.map((match) => match.record.id)).toEqual(["mem-pref-concise", "mem-fact-embeddings"]);
-    expect(response.filteredCount).toBe(1);
+    expect(response.filteredCount).toBe(0);
     expect(response.disabledCount).toBe(1);
     expect(memoryCitations(response.matches)).toEqual([
       "[[Notes/Preferences.md#Style|Style preference]]",
@@ -112,14 +112,13 @@ describe("memory retrieval", () => {
     expect(text).toContain("Memory search: embedding gpu citations");
     expect(text).toContain("Large vault embedding generation can be expensive without GPU acceleration.");
     expect(text).toContain("The user prefers concise answers with exact source citations.");
-    expect(text).not.toContain("Project-only memory");
     expect(text).not.toContain("Disabled memory");
     expect(details).toMatchObject({
       memoryPath: MEMORY_PATH,
       query: "embedding gpu citations",
       returned: 2,
       totalMatches: 2,
-      filteredCount: 1,
+      filteredCount: 0,
       disabledCount: 1,
       memoryIds: ["mem-fact-embeddings", "mem-pref-concise"],
       citations: [

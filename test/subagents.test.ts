@@ -110,6 +110,55 @@ function streamingChildStreamFn(text: string): StreamFn {
   }) as unknown as StreamFn;
 }
 
+/** A child stream that always fails with an error message, no network. */
+function errorStreamFn(message = "boom"): StreamFn {
+  return ((model: Model<"openai-completions">) => {
+    const stream = createAssistantMessageEventStream();
+    const failure = {
+      role: "assistant" as const,
+      content: [] as { type: "text"; text: string }[],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 1, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "error" as const,
+      errorMessage: message,
+      timestamp: Date.now(),
+    };
+    queueMicrotask(() => {
+      stream.push({ type: "error", reason: "error", error: failure });
+      stream.end(failure);
+    });
+    return stream;
+  }) as unknown as StreamFn;
+}
+
+/** A child stream that errors when its run signal aborts (real abort semantics). */
+function abortErrorStreamFn(message = "Request was aborted"): StreamFn {
+  return ((model: Model<"openai-completions">, _context: unknown, options?: { signal?: AbortSignal }) => {
+    const stream = createAssistantMessageEventStream();
+    const fail = (): void => {
+      const failure = {
+        role: "assistant" as const,
+        content: [] as { type: "text"; text: string }[],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: "aborted" as const,
+        errorMessage: message,
+        timestamp: Date.now(),
+      };
+      stream.push({ type: "error", reason: "aborted", error: failure });
+      stream.end(failure);
+    };
+    const signal = options?.signal;
+    if (signal?.aborted) fail();
+    else signal?.addEventListener("abort", fail, { once: true });
+    return stream;
+  }) as unknown as StreamFn;
+}
+
 function makeChild(streamFn: StreamFn): Agent {
   return new Agent({
     streamFn,
@@ -332,7 +381,7 @@ describe("createSubagentTool", () => {
       getProfiles: () => [RESEARCHER],
       createChildAgent: () => {
         const isFirst = created++ === 0;
-        return makeChild(isFirst ? hangingStreamFn() : childStreamFn("ok"));
+        return makeChild(isFirst ? abortErrorStreamFn() : childStreamFn("ok"));
       },
     });
     const controller = new AbortController();
@@ -344,9 +393,74 @@ describe("createSubagentTool", () => {
     abortSubagentChild("call-a");
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
-    expect(firstResult.details.children[0].status).not.toBe("running");
+    // A stopped child settles as a normal (non-error) result marked "aborted" —
+    // the step renders red via its child status, but the parent is not nudged
+    // to re-dispatch the task the user just stopped.
+    expect(firstResult.details.children[0].status).toBe("aborted");
+    expect(firstResult.details.children[0].summary).toBe("Stopped by user");
     expect(secondResult.details.children[0].status).toBe("done");
     controller.abort();
+  });
+
+  it("settles a failed child as an error and rejects the dispatch call", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(errorStreamFn("disk full")),
+    });
+    await expect(tool.execute("call-f", { agent: "researcher", task: "t" }, undefined)).rejects.toThrow(
+      /failed.*disk full/i,
+    );
+  });
+
+  it("marks a parent-stopped child as aborted without rejecting the dispatch", async () => {
+    const controller = new AbortController();
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(abortErrorStreamFn()),
+    });
+    const pending = tool.execute("call-s", { agent: "researcher", task: "hang" }, controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    controller.abort();
+    const result = await pending;
+    expect(result.details.children[0].status).toBe("aborted");
+  });
+
+  it("marks a stopped child as aborted even when the stream finishes cleanly", async () => {
+    // A provider stream may end normally on abort (no errorMessage). The stop
+    // flags must win so the child never settles as a green-check "done".
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(hangingStreamFn()),
+    });
+    const controller = new AbortController();
+    const pending = tool.execute("call-c", { agent: "researcher", task: "hang" }, controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    controller.abort();
+    const result = await pending;
+    expect(result.details.children[0].status).toBe("aborted");
+  });
+
+  it("auto-aborts a child that runs past the configured timeout", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(abortErrorStreamFn()),
+      maxRuntimeSeconds: () => 0.05,
+    });
+    await expect(tool.execute("call-t", { agent: "researcher", task: "slow" }, undefined)).rejects.toThrow(
+      /Timed out after/i,
+    );
+  });
+
+  it("reports per-child duration and token/cost usage once a child settles", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(childStreamFn("measured")),
+    });
+    const result = await tool.execute("call-u", { agent: "researcher", task: "t" }, undefined);
+    const child = result.details.children[0];
+    expect(child.status).toBe("done");
+    expect(child.durationMs).toBeGreaterThanOrEqual(0);
+    expect(child.usage).toMatchObject({ input: 3, output: 4, totalTokens: 7, costUsd: 0 });
   });
 
   it("caps concurrent dispatches at 10 and queues the rest, promoting on stop", async () => {

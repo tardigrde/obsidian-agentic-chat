@@ -1,7 +1,6 @@
 import type { App, TFile } from "obsidian";
 import type { IgnoreMatcher } from "../vault/ignore";
 import type { RetrievalDocument } from "./policy";
-import { isPathInProjectScope } from "../projects/projects";
 
 export async function loadVaultRetrievalDocuments(
   app: App,
@@ -10,7 +9,7 @@ export async function loadVaultRetrievalDocuments(
 ): Promise<RetrievalDocument[]> {
   const files = (app.vault as App["vault"] & { getMarkdownFiles: () => TFile[]; cachedRead: (file: TFile) => Promise<string> })
     .getMarkdownFiles()
-    .filter((file) => !ignoreMatcher?.(file.path) && isPathInProjectScope(file.path, scopeFolders ?? []));
+    .filter((file) => !ignoreMatcher?.(file.path) && isPathInScope(file.path, scopeFolders ?? []));
   const documents = await Promise.all(
     files.map(async (file) =>
       markdownToRetrievalDocument({
@@ -23,6 +22,12 @@ export async function loadVaultRetrievalDocuments(
     ),
   );
   return withBacklinks(documents);
+}
+
+/** True when `path` is at or under one of the scope folders; empty scope = all. */
+function isPathInScope(path: string, folders: readonly string[]): boolean {
+  if (folders.length === 0) return true;
+  return folders.some((folder) => folder === "" || path === folder || path.startsWith(`${folder}/`));
 }
 
 export function markdownToRetrievalDocument(input: {

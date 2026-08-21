@@ -113,29 +113,6 @@ describe("SessionActivationCoordinator", () => {
     expect(ctx.resets).toEqual([{ lastSent: true, activeNoteCache: true, contextCache: true, editing: true, bubble: true }]);
   });
 
-  it("continues project sessions with attachment and active-note reset", async () => {
-    const ctx = makeCoordinator();
-
-    await ctx.coordinator.continueProjectSession(async () => {
-      ctx.events.push("continue");
-    });
-
-    expect(ctx.events).toEqual([
-      "reset",
-      "mute:true",
-      "continue",
-      "usage:true",
-      "mute:false",
-      "render:1",
-      "tabs",
-      "active-note",
-      "chrome",
-    ]);
-    expect(ctx.resets).toEqual([
-      { attachments: true, activeNoteSuppression: true, activeNoteCache: true, contextCache: true, lastSent: true, editing: true },
-    ]);
-  });
-
   it("resets clean UI state after clearing sessions", () => {
     const ctx = makeCoordinator([]);
 

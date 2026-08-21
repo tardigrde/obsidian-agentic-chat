@@ -21,7 +21,6 @@ describe("ChatView semantic index workflow", () => {
       plugin: {
         manifest: { dir: ".obsidian/plugins/agentic-chat", id: "agentic-chat" },
         settings: {
-          projects: { activeProjectId: "", items: [] },
           embeddings: {},
           network: {},
         },

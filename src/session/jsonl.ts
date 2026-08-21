@@ -13,8 +13,6 @@ export interface SessionHeaderEntry {
   id: string;
   timestamp: string;
   cwd: string;
-  projectId?: string;
-  projectName?: string;
 }
 
 export interface MessageSessionEntry {
@@ -94,18 +92,14 @@ export function createSessionHeader(
   id: string,
   cwd: string,
   timestamp = new Date().toISOString(),
-  scope: { projectId?: string; projectName?: string } = {},
 ): SessionHeaderEntry {
-  const header: SessionHeaderEntry = {
+  return {
     type: "session",
     version: CURRENT_SESSION_VERSION,
     id,
     timestamp,
     cwd,
   };
-  if (scope.projectId) header.projectId = scope.projectId;
-  if (scope.projectName) header.projectName = scope.projectName;
-  return header;
 }
 
 export function parseSessionEntries(content: string): SessionEntry[] {

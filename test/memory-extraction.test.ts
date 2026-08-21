@@ -130,13 +130,13 @@ describe("memory extraction proposals", () => {
       user("I prefer answers in English unless I ask otherwise."),
     ];
 
-    const first = extractMemoryProposals(transcript, { defaultScope: "project", now: NOW });
-    const second = extractMemoryProposals(transcript, { defaultScope: "project", now: NOW });
+    const first = extractMemoryProposals(transcript, { defaultScope: "vault", now: NOW });
+    const second = extractMemoryProposals(transcript, { defaultScope: "vault", now: NOW });
 
     expect(second).toEqual(first);
     expect(first.map((proposal) => [proposal.kind, proposal.scope, proposal.text])).toEqual([
-      ["fact", "project", "The research vault is multilingual."],
-      ["preference", "project", "The user prefers answers in English unless I ask otherwise."],
+      ["fact", "vault", "The research vault is multilingual."],
+      ["preference", "vault", "The user prefers answers in English unless I ask otherwise."],
     ]);
   });
 });
