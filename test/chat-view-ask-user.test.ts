@@ -136,7 +136,7 @@ describe("ChatView ask_user prompt", () => {
         },
         workspace: { getLeaf },
       },
-      plugin: { settings: { projects: { activeProjectId: "", items: [] } } },
+      plugin: { settings: {} },
       service: {
         getMessages: (): AgentMessage[] => [],
         getSessionInfo: () => ({ id: "session-1" }),

@@ -96,13 +96,6 @@ import {
   semanticIndexPath,
   type SemanticIndexFile,
 } from "../retrieval/semantic-index";
-import {
-  activeProject,
-  describeProject,
-  effectiveProjectSettings,
-  projectLabel,
-  resolveProjectCommand,
-} from "../projects/projects";
 import { memoryPathForApp } from "../tools/memory-tools";
 import { planTrackerRows } from "../agent/plan-tracker";
 import { buildPlanTrackerPanelState } from "./plan-tracker-panel";
@@ -1023,12 +1016,11 @@ export class ChatView extends ItemView {
 
   private syncChrome(): void {
     const { settings } = this.plugin;
-    const effective = effectiveProjectSettings(settings);
     this.syncControls();
     this.modelPillEl.empty();
     const modelPill = buildModelPillState({
       provider: settings.provider,
-      activeModelId: activeModelId(effective),
+      activeModelId: activeModelId(settings),
       overrideModelId: this.service.getModelOverride(),
     });
     this.modelPillEl.toggleClass("is-override", modelPill.isOverride);
@@ -1515,9 +1507,6 @@ export class ChatView extends ItemView {
       case "status":
         this.showStatus();
         return true;
-      case "project":
-        await this.runProject(argString);
-        return true;
       case "memory":
         await this.createMemoryWorkflow().run(argString);
         return true;
@@ -1915,49 +1904,6 @@ export class ChatView extends ItemView {
     );
   }
 
-  /** `/project [name|clear]`: switch the active project workspace and its session group. */
-  private async runProject(arg: string): Promise<void> {
-    this.clearEmptyState();
-    const result = resolveProjectCommand(arg, this.plugin.settings.projects);
-    if (result.action === "list") {
-      // No in-composer project picker: the folder pill was removed, agents infer
-      // scope from vault context. `/project` alone just lists the current state.
-      const activeId = this.plugin.settings.projects.activeProjectId;
-      const projects = this.plugin.settings.projects.items;
-      const rows: Array<[string, string]> = [
-        ["Vault-wide", activeId ? "Switch back to unscoped vault chat." : "current"],
-        ...projects.map((project): [string, string] => [
-          project.name,
-          `${project.id === activeId ? "current · " : ""}${describeProject(project) || "all notes"}`,
-        ]),
-      ];
-      this.renderInfoMessage("Projects", rows);
-      return;
-    }
-    if (result.action === "error") {
-      this.renderErrorMessage(result.message);
-      return;
-    }
-    await this.activateProject(result.projectId);
-  }
-
-  private async activateProject(projectId: string): Promise<void> {
-    if (this.service.isStreaming()) {
-      this.renderErrorMessage("Can't switch project while the agent is responding.");
-      return;
-    }
-    if (this.plugin.settings.projects.activeProjectId === projectId) {
-      const project = activeProject(this.plugin.settings.projects);
-      this.renderInfoMessage("Project", [[projectLabel(project), project ? describeProject(project) : "Vault-wide"]]);
-      return;
-    }
-    this.plugin.settings.projects.activeProjectId = projectId;
-    await this.plugin.saveSettings();
-    await this.createSessionActivationCoordinator().continueProjectSession(() => this.service.continueRecentSession());
-    const project = activeProject(this.plugin.settings.projects);
-    this.renderInfoMessage("Project", [[projectLabel(project), project ? describeProject(project) : "Vault-wide"]]);
-  }
-
   private async runSemanticIndex(arg: string): Promise<void> {
     await this.semanticIndexWorkflowController().run(arg);
   }
@@ -1987,7 +1933,6 @@ export class ChatView extends ItemView {
     this.semanticIndexWorkflow = new SemanticIndexWorkflowController({
       adapter: this.app.vault.adapter,
       indexPath: () => this.semanticIndexFilePath(),
-      activeProject: () => activeProject(this.plugin.settings.projects),
       activeNotePath: () => this.activeNotePath,
       loadDocuments: (scopeFolders) =>
         loadVaultRetrievalDocuments(this.app, (path) => this.service.isPathIgnored(path), scopeFolders),
@@ -2010,7 +1955,7 @@ export class ChatView extends ItemView {
       adapter: this.app.vault.adapter,
       memoryPath: () => memoryPathForApp(this.app),
       messages: () => this.service.getMessages(),
-      defaultScope: () => (activeProject(this.plugin.settings.projects) ? "project" : "vault"),
+      defaultScope: () => "vault",
       sessionSource: () => {
         const session = this.service.getSessionInfo();
         return session ? `[[Agentic Chat Sessions/${session.id}|Chat session]]` : undefined;
@@ -2043,23 +1988,16 @@ export class ChatView extends ItemView {
 
   private showStatus(): void {
     const { settings } = this.plugin;
-    const effective = effectiveProjectSettings(settings);
-    const project = activeProject(settings.projects);
     const session = this.service.getSessionInfo();
     const override = this.service.getModelOverride();
     const effortOverride = this.service.getThinkingOverride();
     const diagnostics = this.service.getRuntimeDiagnostics();
-    const projectRows: Array<[string, string]> = project
-      ? [["Project scope", project.folders.map((folder) => folder || "/").join(", ") || "all notes"]]
-      : [];
     this.clearEmptyState();
     this.renderInfoMessage("Status", [
       ["Provider", settings.provider],
-      ["Model", override ? `${override} (next message only)` : activeModelId(effective)],
-      ["Project", projectLabel(project)],
-      ...projectRows,
+      ["Model", override ? `${override} (next message only)` : activeModelId(settings)],
       ["Mode", MODES[settings.mode].label],
-      ["Output style", OUTPUT_STYLES[effective.outputStyle].label],
+      ["Output style", OUTPUT_STYLES[settings.outputStyle].label],
       ["Thinking", effortOverride ? `${effortOverride} (next message only)` : settings.thinkingLevel],
       ["Approval (mutating)", settings.approval.mutating],
       ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],

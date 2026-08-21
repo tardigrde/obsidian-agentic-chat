@@ -13,14 +13,12 @@ import {
   type RetrievalIndexScope,
 } from "../retrieval/policy";
 import { embeddingProfileFromConfig } from "../retrieval/embeddings";
-import type { AgentProject } from "../projects/projects";
 import { parseSemanticIndexScopeCommand } from "./semantic-index-command";
 import type { WorkflowRenderer } from "./workflow-renderer";
 
 export interface SemanticIndexWorkflowControllerOptions {
   adapter: DataAdapter;
   indexPath: () => string;
-  activeProject: () => Pick<AgentProject, "name" | "folders"> | null | undefined;
   activeNotePath: () => string | null;
   loadDocuments: (scopeFolders?: readonly string[]) => Promise<RetrievalDocument[]>;
   embeddingConfig: () => Parameters<typeof embeddingProfileFromConfig>[0];
@@ -49,12 +47,11 @@ export class SemanticIndexWorkflowController {
       return;
     }
     if (action !== "estimate" && action !== "start") {
-      this.options.renderer.error("Usage: /semantic-index [status|estimate|start|cancel] [folder <path>|tag <tag>|project|vault --confirm-vault]");
+      this.options.renderer.error("Usage: /semantic-index [status|estimate|start|cancel] [folder <path>|tag <tag>|vault --confirm-vault]");
       return;
     }
 
     const parsed = parseSemanticIndexScopeCommand(rest, {
-      activeProject: this.options.activeProject() ?? undefined,
       activeNotePath: this.options.activeNotePath(),
     });
     if ("error" in parsed) {
@@ -111,7 +108,7 @@ export class SemanticIndexWorkflowController {
   }
 
   private async loadScopedDocuments(scope: RetrievalIndexScope): Promise<RetrievalDocument[]> {
-    const scopeFolders = scope.kind === "folder" || scope.kind === "project" ? scope.paths : undefined;
+    const scopeFolders = scope.kind === "folder" ? scope.paths : undefined;
     const documents = await this.options.loadDocuments(scopeFolders);
     if (scope.kind !== "tag") return documents;
     const tags = new Set((scope.tags ?? []).map((tag) => tag.replace(/^#/, "").toLowerCase()));

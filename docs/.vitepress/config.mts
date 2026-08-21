@@ -35,7 +35,6 @@ export default defineConfig({
           { text: "Feature map", link: "/features/" },
           { text: "Context and control", link: "/features/context-and-control" },
           { text: "Web, MCP, and observability", link: "/features/web-mcp-observability" },
-          { text: "Project workspaces", link: "/features/projects" },
           { text: "Memory", link: "/features/memory" },
           { text: "Semantic retrieval", link: "/features/semantic-retrieval" },
         ],

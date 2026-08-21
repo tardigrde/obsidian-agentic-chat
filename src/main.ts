@@ -34,7 +34,6 @@ import { ChatView } from "./ui/chat-view";
 import { buildQuickAskTarget } from "./ui/quick-ask";
 import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
-import { effectiveProjectSettings, projectSessionScope } from "./projects/projects";
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
 
@@ -107,12 +106,10 @@ export default class AgenticChatPlugin extends Plugin {
    * creates one per tab so multiple conversations can run independently in a leaf.
    */
   createAgentService(options: { askUser?: AskUserHandler } = {}): AgentService {
-    const sessionManager = ObsidianSessionManager.forPlugin(this.app, this, () =>
-      projectSessionScope(this.settings.projects),
-    );
+    const sessionManager = ObsidianSessionManager.forPlugin(this.app, this);
     return new AgentService({
       app: this.app,
-      getSettings: () => effectiveProjectSettings(this.settings),
+      getSettings: () => this.settings,
       sessionManager,
       confirmToolCall: (request) => this.confirmToolCall(request),
       askUser: options.askUser,

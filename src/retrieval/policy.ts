@@ -177,7 +177,7 @@ export interface RetrievalEmbedder {
   embedBatch(inputs: readonly EmbeddingInput[], options?: EmbeddingRequestOptions): Promise<EmbeddingResult[]>;
 }
 
-export type RetrievalIndexScopeKind = "active-note" | "folder" | "tag" | "project" | "vault";
+export type RetrievalIndexScopeKind = "active-note" | "folder" | "tag" | "vault";
 
 export interface RetrievalIndexScope {
   kind: RetrievalIndexScopeKind;

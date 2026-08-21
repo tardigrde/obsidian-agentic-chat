@@ -34,16 +34,10 @@ Agentic Chat turns the Obsidian sidebar into an agent workspace rather than a pl
 - Real-time turn steering with `/steer`, queued follow-ups with `/follow-up`, and hard redirects with `/redirect`.
 - Reasoning effort control via `/effort`.
 
-## Project workspaces
-
-- Create project workspaces that scope notes, tools, model/profile, and sessions.
-- Switch projects with `/project` to change the active working set on the fly.
-- Projects apply scoped folders, model overrides, output style, system prompt, and tool toggles (web/MCP).
-
 ## Memory
 
 - Long-term memory with kinds: preference, fact, instruction, summary.
-- Scopes: global, vault, project.
+- Scopes: global, vault.
 - Add memories with `/memory add`.
 - Search memories with the `search_memory` tool.
 - Export or clear memory stores.
@@ -52,7 +46,7 @@ Agentic Chat turns the Obsidian sidebar into an agent workspace rather than a pl
 
 - Opt-in semantic index over vault notes.
 - Configurable embedding provider (OpenRouter, Ollama, OpenAI-compatible).
-- Scoped indexing by vault, folder, tag, or project.
+- Scoped indexing by vault, folder, tag, or the active note's folder.
 - `/semantic-index` commands to estimate, start, or cancel indexing.
 
 ## Document import

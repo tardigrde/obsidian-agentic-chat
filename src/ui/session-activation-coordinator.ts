@@ -103,22 +103,6 @@ export class SessionActivationCoordinator {
     this.options.syncTabStrip();
   }
 
-  async continueProjectSession(continueSession: () => Promise<void>): Promise<void> {
-    this.options.resetUiState({
-      attachments: true,
-      activeNoteSuppression: true,
-      activeNoteCache: true,
-      contextCache: true,
-      lastSent: true,
-      editing: true,
-    });
-    await this.runMuted(continueSession, true);
-    this.options.renderTranscript(this.options.messages());
-    this.options.syncTabStrip();
-    this.options.syncActiveNote();
-    this.options.syncChrome();
-  }
-
   afterSessionsCleared(): void {
     this.options.resetUiState(CLEAN_CONVERSATION_RESET);
     this.options.resetUsageNotifications(false);

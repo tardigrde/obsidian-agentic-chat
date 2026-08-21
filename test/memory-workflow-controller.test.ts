@@ -133,10 +133,10 @@ describe("MemoryWorkflowController", () => {
 
   it("renders review proposals as injected action rows with duplicate detail", async () => {
     const adapter = new MemoryAdapter();
-    await writeMemoryRecords(adapter.asDataAdapter(), MEMORY_PATH, [memory({ id: "mem-existing", scope: "project" })]);
+    await writeMemoryRecords(adapter.asDataAdapter(), MEMORY_PATH, [memory({ id: "mem-existing", scope: "vault" })]);
     const { controller, calls } = makeController({
       adapter,
-      scope: "project",
+      scope: "vault",
       messages: [userMessage("I prefer concise answers.")],
     });
 

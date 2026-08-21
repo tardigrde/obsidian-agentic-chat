@@ -17,61 +17,6 @@ function manager(): { sm: ObsidianSessionManager; adapter: MemoryAdapter } {
   return { sm, adapter };
 }
 
-function scopedManager(): {
-  sm: ObsidianSessionManager;
-  adapter: MemoryAdapter;
-  scope: { projectId?: string; projectName?: string };
-} {
-  const adapter = new MemoryAdapter();
-  const scope: { projectId?: string; projectName?: string } = {};
-  const sm = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", () => scope);
-  return { sm, adapter, scope };
-}
-
-describe("ObsidianSessionManager project sessions", () => {
-  it("tags new sessions with the active project and lists only that project group", async () => {
-    const { sm, adapter, scope } = scopedManager();
-    scope.projectId = "alpha";
-    scope.projectName = "Alpha";
-    const alpha = await sm.createSession(DEFAULTS);
-    await sm.appendMessage(userMessage("alpha prompt"));
-
-    scope.projectId = "beta";
-    scope.projectName = "Beta";
-    const beta = await sm.createSession(DEFAULTS);
-    await sm.appendMessage(userMessage("beta prompt"));
-
-    let sessions = await sm.listSessions();
-    expect(sessions.map((session) => session.id)).toEqual([beta.id]);
-    expect(sessions[0]).toMatchObject({ projectId: "beta", projectName: "Beta" });
-
-    scope.projectId = "alpha";
-    scope.projectName = "Alpha";
-    sessions = await sm.listSessions();
-    expect(sessions.map((session) => session.id)).toEqual([alpha.id]);
-
-    const alphaEntries = parseSessionEntries(adapter.files.get(alpha.path) ?? "");
-    expect(alphaEntries[0]).toMatchObject({
-      type: "session",
-      projectId: "alpha",
-      projectName: "Alpha",
-    });
-  });
-
-  it("keeps vault-wide sessions separate from project sessions", async () => {
-    const { sm, scope } = scopedManager();
-    const vaultWide = await sm.createSession(DEFAULTS);
-    scope.projectId = "alpha";
-    scope.projectName = "Alpha";
-    await sm.createSession(DEFAULTS);
-
-    scope.projectId = undefined;
-    scope.projectName = undefined;
-
-    expect((await sm.listSessions()).map((session) => session.id)).toEqual([vaultWide.id]);
-  });
-});
-
 describe("ObsidianSessionManager.renameSession", () => {
   it("renames the active session in memory", async () => {
     const { sm } = manager();

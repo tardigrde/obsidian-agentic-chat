@@ -66,12 +66,12 @@ describe("memory management", () => {
   it("does not merge conflicting memories with different text or scope", () => {
     const result = consolidateDuplicateMemories([
       record({ id: "mem-vault" }),
-      record({ id: "mem-project", scope: "project" }),
+      record({ id: "mem-global", scope: "global" }),
       record({ id: "mem-other", text: "The user prefers detailed answers." }),
     ]);
 
     expect(result.consolidations).toEqual([]);
-    expect(result.records.map((item) => item.id).sort()).toEqual(["mem-other", "mem-project", "mem-vault"]);
+    expect(result.records.map((item) => item.id).sort()).toEqual(["mem-global", "mem-other", "mem-vault"]);
   });
 
   it("ages stale enabled memories without forgetting them", () => {

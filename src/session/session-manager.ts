@@ -41,15 +41,8 @@ export interface SessionInfo {
   createdAt: string;
   updatedAt: string;
   name?: string;
-  projectId?: string;
-  projectName?: string;
   messageCount: number;
   firstMessage: string;
-}
-
-export interface SessionScope {
-  projectId?: string;
-  projectName?: string;
 }
 
 interface SessionFileInfo extends SessionInfo {
@@ -64,7 +57,6 @@ export class ObsidianSessionManager {
   private readonly adapter: DataAdapter;
   private readonly sessionDir: string;
   private readonly cwd: string;
-  private readonly scopeProvider?: () => SessionScope | undefined;
   private sessionFile: string | null = null;
   private entries: SessionEntry[] = [];
   private leafId: string | null = null;
@@ -73,28 +65,17 @@ export class ObsidianSessionManager {
    * `beforeSummary` to keep the JSONL bounded for long editing sessions. */
   private fullCheckpointPaths = new Set<string>();
 
-  constructor(
-    adapter: DataAdapter,
-    sessionDir: string,
-    cwd: string,
-    scopeProvider?: () => SessionScope | undefined,
-  ) {
+  constructor(adapter: DataAdapter, sessionDir: string, cwd: string) {
     this.adapter = adapter;
     this.sessionDir = normalizeFolderPath(sessionDir, { allowPluginInternals: true });
     this.cwd = cwd;
-    this.scopeProvider = scopeProvider;
   }
 
-  static forPlugin(
-    app: App,
-    plugin: Plugin,
-    scopeProvider?: () => SessionScope | undefined,
-  ): ObsidianSessionManager {
+  static forPlugin(app: App, plugin: Plugin): ObsidianSessionManager {
     return new ObsidianSessionManager(
       app.vault.adapter,
       getPluginSessionDir(app, plugin),
       `obsidian-vault:${app.vault.getName()}`,
-      scopeProvider,
     );
   }
 
@@ -104,7 +85,7 @@ export class ObsidianSessionManager {
     const timestamp = new Date().toISOString();
     const fileTimestamp = timestamp.replace(/[:.]/g, "-");
     this.sessionFile = `${this.sessionDir}/${fileTimestamp}_${sessionId}.jsonl`;
-    this.entries = [createSessionHeader(sessionId, this.cwd, timestamp, this.currentScope())];
+    this.entries = [createSessionHeader(sessionId, this.cwd, timestamp)];
     this.leafId = null;
     this.fullCheckpointPaths = new Set();
     await this.adapter.write(this.sessionFile, serializeSessionEntries(this.entries));
@@ -140,11 +121,9 @@ export class ObsidianSessionManager {
     await this.ensureSessionDirectory();
     const listing = await this.adapter.list(this.sessionDir);
     const sessionFiles = listing.files.filter((path) => path.endsWith(".jsonl"));
-    const scope = this.currentScope();
     const sessions = await Promise.all(sessionFiles.map((path) => this.readSessionInfo(path)));
     return sessions
       .filter((session): session is SessionFileInfo => session !== null)
-      .filter((session) => this.matchesScope(session, scope))
       .sort((left, right) => right.modifiedTime - left.modifiedTime)
       .map(({ modifiedTime: _modifiedTime, ...session }) => session);
   }
@@ -408,16 +387,6 @@ export class ObsidianSessionManager {
       return null;
     }
   }
-
-  private currentScope(): SessionScope | undefined {
-    return this.scopeProvider?.();
-  }
-
-  private matchesScope(session: SessionInfo, scope: SessionScope | undefined): boolean {
-    if (!this.scopeProvider) return true;
-    const projectId = scope?.projectId?.trim() || "";
-    return projectId ? session.projectId === projectId : !session.projectId;
-  }
 }
 
 export function getPluginSessionDir(app: App, plugin: Plugin): string {
@@ -437,8 +406,6 @@ function summarizeSession(path: string, entries: SessionEntry[], modifiedTime: n
     createdAt: header.timestamp,
     updatedAt: new Date(getSessionModifiedTime(entries, modifiedTime)).toISOString(),
     name: getSessionName(entries),
-    projectId: header.projectId,
-    projectName: header.projectName,
     messageCount: messageEntries.length,
     firstMessage: getFirstUserMessage(messageEntries) || "(no messages)",
   };

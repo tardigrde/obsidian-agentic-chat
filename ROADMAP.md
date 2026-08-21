@@ -107,11 +107,6 @@ thin (or absent) here.
 - **Effort**: M
 - **Deps**: none
 
-### S6 · Projects have no creation/edit UI; "profile" collides with output style
-- **Problem**: projects mutate five settings dimensions (working dirs, output style, system prompt, model, web/mcp toggles) but can only be configured by hand-editing `data.json`; docs claim a Settings UI that does not exist. `project.profile` is literally the `OutputStyle` enum, colliding with the subagent "profile" vocabulary.
-- **Effort**: L (UI) / S (rename)
-- **Deps**: none
-
 ### S7 · Deprecated settings surface lingers
 - **Problem**: every secret still has a dual plaintext `*ApiKey` + `*SecretId` pair with migration fallback fields persisted. (`templatesFolder` was removed in S9.)
 - **Effort**: S
@@ -119,9 +114,9 @@ thin (or absent) here.
 
 ### S8 · Subagent reframe: drop the "profile" concept
 - **Problem**: subagents are authored as "profiles" (`AGENT.md` + built-in roster) with their own system prompt + tool allowlist, but the delegation value is isolated context for the single main agent — not a switchable persona. The "profile" vocabulary also collides with `project.profile` (an output style). The main agent should always be one agent in the main conversation; subagents are child agents that inherit the main agent's config and controls (approval, ignore list, web/MCP gates) and can be dispatched by it.
-- **Approach (tentative)**: keep the child-agent runtime and the `subagent` tool; drop the `AGENT.md` profile authoring surface and built-in roster in favor of subagents that inherit from the parent (system prompt override via invocation, same tool/approval controls); possibly ship one built-in "Explorer" agent for scoped read-only tasks. Reconcile with S6 naming.
+- **Approach (tentative)**: keep the child-agent runtime and the `subagent` tool; drop the `AGENT.md` profile authoring surface and built-in roster in favor of subagents that inherit from the parent (system prompt override via invocation, same tool/approval controls); possibly ship one built-in "Explorer" agent for scoped read-only tasks.
 - **Effort**: M
-- **Deps**: S6
+- **Deps**: none
 
 ### S10 · Decouple client-owned MCP state from server shape
 - **Problem**: `settings.mcp.servers` persists a full *copy* of each plugin-derived server (shape + client state merged by id via `mergePluginMcpServers`/`syncMcpServers`). The package is meant to be the single source of truth for server shape, but the copy can diverge: the settings tab renders `settings.mcp.servers` while the runtime re-derives from packages per turn, and the sync/prune/merge machinery exists only to paper over that duplication. State is also keyed by derived id, so renaming a package entry or plugin loses client state.

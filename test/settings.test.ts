@@ -41,6 +41,15 @@ describe("mergeSettings — working directories", () => {
     expect(mergeSettings({}).approval.workingDirs).toEqual([]);
   });
 
+  it("drops a legacy projects key from stored settings", () => {
+    const merged = mergeSettings({
+      approval: { mutating: "ask", perTool: {}, workingDirs: [] },
+      projects: { activeProjectId: "alpha", items: [{ id: "alpha", name: "Alpha", folders: ["A"] }] },
+    } as unknown as Partial<AgenticChatSettings>);
+    expect(JSON.stringify(merged)).not.toContain("projects");
+    expect((merged as unknown as Record<string, unknown>).projects).toBeUndefined();
+  });
+
   it("keeps a stored string[] working set", () => {
     const merged = mergeSettings({ approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes", "Work"] } });
     expect(merged.approval.workingDirs).toEqual(["Notes", "Work"]);

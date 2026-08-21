@@ -6,7 +6,7 @@ Semantic retrieval adds vector-based note search to the agent. It is opt-in and 
 
 1. **Index** — The plugin sends note text to an embedding provider and stores the resulting vectors in a local index file.
 2. **Query** — When the agent needs relevant context, the index returns the most semantically similar notes.
-3. **Scope** — Indexing is scoped to a vault, folder, tag, or project workspace. You choose the scope each time you index.
+3. **Scope** — Indexing is scoped to a vault, folder, tag, or the active note's folder. You choose the scope each time you index.
 
 ## Setup
 
@@ -29,8 +29,6 @@ Provider API keys reuse the same secrets configured in **Settings > Models**.
 | `/semantic-index estimate` | Estimate how many notes and tokens an index would cover for the current scope. |
 | `/semantic-index start` | Build or rebuild the index for the current scope. |
 | `/semantic-index cancel` | Cancel an in-progress index build. |
-
-When a project is active, `/semantic-index` scopes to the project folders automatically.
 
 ## Privacy
 

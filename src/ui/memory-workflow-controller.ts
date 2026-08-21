@@ -115,7 +115,7 @@ export class MemoryWorkflowController {
   private async addManual(raw: string): Promise<void> {
     const parsed = parseManualMemorySpec(raw, this.options.defaultScope());
     if (!parsed.text) {
-      this.options.renderer.error("Usage: /memory add [preference|fact|instruction|summary] [global|vault|project] <text>");
+      this.options.renderer.error("Usage: /memory add [preference|fact|instruction|summary] [global|vault] <text>");
       return;
     }
     if (containsSensitiveText(parsed.text)) {
@@ -240,7 +240,7 @@ export class MemoryWorkflowController {
 }
 
 const MEMORY_KINDS = new Set<MemoryKind>(["preference", "fact", "instruction", "summary"]);
-const MEMORY_SCOPES = new Set<MemoryScope>(["global", "vault", "project"]);
+const MEMORY_SCOPES = new Set<MemoryScope>(["global", "vault"]);
 
 function parseManualMemorySpec(raw: string, defaultScope: MemoryScope): { kind: MemoryKind; scope: MemoryScope; text: string } {
   const tokens = raw.trim().split(/\s+/).filter(Boolean);
