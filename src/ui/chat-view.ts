@@ -206,7 +206,6 @@ export class ChatView extends ItemView {
   private stopButton!: HTMLButtonElement;
   private statusEl!: HTMLElement;
   private modelPillEl!: HTMLElement;
-  private projectPillEl!: HTMLButtonElement;
   private effortKnobEl!: HTMLElement;
   private usageEl!: HTMLElement;
   private contextBarEl!: HTMLProgressElement;
@@ -711,12 +710,6 @@ export class ChatView extends ItemView {
       }
     });
 
-    this.projectPillEl = toolbarLeft.createEl("button", {
-      cls: "agentic-chat-project-pill",
-      attr: { "aria-label": "Switch project workspace" },
-    });
-    this.projectPillEl.addEventListener("click", () => this.showProjectList());
-
     this.contextBarEl = toolbarLeft.createEl("progress", {
       cls: "agentic-chat-ctx-bar",
       attr: { "aria-label": "Context window used", max: "100", value: "0" },
@@ -740,7 +733,8 @@ export class ChatView extends ItemView {
       "Safe: ask before every edit and action. YOLO: run without asking (for trusted vaults).",
     );
     const toggleMode = () => {
-      if (this.service.isStreaming() || this.plugin.settings.mode === "plan") return;
+      // setMode is the single gate: it refuses while streaming and enforces the
+      // plan→yolo check. The toggle itself must not silently swallow clicks.
       const target = this.plugin.settings.mode === "yolo" ? "safe" : "yolo";
       void this.setMode(target);
     };
@@ -959,7 +953,9 @@ export class ChatView extends ItemView {
     // Choosing a posture other than plan ends any sticky plan state.
     if (mode !== "plan") this.modeBeforePlan = null;
     await this.plugin.saveSettings();
-    this.syncControls();
+    // Repaint the whole chrome so the Safe↔YOLO segment + aria-checked flip
+    // instantly after the mode lands on disk (syncChrome calls syncControls).
+    this.syncChrome();
   }
 
   /** `/plan`: enter sticky read-only plan mode, remembering the posture to restore. */
@@ -1040,7 +1036,6 @@ export class ChatView extends ItemView {
     this.modelPillEl.setAttr("title", modelPill.title);
     if (modelPill.isOverride) this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: modelPill.providerLabel });
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: modelPill.shortModel });
-    this.syncProjectPill();
     this.syncEffortKnob();
     this.renderPlanTrackerPanel();
 
@@ -1077,20 +1072,6 @@ export class ChatView extends ItemView {
       const span = el.createSpan({ text: part.text });
       if (part.cls) for (const cls of part.cls.split(" ")) if (cls) span.addClass(cls);
     });
-  }
-
-  private syncProjectPill(): void {
-    if (!this.projectPillEl) return;
-    const project = activeProject(this.plugin.settings.projects);
-    this.projectPillEl.empty();
-    const icon = this.projectPillEl.createSpan({ cls: "agentic-chat-project-icon" });
-    setIcon(icon, project ? "folder-kanban" : "layout-dashboard");
-    this.projectPillEl.createSpan({ cls: "agentic-chat-project-name", text: projectLabel(project) });
-    this.projectPillEl.toggleClass("is-active", !!project);
-    this.projectPillEl.setAttr("title", project ? describeProject(project) : "Vault-wide workspace");
-    // Hide the project pill entirely until a project exists — the default
-    // "Vault-wide" label is noise when projects aren't in use.
-    this.projectPillEl.toggle(!!project);
   }
 
   /** Glanceable color-coded context-window fill bar; hidden until usage is known. */
@@ -1939,7 +1920,19 @@ export class ChatView extends ItemView {
     this.clearEmptyState();
     const result = resolveProjectCommand(arg, this.plugin.settings.projects);
     if (result.action === "list") {
-      this.showProjectList();
+      // No in-composer project picker: the folder pill was removed, agents infer
+      // scope from vault context. `/project` alone just lists the current state.
+      const activeId = this.plugin.settings.projects.activeProjectId;
+      const projects = this.plugin.settings.projects.items;
+      this.renderInfoMessage(
+        "Projects",
+        projects.length === 0
+          ? [["(none)", "No projects configured. Add one in settings, then run /project <name>."]]
+          : projects.map((project) => [
+              project.name,
+              `${project.id === activeId ? "current · " : ""}${describeProject(project) || "all notes"}`,
+            ]),
+      );
       return;
     }
     if (result.action === "error") {
@@ -1947,27 +1940,6 @@ export class ChatView extends ItemView {
       return;
     }
     await this.activateProject(result.projectId);
-  }
-
-  private showProjectList(): void {
-    this.clearEmptyState();
-    const activeId = this.plugin.settings.projects.activeProjectId;
-    const projects = this.plugin.settings.projects.items;
-    const items: ActionRow[] = [
-      {
-        label: "Vault-wide",
-        detail: activeId ? "Switch back to unscoped vault chat." : "current",
-        icon: "layout-dashboard",
-        onClick: () => void this.activateProject(""),
-      },
-      ...projects.map((project) => ({
-        label: project.name,
-        detail: `${project.id === activeId ? "current · " : ""}${describeProject(project) || "all notes"}`,
-        icon: "folder-kanban",
-        onClick: () => void this.activateProject(project.id),
-      })),
-    ];
-    this.renderActionList("Projects", "Pick a workspace for scoped notes, tools, model/profile, and sessions.", items);
   }
 
   private async activateProject(projectId: string): Promise<void> {
