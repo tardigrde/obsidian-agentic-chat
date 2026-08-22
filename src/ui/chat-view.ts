@@ -1812,7 +1812,14 @@ export class ChatView extends ItemView {
       this.renderErrorMessage("Can't change effort while the agent is responding.");
       return;
     }
-    await this.persistEffortLevel(level);
+    try {
+      await this.persistEffortLevel(level);
+    } catch (error) {
+      this.renderErrorMessage(
+        `Could not save effort level: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
     this.renderInfoMessage("Effort", [
       [level, "Saved. Applies to your messages going forward; switching effort re-processes the prompt once (a cache miss) — affects cost."],
     ]);
@@ -1830,16 +1837,31 @@ export class ChatView extends ItemView {
     const current = this.service.getActiveThinkingLevel();
     const index = levels.indexOf(current);
     const next = levels[(index + 1) % levels.length];
-    await this.persistEffortLevel(next);
+    try {
+      await this.persistEffortLevel(next);
+    } catch {
+      // persistEffortLevel already rolled the knob back to the saved level.
+      new Notice("Could not save effort level.");
+    }
   }
 
-  /** Persist the chosen effort level and repaint the knob. */
+  /**
+   * Persist the chosen effort level and repaint the knob. Rolls the setting
+   * back if saving fails, so the UI never advertises a level that didn't stick.
+   */
   private async persistEffortLevel(level: ThinkingLevel): Promise<void> {
-    if (this.plugin.settings.thinkingLevel === level) return;
+    const previous = this.plugin.settings.thinkingLevel;
+    if (previous === level) return;
     this.plugin.settings.thinkingLevel = level;
     // Repaint instantly; persistence lands in the background.
     this.syncChrome();
-    await this.plugin.saveSettings();
+    try {
+      await this.plugin.saveSettings();
+    } catch (error) {
+      this.plugin.settings.thinkingLevel = previous;
+      this.syncChrome();
+      throw error;
+    }
   }
 
   /** Render the composer effort knob from the level the next message will use. */
@@ -2012,7 +2034,9 @@ export class ChatView extends ItemView {
       ["Model", override ? `${override} (next message only)` : activeModelId(settings)],
       ["Mode", MODES[settings.mode].label],
       ["Output style", OUTPUT_STYLES[settings.outputStyle].label],
-      ["Thinking", settings.thinkingLevel],
+      // The active level, i.e. the configured level clamped to what the model
+      // actually supports — the raw setting alone can overstate the next turn.
+      ["Thinking", this.service.getActiveThinkingLevel()],
       ["Approval (mutating)", settings.approval.mutating],
       ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],
       ["Session", session ? `${session.messageCount} messages` : "(none)"],
@@ -2431,9 +2455,10 @@ export class ChatView extends ItemView {
     for (const call of toolCalls(message)) {
       bubble.startStep(call.id, call.name, JSON.stringify(call.arguments ?? {}));
       const result = toolResults.get(call.id);
-      // Pass the persisted details so replay re-derives the live verdict — a
+      // Pass the persisted details wrapped in the result shape endStep reads
+      // (`resultObject.details`), so replay re-derives the live verdict — a
       // stopped subagent dispatch must render red here too, not green.
-      if (result) bubble.endStep(call.id, result.text, result.isError, result.details);
+      if (result) bubble.endStep(call.id, result.text, result.isError, { details: result.details });
     }
     const text = messageText(message);
     const planning = this.plugin.settings.mode === "plan";

@@ -30,6 +30,18 @@ function subagentChildren(details: unknown): SubagentChildStatus[] {
   return shaped?.kind === "subagent" && Array.isArray(shaped.children) ? shaped.children : [];
 }
 
+/**
+ * Whether a subagent dispatch's settled child statuses force the step to render
+ * as failed. A stopped (or timed-out) dispatch returns a NORMAL tool result —
+ * so the parent won't re-dispatch — but the UI must still read it as stopped.
+ * Accepts both shapes: the live tool result object and replay's wrapped
+ * persisted details (`{ details }`).
+ */
+export function subagentResultForcesError(resultObject: unknown): boolean {
+  const children = subagentChildren((resultObject as { details?: unknown } | undefined)?.details);
+  return children.some((child) => child.status === "error" || child.status === "aborted");
+}
+
 /** Per-step DOM + identity kept on the bubble for live updates and settle. */
 interface StepEntry {
   card: HTMLElement;
@@ -512,11 +524,13 @@ export class AssistantBubble {
   private subagentMetaText(child: SubagentChildStatus): string {
     if (child.status === "queued" || child.status === "running") return "";
     const parts: string[] = [];
-    if (child.durationMs !== undefined) parts.push(formatElapsed(child.durationMs));
-    if (child.usage && child.usage.totalTokens > 0) {
-      parts.push(`${formatTokenInteger(child.usage.totalTokens)} tok`);
+    if (child.usage) {
+      // Cost is a normalized field of its own — render it whenever positive,
+      // even when the provider reported no token counts.
+      if (child.usage.totalTokens > 0) parts.push(`${formatTokenInteger(child.usage.totalTokens)} tok`);
       if (child.usage.costUsd > 0) parts.push(formatCost(child.usage.costUsd));
     }
+    if (child.durationMs !== undefined) parts.unshift(formatElapsed(child.durationMs));
     return parts.join(" · ");
   }
 
@@ -568,14 +582,8 @@ export class AssistantBubble {
   endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
-    // A stopped (or timed-out) dispatch returns a NORMAL tool result — so the
-    // parent won't re-dispatch a task the user halted — but the step must still
-    // read as failed: derive red from the child statuses.
-    if (step.name === SUBAGENT_TOOL_NAME) {
-      const children = subagentChildren((resultObject as { details?: unknown } | undefined)?.details);
-      if (children.some((child) => child.status === "error" || child.status === "aborted")) {
-        isError = true;
-      }
+    if (step.name === SUBAGENT_TOOL_NAME && subagentResultForcesError(resultObject)) {
+      isError = true;
     }
     step.card.removeClass("is-running");
     step.card.addClass(isError ? "is-error" : "is-done");
