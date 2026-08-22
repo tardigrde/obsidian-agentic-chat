@@ -329,29 +329,7 @@ export class AgentService {
     return this.turns.getActiveModelId();
   }
 
-  /**
-   * Set (or clear) the reasoning level applied to the next prompt. The composer
-   * knob now persists the level via settings (no one-shot override); this remains
-   * as the low-level hook to push a level or clear a stale one before a turn.
-   * Changing effort mid-conversation re-processes the prompt prefix (a one-time
-   * cache miss); the composer knob's tooltip warns about that cost.
-   */
-  setThinkingOverride(level: ThinkingLevel | null): void {
-    this.turns.setThinkingOverride(level);
-    // Reflect the pending override in the chrome/estimate right away, but never
-    // change the level out from under an in-flight turn.
-    if (this.agent && !this.agent.state.isStreaming) {
-      this.agent.state.thinkingLevel = this.turns.getActiveThinkingLevel();
-    }
-    this.notifyChange();
-  }
-
-  /** The pending one-shot thinking override, or null when none is queued. */
-  getThinkingOverride(): ThinkingLevel | null {
-    return this.turns.getThinkingOverride();
-  }
-
-  /** The thinking level the next prompt will actually use (override if queued, else settings). */
+  /** The thinking level the next prompt will actually use (clamped to the active model). */
   getActiveThinkingLevel(): ThinkingLevel {
     return this.turns.getActiveThinkingLevel();
   }
@@ -413,7 +391,6 @@ export class AgentService {
       modelOverride: this.getModelOverride(),
       contextWindow: this.turns.buildModelForTurn().contextWindow || null,
       thinkingLevel: this.getActiveThinkingLevel(),
-      thinkingOverride: this.getThinkingOverride(),
       isStreaming: this.isStreaming(),
       canUndo: this.canUndo(),
       lastError: this.getError(),

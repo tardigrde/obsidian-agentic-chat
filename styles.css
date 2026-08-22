@@ -898,6 +898,13 @@
   border-color: var(--text-error);
 }
 
+/* Stopped by the user or timed out: red like an error so it gets noticed,
+   though the dispatch itself returns a normal result (no re-dispatch pressure). */
+.agentic-chat-subagent.is-aborted .agentic-chat-subagent-status {
+  color: var(--text-error);
+  border-color: var(--text-error);
+}
+
 .agentic-chat-subagent.is-queued .agentic-chat-subagent-status {
   color: var(--text-muted);
   border-color: var(--background-modifier-border);

@@ -40,13 +40,6 @@ export function abortSubagentChild(id: string): void {
   activeStops.delete(id);
 }
 
-/** Thrown when a child is stopped on its own (per-child Stop), not the parent. */
-class SubagentStoppedError extends Error {
-  constructor() {
-    super("Subagent stopped");
-  }
-}
-
 /** Structured details payload for the subagent tool result, consumed by the UI. */
 export interface SubagentDetails {
   kind: "subagent";
@@ -152,7 +145,7 @@ export function createSubagentTool(
       try {
         await runSingleChild(deps, status, profile, task, toolCallId, signal, scheduleEmit);
       } catch (error) {
-        if (signal?.aborted || error instanceof SubagentStoppedError) {
+        if (signal?.aborted) {
           status.status = "aborted";
           status.summary = "Stopped by user";
         } else {
@@ -279,7 +272,7 @@ async function runSingleChild(
   let timedOut = false;
   const timeoutTimer =
     maxSeconds > 0
-      ? setTimeout(() => {
+      ? window.setTimeout(() => {
           timedOut = true;
           child.abort();
         }, maxSeconds * 1000)
@@ -305,12 +298,16 @@ async function runSingleChild(
   try {
     await child.prompt(task);
     await child.waitForIdle();
+    // The child finished its work: drop the stop hook immediately so a Stop
+    // click landing after completion can't flag this child as stopped and
+    // discard an answer it actually produced.
+    activeStops.delete(stopId);
   } catch (error) {
-    if (timedOut) throw new Error(`Timed out after ${maxSeconds}s`, { cause: error });
-    if (stoppedLocally) throw new SubagentStoppedError();
-    throw error;
+    // An abort-shaped failure is classified below from the settle flags; only a
+    // genuine child error propagates to the caller's error classification.
+    if (!timedOut && !stoppedLocally && !signal?.aborted) throw error;
   } finally {
-    if (timeoutTimer) clearTimeout(timeoutTimer);
+    if (timeoutTimer) window.clearTimeout(timeoutTimer);
     unsub();
     signal?.removeEventListener("abort", onAbort);
     activeStops.delete(stopId);
@@ -328,12 +325,17 @@ async function runSingleChild(
   }
 
   const error = child.state.errorMessage;
-  if (timedOut) {
-    status.status = "error";
-    status.summary = `Timed out after ${maxSeconds}s`;
-  } else if (signal?.aborted || stoppedLocally) {
+  // Settle precedence: an explicit stop wins over a timeout firing at the same
+  // moment, and both beat a clean finish — a stopped/timed-out child must never
+  // settle as a green-check "done". Both settle as "aborted" (a normal result,
+  // no re-dispatch pressure) rather than "error" (which throws and invites the
+  // parent to retry the very task the user just stopped or capped).
+  if (signal?.aborted || stoppedLocally) {
     status.status = "aborted";
     status.summary = "Stopped by user";
+  } else if (timedOut) {
+    status.status = "aborted";
+    status.summary = `Timed out after ${maxSeconds}s`;
   } else if (error) {
     status.status = "error";
     status.summary = truncateToolOutput(error, PER_CHILD_SUMMARY_CHARS);

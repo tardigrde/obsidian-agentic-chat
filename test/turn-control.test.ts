@@ -89,10 +89,10 @@ describe("turn control", () => {
     );
   });
 
-  it("resolves one-shot thinking override and clamps to supported levels", () => {
-    expect(resolveThinkingLevelForTurn("low", "high", ["off", "low", "high"])).toBe("high");
-    expect(resolveThinkingLevelForTurn("low", "xhigh", ["off", "low", "medium"])).toBe("medium");
-    expect(resolveThinkingLevelForTurn("low", null, ["off", "low", "high"])).toBe("low");
+  it("clamps the persisted thinking level to the model's supported levels", () => {
+    expect(resolveThinkingLevelForTurn("high", ["off", "low", "high"])).toBe("high");
+    expect(resolveThinkingLevelForTurn("xhigh", ["off", "low", "medium"])).toBe("medium");
+    expect(resolveThinkingLevelForTurn("low", ["off", "low", "high"])).toBe("low");
   });
 
   it("normalizes steering text and labels steering modes", () => {

@@ -42,7 +42,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "follow-up", args: "[text]", description: "queue a follow-up behind the active turn", aliases: ["followup"] },
   { name: "redirect", args: "[text]", description: "stop the active turn and answer this instead" },
   { name: "style", args: "[name]", description: "switch output style" },
-  { name: "effort", args: "[level]", description: "set reasoning effort for the next message", aliases: ["thinking"] },
+  { name: "effort", args: "[level]", description: "set reasoning effort for your messages (persisted)", aliases: ["thinking"] },
   { name: "usage", description: "show token & cost totals" },
   { name: "compact", args: "[instructions]", description: "summarize older turns now; optional instructions guide the summary" },
   { name: "export", description: "save this conversation as a Markdown note" },
@@ -50,6 +50,9 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "skill", args: "[name] [args]", description: "run a vault skill; args fill $ARGUMENTS/$1", takesSkillArg: true },
   { name: "agent", args: "[name] [task]", description: "delegate a task to a subagent" },
   { name: "init", args: "[instructions]", description: "curate the vault's AGENTS.md standing-instructions file" },
+  // Retired with the projects feature. Kept routable (hidden) so muscle memory
+  // gets a redirect hint instead of the literal text leaking to the model.
+  { name: "project", aliases: ["projects"], description: "projects were removed", hidden: true },
   { name: "help", description: "show this list" },
 ];
 

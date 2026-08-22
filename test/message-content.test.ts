@@ -86,9 +86,16 @@ describe("collectToolResults", () => {
       msg({ role: "toolResult", toolCallId: "c2", isError: true, content: "boom" }),
     ];
     const map = collectToolResults(messages);
-    expect(map.get("c1")).toEqual({ text: "ok", isError: false });
-    expect(map.get("c2")).toEqual({ text: "boom", isError: true });
+    expect(map.get("c1")).toEqual({ text: "ok", isError: false, details: undefined });
+    expect(map.get("c2")).toEqual({ text: "boom", isError: true, details: undefined });
     expect(map.size).toBe(2);
+  });
+
+  it("carries persisted details so replay can re-derive a stopped subagent's verdict", () => {
+    const details = { kind: "subagent", children: [{ agent: "explorer", task: "hang", status: "aborted" }] };
+    const messages = [msg({ role: "toolResult", toolCallId: "c1", isError: false, content: "stopped", details })];
+    const map = collectToolResults(messages);
+    expect(map.get("c1")?.details).toEqual(details);
   });
 });
 

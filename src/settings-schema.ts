@@ -77,7 +77,7 @@ export interface AgenticChatSettings {
   agentsFolder: string;
   /** Include the built-in subagent roster (researcher / reviewer / editor). */
   enableBuiltinAgents: boolean;
-  /** Auto-abort a subagent after this many seconds. 0 disables the timeout. */
+  /** Auto-abort a subagent after this many seconds (max 86400). 0 disables the timeout. */
   subagentTimeoutSeconds: number;
   /**
    * Newline-separated gitignore-style globs the agent may never read or see.
@@ -204,10 +204,18 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
 
 /** Merge stored settings over defaults, healing nested objects. */
 export function mergeSettings(stored: Partial<AgenticChatSettings> | null | undefined): AgenticChatSettings {
-  // Drop the retired `projects` feature from the persisted object so a legacy
-  // key from an older data.json is neither carried nor re-saved.
+  // Drop retired feature keys (e.g. the removed `projects` workspaces) from the
+  // persisted object so a legacy key from an older data.json is neither carried
+  // nor re-saved.
   const remaining = { ...(stored ?? {}) };
-  delete (remaining as Record<string, unknown>).projects;
+  const retiredKeys = RETIRED_SETTING_KEYS.filter((key) => key in remaining);
+  for (const key of retiredKeys) {
+    delete (remaining as Record<string, unknown>)[key];
+  }
+  // Make the silent drop of hand-authored config visible (until the next save).
+  if (retiredKeys.length > 0) {
+    console.warn(`Agentic chat: dropped retired setting(s): ${retiredKeys.join(", ")}.`);
+  }
   return {
     ...DEFAULT_SETTINGS,
     ...remaining,
@@ -256,14 +264,20 @@ function stringSetting(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-/** Heal the context-window override: 0 = auto-detect, otherwise a positive integer. */
-function healContextWindow(value: unknown): number {
+/** Retired feature keys removed from persisted data.json on load. */
+const RETIRED_SETTING_KEYS = ["projects"] as const;
+
+/** Upper bound for the subagent timeout (24h) — keeps `setTimeout` under its 32-bit delay range. */
+export const MAX_SUBAGENT_TIMEOUT_SECONDS = 86_400;
+
+/** Heal the subagent auto-abort timeout: whole seconds clamped to [0, 24h]; 0 = disabled. */
+export function healSubagentTimeout(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
-  return Math.max(0, Math.trunc(value));
+  return Math.min(Math.max(0, Math.trunc(value)), MAX_SUBAGENT_TIMEOUT_SECONDS);
 }
 
-/** Heal the subagent auto-abort timeout: whole seconds, 0 = disabled. */
-function healSubagentTimeout(value: unknown): number {
+/** Heal the context-window override: 0 = auto-detect, otherwise a positive integer. */
+function healContextWindow(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
   return Math.max(0, Math.trunc(value));
 }

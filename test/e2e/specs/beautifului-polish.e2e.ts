@@ -343,10 +343,22 @@ describe("agentic-chat beautifului polish", function () {
     expect(status.status).toBe("stopped");
     const pill = await probe({ key: "pill", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-status" });
     expect(pill.pill).toBe("Stopped");
-    // The Dispatch step itself settles as an error (x-circle), never a check.
-    await emit(toolEnd("t-stop", "Subagent was stopped: Stopped by user", true));
+    // Production contract: the stopped dispatch settles as a NORMAL result
+    // (isError:false — no re-dispatch pressure); the red x-circle comes from the
+    // endStep derivation over the persisted child statuses, so assert that path.
+    await emit({
+      type: "tool_execution_end",
+      toolCallId: "t-stop",
+      result: {
+        content: [{ type: "text", text: 'Subagent "explorer" was stopped: Stopped by user' }],
+        details: { kind: "subagent", children: [{ agent: "explorer", task: "hang", status: "aborted", transcript: [], summary: "Stopped by user" }] },
+      },
+      isError: false,
+    });
     const icon = await probe({ key: "icon", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-icon svg", attr: "class" });
     expect(icon.icon).toContain("x-circle");
+    const card = await probe({ key: "cls", selector: ".agentic-chat-assistant:last-child .agentic-chat-step", attr: "class" });
+    expect(card.cls).toContain("is-error");
     await emit(assistantEndEmpty());
     await emit({ type: "agent_end" });
   });

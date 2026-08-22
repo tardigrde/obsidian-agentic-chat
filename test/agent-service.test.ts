@@ -318,20 +318,6 @@ describe("AgentService", () => {
     expect(seen).toEqual(["anthropic/claude-3.5-sonnet", settings.openrouterModel]);
   });
 
-  it("applies a one-shot thinking override to the next prompt only, then reverts", async () => {
-    const { service, settings } = makeService(cannedStreamFn("ok"));
-    expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
-
-    service.setThinkingOverride("high");
-    expect(service.getThinkingOverride()).toBe("high");
-    expect(service.getActiveThinkingLevel()).toBe("high");
-
-    await service.sendPrompt("one hard prompt");
-    // The override was consumed by the turn it was set for.
-    expect(service.getThinkingOverride()).toBeNull();
-    expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
-  });
-
   it("keeps two tab services over one sessions dir independent", async () => {
     // Mirrors the C3 tab model: each tab is its own AgentService with its own
     // session manager, but they share the plugin's sessions directory.
@@ -1015,13 +1001,11 @@ describe("AgentService", () => {
     const { service, settings } = makeService(failingStream);
 
     service.setModelOverride("anthropic/claude-3.5-sonnet");
-    service.setThinkingOverride("high");
     await service.sendPrompt("fail");
 
     expect(service.getError()).toBe("stream failed");
     expect(service.getModelOverride()).toBeNull();
     expect(service.getActiveModelId()).toBe(settings.openrouterModel);
-    expect(service.getThinkingOverride()).toBeNull();
     expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
   });
 

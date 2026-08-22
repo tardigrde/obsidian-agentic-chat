@@ -67,7 +67,7 @@ Run `/export` to save the current conversation as a Markdown note in the vault.
 
 ## Reasoning effort
 
-Override the default thinking level for the next message with `/effort [level]` (e.g., `/effort high`). It resets after the next turn.
+Set your reasoning effort with `/effort [level]` (e.g., `/effort high`). The choice persists across messages until you change it — via `/effort` again or the effort knob in the composer.
 
 ## Undo and retry
 

@@ -9,13 +9,31 @@ describe("semantic index command scope parsing", () => {
     });
   });
 
-  it("uses the vault root folder label for root-level active notes and folder slash", () => {
-    expect(parseSemanticIndexScopeCommand([], { activeNotePath: "Inbox.md" })).toEqual({
-      scope: { kind: "folder", label: "/", paths: [""] },
+  it("refuses the implicit whole-vault scope of a root-level active note", () => {
+    // folder "" matches every file in the vault; that intent must go through
+    // the explicit vault confirmation instead of silently indexing everything.
+    const parsed = parseSemanticIndexScopeCommand([], { activeNotePath: "Inbox.md" });
+    expect(parsed).toHaveProperty("error");
+    expect((parsed as { error: string }).error).toContain("--confirm-vault");
+  });
+
+  it("routes root-covering folder scopes through the vault confirmation gate", () => {
+    expect(parseSemanticIndexScopeCommand(["folder", "/"])).toEqual({
+      error: '"/" covers the whole vault. Re-run with --confirm-vault to index everything.',
+    });
+    expect(parseSemanticIndexScopeCommand(["folder", "/", "--confirm-vault"])).toEqual({
+      scope: { kind: "vault", label: "Whole vault" },
+      confirmVault: true,
+    });
+  });
+
+  it("defaults to the active note's own folder when it is not in the vault root", () => {
+    expect(parseSemanticIndexScopeCommand([], { activeNotePath: "Notes/Plans/today.md" })).toEqual({
+      scope: { kind: "folder", label: "Notes/Plans", paths: ["Notes/Plans"] },
       confirmVault: false,
     });
-    expect(parseSemanticIndexScopeCommand(["folder", "/"])).toEqual({
-      scope: { kind: "folder", label: "/", paths: [""] },
+    expect(parseSemanticIndexScopeCommand([], { activeNotePath: "Notes/today.md" })).toEqual({
+      scope: { kind: "folder", label: "Notes", paths: ["Notes"] },
       confirmVault: false,
     });
   });

@@ -1,6 +1,6 @@
 import { type App, type Component, loadMermaid, MarkdownRenderer, Notice, setIcon } from "obsidian";
 import type { Usage } from "@earendil-works/pi-ai";
-import type { SubagentChildStatus } from "../tools/subagent-tool";
+import { SUBAGENT_TOOL_NAME, type SubagentChildStatus } from "../tools/subagent-tool";
 import type { AskUserDetails } from "../tools/ask-user-tool";
 import {
   callPath,
@@ -24,11 +24,10 @@ const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
   aborted: "stopped",
 };
 
-/** Extract the child statuses from a subagent tool result (details snapshot). */
-function subagentChildrenFromResult(resultObject: unknown): SubagentChildStatus[] {
-  const details = (resultObject as { details?: { kind?: string; children?: SubagentChildStatus[] } } | undefined)
-    ?.details;
-  return details?.kind === "subagent" && Array.isArray(details.children) ? details.children : [];
+/** Extract the child statuses from a subagent details payload, or [] when absent/malformed. */
+function subagentChildren(details: unknown): SubagentChildStatus[] {
+  const shaped = details as { kind?: string; children?: SubagentChildStatus[] } | undefined;
+  return shaped?.kind === "subagent" && Array.isArray(shaped.children) ? shaped.children : [];
 }
 
 /** Per-step DOM + identity kept on the bubble for live updates and settle. */
@@ -399,13 +398,10 @@ export class AssistantBubble {
   updateStep(id: string, partial: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
-    const details = (partial as { details?: unknown } | undefined)?.details as
-      | { kind?: string; children?: SubagentChildStatus[] }
-      | AskUserDetails
-      | undefined;
-    if (!details) return;
-    if (details.kind === "subagent" && "children" in details && Array.isArray(details.children)) {
-      this.renderSubagentChildren(step.body, details.children);
+    const details = (partial as { details?: unknown } | undefined)?.details;
+    const children = subagentChildren(details);
+    if (children.length > 0) {
+      this.renderSubagentChildren(step.body, children);
       if (step.card.parentElement) this.syncStepCollapsible(step.card.parentElement, step.body);
       // Auto-open so live child progress is visible while the step runs.
       step.card.addClass("is-open");
@@ -572,11 +568,11 @@ export class AssistantBubble {
   endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
-    // A subagent dispatch whose children failed or were stopped returns a
-    // normal tool result (so the parent won't re-dispatch), but the step must
-    // still read as an error — derive it from the child statuses.
-    if (step.name === "subagent") {
-      const children = subagentChildrenFromResult(resultObject);
+    // A stopped (or timed-out) dispatch returns a NORMAL tool result — so the
+    // parent won't re-dispatch a task the user halted — but the step must still
+    // read as failed: derive red from the child statuses.
+    if (step.name === SUBAGENT_TOOL_NAME) {
+      const children = subagentChildren((resultObject as { details?: unknown } | undefined)?.details);
       if (children.some((child) => child.status === "error" || child.status === "aborted")) {
         isError = true;
       }

@@ -690,7 +690,7 @@ export class ChatView extends ItemView {
     this.modelPillEl.addEventListener("click", () => void this.switchModel());
     modelGroup.createSpan({ cls: "agentic-chat-model-divider", attr: { "aria-hidden": "true" } });
 
-    // Effort knob: click cycles the reasoning level for the next message only.
+    // Effort knob: click cycles the persisted reasoning level.
     this.effortKnobEl = modelGroup.createDiv({
       cls: "agentic-chat-effort",
       attr: { role: "button", tabindex: "0" },
@@ -1557,6 +1557,11 @@ export class ChatView extends ItemView {
       case "init":
         await this.runInit(argString);
         return true;
+      case "project":
+        this.renderInfoMessage("Projects", [
+          ["Removed", "Project workspaces were removed. Use /add-dir for working directories and /style for output styles."],
+        ]);
+        return true;
       case "help":
         this.showHelp();
         return true;
@@ -1761,7 +1766,7 @@ export class ChatView extends ItemView {
     );
   }
 
-  /** `/effort [level]`: no arg shows a picker; an arg sets the next message's reasoning effort. */
+  /** `/effort [level]`: no arg shows a picker; an arg sets your reasoning effort (persisted). */
   private runEffort(arg: string): void {
     this.clearEmptyState();
     if (!arg) {
@@ -1790,7 +1795,7 @@ export class ChatView extends ItemView {
     }
     this.renderActionList(
       "Effort",
-      `Reasoning effort for your next message · current: ${current}. ` +
+      `Reasoning effort for your messages · current: ${current}. ` +
         "Changing it re-processes the prompt once (a cache miss) — affects cost.",
       levels.map((id) => ({
         label: id,
@@ -1801,7 +1806,7 @@ export class ChatView extends ItemView {
     );
   }
 
-  /** Apply an effort level for the next message and remember it (persisted). */
+  /** Apply an effort level and remember it (persisted). */
   private async chooseEffort(level: ThinkingLevel): Promise<void> {
     if (this.service.isStreaming()) {
       this.renderErrorMessage("Can't change effort while the agent is responding.");
@@ -1809,16 +1814,15 @@ export class ChatView extends ItemView {
     }
     await this.persistEffortLevel(level);
     this.renderInfoMessage("Effort", [
-      [level, "Saved. Applies to your next message; switching effort re-processes the prompt once (a cache miss) — affects cost."],
+      [level, "Saved. Applies to your messages going forward; switching effort re-processes the prompt once (a cache miss) — affects cost."],
     ]);
   }
 
-  /** Composer effort knob: cycle to the next supported reasoning level for the next message. */
+  /** Composer effort knob: cycle to the next supported reasoning level. */
   private async cycleEffort(): Promise<void> {
     if (this.service.isStreaming()) return;
     const levels = this.service.getActiveThinkingLevels();
     if (levels.length <= 1) {
-      this.service.setThinkingOverride(null);
       this.syncEffortKnob();
       new Notice("Current model does not expose alternate reasoning effort levels.");
       return;
@@ -1829,11 +1833,10 @@ export class ChatView extends ItemView {
     await this.persistEffortLevel(next);
   }
 
-  /** Persist the chosen effort level and repaint the knob (no one-shot override split). */
+  /** Persist the chosen effort level and repaint the knob. */
   private async persistEffortLevel(level: ThinkingLevel): Promise<void> {
     if (this.plugin.settings.thinkingLevel === level) return;
     this.plugin.settings.thinkingLevel = level;
-    this.service.setThinkingOverride(null);
     // Repaint instantly; persistence lands in the background.
     this.syncChrome();
     await this.plugin.saveSettings();
@@ -2428,7 +2431,9 @@ export class ChatView extends ItemView {
     for (const call of toolCalls(message)) {
       bubble.startStep(call.id, call.name, JSON.stringify(call.arguments ?? {}));
       const result = toolResults.get(call.id);
-      if (result) bubble.endStep(call.id, result.text, result.isError);
+      // Pass the persisted details so replay re-derives the live verdict — a
+      // stopped subagent dispatch must render red here too, not green.
+      if (result) bubble.endStep(call.id, result.text, result.isError, result.details);
     }
     const text = messageText(message);
     const planning = this.plugin.settings.mode === "plan";

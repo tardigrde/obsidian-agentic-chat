@@ -440,15 +440,53 @@ describe("createSubagentTool", () => {
     expect(result.details.children[0].status).toBe("aborted");
   });
 
-  it("auto-aborts a child that runs past the configured timeout", async () => {
+  it("settles a timed-out child as aborted without rejecting the dispatch", async () => {
     const tool = createSubagentTool({
       getProfiles: () => [RESEARCHER],
       createChildAgent: () => makeChild(abortErrorStreamFn()),
       maxRuntimeSeconds: () => 0.05,
     });
-    await expect(tool.execute("call-t", { agent: "researcher", task: "slow" }, undefined)).rejects.toThrow(
-      /Timed out after/i,
-    );
+    const result = await tool.execute("call-t", { agent: "researcher", task: "slow" }, undefined);
+    // A timeout settles like a stop: normal result, no re-dispatch pressure.
+    expect(result.details.children[0].status).toBe("aborted");
+    expect(result.details.children[0].summary).toMatch(/Timed out after/i);
+  });
+
+  it("settles a timed-out child as aborted even when its stream ends cleanly on abort", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(hangingStreamFn()),
+      maxRuntimeSeconds: () => 0.05,
+    });
+    const result = await tool.execute("call-t2", { agent: "researcher", task: "slow" }, undefined);
+    expect(result.details.children[0].status).toBe("aborted");
+    expect(result.details.children[0].summary).toMatch(/Timed out after/i);
+  });
+
+  it("reports an explicit user stop over a timeout firing at the same moment", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(hangingStreamFn()),
+      maxRuntimeSeconds: () => 0.05,
+    });
+    const pending = tool.execute("call-race", { agent: "researcher", task: "hang" }, undefined);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    abortSubagentChild("call-race");
+    const result = await pending;
+    // The user asked for the stop; report that, not the timeout.
+    expect(result.details.children[0].status).toBe("aborted");
+    expect(result.details.children[0].summary).toBe("Stopped by user");
+  });
+
+  it("keeps a completed child's output when a stop arrives after it finishes", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(childStreamFn("real answer")),
+    });
+    const result = await tool.execute("call-late", { agent: "researcher", task: "quick" }, undefined);
+    // The dispatch already settled; no stop hook remains to flip it.
+    expect(result.details.children[0].status).toBe("done");
+    expect(result.details.children[0].summary).toBe("real answer");
   });
 
   it("reports per-child duration and token/cost usage once a child settles", async () => {
@@ -461,6 +499,22 @@ describe("createSubagentTool", () => {
     expect(child.status).toBe("done");
     expect(child.durationMs).toBeGreaterThanOrEqual(0);
     expect(child.usage).toMatchObject({ input: 3, output: 4, totalTokens: 7, costUsd: 0 });
+  });
+
+  it("records duration and partial usage for a stopped child too", async () => {
+    const usages: { totalTokens: number }[] = [];
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(abortErrorStreamFn()),
+      recordUsage: (usage) => usages.push(usage),
+      maxRuntimeSeconds: () => 0.05,
+    });
+    const result = await tool.execute("call-u-abort", { agent: "researcher", task: "t" }, undefined);
+    const child = result.details.children[0];
+    expect(child.status).toBe("aborted");
+    expect(child.durationMs).toBeGreaterThanOrEqual(0);
+    expect(child.usage).toBeDefined();
+    expect(usages).toHaveLength(1);
   });
 
   it("caps concurrent dispatches at 10 and queues the rest, promoting on stop", async () => {

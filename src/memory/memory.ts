@@ -8,7 +8,17 @@ import {
 import { tokenizeRetrievalQuery } from "../retrieval/lexical";
 
 export type MemoryKind = "preference" | "fact" | "instruction" | "summary";
+/** Scopes new memories can be written with. */
 export type MemoryScope = "global" | "vault";
+
+/**
+ * Scope values that can exist on disk. The retired project-workspace feature
+ * wrote `scope: "project"`; those records still parse verbatim instead of being
+ * silently re-scoped to `vault` (which would expose memories that were
+ * previously gated behind an active project). They simply never match an
+ * allowed search scope, and write-backs keep the original label.
+ */
+export type StoredMemoryScope = MemoryScope | "project";
 
 export interface MemoryProvenanceEntry {
   source: string;
@@ -20,7 +30,7 @@ export interface MemoryRecord {
   id: string;
   kind: MemoryKind;
   text: string;
-  scope: MemoryScope;
+  scope: StoredMemoryScope;
   source?: string;
   provenance?: readonly MemoryProvenanceEntry[];
   supersedes?: readonly string[];
@@ -66,7 +76,8 @@ export interface MemorySearchResponse {
 const DEFAULT_ALLOWED_SCOPES: readonly MemoryScope[] = ["global", "vault"];
 const DEFAULT_MAX_RESULTS = 8;
 const MEMORY_KINDS = new Set<MemoryKind>(["preference", "fact", "instruction", "summary"]);
-const MEMORY_SCOPES = new Set<MemoryScope>(["global", "vault"]);
+/** The only scopes a memory may be created or explicitly searched with. */
+export const MEMORY_SCOPES: ReadonlySet<MemoryScope> = new Set<MemoryScope>(["global", "vault"]);
 
 export async function loadMemoryRecords(adapter: DataAdapter | undefined, path: string): Promise<MemoryRecord[]> {
   if (!adapter || !(await adapter.exists(path))) return [];
@@ -90,7 +101,8 @@ export function parseMemoryRecords(jsonl: string): MemoryRecord[] {
 export function searchMemories(query: MemorySearchQuery, options: MemorySearchOptions): MemorySearchResponse {
   const queryTokens = tokenizeRetrievalQuery(query.query);
   const maxResults = Math.max(1, Math.trunc(query.maxResults ?? options.defaultMaxResults ?? DEFAULT_MAX_RESULTS));
-  const allowedScopes = new Set(options.allowedScopes ?? DEFAULT_ALLOWED_SCOPES);
+  // String-keyed so a legacy stored scope ("project") can never match.
+  const allowedScopes = new Set<string>(options.allowedScopes ?? DEFAULT_ALLOWED_SCOPES);
   const matches: MemorySearchMatch[] = [];
   let filteredCount = 0;
   let disabledCount = 0;
@@ -265,6 +277,8 @@ function memoryKind(value: unknown): MemoryKind | null {
   return typeof value === "string" && MEMORY_KINDS.has(value as MemoryKind) ? (value as MemoryKind) : null;
 }
 
-function memoryScope(value: unknown): MemoryScope | null {
-  return typeof value === "string" && MEMORY_SCOPES.has(value as MemoryScope) ? (value as MemoryScope) : null;
+function memoryScope(value: unknown): StoredMemoryScope | null {
+  if (typeof value !== "string") return null;
+  // The retired project scope parses verbatim; anything unknown defaults upstream.
+  return value === "project" || MEMORY_SCOPES.has(value as MemoryScope) ? (value as StoredMemoryScope) : null;
 }

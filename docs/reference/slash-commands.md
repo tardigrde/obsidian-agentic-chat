@@ -8,7 +8,7 @@ Slash commands run locally and are not sent to the model.
 | `/sessions [clear --confirm]` | Browse, search, reopen, rename, or delete past conversations. Clear with confirmation deletes all conversations in the current scope. |
 | `/history` | Alias for `/sessions`. |
 | `/model` | Switch model. Shift actions apply a next-prompt-only override where supported. |
-| `/effort [level]` | Set reasoning effort for the next message (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). Alias: `/thinking`. |
+| `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists across messages. Alias: `/thinking`. |
 | `/config` | Switch permission mode. |
 | `/mode` | Alias for `/config`. |
 | `/add-dir [folder]` | Grant a vault working directory. Without an argument, opens a vault folder picker. |

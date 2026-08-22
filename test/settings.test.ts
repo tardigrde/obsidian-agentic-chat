@@ -49,6 +49,11 @@ describe("mergeSettings — working directories", () => {
     expect(mergeSettings({ subagentTimeoutSeconds: "x" as unknown as number }).subagentTimeoutSeconds).toBe(0);
   });
 
+  it("caps the subagent timeout at 24h so setTimeout stays in its valid range", () => {
+    expect(mergeSettings({ subagentTimeoutSeconds: 100_000 }).subagentTimeoutSeconds).toBe(86_400);
+    expect(mergeSettings({ subagentTimeoutSeconds: Number.MAX_SAFE_INTEGER }).subagentTimeoutSeconds).toBe(86_400);
+  });
+
   it("drops a legacy projects key from stored settings", () => {
     const merged = mergeSettings({
       approval: { mutating: "ask", perTool: {}, workingDirs: [] },

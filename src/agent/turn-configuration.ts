@@ -16,15 +16,14 @@ export interface AgentTurnConfigurationOptions {
 }
 
 /**
- * Owns per-turn model/thinking overrides and the small cache behind the effort
- * picker. AgentService decides when to push these resolved values into the live
- * pi Agent; this class only tracks and resolves the next-turn configuration.
+ * Owns per-turn model overrides and the small cache behind the effort picker.
+ * AgentService decides when to push these resolved values into the live pi
+ * Agent; this class only tracks and resolves the next-turn configuration.
  */
 export class AgentTurnConfiguration {
   private readonly getSettings: () => AgenticChatSettings;
   private readonly resolveSupportedThinkingLevels: (config: ModelConfig) => ThinkingLevel[];
   private modelOverride: string | null = null;
-  private thinkingOverride: ThinkingLevel | null = null;
   private cachedLevels: { modelId: string; levels: ThinkingLevel[] } | null = null;
 
   constructor(options: AgentTurnConfigurationOptions) {
@@ -43,22 +42,6 @@ export class AgentTurnConfiguration {
 
   getActiveModelId(): string {
     return this.getModelOverride() ?? activeModelId(this.getSettings());
-  }
-
-  setThinkingOverride(level: ThinkingLevel | null): void {
-    if (level === null) {
-      this.thinkingOverride = null;
-      return;
-    }
-    const settings = this.getSettings();
-    const levels = this.getActiveThinkingLevels();
-    const defaultLevel = resolveThinkingLevelForTurn(settings.thinkingLevel, null, levels);
-    const requestedLevel = resolveThinkingLevelForTurn(settings.thinkingLevel, level, levels);
-    this.thinkingOverride = requestedLevel === defaultLevel ? null : requestedLevel;
-  }
-
-  getThinkingOverride(): ThinkingLevel | null {
-    return this.thinkingOverride;
   }
 
   getActiveThinkingLevel(): ThinkingLevel {
@@ -82,11 +65,10 @@ export class AgentTurnConfiguration {
   }
 
   thinkingLevelForTurn(settings: AgenticChatSettings = this.getSettings()): ThinkingLevel {
-    return resolveThinkingLevelForTurn(settings.thinkingLevel, this.thinkingOverride, this.getActiveThinkingLevels());
+    return resolveThinkingLevelForTurn(settings.thinkingLevel, this.getActiveThinkingLevels());
   }
 
   consumeOverrides(): void {
     this.modelOverride = null;
-    this.thinkingOverride = null;
   }
 }

@@ -142,4 +142,25 @@ describe("session jsonl", () => {
     expect(buildSessionContext(entries, null).messages).toHaveLength(0);
     expect(getLastLeafId(entries)).toBeNull();
   });
+
+  it("tolerates a legacy header that still carries retired project fields", () => {
+    // Sessions written before the projects feature was removed have projectId /
+    // projectName on the header. Parsing must keep working (and keep the extra
+    // keys verbatim) so old sessions load, list, and resume unchanged.
+    const legacyLine = JSON.stringify({
+      type: "session",
+      version: 1,
+      id: "sid",
+      timestamp: "2026-06-13T00:00:00.000Z",
+      cwd: "vault",
+      projectId: "alpha",
+      projectIdName: "Alpha",
+    });
+    const entries = parseSessionEntries(`${legacyLine}\n`);
+    expect(entries).toHaveLength(1);
+    const header = entries[0] as unknown as Record<string, unknown>;
+    expect(header.type).toBe("session");
+    expect(header.projectId).toBe("alpha");
+    expect(buildSessionContext(entries).messages).toHaveLength(0);
+  });
 });
