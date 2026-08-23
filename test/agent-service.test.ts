@@ -10,7 +10,6 @@ import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
-import { effectiveProjectSettings, projectSessionScope } from "../src/projects/projects";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 import { fakeMemoryJsonl } from "./helpers/memory-fixtures";
@@ -319,20 +318,6 @@ describe("AgentService", () => {
     expect(seen).toEqual(["anthropic/claude-3.5-sonnet", settings.openrouterModel]);
   });
 
-  it("applies a one-shot thinking override to the next prompt only, then reverts", async () => {
-    const { service, settings } = makeService(cannedStreamFn("ok"));
-    expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
-
-    service.setThinkingOverride("high");
-    expect(service.getThinkingOverride()).toBe("high");
-    expect(service.getActiveThinkingLevel()).toBe("high");
-
-    await service.sendPrompt("one hard prompt");
-    // The override was consumed by the turn it was set for.
-    expect(service.getThinkingOverride()).toBeNull();
-    expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
-  });
-
   it("keeps two tab services over one sessions dir independent", async () => {
     // Mirrors the C3 tab model: each tab is its own AgentService with its own
     // session manager, but they share the plugin's sessions directory.
@@ -445,60 +430,6 @@ describe("AgentService", () => {
     });
     expect(serializedContext).not.toContain("The user prefers concise answers");
     expect(serializedContext).not.toContain("Large vault embedding generation");
-    expect(serializedContext).not.toContain("Project-only memory");
-  });
-
-  it("activates project settings for model context, tools, and session metadata", async () => {
-    const settings: AgenticChatSettings = {
-      ...DEFAULT_SETTINGS,
-      openrouterApiKey: "test-key",
-      openrouterModel: "base/model",
-      web: { ...DEFAULT_SETTINGS.web, enabled: true },
-      projects: {
-        activeProjectId: "alpha",
-        items: [
-          {
-            id: "alpha",
-            name: "Alpha",
-            folders: ["Projects/Alpha"],
-            modelId: "project/model",
-            systemPrompt: "Use alpha project terms.",
-            tools: { web: false },
-          },
-        ],
-      },
-    };
-    const seen: Array<{ modelId: string; systemPrompt: string; tools: string[] }> = [];
-    const base = cannedStreamFn("ok");
-    const streamFn: StreamFn = ((model: Model<"openai-completions">, context: Context, options: unknown) => {
-      seen.push({
-        modelId: model.id,
-        systemPrompt: context.systemPrompt ?? "",
-        tools: (context.tools ?? []).map((tool) => tool.name),
-      });
-      return (base as (...args: unknown[]) => unknown)(model, context, options);
-    }) as unknown as StreamFn;
-    const adapter = new MemoryAdapter();
-    const service = new AgentService({
-      app: minimalApp(),
-      getSettings: () => effectiveProjectSettings(settings),
-      sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", () =>
-        projectSessionScope(settings.projects),
-      ),
-      confirmToolCall: async () => ({ approved: true, remember: false }),
-      streamFn,
-    });
-
-    await service.sendPrompt("project prompt");
-
-    expect(seen[0]).toMatchObject({
-      modelId: "project/model",
-    });
-    expect(seen[0]?.systemPrompt).toContain("Project: Alpha");
-    expect(seen[0]?.systemPrompt).toContain("Use alpha project terms.");
-    expect(seen[0]?.tools).not.toContain("web_search");
-    expect(seen[0]?.tools).not.toContain("fetch_url");
-    expect(service.getSessionInfo()).toMatchObject({ projectId: "alpha", projectName: "Alpha" });
   });
 
   it("runs ask_user through the registered UI handler and continues", async () => {
@@ -1070,13 +1001,11 @@ describe("AgentService", () => {
     const { service, settings } = makeService(failingStream);
 
     service.setModelOverride("anthropic/claude-3.5-sonnet");
-    service.setThinkingOverride("high");
     await service.sendPrompt("fail");
 
     expect(service.getError()).toBe("stream failed");
     expect(service.getModelOverride()).toBeNull();
     expect(service.getActiveModelId()).toBe(settings.openrouterModel);
-    expect(service.getThinkingOverride()).toBeNull();
     expect(service.getActiveThinkingLevel()).toBe(settings.thinkingLevel);
   });
 

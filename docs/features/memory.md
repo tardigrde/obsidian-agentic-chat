@@ -17,7 +17,6 @@ Memory stores long-term facts, preferences, instructions, and summaries that per
 | --- | --- |
 | `global` | All vaults and sessions. |
 | `vault` | Only this vault. |
-| `project` | Only the active project (filtered until project context is active). |
 
 ## Commands
 

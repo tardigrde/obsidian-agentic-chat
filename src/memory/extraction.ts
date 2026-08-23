@@ -10,6 +10,7 @@ import {
   type MemoryKind,
   type MemoryRecord,
   type MemoryScope,
+  type StoredMemoryScope,
 } from "./memory";
 import { containsSensitiveText } from "../privacy/redaction";
 
@@ -243,7 +244,7 @@ function memoryKey(record: Pick<MemoryRecord, "kind" | "text" | "scope">): strin
   return proposalKey(record.kind, record.text, record.scope);
 }
 
-function proposalKey(kind: MemoryKind, text: string, scope: MemoryScope): string {
+function proposalKey(kind: MemoryKind, text: string, scope: StoredMemoryScope): string {
   return `${kind}:${scope}:${normalizeText(text)}`;
 }
 

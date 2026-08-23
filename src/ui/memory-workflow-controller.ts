@@ -13,7 +13,13 @@ import {
   forgetMemory,
   writeMemoryRecords,
 } from "../memory/management";
-import { loadMemoryRecords, type MemoryKind, type MemoryRecord, type MemoryScope } from "../memory/memory";
+import {
+  loadMemoryRecords,
+  MEMORY_SCOPES,
+  type MemoryKind,
+  type MemoryRecord,
+  type MemoryScope,
+} from "../memory/memory";
 import { containsSensitiveText } from "../privacy/redaction";
 import type { WorkflowRenderer } from "./workflow-renderer";
 
@@ -115,7 +121,7 @@ export class MemoryWorkflowController {
   private async addManual(raw: string): Promise<void> {
     const parsed = parseManualMemorySpec(raw, this.options.defaultScope());
     if (!parsed.text) {
-      this.options.renderer.error("Usage: /memory add [preference|fact|instruction|summary] [global|vault|project] <text>");
+      this.options.renderer.error("Usage: /memory add [preference|fact|instruction|summary] [global|vault] <text>");
       return;
     }
     if (containsSensitiveText(parsed.text)) {
@@ -240,7 +246,6 @@ export class MemoryWorkflowController {
 }
 
 const MEMORY_KINDS = new Set<MemoryKind>(["preference", "fact", "instruction", "summary"]);
-const MEMORY_SCOPES = new Set<MemoryScope>(["global", "vault", "project"]);
 
 function parseManualMemorySpec(raw: string, defaultScope: MemoryScope): { kind: MemoryKind; scope: MemoryScope; text: string } {
   const tokens = raw.trim().split(/\s+/).filter(Boolean);

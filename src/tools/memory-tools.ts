@@ -6,6 +6,7 @@ import {
   formatMemorySearchResponse,
   loadMemoryRecords,
   memoryCitations,
+  MEMORY_SCOPES,
   searchMemories,
   type MemoryKind,
   type MemoryScope,
@@ -87,5 +88,5 @@ function parseKind(value: unknown): MemoryKind | undefined {
 }
 
 function parseScope(value: unknown): MemoryScope | undefined {
-  return value === "global" || value === "vault" ? value : undefined;
+  return typeof value === "string" && MEMORY_SCOPES.has(value as MemoryScope) ? (value as MemoryScope) : undefined;
 }

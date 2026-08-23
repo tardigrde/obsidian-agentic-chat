@@ -57,7 +57,6 @@ function makeController(options: {
     controller: new SemanticIndexWorkflowController({
       adapter: adapter.asDataAdapter(),
       indexPath: () => INDEX_PATH,
-      activeProject: () => ({ name: "Client Work", folders: ["Projects"] }),
       activeNotePath: () => options.activeNotePath ?? "Research/Retrieval.md",
       loadDocuments: async (scopeFolders) => {
         loadedFolders.push(scopeFolders);

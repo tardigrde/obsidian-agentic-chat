@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { App, DataAdapter } from "obsidian";
 import { addEvidenceSource, createEvidenceLedger } from "../src/retrieval/evidence-ledger";
+import { memoryRecordsToJsonl } from "../src/memory/management";
 import {
   formatMemorySearchResponse,
   loadMemoryRecords,
@@ -44,6 +45,33 @@ describe("memory retrieval", () => {
     ]);
   });
 
+  it("keeps a retired project-scoped record verbatim and excluded from search", () => {
+    // Legacy data.json-era row written by the removed projects feature. It must
+    // parse with its original scope — NOT be re-scoped to vault (which would
+    // surface previously project-gated memories in every context).
+    const records = parseMemoryRecords(
+      [
+        JSON.stringify({ id: "mem-proj-secret", kind: "fact", scope: "project", text: "secret project roadmap dates" }),
+        JSON.stringify({ id: "mem-vault-ok", kind: "fact", scope: "vault", text: "secret project roadmap dates" }),
+      ].join("\n"),
+    );
+
+    const projectRecord = records.find((record) => record.id === "mem-proj-secret");
+    expect(projectRecord?.scope).toBe("project");
+
+    // Write-back (forget/consolidate/export all rewrite the file) must keep the
+    // retired label instead of persisting an upgraded scope.
+    expect(memoryRecordsToJsonl(records)).toContain('"scope":"project"');
+
+    // Identical text must stay hidden while its vault twin stays searchable.
+    const response = searchMemories(
+      { query: "secret project roadmap dates" },
+      { records, allowedScopes: ["global", "vault"] },
+    );
+    expect(response.matches.map((match) => match.record.id)).toEqual(["mem-vault-ok"]);
+    expect(response.filteredCount).toBe(1);
+  });
+
   it("retrieves citable memories with lexical matching and scope filters", () => {
     const response = searchMemories(
       { query: "concise citations embeddings gpu", maxResults: 10 },
@@ -51,7 +79,7 @@ describe("memory retrieval", () => {
     );
 
     expect(response.matches.map((match) => match.record.id)).toEqual(["mem-pref-concise", "mem-fact-embeddings"]);
-    expect(response.filteredCount).toBe(1);
+    expect(response.filteredCount).toBe(0);
     expect(response.disabledCount).toBe(1);
     expect(memoryCitations(response.matches)).toEqual([
       "[[Notes/Preferences.md#Style|Style preference]]",
@@ -112,14 +140,13 @@ describe("memory retrieval", () => {
     expect(text).toContain("Memory search: embedding gpu citations");
     expect(text).toContain("Large vault embedding generation can be expensive without GPU acceleration.");
     expect(text).toContain("The user prefers concise answers with exact source citations.");
-    expect(text).not.toContain("Project-only memory");
     expect(text).not.toContain("Disabled memory");
     expect(details).toMatchObject({
       memoryPath: MEMORY_PATH,
       query: "embedding gpu citations",
       returned: 2,
       totalMatches: 2,
-      filteredCount: 1,
+      filteredCount: 0,
       disabledCount: 1,
       memoryIds: ["mem-fact-embeddings", "mem-pref-concise"],
       citations: [

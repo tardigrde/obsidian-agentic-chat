@@ -41,6 +41,28 @@ describe("mergeSettings — working directories", () => {
     expect(mergeSettings({}).approval.workingDirs).toEqual([]);
   });
 
+  it("heals the subagent timeout to whole seconds, 0 = disabled", () => {
+    expect(mergeSettings(null).subagentTimeoutSeconds).toBe(0);
+    expect(mergeSettings({ subagentTimeoutSeconds: 300 }).subagentTimeoutSeconds).toBe(300);
+    expect(mergeSettings({ subagentTimeoutSeconds: -5 }).subagentTimeoutSeconds).toBe(0);
+    expect(mergeSettings({ subagentTimeoutSeconds: 12.9 }).subagentTimeoutSeconds).toBe(12);
+    expect(mergeSettings({ subagentTimeoutSeconds: "x" as unknown as number }).subagentTimeoutSeconds).toBe(0);
+  });
+
+  it("caps the subagent timeout at 24h so setTimeout stays in its valid range", () => {
+    expect(mergeSettings({ subagentTimeoutSeconds: 100_000 }).subagentTimeoutSeconds).toBe(86_400);
+    expect(mergeSettings({ subagentTimeoutSeconds: Number.MAX_SAFE_INTEGER }).subagentTimeoutSeconds).toBe(86_400);
+  });
+
+  it("drops a legacy projects key from stored settings", () => {
+    const merged = mergeSettings({
+      approval: { mutating: "ask", perTool: {}, workingDirs: [] },
+      projects: { activeProjectId: "alpha", items: [{ id: "alpha", name: "Alpha", folders: ["A"] }] },
+    } as unknown as Partial<AgenticChatSettings>);
+    expect(JSON.stringify(merged)).not.toContain("projects");
+    expect((merged as unknown as Record<string, unknown>).projects).toBeUndefined();
+  });
+
   it("keeps a stored string[] working set", () => {
     const merged = mergeSettings({ approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes", "Work"] } });
     expect(merged.approval.workingDirs).toEqual(["Notes", "Work"]);

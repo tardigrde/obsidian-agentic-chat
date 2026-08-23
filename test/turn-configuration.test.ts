@@ -38,23 +38,6 @@ describe("AgentTurnConfiguration", () => {
     });
 
     expect(turns.getActiveThinkingLevel()).toBe("low");
-
-    turns.setThinkingOverride("high");
-
-    expect(turns.getActiveThinkingLevel()).toBe("low");
-    expect(turns.getThinkingOverride()).toBeNull();
-  });
-
-  it("does not keep a no-op thinking override", () => {
-    const turns = new AgentTurnConfiguration({
-      getSettings: () => settings({ thinkingLevel: "off" }),
-      resolveSupportedThinkingLevels: () => ["off"],
-    });
-
-    turns.setThinkingOverride("off");
-
-    expect(turns.getActiveThinkingLevel()).toBe("off");
-    expect(turns.getThinkingOverride()).toBeNull();
   });
 
   it("caches supported thinking levels by active model id", () => {
@@ -77,18 +60,16 @@ describe("AgentTurnConfiguration", () => {
     expect(calls).toBe(2);
   });
 
-  it("consumes one-shot model and thinking overrides together", () => {
+  it("consumes the one-shot model override", () => {
     const turns = new AgentTurnConfiguration({
       getSettings: () => settings(),
       resolveSupportedThinkingLevels: () => ["off", "low"],
     });
 
     turns.setModelOverride("override/model");
-    turns.setThinkingOverride("high");
     turns.consumeOverrides();
 
     expect(turns.getModelOverride()).toBeNull();
-    expect(turns.getThinkingOverride()).toBeNull();
     expect(turns.getActiveModelId()).toBe("default/model");
     expect(turns.getActiveThinkingLevel()).toBe("low");
   });

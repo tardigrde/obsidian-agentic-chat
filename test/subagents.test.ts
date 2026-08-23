@@ -110,6 +110,55 @@ function streamingChildStreamFn(text: string): StreamFn {
   }) as unknown as StreamFn;
 }
 
+/** A child stream that always fails with an error message, no network. */
+function errorStreamFn(message = "boom"): StreamFn {
+  return ((model: Model<"openai-completions">) => {
+    const stream = createAssistantMessageEventStream();
+    const failure = {
+      role: "assistant" as const,
+      content: [] as { type: "text"; text: string }[],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 1, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "error" as const,
+      errorMessage: message,
+      timestamp: Date.now(),
+    };
+    queueMicrotask(() => {
+      stream.push({ type: "error", reason: "error", error: failure });
+      stream.end(failure);
+    });
+    return stream;
+  }) as unknown as StreamFn;
+}
+
+/** A child stream that errors when its run signal aborts (real abort semantics). */
+function abortErrorStreamFn(message = "Request was aborted"): StreamFn {
+  return ((model: Model<"openai-completions">, _context: unknown, options?: { signal?: AbortSignal }) => {
+    const stream = createAssistantMessageEventStream();
+    const fail = (): void => {
+      const failure = {
+        role: "assistant" as const,
+        content: [] as { type: "text"; text: string }[],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: "aborted" as const,
+        errorMessage: message,
+        timestamp: Date.now(),
+      };
+      stream.push({ type: "error", reason: "aborted", error: failure });
+      stream.end(failure);
+    };
+    const signal = options?.signal;
+    if (signal?.aborted) fail();
+    else signal?.addEventListener("abort", fail, { once: true });
+    return stream;
+  }) as unknown as StreamFn;
+}
+
 function makeChild(streamFn: StreamFn): Agent {
   return new Agent({
     streamFn,
@@ -332,7 +381,7 @@ describe("createSubagentTool", () => {
       getProfiles: () => [RESEARCHER],
       createChildAgent: () => {
         const isFirst = created++ === 0;
-        return makeChild(isFirst ? hangingStreamFn() : childStreamFn("ok"));
+        return makeChild(isFirst ? abortErrorStreamFn() : childStreamFn("ok"));
       },
     });
     const controller = new AbortController();
@@ -344,9 +393,128 @@ describe("createSubagentTool", () => {
     abortSubagentChild("call-a");
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
-    expect(firstResult.details.children[0].status).not.toBe("running");
+    // A stopped child settles as a normal (non-error) result marked "aborted" —
+    // the step renders red via its child status, but the parent is not nudged
+    // to re-dispatch the task the user just stopped.
+    expect(firstResult.details.children[0].status).toBe("aborted");
+    expect(firstResult.details.children[0].summary).toBe("Stopped by user");
     expect(secondResult.details.children[0].status).toBe("done");
     controller.abort();
+  });
+
+  it("settles a failed child as an error and rejects the dispatch call", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(errorStreamFn("disk full")),
+    });
+    await expect(tool.execute("call-f", { agent: "researcher", task: "t" }, undefined)).rejects.toThrow(
+      /failed.*disk full/i,
+    );
+  });
+
+  it("marks a parent-stopped child as aborted without rejecting the dispatch", async () => {
+    const controller = new AbortController();
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(abortErrorStreamFn()),
+    });
+    const pending = tool.execute("call-s", { agent: "researcher", task: "hang" }, controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    controller.abort();
+    const result = await pending;
+    expect(result.details.children[0].status).toBe("aborted");
+  });
+
+  it("marks a stopped child as aborted even when the stream finishes cleanly", async () => {
+    // A provider stream may end normally on abort (no errorMessage). The stop
+    // flags must win so the child never settles as a green-check "done".
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(hangingStreamFn()),
+    });
+    const controller = new AbortController();
+    const pending = tool.execute("call-c", { agent: "researcher", task: "hang" }, controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    controller.abort();
+    const result = await pending;
+    expect(result.details.children[0].status).toBe("aborted");
+  });
+
+  it("settles a timed-out child as aborted without rejecting the dispatch", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(abortErrorStreamFn()),
+      maxRuntimeSeconds: () => 0.05,
+    });
+    const result = await tool.execute("call-t", { agent: "researcher", task: "slow" }, undefined);
+    // A timeout settles like a stop: normal result, no re-dispatch pressure.
+    expect(result.details.children[0].status).toBe("aborted");
+    expect(result.details.children[0].summary).toMatch(/Timed out after/i);
+  });
+
+  it("settles a timed-out child as aborted even when its stream ends cleanly on abort", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(hangingStreamFn()),
+      maxRuntimeSeconds: () => 0.05,
+    });
+    const result = await tool.execute("call-t2", { agent: "researcher", task: "slow" }, undefined);
+    expect(result.details.children[0].status).toBe("aborted");
+    expect(result.details.children[0].summary).toMatch(/Timed out after/i);
+  });
+
+  it("reports an explicit user stop over a timeout firing at the same moment", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(hangingStreamFn()),
+      maxRuntimeSeconds: () => 0.05,
+    });
+    const pending = tool.execute("call-race", { agent: "researcher", task: "hang" }, undefined);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    abortSubagentChild("call-race");
+    const result = await pending;
+    // The user asked for the stop; report that, not the timeout.
+    expect(result.details.children[0].status).toBe("aborted");
+    expect(result.details.children[0].summary).toBe("Stopped by user");
+  });
+
+  it("keeps a completed child's output when a stop arrives after it finishes", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(childStreamFn("real answer")),
+    });
+    const result = await tool.execute("call-late", { agent: "researcher", task: "quick" }, undefined);
+    // The dispatch already settled; no stop hook remains to flip it.
+    expect(result.details.children[0].status).toBe("done");
+    expect(result.details.children[0].summary).toBe("real answer");
+  });
+
+  it("reports per-child duration and token/cost usage once a child settles", async () => {
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(childStreamFn("measured")),
+    });
+    const result = await tool.execute("call-u", { agent: "researcher", task: "t" }, undefined);
+    const child = result.details.children[0];
+    expect(child.status).toBe("done");
+    expect(child.durationMs).toBeGreaterThanOrEqual(0);
+    expect(child.usage).toMatchObject({ input: 3, output: 4, totalTokens: 7, costUsd: 0 });
+  });
+
+  it("records duration and partial usage for a stopped child too", async () => {
+    const usages: { totalTokens: number }[] = [];
+    const tool = createSubagentTool({
+      getProfiles: () => [RESEARCHER],
+      createChildAgent: () => makeChild(abortErrorStreamFn()),
+      recordUsage: (usage) => usages.push(usage),
+      maxRuntimeSeconds: () => 0.05,
+    });
+    const result = await tool.execute("call-u-abort", { agent: "researcher", task: "t" }, undefined);
+    const child = result.details.children[0];
+    expect(child.status).toBe("aborted");
+    expect(child.durationMs).toBeGreaterThanOrEqual(0);
+    expect(child.usage).toBeDefined();
+    expect(usages).toHaveLength(1);
   });
 
   it("caps concurrent dispatches at 10 and queues the rest, promoting on stop", async () => {

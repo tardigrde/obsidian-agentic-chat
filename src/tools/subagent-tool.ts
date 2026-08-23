@@ -21,13 +21,17 @@ export type SubagentTranscriptEntry =
 export interface SubagentChildStatus {
   agent: string;
   task: string;
-  status: "queued" | "running" | "done" | "error";
+  status: "queued" | "running" | "done" | "error" | "aborted";
   /** Final summary text (or the error message) once the child settles. */
   summary?: string;
   /** Id used to abort just this child. */
   stopId?: string;
   /** Live transcript accumulated while the child runs. */
   transcript?: SubagentTranscriptEntry[];
+  /** Wall-clock runtime of the child session, set once it settles. */
+  durationMs?: number;
+  /** Token/cost usage of the child session, set when the provider reports it. */
+  usage?: { input: number; output: number; totalTokens: number; costUsd: number };
 }
 
 const activeStops = new Map<string, () => void>();
@@ -54,6 +58,8 @@ export interface SubagentToolDeps {
   createChildAgent: (profile: AgentProfile) => Agent;
   /** Report a finished child's token usage for session cost accounting. */
   recordUsage?: (usage: Usage) => void;
+  /** Auto-abort a child that runs longer than this many seconds. 0 disables. */
+  maxRuntimeSeconds?: () => number;
 }
 
 const SubagentParameters = Type.Object({
@@ -125,8 +131,8 @@ export function createSubagentTool(
           emit();
         });
       } catch {
-        status.status = "error";
-        status.summary = "aborted";
+        status.status = "aborted";
+        status.summary = "Stopped before it started";
         flushEmit();
         return {
           content: [{ type: "text", text: truncateToolOutput(`Subagent "${agent}" aborted before it started.`) }],
@@ -139,12 +145,28 @@ export function createSubagentTool(
       try {
         await runSingleChild(deps, status, profile, task, toolCallId, signal, scheduleEmit);
       } catch (error) {
-        status.status = "error";
-        status.summary = error instanceof Error ? error.message : String(error);
+        if (signal?.aborted) {
+          status.status = "aborted";
+          status.summary = "Stopped by user";
+        } else {
+          status.status = "error";
+          status.summary = truncateToolOutput(
+            error instanceof Error ? error.message : String(error),
+            PER_CHILD_SUMMARY_CHARS,
+          );
+        }
       } finally {
         releaseSlot(slots);
       }
       flushEmit();
+
+      // A failed child surfaces as a failed tool call so the Dispatch step
+      // renders red. A *stopped* child returns a normal result instead: the
+      // parent must not feel pressure to re-dispatch a task the user just
+      // stopped — the step still renders as stopped via its child statuses.
+      if (status.status === "error") {
+        throw new Error(`Subagent "${agent}" failed: ${status.summary ?? "unknown error"}`);
+      }
 
       return {
         content: [{ type: "text", text: truncateToolOutput(mergeSummaries([status])) }],
@@ -230,16 +252,31 @@ async function runSingleChild(
   scheduleEmit: () => void,
 ): Promise<void> {
   const child = deps.createChildAgent(profile);
+  const startedAt = Date.now();
 
   // 1:1 means the tool call id is a stable, unique stop id for this child.
   const stopId = parentToolCallId;
   status.stopId = stopId;
   status.transcript = [];
-  activeStops.set(stopId, () => child.abort());
+  let stoppedLocally = false;
+  activeStops.set(stopId, () => {
+    stoppedLocally = true;
+    child.abort();
+  });
 
   const onAbort = (): void => child.abort();
   signal?.addEventListener("abort", onAbort);
   if (signal?.aborted) child.abort();
+
+  const maxSeconds = deps.maxRuntimeSeconds?.() ?? 0;
+  let timedOut = false;
+  const timeoutTimer =
+    maxSeconds > 0
+      ? window.setTimeout(() => {
+          timedOut = true;
+          child.abort();
+        }, maxSeconds * 1000)
+      : null;
 
   const unsub = child.subscribe((event: AgentEvent) => {
     if (!status.transcript) return;
@@ -261,16 +298,45 @@ async function runSingleChild(
   try {
     await child.prompt(task);
     await child.waitForIdle();
+    // The child finished its work: drop the stop hook immediately so a Stop
+    // click landing after completion can't flag this child as stopped and
+    // discard an answer it actually produced.
+    activeStops.delete(stopId);
+  } catch (error) {
+    // An abort-shaped failure is classified below from the settle flags; only a
+    // genuine child error propagates to the caller's error classification.
+    if (!timedOut && !stoppedLocally && !signal?.aborted) throw error;
   } finally {
+    if (timeoutTimer) window.clearTimeout(timeoutTimer);
     unsub();
     signal?.removeEventListener("abort", onAbort);
     activeStops.delete(stopId);
+    status.durationMs = Date.now() - startedAt;
+    const usage = sumAssistantUsage(child.state.messages);
+    if (usage) {
+      deps.recordUsage?.(usage);
+      status.usage = {
+        input: usage.input ?? 0,
+        output: usage.output ?? 0,
+        totalTokens: usage.totalTokens ?? 0,
+        costUsd: usage.cost?.total ?? 0,
+      };
+    }
   }
 
-  const usage = sumAssistantUsage(child.state.messages);
-  if (usage) deps.recordUsage?.(usage);
   const error = child.state.errorMessage;
-  if (error) {
+  // Settle precedence: an explicit stop wins over a timeout firing at the same
+  // moment, and both beat a clean finish — a stopped/timed-out child must never
+  // settle as a green-check "done". Both settle as "aborted" (a normal result,
+  // no re-dispatch pressure) rather than "error" (which throws and invites the
+  // parent to retry the very task the user just stopped or capped).
+  if (signal?.aborted || stoppedLocally) {
+    status.status = "aborted";
+    status.summary = "Stopped by user";
+  } else if (timedOut) {
+    status.status = "aborted";
+    status.summary = `Timed out after ${maxSeconds}s`;
+  } else if (error) {
     status.status = "error";
     status.summary = truncateToolOutput(error, PER_CHILD_SUMMARY_CHARS);
   } else {

@@ -1,9 +1,7 @@
-import type { AgentProject } from "../projects/projects";
 import type { RetrievalIndexScope } from "../retrieval/policy";
 import { normalizeFolderPath } from "../vault/path";
 
 export interface SemanticIndexScopeContext {
-  activeProject?: Pick<AgentProject, "name" | "folders">;
   activeNotePath?: string | null;
 }
 
@@ -34,32 +32,33 @@ export function parseSemanticIndexScopeCommand(
     return { scope: { kind: "tag", label: `#${tag}`, tags: [tag] }, confirmVault };
   }
 
-  if (lower === "project") {
-    const project = context.activeProject;
-    if (!project) return { error: "No project is active. Use /project first, or choose a folder/tag/vault scope." };
-    return { scope: { kind: "project", label: project.name, paths: project.folders }, confirmVault };
-  }
-
   if (lower === "vault") {
     return { scope: { kind: "vault", label: "Whole vault" }, confirmVault };
   }
 
-  return { error: `Unknown semantic index scope "${kind}". Use folder, tag, project, or vault.` };
+  return { error: `Unknown semantic index scope "${kind}". Use folder, tag, or vault.` };
 }
 
 function defaultSemanticIndexScope(
   context: SemanticIndexScopeContext,
   confirmVault: boolean,
 ): ParsedSemanticIndexScope {
-  const project = context.activeProject;
-  if (project) return { scope: { kind: "project", label: project.name, paths: project.folders }, confirmVault };
-
   const activeFolder = activeNoteFolder(context.activeNotePath);
   if (activeFolder !== null) {
-    return { scope: { kind: "folder", label: activeFolder || "/", paths: [activeFolder] }, confirmVault };
+    // A root-level active note resolves to folder "" — which matches every file
+    // in the vault. That is a vault-wide index without the --confirm-vault
+    // gate, so refuse and make the scope explicit instead.
+    if (activeFolder === "") {
+      return {
+        error:
+          "The active note is in the vault root, so the default scope would cover the whole vault. " +
+          "Choose a scope: folder <path>, tag <tag>, or vault --confirm-vault.",
+      };
+    }
+    return { scope: { kind: "folder", label: activeFolder, paths: [activeFolder] }, confirmVault };
   }
 
-  return { error: "Choose a scope: folder <path>, tag <tag>, project, or vault --confirm-vault." };
+  return { error: "Choose a scope: folder <path>, tag <tag>, or vault --confirm-vault." };
 }
 
 function folderSemanticIndexScope(folder: string, confirmVault: boolean): ParsedSemanticIndexScope {
@@ -69,7 +68,14 @@ function folderSemanticIndexScope(folder: string, confirmVault: boolean): Parsed
   } catch {
     return { error: `Invalid folder path "${folder}".` };
   }
-  return { scope: { kind: "folder", label: normalized || "/", paths: [normalized] }, confirmVault };
+  // "/" or "." normalize to the vault root — i.e. everything. Route that intent
+  // through the explicit vault confirmation instead of a silent full-vault index.
+  if (!normalized) {
+    return confirmVault
+      ? { scope: { kind: "vault", label: "Whole vault" }, confirmVault }
+      : { error: `"${folder}" covers the whole vault. Re-run with --confirm-vault to index everything.` };
+  }
+  return { scope: { kind: "folder", label: normalized, paths: [normalized] }, confirmVault };
 }
 
 function activeNoteFolder(path: string | null | undefined): string | null {

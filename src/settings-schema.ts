@@ -19,7 +19,6 @@ import {
   OPENROUTER_API_KEY_SECRET_ID,
   WEB_SEARCH_API_KEY_SECRET_ID,
 } from "./secrets/secret-store";
-import { DEFAULT_PROJECT_SETTINGS, healProjectSettings, type ProjectSettings } from "./projects/projects";
 import { DEFAULT_TOOL_BUDGET_SETTINGS, healToolBudgetSettings, type ToolBudgetSettings } from "./agent/tool-budget";
 import {
   DEFAULT_OBSERVABILITY_SETTINGS,
@@ -55,6 +54,7 @@ export interface AgenticChatSettings {
    * keep all tools (the tool budget never drops) and disable auto-compaction.
    */
   openaiCompatibleContextWindow: number;
+  /** Reasoning effort for your messages, set via the composer knob or `/effort`. */
   thinkingLevel: ThinkingLevel;
   temperature: number;
   /** 0 means "let the provider decide". */
@@ -77,6 +77,8 @@ export interface AgenticChatSettings {
   agentsFolder: string;
   /** Include the built-in subagent roster (researcher / reviewer / editor). */
   enableBuiltinAgents: boolean;
+  /** Auto-abort a subagent after this many seconds (max 86400). 0 disables the timeout. */
+  subagentTimeoutSeconds: number;
   /**
    * Newline-separated gitignore-style globs the agent may never read or see.
    * Enforced at the tool layer; matched files are invisible, not just denied.
@@ -94,8 +96,6 @@ export interface AgenticChatSettings {
   web: WebSettings;
   /** Remote MCP tools over HTTPS Streamable HTTP. Off by default — sends data off-device. */
   mcp: McpSettings;
-  /** Optional project workspaces that scope notes, tools, model/profile, and sessions. */
-  projects: ProjectSettings;
   /** Optional semantic retrieval index configuration. Uses existing provider secrets. */
   embeddings: EmbeddingSettings;
   /** Optional opt-in OTLP/Langfuse observability export. */
@@ -174,6 +174,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   plugins: DEFAULT_PLUGIN_SETTINGS,
   agentsFolder: "",
   enableBuiltinAgents: true,
+  subagentTimeoutSeconds: 0,
   ignoredGlobs: "",
   notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
   compaction: { enabled: true, thresholdPercent: 80 },
@@ -197,16 +198,27 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
     noProxy: "localhost,127.0.0.1,::1",
     servers: [],
   },
-  projects: DEFAULT_PROJECT_SETTINGS,
   embeddings: DEFAULT_EMBEDDING_SETTINGS,
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
 };
 
 /** Merge stored settings over defaults, healing nested objects. */
 export function mergeSettings(stored: Partial<AgenticChatSettings> | null | undefined): AgenticChatSettings {
+  // Drop retired feature keys (e.g. the removed `projects` workspaces) from the
+  // persisted object so a legacy key from an older data.json is neither carried
+  // nor re-saved.
+  const remaining = { ...(stored ?? {}) };
+  const retiredKeys = RETIRED_SETTING_KEYS.filter((key) => key in remaining);
+  for (const key of retiredKeys) {
+    delete (remaining as Record<string, unknown>)[key];
+  }
+  // Make the silent drop of hand-authored config visible (until the next save).
+  if (retiredKeys.length > 0) {
+    console.warn(`Agentic chat: dropped retired setting(s): ${retiredKeys.join(", ")}.`);
+  }
   return {
     ...DEFAULT_SETTINGS,
-    ...stored,
+    ...remaining,
     // Heal enum-like fields so an unknown (or retired ask/plan/agent) value can't break the gate or prompt.
     provider: healProvider(stored?.provider),
     openrouterApiKeySecretId: stringSetting(stored?.openrouterApiKeySecretId, OPENROUTER_API_KEY_SECRET_ID),
@@ -242,7 +254,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     },
     mcp: healMcpSettings(stored?.mcp),
     plugins: healPluginSettings(stored?.plugins),
-    projects: healProjectSettings(stored?.projects),
+    subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
   };
@@ -250,6 +262,18 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
 
 function stringSetting(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+/** Retired feature keys removed from persisted data.json on load. */
+const RETIRED_SETTING_KEYS = ["projects"] as const;
+
+/** Upper bound for the subagent timeout (24h) — keeps `setTimeout` under its 32-bit delay range. */
+export const MAX_SUBAGENT_TIMEOUT_SECONDS = 86_400;
+
+/** Heal the subagent auto-abort timeout: whole seconds clamped to [0, 24h]; 0 = disabled. */
+export function healSubagentTimeout(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.min(Math.max(0, Math.trunc(value)), MAX_SUBAGENT_TIMEOUT_SECONDS);
 }
 
 /** Heal the context-window override: 0 = auto-detect, otherwise a positive integer. */

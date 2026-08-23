@@ -60,6 +60,7 @@ export class AgentSubagentRuntime {
       getProfiles: () => this.getResources().profiles,
       createChildAgent: (profile) => this.createChildAgent(profile),
       recordUsage: this.recordUsage,
+      maxRuntimeSeconds: () => this.getSettings().subagentTimeoutSeconds,
     });
   }
 

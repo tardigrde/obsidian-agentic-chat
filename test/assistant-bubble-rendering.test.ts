@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { classifyRenderedChatLink, enhanceCallouts, renderMermaidBlocks, sourceChipName } from "../src/ui/assistant-bubble";
+import {
+  classifyRenderedChatLink,
+  enhanceCallouts,
+  renderMermaidBlocks,
+  sourceChipName,
+  subagentResultForcesError,
+} from "../src/ui/assistant-bubble";
 
 class FakeClassList {
   private readonly values = new Set<string>();
@@ -174,6 +180,21 @@ describe("assistant markdown rendering helpers", () => {
     expect(sourceChipName("")).toBe("");
     expect(sourceChipName("   ")).toBe("");
     expect(sourceChipName("dir/")).toBe("dir");
+  });
+
+  it("forces the stopped-dispatch verdict from live results and wrapped replay details", () => {
+    const aborted = { agent: "explorer", task: "hang", status: "aborted", summary: "Stopped by user" };
+    const done = { agent: "explorer", task: "work", status: "done", summary: "ok" };
+    // Live path: endStep receives the full tool result object.
+    const liveResult = { content: [{ type: "text", text: "stopped" }], details: { kind: "subagent", children: [aborted] } };
+    expect(subagentResultForcesError(liveResult)).toBe(true);
+    // Replay path: chat-view wraps the persisted details as `{ details }`.
+    const replayShape = { details: { kind: "subagent", children: [aborted] } };
+    expect(subagentResultForcesError(replayShape)).toBe(true);
+    // A clean child (or no statuses at all) never forces red.
+    expect(subagentResultForcesError({ details: { kind: "subagent", children: [done] } })).toBe(false);
+    expect(subagentResultForcesError(undefined)).toBe(false);
+    expect(subagentResultForcesError({})).toBe(false);
   });
 
   it("classifies rendered vault and external links", () => {

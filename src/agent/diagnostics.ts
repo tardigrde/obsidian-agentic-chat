@@ -25,7 +25,6 @@ export interface AgentRuntimeDiagnostics {
   modelOverride: string | null;
   contextWindow: number | null;
   thinkingLevel: ThinkingLevel;
-  thinkingOverride: ThinkingLevel | null;
   mode: string;
   outputStyle: string;
   approval: {
@@ -72,7 +71,6 @@ export interface BuildRuntimeDiagnosticsOptions {
   modelOverride: string | null;
   contextWindow: number | null;
   thinkingLevel: ThinkingLevel;
-  thinkingOverride: ThinkingLevel | null;
   isStreaming: boolean;
   canUndo: boolean;
   lastError: string | undefined;
@@ -98,7 +96,6 @@ export function buildRuntimeDiagnostics(options: BuildRuntimeDiagnosticsOptions)
     /** Resolved context window for the active model (null when unknown). */
     contextWindow: options.contextWindow,
     thinkingLevel: options.thinkingLevel,
-    thinkingOverride: options.thinkingOverride,
     mode: settings.mode,
     outputStyle: settings.outputStyle,
     approval: {
@@ -168,12 +165,7 @@ export function formatRuntimeDiagnosticsRows(diagnostics: AgentRuntimeDiagnostic
     ["Session", formatSession(diagnostics)],
     ["Provider", diagnostics.provider],
     ["Model", diagnostics.modelOverride ? `${diagnostics.model} (next message only)` : diagnostics.model],
-    [
-      "Thinking",
-      diagnostics.thinkingOverride
-        ? `${diagnostics.thinkingOverride} (next message only)`
-        : diagnostics.thinkingLevel,
-    ],
+    ["Thinking", diagnostics.thinkingLevel],
     ["Mode", diagnostics.mode],
     ["Output style", diagnostics.outputStyle],
     ["Tools", formatList(diagnostics.tools)],

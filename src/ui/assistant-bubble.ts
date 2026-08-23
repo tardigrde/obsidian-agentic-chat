@@ -1,12 +1,14 @@
 import { type App, type Component, loadMermaid, MarkdownRenderer, Notice, setIcon } from "obsidian";
 import type { Usage } from "@earendil-works/pi-ai";
-import type { SubagentChildStatus } from "../tools/subagent-tool";
+import { SUBAGENT_TOOL_NAME, type SubagentChildStatus } from "../tools/subagent-tool";
 import type { AskUserDetails } from "../tools/ask-user-tool";
 import {
   callPath,
   describeCall,
   formatCallBody,
+  formatCost,
   formatElapsed,
+  formatTokenInteger,
   HIDE_RESULT_TOOLS,
   PATH_TOOLS,
   safeJson,
@@ -19,7 +21,26 @@ const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
   running: "running…",
   done: "done",
   error: "failed",
+  aborted: "stopped",
 };
+
+/** Extract the child statuses from a subagent details payload, or [] when absent/malformed. */
+function subagentChildren(details: unknown): SubagentChildStatus[] {
+  const shaped = details as { kind?: string; children?: SubagentChildStatus[] } | undefined;
+  return shaped?.kind === "subagent" && Array.isArray(shaped.children) ? shaped.children : [];
+}
+
+/**
+ * Whether a subagent dispatch's settled child statuses force the step to render
+ * as failed. A stopped (or timed-out) dispatch returns a NORMAL tool result —
+ * so the parent won't re-dispatch — but the UI must still read it as stopped.
+ * Accepts both shapes: the live tool result object and replay's wrapped
+ * persisted details (`{ details }`).
+ */
+export function subagentResultForcesError(resultObject: unknown): boolean {
+  const children = subagentChildren((resultObject as { details?: unknown } | undefined)?.details);
+  return children.some((child) => child.status === "error" || child.status === "aborted");
+}
 
 /** Per-step DOM + identity kept on the bubble for live updates and settle. */
 interface StepEntry {
@@ -389,13 +410,10 @@ export class AssistantBubble {
   updateStep(id: string, partial: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
-    const details = (partial as { details?: unknown } | undefined)?.details as
-      | { kind?: string; children?: SubagentChildStatus[] }
-      | AskUserDetails
-      | undefined;
-    if (!details) return;
-    if (details.kind === "subagent" && "children" in details && Array.isArray(details.children)) {
-      this.renderSubagentChildren(step.body, details.children);
+    const details = (partial as { details?: unknown } | undefined)?.details;
+    const children = subagentChildren(details);
+    if (children.length > 0) {
+      this.renderSubagentChildren(step.body, children);
       if (step.card.parentElement) this.syncStepCollapsible(step.card.parentElement, step.body);
       // Auto-open so live child progress is visible while the step runs.
       step.card.addClass("is-open");
@@ -445,6 +463,7 @@ export class AssistantBubble {
     const running = children.some((child) => child.status === "running");
     const queued = !running && children.some((child) => child.status === "queued");
     const failed = children.some((child) => child.status === "error");
+    const stopped = !failed && children.some((child) => child.status === "aborted");
     let text: string;
     let stateClass: string;
     if (running) {
@@ -455,6 +474,9 @@ export class AssistantBubble {
       stateClass = "is-queued";
     } else if (failed) {
       text = "Failed";
+      stateClass = "is-error";
+    } else if (stopped) {
+      text = "Stopped";
       stateClass = "is-error";
     } else {
       text = "Done";
@@ -473,12 +495,21 @@ export class AssistantBubble {
     if (!summary) summary = row.createEl("summary");
     const nameText = `${child.agent}: ${truncateText(child.task, 120)}`;
     const statusText = SUBAGENT_STATUS_LABEL[child.status];
+    const metaText = this.subagentMetaText(child);
     const currentName = summary.querySelector<HTMLElement>(".agentic-chat-subagent-name")?.textContent;
     const currentStatus = summary.querySelector<HTMLElement>(".agentic-chat-subagent-status")?.textContent;
-    if (currentName === nameText && currentStatus === statusText) return;
+    const currentMeta = summary.querySelector<HTMLElement>(".agentic-chat-subagent-meta")?.textContent;
+    // Absent meta renders as "" (queued/running); compare normalized so a
+    // settled header with no meta isn't rebuilt on every live emit.
+    if (currentName === nameText && currentStatus === statusText && (currentMeta ?? "") === metaText) return;
     summary.empty();
     summary.createSpan({ cls: "agentic-chat-subagent-name", text: nameText });
     summary.createSpan({ cls: "agentic-chat-subagent-status", text: statusText });
+    // Small, subtle completion readout once the child settles: how long it ran,
+    // how many tokens it used, and the approximate cost (when priced).
+    if (metaText) {
+      summary.createSpan({ cls: "agentic-chat-subagent-meta", text: metaText });
+    }
     if (child.status === "running" && child.stopId && this.actions.onStopSubagentChild) {
       const stopBtn = summary.createEl("button", { cls: "agentic-chat-subagent-stop", text: "Stop" });
       const id = child.stopId;
@@ -488,6 +519,19 @@ export class AssistantBubble {
         this.actions.onStopSubagentChild?.(id);
       });
     }
+  }
+
+  private subagentMetaText(child: SubagentChildStatus): string {
+    if (child.status === "queued" || child.status === "running") return "";
+    const parts: string[] = [];
+    if (child.usage) {
+      // Cost is a normalized field of its own — render it whenever positive,
+      // even when the provider reported no token counts.
+      if (child.usage.totalTokens > 0) parts.push(`${formatTokenInteger(child.usage.totalTokens)} tok`);
+      if (child.usage.costUsd > 0) parts.push(formatCost(child.usage.costUsd));
+    }
+    if (child.durationMs !== undefined) parts.unshift(formatElapsed(child.durationMs));
+    return parts.join(" · ");
   }
 
   private renderSubagentBody(row: HTMLDetailsElement, child: SubagentChildStatus): void {
@@ -538,6 +582,9 @@ export class AssistantBubble {
   endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
+    if (step.name === SUBAGENT_TOOL_NAME && subagentResultForcesError(resultObject)) {
+      isError = true;
+    }
     step.card.removeClass("is-running");
     step.card.addClass(isError ? "is-error" : "is-done");
     setIcon(step.icon, isError ? "x-circle" : "check-circle-2");

@@ -5,6 +5,12 @@ import type { Usage } from "@earendil-works/pi-ai";
 export interface ToolResultLite {
   text: string;
   isError: boolean;
+  /**
+   * Structured details persisted on the `toolResult` message (e.g. the subagent
+   * child statuses). History replay needs them to re-derive a stopped dispatch's
+   * red rendering, which the plain text/isError pair cannot express.
+   */
+  details?: unknown;
 }
 
 /** Index every `toolResult` message by its originating tool-call id. */
@@ -12,7 +18,11 @@ export function collectToolResults(messages: AgentMessage[]): Map<string, ToolRe
   const map = new Map<string, ToolResultLite>();
   for (const message of messages) {
     if (message.role === "toolResult") {
-      map.set(message.toolCallId, { text: toolResultText(message), isError: message.isError });
+      map.set(message.toolCallId, {
+        text: toolResultText(message),
+        isError: message.isError,
+        details: (message as { details?: unknown }).details,
+      });
     }
   }
   return map;

@@ -72,6 +72,7 @@ import {
   PROVIDERS,
   PROVIDER_LABELS,
   embeddingModelPlaceholder,
+  healSubagentTimeout,
   type AgenticChatSettings,
   type NetworkSettings,
 } from "./settings-schema";
@@ -1900,6 +1901,22 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         await this.save();
       },
     );
+    new Setting(containerEl)
+      .setName("Subagent timeout")
+      .setDesc(
+        "Auto-stop a subagent that runs longer than this many seconds (0 disables, max 86400). " +
+          "The child is aborted and the Dispatch step settles as stopped.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("0 = disabled")
+          .setValue(settings.subagentTimeoutSeconds > 0 ? String(settings.subagentTimeoutSeconds) : "")
+          .onChange(async (value) => {
+            // Same heal path as load: whole seconds clamped to [0, 24h].
+            settings.subagentTimeoutSeconds = healSubagentTimeout(Number(value));
+            await this.save();
+          }),
+      );
 
     new Setting(containerEl).setName("Semantic retrieval").setHeading();
     new Setting(containerEl)

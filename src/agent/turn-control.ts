@@ -68,8 +68,7 @@ export function resolveModelConfigForTurn(config: ModelConfig, modelOverride: st
 
 export function resolveThinkingLevelForTurn(
   defaultLevel: ThinkingLevel,
-  override: ThinkingLevel | null,
   supportedLevels: ThinkingLevel[],
 ): ThinkingLevel {
-  return clampThinkingLevel(override ?? defaultLevel, supportedLevels);
+  return clampThinkingLevel(defaultLevel, supportedLevels);
 }
