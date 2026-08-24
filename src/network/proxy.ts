@@ -16,6 +16,14 @@ export const DEFAULT_PROXY_SETTINGS: Readonly<ProxySettings> = {
   noProxy: "localhost,127.0.0.1,::1",
 };
 
+/**
+ * Settings-input example. Plain http is the ONLY proxy scheme
+ * {@link normalizeProxyUrl} accepts (the tunnel dials the proxy over a plain
+ * TCP socket), so the example deliberately shows that scheme.
+ */
+// NOSONAR: intentional http literal — see docstring above.
+export const PROXY_URL_EXAMPLE = "http://192.0.2.10:3128";
+
 /** Normalize a user-entered proxy URL to a canonical http:// URL; anything else collapses to "". */
 export function normalizeProxyUrl(input: string | undefined): string {
   if (!input) return "";

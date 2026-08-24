@@ -67,7 +67,7 @@ import {
   type EmbeddingSettings,
 } from "./retrieval/embeddings";
 
-import { effectiveProxy, DEFAULT_PROXY_SETTINGS, type ProxySettings } from "./network/proxy";
+import { effectiveProxy, DEFAULT_PROXY_SETTINGS, PROXY_URL_EXAMPLE, type ProxySettings } from "./network/proxy";
 import {
   DEFAULT_SETTINGS,
   PROVIDERS,
@@ -293,7 +293,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     this.renderProxySettingRows(containerEl, settings.network, {
       proxyDesc:
         "Optional HTTP proxy for plugin-owned network calls: OpenRouter/OpenAI-compatible chat, model browsing, web tools, and MCP unless MCP overrides it.",
-      proxyPlaceholder: "http://192.0.2.10:3128",
       noProxyDesc: "Comma-separated hosts/domains that bypass the plugin proxy.",
     }, async (update) => {
       Object.assign(settings.network, update);
@@ -1519,7 +1518,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private renderProxySettingRows(
     containerEl: HTMLElement,
     values: ProxySettings,
-    copy: { proxyDesc: string; proxyPlaceholder?: string; noProxyDesc: string },
+    copy: { proxyDesc: string; noProxyDesc: string },
     onWrite: (update: Partial<ProxySettings>) => Promise<void>,
   ): void {
     new Setting(containerEl)
@@ -1527,7 +1526,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setDesc(copy.proxyDesc)
       .addText((text) =>
         text
-          .setPlaceholder(copy.proxyPlaceholder ?? "http://host:port")
+          .setPlaceholder(PROXY_URL_EXAMPLE)
           .setValue(values.proxyUrl)
           .onChange(async (value) => {
             await onWrite({ proxyUrl: value.trim() });
