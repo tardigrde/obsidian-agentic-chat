@@ -21,8 +21,7 @@ export const DEFAULT_PROXY_SETTINGS: Readonly<ProxySettings> = {
  * {@link normalizeProxyUrl} accepts (the tunnel dials the proxy over a plain
  * TCP socket), so the example deliberately shows that scheme.
  */
-// NOSONAR: intentional http literal — see docstring above.
-export const PROXY_URL_EXAMPLE = "http://192.0.2.10:3128";
+export const PROXY_URL_EXAMPLE = "http://192.0.2.10:3128"; // NOSONAR: intentional http literal — see docstring above.
 
 /** Normalize a user-entered proxy URL to a canonical http:// URL; anything else collapses to "". */
 export function normalizeProxyUrl(input: string | undefined): string {
