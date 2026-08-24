@@ -293,7 +293,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     this.renderProxySettingRows(containerEl, settings.network, {
       proxyDesc:
         "Optional HTTP proxy for plugin-owned network calls: OpenRouter/OpenAI-compatible chat, model browsing, web tools, and MCP unless MCP overrides it.",
-      proxyPlaceholder: "https://192.0.2.10:3128",
+      proxyPlaceholder: "http://192.0.2.10:3128",
       noProxyDesc: "Comma-separated hosts/domains that bypass the plugin proxy.",
     }, async (update) => {
       Object.assign(settings.network, update);
@@ -1527,7 +1527,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setDesc(copy.proxyDesc)
       .addText((text) =>
         text
-          .setPlaceholder(copy.proxyPlaceholder ?? "https://host:port")
+          .setPlaceholder(copy.proxyPlaceholder ?? "http://host:port")
           .setValue(values.proxyUrl)
           .onChange(async (value) => {
             await onWrite({ proxyUrl: value.trim() });
