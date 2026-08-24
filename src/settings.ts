@@ -67,6 +67,7 @@ import {
   type EmbeddingSettings,
 } from "./retrieval/embeddings";
 
+import { effectiveProxy, DEFAULT_PROXY_SETTINGS, type ProxySettings } from "./network/proxy";
 import {
   DEFAULT_SETTINGS,
   PROVIDERS,
@@ -289,33 +290,15 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName("Network proxy").setHeading();
 
-    new Setting(containerEl)
-      .setName("HTTP proxy")
-      .setDesc(
+    this.renderProxySettingRows(containerEl, settings.network, {
+      proxyDesc:
         "Optional HTTP proxy for plugin-owned network calls: OpenRouter/OpenAI-compatible chat, model browsing, web tools, and MCP unless MCP overrides it.",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("https://192.0.2.10:3128")
-          .setValue(settings.network.proxyUrl)
-          .onChange(async (value) => {
-            settings.network.proxyUrl = value.trim();
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("No proxy")
-      .setDesc("Comma-separated hosts/domains that bypass the plugin proxy.")
-      .addText((text) =>
-        text
-          .setPlaceholder("localhost,127.0.0.1,::1")
-          .setValue(settings.network.noProxy)
-          .onChange(async (value) => {
-            settings.network.noProxy = value.trim();
-            await this.save();
-          }),
-      );
+      proxyPlaceholder: "https://192.0.2.10:3128",
+      noProxyDesc: "Comma-separated hosts/domains that bypass the plugin proxy.",
+    }, async (update) => {
+      Object.assign(settings.network, update);
+      await this.save();
+    });
 
     if (settings.provider === "openrouter") {
       this.renderOpenRouter(containerEl, settings);
@@ -879,31 +862,13 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     if (!settings.mcp.enabled) return;
 
-    new Setting(containerEl)
-      .setName("HTTP proxy")
-      .setDesc("Optional MCP-only override. Leave empty to inherit the global network proxy from the Models tab.")
-      .addText((text) =>
-        text
-          .setPlaceholder("https://host:port")
-          .setValue(settings.mcp.proxyUrl)
-          .onChange(async (value) => {
-            settings.mcp.proxyUrl = value.trim();
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("No proxy")
-      .setDesc("Comma-separated hosts/domains that bypass the MCP proxy.")
-      .addText((text) =>
-        text
-          .setPlaceholder("localhost,127.0.0.1,::1")
-          .setValue(settings.mcp.noProxy)
-          .onChange(async (value) => {
-            settings.mcp.noProxy = value.trim();
-            await this.save();
-          }),
-      );
+    this.renderProxySettingRows(containerEl, settings.mcp, {
+      proxyDesc: "Optional MCP-only override. Leave empty to inherit the global network proxy from the Models tab.",
+      noProxyDesc: "Comma-separated hosts/domains that bypass the MCP proxy.",
+    }, async (update) => {
+      Object.assign(settings.mcp, update);
+      await this.save();
+    });
 
     this.ensurePluginsLoaded();
 
@@ -1055,31 +1020,14 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
-      .setName("HTTP proxy")
-      .setDesc("Optional observability-only override. Leave empty to inherit the global network proxy from the Models tab.")
-      .addText((text) =>
-        text
-          .setPlaceholder("https://host:port")
-          .setValue(settings.observability.proxyUrl)
-          .onChange(async (value) => {
-            settings.observability.proxyUrl = value.trim();
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("No proxy")
-      .setDesc("Comma-separated hosts/domains that bypass the observability proxy.")
-      .addText((text) =>
-        text
-          .setPlaceholder("localhost,127.0.0.1,::1")
-          .setValue(settings.observability.noProxy)
-          .onChange(async (value) => {
-            settings.observability.noProxy = value.trim();
-            await this.save();
-          }),
-      );
+    this.renderProxySettingRows(containerEl, settings.observability, {
+      proxyDesc:
+        "Optional observability-only override. Leave empty to inherit the global network proxy from the Models tab.",
+      noProxyDesc: "Comma-separated hosts/domains that bypass the observability proxy.",
+    }, async (update) => {
+      Object.assign(settings.observability, update);
+      await this.save();
+    });
 
     if (settings.observability.backend === "langfuse") {
       this.renderSecretInput(containerEl, {
@@ -1560,7 +1508,43 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
   private effectiveMcpProxySettings(): NetworkSettings {
     const { network, mcp } = this.plugin.settings;
-    return mcp.proxyUrl ? { proxyUrl: mcp.proxyUrl, noProxy: mcp.noProxy } : network;
+    return effectiveProxy(mcp, network);
+  }
+
+  /**
+   * The HTTP-proxy + no-proxy row pair shared by the network, MCP, and
+   * observability tabs. Only the descriptions differ per tab; persistence is
+   * delegated so each tab writes its own settings slice.
+   */
+  private renderProxySettingRows(
+    containerEl: HTMLElement,
+    values: ProxySettings,
+    copy: { proxyDesc: string; proxyPlaceholder?: string; noProxyDesc: string },
+    onWrite: (update: Partial<ProxySettings>) => Promise<void>,
+  ): void {
+    new Setting(containerEl)
+      .setName("HTTP proxy")
+      .setDesc(copy.proxyDesc)
+      .addText((text) =>
+        text
+          .setPlaceholder(copy.proxyPlaceholder ?? "https://host:port")
+          .setValue(values.proxyUrl)
+          .onChange(async (value) => {
+            await onWrite({ proxyUrl: value.trim() });
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("No proxy")
+      .setDesc(copy.noProxyDesc)
+      .addText((text) =>
+        text
+          .setPlaceholder(DEFAULT_PROXY_SETTINGS.noProxy)
+          .setValue(values.noProxy)
+          .onChange(async (value) => {
+            await onWrite({ noProxy: value.trim() });
+          }),
+      );
   }
 
   private handleMcpOAuthProgress(server: McpServerSettings, event: McpOAuthProgressEvent): void {

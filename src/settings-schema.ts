@@ -2,6 +2,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OLLAMA_BASE_URL,
+  healProviderId,
   type ModelConfig,
   type PrivacySettings,
   type ProviderId,
@@ -12,7 +13,7 @@ import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/o
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from "./plugins/settings";
 import { DEFAULT_PLUGINS_FOLDER } from "./plugins/loader";
-import { healMcpSettings, normalizeMcpNoProxy, normalizeMcpProxyUrl, type McpSettings } from "./mcp/settings";
+import { healMcpSettings, type McpSettings } from "./mcp/settings";
 import { WEB_SEARCH_PROVIDERS, type WebSearchProvider } from "./tools/web-search";
 import {
   OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
@@ -20,6 +21,12 @@ import {
   WEB_SEARCH_API_KEY_SECRET_ID,
 } from "./secrets/secret-store";
 import { DEFAULT_TOOL_BUDGET_SETTINGS, healToolBudgetSettings, type ToolBudgetSettings } from "./agent/tool-budget";
+import {
+  DEFAULT_PROXY_SETTINGS,
+  type ProxySettings,
+  normalizeNoProxy,
+  normalizeProxyUrl,
+} from "./network/proxy";
 import {
   DEFAULT_OBSERVABILITY_SETTINGS,
   healObservabilitySettings,
@@ -102,12 +109,12 @@ export interface AgenticChatSettings {
   observability: ObservabilitySettings;
 }
 
-export interface NetworkSettings {
-  /** Optional HTTP proxy URL used by plugin-owned request paths. */
-  proxyUrl: string;
-  /** Comma-separated hosts/domains that bypass the plugin proxy. */
-  noProxy: string;
-}
+/**
+ * The global network proxy every plugin-owned request path can inherit.
+ * Shape and normalization are shared with the MCP and observability overrides
+ * (see {@link ProxySettings}); empty proxyUrl means "no global proxy".
+ */
+export type NetworkSettings = ProxySettings;
 
 export interface WebSettings {
   /**
@@ -179,10 +186,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
   compaction: { enabled: true, thresholdPercent: 80 },
   toolBudget: { ...DEFAULT_TOOL_BUDGET_SETTINGS },
-  network: {
-    proxyUrl: "",
-    noProxy: "localhost,127.0.0.1,::1",
-  },
+  network: { ...DEFAULT_PROXY_SETTINGS },
   web: {
     enabled: false,
     searchProvider: "tavily",
@@ -284,8 +288,8 @@ function healContextWindow(value: unknown): number {
 
 function healNetworkSettings(stored: Partial<NetworkSettings> | null | undefined): NetworkSettings {
   return {
-    proxyUrl: normalizeMcpProxyUrl(stored?.proxyUrl),
-    noProxy: normalizeMcpNoProxy(stored?.noProxy),
+    proxyUrl: normalizeProxyUrl(stored?.proxyUrl),
+    noProxy: normalizeNoProxy(stored?.noProxy),
   };
 }
 
@@ -314,7 +318,7 @@ function healPluginSettings(stored: Partial<PluginSettings> | null | undefined):
 }
 
 function healProvider(stored: ProviderId | undefined): ProviderId {
-  return stored && PROVIDERS.includes(stored) ? stored : DEFAULT_SETTINGS.provider;
+  return healProviderId(stored, DEFAULT_SETTINGS.provider);
 }
 
 export function embeddingModelPlaceholder(provider: EmbeddingProviderId): string {
@@ -349,7 +353,8 @@ export function apiKeyForProvider(settings: AgenticChatSettings, provider: strin
   return settings.openrouterApiKey.trim() || undefined;
 }
 
-export const PROVIDERS: ProviderId[] = ["openrouter", "ollama", "openai-compatible"];
+// Re-exported for the settings UI and tests; defined next to ProviderId in llm/models.
+export { PROVIDERS } from "./llm/models";
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
   openrouter: "OpenRouter",

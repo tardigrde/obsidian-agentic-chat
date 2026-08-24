@@ -1,4 +1,4 @@
-import { normalizeMcpNoProxy, normalizeMcpProxyUrl } from "../mcp/settings";
+import { DEFAULT_PROXY_SETTINGS, type ProxySettings, normalizeNoProxy, normalizeProxyUrl } from "../network/proxy";
 
 export const OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID = "agentic-chat-langfuse-public-key";
 export const OBSERVABILITY_LANGFUSE_SECRET_KEY_SECRET_ID = "agentic-chat-langfuse-secret-key";
@@ -7,17 +7,13 @@ export const OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID = "agentic-chat-observabi
 export type ObservabilityBackend = "langfuse" | "otlp";
 export type ObservabilityPayloadMode = "metadata" | "redacted-previews" | "full-content";
 
-export interface ObservabilitySettings {
+export interface ObservabilitySettings extends ProxySettings {
   /** Opt-in telemetry export. Off by default; no endpoint is built in. */
   enabled: boolean;
   /** Langfuse is a convenience preset over OTLP/HTTP JSON. */
   backend: ObservabilityBackend;
   /** Langfuse base URL or generic OTLP /v1/traces endpoint, depending on backend. */
   endpoint: string;
-  /** Optional observability-only HTTP proxy override. Empty inherits the global proxy. */
-  proxyUrl: string;
-  /** Comma-separated hosts/domains that bypass the observability proxy. */
-  noProxy: string;
   /** 0-100 percentage of turns to export. */
   sampleRate: number;
   /** How much prompt/response text may leave the vault. */
@@ -42,8 +38,7 @@ export const DEFAULT_OBSERVABILITY_SETTINGS: ObservabilitySettings = {
   enabled: false,
   backend: "langfuse",
   endpoint: "",
-  proxyUrl: "",
-  noProxy: "localhost,127.0.0.1,::1",
+  ...DEFAULT_PROXY_SETTINGS,
   sampleRate: 100,
   payloadMode: "metadata",
   langfusePublicKeySecretId: OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
@@ -66,8 +61,8 @@ export function healObservabilitySettings(
     enabled: stored?.enabled === true,
     backend: healBackend(stored?.backend),
     endpoint: normalizeObservabilityEndpoint(stored?.endpoint),
-    proxyUrl: normalizeMcpProxyUrl(stored?.proxyUrl),
-    noProxy: normalizeMcpNoProxy(stored?.noProxy),
+    proxyUrl: normalizeProxyUrl(stored?.proxyUrl),
+    noProxy: normalizeNoProxy(stored?.noProxy),
     sampleRate: clampSampleRate(stored?.sampleRate),
     payloadMode: healPayloadMode(stored?.payloadMode),
     langfusePublicKeySecretId: stringSetting(

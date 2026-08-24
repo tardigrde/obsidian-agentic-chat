@@ -1,14 +1,12 @@
 import type { WebFetcher, WebHttpRequest, WebHttpResponse } from "../tools/web-fetch";
 import { createObsidianFetcher } from "../tools/web-fetch";
+import type { ProxySettings } from "../network/proxy";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
 
 const DEFAULT_HTTPS_PORT = 443;
 const DEFAULT_HTTP_PORT = 80;
 
-export interface ProxyFetchSettings {
-  proxyUrl: string;
-  noProxy: string;
-}
+export type ProxyFetchSettings = ProxySettings;
 
 export function createMcpFetcher(settings: ProxyFetchSettings, fallback: WebFetcher = createObsidianFetcher()): WebFetcher {
   return createProxiedFetcher(settings, fallback);

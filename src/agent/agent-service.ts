@@ -11,6 +11,7 @@ import { type ImageContent, type Usage, type UserMessage } from "@earendil-works
 import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider } from "../settings";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
+import { effectiveProxy } from "../network/proxy";
 import { createObsidianFetcher, type WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
 import { createDynamicProxiedFetcher } from "../mcp/fetcher";
@@ -735,9 +736,7 @@ export class AgentService {
 
   private effectiveObservabilityProxySettings(): { proxyUrl: string; noProxy: string } {
     const settings = this.getSettings();
-    return settings.observability.proxyUrl
-      ? { proxyUrl: settings.observability.proxyUrl, noProxy: settings.observability.noProxy }
-      : settings.network;
+    return effectiveProxy(settings.observability, settings.network);
   }
 
   private sessionDefaults(): SessionDefaults {
