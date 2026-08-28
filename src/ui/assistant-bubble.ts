@@ -585,6 +585,19 @@ export class AssistantBubble {
     if (step.name === SUBAGENT_TOOL_NAME && subagentResultForcesError(resultObject)) {
       isError = true;
     }
+    // Replay path: `ChatView.renderAssistantMessage` only calls startStep+endStep,
+    // so the dispatch card would stay empty without this. Ensure persisted
+    // children are rendered here without auto-opening the outer card — reload
+    // shows a collapsed Dispatch card (Codex `ReplayKind` parity), while live
+    // `updateStep` already auto-opened.
+    if (step.name === SUBAGENT_TOOL_NAME) {
+      const maybeDetails = (resultObject as { details?: unknown } | undefined)?.details;
+      const children = subagentChildren(maybeDetails);
+      if (children.length > 0) {
+        this.renderSubagentChildren(step.body, children);
+        this.syncStepCollapsible(step.card.parentElement ?? step.card, step.body);
+      }
+    }
     step.card.removeClass("is-running");
     step.card.addClass(isError ? "is-error" : "is-done");
     setIcon(step.icon, isError ? "x-circle" : "check-circle-2");

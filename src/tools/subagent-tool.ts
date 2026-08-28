@@ -47,6 +47,24 @@ export interface SubagentDetails {
   children: SubagentChildStatus[];
 }
 
+/**
+ * Persisted shape strips volatile live fields (`transcript`/`stopId`) to keep
+ * JSONL bounded. Live `snapshot` retains them for streaming UI; persisted
+ * `persistedSnapshot` is what lands in `toolResult.details` for reload.
+ * Both shapes are accepted by `subagentChildren`/`renderSubagentBody`.
+ */
+export function toPersistedChild(status: SubagentChildStatus): SubagentChildStatus {
+  const { transcript: _transcript, stopId: _stopId, ...persisted } = status;
+  return persisted as SubagentChildStatus;
+}
+
+export function persistedSnapshot(statuses: SubagentChildStatus[]): SubagentDetails {
+  return { kind: "subagent", children: statuses.map(toPersistedChild) };
+}
+
+/** Pending error details for a toolCallId that threw — injected via `afterToolCall` so the error toolResult still carries the dispatch card. */
+export const pendingSubagentErrorDetails = new Map<string, SubagentDetails>();
+
 export interface SubagentTask {
   agent: string;
   task: string;
@@ -166,6 +184,7 @@ export function createSubagentTool(
       // parent must not feel pressure to re-dispatch a task the user just
       // stopped — the step still renders as stopped via its child statuses.
       if (status.status === "error") {
+        pendingSubagentErrorDetails.set(toolCallId, persistedSnapshot([status]));
         throw new Error(`Subagent "${agent}" failed: ${status.summary ?? "unknown error"}`);
       }
 

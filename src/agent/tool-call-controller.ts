@@ -10,7 +10,13 @@ import {
 import type { ApprovalPolicy } from "./approval";
 import { isMcpToolName, mcpServerIdFromToolName } from "../mcp/tools";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
-import { SUBAGENT_TOOL_NAME, normalizeTasks } from "../tools/subagent-tool";
+import {
+  pendingSubagentErrorDetails,
+  persistedSnapshot,
+  SUBAGENT_TOOL_NAME,
+  normalizeTasks,
+  type SubagentChildStatus,
+} from "../tools/subagent-tool";
 import type { AgentProfile } from "./subagents";
 import { resolveModePolicy } from "./modes";
 import { resolveWorkingDirPolicy } from "./working-dir";
@@ -45,8 +51,10 @@ export interface BeforeToolCallContext {
 export interface AfterToolCallContext {
   toolCall: {
     id: string;
+    name?: string;
   };
   isError: boolean;
+  result?: { details?: unknown };
 }
 
 interface ToolCallControllerOptions {
@@ -143,12 +151,42 @@ export class AgentToolCallController {
     return decision;
   }
 
-  async afterToolCall(context: AfterToolCallContext): Promise<undefined> {
+  async afterToolCall(
+    context: AfterToolCallContext,
+  ): Promise<{ details?: unknown; isError?: boolean } | undefined> {
     const entry = this.pendingUndo.get(context.toolCall.id);
     if (entry) {
       this.pendingUndo.delete(context.toolCall.id);
       // Only record successful mutations; a failed tool left nothing to undo.
       if (!context.isError) this.undoStack.push(entry);
+    }
+    // Error-path subagent dispatches throw, so the harness's error `toolResult`
+    // would otherwise have empty `details` — inject the persisted dispatch card
+    // so reload can rehydrate it. The live path already rendered via `onUpdate`.
+    if (context.isError) {
+      const pending = pendingSubagentErrorDetails.get(context.toolCall.id);
+      if (pending) {
+        pendingSubagentErrorDetails.delete(context.toolCall.id);
+        return { details: pending };
+      }
+    }
+    // Bounded persistence: strip live-only `transcript`/`stopId` from the
+    // success-path `toolResult.details` so JSONL stays small. Live
+    // `tool_execution_update` already showed the full transcript; the test
+    // path `tool.execute` bypasses this hook, so its `stopId` assertion keeps
+    // passing while persisted history is trimmed.
+    const details = (context.result as { details?: unknown } | undefined)?.details as
+      | { kind?: string; children?: SubagentChildStatus[] }
+      | undefined;
+    if (details?.kind === "subagent" && Array.isArray(details.children)) {
+      const needsStrip = details.children.some(
+        (child) =>
+          (child as unknown as Record<string, unknown>).transcript !== undefined ||
+          (child as unknown as Record<string, unknown>).stopId !== undefined,
+      );
+      if (needsStrip) {
+        return { details: persistedSnapshot(details.children) };
+      }
     }
     return undefined;
   }
