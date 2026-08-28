@@ -47,11 +47,12 @@ Set the default mode, mutating-tool policy, per-tool overrides, working director
 
 ## Web
 
-Enable web access and configure Tavily, Brave, or SearXNG credentials and endpoints.
+Enable web access and configure Tavily, Brave, or SearXNG credentials and endpoints, plus an optional destination allowlist.
 
 - **Search provider** — Tavily, Brave, or SearXNG.
 - **Max results** — Default search results to return (1–10).
 - **Fetch character limit** — Cap on characters of fetched page text returned to the model.
+- **Fetch allowlist** (`settings.web.allowedHosts`, comma-separated host suffixes, e.g. `example.com, *.wikipedia.org, *`) — limits `fetch_url` destinations with label-boundary-aware matching; empty allows all public hosts. Deny wins over SSRF and on every redirect hop. Web/MCP/vault tool outputs are wrapped as untrusted data (`[BEGIN_UNTRUSTED_TOOL_OUTPUT ...]` / `[END_UNTRUSTED_TOOL_OUTPUT]`, inner markers escaped) so the model does not follow injected instructions inside tool results.
 
 ## MCP
 
