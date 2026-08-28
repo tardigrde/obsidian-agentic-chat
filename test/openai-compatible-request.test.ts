@@ -429,6 +429,59 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     expect(result.content).toEqual([{ type: "text", text: "recovered" }]);
   });
 
+  it("retries 503 twice with backoff+jitter and succeeds", async () => {
+    let attempts = 0;
+    const requester: OpenAICompatibleRequester = async () => {
+      attempts += 1;
+      if (attempts <= 2) {
+        return { status: 503, text: "Service Unavailable", headers: {}, json: { error: { message: "Service Unavailable" } } };
+      }
+      return {
+        status: 200,
+        text: "",
+        json: { choices: [{ message: { role: "assistant", content: "ok" }, finish_reason: "stop" }] },
+      };
+    };
+    const { result } = await collect(
+      streamOpenAICompatibleViaRequestUrl(model(), { messages: [{ role: "user", content: "ping", timestamp: 1 }] }, { apiKey: "test-key", maxRetries: 2 }, requester),
+    );
+    expect(attempts).toBe(3);
+    expect(result.content).toEqual([{ type: "text", text: "ok" }]);
+  });
+
+  it("honors Retry-After for 429 and waits at least 2s", async () => {
+    let attempts = 0;
+    const requester: OpenAICompatibleRequester = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return { status: 429, text: "Too Many Requests", headers: { "retry-after": "2" }, json: { error: { message: "Too Many Requests" } } };
+      }
+      return { status: 200, text: "", json: { choices: [{ message: { role: "assistant", content: "recovered" }, finish_reason: "stop" }] } };
+    };
+    const start = Date.now();
+    const { result } = await collect(
+      streamOpenAICompatibleViaRequestUrl(model(), { messages: [{ role: "user", content: "ping", timestamp: 1 }] }, { apiKey: "test-key", maxRetries: 1 }, requester),
+    );
+    const elapsed = Date.now() - start;
+    expect(attempts).toBe(2);
+    expect(elapsed).toBeGreaterThanOrEqual(1900);
+    expect(result.content).toEqual([{ type: "text", text: "recovered" }]);
+  });
+
+  it("does not retry 401 permanent errors", async () => {
+    let attempts = 0;
+    const requester: OpenAICompatibleRequester = async () => {
+      attempts += 1;
+      return { status: 401, text: '{"error":{"message":"Unauthorized"}}', headers: {}, json: { error: { message: "Unauthorized" } } };
+    };
+    const { events, result } = await collect(
+      streamOpenAICompatibleViaRequestUrl(model(), { messages: [{ role: "user", content: "ping", timestamp: 1 }] }, { apiKey: "bad-key", maxRetries: 2 }, requester),
+    );
+    expect(attempts).toBe(1);
+    expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "error" })]));
+    expect(result.stopReason).toBe("error");
+  });
+
   it("finishes as aborted when the signal fires before requestUrl returns", async () => {
     let resolveRequest: ((response: Awaited<ReturnType<OpenAICompatibleRequester>>) => void) | undefined;
     const requester: OpenAICompatibleRequester = () =>

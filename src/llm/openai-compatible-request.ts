@@ -17,6 +17,12 @@ import {
 import { convertMessages } from "@earendil-works/pi-ai/api/openai-completions";
 import type { WebFetcher } from "../tools/web-fetch";
 import { normalizeOpenAICompatibleApiBaseUrl } from "./models";
+import {
+  backoffDelayMs,
+  classifyError,
+  classifyHttpResponse,
+  sleep,
+} from "../agent/error-classifier";
 
 export interface OpenAICompatibleRequest {
   url: string;
@@ -206,30 +212,31 @@ async function requestCompletionWithRetries(
     try {
       const response = await withRequestGuards(requester(request), options?.timeoutMs, options?.signal);
       throwIfRequestAborted(options?.signal);
-      if (attempt >= maxRetries || !isRetryableResponse(response)) return response;
+      const classified = classifyHttpResponse(response.status, response.headers, extractErrorDetail(response) || response.text);
+      if (attempt >= maxRetries || !classified.retryable) return response;
+      const delayMs = backoffDelayMs(attempt, classified.retryAfterMs);
+      if (options?.maxRetryDelayMs !== undefined && options.maxRetryDelayMs > 0 && delayMs > options.maxRetryDelayMs) {
+        throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`, { cause: classified });
+      }
+      await sleep(delayMs, options?.signal);
     } catch (error) {
       if (options?.signal?.aborted || error instanceof RequestAbortError) throw error;
-      if (attempt >= maxRetries || error instanceof RequestTimeoutError) throw error;
+      const base = classifyError(error);
+      const classified = error instanceof RequestTimeoutError ? { ...base, retryable: true, class: "transient" as const } : base;
+      if (attempt >= maxRetries || !classified.retryable) throw error;
+      const delayMs = backoffDelayMs(attempt, classified.retryAfterMs);
+      if (options?.maxRetryDelayMs !== undefined && options.maxRetryDelayMs > 0 && delayMs > options.maxRetryDelayMs) {
+        throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`, { cause: error });
+      }
+      await sleep(delayMs, options?.signal);
     }
 
-    await waitForRetryDelay(attempt, options);
     attempt += 1;
   }
 }
 
-function isRetryableResponse(response: OpenAICompatibleResponse): boolean {
-  if (response.status === 408 || response.status === 409 || response.status === 425 || response.status === 429) return true;
-  if (response.status >= 500 && response.status <= 599) return true;
-  if (response.status !== 400) return false;
-  return /server connection error|temporar|timeout|upstream|network/i.test(extractErrorDetail(response));
-}
-
-async function waitForRetryDelay(attempt: number, options: SimpleStreamOptions | undefined): Promise<void> {
-  const delayMs = Math.min(2_000, 250 * 2 ** attempt);
-  if (options?.maxRetryDelayMs !== undefined && options.maxRetryDelayMs > 0 && delayMs > options.maxRetryDelayMs) {
-    throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`);
-  }
-  await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
+export function isRetryableResponse(response: OpenAICompatibleResponse): boolean {
+  return classifyHttpResponse(response.status, response.headers, extractErrorDetail(response) || response.text).retryable;
 }
 
 function buildPayload(

@@ -775,4 +775,29 @@ describe("McpHttpClient", () => {
 
     await expect(client.listTools()).rejects.toThrow(/timed out.*Docs MCP initialize/i);
   });
+
+  it("retries transient 503 for MCP initialize and succeeds", async () => {
+    let callCount = 0;
+    const fetcher: WebFetcher = async () => {
+      callCount += 1;
+      if (callCount <= 2) return { status: 503, text: "Service Unavailable", headers: {} };
+      if (callCount === 3) return { status: 200, text: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2025-11-25" } }), headers: {} };
+      if (callCount === 4) return { status: 202, text: "", headers: {} };
+      return { status: 200, text: JSON.stringify({ jsonrpc: "2.0", id: 2, result: { tools: [{ name: "get_time" }] } }), headers: {} };
+    };
+    const client = new McpHttpClient({ server: server(), fetcher });
+    await expect(client.listTools()).resolves.toMatchObject([{ name: "get_time" }]);
+    expect(callCount).toBe(5);
+  });
+
+  it("does not retry 401 for MCP and surfaces immediately", async () => {
+    let callCount = 0;
+    const fetcher: WebFetcher = async () => {
+      callCount += 1;
+      return { status: 401, text: "Unauthorized", headers: {} };
+    };
+    const client = new McpHttpClient({ server: server(), fetcher });
+    await expect(client.listTools()).rejects.toThrow(/HTTP 401/);
+    expect(callCount).toBe(1);
+  });
 });
