@@ -26,8 +26,15 @@ const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
 
 /** Extract the child statuses from a subagent details payload, or [] when absent/malformed. */
 function subagentChildren(details: unknown): SubagentChildStatus[] {
-  const shaped = details as { kind?: string; children?: SubagentChildStatus[] } | undefined;
-  return shaped?.kind === "subagent" && Array.isArray(shaped.children) ? shaped.children : [];
+  const shaped = details as { kind?: string; children?: unknown } | undefined;
+  if (shaped?.kind !== "subagent" || !Array.isArray(shaped.children)) return [];
+  return shaped.children.filter(
+    (child): child is SubagentChildStatus =>
+      !!child &&
+      typeof child === "object" &&
+      typeof (child as { agent?: unknown }).agent === "string" &&
+      typeof (child as { status?: unknown }).status === "string",
+  );
 }
 
 /**
@@ -493,8 +500,8 @@ export class AssistantBubble {
   private renderSubagentHeader(row: HTMLDetailsElement, child: SubagentChildStatus): void {
     let summary = row.querySelector("summary");
     if (!summary) summary = row.createEl("summary");
-    const nameText = `${child.agent}: ${truncateText(child.task, 120)}`;
-    const statusText = SUBAGENT_STATUS_LABEL[child.status];
+    const nameText = `${String(child.agent ?? "?")}: ${truncateText(String(child.task ?? ""), 120)}`;
+    const statusText = SUBAGENT_STATUS_LABEL[child.status] ?? String(child.status ?? "unknown");
     const metaText = this.subagentMetaText(child);
     const currentName = summary.querySelector<HTMLElement>(".agentic-chat-subagent-name")?.textContent;
     const currentStatus = summary.querySelector<HTMLElement>(".agentic-chat-subagent-status")?.textContent;
@@ -585,6 +592,22 @@ export class AssistantBubble {
     if (step.name === SUBAGENT_TOOL_NAME && subagentResultForcesError(resultObject)) {
       isError = true;
     }
+    // Replay path: `ChatView.renderAssistantMessage` only calls startStep+endStep,
+    // so the dispatch card would stay empty without this. Ensure persisted
+    // children are rendered here without auto-opening the outer card — reload
+    // shows a collapsed Dispatch card for `done` (Codex `ReplayKind` parity)
+    // while live `updateStep` already auto-opened. `isError` (failed/stopped)
+    // keeps the step expanded via `retractFailedSource` below so the error is
+    // visible without an extra click.
+    if (step.name === SUBAGENT_TOOL_NAME) {
+      const maybeDetails = (resultObject as { details?: unknown } | undefined)?.details;
+      const children = subagentChildren(maybeDetails);
+      if (children.length > 0) {
+        this.renderSubagentChildren(step.body, children);
+        const row = step.card.parentElement;
+        if (row) this.syncStepCollapsible(row, step.body);
+      }
+    }
     step.card.removeClass("is-running");
     step.card.addClass(isError ? "is-error" : "is-done");
     setIcon(step.icon, isError ? "x-circle" : "check-circle-2");
@@ -610,7 +633,10 @@ export class AssistantBubble {
       resultSection.createDiv({ cls: "agentic-chat-step-section-label", text: isError ? "Error" : "Result" });
       resultSection.createEl("pre", { text: truncateText(result, 4_000) });
     }
-    this.syncStepCollapsible(step.card.parentElement ?? step.card, step.body);
+    {
+      const row = step.card.parentElement;
+      if (row) this.syncStepCollapsible(row, step.body);
+    }
   }
 
   /** Record a successful get_active_note's target as a source chip. */

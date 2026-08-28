@@ -195,11 +195,11 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) return Promise.reject(new Error("Aborted."));
   return new Promise<void>((resolve, reject) => {
     const onAbort = (): void => {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
       reject(new Error("Aborted."));
     };
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
