@@ -3,6 +3,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { AgentProfile } from "../agent/subagents";
 import { sumAssistantUsage } from "../agent/usage";
+import { redactText } from "../privacy/redaction";
 import { truncateToolOutput } from "../vault/truncate";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
 
@@ -49,13 +50,22 @@ export interface SubagentDetails {
 
 /**
  * Persisted shape strips volatile live fields (`transcript`/`stopId`) to keep
- * JSONL bounded. Live `snapshot` retains them for streaming UI; persisted
- * `persistedSnapshot` is what lands in `toolResult.details` for reload.
- * Both shapes are accepted by `subagentChildren`/`renderSubagentBody`.
+ * JSONL bounded and redacts high-entropy secrets. Live `snapshot` retains
+ * them for streaming UI; persisted `persistedSnapshot` is what lands in
+ * `toolResult.details` for reload. Both shapes are accepted by
+ * `subagentChildren`/`renderSubagentBody`. Allowlist prevents future volatile
+ * fields from leaking.
  */
 export function toPersistedChild(status: SubagentChildStatus): SubagentChildStatus {
-  const { transcript: _transcript, stopId: _stopId, ...persisted } = status;
-  return persisted as SubagentChildStatus;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- spread with conditional optional props requires assertion to satisfy SubagentChildStatus
+  return {
+    agent: redactText(String(status.agent ?? ""), { redactHighEntropy: true, maxLength: 120 }),
+    task: redactText(String(status.task ?? ""), { redactHighEntropy: true, maxLength: 400 }),
+    status: status.status,
+    ...(status.summary ? { summary: redactText(status.summary, { redactHighEntropy: true, maxLength: 9000 }) } : {}),
+    ...(typeof status.durationMs === "number" ? { durationMs: status.durationMs } : {}),
+    ...(status.usage ? { usage: status.usage } : {}),
+  } as SubagentChildStatus;
 }
 
 export function persistedSnapshot(statuses: SubagentChildStatus[]): SubagentDetails {
@@ -64,6 +74,11 @@ export function persistedSnapshot(statuses: SubagentChildStatus[]): SubagentDeta
 
 /** Pending error details for a toolCallId that threw — injected via `afterToolCall` so the error toolResult still carries the dispatch card. */
 export const pendingSubagentErrorDetails = new Map<string, SubagentDetails>();
+
+export function clearPendingSubagentErrorDetails(id?: string): void {
+  if (id) pendingSubagentErrorDetails.delete(id);
+  else pendingSubagentErrorDetails.clear();
+}
 
 export interface SubagentTask {
   agent: string;
@@ -169,9 +184,9 @@ export function createSubagentTool(
           status.summary = "Stopped by user";
         } else {
           status.status = "error";
-          status.summary = truncateToolOutput(
-            error instanceof Error ? error.message : String(error),
-            PER_CHILD_SUMMARY_CHARS,
+          status.summary = redactText(
+            truncateToolOutput(error instanceof Error ? error.message : String(error), PER_CHILD_SUMMARY_CHARS),
+            { redactHighEntropy: true, maxLength: 9000 },
           );
         }
       } finally {
@@ -185,7 +200,12 @@ export function createSubagentTool(
       // stopped — the step still renders as stopped via its child statuses.
       if (status.status === "error") {
         pendingSubagentErrorDetails.set(toolCallId, persistedSnapshot([status]));
-        throw new Error(`Subagent "${agent}" failed: ${status.summary ?? "unknown error"}`);
+        throw new Error(
+          wrapToolOutputTruncated(
+            truncateToolOutput(`Subagent "${agent}" failed: ${status.summary ?? "unknown error"}`, PER_CHILD_SUMMARY_CHARS),
+            "subagent",
+          ),
+        );
       }
 
       return {
@@ -358,12 +378,15 @@ async function runSingleChild(
     status.summary = `Timed out after ${maxSeconds}s`;
   } else if (error) {
     status.status = "error";
-    status.summary = truncateToolOutput(error, PER_CHILD_SUMMARY_CHARS);
+    status.summary = redactText(truncateToolOutput(error, PER_CHILD_SUMMARY_CHARS), {
+      redactHighEntropy: true,
+      maxLength: 9000,
+    });
   } else {
     status.status = "done";
-    status.summary = truncateToolOutput(
-      lastAssistantText(child.state.messages) || "(no output)",
-      PER_CHILD_SUMMARY_CHARS,
+    status.summary = redactText(
+      truncateToolOutput(lastAssistantText(child.state.messages) || "(no output)", PER_CHILD_SUMMARY_CHARS),
+      { redactHighEntropy: true, maxLength: 9000 },
     );
   }
 }

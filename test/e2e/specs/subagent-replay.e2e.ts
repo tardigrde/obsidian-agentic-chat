@@ -171,4 +171,130 @@ describe("R1 subagent replay smoke", function () {
     const pill = await probe({ key: "status", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-status" });
     expect(pill.status).toBe("Failed");
   });
+
+  it("toggles a collapsed replay card open and keeps Stop hidden", async function () {
+    await startAssistantTurn();
+    await emit(toolStart("t-r1-toggle", "subagent", { agent: "explorer", task: "toggle me" }));
+    await emit({
+      type: "tool_execution_end",
+      toolCallId: "t-r1-toggle",
+      result: {
+        content: [{ type: "text", text: "toggle summary" }],
+        details: {
+          kind: "subagent",
+          children: [{ agent: "explorer", task: "toggle me", status: "done", summary: "toggle summary", durationMs: 1000 }],
+        },
+      },
+      isError: false,
+    });
+    await emit(assistantEndEmpty());
+    await emit({ type: "agent_end" });
+
+    const ariaBefore = await probe({ key: "aria", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-toggle", attr: "aria-expanded" });
+    expect(ariaBefore.aria).toBe("false");
+    await browser.execute(() => {
+      const toggle = document.querySelector<HTMLElement>(".agentic-chat-assistant:last-child .agentic-chat-step-toggle");
+      toggle?.click();
+    });
+    await browser.waitUntil(
+      async () => (await probe({ key: "aria", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-toggle", attr: "aria-expanded" })).aria === "true",
+      { timeout: 2000, timeoutMsg: "toggle never expanded" },
+    );
+    const stopAfter = await probe({ key: "stop", selector: ".agentic-chat-assistant:last-child .agentic-chat-subagent-stop", all: true });
+    expect(stopAfter.stop).toEqual([]);
+    const summaryAfter = await probe({ key: "text", selector: ".agentic-chat-assistant:last-child .agentic-chat-subagent pre" });
+    expect(summaryAfter.text).toContain("toggle summary");
+  });
+
+  it("persists stripped details to session file and survives loadSession reload", async function () {
+    // Write a synthetic session file with stripped details (no transcript/stopId) and load it — true reload path via JSONL → ChatView.renderTranscript → bubble.endStep.
+    const sessionPath = await browser.executeObsidian(async ({ app }) => {
+      const now = new Date().toISOString();
+      const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("");
+      const fileTs = now.replace(/[:.]/g, "-");
+      const sessionDir = `${app.vault.configDir}/plugins/agentic-chat/sessions`;
+      // Ensure dir exists
+      const parts = sessionDir.split("/");
+      let cur = "";
+      for (const seg of parts) {
+        cur = cur ? `${cur}/${seg}` : seg;
+        if (!(await app.vault.adapter.exists(cur))) await app.vault.adapter.mkdir(cur);
+      }
+      const path = `${sessionDir}/${fileTs}_${id}.jsonl`;
+      const header = { type: "session", version: 1, id, timestamp: now, cwd: "obsidian-vault:test" };
+      const userMsg = {
+        type: "message",
+        id: "m1",
+        parentId: null,
+        timestamp: now,
+        message: { role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() },
+      };
+      const assistantMsg = {
+        type: "message",
+        id: "m2",
+        parentId: "m1",
+        timestamp: now,
+        message: {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "t-file", name: "subagent", arguments: { agent: "explorer", task: "file task" } }],
+        },
+      };
+      const toolResult = {
+        type: "message",
+        id: "m3",
+        parentId: "m2",
+        timestamp: now,
+        message: {
+          role: "toolResult",
+          toolCallId: "t-file",
+          toolName: "subagent",
+          content: [{ type: "text", text: "file summary" }],
+          details: {
+            kind: "subagent",
+            children: [{ agent: "explorer", task: "file task", status: "done", summary: "file summary", durationMs: 1000, usage: { input: 10, output: 20, totalTokens: 30, costUsd: 0.001 } }],
+          },
+          isError: false,
+        },
+      };
+      const assistantText = {
+        type: "message",
+        id: "m4",
+        parentId: "m3",
+        timestamp: now,
+        message: { role: "assistant", content: [{ type: "text", text: "done" }] },
+      };
+      const content = [header, userMsg, assistantMsg, toolResult, assistantText].map((e) => JSON.stringify(e)).join("\n") + "\n";
+      await app.vault.adapter.write(path, content);
+      return path;
+    });
+
+    // Sanity: file was written stripped (no transcript/stopId)
+    const persistedCheck = await browser.executeObsidian(async ({ app }, path) => {
+      const raw = await app.vault.adapter.read(path);
+      const lines = raw.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      const toolResults = lines.filter((e) => e.type === "message" && (e.message as { role?: string })?.role === "toolResult");
+      const last = toolResults.at(-1) as { message?: { details?: { children?: Array<Record<string, unknown>> } } } | undefined;
+      return { details: (last?.message as unknown as { details?: unknown })?.details } as const;
+    }, sessionPath);
+    const children = ((persistedCheck as { details?: { children?: Array<Record<string, unknown>> } }).details?.children ?? []) as Array<Record<string, unknown>>;
+    expect(children.length).toBe(1);
+    expect(children[0].transcript).toBeUndefined();
+    expect(children[0].stopId).toBeUndefined();
+    expect(children[0].summary).toBe("file summary");
+
+    await browser.executeObsidian(
+      async ({ app }, viewType, sPath) => {
+        const view = app.workspace.getLeavesOfType(viewType)[0]?.view as unknown as { loadSession?: (p: string) => Promise<void> };
+        if (!view?.loadSession) throw new Error("view.loadSession not found");
+        await view.loadSession(sPath);
+      },
+      VIEW_TYPE_AGENT_CHAT,
+      sessionPath,
+    );
+    await $(".agentic-chat-step").waitForExist({ timeout: 5000, timeoutMsg: "dispatch card missing after loadSession" });
+    const summaryAfterReload = await probe({ key: "text", selector: ".agentic-chat-assistant:last-child .agentic-chat-subagent pre" });
+    expect(summaryAfterReload.text).toContain("file summary");
+    const ariaAfter = await probe({ key: "aria", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-toggle", attr: "aria-expanded" });
+    expect(ariaAfter.aria).toBe("false");
+  });
 });

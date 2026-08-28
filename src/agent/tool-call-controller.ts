@@ -125,6 +125,7 @@ export class AgentToolCallController {
   clearSessionState(): void {
     this.undoStack = [];
     this.pendingUndo.clear();
+    pendingSubagentErrorDetails.clear();
   }
 
   async beforeToolCall(context: BeforeToolCallContext): Promise<ToolGateDecision> {
@@ -175,7 +176,7 @@ export class AgentToolCallController {
     // `tool_execution_update` already showed the full transcript; the test
     // path `tool.execute` bypasses this hook, so its `stopId` assertion keeps
     // passing while persisted history is trimmed.
-    const details = (context.result as { details?: unknown } | undefined)?.details as
+    const details = context.result?.details as
       | { kind?: string; children?: SubagentChildStatus[] }
       | undefined;
     if (details?.kind === "subagent" && Array.isArray(details.children)) {
