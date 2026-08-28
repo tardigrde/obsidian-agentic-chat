@@ -132,38 +132,19 @@ export class AgentStreamRuntime {
           if (result.stopReason === "aborted") errorMessage = result.errorMessage ?? "aborted";
           if (errorMessage) {
             const classified = classifyError(errorMessage);
-            const shouldRetry = !hadContent && classified.retryable && attempt < maxRetries && !signal?.aborted && classified.class !== "resource" && classified.class !== "aborted" && classified.class !== "model" && classified.class !== "permanent";
-            if (!shouldRetry) {
+            if (!this.shouldRetryStream(classified, hadContent, attempt, maxRetries, signal)) {
               for (const event of buffered) outer.push(event as never);
               outer.end(result);
               break;
             }
             const delay = backoffDelayMs(attempt, classified.retryAfterMs);
-            if (streamOptions.maxRetryDelayMs !== undefined && streamOptions.maxRetryDelayMs > 0 && delay > streamOptions.maxRetryDelayMs) {
+            if (this.exceedsMaxDelay(delay, streamOptions.maxRetryDelayMs)) {
               for (const event of buffered) outer.push(event as never);
               outer.end(result);
               break;
             }
             console.warn(`Agentic Chat: model stream ${classified.class} (attempt ${attempt + 1}/${maxRetries}) retrying in ${delay}ms: ${classified.message.slice(0, 200)}`);
-            try {
-              await sleep(delay, signal);
-            } catch {
-              for (const event of buffered) outer.push(event as never);
-              const dummy: import("@earendil-works/pi-ai").AssistantMessage = {
-                role: "assistant",
-                content: [],
-                api: model.api,
-                provider: model.provider,
-                model: model.id,
-                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-                stopReason: "aborted",
-                errorMessage: "aborted",
-                timestamp: Date.now(),
-              };
-              outer.push({ type: "error", reason: "aborted" as never, error: dummy } as never);
-              outer.end(dummy);
-              break;
-            }
+            if (!(await this.sleepOrAbort(buffered, outer, model, delay, signal))) break;
             attempt += 1;
             continue;
           }
@@ -173,68 +154,64 @@ export class AgentStreamRuntime {
         } catch (error) {
           const classified = classifyError(error);
           errorMessage = classified.message;
-          const shouldRetry = !hadContent && classified.retryable && attempt < maxRetries && !signal?.aborted && classified.class !== "resource" && classified.class !== "aborted" && classified.class !== "model" && classified.class !== "permanent";
-          if (!shouldRetry) {
+          if (!this.shouldRetryStream(classified, hadContent, attempt, maxRetries, signal)) {
             for (const event of buffered) outer.push(event as never);
-            const reason: StopReason = signal?.aborted || classified.class === "aborted" ? "aborted" : "error";
-            const dummy: import("@earendil-works/pi-ai").AssistantMessage = {
-              role: "assistant",
-              content: [],
-              api: model.api,
-              provider: model.provider,
-              model: model.id,
-              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-              stopReason: reason,
-              errorMessage,
-              timestamp: Date.now(),
-            };
-            outer.push({ type: "error", reason: reason as never, error: dummy } as never);
-            outer.end(dummy);
+            this.pushStreamError(outer, model, signal?.aborted || classified.class === "aborted" ? "aborted" : "error", errorMessage);
             break;
           }
           const delay = backoffDelayMs(attempt, classified.retryAfterMs);
-          if (streamOptions.maxRetryDelayMs !== undefined && streamOptions.maxRetryDelayMs > 0 && delay > streamOptions.maxRetryDelayMs) {
+          if (this.exceedsMaxDelay(delay, streamOptions.maxRetryDelayMs)) {
             for (const event of buffered) outer.push(event as never);
-            const reason: StopReason = signal?.aborted || classified.class === "aborted" ? "aborted" : "error";
-            const dummy: import("@earendil-works/pi-ai").AssistantMessage = {
-              role: "assistant",
-              content: [],
-              api: model.api,
-              provider: model.provider,
-              model: model.id,
-              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-              stopReason: reason,
-              errorMessage,
-              timestamp: Date.now(),
-            };
-            outer.push({ type: "error", reason: reason as never, error: dummy } as never);
-            outer.end(dummy);
+            this.pushStreamError(outer, model, signal?.aborted || classified.class === "aborted" ? "aborted" : "error", errorMessage);
             break;
           }
           console.warn(`Agentic Chat: model stream ${classified.class} (attempt ${attempt + 1}/${maxRetries}) retrying in ${delay}ms: ${classified.message.slice(0, 200)}`);
-          try {
-            await sleep(delay, signal);
-          } catch {
-            for (const event of buffered) outer.push(event as never);
-            const dummy: import("@earendil-works/pi-ai").AssistantMessage = {
-              role: "assistant",
-              content: [],
-              api: model.api,
-              provider: model.provider,
-              model: model.id,
-              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-              stopReason: "aborted",
-              errorMessage: "aborted",
-              timestamp: Date.now(),
-            };
-            outer.push({ type: "error", reason: "aborted" as never, error: dummy } as never);
-            outer.end(dummy);
-            break;
-          }
+          if (!(await this.sleepOrAbort(buffered, outer, model, delay, signal))) break;
           attempt += 1;
         }
       }
     })();
     return outer;
+  }
+
+  private shouldRetryStream(
+    classified: ReturnType<typeof classifyError>,
+    hadContent: boolean,
+    attempt: number,
+    maxRetries: number,
+    signal?: AbortSignal,
+  ): boolean {
+    return !hadContent && classified.retryable && attempt < maxRetries && !signal?.aborted && classified.class !== "resource" && classified.class !== "aborted" && classified.class !== "model" && classified.class !== "permanent";
+  }
+
+  private exceedsMaxDelay(delay: number, maxDelay: number | undefined): boolean {
+    return maxDelay !== undefined && maxDelay > 0 && delay > maxDelay;
+  }
+
+  private async sleepOrAbort(buffered: unknown[], outer: AssistantMessageEventStream, model: Model<Api>, delay: number, signal?: AbortSignal): Promise<boolean> {
+    try {
+      await sleep(delay, signal);
+      return true;
+    } catch {
+      for (const event of buffered) outer.push(event as never);
+      this.pushStreamError(outer, model, "aborted", "aborted");
+      return false;
+    }
+  }
+
+  private pushStreamError(outer: AssistantMessageEventStream, model: Model<Api>, reason: StopReason, errorMessage: string): void {
+    const dummy: import("@earendil-works/pi-ai").AssistantMessage = {
+      role: "assistant",
+      content: [],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: reason,
+      errorMessage,
+      timestamp: Date.now(),
+    };
+    outer.push({ type: "error", reason: reason as never, error: dummy } as never);
+    outer.end(dummy);
   }
 }
