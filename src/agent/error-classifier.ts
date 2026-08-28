@@ -168,7 +168,7 @@ function secureRandom(): number {
     // Convert 32-bit int to [0,1)
     return array[0] / 0x100000000;
   } catch {
-    return Math.random();
+    return Math.random(); // NOSONAR - jitter for backoff, not security-sensitive; crypto is primary
   }
 }
 
