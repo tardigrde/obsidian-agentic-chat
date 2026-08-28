@@ -186,6 +186,16 @@ function folderListing(options: PromptContextOptions, folderPath: string): strin
   return `Folder listing for "${folderPath}":\n${listing || "(empty)"}`;
 }
 
+/** Synthetic hint that anchors the model to the explicit user request over attached context. */
+export function buildFocusHint(explicitRequest: string): string {
+  const trimmed = explicitRequest.trim();
+  if (!trimmed) return "";
+  const collapsed = trimmed.replace(/\s+/g, " ");
+  const raw = collapsed.length > 200 ? `${collapsed.slice(0, 200).trimEnd()}…` : collapsed;
+  const snippet = raw.replaceAll('"', "'");
+  return `Focus: The user's explicit request above is the primary task — "${snippet}". Attached context is background only; only edit what the request directly asks for.`;
+}
+
 /**
  * Best-effort slice of the active editor's visible range: a window of lines
  * around the cursor in the matching MarkdownView. Mobile-safe: public Editor API

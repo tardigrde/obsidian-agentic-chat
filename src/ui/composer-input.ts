@@ -2,7 +2,7 @@ import type { TurnSteeringMode } from "../agent/turn-control";
 
 /** Strip an attachment `<context>...</context>` preamble for display/retry fallback. */
 export function stripContextPreamble(text: string): string {
-  return text.replace(/^<context>[\s\S]*?<\/context>\n\n/, "");
+  return text.replace(/^<context>[\s\S]*?<\/context>\n\n(?:Focus:[^\n]*\n\n)?/, "");
 }
 
 export function parseStreamingSteering(input: string): { mode: TurnSteeringMode; text: string } | null {
