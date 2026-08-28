@@ -55,10 +55,9 @@ export function escapeToolOutput(text: string): string {
  */
 export function wrapToolOutput(text: string, toolName?: string): string {
   const escaped = escapeToolOutput(text);
-  const begin =
-    toolName && toolName.trim()
-      ? `${TOOL_OUTPUT_BEGIN_PREFIX} tool="${sanitizeToolName(toolName)}"]`
-      : `${TOOL_OUTPUT_BEGIN_PREFIX}]`;
+  const begin = toolName?.trim()
+    ? `${TOOL_OUTPUT_BEGIN_PREFIX} tool="${sanitizeToolName(toolName)}"]`
+    : `${TOOL_OUTPUT_BEGIN_PREFIX}]`;
   return `${begin}\n${escaped}\n${TOOL_OUTPUT_END_MARKER}`;
 }
 
