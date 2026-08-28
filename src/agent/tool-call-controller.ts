@@ -167,15 +167,24 @@ export class AgentToolCallController {
     // Working-dir boundary keys off path/newPath args, so only Safe mode (which can scope
     // calls to granted dirs) needs it; YOLO is a session-wide allow and plan is read-only.
     // Skill resources are vault-hosted plugin content, not user notes — exempt from the
-    // working-dir allow-list so `read_skill_file` doesn't require an ask when dirs are scoped.
-    const isSkillTool = toolName === "read_skill" || toolName === "read_skill_file";
+    // working-dir allow-list so `read_skill*`/`load_skill` doesn't require an ask when dirs are scoped.
+    const isSkillTool =
+      toolName === "read_skill" ||
+      toolName === "read_skill_file" ||
+      toolName === "load_skill" ||
+      toolName === "unload_skill";
     const scoped = settings.mode === "safe" && !isSkillTool;
+    // H8 load/unload mutates prompt overlay (persistent) — default to ask to prevent
+    // auto-injection via indirect prompt injection (fetch_url -> load_skill evil).
+    // Respects perTool override so user can set allow/deny explicitly.
+    const isLoadSkillTool = toolName === "load_skill" || toolName === "unload_skill";
+    const basePolicy = isLoadSkillTool ? (settings.approval.perTool[toolName] ?? "ask") : decision.policy;
     // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
     // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
     // already forces read-only, so the boundary only refines Safe.
     const policy = scoped
-      ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, decision.policy)
-      : decision.policy;
+      ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, basePolicy)
+      : basePolicy;
     const label = this.labelForTool(toolName);
     if (policy === "allow") {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });

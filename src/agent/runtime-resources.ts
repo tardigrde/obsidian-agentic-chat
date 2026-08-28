@@ -14,6 +14,11 @@ import { createDocumentTools } from "../tools/document-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
 import { createReadSkillTool, createReadSkillFileTool } from "../tools/read-skill-tool";
+import { createSkillLoadTools } from "../tools/skill-tools";
+import { getLoadedSkillNames, pruneLoadedSkills } from "../skills/skill-load-state";
+import { formatSkillInvocation } from "../skills/skills";
+import { wrapToolOutput } from "../tools/tool-output-wrapper";
+import { truncateToolOutput } from "../vault/truncate";
 import { createMcpFetcher } from "../mcp/fetcher";
 import { createMcpToolsWithDiagnostics, type McpServerDiagnostic } from "../mcp/tools";
 import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
@@ -111,8 +116,32 @@ export function composeAgentSystemPrompt(
     OUTPUT_STYLES[settings.outputStyle].promptOverlay,
     formatSubagentsForSystemPrompt(resources.profiles),
     pluginSkillTrustBoundary(resources.plugins),
+    formatLoadedSkillsOverlay(resources.skills),
   ];
   return buildSystemPrompt(settings.systemPrompt, resources.skills, overlays);
+}
+
+const MAX_LOADED_SKILLS_CHARS = 16_000;
+
+function formatLoadedSkillsOverlay(skills: Skill[]): string {
+  const loadedNames = getLoadedSkillNames();
+  if (loadedNames.length === 0) return "";
+  const byName = new Map(skills.map((s) => [s.name, s] as const));
+  const loaded = loadedNames.map((name) => byName.get(name)).filter((s): s is Skill => Boolean(s));
+  // Prune stale names that no longer exist (plugin disabled/removed)
+  if (loaded.length !== loadedNames.length) {
+    pruneLoadedSkills(new Set(skills.map((s) => s.name)));
+  }
+  if (loaded.length === 0) return "";
+  const blocks = loaded.map((skill) => {
+    const raw = formatSkillInvocation(skill);
+    // Wrap as untrusted DATA so model treats body as data, not instructions
+    return wrapToolOutput(raw, `load_skill:${skill.name}`);
+  });
+  const joined = blocks.join("\n\n");
+  if (joined.length <= MAX_LOADED_SKILLS_CHARS) return joined;
+  const truncated = truncateToolOutput(joined, MAX_LOADED_SKILLS_CHARS);
+  return `${truncated}\n\n[Loaded skills truncated at ${MAX_LOADED_SKILLS_CHARS} chars — unload some skills to free context.]`;
 }
 
 /**
@@ -163,6 +192,7 @@ export function buildAgentParentTools(options: {
     ...options.resources.mcpTools,
     createReadSkillTool(options.resources.skills),
     createReadSkillFileTool(options.app, options.resources.skills),
+    ...createSkillLoadTools(options.resources.skills),
     ...(options.subagentTool ? [options.subagentTool] : []),
   ];
   const budgeted = applyToolBudget({
