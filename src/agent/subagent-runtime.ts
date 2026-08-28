@@ -6,6 +6,7 @@ import { activeModelConfig, apiKeyForProvider } from "../settings";
 import type { AgenticChatSettings } from "../settings";
 import { buildModel, type ModelConfig } from "../llm/models";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
+import { createReadSkillFileTool, createReadSkillTool } from "../tools/read-skill-tool";
 import { createVaultTools } from "../tools/vault-tools";
 import { createSubagentTool } from "../tools/subagent-tool";
 import { createWebTools } from "../tools/web-tools";
@@ -70,10 +71,13 @@ export class AgentSubagentRuntime {
     const childNamespace = this.nextChildNamespace();
     // Strip tools the user explicitly denied before the child is created.
     // Allowed child calls still flow through the parent tool-call controller.
+    const skills = this.getResources().skills;
     const childTools = [
       ...createVaultTools(this.app, this.getResources().ignoreMatcher, new ReadMemo()),
       ...createWebTools(settings.web, this.webFetch, this.artifactStore),
       ...createToolArtifactTools(this.artifactStore),
+      createReadSkillTool(skills),
+      createReadSkillFileTool(this.app, skills),
     ].filter(
       (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
     );
