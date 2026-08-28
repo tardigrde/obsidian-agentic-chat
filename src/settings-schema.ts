@@ -27,7 +27,7 @@ import {
   normalizeNoProxy,
   normalizeProxyUrl,
 } from "./network/proxy";
-import { normalizeAllowedHosts } from "./tools/web-fetch";
+import { normalizeAllowedHosts } from "./tools/web-allowlist";
 import {
   DEFAULT_OBSERVABILITY_SETTINGS,
   healObservabilitySettings,
