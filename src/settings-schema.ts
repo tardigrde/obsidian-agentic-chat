@@ -198,8 +198,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   },
   mcp: {
     enabled: false,
-    proxyUrl: "",
-    noProxy: "localhost,127.0.0.1,::1",
+    ...DEFAULT_PROXY_SETTINGS,
     servers: [],
   },
   embeddings: DEFAULT_EMBEDDING_SETTINGS,

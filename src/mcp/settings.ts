@@ -478,3 +478,9 @@ function legacyString(value: unknown): string {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string").join(",");
   return "";
 }
+
+/** @deprecated Use normalizeProxyUrl from src/network/proxy.ts — kept for backwards compat. */
+export const normalizeMcpProxyUrl = normalizeProxyUrl;
+
+/** @deprecated Use normalizeNoProxy from src/network/proxy.ts — kept for backwards compat. */
+export const normalizeMcpNoProxy = normalizeNoProxy;
