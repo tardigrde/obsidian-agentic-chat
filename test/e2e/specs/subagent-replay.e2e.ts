@@ -24,7 +24,9 @@ async function probe(query: ProbeQuery): Promise<ProbeResult> {
     const attr = q.attr;
     const nodes = q.all ? Array.from(document.querySelectorAll(q.selector)) : [document.querySelector(q.selector)];
     const values = nodes.filter(Boolean) as Element[];
-    const read = (el: Element): string => (attr ? el.getAttribute(attr) ?? "" : (el as HTMLElement).innerText ?? (el.textContent ?? ""));
+    // Use textContent for hidden <details> (innerText is "" when collapsed) — fallback to innerText for visible.
+    const read = (el: Element): string =>
+      attr ? (el.getAttribute(attr) ?? "") : ((el.textContent ?? (el as HTMLElement).innerText ?? "") as string);
     out[q.key] = q.all ? values.map(read) : values.length > 0 ? read(values[0]) : "";
     return out;
   }, query)) as ProbeResult;
@@ -292,9 +294,10 @@ describe("R1 subagent replay smoke", function () {
       sessionPath,
     );
     await $(".agentic-chat-step").waitForExist({ timeout: 5000, timeoutMsg: "dispatch card missing after loadSession" });
-    const summaryAfterReload = await probe({ key: "text", selector: ".agentic-chat-assistant:last-child .agentic-chat-subagent pre" });
+    // After loadSession there are two assistants (dispatch + final text), so last-child is the text bubble — query any subagent pre/toggle instead.
+    const summaryAfterReload = await probe({ key: "text", selector: ".agentic-chat-subagent pre" });
     expect(summaryAfterReload.text).toContain("file summary");
-    const ariaAfter = await probe({ key: "aria", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-toggle", attr: "aria-expanded" });
+    const ariaAfter = await probe({ key: "aria", selector: ".agentic-chat-step-toggle", attr: "aria-expanded" });
     expect(ariaAfter.aria).toBe("false");
   });
 });
