@@ -3,7 +3,9 @@ import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   OPENROUTER_BASE_URL,
   buildOpenRouterRouting,
+  healProviderId,
   type PrivacySettings,
+  type ProviderId,
 } from "../llm/models";
 import type { WebFetcher } from "../tools/web-fetch";
 import {
@@ -19,7 +21,8 @@ import {
 } from "./policy";
 import { stableTextHash } from "./source-hash";
 
-export type EmbeddingProviderId = "openrouter" | "ollama" | "openai-compatible";
+/** Embeddings ride the same provider set as chat; alias kept for the embedding-specific settings surface. */
+export type EmbeddingProviderId = ProviderId;
 
 export interface EmbeddingSettings {
   enabled: boolean;
@@ -441,7 +444,8 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 }
 
 function healEmbeddingProvider(value: unknown): EmbeddingProviderId {
-  return value === "openrouter" || value === "ollama" || value === "openai-compatible" ? value : "openrouter";
+  // Same provider ladder as chat; embeddings default to OpenRouter too.
+  return healProviderId(value, "openrouter");
 }
 
 function healLanguageCoverage(value: unknown): EmbeddingLanguageCoverage {

@@ -1,4 +1,5 @@
 import type { ApprovalPolicy } from "../agent/approval";
+import { DEFAULT_PROXY_SETTINGS, type ProxySettings, normalizeNoProxy, normalizeProxyUrl } from "../network/proxy";
 import { ensureMcpOAuthSecretRefs, mcpSecretId } from "../secrets/secret-store";
 import { isValidHttpHeaderName } from "./http-headers";
 import { mcpUrlProblem } from "../utils/host-policy";
@@ -6,16 +7,12 @@ import { mcpUrlProblem } from "../utils/host-policy";
 export type McpAuthType = "none" | "bearer" | "header" | "oauth";
 type LegacyMcpServerPreset = "generic" | "context7" | "oauth";
 
-export interface McpSettings {
+export interface McpSettings extends ProxySettings {
   /**
    * Master egress gate for remote MCP servers. Off by default; when off no MCP
    * tools are registered and no MCP endpoint is contacted.
    */
   enabled: boolean;
-  /** Optional HTTP proxy URL used only for remote MCP HTTPS/OAuth requests. */
-  proxyUrl: string;
-  /** Comma-separated hosts/domains that bypass the MCP proxy. */
-  noProxy: string;
   /** Remote Streamable HTTP MCP servers. */
   servers: McpServerSettings[];
 }
@@ -123,8 +120,7 @@ export interface McpOAuthSettings {
 
 export const DEFAULT_MCP_SETTINGS: McpSettings = {
   enabled: false,
-  proxyUrl: "",
-  noProxy: "localhost,127.0.0.1,::1",
+  ...DEFAULT_PROXY_SETTINGS,
   servers: [],
 };
 
@@ -151,8 +147,8 @@ export function healMcpSettings(stored: Partial<McpSettings> | null | undefined)
   const servers = Array.isArray(stored?.servers) ? stored.servers.map(healMcpServer).filter(isMcpServer) : [];
   return {
     enabled: stored?.enabled === true,
-    proxyUrl: normalizeMcpProxyUrl(stored?.proxyUrl),
-    noProxy: normalizeMcpNoProxy(stored?.noProxy),
+    proxyUrl: normalizeProxyUrl(stored?.proxyUrl),
+    noProxy: normalizeNoProxy(stored?.noProxy),
     servers: uniquifyMcpServerIds(servers),
   };
 }
@@ -420,36 +416,6 @@ export function normalizeMcpServerId(input: string): string {
   return normalized || "mcp";
 }
 
-export function normalizeMcpProxyUrl(input: string | undefined): string {
-  if (!input) return "";
-  const trimmed = input.trim();
-  if (!trimmed) return "";
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol !== "http:") return "";
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return "";
-  }
-}
-
-export function normalizeMcpNoProxy(input: string | undefined): string {
-  const fallback = DEFAULT_MCP_SETTINGS.noProxy;
-  if (!input) return fallback;
-  const seen = new Set<string>();
-  const values = input
-    .split(/[,\s]+/)
-    .map((part) => part.trim().toLowerCase())
-    .filter((part) => part && /^[a-z0-9.*:[\]_-]+$/.test(part))
-    .filter((part) => {
-      if (seen.has(part)) return false;
-      seen.add(part);
-      return true;
-    });
-  return values.length > 0 ? values.join(",") : fallback;
-}
-
 export function serverIdFromMcpUrl(input: string | undefined): string {
   if (!input) return "";
   try {
@@ -512,3 +478,9 @@ function legacyString(value: unknown): string {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string").join(",");
   return "";
 }
+
+/** @deprecated Use normalizeProxyUrl from src/network/proxy.ts — kept for backwards compat. */
+export const normalizeMcpProxyUrl = normalizeProxyUrl;
+
+/** @deprecated Use normalizeNoProxy from src/network/proxy.ts — kept for backwards compat. */
+export const normalizeMcpNoProxy = normalizeNoProxy;
