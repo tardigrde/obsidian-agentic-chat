@@ -28,3 +28,10 @@ export function clearLoadedSkills(): void {
 export function getLoadedSkillNames(): string[] {
   return [...loaded];
 }
+
+/** Remove any loaded names that no longer correspond to an available skill. */
+export function pruneLoadedSkills(availableNames: Set<string>): void {
+  for (const name of [...loaded]) {
+    if (!availableNames.has(name)) loaded.delete(name);
+  }
+}

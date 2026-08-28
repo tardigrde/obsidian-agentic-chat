@@ -174,12 +174,17 @@ export class AgentToolCallController {
       toolName === "load_skill" ||
       toolName === "unload_skill";
     const scoped = settings.mode === "safe" && !isSkillTool;
+    // H8 load/unload mutates prompt overlay (persistent) — default to ask to prevent
+    // auto-injection via indirect prompt injection (fetch_url -> load_skill evil).
+    // Respects perTool override so user can set allow/deny explicitly.
+    const isLoadSkillTool = toolName === "load_skill" || toolName === "unload_skill";
+    const basePolicy = isLoadSkillTool ? (settings.approval.perTool[toolName] ?? "ask") : decision.policy;
     // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
     // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
     // already forces read-only, so the boundary only refines Safe.
     const policy = scoped
-      ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, decision.policy)
-      : decision.policy;
+      ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, basePolicy)
+      : basePolicy;
     const label = this.labelForTool(toolName);
     if (policy === "allow") {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });

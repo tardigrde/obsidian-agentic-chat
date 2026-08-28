@@ -13,6 +13,7 @@ import {
   loadAgentRuntimeResources,
   type AgentRuntimeResources,
 } from "./runtime-resources";
+import { clearLoadedSkills } from "../skills/skill-load-state";
 import {
   createToolBudgetState,
   DEFAULT_TOOL_BUDGET_SETTINGS,
@@ -75,6 +76,7 @@ export class AgentRuntimeResourceState {
   }
 
   clearSessionState(): void {
+    clearLoadedSkills();
     resetToolBudgetState(this.toolBudgetState);
     const settings = this.options.getSettings();
     this.toolBudgetSnapshot = {
@@ -96,6 +98,9 @@ export class AgentRuntimeResourceState {
       this.options.saveSettings,
       this.options.artifactStore,
     );
+    // Prune any loaded skill that disappeared (plugin disabled/removed)
+    const { pruneLoadedSkills } = await import("../skills/skill-load-state");
+    pruneLoadedSkills(new Set(this.resources.skills.map((s) => s.name)));
     this.reloadedAt = new Date().toISOString();
     return this.resources;
   }
