@@ -38,6 +38,7 @@ import {
   WriteParameters,
   vaultToolDefinition,
 } from "./vault-tool-definitions";
+import { wrapToolOutput } from "./tool-output-wrapper";
 
 export { MUTATING_TOOLS } from "./tool-contracts";
 
@@ -878,5 +879,5 @@ function requestedWindow(path: string, window: LineWindow): RequestedWindow {
 }
 
 function textResult(text: string, details: Record<string, unknown>): AgentToolResult<Record<string, unknown>> {
-  return { content: [{ type: "text", text: truncateToolOutput(text) }], details };
+  return { content: [{ type: "text", text: wrapToolOutput(truncateToolOutput(text)) }], details };
 }

@@ -2,6 +2,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { truncateToolOutput } from "../vault/truncate";
 import { throwIfAborted, type WebFetcher, type WebHttpRequest } from "./web-fetch";
+import { wrapToolOutput } from "./tool-output-wrapper";
 
 /** Supported search backends. Tavily/Brave need an API key; SearXNG needs a URL. */
 export type WebSearchProvider = "tavily" | "brave" | "searxng";
@@ -148,7 +149,7 @@ export function createWebSearchTool(config: WebSearchConfig): AgentTool<typeof S
       }
       const results = adapter.parse(safeJsonParse(response.text)).filter((result) => result.url).slice(0, maxResults);
       return {
-        content: [{ type: "text", text: truncateToolOutput(formatResults(query, results)) }],
+        content: [{ type: "text", text: wrapToolOutput(truncateToolOutput(formatResults(query, results)), "web_search") }],
         details: { provider: config.provider, query, count: results.length, results },
       };
     },

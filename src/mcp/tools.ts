@@ -4,6 +4,7 @@ import { Type, type TSchema } from "typebox";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import type { WebFetcher } from "../tools/web-fetch";
 import { truncateToolOutput } from "../vault/truncate";
+import { wrapToolOutput } from "../tools/tool-output-wrapper";
 import { McpHttpClient, type McpCallToolResult, type McpToolDefinition } from "./client";
 import type { McpAuthType, McpKnownToolSettings, McpServerSettings, McpSettings } from "./settings";
 
@@ -323,7 +324,7 @@ async function renderMcpResult(result: McpCallToolResult, options: RenderMcpResu
         contentType: "text/plain",
       });
       return {
-        content: [{ type: "text", text: renderArtifactPreview(text, artifact) }],
+        content: [{ type: "text", text: wrapToolOutput(renderArtifactPreview(text, artifact), options.localToolName) }],
         truncated: true,
         artifact,
       };
@@ -336,7 +337,7 @@ async function renderMcpResult(result: McpCallToolResult, options: RenderMcpResu
     }
   }
   const truncated = text.length > 50_000;
-  return { content: [{ type: "text", text: truncateToolOutput(text) }], truncated };
+  return { content: [{ type: "text", text: wrapToolOutput(truncateToolOutput(text), options.localToolName) }], truncated };
 }
 
 function renderArtifactPreview(text: string, artifact: ToolArtifactMetadata): string {

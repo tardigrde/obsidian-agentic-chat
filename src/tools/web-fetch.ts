@@ -9,6 +9,7 @@ import {
   type SourceTextExtractor,
 } from "../retrieval/source-artifacts";
 import { isHostAllowedByAllowlist } from "./web-allowlist";
+import { wrapToolOutput } from "./tool-output-wrapper";
 export { isHostAllowedByAllowlist, normalizeAllowedHosts } from "./web-allowlist";
 
 /** A minimal HTTP request the web tools issue. */
@@ -185,7 +186,7 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
         ? `${rendered.text}\n\nSource artifact: ${artifact.artifactCitation}${duplicateHint}`
         : rendered.text;
       return {
-        content: [{ type: "text", text: artifactText }],
+        content: [{ type: "text", text: wrapToolOutput(artifactText, "fetch_url") }],
         details: {
           url,
           title: rendered.title,
