@@ -1351,7 +1351,14 @@ export class ChatView extends ItemView {
         return;
       }
       const focusHint = context && text.trim() ? buildFocusHint(text) : "";
-      const prompt = focusHint ? `${context}\n\n${focusHint}\n\n${text}` : context ? `${context}\n\n${text}` : text;
+      let prompt: string;
+      if (focusHint) {
+        prompt = `${context}\n\n${focusHint}\n\n${text}`;
+      } else if (context) {
+        prompt = `${context}\n\n${text}`;
+      } else {
+        prompt = text;
+      }
       // Image attachments ride as multimodal content parts, not text context.
       const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
       if (!this.isLiveTab(tab)) {
@@ -1401,7 +1408,14 @@ export class ChatView extends ItemView {
         return;
       }
       const focusHint = context && steering.text.trim() ? buildFocusHint(steering.text) : "";
-      const prompt = focusHint ? `${context}\n\n${focusHint}\n\n${steering.text}` : context ? `${context}\n\n${steering.text}` : steering.text;
+      let prompt: string;
+      if (focusHint) {
+        prompt = `${context}\n\n${focusHint}\n\n${steering.text}`;
+      } else if (context) {
+        prompt = `${context}\n\n${steering.text}`;
+      } else {
+        prompt = steering.text;
+      }
       const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
