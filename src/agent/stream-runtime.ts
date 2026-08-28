@@ -109,7 +109,17 @@ export class AgentStreamRuntime {
           for await (const event of inner) {
             buffered.push(event);
             const type = (event as { type?: string }).type;
-            if (type === "text_start" || type === "text_delta" || type === "thinking_start" || type === "thinking_delta" || type === "toolcall_start" || type === "toolcall_delta") {
+            if (
+              type === "text_start" ||
+              type === "text_delta" ||
+              type === "text_end" ||
+              type === "thinking_start" ||
+              type === "thinking_delta" ||
+              type === "thinking_end" ||
+              type === "toolcall_start" ||
+              type === "toolcall_delta" ||
+              type === "toolcall_end"
+            ) {
               hadContent = true;
             }
             if (type === "error") {
@@ -129,8 +139,31 @@ export class AgentStreamRuntime {
               break;
             }
             const delay = backoffDelayMs(attempt, classified.retryAfterMs);
+            if (streamOptions.maxRetryDelayMs !== undefined && streamOptions.maxRetryDelayMs > 0 && delay > streamOptions.maxRetryDelayMs) {
+              for (const event of buffered) outer.push(event as never);
+              outer.end(result);
+              break;
+            }
             console.warn(`Agentic Chat: model stream ${classified.class} (attempt ${attempt + 1}/${maxRetries}) retrying in ${delay}ms: ${classified.message.slice(0, 200)}`);
-            await sleep(delay, signal);
+            try {
+              await sleep(delay, signal);
+            } catch {
+              for (const event of buffered) outer.push(event as never);
+              const dummy: import("@earendil-works/pi-ai").AssistantMessage = {
+                role: "assistant",
+                content: [],
+                api: model.api,
+                provider: model.provider,
+                model: model.id,
+                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+                stopReason: "aborted",
+                errorMessage: "aborted",
+                timestamp: Date.now(),
+              };
+              outer.push({ type: "error", reason: "aborted" as never, error: dummy } as never);
+              outer.end(dummy);
+              break;
+            }
             attempt += 1;
             continue;
           }
@@ -140,8 +173,9 @@ export class AgentStreamRuntime {
         } catch (error) {
           const classified = classifyError(error);
           errorMessage = classified.message;
-          const shouldRetry = !hadContent && classified.retryable && attempt < maxRetries && !signal?.aborted;
+          const shouldRetry = !hadContent && classified.retryable && attempt < maxRetries && !signal?.aborted && classified.class !== "resource" && classified.class !== "aborted" && classified.class !== "model" && classified.class !== "permanent";
           if (!shouldRetry) {
+            for (const event of buffered) outer.push(event as never);
             const reason: StopReason = signal?.aborted || classified.class === "aborted" ? "aborted" : "error";
             const dummy: import("@earendil-works/pi-ai").AssistantMessage = {
               role: "assistant",
@@ -159,10 +193,29 @@ export class AgentStreamRuntime {
             break;
           }
           const delay = backoffDelayMs(attempt, classified.retryAfterMs);
+          if (streamOptions.maxRetryDelayMs !== undefined && streamOptions.maxRetryDelayMs > 0 && delay > streamOptions.maxRetryDelayMs) {
+            for (const event of buffered) outer.push(event as never);
+            const reason: StopReason = signal?.aborted || classified.class === "aborted" ? "aborted" : "error";
+            const dummy: import("@earendil-works/pi-ai").AssistantMessage = {
+              role: "assistant",
+              content: [],
+              api: model.api,
+              provider: model.provider,
+              model: model.id,
+              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+              stopReason: reason,
+              errorMessage,
+              timestamp: Date.now(),
+            };
+            outer.push({ type: "error", reason: reason as never, error: dummy } as never);
+            outer.end(dummy);
+            break;
+          }
           console.warn(`Agentic Chat: model stream ${classified.class} (attempt ${attempt + 1}/${maxRetries}) retrying in ${delay}ms: ${classified.message.slice(0, 200)}`);
           try {
             await sleep(delay, signal);
           } catch {
+            for (const event of buffered) outer.push(event as never);
             const dummy: import("@earendil-works/pi-ai").AssistantMessage = {
               role: "assistant",
               content: [],

@@ -8,7 +8,6 @@ import {
   backoffDelayMs,
   classifyError,
   classifyHttpResponse,
-  getRetryAfterMsFromHeaders,
   sleep,
 } from "../agent/error-classifier";
 
@@ -349,7 +348,7 @@ export class McpHttpClient {
         const classified = classifyError(error);
         if (!classified.retryable || attempt >= maxRetries || signal?.aborted) throw error;
         await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
-        if (signal?.aborted) throw new Error("Aborted.");
+        if (signal?.aborted) throw new Error("Aborted.", { cause: error });
         attempt += 1;
         continue;
       }

@@ -21,7 +21,6 @@ import {
   backoffDelayMs,
   classifyError,
   classifyHttpResponse,
-  getRetryAfterMsFromHeaders,
   sleep,
 } from "../agent/error-classifier";
 
@@ -213,13 +212,11 @@ async function requestCompletionWithRetries(
     try {
       const response = await withRequestGuards(requester(request), options?.timeoutMs, options?.signal);
       throwIfRequestAborted(options?.signal);
-      const retryAfterMs = getRetryAfterMsFromHeaders(response.headers);
       const classified = classifyHttpResponse(response.status, response.headers, extractErrorDetail(response) || response.text);
-      const withRetryAfter: typeof classified = retryAfterMs !== undefined ? { ...classified, retryAfterMs } : classified;
-      if (attempt >= maxRetries || !withRetryAfter.retryable) return response;
-      const delayMs = backoffDelayMs(attempt, withRetryAfter.retryAfterMs);
+      if (attempt >= maxRetries || !classified.retryable) return response;
+      const delayMs = backoffDelayMs(attempt, classified.retryAfterMs);
       if (options?.maxRetryDelayMs !== undefined && options.maxRetryDelayMs > 0 && delayMs > options.maxRetryDelayMs) {
-        throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`, { cause: withRetryAfter });
+        throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`, { cause: classified });
       }
       await sleep(delayMs, options?.signal);
     } catch (error) {

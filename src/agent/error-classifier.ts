@@ -162,7 +162,7 @@ export function backoffDelayMs(attempt: number, retryAfterMs?: number): number {
 
 function secureRandom(): number {
   try {
-    const cryptoObj = (globalThis as unknown as { crypto?: Crypto }).crypto;
+    const cryptoObj = typeof crypto !== "undefined" ? crypto : undefined;
     if (cryptoObj?.getRandomValues) {
       const array = new Uint32Array(1);
       cryptoObj.getRandomValues(array);
@@ -195,11 +195,11 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) return Promise.reject(new Error("Aborted."));
   return new Promise<void>((resolve, reject) => {
     const onAbort = (): void => {
-      globalThis.clearTimeout(timer);
+      clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
       reject(new Error("Aborted."));
     };
-    const timer = globalThis.setTimeout(() => {
+    const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
