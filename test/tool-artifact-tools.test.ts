@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createToolArtifactTools } from "../src/artifacts/tool-artifact-tools";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
+import { unwrapToolOutput } from "../src/tools/tool-output-wrapper";
 
 function storeWith(text: string, overrides: Partial<ToolArtifactMetadata> = {}): ToolArtifactStoreLike {
   const metadata: ToolArtifactMetadata = {
@@ -75,7 +76,7 @@ describe("tool artifact tools", () => {
     const result = await exportTool?.execute("call-1", { id: "artifact-1", format: "json", limit: 8 });
 
     const text = result?.content[0]?.type === "text" ? result.content[0].text : "";
-    const parsed = JSON.parse(text) as { metadata: ToolArtifactMetadata; text: string; truncated: boolean };
+    const parsed = JSON.parse(unwrapToolOutput(text)) as { metadata: ToolArtifactMetadata; text: string; truncated: boolean };
     expect(parsed.metadata).toMatchObject({ id: "artifact-1", sourceKind: "docx" });
     expect(parsed.text).toBe("01234567");
     expect(parsed.truncated).toBe(true);

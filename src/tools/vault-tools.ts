@@ -38,6 +38,7 @@ import {
   WriteParameters,
   vaultToolDefinition,
 } from "./vault-tool-definitions";
+import { wrapToolOutputTruncated } from "./tool-output-wrapper";
 
 export { MUTATING_TOOLS } from "./tool-contracts";
 
@@ -221,11 +222,11 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       const cached = memo?.getCached(readKey, mtime);
       if (cached) {
         memo?.mark(readKey);
-        return textResult(cachedReadMessage(path, cached.timestamp) + cached.content, {
+        return untrustedTextResult(cachedReadMessage(path, cached.timestamp) + cached.content, {
           path,
           cached: true,
           timestamp: cached.timestamp,
-        });
+        }, "read");
       }
 
       // Redundant-range guard: the requested lines were already served this
@@ -233,7 +234,7 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       // hand the model a pointer plus the prior content instead of re-pulling.
       const covered = memo?.coverageFor(requestedWindow(path, window), mtime);
       if (covered) {
-        return textResult(coveredReadMessage(path, covered), { path, deduplicated: true, covered: true });
+        return untrustedTextResult(coveredReadMessage(path, covered), { path, deduplicated: true, covered: true }, "read");
       }
 
       // Size guardrail: refuse a bulk dump of a very large file; guide the model
@@ -254,13 +255,13 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
         mtime,
         slice.startLine === 1 && slice.endLine === slice.totalLines && !slice.truncated,
       );
-      return textResult(formatTextSlice(path, slice), {
+      return untrustedTextResult(formatTextSlice(path, slice), {
         path,
         startLine: slice.startLine,
         endLine: slice.endLine,
         totalLines: slice.totalLines,
         truncated: slice.truncated,
-      });
+      }, "read");
     },
   };
 }
@@ -343,19 +344,23 @@ function editToolMessage(
       error: failure.error,
     })),
   };
+  // Edit messages contain file diffs (file content) when diffSummary is present — treat as untrusted
   if (applied === 0) {
     // Nothing applied — surface every failure so the model can correct them.
-    return textResult(
+    return untrustedTextResult(
       `Applied 0 of ${total} edits to ${path}; none matched. Failures:\n${formatEditFailures(failed)}`,
       details,
+      "edit",
     );
   }
   if (failed.length === 0) {
     const base = `Applied ${applied} edit${applied === 1 ? "" : "s"} to ${path}.`;
-    return textResult(diffSummary ? `${base}\n\n${diffSummary}` : base, details);
+    const text = diffSummary ? `${base}\n\n${diffSummary}` : base;
+    return diffSummary ? untrustedTextResult(text, details, "edit") : textResult(text, details);
   }
   const base = `Applied ${applied} of ${total} edits to ${path}. ${failed.length} not applied:\n${formatEditFailures(failed)}`;
-  return textResult(diffSummary ? `${base}\n\n${diffSummary}` : base, details);
+  const text = diffSummary ? `${base}\n\n${diffSummary}` : base;
+  return diffSummary ? untrustedTextResult(text, details, "edit") : textResult(text, details);
 }
 
 /** Produce a concise diff summary (≤20 lines) of the changed regions. */
@@ -479,7 +484,7 @@ function createSearchTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof 
           })
         : emptyContentSearch();
 
-      return textResult(formatSearchResults({ kind, fileResults, contentResults }), {
+      return untrustedTextResult(formatSearchResults({ kind, fileResults, contentResults }), {
         query,
         kind,
         path: rootPath,
@@ -487,7 +492,7 @@ function createSearchTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof 
         fileTruncated: fileResults.truncated,
         contentCount: contentResults.matches.length,
         contentTruncated: contentResults.truncated,
-      });
+      }, "search");
     },
   };
 }
@@ -510,11 +515,11 @@ function createGrepTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof Gr
         );
         if (matches.length >= maxMatches) break;
       }
-      return textResult(formatGrepMatches(matches, matches.length >= maxMatches), {
+      return untrustedTextResult(formatGrepMatches(matches, matches.length >= maxMatches), {
         pattern: params.pattern,
         count: matches.length,
         truncated: matches.length >= maxMatches,
-      });
+      }, "grep");
     },
   };
 }
@@ -620,7 +625,11 @@ function createActiveNoteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typ
         const content = await app.vault.cachedRead(file);
         lines.push("", "Content:", formatTextSlice(file.path, sliceTextByLines(content, { limit: 200 })));
       }
-      return textResult(lines.join("\n"), { path: file.path, hasSelection: selection.length > 0 });
+      // When content is included, file body is untrusted vault data
+      const useUntrusted = !!params.includeContent;
+      return useUntrusted
+        ? untrustedTextResult(lines.join("\n"), { path: file.path, hasSelection: selection.length > 0 }, "get_active_note")
+        : textResult(lines.join("\n"), { path: file.path, hasSelection: selection.length > 0 });
     },
   };
 }
@@ -718,7 +727,7 @@ function createGetPropertiesTool(app: App, isIgnored: IgnoreMatcher): AgentTool<
       const frontmatter = await readFrontmatter(app, file);
       const keys = Object.keys(frontmatter);
       const text = keys.length === 0 ? "(no frontmatter properties)" : JSON.stringify(frontmatter, null, 2);
-      return textResult(truncateToolOutput(text), { path, keys });
+      return untrustedTextResult(truncateToolOutput(text), { path, keys }, "get_properties");
     },
   };
 }
@@ -879,4 +888,15 @@ function requestedWindow(path: string, window: LineWindow): RequestedWindow {
 
 function textResult(text: string, details: Record<string, unknown>): AgentToolResult<Record<string, unknown>> {
   return { content: [{ type: "text", text: truncateToolOutput(text) }], details };
+}
+
+function untrustedTextResult(
+  text: string,
+  details: Record<string, unknown>,
+  toolName?: string,
+): AgentToolResult<Record<string, unknown>> {
+  return {
+    content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(text), toolName) }],
+    details,
+  };
 }

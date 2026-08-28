@@ -13,7 +13,7 @@ When enabled, the agent receives:
 
 The built-in `/deep-research` skill is offered only while web access is enabled.
 
-The fetch tool has SSRF guardrails for non-HTTP schemes and localhost, private, and link-local hosts.
+The fetch tool has SSRF guardrails for non-HTTP schemes and localhost, private, and link-local hosts, plus an optional **Fetch allowlist** (`settings.web.allowedHosts`) that restricts destinations to explicit host suffixes (label-boundary-aware, `*.example.com` / `example.com` / `*`; deny wins over SSRF and on every redirect hop; empty = allow all public). Tool outputs (vault via `textResult`, MCP, `fetch_url`/`web_search`) are wrapped with `[BEGIN_UNTRUSTED_TOOL_OUTPUT ...]` / `[END_UNTRUSTED_TOOL_OUTPUT]` (inner markers escaped) so the model treats them as DATA, never as instructions — see `src/tools/tool-output-wrapper.ts` and the system prompt trust boundary.
 
 ## MCP tools
 

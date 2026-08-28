@@ -5,6 +5,7 @@ import { createVaultTools } from "../src/tools/vault-tools";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { IgnoreMatcher } from "../src/vault/ignore";
 import { ReadMemo } from "../src/vault/read-memo";
+import { unwrapToolOutput } from "../src/tools/tool-output-wrapper";
 
 interface FileSpec {
   content?: string;
@@ -394,7 +395,7 @@ describe("get_backlinks", () => {
   it("reports no backlinks cleanly", async () => {
     const app = makeApp(spec);
     const { text, details } = await run(getTool(app, "get_backlinks"), { path: "Unrelated.md" });
-    expect(text).toBe("No backlinks.");
+    expect(unwrapToolOutput(text)).toBe("No backlinks.");
     expect(details.count).toBe(0);
   });
 });
@@ -478,7 +479,7 @@ describe("get_properties", () => {
     const app = makeApp({ files: { "Note.md": { frontmatter: { status: "active", tags: ["a", "b"] } } } });
     const { text, details } = await run(getTool(app, "get_properties"), { path: "Note.md" });
     expect(details.keys).toEqual(["status", "tags"]);
-    expect(JSON.parse(text)).toEqual({ status: "active", tags: ["a", "b"] });
+    expect(JSON.parse(unwrapToolOutput(text))).toEqual({ status: "active", tags: ["a", "b"] });
   });
 
   it("strips the internal position field from cached frontmatter", async () => {
@@ -493,13 +494,13 @@ describe("get_properties", () => {
     const app = makeApp({ files: { "Note.md": { content: "---\nstatus: draft\n---\n\nBody" } } });
     const { details, text } = await run(getTool(app, "get_properties"), { path: "Note.md" });
     expect(details.keys).toEqual(["status"]);
-    expect(JSON.parse(text)).toEqual({ status: "draft" });
+    expect(JSON.parse(unwrapToolOutput(text))).toEqual({ status: "draft" });
   });
 
   it("reports no frontmatter cleanly", async () => {
     const app = makeApp({ files: { "Note.md": { content: "Just a body" } } });
     const { text, details } = await run(getTool(app, "get_properties"), { path: "Note.md" });
-    expect(text).toBe("(no frontmatter properties)");
+    expect(unwrapToolOutput(text)).toBe("(no frontmatter properties)");
     expect(details.keys).toEqual([]);
   });
 
@@ -526,7 +527,7 @@ describe("set_properties", () => {
     expect(details.set).toEqual(["status", "priority"]);
     expect(text).toContain("set status, priority");
     const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
-    expect(JSON.parse(after.text)).toEqual({ status: "published", keep: "me", priority: 3 });
+    expect(JSON.parse(unwrapToolOutput(after.text))).toEqual({ status: "published", keep: "me", priority: 3 });
   });
 
   it("deletes a key when its value is null", async () => {
@@ -538,14 +539,14 @@ describe("set_properties", () => {
     expect(details.deleted).toEqual(["drop"]);
     expect(text).toContain("deleted drop");
     const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
-    expect(JSON.parse(after.text)).toEqual({ keep: "y" });
+    expect(JSON.parse(unwrapToolOutput(after.text))).toEqual({ keep: "y" });
   });
 
   it("creates frontmatter on a note that has none", async () => {
     const app = makeApp({ files: { "Note.md": { content: "Body only" } } });
     await run(getTool(app, "set_properties"), { path: "Note.md", properties: { tag: "new" } });
     const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
-    expect(JSON.parse(after.text)).toEqual({ tag: "new" });
+    expect(JSON.parse(unwrapToolOutput(after.text))).toEqual({ tag: "new" });
   });
 
   it("reports an ignored note as not found and does not mutate it", async () => {
@@ -554,7 +555,7 @@ describe("set_properties", () => {
       run(getTool(app, "set_properties", ignore("Note.md")), { path: "Note.md", properties: { a: 2 } }),
     ).rejects.toThrow(/not found/);
     const after = await run(getTool(app, "get_properties"), { path: "Note.md" });
-    expect(JSON.parse(after.text)).toEqual({ a: 1 });
+    expect(JSON.parse(unwrapToolOutput(after.text))).toEqual({ a: 1 });
   });
 
   it("reports a missing note as not found", async () => {
@@ -690,7 +691,7 @@ describe("delete", () => {
 
     const result = await run(del, { path: "Empty" });
 
-    expect(result.text).toBe("Moved Empty to trash.");
+    expect(unwrapToolOutput(result.text)).toBe("Moved Empty to trash.");
     expect(result.details).toMatchObject({ path: "Empty", kind: "folder" });
     expect(app.vault.getAbstractFileByPath("Empty")).toBeNull();
   });

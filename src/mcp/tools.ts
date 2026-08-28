@@ -4,6 +4,7 @@ import { Type, type TSchema } from "typebox";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import type { WebFetcher } from "../tools/web-fetch";
 import { truncateToolOutput } from "../vault/truncate";
+import { wrapToolOutput, wrapToolOutputTruncated } from "../tools/tool-output-wrapper";
 import { McpHttpClient, type McpCallToolResult, type McpToolDefinition } from "./client";
 import type { McpAuthType, McpKnownToolSettings, McpServerSettings, McpSettings } from "./settings";
 
@@ -323,7 +324,7 @@ async function renderMcpResult(result: McpCallToolResult, options: RenderMcpResu
         contentType: "text/plain",
       });
       return {
-        content: [{ type: "text", text: renderArtifactPreview(text, artifact) }],
+        content: [{ type: "text", text: wrapToolOutput(renderArtifactPreview(text, artifact), options.localToolName) }],
         truncated: true,
         artifact,
       };
@@ -336,7 +337,13 @@ async function renderMcpResult(result: McpCallToolResult, options: RenderMcpResu
     }
   }
   const truncated = text.length > 50_000;
-  return { content: [{ type: "text", text: truncateToolOutput(text) }], truncated };
+  // Wrap payload only; keep harness prefix outside the trust boundary
+  const payload = renderedParts.length > 0 ? renderedParts.join("\n\n") : "(MCP tool returned no content.)";
+  if (prefix) {
+    const wrapped = wrapToolOutputTruncated(truncateToolOutput(payload), options.localToolName);
+    return { content: [{ type: "text", text: `${prefix}${wrapped}` }], truncated };
+  }
+  return { content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(payload), options.localToolName) }], truncated };
 }
 
 function renderArtifactPreview(text: string, artifact: ToolArtifactMetadata): string {

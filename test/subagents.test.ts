@@ -10,6 +10,7 @@ import {
   formatSubagentsForSystemPrompt,
   loadAgentProfiles,
 } from "../src/agent/subagents";
+import { unwrapToolOutput } from "../src/tools/tool-output-wrapper";
 import {
   abortSubagentChild,
   createSubagentTool,
@@ -301,7 +302,7 @@ describe("createSubagentTool", () => {
       undefined,
       (partial) => updates.push(partial.details),
     );
-    expect(firstText(result.content)).toBe("child result");
+    expect(unwrapToolOutput(firstText(result.content))).toBe("child result");
     expect(result.details.children[0]).toMatchObject({ agent: "researcher", status: "done", summary: "child result" });
     expect(usages).toHaveLength(1);
     expect(usages[0].totalTokens).toBe(7);

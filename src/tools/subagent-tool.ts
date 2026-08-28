@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import type { AgentProfile } from "../agent/subagents";
 import { sumAssistantUsage } from "../agent/usage";
 import { truncateToolOutput } from "../vault/truncate";
+import { wrapToolOutputTruncated } from "./tool-output-wrapper";
 
 export const SUBAGENT_TOOL_NAME = "subagent";
 
@@ -169,7 +170,7 @@ export function createSubagentTool(
       }
 
       return {
-        content: [{ type: "text", text: truncateToolOutput(mergeSummaries([status])) }],
+        content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(mergeSummaries([status])), "subagent") }],
         details: snapshot([status]),
       };
     },

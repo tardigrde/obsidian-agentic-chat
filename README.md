@@ -117,11 +117,11 @@ Skills are reusable instruction/capability units in the [agentskills.io](https:/
 
 Off by default. Enable *Web access* in settings (it carries an egress warning) to register two read-only tools and a research skill:
 
-- **`web_search`** — queries your configured backend (Tavily / Brave / SearXNG; keyed in settings) and returns ranked title/URL/snippet results.
-- **`fetch_url`** — fetches an http(s) page and returns readable text (scripts/markup stripped, entities decoded). Long pages can be paged with `offset` / `nextOffset`. A best-effort SSRF guard blocks non-http(s) schemes and localhost/private/link-local hosts.
+- **`web_search`** — queries your configured backend (Tavily / Brave / SearXNG; keyed in settings) and returns ranked title/URL/snippet results (wrapped as untrusted data).
+- **`fetch_url`** — fetches an http(s) page and returns readable text (scripts/markup stripped, entities decoded). Long pages can be paged with `offset` / `nextOffset`. A best-effort SSRF guard blocks non-http(s) schemes and localhost/private/link-local hosts; when a **Fetch allowlist** is configured in settings (`Web → Fetch allowlist`, `settings.web.allowedHosts`), only matching hosts (label-boundary-aware, `*.example.com` / `example.com` / `*`) are reachable (deny wins over SSRF, checked on every redirect hop). Outputs are wrapped with `[BEGIN_UNTRUSTED_TOOL_OUTPUT ...]` / `[END_UNTRUSTED_TOOL_OUTPUT]` so the model treats fetched content as DATA, never as instructions.
 - **`/deep-research`** — a built-in skill (advertised only while web access is on) that supervises parallel researcher subagents, runs an adversarial reviewer pass, then synthesizes and saves a sourced note with source artifacts/URLs and a `## Sources` list.
 
-Egress is gated by a single off-by-default setting: while it's off, the web tools aren't registered at all, so nothing can leave your device for the web. When on, search queries and fetched URLs go to your chosen search provider and the fetched sites — **outside** the model-provider privacy boundary.
+Egress is gated by a single off-by-default setting: while it's off, the web tools aren't registered at all, so nothing can leave your device for the web. When on, search queries and fetched URLs go to your chosen search provider and the fetched sites — **outside** the model-provider privacy boundary. The allowlist provides positive egress control when you want to restrict destinations.
 
 ## MCP tools
 
