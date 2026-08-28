@@ -68,6 +68,7 @@ import {
 } from "./retrieval/embeddings";
 
 import { effectiveProxy, DEFAULT_PROXY_SETTINGS, PROXY_URL_EXAMPLE, type ProxySettings } from "./network/proxy";
+import { normalizeAllowedHosts } from "./tools/web-allowlist";
 import {
   DEFAULT_SETTINGS,
   PROVIDERS,
@@ -835,6 +836,24 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           await this.save();
         });
       });
+
+    new Setting(containerEl)
+      .setName("Allowed hosts")
+      .setDesc(
+        "Optional comma-separated host suffixes for fetch_url. Empty allows any public host. " +
+          'Example: example.com, *.wikipedia.org — blocks other hosts with "Blocked by allowlist".',
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("example.com, *.wikipedia.org")
+          .setValue(settings.web.allowedHosts)
+          .onChange(async (value) => {
+            settings.web.allowedHosts = normalizeAllowedHosts(value);
+            await this.save();
+            // Update the field to the canonical (lower-cased, deduped) value so typos like `Example.COM` are visible immediately.
+            text.setValue(settings.web.allowedHosts);
+          }),
+      );
   }
 
   private renderMcp(containerEl: HTMLElement, settings: AgenticChatSettings): void {

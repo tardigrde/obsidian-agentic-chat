@@ -8,6 +8,8 @@ import {
   type SourceImportKind,
   type SourceTextExtractor,
 } from "../retrieval/source-artifacts";
+import { isHostAllowedByAllowlist } from "./web-allowlist";
+export { isHostAllowedByAllowlist, normalizeAllowedHosts } from "./web-allowlist";
 
 /** A minimal HTTP request the web tools issue. */
 export interface WebHttpRequest {
@@ -86,6 +88,8 @@ export interface WebFetchConfig {
   artifactStore?: ToolArtifactStoreLike;
   /** Optional shared dedupe cache for fetched source imports. */
   sourceArtifacts?: SourceArtifactDeduper;
+  /** Comma-separated host suffix allowlist; empty allows all public hosts. */
+  allowedHosts?: string;
 }
 
 const ACCEPT_HEADER = "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8";
@@ -107,6 +111,7 @@ async function fetchFollowingRedirects(
   fetcher: WebFetcher,
   url: string,
   signal: AbortSignal | undefined,
+  allowedHosts: string = "",
 ): Promise<WebHttpResponse> {
   let currentUrl = url;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -122,6 +127,9 @@ async function fetchFollowingRedirects(
       throw new Error(`Redirect from ${currentUrl} pointed at an invalid URL: ${location}`);
     }
     currentUrl = normalizeWebUrl(resolved);
+    if (!isHostAllowedByAllowlist(new URL(currentUrl).hostname, allowedHosts)) {
+      throw new Error(`Blocked by allowlist: ${new URL(currentUrl).hostname}`);
+    }
   }
   throw new Error(`Too many redirects while fetching ${url}.`);
 }
@@ -138,12 +146,16 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
     label: "Fetch web page",
     description:
       "Fetch an http(s) URL and return readable text (HTML stripped). " +
-      "Read a web_search result or a URL the user gave. Sends the URL off-device; cite it for any claim.",
+      "Read a web_search result or a URL the user gave. Sends the URL off-device; cite it for any claim. " +
+      "If an allowlist is configured, only hosts in the allowlist are reachable.",
     parameters: FetchParameters,
     execute: async (_id, params, signal) => {
       const url = normalizeWebUrl(params.url);
+      if (!isHostAllowedByAllowlist(new URL(url).hostname, config.allowedHosts ?? "")) {
+        throw new Error(`Blocked by allowlist: ${new URL(url).hostname}`);
+      }
       throwIfAborted(signal);
-      const response = await fetchFollowingRedirects(config.fetcher, url, signal);
+      const response = await fetchFollowingRedirects(config.fetcher, url, signal, config.allowedHosts ?? "");
       throwIfAborted(signal);
       if (response.status === 0) {
         throw new Error(`Could not fetch ${url}: ${response.text || "network error"}.`);

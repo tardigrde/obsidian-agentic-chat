@@ -5,6 +5,8 @@ import { parseSourceReference } from "../src/retrieval/citations";
 import {
   createWebFetchTool,
   extractReadableText,
+  isHostAllowedByAllowlist,
+  normalizeAllowedHosts,
   normalizeWebUrl,
   type WebFetcher,
   type WebHttpRequest,
@@ -126,6 +128,71 @@ describe("normalizeWebUrl", () => {
 
   it("still allows IPv4-mapped IPv6 of a public address", () => {
     expect(() => normalizeWebUrl("http://[::ffff:8.8.8.8]/x")).not.toThrow();
+  });
+});
+
+describe("normalizeAllowedHosts", () => {
+  it("normalizes comma and whitespace, lowercases, and dedupes", () => {
+    expect(normalizeAllowedHosts(" Example.COM , example.com, *.Wikipedia.org , *.wikipedia.org ")).toBe(
+      "example.com,*.wikipedia.org",
+    );
+  });
+
+  it("filters invalid patterns and returns empty when fully invalid", () => {
+    expect(normalizeAllowedHosts(" , , ")).toBe("");
+    expect(normalizeAllowedHosts("!!!, ???")).toBe("");
+  });
+
+  it("returns empty for undefined or empty", () => {
+    expect(normalizeAllowedHosts(undefined)).toBe("");
+    expect(normalizeAllowedHosts("")).toBe("");
+    expect(normalizeAllowedHosts("   ")).toBe("");
+  });
+});
+
+describe("isHostAllowedByAllowlist", () => {
+  it("allows all when allowlist is empty", () => {
+    expect(isHostAllowedByAllowlist("example.com", "")).toBe(true);
+    expect(isHostAllowedByAllowlist("evil.com", "   ")).toBe(true);
+    expect(isHostAllowedByAllowlist("example.com", "")).toBe(true);
+  });
+
+  it("allows exact and subdomains but not evil suffix", () => {
+    const allow = "example.com";
+    expect(isHostAllowedByAllowlist("example.com", allow)).toBe(true);
+    expect(isHostAllowedByAllowlist("sub.example.com", allow)).toBe(true);
+    expect(isHostAllowedByAllowlist("deep.sub.example.com", allow)).toBe(true);
+    expect(isHostAllowedByAllowlist("evil-example.com", allow)).toBe(false);
+    expect(isHostAllowedByAllowlist("evil.com", allow)).toBe(false);
+    expect(isHostAllowedByAllowlist("example.com.evil.com", allow)).toBe(false);
+  });
+
+  it("handles *. and . prefix patterns label-boundary aware", () => {
+    expect(isHostAllowedByAllowlist("sub.example.com", "*.example.com")).toBe(true);
+    expect(isHostAllowedByAllowlist("example.com", "*.example.com")).toBe(false);
+    expect(isHostAllowedByAllowlist("sub.example.com", ".example.com")).toBe(true);
+    expect(isHostAllowedByAllowlist("example.com", ".example.com")).toBe(false);
+    expect(isHostAllowedByAllowlist("evil-example.com", "*.example.com")).toBe(false);
+  });
+
+  it("handles wildcard *", () => {
+    expect(isHostAllowedByAllowlist("anything.com", "*")).toBe(true);
+    expect(isHostAllowedByAllowlist("example.com", "example.com, *")).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isHostAllowedByAllowlist("EXAMPLE.COM", "example.com")).toBe(true);
+    expect(isHostAllowedByAllowlist("Sub.Example.COM", "EXAMPLE.COM")).toBe(true);
+  });
+
+  it("handles comma-separated list", () => {
+    const allow = "example.com, *.wikipedia.org, api.test.com";
+    expect(isHostAllowedByAllowlist("example.com", allow)).toBe(true);
+    expect(isHostAllowedByAllowlist("sub.wikipedia.org", allow)).toBe(true);
+    expect(isHostAllowedByAllowlist("en.wikipedia.org", allow)).toBe(true);
+    expect(isHostAllowedByAllowlist("api.test.com", allow)).toBe(true);
+    expect(isHostAllowedByAllowlist("sub.api.test.com", allow)).toBe(true);
+    expect(isHostAllowedByAllowlist("evil.com", allow)).toBe(false);
   });
 });
 
@@ -412,5 +479,60 @@ describe("fetch_url tool", () => {
     expect(first.details.sourceArtifactDuplicate).toBe(false);
     expect(second.details.sourceArtifactDuplicate).toBe(true);
     expect(second.text).toContain("Source artifact: [Doc](artifact:artifact-1) (already imported)");
+  });
+
+  it("allows hosts matching the allowlist and blocks others", async () => {
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ text: "<p>ok</p>", headers: { "content-type": "text/html" } }),
+      charLimit: 10_000,
+      allowedHosts: "example.com, *.wikipedia.org",
+    });
+    await expect(run(tool, { url: "https://example.com/page" })).resolves.toBeDefined();
+    await expect(run(tool, { url: "https://sub.example.com/page" })).resolves.toBeDefined();
+    await expect(run(tool, { url: "https://en.wikipedia.org/wiki/Obsidian" })).resolves.toBeDefined();
+    await expect(run(tool, { url: "https://evil.com/page" })).rejects.toThrow(/Blocked by allowlist: evil\.com/);
+    await expect(run(tool, { url: "https://evil-example.com/page" })).rejects.toThrow(/Blocked by allowlist/);
+  });
+
+  it("still blocks SSRF even when allowlist would otherwise allow public", async () => {
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ text: "" }),
+      charLimit: 10_000,
+      allowedHosts: "localhost, example.com",
+    });
+    await expect(run(tool, { url: "http://localhost/admin" })).rejects.toThrow(/local or private/i);
+    await expect(run(tool, { url: "http://127.0.0.1/x" })).rejects.toThrow(/local or private/i);
+    // Allowlist with localhost should not bypass SSRF deny (deny wins)
+    await expect(run(tool, { url: "https://example.com/page" })).resolves.toBeDefined();
+  });
+
+  it("blocks redirects that land outside the allowlist", async () => {
+    const fetcher: WebFetcher = async (request) => {
+      if (request.url === "https://example.com/start") {
+        return { status: 302, text: "", headers: { location: "https://evil.com/steal" } as Record<string, string> };
+      }
+      return { status: 200, text: "<p>evil</p>", headers: { "content-type": "text/html" } as Record<string, string> };
+    };
+    const tool = createWebFetchTool({ fetcher, charLimit: 10_000, allowedHosts: "example.com" });
+    await expect(run(tool, { url: "https://example.com/start" })).rejects.toThrow(/Blocked by allowlist: evil\.com/);
+  });
+
+  it("allows all when allowlist is empty", async () => {
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ text: "<p>ok</p>", headers: { "content-type": "text/html" } }),
+      charLimit: 10_000,
+      allowedHosts: "",
+    });
+    await expect(run(tool, { url: "https://anything.example.net/page" })).resolves.toBeDefined();
+    await expect(run(tool, { url: "https://evil.com/page" })).resolves.toBeDefined();
+  });
+
+  it("handles wildcard * in allowlist", async () => {
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ text: "<p>ok</p>", headers: { "content-type": "text/html" } }),
+      charLimit: 10_000,
+      allowedHosts: "*",
+    });
+    await expect(run(tool, { url: "https://evil.com/page" })).resolves.toBeDefined();
   });
 });

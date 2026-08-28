@@ -22,6 +22,6 @@ export function createWebTools(settings: WebSettings, fetcher: WebFetcher, artif
       maxResults: settings.maxResults,
       fetcher,
     }),
-    createWebFetchTool({ fetcher, charLimit: settings.fetchCharLimit, artifactStore }),
+    createWebFetchTool({ fetcher, charLimit: settings.fetchCharLimit, artifactStore, allowedHosts: settings.allowedHosts }),
   ];
 }
