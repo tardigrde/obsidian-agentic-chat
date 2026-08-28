@@ -349,17 +349,15 @@ export class McpHttpClient {
         const classified = classifyError(error);
         if (!classified.retryable || attempt >= maxRetries || signal?.aborted) throw error;
         await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
+        if (signal?.aborted) throw new Error("Aborted.");
         attempt += 1;
         continue;
       }
-      const sessionId = sanitizeMcpSessionId(response.headers["mcp-session-id"]);
-      if (sessionId) this.sessionId = sessionId;
       if (response.status === 0) {
-        const retryAfterMs = getRetryAfterMsFromHeaders(response.headers);
         const classified = classifyHttpResponse(0, response.headers, response.text);
-        const effective = retryAfterMs !== undefined ? { ...classified, retryAfterMs } : classified;
-        if (!effective.retryable || attempt >= maxRetries) throw new Error(statusZeroMessage(response));
-        await sleep(backoffDelayMs(attempt, effective.retryAfterMs), signal);
+        if (!classified.retryable || attempt >= maxRetries) throw new Error(statusZeroMessage(response));
+        await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
+        if (signal?.aborted) throw new Error("Aborted.");
         attempt += 1;
         continue;
       }
@@ -368,14 +366,15 @@ export class McpHttpClient {
         if (response.status === 404 && this.sessionId) throw new McpSessionTerminatedError(`MCP ${this.server.name} session expired.`);
         if (response.status === 401 && this.server.authType === "oauth") throw new McpOAuthUnauthorizedError(auth ?? "");
         if (response.status === 403 && this.server.authType === "oauth") throw new McpOAuthForbiddenError(auth ?? "");
-        const retryAfterMs = getRetryAfterMsFromHeaders(response.headers);
         const classified = classifyHttpResponse(response.status, response.headers, response.text);
-        const effective = retryAfterMs !== undefined ? { ...classified, retryAfterMs } : classified;
-        if (!effective.retryable || attempt >= maxRetries) throw new Error(httpErrorMessage(response));
-        await sleep(backoffDelayMs(attempt, effective.retryAfterMs), signal);
+        if (!classified.retryable || attempt >= maxRetries) throw new Error(httpErrorMessage(response));
+        await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
+        if (signal?.aborted) throw new Error("Aborted.");
         attempt += 1;
         continue;
       }
+      const sessionId = sanitizeMcpSessionId(response.headers["mcp-session-id"]);
+      if (sessionId) this.sessionId = sessionId;
       return response;
     }
   }

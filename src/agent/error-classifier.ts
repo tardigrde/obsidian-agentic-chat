@@ -12,24 +12,22 @@ export const INITIAL_BACKOFF_MS = 500;
 export const MAX_BACKOFF_MS = 8000;
 export const JITTER_FACTOR = 0.25;
 
+export const MAX_RETRY_AFTER_MS = 60_000;
+
 export function parseRetryAfterMs(value: string | undefined, nowMs = Date.now()): number | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  const seconds = Number.parseInt(trimmed, 10);
-  if (Number.isFinite(seconds) && String(seconds) === trimmed) {
-    if (seconds < 0) return undefined;
-    return seconds * 1000;
-  }
-  if (/^\d+$/.test(trimmed)) {
-    const asNum = Number.parseInt(trimmed, 10);
-    if (Number.isFinite(asNum) && asNum >= 0) return asNum * 1000;
+  if (/^-?\d+$/.test(trimmed)) {
+    const seconds = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+    return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS);
   }
   const dateMs = Date.parse(trimmed);
   if (Number.isFinite(dateMs)) {
     const diff = dateMs - nowMs;
     if (diff <= 0) return 0;
-    return diff;
+    return Math.min(diff, MAX_RETRY_AFTER_MS);
   }
   return undefined;
 }
@@ -51,11 +49,11 @@ export function getRetryAfterMsFromHeaders(
 
 export function isAbortedError(error: unknown): boolean {
   if (error instanceof Error) {
-    const msg = error.message.toLowerCase();
-    if (msg.includes("aborted") || msg.includes("abort")) return true;
     if (error.name === "AbortError") return true;
+    const msg = error.message.toLowerCase();
+    if (/\babort(ed|ing)?\b/i.test(msg)) return true;
   }
-  if (typeof error === "string" && /abort/i.test(error)) return true;
+  if (typeof error === "string" && /\babort(ed|ing)?\b/i.test(error)) return true;
   return false;
 }
 
@@ -95,7 +93,7 @@ function classifyStatus(
   if (status >= 400 && status < 500) {
     return { class: "permanent", retryable: false, status, retryAfterMs, message };
   }
-  return { class: "unknown" as ErrorClass, retryable: false, status, retryAfterMs, message };
+  return { class: "permanent", retryable: false, status, retryAfterMs, message };
 }
 
 export function classifyHttpResponse(
@@ -150,12 +148,13 @@ function extractRetryAfterFromMessage(_message: string): number | undefined {
 }
 
 export function backoffDelayMs(attempt: number, retryAfterMs?: number): number {
-  const exponential = Math.min(MAX_BACKOFF_MS, INITIAL_BACKOFF_MS * 2 ** attempt);
+  const safeAttempt = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
+  const exponential = Math.min(MAX_BACKOFF_MS, INITIAL_BACKOFF_MS * 2 ** safeAttempt);
   const jitter = exponential * JITTER_FACTOR * (secureRandom() * 2 - 1);
   let delay = exponential + jitter;
   delay = Math.max(0, Math.min(MAX_BACKOFF_MS, delay));
   if (retryAfterMs !== undefined && Number.isFinite(retryAfterMs)) {
-    const honored = Math.max(0, retryAfterMs);
+    const honored = Math.min(MAX_RETRY_AFTER_MS, Math.max(0, retryAfterMs));
     delay = Math.max(delay, honored);
   }
   return Math.round(delay);
@@ -163,13 +162,16 @@ export function backoffDelayMs(attempt: number, retryAfterMs?: number): number {
 
 function secureRandom(): number {
   try {
-    const array = new Uint32Array(1);
-    window.crypto?.getRandomValues?.(array);
-    // Convert 32-bit int to [0,1)
-    return array[0] / 0x100000000;
+    const cryptoObj = (globalThis as unknown as { crypto?: Crypto }).crypto;
+    if (cryptoObj?.getRandomValues) {
+      const array = new Uint32Array(1);
+      cryptoObj.getRandomValues(array);
+      return array[0] / 0x100000000;
+    }
   } catch {
-    return Math.random(); // NOSONAR - jitter for backoff, not security-sensitive; crypto is primary
+    // fall through
   }
+  return Math.random(); // NOSONAR - jitter for backoff, not security-sensitive; crypto is primary
 }
 
 export function shouldRetry(classified: ClassifiedError, attempt: number, maxRetries: number): boolean {
@@ -193,10 +195,11 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) return Promise.reject(new Error("Aborted."));
   return new Promise<void>((resolve, reject) => {
     const onAbort = (): void => {
-      window.clearTimeout(timer);
+      globalThis.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       reject(new Error("Aborted."));
     };
-    const timer = window.setTimeout(() => {
+    const timer = globalThis.setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
