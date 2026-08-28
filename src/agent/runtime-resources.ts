@@ -13,7 +13,7 @@ import { createMemoryTools } from "../tools/memory-tools";
 import { createDocumentTools } from "../tools/document-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
-import { createReadSkillTool } from "../tools/read-skill-tool";
+import { createReadSkillTool, createReadSkillFileTool } from "../tools/read-skill-tool";
 import { createMcpFetcher } from "../mcp/fetcher";
 import { createMcpToolsWithDiagnostics, type McpServerDiagnostic } from "../mcp/tools";
 import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
@@ -162,6 +162,7 @@ export function buildAgentParentTools(options: {
     ...createToolArtifactTools(options.artifactStore),
     ...options.resources.mcpTools,
     createReadSkillTool(options.resources.skills),
+    createReadSkillFileTool(options.app, options.resources.skills),
     ...(options.subagentTool ? [options.subagentTool] : []),
   ];
   const budgeted = applyToolBudget({

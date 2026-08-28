@@ -42,7 +42,7 @@ import { wrapToolOutputTruncated } from "./tool-output-wrapper";
 
 export { MUTATING_TOOLS } from "./tool-contracts";
 
-const TEXT_EXTENSIONS = new Set([
+export const TEXT_EXTENSIONS = new Set([
   "md", "txt", "json", "jsonl", "csv", "tsv", "yaml", "yml",
   "css", "js", "ts", "tsx", "jsx", "html", "xml",
 ]);

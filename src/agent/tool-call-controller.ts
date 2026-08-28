@@ -166,7 +166,10 @@ export class AgentToolCallController {
     const { reason } = decision;
     // Working-dir boundary keys off path/newPath args, so only Safe mode (which can scope
     // calls to granted dirs) needs it; YOLO is a session-wide allow and plan is read-only.
-    const scoped = settings.mode === "safe";
+    // Skill resources are vault-hosted plugin content, not user notes — exempt from the
+    // working-dir allow-list so `read_skill_file` doesn't require an ask when dirs are scoped.
+    const isSkillTool = toolName === "read_skill" || toolName === "read_skill_file";
+    const scoped = settings.mode === "safe" && !isSkillTool;
     // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
     // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
     // already forces read-only, so the boundary only refines Safe.

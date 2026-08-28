@@ -1,6 +1,7 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
 import { formatSkillInvocation, parseCommandArgs, substituteArgs } from "@earendil-works/pi-agent-core";
 import { parseYaml } from "obsidian";
+import { normalizeVaultPath } from "../vault/path";
 
 // pi owns the spec-compatible formatting; we only handle loading from the vault.
 export {
@@ -56,4 +57,41 @@ export function splitFrontmatter(content: string): Frontmatter {
 export function stringField(data: Record<string, unknown>, key: string): string | undefined {
   const value = data[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/** Vault path of the skill's SKILL.md file; "(built-in)" for bundled skills. */
+const BUILTIN_MARKER = "(built-in)";
+
+/** Directory that contains the skill's SKILL.md, or null for built-ins. */
+export function getSkillDir(skill: Skill): string | null {
+  const filePath = skill.filePath;
+  if (!filePath || filePath === BUILTIN_MARKER || filePath.startsWith("(")) return null;
+  const slash = filePath.lastIndexOf("/");
+  if (slash === -1) return null;
+  return filePath.slice(0, slash);
+}
+
+/**
+ * Resolve a relative path inside a skill's folder with strict confinement.
+ * Joins `skillDir/relativePath`, normalizes, and ensures the result stays
+ * inside the skill directory. Throws on absolute paths, `..` escapes, or
+ * confinement violations.
+ */
+export function resolveSkillResourcePath(skill: Skill, relativePath: string): string {
+  const dir = getSkillDir(skill);
+  if (!dir) throw new Error(`Skill "${skill.name}" is built-in and has no additional files.`);
+  const trimmed = relativePath.trim().replaceAll("\\", "/");
+  if (!trimmed) throw new Error("path is required.");
+  if (trimmed.startsWith("/")) throw new Error(`Path must be relative to skill folder, not absolute: "${relativePath}"`);
+  const joined = `${dir}/${trimmed}`;
+  let normalized: string;
+  try {
+    normalized = normalizeVaultPath(joined);
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error), { cause: error });
+  }
+  if (normalized !== dir && !normalized.startsWith(`${dir}/`)) {
+    throw new Error(`Path "${relativePath}" escapes skill folder "${skill.name}"; must stay inside ${dir}.`);
+  }
+  return normalized;
 }
