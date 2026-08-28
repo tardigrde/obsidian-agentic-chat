@@ -14,6 +14,9 @@ import { createDocumentTools } from "../tools/document-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
 import { createReadSkillTool, createReadSkillFileTool } from "../tools/read-skill-tool";
+import { createSkillLoadTools } from "../tools/skill-tools";
+import { getLoadedSkillNames } from "../skills/skill-load-state";
+import { formatSkillInvocation } from "../skills/skills";
 import { createMcpFetcher } from "../mcp/fetcher";
 import { createMcpToolsWithDiagnostics, type McpServerDiagnostic } from "../mcp/tools";
 import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
@@ -111,8 +114,19 @@ export function composeAgentSystemPrompt(
     OUTPUT_STYLES[settings.outputStyle].promptOverlay,
     formatSubagentsForSystemPrompt(resources.profiles),
     pluginSkillTrustBoundary(resources.plugins),
+    formatLoadedSkillsOverlay(resources.skills),
   ];
   return buildSystemPrompt(settings.systemPrompt, resources.skills, overlays);
+}
+
+function formatLoadedSkillsOverlay(skills: Skill[]): string {
+  const loadedNames = getLoadedSkillNames();
+  if (loadedNames.length === 0) return "";
+  const loaded = loadedNames
+    .map((name) => skills.find((s) => s.name === name))
+    .filter((s): s is Skill => Boolean(s));
+  if (loaded.length === 0) return "";
+  return loaded.map((skill) => formatSkillInvocation(skill)).join("\n\n");
 }
 
 /**
@@ -163,6 +177,7 @@ export function buildAgentParentTools(options: {
     ...options.resources.mcpTools,
     createReadSkillTool(options.resources.skills),
     createReadSkillFileTool(options.app, options.resources.skills),
+    ...createSkillLoadTools(options.resources.skills),
     ...(options.subagentTool ? [options.subagentTool] : []),
   ];
   const budgeted = applyToolBudget({
