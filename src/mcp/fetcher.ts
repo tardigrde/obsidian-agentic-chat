@@ -2,6 +2,10 @@ import type { WebFetcher, WebHttpRequest, WebHttpResponse } from "../tools/web-f
 import { createObsidianFetcher } from "../tools/web-fetch";
 import type { ProxySettings } from "../network/proxy";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
+// H3: MCP transient retries (429/5xx + Retry-After, 500ms→8s+jitter) are owned by
+// `src/mcp/client.ts` (post/getSseAfter) to avoid double multiplication with a
+// fetcher-level loop. This module stays retry-free; the client is the single owner
+// for `tools/call` replay-safe retries. See `src/agent/error-classifier.ts`.
 
 const DEFAULT_HTTPS_PORT = 443;
 const DEFAULT_HTTP_PORT = 80;

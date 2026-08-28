@@ -299,6 +299,18 @@ function formatList(values: readonly string[]): string {
   return values.length === 0 ? "(none)" : values.join(", ");
 }
 
+export function summarizeRetryAttempt(
+  attempt: number,
+  maxRetries: number,
+  errorClass: string,
+  status?: number,
+  delayMs?: number,
+): string {
+  const statusPart = status !== undefined ? `:${status}` : "";
+  const delayPart = delayMs !== undefined ? `:${delayMs}ms` : "";
+  return `retry:${errorClass}${statusPart}:${attempt + 1}/${maxRetries}${delayPart}`;
+}
+
 function exhaustiveEvent(_event: never): string {
   return "unknown:event";
 }

@@ -134,7 +134,11 @@ describe("MCP tools", () => {
     await expect(
       probeMcpServer(
         createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
-        queuedFetcher([{ status: 500, text: "down", headers: {} }]),
+        queuedFetcher([
+          { status: 500, text: "down", headers: {} },
+          { status: 500, text: "down", headers: {} },
+          { status: 500, text: "down", headers: {} },
+        ]),
       ),
     ).rejects.toThrow(/HTTP 500/);
   });

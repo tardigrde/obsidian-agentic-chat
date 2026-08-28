@@ -85,13 +85,15 @@ describe("AgentStreamRuntime", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0].context).toBe(context);
+    // StreamSimple path is wrapped with harness retry: inner receives maxRetries 0 so the
+    // harness (not pi-ai) owns backoff+jitter+Retry-After. Outer setting still 3 retries.
     expect(calls[0].options).toMatchObject({
       apiKey: "test-key",
       signal,
       temperature: 0.7,
       maxTokens: 64,
       timeoutMs: 12_345,
-      maxRetries: 3,
+      maxRetries: 0,
       headers: {
         "HTTP-Referer": "https://github.com/tardigrde/obsidian-agentic-chat",
         "X-Title": "Custom Title",
