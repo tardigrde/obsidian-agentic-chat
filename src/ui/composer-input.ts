@@ -1,8 +1,9 @@
 import type { TurnSteeringMode } from "../agent/turn-control";
+import { stripContextPreamble as stripFromBuilder } from "./context-builder";
 
 /** Strip an attachment `<context>...</context>` preamble for display/retry fallback. */
 export function stripContextPreamble(text: string): string {
-  return text.replace(/^<context>[\s\S]*?<\/context>\n\n(?:Focus:[^\n]*\n\n)?/, "");
+  return stripFromBuilder(text);
 }
 
 export function parseStreamingSteering(input: string): { mode: TurnSteeringMode; text: string } | null {

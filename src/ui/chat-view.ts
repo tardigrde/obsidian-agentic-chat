@@ -57,7 +57,7 @@ import { ComposerHistory } from "./composer-history";
 import { PromptEditState } from "./prompt-edit-state";
 import { freshChatTabState, type ChatTabWorkingState } from "./chat-tab-state";
 import {
-  buildFocusHint,
+  assemblePrompt,
   buildPromptContext,
   loadImageAttachments as loadContextImageAttachments,
   PromptContextCache,
@@ -1350,15 +1350,7 @@ export class ChatView extends ItemView {
         contextCache.discard();
         return;
       }
-      const focusHint = context && text.trim() ? buildFocusHint(text) : "";
-      let prompt: string;
-      if (focusHint) {
-        prompt = `${context}\n\n${focusHint}\n\n${text}`;
-      } else if (context) {
-        prompt = `${context}\n\n${text}`;
-      } else {
-        prompt = text;
-      }
+      const prompt = assemblePrompt(context, text);
       // Image attachments ride as multimodal content parts, not text context.
       const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
       if (!this.isLiveTab(tab)) {
@@ -1407,15 +1399,7 @@ export class ChatView extends ItemView {
         contextCache.discard();
         return;
       }
-      const focusHint = context && steering.text.trim() ? buildFocusHint(steering.text) : "";
-      let prompt: string;
-      if (focusHint) {
-        prompt = `${context}\n\n${focusHint}\n\n${steering.text}`;
-      } else if (context) {
-        prompt = `${context}\n\n${steering.text}`;
-      } else {
-        prompt = steering.text;
-      }
+      const prompt = assemblePrompt(context, steering.text);
       const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
