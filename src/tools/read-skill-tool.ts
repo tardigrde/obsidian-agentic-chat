@@ -3,6 +3,7 @@ import { TFolder, type App } from "obsidian";
 import { Type } from "typebox";
 import { resolveSkillResourcePath } from "../skills/skills";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { TEXT_EXTENSIONS } from "./vault-tools";
 import {
   formatTextSlice,
   readSizeGuardrail,
@@ -24,9 +25,7 @@ const ReadSkillFileParameters = Type.Object({
   limit: Type.Optional(Type.Number({ description: "max lines" })),
 });
 
-const TEXT_EXTENSIONS = new Set([
-  "md", "txt", "json", "jsonl", "csv", "tsv", "yaml", "yml", "css", "js", "ts", "tsx", "jsx", "html", "xml",
-]);
+
 
 /**
  * Create the `read_skill` tool: loads the full content of a named skill on demand.
@@ -81,8 +80,9 @@ export function createReadSkillFileTool(app: App, skills: Skill[]): AgentTool<ty
       }
       const file = app.vault.getFileByPath(resolved);
       // Binary asset guard (Option A: path hint, not base64) — check extension before reading
-      const hasDot = resolved.includes(".");
-      const ext = hasDot ? (resolved.split(".").pop()?.toLowerCase() ?? "") : "";
+      const baseName = resolved.split("/").pop() ?? resolved;
+      const hasDot = baseName.includes(".");
+      const ext = hasDot ? (baseName.split(".").pop()?.toLowerCase() ?? "") : "";
       const fileExt = file?.extension?.toLowerCase() ?? "";
       const isText = !hasDot || TEXT_EXTENSIONS.has(ext) || TEXT_EXTENSIONS.has(fileExt);
       // For unknown files (no TFile entry) we treat text-like extensions as text; others as binary
@@ -113,9 +113,11 @@ export function createReadSkillFileTool(app: App, skills: Skill[]): AgentTool<ty
               details: { path: resolved, skill: skill.name, tooLarge: true },
             };
           }
-          return handleSkillFileContent(resolved, content, content.length, params, skill.name);
-        } catch {
-          throw new Error(`File not found: ${resolved} (skill "${skill.name}" resource "${params.path}")`);
+          return handleSkillFileContent(resolved, content, params, skill.name);
+        } catch (error) {
+          throw new Error(`File not found: ${resolved} (skill "${skill.name}" resource "${params.path}")`, {
+            cause: error,
+          });
         }
       }
       const guidance = readSizeGuardrail({
@@ -134,9 +136,10 @@ export function createReadSkillFileTool(app: App, skills: Skill[]): AgentTool<ty
       try {
         content = await app.vault.cachedRead(file);
       } catch {
+        // cachedRead can fail on mobile/web adapter stale tree; fall back to direct read
         content = await app.vault.adapter.read(resolved);
       }
-      return handleSkillFileContent(resolved, content, file.stat?.size ?? content.length, params, skill.name);
+      return handleSkillFileContent(resolved, content, params, skill.name);
     },
   };
 }
@@ -144,11 +147,9 @@ export function createReadSkillFileTool(app: App, skills: Skill[]): AgentTool<ty
 function handleSkillFileContent(
   path: string,
   content: string,
-  size: number,
   params: { offset?: number; limit?: number },
   skillName?: string,
 ): { content: { type: "text"; text: string }[]; details: Record<string, unknown> } {
-  void size;
   const window = resolveLineWindow({
     offset: params.offset,
     limit: params.limit,
@@ -156,7 +157,7 @@ function handleSkillFileContent(
   const slice = sliceTextByLines(content, window);
   const formatted = formatTextSlice(path, slice);
   return {
-    content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(formatted), "read_skill_file") }],
+    content: [{ type: "text", text: wrapToolOutputTruncated(formatted, "read_skill_file") }],
     details: {
       path,
       ...(skillName ? { skill: skillName } : {}),
