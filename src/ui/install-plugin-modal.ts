@@ -13,7 +13,7 @@ import { sniffSource, type MarketplaceSourceEntry } from "../plugins/import/snif
  * servers start disabled.
  */
 export class InstallPluginModal extends Modal {
-  private readonly status = document.createElement("div");
+  private readonly status = document.createDiv();
 
   constructor(
     app: App,
@@ -93,7 +93,7 @@ export class InstallPluginModal extends Modal {
 
   /** Desktop-only: webkitdirectory folder picker read into a tree, then sniff + install. */
   private pickFolder(): void {
-    const input = document.createElement("input");
+    const input = document.createEl("input", { type: "file" });
     input.type = "file";
     input.multiple = true;
     input.setAttribute("webkitdirectory", "");
@@ -119,7 +119,7 @@ export class InstallPluginModal extends Modal {
 
   /** Archive file picker: extract in-memory, then sniff + install. */
   private pickArchive(): void {
-    const input = document.createElement("input");
+    const input = document.createEl("input", { type: "file" });
     input.type = "file";
     input.accept = ".zip,.tar.gz,.tgz";
     input.onchange = async () => {

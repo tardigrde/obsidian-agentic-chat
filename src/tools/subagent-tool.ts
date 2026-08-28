@@ -57,7 +57,6 @@ export interface SubagentDetails {
  * fields from leaking.
  */
 export function toPersistedChild(status: SubagentChildStatus): SubagentChildStatus {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- spread with conditional optional props requires assertion to satisfy SubagentChildStatus
   return {
     agent: redactText(String(status.agent ?? ""), { redactHighEntropy: true, maxLength: 120 }),
     task: redactText(String(status.task ?? ""), { redactHighEntropy: true, maxLength: 400 }),
@@ -65,7 +64,7 @@ export function toPersistedChild(status: SubagentChildStatus): SubagentChildStat
     ...(status.summary ? { summary: redactText(status.summary, { redactHighEntropy: true, maxLength: 9000 }) } : {}),
     ...(typeof status.durationMs === "number" ? { durationMs: status.durationMs } : {}),
     ...(status.usage ? { usage: status.usage } : {}),
-  } as SubagentChildStatus;
+  };
 }
 
 export function persistedSnapshot(statuses: SubagentChildStatus[]): SubagentDetails {

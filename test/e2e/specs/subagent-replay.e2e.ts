@@ -64,38 +64,39 @@ function assistantEndEmpty(): Record<string, unknown> {
   return { type: "message_end", message: { role: "assistant", content: [] } };
 }
 
+type SubagentChild = { agent: string; task: string; status: "done" | "aborted" | "error"; summary: string; durationMs?: number; usage?: { input: number; output: number; totalTokens: number; costUsd: number } };
+
+async function emitSubagentDispatch(opts: { id: string; agent: string; task: string; children: SubagentChild[]; isError: boolean; contentText: string }): Promise<void> {
+  await startAssistantTurn();
+  await emit(toolStart(opts.id, "subagent", { agent: opts.agent, task: opts.task }));
+  await emit({
+    type: "tool_execution_end",
+    toolCallId: opts.id,
+    result: {
+      content: [{ type: "text", text: opts.contentText }],
+      details: { kind: "subagent", children: opts.children },
+    },
+    isError: opts.isError,
+  });
+  await emit(assistantEndEmpty());
+  await emit({ type: "agent_end" });
+}
+
 describe("R1 subagent replay smoke", function () {
   before(async function () {
     await openChat();
   });
 
   it("rehydrates a done dispatch from tool_execution_end alone (no updateStep), collapsed with summary", async function () {
-    await startAssistantTurn();
-    await emit(toolStart("t-r1-done", "subagent", { agent: "explorer", task: "map the vault" }));
     // Replay path: no tool_execution_update, only end with persisted details (stripped transcript/stopId, bounded).
-    await emit({
-      type: "tool_execution_end",
-      toolCallId: "t-r1-done",
-      result: {
-        content: [{ type: "text", text: "summary text" }],
-        details: {
-          kind: "subagent",
-          children: [
-            {
-              agent: "explorer",
-              task: "map the vault",
-              status: "done",
-              summary: "found 3 notes",
-              durationMs: 42_000,
-              usage: { input: 1000, output: 500, totalTokens: 1500, costUsd: 0.003 },
-            },
-          ],
-        },
-      },
+    await emitSubagentDispatch({
+      id: "t-r1-done",
+      agent: "explorer",
+      task: "map the vault",
+      contentText: "summary text",
       isError: false,
+      children: [{ agent: "explorer", task: "map the vault", status: "done", summary: "found 3 notes", durationMs: 42_000, usage: { input: 1000, output: 500, totalTokens: 1500, costUsd: 0.003 } }],
     });
-    await emit(assistantEndEmpty());
-    await emit({ type: "agent_end" });
 
     // Outer dispatch card exists and is collapsed on reload (ReplayKind parity).
     await browser.waitUntil(
@@ -125,22 +126,14 @@ describe("R1 subagent replay smoke", function () {
   });
 
   it("rehydrates an aborted dispatch as stopped (red) without re-running", async function () {
-    await startAssistantTurn();
-    await emit(toolStart("t-r1-abort", "subagent", { agent: "explorer", task: "hang" }));
-    await emit({
-      type: "tool_execution_end",
-      toolCallId: "t-r1-abort",
-      result: {
-        content: [{ type: "text", text: 'Subagent "explorer" was stopped: Stopped by user' }],
-        details: {
-          kind: "subagent",
-          children: [{ agent: "explorer", task: "hang", status: "aborted", summary: "Stopped by user", durationMs: 5000 }],
-        },
-      },
+    await emitSubagentDispatch({
+      id: "t-r1-abort",
+      agent: "explorer",
+      task: "hang",
+      contentText: 'Subagent "explorer" was stopped: Stopped by user',
       isError: false,
+      children: [{ agent: "explorer", task: "hang", status: "aborted", summary: "Stopped by user", durationMs: 5000 }],
     });
-    await emit(assistantEndEmpty());
-    await emit({ type: "agent_end" });
 
     const icon = await probe({ key: "icon", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-icon svg", attr: "class" });
     expect(icon.icon).toContain("x-circle");
@@ -151,22 +144,14 @@ describe("R1 subagent replay smoke", function () {
   });
 
   it("rehydrates an error dispatch as failed (red) from persisted details", async function () {
-    await startAssistantTurn();
-    await emit(toolStart("t-r1-error", "subagent", { agent: "explorer", task: "bad" }));
-    await emit({
-      type: "tool_execution_end",
-      toolCallId: "t-r1-error",
-      result: {
-        content: [{ type: "text", text: 'Subagent "explorer" failed: disk full' }],
-        details: {
-          kind: "subagent",
-          children: [{ agent: "explorer", task: "bad", status: "error", summary: "disk full", durationMs: 1000 }],
-        },
-      },
+    await emitSubagentDispatch({
+      id: "t-r1-error",
+      agent: "explorer",
+      task: "bad",
+      contentText: 'Subagent "explorer" failed: disk full',
       isError: true,
+      children: [{ agent: "explorer", task: "bad", status: "error", summary: "disk full", durationMs: 1000 }],
     });
-    await emit(assistantEndEmpty());
-    await emit({ type: "agent_end" });
 
     const card = await probe({ key: "cls", selector: ".agentic-chat-assistant:last-child .agentic-chat-step", attr: "class" });
     expect(card.cls).toContain("is-error");
@@ -175,22 +160,14 @@ describe("R1 subagent replay smoke", function () {
   });
 
   it("toggles a collapsed replay card open and keeps Stop hidden", async function () {
-    await startAssistantTurn();
-    await emit(toolStart("t-r1-toggle", "subagent", { agent: "explorer", task: "toggle me" }));
-    await emit({
-      type: "tool_execution_end",
-      toolCallId: "t-r1-toggle",
-      result: {
-        content: [{ type: "text", text: "toggle summary" }],
-        details: {
-          kind: "subagent",
-          children: [{ agent: "explorer", task: "toggle me", status: "done", summary: "toggle summary", durationMs: 1000 }],
-        },
-      },
+    await emitSubagentDispatch({
+      id: "t-r1-toggle",
+      agent: "explorer",
+      task: "toggle me",
+      contentText: "toggle summary",
       isError: false,
+      children: [{ agent: "explorer", task: "toggle me", status: "done", summary: "toggle summary", durationMs: 1000 }],
     });
-    await emit(assistantEndEmpty());
-    await emit({ type: "agent_end" });
 
     const ariaBefore = await probe({ key: "aria", selector: ".agentic-chat-assistant:last-child .agentic-chat-step-toggle", attr: "aria-expanded" });
     expect(ariaBefore.aria).toBe("false");
