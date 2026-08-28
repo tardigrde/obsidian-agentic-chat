@@ -275,6 +275,9 @@ export class AgentToolCallController {
     const override = settings.approval.perTool[toolName];
     if (override) return override;
     const serverId = mcpServerIdFromToolName(toolName);
+    if (!serverId) return "ask";
+    const state = settings.plugins.mcpState[serverId];
+    if (state) return state.approval;
     const server = settings.mcp.servers.find((candidate) => candidate.id === serverId);
     return server?.approval ?? "ask";
   }

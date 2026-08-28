@@ -122,9 +122,11 @@ describe("PluginService.installFromTree", () => {
     await service.installFromTree(claudePluginTree(), "github:example/docs-helper");
 
     expect(current.plugins.sources["docs-helper"]).toBe("github:example/docs-helper");
-    const server = current.mcp.servers.find((s) => s.source === "plugin");
-    expect(server?.enabled).toBe(false);
-    expect(server?.id).toBe(pluginMcpServerId("docs-helper", "files"));
+    const id = pluginMcpServerId("docs-helper", "files");
+    expect(current.plugins.mcpState[id]?.enabled).toBe(false);
+    expect(current.plugins.mcpState[id]).toBeDefined();
+    // Legacy location must no longer be used for plugin servers
+    expect(current.mcp.servers.find((s) => s.source === "plugin")).toBeUndefined();
   });
 
   it("re-importing the same name updates the package in place", async () => {

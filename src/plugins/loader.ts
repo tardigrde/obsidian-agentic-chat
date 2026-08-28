@@ -1,8 +1,10 @@
 import { type App, TFolder, TFile } from "obsidian";
 import type { Skill } from "@earendil-works/pi-agent-core";
 import {
+  applyMcpServerState,
   createMcpServerSettings,
   type McpServerSettings,
+  type McpServerState,
 } from "../mcp/settings";
 import { parseSkillMarkdown } from "../skills/skill-format";
 import { sha256Hex } from "../utils/sha256";
@@ -364,6 +366,74 @@ export function syncMcpServers(
   derived: readonly McpServerSettings[],
 ): void {
   settings.mcp.servers = mergePluginMcpServers(settings.mcp.servers, derived);
+}
+
+/**
+ * New S10 path: derive the runtime MCP server list from plugin shape + client-owned
+ * state map (settings.plugins.mcpState). Shape (url/name/headers/pluginRoot) comes
+ * from the plugin file; enabled/approval/auth/knownTools/oauth comes from the map.
+ * No merge/sync of settings.mcp.servers — the two cannot diverge.
+ */
+export function deriveMcpServers(
+  derived: readonly McpServerSettings[],
+  stateMap: Record<string, McpServerState>,
+): McpServerSettings[] {
+  return derived.map((server) => {
+    const state = stateMap[server.id];
+    if (!state) return server;
+    // Security: if mcp.json moved the URL, never replay tokens minted for the old host.
+    if (state.lastUrl && state.lastUrl !== server.url) {
+      state.authHeaderValue = "";
+      state.oauth = { ...state.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
+      // Secret ids stay derived from id, but values are cleared via store on next save.
+    }
+    state.lastUrl = server.url;
+    const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
+    applyMcpServerState(copy, state);
+    return copy;
+  });
+}
+
+/**
+ * Resolve all MCP servers for the runtime: plugin-derived (via mcpState map) plus
+ * legacy user servers that still live in settings.mcp.servers (source=user).
+ * After the one-time migration, the only survivors in mcp.servers are user servers
+ * that have not yet been recreated as plugins; new plugin servers are never added there.
+ * For backward compat (tests that still pass plugin servers via mcp.servers), a
+ * legacy plugin entry is used as fallback state when the map has no entry.
+ */
+export function resolveMcpServers(
+  settings: { mcp: { servers: McpServerSettings[] }; plugins: { mcpState: Record<string, McpServerState> } },
+  derivedPluginServers: readonly McpServerSettings[],
+): McpServerSettings[] {
+  const legacyPluginById = new Map(
+    settings.mcp.servers.filter((s) => s.source === "plugin").map((s) => [s.id, s] as const),
+  );
+  const pluginServers = derivedPluginServers.map((server) => {
+    const state = settings.plugins.mcpState[server.id];
+    if (state) {
+      const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
+      applyMcpServerState(copy, state);
+      return copy;
+    }
+    const legacy = legacyPluginById.get(server.id);
+    if (legacy) {
+      // Fallback for tests / pre-migration data that still stores plugin state in mcp.servers.
+      const copy: McpServerSettings = { ...server, oauth: { ...legacy.oauth }, knownTools: [...legacy.knownTools] };
+      copy.enabled = legacy.enabled;
+      copy.approval = legacy.approval;
+      copy.authType = legacy.authType;
+      copy.authHeaderName = legacy.authHeaderName;
+      copy.authHeaderValueSecretId = legacy.authHeaderValueSecretId;
+      copy.authHeaderValue = legacy.authHeaderValue;
+      copy.oauth = { ...legacy.oauth };
+      copy.knownTools = [...legacy.knownTools];
+      return copy;
+    }
+    return server;
+  });
+  const userServers = settings.mcp.servers.filter((server) => server.source !== "plugin");
+  return [...userServers, ...pluginServers];
 }
 
 function folderEntry(app: App, path: string): TFolder | null {
