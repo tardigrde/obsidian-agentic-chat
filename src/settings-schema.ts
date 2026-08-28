@@ -27,6 +27,7 @@ import {
   normalizeNoProxy,
   normalizeProxyUrl,
 } from "./network/proxy";
+import { normalizeAllowedHosts } from "./tools/web-fetch";
 import {
   DEFAULT_OBSERVABILITY_SETTINGS,
   healObservabilitySettings,
@@ -134,6 +135,8 @@ export interface WebSettings {
   maxResults: number;
   /** Default cap on characters of fetched page text returned to the model. */
   fetchCharLimit: number;
+  /** Comma-separated host suffixes for fetch_url allowlist; empty allows all public hosts. */
+  allowedHosts: string;
 }
 
 export interface CompactionSettings {
@@ -195,6 +198,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
     searxngUrl: "",
     maxResults: 5,
     fetchCharLimit: 10_000,
+    allowedHosts: "",
   },
   mcp: {
     enabled: false,
@@ -254,6 +258,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       // Heal the provider enum so an unknown persisted value can't break search.
       searchProvider: healSearchProvider(stored?.web?.searchProvider),
       searchApiKeySecretId: stringSetting(stored?.web?.searchApiKeySecretId, WEB_SEARCH_API_KEY_SECRET_ID),
+      allowedHosts: normalizeAllowedHosts(stored?.web?.allowedHosts),
     },
     mcp: healMcpSettings(stored?.mcp),
     plugins: healPluginSettings(stored?.plugins),

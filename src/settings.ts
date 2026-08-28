@@ -835,6 +835,22 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           await this.save();
         });
       });
+
+    new Setting(containerEl)
+      .setName("Allowed hosts")
+      .setDesc(
+        "Optional comma-separated host suffixes for fetch_url. Empty allows any public host. " +
+          'Example: example.com, *.wikipedia.org — blocks other hosts with "Blocked by allowlist".',
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("example.com, *.wikipedia.org")
+          .setValue(settings.web.allowedHosts)
+          .onChange(async (value) => {
+            settings.web.allowedHosts = value.trim();
+            await this.save();
+          }),
+      );
   }
 
   private renderMcp(containerEl: HTMLElement, settings: AgenticChatSettings): void {

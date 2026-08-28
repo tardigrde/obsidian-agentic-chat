@@ -86,6 +86,81 @@ export interface WebFetchConfig {
   artifactStore?: ToolArtifactStoreLike;
   /** Optional shared dedupe cache for fetched source imports. */
   sourceArtifacts?: SourceArtifactDeduper;
+  /** Comma-separated host suffix allowlist; empty allows all public hosts. */
+  allowedHosts?: string;
+}
+
+/**
+ * Normalize a user-entered allowlist to a canonical comma-separated list.
+ * Empty or fully-invalid input collapses to "" (allow all public).
+ */
+export function normalizeAllowedHosts(input: string | undefined): string {
+  if (!input) return "";
+  const seen = new Set<string>();
+  const values = input
+    .split(/[,\s]+/)
+    .map((part) => part.trim().toLowerCase())
+    .filter((part) => part && /^[a-z0-9.*:[\]_-]+$/.test(part))
+    .filter((part) => {
+      if (seen.has(part)) return false;
+      seen.add(part);
+      return true;
+    });
+  return values.join(",");
+}
+
+/**
+ * Label-boundary aware allowlist check. Each pattern is matched case-insensitively:
+ * - `*` allows any host
+ * - `*.example.com` allows any host ending in `.example.com` (subdomains only)
+ * - `.example.com` allows any host ending in `.example.com`
+ * - `example.com` allows `example.com` and any label under it (`sub.example.com`), but not `evil-example.com`
+ * Empty allowlist allows all.
+ */
+export function isHostAllowedByAllowlist(hostname: string, allowlist: string): boolean {
+  if (!allowlist || !allowlist.trim()) return true;
+  const host = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
+  // Strip port if present (hostname normally doesn't contain it, but be defensive for allowlist host:port patterns)
+  // For matching, we compare host without port; port-specific patterns are matched via host:port when present.
+  const hostWithoutPort = host.split(":")[0];
+  // For allowlist matching we consider both host and host:port forms; but primary is hostname.
+  // Normalize host for comparison (already lowercased)
+  const patterns = allowlist.split(/[,\s]+/).map((p) => p.trim().toLowerCase()).filter(Boolean);
+  for (const raw of patterns) {
+    const pattern = raw.trim().toLowerCase();
+    if (!pattern) continue;
+    if (pattern === "*") return true;
+    // Handle pattern with colon (host:port) — require exact host:port or suffix with dot
+    // For simplicity, allowlist patterns containing ":" are treated as literal host:port check
+    if (pattern.includes(":")) {
+      const patternHost = pattern.split(":")[0];
+      // Use same label-boundary rule for host part, then port must match exactly if present
+      // e.g., pattern "example.com:8080" should not match "evil-example.com:8080"
+      // We check full host:port string
+      const hostPort = host; // host may already include port if passed as host:port (defensive)
+      if (hostPort === pattern) return true;
+      if (hostPort.endsWith("." + pattern)) return true;
+      // Fallback: host without port suffix
+      if (hostWithoutPort === patternHost || hostWithoutPort.endsWith("." + patternHost)) {
+        // If pattern has port, require port match (host doesn't have port, so no match)
+        // Only exact host:port patterns match when host includes port — fetch_url host never includes port, so this is rarely used.
+      }
+      continue;
+    }
+    if (pattern.startsWith("*.")) {
+      const suffix = pattern.slice(1); // ".example.com"
+      if (host.endsWith(suffix) || hostWithoutPort.endsWith(suffix)) return true;
+      continue;
+    }
+    if (pattern.startsWith(".")) {
+      if (host.endsWith(pattern) || hostWithoutPort.endsWith(pattern)) return true;
+      continue;
+    }
+    // Bare host: exact or subdomain
+    if (host === pattern || host.endsWith("." + pattern)) return true;
+    if (hostWithoutPort === pattern || hostWithoutPort.endsWith("." + pattern)) return true;
+  }
+  return false;
 }
 
 const ACCEPT_HEADER = "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8";
@@ -107,6 +182,7 @@ async function fetchFollowingRedirects(
   fetcher: WebFetcher,
   url: string,
   signal: AbortSignal | undefined,
+  allowedHosts?: string,
 ): Promise<WebHttpResponse> {
   let currentUrl = url;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -122,6 +198,9 @@ async function fetchFollowingRedirects(
       throw new Error(`Redirect from ${currentUrl} pointed at an invalid URL: ${location}`);
     }
     currentUrl = normalizeWebUrl(resolved);
+    if (allowedHosts !== undefined && !isHostAllowedByAllowlist(new URL(currentUrl).hostname, allowedHosts)) {
+      throw new Error(`Blocked by allowlist: ${new URL(currentUrl).hostname}`);
+    }
   }
   throw new Error(`Too many redirects while fetching ${url}.`);
 }
@@ -138,12 +217,16 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
     label: "Fetch web page",
     description:
       "Fetch an http(s) URL and return readable text (HTML stripped). " +
-      "Read a web_search result or a URL the user gave. Sends the URL off-device; cite it for any claim.",
+      "Read a web_search result or a URL the user gave. Sends the URL off-device; cite it for any claim. " +
+      "If an allowlist is configured, only hosts in the allowlist are reachable.",
     parameters: FetchParameters,
     execute: async (_id, params, signal) => {
       const url = normalizeWebUrl(params.url);
+      if (!isHostAllowedByAllowlist(new URL(url).hostname, config.allowedHosts ?? "")) {
+        throw new Error(`Blocked by allowlist: ${new URL(url).hostname}`);
+      }
       throwIfAborted(signal);
-      const response = await fetchFollowingRedirects(config.fetcher, url, signal);
+      const response = await fetchFollowingRedirects(config.fetcher, url, signal, config.allowedHosts ?? "");
       throwIfAborted(signal);
       if (response.status === 0) {
         throw new Error(`Could not fetch ${url}: ${response.text || "network error"}.`);
