@@ -12,6 +12,8 @@
  * DATA, never as instructions.
  */
 
+import { truncateToolOutput } from "../vault/truncate";
+
 export const TOOL_OUTPUT_BEGIN_PREFIX = "[BEGIN_UNTRUSTED_TOOL_OUTPUT";
 export const TOOL_OUTPUT_END_MARKER = "[END_UNTRUSTED_TOOL_OUTPUT]";
 
@@ -19,16 +21,26 @@ export const TOOL_OUTPUT_END_MARKER = "[END_UNTRUSTED_TOOL_OUTPUT]";
 export const TOOL_OUTPUT_BEGIN_ESCAPED = "[BEGIN_UNTRUSTED_TOOL_OUTPUT_ESCAPED";
 export const TOOL_OUTPUT_END_ESCAPED = "[END_UNTRUSTED_TOOL_OUTPUT_ESCAPED]";
 
+/** Placeholders for bijective escaping of already-escaped literals. */
+const PH_BEGIN_ESC = "\u0000__BEGIN_ESCAPED__\u0000";
+const PH_END_ESC = "\u0000__END_ESCAPED__\u0000";
+
 /**
  * Escape any marker-like sequences in untrusted text so they cannot close
  * (or fake-open) the wrapper. Replaces full markers and the prefix that
- * carries the `tool="..."` attribute.
+ * carries the `tool="..."` attribute. Handles payloads that already contain
+ * escaped forms bijectively via placeholders.
  */
 export function escapeToolOutput(text: string): string {
-  // Order matters: escape END before BEGIN, but neither contains the other.
+  // Fast path — most payloads contain no markers
+  if (!text.includes("[BEGIN") && !text.includes("[END")) return text;
   return text
+    .replaceAll(TOOL_OUTPUT_BEGIN_ESCAPED, PH_BEGIN_ESC)
+    .replaceAll(TOOL_OUTPUT_END_ESCAPED, PH_END_ESC)
     .replaceAll(TOOL_OUTPUT_END_MARKER, TOOL_OUTPUT_END_ESCAPED)
-    .replaceAll(TOOL_OUTPUT_BEGIN_PREFIX, TOOL_OUTPUT_BEGIN_ESCAPED);
+    .replaceAll(TOOL_OUTPUT_BEGIN_PREFIX, TOOL_OUTPUT_BEGIN_ESCAPED)
+    .replaceAll(PH_BEGIN_ESC, `${TOOL_OUTPUT_BEGIN_ESCAPED}_ORIG_`)
+    .replaceAll(PH_END_ESC, `${TOOL_OUTPUT_END_ESCAPED}_ORIG_`);
 }
 
 /**
@@ -50,15 +62,26 @@ export function wrapToolOutput(text: string, toolName?: string): string {
   return `${begin}\n${escaped}\n${TOOL_OUTPUT_END_MARKER}`;
 }
 
+/**
+ * Wrap with truncation budget reserved for the wrapper. Use for hot-path
+ * tool outputs that must not exceed DEFAULT_MAX_CHARS after wrapping.
+ */
+export function wrapToolOutputTruncated(text: string, toolName?: string, maxChars = 50_000): string {
+  const overhead = toolName ? 90 : 60; // BEGIN line + END line + newlines + tool attr + escaping bloat
+  const budget = Math.max(500, maxChars - overhead);
+  const truncated = text.length > budget ? truncateToolOutput(text, budget) : text;
+  return wrapToolOutput(truncated, toolName);
+}
+
 function sanitizeToolName(name: string): string {
-  // Tool names are controlled by the harness, but strip quotes/newlines
-  // to keep the BEGIN line well-formed.
-  return name.replace(/["\r\n]/g, "_").slice(0, 128);
+  // Strict allowlist: keep alphanum, _ , - ; replace everything else (including ] [ " \r \n control) with _
+  return name.replace(/[^a-z0-9_-]/gi, "_").slice(0, 128) || "tool";
 }
 
 /**
  * Strip the wrapper if present — useful for tests that need to inspect the
  * inner JSON/text. If the text is not wrapped, returns it unchanged.
+ * Inverse of wrapToolOutput for round-trip testing.
  */
 export function unwrapToolOutput(text: string): string {
   if (!text.startsWith(TOOL_OUTPUT_BEGIN_PREFIX)) return text;
@@ -66,9 +89,10 @@ export function unwrapToolOutput(text: string): string {
   const lastMarker = text.lastIndexOf(`\n${TOOL_OUTPUT_END_MARKER}`);
   if (firstNewline === -1 || lastMarker === -1) return text;
   const inner = text.slice(firstNewline + 1, lastMarker);
-  // Un-escape the escaped markers back to their original form so tests see
-  // the payload the tool originally produced.
+  // Reverse in opposite order: ORIG first, then regular
   return inner
-    .replaceAll(TOOL_OUTPUT_END_ESCAPED, TOOL_OUTPUT_END_MARKER)
-    .replaceAll(TOOL_OUTPUT_BEGIN_ESCAPED, TOOL_OUTPUT_BEGIN_PREFIX);
+    .replaceAll(`${TOOL_OUTPUT_BEGIN_ESCAPED}_ORIG_`, TOOL_OUTPUT_BEGIN_ESCAPED)
+    .replaceAll(`${TOOL_OUTPUT_END_ESCAPED}_ORIG_`, TOOL_OUTPUT_END_ESCAPED)
+    .replaceAll(TOOL_OUTPUT_BEGIN_ESCAPED, TOOL_OUTPUT_BEGIN_PREFIX)
+    .replaceAll(TOOL_OUTPUT_END_ESCAPED, TOOL_OUTPUT_END_MARKER);
 }

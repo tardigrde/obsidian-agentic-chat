@@ -9,7 +9,7 @@ import {
   type SourceTextExtractor,
 } from "../retrieval/source-artifacts";
 import { isHostAllowedByAllowlist } from "./web-allowlist";
-import { wrapToolOutput } from "./tool-output-wrapper";
+import { wrapToolOutputTruncated } from "./tool-output-wrapper";
 export { isHostAllowedByAllowlist, normalizeAllowedHosts } from "./web-allowlist";
 
 /** A minimal HTTP request the web tools issue. */
@@ -106,7 +106,9 @@ const MAX_REDIRECTS = 5;
  * host, but a public page can 3xx to a local/private address; re-validating every
  * hop keeps redirect-based SSRF from slipping past that gate. Fetchers that
  * already follow redirects (Obsidian's `requestUrl`) return a non-3xx response,
- * so this loop is a no-op for them.
+ * so this loop is a no-op for them — allowlist/SSRF on auto-followed hops is
+ * best-effort; the initial URL is still gated and manual fetchers (tests, custom
+ * WebFetcher) are fully hop-validated.
  */
 async function fetchFollowingRedirects(
   fetcher: WebFetcher,
@@ -186,7 +188,7 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
         ? `${rendered.text}\n\nSource artifact: ${artifact.artifactCitation}${duplicateHint}`
         : rendered.text;
       return {
-        content: [{ type: "text", text: wrapToolOutput(artifactText, "fetch_url") }],
+        content: [{ type: "text", text: wrapToolOutputTruncated(artifactText, "fetch_url") }],
         details: {
           url,
           title: rendered.title,

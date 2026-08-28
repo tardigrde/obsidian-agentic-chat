@@ -1,6 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { truncateToolOutput } from "../vault/truncate";
+import { wrapToolOutputTruncated } from "../tools/tool-output-wrapper";
 import type { ToolArtifactStoreLike, ToolArtifactReadResult } from "./tool-artifact-store";
 
 const DEFAULT_READ_LIMIT = 12_000;
@@ -83,7 +84,7 @@ function createReadArtifactTool(store: ToolArtifactStoreLike): AgentTool {
       const end = Math.min(read.text.length, offset + limit);
       const chunk = read.text.slice(offset, end);
       return {
-        content: [{ type: "text", text: truncateToolOutput(formatArtifactRead(read, offset, end, chunk), MAX_READ_LIMIT + 1_000) }],
+        content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(formatArtifactRead(read, offset, end, chunk), MAX_READ_LIMIT + 1_000), "read_artifact") }],
         details: {
           artifactId: read.metadata.id,
           offset,
@@ -125,7 +126,7 @@ function createSearchArtifactTool(store: ToolArtifactStoreLike): AgentTool {
       const read = await store.readArtifact(id);
       const matches = findMatches(read.text, query, maxMatches);
       return {
-        content: [{ type: "text", text: formatArtifactSearch(read, query, matches) }],
+        content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(formatArtifactSearch(read, query, matches)), "search_artifact") }],
         details: {
           artifactId: read.metadata.id,
           query,
@@ -161,7 +162,7 @@ function createExportArtifactTool(store: ToolArtifactStoreLike): AgentTool {
       const truncated = read.text.length > limit;
       const payload = formatArtifactExport(read, format, limit);
       return {
-        content: [{ type: "text", text: truncateToolOutput(payload, MAX_EXPORT_LIMIT + 2_000) }],
+        content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(payload, MAX_EXPORT_LIMIT + 2_000), "export_artifact") }],
         details: {
           artifactId: read.metadata.id,
           format,
