@@ -1,6 +1,6 @@
 # Agentic Chat — Roadmap
 
-Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01; S9 completed and removed on 2026-08-11.)
+Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01; S9 completed and removed on 2026-08-11; E10 completed and removed on 2026-08-24 — beautifului polish #98.)
 
 - **Status**: living document
 - **Created**: 2026-07-17
@@ -51,11 +51,7 @@ Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d
 
 ## Group E — Chaining timeline
 
-### E10 · Vertical chaining timeline (per-call check/X done, line missing)
-- **Problem**: Per-call check/X icons exist (`assistant-bubble.ts:366-371`) but there is no vertical run line linking the calls.
-- **Approach**: ResizeObserver-driven line per assistant run.
-- **Files**: `src/ui/assistant-bubble.ts`, `src/ui/chat-view.ts`, `styles.css`
-- **Effort**: L
+*E10 · Vertical chaining timeline — **DONE** in #98.* Per-turn `ResizeObserver`-driven rail (`assistant-bubble.ts:99-217` `ensureTimeline` / `updateRail`, `styles.css:458` `.agentic-chat-timeline-rail`) now links reasoning + tool steps. Check/X per-call icons remain (`assistant-bubble.ts:590`). No pending item.
 
 ---
 
@@ -87,13 +83,15 @@ thin (or absent) here.
 - **Effort**: L
 - **Deps**: none
 
-### S2 · Proxy config duplicated across three subsystems
+### S2 · Proxy config duplicated across three subsystems — **OPEN PR #108** `refactor/s2-s3-consolidation` (MERGEABLE/CLEAN, 1366/1366 tests, CI+CodeQL+SonarCloud green)
 - **Problem**: `network.proxyUrl`/`noProxy`, `mcp.proxyUrl`/`noProxy`, and `observability.proxyUrl`/`noProxy` are the same shape with the same normalizers, surfaced on three separate settings tabs; MCP silently falls back to `network` when its own proxy is empty.
+- **Status**: Fix extracted to `src/network/proxy.ts` (`ProxySettings` + `effectiveProxy()`), `src/settings.ts` collapses rows to `renderProxySettingRows`. No behavior change, persisted `data.json` shape unchanged.
 - **Effort**: M
 - **Deps**: none
 
-### S3 · Provider/model triple duplicated by embeddings
+### S3 · Provider/model triple duplicated by embeddings — **OPEN PR #108** `refactor/s2-s3-consolidation` (same PR)
 - **Problem**: chat and semantic retrieval each define their own provider enum + per-provider base URL/model/key triple; `EmbeddingProviderId` mirrors `ProviderId`. Two provider selectors and two model-config paths to maintain.
+- **Status**: Fix aliases `EmbeddingProviderId = ProviderId`, central `PROVIDERS`/`healProviderId()` in `src/llm/models.ts`. Labels stay separate (chat `Ollama (local)` vs embedding `Ollama`).
 - **Effort**: M
 - **Deps**: none
 
@@ -113,13 +111,15 @@ thin (or absent) here.
 - **Deps**: none
 
 ### S8 · Subagent reframe: drop the "profile" concept
-- **Problem**: subagents are authored as "profiles" (`AGENT.md` + built-in roster) with their own system prompt + tool allowlist, but the delegation value is isolated context for the single main agent — not a switchable persona. The "profile" vocabulary also collides with `project.profile` (an output style). The main agent should always be one agent in the main conversation; subagents are child agents that inherit the main agent's config and controls (approval, ignore list, web/MCP gates) and can be dispatched by it.
+- **Problem**: subagents are authored as "profiles" (`AGENT.md` + built-in roster `src/agent/subagents.ts:49` + `agentsFolder`/`enableBuiltinAgents` `src/settings-schema.ts:77`) with their own system prompt + tool allowlist, but the delegation value is isolated context for the single main agent — not a switchable persona. The "profile" vocabulary also collides with `outputStyle` (`src/agent/output-styles.ts:6` `default/brainstorm/learning`).
+- **Clarification 2026-08-24**: #102 `feat/remove-projects` removed the *projects* `profile` (`projects[].profile` → per-project output style), not subagent profiles. Subagent `AgentProfile` and `outputStyle` both remain; this item is **still open**.
 - **Approach (tentative)**: keep the child-agent runtime and the `subagent` tool; drop the `AGENT.md` profile authoring surface and built-in roster in favor of subagents that inherit from the parent (system prompt override via invocation, same tool/approval controls); possibly ship one built-in "Explorer" agent for scoped read-only tasks.
 - **Effort**: M
 - **Deps**: none
 
-### S10 · Decouple client-owned MCP state from server shape
-- **Problem**: `settings.mcp.servers` persists a full *copy* of each plugin-derived server (shape + client state merged by id via `mergePluginMcpServers`/`syncMcpServers`). The package is meant to be the single source of truth for server shape, but the copy can diverge: the settings tab renders `settings.mcp.servers` while the runtime re-derives from packages per turn, and the sync/prune/merge machinery exists only to paper over that duplication. State is also keyed by derived id, so renaming a package entry or plugin loses client state.
+### S10 · Decouple client-owned MCP state from server shape — **conflicts with Agent Plugins**
+- **Problem**: `settings.mcp.servers` persists a full *copy* of each plugin-derived server (shape + client state merged by id via `mergePluginMcpServers`/`syncMcpServers` `src/plugins/loader.ts:334`). The package (`mcp.json` per plugin, #96 `feat/agent-plugins`) is meant to be the single source of truth for server shape, but the copy can diverge: the settings tab renders `settings.mcp.servers` while the runtime re-derives from packages per turn, and the sync/prune/merge machinery exists only to paper over that duplication. State is also keyed by derived id (`pluginMcpServerId` → `normalizeMcpServerId`), so renaming a package entry or plugin loses client state.
+- **Clarification 2026-08-24**: Yes — this is the agent-plugins ↔ legacy MCP config conflict. Plugins own `url/headers/name/source/pluginRoot`; settings owns `enabled/approval/authType/header refs/knownTools/oauth`. The merge keeps them in sync today, but is duplication by design.
 - **Goal**: Packages define server shape; client-owned state (enabled, approval, authType/header refs, knownTools, oauth) lives in a separate id-keyed map (e.g. `settings.plugins.mcpState[id]`). Drop `syncMcpServers` and the merge; the settings tab and runtime both derive from packages + state map, so they cannot diverge.
 - **Approach**: migrate the state out of `settings.mcp.servers` into the map (one-time heal), derive `McpServerSettings` on load, keep secret refs unchanged.
 - **Files**: `src/plugins/loader.ts` (merge/sync removal), `src/mcp/settings.ts` (heal), `src/settings.ts` (MCP tab render), `src/agent/runtime-resources.ts`, `src/settings-schema.ts`
@@ -245,6 +245,6 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 ## Recommended order
 
-B12 → E10 → H1 → H7 → H3 → F10 → H8 → H4 → R1 → F8 → C6 → H2 → H6 → H5 → R2 → A7. (Group S `S1-S10` remains a dedicated consolidation session, not ordered — start with **S10** (SSOT) then S1/S2.)
+B12 → H1 → H7 → H3 → F10 → H8 → H4 → R1 → F8 → C6 → H2 → H6 → H5 → R2 → A7. (Group S `S1-S10` remains a dedicated consolidation session, not ordered — start with **S10** (SSOT) then S1; S2/S3 already in PR #108, E10 done #98.)
 
 *First-principles rationale*: security (H1/H7) and reliability (H3/H4) before capability expansion (F10/H8/H2); S-cluster is high-ROI but L-effort and cross-cuts every gate, so batch separately.
