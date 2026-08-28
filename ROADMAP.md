@@ -1,6 +1,6 @@
 # Agentic Chat — Roadmap
 
-Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01; S9 completed and removed on 2026-08-11; E10 completed and removed on 2026-08-24 — beautifului polish #98; S2/S3 completed and removed on 2026-08-28 — proxy + provider consolidation #108; H4 completed and removed on 2026-08-28 — per-subagent wall-clock timeout already shipped; H1 completed and removed on 2026-08-28 — fetch_url allowlist #110; H7 completed and removed on 2026-08-28 — tool-output wrapper #111.)
+Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01; S9 completed and removed on 2026-08-11; E10 completed and removed on 2026-08-24 — beautifului polish #98; S2/S3 completed and removed on 2026-08-28 — proxy + provider consolidation #108; H4 completed and removed on 2026-08-28 — per-subagent wall-clock timeout already shipped; H1 completed and removed on 2026-08-28 — fetch_url allowlist #110; H7 completed and removed on 2026-08-28 — tool-output wrapper #111; B12 completed and removed on 2026-08-28 — intent anchoring #113.)
 
 - **Status**: living document
 - **Created**: 2026-07-17
@@ -41,11 +41,7 @@ Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d
 - **Action**: Skip for now. Revisit if batch-denial becomes a frequent pattern.
 - **Effort**: M (if ever done)
 
-### B12 · Better grounding / intent anchoring
-- **Problem**: Flash edited 6 unrelated places for a 1-section request.
-- **Approach**: Weight explicit user request higher than attachment context; add synthetic focus hint.
-- **Files**: `src/agent/agent-service.ts`, `src/ui/context-builder.ts`
-- **Effort**: M–L
+*B12 · Better grounding / intent anchoring — **DONE** in #113.* `src/ui/context-builder.ts` `FOCUS_HINT`/`buildFocusHint`/`assemblePrompt`/`escapeContextSection` + `src/ui/chat-view.ts` `assemblePrompt` injection between `<context>` and request + `src/ui/composer-input.ts` `stripContextPreamble` delegation + `src/agent/default-system-prompt.ts` hierarchy (`system > Focus > request > <context>`/tool outputs). Hint is static (no echo of user text) and `<context>` forgery (`</context>`/`<context>`/`Focus:` inside attachments) is escaped. Harness over-edit gap closed.
 
 ---
 
@@ -215,6 +211,6 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 ## Recommended order
 
-B12 → H3 → F10 → H8 → R1 → F8 → C6 → H2 → H6 → H5 → R2 → A7. (Group S `S1-S10` remains a dedicated consolidation session, not ordered — start with **S10** (SSOT) then S1. H1 done #110, H4 done, H7 done #111, S2/S3 done #108, E10 done #98. H8 is sibling to F10: implement `scripts/references/assets` path confinement in F10 first, then `load_skill` body swap.)
+H3 → F10 → H8 → R1 → F8 → C6 → H2 → H6 → H5 → R2 → A7. (Group S `S1-S10` remains a dedicated consolidation session, not ordered — start with **S10** (SSOT) then S1. B12 done #113, H1 done #110, H4 done, H7 done #111, S2/S3 done #108, E10 done #98. H8 is sibling to F10: implement `scripts/references/assets` path confinement in F10 first, then `load_skill` body swap.)
 
 *First-principles rationale*: security (H1/H7) and reliability (H3) before capability expansion (F10/H8/H2); S-cluster is high-ROI but L-effort and cross-cuts every gate, so batch separately. H5 evaluator reuses `AgentProfile.model` — reconcile with S8 profile reframe (keep `model` override, drop persona vocabulary).
