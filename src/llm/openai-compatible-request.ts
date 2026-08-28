@@ -224,23 +224,14 @@ async function requestCompletionWithRetries(
       await sleep(delayMs, options?.signal);
     } catch (error) {
       if (options?.signal?.aborted || error instanceof RequestAbortError) throw error;
-      const classified = classifyError(error);
-      if (error instanceof RequestTimeoutError) {
-        const timeoutClassified = { ...classified, retryable: true, class: "transient" as const };
-        if (attempt >= maxRetries || !timeoutClassified.retryable) throw error;
-        const delayMs = backoffDelayMs(attempt, timeoutClassified.retryAfterMs);
-        if (options?.maxRetryDelayMs !== undefined && options.maxRetryDelayMs > 0 && delayMs > options.maxRetryDelayMs) {
-          throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`, { cause: error });
-        }
-        await sleep(delayMs, options?.signal);
-      } else {
-        if (attempt >= maxRetries || !classified.retryable) throw error;
-        const delayMs = backoffDelayMs(attempt, classified.retryAfterMs);
-        if (options?.maxRetryDelayMs !== undefined && options.maxRetryDelayMs > 0 && delayMs > options.maxRetryDelayMs) {
-          throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`, { cause: error });
-        }
-        await sleep(delayMs, options?.signal);
+      const base = classifyError(error);
+      const classified = error instanceof RequestTimeoutError ? { ...base, retryable: true, class: "transient" as const } : base;
+      if (attempt >= maxRetries || !classified.retryable) throw error;
+      const delayMs = backoffDelayMs(attempt, classified.retryAfterMs);
+      if (options?.maxRetryDelayMs !== undefined && options.maxRetryDelayMs > 0 && delayMs > options.maxRetryDelayMs) {
+        throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`, { cause: error });
       }
+      await sleep(delayMs, options?.signal);
     }
 
     attempt += 1;

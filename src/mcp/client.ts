@@ -282,13 +282,10 @@ export class McpHttpClient {
 
   private async post(body: JsonRpcRequest, signal?: AbortSignal): Promise<WebHttpResponse> {
     if (signal?.aborted) throw new Error("Aborted.");
-    const maxRetries = 2;
-    let attempt = 0;
-    while (true) {
-      let response: WebHttpResponse;
-      try {
+    return this.fetchWithRetry(
+      async () => {
         const url = normalizeMcpUrl(this.server.url);
-        response = await fetchWithMcpTimeout(
+        return fetchWithMcpTimeout(
           this.fetcher,
           {
             url,
@@ -300,63 +297,25 @@ export class McpHttpClient {
           signal,
           this.requestTimeoutMs,
         );
-      } catch (error) {
-        const classified = classifyError(error);
-        if (!classified.retryable || attempt >= maxRetries || signal?.aborted) throw error;
-        await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
-        attempt += 1;
-        continue;
-      }
-      const sessionId = sanitizeMcpSessionId(response.headers["mcp-session-id"]);
-      if (sessionId) this.sessionId = sessionId;
-      if (response.status === 0) {
-        const retryAfterMs = getRetryAfterMsFromHeaders(response.headers);
-        const classified = classifyHttpResponse(0, response.headers, response.text);
-        const effective = retryAfterMs !== undefined ? { ...classified, retryAfterMs } : classified;
-        if (!effective.retryable || attempt >= maxRetries) {
-          throw new Error(`MCP ${this.server.name} request failed: ${response.text || "network error"}.`);
-        }
-        await sleep(backoffDelayMs(attempt, effective.retryAfterMs), signal);
-        attempt += 1;
-        continue;
-      }
-      if (response.status < 200 || response.status >= 300) {
+      },
+      signal,
+      (response) => `MCP ${this.server.name} request failed: ${response.text || "network error"}.`,
+      (response) => {
         const auth = response.headers["www-authenticate"];
-        if (response.status === 404 && this.sessionId) {
-          throw new McpSessionTerminatedError(`MCP ${this.server.name} session expired.`);
-        }
-        if (response.status === 401 && this.server.authType === "oauth") {
-          throw new McpOAuthUnauthorizedError(auth ?? "");
-        }
-        if (response.status === 403 && this.server.authType === "oauth") {
-          throw new McpOAuthForbiddenError(auth ?? "");
-        }
-        const retryAfterMs = getRetryAfterMsFromHeaders(response.headers);
-        const classified = classifyHttpResponse(response.status, response.headers, response.text);
-        const effective = retryAfterMs !== undefined ? { ...classified, retryAfterMs } : classified;
-        if (!effective.retryable || attempt >= maxRetries) {
-          const hint = auth ? ` (${auth})` : "";
-          throw new Error(`MCP ${this.server.name} request failed (HTTP ${response.status})${hint}.`);
-        }
-        await sleep(backoffDelayMs(attempt, effective.retryAfterMs), signal);
-        attempt += 1;
-        continue;
-      }
-      return response;
-    }
+        const hint = auth ? ` (${auth})` : "";
+        return `MCP ${this.server.name} request failed (HTTP ${response.status})${hint}.`;
+      },
+    );
   }
 
   private async getSseAfter(lastEventId: string | undefined, signal?: AbortSignal): Promise<WebHttpResponse> {
     if (signal?.aborted) throw new Error("Aborted.");
-    const maxRetries = 2;
-    let attempt = 0;
-    while (true) {
-      let response: WebHttpResponse;
-      try {
+    return this.fetchWithRetry(
+      async () => {
         const headers = await this.headers(signal);
         headers.Accept = "text/event-stream";
         if (lastEventId) headers["Last-Event-ID"] = lastEventId;
-        response = await fetchWithMcpTimeout(
+        return fetchWithMcpTimeout(
           this.fetcher,
           {
             url: normalizeMcpUrl(this.server.url),
@@ -367,6 +326,25 @@ export class McpHttpClient {
           signal,
           this.requestTimeoutMs,
         );
+      },
+      signal,
+      (response) => `MCP ${this.server.name} SSE resume failed: ${response.text || "network error"}.`,
+      (response) => `MCP ${this.server.name} SSE resume failed (HTTP ${response.status}).`,
+    );
+  }
+
+  private async fetchWithRetry(
+    doFetch: () => Promise<WebHttpResponse>,
+    signal: AbortSignal | undefined,
+    statusZeroMessage: (response: WebHttpResponse) => string,
+    httpErrorMessage: (response: WebHttpResponse) => string,
+  ): Promise<WebHttpResponse> {
+    const maxRetries = 2;
+    let attempt = 0;
+    while (true) {
+      let response: WebHttpResponse;
+      try {
+        response = await doFetch();
       } catch (error) {
         const classified = classifyError(error);
         if (!classified.retryable || attempt >= maxRetries || signal?.aborted) throw error;
@@ -380,30 +358,20 @@ export class McpHttpClient {
         const retryAfterMs = getRetryAfterMsFromHeaders(response.headers);
         const classified = classifyHttpResponse(0, response.headers, response.text);
         const effective = retryAfterMs !== undefined ? { ...classified, retryAfterMs } : classified;
-        if (!effective.retryable || attempt >= maxRetries) {
-          throw new Error(`MCP ${this.server.name} SSE resume failed: ${response.text || "network error"}.`);
-        }
+        if (!effective.retryable || attempt >= maxRetries) throw new Error(statusZeroMessage(response));
         await sleep(backoffDelayMs(attempt, effective.retryAfterMs), signal);
         attempt += 1;
         continue;
       }
       if (response.status < 200 || response.status >= 300) {
         const auth = response.headers["www-authenticate"];
-        if (response.status === 404 && this.sessionId) {
-          throw new McpSessionTerminatedError(`MCP ${this.server.name} session expired.`);
-        }
-        if (response.status === 401 && this.server.authType === "oauth") {
-          throw new McpOAuthUnauthorizedError(auth ?? "");
-        }
-        if (response.status === 403 && this.server.authType === "oauth") {
-          throw new McpOAuthForbiddenError(auth ?? "");
-        }
+        if (response.status === 404 && this.sessionId) throw new McpSessionTerminatedError(`MCP ${this.server.name} session expired.`);
+        if (response.status === 401 && this.server.authType === "oauth") throw new McpOAuthUnauthorizedError(auth ?? "");
+        if (response.status === 403 && this.server.authType === "oauth") throw new McpOAuthForbiddenError(auth ?? "");
         const retryAfterMs = getRetryAfterMsFromHeaders(response.headers);
         const classified = classifyHttpResponse(response.status, response.headers, response.text);
         const effective = retryAfterMs !== undefined ? { ...classified, retryAfterMs } : classified;
-        if (!effective.retryable || attempt >= maxRetries) {
-          throw new Error(`MCP ${this.server.name} SSE resume failed (HTTP ${response.status}).`);
-        }
+        if (!effective.retryable || attempt >= maxRetries) throw new Error(httpErrorMessage(response));
         await sleep(backoffDelayMs(attempt, effective.retryAfterMs), signal);
         attempt += 1;
         continue;

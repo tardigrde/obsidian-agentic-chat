@@ -6,6 +6,7 @@ import {
   type Context,
   type Model,
   type SimpleStreamOptions,
+  type StopReason,
 } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import {
@@ -141,7 +142,7 @@ export class AgentStreamRuntime {
           errorMessage = classified.message;
           const shouldRetry = !hadContent && classified.retryable && attempt < maxRetries && !signal?.aborted;
           if (!shouldRetry) {
-            const reason = signal?.aborted || classified.class === "aborted" ? "aborted" : "error";
+            const reason: StopReason = signal?.aborted || classified.class === "aborted" ? "aborted" : "error";
             const dummy: import("@earendil-works/pi-ai").AssistantMessage = {
               role: "assistant",
               content: [],
@@ -149,7 +150,7 @@ export class AgentStreamRuntime {
               provider: model.provider,
               model: model.id,
               usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-              stopReason: reason as import("@earendil-works/pi-ai").StopReason,
+              stopReason: reason,
               errorMessage,
               timestamp: Date.now(),
             };

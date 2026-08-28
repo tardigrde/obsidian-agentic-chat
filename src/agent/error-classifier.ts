@@ -151,7 +151,7 @@ function extractRetryAfterFromMessage(_message: string): number | undefined {
 
 export function backoffDelayMs(attempt: number, retryAfterMs?: number): number {
   const exponential = Math.min(MAX_BACKOFF_MS, INITIAL_BACKOFF_MS * 2 ** attempt);
-  const jitter = exponential * JITTER_FACTOR * (Math.random() * 2 - 1);
+  const jitter = exponential * JITTER_FACTOR * (secureRandom() * 2 - 1);
   let delay = exponential + jitter;
   delay = Math.max(0, Math.min(MAX_BACKOFF_MS, delay));
   if (retryAfterMs !== undefined && Number.isFinite(retryAfterMs)) {
@@ -159,6 +159,17 @@ export function backoffDelayMs(attempt: number, retryAfterMs?: number): number {
     delay = Math.max(delay, honored);
   }
   return Math.round(delay);
+}
+
+function secureRandom(): number {
+  try {
+    const array = new Uint32Array(1);
+    window.crypto?.getRandomValues?.(array);
+    // Convert 32-bit int to [0,1)
+    return array[0] / 0x100000000;
+  } catch {
+    return Math.random();
+  }
 }
 
 export function shouldRetry(classified: ClassifiedError, attempt: number, maxRetries: number): boolean {
