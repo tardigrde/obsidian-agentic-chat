@@ -3,6 +3,7 @@ import type { Skill } from "@earendil-works/pi-agent-core";
 import {
   applyMcpServerState,
   createMcpServerSettings,
+  mcpServerStateFromServer,
   type McpServerSettings,
   type McpServerState,
 } from "../mcp/settings";
@@ -382,16 +383,36 @@ export function deriveMcpServers(
     const state = stateMap[server.id];
     if (!state) return server;
     // Security: if mcp.json moved the URL, never replay tokens minted for the old host.
-    if (state.lastUrl && state.lastUrl !== server.url) {
-      state.authHeaderValue = "";
-      state.oauth = { ...state.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
-      // Secret ids stay derived from id, but values are cleared via store on next save.
-    }
-    state.lastUrl = server.url;
+    // Derive is pure — do not mutate the persisted stateMap (read path). Use an
+    // effective copy with cleared auth/knownTools and updated lastUrl for this turn;
+    // persistence of the cleared state happens via explicit save/prune elsewhere.
+    const urlChanged = Boolean(state.lastUrl && state.lastUrl !== server.url);
+    const effectiveState: McpServerState = urlChanged
+      ? {
+          ...state,
+          authHeaderValue: "",
+          oauth: { ...state.oauth, accessToken: "", refreshToken: "", expiresAt: 0 },
+          knownTools: [],
+          lastUrl: server.url,
+        }
+      : state.lastUrl === server.url
+        ? state
+        : { ...state, lastUrl: server.url };
     const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
-    applyMcpServerState(copy, state);
+    applyMcpServerState(copy, effectiveState);
     return copy;
   });
+}
+
+/** Prune orphaned mcpState entries that no longer have a derived server (e.g. after plugin removal). */
+export function pruneOrphanMcpState(
+  stateMap: Record<string, McpServerState>,
+  derivedIds: ReadonlySet<string> | readonly string[],
+): void {
+  const alive = derivedIds instanceof Set ? derivedIds : new Set(derivedIds);
+  for (const id of Object.keys(stateMap)) {
+    if (!alive.has(id)) delete stateMap[id];
+  }
 }
 
 /**
@@ -419,15 +440,9 @@ export function resolveMcpServers(
     const legacy = legacyPluginById.get(server.id);
     if (legacy) {
       // Fallback for tests / pre-migration data that still stores plugin state in mcp.servers.
-      const copy: McpServerSettings = { ...server, oauth: { ...legacy.oauth }, knownTools: [...legacy.knownTools] };
-      copy.enabled = legacy.enabled;
-      copy.approval = legacy.approval;
-      copy.authType = legacy.authType;
-      copy.authHeaderName = legacy.authHeaderName;
-      copy.authHeaderValueSecretId = legacy.authHeaderValueSecretId;
-      copy.authHeaderValue = legacy.authHeaderValue;
-      copy.oauth = { ...legacy.oauth };
-      copy.knownTools = [...legacy.knownTools];
+      const legacyState = mcpServerStateFromServer(legacy);
+      const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
+      applyMcpServerState(copy, legacyState);
       return copy;
     }
     return server;

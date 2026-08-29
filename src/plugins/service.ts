@@ -23,6 +23,7 @@ import {
   loadPlugins,
   mcpServerFromPluginEntry,
   pluginMcpServerId,
+  pruneOrphanMcpState,
   type LoadedPlugin,
 } from "./loader";
 import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, slugifyPluginName, validatePluginManifest } from "./manifest";
@@ -63,6 +64,13 @@ export class PluginService {
       folder: settings.plugins.folder,
       enabledPlugins: settings.plugins.enabled,
     });
+    // Prune orphaned mcpState entries that no longer have a derived server
+    // (e.g. plugin removed externally). This also covers the removePackage
+    // cache-miss case where we could not know the derived ids at removal time.
+    const aliveIds = new Set(this.cache.flatMap((p) => p.mcpServers.map((s) => s.id)));
+    const before = Object.keys(settings.plugins.mcpState).length;
+    pruneOrphanMcpState(settings.plugins.mcpState, aliveIds);
+    if (Object.keys(settings.plugins.mcpState).length !== before) await this.saveSettings?.();
     return this.cache;
   }
 
@@ -146,10 +154,12 @@ export class PluginService {
     const existingState = settings.plugins.mcpState[derived.id];
     if (existingState) {
       existingState.enabled = true;
+      existingState.lastUrl = derived.url;
     } else {
       settings.plugins.mcpState[derived.id] = createMcpServerState(derived.id, {
         enabled: true,
         approval: derived.approval,
+        lastUrl: derived.url,
       });
     }
     await this.saveSettings?.();
@@ -315,9 +325,11 @@ export class PluginService {
         delete settings.plugins.mcpState[server.id];
       }
     } else {
-      // Fallback: remove any state whose id looks like it belongs to this plugin (best-effort).
-      // The stable id is pluginMcpServerId(pluginName, key) — we can only prune by checking the plugin name prefix.
-      // For safety, only prune if the id contains the plugin name slug; otherwise keep it (orphan pruning happens on next load).
+      // Cache miss (e.g. vault restart before first load): we don't know the
+      // derived ids for this plugin, so we cannot safely prune mcpState here.
+      // Orphans are pruned on next reload() via pruneOrphanMcpState (aliveIds
+      // from the fresh scan). No best-effort guess to avoid deleting unrelated
+      // state.
     }
     const enabled = { ...settings.plugins.enabled };
     delete enabled[name];
