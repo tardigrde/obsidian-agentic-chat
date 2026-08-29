@@ -737,7 +737,7 @@
   height: 12px;
 }
 
-.agentic-chat-step-row:has(.agentic-chat-step.is-open) .agentic-chat-step-chevron {
+.agentic-chat-step-row.is-open .agentic-chat-step-chevron {
   transform: rotate(90deg);
 }
 
