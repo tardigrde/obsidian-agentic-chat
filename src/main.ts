@@ -36,11 +36,14 @@ import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
+import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
 
 declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
 
 export default class AgenticChatPlugin extends Plugin {
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
+  /** S4: single-source memory for plan restore — one value for all leaves, not per-view (Codex atomic override). */
+  modeBeforePlan: AgentMode | null = null;
   private secretStore!: ObsidianSecretStore;
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
   readonly pluginService = new PluginService(
@@ -252,6 +255,43 @@ export default class AgenticChatPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(settingsForStorage(this.settings, this.secretStore));
+    this.syncModeToViews();
+  }
+
+  /** S4: single-source mode — after any persisted mode change, push chrome to every chat leaf atomically (Codex ThreadSettingsOverrides pattern). */
+  private syncModeToViews(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_AGENT_CHAT)) {
+      if (leaf.view instanceof ChatView) leaf.view.refreshModeFromSettings();
+    }
+  }
+
+  /** Whether any chat view is currently streaming — used by the settings tab's atomic gate. */
+  isAnyViewStreaming(): boolean {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_AGENT_CHAT)) {
+      if (leaf.view instanceof ChatView && leaf.view.isStreaming()) return true;
+    }
+    return false;
+  }
+
+  /** S4: settings tab delegates to the active chat view so modeBeforePlan is handled atomically; falls back to direct mutate when no view is open. */
+  async requestModeChange(target: AgentMode): Promise<boolean> {
+    const activeView = this.app.workspace.getActiveViewOfType(ChatView);
+    if (activeView) {
+      return activeView.requestModeChange(target);
+    }
+    // No active view — mutate directly with the same validation as ChatView.
+    const blocked = validateModeTransition(this.settings.mode, target, this.isAnyViewStreaming());
+    if (blocked) {
+      new Notice(blocked);
+      return false;
+    }
+    if (this.settings.mode === target) return false;
+    const transition = resolveModeTransition(this.settings.mode, target, this.modeBeforePlan);
+    if (!transition) return false;
+    this.settings.mode = transition.nextMode;
+    this.modeBeforePlan = transition.nextPrevious;
+    await this.saveSettings();
+    return true;
   }
 }
 

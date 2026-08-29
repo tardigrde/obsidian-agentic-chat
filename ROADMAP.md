@@ -1,6 +1,6 @@
 # Agentic Chat — Roadmap
 
-Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01; S9 completed and removed on 2026-08-11; E10 completed and removed on 2026-08-24 — beautifului polish #98; S2/S3 completed and removed on 2026-08-28 — proxy + provider consolidation #108; H4 completed and removed on 2026-08-28 — per-subagent wall-clock timeout already shipped; H1 completed and removed on 2026-08-28 — fetch_url allowlist #110; H7 completed and removed on 2026-08-28 — tool-output wrapper #111; B12 completed and removed on 2026-08-28 — intent anchoring #113; H3 completed and removed on 2026-08-28 — error classifier #112; F10 completed and removed on 2026-08-28 — skill resource loading #114; H8 completed and removed on 2026-08-28 — on-demand skill loading #115; R1 completed and removed on 2026-08-28 — subagent replay #116; S10 completed and removed on 2026-08-28 — MCP state decoupled #S10.)
+Only pending items. Done work is removed to keep the doc small. (B1, B2, B3a–d, B4, B5, B6, C5, F6 were completed and removed on 2026-08-01; S9 completed and removed on 2026-08-11; E10 completed and removed on 2026-08-24 — beautifului polish #98; S2/S3 completed and removed on 2026-08-28 — proxy + provider consolidation #108; H4 completed and removed on 2026-08-28 — per-subagent wall-clock timeout already shipped; H1 completed and removed on 2026-08-28 — fetch_url allowlist #110; H7 completed and removed on 2026-08-28 — tool-output wrapper #111; B12 completed and removed on 2026-08-28 — intent anchoring #113; H3 completed and removed on 2026-08-28 — error classifier #112; F10 completed and removed on 2026-08-28 — skill resource loading #114; H8 completed and removed on 2026-08-28 — on-demand skill loading #115; R1 completed and removed on 2026-08-28 — subagent replay #116; S10 completed and removed on 2026-08-28 — MCP state decoupled #S10; S1 completed and removed on 2026-08-29 — approval lattice #121; S4 completed and removed on 2026-08-29 — permission mode consolidation.)
 
 - **Status**: living document
 - **Created**: 2026-07-17
@@ -81,11 +81,7 @@ thin (or absent) here.
 
 *S3 · Provider/model triple — **DONE** in #108.* `EmbeddingProviderId = ProviderId`, `PROVIDERS`/`healProviderId()` centralized in `src/llm/models.ts`. Labels stay separate.
 
-### S4 · Permission mode surfaced on four controls
-- **Problem**: `settings.mode` (settings dropdown, which also lists plan) × composer Safe↔YOLO toggle × `/config` picker × `/plan` sticky read-only. Four surfaces for one value with different allowed states.
-- **Effort**: S–M
-- **Deps**: none
-- **Codex**: Codex has only 2 visible modes `Plan|Default` `config_types.rs:685` (yolo=`DangerFullAccess`+`Never`), not 4. Borrow its atomic override pattern: `ThreadSettingsOverrides{approval_policy, sandbox_policy, permission_profile}` `protocol.rs:502` applied atomically — single source, all UIs reflect it.
+*S4 · Permission mode surfaced on four controls — **DONE** (this PR).* `src/agent/modes.ts` `validateModeTransition`/`resolveModeTransition` is the single gate (mirrors Codex `ThreadSettingsOverrides` atomic apply); `src/settings.ts` dropdown now lists `MODE_ORDER` (Safe/YOLO/Plan) and delegates via `plugin.requestModeChange` to the active `ChatView` so `modeBeforePlan` stays coherent; `src/ui/chat-view.ts` `setMode` + `isAnyTabStreaming` centralizes all four surfaces (settings dropdown, composer Safe↔YOLO toggle, `/config` picker, `/plan` sticky); `src/main.ts` `modeBeforePlan` singleton + `syncModeToViews` broadcasts to every leaf; `src/ui/commands.ts` `/config` lists Safe/YOLO/Plan. Single source, all UIs reflect it.
 
 ### S5 · Three ignore/deny-list mechanisms
 - **Problem**: vault `ignoredGlobs`, MCP legacy tool filters (now URL params), and working directories as the inverse allow-list. Same glob syntax, three representations.
@@ -186,7 +182,7 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 **Stability first:** `H5 → R2 → A7` (`C6` auto-decay removed, `H6` dropped, `H2` deferred — big feature).
 
-(Group S `S1-S10` remains a dedicated consolidation session, not ordered — **S10 done**, next `S1` (approval lattice) then `S4/S5/S7/S8`. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `S2/S3` done #108, `E10` done #98. `F8` + `H2` + `C6/H6` deferred/dropped.)
+(Group S `S1-S10` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (this PR), next `S5/S7/S8`. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `S2/S3` done #108, `E10` done #98. `F8` + `H2` + `C6/H6` deferred/dropped.)
 
 *First-principles rationale*: security/reliability done — next small wins are evaluator routing (`H5` `S`) then diff polish (`R2` `S`) before audit (`A7`). Memory (`H2`) is `M–L` and needs docs/privacy pass, so pushed. No babysitting — user controls `/compact`, threshold `80%` is the safety net. S-cluster high-ROI but `L-effort` and cross-cuts every gate, so batch separately. `H5` reuses `AgentProfile.model` — reconcile with `S8` role reframe.
 

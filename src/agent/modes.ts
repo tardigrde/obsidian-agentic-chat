@@ -139,3 +139,60 @@ export function healMode(stored: string | undefined): AgentMode {
   if (stored === "ask") return "plan";
   return DEFAULT_MODE;
 }
+
+/**
+ * S4: single validation gate for every mode surface (settings dropdown,
+ * composer Safe↔YOLO toggle, `/config` picker, `/plan` sticky). Codex
+ * applies `ThreadSettingsOverrides{approval_policy, sandbox_policy,
+ * permission_profile}` atomically — single source, all UIs reflect it.
+ * This is the Obsidian analogue: one pure check, all UIs delegate to it.
+ * Returns an error message when the transition is blocked, otherwise `null`.
+ */
+export function validateModeTransition(
+  current: AgentMode,
+  target: AgentMode,
+  isStreaming: boolean,
+): string | null {
+  if (isStreaming) return "Can't switch mode while the agent is responding.";
+  if (current === target) return null;
+  // Plan is sticky read-only: yolo would widen the write boundary without
+  // an explicit plan exit. Reuse the harness gap wording so every surface
+  // shows the same guidance.
+  if (current === "plan" && target === "yolo") return "Can't switch to YOLO while in plan mode.";
+  return null;
+}
+
+/**
+ * Atomic mode update descriptor — mirrors Codex's
+ * `ThreadSettingsOverrides` applied atomically. Callers mutate
+ * `settings.mode` and `modeBeforePlan` only after validation passes,
+ * then persist once.
+ */
+export interface ModeTransition {
+  nextMode: AgentMode;
+  nextPrevious: AgentMode | null;
+}
+
+/**
+ * Compute the atomic `settings.mode` + `modeBeforePlan` update for a
+ * validated transition. Pure, so every UI (settings tab, composer toggle,
+ * `/config`, `/plan`) produces the same state.
+ */
+export function resolveModeTransition(
+  current: AgentMode,
+  target: AgentMode,
+  previousBeforePlan: AgentMode | null,
+): ModeTransition | null {
+  if (current === target) return null;
+  if (target === "plan") {
+    const entered = enterPlan(current);
+    if (!entered) return null;
+    return { nextMode: "plan", nextPrevious: entered.previous };
+  }
+  if (current === "plan") {
+    // Leaving plan via an explicit safe/yolo pick: restore is handled by
+    // the caller choosing `target`; just clear the remembered posture.
+    return { nextMode: target, nextPrevious: null };
+  }
+  return { nextMode: target, nextPrevious: previousBeforePlan };
+}
