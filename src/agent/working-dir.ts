@@ -95,13 +95,6 @@ export function removeWorkingDir(workingDirs: string[], rawPath: string): boolea
   return true;
 }
 
-export function setWorkingDirs(workingDirs: string[], next: string[]): string[] {
-  const normalized = normalizeWorkingDirs(next);
-  workingDirs.length = 0;
-  workingDirs.push(...normalized);
-  return workingDirs;
-}
-
 /**
  * Refine an approval policy by the working-dir boundary. With dirs configured, a call
  * whose targets are all inside a granted dir auto-runs (`allow`); any other call routes
