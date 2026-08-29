@@ -16,8 +16,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # @earendil-works/pi-* require node >=22.19.
-          node-version: "22"
+          # @earendil-works/pi-* require node >=22.19 (tested on 24).
+          node-version: "24"
           cache: npm
 
       - name: Install dependencies
