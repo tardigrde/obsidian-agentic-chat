@@ -5,13 +5,36 @@
   flex-direction: column;
   height: 100%;
   padding: 0;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  /* Let narrow panes (right sidebar, stacked leaves) drive wrapping instead of
+     intrinsic content width. Resize from full-window → small leaves the leaf's
+     CSS size smaller than the row's intrinsic width; without this the leaf
+     keeps its old width and the view is clipped on the right. */
+  container-type: inline-size;
+  container-name: agentic-chat;
+}
+
+.agentic-chat-view *,
+.agentic-chat-view *::before,
+.agentic-chat-view *::after {
+  box-sizing: border-box;
 }
 
 /* --- Message list --- */
 
 .agentic-chat-messages {
   flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  width: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--size-4-3);
   display: flex;
   flex-direction: column;
@@ -72,7 +95,9 @@
 .agentic-chat-message {
   border-radius: var(--radius-m);
   max-width: 100%;
+  min-width: 0;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .agentic-chat-user {
@@ -118,11 +143,18 @@
   background-color: var(--background-secondary);
   padding: var(--size-4-2) var(--size-4-3);
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .agentic-chat-text {
   font-size: var(--font-ui-medium);
   line-height: 1.5;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .agentic-chat-text.is-streaming {
@@ -135,6 +167,35 @@
 
 .agentic-chat-text > p:last-child {
   margin-bottom: 0;
+}
+
+/* Rendered markdown (finalized assistant text) lives inside .agentic-chat-text
+   via Obsidian's MarkdownRenderer. Clamp its inner elements so a long code
+   block, table, or URL never forces the pane wider than the leaf — the bug
+   the user sees as "right side cut off" after shrinking the window. */
+.agentic-chat-text.markdown-rendered {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.agentic-chat-text pre,
+.agentic-chat-text code,
+.agentic-chat-text table,
+.agentic-chat-text img {
+  max-width: 100%;
+}
+
+.agentic-chat-text pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+.agentic-chat-text table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
 }
 
 .agentic-chat-mermaid {
@@ -461,6 +522,8 @@
   position: relative;
   padding-left: 14px;
   margin-bottom: var(--size-2-1);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .agentic-chat-timeline-rail {
@@ -604,6 +667,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--size-2-2);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .agentic-chat-steps:not(:empty) {
@@ -640,6 +705,8 @@
   display: flex;
   align-items: flex-start;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Chevron lives OUTSIDE the card (left), matching the reasoning pill anatomy. */
@@ -966,6 +1033,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--size-2-2);
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 /* --- Tab strip (up to MAX_TABS independent sessions) --- */
@@ -973,9 +1043,12 @@
 /* Nav row above the input card: tab pills left, header actions right. */
 .agentic-chat-tabs-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--size-2-2);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .agentic-chat-tab-actions {
@@ -1001,6 +1074,10 @@
   flex-direction: column;
   gap: var(--size-2-2);
   min-height: 92px;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  overflow: hidden;
   padding: var(--size-2-3) var(--size-4-2);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);
@@ -1178,12 +1255,16 @@
   position: relative;
   flex: 1 1 auto;
   display: flex;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* The textarea carries no box of its own — the card is the input rectangle.
    Keep vertical resize so a long prompt can grow the card. */
 .agentic-chat-input {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   resize: vertical;
   min-height: 48px;
   padding: var(--size-2-2) 0 0 0;
@@ -1268,6 +1349,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--size-2-3);
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .agentic-chat-toolbar-left {
@@ -1276,14 +1360,19 @@
   align-items: center;
   gap: var(--size-2-2);
   min-width: 0;
+  max-width: 100%;
   flex: 1 1 auto;
 }
 
 .agentic-chat-toolbar-right {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--size-2-3);
   margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* --- Effort knob (per-message reasoning level), right segment of the model pill --- */
@@ -1472,7 +1561,9 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-l);
   background-color: var(--background-secondary);
-  max-width: min(22rem, 70%);
+  max-width: min(22rem, 100%);
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
 }
 
@@ -2026,4 +2117,59 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Narrow panes (right sidebar, stacked leaves, or small window after drag):
+   the pane width, not the viewport, drives wrapping. Without this the
+   model pill + Safe↔YOLO + context gauge keep their wide intrinsic size,
+   the row overflows, and the whole view is clipped on the right — the
+   "cut off" the user sees after shrinking the window or dragging the
+   splitter to reveal the editor. */
+@container agentic-chat (max-width: 400px) {
+  .agentic-chat-messages {
+    padding: var(--size-4-2);
+  }
+
+  .agentic-chat-composer {
+    padding: var(--size-4-2);
+  }
+
+  .agentic-chat-field {
+    padding: var(--size-2-2) var(--size-2-3);
+  }
+
+  .agentic-chat-toolbar {
+    gap: var(--size-2-2);
+  }
+
+  .agentic-chat-model {
+    max-width: 100%;
+    flex-basis: 100%;
+  }
+
+  .agentic-chat-toolbar-left,
+  .agentic-chat-toolbar-right {
+    flex-basis: 100%;
+    max-width: 100%;
+    justify-content: flex-start;
+  }
+
+  .agentic-chat-toolbar-right {
+    margin-left: 0;
+    justify-content: space-between;
+  }
+
+  .agentic-chat-user {
+    max-width: 96%;
+  }
+}
+
+@container agentic-chat (max-width: 320px) {
+  .agentic-chat-tabs-row {
+    flex-wrap: wrap;
+  }
+
+  .agentic-chat-field {
+    min-height: 88px;
+  }
 }
