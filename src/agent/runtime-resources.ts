@@ -82,7 +82,7 @@ export async function loadAgentRuntimeResources(
   // state (enabled/approval/auth/knownTools/oauth) lives in settings.plugins.mcpState
   // keyed by stable id. No merge with settings.mcp.servers — the two cannot diverge.
   const pluginServers = plugins.filter((plugin) => plugin.enabled).flatMap((plugin) => plugin.mcpServers);
-  const mcpServers = resolveMcpServers(settings as never, pluginServers);
+  const mcpServers = resolveMcpServers(settings, pluginServers);
   const mcp = webFetch
     ? await createMcpToolsWithDiagnostics(
         { ...settings.mcp, servers: mcpServers },

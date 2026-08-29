@@ -288,7 +288,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private mcpDisplayServers(settings: AgenticChatSettings): McpServerSettings[] {
     const pluginServers = this.plugin.pluginService.getLoaded().filter((p) => p.enabled).flatMap((p) => p.mcpServers);
     // Use the same resolution as the runtime (state map primary, legacy mcp.servers fallback for tests/pre-migration).
-    return resolveMcpServers(settings as never, pluginServers);
+    return resolveMcpServers(settings, pluginServers);
   }
 
   private ensureMcpStateEntry(id: string): McpServerState {

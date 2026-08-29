@@ -136,7 +136,7 @@ export function settingsForStorage(settings: AgenticChatSettings, store: SecretS
     storeMcpServerSecrets(settings.mcp.servers[index], stored.mcp.servers[index], store);
   }
   for (const [id, state] of Object.entries(settings.plugins.mcpState)) {
-    const storedState = (stored.plugins.mcpState as Record<string, McpServerState>)[id];
+    const storedState = stored.plugins.mcpState[id];
     if (storedState) storeMcpStateSecrets(id, state, storedState, store);
   }
   return stored;

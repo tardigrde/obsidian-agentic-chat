@@ -31,5 +31,5 @@ export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
 export function healPluginMcpState(
   stored: Record<string, unknown> | null | undefined,
 ): Record<string, McpServerState> {
-  return healMcpServerStateMap(stored as Record<string, unknown> | null | undefined);
+  return healMcpServerStateMap(stored);
 }
