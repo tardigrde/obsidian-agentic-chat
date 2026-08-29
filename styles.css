@@ -96,7 +96,6 @@
   border-radius: var(--radius-m);
   max-width: 100%;
   min-width: 0;
-  word-break: break-word;
   overflow-wrap: anywhere;
 }
 
@@ -154,7 +153,6 @@
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
 .agentic-chat-text.is-streaming {
@@ -188,7 +186,7 @@
 
 .agentic-chat-text pre {
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   overflow-x: auto;
 }
 

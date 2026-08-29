@@ -19,7 +19,8 @@ async function emitUser(text: string): Promise<void> {
   await browser.executeObsidian(
     async ({ app }, viewType, msg) => {
       const view = app.workspace.getLeavesOfType(viewType)[0]?.view as unknown as { handleAgentEvent?: (e: unknown) => void };
-      view?.handleAgentEvent?.({ type: "message_end", message: { role: "user", content: [{ type: "text", text: msg }] } });
+      if (!view?.handleAgentEvent) throw new Error(`chat view missing handleAgentEvent for ${viewType}`);
+      view.handleAgentEvent({ type: "message_end", message: { role: "user", content: [{ type: "text", text: msg }] } });
     },
     "agentic-chat-chat-view",
     text,
@@ -30,14 +31,15 @@ async function emitAssistant(text: string): Promise<void> {
   await browser.executeObsidian(
     async ({ app }, viewType, msg) => {
       const view = app.workspace.getLeavesOfType(viewType)[0]?.view as unknown as { handleAgentEvent?: (e: unknown) => void };
-      view?.handleAgentEvent?.({ type: "agent_start" });
-      view?.handleAgentEvent?.({ type: "message_start", message: { role: "assistant", content: [] } });
-      view?.handleAgentEvent?.({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: msg } });
-      view?.handleAgentEvent?.({
+      if (!view?.handleAgentEvent) throw new Error(`chat view missing handleAgentEvent for ${viewType}`);
+      view.handleAgentEvent({ type: "agent_start" });
+      view.handleAgentEvent({ type: "message_start", message: { role: "assistant", content: [] } });
+      view.handleAgentEvent({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: msg } });
+      view.handleAgentEvent({
         type: "message_end",
         message: { role: "assistant", content: [{ type: "text", text: msg }] },
       });
-      view?.handleAgentEvent?.({ type: "agent_end" });
+      view.handleAgentEvent({ type: "agent_end" });
     },
     "agentic-chat-chat-view",
     text,
@@ -111,57 +113,101 @@ describe("agentic-chat clip regression", function () {
     const dir = path.resolve(`logs/clip-debug/${new Date().toISOString().replace(/[:.]/g, "-")}`);
     mkdirSync(dir, { recursive: true });
 
+    // Capture original inline styles so the forced 340px leaf does not leak
+    // into the final recovery check or later tests.
+    const originalLeafStyles = await browser.execute(() => {
+      const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+      const leaf = view?.closest<HTMLElement>(".workspace-leaf") as HTMLElement | null;
+      const split = leaf?.closest<HTMLElement>(".workspace-split") as HTMLElement | null;
+      return {
+        leafFlex: leaf?.style.flex ?? "",
+        leafWidth: leaf?.style.width ?? "",
+        leafMinWidth: leaf?.style.minWidth ?? "",
+        splitMinWidth: split?.style.minWidth ?? "",
+      };
+    });
+
     const widths: Array<{ w: number; h: number; name: string }> = [
       { w: 1200, h: 800, name: "01-1200-full" },
       { w: 860, h: 700, name: "02-860-small-window" },
       { w: 760, h: 700, name: "03-760-narrow" },
     ];
 
-    for (const { w, h, name } of widths) {
+    try {
+      for (const { w, h, name } of widths) {
+        try {
+          await browser.setWindowSize(w, h);
+        } catch (_e) {
+          // window resize best-effort on Obsidian runtime
+        }
+        await browser.pause(600);
+
+        // force leaf sizer to be narrow like user's "editor + chat" state: shrink chat leaf to ~300px
+        if (name.includes("760") || name.includes("860")) {
+          await browser.execute(() => {
+            const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+            const leaf = view?.closest<HTMLElement>(".workspace-leaf");
+            const split = leaf?.closest<HTMLElement>(".workspace-split");
+            if (leaf) {
+              leaf.style.flex = "0 0 340px";
+              (leaf.style as unknown as Record<string, string>).width = "340px";
+              (leaf.style as unknown as Record<string, string>).minWidth = "280px";
+            }
+            if (split) split.style.minWidth = "0px";
+          });
+          await browser.pause(400);
+        }
+
+        const res = await checkNoClip(name);
+        // eslint-disable-next-line no-console
+        console.log(`[clip-debug] ${res.details} ok=${res.ok}`);
+
+        const view = await $(".agentic-chat-view");
+        if (await view.isExisting()) await view.saveScreenshot(path.join(dir, `${name}.view.png`));
+        await browser.saveScreenshot(path.join(dir, `${name}.full.png`));
+
+        if (!res.ok) throw new Error(res.details);
+      }
+
+      // Restore original leaf styles before widening so the final check
+      // actually tests recovery, not a still-forced narrow leaf.
+      await browser.execute((orig) => {
+        const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+        const leaf = view?.closest<HTMLElement>(".workspace-leaf") as HTMLElement | null;
+        const split = leaf?.closest<HTMLElement>(".workspace-split") as HTMLElement | null;
+        if (leaf) {
+          leaf.style.flex = orig.leafFlex;
+          leaf.style.width = orig.leafWidth;
+          (leaf.style as unknown as Record<string, string>).minWidth = orig.leafMinWidth;
+        }
+        if (split) split.style.minWidth = orig.splitMinWidth;
+      }, originalLeafStyles);
+      await browser.pause(300);
+
+      // widen again to ensure no sticky overflow after resize back
       try {
-        await browser.setWindowSize(w, h);
+        await browser.setWindowSize(1200, 800);
       } catch (_e) {
-        // window resize best-effort on Obsidian runtime
+        // best-effort
       }
       await browser.pause(600);
-
-      // force leaf sizer to be narrow like user's "editor + chat" state: shrink chat leaf to ~300px
-      if (name.includes("760") || name.includes("860")) {
-        await browser.execute(() => {
-          const view = document.querySelector<HTMLElement>(".agentic-chat-view");
-          const leaf = view?.closest<HTMLElement>(".workspace-leaf");
-          const split = leaf?.closest<HTMLElement>(".workspace-split");
-          if (leaf) {
-            leaf.style.flex = "0 0 340px";
-            (leaf.style as unknown as Record<string, string>).width = "340px";
-            (leaf.style as unknown as Record<string, string>).minWidth = "280px";
-          }
-          if (split) split.style.minWidth = "0px";
-        });
-        await browser.pause(400);
-      }
-
-      const res = await checkNoClip(name);
+      const final = await checkNoClip("04-back-to-1200");
       // eslint-disable-next-line no-console
-      console.log(`[clip-debug] ${res.details} ok=${res.ok}`);
-
-      const view = await $(".agentic-chat-view");
-      if (await view.isExisting()) await view.saveScreenshot(path.join(dir, `${name}.view.png`));
-      await browser.saveScreenshot(path.join(dir, `${name}.full.png`));
-
-      if (!res.ok) throw new Error(res.details);
+      console.log(`[clip-debug] ${final.details} ok=${final.ok}`);
+      if (!final.ok) throw new Error(final.details);
+    } finally {
+      // Always restore even if an assertion fails so later specs inherit clean state.
+      await browser.execute((orig) => {
+        const view = document.querySelector<HTMLElement>(".agentic-chat-view");
+        const leaf = view?.closest<HTMLElement>(".workspace-leaf") as HTMLElement | null;
+        const split = leaf?.closest<HTMLElement>(".workspace-split") as HTMLElement | null;
+        if (leaf) {
+          leaf.style.flex = orig.leafFlex;
+          leaf.style.width = orig.leafWidth;
+          (leaf.style as unknown as Record<string, string>).minWidth = orig.leafMinWidth;
+        }
+        if (split) split.style.minWidth = orig.splitMinWidth;
+      }, originalLeafStyles);
     }
-
-    // widen again to ensure no sticky overflow after resize back
-    try {
-      await browser.setWindowSize(1200, 800);
-    } catch (_e) {
-      // best-effort
-    }
-    await browser.pause(600);
-    const final = await checkNoClip("04-back-to-1200");
-    // eslint-disable-next-line no-console
-    console.log(`[clip-debug] ${final.details} ok=${final.ok}`);
-    if (!final.ok) throw new Error(final.details);
   });
 });
