@@ -54,6 +54,47 @@ export function isInsideWorkingDirs(path: string, dirs: string[]): boolean {
   return dirs.some((dir) => dir === "" || path === dir || path.startsWith(`${dir}/`));
 }
 
+export type AddWorkingDirResult = "added" | "duplicate" | "invalid";
+
+/**
+ * Canonical working-dir mutators — S1.
+ * All three surfaces (settings tab, /add-dir, composer folder menu) must go
+ * through these so normalization / dedup cannot diverge.
+ */
+export function addWorkingDir(workingDirs: string[], rawPath: string): AddWorkingDirResult {
+  const normalized = (() => {
+    try {
+      const trimmed = rawPath.trim();
+      // Treat "/", "//", "///", " / " as vault root like resolveWorkingDirectoryInput
+      if (!trimmed || /^\/+$/.test(trimmed)) return "";
+      return normalizeFolderPath(trimmed === "/" ? "" : trimmed);
+    } catch {
+      return null;
+    }
+  })();
+  if (normalized === null) return "invalid";
+  if (workingDirs.includes(normalized)) return "duplicate";
+  workingDirs.push(normalized);
+  return "added";
+}
+
+export function removeWorkingDir(workingDirs: string[], rawPath: string): boolean {
+  let normalized: string | null;
+  try {
+    const trimmed = rawPath.trim();
+    if (!trimmed || /^\/+$/.test(trimmed)) normalized = "";
+    else normalized = normalizeFolderPath(trimmed);
+  } catch {
+    normalized = rawPath;
+  }
+  // stored dirs are always normalized, so try normalized first then raw
+  let index = workingDirs.indexOf(normalized ?? rawPath);
+  if (index === -1 && normalized !== rawPath) index = workingDirs.indexOf(rawPath);
+  if (index === -1) return false;
+  workingDirs.splice(index, 1);
+  return true;
+}
+
 /**
  * Refine an approval policy by the working-dir boundary. With dirs configured, a call
  * whose targets are all inside a granted dir auto-runs (`allow`); any other call routes

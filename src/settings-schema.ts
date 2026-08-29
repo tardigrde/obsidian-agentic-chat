@@ -7,7 +7,8 @@ import {
   type PrivacySettings,
   type ProviderId,
 } from "./llm/models";
-import { type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
+import { healPerToolMap, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
+import { normalizeWorkingDirs } from "./agent/working-dir";
 import { type AgentMode, DEFAULT_MODE, healMode } from "./agent/modes";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
@@ -264,12 +265,14 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     approval: {
       ...DEFAULT_SETTINGS.approval,
       ...stored?.approval,
-      perTool: { ...stored?.approval?.perTool },
+      perTool: healPerToolMap(stored?.approval?.perTool),
       // Heal the granted working dirs to a string[] so a malformed persisted value
-      // can't break the gate.
-      workingDirs: Array.isArray(stored?.approval?.workingDirs)
-        ? stored.approval.workingDirs.filter((dir): dir is string => typeof dir === "string")
-        : [],
+      // can't break the gate. Also drop plugin-internal paths that would fail-open the boundary.
+      workingDirs: normalizeWorkingDirs(
+        Array.isArray(stored?.approval?.workingDirs)
+          ? stored.approval.workingDirs.filter((dir): dir is string => typeof dir === "string")
+          : [],
+      ),
     },
     notifications: { ...DEFAULT_SETTINGS.notifications, ...stored?.notifications },
     compaction: { ...DEFAULT_SETTINGS.compaction, ...stored?.compaction },

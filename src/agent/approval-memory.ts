@@ -1,5 +1,6 @@
 import type { AgenticChatSettings } from "../settings";
 import type { ApprovalPolicy } from "./approval";
+import { setPerToolApproval } from "./approval";
 
 export interface RememberableApprovalChoice {
   approved: boolean;
@@ -18,6 +19,6 @@ export function applyRememberedApprovalChoice(
 ): boolean {
   const policy = approvalPolicyForRememberedChoice(choice);
   if (!policy) return false;
-  settings.approval.perTool[toolName] = policy;
+  setPerToolApproval(settings.approval, toolName, policy);
   return true;
 }
