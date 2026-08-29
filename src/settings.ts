@@ -2098,6 +2098,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .onClick(() => this.openInVault(plugin.rootPath));
     new ButtonComponent(controls)
       .setButtonText("Remove")
+      // Keep setWarning for minAppVersion 1.11.4 — setDestructive() needs 1.13.0 (obsidianmd/no-unsupported-api)
       .setWarning()
       .onClick(async () => {
         await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);

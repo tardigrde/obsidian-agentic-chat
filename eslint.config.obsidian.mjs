@@ -50,4 +50,11 @@ export default defineConfig([
       "obsidianmd/ui/sentence-case": "off",
     },
   },
+  {
+    // new-skill-modal uses a native confirm() as an overwrite guard before
+    // scaffolding; Obsidian does not provide a suitable async confirm modal in
+    // this context and the call is intentional. Allow it here.
+    files: ["src/ui/new-skill-modal.ts"],
+    rules: { "no-alert": "off" },
+  },
 ]);

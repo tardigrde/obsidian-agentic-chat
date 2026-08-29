@@ -658,7 +658,7 @@ export class ChatView extends ItemView {
       // Composition (IME) inputs may briefly leave the value empty; don't drop a
       // queued prompt mid-composition — the trailing non-composing input event
       // reconciles the state.
-      if (this.queuedPromptArmed && !(event as InputEvent).isComposing) {
+      if (this.queuedPromptArmed && !(event instanceof InputEvent && event.isComposing)) {
         const text = this.inputEl.value.trim();
         if (!text) {
           this.queuedPromptArmed = false;

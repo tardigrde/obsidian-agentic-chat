@@ -305,6 +305,7 @@ export class AssistantBubble {
     const card = row.querySelector(".agentic-chat-step");
     if (!card) return;
     const open = card.classList.toggle("is-open");
+    row.classList.toggle("is-open", open);
     row.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", String(open));
   }
 
@@ -424,6 +425,7 @@ export class AssistantBubble {
       if (step.card.parentElement) this.syncStepCollapsible(step.card.parentElement, step.body);
       // Auto-open so live child progress is visible while the step runs.
       step.card.addClass("is-open");
+      step.card.parentElement?.addClass("is-open");
       step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
       return;
     }
@@ -432,6 +434,7 @@ export class AssistantBubble {
       if (step.card.parentElement) this.syncStepCollapsible(step.card.parentElement, step.body);
       // Auto-open so the ask-user state is visible while waiting.
       step.card.addClass("is-open");
+      step.card.parentElement?.addClass("is-open");
       step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
     }
   }
@@ -655,6 +658,7 @@ export class AssistantBubble {
     const sourcePath = this.stepSourcePath.get(id);
     if (sourcePath) this.sourcePaths.delete(sourcePath);
     step.card.addClass("is-open");
+    step.card.parentElement?.addClass("is-open");
     step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
   }
 
