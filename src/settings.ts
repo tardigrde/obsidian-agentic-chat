@@ -1,5 +1,4 @@
 import { App, ButtonComponent, Notice, Platform, PluginSettingTab, Setting, TFile, TFolder, ToggleComponent, type SettingDefinitionItem } from "obsidian";
-import { normalizeFolderPath } from "./vault/path";
 import type AgenticChatPlugin from "./main";
 import { DEFAULT_PLUGINS_FOLDER, resolveMcpServers } from "./plugins/loader";
 import type { LoadedPlugin } from "./plugins/loader";
@@ -11,8 +10,9 @@ import {
   listOpenRouterModels,
   type ProviderId,
 } from "./llm/models";
-import { type ApprovalPolicy } from "./agent/approval";
+import { type ApprovalPolicy, clearMcpPerToolApprovals, setPerToolApproval } from "./agent/approval";
 import { type AgentMode, MODES, TOGGLE_MODES } from "./agent/modes";
+import { addWorkingDir, removeWorkingDir } from "./agent/working-dir";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { MUTATING_TOOLS } from "./tools/tool-contracts";
 import { createVaultTools } from "./tools/vault-tools";
@@ -36,7 +36,7 @@ import {
   type McpOAuthProgressEvent,
 } from "./mcp/oauth";
 import { createFetchFromWebFetcher, createMcpFetcher, createProxiedFetcher } from "./mcp/fetcher";
-import { localMcpToolName, localMcpToolNames, probeMcpServer } from "./mcp/tools";
+import { localMcpToolNames, probeMcpServer } from "./mcp/tools";
 import {
   formatMcpServerSummary,
   formatMcpToolApprovalDescription,
@@ -741,8 +741,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             .addOption("deny", "Deny")
             .setValue(settings.approval.perTool[tool.name] ?? "default")
             .onChange(async (value) => {
-              if (value === "default") delete settings.approval.perTool[tool.name];
-              else settings.approval.perTool[tool.name] = value as ApprovalPolicy;
+              setPerToolApproval(settings.approval, tool.name, value as ApprovalPolicy | "default");
               await this.save();
             });
         });
@@ -765,12 +764,11 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .addButton((button) =>
         button.setButtonText("Add folder").onClick(() => {
           new FolderSuggestModal(this.app, (folder) => {
-            const dirs = settings.approval.workingDirs;
-            // Normalize identically to the chat view + gate so entries can't diverge.
-            const path = folder.path === "/" ? "" : normalizeFolderPath(folder.path);
-            if (!dirs.includes(path)) {
-              dirs.push(path);
+            const result = addWorkingDir(settings.approval.workingDirs, folder.path);
+            if (result === "added") {
               this.refresh();
+            } else if (result === "invalid") {
+              new Notice(`Invalid folder path: ${folder.path}`);
             }
           }).open();
         }),
@@ -792,9 +790,10 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             .setButtonText("Remove")
             .setClass("mod-warning")
             .onClick(async () => {
-              settings.approval.workingDirs = settings.approval.workingDirs.filter((entry) => entry !== dir);
-              await this.save();
-              this.redraw();
+              if (removeWorkingDir(settings.approval.workingDirs, dir)) {
+                await this.save();
+                this.redraw();
+              }
             }),
         );
     }
@@ -1357,8 +1356,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             .addOption("deny", "Deny")
             .setValue(settings.approval.perTool[localName] ?? "default")
             .onChange(async (value) => {
-              if (value === "default") delete settings.approval.perTool[localName];
-              else settings.approval.perTool[localName] = value as ApprovalPolicy;
+              setPerToolApproval(settings.approval, localName, value as ApprovalPolicy | "default");
               await this.save();
             }),
         );
@@ -1767,7 +1765,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     for (let index = 0; index < server.knownTools.length; index += 1) {
       const policy = previousApprovals[previousLocalNames[index]];
       const nextLocalName = mcpKnownToolLocalName(server, server.knownTools[index]);
-      if (policy) settings.approval.perTool[nextLocalName] = policy;
+      if (policy) setPerToolApproval(settings.approval, nextLocalName, policy);
     }
     this.syncMcpServerToState(server);
   }
@@ -1796,14 +1794,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   private deleteMcpPerToolApprovals(settings: AgenticChatSettings, serverId: string): Record<string, ApprovalPolicy> {
-    const prefix = localMcpToolName(serverId, "tool").slice(0, -"tool".length);
-    const removed: Record<string, ApprovalPolicy> = {};
-    for (const key of Object.keys(settings.approval.perTool)) {
-      if (!key.startsWith(prefix)) continue;
-      removed[key] = settings.approval.perTool[key];
-      delete settings.approval.perTool[key];
-    }
-    return removed;
+    return clearMcpPerToolApprovals(settings.approval, serverId);
   }
 
   private rebaseMcpKnownToolLocalNames(server: McpServerSettings): void {

@@ -1,5 +1,6 @@
 import type { Menu } from "obsidian";
 import { normalizeFolderPath } from "../vault/path";
+import { addWorkingDir, removeWorkingDir } from "../agent/working-dir";
 import type { WorkflowRenderer } from "./workflow-renderer";
 
 export interface WorkingDirectoryWorkflowControllerOptions {
@@ -101,11 +102,15 @@ export class WorkingDirectoryWorkflowController {
       return;
     }
     const dirs = this.options.workingDirs();
-    if (dirs.includes(normalized)) {
+    const addResult = addWorkingDir(dirs, normalized);
+    if (addResult === "duplicate") {
       this.options.renderer.info("Working directory", [[formatWorkingDirLabel(normalized), "Already a working directory."]]);
       return;
     }
-    dirs.push(normalized);
+    if (addResult === "invalid") {
+      this.options.renderer.error(`Invalid folder path "${normalized}".`);
+      return;
+    }
     await this.options.saveSettings();
     this.options.afterChange();
     this.options.renderer.info("Working directory", [
@@ -118,9 +123,7 @@ export class WorkingDirectoryWorkflowController {
 
   async remove(dir: string): Promise<void> {
     const dirs = this.options.workingDirs();
-    const index = dirs.indexOf(dir);
-    if (index === -1) return;
-    dirs.splice(index, 1);
+    if (!removeWorkingDir(dirs, dir)) return;
     await this.options.saveSettings();
     this.options.afterChange();
   }

@@ -7,7 +7,7 @@ import {
   restoreFileCheckpoint,
   type FileCheckpoint,
 } from "./file-checkpoints";
-import type { ApprovalPolicy } from "./approval";
+import { type ApprovalPolicy, getPerToolApproval } from "./approval";
 import { isMcpToolName, mcpServerIdFromToolName } from "../mcp/tools";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import {
@@ -19,7 +19,7 @@ import {
 } from "../tools/subagent-tool";
 import type { AgentProfile } from "./subagents";
 import { resolveModePolicy } from "./modes";
-import { resolveWorkingDirPolicy } from "./working-dir";
+import { resolveWorkingDirPolicy, toolTargetPaths } from "./working-dir";
 import { UNDOABLE_TOOLS, captureUndo } from "./undo";
 
 /** A pending tool call the user must approve. */
@@ -217,7 +217,7 @@ export class AgentToolCallController {
     // auto-injection via indirect prompt injection (fetch_url -> load_skill evil).
     // Respects perTool override so user can set allow/deny explicitly.
     const isLoadSkillTool = toolName === "load_skill" || toolName === "unload_skill";
-    const basePolicy = isLoadSkillTool ? (settings.approval.perTool[toolName] ?? "ask") : decision.policy;
+    const basePolicy = isLoadSkillTool ? (getPerToolApproval(settings.approval, toolName) ?? "ask") : decision.policy;
     // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
     // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
     // already forces read-only, so the boundary only refines Safe.
@@ -250,7 +250,25 @@ export class AgentToolCallController {
     toolName: string,
     args: unknown,
   ): Promise<ToolGateDecision> {
-    const policy = this.resolveMcpPolicy(settings, toolName);
+    // S1: MCP now respects the same mode overlay as vault tools (plan deny, yolo allow)
+    // and the same working-dir refinement for vault-path args. Previously this bypassed both,
+    // allowing MCP to escape the safety boundary. Working-dir refinement is only applied
+    // when args actually target vault paths (path/newPath) — pathless MCP calls don't span the vault.
+    const modeCheck = resolveModePolicy(settings.mode, settings.approval, toolName);
+    if (modeCheck.policy === "deny" && modeCheck.reason) {
+      await this.auditApproval({ decision: "denied", toolCallId, toolName, label: this.labelForTool(toolName), args, reason: modeCheck.reason });
+      return { block: true, reason: modeCheck.reason };
+    }
+    const perTool = getPerToolApproval(settings.approval, toolName);
+    const serverApproval = this.resolveMcpServerApproval(settings, toolName);
+    const serverBase = serverApproval ?? "ask";
+    const yoloServerBase = settings.mode === "yolo" && serverBase !== "deny" ? "allow" : serverBase;
+    const basePolicy = perTool ?? yoloServerBase;
+    // Only refine by working dirs when the call actually targets vault paths;
+    // most MCP tools are pathless and should not be forced through the vault allow-list.
+    const hasVaultTargets = toolTargetPaths(args).length > 0;
+    const scoped = settings.mode === "safe" && hasVaultTargets;
+    const policy = scoped ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, basePolicy) : basePolicy;
     const label = this.labelForTool(toolName);
     if (policy === "allow") {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });
@@ -272,14 +290,18 @@ export class AgentToolCallController {
   }
 
   private resolveMcpPolicy(settings: AgenticChatSettings, toolName: string): ApprovalPolicy {
-    const override = settings.approval.perTool[toolName];
+    const override = getPerToolApproval(settings.approval, toolName);
     if (override) return override;
+    return this.resolveMcpServerApproval(settings, toolName) ?? "ask";
+  }
+
+  private resolveMcpServerApproval(settings: AgenticChatSettings, toolName: string): ApprovalPolicy | undefined {
     const serverId = mcpServerIdFromToolName(toolName);
-    if (!serverId) return "ask";
+    if (!serverId) return undefined;
     const state = settings.plugins.mcpState[serverId];
-    if (state) return state.approval;
+    if (state && state.approval) return state.approval;
     const server = settings.mcp.servers.find((candidate) => candidate.id === serverId);
-    return server?.approval ?? "ask";
+    return server?.approval;
   }
 
   /**
@@ -294,7 +316,7 @@ export class AgentToolCallController {
     toolCallId: string,
     args: unknown,
   ): Promise<ToolGateDecision> {
-    if (!this.dispatchCanMutate(args)) {
+    if (!this.dispatchCanMutate(settings, args)) {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
       return undefined;
     }
@@ -344,12 +366,20 @@ export class AgentToolCallController {
     return this.getTools().find((candidate) => candidate.name === toolName)?.label ?? toolName;
   }
 
-  /** True when any dispatched profile's allowlist includes a mutating tool. */
-  private dispatchCanMutate(args: unknown): boolean {
+  /** True when any dispatched profile's allowlist includes a mutating tool that is not per-tool denied. */
+  private dispatchCanMutate(settings: AgenticChatSettings, args: unknown): boolean {
     const tasks = normalizeTasks((args ?? {}));
     return tasks.some((task) => {
       const profile = this.getProfiles().find((candidate) => candidate.name === task.agent);
-      return !!profile && profile.toolAllowlist.some((name) => MUTATING_TOOLS.has(name));
+      if (!profile) return false;
+      return profile.toolAllowlist.some((name) => {
+        const isMutating =
+          MUTATING_TOOLS.has(name) || isMcpToolName(name) || name === "load_skill" || name === "unload_skill";
+        if (!isMutating) return false;
+        // Per-tool deny means this mutating tool is effectively read-only for dispatch purposes.
+        if (getPerToolApproval(settings.approval, name) === "deny") return false;
+        return true;
+      });
     });
   }
 }
