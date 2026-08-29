@@ -50,6 +50,21 @@ export interface McpServerSettings {
   pluginRoot?: string;
 }
 
+/** Client-owned state for a plugin-derived MCP server (shape lives in mcp.json). */
+export interface McpServerState {
+  enabled: boolean;
+  approval: ApprovalPolicy;
+  authType: McpAuthType;
+  authHeaderName: string;
+  authHeaderValueSecretId: string;
+  /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
+  authHeaderValue: string;
+  oauth: McpOAuthSettings;
+  knownTools: McpKnownToolSettings[];
+  /** Last known URL for change detection — cleared auth if mcp.json moves host. */
+  lastUrl?: string;
+}
+
 export interface McpKnownToolSettings {
   /** Remote MCP tool name as returned by tools/list. */
   name: string;
@@ -179,6 +194,94 @@ function healMcpServer(server: Partial<McpServerSettings> | null | undefined): M
     source: healServerSource(server.source),
     ...(typeof server.pluginRoot === "string" && server.pluginRoot.trim() ? { pluginRoot: server.pluginRoot.trim() } : {}),
   };
+}
+
+export const DEFAULT_MCP_SERVER_STATE: McpServerState = {
+  enabled: false,
+  approval: "ask",
+  authType: "none",
+  authHeaderName: "",
+  authHeaderValueSecretId: "",
+  authHeaderValue: "",
+  oauth: { ...DEFAULT_MCP_OAUTH_SETTINGS },
+  knownTools: [],
+};
+
+export function healMcpServerState(
+  stored: Partial<McpServerState> | null | undefined,
+  id: string,
+): McpServerState {
+  const healedId = normalizeMcpServerId(id);
+  return {
+    enabled: stored?.enabled === true,
+    approval: healApproval(stored?.approval),
+    authType: healAuthType(stored?.authType, undefined, stored?.authHeaderName),
+    authHeaderName: typeof stored?.authHeaderName === "string" ? stored.authHeaderName.trim() : "",
+    authHeaderValueSecretId: stringValue(stored?.authHeaderValueSecretId) || mcpSecretId(healedId, "auth-header-value"),
+    authHeaderValue: typeof stored?.authHeaderValue === "string" ? stored.authHeaderValue.trim() : "",
+    oauth: healOAuthSettings(stored?.oauth, healedId),
+    knownTools: healMcpKnownTools(stored?.knownTools),
+    ...(typeof (stored as Record<string, unknown>)?.lastUrl === "string" && (stored as Record<string, unknown>).lastUrl
+      ? { lastUrl: String((stored as Record<string, unknown>).lastUrl).trim() }
+      : {}),
+  };
+}
+
+export function createMcpServerState(id: string, overrides: Partial<McpServerState> = {}): McpServerState {
+  const healedId = normalizeMcpServerId(id);
+  return {
+    enabled: typeof overrides.enabled === "boolean" ? overrides.enabled : false,
+    approval: healApproval(overrides.approval),
+    authType: healAuthType(overrides.authType, undefined, overrides.authHeaderName),
+    authHeaderName: stringValue(overrides.authHeaderName),
+    authHeaderValueSecretId: stringValue(overrides.authHeaderValueSecretId) || mcpSecretId(healedId, "auth-header-value"),
+    authHeaderValue: stringValue(overrides.authHeaderValue),
+    oauth: healOAuthSettings(overrides.oauth, healedId),
+    knownTools: healMcpKnownTools(overrides.knownTools),
+    ...(typeof overrides.lastUrl === "string" && overrides.lastUrl.trim() ? { lastUrl: overrides.lastUrl.trim() } : {}),
+  };
+}
+
+export function mcpServerStateFromServer(server: McpServerSettings): McpServerState {
+  return {
+    enabled: server.enabled,
+    approval: server.approval,
+    authType: server.authType,
+    authHeaderName: server.authHeaderName,
+    authHeaderValueSecretId: server.authHeaderValueSecretId || mcpSecretId(server.id, "auth-header-value"),
+    authHeaderValue: server.authHeaderValue,
+    oauth: { ...server.oauth },
+    knownTools: [...server.knownTools],
+    lastUrl: server.url,
+  };
+}
+
+export function applyMcpServerState(server: McpServerSettings, state: McpServerState): void {
+  server.enabled = state.enabled;
+  server.approval = state.approval;
+  server.authType = state.authType;
+  server.authHeaderName = state.authHeaderName;
+  server.authHeaderValueSecretId = state.authHeaderValueSecretId || mcpSecretId(server.id, "auth-header-value");
+  server.authHeaderValue = state.authHeaderValue;
+  server.oauth = { ...state.oauth };
+  server.knownTools = [...state.knownTools];
+  server.authHeaderValueSecretId ||= mcpSecretId(server.id, "auth-header-value");
+  ensureMcpOAuthSecretRefs(server.id, server.oauth);
+  // lastUrl is tracked in state, not in server shape
+}
+
+export function healMcpServerStateMap(
+  stored: Record<string, unknown> | null | undefined,
+): Record<string, McpServerState> {
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+  const healed: Record<string, McpServerState> = {};
+  for (const [rawId, value] of Object.entries(stored)) {
+    const id = normalizeMcpServerId(rawId);
+    if (!id || healed[id]) continue;
+    const record = value && typeof value === "object" && !Array.isArray(value) ? (value as Partial<McpServerState>) : null;
+    healed[id] = healMcpServerState(record, id);
+  }
+  return healed;
 }
 
 export function createMcpServerSettings(

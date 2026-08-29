@@ -1,8 +1,9 @@
 import { App, ButtonComponent, Notice, Platform, PluginSettingTab, Setting, TFile, TFolder, ToggleComponent, type SettingDefinitionItem } from "obsidian";
 import { normalizeFolderPath } from "./vault/path";
 import type AgenticChatPlugin from "./main";
-import { DEFAULT_PLUGINS_FOLDER, syncMcpServers } from "./plugins/loader";
+import { DEFAULT_PLUGINS_FOLDER, resolveMcpServers } from "./plugins/loader";
 import type { LoadedPlugin } from "./plugins/loader";
+import { createMcpServerState, mcpServerStateFromServer, type McpServerState } from "./mcp/settings";
 import { validateMcpUrl } from "./plugins/manifest";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
@@ -239,17 +240,78 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     void this.plugin.pluginService
       .load()
       .then((plugins) => {
-        // Materialize derived plugin MCP servers into settings once per plugin
-        // load (not during render): the MCP tab and /doctor then show merged
-        // state, and user-configured servers are always preserved by the merge.
+        // S10: shape lives in mcp.json; ensure every derived plugin server has a
+        // client-owned entry in settings.plugins.mcpState (enabled/approval/auth).
+        // No merge into settings.mcp.servers — the two cannot diverge.
         const pluginServers = plugins.flatMap((plugin) => plugin.mcpServers);
-        if (pluginServers.length > 0) syncMcpServers(this.plugin.settings, pluginServers);
+        let mutated = false;
+        const derivedIds = new Set(pluginServers.map((s) => s.id));
+        for (const server of pluginServers) {
+          const existing = this.plugin.settings.plugins.mcpState[server.id];
+          if (!existing) {
+            this.plugin.settings.plugins.mcpState[server.id] = createMcpServerState(server.id, {
+              enabled: server.enabled,
+              approval: server.approval,
+              lastUrl: server.url,
+            });
+            mutated = true;
+          } else if (existing.lastUrl !== server.url) {
+            // URL moved in mcp.json — clear tokens for new host (also handled in derive, but ensure persisted state is cleared)
+            if (existing.lastUrl && existing.lastUrl !== server.url) {
+              existing.authHeaderValue = "";
+              existing.oauth = { ...existing.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
+            }
+            existing.lastUrl = server.url;
+            mutated = true;
+          }
+        }
+        // Prune orphan mcpState entries whose plugin no longer declares that server.
+        for (const id of Object.keys(this.plugin.settings.plugins.mcpState)) {
+          if (!derivedIds.has(id)) {
+            // Keep entries that correspond to legacy user servers still in mcp.servers (source=user) — they are not plugin orphans.
+            const isLegacyUser = this.plugin.settings.mcp.servers.some((s) => s.id === id && s.source !== "plugin");
+            if (!isLegacyUser) {
+              delete this.plugin.settings.plugins.mcpState[id];
+              mutated = true;
+            }
+          }
+        }
+        if (mutated) void this.save();
         return plugins;
       })
       .catch((error: unknown) => {
         console.warn("Agentic chat: could not load agent plugins", error);
       })
       .then(() => this.redraw());
+  }
+
+  private mcpDisplayServers(settings: AgenticChatSettings): McpServerSettings[] {
+    const pluginServers = this.plugin.pluginService.getLoaded().filter((p) => p.enabled).flatMap((p) => p.mcpServers);
+    // Use the same resolution as the runtime (state map primary, legacy mcp.servers fallback for tests/pre-migration).
+    return resolveMcpServers(settings, pluginServers);
+  }
+
+  private ensureMcpStateEntry(id: string): McpServerState {
+    const existing = this.plugin.settings.plugins.mcpState[id];
+    if (existing) return existing;
+    const created = createMcpServerState(id);
+    this.plugin.settings.plugins.mcpState[id] = created;
+    return created;
+  }
+
+  private syncMcpServerToState(server: McpServerSettings): void {
+    if (server.source !== "plugin") return;
+    const state = this.ensureMcpStateEntry(server.id);
+    const next = mcpServerStateFromServer(server);
+    // Preserve secret ids already in state (they are derived from id, but keep if present)
+    state.enabled = next.enabled;
+    state.approval = next.approval;
+    state.authType = next.authType;
+    state.authHeaderName = next.authHeaderName;
+    state.authHeaderValueSecretId = next.authHeaderValueSecretId;
+    state.authHeaderValue = next.authHeaderValue;
+    state.oauth = next.oauth;
+    state.knownTools = next.knownTools;
   }
 
   display(): void {
@@ -940,7 +1002,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         }),
       );
 
-    if (settings.mcp.servers.length === 0) {
+    const displayServers = this.mcpDisplayServers(settings);
+    if (displayServers.length === 0) {
       containerEl.createDiv({
         cls: "setting-item-description",
         text: "No MCP servers. Generate a plugin package above, or add a plugin folder with an mcp.json inside the plugin folder.",
@@ -948,7 +1011,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       return;
     }
 
-    for (const server of settings.mcp.servers) {
+    for (const server of displayServers) {
       this.renderMcpServer(containerEl, settings, server);
     }
   }
@@ -1128,6 +1191,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(server.enabled).onChange(async (value) => {
           server.enabled = value;
+          this.syncMcpServerToState(server);
           await this.save();
         }),
       )
@@ -1246,6 +1310,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           .setValue(server.approval)
           .onChange(async (value) => {
             server.approval = value as ApprovalPolicy;
+            this.syncMcpServerToState(server);
             await this.save();
           }),
       );
@@ -1319,6 +1384,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             server.authType = value as McpAuthType;
             if (server.authType === "bearer") server.authHeaderName = "";
+            this.syncMcpServerToState(server);
             await this.save();
             this.redraw();
           }),
@@ -1337,11 +1403,13 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         hasValue: Boolean(server.authHeaderValue),
         onSet: async (value) => {
           server.authHeaderValue = value;
+          this.syncMcpServerToState(server);
           await this.save();
           onAuthChanged();
         },
         onForget: async () => {
           server.authHeaderValue = "";
+          this.syncMcpServerToState(server);
           await this.save();
           onAuthChanged();
         },
@@ -1360,6 +1428,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           .setValue(server.authHeaderName)
           .onChange(async (value) => {
             server.authHeaderName = value.trim();
+            this.syncMcpServerToState(server);
             await this.save();
             onAuthChanged();
           }),
@@ -1372,11 +1441,13 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       hasValue: Boolean(server.authHeaderValue),
       onSet: async (value) => {
         server.authHeaderValue = value;
+        this.syncMcpServerToState(server);
         await this.save();
         onAuthChanged();
       },
       onForget: async () => {
         server.authHeaderValue = "";
+        this.syncMcpServerToState(server);
         await this.save();
         onAuthChanged();
       },
@@ -1402,6 +1473,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           .onClick(async () => {
             forgetMcpOAuthTokens(server);
             server.knownTools = [];
+            this.syncMcpServerToState(server);
             await this.save();
             this.redraw();
           }),
@@ -1443,6 +1515,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           server.oauth.clientId = value.trim();
           server.oauth.dynamicClientRegistration = false;
           server.oauth.registeredRedirectUri = "";
+          this.syncMcpServerToState(server);
           await this.save();
         }),
       );
@@ -1456,12 +1529,14 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         server.oauth.clientSecret = value;
         server.oauth.dynamicClientRegistration = false;
         server.oauth.registeredRedirectUri = "";
+        this.syncMcpServerToState(server);
         await this.save();
       },
       onForget: async () => {
         server.oauth.clientSecret = "";
         server.oauth.dynamicClientRegistration = false;
         server.oauth.registeredRedirectUri = "";
+        this.syncMcpServerToState(server);
         await this.save();
       },
     });
@@ -1491,6 +1566,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     });
     server.knownTools = result.tools;
     server.enabled = true;
+    this.syncMcpServerToState(server);
     await this.save();
     return result;
   }
@@ -1510,10 +1586,12 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       callbackReceiver: Platform.isMobileApp ? this.plugin.createMcpOAuthCallbackReceiver() : undefined,
       onProgress: (event) => this.handleMcpOAuthProgress(server, event),
     });
+    this.syncMcpServerToState(server);
     const result = await probeMcpServer(server, fetcher, {
       onServerChanged: () => this.save(),
     });
     server.knownTools = result.tools;
+    this.syncMcpServerToState(server);
     await this.save();
     const sample = formatMcpToolSample(result.toolNames);
     new Notice(
@@ -1626,7 +1704,10 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     base: string,
     current?: McpServerSettings,
   ): string {
-    const used = new Set(settings.mcp.servers.filter((entry) => entry !== current).map((entry) => entry.id));
+    const used = new Set([
+      ...settings.mcp.servers.filter((entry) => entry !== current).map((entry) => entry.id),
+      ...Object.keys(settings.plugins.mcpState).filter((id) => id !== current?.id),
+    ]);
     return nextUniqueMcpServerId(base, used);
   }
 
@@ -1653,6 +1734,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       }
     }
     if (!mcpEndpointProblem(server.url)) server.enabled = true;
+    this.syncMcpServerToState(server);
     return {
       clearedCredentials,
       shouldDisplay:
@@ -1668,8 +1750,18 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     const previousSecretIds = mcpSecretIds(server);
     const previousApprovals = this.deleteMcpPerToolApprovals(settings, previousId);
     const previousLocalNames = server.knownTools.map((tool) => mcpKnownToolLocalName(server, tool));
+    const previousState = settings.plugins.mcpState[previousId];
     server.id = nextId;
     resetMcpServerSecretRefs(server);
+    if (previousState && server.source === "plugin") {
+      settings.plugins.mcpState[nextId] = previousState;
+      // Re-key secret ids inside the moved state
+      previousState.authHeaderValueSecretId = server.authHeaderValueSecretId;
+      previousState.oauth.clientSecretSecretId = server.oauth.clientSecretSecretId;
+      previousState.oauth.accessTokenSecretId = server.oauth.accessTokenSecretId;
+      previousState.oauth.refreshTokenSecretId = server.oauth.refreshTokenSecretId;
+      delete settings.plugins.mcpState[previousId];
+    }
     this.clearSecretIds(previousSecretIds.filter((id) => !mcpSecretIds(server).includes(id)));
     this.rebaseMcpKnownToolLocalNames(server);
     for (let index = 0; index < server.knownTools.length; index += 1) {
@@ -1677,11 +1769,13 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       const nextLocalName = mcpKnownToolLocalName(server, server.knownTools[index]);
       if (policy) settings.approval.perTool[nextLocalName] = policy;
     }
+    this.syncMcpServerToState(server);
   }
 
   private clearMcpKnownToolsAndApprovals(settings: AgenticChatSettings, server: McpServerSettings): void {
     this.deleteMcpPerToolApprovals(settings, server.id);
     server.knownTools = [];
+    this.syncMcpServerToState(server);
   }
 
   private clearMcpSecretSlots(server: McpServerSettings): void {

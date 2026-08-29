@@ -4,7 +4,7 @@ import type { AgenticChatSettings } from "../settings";
 import { builtinSkills } from "../skills/builtin-skills";
 import {
   loadPlugins,
-  mergePluginMcpServers,
+  resolveMcpServers,
   type LoadedPlugin,
 } from "../plugins/loader";
 import { createVaultTools } from "../tools/vault-tools";
@@ -78,11 +78,11 @@ export async function loadAgentRuntimeResources(
   const mcpProxySettings = settings.mcp.proxyUrl
     ? settings.mcp
     : { proxyUrl: settings.network.proxyUrl, noProxy: settings.network.noProxy };
-  // Plugin mcp.json is the source of truth for server shape; persisted
-  // client-owned state (enable, approval, auth) is merged by id. Servers of
-  // disabled plugins are excluded from the runtime tool set.
+  // Plugin mcp.json is the source of truth for server shape; client-owned
+  // state (enabled/approval/auth/knownTools/oauth) lives in settings.plugins.mcpState
+  // keyed by stable id. No merge with settings.mcp.servers — the two cannot diverge.
   const pluginServers = plugins.filter((plugin) => plugin.enabled).flatMap((plugin) => plugin.mcpServers);
-  const mcpServers = mergePluginMcpServers(settings.mcp.servers, pluginServers);
+  const mcpServers = resolveMcpServers(settings, pluginServers);
   const mcp = webFetch
     ? await createMcpToolsWithDiagnostics(
         { ...settings.mcp, servers: mcpServers },

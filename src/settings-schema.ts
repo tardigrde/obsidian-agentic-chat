@@ -11,9 +11,9 @@ import { type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approv
 import { type AgentMode, DEFAULT_MODE, healMode } from "./agent/modes";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
-import { DEFAULT_PLUGIN_SETTINGS, type PluginSettings } from "./plugins/settings";
+import { DEFAULT_PLUGIN_SETTINGS, healPluginMcpState, type PluginSettings } from "./plugins/settings";
 import { DEFAULT_PLUGINS_FOLDER } from "./plugins/loader";
-import { healMcpSettings, type McpSettings } from "./mcp/settings";
+import { healMcpSettings, mcpServerStateFromServer, type McpSettings } from "./mcp/settings";
 import { WEB_SEARCH_PROVIDERS, type WebSearchProvider } from "./tools/web-search";
 import {
   OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
@@ -223,6 +223,29 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
   if (retiredKeys.length > 0) {
     console.warn(`Agentic chat: dropped retired setting(s): ${retiredKeys.join(", ")}.`);
   }
+  const healedMcp = healMcpSettings(stored?.mcp);
+  const healedPlugins = healPluginSettings(stored?.plugins);
+  // One-time migration S10: legacy plugin servers persisted in mcp.servers → plugins.mcpState map.
+  // Client state (enabled/approval/auth/knownTools/oauth) moves by stable id; shape stays in mcp.json.
+  // User servers (source=user) stay in mcp.servers for backward compat until they are re-created as plugins.
+  if (healedMcp.servers.length > 0) {
+    let migrated = false;
+    const remainingServers: typeof healedMcp.servers = [];
+    for (const server of healedMcp.servers) {
+      if (server.source === "plugin" && !healedPlugins.mcpState[server.id]) {
+        healedPlugins.mcpState[server.id] = mcpServerStateFromServer(server);
+        migrated = true;
+      } else if (server.source === "plugin" && healedPlugins.mcpState[server.id]) {
+        // Already migrated — drop the persisted copy to avoid divergence.
+        migrated = true;
+      } else {
+        remainingServers.push(server);
+      }
+    }
+    if (migrated) {
+      healedMcp.servers = remainingServers;
+    }
+  }
   return {
     ...DEFAULT_SETTINGS,
     ...remaining,
@@ -260,8 +283,8 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       searchApiKeySecretId: stringSetting(stored?.web?.searchApiKeySecretId, WEB_SEARCH_API_KEY_SECRET_ID),
       allowedHosts: normalizeAllowedHosts(stored?.web?.allowedHosts),
     },
-    mcp: healMcpSettings(stored?.mcp),
-    plugins: healPluginSettings(stored?.plugins),
+    mcp: healedMcp,
+    plugins: healedPlugins,
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
@@ -314,10 +337,14 @@ function healPluginSettings(stored: Partial<PluginSettings> | null | undefined):
       if (typeof value === "string" && value.trim()) sources[name] = value.trim();
     }
   }
+  const mcpState = healPluginMcpState(
+    (stored as Record<string, unknown>)?.mcpState as Record<string, unknown> | null | undefined,
+  );
   return {
     folder: typeof stored?.folder === "string" && stored.folder.trim() ? stored.folder.trim() : DEFAULT_PLUGINS_FOLDER,
     enabled,
     sources,
+    mcpState,
   };
 }
 

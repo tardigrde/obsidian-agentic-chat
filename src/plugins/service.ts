@@ -1,6 +1,6 @@
 import { type App, TFolder } from "obsidian";
 import { type AgenticChatSettings } from "../settings";
-import { normalizeMcpServerId } from "../mcp/settings";
+import { createMcpServerState, normalizeMcpServerId } from "../mcp/settings";
 import { BUILTIN_SKILL_DOCS } from "../skills/builtin-skills";
 import type { FileTree } from "./import/archive";
 import { convertToAgentPlugin } from "./import/convert";
@@ -22,7 +22,8 @@ import {
   DEFAULT_PLUGINS_FOLDER,
   loadPlugins,
   mcpServerFromPluginEntry,
-  mergePluginMcpServers,
+  pluginMcpServerId,
+  pruneOrphanMcpState,
   type LoadedPlugin,
 } from "./loader";
 import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, slugifyPluginName, validatePluginManifest } from "./manifest";
@@ -63,6 +64,13 @@ export class PluginService {
       folder: settings.plugins.folder,
       enabledPlugins: settings.plugins.enabled,
     });
+    // Prune orphaned mcpState entries that no longer have a derived server
+    // (e.g. plugin removed externally). This also covers the removePackage
+    // cache-miss case where we could not know the derived ids at removal time.
+    const aliveIds = new Set(this.cache.flatMap((p) => p.mcpServers.map((s) => s.id)));
+    const before = Object.keys(settings.plugins.mcpState).length;
+    pruneOrphanMcpState(settings.plugins.mcpState, aliveIds);
+    if (Object.keys(settings.plugins.mcpState).length !== before) await this.saveSettings?.();
     return this.cache;
   }
 
@@ -130,8 +138,8 @@ export class PluginService {
     );
     // The vault file tree may not reflect brand-new folders immediately (or
     // at all on some platforms), so don't wait for a reload to expose the
-    // server: persist the derived record now, keyed by the stable id the
-    // loader will derive on its next scan.
+    // server: ensure a client-owned entry exists in the state map keyed by the
+    // stable id the loader will derive on its next scan.
     const derived = mcpServerFromPluginEntry(pluginName, rootPath, {
       key: serverKey,
       transport: "streamable-http",
@@ -143,8 +151,17 @@ export class PluginService {
     // (unlike imported/plugin-declared servers, which default to disabled).
     derived.enabled = true;
     const settings = this.getSettings();
-    const existingPluginServers = settings.mcp.servers.filter((server) => server.source === "plugin");
-    settings.mcp.servers = mergePluginMcpServers(settings.mcp.servers, [...existingPluginServers, derived]);
+    const existingState = settings.plugins.mcpState[derived.id];
+    if (existingState) {
+      existingState.enabled = true;
+      existingState.lastUrl = derived.url;
+    } else {
+      settings.plugins.mcpState[derived.id] = createMcpServerState(derived.id, {
+        enabled: true,
+        approval: derived.approval,
+        lastUrl: derived.url,
+      });
+    }
     await this.saveSettings?.();
     this.invalidate();
     return { rootPath, pluginName, serverKey };
@@ -301,6 +318,19 @@ export class PluginService {
     await this.vaultWriter().removeFolder(rootPath);
     const settings = this.getSettings();
     settings.mcp.servers = settings.mcp.servers.filter((server) => server.source !== "plugin" || server.pluginRoot !== rootPath);
+    // Prune client-owned state for servers that belonged to this plugin.
+    const cached = this.cache?.find((p) => p.rootPath === rootPath || p.name === name);
+    if (cached) {
+      for (const server of cached.mcpServers) {
+        delete settings.plugins.mcpState[server.id];
+      }
+    } else {
+      // Cache miss (e.g. vault restart before first load): we don't know the
+      // derived ids for this plugin, so we cannot safely prune mcpState here.
+      // Orphans are pruned on next reload() via pruneOrphanMcpState (aliveIds
+      // from the fresh scan). No best-effort guess to avoid deleting unrelated
+      // state.
+    }
     const enabled = { ...settings.plugins.enabled };
     delete enabled[name];
     settings.plugins.enabled = enabled;
@@ -415,27 +445,19 @@ export class PluginService {
     settings.plugins.sources = sources;
   }
 
-  /** Persist derived MCP records for an imported plugin, defaulting to disabled (D11). */
+  /** Ensure client-owned state exists for an imported plugin's MCP servers, defaulting to disabled (D11). */
   private async recordPluginMcp(pluginName: string, converted: { mcpEntries: Array<{ key: string; url: string; headers?: Record<string, string> }> }): Promise<void> {
     if (converted.mcpEntries.length === 0) return;
-    const rootPath = `${this.pluginsFolder()}/${pluginName}`;
-    const derived = converted.mcpEntries.map((entry) => ({
-      ...mcpServerFromPluginEntry(pluginName, rootPath, {
-        key: entry.key,
-        transport: "streamable-http" as const,
-        url: entry.url,
-        headers: entry.headers ?? {},
-        problems: [],
-      }),
-      enabled: false,
-      // Plugin literal headers are not persisted to data.json: the merge re-
-      // derives them from the package's mcp.json at runtime, so persisting
-      // them would only duplicate package content into the settings file.
-      headers: {},
-    }));
     const settings = this.getSettings();
-    settings.mcp.servers = mergePluginMcpServers(settings.mcp.servers, derived);
-    await this.saveSettings?.();
+    let mutated = false;
+    for (const entry of converted.mcpEntries) {
+      const id = pluginMcpServerId(pluginName, entry.key);
+      if (!settings.plugins.mcpState[id]) {
+        settings.plugins.mcpState[id] = createMcpServerState(id, { enabled: false });
+        mutated = true;
+      }
+    }
+    if (mutated) await this.saveSettings?.();
   }
 
   /** Vault-backed writer used by all install paths. */
