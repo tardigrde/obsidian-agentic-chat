@@ -231,11 +231,10 @@ export function healMcpServerState(
   id: string,
 ): McpServerState {
   const healedId = normalizeMcpServerId(id);
-  // Access the persisted record's dynamic (snake_case legacy) keys through the
-  // settings map the same way healMcpServerStateMap does, without a type assertion.
-  const raw = stored as unknown;
   const record =
-    raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as { [key: string]: unknown }) : null;
+    stored && typeof stored === "object" && !Array.isArray(stored)
+      ? (stored as { [key: string]: unknown })
+      : null;
   return {
     enabled: stored?.enabled === true,
     approval: healApproval(stored?.approval),
@@ -246,7 +245,7 @@ export function healMcpServerState(
     oauth: healOAuthSettings(stored?.oauth, healedId),
     knownTools: healMcpKnownTools(stored?.knownTools),
     ...(typeof record?.lastUrl === "string" && record.lastUrl.trim()
-      ? { lastUrl: String(record.lastUrl).trim() }
+      ? { lastUrl: record.lastUrl.trim() }
       : {}),
     enabledTools: healMcpToolGlobs(record?.enabledTools ?? record?.enabled_tools),
     disabledTools: healMcpToolGlobs(record?.disabledTools ?? record?.disabled_tools),

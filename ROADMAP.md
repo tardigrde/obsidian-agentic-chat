@@ -83,11 +83,7 @@ thin (or absent) here.
 
 *S4 · Permission mode surfaced on four controls — **DONE** (this PR).* `src/agent/modes.ts` `validateModeTransition`/`resolveModeTransition` is the single gate (mirrors Codex `ThreadSettingsOverrides` atomic apply); `src/settings.ts` dropdown now lists `MODE_ORDER` (Safe/YOLO/Plan) and delegates via `plugin.requestModeChange` to the active `ChatView` so `modeBeforePlan` stays coherent; `src/ui/chat-view.ts` `setMode` + `isAnyTabStreaming` centralizes all four surfaces (settings dropdown, composer Safe↔YOLO toggle, `/config` picker, `/plan` sticky); `src/main.ts` `modeBeforePlan` singleton + `syncModeToViews` broadcasts to every leaf; `src/ui/commands.ts` `/config` lists Safe/YOLO/Plan. Single source, all UIs reflect it.
 
-### S5 · Three ignore/deny-list mechanisms
-- **Problem**: vault `ignoredGlobs`, MCP legacy tool filters (now URL params), and working directories as the inverse allow-list. Same glob syntax, three representations.
-- **Effort**: M
-- **Deps**: none
-- **Codex**: Split into `SandboxPolicy::WorkspaceWrite.writable_roots` (+ auto `cwd`/`tmp`) `protocol.rs:1224` + `McpServerConfig.enabled_tools/disabled_tools` `mcp_types.rs:233` + `FilesystemDenyReadPattern`/`PROTECTED_METADATA_PATH_NAMES` `permissions.rs:32`. Keep `ignoredGlobs` name but implement as `FileSystemSandboxPolicy` deny-globs; keep `workingDirs` as `writable_roots`; keep dual `enabled/disabled_tools` ordered allow-then-deny like Codex.
+*S5 · Three ignore/deny-list mechanisms — **DONE** (this PR).* `ignoredGlobs` → `FileSystemDenyReadPattern` + `PROTECTED_METADATA_PATH_NAMES` via `src/vault/file-system-sandbox.ts` + `src/vault/glob-pattern.ts` + `src/vault/ignore.ts` (protected `.obsidian`+`.git`+`.trash` always denied, user globs merged, case-insensitive subtree, NFC, ReDoS cap, vault caps 200/200); `workingDirs` → `SandboxPolicy::WorkspaceWrite.writable_roots` docs in `src/agent/working-dir.ts`; MCP `enabled_tools/disabled_tools` ordered allow-then-deny via `src/mcp/tool-filter.ts` (glob `*`/`**`/`?`, MAX 100/200, dedupe, heals camel/snake, `iu` flag) filtered in both `probeMcpServer` and `discoverServerTools`; runtime `src/agent/runtime-resources.ts` uses `createFileSystemDenyMatcher` with vault `configDir`; settings UI adds per-server textareas. Tests cover heal, matcher, ordering, ReDoS, NFC, subtree/case.
 
 ### S7 · Deprecated settings surface lingers
 - **Problem**: every secret still has a dual plaintext `*ApiKey` + `*SecretId` pair with migration fallback fields persisted. (`templatesFolder` was removed in S9.)
