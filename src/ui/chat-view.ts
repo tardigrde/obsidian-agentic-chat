@@ -11,7 +11,10 @@ import type { ImageContent, Usage } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
 import type { AskUserRequest } from "../tools/ask-user-tool";
+import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
 import { abortSubagentChild } from "../tools/subagent-tool";
+import { applyRememberedApprovalChoice } from "../agent/approval-memory";
+import { ApprovalModal } from "./approval-modal";
 import { isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
@@ -141,6 +144,7 @@ interface ChatTab {
   service: AgentService;
   unsubscribe: () => void;
   state: ChatTabWorkingState;
+  needsApproval?: boolean;
 }
 
 /** Minimal shape of Obsidian's internal (undocumented) drag manager. */
@@ -328,6 +332,10 @@ export class ChatView extends ItemView {
         if (!tabRef.current) throw new Error("The chat tab is not ready to ask the user.");
         return this.askUserForTab(tabRef.current, request, signal);
       },
+      confirmToolCall: (request) => {
+        if (!tabRef.current) throw new Error("The chat tab is not ready for approval.");
+        return this.confirmToolCallForTab(tabRef.current, request);
+      },
     });
     const tab: ChatTab = { service, unsubscribe: () => {}, state: freshChatTabState() };
     tabRef.current = tab;
@@ -474,6 +482,10 @@ export class ChatView extends ItemView {
       pill.toggleClass("is-active", active);
       pill.createSpan({ cls: "agentic-chat-tab-num", text: String(index + 1) });
       if (tab.service.isStreaming()) pill.createSpan({ cls: "agentic-chat-tab-busy", attr: { "aria-hidden": "true" } });
+      if (tab.needsApproval) {
+        pill.addClass("is-needs-approval");
+        pill.setAttr("title", `${this.tabLabel(tab)} — needs approval: click to review`);
+      }
       this.onActivate(pill, () => void this.switchToTab(index));
       if (this.tabs.length > 1) {
         const close = pill.createSpan({
@@ -519,6 +531,32 @@ export class ChatView extends ItemView {
     if (index === -1) throw new Error("The chat tab that asked the question is no longer open.");
     if (tab !== this.activeTab) await this.switchToTab(index);
     return await this.renderAskUserPrompt(request, signal);
+  }
+
+  /** Notify + label for background tool approvals (no auto-switch). */
+  private async confirmToolCallForTab(tab: ChatTab, request: ToolApprovalRequest): Promise<UserApprovalChoice> {
+    const index = this.tabs.indexOf(tab);
+    if (index === -1) throw new Error("The chat tab that requested approval is no longer open.");
+    const isBackground = tab !== this.activeTab;
+    const sessionLabel = `Tab ${index + 1} • ${this.tabLabel(tab)}`;
+    const labeledRequest: ToolApprovalRequest = { ...request, sessionLabel };
+    if (isBackground) {
+      tab.needsApproval = true;
+      this.syncTabStrip();
+      this.notifier.notify("info", `${sessionLabel} needs approval: ${request.label}`);
+    }
+    try {
+      const choice = await new ApprovalModal(this.app, labeledRequest).ask();
+      if (applyRememberedApprovalChoice(this.plugin.settings, request.toolName, choice)) {
+        await this.plugin.saveSettings();
+      }
+      return choice;
+    } finally {
+      if (tab.needsApproval) {
+        tab.needsApproval = false;
+        this.syncTabStrip();
+      }
+    }
   }
 
   private async renderAskUserPrompt(request: AskUserRequest, signal?: AbortSignal): Promise<string> {

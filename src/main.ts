@@ -109,13 +109,13 @@ export default class AgenticChatPlugin extends Plugin {
    * Build a fresh agent service backed by its own session manager. The chat view
    * creates one per tab so multiple conversations can run independently in a leaf.
    */
-  createAgentService(options: { askUser?: AskUserHandler } = {}): AgentService {
+  createAgentService(options: { askUser?: AskUserHandler; confirmToolCall?: (request: ToolApprovalRequest) => Promise<UserApprovalChoice> } = {}): AgentService {
     const sessionManager = ObsidianSessionManager.forPlugin(this.app, this);
     return new AgentService({
       app: this.app,
       getSettings: () => this.settings,
       sessionManager,
-      confirmToolCall: (request) => this.confirmToolCall(request),
+      confirmToolCall: options.confirmToolCall ?? ((request) => this.confirmToolCall(request)),
       askUser: options.askUser,
       streamFn: createWindowE2EStreamFn({ enabled: __AGENTIC_CHAT_ENABLE_E2E_STREAM__ }),
       saveSettings: () => this.saveSettings(),

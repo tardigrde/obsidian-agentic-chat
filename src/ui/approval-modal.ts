@@ -32,7 +32,11 @@ export class ApprovalModal extends Modal {
 
   onOpen(): void {
     const { contentEl, titleEl } = this;
-    titleEl.setText(`Allow "${this.request.label}"?`);
+    const label = this.request.sessionLabel ? `[${this.request.sessionLabel}] Allow "${this.request.label}"?` : `Allow "${this.request.label}"?`;
+    titleEl.setText(label);
+    if (this.request.sessionLabel) {
+      contentEl.createEl("p", { cls: "agentic-chat-approval-session", text: `Session: ${this.request.sessionLabel}` });
+    }
     contentEl.addClass("agentic-chat-approval");
 
     contentEl.createEl("p", {
