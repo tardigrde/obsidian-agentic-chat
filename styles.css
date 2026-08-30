@@ -1129,6 +1129,11 @@
   animation: agentic-chat-pulse 1s ease-in-out infinite;
 }
 
+.agentic-chat-tab.is-needs-approval {
+  border-color: var(--text-warning);
+  box-shadow: 0 0 0 1px var(--text-warning);
+}
+
 .agentic-chat-tab-close {
   display: inline-flex;
   align-items: center;
@@ -1402,7 +1407,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--size-2-1);
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: var(--radius-l);
   cursor: pointer;
   white-space: nowrap;
@@ -1434,10 +1439,11 @@
 /* Effort value reads as a low→max scale: muted at the bottom step, ramping
    toward the accent at the top, uniform across levels (no override split). */
 .agentic-chat-effort-value {
-  font-size: var(--font-smallest);
+  font-size: calc(var(--font-smallest) * 0.92);
   font-weight: var(--font-medium);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  line-height: 1;
   color: color-mix(
     in oklab,
     var(--text-muted),
@@ -1874,6 +1880,12 @@
 }
 
 /* --- Approval modal --- */
+
+.agentic-chat-approval-session {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin: 0 0 var(--size-2-2);
+}
 
 .agentic-chat-approval-args {
   max-height: 240px;

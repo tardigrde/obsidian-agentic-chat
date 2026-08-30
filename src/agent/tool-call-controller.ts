@@ -27,6 +27,8 @@ export interface ToolApprovalRequest {
   toolName: string;
   label: string;
   args: unknown;
+  /** Optional tab/session label for background approvals (shown in modal title). */
+  sessionLabel?: string;
 }
 
 export type ToolGateDecision = { block: true; reason: string } | undefined;
