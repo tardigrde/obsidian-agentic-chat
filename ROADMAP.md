@@ -182,7 +182,7 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 **Stability first:** `H5 → R2 → A7` (`C6` auto-decay removed, `H6` dropped, `H2` deferred — big feature).
 
-(Group S `S1-S10` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (this PR), next `S5/S7/S8`. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `S2/S3` done #108, `E10` done #98. `F8` + `H2` + `C6/H6` deferred/dropped.)
+(Group S `S1-S10` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (#122), **S5 done** (this PR), next `S7/S8`. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `S2/S3` done #108, `E10` done #98. `F8` + `H2` + `C6/H6` deferred/dropped.)
 
 *First-principles rationale*: security/reliability done — next small wins are evaluator routing (`H5` `S`) then diff polish (`R2` `S`) before audit (`A7`). Memory (`H2`) is `M–L` and needs docs/privacy pass, so pushed. No babysitting — user controls `/compact`, threshold `80%` is the safety net. S-cluster high-ROI but `L-effort` and cross-cuts every gate, so batch separately. `H5` reuses `AgentProfile.model` — reconcile with `S8` role reframe.
 

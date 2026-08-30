@@ -1,4 +1,6 @@
 // Ignore lists: vault-relative globs the agent may never read or even see.
+// S5: FileSystemSandboxPolicy deny-globs — `FilesystemDenyReadPattern` `permissions.rs:32`
+// (same engine as MCP enabled/disabled_tools and writable_roots, see `glob-pattern.ts`).
 // Enforced at the tool layer (see src/tools/vault-tools.ts) so the model cannot
 // route around them. Excluded paths are made invisible, not merely denied.
 

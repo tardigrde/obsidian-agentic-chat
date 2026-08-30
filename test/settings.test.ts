@@ -347,6 +347,8 @@ describe("mergeSettings — MCP", () => {
           oauth: mcpOAuthSettingsForServer("context_7"),
           approval: "ask",
           knownTools: [],
+          enabledTools: [],
+          disabledTools: [],
         },
       ],
     });

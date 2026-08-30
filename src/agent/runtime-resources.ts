@@ -23,7 +23,8 @@ import { createMcpFetcher } from "../mcp/fetcher";
 import { createMcpToolsWithDiagnostics, type McpServerDiagnostic } from "../mcp/tools";
 import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "../vault/ignore";
+import { type IgnoreMatcher } from "../vault/ignore";
+import { createFileSystemDenyMatcher } from "../vault/file-system-sandbox";
 import type { ReadMemo } from "../vault/read-memo";
 import { formatInstructionsOverlay, loadVaultInstructions } from "./instructions";
 import { type AgentProfile, formatSubagentsForSystemPrompt, loadAgentProfiles } from "./subagents";
@@ -63,7 +64,10 @@ export async function loadAgentRuntimeResources(
   onSettingsChanged?: () => void | Promise<void>,
   artifactStore?: ToolArtifactStoreLike,
 ): Promise<AgentRuntimeResources> {
-  const ignoreMatcher = createIgnoreMatcher(parseIgnorePatterns(settings.ignoredGlobs));
+  // S5: FileSystemSandboxPolicy deny-globs — user ignoredGlobs + protected metadata globs
+  // (`.obsidian/**`, `.git/**`, `.trash/**`) merged via one engine (`glob-pattern.ts`).
+  // Writable roots (`workingDirs`) remain a separate allow-list (`src/agent/working-dir.ts`).
+  const ignoreMatcher = createFileSystemDenyMatcher(settings.ignoredGlobs);
   const plugins = await loadPlugins(app, {
     folder: settings.plugins.folder,
     enabledPlugins: settings.plugins.enabled,

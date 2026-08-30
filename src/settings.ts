@@ -1321,7 +1321,51 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     this.renderMcpSetupGuide(containerEl, server);
     this.renderMcpAuthentication(containerEl, server, syncTestButton);
+    this.renderMcpToolFilters(containerEl, server);
     this.renderMcpToolApprovals(containerEl, settings, server);
+  }
+
+  private renderMcpToolFilters(containerEl: HTMLElement, server: McpServerSettings): void {
+    new Setting(containerEl).setName("Tool filtering (S5)").setHeading();
+    containerEl.createDiv({
+      cls: "setting-item-description",
+      text:
+        "Ordered allow-then-deny globs for remote tools (same dialect as vault ignore: * / ** / ?). " +
+        "Enabled is an allowlist (empty = allow all); disabled is a denylist (deny wins). " +
+        "Examples: *  ·  read_*  ·  *_danger  ·  ?est  ·  tool_*",
+    });
+    new Setting(containerEl)
+      .setName("Enabled tools (allowlist)")
+      .setDesc("One glob per line. When non-empty, only tools matching at least one pattern are exposed. Empty allows all.")
+      .addTextArea((text) => {
+        text.inputEl.rows = 3;
+        text.inputEl.addClass("agentic-chat-system-prompt");
+        text.setPlaceholder("*\nread_*\n*_safe").setValue((server.enabledTools ?? []).join("\n")).onChange(async (value) => {
+          const patterns = value
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0 && !line.startsWith("#"));
+          server.enabledTools = patterns;
+          this.syncMcpServerToState(server);
+          await this.save();
+        });
+      });
+    new Setting(containerEl)
+      .setName("Disabled tools (denylist)")
+      .setDesc("One glob per line. Any tool matching a disabled pattern is hidden even if it matched the allowlist.")
+      .addTextArea((text) => {
+        text.inputEl.rows = 3;
+        text.inputEl.addClass("agentic-chat-system-prompt");
+        text.setPlaceholder("*_danger\nwrite_*\nsecret_*").setValue((server.disabledTools ?? []).join("\n")).onChange(async (value) => {
+          const patterns = value
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0 && !line.startsWith("#"));
+          server.disabledTools = patterns;
+          this.syncMcpServerToState(server);
+          await this.save();
+        });
+      });
   }
 
   private renderMcpToolApprovals(
