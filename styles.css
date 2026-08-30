@@ -1197,7 +1197,7 @@
   max-width: min(220px, 100%);
   min-width: 0;
   overflow: hidden;
-  height: 22px;
+  min-height: 22px;
   line-height: 1;
 }
 
@@ -1229,6 +1229,13 @@
   flex-shrink: 0;
 }
 
+.agentic-chat-chip-icon,
+.agentic-chat-chip-remove {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
 .agentic-chat-chip-icon svg,
 .agentic-chat-chip-remove svg {
   width: 12px;
@@ -1237,8 +1244,6 @@
 
 .agentic-chat-chip-remove {
   cursor: pointer;
-  display: flex;
-  align-items: center;
   color: var(--text-muted);
 }
 
@@ -1250,6 +1255,7 @@
 .agentic-chat-chip.is-pending {
   border-style: dashed;
   border-color: var(--text-warning);
+  max-width: min(320px, 100%);
 }
 
 .agentic-chat-chip.is-pending .agentic-chat-chip-tag {
@@ -1257,10 +1263,12 @@
 }
 
 .agentic-chat-chip-text {
-  max-width: 240px;
+  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .agentic-chat-input-wrap {
