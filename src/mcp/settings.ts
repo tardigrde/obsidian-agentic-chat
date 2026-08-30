@@ -266,8 +266,8 @@ export function createMcpServerState(id: string, overrides: Partial<McpServerSta
     oauth: healOAuthSettings(overrides.oauth, healedId),
     knownTools: healMcpKnownTools(overrides.knownTools),
     ...(typeof overrides.lastUrl === "string" && overrides.lastUrl.trim() ? { lastUrl: overrides.lastUrl.trim() } : {}),
-    enabledTools: healMcpToolGlobs(raw.enabledTools ?? raw.enabled_tools ?? overrides.enabledTools),
-    disabledTools: healMcpToolGlobs(raw.disabledTools ?? raw.disabled_tools ?? overrides.disabledTools),
+    enabledTools: healMcpToolGlobs(raw.enabledTools ?? raw.enabled_tools),
+    disabledTools: healMcpToolGlobs(raw.disabledTools ?? raw.disabled_tools),
   };
 }
 

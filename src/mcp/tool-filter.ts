@@ -49,8 +49,8 @@ export function healMcpToolGlobs(value: unknown): string[] {
  * Trailing `/` is stripped (documentary); leading `/` is stripped (tool names have no root).
  * `globToRegExpSource` can reject unsafe patterns (excessive double-star segments — a
  * ReDoS guard), in which case this returns null and the pattern is skipped
- * (fail-closed: patterns that cannot be compiled never match, so a deny-list glob
- * never silently allows).
+ * (fail-open for deny: a rejected deny glob never matches, so the intended
+ * hidden tool stays visible — surface a warning in the UI; fail-closed for allow).
  */
 function toolGlobToRegExp(pattern: string): RegExp | null {
   let body = pattern.normalize("NFC").trim();
@@ -61,7 +61,7 @@ function toolGlobToRegExp(pattern: string): RegExp | null {
   try {
     const source = globToRegExpSource(body);
     if (source === null) return null;
-    return new RegExp(`^${source}$`, "i");
+    return new RegExp(`^${source}$`, "iu");
   } catch {
     return null;
   }

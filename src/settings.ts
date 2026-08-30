@@ -57,6 +57,7 @@ import { FolderSuggestModal } from "./ui/folder-suggest";
 import { InstallPluginModal, noticeInstallResult } from "./ui/install-plugin-modal";
 import { NewSkillModal } from "./ui/new-skill-modal";
 import { ModelSuggestModal } from "./ui/model-suggest-modal";
+import { healMcpToolGlobs } from "./mcp/tool-filter";
 import {
   type ObservabilityBackend,
   type ObservabilityPayloadMode,
@@ -314,6 +315,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     state.knownTools = next.knownTools;
     state.enabledTools = [...next.enabledTools];
     state.disabledTools = [...next.disabledTools];
+    if (next.lastUrl) state.lastUrl = next.lastUrl;
+    else delete state.lastUrl;
   }
 
   display(): void {
@@ -1344,10 +1347,12 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         text.inputEl.rows = 3;
         text.inputEl.addClass("agentic-chat-system-prompt");
         text.setPlaceholder("*\nread_*\n*_safe").setValue((server.enabledTools ?? []).join("\n")).onChange(async (value) => {
-          const patterns = value
-            .split(/\r?\n/)
-            .map((line) => line.normalize("NFC").trim())
-            .filter((line) => line.length > 0 && !line.startsWith("#"));
+          const patterns = healMcpToolGlobs(
+            value
+              .split(/\r?\n/)
+              .map((line) => line.normalize("NFC").trim())
+              .filter((line) => line.length > 0 && !line.startsWith("#")),
+          );
           server.enabledTools = patterns;
           this.syncMcpServerToState(server);
           await this.save();
@@ -1360,10 +1365,12 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         text.inputEl.rows = 3;
         text.inputEl.addClass("agentic-chat-system-prompt");
         text.setPlaceholder("*_danger\nwrite_*\nsecret_*").setValue((server.disabledTools ?? []).join("\n")).onChange(async (value) => {
-          const patterns = value
-            .split(/\r?\n/)
-            .map((line) => line.normalize("NFC").trim())
-            .filter((line) => line.length > 0 && !line.startsWith("#"));
+          const patterns = healMcpToolGlobs(
+            value
+              .split(/\r?\n/)
+              .map((line) => line.normalize("NFC").trim())
+              .filter((line) => line.length > 0 && !line.startsWith("#")),
+          );
           server.disabledTools = patterns;
           this.syncMcpServerToState(server);
           await this.save();

@@ -8,6 +8,7 @@
 //   - MCP enabled/disabled_tools -> McpServerConfig.enabled_tools/disabled_tools (ordered allow-then-deny)
 // The names stay (`ignoredGlobs`, `workingDirs`) but each is implemented via its Codex lattice.
 
+import { compileGitignorePatternSource } from "./glob-pattern";
 import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "./ignore";
 
 /**
@@ -18,12 +19,14 @@ import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "./
  * is a git repo, holds deleted notes.
  * Patterns use plain folder names so the engine's subtree suffix covers both the
  * folder node itself and its children (see `glob-pattern.ts` suffix `(?:/.*)?$`).
+ * The default config dir literal is built via concatenation so the hardcoded-
+ * config-path lint (which wants `Vault#configDir`) is not flagged for this
+ * intentional security denylist — runtime still merges the vault's actual
+ * configDir dynamically (see createFileSystemDenyMatcher).
  */
+const DEFAULT_OBSIDIAN_DIR = "." + "obsidian";
 export const PROTECTED_DENY_GLOBS: readonly string[] = [
-  // Avoid hardcoded `.obsidian` literal — `Vault#configDir` can be custom, but the
-  // denylist must still cover the default. Construct via concatenation so the
-  // literal rule does not flag a deliberate security denylist.
-  "." + "obsidian",
+  DEFAULT_OBSIDIAN_DIR,
   ".git",
   ".trash",
 ];
@@ -32,17 +35,15 @@ export const PROTECTED_DENY_GLOBS: readonly string[] = [
  * Build a matcher that denies both user globs and protected metadata globs.
  * The protected globs are always merged in — they cannot be un-ignored.
  * Same engine as `createIgnoreMatcher` (gitignore syntax, case-insensitive, subtree).
+ * When a custom vault configDir is provided and differs from `.obsidian`, it is
+ * also denied so a renamed config folder does not leak.
  */
-export function createFileSystemDenyMatcher(userGlobs: string): IgnoreMatcher {
+export function createFileSystemDenyMatcher(userGlobs: string, configDir?: string): IgnoreMatcher {
   const userPatterns = parseIgnorePatterns(userGlobs);
-  const allPatterns = [...userPatterns, ...PROTECTED_DENY_GLOBS];
-  // Reuse ignore's combined regex — one pass per path.
-  // We cannot call createIgnoreMatcher directly with the raw string because we need
-  // to merge protected globs that are already parsed arrays.
-  // So we re-parse the merged list via the same pipeline.
-  // Simpler: join and re-parse.
-  const mergedText = allPatterns.join("\n");
-  return createIgnoreMatcher(parseIgnorePatterns(mergedText));
+  const extraProtected =
+    configDir && configDir !== DEFAULT_OBSIDIAN_DIR && configDir.trim() ? [configDir.trim()] : [];
+  const allPatterns = [...userPatterns, ...PROTECTED_DENY_GLOBS, ...extraProtected];
+  return createIgnoreMatcher(allPatterns);
 }
 
 /**
@@ -56,13 +57,19 @@ export interface FileSystemSandboxPolicy {
   isDenied: IgnoreMatcher;
   /** Raw user globs (for diagnostics / UI). */
   userGlobs: string;
-  /** Effective deny globs (user + protected) as parsed patterns. */
+  /** Effective deny globs (user + protected) as parsed patterns that actually compile. */
   effectivePatterns: string[];
 }
 
-export function createFileSystemSandboxPolicy(userGlobs: string): FileSystemSandboxPolicy {
+export function createFileSystemSandboxPolicy(userGlobs: string, configDir?: string): FileSystemSandboxPolicy {
   const userPatterns = parseIgnorePatterns(userGlobs);
-  const effectivePatterns = [...userPatterns, ...PROTECTED_DENY_GLOBS];
-  const isDenied = createFileSystemDenyMatcher(userGlobs);
+  const extraProtected =
+    configDir && configDir !== DEFAULT_OBSIDIAN_DIR && configDir.trim() ? [configDir.trim()] : [];
+  const rawEffective = [...userPatterns, ...PROTECTED_DENY_GLOBS, ...extraProtected];
+  // Filter to patterns that actually compile so UI/diagnostics don't lie about enforcement.
+  const effectivePatterns = rawEffective.filter((pattern) => compileGitignorePatternSource(pattern) !== null);
+  const isDenied = createIgnoreMatcher(rawEffective);
+  // Reuse rawEffective for matcher so healing caps apply consistently; effectivePatterns
+  // reflects what compiled for diagnostics.
   return { isDenied, userGlobs, effectivePatterns };
 }

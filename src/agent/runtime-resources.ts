@@ -65,9 +65,10 @@ export async function loadAgentRuntimeResources(
   artifactStore?: ToolArtifactStoreLike,
 ): Promise<AgentRuntimeResources> {
   // S5: FileSystemSandboxPolicy deny-globs — user ignoredGlobs + protected metadata globs
-  // (`.obsidian/**`, `.git/**`, `.trash/**`) merged via one engine (`glob-pattern.ts`).
+  // (`.obsidian/**`, `.git/**`, `.trash/**` plus the vault's actual configDir) merged via one engine (`glob-pattern.ts`).
   // Writable roots (`workingDirs`) remain a separate allow-list (`src/agent/working-dir.ts`).
-  const ignoreMatcher = createFileSystemDenyMatcher(settings.ignoredGlobs);
+  const vaultConfigDir = (app.vault as unknown as { configDir?: string }).configDir;
+  const ignoreMatcher = createFileSystemDenyMatcher(settings.ignoredGlobs, vaultConfigDir);
   const plugins = await loadPlugins(app, {
     folder: settings.plugins.folder,
     enabledPlugins: settings.plugins.enabled,
