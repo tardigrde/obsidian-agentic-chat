@@ -13,6 +13,29 @@ describe("file-system-sandbox", () => {
     expect(PROTECTED_DENY_GLOBS).toContain(".trash");
   });
 
+  it("normalizes NFC/NFD paths and patterns before matching", () => {
+    const accent = "secret-note-with-\u00e9.md"; // é NFC
+    const nfd = "secret-note-with-e\u0301.md"; // é decomposed (macOS APFS stores NFD)
+    const isDenied = createFileSystemDenyMatcher("Private/**");
+    expect(isDenied(`Private/${accent}`)).toBe(true);
+    // NFD path must still match an NFC pattern and vice versa
+    const nfdDenied = createFileSystemDenyMatcher(["secret-note-with-\u00e9.md"].join("\n"));
+    expect(nfdDenied(nfd)).toBe(true);
+    expect(nfdDenied(accent)).toBe(true);
+  });
+
+  it("skips unsafe patterns with excessive **/ segments instead of backtracking", () => {
+    const isDenied = createFileSystemDenyMatcher("a/**/**/**/**/**/**/**/secret");
+    const start = Date.now();
+    // Deep non-matching path must not hang (bounded-linear rejection because the
+    // pattern is skipped as unsafe).
+    expect(isDenied("a/b/b/b/b/b/b/b/b/b/b/b/b/b/b/b/b/b/b/b/b/x")).toBe(false);
+    expect(Date.now() - start).toBeLessThan(1000);
+    // A single ** still works across depth (allowed), so deep deny still possible.
+    const single = createFileSystemDenyMatcher("a/**/secret");
+    expect(single("a/b/c/d/secret")).toBe(true);
+  });
+
   it("denies protected paths even with empty user globs", () => {
     const isDenied = createFileSystemDenyMatcher("");
     expect(isDenied(".obsidian/app.json")).toBe(true);

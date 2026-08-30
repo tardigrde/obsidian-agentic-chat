@@ -377,6 +377,9 @@ describe("mergeSettings — MCP", () => {
   it("heals S5 enabled/disabled_tools globs for servers and state, including snake_case legacy keys", () => {
     const merged = mergeSettings({
       plugins: {
+        folder: "",
+        enabled: {},
+        sources: {},
         mcpState: {
           plugin_srv: {
             enabled: true,
@@ -412,6 +415,9 @@ describe("mergeSettings — MCP", () => {
   it("heals S5 tool globs to empty arrays when absent or malformed", () => {
     const merged = mergeSettings({
       plugins: {
+        folder: "",
+        enabled: {},
+        sources: {},
         mcpState: {
           fresh: { enabled: true, approval: "ask", enabled_tools: 42 } as never,
         },

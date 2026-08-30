@@ -123,6 +123,24 @@ describe("createToolGlobMatcher", () => {
     expect(isMatch("a".repeat(100))).toBe(false);
     expect(isMatch("b".repeat(100))).toBe(true);
   });
+
+  it("skips excessive **/ segments (ReDoS guard) and rejects instead of backtracking", () => {
+    const start = Date.now();
+    const isMatch = createToolGlobMatcher(["a/**/**/**/**/**/**/**/z"]);
+    expect(isMatch("a/b/b/b/b/b/b/b/b/b/b/b/b/b/b/b/b/x")).toBe(false);
+    expect(Date.now() - start).toBeLessThan(1000);
+    // Single ** still crosses separators.
+    const single = createToolGlobMatcher(["a/**/z"]);
+    expect(single("a/b/c/d/z")).toBe(true);
+  });
+
+  it("normalizes NFC/NFD tool names and patterns before matching", () => {
+    const accent = "caf\u00e9_tool"; // NFC
+    const nfd = "cafe\u0301_tool"; // decomposed
+    const isMatch = createToolGlobMatcher(["caf\u00e9_*"]);
+    expect(isMatch(accent)).toBe(true);
+    expect(isMatch(nfd)).toBe(true);
+  });
 });
 
 describe("filterMcpToolsByGlobs", () => {

@@ -312,6 +312,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     state.authHeaderValue = next.authHeaderValue;
     state.oauth = next.oauth;
     state.knownTools = next.knownTools;
+    state.enabledTools = [...next.enabledTools];
+    state.disabledTools = [...next.disabledTools];
   }
 
   display(): void {
@@ -1326,13 +1328,14 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   private renderMcpToolFilters(containerEl: HTMLElement, server: McpServerSettings): void {
-    new Setting(containerEl).setName("Tool filtering (S5)").setHeading();
+    new Setting(containerEl).setName("Tool filtering").setHeading();
     containerEl.createDiv({
       cls: "setting-item-description",
       text:
-        "Ordered allow-then-deny globs for remote tools (same dialect as vault ignore: * / ** / ?). " +
+        "Ordered allow-then-deny globs for this server's native tool names (the names the MCP server " +
+        "reports, not the local mcp__ names shown below). Same dialect as vault ignore: * / ** / ?. " +
         "Enabled is an allowlist (empty = allow all); disabled is a denylist (deny wins). " +
-        "Examples: *  ·  read_*  ·  *_danger  ·  ?est  ·  tool_*",
+        "Up to 100 patterns, 200 characters each. Examples: * · read_* · *?_danger · tool_*",
     });
     new Setting(containerEl)
       .setName("Enabled tools (allowlist)")
@@ -1343,7 +1346,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         text.setPlaceholder("*\nread_*\n*_safe").setValue((server.enabledTools ?? []).join("\n")).onChange(async (value) => {
           const patterns = value
             .split(/\r?\n/)
-            .map((line) => line.trim())
+            .map((line) => line.normalize("NFC").trim())
             .filter((line) => line.length > 0 && !line.startsWith("#"));
           server.enabledTools = patterns;
           this.syncMcpServerToState(server);
@@ -1359,7 +1362,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         text.setPlaceholder("*_danger\nwrite_*\nsecret_*").setValue((server.disabledTools ?? []).join("\n")).onChange(async (value) => {
           const patterns = value
             .split(/\r?\n/)
-            .map((line) => line.trim())
+            .map((line) => line.normalize("NFC").trim())
             .filter((line) => line.length > 0 && !line.startsWith("#"));
           server.disabledTools = patterns;
           this.syncMcpServerToState(server);

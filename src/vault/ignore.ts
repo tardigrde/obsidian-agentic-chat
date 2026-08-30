@@ -12,14 +12,16 @@ export type IgnoreMatcher = (path: string) => boolean;
 export function parseIgnorePatterns(text: string): string[] {
   return text
     .split(/\r?\n/)
-    .map((line) => line.trim())
+    .map((line) => line.normalize("NFC").trim())
     .filter((line) => line.length > 0 && !line.startsWith("#"));
 }
 
 /**
  * Build a matcher for vault-relative paths from gitignore-style patterns.
  * Matching is case-insensitive (a security feature should over-block rather
- * than let `Secret.md` slip past `secret.md`).
+ * than let `Secret.md` slip past `secret.md`). Both patterns and subject paths
+ * are NFC-normalized before testing so files stored as NFD on macOS (APFS) still
+ * match patterns typed as NFC (adversarial-review finding).
  *
  * Supported syntax:
  * - `*`  matches any run of characters except `/`
@@ -30,6 +32,10 @@ export function parseIgnorePatterns(text: string): string[] {
  *   matches at any depth (by basename), like gitignore
  * - any match also covers the path's subtree, so a folder pattern hides the
  *   files inside it; a trailing `/` is therefore optional/documentary
+ *
+ * A pattern whose double-star segments exceed the shared glob cap
+ * (`MAX_DOUBLE_STAR_SEGMENTS` in glob-pattern.ts) is skipped. Skipped deny
+ * patterns never match, so they can never re-allow a hidden path (fail-closed).
  */
 export function createIgnoreMatcher(patterns: string[]): IgnoreMatcher {
   const sources = patterns
@@ -37,6 +43,6 @@ export function createIgnoreMatcher(patterns: string[]): IgnoreMatcher {
     .filter((source): source is string => source !== null);
   if (sources.length === 0) return () => false;
   // One combined regex = a single pass per path, instead of one test per pattern.
-  const combined = new RegExp(sources.map((source) => `(?:${source})`).join("|"), "i");
-  return (path) => combined.test(path.replace(/^\/+/, ""));
+  const combined = new RegExp(sources.map((source) => `(?:${source})`).join("|"), "iu");
+  return (path) => combined.test(path.replace(/^\/+/, "").normalize("NFC"));
 }

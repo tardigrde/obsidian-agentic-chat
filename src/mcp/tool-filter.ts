@@ -43,20 +43,24 @@ export function healMcpToolGlobs(value: unknown): string[] {
 
 /**
  * Compile a single tool glob to a case-insensitive RegExp matching the whole name.
- * Uses shared `globToRegExpSource` so `*`/`**`/`?` behave like vault ignore.
- * - `*`  matches any run except `/`
- * - `**` matches any including `/`
- * - `?`  matches one char except `/`
+ * Uses shared `globToRegExpSource` so the single-star, double-star and question-mark
+ * globs behave like vault ignore (`*` matches any run except `/`, `**` matches any
+ * including `/`, `?` matches one char except `/`).
  * Trailing `/` is stripped (documentary); leading `/` is stripped (tool names have no root).
+ * `globToRegExpSource` can reject unsafe patterns (excessive double-star segments — a
+ * ReDoS guard), in which case this returns null and the pattern is skipped
+ * (fail-closed: patterns that cannot be compiled never match, so a deny-list glob
+ * never silently allows).
  */
 function toolGlobToRegExp(pattern: string): RegExp | null {
-  let body = pattern.trim();
+  let body = pattern.normalize("NFC").trim();
   if (!body) return null;
   if (body.endsWith("/")) body = body.slice(0, -1);
   if (body.startsWith("/")) body = body.slice(1);
   if (!body) return null;
   try {
     const source = globToRegExpSource(body);
+    if (source === null) return null;
     return new RegExp(`^${source}$`, "i");
   } catch {
     return null;
@@ -73,7 +77,7 @@ export function createToolGlobMatcher(patterns: string[]): (name: string) => boo
     .filter((r): r is RegExp => r !== null);
   if (regexes.length === 0) return () => false;
   return (name: string) => {
-    const normalized = name.trim();
+    const normalized = name.normalize("NFC").trim();
     return regexes.some((re) => re.test(normalized));
   };
 }
@@ -84,7 +88,8 @@ export function createToolGlobMatcher(patterns: string[]): (name: string) => boo
  *   enabled glob survive the allow phase. Empty => allow all.
  * - `disabledTools` denylist: any tool matching a disabled glob is removed,
  *   even if it was allowed. Deny wins.
- * - `__proto__`/constructor/prototype tool names are never matched (safety).
+ * Tool names are matched as strings and never assigned back into any object, so
+ * prototype-key names (`__proto__`, `constructor`) are compared safely.
  */
 export function filterMcpToolsByGlobs<T extends { name: string }>(
   tools: T[],
