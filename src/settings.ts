@@ -951,13 +951,19 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     this.ensurePluginsLoaded();
 
-    new Setting(containerEl)
-      .setName("Add MCP server")
-      .setDesc(
-        "Writes a real agent plugin package (plugin.json + mcp.json) into the plugins folder. " +
+    {
+      const heading = containerEl.createDiv({ cls: "agentic-chat-mcp-heading" });
+      heading.createEl("div", { text: "Add MCP server", cls: "agentic-chat-mcp-heading-title" });
+      heading.createEl("div", {
+        text:
+          "Writes a real agent plugin package (plugin.json + mcp.json) into the plugins folder. " +
           "Packages, not settings, own server endpoints after creation.",
-      )
-      .setHeading()
+        cls: "setting-item-description",
+      });
+    }
+
+    new Setting(containerEl)
+      .setClass("agentic-chat-mcp-add")
       .addText((text) =>
         text
           .setPlaceholder("Server name")
@@ -975,7 +981,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           }),
       )
       .addButton((button) =>
-        button.setButtonText("Generate plugin").onClick(async () => {
+        button.setButtonText("Add MCP server").onClick(async () => {
           const url = this.pendingMcpServerUrl.trim();
           const name = this.pendingMcpServerName.trim();
           if (!name || !url) {

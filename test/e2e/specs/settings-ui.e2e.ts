@@ -64,7 +64,7 @@ const LANGFUSE_SECRET_KEY_SECRET_ID = "agentic-chat-langfuse-secret-key";
 async function resetSettingsForUiSpec(): Promise<void> {
   await browser.executeObsidian(async ({ app }) => {
     // Remove the generated package from a previous run so the MCP tab's
-    // "Generate plugin" always produces the canonical "docs" package.
+    // "Add MCP server" always produces the canonical "docs" package.
     const previous = app.vault.getAbstractFileByPath(".agentic-plugins/docs");
     if (previous) await app.vault.delete(previous, true);
   });
@@ -224,7 +224,7 @@ describe("agentic-chat settings UI", function () {
     await waitForSetting("Add MCP server");
     await setSettingText("Add MCP server", "docs");
     await setSettingTextByPlaceholder("https://mcp.example.com/mcp", "https://docs.example.com/mcp");
-    await clickSettingButton("Add MCP server", "Generate plugin");
+    await clickSettingButton("Add MCP server", "Add MCP server");
     await waitForSetting("Setup guide");
     await setSettingSelect("Approval", "allow");
     await setSettingSelect("Authentication", "header");
