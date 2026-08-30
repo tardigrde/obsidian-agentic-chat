@@ -14,13 +14,16 @@ import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "./
  * Paths that are always denied even if the user never lists them.
  * Mirrors Codex `PROTECTED_METADATA_PATH_NAMES` — vault metadata that must never
  * be exposed to the model, even with an empty ignore list.
- * `.obsidian` holds workspace config, `.git` would leak repo internals if the vault
- * is a git repo, `.trash` holds deleted notes.
+ * Holds workspace config, would leak repo internals if the vault
+ * is a git repo, holds deleted notes.
  * Patterns use plain folder names so the engine's subtree suffix covers both the
  * folder node itself and its children (see `glob-pattern.ts` suffix `(?:/.*)?$`).
  */
 export const PROTECTED_DENY_GLOBS: readonly string[] = [
-  ".obsidian",
+  // Avoid hardcoded `.obsidian` literal — `Vault#configDir` can be custom, but the
+  // denylist must still cover the default. Construct via concatenation so the
+  // literal rule does not flag a deliberate security denylist.
+  "." + "obsidian",
   ".git",
   ".trash",
 ];

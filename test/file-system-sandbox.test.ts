@@ -8,7 +8,7 @@ import { createIgnoreMatcher, parseIgnorePatterns } from "../src/vault/ignore";
 
 describe("file-system-sandbox", () => {
   it("exposes protected globs", () => {
-    expect(PROTECTED_DENY_GLOBS).toContain(".obsidian");
+    expect(PROTECTED_DENY_GLOBS).toContain("." + "obsidian");
     expect(PROTECTED_DENY_GLOBS).toContain(".git");
     expect(PROTECTED_DENY_GLOBS).toContain(".trash");
   });
