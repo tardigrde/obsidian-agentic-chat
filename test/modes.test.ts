@@ -7,7 +7,9 @@ import {
   MODE_ORDER,
   MODES,
   resolveModePolicy,
+  resolveModeTransition,
   TOGGLE_MODES,
+  validateModeTransition,
 } from "../src/agent/modes";
 import { type ApprovalSettings } from "../src/agent/approval";
 import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
@@ -91,5 +93,88 @@ describe("healMode", () => {
     expect(healMode("ask")).toBe("plan");
     expect(healMode("nonsense")).toBe(DEFAULT_MODE);
     expect(healMode(undefined)).toBe(DEFAULT_MODE);
+  });
+});
+
+describe("validateModeTransition", () => {
+  it("blocks while streaming regardless of target", () => {
+    expect(validateModeTransition("safe", "yolo", true)).toMatch(/Can't switch mode while the agent is responding/);
+    expect(validateModeTransition("safe", "plan", true)).toMatch(/Can't switch mode while the agent is responding/);
+    expect(validateModeTransition("plan", "safe", true)).toMatch(/Can't switch mode while the agent is responding/);
+  });
+
+  it("allows same-mode no-op even without streaming block wording", () => {
+    expect(validateModeTransition("safe", "safe", false)).toBeNull();
+    expect(validateModeTransition("yolo", "yolo", false)).toBeNull();
+    expect(validateModeTransition("plan", "plan", false)).toBeNull();
+  });
+
+  it("blocks plan→yolo when not restoring previous yolo", () => {
+    expect(validateModeTransition("plan", "yolo", false, null)).toMatch(/Can't switch to YOLO while in plan mode/);
+    expect(validateModeTransition("plan", "yolo", false, "safe")).toMatch(/Can't switch to YOLO while in plan mode/);
+  });
+
+  it("allows plan→yolo when restoring previous yolo posture", () => {
+    expect(validateModeTransition("plan", "yolo", false, "yolo")).toBeNull();
+  });
+
+  it("allows plan→safe", () => {
+    expect(validateModeTransition("plan", "safe", false, null)).toBeNull();
+    expect(validateModeTransition("plan", "safe", false, "safe")).toBeNull();
+  });
+
+  it("allows safe↔yolo and safe/yolo→plan", () => {
+    expect(validateModeTransition("safe", "yolo", false)).toBeNull();
+    expect(validateModeTransition("yolo", "safe", false)).toBeNull();
+    expect(validateModeTransition("safe", "plan", false)).toBeNull();
+    expect(validateModeTransition("yolo", "plan", false)).toBeNull();
+  });
+});
+
+describe("resolveModeTransition", () => {
+  it("returns null for same-mode no-op", () => {
+    expect(resolveModeTransition("safe", "safe", null)).toBeNull();
+    expect(resolveModeTransition("plan", "plan", "safe")).toBeNull();
+  });
+
+  it("x→plan remembers previous posture", () => {
+    expect(resolveModeTransition("safe", "plan", null)).toEqual({ nextMode: "plan", nextPrevious: "safe" });
+    expect(resolveModeTransition("yolo", "plan", "safe")).toEqual({ nextMode: "plan", nextPrevious: "yolo" });
+  });
+
+  it("plan→x clears remembered posture", () => {
+    expect(resolveModeTransition("plan", "safe", "yolo")).toEqual({ nextMode: "safe", nextPrevious: null });
+    expect(resolveModeTransition("plan", "yolo", "yolo")).toEqual({ nextMode: "yolo", nextPrevious: null });
+  });
+
+  it("blocks plan→yolo escalation when not restoring", () => {
+    expect(resolveModeTransition("plan", "yolo", null)).toBeNull();
+    expect(resolveModeTransition("plan", "yolo", "safe")).toBeNull();
+  });
+
+  it("preserves plan memory on safe↔yolo, heals stale plan previous", () => {
+    expect(resolveModeTransition("safe", "yolo", null)).toEqual({ nextMode: "yolo", nextPrevious: null });
+    expect(resolveModeTransition("safe", "yolo", "safe" as never)).toEqual({ nextMode: "yolo", nextPrevious: "safe" });
+    // stale previous === "plan" is healed to null
+    expect(resolveModeTransition("safe", "yolo", "plan")).toEqual({ nextMode: "yolo", nextPrevious: null });
+  });
+
+  it("yolo→plan→yolo round-trip restores correctly via resolve+validate", () => {
+    const entered = resolveModeTransition("yolo", "plan", null)!;
+    expect(entered.nextPrevious).toBe("yolo");
+    expect(validateModeTransition("plan", "yolo", false, entered.nextPrevious)).toBeNull();
+    const exited = resolveModeTransition("plan", "yolo", entered.nextPrevious)!;
+    expect(exited.nextMode).toBe("yolo");
+    expect(exited.nextPrevious).toBeNull();
+  });
+
+  it("safe→plan→safe round-trip overwrites stale previous on re-entry", () => {
+    const first = resolveModeTransition("safe", "plan", null)!;
+    expect(first.nextPrevious).toBe("safe");
+    const back = resolveModeTransition("plan", "safe", first.nextPrevious)!;
+    expect(back.nextMode).toBe("safe");
+    // re-entering plan should capture fresh previous, not stale
+    const second = resolveModeTransition("yolo", "plan", back.nextPrevious)!;
+    expect(second.nextPrevious).toBe("yolo");
   });
 });

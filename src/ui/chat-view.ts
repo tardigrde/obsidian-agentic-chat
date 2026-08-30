@@ -956,7 +956,12 @@ export class ChatView extends ItemView {
 
   private async setMode(mode: AgentMode): Promise<boolean> {
     const current = this.plugin.settings.mode;
-    const blocked = validateModeTransition(current, mode, this.isAnyTabStreaming());
+    const blocked = validateModeTransition(
+      current,
+      mode,
+      this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming(),
+      this.modeBeforePlan,
+    );
     if (blocked) {
       if (current !== mode) this.renderErrorMessage(blocked);
       return false;
@@ -980,8 +985,12 @@ export class ChatView extends ItemView {
 
   /** `/plan`: enter sticky read-only plan mode, remembering the posture to restore. */
   private async enterPlanMode(): Promise<void> {
-    this.clearEmptyState();
-    const blocked = validateModeTransition(this.plugin.settings.mode, "plan", this.isAnyTabStreaming());
+    const blocked = validateModeTransition(
+      this.plugin.settings.mode,
+      "plan",
+      this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming(),
+      this.modeBeforePlan,
+    );
     if (blocked) {
       this.renderErrorMessage(blocked);
       return;
@@ -991,6 +1000,7 @@ export class ChatView extends ItemView {
       this.renderInfoMessage("Plan", [["Plan", "Already in plan mode. Click the Plan badge to abort."]]);
       return;
     }
+    this.clearEmptyState();
     // Let setMode own the atomic modeBeforePlan mutation to avoid a racy half-write if streaming starts between validates.
     if (await this.setMode("plan")) {
       this.renderInfoMessage("Plan", [[MODES.plan.label, MODES.plan.description]]);
@@ -999,17 +1009,22 @@ export class ChatView extends ItemView {
 
   /** Leave plan mode, restoring the Safe/YOLO posture in effect before /plan. */
   private async exitPlanMode(): Promise<void> {
-    this.clearEmptyState();
     if (this.plugin.settings.mode !== "plan") {
       this.renderInfoMessage("Plan", [["Plan", "Not in plan mode."]]);
       return;
     }
     const target = exitPlan(this.modeBeforePlan);
-    const blocked = validateModeTransition("plan", target, this.isAnyTabStreaming());
+    const blocked = validateModeTransition(
+      "plan",
+      target,
+      this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming(),
+      this.modeBeforePlan,
+    );
     if (blocked) {
       this.renderErrorMessage(blocked);
       return;
     }
+    this.clearEmptyState();
     // Do not clear modeBeforePlan before setMode — resolveModeTransition owns it atomically.
     if (await this.setMode(target)) {
       this.renderInfoMessage("Mode", [[MODES[target].label, MODES[target].description]]);
@@ -1059,7 +1074,7 @@ export class ChatView extends ItemView {
   private syncControls(): void {
     if (!this.modeToggleEl) return;
     const { settings } = this.plugin;
-    const streaming = this.isAnyTabStreaming();
+    const streaming = this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming();
     const planning = settings.mode === "plan";
     this.modeToggleEl.toggleClass("is-active", settings.mode === "yolo");
     this.modeToggleEl.toggleClass("is-planning", planning);

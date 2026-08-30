@@ -44,6 +44,7 @@ export default class AgenticChatPlugin extends Plugin {
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
   /** S4: single-source memory for plan restore — one value for all leaves, not per-view (Codex atomic override). */
   modeBeforePlan: AgentMode | null = null;
+  private lastSyncedMode: AgentMode | null = null;
   private secretStore!: ObsidianSecretStore;
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
   readonly pluginService = new PluginService(
@@ -226,6 +227,8 @@ export default class AgenticChatPlugin extends Plugin {
     const legacySkillFolders = legacySkillFolderPaths(stored);
     this.settings = mergeSettings(stored);
     hydrateSettingsSecrets(this.settings, this.secretStore);
+    // S4: remember mode for broadcast guard; heals plan restore on restart
+    this.lastSyncedMode = this.settings.mode;
     if (legacySkillFolders.length > 0) {
       // Run the migration before persisting the new schema: if it fails we
       // skip the save, so data.json keeps the legacy keys and the migration
@@ -255,7 +258,11 @@ export default class AgenticChatPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(settingsForStorage(this.settings, this.secretStore));
-    this.syncModeToViews();
+    // Only broadcast when mode actually changed — avoids repaint + notification side-effects on unrelated saves.
+    if (this.lastSyncedMode !== this.settings.mode) {
+      this.lastSyncedMode = this.settings.mode;
+      this.syncModeToViews();
+    }
   }
 
   /** S4: single-source mode — after any persisted mode change, push chrome to every chat leaf atomically (Codex ThreadSettingsOverrides pattern). */
@@ -277,10 +284,20 @@ export default class AgenticChatPlugin extends Plugin {
   async requestModeChange(target: AgentMode): Promise<boolean> {
     const activeView = this.app.workspace.getActiveViewOfType(ChatView);
     if (activeView) {
-      return activeView.requestModeChange(target);
+      const ok = await activeView.requestModeChange(target);
+      if (!ok) {
+        const blocked = validateModeTransition(
+          this.settings.mode,
+          target,
+          this.isAnyViewStreaming(),
+          this.modeBeforePlan,
+        );
+        if (blocked) new Notice(blocked);
+      }
+      return ok;
     }
     // No active view — mutate directly with the same validation as ChatView.
-    const blocked = validateModeTransition(this.settings.mode, target, this.isAnyViewStreaming());
+    const blocked = validateModeTransition(this.settings.mode, target, this.isAnyViewStreaming(), this.modeBeforePlan);
     if (blocked) {
       new Notice(blocked);
       return false;

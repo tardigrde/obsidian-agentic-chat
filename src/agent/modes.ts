@@ -22,7 +22,7 @@ export const DEFAULT_MODE: AgentMode = "safe";
 /** Display order for menus and pickers (default first; plan last — it's command-driven). */
 export const MODE_ORDER: AgentMode[] = ["safe", "yolo", "plan"];
 
-/** The two postures exposed as the composer toggle / settings default (plan is `/plan` only). */
+/** The two postures exposed as the composer toggle (Safe ↔ YOLO). Kept as toggle contract; dropdown uses MODE_ORDER. */
 export const TOGGLE_MODES: AgentMode[] = ["safe", "yolo"];
 
 export interface ModeDefinition {
@@ -147,18 +147,24 @@ export function healMode(stored: string | undefined): AgentMode {
  * permission_profile}` atomically — single source, all UIs reflect it.
  * This is the Obsidian analogue: one pure check, all UIs delegate to it.
  * Returns an error message when the transition is blocked, otherwise `null`.
+ *
+ * Asymmetry: plan→safe is allowed as an explicit abort (user bails on plan);
+ * plan→yolo is blocked unless it restores the remembered posture (yolo→plan→yolo round-trip).
+ * Direct plan→yolo would escalate without an explicit exit.
  */
 export function validateModeTransition(
   current: AgentMode,
   target: AgentMode,
   isStreaming: boolean,
+  previousBeforePlan: AgentMode | null = null,
 ): string | null {
   if (isStreaming) return "Can't switch mode while the agent is responding.";
   if (current === target) return null;
   // Plan is sticky read-only: yolo would widen the write boundary without
   // an explicit plan exit. Reuse the harness gap wording so every surface
-  // shows the same guidance.
-  if (current === "plan" && target === "yolo") return "Can't switch to YOLO while in plan mode.";
+  // shows the same guidance. Allow restore when previous was yolo.
+  if (current === "plan" && target === "yolo" && previousBeforePlan !== "yolo")
+    return "Can't switch to YOLO while in plan mode.";
   return null;
 }
 
@@ -184,6 +190,8 @@ export function resolveModeTransition(
   previousBeforePlan: AgentMode | null,
 ): ModeTransition | null {
   if (current === target) return null;
+  // Defense-in-depth: callers should have validated; still reject illegal plan→yolo escalation.
+  if (current === "plan" && target === "yolo" && previousBeforePlan !== "yolo") return null;
   if (target === "plan") {
     const entered = enterPlan(current);
     if (!entered) return null;
@@ -194,5 +202,7 @@ export function resolveModeTransition(
     // the caller choosing `target`; just clear the remembered posture.
     return { nextMode: target, nextPrevious: null };
   }
+  // Safe↔YOLO toggles must not carry stale plan memory.
+  if (previousBeforePlan !== null && previousBeforePlan === "plan") previousBeforePlan = null;
   return { nextMode: target, nextPrevious: previousBeforePlan };
 }
