@@ -5,7 +5,7 @@ import { Notice } from "obsidian";
  * background signals (agent finished, context-window filling, cost crossing a
  * cap); foreground slash output renders in-pane instead. Errors always show.
  */
-export type NotifyCategory = "agentFinished" | "contextWindow" | "cost" | "error" | "info";
+export type NotifyCategory = "agentFinished" | "contextWindow" | "cost" | "error" | "info" | "approval";
 
 /** Sink is injectable so tests can capture notifications without Obsidian. */
 export type NoticeSink = (message: string, timeoutMs?: number) => void;
@@ -22,7 +22,7 @@ export class Notifier {
 
   /** Emit a notification. Errors bypass the enabled toggle; others honor it. Returns whether it fired. */
   notify(category: NotifyCategory, message: string, timeoutMs?: number): boolean {
-    if (category !== "error" && !this.isEnabled()) return false;
+    if (category !== "error" && category !== "approval" && !this.isEnabled()) return false;
     this.sink(message, timeoutMs);
     return true;
   }

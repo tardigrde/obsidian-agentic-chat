@@ -145,6 +145,7 @@ interface ChatTab {
   unsubscribe: () => void;
   state: ChatTabWorkingState;
   needsApproval?: boolean;
+  pendingApprovalModal?: ApprovalModal;
 }
 
 /** Minimal shape of Obsidian's internal (undocumented) drag manager. */
@@ -297,6 +298,7 @@ export class ChatView extends ItemView {
     // The view owns its tab services; dispose them so no detached agent keeps running.
     for (const tab of this.tabs) {
       tab.unsubscribe();
+      tab.pendingApprovalModal?.close();
       tab.service.dispose();
     }
     this.tabs = [];
@@ -437,6 +439,7 @@ export class ChatView extends ItemView {
     if (closingActive) this.endEditing(false);
     const [tab] = this.tabs.splice(index, 1);
     tab.unsubscribe();
+    tab.pendingApprovalModal?.close();
     tab.service.dispose();
     if (index < this.activeTabIndex) {
       this.activeTabIndex -= 1;
@@ -539,19 +542,22 @@ export class ChatView extends ItemView {
     if (index === -1) throw new Error("The chat tab that requested approval is no longer open.");
     const isBackground = tab !== this.activeTab;
     const sessionLabel = `Tab ${index + 1} • ${this.tabLabel(tab)}`;
-    const labeledRequest: ToolApprovalRequest = { ...request, sessionLabel };
+    const labeledRequest: ToolApprovalRequest = isBackground ? { ...request, sessionLabel } : request;
     if (isBackground) {
       tab.needsApproval = true;
       this.syncTabStrip();
-      this.notifier.notify("info", `${sessionLabel} needs approval: ${request.label}`);
+      this.notifier.notify("approval", `${sessionLabel} needs approval: ${request.label}`);
     }
+    const modal = new ApprovalModal(this.app, labeledRequest);
+    tab.pendingApprovalModal = modal;
     try {
-      const choice = await new ApprovalModal(this.app, labeledRequest).ask();
+      const choice = await modal.ask();
       if (applyRememberedApprovalChoice(this.plugin.settings, request.toolName, choice)) {
         await this.plugin.saveSettings();
       }
       return choice;
     } finally {
+      tab.pendingApprovalModal = undefined;
       if (tab.needsApproval) {
         tab.needsApproval = false;
         this.syncTabStrip();
