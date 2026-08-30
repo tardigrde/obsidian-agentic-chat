@@ -1194,6 +1194,11 @@
   border-radius: var(--radius-l);
   padding: 2px var(--size-2-3);
   font-size: var(--font-ui-smaller);
+  max-width: min(220px, 100%);
+  min-width: 0;
+  overflow: hidden;
+  height: 22px;
+  line-height: 1;
 }
 
 .agentic-chat-chip.is-active-note {
@@ -1207,12 +1212,21 @@
   color: var(--text-accent);
 }
 
+.agentic-chat-chip-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agentic-chat-chip-tag {
-  font-size: var(--font-ui-smaller);
+  font-size: var(--font-smallest);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-accent);
   opacity: 0.85;
+  flex-shrink: 0;
 }
 
 .agentic-chat-chip-icon svg,
@@ -1412,7 +1426,10 @@
 /* Effort value reads as a low→max scale: muted at the bottom step, ramping
    toward the accent at the top, uniform across levels (no override split). */
 .agentic-chat-effort-value {
-  font-size: var(--font-ui-smaller);
+  font-size: var(--font-smallest);
+  font-weight: var(--font-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: color-mix(
     in oklab,
     var(--text-muted),
