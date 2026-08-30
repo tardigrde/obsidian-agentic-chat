@@ -42,7 +42,12 @@ export function createFileSystemDenyMatcher(userGlobs: string, configDir?: strin
   const userPatterns = parseIgnorePatterns(userGlobs);
   const extraProtected =
     configDir && configDir !== DEFAULT_OBSIDIAN_DIR && configDir.trim() ? [configDir.trim()] : [];
-  const allPatterns = [...userPatterns, ...PROTECTED_DENY_GLOBS, ...extraProtected];
+  // Cap user patterns before merging so protected globs are never dropped by the
+  // 200-pattern limit in createIgnoreMatcher (adversarial-review finding).
+  const protectedCount = PROTECTED_DENY_GLOBS.length + extraProtected.length;
+  const maxUser = Math.max(0, 200 - protectedCount);
+  const cappedUser = userPatterns.slice(0, maxUser);
+  const allPatterns = [...cappedUser, ...PROTECTED_DENY_GLOBS, ...extraProtected];
   return createIgnoreMatcher(allPatterns);
 }
 
@@ -65,11 +70,12 @@ export function createFileSystemSandboxPolicy(userGlobs: string, configDir?: str
   const userPatterns = parseIgnorePatterns(userGlobs);
   const extraProtected =
     configDir && configDir !== DEFAULT_OBSIDIAN_DIR && configDir.trim() ? [configDir.trim()] : [];
-  const rawEffective = [...userPatterns, ...PROTECTED_DENY_GLOBS, ...extraProtected];
+  const protectedCount = PROTECTED_DENY_GLOBS.length + extraProtected.length;
+  const maxUser = Math.max(0, 200 - protectedCount);
+  const cappedUser = userPatterns.slice(0, maxUser);
+  const rawEffective = [...cappedUser, ...PROTECTED_DENY_GLOBS, ...extraProtected];
   // Filter to patterns that actually compile so UI/diagnostics don't lie about enforcement.
   const effectivePatterns = rawEffective.filter((pattern) => compileGitignorePatternSource(pattern) !== null);
   const isDenied = createIgnoreMatcher(rawEffective);
-  // Reuse rawEffective for matcher so healing caps apply consistently; effectivePatterns
-  // reflects what compiled for diagnostics.
   return { isDenied, userGlobs, effectivePatterns };
 }
