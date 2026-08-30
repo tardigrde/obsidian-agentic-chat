@@ -3,6 +3,7 @@ import { DEFAULT_PROXY_SETTINGS, type ProxySettings, normalizeNoProxy, normalize
 import { ensureMcpOAuthSecretRefs, mcpSecretId } from "../secrets/secret-store";
 import { isValidHttpHeaderName } from "./http-headers";
 import { mcpUrlProblem } from "../utils/host-policy";
+import { healMcpToolGlobs } from "./tool-filter";
 
 export type McpAuthType = "none" | "bearer" | "header" | "oauth";
 type LegacyMcpServerPreset = "generic" | "context7" | "oauth";
@@ -48,6 +49,16 @@ export interface McpServerSettings {
   source: "user" | "plugin";
   /** Vault path of the plugin package that declared this server, when plugin-sourced. */
   pluginRoot?: string;
+  /**
+   * Ordered allow-then-deny globs for remote tools (S5).
+   * `enabledTools` is an allowlist: when non-empty only matching tools are exposed.
+   * `disabledTools` is a denylist: any match is hidden even if allowed. Deny wins.
+   * Same glob dialect as vault ignore (`*`/`**`/`?`, case-insensitive) so the three
+   * ignore/deny mechanisms share one engine (file-system sandbox, writable roots, MCP).
+   */
+  enabledTools: string[];
+  /** Deny globs for remote tools — deny wins over allow. */
+  disabledTools: string[];
 }
 
 /** Client-owned state for a plugin-derived MCP server (shape lives in mcp.json). */
@@ -63,6 +74,10 @@ export interface McpServerState {
   knownTools: McpKnownToolSettings[];
   /** Last known URL for change detection — cleared auth if mcp.json moves host. */
   lastUrl?: string;
+  /** Ordered allow-then-deny globs for remote tools (S5) — client-owned, like approval/auth. */
+  enabledTools: string[];
+  /** Deny globs for remote tools — deny wins. */
+  disabledTools: string[];
 }
 
 export interface McpKnownToolSettings {
@@ -193,6 +208,8 @@ function healMcpServer(server: Partial<McpServerSettings> | null | undefined): M
     headers: healHeaderMap(server.headers),
     source: healServerSource(server.source),
     ...(typeof server.pluginRoot === "string" && server.pluginRoot.trim() ? { pluginRoot: server.pluginRoot.trim() } : {}),
+    enabledTools: healMcpToolGlobs((server as Record<string, unknown>).enabledTools ?? (server as Record<string, unknown>).enabled_tools),
+    disabledTools: healMcpToolGlobs((server as Record<string, unknown>).disabledTools ?? (server as Record<string, unknown>).disabled_tools),
   };
 }
 
@@ -205,6 +222,8 @@ export const DEFAULT_MCP_SERVER_STATE: McpServerState = {
   authHeaderValue: "",
   oauth: { ...DEFAULT_MCP_OAUTH_SETTINGS },
   knownTools: [],
+  enabledTools: [],
+  disabledTools: [],
 };
 
 export function healMcpServerState(
@@ -212,6 +231,10 @@ export function healMcpServerState(
   id: string,
 ): McpServerState {
   const healedId = normalizeMcpServerId(id);
+  const record =
+    stored && typeof stored === "object" && !Array.isArray(stored)
+      ? (stored as { [key: string]: unknown })
+      : null;
   return {
     enabled: stored?.enabled === true,
     approval: healApproval(stored?.approval),
@@ -221,14 +244,17 @@ export function healMcpServerState(
     authHeaderValue: typeof stored?.authHeaderValue === "string" ? stored.authHeaderValue.trim() : "",
     oauth: healOAuthSettings(stored?.oauth, healedId),
     knownTools: healMcpKnownTools(stored?.knownTools),
-    ...(typeof (stored as Record<string, unknown>)?.lastUrl === "string" && (stored as Record<string, unknown>).lastUrl
-      ? { lastUrl: String((stored as Record<string, unknown>).lastUrl).trim() }
+    ...(typeof record?.lastUrl === "string" && record.lastUrl.trim()
+      ? { lastUrl: record.lastUrl.trim() }
       : {}),
+    enabledTools: healMcpToolGlobs(record?.enabledTools ?? record?.enabled_tools),
+    disabledTools: healMcpToolGlobs(record?.disabledTools ?? record?.disabled_tools),
   };
 }
 
 export function createMcpServerState(id: string, overrides: Partial<McpServerState> = {}): McpServerState {
   const healedId = normalizeMcpServerId(id);
+  const raw = overrides as Record<string, unknown>;
   return {
     enabled: typeof overrides.enabled === "boolean" ? overrides.enabled : false,
     approval: healApproval(overrides.approval),
@@ -239,6 +265,8 @@ export function createMcpServerState(id: string, overrides: Partial<McpServerSta
     oauth: healOAuthSettings(overrides.oauth, healedId),
     knownTools: healMcpKnownTools(overrides.knownTools),
     ...(typeof overrides.lastUrl === "string" && overrides.lastUrl.trim() ? { lastUrl: overrides.lastUrl.trim() } : {}),
+    enabledTools: healMcpToolGlobs(raw.enabledTools ?? raw.enabled_tools),
+    disabledTools: healMcpToolGlobs(raw.disabledTools ?? raw.disabled_tools),
   };
 }
 
@@ -253,6 +281,8 @@ export function mcpServerStateFromServer(server: McpServerSettings): McpServerSt
     oauth: { ...server.oauth },
     knownTools: [...server.knownTools],
     lastUrl: server.url,
+    enabledTools: [...(server.enabledTools ?? [])],
+    disabledTools: [...(server.disabledTools ?? [])],
   };
 }
 
@@ -265,6 +295,8 @@ export function applyMcpServerState(server: McpServerSettings, state: McpServerS
   server.authHeaderValue = state.authHeaderValue;
   server.oauth = { ...state.oauth };
   server.knownTools = [...state.knownTools];
+  server.enabledTools = [...(state.enabledTools ?? [])];
+  server.disabledTools = [...(state.disabledTools ?? [])];
   server.authHeaderValueSecretId ||= mcpSecretId(server.id, "auth-header-value");
   ensureMcpOAuthSecretRefs(server.id, server.oauth);
   // lastUrl is tracked in state, not in server shape
@@ -289,6 +321,7 @@ export function createMcpServerSettings(
 ): McpServerSettings {
   const id = normalizeMcpServerId(overrides.id || overrides.name || serverIdFromMcpUrl(overrides.url) || "mcp");
   const url = stringValue(overrides.url) || "https://";
+  const raw = overrides as Record<string, unknown>;
   return {
     id,
     name: stringValue(overrides.name) || "MCP server",
@@ -306,6 +339,8 @@ export function createMcpServerSettings(
     ...(typeof overrides.pluginRoot === "string" && overrides.pluginRoot.trim()
       ? { pluginRoot: overrides.pluginRoot.trim() }
       : {}),
+    enabledTools: healMcpToolGlobs(raw.enabledTools ?? raw.enabled_tools),
+    disabledTools: healMcpToolGlobs(raw.disabledTools ?? raw.disabled_tools),
   };
 }
 

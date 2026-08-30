@@ -60,5 +60,13 @@ function collapsePathSegments(path: string): string {
 }
 
 function isPluginInternalPath(path: string): boolean {
-  return path === `.obsidian/plugins/${PLUGIN_ID}` || path.startsWith(`.obsidian/plugins/${PLUGIN_ID}/`);
+  // Block the plugin's own internals regardless of the vault's configured configDir
+  // (default `.obsidian` or a custom dir). Match only exact segment `plugins/<id>`
+  // to avoid false positives on sibling dirs like `plugins/agentic-chat-extra`.
+  if (path === `plugins/${PLUGIN_ID}` || path.startsWith(`plugins/${PLUGIN_ID}/`)) return true;
+  const needle = `/plugins/${PLUGIN_ID}`;
+  if (path === needle.slice(1)) return true;
+  if (path.endsWith(needle)) return true;
+  if (path.includes(`${needle}/`)) return true;
+  return false;
 }

@@ -7,6 +7,7 @@ import { truncateToolOutput } from "../vault/truncate";
 import { wrapToolOutput, wrapToolOutputTruncated } from "../tools/tool-output-wrapper";
 import { McpHttpClient, type McpCallToolResult, type McpToolDefinition } from "./client";
 import type { McpAuthType, McpKnownToolSettings, McpServerSettings, McpSettings } from "./settings";
+import { filterMcpToolsByGlobs } from "./tool-filter";
 
 export const MCP_TOOL_PREFIX = "mcp__";
 
@@ -107,7 +108,8 @@ export async function probeMcpServer(
 ): Promise<McpServerProbeResult> {
   const client = new McpHttpClient({ server, fetcher, onServerChanged: options.onServerChanged });
   const tools = await client.listTools();
-  return { toolCount: tools.length, toolNames: tools.map((tool) => tool.name), tools: mcpKnownTools(tools, server.id) };
+  const filtered = filterMcpToolsByGlobs(tools, server.enabledTools ?? [], server.disabledTools ?? []);
+  return { toolCount: filtered.length, toolNames: filtered.map((tool) => tool.name), tools: mcpKnownTools(filtered, server.id) };
 }
 
 export function isMcpToolName(toolName: string): boolean {
@@ -139,8 +141,9 @@ async function discoverServerTools(
   try {
     const client = new McpHttpClient({ server, fetcher, onServerChanged: options.onServerChanged });
     const remoteTools = await client.listTools();
+    const filtered = filterMcpToolsByGlobs(remoteTools, server.enabledTools ?? [], server.disabledTools ?? []);
     const usedNames = new Set<string>();
-    const tools = remoteTools.map((tool) =>
+    const tools = filtered.map((tool) =>
       createMcpTool(server, fetcher, options, tool, nextLocalToolName(server.id, tool.name, usedNames)),
     );
     return {
@@ -149,7 +152,7 @@ async function discoverServerTools(
         ...baseDiagnostic(server),
         status: "ok",
         toolCount: tools.length,
-        toolNames: remoteTools.map((tool) => tool.name),
+        toolNames: filtered.map((tool) => tool.name),
       },
     };
   } catch (error) {

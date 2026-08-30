@@ -347,6 +347,8 @@ describe("mergeSettings — MCP", () => {
           oauth: mcpOAuthSettingsForServer("context_7"),
           approval: "ask",
           knownTools: [],
+          enabledTools: [],
+          disabledTools: [],
         },
       ],
     });
@@ -370,6 +372,68 @@ describe("mergeSettings — MCP", () => {
     expect(
       mergeSettings({ mcp: { enabled: true, proxyUrl: "socks://proxy:1080", servers: [] } as never }).mcp.proxyUrl,
     ).toBe("");
+  });
+
+  it("heals S5 enabled/disabled_tools globs for servers and state, including snake_case legacy keys", () => {
+    const merged = mergeSettings({
+      plugins: {
+        folder: "",
+        enabled: {},
+        sources: {},
+        mcpState: {
+          plugin_srv: {
+            enabled: true,
+            approval: "allow",
+            enabled_tools: ["read_*", " list_* ", "", "# c"],
+            disabled_tools: "delete_*,*_danger",
+            lastUrl: "https://srv.example.com/mcp",
+          } as never,
+        },
+      },
+      mcp: {
+        enabled: true,
+        proxyUrl: "",
+        noProxy: "",
+        servers: [
+          {
+            id: "user_srv",
+            name: "User",
+            url: "https://user.example.com/mcp",
+            enabledTools: ["read_*", "READ_*"],
+            disabledTools: ["*_danger"],
+          } as never,
+        ],
+      },
+    });
+
+    expect(merged.plugins.mcpState.plugin_srv.enabledTools).toEqual(["read_*", "list_*"]);
+    expect(merged.plugins.mcpState.plugin_srv.disabledTools).toEqual(["delete_*", "*_danger"]);
+    expect(merged.mcp.servers[0].enabledTools).toEqual(["read_*"]);
+    expect(merged.mcp.servers[0].disabledTools).toEqual(["*_danger"]);
+  });
+
+  it("heals S5 tool globs to empty arrays when absent or malformed", () => {
+    const merged = mergeSettings({
+      plugins: {
+        folder: "",
+        enabled: {},
+        sources: {},
+        mcpState: {
+          fresh: { enabled: true, approval: "ask", enabled_tools: 42 } as never,
+        },
+      },
+      mcp: {
+        enabled: true,
+        proxyUrl: "",
+        noProxy: "",
+        servers: [{ id: "a", name: "A", url: "https://a.example.com/mcp" } as never],
+      },
+    });
+
+    expect(merged.plugins.mcpState.fresh.enabledTools).toEqual([]);
+    expect(merged.plugins.mcpState.fresh.disabledTools).toEqual([]);
+    expect(merged.mcp.servers[0].enabledTools).toEqual([]);
+    expect(merged.mcp.servers[0].disabledTools).toEqual([]);
   });
 
   it("heals observability settings and proxy overrides", () => {

@@ -96,6 +96,61 @@ describe("MCP tools", () => {
     expect(mcpServerIdFromToolName("mcp__docs__resolve_library_id")).toBe("docs");
   });
 
+  it("filters discovered tools by enabled/disabled globs before registration", async () => {
+    const tools = await createMcpTools(
+      mcpSettings({
+        servers: [
+          createMcpServerSettings({
+            id: "docs",
+            name: "Docs MCP",
+            url: "https://mcp.example.com/mcp",
+            enabledTools: ["read_*", "list_*"],
+            disabledTools: ["*_danger"],
+          }),
+        ],
+      }),
+      queuedFetcher([
+        rpc(1, { protocolVersion: "2025-11-25" }),
+        { status: 202, text: "", headers: {} },
+        rpc(2, {
+          tools: [
+            { name: "read_file" },
+            { name: "list_files" },
+            { name: "list_danger" },
+            { name: "write_file" },
+          ],
+        }),
+      ]),
+    );
+
+    expect(tools.map((tool) => tool.name)).toEqual(["mcp__docs__read_file", "mcp__docs__list_files"]);
+    expect(tools.map((tool) => tool.name)).not.toContain("mcp__docs__write_file");
+    expect(tools.map((tool) => tool.name)).not.toContain("mcp__docs__list_danger");
+  });
+
+  it("probe respects deny-wins and allowlist filtering with diagnostics names", async () => {
+    const result = await probeMcpServer(
+      createMcpServerSettings({
+        id: "docs",
+        name: "Docs MCP",
+        url: "https://mcp.example.com/mcp",
+        enabledTools: ["*"],
+        disabledTools: ["delete_*", "*_internal"],
+      }),
+      queuedFetcher([
+        rpc(1, { protocolVersion: "2025-11-25" }),
+        { status: 202, text: "", headers: {} },
+        rpc(2, {
+          tools: [{ name: "delete_all" }, { name: "get_internal" }, { name: "public_query" }],
+        }),
+      ]),
+    );
+
+    expect(result.toolCount).toBe(1);
+    expect(result.toolNames).toEqual(["public_query"]);
+    expect(result.tools.map((tool) => tool.name)).toEqual(["public_query"]);
+  });
+
   it("probes a server with the same initialize and list-tools path used for registration", async () => {
     const requests: WebHttpRequest[] = [];
     const result = await probeMcpServer(

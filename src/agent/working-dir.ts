@@ -2,11 +2,13 @@ import type { ApprovalPolicy } from "./approval";
 import { normalizeFolderPath, normalizeVaultPath } from "../vault/path";
 
 /**
- * Working-directory scope (C1/S2). A granted folder becomes a working set: tool
- * calls whose targets sit **inside** any granted dir auto-run, while calls that
- * reach **outside** every granted dir route through the approval gate (ask) — even
- * read-only ones. The inverse of ignore-globs (an allow-list working set vs a
- * deny-list). Empty config = today's behavior. Pure, so the gate stays testable.
+ * Working-directory scope (C1/S2, S5 writable_roots).
+ * Codex borrow: `SandboxPolicy::WorkspaceWrite.writable_roots` + auto `cwd`/`tmp` `protocol.rs:1224`.
+ * S5 keeps `workingDirs` as writable_roots (allow-list working set): tool calls whose
+ * targets sit **inside** any granted dir auto-run, while calls that reach **outside**
+ * every granted dir route through the approval gate (ask) — even read-only ones.
+ * The inverse of ignore-globs (FileSystemDenyReadPattern) — one is deny-list, the
+ * other is allow-list. Empty config = today's behavior. Pure, so the gate stays testable.
  */
 
 /** Tool arg fields that name a vault path the call acts on. */

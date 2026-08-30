@@ -83,11 +83,7 @@ thin (or absent) here.
 
 *S4 · Permission mode surfaced on four controls — **DONE** (this PR).* `src/agent/modes.ts` `validateModeTransition`/`resolveModeTransition` is the single gate (mirrors Codex `ThreadSettingsOverrides` atomic apply); `src/settings.ts` dropdown now lists `MODE_ORDER` (Safe/YOLO/Plan) and delegates via `plugin.requestModeChange` to the active `ChatView` so `modeBeforePlan` stays coherent; `src/ui/chat-view.ts` `setMode` + `isAnyTabStreaming` centralizes all four surfaces (settings dropdown, composer Safe↔YOLO toggle, `/config` picker, `/plan` sticky); `src/main.ts` `modeBeforePlan` singleton + `syncModeToViews` broadcasts to every leaf; `src/ui/commands.ts` `/config` lists Safe/YOLO/Plan. Single source, all UIs reflect it.
 
-### S5 · Three ignore/deny-list mechanisms
-- **Problem**: vault `ignoredGlobs`, MCP legacy tool filters (now URL params), and working directories as the inverse allow-list. Same glob syntax, three representations.
-- **Effort**: M
-- **Deps**: none
-- **Codex**: Split into `SandboxPolicy::WorkspaceWrite.writable_roots` (+ auto `cwd`/`tmp`) `protocol.rs:1224` + `McpServerConfig.enabled_tools/disabled_tools` `mcp_types.rs:233` + `FilesystemDenyReadPattern`/`PROTECTED_METADATA_PATH_NAMES` `permissions.rs:32`. Keep `ignoredGlobs` name but implement as `FileSystemSandboxPolicy` deny-globs; keep `workingDirs` as `writable_roots`; keep dual `enabled/disabled_tools` ordered allow-then-deny like Codex.
+*S5 · Three ignore/deny-list mechanisms — **DONE** (this PR).* `ignoredGlobs` → `FileSystemDenyReadPattern` + `PROTECTED_METADATA_PATH_NAMES` via `src/vault/file-system-sandbox.ts` + `src/vault/glob-pattern.ts` + `src/vault/ignore.ts` (protected `.obsidian`+`.git`+`.trash` always denied, user globs merged, case-insensitive subtree, NFC, ReDoS cap, vault caps 200/200); `workingDirs` → `SandboxPolicy::WorkspaceWrite.writable_roots` docs in `src/agent/working-dir.ts`; MCP `enabled_tools/disabled_tools` ordered allow-then-deny via `src/mcp/tool-filter.ts` (glob `*`/`**`/`?`, MAX 100/200, dedupe, heals camel/snake, `iu` flag) filtered in both `probeMcpServer` and `discoverServerTools`; runtime `src/agent/runtime-resources.ts` uses `createFileSystemDenyMatcher` with vault `configDir`; settings UI adds per-server textareas. Tests cover heal, matcher, ordering, ReDoS, NFC, subtree/case.
 
 ### S7 · Deprecated settings surface lingers
 - **Problem**: every secret still has a dual plaintext `*ApiKey` + `*SecretId` pair with migration fallback fields persisted. (`templatesFolder` was removed in S9.)
@@ -182,7 +178,7 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 **Stability first:** `H5 → R2 → A7` (`C6` auto-decay removed, `H6` dropped, `H2` deferred — big feature).
 
-(Group S `S1-S10` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (this PR), next `S5/S7/S8`. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `S2/S3` done #108, `E10` done #98. `F8` + `H2` + `C6/H6` deferred/dropped.)
+(Group S `S1-S10` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (#122), **S5 done** (this PR), next `S7/S8`. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `S2/S3` done #108, `E10` done #98. `F8` + `H2` + `C6/H6` deferred/dropped.)
 
 *First-principles rationale*: security/reliability done — next small wins are evaluator routing (`H5` `S`) then diff polish (`R2` `S`) before audit (`A7`). Memory (`H2`) is `M–L` and needs docs/privacy pass, so pushed. No babysitting — user controls `/compact`, threshold `80%` is the safety net. S-cluster high-ROI but `L-effort` and cross-cuts every gate, so batch separately. `H5` reuses `AgentProfile.model` — reconcile with `S8` role reframe.
 
