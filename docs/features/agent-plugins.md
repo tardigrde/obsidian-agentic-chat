@@ -25,7 +25,7 @@ A plugin with only an `mcp.json` (no skills) is valid — MCP-only plugins are a
 
 The settings UI writes real packages for you:
 
-- **MCP tab → Add MCP server** — enter a server name and an HTTPS (or loopback HTTP) endpoint, hit **Generate plugin**, and a package is created with that server's `plugin.json` + `mcp.json`. You then configure authentication, approval, and enable state from the same tab; endpoint and literal headers remain owned by the package.
+- **MCP tab → Add MCP server** — enter a server name and an HTTPS (or loopback HTTP) endpoint, hit **Add MCP server**, and a package is created with that server's `plugin.json` + `mcp.json`. You then configure authentication, approval, and enable state from the same tab; endpoint and literal headers remain owned by the package.
 - **Resources tab → New skill…** — scaffold a single-skill package (`skills/<name>/SKILL.md`) with a ready-to-fill template.
 
 ## Importing plugins
