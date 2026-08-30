@@ -56,7 +56,10 @@ function renderAttachmentChip(
   else if (isImage) iconName = "image";
   else iconName = "file-text";
   setIcon(icon, iconName);
-  chip.createSpan({ text: isFolder ? path.slice(FOLDER_PREFIX.length) : contextAttachmentLabel(entry) });
+  chip.createSpan({
+    cls: "agentic-chat-chip-label",
+    text: isFolder ? path.slice(FOLDER_PREFIX.length) : contextAttachmentLabel(entry),
+  });
   if (active) {
     chip.createSpan({ cls: "agentic-chat-chip-tag", text: "active" });
     chip.setAttr("title", "The active note is attached automatically — remove to stop for this session.");
@@ -70,7 +73,7 @@ function renderScopeChip(parent: HTMLElement, dir: string, onRemove: () => void)
   const chip = parent.createDiv({ cls: ["agentic-chat-chip", "is-scope"] });
   const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
   setIcon(icon, "folder-check");
-  chip.createSpan({ text: formatWorkingDirLabel(dir) });
+  chip.createSpan({ cls: "agentic-chat-chip-label", text: formatWorkingDirLabel(dir) });
   chip.createSpan({ cls: "agentic-chat-chip-tag", text: "scope" });
   chip.setAttr(
     "title",
