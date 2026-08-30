@@ -76,7 +76,15 @@ import { isPinnedToBottom } from "./scroll-pinning";
 import { formatCompactionSummary, isSummaryMessage } from "../agent/compaction";
 import { isInstructionFilePath } from "../agent/instructions";
 import { steeringStatus } from "../agent/turn-control";
-import { type AgentMode, enterPlan, exitPlan, MODE_ORDER, MODES } from "../agent/modes";
+import {
+  type AgentMode,
+  enterPlan,
+  exitPlan,
+  MODE_ORDER,
+  MODES,
+  resolveModeTransition,
+  validateModeTransition,
+} from "../agent/modes";
 import {
   ActiveNoteContextCache,
   type ActiveNoteState,
@@ -154,7 +162,12 @@ export class ChatView extends ItemView {
   private activeNoteCache = new ActiveNoteContextCache();
   private contextCache = new PromptContextCache();
   private activeNoteSuppressed = false;
-  private modeBeforePlan: AgentMode | null = null;
+  private get modeBeforePlan(): AgentMode | null {
+    return this.plugin.modeBeforePlan;
+  }
+  private set modeBeforePlan(value: AgentMode | null) {
+    this.plugin.modeBeforePlan = value;
+  }
   private bubble: AssistantBubble | null = null;
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
   private notifiedContext = new Set<number>();
@@ -937,30 +950,49 @@ export class ChatView extends ItemView {
   }
 
   // --- composer controls (Safe ↔ YOLO toggle + sticky plan) ---
+  // S4: all mode mutations (toggle, /config, /plan, settings tab) funnel through
+  // validateModeTransition + resolveModeTransition so the four surfaces stay
+  // atomically in sync (Codex ThreadSettingsOverrides pattern).
 
-  private async setMode(mode: AgentMode): Promise<void> {
-    // Mode is evaluated live by the tool gate; changing it mid-stream would
-    // disagree with the system prompt this run started under. Lock it while busy.
-    if (this.service.isStreaming()) return;
-    if (this.plugin.settings.mode === mode) return;
-    if (this.plugin.settings.mode === "plan" && mode === "yolo") {
-      this.renderErrorMessage("Can't switch to YOLO while in plan mode.");
-      return;
+  private async setMode(mode: AgentMode): Promise<boolean> {
+    const current = this.plugin.settings.mode;
+    const blocked = validateModeTransition(
+      current,
+      mode,
+      this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming(),
+      this.modeBeforePlan,
+    );
+    if (blocked) {
+      if (current !== mode) this.renderErrorMessage(blocked);
+      return false;
     }
-    this.plugin.settings.mode = mode;
-    // Choosing a posture other than plan ends any sticky plan state.
-    if (mode !== "plan") this.modeBeforePlan = null;
+    if (current === mode) return false;
+    const transition = resolveModeTransition(current, mode, this.modeBeforePlan);
+    if (!transition) return false;
+    this.plugin.settings.mode = transition.nextMode;
+    this.modeBeforePlan = transition.nextPrevious;
     await this.plugin.saveSettings();
     // Repaint the whole chrome so the Safe↔YOLO segment + aria-checked flip
     // instantly after the mode lands on disk (syncChrome calls syncControls).
     this.syncChrome();
+    return true;
+  }
+
+  /** S4: external callers (settings tab) route through the active view so modeBeforePlan stays coherent. */
+  async requestModeChange(mode: AgentMode): Promise<boolean> {
+    return this.setMode(mode);
   }
 
   /** `/plan`: enter sticky read-only plan mode, remembering the posture to restore. */
   private async enterPlanMode(): Promise<void> {
-    this.clearEmptyState();
-    if (this.service.isStreaming()) {
-      this.renderErrorMessage("Can't switch mode while the agent is responding.");
+    const blocked = validateModeTransition(
+      this.plugin.settings.mode,
+      "plan",
+      this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming(),
+      this.modeBeforePlan,
+    );
+    if (blocked) {
+      this.renderErrorMessage(blocked);
       return;
     }
     const transition = enterPlan(this.plugin.settings.mode);
@@ -968,26 +1000,62 @@ export class ChatView extends ItemView {
       this.renderInfoMessage("Plan", [["Plan", "Already in plan mode. Click the Plan badge to abort."]]);
       return;
     }
-    this.modeBeforePlan = transition.previous;
-    await this.setMode("plan");
-    this.renderInfoMessage("Plan", [[MODES.plan.label, MODES.plan.description]]);
+    this.clearEmptyState();
+    // Let setMode own the atomic modeBeforePlan mutation to avoid a racy half-write if streaming starts between validates.
+    if (await this.setMode("plan")) {
+      this.renderInfoMessage("Plan", [[MODES.plan.label, MODES.plan.description]]);
+    }
   }
 
   /** Leave plan mode, restoring the Safe/YOLO posture in effect before /plan. */
   private async exitPlanMode(): Promise<void> {
-    this.clearEmptyState();
     if (this.plugin.settings.mode !== "plan") {
       this.renderInfoMessage("Plan", [["Plan", "Not in plan mode."]]);
       return;
     }
-    if (this.service.isStreaming()) {
-      this.renderErrorMessage("Can't switch mode while the agent is responding.");
+    const target = exitPlan(this.modeBeforePlan);
+    const blocked = validateModeTransition(
+      "plan",
+      target,
+      this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming(),
+      this.modeBeforePlan,
+    );
+    if (blocked) {
+      this.renderErrorMessage(blocked);
       return;
     }
-    const restored = exitPlan(this.modeBeforePlan);
-    this.modeBeforePlan = null;
-    await this.setMode(restored);
-    this.renderInfoMessage("Mode", [[MODES[restored].label, MODES[restored].description]]);
+    this.clearEmptyState();
+    // Do not clear modeBeforePlan before setMode — resolveModeTransition owns it atomically.
+    if (await this.setMode(target)) {
+      this.renderInfoMessage("Mode", [[MODES[target].label, MODES[target].description]]);
+    }
+  }
+
+  /** Whether the current tab's agent is streaming — exposed for the plugin's S4 broadcast. */
+  isStreaming(): boolean {
+    return this.isAnyTabStreaming();
+  }
+
+  /** Whether any tab in this leaf is streaming — covers background tabs for the settings gate. */
+  private isAnyTabStreaming(): boolean {
+    for (const tab of this.tabs) {
+      if (tab.service.isStreaming()) return true;
+    }
+    return false;
+  }
+
+  /** S4: called by the plugin after any persisted mode change (e.g. settings tab) so every leaf reflects the single source atomically. */
+  refreshModeFromSettings(): void {
+    // Keep the sticky-plan memory coherent: leaving plan via another surface must clear it,
+    // entering plan via another surface must seed it when we have no history.
+    if (this.plugin.settings.mode !== "plan" && this.modeBeforePlan !== null) {
+      this.modeBeforePlan = null;
+    }
+    if (this.plugin.settings.mode === "plan" && this.modeBeforePlan === null) {
+      // Entered via settings tab which has no per-view memory — default restore is safe.
+      this.modeBeforePlan = "safe";
+    }
+    this.syncChrome();
   }
 
   private async setOutputStyle(style: OutputStyle): Promise<void> {
@@ -1006,7 +1074,7 @@ export class ChatView extends ItemView {
   private syncControls(): void {
     if (!this.modeToggleEl) return;
     const { settings } = this.plugin;
-    const streaming = this.service.isStreaming();
+    const streaming = this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming();
     const planning = settings.mode === "plan";
     this.modeToggleEl.toggleClass("is-active", settings.mode === "yolo");
     this.modeToggleEl.toggleClass("is-planning", planning);
@@ -2072,8 +2140,9 @@ export class ChatView extends ItemView {
       await this.enterPlanMode();
       return;
     }
-    await this.setMode(mode);
-    this.renderInfoMessage("Mode", [[MODES[mode].label, MODES[mode].description]]);
+    if (await this.setMode(mode)) {
+      this.renderInfoMessage("Mode", [[MODES[mode].label, MODES[mode].description]]);
+    }
   }
 
   private async chooseStyle(style: OutputStyle): Promise<void> {
