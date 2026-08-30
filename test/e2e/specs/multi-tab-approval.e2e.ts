@@ -1,4 +1,4 @@
-import { browser, expect, $ } from "@wdio/globals";
+import { browser, expect, $, $$ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
 
 const MULTI_TAB_WRITE_PATH = "E2E-Multi-Tab-Write.md";
@@ -59,6 +59,7 @@ describe("multi-tab background approval (effort + notify+label)", function () {
       {
         label: "multi-tab write",
         stopReason: "toolUse",
+        delayMs: 1200,
         content: [{ type: "toolCall", id: "e2e-multi-tab-write", name: "write", arguments: { path: MULTI_TAB_WRITE_PATH, content: "multi-tab ok" } }],
       },
       { label: "multi-tab final", stopReason: "stop", content: [{ type: "text", text: "Wrote multi-tab note." }] },
@@ -109,27 +110,31 @@ describe("multi-tab background approval (effort + notify+label)", function () {
     }, "trigger multi-tab write");
 
     // Quickly switch to Tab2 before approval resolves — background approval should not steal focus
-    await browser.pause(200);
+    await browser.pause(300);
     const tabsAfter = await $$(".agentic-chat-tab");
     await tabsAfter[1].click();
+    await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.classList.contains("is-active")), { timeout: 2_000 });
+    // Give tool time to hit approval gate (tool has 1200ms delay)
+    await browser.pause(1300);
 
     const modal = await $(".agentic-chat-approval");
     await modal.waitForExist({ timeout: 10_000 });
 
-    // Modal title should contain Tab 1 session label, and content Session line
+    // Modal title should contain Tab 1 session label, and content Session line — check via DOM, no click behind overlay
     const title = await browser.execute(() => document.querySelector<HTMLElement>(".modal-title")?.innerText ?? "");
     expect(title).toContain("Tab 1");
     const sessionLine = await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-approval-session")?.innerText ?? "");
     expect(sessionLine).toContain("Tab 1");
 
-    // Background Tab1 pill should pulse needs-approval, Tab2 should be active
-    const tab1 = (await $$(".agentic-chat-tab"))[0];
-    const tab1Class = await tab1.getAttribute("class");
-    expect(tab1Class).toContain("is-needs-approval");
-    const activeIndex = await browser.execute(() => {
+    // Background Tab1 pill should pulse needs-approval, Tab2 should be active — inspect via execute, not click (modal blocks)
+    const { tab1Class, activeIndex } = await browser.execute(() => {
       const pills = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-tab"));
-      return pills.findIndex((p) => p.classList.contains("is-active"));
+      return {
+        tab1Class: pills[0]?.className ?? "",
+        activeIndex: pills.findIndex((p) => p.classList.contains("is-active")),
+      };
     });
+    expect(tab1Class).toContain("is-needs-approval");
     expect(activeIndex).toBe(1);
 
     // Approve from background — should create file and clear badge
@@ -143,8 +148,8 @@ describe("multi-tab background approval (effort + notify+label)", function () {
     }, { timeout: 10_000 });
 
     await browser.pause(300);
-    const tab1After = (await $$(".agentic-chat-tab"))[0];
-    expect(await tab1After.getAttribute("class")).not.toContain("is-needs-approval");
+    const tab1ClassAfter = await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[0]?.className ?? "");
+    expect(tab1ClassAfter).not.toContain("is-needs-approval");
   });
 
   it("clears pending modal and badge when background tab is closed", async function () {
@@ -153,12 +158,13 @@ describe("multi-tab background approval (effort + notify+label)", function () {
       {
         label: "multi-tab write close",
         stopReason: "toolUse",
+        delayMs: 1200,
         content: [{ type: "toolCall", id: "e2e-multi-tab-write-close", name: "write", arguments: { path: "E2E-Multi-Tab-Close.md", content: "close" } }],
       },
       { label: "close final", stopReason: "stop", content: [{ type: "text", text: "Wrote close." }] },
     ]);
-    const tabs = await $$(".agentic-chat-tab");
-    await tabs[0].click();
+    const tabsC = await $$(".agentic-chat-tab");
+    await tabsC[0].click();
     await browser.execute((msg) => {
       const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
       const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
@@ -167,14 +173,19 @@ describe("multi-tab background approval (effort + notify+label)", function () {
       send!.click();
     }, "trigger close while pending");
 
-    await browser.pause(200);
-    const tabs2 = await $$(".agentic-chat-tab");
-    await tabs2[1].click();
+    await browser.pause(300);
+    const tabsD = await $$(".agentic-chat-tab");
+    await tabsD[1].click();
+    await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.classList.contains("is-active")), { timeout: 2_000 });
+    await browser.pause(1300);
     await $(".agentic-chat-approval").waitForExist({ timeout: 10_000 });
 
-    // Close Tab1 while its approval modal is open — modal should close, badge cleared
-    const closeBtn = await (await $$(".agentic-chat-tab"))[0].$(".agentic-chat-tab-close");
-    if (await closeBtn.isExisting()) await closeBtn.click();
+    // Close Tab1 while its approval modal is open — use direct JS (modal blocks tab clicks) to close tab, modal should close
+    await browser.executeObsidian(async ({ app }) => {
+      const leaves = app.workspace.getLeavesOfType("agentic-chat-chat-view");
+      const view = leaves[0]?.view as unknown as { closeTab?: (index: number) => void };
+      view?.closeTab?.(0);
+    });
     await $(".agentic-chat-approval").waitForExist({ reverse: true, timeout: 5_000 });
     expect(await $(".agentic-chat-approval").isExisting()).toBe(false);
   });
