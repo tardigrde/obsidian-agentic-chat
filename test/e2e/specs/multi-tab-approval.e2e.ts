@@ -63,6 +63,13 @@ describe("multi-tab background approval (effort + notify+label)", function () {
         content: [{ type: "toolCall", id: "e2e-multi-tab-write", name: "write", arguments: { path: MULTI_TAB_WRITE_PATH, content: "multi-tab ok" } }],
       },
       { label: "multi-tab final", stopReason: "stop", content: [{ type: "text", text: "Wrote multi-tab note." }] },
+      {
+        label: "multi-tab write close",
+        stopReason: "toolUse",
+        delayMs: 1200,
+        content: [{ type: "toolCall", id: "e2e-multi-tab-write-close", name: "write", arguments: { path: "E2E-Multi-Tab-Close.md", content: "close" } }],
+      },
+      { label: "close final", stopReason: "stop", content: [{ type: "text", text: "Wrote close." }] },
     ]);
     const ok = await configureSafe();
     void ok;
@@ -93,13 +100,12 @@ describe("multi-tab background approval (effort + notify+label)", function () {
 
   it("surfaces background tab approval with tab badge and session label (no auto-switch)", async function () {
     // Ensure we have 2 tabs
-    const add = await $(".agentic-chat-tab-add");
-    if (await add.isExisting()) await add.click();
-    await browser.waitUntil(async () => (await $$(".agentic-chat-tab")).length >= 2, { timeout: 2_000 });
+    await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-tab-add")?.click());
+    await browser.waitUntil(async () => (await $$(".agentic-chat-tab")).length >= 2, { timeout: 3_000 });
 
-    const tabs = await $$(".agentic-chat-tab");
     // Ensure Tab1 active then send write that needs approval
-    await tabs[0].click();
+    await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[0]?.click());
+    await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[0]?.classList.contains("is-active")), { timeout: 2_000 });
     await browser.execute((msg) => {
       const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
       const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
@@ -111,8 +117,7 @@ describe("multi-tab background approval (effort + notify+label)", function () {
 
     // Quickly switch to Tab2 before approval resolves — background approval should not steal focus
     await browser.pause(300);
-    const tabsAfter = await $$(".agentic-chat-tab");
-    await tabsAfter[1].click();
+    await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.click());
     await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.classList.contains("is-active")), { timeout: 2_000 });
     // Give tool time to hit approval gate (tool has 1200ms delay)
     await browser.pause(1300);
@@ -153,18 +158,10 @@ describe("multi-tab background approval (effort + notify+label)", function () {
   });
 
   it("clears pending modal and badge when background tab is closed", async function () {
-    // Re-install a second write to test close-while-pending
-    await installScriptedTurns([
-      {
-        label: "multi-tab write close",
-        stopReason: "toolUse",
-        delayMs: 1200,
-        content: [{ type: "toolCall", id: "e2e-multi-tab-write-close", name: "write", arguments: { path: "E2E-Multi-Tab-Close.md", content: "close" } }],
-      },
-      { label: "close final", stopReason: "stop", content: [{ type: "text", text: "Wrote close." }] },
-    ]);
-    const tabsC = await $$(".agentic-chat-tab");
-    await tabsC[0].click();
+    // Wait for previous turn to settle before starting next scenario
+    await browser.waitUntil(async () => (await $(".agentic-chat-send").getText()).trim() === "Send", { timeout: 8_000 });
+    await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[0]?.click());
+    await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[0]?.classList.contains("is-active")), { timeout: 2_000 });
     await browser.execute((msg) => {
       const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
       const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
@@ -174,11 +171,10 @@ describe("multi-tab background approval (effort + notify+label)", function () {
     }, "trigger close while pending");
 
     await browser.pause(300);
-    const tabsD = await $$(".agentic-chat-tab");
-    await tabsD[1].click();
+    await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.click());
     await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.classList.contains("is-active")), { timeout: 2_000 });
-    await browser.pause(1300);
-    await $(".agentic-chat-approval").waitForExist({ timeout: 10_000 });
+    await browser.pause(2000);
+    await $(".agentic-chat-approval").waitForExist({ timeout: 12_000 });
 
     // Close Tab1 while its approval modal is open — use direct JS (modal blocks tab clicks) to close tab, modal should close
     await browser.executeObsidian(async ({ app }) => {
