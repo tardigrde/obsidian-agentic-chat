@@ -129,6 +129,7 @@ export default class AgenticChatPlugin extends Plugin {
       confirmToolCall: options.confirmToolCall ?? ((request) => this.confirmToolCall(request)),
       askUser: options.askUser,
       streamFn: createWindowE2EStreamFn({ enabled: __AGENTIC_CHAT_ENABLE_E2E_STREAM__ }),
+      loopGuardDisabled: __AGENTIC_CHAT_ENABLE_E2E_STREAM__,
       saveSettings: () => this.saveSettings(),
       skillScaffolder: this.pluginService,
       artifactStore: ToolArtifactStore.forPlugin(this.app, this, {

@@ -24,7 +24,12 @@ export function fnv1a(value: string): string {
  * differ only in key order hash identically.
  */
 export function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (value === null || typeof value !== "object") {
+    // JSON.stringify(undefined) / functions / symbols returns undefined, not a
+    // string — normalize so hashing never receives a non-string input.
+    const json = JSON.stringify(value);
+    return json === undefined ? "undefined" : json;
+  }
   if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
   const record = value as Record<string, unknown>;
   const entries = Object.keys(record)
@@ -101,22 +106,29 @@ export class AgentLoopGuard {
   }
 
   shouldStopAfterTurn(context: ShouldStopAfterTurnContext): boolean {
-    const batchKey = toolBatchKey(context.message);
-    if (batchKey === null) {
-      // Tool-free turn — the model answered. A loop can't continue past it.
-      this.reset();
+    try {
+      // Hook contract (pi-agent-core): must not throw — a throw interrupts the
+      // agent loop without a normal event sequence. Any unexpected message
+      // shape falls back to "keep going".
+      const batchKey = toolBatchKey(context.message);
+      if (batchKey === null) {
+        // Tool-free turn — the model answered. A loop can't continue past it.
+        this.reset();
+        return false;
+      }
+      const resultKey = toolResultKey(context.toolResults);
+      if (batchKey === this.lastBatchKey && resultKey === this.lastResultKey) {
+        this.identicalRuns += 1;
+      } else {
+        this.lastBatchKey = batchKey;
+        this.lastResultKey = resultKey;
+        this.identicalRuns = 1;
+      }
+      if (this.identicalRuns < this.maxIdenticalBatches) return false;
+      this.firedText = LOOP_GUARD_NOTICE_TEXT;
+      return true;
+    } catch {
       return false;
     }
-    const resultKey = toolResultKey(context.toolResults);
-    if (batchKey === this.lastBatchKey && resultKey === this.lastResultKey) {
-      this.identicalRuns += 1;
-    } else {
-      this.lastBatchKey = batchKey;
-      this.lastResultKey = resultKey;
-      this.identicalRuns = 1;
-    }
-    if (this.identicalRuns < this.maxIdenticalBatches) return false;
-    this.firedText = LOOP_GUARD_NOTICE_TEXT;
-    return true;
   }
 }

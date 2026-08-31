@@ -44,6 +44,13 @@ describe("stableStringify", () => {
     expect(stableStringify({ action: "list" })).not.toBe(stableStringify({ action: "write" }));
     expect(stableStringify({ a: [2, 1], b: { d: 1, c: 2 } })).toBe('{"a":[2,1],"b":{"c":2,"d":1}}');
   });
+
+  it("normalizes undefined/function values instead of returning undefined", () => {
+    expect(stableStringify(undefined)).toBe("undefined");
+    expect(stableStringify({ a: undefined })).toBe('{"a":undefined}');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(typeof stableStringify((() => 1) as any)).toBe("string");
+  });
 });
 
 describe("fnv1a", () => {
@@ -83,6 +90,18 @@ describe("AgentLoopGuard", () => {
     [toolCallBlock("read", { path: "A" }), toolCallBlock("search", { query: "#tag" })],
     [toolResult("c1", "read", "content A"), toolResult("c2", "search", "results 1")],
   );
+
+  it("does not throw on malformed tool call blocks (missing arguments)", () => {
+    const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
+    const malformed = context(
+      // Block without `arguments` — must hash as `undefined`, not crash the hook.
+      [{ type: "toolCall", id: "c1", name: "read" } as unknown as { type: string; id?: string; name?: string; arguments?: unknown; text?: string }],
+      [toolResult("c1", "read", "content A")],
+    );
+    expect(guard.shouldStopAfterTurn(malformed)).toBe(false);
+    expect(guard.shouldStopAfterTurn(malformed)).toBe(true); // identical malformed repeats still detected
+    expect(guard.noticeText).not.toBeNull();
+  });
 
   it("defaults to 4 identical batches before firing", () => {
     const guard = new AgentLoopGuard();

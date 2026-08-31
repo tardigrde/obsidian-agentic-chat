@@ -79,6 +79,12 @@ export interface AgentServiceOptions {
   confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   /** Injected for tests; production streams through the pi-ai Models runtime. */
   streamFn?: StreamFn;
+  /**
+   * Disable the loop guard for scripted e2e runs: the guard would soft-stop a
+   * scripted stream that repeats an identical tool batch, failing the spec
+   * with an unrelated-looking transcript divergence.
+   */
+  loopGuardDisabled?: boolean;
   /** Injected for tests; production summarizes through the chat stream runtime. */
   summarize?: SummarizeFn;
   /** Injected for tests; production wraps Obsidian's `requestUrl` for the web tools. */
@@ -103,6 +109,11 @@ export type ManualCompactionResult =
  * Owns the pi Agent for the chat view: model/tool/skill wiring, approval gates,
  * JSONL session persistence, and event/state fan-out to the UI.
  */
+/** No-op loop guard used for scripted e2e runs (see `AgentServiceOptions.loopGuardDisabled`). */
+const DISABLED_LOOP_GUARD: Pick<AgentLoopGuard, "shouldStopAfterTurn"> = {
+  shouldStopAfterTurn: () => false,
+};
+
 export class AgentService {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
@@ -218,7 +229,7 @@ export class AgentService {
       runtimeResources: this.runtimeResources,
       subagents: this.subagents,
       toolCalls: this.toolCalls,
-      loopGuard: this.loopGuard,
+      loopGuard: options.loopGuardDisabled ? DISABLED_LOOP_GUARD : this.loopGuard,
       sessions: this.sessions,
       onEvent: (event) => this.handleAgentEvent(event),
     });
@@ -689,9 +700,10 @@ export class AgentService {
     await handleAgentRuntimeEvent(event, {
       recordMessageEnd: (message) => this.sessionEvents.recordMessageEnd(message),
       recordAgentEnd: async (messages) => {
-        this.appendLoopGuardMessage(messages);
+        // Loop-guard message must stream through the normal message path so the
+        // live chat shows it: agent_end payloads are not rendered bubble-by-bubble.
+        await this.emitLoopGuardMessage();
         await this.sessionEvents.recordAgentEnd(messages);
-        if (this.loopGuard.noticeText) new Notice(this.loopGuard.noticeText);
       },
       recordAuditEvent: (agentEvent) => this.actionAudit.recordAgentEvent(agentEvent),
       enforceSpendCap: () => this.enforceSpendCap(),
@@ -721,15 +733,28 @@ export class AgentService {
   }
 
   /**
-   * Synthetic assistant message appended at `agent_end` when the loop guard
-   * fired: plain-text explanation of why the run stopped, persisted with the
-   * session so it survives reload (same shape as replay turns).
+   * When the loop guard fired, surface the plain-text explanation live in the
+   * chat: emits synthetic message_start/message_end (persists + renders like any
+   * assistant message), plus a transient Notice. Runs once per fire — the guard
+   * clears its notice on the next prompt.
    */
-  private appendLoopGuardMessage(messages: AgentMessage[]): void {
+  private async emitLoopGuardMessage(): Promise<void> {
     const text = this.loopGuard.noticeText;
     if (!text) return;
+    const message = this.buildLoopGuardMessage(text);
+    await this.sessionEvents.recordMessageEnd(message);
+    this.listeners.emitEvent({ type: "message_start", message } as AgentEvent);
+    this.listeners.emitEvent({ type: "message_end", message } as AgentEvent);
+    new Notice(text);
+  }
+
+  /**
+   * Synthetic assistant message explaining the loop-guard stop. Same shape as
+   * replay turns, so the chat bubble and JSONL rehydration render it normally.
+   */
+  private buildLoopGuardMessage(text: string): AssistantMessage {
     const model = this.agent?.state.model;
-    const message: AssistantMessage = {
+    return {
       role: "assistant",
       content: [{ type: "text", text }],
       api: model?.api ?? "openai-completions",
@@ -739,7 +764,6 @@ export class AgentService {
       stopReason: "stop",
       timestamp: Date.now(),
     };
-    messages.push(message);
   }
 
   /**
