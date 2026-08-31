@@ -1592,7 +1592,11 @@
   background-color: var(--background-secondary);
   max-width: min(22rem, 100%);
   min-width: 0;
-  flex: 1 1 auto;
+  /* Content-width pill: shrinks on narrow panes (model name truncates), never
+     stretches to fill the composer row — a growing pill read as an oversized
+     "effort chip" on wide panes and full-width once the @container 400px rule
+     kicked in while narrowing the pane. */
+  flex: 0 1 auto;
   overflow: hidden;
 }
 
@@ -2205,7 +2209,8 @@
 
   .agentic-chat-model {
     max-width: 100%;
-    flex-basis: 100%;
+    /* No flex-basis: 100% — content-width pill with truncated model name;
+       a full-width pill is what made the chip stretch with the pane width. */
   }
 
   .agentic-chat-toolbar-left,

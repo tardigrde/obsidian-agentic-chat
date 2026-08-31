@@ -192,14 +192,14 @@ describe("agentic-chat smoke", function () {
     await expect($(".agentic-chat-effort-value")).toExist();
     const readEffortValue = async (): Promise<string> =>
       browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-effort-value")?.innerText.trim() ?? "");
-    const value = await readEffortValue();
+    const value = (await readEffortValue()).toLowerCase();
     const KNOWN_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
     if (!KNOWN_LEVELS.includes(value)) {
       throw new Error(`effort knob rendered an unknown level: "${value}"`);
     }
     // Cycling must keep it within the supported set (no crash, no invalid level).
     await knob.click();
-    const next = await readEffortValue();
+    const next = (await readEffortValue()).toLowerCase();
     if (!KNOWN_LEVELS.includes(next)) {
       throw new Error(`effort knob cycled to an unknown level: "${next}"`);
     }
