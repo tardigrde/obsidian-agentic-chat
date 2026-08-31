@@ -1,0 +1,157 @@
+import { describe, expect, it } from "vitest";
+import type { ShouldStopAfterTurnContext } from "@earendil-works/pi-agent-core";
+import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import {
+  AgentLoopGuard,
+  fnv1a,
+  stableStringify,
+  toolBatchKey,
+  toolResultKey,
+} from "../src/agent/loop-guard";
+
+function toolCallBlock(name: string, args: unknown, id = "c1"): { type: "toolCall"; id: string; name: string; arguments: unknown } {
+  return { type: "toolCall", id, name, arguments: args };
+}
+
+function textBlock(text: string): { type: "text"; text: string } {
+  return { type: "text", text };
+}
+
+function toolResult(toolCallId: string, toolName: string, text: string): ToolResultMessage {
+  return {
+    role: "toolResult",
+    toolCallId,
+    toolName,
+    isError: false,
+    timestamp: Date.now(),
+    content: [textBlock(text)],
+  };
+}
+
+function context(
+  messageContent: { type: string; id?: string; name?: string; arguments?: unknown; text?: string }[],
+  results: ReturnType<typeof toolResult>[],
+): ShouldStopAfterTurnContext {
+  return {
+    message: { content: messageContent },
+    toolResults: results,
+  } as unknown as ShouldStopAfterTurnContext;
+}
+
+describe("stableStringify", () => {
+  it("stringifies with sorted keys (argument key order does not matter)", () => {
+    expect(stableStringify({ path: "x", action: "list" })).toBe(stableStringify({ action: "list", path: "x" }));
+    expect(stableStringify({ action: "list" })).not.toBe(stableStringify({ action: "write" }));
+    expect(stableStringify({ a: [2, 1], b: { d: 1, c: 2 } })).toBe('{"a":[2,1],"b":{"c":2,"d":1}}');
+  });
+});
+
+describe("fnv1a", () => {
+  it("is deterministic and distinguishes values", () => {
+    expect(fnv1a("read")).toBe(fnv1a("read"));
+    expect(fnv1a("read")).not.toBe(fnv1a("write"));
+  });
+});
+
+describe("toolBatchKey", () => {
+  it("returns null for a tool-free turn", () => {
+    expect(toolBatchKey({ content: [textBlock("final answer")] })).toBeNull();
+  });
+
+  it("produces an ordered per-call key of name + hashed args", () => {
+    const a = toolBatchKey({ content: [toolCallBlock("read", { path: "x" }), toolCallBlock("search", { query: "y" })] });
+    const b = toolBatchKey({ content: [toolCallBlock("search", { query: "y" }), toolCallBlock("read", { path: "x" })] });
+    expect(a).not.toBeNull();
+    expect(a).not.toBe(b); // ordering matters
+    expect(toolBatchKey({ content: [toolCallBlock("read", { path: "x" })] })).not.toBe(
+      toolBatchKey({ content: [toolCallBlock("read", { path: "z" })] }),
+    );
+  });
+});
+
+describe("toolResultKey", () => {
+  it("hashes result text in order and distinguishes changes", () => {
+    const a = toolResultKey([toolResult("c1", "read", "same"), toolResult("c2", "search", "same")]);
+    const b = toolResultKey([toolResult("c1", "read", "same"), toolResult("c2", "search", "changed")]);
+    expect(a).not.toBe(b);
+    expect(a).toBe(toolResultKey([toolResult("c1", "read", "same"), toolResult("c2", "search", "same")]));
+  });
+});
+
+describe("AgentLoopGuard", () => {
+  const batch = context(
+    [toolCallBlock("read", { path: "A" }), toolCallBlock("search", { query: "#tag" })],
+    [toolResult("c1", "read", "content A"), toolResult("c2", "search", "results 1")],
+  );
+
+  it("defaults to 4 identical batches before firing", () => {
+    const guard = new AgentLoopGuard();
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+    expect(guard.shouldStopAfterTurn(batch)).toBe(true);
+    expect(guard.noticeText).toMatch(/Loop guard/);
+    expect(guard.shouldStopAfterTurn(batch)).toBe(true); // stays fired
+  });
+
+  it("honors a custom threshold (fire on 2nd)", () => {
+    const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+    expect(guard.shouldStopAfterTurn(batch)).toBe(true);
+  });
+
+  it("does not fire when arguments change", () => {
+    const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+    const different = context(
+      [toolCallBlock("read", { path: "B" }), toolCallBlock("search", { query: "#tag" })],
+      [toolResult("c1", "read", "content B"), toolResult("c2", "search", "results 1")],
+    );
+    expect(guard.shouldStopAfterTurn(different)).toBe(false);
+    expect(guard.shouldStopAfterTurn(different)).toBe(true);
+    expect(guard.noticeText).not.toBeNull();
+  });
+
+  it("does not fire when results change (polling), same args", () => {
+    const guard = new AgentLoopGuard({ maxIdenticalBatches: 3 });
+    const changedResult = context(
+      [toolCallBlock("read", { path: "A" })],
+      [toolResult("c1", "read", "content changed")],
+    );
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+    expect(guard.shouldStopAfterTurn(changedResult)).toBe(false); // result changed — streak broken
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false); // batch changed back — new streak
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+    expect(guard.shouldStopAfterTurn(batch)).toBe(true);
+  });
+
+  it("resets on a tool-free turn (model answered)", () => {
+    const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+    expect(guard.shouldStopAfterTurn(context([textBlock("final answer")], []))).toBe(false);
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false); // streak restarted
+    expect(guard.shouldStopAfterTurn(batch)).toBe(true);
+  });
+
+  it("reset() clears the streak and the notice", () => {
+    const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
+    guard.shouldStopAfterTurn(batch);
+    guard.shouldStopAfterTurn(batch);
+    expect(guard.noticeText).not.toBeNull();
+    guard.reset();
+    expect(guard.noticeText).toBeNull();
+    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+  });
+
+  it("exact-match only: same args with different result restarts the counter", () => {
+    const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
+    const otherResult = context(
+      [toolCallBlock("read", { path: "A" })],
+      [toolResult("c1", "read", "different content")],
+    );
+    guard.shouldStopAfterTurn(context([toolCallBlock("read", { path: "A" })], [toolResult("c1", "read", "same")]));
+    guard.shouldStopAfterTurn(otherResult);
+    guard.shouldStopAfterTurn(otherResult);
+    expect(guard.noticeText).not.toBeNull(); // two identical (args+result) turns still fire
+  });
+});

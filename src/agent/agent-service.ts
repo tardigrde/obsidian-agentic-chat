@@ -1,4 +1,4 @@
-import { TFile, type App, type EventRef } from "obsidian";
+import { TFile, Notice, type App, type EventRef } from "obsidian";
 import {
   type Agent,
   type AgentEvent,
@@ -8,6 +8,7 @@ import {
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import { type ImageContent, type Usage, type UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider } from "../settings";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
@@ -50,6 +51,7 @@ import {
   type AgentServiceEventListener,
 } from "./service-listeners";
 import { AgentStreamRuntime } from "./stream-runtime";
+import { AgentLoopGuard } from "./loop-guard";
 import { AgentRuntimeResourceState } from "./runtime-resource-state";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import { AgentSubagentRuntime } from "./subagent-runtime";
@@ -123,6 +125,7 @@ export class AgentService {
   private readonly parentAgent: ParentAgentRuntime;
   private readonly sessionState = new AgentSessionLocalState();
   private readonly listeners = new AgentServiceListeners();
+  private readonly loopGuard = new AgentLoopGuard();
   private readonly recentEvents: string[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
   private readonly commandInvocations: AgentCommandInvocationRuntime;
@@ -215,6 +218,7 @@ export class AgentService {
       runtimeResources: this.runtimeResources,
       subagents: this.subagents,
       toolCalls: this.toolCalls,
+      loopGuard: this.loopGuard,
       sessions: this.sessions,
       onEvent: (event) => this.handleAgentEvent(event),
     });
@@ -640,6 +644,9 @@ export class AgentService {
 
   private async runPrompt(run: PromptTurnRun): Promise<void> {
     await this.initialize();
+    // A fresh prompt starts a new epoch: any identical-batch streak from a
+    // previous user turn must not carry into this one (loop guard).
+    this.loopGuard.reset();
     await this.promptTurns.run(run);
   }
 
@@ -656,6 +663,8 @@ export class AgentService {
 
     const message = createUserMessage(text, attached);
     this.sessionState.clearError();
+    // Steering is user input too: user-provided info ends any running streak.
+    this.loopGuard.reset();
     if (mode === "follow-up") agent.followUp(message);
     else agent.steer(message);
     this.notifyChange();
@@ -679,7 +688,11 @@ export class AgentService {
     this.observability.handleAgentEvent(event);
     await handleAgentRuntimeEvent(event, {
       recordMessageEnd: (message) => this.sessionEvents.recordMessageEnd(message),
-      recordAgentEnd: (messages) => this.sessionEvents.recordAgentEnd(messages),
+      recordAgentEnd: async (messages) => {
+        this.appendLoopGuardMessage(messages);
+        await this.sessionEvents.recordAgentEnd(messages);
+        if (this.loopGuard.noticeText) new Notice(this.loopGuard.noticeText);
+      },
       recordAuditEvent: (agentEvent) => this.actionAudit.recordAgentEvent(agentEvent),
       enforceSpendCap: () => this.enforceSpendCap(),
       setError: (error) => this.sessionState.setError(error),
@@ -705,6 +718,28 @@ export class AgentService {
     if (!reason) return;
     this.sessionState.setErrorMessage(reason);
     agent?.abort();
+  }
+
+  /**
+   * Synthetic assistant message appended at `agent_end` when the loop guard
+   * fired: plain-text explanation of why the run stopped, persisted with the
+   * session so it survives reload (same shape as replay turns).
+   */
+  private appendLoopGuardMessage(messages: AgentMessage[]): void {
+    const text = this.loopGuard.noticeText;
+    if (!text) return;
+    const model = this.agent?.state.model;
+    const message: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text }],
+      api: model?.api ?? "openai-completions",
+      provider: model?.provider ?? "openrouter",
+      model: model?.id ?? "unknown",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    };
+    messages.push(message);
   }
 
   /**
