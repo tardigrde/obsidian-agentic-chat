@@ -743,8 +743,8 @@ export class AgentService {
     if (!text) return;
     const message = this.buildLoopGuardMessage(text);
     await this.sessionEvents.recordMessageEnd(message);
-    this.listeners.emitEvent({ type: "message_start", message } as AgentEvent);
-    this.listeners.emitEvent({ type: "message_end", message } as AgentEvent);
+    this.listeners.emitEvent({ type: "message_start", message });
+    this.listeners.emitEvent({ type: "message_end", message });
     new Notice(text);
   }
 
@@ -753,7 +753,9 @@ export class AgentService {
    * replay turns, so the chat bubble and JSONL rehydration render it normally.
    */
   private buildLoopGuardMessage(text: string): AssistantMessage {
-    const model = this.agent?.state.model;
+    const model = this.agent?.state.model as
+      | { api?: AssistantMessage["api"]; provider?: string; id?: string }
+      | undefined;
     return {
       role: "assistant",
       content: [{ type: "text", text }],
