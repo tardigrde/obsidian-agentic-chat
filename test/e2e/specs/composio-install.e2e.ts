@@ -1,6 +1,7 @@
-import { browser, expect, $ } from "@wdio/globals";
+import { browser, $ } from "@wdio/globals";
 import { describe, it, before } from "mocha";
 import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { zipSync } from "../../../src/vendor/fflate";
 import {
   clickSettingButton,
@@ -56,7 +57,7 @@ describe("composio bundle install (Cursor → Agent Plugins)", function () {
       res.end(Buffer.from(composioZip));
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const address = server.address() as any;
+    const address = server.address() as AddressInfo;
     const url = `http://127.0.0.1:${address.port}/composio-mcp-plugin.zip`;
 
     try {
@@ -99,7 +100,7 @@ describe("composio bundle install (Cursor → Agent Plugins)", function () {
           const entry = Object.entries(mcpState).find(([id]) => id.startsWith("plugin_composio_com"));
           if (!entry) return false;
           const [, state] = entry;
-          return state.enabled === false && state.lastUrl === "https://connect.composio.dev/mcp" && (state as any).authType === "oauth";
+          return state.enabled === false && state.lastUrl === "https://connect.composio.dev/mcp" && (state as unknown as { authType?: string }).authType === "oauth";
         },
         { timeout: 10_000, timeoutMsg: "Composio MCP server not persisted disabled with oauth and correct URL in plugins.mcpState" },
       );
@@ -165,14 +166,15 @@ describe("composio bundle install (Cursor → Agent Plugins)", function () {
         const mainHandle = handles[0];
         await browser.switchToWindow(mainHandle);
         await browser.executeObsidian(async ({ app }) => {
-          const vault: any = (app as any).vault;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vault: any = (app as any).vault;
           const existing = vault.getAbstractFileByPath(".agentic-plugins/composio");
           if (existing) await vault.delete(existing, true);
           else if (await vault.adapter.exists(".agentic-plugins/composio")) await vault.adapter.rmdir(".agentic-plugins/composio", true);
         });
         const settingsHandle = (await browser.getWindowHandles()).find((h) => h !== mainHandle) ?? mainHandle;
         await browser.switchToWindow(settingsHandle);
-      } catch {}
+      } catch {} // eslint-disable-line no-empty
     }
   });
 
@@ -183,9 +185,12 @@ describe("composio bundle install (Cursor → Agent Plugins)", function () {
     const mainBare = handlesBare[0];
     await browser.switchToWindow(mainBare);
     await browser.executeObsidian(async ({ app }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const plugin: any = (app as any).plugins.plugins["agentic-chat"];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const mcp: any = plugin.settings.mcp;
       mcp.enabled = true;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (!mcp.servers.find((s: any) => s.id === "e2e-bare-oauth")) {
         mcp.servers.push({
           id: "e2e-bare-oauth",
@@ -251,7 +256,9 @@ describe("composio bundle install (Cursor → Agent Plugins)", function () {
     const mainCleanupBare = handlesCleanupBare[0];
     await browser.switchToWindow(mainCleanupBare);
     await browser.executeObsidian(async ({ app }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const plugin: any = (app as any).plugins.plugins["agentic-chat"];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       plugin.settings.mcp.servers = plugin.settings.mcp.servers.filter((s: any) => s.id !== "e2e-bare-oauth");
       await plugin.saveSettings();
     });

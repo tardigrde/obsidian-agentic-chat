@@ -81,6 +81,9 @@ export interface McpServerState {
   enabledTools: string[];
   /** Deny globs for remote tools — deny wins. */
   disabledTools: string[];
+  /** Transient: last OAuth challenge when server advertised resource_metadata but authType was none (not persisted long-term). */
+  pendingOAuthChallenge?: string;
+  pendingOAuthResourceUrl?: string;
 }
 
 export interface McpKnownToolSettings {
@@ -258,6 +261,12 @@ export function healMcpServerState(
       : {}),
     enabledTools: healMcpToolGlobs(record?.enabledTools ?? record?.enabled_tools),
     disabledTools: healMcpToolGlobs(record?.disabledTools ?? record?.disabled_tools),
+    ...(typeof record?.pendingOAuthChallenge === "string" && record.pendingOAuthChallenge.trim()
+      ? { pendingOAuthChallenge: record.pendingOAuthChallenge.trim() }
+      : {}),
+    ...(typeof record?.pendingOAuthResourceUrl === "string" && record.pendingOAuthResourceUrl.trim()
+      ? { pendingOAuthResourceUrl: record.pendingOAuthResourceUrl.trim() }
+      : {}),
   };
 }
 
@@ -274,6 +283,12 @@ export function createMcpServerState(id: string, overrides: Partial<McpServerSta
     oauth: healOAuthSettings(overrides.oauth, healedId),
     knownTools: healMcpKnownTools(overrides.knownTools),
     ...(typeof overrides.lastUrl === "string" && overrides.lastUrl.trim() ? { lastUrl: overrides.lastUrl.trim() } : {}),
+    ...(typeof overrides.pendingOAuthChallenge === "string" && overrides.pendingOAuthChallenge.trim()
+      ? { pendingOAuthChallenge: overrides.pendingOAuthChallenge.trim() }
+      : {}),
+    ...(typeof overrides.pendingOAuthResourceUrl === "string" && overrides.pendingOAuthResourceUrl.trim()
+      ? { pendingOAuthResourceUrl: overrides.pendingOAuthResourceUrl.trim() }
+      : {}),
     enabledTools: healMcpToolGlobs(raw.enabledTools ?? raw.enabled_tools),
     disabledTools: healMcpToolGlobs(raw.disabledTools ?? raw.disabled_tools),
   };

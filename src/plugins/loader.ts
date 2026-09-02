@@ -409,6 +409,8 @@ export function deriveMcpServers(
           oauth: { ...state.oauth, accessToken: "", refreshToken: "", expiresAt: 0 },
           knownTools: [],
           lastUrl: server.url,
+          pendingOAuthChallenge: undefined,
+          pendingOAuthResourceUrl: undefined,
         }
       : state.lastUrl === server.url
         ? state
