@@ -233,13 +233,26 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private pluginsLoadedOnce = false;
   private pendingMcpServerName = "";
   private pendingMcpServerUrl = "";
+  private externallyDeletedPlugins: LoadedPlugin[] = [];
 
   /** Trigger an async plugin load once; redraw when it lands so rows appear. */
   private ensurePluginsLoaded(): void {
-    if (this.pluginsLoadedOnce && this.plugin.pluginService.hasCache()) return;
+    if (this.pluginsLoadedOnce && this.plugin.pluginService.hasCache()) {
+      // Dot-folders deleted externally don't fire vault.delete; poll the adapter so
+      // Resources doesn't show a stale cache until the user clicks Remove.
+      void this.plugin.pluginService.listExternallyDeletedPlugins().then((deleted) => {
+        if (deleted.length > 0) {
+          this.externallyDeletedPlugins = deleted;
+          // Keep transient until dismissed; auto-prune orphan settings via reload.
+          this.pluginsLoadedOnce = false;
+          this.ensurePluginsLoaded();
+        }
+      });
+      return;
+    }
     this.pluginsLoadedOnce = true;
     void this.plugin.pluginService
-      .load()
+      .reload()
       .then((plugins) => {
         // S10: shape lives in mcp.json; ensure every derived plugin server has a
         // client-owned entry in settings.plugins.mcpState (enabled/approval/auth).
@@ -273,10 +286,16 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             const isLegacyUser = this.plugin.settings.mcp.servers.some((s) => s.id === id && s.source !== "plugin");
             if (!isLegacyUser) {
               delete this.plugin.settings.plugins.mcpState[id];
+              clearMcpPerToolApprovals(this.plugin.settings.approval, id);
               mutated = true;
             }
           }
         }
+        // Reconcile transient deleted list with fresh scan (hide if reappeared).
+        const alivePaths = new Set(plugins.map((plugin) => plugin.rootPath));
+        const beforeTransient = this.externallyDeletedPlugins.length;
+        this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((plugin) => !alivePaths.has(plugin.rootPath));
+        if (this.externallyDeletedPlugins.length !== beforeTransient) mutated = true;
         if (mutated) void this.save();
         return plugins;
       })
@@ -2214,7 +2233,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private renderPluginsList(containerEl: HTMLElement, settings: AgenticChatSettings): void {
     this.ensurePluginsLoaded();
     const plugins = this.plugin.pluginService.getLoaded();
-    if (plugins.length === 0) {
+    const deleted = this.externallyDeletedPlugins;
+    if (plugins.length === 0 && deleted.length === 0) {
       containerEl.createDiv({
         cls: "setting-item-description",
         text:
@@ -2224,9 +2244,27 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       return;
     }
 
-    new Setting(containerEl).setName("Installed plugins").setHeading();
-    for (const plugin of plugins) {
-      this.renderPluginRow(containerEl, settings, plugin);
+    if (plugins.length > 0) {
+      new Setting(containerEl).setName("Installed plugins").setHeading();
+      for (const plugin of plugins) {
+        this.renderPluginRow(containerEl, settings, plugin);
+      }
+    }
+    if (deleted.length > 0) {
+      new Setting(containerEl).setName("Deleted on disk").setHeading();
+      containerEl.createDiv({
+        cls: "setting-item-description",
+        text: "These plugins were deleted outside Obsidian. Settings were cleaned; dismiss this notice when ready.",
+      });
+      for (const plugin of deleted) {
+        this.renderDeletedPluginRow(containerEl, settings, plugin);
+      }
+      new Setting(containerEl).addButton((button) =>
+        button.setButtonText("Dismiss").onClick(() => {
+          this.externallyDeletedPlugins = [];
+          this.redraw();
+        }),
+      );
     }
   }
 
@@ -2275,10 +2313,40 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       // Keep setWarning for minAppVersion 1.11.4 — setDestructive() needs 1.13.0 (obsidianmd/no-unsupported-api)
       .setWarning()
       .onClick(async () => {
-        await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
-        new Notice(`Removed agent plugin "${plugin.name}".`);
+        const existed = await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
+        if (existed) new Notice(`Removed agent plugin "${plugin.name}".`);
+        else new Notice(`Agent plugin "${plugin.name}" was already deleted on disk — settings cleaned.`);
         this.pluginsLoadedOnce = false;
         await this.save();
+        this.redraw();
+      });
+  }
+
+  private renderDeletedPluginRow(containerEl: HTMLElement, settings: AgenticChatSettings, plugin: LoadedPlugin): void {
+    const row = containerEl.createDiv({ cls: "agentic-chat-plugin-row agentic-chat-plugin-deleted" });
+    const main = row.createDiv({ cls: "agentic-chat-plugin-main" });
+    main.createDiv({ cls: "agentic-chat-plugin-name", text: plugin.name });
+    const meta = main.createDiv({ cls: "agentic-chat-plugin-meta" });
+    meta.createSpan({ text: `${plugin.rootPath} — deleted on disk` });
+    const source = settings.plugins.sources?.[plugin.name];
+    if (source) {
+      const tail = meta.createSpan({ cls: "agentic-chat-plugin-meta-extra" });
+      tail.createSpan({ text: ` — Source: ${source}` });
+    }
+    const controls = row.createDiv({ cls: "agentic-chat-plugin-controls" });
+    new ButtonComponent(controls)
+      .setButtonText("Dismiss")
+      .onClick(async () => {
+        // Settings already pruned via reload(); Dismiss just hides the transient.
+        // Ensure any remaining orphan entries for this plugin are cleared.
+        const existed = await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
+        if (!existed) {
+          // Already gone — ensure sources/enabled cleaned if reload missed them (fallback).
+          delete settings.plugins.sources[plugin.name];
+          delete settings.plugins.enabled[plugin.name];
+          await this.save();
+        }
+        this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((entry) => entry.rootPath !== plugin.rootPath);
         this.redraw();
       });
   }
