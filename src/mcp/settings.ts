@@ -59,6 +59,9 @@ export interface McpServerSettings {
   enabledTools: string[];
   /** Deny globs for remote tools — deny wins over allow. */
   disabledTools: string[];
+  /** Transient: last WWW-Authenticate challenge with resource_metadata when authType is none (not persisted). */
+  pendingOAuthChallenge?: string;
+  pendingOAuthResourceUrl?: string;
 }
 
 /** Client-owned state for a plugin-derived MCP server (shape lives in mcp.json). */
@@ -210,6 +213,12 @@ function healMcpServer(server: Partial<McpServerSettings> | null | undefined): M
     ...(typeof server.pluginRoot === "string" && server.pluginRoot.trim() ? { pluginRoot: server.pluginRoot.trim() } : {}),
     enabledTools: healMcpToolGlobs((server as Record<string, unknown>).enabledTools ?? (server as Record<string, unknown>).enabled_tools),
     disabledTools: healMcpToolGlobs((server as Record<string, unknown>).disabledTools ?? (server as Record<string, unknown>).disabled_tools),
+    ...(typeof (server as Record<string, unknown>).pendingOAuthChallenge === "string" && (server as Record<string, unknown>).pendingOAuthChallenge
+      ? { pendingOAuthChallenge: String((server as Record<string, unknown>).pendingOAuthChallenge) }
+      : {}),
+    ...(typeof (server as Record<string, unknown>).pendingOAuthResourceUrl === "string" && (server as Record<string, unknown>).pendingOAuthResourceUrl
+      ? { pendingOAuthResourceUrl: String((server as Record<string, unknown>).pendingOAuthResourceUrl) }
+      : {}),
   };
 }
 

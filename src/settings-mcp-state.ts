@@ -48,7 +48,8 @@ export function mcpAuthProblem(server: McpServerSettings): string {
 }
 
 export function mcpTestButtonState(server: McpServerSettings): McpTestButtonState {
-  const needsOAuthSignIn = server.authType === "oauth" && !hasMcpOAuthAccess(server);
+  const hasPendingOAuth = Boolean(server.pendingOAuthChallenge && server.pendingOAuthResourceUrl);
+  const needsOAuthSignIn = (server.authType === "oauth" && !hasMcpOAuthAccess(server)) || hasPendingOAuth;
   const problem = mcpEndpointProblem(server.url) || (needsOAuthSignIn ? "" : mcpAuthProblem(server));
   return {
     label: needsOAuthSignIn ? "Authenticate & test" : "Test connection",

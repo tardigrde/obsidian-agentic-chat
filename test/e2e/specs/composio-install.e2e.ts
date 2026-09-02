@@ -175,4 +175,87 @@ describe("composio bundle install (Cursor → Agent Plugins)", function () {
       } catch {}
     }
   });
+
+  it("shows OAuth banner for bare MCP when 401 advertises resource_metadata (no auto-redirect)", async function () {
+    this.timeout(20_000);
+    // Create a bare MCP server (source user) with pending OAuth challenge (simulates 401 with resource_metadata)
+    const handlesBare = await browser.getWindowHandles();
+    const mainBare = handlesBare[0];
+    await browser.switchToWindow(mainBare);
+    await browser.executeObsidian(async ({ app }) => {
+      const plugin: any = (app as any).plugins.plugins["agentic-chat"];
+      const mcp: any = plugin.settings.mcp;
+      mcp.enabled = true;
+      if (!mcp.servers.find((s: any) => s.id === "e2e-bare-oauth")) {
+        mcp.servers.push({
+          id: "e2e-bare-oauth",
+          name: "e2e-bare-oauth",
+          url: "https://mcp.example.com/mcp",
+          enabled: true,
+          authType: "none",
+          authHeaderName: "",
+          authHeaderValue: "",
+          authHeaderValueSecretId: "test",
+          oauth: {
+            clientId: "",
+            clientSecret: "",
+            clientSecretSecretId: "",
+            dynamicClientRegistration: false,
+            registeredRedirectUri: "",
+            authorizationServer: "",
+            authorizationEndpoint: "",
+            tokenEndpoint: "",
+            registrationEndpoint: "",
+            resourceMetadataUrl: "",
+            accessToken: "",
+            accessTokenSecretId: "",
+            refreshToken: "",
+            refreshTokenSecretId: "",
+            expiresAt: 0,
+            scope: "",
+          },
+          approval: "ask",
+          knownTools: [],
+          headers: {},
+          source: "user",
+          enabledTools: [],
+          disabledTools: [],
+          pendingOAuthChallenge: 'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"',
+          pendingOAuthResourceUrl: "https://mcp.example.com/.well-known/oauth-protected-resource",
+        });
+        await plugin.saveSettings();
+      }
+    });
+    const settingsBare = (await browser.getWindowHandles()).find((h) => h !== mainBare) ?? mainBare;
+    await browser.switchToWindow(settingsBare);
+    await selectSettingsTab("MCP");
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() => {
+          const t = document.body.textContent ?? "";
+          return t.includes("requires OAuth") && t.includes("Authenticate & test");
+        }),
+      { timeout: 5_000, timeoutMsg: "Bare MCP OAuth banner not shown" },
+    );
+    // For none, banner shows "Click Authenticate & test" without Switch button; just verify Authenticate button exists
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() => {
+          const btns = Array.from(document.querySelectorAll("button"));
+          return btns.some((b) => b.innerText.trim() === "Authenticate & test");
+        }),
+      { timeout: 5_000, timeoutMsg: "Authenticate & test not shown for bare OAuth banner" },
+    );
+    // Cleanup bare server
+    const handlesCleanupBare = await browser.getWindowHandles();
+    const mainCleanupBare = handlesCleanupBare[0];
+    await browser.switchToWindow(mainCleanupBare);
+    await browser.executeObsidian(async ({ app }) => {
+      const plugin: any = (app as any).plugins.plugins["agentic-chat"];
+      plugin.settings.mcp.servers = plugin.settings.mcp.servers.filter((s: any) => s.id !== "e2e-bare-oauth");
+      await plugin.saveSettings();
+    });
+    const settingsCleanupBare = (await browser.getWindowHandles()).find((h) => h !== mainCleanupBare) ?? mainCleanupBare;
+    await browser.switchToWindow(settingsCleanupBare);
+  });
 });

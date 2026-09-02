@@ -18,6 +18,21 @@ const JSON_RPC = "2.0";
 const ACCEPT = "application/json, text/event-stream";
 const MAX_SESSION_ID_LENGTH = 1024;
 
+function isValidOAuthResourceUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase();
+    // Block private / loopback / link-local
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".localhost")) return false;
+    if (host.startsWith("10.") || host.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) return false;
+    if (host.startsWith("169.254.") || host.startsWith("0.")) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface McpToolDefinition {
   name: string;
   title?: string;
@@ -85,6 +100,15 @@ class McpOAuthUnauthorizedError extends Error {
 class McpOAuthForbiddenError extends Error {
   constructor(readonly challenge: string) {
     super("MCP OAuth token was forbidden.");
+  }
+}
+
+export class McpOAuthRequiredError extends Error {
+  constructor(
+    readonly challenge: string,
+    readonly resourceUrl: string,
+  ) {
+    super("MCP server requires OAuth authentication.");
   }
 }
 
@@ -365,6 +389,19 @@ export class McpHttpClient {
         if (response.status === 404 && this.sessionId) throw new McpSessionTerminatedError(`MCP ${this.server.name} session expired.`);
         if (response.status === 401 && this.server.authType === "oauth") throw new McpOAuthUnauthorizedError(auth ?? "");
         if (response.status === 403 && this.server.authType === "oauth") throw new McpOAuthForbiddenError(auth ?? "");
+        // Auto-detect OAuth requirement when server advertises resource_metadata but authType is none/bearer/header.
+        // Do not auto-start flow; just set pending challenge and throw a specific error so the UI can show a banner + Switch CTA.
+        if (response.status === 401 && auth && /resource_metadata/i.test(auth)) {
+          const parsed = parseWwwAuthenticate(auth) as Record<string, string>;
+          const resourceUrl = parsed.resource_metadata ?? parsed.resourceMetadata ?? "";
+          if (resourceUrl && isValidOAuthResourceUrl(resourceUrl)) {
+            this.server.pendingOAuthChallenge = auth;
+            this.server.pendingOAuthResourceUrl = resourceUrl;
+            // For none: allow UI to show "This server requires OAuth" banner and enable Authenticate button without persisting yet.
+            // For bearer/header: also set pending so UI can show "Switch to OAuth?" CTA, but don't overwrite persisted authType until user confirms.
+            throw new McpOAuthRequiredError(auth, resourceUrl);
+          }
+        }
         const classified = classifyHttpResponse(response.status, response.headers, response.text);
         if (!classified.retryable || attempt >= maxRetries) throw new Error(httpErrorMessage(response));
         await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);

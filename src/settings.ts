@@ -1225,6 +1225,28 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           });
       });
 
+    // Show banner when server advertised OAuth via 401 but authType is still none/bearer/header
+    if (server.pendingOAuthChallenge && server.pendingOAuthResourceUrl) {
+      const banner = containerEl.createDiv({ cls: "setting-item-description agentic-chat-oauth-banner" });
+      const isNone = server.authType === "none";
+      banner.createSpan({
+        text: isNone
+          ? `This server requires OAuth (resource: ${server.pendingOAuthResourceUrl}). Click Authenticate & test to sign in — no need to change the Authentication dropdown manually.`
+          : `This server advertises OAuth (resource: ${server.pendingOAuthResourceUrl}) but is set to ${server.authType}. `,
+      });
+      if (!isNone) {
+        const switchBtn = banner.createEl("button", { text: "Switch to OAuth", cls: "mod-cta" });
+        switchBtn.addEventListener("click", async () => {
+          server.authType = "oauth";
+          server.pendingOAuthChallenge = undefined;
+          server.pendingOAuthResourceUrl = undefined;
+          this.syncMcpServerToState(server);
+          await this.save();
+          this.redraw();
+        });
+      }
+    }
+
     if (server.authType === "oauth") {
       header.addButton((button) =>
         button
@@ -1513,8 +1535,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
   private renderMcpOAuth(containerEl: HTMLElement, server: McpServerSettings): void {
     const authenticated = hasMcpOAuthAccess(server);
-    new Setting(containerEl)
-      .setName("OAuth status")
     const scopePart = server.oauth.scope ? ` with scopes: ${server.oauth.scope}` : "";
     new Setting(containerEl)
       .setName("OAuth status")
@@ -1738,7 +1758,15 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     try {
       await action();
     } catch (error) {
-      new Notice(`Agentic Chat MCP: ${error instanceof Error ? error.message : String(error)}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      // For OAuth-required (authType none/bearer/header but server advertises resource_metadata), the client already set
+      // pendingOAuthChallenge on the server. Show a banner + redraw so Authenticate & test appears without manual dropdown.
+      if (msg.includes("requires OAuth") || (error as { resourceUrl?: string })?.resourceUrl) {
+        new Notice(`Agentic Chat MCP: ${msg} — check the OAuth banner below.`);
+        this.redraw();
+      } else {
+        new Notice(`Agentic Chat MCP: ${msg}`);
+      }
     } finally {
       button.setButtonText(label);
       button.setDisabled(false);

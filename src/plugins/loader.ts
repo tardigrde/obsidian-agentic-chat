@@ -301,7 +301,18 @@ export function mcpServerFromPluginEntry(
   const url = entry.url ?? "";
   // Composio Connect advertises OAuth via 401 + resource_metadata; default to oauth so the
   // Test button shows "Authenticate & test" without requiring the user to open the Authentication dropdown first.
-  const authType = url.includes("composio.dev") ? "oauth" : "none";
+  // Use pluginName check (not URL substring) to avoid evil.com/composio.dev bypass, plus hostname suffix for bare URLs.
+  const isComposio =
+    pluginName === "composio" ||
+    (() => {
+      try {
+        const h = new URL(url).hostname.toLowerCase();
+        return h === "composio.dev" || h.endsWith(".composio.dev") || h === "connect.composio.dev";
+      } catch {
+        return false;
+      }
+    })();
+  const authType = isComposio ? "oauth" : "none";
   return {
     ...createMcpServerSettings({
       id: pluginMcpServerId(pluginName, entry.key),
