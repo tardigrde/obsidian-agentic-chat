@@ -32,7 +32,10 @@ export interface McpServerSettings {
   authHeaderName: string;
   /** Optional bearer token or custom auth header value. */
   authHeaderValueSecretId: string;
-  /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link authHeaderValueSecretId}.
+   */
   authHeaderValue: string;
   /** OAuth state and tokens for remote MCP servers that use MCP authorization. */
   oauth: McpOAuthSettings;
@@ -71,7 +74,10 @@ export interface McpServerState {
   authType: McpAuthType;
   authHeaderName: string;
   authHeaderValueSecretId: string;
-  /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link authHeaderValueSecretId}.
+   */
   authHeaderValue: string;
   oauth: McpOAuthSettings;
   knownTools: McpKnownToolSettings[];
@@ -132,7 +138,10 @@ export interface McpSetupStep {
 export interface McpOAuthSettings {
   clientId: string;
   clientSecretSecretId: string;
-  /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link clientSecretSecretId}.
+   */
   clientSecret: string;
   /** True when clientId was obtained through dynamic client registration. */
   dynamicClientRegistration: boolean;
@@ -144,10 +153,16 @@ export interface McpOAuthSettings {
   registrationEndpoint: string;
   resourceMetadataUrl: string;
   accessTokenSecretId: string;
-  /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link accessTokenSecretId}.
+   */
   accessToken: string;
   refreshTokenSecretId: string;
-  /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link refreshTokenSecretId}.
+   */
   refreshToken: string;
   /** Unix epoch milliseconds. 0 means unknown/non-expiring. */
   expiresAt: number;

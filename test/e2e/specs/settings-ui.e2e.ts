@@ -196,7 +196,11 @@ describe("agentic-chat settings UI", function () {
     }, "OpenAI-compatible settings were not persisted from the settings UI");
 
     expect(await readSecret(OPENAI_COMPATIBLE_KEY_SECRET_ID)).toBe(OPENAI_COMPATIBLE_KEY);
-    expect((await readStoredData()).openaiCompatibleApiKey).toBe("");
+    {
+      const storedAfter = await readStoredData();
+      expect(storedAfter.openaiCompatibleApiKey).toBeUndefined();
+      expect("openaiCompatibleApiKey" in storedAfter).toBe(false);
+    }
   });
 
   it("persists approval gates and per-tool overrides through the Approval tab", async function () {
@@ -377,9 +381,11 @@ describe("agentic-chat settings UI", function () {
     expect(await readSecret(LANGFUSE_PUBLIC_KEY_SECRET_ID)).toBe("pk-lf-e2e");
     expect(await readSecret(LANGFUSE_SECRET_KEY_SECRET_ID)).toBe("sk-lf-e2e");
     const stored = await readStoredData();
-    const storedObservability = stored.observability as { langfusePublicKey?: string; langfuseSecretKey?: string };
-    expect(storedObservability.langfusePublicKey).toBe("");
-    expect(storedObservability.langfuseSecretKey).toBe("");
+    const storedObservability = stored.observability as { langfusePublicKey?: string; langfuseSecretKey?: string; authHeaderValue?: string };
+    expect(storedObservability.langfusePublicKey).toBeUndefined();
+    expect(storedObservability.langfuseSecretKey).toBeUndefined();
+    expect("langfusePublicKey" in storedObservability).toBe(false);
+    expect("langfuseSecretKey" in storedObservability).toBe(false);
   });
 
   it("persists plugin folder, subagent folder, and ignored globs through the Resources tab", async function () {

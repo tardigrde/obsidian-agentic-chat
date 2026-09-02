@@ -58,16 +58,22 @@ describe("secret storage migration", () => {
 
     const stored = settingsForStorage(settings, store);
 
-    expect(stored.openrouterApiKey).toBe("");
-    expect(stored.openaiCompatibleApiKey).toBe("");
-    expect(stored.web.searchApiKey).toBe("");
-    expect(stored.observability.langfusePublicKey).toBe("");
-    expect(stored.observability.langfuseSecretKey).toBe("");
-    expect(stored.observability.authHeaderValue).toBe("");
-    expect(stored.mcp.servers[0].authHeaderValue).toBe("");
-    expect(stored.mcp.servers[0].oauth.clientSecret).toBe("");
-    expect(stored.mcp.servers[0].oauth.accessToken).toBe("");
-    expect(stored.mcp.servers[0].oauth.refreshToken).toBe("");
+    expect(stored.openrouterApiKey).toBeUndefined();
+    expect(stored.openaiCompatibleApiKey).toBeUndefined();
+    expect((stored.web as unknown as Record<string, unknown>).searchApiKey).toBeUndefined();
+    expect((stored.observability as unknown as Record<string, unknown>).langfusePublicKey).toBeUndefined();
+    expect((stored.observability as unknown as Record<string, unknown>).langfuseSecretKey).toBeUndefined();
+    expect((stored.observability as unknown as Record<string, unknown>).authHeaderValue).toBeUndefined();
+    expect((stored.mcp.servers[0] as unknown as Record<string, unknown>).authHeaderValue).toBeUndefined();
+    expect((stored.mcp.servers[0].oauth as unknown as Record<string, unknown>).clientSecret).toBeUndefined();
+    expect((stored.mcp.servers[0].oauth as unknown as Record<string, unknown>).accessToken).toBeUndefined();
+    expect((stored.mcp.servers[0].oauth as unknown as Record<string, unknown>).refreshToken).toBeUndefined();
+    // Persisted JSON must omit plaintext keys entirely (not even "").
+    expect("openrouterApiKey" in stored).toBe(false);
+    expect("openaiCompatibleApiKey" in stored).toBe(false);
+    expect("searchApiKey" in stored.web).toBe(false);
+    expect("langfusePublicKey" in stored.observability).toBe(false);
+    expect("authHeaderValue" in (stored.mcp.servers[0] as unknown as Record<string, unknown>)).toBe(false);
 
     expect(store.getSecret(stored.openrouterApiKeySecretId)).toBe("openrouter-secret");
     expect(store.getSecret(stored.openaiCompatibleApiKeySecretId)).toBe("openai-secret");

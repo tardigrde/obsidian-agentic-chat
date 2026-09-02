@@ -218,16 +218,23 @@ describe("agentic-chat settings migration", function () {
     expect(state.secrets[SECRET_IDS.mcpAccessToken]).toBe("legacy-access-token");
     expect(state.secrets[SECRET_IDS.mcpRefreshToken]).toBe("legacy-refresh-token");
 
-    expect(state.stored.openrouterApiKey).toBe("");
-    expect(state.stored.openaiCompatibleApiKey).toBe("");
-    expect(objectAt(state.stored, "web").searchApiKey).toBe("");
+    expect(state.stored.openrouterApiKey).toBeUndefined();
+    expect(state.stored.openaiCompatibleApiKey).toBeUndefined();
+    expect(objectAt(state.stored, "web").searchApiKey).toBeUndefined();
+    expect("openrouterApiKey" in state.stored).toBe(false);
+    expect("openaiCompatibleApiKey" in state.stored).toBe(false);
+    expect("searchApiKey" in objectAt(state.stored, "web")).toBe(false);
     const storedMcp = objectAt(state.stored, "mcp");
     const storedServer = (storedMcp.servers as Array<Record<string, unknown>>)[0];
-    expect(storedServer.authHeaderValue).toBe("");
+    expect(storedServer.authHeaderValue).toBeUndefined();
+    expect("authHeaderValue" in storedServer).toBe(false);
     const storedOAuth = objectAt(storedServer, "oauth");
-    expect(storedOAuth.clientSecret).toBe("");
-    expect(storedOAuth.accessToken).toBe("");
-    expect(storedOAuth.refreshToken).toBe("");
+    expect(storedOAuth.clientSecret).toBeUndefined();
+    expect(storedOAuth.accessToken).toBeUndefined();
+    expect(storedOAuth.refreshToken).toBeUndefined();
+    expect("clientSecret" in storedOAuth).toBe(false);
+    expect("accessToken" in storedOAuth).toBe(false);
+    expect("refreshToken" in storedOAuth).toBe(false);
 
     await browser.executeObsidianCommand("agentic-chat:open-chat");
     await $(".agentic-chat-view").waitForExist();

@@ -231,7 +231,7 @@ function storeSecretSlot<T extends Record<K, string>, K extends string>(
 ): void {
   const value = typeof runtime[key] === "string" ? runtime[key].trim() : "";
   store.setSecret(secretId, value);
-  stored[key] = "" as T[K];
+  delete (stored as Record<string, unknown>)[key as string];
 }
 
 function hydrateSettingsSecretSlot(settings: AgenticChatSettings, slot: SettingsSecretSlot, store: SecretStore): void {
@@ -248,7 +248,7 @@ function storeSettingsSecretSlot(
 ): void {
   const value = stringAt(runtime, slot.valuePath).trim();
   store.setSecret(stringAt(runtime, slot.secretIdPath), value);
-  writePath(stored, slot.valuePath, "");
+  deletePath(stored, slot.valuePath);
 }
 
 function stringAt(root: unknown, path: readonly string[]): string {
@@ -274,6 +274,17 @@ function writePath(root: unknown, path: readonly string[], value: string): void 
     current = next as Record<string, unknown>;
   }
   current[path[path.length - 1]] = value;
+}
+
+function deletePath(root: unknown, path: readonly string[]): void {
+  if (!root || typeof root !== "object") return;
+  let current = root as Record<string, unknown>;
+  for (const segment of path.slice(0, -1)) {
+    const next = current[segment];
+    if (!next || typeof next !== "object") return;
+    current = next as Record<string, unknown>;
+  }
+  delete current[path[path.length - 1]];
 }
 
 function cloneSettings(settings: AgenticChatSettings): AgenticChatSettings {
