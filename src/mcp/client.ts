@@ -392,7 +392,7 @@ export class McpHttpClient {
         // Auto-detect OAuth requirement when server advertises resource_metadata but authType is none/bearer/header.
         // Do not auto-start flow; just set pending challenge and throw a specific error so the UI can show a banner + Switch CTA.
         if (response.status === 401 && auth && /resource_metadata/i.test(auth)) {
-          const parsed = parseWwwAuthenticate(auth) as Record<string, string>;
+          const parsed = parseWwwAuthenticate(auth);
           const resourceUrl = parsed.resource_metadata ?? parsed.resourceMetadata ?? "";
           if (resourceUrl && isValidOAuthResourceUrl(resourceUrl)) {
             this.server.pendingOAuthChallenge = auth;

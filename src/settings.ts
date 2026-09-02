@@ -1236,13 +1236,15 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       });
       if (!isNone) {
         const switchBtn = banner.createEl("button", { text: "Switch to OAuth", cls: "mod-cta" });
-        switchBtn.addEventListener("click", async () => {
-          server.authType = "oauth";
-          server.pendingOAuthChallenge = undefined;
-          server.pendingOAuthResourceUrl = undefined;
-          this.syncMcpServerToState(server);
-          await this.save();
-          this.redraw();
+        switchBtn.addEventListener("click", () => {
+          void (async () => {
+            server.authType = "oauth";
+            server.pendingOAuthChallenge = undefined;
+            server.pendingOAuthResourceUrl = undefined;
+            this.syncMcpServerToState(server);
+            await this.save();
+            this.redraw();
+          })();
         });
       }
     }
