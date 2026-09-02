@@ -293,23 +293,35 @@ function stableIdHash(input: string): string {
   return sha256Hex(input).slice(0, 12);
 }
 
+function isComposioServer(pluginName: string, url: string): boolean {
+  if (pluginName === "composio") return true;
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return h === "composio.dev" || h.endsWith(".composio.dev") || h === "connect.composio.dev";
+  } catch {
+    return false;
+  }
+}
+
 export function mcpServerFromPluginEntry(
   pluginName: string,
   pluginRoot: string,
   entry: PluginMcpServer,
 ): McpServerSettings {
+  const url = entry.url ?? "";
+  const authType = isComposioServer(pluginName, url) ? "oauth" : "none";
   return {
     ...createMcpServerSettings({
       id: pluginMcpServerId(pluginName, entry.key),
       name: `${pluginName}: ${entry.key}`,
-      url: entry.url ?? "",
+      url,
       // Plugin MCP servers start disabled (D11) — for imported packages the
       // import flow reinforces this, and hand-authored mcp.json servers are
       // not silently enabled just by appearing on disk. The "Add MCP server"
       // generator opts in explicitly.
       enabled: false,
       approval: "ask",
-      authType: "none",
+      authType,
     }),
     headers: entry.headers ?? {},
     source: "plugin",
@@ -394,6 +406,8 @@ export function deriveMcpServers(
           oauth: { ...state.oauth, accessToken: "", refreshToken: "", expiresAt: 0 },
           knownTools: [],
           lastUrl: server.url,
+          pendingOAuthChallenge: undefined,
+          pendingOAuthResourceUrl: undefined,
         }
       : state.lastUrl === server.url
         ? state

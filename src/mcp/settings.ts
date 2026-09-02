@@ -59,6 +59,9 @@ export interface McpServerSettings {
   enabledTools: string[];
   /** Deny globs for remote tools — deny wins over allow. */
   disabledTools: string[];
+  /** Transient: last WWW-Authenticate challenge with resource_metadata when authType is none (not persisted). */
+  pendingOAuthChallenge?: string;
+  pendingOAuthResourceUrl?: string;
 }
 
 /** Client-owned state for a plugin-derived MCP server (shape lives in mcp.json). */
@@ -78,6 +81,9 @@ export interface McpServerState {
   enabledTools: string[];
   /** Deny globs for remote tools — deny wins. */
   disabledTools: string[];
+  /** Transient: last OAuth challenge when server advertised resource_metadata but authType was none (not persisted long-term). */
+  pendingOAuthChallenge?: string;
+  pendingOAuthResourceUrl?: string;
 }
 
 export interface McpKnownToolSettings {
@@ -210,6 +216,12 @@ function healMcpServer(server: Partial<McpServerSettings> | null | undefined): M
     ...(typeof server.pluginRoot === "string" && server.pluginRoot.trim() ? { pluginRoot: server.pluginRoot.trim() } : {}),
     enabledTools: healMcpToolGlobs((server as Record<string, unknown>).enabledTools ?? (server as Record<string, unknown>).enabled_tools),
     disabledTools: healMcpToolGlobs((server as Record<string, unknown>).disabledTools ?? (server as Record<string, unknown>).disabled_tools),
+    ...(typeof (server as Record<string, unknown>).pendingOAuthChallenge === "string" && (server as Record<string, unknown>).pendingOAuthChallenge
+      ? { pendingOAuthChallenge: String((server as Record<string, unknown>).pendingOAuthChallenge) }
+      : {}),
+    ...(typeof (server as Record<string, unknown>).pendingOAuthResourceUrl === "string" && (server as Record<string, unknown>).pendingOAuthResourceUrl
+      ? { pendingOAuthResourceUrl: String((server as Record<string, unknown>).pendingOAuthResourceUrl) }
+      : {}),
   };
 }
 
@@ -249,6 +261,12 @@ export function healMcpServerState(
       : {}),
     enabledTools: healMcpToolGlobs(record?.enabledTools ?? record?.enabled_tools),
     disabledTools: healMcpToolGlobs(record?.disabledTools ?? record?.disabled_tools),
+    ...(typeof record?.pendingOAuthChallenge === "string" && record.pendingOAuthChallenge.trim()
+      ? { pendingOAuthChallenge: record.pendingOAuthChallenge.trim() }
+      : {}),
+    ...(typeof record?.pendingOAuthResourceUrl === "string" && record.pendingOAuthResourceUrl.trim()
+      ? { pendingOAuthResourceUrl: record.pendingOAuthResourceUrl.trim() }
+      : {}),
   };
 }
 
@@ -265,6 +283,12 @@ export function createMcpServerState(id: string, overrides: Partial<McpServerSta
     oauth: healOAuthSettings(overrides.oauth, healedId),
     knownTools: healMcpKnownTools(overrides.knownTools),
     ...(typeof overrides.lastUrl === "string" && overrides.lastUrl.trim() ? { lastUrl: overrides.lastUrl.trim() } : {}),
+    ...(typeof overrides.pendingOAuthChallenge === "string" && overrides.pendingOAuthChallenge.trim()
+      ? { pendingOAuthChallenge: overrides.pendingOAuthChallenge.trim() }
+      : {}),
+    ...(typeof overrides.pendingOAuthResourceUrl === "string" && overrides.pendingOAuthResourceUrl.trim()
+      ? { pendingOAuthResourceUrl: overrides.pendingOAuthResourceUrl.trim() }
+      : {}),
     enabledTools: healMcpToolGlobs(raw.enabledTools ?? raw.enabled_tools),
     disabledTools: healMcpToolGlobs(raw.disabledTools ?? raw.disabled_tools),
   };
