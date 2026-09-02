@@ -563,7 +563,7 @@ export class PluginService {
         try {
           await app.vault.adapter.rmdir(path, true);
         } catch (error) {
-          const code = (error as NodeJS.ErrnoException)?.code;
+          const code = (error as { code?: string })?.code;
           const message = String((error as Error)?.message ?? "").toLowerCase();
           if (code === "ENOENT" || message.includes("enoent") || message.includes("no such file")) return false;
           throw error;

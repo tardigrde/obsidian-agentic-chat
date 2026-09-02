@@ -979,8 +979,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     {
       const heading = containerEl.createDiv({ cls: "agentic-chat-mcp-heading" });
-      heading.createEl("div", { text: "Add MCP server", cls: "agentic-chat-mcp-heading-title" });
-      heading.createEl("div", {
+      heading.createDiv({ text: "Add MCP server", cls: "agentic-chat-mcp-heading-title" });
+      heading.createDiv({
         text:
           "Writes a real agent plugin package (plugin.json + mcp.json) into the plugins folder. " +
           "Packages, not settings, own server endpoints after creation.",
