@@ -13,7 +13,7 @@ import { sniffSource, type MarketplaceSourceEntry } from "../plugins/import/snif
  * servers start disabled.
  */
 export class InstallPluginModal extends Modal {
-  private readonly status = document.createDiv();
+  private status!: HTMLElement;
 
   constructor(
     app: App,
@@ -36,8 +36,7 @@ export class InstallPluginModal extends Modal {
     });
 
     this.renderSourceFields(contentEl);
-    this.status.addClass("agentic-chat-install-status");
-    contentEl.appendChild(this.status);
+    this.status = contentEl.createDiv({ cls: "agentic-chat-install-status" });
   }
 
   private renderSourceFields(containerEl: HTMLElement): void {
