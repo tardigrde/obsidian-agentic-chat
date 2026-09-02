@@ -88,9 +88,15 @@ export interface AgenticChatSettings {
   approval: ApprovalSettings;
   /** Agent Plugins packages loaded from a vault folder. */
   plugins: PluginSettings;
-  /** Vault folder scanned for AGENT.md subagent profiles. Empty disables vault profiles. */
+  /**
+   * @deprecated Vault AGENT.md roster – subagents now inherit from parent; Explorer role replaces researcher/reviewer/editor.
+   * Kept for backward compat; vault AGENT.md still loads with a warning but will be removed. Empty disables vault roles.
+   */
   agentsFolder: string;
-  /** Include the built-in subagent roster (researcher / reviewer / editor). */
+  /**
+   * @deprecated Subagent roster toggle – now controls the single built-in Explorer role (read-only recon).
+   * Formerly toggled researcher/reviewer/editor; kept for legacy data.json healing.
+   */
   enableBuiltinAgents: boolean;
   /** Auto-abort a subagent after this many seconds (max 86400). 0 disables the timeout. */
   subagentTimeoutSeconds: number;

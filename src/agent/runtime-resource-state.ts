@@ -5,7 +5,7 @@ import type { WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
 import type { ReadMemo } from "../vault/read-memo";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import type { AgentProfile } from "./subagents";
+import type { AgentRole } from "./subagents";
 import {
   EMPTY_AGENT_RUNTIME_RESOURCES,
   buildAgentParentTools,
@@ -63,7 +63,7 @@ export class AgentRuntimeResourceState {
     return this.resources.skills;
   }
 
-  getProfiles(): AgentProfile[] {
+  getProfiles(): AgentRole[] {
     return this.resources.profiles;
   }
 

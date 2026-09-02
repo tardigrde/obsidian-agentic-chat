@@ -27,7 +27,11 @@ import { type IgnoreMatcher } from "../vault/ignore";
 import { createFileSystemDenyMatcher } from "../vault/file-system-sandbox";
 import type { ReadMemo } from "../vault/read-memo";
 import { formatInstructionsOverlay, loadVaultInstructions } from "./instructions";
-import { type AgentProfile, formatSubagentsForSystemPrompt, loadAgentProfiles } from "./subagents";
+import {
+  type AgentRole,
+  formatAgentRolesForSystemPrompt,
+  loadAgentRoles,
+} from "./subagents";
 import { buildSystemPrompt } from "./system-prompt";
 import { MODES } from "./modes";
 import { OUTPUT_STYLES } from "./output-styles";
@@ -40,7 +44,7 @@ import {
 export interface AgentRuntimeResources {
   skills: Skill[];
   plugins: LoadedPlugin[];
-  profiles: AgentProfile[];
+  profiles: AgentRole[];
   instructionsOverlay: string;
   ignoreMatcher: IgnoreMatcher;
   mcpTools: AgentTool[];
@@ -74,7 +78,7 @@ export async function loadAgentRuntimeResources(
     enabledPlugins: settings.plugins.enabled,
   });
   const skills = await loadRuntimeSkills(app, settings, plugins);
-  const profiles = await loadAgentProfiles(app, settings.agentsFolder, settings.enableBuiltinAgents);
+  const profiles = await loadAgentRoles(app, settings.agentsFolder, settings.enableBuiltinAgents);
   // Standing instructions (AGENTS.md -> CLAUDE.md -> GEMINI.md at the vault root):
   // re-read every turn so agent/user edits land in the next system prompt. The
   // adapter guard keeps minimal test harnesses working.
@@ -119,7 +123,7 @@ export function composeAgentSystemPrompt(
     resources.instructionsOverlay,
     MODES[settings.mode].promptOverlay,
     OUTPUT_STYLES[settings.outputStyle].promptOverlay,
-    formatSubagentsForSystemPrompt(resources.profiles),
+    formatAgentRolesForSystemPrompt(resources.profiles),
     pluginSkillTrustBoundary(resources.plugins),
     formatLoadedSkillsOverlay(resources.skills),
   ];

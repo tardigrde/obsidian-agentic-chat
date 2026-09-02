@@ -6,11 +6,11 @@ import {
   buildSubagentInvocation,
   unknownAgentMessage,
 } from "./agent-invocations";
-import type { AgentProfile } from "./subagents";
+import type { AgentRole } from "./subagents";
 
 export interface AgentCommandResources {
   skills: Skill[];
-  profiles: AgentProfile[];
+  profiles: AgentRole[];
 }
 
 export type AgentCommandPlan =

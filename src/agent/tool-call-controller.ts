@@ -17,7 +17,7 @@ import {
   normalizeTasks,
   type SubagentChildStatus,
 } from "../tools/subagent-tool";
-import type { AgentProfile } from "./subagents";
+import type { AgentRole } from "./subagents";
 import { resolveModePolicy } from "./modes";
 import { resolveWorkingDirPolicy, toolTargetPaths } from "./working-dir";
 import { UNDOABLE_TOOLS, captureUndo } from "./undo";
@@ -64,7 +64,7 @@ interface ToolCallControllerOptions {
   getSettings: () => AgenticChatSettings;
   confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   getTools: () => AgentTool[];
-  getProfiles: () => AgentProfile[];
+  getProfiles: () => AgentRole[];
   onUndoApplied: () => void;
   recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
@@ -80,7 +80,7 @@ export class AgentToolCallController {
   private readonly getSettings: () => AgenticChatSettings;
   private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   private readonly getTools: () => AgentTool[];
-  private readonly getProfiles: () => AgentProfile[];
+  private readonly getProfiles: () => AgentRole[];
   private readonly onUndoApplied: () => void;
   private readonly recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   private readonly recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
@@ -368,7 +368,7 @@ export class AgentToolCallController {
     return this.getTools().find((candidate) => candidate.name === toolName)?.label ?? toolName;
   }
 
-  /** True when any dispatched profile's allowlist includes a mutating tool that is not per-tool denied. */
+  /** True when any dispatched role's allowlist includes a mutating tool that is not per-tool denied. */
   private dispatchCanMutate(settings: AgenticChatSettings, args: unknown): boolean {
     const tasks = normalizeTasks((args ?? {}));
     return tasks.some((task) => {

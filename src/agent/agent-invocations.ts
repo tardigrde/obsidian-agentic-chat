@@ -1,5 +1,5 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
-import type { AgentProfile } from "./subagents";
+import type { AgentRole } from "./subagents";
 
 export function buildSubagentInvocation(name: string, task: string): string {
   return `Use the subagent tool to delegate this task to the "${name}" subagent: ${task}`;
@@ -38,7 +38,7 @@ export function buildInstructionCaptureInvocation(instruction: string): string {
 
 export function unknownAgentMessage(
   name: string,
-  profiles: Pick<AgentProfile, "name">[],
+  profiles: Pick<AgentRole, "name">[],
   skills: Pick<Skill, "name">[],
 ): string {
   const available = profiles.map((item) => item.name);

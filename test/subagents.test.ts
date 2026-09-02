@@ -7,8 +7,11 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import {
   type AgentProfile,
   BUILTIN_AGENT_PROFILES,
+  BUILTIN_AGENT_ROLES,
+  formatAgentRolesForSystemPrompt,
   formatSubagentsForSystemPrompt,
   loadAgentProfiles,
+  loadAgentRoles,
 } from "../src/agent/subagents";
 import { unwrapToolOutput } from "../src/tools/tool-output-wrapper";
 import {
@@ -204,14 +207,19 @@ describe("loadAgentProfiles", () => {
   it("offers the built-in roster when no vault folder is set", async () => {
     const app = { vault: {} } as unknown as App;
     const profiles = await loadAgentProfiles(app, "", true);
-    expect(profiles.map((p) => p.name).sort()).toEqual(["editor", "researcher", "reviewer"]);
+    expect(profiles.map((p) => p.name).sort()).toEqual(["explorer"]);
     expect(profiles).toHaveLength(BUILTIN_AGENT_PROFILES.length);
-    expect(profiles.find((profile) => profile.name === "researcher")?.toolAllowlist).toEqual(
+    expect(profiles).toHaveLength(BUILTIN_AGENT_ROLES.length);
+    expect(profiles.find((profile) => profile.name === "explorer")?.toolAllowlist).toEqual(
       expect.arrayContaining(["web_search", "fetch_url", "read_artifact"]),
     );
-    expect(profiles.find((profile) => profile.name === "reviewer")?.toolAllowlist).toEqual(
-      expect.arrayContaining(["web_search", "fetch_url", "search_artifact"]),
-    );
+  });
+
+  it("offers the same via the new loadAgentRoles alias", async () => {
+    const app = { vault: {} } as unknown as App;
+    const roles = await loadAgentRoles(app, "", true);
+    expect(roles.map((p) => p.name).sort()).toEqual(["explorer"]);
+    expect(BUILTIN_AGENT_PROFILES).toBe(BUILTIN_AGENT_ROLES);
   });
 
   it("returns nothing when built-ins are disabled and no folder is set", async () => {
@@ -221,14 +229,13 @@ describe("loadAgentProfiles", () => {
 
   it("lets a vault AGENT.md override a built-in of the same name", async () => {
     const app = makeVaultApp("Agents", [
-      { path: "Agents/researcher.md", content: "---\nname: researcher\ndescription: Custom recon\n---\nCustom prompt body" },
+      { path: "Agents/explorer.md", content: "---\nname: explorer\ndescription: Custom explorer\n---\nCustom prompt body" },
     ]);
     const profiles = await loadAgentProfiles(app, "Agents", true);
-    const researcher = profiles.find((p) => p.name === "researcher");
-    expect(researcher?.systemPrompt).toBe("Custom prompt body");
-    expect(researcher?.description).toBe("Custom recon");
-    // The other built-ins remain.
-    expect(profiles.map((p) => p.name).sort()).toEqual(["editor", "researcher", "reviewer"]);
+    const explorer = profiles.find((p) => p.name === "explorer");
+    expect(explorer?.systemPrompt).toBe("Custom prompt body");
+    expect(explorer?.description).toBe("Custom explorer");
+    expect(profiles.map((p) => p.name).sort()).toEqual(["explorer"]);
   });
 
   it("parses a comma-separated tools allowlist from frontmatter", async () => {
@@ -246,8 +253,16 @@ describe("formatSubagentsForSystemPrompt", () => {
     expect(formatSubagentsForSystemPrompt([])).toBe("");
     const block = formatSubagentsForSystemPrompt(BUILTIN_AGENT_PROFILES);
     expect(block).toContain("## Subagents");
-    expect(block).toContain("researcher");
-    expect(block).toContain("editor");
+    expect(block).toContain("explorer");
+  });
+
+  it("primary alias formatAgentRolesForSystemPrompt matches deprecated name", () => {
+    const a = formatSubagentsForSystemPrompt(BUILTIN_AGENT_ROLES);
+    const b = formatAgentRolesForSystemPrompt(BUILTIN_AGENT_ROLES);
+    expect(a).toBe(b);
+    expect(a).toContain("Explorer");
+    void a;
+    void b;
   });
 });
 

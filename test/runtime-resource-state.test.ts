@@ -100,7 +100,7 @@ describe("AgentRuntimeResourceState", () => {
     await state.reload();
 
     expect(state.getSkills().map((skill) => skill.name)).toContain("deep-research");
-    expect(state.getProfiles().map((profile) => profile.name).sort()).toEqual(["editor", "researcher", "reviewer"]);
+    expect(state.getProfiles().map((profile) => profile.name).sort()).toEqual(["explorer"]);
     expect(state.current.instructionsOverlay).toContain("# Vault instructions");
     expect(state.isPathIgnored("Private/secret.md")).toBe(true);
     expect(state.isPathIgnored("Notes/public.md")).toBe(false);
