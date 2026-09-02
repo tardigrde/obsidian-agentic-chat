@@ -240,14 +240,17 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     if (this.pluginsLoadedOnce && this.plugin.pluginService.hasCache()) {
       // Dot-folders deleted externally don't fire vault.delete; poll the adapter so
       // Resources doesn't show a stale cache until the user clicks Remove.
-      void this.plugin.pluginService.listExternallyDeletedPlugins().then((deleted) => {
-        if (deleted.length > 0) {
-          this.externallyDeletedPlugins = deleted;
-          // Keep transient until dismissed; auto-prune orphan settings via reload.
-          this.pluginsLoadedOnce = false;
-          this.ensurePluginsLoaded();
-        }
-      });
+      void this.plugin.pluginService
+        .listExternallyDeletedPlugins()
+        .then((deleted) => {
+          if (deleted.length > 0) {
+            this.externallyDeletedPlugins = deleted;
+            // Keep transient until dismissed; auto-prune orphan settings via reload.
+            this.pluginsLoadedOnce = false;
+            this.ensurePluginsLoaded();
+          }
+        })
+        .catch(() => {});
       return;
     }
     this.pluginsLoadedOnce = true;
@@ -2337,15 +2340,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     new ButtonComponent(controls)
       .setButtonText("Dismiss")
       .onClick(async () => {
-        // Settings already pruned via reload(); Dismiss just hides the transient.
-        // Ensure any remaining orphan entries for this plugin are cleared.
-        const existed = await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
-        if (!existed) {
-          // Already gone — ensure sources/enabled cleaned if reload missed them (fallback).
-          delete settings.plugins.sources[plugin.name];
-          delete settings.plugins.enabled[plugin.name];
-          await this.save();
-        }
+        await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
         this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((entry) => entry.rootPath !== plugin.rootPath);
         this.redraw();
       });

@@ -126,21 +126,6 @@ export class PluginService {
     return true;
   }
 
-  /** Check whether any cached plugin folder no longer exists on disk (dot-folder watcher gap). */
-  async hasExternallyDeletedPlugin(): Promise<boolean> {
-    if (!this.cache || this.cache.length === 0) return false;
-    for (const plugin of this.cache) {
-      try {
-        const exists = await this.app.vault.adapter.exists(plugin.rootPath);
-        if (!exists) return true;
-      } catch {
-        // Treat probe failure as not deleted to avoid spurious reloads.
-        continue;
-      }
-    }
-    return false;
-  }
-
   /** List cached plugins whose folders are missing on disk. */
   async listExternallyDeletedPlugins(): Promise<LoadedPlugin[]> {
     if (!this.cache || this.cache.length === 0) return [];
@@ -154,6 +139,11 @@ export class PluginService {
       }
     }
     return deleted;
+  }
+
+  /** Check whether any cached plugin folder no longer exists on disk (dot-folder watcher gap). */
+  async hasExternallyDeletedPlugin(): Promise<boolean> {
+    return (await this.listExternallyDeletedPlugins()).length > 0;
   }
 
   /**
@@ -396,8 +386,7 @@ export class PluginService {
         // Best-effort only; orphans are also pruned on next reload() via aliveIds.
       }
     }
-    const existed = await this.vaultWriter().folderExists(rootPath);
-    await this.vaultWriter().removeFolder(rootPath);
+    const existed = await this.vaultWriter().removeFolder(rootPath);
     const settings = this.getSettings();
     settings.mcp.servers = settings.mcp.servers.filter((server) => server.source !== "plugin" || server.pluginRoot !== rootPath);
     for (const id of serverIds) {
@@ -570,14 +559,17 @@ export class PluginService {
       removeFolder: async (path) => {
         const inTree = app.vault.getAbstractFileByPath(path) instanceof TFolder;
         const onDisk = await app.vault.adapter.exists(path).catch(() => false);
-        if (!inTree && !onDisk) return;
+        if (!inTree && !onDisk) return false;
         try {
           await app.vault.adapter.rmdir(path, true);
         } catch (error) {
-          const message = String((error as Error)?.message ?? "");
-          if (!message.includes("ENOENT")) throw error;
+          const code = (error as NodeJS.ErrnoException)?.code;
+          const message = String((error as Error)?.message ?? "").toLowerCase();
+          if (code === "ENOENT" || message.includes("enoent") || message.includes("no such file")) return false;
+          throw error;
         }
         pruneTreeFolder(app, path);
+        return true;
       },
       folderExists: async (path) => {
         if (app.vault.getAbstractFileByPath(path) instanceof TFolder) return true;
