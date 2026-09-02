@@ -233,57 +233,91 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private pluginsLoadedOnce = false;
   private pendingMcpServerName = "";
   private pendingMcpServerUrl = "";
+  private externallyDeletedPlugins: LoadedPlugin[] = [];
+  private externalDeleteCheckRunning = false;
+  private lastExternalDeleteCheck = 0;
 
   /** Trigger an async plugin load once; redraw when it lands so rows appear. */
   private ensurePluginsLoaded(): void {
-    if (this.pluginsLoadedOnce && this.plugin.pluginService.hasCache()) return;
+    if (this.pluginsLoadedOnce && this.plugin.pluginService.hasCache()) {
+      // Dot-folders deleted externally don't fire vault.delete; poll the adapter so
+      // Resources doesn't show a stale cache until the user clicks Remove.
+      const now = Date.now();
+      if (this.externalDeleteCheckRunning) return;
+      if (now - this.lastExternalDeleteCheck < 2000) return;
+      this.externalDeleteCheckRunning = true;
+      this.lastExternalDeleteCheck = now;
+      void this.plugin.pluginService
+        .listExternallyDeletedPlugins()
+        .then((deleted) => {
+          if (deleted.length > 0) {
+            this.externallyDeletedPlugins = deleted;
+            // Keep transient until dismissed; auto-prune orphan settings via reload on next display.
+            this.pluginsLoadedOnce = false;
+            this.ensurePluginsLoaded();
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          this.externalDeleteCheckRunning = false;
+        });
+      return;
+    }
     this.pluginsLoadedOnce = true;
     void this.plugin.pluginService
-      .load()
+      .reload()
       .then((plugins) => {
-        // S10: shape lives in mcp.json; ensure every derived plugin server has a
-        // client-owned entry in settings.plugins.mcpState (enabled/approval/auth).
-        // No merge into settings.mcp.servers — the two cannot diverge.
-        const pluginServers = plugins.flatMap((plugin) => plugin.mcpServers);
-        let mutated = false;
-        const derivedIds = new Set(pluginServers.map((s) => s.id));
-        for (const server of pluginServers) {
-          const existing = this.plugin.settings.plugins.mcpState[server.id];
-          if (!existing) {
-            this.plugin.settings.plugins.mcpState[server.id] = createMcpServerState(server.id, {
-              enabled: server.enabled,
-              approval: server.approval,
-              lastUrl: server.url,
-            });
-            mutated = true;
-          } else if (existing.lastUrl !== server.url) {
-            // URL moved in mcp.json — clear tokens for new host (also handled in derive, but ensure persisted state is cleared)
-            if (existing.lastUrl && existing.lastUrl !== server.url) {
-              existing.authHeaderValue = "";
-              existing.oauth = { ...existing.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
-            }
-            existing.lastUrl = server.url;
-            mutated = true;
-          }
-        }
-        // Prune orphan mcpState entries whose plugin no longer declares that server.
-        for (const id of Object.keys(this.plugin.settings.plugins.mcpState)) {
-          if (!derivedIds.has(id)) {
-            // Keep entries that correspond to legacy user servers still in mcp.servers (source=user) — they are not plugin orphans.
-            const isLegacyUser = this.plugin.settings.mcp.servers.some((s) => s.id === id && s.source !== "plugin");
-            if (!isLegacyUser) {
-              delete this.plugin.settings.plugins.mcpState[id];
-              mutated = true;
-            }
-          }
-        }
+        const mutated = this.reconcileLoadedPlugins(plugins);
         if (mutated) void this.save();
+        // Transient prune does not count as settings mutation (reconcile handles split)
+        if (this.externallyDeletedPlugins.length > 0) this.redraw();
         return plugins;
       })
       .catch((error: unknown) => {
         console.warn("Agentic chat: could not load agent plugins", error);
       })
       .then(() => this.redraw());
+  }
+
+  private reconcileLoadedPlugins(plugins: LoadedPlugin[]): boolean {
+    // S10: shape lives in mcp.json; ensure every derived plugin server has a
+    // client-owned entry in settings.plugins.mcpState (enabled/approval/auth).
+    // No merge into settings.mcp.servers — the two cannot diverge.
+    const pluginServers = plugins.flatMap((plugin) => plugin.mcpServers);
+    let mutated = false;
+    const derivedIds = new Set(pluginServers.map((server) => server.id));
+    for (const server of pluginServers) {
+      const existing = this.plugin.settings.plugins.mcpState[server.id];
+      if (!existing) {
+        this.plugin.settings.plugins.mcpState[server.id] = createMcpServerState(server.id, {
+          enabled: server.enabled,
+          approval: server.approval,
+          lastUrl: server.url,
+        });
+        mutated = true;
+      } else if (existing.lastUrl !== server.url) {
+        if (existing.lastUrl && existing.lastUrl !== server.url) {
+          existing.authHeaderValue = "";
+          existing.oauth = { ...existing.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
+        }
+        existing.lastUrl = server.url;
+        mutated = true;
+      }
+    }
+    for (const id of Object.keys(this.plugin.settings.plugins.mcpState)) {
+      if (!derivedIds.has(id)) {
+        const isLegacyUser = this.plugin.settings.mcp.servers.some((entry) => entry.id === id && entry.source !== "plugin");
+        if (!isLegacyUser) {
+          delete this.plugin.settings.plugins.mcpState[id];
+          clearMcpPerToolApprovals(this.plugin.settings.approval, id);
+          mutated = true;
+        }
+      }
+    }
+    // Prune transient deleted cache entries that have reappeared (recreated outside)
+    const alivePaths = new Set(plugins.map((plugin) => plugin.rootPath));
+    this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((plugin) => !alivePaths.has(plugin.rootPath));
+    return mutated;
   }
 
   private mcpDisplayServers(settings: AgenticChatSettings): McpServerSettings[] {
@@ -957,8 +991,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     {
       const heading = containerEl.createDiv({ cls: "agentic-chat-mcp-heading" });
-      heading.createEl("div", { text: "Add MCP server", cls: "agentic-chat-mcp-heading-title" });
-      heading.createEl("div", {
+      heading.createDiv({ text: "Add MCP server", cls: "agentic-chat-mcp-heading-title" });
+      heading.createDiv({
         text:
           "Writes a real agent plugin package (plugin.json + mcp.json) into the plugins folder. " +
           "Packages, not settings, own server endpoints after creation.",
@@ -2214,7 +2248,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private renderPluginsList(containerEl: HTMLElement, settings: AgenticChatSettings): void {
     this.ensurePluginsLoaded();
     const plugins = this.plugin.pluginService.getLoaded();
-    if (plugins.length === 0) {
+    const deleted = this.externallyDeletedPlugins;
+    if (plugins.length === 0 && deleted.length === 0) {
       containerEl.createDiv({
         cls: "setting-item-description",
         text:
@@ -2224,9 +2259,27 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       return;
     }
 
-    new Setting(containerEl).setName("Installed plugins").setHeading();
-    for (const plugin of plugins) {
-      this.renderPluginRow(containerEl, settings, plugin);
+    if (plugins.length > 0) {
+      new Setting(containerEl).setName("Installed plugins").setHeading();
+      for (const plugin of plugins) {
+        this.renderPluginRow(containerEl, settings, plugin);
+      }
+    }
+    if (deleted.length > 0) {
+      new Setting(containerEl).setName("Deleted on disk").setHeading();
+      containerEl.createDiv({
+        cls: "setting-item-description",
+        text: "These plugins were deleted outside Obsidian. Settings were cleaned; dismiss this notice when ready.",
+      });
+      for (const plugin of deleted) {
+        this.renderDeletedPluginRow(containerEl, settings, plugin);
+      }
+      new Setting(containerEl).addButton((button) =>
+        button.setButtonText("Dismiss").onClick(() => {
+          this.externallyDeletedPlugins = [];
+          this.redraw();
+        }),
+      );
     }
   }
 
@@ -2275,10 +2328,39 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       // Keep setWarning for minAppVersion 1.11.4 — setDestructive() needs 1.13.0 (obsidianmd/no-unsupported-api)
       .setWarning()
       .onClick(async () => {
-        await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
-        new Notice(`Removed agent plugin "${plugin.name}".`);
+        const existed = await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
+        if (existed) new Notice(`Removed agent plugin "${plugin.name}".`);
+        else new Notice(`Agent plugin "${plugin.name}" was already deleted on disk — settings cleaned.`);
         this.pluginsLoadedOnce = false;
         await this.save();
+        this.redraw();
+      });
+  }
+
+  private renderDeletedPluginRow(containerEl: HTMLElement, settings: AgenticChatSettings, plugin: LoadedPlugin): void {
+    const row = containerEl.createDiv({ cls: "agentic-chat-plugin-row agentic-chat-plugin-deleted" });
+    const main = row.createDiv({ cls: "agentic-chat-plugin-main" });
+    main.createDiv({ cls: "agentic-chat-plugin-name", text: plugin.name });
+    const meta = main.createDiv({ cls: "agentic-chat-plugin-meta" });
+    meta.createSpan({ text: `${plugin.rootPath} — deleted on disk` });
+    const source = settings.plugins.sources?.[plugin.name];
+    if (source) {
+      const tail = meta.createSpan({ cls: "agentic-chat-plugin-meta-extra" });
+      tail.createSpan({ text: ` — Source: ${source}` });
+    }
+    const controls = row.createDiv({ cls: "agentic-chat-plugin-controls" });
+    new ButtonComponent(controls)
+      .setButtonText("Dismiss")
+      .onClick(async () => {
+        // Guard the TOCTOU: if the folder was recreated since the transient was shown, don't delete it.
+        let shouldRemove: boolean;
+        try {
+          shouldRemove = !(await this.app.vault.adapter.exists(plugin.rootPath));
+        } catch {
+          shouldRemove = false;
+        }
+        if (shouldRemove) await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
+        this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((entry) => entry.rootPath !== plugin.rootPath);
         this.redraw();
       });
   }

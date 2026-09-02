@@ -7,8 +7,8 @@ export interface PackageWriter {
   ensureFolder(path: string): Promise<void>;
   /** Write a text or binary file, creating parent folders. */
   writeFile(path: string, content: string | Uint8Array): Promise<void>;
-  /** Recursively remove a folder. */
-  removeFolder(path: string): Promise<void>;
+  /** Recursively remove a folder. Returns true when a folder existed and was removed. */
+  removeFolder(path: string): Promise<boolean>;
   /** True when the folder exists. */
   folderExists(path: string): Promise<boolean>;
   /** Move a folder, replacing any existing target. */

@@ -5,11 +5,71 @@ export class FakeVault {
   private readonly root = new TFolder();
   private readonly files = new Map<string, { file: TFile; content: string }>();
   private readonly folders = new Map<string, TFolder>();
+  private readonly diskOnlyFolders = new Set<string>();
+  private readonly diskOnlyFiles = new Map<string, string>();
+  private readonly adapterExistsOverrides = new Map<string, boolean>();
+  private readonly rmdirErrors = new Map<string, { code?: string; message?: string }>();
 
   constructor() {
     this.root.path = "/";
     this.root.name = "";
     this.folders.set("/", this.root);
+  }
+
+  addDiskOnlyFolder(path: string): void {
+    this.diskOnlyFolders.add(path);
+  }
+  addDiskOnlyFile(path: string, content: string): void {
+    this.diskOnlyFiles.set(path, content);
+  }
+
+  /** Hide a folder from the vault tree while keeping it on "disk" (adapter.exists true). Simulates dot-folder not indexed. */
+  hideFolderFromTree(path: string): void {
+    const folder = this.folders.get(path);
+    if (folder) {
+      this.folders.delete(path);
+      this.diskOnlyFolders.add(path);
+      // Remove from parent children
+      const parent = folder.parent;
+      if (parent) {
+        parent.children = parent.children.filter((child) => child.path !== path);
+      }
+      // Also keep all nested files/folders on disk but hidden from tree
+      for (const key of [...this.folders.keys()]) {
+        if (key === path || key.startsWith(`${path}/`)) {
+          const nested = this.folders.get(key);
+          if (!nested) continue;
+          this.folders.delete(key);
+          this.diskOnlyFolders.add(key);
+          // Clear nested files from tree as well but keep on disk
+        }
+      }
+      for (const key of [...this.files.keys()]) {
+        if (key === path || key.startsWith(`${path}/`)) {
+          const entry = this.files.get(key);
+          if (!entry) continue;
+          this.files.delete(key);
+          this.diskOnlyFiles.set(key, entry.content);
+        }
+      }
+    } else if (!this.diskOnlyFolders.has(path)) {
+      this.diskOnlyFolders.add(path);
+    }
+  }
+
+  /** Force adapter.exists to return a specific value for a path (e.g. simulate IO error via override + throw). */
+  setAdapterExistsOverride(path: string, exists: boolean): void {
+    this.adapterExistsOverrides.set(path, exists);
+  }
+
+  clearAdapterExistsOverride(path: string): void {
+    this.adapterExistsOverrides.delete(path);
+  }
+
+  /** Make the next rmdir for this exact path throw an error with optional code. */
+  setRmdirError(path: string, error: { code?: string; message?: string } | null): void {
+    if (error) this.rmdirErrors.set(path, error);
+    else this.rmdirErrors.delete(path);
   }
 
   getRoot(): TFolder {
@@ -92,26 +152,45 @@ export class FakeVault {
 
   /** Adapter-like surface the plugin touches directly (list/read/rename/rmdir). */
   readonly adapter: FakeVaultAdapter = {
-    exists: async (path: string): Promise<boolean> =>
-      this.folders.has(path) || this.files.has(path),
+    exists: async (path: string): Promise<boolean> => {
+      if (this.adapterExistsOverrides.has(path)) return this.adapterExistsOverrides.get(path)!;
+      if (this.diskOnlyFolders.has(path)) return true;
+      if (this.diskOnlyFiles.has(path)) return true;
+      // Disk-only prefix: any diskOnly file under this folder counts as exists for folder path
+      for (const key of this.diskOnlyFolders) {
+        if (key.startsWith(`${path}/`)) return true;
+      }
+      for (const key of this.diskOnlyFiles.keys()) {
+        if (key === path || key.startsWith(`${path}/`)) return true;
+      }
+      return this.folders.has(path) || this.files.has(path);
+    },
     list: async (path: string): Promise<{ folders: string[]; files: string[] }> => {
       const normalized = path === "/" ? "" : path.replace(/\/+$/, "");
       const prefix = normalized ? `${normalized}/` : "";
       const topLevel = (key: string): boolean => (prefix ? key.startsWith(prefix) && !key.slice(prefix.length).includes("/") : !key.includes("/"));
+      const folderKeys = new Set<string>([...this.folders.keys(), ...this.diskOnlyFolders]);
+      const fileKeys = new Set<string>([...this.files.keys(), ...this.diskOnlyFiles.keys()]);
       return {
-        folders: [...this.folders.keys()].filter((key) => key !== "/" && topLevel(key)),
-        files: [...this.files.keys()].filter(topLevel),
+        folders: [...folderKeys].filter((key) => key !== "/" && topLevel(key)),
+        files: [...fileKeys].filter(topLevel),
       };
     },
     read: async (path: string): Promise<string> => {
       const entry = this.files.get(path);
-      if (!entry) throw new Error(`File not found: ${path}`);
-      return entry.content;
+      if (entry) return entry.content;
+      const diskContent = this.diskOnlyFiles.get(path);
+      if (diskContent !== undefined) return diskContent;
+      throw new Error(`File not found: ${path}`);
     },
     write: async (path: string, content: string): Promise<void> => {
       const entry = this.files.get(path);
       if (entry) {
         entry.content = String(content);
+        return;
+      }
+      if (this.diskOnlyFiles.has(path)) {
+        this.diskOnlyFiles.set(path, String(content));
         return;
       }
       await this.create(path, String(content));
@@ -124,17 +203,27 @@ export class FakeVault {
       for (const key of this.files.keys()) {
         if (key === from || key.startsWith(`${from}/`)) moves.push([key, to + key.slice(from.length)]);
       }
+      for (const key of this.diskOnlyFiles.keys()) {
+        if (key === from || key.startsWith(`${from}/`)) moves.push([key, to + key.slice(from.length)]);
+      }
       for (const [oldPath, newPath] of moves) {
         const entry = this.files.get(oldPath);
-        if (!entry) continue;
-        this.files.delete(oldPath);
-        entry.file.path = newPath;
-        entry.file.name = newPath.split("/").pop() ?? newPath;
-        entry.file.extension = entry.file.name.includes(".") ? entry.file.name.split(".").pop() ?? "" : "";
-        entry.file.basename = entry.file.name.includes(".")
-          ? entry.file.name.slice(0, entry.file.name.lastIndexOf("."))
-          : entry.file.name;
-        this.files.set(newPath, entry);
+        if (entry) {
+          this.files.delete(oldPath);
+          entry.file.path = newPath;
+          entry.file.name = newPath.split("/").pop() ?? newPath;
+          entry.file.extension = entry.file.name.includes(".") ? entry.file.name.split(".").pop() ?? "" : "";
+          entry.file.basename = entry.file.name.includes(".")
+            ? entry.file.name.slice(0, entry.file.name.lastIndexOf("."))
+            : entry.file.name;
+          this.files.set(newPath, entry);
+        } else {
+          const content = this.diskOnlyFiles.get(oldPath);
+          if (content !== undefined) {
+            this.diskOnlyFiles.delete(oldPath);
+            this.diskOnlyFiles.set(newPath, content);
+          }
+        }
       }
       const folderMoves: Array<[string, string]> = [];
       for (const key of this.folders.keys()) {
@@ -142,22 +231,58 @@ export class FakeVault {
           folderMoves.push([key, to + key.slice(from.length)]);
         }
       }
+      for (const key of this.diskOnlyFolders) {
+        if (key === from || key.startsWith(`${from}/`)) {
+          folderMoves.push([key, to + key.slice(from.length)]);
+        }
+      }
+      // Deduplicate moves where both sets have same key (should not happen due to hide logic)
+      const seen = new Set<string>();
       for (const [oldPath, newPath] of folderMoves) {
+        if (seen.has(oldPath)) continue;
+        seen.add(oldPath);
         const folder = this.folders.get(oldPath);
-        if (!folder) continue;
-        this.folders.delete(oldPath);
-        folder.path = newPath;
-        folder.name = newPath.split("/").pop() ?? newPath;
-        this.folders.set(newPath, folder);
+        if (folder) {
+          this.folders.delete(oldPath);
+          folder.path = newPath;
+          folder.name = newPath.split("/").pop() ?? newPath;
+          this.folders.set(newPath, folder);
+        } else if (this.diskOnlyFolders.has(oldPath)) {
+          this.diskOnlyFolders.delete(oldPath);
+          this.diskOnlyFolders.add(newPath);
+        }
       }
     },
     rmdir: async (path: string, _recursive: boolean): Promise<void> => {
-      if (!this.folders.has(path)) return;
+      const err = this.rmdirErrors.get(path);
+      if (err) {
+        const error = Object.assign(new Error(err.message ?? "ENOENT: no such file or directory"), err);
+        throw error;
+      }
+      const hasFolder = this.folders.has(path) || this.diskOnlyFolders.has(path);
+      if (!hasFolder) {
+        const hasFilePrefix = [...this.files.keys(), ...this.diskOnlyFiles.keys()].some((k) => k === path || k.startsWith(`${path}/`));
+        if (!hasFilePrefix) return;
+      }
       for (const key of [...this.files.keys()]) {
         if (key === path || key.startsWith(`${path}/`)) this.files.delete(key);
       }
+      for (const key of [...this.diskOnlyFiles.keys()]) {
+        if (key === path || key.startsWith(`${path}/`)) this.diskOnlyFiles.delete(key);
+      }
       for (const key of [...this.folders.keys()]) {
-        if (key !== "/" && (key === path || key.startsWith(`${path}/`))) this.folders.delete(key);
+        if (key !== "/" && (key === path || key.startsWith(`${path}/`))) {
+          const folder = this.folders.get(key);
+          if (folder) {
+            // detach from parent children
+            const parent = folder.parent;
+            if (parent) parent.children = parent.children.filter((c) => c.path !== key);
+          }
+          this.folders.delete(key);
+        }
+      }
+      for (const key of [...this.diskOnlyFolders]) {
+        if (key === path || key.startsWith(`${path}/`)) this.diskOnlyFolders.delete(key);
       }
     },
   };
