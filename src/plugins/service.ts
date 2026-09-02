@@ -24,7 +24,6 @@ import {
   loadPlugins,
   mcpServerFromPluginEntry,
   pluginMcpServerId,
-  pruneOrphanMcpState,
   type LoadedPlugin,
 } from "./loader";
 import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, slugifyPluginName, validatePluginManifest } from "./manifest";
@@ -65,20 +64,27 @@ export class PluginService {
       folder: settings.plugins.folder,
       enabledPlugins: settings.plugins.enabled,
     });
-    // Prune orphaned mcpState entries that no longer have a derived server
-    // (e.g. plugin removed externally). This also covers the removePackage
-    // cache-miss case where we could not know the derived ids at removal time.
-    const aliveIds = new Set(this.cache.flatMap((p) => p.mcpServers.map((s) => s.id)));
-    const beforeMcpState = Object.keys(settings.plugins.mcpState).length;
-    const beforePerTool = Object.keys(settings.approval.perTool).length;
-    const deletedMcpIds = Object.keys(settings.plugins.mcpState).filter((id) => !aliveIds.has(id));
-    pruneOrphanMcpState(settings.plugins.mcpState, aliveIds);
+    const mutated = this.pruneOrphanPluginSettings(settings);
+    if (mutated) await this.saveSettings?.();
+    return this.cache;
+  }
+
+  private pruneOrphanPluginSettings(settings: AgenticChatSettings): boolean {
+    const aliveIds = new Set(this.cache!.flatMap((p) => p.mcpServers.map((s) => s.id)));
+    // Keep mcpState for ids still owned by a legacy user server — matches
+    // settings.ts reconcile guard (prevents collision over-delete).
+    const isLegacyUserId = (id: string): boolean =>
+      settings.mcp.servers.some((server) => server.id === id && server.source !== "plugin");
+    const deletedMcpIds = Object.keys(settings.plugins.mcpState).filter((id) => !aliveIds.has(id) && !isLegacyUserId(id));
+    let mutated = deletedMcpIds.length > 0;
     for (const id of deletedMcpIds) {
+      delete settings.plugins.mcpState[id];
       clearMcpPerToolApprovals(settings.approval, id);
     }
-    const aliveNames = new Set(this.cache.map((p) => p.name));
-    let mutated = Object.keys(settings.plugins.mcpState).length !== beforeMcpState;
-    if (Object.keys(settings.approval.perTool).length !== beforePerTool) mutated = true;
+    // Also prune perTool for deleted ids that had no mcpState entry but still have approvals (best-effort)
+    // — use the full deleted set without legacy guard filtered above? No, respect guard.
+    // Already handled for deletedMcpIds above; legacy ids retain their perTool intentionally.
+    const aliveNames = new Set(this.cache!.map((p) => p.name));
     for (const name of Object.keys(settings.plugins.enabled)) {
       if (!aliveNames.has(name)) {
         delete settings.plugins.enabled[name];
@@ -98,8 +104,7 @@ export class PluginService {
       return this.cache!.some((p) => p.rootPath === server.pluginRoot);
     });
     if (settings.mcp.servers.length !== beforeLegacy) mutated = true;
-    if (mutated) await this.saveSettings?.();
-    return this.cache;
+    return mutated;
   }
 
   getLoaded(): LoadedPlugin[] {
@@ -135,15 +140,11 @@ export class PluginService {
         const exists = await this.app.vault.adapter.exists(plugin.rootPath);
         if (!exists) deleted.push(plugin);
       } catch {
+        // exists failed (permissions / transient IO) — don't treat as deleted, keep plugin visible.
         continue;
       }
     }
     return deleted;
-  }
-
-  /** Check whether any cached plugin folder no longer exists on disk (dot-folder watcher gap). */
-  async hasExternallyDeletedPlugin(): Promise<boolean> {
-    return (await this.listExternallyDeletedPlugins()).length > 0;
   }
 
   /**
@@ -366,18 +367,21 @@ export class PluginService {
    */
   async removePackage(name: string, rootPath: string): Promise<boolean> {
     // Determine server ids to prune before the folder is gone (cache miss → read mcp.json).
-    const cached = this.cache?.find((p) => p.rootPath === rootPath || p.name === name);
+    const cached =
+      this.cache?.find((p) => p.rootPath === rootPath) ?? this.cache?.find((p) => p.name === name) ?? null;
     let serverIds: string[] = [];
     if (cached) {
       serverIds = cached.mcpServers.map((server) => server.id);
     } else {
       try {
         const raw = await this.app.vault.adapter.read(`${rootPath}/mcp.json`);
-        if (raw) {
+        if (raw && raw.length <= 128 * 1024) {
           const parsed = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
           const mcpServers = parsed?.mcpServers;
           if (mcpServers && typeof mcpServers === "object") {
-            for (const key of Object.keys(mcpServers)) {
+            const keys = Object.keys(mcpServers);
+            // Bound iteration to avoid DOS from crafted huge mcp.json
+            for (const key of keys.slice(0, 100)) {
               serverIds.push(pluginMcpServerId(name, key));
             }
           }
@@ -557,6 +561,7 @@ export class PluginService {
         }
       },
       removeFolder: async (path) => {
+        if (!this.isWithinPluginsFolder(path)) return false;
         const inTree = app.vault.getAbstractFileByPath(path) instanceof TFolder;
         const onDisk = await app.vault.adapter.exists(path).catch(() => false);
         if (!inTree && !onDisk) return false;
@@ -565,7 +570,7 @@ export class PluginService {
         } catch (error) {
           const code = (error as { code?: string })?.code;
           const message = String((error as Error)?.message ?? "").toLowerCase();
-          if (code === "ENOENT" || message.includes("enoent") || message.includes("no such file")) return false;
+          if (code === "ENOENT" || message.includes("enoent")) return false;
           throw error;
         }
         pruneTreeFolder(app, path);
@@ -582,7 +587,26 @@ export class PluginService {
   }
 
   private pluginsFolder(): string {
-    return this.getSettings().plugins.folder.trim() || DEFAULT_PLUGINS_FOLDER;
+    const raw = this.getSettings().plugins.folder.trim().replace(/\/+$/, "");
+    if (!raw) return DEFAULT_PLUGINS_FOLDER;
+    if (raw.startsWith("/") || raw.includes(":") || raw.includes("\\")) return DEFAULT_PLUGINS_FOLDER;
+    const segments = raw.split("/").filter(Boolean);
+    if (segments.length === 0 || segments.some((segment) => segment === ".." || segment === ".")) {
+      return DEFAULT_PLUGINS_FOLDER;
+    }
+    return raw;
+  }
+
+  private isWithinPluginsFolder(target: string): boolean {
+    if (!target || target === "/" || target.trim() === "") return false;
+    const folder = this.pluginsFolder().replace(/\/+$/, "");
+    const normalized = target.trim().replace(/\/+$/, "");
+    if (normalized === folder) return false;
+    if (!normalized.startsWith(`${folder}/`)) return false;
+    // No traversal segments after the plugins folder prefix
+    const suffix = normalized.slice(folder.length + 1);
+    if (!suffix || suffix.split("/").some((segment) => segment === ".." || segment === "." || segment.length === 0)) return false;
+    return true;
   }
 
   /** Create every missing segment of a vault folder path. */

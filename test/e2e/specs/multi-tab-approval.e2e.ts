@@ -1,4 +1,4 @@
-import { browser, expect, $, $$ } from "@wdio/globals";
+import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
 
 const MULTI_TAB_WRITE_PATH = "E2E-Multi-Tab-Write.md";
@@ -7,6 +7,7 @@ type ScriptedTurn = {
   label?: string;
   content: Array<Record<string, unknown>>;
   stopReason?: "stop" | "toolUse";
+  delayMs?: number;
 };
 
 async function openChat(): Promise<void> {
@@ -101,7 +102,13 @@ describe("multi-tab background approval (effort + notify+label)", function () {
   it("surfaces background tab approval with tab badge and session label (no auto-switch)", async function () {
     // Ensure we have 2 tabs
     await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-tab-add")?.click());
-    await browser.waitUntil(async () => (await $$(".agentic-chat-tab")).length >= 2, { timeout: 3_000 });
+    await browser.waitUntil(
+      async () => {
+        const count = (await browser.execute(() => document.querySelectorAll(".agentic-chat-tab").length)) as unknown as number;
+        return count >= 2;
+      },
+      { timeout: 3_000 },
+    );
 
     // Ensure Tab1 active then send write that needs approval
     await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[0]?.click());

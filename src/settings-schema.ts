@@ -344,11 +344,28 @@ function healPluginSettings(stored: Partial<PluginSettings> | null | undefined):
     (stored as Record<string, unknown>)?.mcpState as Record<string, unknown> | null | undefined,
   );
   return {
-    folder: typeof stored?.folder === "string" && stored.folder.trim() ? stored.folder.trim() : DEFAULT_PLUGINS_FOLDER,
+    folder: healPluginsFolder(stored?.folder),
     enabled,
     sources,
     mcpState,
   };
+}
+
+function healPluginsFolder(raw: unknown): string {
+  if (typeof raw !== "string") return DEFAULT_PLUGINS_FOLDER;
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) return DEFAULT_PLUGINS_FOLDER;
+  // Reject absolute, traversal, or colon (Windows drive / URL) to keep deletes confined.
+  if (trimmed.startsWith("/") || trimmed.includes(":") || trimmed.includes("\\")) {
+    return DEFAULT_PLUGINS_FOLDER;
+  }
+  const segments = trimmed.split("/").filter(Boolean);
+  if (segments.length === 0 || segments.some((segment) => segment === ".." || segment === ".")) {
+    return DEFAULT_PLUGINS_FOLDER;
+  }
+  // Allow dot-folders like .agentic-plugins, but require at least one non-dot segment char
+  if (segments.some((segment) => segment.length === 0)) return DEFAULT_PLUGINS_FOLDER;
+  return trimmed;
 }
 
 function healProvider(stored: ProviderId | undefined): ProviderId {

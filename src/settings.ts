@@ -234,23 +234,33 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private pendingMcpServerName = "";
   private pendingMcpServerUrl = "";
   private externallyDeletedPlugins: LoadedPlugin[] = [];
+  private externalDeleteCheckRunning = false;
+  private lastExternalDeleteCheck = 0;
 
   /** Trigger an async plugin load once; redraw when it lands so rows appear. */
   private ensurePluginsLoaded(): void {
     if (this.pluginsLoadedOnce && this.plugin.pluginService.hasCache()) {
       // Dot-folders deleted externally don't fire vault.delete; poll the adapter so
       // Resources doesn't show a stale cache until the user clicks Remove.
+      const now = Date.now();
+      if (this.externalDeleteCheckRunning) return;
+      if (now - this.lastExternalDeleteCheck < 2000) return;
+      this.externalDeleteCheckRunning = true;
+      this.lastExternalDeleteCheck = now;
       void this.plugin.pluginService
         .listExternallyDeletedPlugins()
         .then((deleted) => {
           if (deleted.length > 0) {
             this.externallyDeletedPlugins = deleted;
-            // Keep transient until dismissed; auto-prune orphan settings via reload.
+            // Keep transient until dismissed; auto-prune orphan settings via reload on next display.
             this.pluginsLoadedOnce = false;
             this.ensurePluginsLoaded();
           }
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          this.externalDeleteCheckRunning = false;
+        });
       return;
     }
     this.pluginsLoadedOnce = true;
@@ -259,6 +269,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .then((plugins) => {
         const mutated = this.reconcileLoadedPlugins(plugins);
         if (mutated) void this.save();
+        // Transient prune does not count as settings mutation (reconcile handles split)
+        if (this.externallyDeletedPlugins.length > 0) this.redraw();
         return plugins;
       })
       .catch((error: unknown) => {
@@ -302,10 +314,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         }
       }
     }
+    // Prune transient deleted cache entries that have reappeared (recreated outside)
     const alivePaths = new Set(plugins.map((plugin) => plugin.rootPath));
-    const beforeTransient = this.externallyDeletedPlugins.length;
     this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((plugin) => !alivePaths.has(plugin.rootPath));
-    if (this.externallyDeletedPlugins.length !== beforeTransient) mutated = true;
     return mutated;
   }
 
@@ -2341,7 +2352,14 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     new ButtonComponent(controls)
       .setButtonText("Dismiss")
       .onClick(async () => {
-        await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
+        // Guard the TOCTOU: if the folder was recreated since the transient was shown, don't delete it.
+        let shouldRemove: boolean;
+        try {
+          shouldRemove = !(await this.app.vault.adapter.exists(plugin.rootPath));
+        } catch {
+          shouldRemove = false;
+        }
+        if (shouldRemove) await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
         this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((entry) => entry.rootPath !== plugin.rootPath);
         this.redraw();
       });
