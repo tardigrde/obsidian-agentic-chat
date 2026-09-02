@@ -257,48 +257,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     void this.plugin.pluginService
       .reload()
       .then((plugins) => {
-        // S10: shape lives in mcp.json; ensure every derived plugin server has a
-        // client-owned entry in settings.plugins.mcpState (enabled/approval/auth).
-        // No merge into settings.mcp.servers — the two cannot diverge.
-        const pluginServers = plugins.flatMap((plugin) => plugin.mcpServers);
-        let mutated = false;
-        const derivedIds = new Set(pluginServers.map((s) => s.id));
-        for (const server of pluginServers) {
-          const existing = this.plugin.settings.plugins.mcpState[server.id];
-          if (!existing) {
-            this.plugin.settings.plugins.mcpState[server.id] = createMcpServerState(server.id, {
-              enabled: server.enabled,
-              approval: server.approval,
-              lastUrl: server.url,
-            });
-            mutated = true;
-          } else if (existing.lastUrl !== server.url) {
-            // URL moved in mcp.json — clear tokens for new host (also handled in derive, but ensure persisted state is cleared)
-            if (existing.lastUrl && existing.lastUrl !== server.url) {
-              existing.authHeaderValue = "";
-              existing.oauth = { ...existing.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
-            }
-            existing.lastUrl = server.url;
-            mutated = true;
-          }
-        }
-        // Prune orphan mcpState entries whose plugin no longer declares that server.
-        for (const id of Object.keys(this.plugin.settings.plugins.mcpState)) {
-          if (!derivedIds.has(id)) {
-            // Keep entries that correspond to legacy user servers still in mcp.servers (source=user) — they are not plugin orphans.
-            const isLegacyUser = this.plugin.settings.mcp.servers.some((s) => s.id === id && s.source !== "plugin");
-            if (!isLegacyUser) {
-              delete this.plugin.settings.plugins.mcpState[id];
-              clearMcpPerToolApprovals(this.plugin.settings.approval, id);
-              mutated = true;
-            }
-          }
-        }
-        // Reconcile transient deleted list with fresh scan (hide if reappeared).
-        const alivePaths = new Set(plugins.map((plugin) => plugin.rootPath));
-        const beforeTransient = this.externallyDeletedPlugins.length;
-        this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((plugin) => !alivePaths.has(plugin.rootPath));
-        if (this.externallyDeletedPlugins.length !== beforeTransient) mutated = true;
+        const mutated = this.reconcileLoadedPlugins(plugins);
         if (mutated) void this.save();
         return plugins;
       })
@@ -306,6 +265,48 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         console.warn("Agentic chat: could not load agent plugins", error);
       })
       .then(() => this.redraw());
+  }
+
+  private reconcileLoadedPlugins(plugins: LoadedPlugin[]): boolean {
+    // S10: shape lives in mcp.json; ensure every derived plugin server has a
+    // client-owned entry in settings.plugins.mcpState (enabled/approval/auth).
+    // No merge into settings.mcp.servers — the two cannot diverge.
+    const pluginServers = plugins.flatMap((plugin) => plugin.mcpServers);
+    let mutated = false;
+    const derivedIds = new Set(pluginServers.map((server) => server.id));
+    for (const server of pluginServers) {
+      const existing = this.plugin.settings.plugins.mcpState[server.id];
+      if (!existing) {
+        this.plugin.settings.plugins.mcpState[server.id] = createMcpServerState(server.id, {
+          enabled: server.enabled,
+          approval: server.approval,
+          lastUrl: server.url,
+        });
+        mutated = true;
+      } else if (existing.lastUrl !== server.url) {
+        if (existing.lastUrl && existing.lastUrl !== server.url) {
+          existing.authHeaderValue = "";
+          existing.oauth = { ...existing.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
+        }
+        existing.lastUrl = server.url;
+        mutated = true;
+      }
+    }
+    for (const id of Object.keys(this.plugin.settings.plugins.mcpState)) {
+      if (!derivedIds.has(id)) {
+        const isLegacyUser = this.plugin.settings.mcp.servers.some((entry) => entry.id === id && entry.source !== "plugin");
+        if (!isLegacyUser) {
+          delete this.plugin.settings.plugins.mcpState[id];
+          clearMcpPerToolApprovals(this.plugin.settings.approval, id);
+          mutated = true;
+        }
+      }
+    }
+    const alivePaths = new Set(plugins.map((plugin) => plugin.rootPath));
+    const beforeTransient = this.externallyDeletedPlugins.length;
+    this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((plugin) => !alivePaths.has(plugin.rootPath));
+    if (this.externallyDeletedPlugins.length !== beforeTransient) mutated = true;
+    return mutated;
   }
 
   private mcpDisplayServers(settings: AgenticChatSettings): McpServerSettings[] {
