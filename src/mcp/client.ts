@@ -397,8 +397,12 @@ export class McpHttpClient {
           if (resourceUrl && isValidOAuthResourceUrl(resourceUrl)) {
             this.server.pendingOAuthChallenge = auth;
             this.server.pendingOAuthResourceUrl = resourceUrl;
-            // For none: allow UI to show "This server requires OAuth" banner and enable Authenticate button without persisting yet.
-            // For bearer/header: also set pending so UI can show "Switch to OAuth?" CTA, but don't overwrite persisted authType until user confirms.
+            // Persist pending for plugin servers so banner survives redraw (ephemeral copy would be lost)
+            try {
+              await this.onServerChanged?.();
+            } catch {
+              // ignore persist errors, still throw OAuth required
+            }
             throw new McpOAuthRequiredError(auth, resourceUrl);
           }
         }

@@ -445,6 +445,16 @@ export class PluginService {
     settings.plugins.sources = sources;
   }
 
+  private isComposioServer(pluginName: string, url: string): boolean {
+    if (pluginName === "composio") return true;
+    try {
+      const h = new URL(url).hostname.toLowerCase();
+      return h === "composio.dev" || h.endsWith(".composio.dev") || h === "connect.composio.dev";
+    } catch {
+      return false;
+    }
+  }
+
   /** Ensure client-owned state exists for an imported plugin's MCP servers, defaulting to disabled (D11). */
   private async recordPluginMcp(pluginName: string, converted: { mcpEntries: Array<{ key: string; url: string; headers?: Record<string, string> }> }): Promise<void> {
     if (converted.mcpEntries.length === 0) return;
@@ -453,17 +463,7 @@ export class PluginService {
     for (const entry of converted.mcpEntries) {
       const id = pluginMcpServerId(pluginName, entry.key);
       if (!settings.plugins.mcpState[id]) {
-        const isComposio =
-          pluginName === "composio" ||
-          (() => {
-            try {
-              const h = new URL(entry.url).hostname.toLowerCase();
-              return h === "composio.dev" || h.endsWith(".composio.dev") || h === "connect.composio.dev";
-            } catch {
-              return false;
-            }
-          })();
-        const authType = isComposio ? "oauth" : "none";
+        const authType = this.isComposioServer(pluginName, entry.url) ? "oauth" : "none";
         settings.plugins.mcpState[id] = createMcpServerState(id, { enabled: false, authType, lastUrl: entry.url });
         mutated = true;
       }
