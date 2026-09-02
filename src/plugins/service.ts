@@ -453,7 +453,8 @@ export class PluginService {
     for (const entry of converted.mcpEntries) {
       const id = pluginMcpServerId(pluginName, entry.key);
       if (!settings.plugins.mcpState[id]) {
-        settings.plugins.mcpState[id] = createMcpServerState(id, { enabled: false });
+        const authType = entry.url.includes("composio.dev") ? "oauth" : "none";
+        settings.plugins.mcpState[id] = createMcpServerState(id, { enabled: false, authType, lastUrl: entry.url });
         mutated = true;
       }
     }

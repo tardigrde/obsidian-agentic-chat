@@ -298,18 +298,22 @@ export function mcpServerFromPluginEntry(
   pluginRoot: string,
   entry: PluginMcpServer,
 ): McpServerSettings {
+  const url = entry.url ?? "";
+  // Composio Connect advertises OAuth via 401 + resource_metadata; default to oauth so the
+  // Test button shows "Authenticate & test" without requiring the user to open the Authentication dropdown first.
+  const authType = url.includes("composio.dev") ? "oauth" : "none";
   return {
     ...createMcpServerSettings({
       id: pluginMcpServerId(pluginName, entry.key),
       name: `${pluginName}: ${entry.key}`,
-      url: entry.url ?? "",
+      url,
       // Plugin MCP servers start disabled (D11) — for imported packages the
       // import flow reinforces this, and hand-authored mcp.json servers are
       // not silently enabled just by appearing on disk. The "Add MCP server"
       // generator opts in explicitly.
       enabled: false,
       approval: "ask",
-      authType: "none",
+      authType,
     }),
     headers: entry.headers ?? {},
     source: "plugin",
