@@ -1,13 +1,10 @@
-import { type App, type TFile } from "obsidian";
-import { splitFrontmatter, stringField } from "../skills/skills";
-import { normalizeFolderPath } from "../vault/path";
-
 /**
- * A subagent profile: a focused child agent the main agent can delegate to.
- * Authored as a built-in (below) or a vault `AGENT.md` (YAML frontmatter + body).
- * The body is the child's system prompt; `toolAllowlist` is its permission boundary.
+ * A subagent role: a focused child agent the main agent can delegate to.
+ * S8 reframe: the isolation value is a clean context window for a subtask,
+ * not a switchable persona. The child's toolAllowlist is advisory;
+ * parent approval/mode still governs.
  */
-export interface AgentProfile {
+export interface AgentRole {
   /** Unique dispatch name. */
   name: string;
   /** One-line summary shown to the model (in the system prompt) and in the UI. */
@@ -19,38 +16,26 @@ export interface AgentProfile {
   /**
    * Tool names the child may call. Empty means "all read-only vault tools".
    * Mutating tools are stripped anyway when the parent is in a read-only mode.
+   * Advisory – parent approval gates still apply.
    */
   toolAllowlist: string[];
 }
 
-const RESEARCHER_PROMPT = `You are a research subagent inside Obsidian. You investigate one focused question against the user's vault and report back.
+const EXPLORER_PROMPT = `You are an explorer subagent inside Obsidian. You investigate one focused question against the user's vault and report back.
 
 - Use read, search, and ls for vault evidence; use web_search and fetch_url when web research is part of the task.
 - Fetch promising web results before relying on them. Prefer primary/authoritative sources and keep their source artifact ids or URLs.
 - Read relevant notes/source artifacts before drawing conclusions; never guess paths or cite snippets you did not inspect.
 - Return a tight, sourced summary: answer first, then the note paths, source artifact ids, and URLs you relied on.
+- When asked to review a draft claim set, source list, note, or plan, be skeptical: flag unsupported claims, stale/low-authority sources, missing citations, and contradictions, ordered by severity with evidence for each finding.
 - You cannot change the vault. Do not propose running other tools.`;
 
-const REVIEWER_PROMPT = `You are an adversarial reviewer subagent inside Obsidian. You critique a note, plan, or change and surface problems.
-
-- Read the relevant material first with read/search/ls and inspect source artifacts with read_artifact/search_artifact when claims cite them.
-- Use web_search/fetch_url only to verify contested or high-impact claims, then cite the fetched source artifact or URL.
-- Be specific and skeptical: list concrete issues, risks, unsupported claims, and missing citations — not praise.
-- Order findings by severity. For each, say where it is, what evidence supports the finding, and why it matters.
-- You cannot change the vault; you only report findings.`;
-
-const EDITOR_PROMPT = `You are an editor subagent inside Obsidian. You apply focused, well-scoped edits to vault notes given clear instructions.
-
-- Read a note before editing it. Prefer edit for small exact changes; use write to create or fully replace a file.
-- Make only the changes the task asks for; do not restructure beyond the request.
-- After editing, briefly confirm exactly what changed (paths and the nature of each change).`;
-
-/** Built-in subagent roster, vault-native analogues of the pi-subagents set. */
-export const BUILTIN_AGENT_PROFILES: AgentProfile[] = [
+/** Single built-in role: read-only recon. */
+export const BUILTIN_AGENT_ROLES: AgentRole[] = [
   {
-    name: "researcher",
-    description: "Read-only recon: investigate a focused question across the vault and report sourced findings.",
-    systemPrompt: RESEARCHER_PROMPT,
+    name: "explorer",
+    description: "Read-only explorer: recon a focused question across the vault (and the web when asked) and report sourced findings.",
+    systemPrompt: EXPLORER_PROMPT,
     toolAllowlist: [
       "read",
       "search",
@@ -62,131 +47,57 @@ export const BUILTIN_AGENT_PROFILES: AgentProfile[] = [
       "read_artifact",
       "search_artifact",
     ],
-  },
-  {
-    name: "reviewer",
-    description: "Adversarial read-only reviewer: critique a note, plan, or change and surface problems by severity.",
-    systemPrompt: REVIEWER_PROMPT,
-    toolAllowlist: [
-      "read",
-      "search",
-      "ls",
-      "get_active_note",
-      "web_search",
-      "fetch_url",
-      "list_artifacts",
-      "read_artifact",
-      "search_artifact",
-    ],
-  },
-  {
-    name: "editor",
-    description: "Apply focused edits to vault notes given clear instructions. Can write and edit files.",
-    systemPrompt: EDITOR_PROMPT,
-    toolAllowlist: ["read", "search", "ls", "edit", "write"],
   },
 ];
 
+// Freeze the built-in roster so a caller mutating a returned role cannot
+// escalate the singleton for the rest of the session.
+for (const role of BUILTIN_AGENT_ROLES) {
+  Object.freeze(role.toolAllowlist);
+  Object.freeze(role);
+}
+Object.freeze(BUILTIN_AGENT_ROLES);
+
+/** Normalize a dispatch name for lookup: trim + case-insensitive (models capitalize). */
+export function normalizeAgentName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/** Case-insensitive role lookup (trims the request). */
+export function findAgentRole(roles: Pick<AgentRole, "name">[], name: string): AgentRole | undefined {
+  const wanted = normalizeAgentName(name);
+  return (roles as AgentRole[]).find((candidate) => candidate.name.trim().toLowerCase() === wanted);
+}
+
 /**
- * Load the available subagent profiles: the built-in roster (optional) plus any
- * vault `AGENT.md` files. A vault profile overrides a built-in of the same name.
+ * Load the available subagent roles. Currently the built-in roster only;
+ * custom roles are not supported — extend BUILTIN_AGENT_ROLES in code.
+ * Returns deep clones so callers cannot mutate the frozen singleton.
  */
-export async function loadAgentProfiles(
-  app: App,
-  folderInput: string,
-  includeBuiltins: boolean,
-): Promise<AgentProfile[]> {
-  const byName = new Map<string, AgentProfile>();
-  if (includeBuiltins) {
-    for (const profile of BUILTIN_AGENT_PROFILES) byName.set(profile.name, profile);
-  }
-  for (const profile of await loadVaultAgentProfiles(app, folderInput)) {
-    byName.set(profile.name, profile);
-  }
-  return [...byName.values()];
+export function loadAgentRoles(): AgentRole[] {
+  return BUILTIN_AGENT_ROLES.map((role) => ({ ...role, toolAllowlist: [...role.toolAllowlist] }));
+}
+
+/** Strip newlines/control chars and cap length so role text cannot inject prompt structure. */
+function sanitizeRoleText(value: string, maxLength: number): string {
+  return value.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
 /** Format the model-visible block advertising the available subagents. */
-export function formatSubagentsForSystemPrompt(profiles: AgentProfile[]): string {
-  if (profiles.length === 0) return "";
-  const lines = profiles.map((profile) => `- **${profile.name}**: ${profile.description}`);
+export function formatAgentRolesForSystemPrompt(roles: AgentRole[]): string {
+  if (roles.length === 0) return "";
+  const lines = roles.map(
+    (role) => `- **${sanitizeRoleText(role.name, 64)}**: ${sanitizeRoleText(role.description, 200)}`,
+  );
   return [
     "## Subagents",
     "",
     "You can delegate focused subtasks to these specialist subagents with the `subagent` tool. " +
       "One call runs one subagent ({agent, task}); make several `subagent` calls in one message " +
       "to run several in parallel (up to 10 at once). " +
-      "Delegate work that is self-contained (research, review, bulk edits) to keep your own context clean.",
+      "Delegate work that is self-contained (research, review) to keep your own context clean. " +
+      "Subagents inherit your approval/mode controls; the built-in Explorer role is read-only recon.",
     "",
     ...lines,
   ].join("\n");
-}
-
-async function loadVaultAgentProfiles(app: App, folderInput: string): Promise<AgentProfile[]> {
-  const folder = safeFolder(folderInput);
-  if (folder === null) return [];
-
-  const files = app.vault.getMarkdownFiles().filter((file) => {
-    if (!isUnder(file.path, folder)) return false;
-    if (file.name.toLowerCase() === "agent.md") return true;
-    return (file.parent?.path ?? "") === folder;
-  });
-
-  const profiles: AgentProfile[] = [];
-  for (const file of files.sort((a, b) => a.path.localeCompare(b.path))) {
-    let raw: string;
-    try {
-      raw = await app.vault.cachedRead(file);
-    } catch (error) {
-      // A single unreadable file must not abort the whole load.
-      console.warn(`Agentic chat: could not read agent file ${file.path}`, error);
-      continue;
-    }
-    const { data, body } = splitFrontmatter(raw);
-    if (!body.trim()) continue;
-    const name = stringField(data, "name") ?? deriveName(file);
-    profiles.push({
-      name,
-      description: stringField(data, "description") ?? name,
-      systemPrompt: body,
-      model: stringField(data, "model"),
-      toolAllowlist: parseToolList(data.tools),
-    });
-  }
-  return profiles;
-}
-
-/** Parse a frontmatter `tools` field: a comma/space list or a YAML array. */
-function parseToolList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item).trim()).filter(Boolean);
-  }
-  if (typeof value === "string") {
-    return value
-      .split(/[,\s]+/)
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
-
-function deriveName(file: TFile): string {
-  // An `AGENT.md` is named after its containing folder; a bare note after itself.
-  if (file.name.toLowerCase() === "agent.md") {
-    return file.parent?.path ? file.parent.name : file.basename;
-  }
-  return file.basename;
-}
-
-function isUnder(path: string, folder: string): boolean {
-  return folder === "" || path === folder || path.startsWith(`${folder}/`);
-}
-
-function safeFolder(folderInput: string): string | null {
-  if (!folderInput.trim()) return null;
-  try {
-    return normalizeFolderPath(folderInput);
-  } catch {
-    return null;
-  }
 }

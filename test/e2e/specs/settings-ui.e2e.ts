@@ -55,8 +55,6 @@ interface SettingsSnapshot {
     }>;
   };
   plugins: { folder: string; sources?: Record<string, string>; mcpState?: Record<string, McpServerStateSnapshot> };
-  enableBuiltinAgents: boolean;
-  agentsFolder: string;
   ignoredGlobs: string;
 }
 
@@ -124,8 +122,6 @@ async function resetSettingsForUiSpec(): Promise<void> {
         sources: Record<string, string>;
         mcpState: Record<string, unknown>;
       };
-      enableBuiltinAgents: boolean;
-      agentsFolder: string;
       ignoredGlobs: string;
     };
     settings.provider = "openrouter";
@@ -167,8 +163,6 @@ async function resetSettingsForUiSpec(): Promise<void> {
       authHeaderValue: "",
     };
     settings.plugins = { folder: ".agentic-plugins", enabled: {}, sources: {}, mcpState: {} };
-    settings.enableBuiltinAgents = true;
-    settings.agentsFolder = "";
     settings.ignoredGlobs = "";
     app.secretStorage?.setSecret?.(secretId, "");
     app.secretStorage?.setSecret?.("agentic-chat-langfuse-public-key", "");
@@ -438,17 +432,13 @@ describe("agentic-chat settings UI", function () {
     expect("authHeaderValue" in storedObservability).toBe(false);
   });
 
-  it("persists plugin folder, subagent folder, and ignored globs through the Resources tab", async function () {
+  it("persists plugin folder and ignored globs through the Resources tab", async function () {
     await selectSettingsTab("Resources");
     await setSettingText("Plugins folder", ".agentic-plugins-e2e");
-    await setSettingToggle("Built-in subagents", false);
-    await setSettingText("Subagents folder", "Agents");
     await setSettingText("Ignore list", "Private/\n*.secret.md");
 
     const settings = await readAgenticChatSettings<SettingsSnapshot>();
     expect(settings.plugins.folder).toBe(".agentic-plugins-e2e");
-    expect(settings.enableBuiltinAgents).toBe(false);
-    expect(settings.agentsFolder).toBe("Agents");
     expect(settings.ignoredGlobs).toBe("Private/\n*.secret.md");
   });
 });

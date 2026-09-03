@@ -17,7 +17,7 @@ import type { AskUserHandler } from "../tools/ask-user-tool";
 import { createDynamicProxiedFetcher } from "../mcp/fetcher";
 import { AgentObservabilityRuntime } from "../observability/agent-observability";
 import { type ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
-import { type AgentProfile } from "./subagents";
+import { type AgentRole } from "./subagents";
 import { handleAgentRuntimeEvent } from "./agent-event-handler";
 import type { RequestCostEstimate } from "./cost";
 import {
@@ -345,7 +345,7 @@ export class AgentService {
     return this.turns.getActiveThinkingLevels();
   }
 
-  getProfiles(): AgentProfile[] {
+  getProfiles(): AgentRole[] {
     return this.runtimeResources.getProfiles();
   }
 
@@ -372,7 +372,7 @@ export class AgentService {
   }
 
   /**
-   * Re-read vault-backed runtime resources (plugins, skills, profiles, MCP
+   * Re-read vault-backed runtime resources (plugins, skills, roles, MCP
    * servers) so diagnostics and the next turn reflect the current vault.
    */
   async reloadRuntimeResources(): Promise<AgentRuntimeResources> {

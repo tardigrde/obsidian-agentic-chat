@@ -17,7 +17,8 @@ import {
   normalizeTasks,
   type SubagentChildStatus,
 } from "../tools/subagent-tool";
-import type { AgentProfile } from "./subagents";
+import type { AgentRole } from "./subagents";
+import { findAgentRole } from "./subagents";
 import { resolveModePolicy } from "./modes";
 import { resolveWorkingDirPolicy, toolTargetPaths } from "./working-dir";
 import { UNDOABLE_TOOLS, captureUndo } from "./undo";
@@ -64,7 +65,7 @@ interface ToolCallControllerOptions {
   getSettings: () => AgenticChatSettings;
   confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   getTools: () => AgentTool[];
-  getProfiles: () => AgentProfile[];
+  getProfiles: () => AgentRole[];
   onUndoApplied: () => void;
   recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
@@ -80,7 +81,7 @@ export class AgentToolCallController {
   private readonly getSettings: () => AgenticChatSettings;
   private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   private readonly getTools: () => AgentTool[];
-  private readonly getProfiles: () => AgentProfile[];
+  private readonly getProfiles: () => AgentRole[];
   private readonly onUndoApplied: () => void;
   private readonly recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   private readonly recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
@@ -318,6 +319,15 @@ export class AgentToolCallController {
     toolCallId: string,
     args: unknown,
   ): Promise<ToolGateDecision> {
+    // Unknown agents fail closed with a distinct audit: the dispatch never ran,
+    // so it must not be logged as auto-approved (execute would throw unknown-agent).
+    const unknown = normalizeTasks((args ?? {})).find((task) => !findAgentRole(this.getProfiles(), task.agent));
+    if (unknown) {
+      const available = this.getProfiles().map((candidate) => candidate.name).join(", ") || "(none)";
+      const reason = `subagent: unknown agent "${unknown.agent.trim()}". Available: ${available}.`;
+      await this.auditApproval({ decision: "denied", toolCallId, toolName: SUBAGENT_TOOL_NAME, args, reason });
+      return { block: true, reason };
+    }
     if (!this.dispatchCanMutate(settings, args)) {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
       return undefined;
@@ -368,16 +378,18 @@ export class AgentToolCallController {
     return this.getTools().find((candidate) => candidate.name === toolName)?.label ?? toolName;
   }
 
-  /** True when any dispatched profile's allowlist includes a mutating tool that is not per-tool denied. */
+  /** True when any dispatched role's allowlist includes a mutating tool that is not per-tool denied. */
   private dispatchCanMutate(settings: AgenticChatSettings, args: unknown): boolean {
     const tasks = normalizeTasks((args ?? {}));
     return tasks.some((task) => {
-      const profile = this.getProfiles().find((candidate) => candidate.name === task.agent);
+      const profile = findAgentRole(this.getProfiles(), task.agent);
       if (!profile) return false;
       return profile.toolAllowlist.some((name) => {
-        const isMutating =
-          MUTATING_TOOLS.has(name) || isMcpToolName(name) || name === "load_skill" || name === "unload_skill";
-        if (!isMutating) return false;
+        // Child agents only ever receive vault + web + artifact + read-skill tools
+        // (see AgentSubagentRuntime.createChildAgent) — never MCP/memory/load_skill.
+        // Gating on those names here would false-trigger a deny prompt for a role
+        // that lists them aspirationally, so only MUTATING_TOOLS counts.
+        if (!MUTATING_TOOLS.has(name)) return false;
         // Per-tool deny means this mutating tool is effectively read-only for dispatch purposes.
         if (getPerToolApproval(settings.approval, name) === "deny") return false;
         return true;

@@ -1,5 +1,5 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
-import type { AgentProfile } from "./subagents";
+import type { AgentRole } from "./subagents";
 
 export function buildSubagentInvocation(name: string, task: string): string {
   return `Use the subagent tool to delegate this task to the "${name}" subagent: ${task}`;
@@ -38,15 +38,15 @@ export function buildInstructionCaptureInvocation(instruction: string): string {
 
 export function unknownAgentMessage(
   name: string,
-  profiles: Pick<AgentProfile, "name">[],
+  profiles: Pick<AgentRole, "name">[],
   skills: Pick<Skill, "name">[],
 ): string {
   const available = profiles.map((item) => item.name);
-  const lower = name.toLowerCase();
+  const lower = name.trim().toLowerCase();
   const skill = skills.find(
     (item) => item.name.toLowerCase() === lower || item.name.toLowerCase().includes(lower),
   );
-  const parts = [`No subagent named "${name}".`];
+  const parts = [`No subagent named "${name.trim()}".`];
   if (skill) parts.push(`Did you mean the skill "${skill.name}"? Run it with /${skill.name} or /skill ${skill.name}.`);
   parts.push(available.length > 0 ? `Available subagents: ${available.join(", ")}.` : "No subagents are configured.");
   return parts.join(" ");

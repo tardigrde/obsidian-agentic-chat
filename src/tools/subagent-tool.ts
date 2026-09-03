@@ -1,7 +1,7 @@
 import { type Agent, type AgentEvent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import type { AgentProfile } from "../agent/subagents";
+import { findAgentRole, type AgentRole } from "../agent/subagents";
 import { sumAssistantUsage } from "../agent/usage";
 import { redactText } from "../privacy/redaction";
 import { truncateToolOutput } from "../vault/truncate";
@@ -85,10 +85,10 @@ export interface SubagentTask {
 }
 
 export interface SubagentToolDeps {
-  /** The subagent profiles available to dispatch right now. */
-  getProfiles: () => AgentProfile[];
-  /** Build a ready-to-run child Agent for a profile (tools/model/stream wired by the caller). */
-  createChildAgent: (profile: AgentProfile) => Agent;
+  /** The subagent roles available to dispatch right now. */
+  getProfiles: () => AgentRole[];
+  /** Build a ready-to-run child Agent for a role (tools/model/stream wired by the caller). */
+  createChildAgent: (profile: AgentRole) => Agent;
   /** Report a finished child's token usage for session cost accounting. */
   recordUsage?: (usage: Usage) => void;
   /** Auto-abort a child that runs longer than this many seconds. 0 disables. */
@@ -96,7 +96,7 @@ export interface SubagentToolDeps {
 }
 
 const SubagentParameters = Type.Object({
-  agent: Type.String({ description: "profile name" }),
+  agent: Type.String({ description: "role name" }),
   task: Type.String({ description: "task to delegate" }),
 });
 
@@ -121,7 +121,7 @@ export function createSubagentTool(
       "Run one specialist subagent in an isolated context; it returns a summary. " +
       "One call = one subagent ({agent, task}). To delegate several tasks, make several " +
       "subagent calls in one message — they run in parallel (up to 10 at once). " +
-      "Profiles are in the system prompt.",
+      "Roles are in the system prompt; Explorer inherits parent approval/mode.",
     parameters: SubagentParameters,
     execute: async (toolCallId, params, signal, onUpdate) => {
       const agent = params.agent?.trim();
@@ -130,10 +130,10 @@ export function createSubagentTool(
         throw new Error("subagent: provide both {agent, task}.");
       }
       const profiles = deps.getProfiles();
-      const profile = profiles.find((candidate) => candidate.name === agent);
+      const profile = findAgentRole(profiles, agent);
       if (!profile) {
         const available = profiles.map((candidate) => candidate.name).join(", ") || "(none)";
-        throw new Error(`subagent: unknown agent "${agent}". Available: ${available}.`);
+        throw new Error(`subagent: unknown agent "${agent.trim()}". Available: ${available}.`);
       }
 
       const status: SubagentChildStatus = { agent, task, status: "queued" };
@@ -218,7 +218,7 @@ export function createSubagentTool(
 /**
  * Resolve the single requested task, tolerating malformed model output (blank
  * agent/task collapse to no-op). Retained for approval gating, which inspects
- * the profile of the target agent before the dispatch runs.
+ * the role of the target agent before the dispatch runs.
  */
 export function normalizeTasks(params: { agent?: string; task?: string }): SubagentTask[] {
   const agent = params.agent?.trim();
@@ -284,7 +284,7 @@ function releaseSlot(pool: SlotPool): void {
 async function runSingleChild(
   deps: SubagentToolDeps,
   status: SubagentChildStatus,
-  profile: AgentProfile,
+  profile: AgentRole,
   task: string,
   parentToolCallId: string,
   signal: AbortSignal | undefined,

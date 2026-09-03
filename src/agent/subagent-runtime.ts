@@ -15,7 +15,7 @@ import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
 import { ReadMemo } from "../vault/read-memo";
 import { resolveModePolicy } from "./modes";
 import type { AgentRuntimeResources } from "./runtime-resources";
-import type { AgentProfile } from "./subagents";
+import type { AgentRole } from "./subagents";
 import type { AfterToolCallContext, AgentToolCallController, BeforeToolCallContext } from "./tool-call-controller";
 
 export interface SubagentRuntimeOptions {
@@ -65,7 +65,7 @@ export class AgentSubagentRuntime {
     });
   }
 
-  createChildAgent(profile: AgentProfile): Agent {
+  createChildAgent(profile: AgentRole): Agent {
     const settings = this.getSettings();
     const readOnly = settings.mode === "plan";
     const childNamespace = this.nextChildNamespace();
@@ -111,15 +111,25 @@ export function childModelConfig(settings: AgenticChatSettings, modelOverride?: 
 }
 
 /**
- * Restrict a child's tools to its profile allowlist. An empty allowlist defaults
+ * Restrict a child's tools to its role allowlist. An empty allowlist defaults
  * to the read-only vault tools; when the parent mode forbids writes, mutating
- * tools are stripped regardless of the allowlist.
+ * tools are stripped regardless of the allowlist. The allowlist is advisory –
+ * parent approval gates still govern execution.
  */
 export function filterChildTools(tools: AgentTool[], allowlist: string[], readOnly: boolean): AgentTool[] {
+  // Allowlist entries come from vault frontmatter — normalize case/whitespace
+  // so "Read, search" does not silently lobotomise the child to zero tools.
+  const normalized = allowlist.map((name) => name.trim().toLowerCase()).filter(Boolean);
   let allowed =
-    allowlist.length > 0
-      ? tools.filter((tool) => allowlist.includes(tool.name))
+    normalized.length > 0
+      ? tools.filter((tool) => normalized.includes(tool.name.toLowerCase()))
       : tools.filter((tool) => !MUTATING_TOOLS.has(tool.name));
+  if (normalized.length > 0 && allowed.length === 0) {
+    console.warn(
+      `Agentic chat: subagent allowlist [${allowlist.join(", ")}] matched no tools — falling back to read-only vault tools.`,
+    );
+    allowed = tools.filter((tool) => !MUTATING_TOOLS.has(tool.name));
+  }
   if (readOnly) allowed = allowed.filter((tool) => !MUTATING_TOOLS.has(tool.name));
   return allowed;
 }

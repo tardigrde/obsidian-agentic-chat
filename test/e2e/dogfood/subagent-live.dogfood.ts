@@ -16,7 +16,7 @@ describe("agentic-chat subagent live dogfood", function () {
     if (process.env.AGENTIC_CHAT_SUBAGENT_DOGFOOD !== "true") this.skip();
     if (!apiKey) this.skip();
 
-    await configureLivePlugin({ apiKey, baseUrl, model, provider: "openrouter", enableBuiltinAgents: true });
+    await configureLivePlugin({ apiKey, baseUrl, model, provider: "openrouter" });
 
     await browser.executeObsidianCommand("agentic-chat:open-chat");
     await $(".agentic-chat-view").waitForExist();
@@ -48,12 +48,12 @@ describe("agentic-chat subagent live dogfood", function () {
 
   it("dispatches a subagent and renders its live inline transcript", async function () {
     await sendPrompt(
-      "Use the researcher subagent to list the files in the vault root and summarize what you see in one sentence.",
+      "Use the explorer subagent to list the files in the vault root and summarize what you see in one sentence.",
     );
 
     const subagentBlock = await $(".agentic-chat-subagent");
     await subagentBlock.waitForExist({ timeout: 30_000 });
-    await expect(subagentBlock.$(".agentic-chat-subagent-name")).toHaveText(/researcher:/i);
+    await expect(subagentBlock.$(".agentic-chat-subagent-name")).toHaveText(/explorer:/i);
 
     await waitForTurnEnd(TURN_TIMEOUT_MS);
 

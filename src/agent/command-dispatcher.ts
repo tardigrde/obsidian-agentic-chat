@@ -6,11 +6,12 @@ import {
   buildSubagentInvocation,
   unknownAgentMessage,
 } from "./agent-invocations";
-import type { AgentProfile } from "./subagents";
+import type { AgentRole } from "./subagents";
+import { findAgentRole } from "./subagents";
 
 export interface AgentCommandResources {
   skills: Skill[];
-  profiles: AgentProfile[];
+  profiles: AgentRole[];
 }
 
 export type AgentCommandPlan =
@@ -28,15 +29,16 @@ export function resolveSkillCommand(
 }
 
 export function resolveAgentCommand(resources: AgentCommandResources, name: string, task: string): AgentCommandPlan {
-  const hasProfile = resources.profiles.some((item) => item.name === name);
+  const trimmedName = name.trim();
+  const hasProfile = trimmedName ? findAgentRole(resources.profiles, trimmedName) !== undefined : false;
   if (!hasProfile) {
-    return { type: "error", message: unknownAgentMessage(name, resources.profiles, resources.skills) };
+    return { type: "error", message: unknownAgentMessage(trimmedName || name, resources.profiles, resources.skills) };
   }
   const trimmed = task.trim();
   if (!trimmed) {
-    return { type: "error", message: `Give the "${name}" subagent a task, e.g. /agent ${name} <task>.` };
+    return { type: "error", message: `Give the "${trimmedName}" subagent a task, e.g. /agent ${trimmedName} <task>.` };
   }
-  return { type: "prompt", prompt: buildSubagentInvocation(name, trimmed) };
+  return { type: "prompt", prompt: buildSubagentInvocation(trimmedName, trimmed) };
 }
 
 export function resolveInitCommand(instructions?: string): AgentCommandPlan {

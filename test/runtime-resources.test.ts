@@ -126,7 +126,6 @@ describe("agent runtime resources", () => {
     const resources = await loadAgentRuntimeResources(
       await seededApp(),
       settings({
-        enableBuiltinAgents: true,
         ignoredGlobs: "Private/**",
         web: { enabled: true },
       }),
@@ -138,7 +137,7 @@ describe("agent runtime resources", () => {
     expect(resources.skills.find((skill) => skill.name === "deep-research")?.filePath).toBe(
       ".agentic-plugins/tools/skills/deep-research/SKILL.md",
     );
-    expect(resources.profiles.map((profile) => profile.name).sort()).toEqual(["editor", "researcher", "reviewer"]);
+    expect(resources.profiles.map((profile) => profile.name).sort()).toEqual(["explorer"]);
     expect(resources.instructionsOverlay).toContain("## Project instructions");
     expect(resources.instructionsOverlay).toContain("# Vault instructions");
     expect(resources.ignoreMatcher("Private/secret.md")).toBe(true);
@@ -148,7 +147,7 @@ describe("agent runtime resources", () => {
   it("composes the system prompt from a loaded resource snapshot", async () => {
     const resources = await loadAgentRuntimeResources(
       await seededApp(),
-      settings({ enableBuiltinAgents: true }),
+      settings(),
     );
 
     const prompt = composeAgentSystemPrompt(settings({ mode: "plan" }), resources, "Identity: test agent.");

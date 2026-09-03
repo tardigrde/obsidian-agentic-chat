@@ -191,7 +191,7 @@ describe("approval matrix: end-to-end cross-checks through gateToolCall", () => 
 });
 
 describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate × mode × working set)", () => {
-  // Built-in profiles (always loaded): researcher = read-only, editor = can mutate.
+  // Single built-in Explorer role (read-only recon).
   const dispatch = (agent: string) => ({
     content: [{ type: "toolCall", id: "c1", name: "subagent", arguments: { agent, task: "do it" } } as AssistantMessage["content"][number]],
     stopReason: "toolUse" as const,
@@ -217,8 +217,8 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     return { isError: tr.isError, text };
   }
 
-  it("safe + no working set: a mutating (editor) dispatch does not prompt before child tool calls", async () => {
-    const streamFn = scriptedStreamFn([dispatch("editor"), childReply("editor reply"), parentFollowup("all set")]);
+  it("safe + no working set: a read-only explorer dispatch does not prompt (S8: explorer read-only, inherits parent)", async () => {
+    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("all set")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "ask", perTool: {}, workingDirs: [] },
@@ -226,11 +226,11 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     await service.sendPrompt("edit with a subagent");
     expect(confirmCalls.count).toBe(0);
     expect(toolResult(service)?.isError).toBe(false);
-    expect(toolResult(service)?.text).toContain("editor reply");
+    expect(toolResult(service)?.text).toContain("explorer reply");
   });
 
-  it("safe + no working set: a read-only (researcher) fan-out runs with no prompt", async () => {
-    const streamFn = scriptedStreamFn([dispatch("researcher"), childReply("found 3 notes"), parentFollowup("done")]);
+  it("safe + no working set: a read-only fan-out runs with no prompt", async () => {
+    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("found 3 notes"), parentFollowup("done")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "ask", perTool: {}, workingDirs: [] },
@@ -241,8 +241,8 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     expect(toolResult(service)?.text).toContain("found 3 notes");
   });
 
-  it("yolo auto-approves a mutating (editor) dispatch even when settings deny mutating", async () => {
-    const streamFn = scriptedStreamFn([dispatch("editor"), childReply("editor reply"), parentFollowup("done")]);
+  it("yolo auto-approves a read-only explorer dispatch (S8: explorer has no mutating tools, gate is vacuous by design)", async () => {
+    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("done")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "yolo",
       approval: { mutating: "deny", perTool: {}, workingDirs: [] },
@@ -250,22 +250,23 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     await service.sendPrompt("edit with a subagent in yolo");
     expect(confirmCalls.count).toBe(0);
     expect(toolResult(service)?.isError).toBe(false);
-    expect(toolResult(service)?.text).toContain("editor reply");
+    expect(toolResult(service)?.text).toContain("explorer reply");
   });
 
-  it("safe + mutating denied: a mutating (editor) dispatch is blocked before any prompt", async () => {
-    const streamFn = scriptedStreamFn([dispatch("editor"), parentFollowup("ok, blocked")]);
+  it("safe + mutating denied: a read-only dispatch is not blocked (S8: explorer has no mutating tools)", async () => {
+    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("all set")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "deny", perTool: {}, workingDirs: [] },
     });
     await service.sendPrompt("edit with a subagent");
     expect(confirmCalls.count).toBe(0);
-    expect(toolResult(service)?.isError).toBe(true);
+    expect(toolResult(service)?.isError).toBe(false);
+    expect(toolResult(service)?.text).toContain("explorer reply");
   });
 
   it("plan: any subagent dispatch is blocked because plan mode is read-only", async () => {
-    const streamFn = scriptedStreamFn([dispatch("editor"), childReply("editor read-only reply"), parentFollowup("done")]);
+    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer read-only reply"), parentFollowup("done")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "plan",
       approval: { mutating: "allow", perTool: {}, workingDirs: [] },
@@ -276,8 +277,8 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     expect(toolResult(service)?.text).toMatch(/read-only/i);
   });
 
-  it("safe + working set: a read-only (researcher) dispatch runs without an up-front prompt", async () => {
-    const streamFn = scriptedStreamFn([dispatch("researcher"), childReply("found scoped notes"), parentFollowup("done")]);
+  it("safe + working set: a read-only dispatch runs without an up-front prompt", async () => {
+    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("found scoped notes"), parentFollowup("done")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
       approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes"] },
@@ -288,16 +289,16 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     expect(toolResult(service)?.text).toContain("found scoped notes");
   });
 
-  it("safe + working set: an editor child write outside the working set is gated at the child call", async () => {
+  it("safe + working set: an explorer child read outside the working set is gated at the child call", async () => {
     const streamFn = scriptedStreamFn([
-      dispatch("editor"),
+      dispatch("explorer"),
       {
         content: [
           {
             type: "toolCall",
-            id: "child-write",
-            name: "write",
-            arguments: { path: "Other/x.md", content: "hi" },
+            id: "child-read",
+            name: "read",
+            arguments: { path: "Other/x.md" },
           } as AssistantMessage["content"][number],
         ],
         stopReason: "toolUse" as const,

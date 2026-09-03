@@ -2092,26 +2092,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName("Subagents").setHeading();
     new Setting(containerEl)
-      .setName("Built-in subagents")
-      .setDesc("Offer the built-in researcher, reviewer, and editor subagents for delegation.")
-      .addToggle((toggle) =>
-        toggle.setValue(settings.enableBuiltinAgents).onChange(async (value) => {
-          settings.enableBuiltinAgents = value;
-          await this.save();
-        }),
-      );
-    this.folderSetting(
-      containerEl,
-      "Subagents folder",
-      "Vault folder scanned for AGENT.md profiles (frontmatter: name, description, model, tools). " +
-        "A vault profile overrides a built-in of the same name. Leave empty for built-ins only.",
-      settings.agentsFolder,
-      async (value) => {
-        settings.agentsFolder = value;
-        await this.save();
-      },
-    );
-    new Setting(containerEl)
       .setName("Subagent timeout")
       .setDesc(
         "Auto-stop a subagent that runs longer than this many seconds (0 disables, max 86400). " +

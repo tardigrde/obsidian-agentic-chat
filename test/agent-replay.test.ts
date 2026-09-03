@@ -37,20 +37,20 @@ describe("AgentService replay harness", () => {
         replayToolCallTurn(
           "call-1",
           "subagent",
-          { agent: "researcher", task: "summarize the inbox" },
+          { agent: "explorer", task: "summarize the inbox" },
           { label: "parent dispatch" },
         ),
         replayTextTurn("Inbox has 3 open threads.", {
-          label: "researcher child",
+          label: "explorer child",
           usage: { input: 2, output: 3, totalTokens: 5 },
         }),
         replayTextTurn("All done.", { label: "parent final" }),
       ],
     });
 
-    expect(result.calls.map((call) => call.label)).toEqual(["parent dispatch", "researcher child", "parent final"]);
+    expect(result.calls.map((call) => call.label)).toEqual(["parent dispatch", "explorer child", "parent final"]);
     expect(result.calls[0].toolNames).toContain("subagent");
-    expect(result.calls[1].systemPrompt).toMatch(/research subagent/i);
+    expect(result.calls[1].systemPrompt).toMatch(/explorer subagent/i);
     expect(result.calls[2].messageCount).toBeGreaterThan(result.calls[0].messageCount);
 
     const toolResult = result.messages.find((message) => message.role === "toolResult");

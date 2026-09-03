@@ -99,7 +99,6 @@ async function configurePlugin(config: McpE2EConfig): Promise<boolean> {
       provider: string;
       openrouterApiKey: string;
       mode: string;
-      enableBuiltinAgents: boolean;
       approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
       web: { enabled: boolean };
       mcp: {
@@ -124,7 +123,6 @@ async function configurePlugin(config: McpE2EConfig): Promise<boolean> {
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-scripted-key";
     settings.mode = "safe";
-    settings.enableBuiltinAgents = false;
     settings.approval.mutating = "ask";
     settings.approval.perTool = {};
     settings.approval.workingDirs = [];

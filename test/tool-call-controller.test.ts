@@ -4,7 +4,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ApprovalAuditInput, CheckpointAuditInput } from "../src/agent/action-audit-log";
 import type { FileCheckpoint } from "../src/agent/file-checkpoints";
 import { AgentToolCallController, type ToolApprovalRequest, type UserApprovalChoice } from "../src/agent/tool-call-controller";
-import type { AgentProfile } from "../src/agent/subagents";
+import type { AgentRole } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { createMcpServerSettings } from "../src/mcp/settings";
 import { FakeVault } from "./helpers/fake-vault";
@@ -14,7 +14,7 @@ function makeController(
     settings?: Partial<AgenticChatSettings>;
     confirmToolCall?: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
     tools?: AgentTool[];
-    profiles?: AgentProfile[];
+    profiles?: AgentRole[];
     app?: App;
     recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
     recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
@@ -195,6 +195,7 @@ describe("AgentToolCallController", () => {
       settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes"] } },
       profiles: [
         {
+          // Arbitrary fixture name, not a built-in role.
           name: "researcher",
           description: "Research",
           systemPrompt: "Research.",
@@ -210,6 +211,35 @@ describe("AgentToolCallController", () => {
     });
 
     expect(decision).toBeUndefined();
+    expect(requests).toEqual([]);
+  });
+
+  it("blocks a mutating role dispatch when mutating tools are denied", async () => {
+    // No built-in role can mutate, so the deny branch is only reachable via a
+    // custom role with mutating tools — keep it covered with a fixture.
+    const { controller, requests } = makeController({
+      settings: { mode: "safe", approval: { mutating: "deny", perTool: {}, workingDirs: [] } },
+      profiles: [
+        {
+          // Arbitrary fixture name, not a built-in role.
+          name: "editor",
+          description: "Vault editor role",
+          systemPrompt: "Edit.",
+          toolAllowlist: ["read", "edit"],
+        },
+      ],
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+    });
+
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "subagent" },
+      args: { agent: "editor", task: "fix it" },
+    });
+
+    expect(decision).toEqual({
+      block: true,
+      reason: "Subagent dispatch is blocked because mutating tools are denied.",
+    });
     expect(requests).toEqual([]);
   });
 

@@ -642,9 +642,9 @@ describe("AgentService", () => {
 
   it("dispatches a subagent, folds child usage into the session, and exposes profiles", async () => {
     const streamFn = scriptedStreamFn([
-      // Parent turn 1: ask to dispatch the researcher subagent.
-      { content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "researcher", task: "summarize the inbox" } }], stopReason: "toolUse" },
-      // Child turn: the researcher's reply (same injected stream serves the child).
+      // Parent turn 1: ask to dispatch the explorer subagent (S8 single role).
+      { content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "explorer", task: "summarize the inbox" } }], stopReason: "toolUse" },
+      // Child turn: the explorer's reply (same injected stream serves the child).
       { content: [{ type: "text", text: "Inbox has 3 open threads." }], stopReason: "stop" },
       // Parent turn 2: final answer after the subagent returns.
       { content: [{ type: "text", text: "All done." }], stopReason: "stop" },
@@ -652,7 +652,7 @@ describe("AgentService", () => {
     const { service } = makeService(streamFn);
     await service.sendPrompt("Use a subagent to check my inbox");
 
-    expect(service.getProfiles().map((profile) => profile.name)).toContain("researcher");
+    expect(service.getProfiles().map((profile) => profile.name)).toContain("explorer");
     const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
       | { role: "toolResult"; isError: boolean; content: Array<{ type: string; text?: string }> }
       | undefined;
@@ -665,8 +665,8 @@ describe("AgentService", () => {
 
   it("gates child subagent tool calls against the configured working set", async () => {
     const streamFn = scriptedStreamFn([
-      { content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "editor", task: "update a note" } }], stopReason: "toolUse" },
-      { content: [{ type: "toolCall", id: "child-call-1", name: "write", arguments: { path: "Other/x.md", content: "outside" } }], stopReason: "toolUse" },
+      { content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "explorer", task: "update a note" } }], stopReason: "toolUse" },
+      { content: [{ type: "toolCall", id: "child-call-1", name: "read", arguments: { path: "Other/x.md" } }], stopReason: "toolUse" },
       { content: [{ type: "text", text: "child saw the denial" }], stopReason: "stop" },
       { content: [{ type: "text", text: "parent saw child result" }], stopReason: "stop" },
     ]);
@@ -707,7 +707,7 @@ describe("AgentService", () => {
     await service.invokeAgent("deep", "do some research");
     const error = service.getError() ?? "";
     expect(error).toContain('No subagent named "deep"');
-    expect(error).toContain("researcher"); // available built-in profiles are listed
+    expect(error).toContain("explorer"); // available built-in roles are listed (S8)
     expect(error).toMatch(/deep-research/); // "deep" is hinted as the deep-research skill
   });
 

@@ -51,4 +51,10 @@ describe("agent invocation helpers", () => {
       'No subagent named "writer". No subagents are configured.',
     );
   });
+
+  it("reports an unknown subagent without retired-name hints", () => {
+    expect(unknownAgentMessage("reviewer", [{ name: "explorer" }], [])).toBe(
+      'No subagent named "reviewer". Available subagents: explorer.',
+    );
+  });
 });

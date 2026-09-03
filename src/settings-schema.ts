@@ -88,10 +88,6 @@ export interface AgenticChatSettings {
   approval: ApprovalSettings;
   /** Agent Plugins packages loaded from a vault folder. */
   plugins: PluginSettings;
-  /** Vault folder scanned for AGENT.md subagent profiles. Empty disables vault profiles. */
-  agentsFolder: string;
-  /** Include the built-in subagent roster (researcher / reviewer / editor). */
-  enableBuiltinAgents: boolean;
   /** Auto-abort a subagent after this many seconds (max 86400). 0 disables the timeout. */
   subagentTimeoutSeconds: number;
   /**
@@ -192,8 +188,6 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
   approval: DEFAULT_APPROVAL_SETTINGS,
   plugins: DEFAULT_PLUGIN_SETTINGS,
-  agentsFolder: "",
-  enableBuiltinAgents: true,
   subagentTimeoutSeconds: 0,
   ignoredGlobs: "",
   notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
@@ -312,7 +306,7 @@ function stringSetting(value: unknown, fallback: string): string {
 }
 
 /** Retired feature keys removed from persisted data.json on load. */
-const RETIRED_SETTING_KEYS = ["projects"] as const;
+const RETIRED_SETTING_KEYS = ["projects", "agentsFolder", "enableBuiltinAgents"] as const;
 
 /** Upper bound for the subagent timeout (24h) — keeps `setTimeout` under its 32-bit delay range. */
 export const MAX_SUBAGENT_TIMEOUT_SECONDS = 86_400;
