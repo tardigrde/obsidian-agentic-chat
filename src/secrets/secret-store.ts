@@ -1,11 +1,19 @@
 import type { App } from "obsidian";
 import type { AgenticChatSettings } from "../settings";
-import type { McpOAuthSettings, McpServerSettings, McpServerState } from "../mcp/settings";
+import type { WebSettings } from "../settings-schema";
+import type {
+  McpOAuthSettings,
+  McpServerSettings,
+  McpServerState,
+  McpSettings,
+} from "../mcp/settings";
+import type { PluginSettings } from "../plugins/settings";
 import { sha256Hex } from "../utils/sha256";
 import {
   OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID,
   OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
   OBSERVABILITY_LANGFUSE_SECRET_KEY_SECRET_ID,
+  type ObservabilitySettings,
 } from "../observability/settings";
 
 export interface SecretStore {
@@ -96,6 +104,40 @@ export function mcpSecretId(serverId: string, kind: string): string {
   return normalizeSecretId(`agentic-chat-mcp-${serverId}-${kind}`);
 }
 
+/** Omit plaintext secret keys from a settings shape; persisted JSON carries only secretStorage refs. */
+type WithoutPlaintext<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+
+export type PersistedMcpOAuthSettings = WithoutPlaintext<
+  McpOAuthSettings,
+  "clientSecret" | "accessToken" | "refreshToken"
+>;
+export type PersistedMcpServerSettings = WithoutPlaintext<McpServerSettings, "authHeaderValue"> & {
+  oauth: PersistedMcpOAuthSettings;
+};
+export type PersistedMcpServerState = WithoutPlaintext<McpServerState, "authHeaderValue"> & {
+  oauth: PersistedMcpOAuthSettings;
+};
+
+/**
+ * Persisted data.json shape: same as runtime settings but every plaintext
+ * secret key is omitted entirely (never `""`). Do NOT use as runtime
+ * `AgenticChatSettings` — omitted keys would throw on `.trim()`. Only
+ * `saveData` consumes this; runtime always goes through `mergeSettings` +
+ * `hydrateSettingsSecrets`.
+ */
+export type PersistedSettings = WithoutPlaintext<
+  AgenticChatSettings,
+  "openrouterApiKey" | "openaiCompatibleApiKey"
+> & {
+  web: WithoutPlaintext<WebSettings, "searchApiKey">;
+  observability: WithoutPlaintext<
+    ObservabilitySettings,
+    "langfusePublicKey" | "langfuseSecretKey" | "authHeaderValue"
+  >;
+  mcp: Omit<McpSettings, "servers"> & { servers: PersistedMcpServerSettings[] };
+  plugins: Omit<PluginSettings, "mcpState"> & { mcpState: Record<string, PersistedMcpServerState> };
+};
+
 /** Sanitize a secret id to Obsidian-safe characters (no length cap). */
 function sanitizeSecretId(input: string): string {
   return input
@@ -128,9 +170,9 @@ export function hydrateSettingsSecrets(settings: AgenticChatSettings, store: Sec
   for (const [id, state] of Object.entries(settings.plugins.mcpState ?? {})) hydrateMcpStateSecrets(id, state, store);
 }
 
-export function settingsForStorage(settings: AgenticChatSettings, store: SecretStore): AgenticChatSettings {
+export function settingsForStorage(settings: AgenticChatSettings, store: SecretStore): PersistedSettings {
   ensureSecretRefs(settings);
-  const stored = cloneSettings(settings);
+  const stored = cloneSettings(settings) as unknown as PersistedSettings;
   for (const slot of SETTINGS_SECRET_SLOTS) storeSettingsSecretSlot(settings, stored, slot, store);
   for (let index = 0; index < settings.mcp.servers.length; index += 1) {
     storeMcpServerSecrets(settings.mcp.servers[index], stored.mcp.servers[index], store);
@@ -174,7 +216,11 @@ function hydrateMcpServerSecrets(server: McpServerSettings, store: SecretStore):
   hydrateSecretSlot(server.oauth, "refreshToken", server.oauth.refreshTokenSecretId, store);
 }
 
-function storeMcpServerSecrets(runtime: McpServerSettings, stored: McpServerSettings, store: SecretStore): void {
+function storeMcpServerSecrets(
+  runtime: McpServerSettings,
+  stored: PersistedMcpServerSettings,
+  store: SecretStore,
+): void {
   ensureMcpServerSecretRefs(runtime);
   stored.authHeaderValueSecretId = runtime.authHeaderValueSecretId;
   storeSecretSlot(runtime, stored, "authHeaderValue", runtime.authHeaderValueSecretId, store);
@@ -184,7 +230,7 @@ function storeMcpServerSecrets(runtime: McpServerSettings, stored: McpServerSett
 function storeMcpOAuthSecrets(
   serverId: string,
   runtime: McpOAuthSettings,
-  stored: McpOAuthSettings,
+  stored: PersistedMcpOAuthSettings,
   store: SecretStore,
 ): void {
   ensureMcpOAuthSecretRefs(serverId, runtime);
@@ -204,7 +250,12 @@ function hydrateMcpStateSecrets(id: string, state: McpServerState, store: Secret
   hydrateSecretSlot(state.oauth, "refreshToken", state.oauth.refreshTokenSecretId, store);
 }
 
-function storeMcpStateSecrets(id: string, runtime: McpServerState, stored: McpServerState, store: SecretStore): void {
+function storeMcpStateSecrets(
+  id: string,
+  runtime: McpServerState,
+  stored: PersistedMcpServerState,
+  store: SecretStore,
+): void {
   ensureMcpStateSecretRefs(id, runtime);
   stored.authHeaderValueSecretId = runtime.authHeaderValueSecretId;
   storeSecretSlot(runtime, stored, "authHeaderValue", runtime.authHeaderValueSecretId, store);
@@ -222,16 +273,22 @@ function hydrateSecretSlot<T extends Record<K, string>, K extends string>(
   if (stored) target[key] = stored as T[K];
 }
 
-function storeSecretSlot<T extends Record<K, string>, K extends string>(
-  runtime: T,
-  stored: T,
+function storeSecretSlot<TRuntime, TStored, K extends Extract<keyof TRuntime & keyof TStored, string>>(
+  runtime: TRuntime,
+  stored: TStored,
   key: K,
   secretId: string,
   store: SecretStore,
 ): void {
-  const value = typeof runtime[key] === "string" ? runtime[key].trim() : "";
-  store.setSecret(secretId, value);
-  delete (stored as Record<string, unknown>)[key as string];
+  const raw: unknown = (runtime as Record<string, unknown>)[key];
+  // Absent (non-string) runtime value must not wipe a good secret: with JSON
+  // omission there is no persisted backup. Only an explicit "" clears.
+  if (typeof raw !== "string") {
+    delete (stored as Record<string, unknown>)[key];
+    return;
+  }
+  store.setSecret(secretId, raw.trim());
+  delete (stored as Record<string, unknown>)[key];
 }
 
 function hydrateSettingsSecretSlot(settings: AgenticChatSettings, slot: SettingsSecretSlot, store: SecretStore): void {
@@ -242,12 +299,17 @@ function hydrateSettingsSecretSlot(settings: AgenticChatSettings, slot: Settings
 
 function storeSettingsSecretSlot(
   runtime: AgenticChatSettings,
-  stored: AgenticChatSettings,
+  stored: PersistedSettings,
   slot: SettingsSecretSlot,
   store: SecretStore,
 ): void {
-  const value = stringAt(runtime, slot.valuePath).trim();
-  store.setSecret(stringAt(runtime, slot.secretIdPath), value);
+  const raw = readPath(runtime, slot.valuePath);
+  // Absent (non-string) runtime value must not wipe a good secret (see storeSecretSlot).
+  if (typeof raw !== "string") {
+    deletePath(stored, slot.valuePath);
+    return;
+  }
+  store.setSecret(stringAt(runtime, slot.secretIdPath), raw.trim());
   deletePath(stored, slot.valuePath);
 }
 
@@ -266,25 +328,26 @@ function readPath(root: unknown, path: readonly string[]): unknown {
 }
 
 function writePath(root: unknown, path: readonly string[], value: string): void {
-  if (!root || typeof root !== "object") return;
-  let current = root as Record<string, unknown>;
-  for (const segment of path.slice(0, -1)) {
-    const next = current[segment];
-    if (!next || typeof next !== "object") return;
-    current = next as Record<string, unknown>;
-  }
-  current[path[path.length - 1]] = value;
+  const parent = parentOf(root, path);
+  if (!parent) return;
+  parent[path[path.length - 1]] = value;
 }
 
 function deletePath(root: unknown, path: readonly string[]): void {
-  if (!root || typeof root !== "object") return;
+  const parent = parentOf(root, path);
+  if (!parent) return;
+  delete parent[path[path.length - 1]];
+}
+
+function parentOf(root: unknown, path: readonly string[]): Record<string, unknown> | undefined {
+  if (!root || typeof root !== "object") return undefined;
   let current = root as Record<string, unknown>;
   for (const segment of path.slice(0, -1)) {
     const next = current[segment];
-    if (!next || typeof next !== "object") return;
+    if (!next || typeof next !== "object") return undefined;
     current = next as Record<string, unknown>;
   }
-  delete current[path[path.length - 1]];
+  return current;
 }
 
 function cloneSettings(settings: AgenticChatSettings): AgenticChatSettings {

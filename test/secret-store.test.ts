@@ -73,7 +73,13 @@ describe("secret storage migration", () => {
     expect("openaiCompatibleApiKey" in stored).toBe(false);
     expect("searchApiKey" in stored.web).toBe(false);
     expect("langfusePublicKey" in stored.observability).toBe(false);
+    expect("langfuseSecretKey" in stored.observability).toBe(false);
+    expect("authHeaderValue" in stored.observability).toBe(false);
     expect("authHeaderValue" in (stored.mcp.servers[0] as unknown as Record<string, unknown>)).toBe(false);
+    const storedOAuth = stored.mcp.servers[0].oauth as unknown as Record<string, unknown>;
+    expect("clientSecret" in storedOAuth).toBe(false);
+    expect("accessToken" in storedOAuth).toBe(false);
+    expect("refreshToken" in storedOAuth).toBe(false);
 
     expect(store.getSecret(stored.openrouterApiKeySecretId)).toBe("openrouter-secret");
     expect(store.getSecret(stored.openaiCompatibleApiKeySecretId)).toBe("openai-secret");
@@ -105,5 +111,44 @@ describe("secret storage migration", () => {
     expect(settings.observability.langfusePublicKey).toBe("pk-lf-public");
     expect(settings.observability.langfuseSecretKey).toBe("sk-lf-secret");
     expect(settings.observability.authHeaderValue).toBe("Bearer otel-token");
+  });
+
+  it("round-trips legacy plaintext through omission back to hydrated runtime", () => {
+    const server = {
+      ...createMcpServerSettings({
+        id: "docs",
+        name: "Docs MCP",
+        url: "https://mcp.example.com/mcp",
+        authType: "bearer",
+      }),
+      authHeaderValue: "docs-secret",
+    };
+    server.oauth.accessToken = "oauth-access";
+    const legacy = mergeSettings({
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "or-roundtrip",
+      web: { ...DEFAULT_SETTINGS.web, searchApiKey: "search-roundtrip" },
+      mcp: { ...DEFAULT_SETTINGS.mcp, enabled: true, servers: [server] },
+    });
+    const store = new MemorySecretStore();
+
+    const stored = settingsForStorage(legacy, store);
+    const json = JSON.stringify(stored);
+    expect(json).not.toContain("or-roundtrip");
+    expect(json).not.toContain("search-roundtrip");
+    expect(json).not.toContain("docs-secret");
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    expect("openrouterApiKey" in parsed).toBe(false);
+    expect("openaiCompatibleApiKey" in parsed).toBe(false);
+
+    // Second load: omitted keys heal to defaults, then hydrate restores from secretStorage.
+    const reloaded = mergeSettings(JSON.parse(json) as Partial<typeof DEFAULT_SETTINGS>);
+    expect(reloaded.openrouterApiKey).toBe("");
+    expect(reloaded.web.searchApiKey).toBe("");
+    hydrateSettingsSecrets(reloaded, store);
+    expect(reloaded.openrouterApiKey).toBe("or-roundtrip");
+    expect(reloaded.web.searchApiKey).toBe("search-roundtrip");
+    expect(reloaded.mcp.servers[0].authHeaderValue).toBe("docs-secret");
+    expect(reloaded.mcp.servers[0].oauth.accessToken).toBe("oauth-access");
   });
 });
