@@ -161,7 +161,8 @@ function resolvedImageMarkdown(
   if (!isImagePath(stripImageQueryFragment(clean))) return null;
   const resolved = safeResolve(resolve, clean);
   if (!resolved) return null;
-  return `![${alt}](${resolved}${title ? ` ${title}` : ""})`;
+  const suffix = title ? ` ${title}` : "";
+  return `![${alt}](${resolved}${suffix})`;
 }
 
 function safeResolve(resolve: (target: string) => string | null, target: string): string | null {
