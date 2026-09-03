@@ -441,8 +441,8 @@ describe("agentic-chat settings UI", function () {
   it("persists plugin folder, subagent folder, and ignored globs through the Resources tab", async function () {
     await selectSettingsTab("Resources");
     await setSettingText("Plugins folder", ".agentic-plugins-e2e");
-    await setSettingToggle("Built-in subagents", false);
-    await setSettingText("Subagents folder", "Agents");
+    await setSettingToggle("Built-in subagents (deprecated)", false);
+    await setSettingText("Subagents folder (deprecated)", "Agents");
     await setSettingText("Ignore list", "Private/\n*.secret.md");
 
     const settings = await readAgenticChatSettings<SettingsSnapshot>();

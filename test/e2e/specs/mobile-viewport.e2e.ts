@@ -272,7 +272,7 @@ describe("agentic-chat mobile viewport", function () {
     await selectSettingsTab("MCP");
     await waitForSetting("Enable MCP");
     await selectSettingsTab("Resources");
-    await waitForSetting("Subagents folder");
+    await waitForSetting("Subagents folder (deprecated)");
     // The seeded agent plugin must render an installed-plugin row so the
     // narrow-viewport row layout (title + controls) is actually exercised.
     await browser.waitUntil(

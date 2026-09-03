@@ -25,7 +25,7 @@ Configure standing instructions, output style, compaction, memory, subagent prof
 - **Standing instructions** — `AGENTS.md` (or `CLAUDE.md` / `GEMINI.md`) loaded from the vault root every turn.
 - **Context window** — Auto-compaction settings: summarize older turns automatically as the context window fills.
 - **Tool budget** — Drop optional tools when registered tool schemas exceed a threshold percent of the context window.
-- **Subagents** — Built-in roster toggle, vault folder for `AGENT.md` profiles, and the subagent timeout (auto-abort a child after N seconds; 0 disables, max 86400).
+- **Subagents** — Built-in Explorer role toggle (deprecated), vault folder for legacy `AGENT.md` roles (deprecated, still loads with a warning), and the subagent timeout (auto-abort a child after N seconds; 0 disables, max 86400).
 
 ### Context-window resolution
 
@@ -93,7 +93,7 @@ Inspect runtime resources such as agent plugins, MCP tools, artifacts, retrieval
 Also includes:
 
 - **Agent plugins** — Vault folder scanned for agent plugin packages (`plugin.json` + `skills/` + `mcp.json`), with per-plugin enable toggles and open-folder shortcuts. See [Agent Plugins](../features/agent-plugins.md).
-- **Subagents** — Enable built-in subagents and configure a vault folder for `AGENT.md` profiles.
+- **Subagents** — Built-in Explorer role toggle (deprecated) and vault folder for legacy `AGENT.md` roles (deprecated).
 
 ## Semantic retrieval
 

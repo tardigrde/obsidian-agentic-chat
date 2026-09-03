@@ -149,10 +149,6 @@ async function loadVaultAgentRoles(app: App, folderInput: string): Promise<Agent
   return roles;
 }
 
-/** @deprecated Use loadVaultAgentRoles – alias for backward compatibility. */
-const loadVaultAgentProfiles = loadVaultAgentRoles;
-void loadVaultAgentProfiles;
-
 /** Parse a frontmatter `tools` field: a comma/space list or a YAML array. */
 function parseToolList(value: unknown): string[] {
   if (Array.isArray(value)) {
