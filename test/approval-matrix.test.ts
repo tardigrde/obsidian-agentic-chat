@@ -191,7 +191,7 @@ describe("approval matrix: end-to-end cross-checks through gateToolCall", () => 
 });
 
 describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate × mode × working set)", () => {
-  // S8: single built-in Explorer role (read-only recon). Vault AGENT.md editor/researcher legacy still loads with warn.
+  // Single built-in Explorer role (read-only recon).
   const dispatch = (agent: string) => ({
     content: [{ type: "toolCall", id: "c1", name: "subagent", arguments: { agent, task: "do it" } } as AssistantMessage["content"][number]],
     stopReason: "toolUse" as const,

@@ -114,7 +114,6 @@ async function configurePlugin(): Promise<boolean> {
       provider: string;
       openrouterApiKey: string;
       mode: string;
-      enableBuiltinAgents: boolean;
       ignoredGlobs: string;
       approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
       toolBudget: { enabled: boolean; thresholdPercent: number };
@@ -124,7 +123,6 @@ async function configurePlugin(): Promise<boolean> {
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-stretch-scripted-key";
     settings.mode = "safe";
-    settings.enableBuiltinAgents = false;
     settings.ignoredGlobs = ["Restricted/**", "*.secret.md"].join("\n");
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};

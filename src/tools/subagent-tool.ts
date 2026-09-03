@@ -1,7 +1,7 @@
 import { type Agent, type AgentEvent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { findAgentRole, retiredAgentHint, type AgentRole } from "../agent/subagents";
+import { findAgentRole, type AgentRole } from "../agent/subagents";
 import { sumAssistantUsage } from "../agent/usage";
 import { redactText } from "../privacy/redaction";
 import { truncateToolOutput } from "../vault/truncate";
@@ -133,8 +133,7 @@ export function createSubagentTool(
       const profile = findAgentRole(profiles, agent);
       if (!profile) {
         const available = profiles.map((candidate) => candidate.name).join(", ") || "(none)";
-        const retiredHint = retiredAgentHint(agent);
-        throw new Error(`subagent: unknown agent "${agent.trim()}".${retiredHint} Available: ${available}.`);
+        throw new Error(`subagent: unknown agent "${agent.trim()}". Available: ${available}.`);
       }
 
       const status: SubagentChildStatus = { agent, task, status: "queued" };

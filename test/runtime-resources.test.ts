@@ -126,7 +126,6 @@ describe("agent runtime resources", () => {
     const resources = await loadAgentRuntimeResources(
       await seededApp(),
       settings({
-        enableBuiltinAgents: true,
         ignoredGlobs: "Private/**",
         web: { enabled: true },
       }),
@@ -148,7 +147,7 @@ describe("agent runtime resources", () => {
   it("composes the system prompt from a loaded resource snapshot", async () => {
     const resources = await loadAgentRuntimeResources(
       await seededApp(),
-      settings({ enableBuiltinAgents: true }),
+      settings(),
     );
 
     const prompt = composeAgentSystemPrompt(settings({ mode: "plan" }), resources, "Identity: test agent.");

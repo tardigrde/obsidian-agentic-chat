@@ -14,7 +14,7 @@ Providers:
 
 ## Agent
 
-Configure standing instructions, output style, compaction, memory, subagent role folders (legacy AGENT.md, deprecated), skills folders, and runtime resource behavior.
+Configure standing instructions, output style, compaction, memory, skills folders, and runtime resource behavior.
 
 - **Permission mode** — Safe honors approval gates; YOLO auto-approves mutating tools for the session. Plan mode is entered via `/plan` in chat.
 - **Temperature** — Sampling randomness (0–2).
@@ -25,7 +25,7 @@ Configure standing instructions, output style, compaction, memory, subagent role
 - **Standing instructions** — `AGENTS.md` (or `CLAUDE.md` / `GEMINI.md`) loaded from the vault root every turn.
 - **Context window** — Auto-compaction settings: summarize older turns automatically as the context window fills.
 - **Tool budget** — Drop optional tools when registered tool schemas exceed a threshold percent of the context window.
-- **Subagents** — Built-in Explorer role toggle (deprecated), vault folder for legacy `AGENT.md` roles (deprecated, still loads with a warning), and the subagent timeout (auto-abort a child after N seconds; 0 disables, max 86400).
+- **Subagents** — Subagent timeout (auto-abort a child after N seconds; 0 disables, max 86400).
 
 ### Context-window resolution
 
@@ -93,7 +93,7 @@ Inspect runtime resources such as agent plugins, MCP tools, artifacts, retrieval
 Also includes:
 
 - **Agent plugins** — Vault folder scanned for agent plugin packages (`plugin.json` + `skills/` + `mcp.json`), with per-plugin enable toggles and open-folder shortcuts. See [Agent Plugins](../features/agent-plugins.md).
-- **Subagents** — Built-in Explorer role toggle (deprecated) and vault folder for legacy `AGENT.md` roles (deprecated).
+- **Subagents** — Subagent timeout.
 
 ## Semantic retrieval
 

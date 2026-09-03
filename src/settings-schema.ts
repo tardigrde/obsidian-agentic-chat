@@ -88,16 +88,6 @@ export interface AgenticChatSettings {
   approval: ApprovalSettings;
   /** Agent Plugins packages loaded from a vault folder. */
   plugins: PluginSettings;
-  /**
-   * @deprecated Vault AGENT.md roster – subagents now inherit from parent; Explorer role replaces researcher/reviewer/editor.
-   * Kept for backward compat; vault AGENT.md still loads with a warning but will be removed. Empty disables vault roles.
-   */
-  agentsFolder: string;
-  /**
-   * @deprecated Subagent roster toggle – now controls the single built-in Explorer role (read-only recon).
-   * Formerly toggled researcher/reviewer/editor; kept for legacy data.json healing.
-   */
-  enableBuiltinAgents: boolean;
   /** Auto-abort a subagent after this many seconds (max 86400). 0 disables the timeout. */
   subagentTimeoutSeconds: number;
   /**
@@ -198,8 +188,6 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
   approval: DEFAULT_APPROVAL_SETTINGS,
   plugins: DEFAULT_PLUGIN_SETTINGS,
-  agentsFolder: "",
-  enableBuiltinAgents: true,
   subagentTimeoutSeconds: 0,
   ignoredGlobs: "",
   notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
@@ -307,13 +295,6 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     },
     mcp: healedMcp,
     plugins: healedPlugins,
-    // Deprecated subagent roster keys: coerce so a corrupt non-string/bool in a
-    // legacy data.json can't crash the per-turn vault role loader (.trim() on 123).
-    agentsFolder: typeof stored?.agentsFolder === "string" ? stored.agentsFolder : DEFAULT_SETTINGS.agentsFolder,
-    enableBuiltinAgents:
-      typeof stored?.enableBuiltinAgents === "boolean"
-        ? stored.enableBuiltinAgents
-        : DEFAULT_SETTINGS.enableBuiltinAgents,
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
@@ -325,7 +306,7 @@ function stringSetting(value: unknown, fallback: string): string {
 }
 
 /** Retired feature keys removed from persisted data.json on load. */
-const RETIRED_SETTING_KEYS = ["projects"] as const;
+const RETIRED_SETTING_KEYS = ["projects", "agentsFolder", "enableBuiltinAgents"] as const;
 
 /** Upper bound for the subagent timeout (24h) — keeps `setTimeout` under its 32-bit delay range. */
 export const MAX_SUBAGENT_TIMEOUT_SECONDS = 86_400;

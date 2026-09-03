@@ -2090,38 +2090,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     this.renderPluginsList(containerEl, settings);
 
-    new Setting(containerEl).setName("Subagents").setHeading();
-    {
-      const note = containerEl.createDiv({ cls: "setting-item-description" });
-      note.createSpan({
-        text:
-          "Deprecated: subagents now inherit from parent (isolated context is the value, not a switchable persona). " +
-          "AGENT.md authoring and the former researcher/reviewer/editor roster are legacy — vault AGENT.md still loads with a warning but will be removed. " +
-          "The single built-in Explorer role (read-only recon) inherits parent approval/mode.",
-      });
-    }
-    new Setting(containerEl)
-      .setName("Built-in subagents (deprecated)")
-      .setDesc(
-        "Deprecated: controls the single built-in Explorer role (read-only recon). Formerly toggled researcher/reviewer/editor; kept for backward compat.",
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(settings.enableBuiltinAgents).onChange(async (value) => {
-          settings.enableBuiltinAgents = value;
-          await this.save();
-        }),
-      );
-    this.folderSetting(
-      containerEl,
-      "Subagents folder (deprecated)",
-      "Deprecated: vault folder scanned for AGENT.md roles (legacy, frontmatter: name, description, model, tools). " +
-        "A vault role still overrides a built-in of the same name but will be removed; Explorer inherits parent context. Leave empty for built-in Explorer only.",
-      settings.agentsFolder,
-      async (value) => {
-        settings.agentsFolder = value;
-        await this.save();
-      },
-    );
     new Setting(containerEl)
       .setName("Subagent timeout")
       .setDesc(

@@ -60,7 +60,7 @@ Agentic Chat turns the Obsidian sidebar into an agent workspace rather than a pl
 - [Agent plugins](agent-plugins.md) — packages in the vault (`.agentic-plugins/`) that follow the Agent Plugins 1.0.0 spec and contribute skills and MCP servers; single source of truth for both.
 - Skills loaded from plugin `SKILL.md` files, alongside built-in skills; plugin skills load first and win name collisions.
 - Built-in self-knowledge skill with tool inventory, doomloop guards, and error patterns.
-- Subagent roles (S8: Explorer, read-only recon; `AGENT.md` profile authoring deprecated, still loads with warning).
+- Subagent roles (single built-in Explorer, read-only recon; no custom roles).
 - Built-in subagent: Explorer (single).
 - Optional web search and URL fetch.
 - Optional HTTPS Streamable HTTP MCP tools, generated into plugin packages from the settings UI.

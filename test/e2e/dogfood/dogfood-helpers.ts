@@ -30,7 +30,6 @@ export async function configureLivePlugin(options: {
   baseUrl: string;
   model: string;
   provider?: "openai-compatible" | "openrouter";
-  enableBuiltinAgents?: boolean;
 }): Promise<void> {
   const configured = await browser.executeObsidian(async ({ app }, liveConfig) => {
     const plugin = (app as unknown as {
@@ -45,7 +44,6 @@ export async function configureLivePlugin(options: {
       openrouterApiKey: string;
       openrouterModel: string;
       mode: string;
-      enableBuiltinAgents?: boolean;
       approval: { mutating: string };
     };
     settings.provider = liveConfig.provider ?? "openai-compatible";
@@ -59,9 +57,6 @@ export async function configureLivePlugin(options: {
     }
     settings.mode = "safe";
     settings.approval.mutating = "allow";
-    if (liveConfig.enableBuiltinAgents != null) {
-      settings.enableBuiltinAgents = liveConfig.enableBuiltinAgents;
-    }
     await plugin.saveSettings?.();
     return true;
   }, options);

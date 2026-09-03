@@ -1,5 +1,5 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
-import { normalizeAgentName, RETIRED_AGENT_NAMES, type AgentRole } from "./subagents";
+import type { AgentRole } from "./subagents";
 
 export function buildSubagentInvocation(name: string, task: string): string {
   return `Use the subagent tool to delegate this task to the "${name}" subagent: ${task}`;
@@ -42,16 +42,11 @@ export function unknownAgentMessage(
   skills: Pick<Skill, "name">[],
 ): string {
   const available = profiles.map((item) => item.name);
-  const lower = normalizeAgentName(name);
+  const lower = name.trim().toLowerCase();
   const skill = skills.find(
     (item) => item.name.toLowerCase() === lower || item.name.toLowerCase().includes(lower),
   );
-  const parts = [`No subagent named "${name}".`];
-  if (RETIRED_AGENT_NAMES.has(lower)) {
-    parts.push(
-      `"${name}" was retired in the S8 role reframe — use the "explorer" role instead (vault AGENT.md roles still work).`,
-    );
-  }
+  const parts = [`No subagent named "${name.trim()}".`];
   if (skill) parts.push(`Did you mean the skill "${skill.name}"? Run it with /${skill.name} or /skill ${skill.name}.`);
   parts.push(available.length > 0 ? `Available subagents: ${available.join(", ")}.` : "No subagents are configured.");
   return parts.join(" ");

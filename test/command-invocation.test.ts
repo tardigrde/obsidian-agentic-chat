@@ -1,9 +1,9 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
 import { describe, expect, it } from "vitest";
 import { AgentCommandInvocationRuntime } from "../src/agent/command-invocation";
-import type { AgentProfile } from "../src/agent/subagents";
+import type { AgentRole } from "../src/agent/subagents";
 
-function makeRuntime(resources: { skills?: Skill[]; profiles?: AgentProfile[] } = {}): {
+function makeRuntime(resources: { skills?: Skill[]; profiles?: AgentRole[] } = {}): {
   runtime: AgentCommandInvocationRuntime;
   prompts: string[];
   errors: string[];
@@ -53,7 +53,7 @@ describe("AgentCommandInvocationRuntime", () => {
   });
 
   it("runs named subagent, init, and instruction commands through the prompt runner", async () => {
-    const profile: AgentProfile = {
+    const profile: AgentRole = {
       name: "reviewer",
       description: "Review work",
       systemPrompt: "Review carefully.",

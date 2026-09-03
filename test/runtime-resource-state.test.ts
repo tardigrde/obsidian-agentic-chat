@@ -91,7 +91,6 @@ describe("AgentRuntimeResourceState", () => {
     const { state } = makeState(
       await seededApp(),
       settings({
-        enableBuiltinAgents: true,
         ignoredGlobs: "Private/**",
         web: { enabled: true },
       }),
@@ -107,7 +106,7 @@ describe("AgentRuntimeResourceState", () => {
   });
 
   it("composes the system prompt with the current model identity and loaded resources", async () => {
-    const currentSettings = settings({ enableBuiltinAgents: true, mode: "plan" });
+    const currentSettings = settings({ mode: "plan" });
     const { state } = makeState(
       await seededApp(),
       currentSettings,
@@ -127,7 +126,7 @@ describe("AgentRuntimeResourceState", () => {
   it("builds parent tools from the current resource snapshot", async () => {
     const { state } = makeState(
       await seededApp(),
-      settings({ enableBuiltinAgents: true, web: { enabled: true } }),
+      settings({ web: { enabled: true } }),
     );
     await state.reload();
     const subagentTool = { name: "subagent", label: "Subagent" } as AgentTool;
@@ -141,7 +140,7 @@ describe("AgentRuntimeResourceState", () => {
 
 
   it("drops optional parent tools when tool schemas exceed the budget threshold", async () => {
-    const currentSettings = settings({ enableBuiltinAgents: true, web: { enabled: true } });
+    const currentSettings = settings({ web: { enabled: true } });
     const { state } = makeState(await seededApp(), currentSettings);
     await state.reload();
     const subagentTool = { name: "subagent", label: "Subagent" } as AgentTool;

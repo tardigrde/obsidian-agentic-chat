@@ -6,13 +6,13 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { AgentSubagentRuntime } from "../src/agent/subagent-runtime";
 import type { AgentRuntimeResources } from "../src/agent/runtime-resources";
-import type { AgentProfile } from "../src/agent/subagents";
+import type { AgentRole } from "../src/agent/subagents";
 import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import type { WebFetcher } from "../src/tools/web-fetch";
 import type { AgentToolCallController } from "../src/agent/tool-call-controller";
 
-const PROFILE: AgentProfile = {
+const PROFILE: AgentRole = {
   name: "editor",
   description: "Edit notes",
   systemPrompt: "child prompt",
@@ -29,7 +29,7 @@ function settings(overrides: Partial<AgenticChatSettings> = {}): AgenticChatSett
   };
 }
 
-function resources(profiles: AgentProfile[] = [PROFILE]): AgentRuntimeResources {
+function resources(profiles: AgentRole[] = [PROFILE]): AgentRuntimeResources {
   return {
     skills: [],
     plugins: [],
@@ -124,7 +124,7 @@ function cannedChildStream(text: string): StreamFn {
 
 function makeRuntime(options: {
   settings?: AgenticChatSettings;
-  profiles?: AgentProfile[];
+  profiles?: AgentRole[];
   streamFn?: StreamFn;
   recordUsage?: (usage: { totalTokens: number }) => void;
   webFetch?: WebFetcher;
@@ -205,7 +205,7 @@ describe("AgentSubagentRuntime", () => {
   });
 
   it("exposes enabled web and artifact lookup tools to allowlisted research children", () => {
-    const profile: AgentProfile = {
+    const profile: AgentRole = {
       name: "researcher",
       description: "Research",
       systemPrompt: "research",
@@ -231,7 +231,7 @@ describe("AgentSubagentRuntime", () => {
 
 
   it("keeps web tools out of children when web access is disabled", () => {
-    const profile: AgentProfile = {
+    const profile: AgentRole = {
       name: "researcher",
       description: "Research",
       systemPrompt: "research",

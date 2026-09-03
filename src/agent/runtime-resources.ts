@@ -78,7 +78,7 @@ export async function loadAgentRuntimeResources(
     enabledPlugins: settings.plugins.enabled,
   });
   const skills = await loadRuntimeSkills(app, settings, plugins);
-  const profiles = await loadAgentRoles(app, settings.agentsFolder, settings.enableBuiltinAgents);
+  const profiles = loadAgentRoles();
   // Standing instructions (AGENTS.md -> CLAUDE.md -> GEMINI.md at the vault root):
   // re-read every turn so agent/user edits land in the next system prompt. The
   // adapter guard keeps minimal test harnesses working.

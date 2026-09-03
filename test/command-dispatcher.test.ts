@@ -7,13 +7,13 @@ import {
   resolveInstructionCommand,
   resolveSkillCommand,
 } from "../src/agent/command-dispatcher";
-import type { AgentProfile } from "../src/agent/subagents";
+import type { AgentRole } from "../src/agent/subagents";
 
 function skill(name: string, content = "Do the thing."): Skill {
   return { name, description: name, content, filePath: `Skills/${name}.md` };
 }
 
-function profile(name: string): AgentProfile {
+function profile(name: string): AgentRole {
   return {
     name,
     description: name,

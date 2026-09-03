@@ -16,7 +16,7 @@ describe("agentic-chat subagent live dogfood", function () {
     if (process.env.AGENTIC_CHAT_SUBAGENT_DOGFOOD !== "true") this.skip();
     if (!apiKey) this.skip();
 
-    await configureLivePlugin({ apiKey, baseUrl, model, provider: "openrouter", enableBuiltinAgents: true });
+    await configureLivePlugin({ apiKey, baseUrl, model, provider: "openrouter" });
 
     await browser.executeObsidianCommand("agentic-chat:open-chat");
     await $(".agentic-chat-view").waitForExist();

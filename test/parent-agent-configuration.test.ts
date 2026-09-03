@@ -4,7 +4,7 @@ import type { Model } from "@earendil-works/pi-ai";
 import { AgentParentConfigurationRuntime } from "../src/agent/parent-agent-configuration";
 import type { ParentAgentRuntime } from "../src/agent/parent-agent-runtime";
 import { EMPTY_AGENT_RUNTIME_RESOURCES } from "../src/agent/runtime-resources";
-import type { AgentProfile } from "../src/agent/subagents";
+import type { AgentRole } from "../src/agent/subagents";
 import type { SessionInfo } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS } from "../src/settings";
 
@@ -38,7 +38,7 @@ describe("AgentParentConfigurationRuntime", () => {
             description: "Research",
             systemPrompt: "Research",
             toolAllowlist: [],
-          } satisfies AgentProfile,
+          } satisfies AgentRole,
         ],
         composeSystemPrompt: (_settings, modelId) => `system:${modelId}`,
         buildParentTools: (_settings, suppliedSubagentTool, options) => {

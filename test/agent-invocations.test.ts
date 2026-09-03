@@ -52,9 +52,9 @@ describe("agent invocation helpers", () => {
     );
   });
 
-  it("hints explorer for retired S8 role names", () => {
+  it("reports an unknown subagent without retired-name hints", () => {
     expect(unknownAgentMessage("reviewer", [{ name: "explorer" }], [])).toBe(
-      'No subagent named "reviewer". "reviewer" was retired in the S8 role reframe — use the "explorer" role instead (vault AGENT.md roles still work). Available subagents: explorer.',
+      'No subagent named "reviewer". Available subagents: explorer.',
     );
   });
 });

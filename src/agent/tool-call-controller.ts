@@ -18,7 +18,7 @@ import {
   type SubagentChildStatus,
 } from "../tools/subagent-tool";
 import type { AgentRole } from "./subagents";
-import { findAgentRole, retiredAgentHint } from "./subagents";
+import { findAgentRole } from "./subagents";
 import { resolveModePolicy } from "./modes";
 import { resolveWorkingDirPolicy, toolTargetPaths } from "./working-dir";
 import { UNDOABLE_TOOLS, captureUndo } from "./undo";
@@ -324,8 +324,7 @@ export class AgentToolCallController {
     const unknown = normalizeTasks((args ?? {})).find((task) => !findAgentRole(this.getProfiles(), task.agent));
     if (unknown) {
       const available = this.getProfiles().map((candidate) => candidate.name).join(", ") || "(none)";
-      const reason =
-        `subagent: unknown agent "${unknown.agent.trim()}".${retiredAgentHint(unknown.agent)} Available: ${available}.`;
+      const reason = `subagent: unknown agent "${unknown.agent.trim()}". Available: ${available}.`;
       await this.auditApproval({ decision: "denied", toolCallId, toolName: SUBAGENT_TOOL_NAME, args, reason });
       return { block: true, reason };
     }
