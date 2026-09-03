@@ -21,7 +21,7 @@ Read-only tools run without approval unless working-directory scoping requires a
 | `edit` | Replace exact strings within a note. |
 | `set_properties` | Write YAML frontmatter through Obsidian APIs. |
 | `rename` | Rename or move a note and preserve inbound wikilinks and backlinks. |
-| `delete` | Move a note or empty folder to trash. |
+| `delete` | Move a note or folder to trash (`recursive:true` for non-empty folders). |
 
 Mutating tools are controlled by the approval policy and can be reverted with `/undo` when they are the latest agent vault mutation.
 

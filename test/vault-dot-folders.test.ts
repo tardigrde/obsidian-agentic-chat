@@ -25,6 +25,7 @@ function makeStaleDotFolderApp() {
     [".agentic-plugins/builtins/skills/self-knowledge/SKILL.md", "# Self\n"],
   ]);
   const createdFolders: string[] = [];
+  const trashed: string[] = [];
 
   const topLevel = (prefix: string, key: string): boolean =>
     prefix ? key.startsWith(`${prefix}/`) && !key.slice(prefix.length + 1).includes("/") : !key.includes("/");
@@ -115,10 +116,39 @@ function makeStaleDotFolderApp() {
           if (content === undefined) throw new Error(`File not found: ${path}`);
           return content;
         },
+        trashSystem: async (path: string) => {
+          trashed.push(path);
+          diskFiles.delete(path);
+          for (const key of [...diskFiles.keys()]) {
+            if (key === path || key.startsWith(`${path}/`)) diskFiles.delete(key);
+          }
+          for (const key of [...diskFolders]) {
+            if (key === path || key.startsWith(`${path}/`)) diskFolders.delete(key);
+          }
+          return true;
+        },
+        trashLocal: async (path: string) => {
+          trashed.push(path);
+        },
+        remove: async (path: string) => {
+          if (!diskFiles.delete(path)) throw new Error(`File not found: ${path}`);
+        },
+        rmdir: async (path: string, recursive: boolean) => {
+          const hasChildren =
+            [...diskFolders].some((key) => key.startsWith(`${path}/`)) ||
+            [...diskFiles.keys()].some((key) => key.startsWith(`${path}/`));
+          if (hasChildren && !recursive) throw new Error(`Folder not empty: ${path}`);
+          for (const key of [...diskFiles.keys()]) {
+            if (key === path || key.startsWith(`${path}/`)) diskFiles.delete(key);
+          }
+          for (const key of [...diskFolders]) {
+            if (key === path || key.startsWith(`${path}/`)) diskFolders.delete(key);
+          }
+        },
       },
     },
   } as unknown as App;
-  return { app, createdFolders };
+  return { app, createdFolders, trashed };
 }
 
 function toolByName(app: App, name: string) {
@@ -169,6 +199,30 @@ describe("dot-folder stale tree", () => {
     const { app } = makeStaleDotFolderApp();
     await expect(runText("read", app, { path: ".agentic-plugins/builtins/missing.json" })).rejects.toThrow(
       /File not found/,
+    );
+  });
+
+  it("delete falls back to the adapter for a stale dot-folder file", async () => {
+    const { app, trashed } = makeStaleDotFolderApp();
+    const text = await runText("delete", app, { path: ".agentic-plugins/builtins/plugin.json" });
+    expect(text).toContain("trash");
+    expect(trashed).toContain(".agentic-plugins/builtins/plugin.json");
+  });
+
+  it("delete refuses a stale non-empty folder without recursive, then removes it with recursive:true", async () => {
+    const { app, trashed } = makeStaleDotFolderApp();
+    await expect(runText("delete", app, { path: ".agentic-plugins/builtins" })).rejects.toThrow(
+      /Folder not empty.*recursive:true/,
+    );
+    const text = await runText("delete", app, { path: ".agentic-plugins/builtins", recursive: true });
+    expect(text).toContain("trash");
+    expect(trashed).toContain(".agentic-plugins/builtins");
+  });
+
+  it("delete still reports missing paths as not found", async () => {
+    const { app } = makeStaleDotFolderApp();
+    await expect(runText("delete", app, { path: ".agentic-plugins/nope" })).rejects.toThrow(
+      /File or folder not found/,
     );
   });
 });

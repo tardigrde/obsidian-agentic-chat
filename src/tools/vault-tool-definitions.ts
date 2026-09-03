@@ -86,6 +86,11 @@ export const RenameParameters = Type.Object({
 
 export const DeleteParameters = Type.Object({
   path: Type.String({ description: "path to trash" }),
+  recursive: Type.Optional(
+    Type.Boolean({
+      description: "Folder contents too. Only on plain request.",
+    }),
+  ),
 });
 
 export const BacklinksParameters = Type.Object({
@@ -155,7 +160,8 @@ const VAULT_TOOL_DESCRIPTIONS: Record<BuiltinToolName, string> = {
   get_active_note:
     "Return the active note path and optional text/selection. Use when the user says 'this note'.",
   rename: "Rename or move a vault file; wikilinks and backlinks update automatically.",
-  delete: "Move a vault file or empty folder to trash (recoverable).",
+  delete:
+    "Move a vault file or folder to trash. recursive:true empties folders, only on plain request.",
   get_backlinks: "List notes that link TO a note (inbound wikilinks).",
   get_links: "List the notes a note links TO (outbound resolved links).",
   local_graph: "Show a note's inbound and outbound link neighborhood.",

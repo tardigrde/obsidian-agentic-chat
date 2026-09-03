@@ -727,15 +727,126 @@ function createDeleteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): 
   return {
     ...vaultToolDefinition("delete"),
     execute: async (_id, params) => {
-      const { path, entry } = getVisibleVaultEntry(app, isIgnored, params.path);
-      if (entry instanceof TFolder && entry.children.length > 0) {
-        throw new Error(`Folder not empty: ${path}`);
+      const path = normalizeVisibleVaultPath(isIgnored, params.path);
+      const recursive = params.recursive === true;
+      const entry = app.vault.getAbstractFileByPath(path);
+      if (entry instanceof TFile) {
+        await app.fileManager.trashFile(entry);
+        memo?.invalidate(path);
+        return textResult(`Moved ${path} to trash.`, { path, kind: "file" });
       }
-      await app.fileManager.trashFile(entry);
+      if (entry instanceof TFolder) {
+        if (entry.children.length > 0 && !recursive) {
+          throw new Error(
+            `Folder not empty: ${path} (${entry.children.length} items). Use recursive:true or delete the contents first.`,
+          );
+        }
+        if (entry.children.length === 0) {
+          await app.fileManager.trashFile(entry);
+          memo?.invalidate(path);
+          return textResult(`Moved ${path} to trash.`, { path, kind: "folder" });
+        }
+        // Indexed recursive delete stays on the vault API so the tree,
+        // undo, and trash semantics match single-file deletes (no adapter
+        // needed — works in tests and offline).
+        await trashTreeFolderRecursive(app, entry);
+        memo?.invalidate(path);
+        return textResult(`Moved ${path} to trash.`, { path, kind: "folder", recursive: true });
+      }
+      // Stale tree: dot-folders (e.g. .agentic-plugins) created outside the
+      // session are on disk but missing from the vault index — fall back to
+      // the adapter like read/ls do. A missing path still throws below, so
+      // "not found" keeps meaning "nowhere", not "stale".
+      const adapter = app.vault.adapter;
+      let onDisk: boolean;
+      try {
+        onDisk = (await adapter?.exists(path)) === true;
+      } catch {
+        onDisk = false;
+      }
+      if (!onDisk) throw new Error(`File or folder not found: ${path}`);
+      let isDiskFolder: boolean;
+      let childCount = 0;
+      try {
+        const listing = await adapter.list(path);
+        isDiskFolder = true;
+        childCount = (listing?.folders?.length ?? 0) + (listing?.files?.length ?? 0);
+      } catch {
+        isDiskFolder = false;
+      }
+      if (isDiskFolder) {
+        if (childCount > 0 && !recursive) {
+          throw new Error(
+            `Folder not empty: ${path} (${childCount} items). Use recursive:true or delete the contents first.`,
+          );
+        }
+        const disposition = await trashAdapterFolder(app, path, recursive || childCount === 0);
+        memo?.invalidate(path);
+        return textResult(
+          disposition === "trash" ? `Moved ${path} to trash.` : `Deleted ${path} (bypassed trash).`,
+          {
+            path,
+            kind: "folder",
+            staleTree: true,
+            ...(recursive ? { recursive: true } : {}),
+            ...(disposition === "trash" ? {} : { bypassedTrash: true }),
+          },
+        );
+      }
+      const disposition = await trashAdapterFile(app, path);
       memo?.invalidate(path);
-      return textResult(`Moved ${path} to trash.`, { path, kind: entry instanceof TFolder ? "folder" : "file" });
+      return textResult(
+        disposition === "trash" ? `Moved ${path} to trash.` : `Deleted ${path} (bypassed trash).`,
+        { path, kind: "file", staleTree: true, ...(disposition === "trash" ? {} : { bypassedTrash: true }) },
+      );
     },
   };
+}
+
+/** Trash an indexed folder bottom-up so non-empty deletes work without the adapter. */
+async function trashTreeFolderRecursive(app: App, folder: TFolder): Promise<void> {
+  for (const child of [...folder.children]) {
+    if (child instanceof TFolder) {
+      await trashTreeFolderRecursive(app, child);
+    } else {
+      await app.fileManager.trashFile(child);
+    }
+  }
+  await app.fileManager.trashFile(folder);
+}
+
+/** Prefer trash for adapter-level deletes; fall back to permanent removal. */
+async function trashAdapterFile(app: App, path: string): Promise<"trash" | "removed"> {
+  try {
+    if (await app.vault.adapter.trashSystem(path)) return "trash";
+  } catch {
+    // Fall through to trashLocal / remove.
+  }
+  try {
+    await app.vault.adapter.trashLocal(path);
+    return "trash";
+  } catch {
+    // Fall through to permanent removal.
+  }
+  await app.vault.adapter.remove(path);
+  return "removed";
+}
+
+/** Prefer trash for adapter-level folder deletes; fall back to rmdir. */
+async function trashAdapterFolder(app: App, path: string, recursive: boolean): Promise<"trash" | "removed"> {
+  try {
+    if (await app.vault.adapter.trashSystem(path)) return "trash";
+  } catch {
+    // Fall through to trashLocal / rmdir.
+  }
+  try {
+    await app.vault.adapter.trashLocal(path);
+    return "trash";
+  } catch {
+    // Fall through to permanent removal.
+  }
+  await app.vault.adapter.rmdir(path, recursive);
+  return "removed";
 }
 
 function createBacklinksTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof BacklinksParameters> {
@@ -907,13 +1018,6 @@ function normalizeVisibleVaultPath(isIgnored: IgnoreMatcher, path: string): stri
 function getVisibleVaultFile(app: App, isIgnored: IgnoreMatcher, path: string): { path: string; file: TFile } {
   const normalized = normalizeVisibleVaultPath(isIgnored, path);
   return { path: normalized, file: getVaultFile(app, normalized) };
-}
-
-function getVisibleVaultEntry(app: App, isIgnored: IgnoreMatcher, path: string): { path: string; entry: TFile | TFolder } {
-  const normalized = normalizeVisibleVaultPath(isIgnored, path);
-  const entry = app.vault.getAbstractFileByPath(normalized);
-  if (entry instanceof TFile || entry instanceof TFolder) return { path: normalized, entry };
-  throw new Error(`File or folder not found: ${normalized}`);
 }
 
 /**

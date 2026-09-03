@@ -212,13 +212,13 @@ export const BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = [
   },
   {
     name: "delete",
-    label: "Delete file or empty folder",
+    label: "Delete file or folder",
     mutating: true,
     undoable: true,
     pathArgs: TARGET_FILE_OR_FOLDER,
     ignoreBehavior: "target-hidden",
     approval: {
-      description: "The agent wants to move a vault file or empty folder to trash. Review the deletion before allowing it.",
+      description: "The agent wants to move a vault file or folder to trash. Non-empty folders need recursive:true, which is allowed ONLY when the user plainly asked to delete that exact folder — otherwise ask back first. Review the deletion before allowing it.",
       preview: "delete",
       requiresContent: true,
     },
