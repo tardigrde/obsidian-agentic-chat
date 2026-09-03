@@ -437,8 +437,44 @@ describe("AgentToolCallController", () => {
     expect(decision).toEqual({ block: true, reason: expect.any(String) });
   });
 
-  it("denies create_skill in plan mode", async () => {
-    const { controller } = makeController({
+  it("asks for recursive delete even in yolo mode", async () => {
+    const { controller, requests } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] } },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "delete" },
+      args: { path: "Full", recursive: true },
+    });
+    expect(decision).toBeUndefined();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.toolName).toBe("delete");
+  });
+
+  it("auto-approves non-recursive delete in yolo mode", async () => {
+    const { controller, requests } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] } },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "delete" },
+      args: { path: "Note.md" },
+    });
+    expect(decision).toBeUndefined();
+    expect(requests).toHaveLength(0);
+  });
+
+  it("honors an explicit per-tool allow for recursive delete", async () => {
+    const { controller, requests } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: { delete: "allow" }, workingDirs: [] } },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "delete" },
+      args: { path: "Full", recursive: true },
+    });
+    expect(decision).toBeUndefined();
+    expect(requests).toHaveLength(0);
+  });
+
+  it("denies create_skill in plan mode", async () => {    const { controller } = makeController({
       settings: { mode: "plan", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
     });
     const decision = await controller.beforeToolCall({

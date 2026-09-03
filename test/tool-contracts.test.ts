@@ -125,7 +125,7 @@ describe("built-in tool contracts", () => {
     expect(approvalPreviewNeedsContent("set_properties")).toBe(false);
 
     expect(toolApprovalDescription("write")).toMatch(/overwrite a vault file/i);
-    expect(toolApprovalDescription("delete")).toMatch(/file or empty folder/i);
+    expect(toolApprovalDescription("delete")).toMatch(/file or folder/i);
     expect(toolApprovalDescription("web_search")).toMatch(/run the web_search tool/i);
   });
 

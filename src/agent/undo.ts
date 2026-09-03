@@ -51,7 +51,15 @@ export async function captureUndo(app: App, toolName: string, args: unknown): Pr
     }
     if (!path) return null;
     const entry = app.vault.getAbstractFileByPath(path);
-    const content = entry instanceof TFile ? await app.vault.cachedRead(entry) : null;
+    let content = entry instanceof TFile ? await app.vault.cachedRead(entry) : null;
+    if (content === null) {
+      // Stale tree: dot-folder files on disk but missing from the vault index.
+      try {
+        content = await app.vault.adapter.read(path);
+      } catch {
+        // Not a readable file on disk; delete falls through to folder checks.
+      }
+    }
     if (toolName === "write") {
       return {
         kind: "content",
@@ -69,6 +77,17 @@ export async function captureUndo(app: App, toolName: string, args: unknown): Pr
     if (toolName === "delete") {
       if (content !== null) return { kind: "delete", path, before: content, beforeSummary: summarizeFileBody(content) };
       if (entry instanceof TFolder && entry.children.length === 0) return { kind: "delete_folder", path };
+      if (!(entry instanceof TFolder)) {
+        // Stale-tree empty folder: confirm on disk so /undo can restore it.
+        try {
+          const listing = await app.vault.adapter.list(path);
+          if ((listing?.folders?.length ?? 0) + (listing?.files?.length ?? 0) === 0) {
+            return { kind: "delete_folder", path };
+          }
+        } catch {
+          // Not a folder on disk; nothing undoable.
+        }
+      }
       return null;
     }
     return null;

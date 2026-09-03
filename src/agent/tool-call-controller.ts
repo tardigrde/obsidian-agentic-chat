@@ -227,12 +227,20 @@ export class AgentToolCallController {
     const policy = scoped
       ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, basePolicy)
       : basePolicy;
+    // Recursive folder delete always asks, even when the mode would
+    // auto-approve: bulk destruction needs a plain per-path confirmation.
+    // An explicit per-tool "allow" for delete still counts as standing
+    // consent; anything else (YOLO blanket allow included) routes to ask.
+    const effectivePolicy =
+      isRecursiveDeleteArgs(args) && policy === "allow" && getPerToolApproval(settings.approval, toolName) !== "allow"
+        ? "ask"
+        : policy;
     const label = this.labelForTool(toolName);
-    if (policy === "allow") {
+    if (effectivePolicy === "allow") {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });
       return undefined;
     }
-    if (policy === "deny") {
+    if (effectivePolicy === "deny") {
       const denial = reason ?? `The "${toolName}" tool is disabled by your approval settings.`;
       await this.auditApproval({ decision: "denied", toolCallId, toolName, label, args, reason: denial });
       return { block: true, reason: denial };
@@ -396,4 +404,13 @@ export class AgentToolCallController {
       });
     });
   }
+}
+
+/** True when the args request a recursive folder delete (bulk destruction). */
+function isRecursiveDeleteArgs(args: unknown): boolean {
+  return (
+    typeof args === "object" &&
+    args !== null &&
+    (args as { recursive?: unknown }).recursive === true
+  );
 }

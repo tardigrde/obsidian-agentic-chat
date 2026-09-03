@@ -37,8 +37,7 @@ export function createReadSkillTool(skills: Skill[]): AgentTool<typeof ReadSkill
   return {
     name: "read_skill",
     label: "Read skill",
-    description:
-      "Load a skill's full instructions by its exact name from the available_skills listing.",
+    description: "Skill instructions by name. Body only; read for exact copy.",
     parameters: ReadSkillParameters,
     execute: async (_id, params) => {
       const skill = skills.find((s) => s.name === params.name);
@@ -46,9 +45,16 @@ export function createReadSkillTool(skills: Skill[]): AgentTool<typeof ReadSkill
         const available = skills.map((s) => s.name).join(", ") || "(none)";
         throw new Error(`No skill named "${params.name}". Available: ${available}.`);
       }
+      const body = formatSkillInvocation(skill);
+      const frontmatter =
+        `---\nname: ${skill.name}\ndescription: ${JSON.stringify(skill.description)}\n---`;
+      const copyHint =
+        skill.filePath && !skill.filePath.startsWith("(")
+          ? `\n\nFrontmatter for exact copy:\n${frontmatter}\nSource file: ${skill.filePath} — use read for a byte-exact copy (frontmatter included).`
+          : `\n\nFrontmatter for exact copy:\n${frontmatter}`;
       return {
-        content: [{ type: "text", text: formatSkillInvocation(skill) }],
-        details: undefined,
+        content: [{ type: "text", text: `${body}${copyHint}` }],
+        details: { name: skill.name, filePath: skill.filePath },
       };
     },
   };

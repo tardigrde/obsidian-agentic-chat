@@ -5,9 +5,17 @@ import type { AcItem } from "./autocomplete";
  * Floating suggestion list above the composer. Pure DOM + keyboard handling; the
  * candidate computation lives in the testable `autocomplete` engine. Rows use
  * `mousedown` (with `preventDefault`) so picking one never blurs the textarea.
+ *
+ * The menu is anchored to the input card, not the textarea wrapper: the card
+ * has `overflow: hidden` (rounded-corner clipping), so anything positioned
+ * inside it is clipped. Instead the menu lives on the composer (no clipping)
+ * and is measured against the card on every show/resize.
  */
 export class AutocompleteMenu {
   private readonly el: HTMLElement;
+  private readonly anchor: () => HTMLElement | null;
+  private readonly repositionObserver: ResizeObserver | null;
+  private anchorObserved: HTMLElement | null = null;
   private items: AcItem[] = [];
   private rows: HTMLElement[] = [];
   private selected = 0;
@@ -16,12 +24,57 @@ export class AutocompleteMenu {
   constructor(
     parent: HTMLElement,
     private readonly onChoose: (item: AcItem) => void,
+    getAnchor?: () => HTMLElement | null,
   ) {
     this.el = parent.createDiv({ cls: "agentic-chat-autocomplete" });
+    this.anchor = getAnchor ?? (() => parent);
     // Keep clicks on the menu chrome (scrollbar, padding) from blurring the textarea,
     // which would hide the menu before the user can scroll or pick.
     this.el.addEventListener("mousedown", (event) => event.preventDefault());
     this.el.hide();
+    // Card height (textarea resize) and composer width (pane resize) move the
+    // anchor — re-measure while open so the menu stays glued to the card.
+    if (typeof ResizeObserver !== "undefined") {
+      this.repositionObserver = new ResizeObserver(() => {
+        if (this.open) this.reposition();
+      });
+      this.repositionObserver.observe(parent);
+    } else {
+      this.repositionObserver = null;
+    }
+  }
+
+  /** Disconnect observers and remove the menu element (view teardown). */
+  detach(): void {
+    this.repositionObserver?.disconnect();
+    this.anchorObserved = null;
+    this.el.detach();
+  }
+
+  /** Track the anchor card so textarea resizes move the menu while open. */
+  private observeAnchor(): void {
+    const target = this.anchor();
+    if (!target || target === this.anchorObserved) return;
+    this.anchorObserved = target;
+    this.repositionObserver?.observe(target);
+  }
+
+  /**
+   * Glue the menu to the top of the anchor card. The menu lives on the
+   * composer (no `overflow: hidden` there); offsets are measured against the
+   * card so pane resizes and textarea resizes both stay correct.
+   */
+  private reposition(): void {
+    const parent = this.el.parentElement;
+    const target = this.anchor() ?? parent;
+    if (!parent || !target) return;
+    if (target.offsetWidth <= 0) return;
+    const gap = 8;
+    // left + width win over the stylesheet's right:0 (over-constrained
+    // absolute positioning ignores right in LTR), so right needs no inline set.
+    this.el.style.left = `${target.offsetLeft}px`;
+    this.el.style.width = `${target.offsetWidth}px`;
+    this.el.style.bottom = `${parent.clientHeight - target.offsetTop + gap}px`;
   }
 
   isOpen(): boolean {
@@ -38,6 +91,8 @@ export class AutocompleteMenu {
     this.render();
     this.el.show();
     this.open = true;
+    this.observeAnchor();
+    this.reposition();
   }
 
   hide(): void {

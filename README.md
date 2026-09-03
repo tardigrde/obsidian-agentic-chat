@@ -35,7 +35,7 @@ Your notes are yours. This plugin is built so that using AI on them does not mea
 
 - **Native sidebar chat** — an Obsidian `ItemView` styled with theme variables (light and dark just work). Tool calls appear as live step cards with elapsed-time timing; reasoning tokens stream into a collapsible section; answers render with Obsidian-style Markdown, including callouts and Mermaid diagrams; an animated indicator shows while the agent is working.
 - **Inline clarification prompts** — when the agent needs a missing detail, it can call `ask_user`; the turn pauses on an inline question with optional answer buttons, then continues from your answer.
-- **Vault tools** — the agent reads and acts on your vault through typed, path-safe tools (see [Vault tools](#vault-tools) for the full list): read/write/edit notes, line-bounded reads, list/search, traverse backlinks and the local graph, read/write frontmatter as structured data, rename (backlinks preserved), and delete files or empty folders to trash.
+- **Vault tools** — the agent reads and acts on your vault through typed, path-safe tools (see [Vault tools](#vault-tools) for the full list): read/write/edit notes, line-bounded reads, list/search, traverse backlinks and the local graph, read/write frontmatter as structured data, rename (backlinks preserved), and delete files or folders to trash.
 - **Approval gates with diff preview** — read-only tools run freely; mutating tools are gated **allow / ask / deny**, globally or per tool. "Ask" shows a confirm dialog with the exact arguments **and a red/green line-level diff** of what would change, plus an optional "don't ask again for this tool" that remembers the final Allow or Deny choice.
 - **Undo** — `/undo` reverts the agent's most recent vault change (write/edit/delete/rename/frontmatter).
 - **Safe ↔ YOLO toggle** — a single composer switch over the approval gate. **Safe** honors your settings approval policy; **YOLO** is a session master switch that auto-approves all mutating tools (a per-tool *deny* still wins).
@@ -77,7 +77,7 @@ All paths are vault-relative; absolute paths and `..` escapes are rejected, and 
 | `edit` | Exact-string replacements within a note. |
 | `set_properties` | Write YAML frontmatter via Obsidian's API (won't corrupt the body). |
 | `rename` | Rename or move a note — **inbound wikilinks and backlinks are updated automatically**. |
-| `delete` | Move a note or empty folder to trash. |
+| `delete` | Move a note or folder to trash (`recursive:true` for non-empty folders, always asks). |
 
 The `search` meta-tool keeps path and content search behind one model-facing decision surface; the older `find` and `grep` tools remain compatibility implementations for tests/internal surfaces. The graph (`local_graph`), frontmatter (`get_properties` / `set_properties`), and link-aware `rename` tools are Obsidian-native: they let the agent traverse the `[[wikilink]]` graph and edit structured metadata reliably instead of brute-grepping or hand-editing raw YAML. `get_backlinks` and `get_links` also remain compatibility implementations, but the default model-facing surface uses `local_graph` to avoid three overlapping graph tools.
 

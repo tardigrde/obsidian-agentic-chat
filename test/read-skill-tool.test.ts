@@ -26,4 +26,20 @@ describe("createReadSkillTool", () => {
       "No skill named",
     );
   });
+
+  it("includes frontmatter and a copy hint so read_skill output is not used for lossy copies", async () => {
+    const vaultSkill = {
+      name: "gemini-image",
+      description: "Generate images with Gemini.",
+      content: "# Gemini\nBody here.",
+      filePath: ".agentic-plugins/gemini-image/skills/gemini-image/SKILL.md",
+    };
+    const vaultTool = createReadSkillTool([vaultSkill]);
+    const result = await vaultTool.execute("call-4", { name: "gemini-image" }, undefined, undefined);
+    const text = result.content.find((c) => c.type === "text")?.text ?? "";
+    expect(text).toContain("name: gemini-image");
+    expect(text).toContain('description: "Generate images with Gemini."');
+    expect(text).toContain(".agentic-plugins/gemini-image/skills/gemini-image/SKILL.md");
+    expect(text).toMatch(/use read .*byte-exact copy/i);
+  });
 });

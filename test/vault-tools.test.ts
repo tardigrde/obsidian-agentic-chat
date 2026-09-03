@@ -700,9 +700,21 @@ describe("delete", () => {
     const app = makeApp({ files: { "Full/Note.md": { content: "body" } } });
     const del = getTool(app, "delete");
 
-    await expect(run(del, { path: "Full" })).rejects.toThrow(/Folder not empty/);
+    await expect(run(del, { path: "Full" })).rejects.toThrow(/Folder not empty.*recursive:true/);
     expect(app.vault.getAbstractFileByPath("Full")).toBeInstanceOf(TFolder);
     expect(app.vault.getAbstractFileByPath("Full/Note.md")).toBeInstanceOf(TFile);
+  });
+
+  it("deletes a non-empty folder with recursive:true", async () => {
+    const app = makeApp({ files: { "Full/Note.md": { content: "body" } } });
+    const del = getTool(app, "delete");
+
+    const result = await run(del, { path: "Full", recursive: true });
+
+    expect(unwrapToolOutput(result.text)).toBe("Moved Full to trash.");
+    expect(result.details).toMatchObject({ path: "Full", kind: "folder", recursive: true });
+    expect(app.vault.getAbstractFileByPath("Full")).toBeNull();
+    expect(app.vault.getAbstractFileByPath("Full/Note.md")).toBeNull();
   });
 });
 
