@@ -45,7 +45,10 @@ export interface AgenticChatSettings {
   provider: ProviderId;
   /** Secret id in Obsidian secretStorage. */
   openrouterApiKeySecretId: string;
-  /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link openrouterApiKeySecretId}. Kept in-memory for {@link apiKeyForProvider}.
+   */
   openrouterApiKey: string;
   openrouterModel: string;
   ollamaBaseUrl: string;
@@ -53,7 +56,10 @@ export interface AgenticChatSettings {
   openaiCompatibleBaseUrl: string;
   /** Secret id in Obsidian secretStorage. */
   openaiCompatibleApiKeySecretId: string;
-  /** Deprecated plaintext migration/fallback field. Persisted as empty after save. */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link openaiCompatibleApiKeySecretId}.
+   */
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
   /**
@@ -128,7 +134,10 @@ export interface WebSettings {
   searchProvider: WebSearchProvider;
   /** Secret id in Obsidian secretStorage. */
   searchApiKeySecretId: string;
-  /** API key for the chosen search provider (Tavily/Brave). */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link searchApiKeySecretId}.
+   */
   searchApiKey: string;
   /** Base URL of a self-hosted SearXNG instance (used only when provider is SearXNG). */
   searxngUrl: string;
@@ -253,10 +262,14 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     // Heal enum-like fields so an unknown (or retired ask/plan/agent) value can't break the gate or prompt.
     provider: healProvider(stored?.provider),
     openrouterApiKeySecretId: stringSetting(stored?.openrouterApiKeySecretId, OPENROUTER_API_KEY_SECRET_ID),
+    // Deprecated runtime-only plaintext: coerce so a corrupt non-string value
+    // can't reach apiKeyForProvider's .trim().
+    openrouterApiKey: typeof stored?.openrouterApiKey === "string" ? stored.openrouterApiKey : "",
     openaiCompatibleApiKeySecretId: stringSetting(
       stored?.openaiCompatibleApiKeySecretId,
       OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
     ),
+    openaiCompatibleApiKey: typeof stored?.openaiCompatibleApiKey === "string" ? stored.openaiCompatibleApiKey : "",
     mode: healMode(stored?.mode),
     openaiCompatibleContextWindow: healContextWindow(stored?.openaiCompatibleContextWindow),
     outputStyle:

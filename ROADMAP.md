@@ -85,11 +85,7 @@ thin (or absent) here.
 
 *S5 · Three ignore/deny-list mechanisms — **DONE** (this PR).* `ignoredGlobs` → `FileSystemDenyReadPattern` + `PROTECTED_METADATA_PATH_NAMES` via `src/vault/file-system-sandbox.ts` + `src/vault/glob-pattern.ts` + `src/vault/ignore.ts` (protected `.obsidian`+`.git`+`.trash` always denied, user globs merged, case-insensitive subtree, NFC, ReDoS cap, vault caps 200/200); `workingDirs` → `SandboxPolicy::WorkspaceWrite.writable_roots` docs in `src/agent/working-dir.ts`; MCP `enabled_tools/disabled_tools` ordered allow-then-deny via `src/mcp/tool-filter.ts` (glob `*`/`**`/`?`, MAX 100/200, dedupe, heals camel/snake, `iu` flag) filtered in both `probeMcpServer` and `discoverServerTools`; runtime `src/agent/runtime-resources.ts` uses `createFileSystemDenyMatcher` with vault `configDir`; settings UI adds per-server textareas. Tests cover heal, matcher, ordering, ReDoS, NFC, subtree/case.
 
-### S7 · Deprecated settings surface lingers
-- **Problem**: every secret still has a dual plaintext `*ApiKey` + `*SecretId` pair with migration fallback fields persisted. (`templatesFolder` was removed in S9.)
-- **Effort**: S
-- **Deps**: none
-- **Codex**: No dual plaintext. Deprecated fields are `#[schemars(skip)]` ignored, inline `bearer_token` hard-rejected via `ensure_no_inline_bearer_tokens` `mcp_edit.rs:33` → must use `bearer_token_env_var`/`env_http_headers` `mcp_types.rs:534`. Secrets via `SecretsManager`+`LocalSecretsBackend`+OS keyring `secrets/src/lib.rs:98`. Borrow: fail-fast on old plaintext, migrate to `*_env_var` only, drop `*ApiKey` after heal.
+*S7 · Deprecated settings surface lingers — **DONE** (this PR).* `settingsForStorage` (`src/secrets/secret-store.ts` `storeSecretSlot`/`storeSettingsSecretSlot` via shared `parentOf` + `deletePath`) now omits all 10 plaintext secret keys from persisted `data.json` entirely (never `""`); secrets live only in secretStorage via `*SecretId` refs. Runtime plaintext fields stay for `apiKeyForProvider`/legacy migration (marked `@deprecated` in `src/settings-schema.ts`, `src/mcp/settings.ts`, `src/observability/settings.ts`). Return type is `PersistedSettings` (plaintext optional) so stored JSON must not be reused as runtime. Tests cover omission (`test/secret-store.test.ts`) + legacy→save→reload→hydrate round-trip.
 
 ### S8 · Subagent reframe: drop the "profile" concept
 - **Problem**: subagents are authored as "profiles" (`AGENT.md` + built-in roster `src/agent/subagents.ts:49` + `agentsFolder`/`enableBuiltinAgents` `src/settings-schema.ts:77`) with their own system prompt + tool allowlist, but the delegation value is isolated context for the single main agent — not a switchable persona. The "profile" vocabulary also collides with `outputStyle` (`src/agent/output-styles.ts:6` `default/brainstorm/learning`).
@@ -178,7 +174,7 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 **Stability first:** `H5 → R2 → A7` (`C6` auto-decay removed, `H6` dropped, `H2` deferred — big feature).
 
-(Group S `S1-S10` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (#122), **S5 done** (this PR), next `S7/S8`. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `S2/S3` done #108, `E10` done #98. `F8` + `H2` + `C6/H6` deferred/dropped.)
+(Group S `S1-S10` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (#122), **S5 done**, **S7 done** (this PR), next `S8`. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `S2/S3` done #108, `E10` done #98. `F8` + `H2` + `C6/H6` deferred/dropped.)
 
 *First-principles rationale*: security/reliability done — next small wins are evaluator routing (`H5` `S`) then diff polish (`R2` `S`) before audit (`A7`). Memory (`H2`) is `M–L` and needs docs/privacy pass, so pushed. No babysitting — user controls `/compact`, threshold `80%` is the safety net. S-cluster high-ROI but `L-effort` and cross-cuts every gate, so batch separately. `H5` reuses `AgentProfile.model` — reconcile with `S8` role reframe.
 

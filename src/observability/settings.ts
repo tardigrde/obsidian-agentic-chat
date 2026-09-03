@@ -20,17 +20,26 @@ export interface ObservabilitySettings extends ProxySettings {
   payloadMode: ObservabilityPayloadMode;
   /** Secret id in Obsidian secretStorage. */
   langfusePublicKeySecretId: string;
-  /** Runtime-only hydrated Langfuse public key. */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link langfusePublicKeySecretId}.
+   */
   langfusePublicKey: string;
   /** Secret id in Obsidian secretStorage. */
   langfuseSecretKeySecretId: string;
-  /** Runtime-only hydrated Langfuse secret key. */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link langfuseSecretKeySecretId}.
+   */
   langfuseSecretKey: string;
   /** Optional generic OTLP auth header name, e.g. Authorization. */
   authHeaderName: string;
   /** Secret id in Obsidian secretStorage. */
   authHeaderValueSecretId: string;
-  /** Runtime-only hydrated generic OTLP auth header value. */
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   * Secrets live in secretStorage via {@link authHeaderValueSecretId}.
+   */
   authHeaderValue: string;
 }
 
