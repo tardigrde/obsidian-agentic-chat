@@ -18,6 +18,7 @@ import {
   type SubagentChildStatus,
 } from "../tools/subagent-tool";
 import type { AgentRole } from "./subagents";
+import { findAgentRole, retiredAgentHint } from "./subagents";
 import { resolveModePolicy } from "./modes";
 import { resolveWorkingDirPolicy, toolTargetPaths } from "./working-dir";
 import { UNDOABLE_TOOLS, captureUndo } from "./undo";
@@ -318,6 +319,16 @@ export class AgentToolCallController {
     toolCallId: string,
     args: unknown,
   ): Promise<ToolGateDecision> {
+    // Unknown agents fail closed with a distinct audit: the dispatch never ran,
+    // so it must not be logged as auto-approved (execute would throw unknown-agent).
+    const unknown = normalizeTasks((args ?? {})).find((task) => !findAgentRole(this.getProfiles(), task.agent));
+    if (unknown) {
+      const available = this.getProfiles().map((candidate) => candidate.name).join(", ") || "(none)";
+      const reason =
+        `subagent: unknown agent "${unknown.agent.trim()}".${retiredAgentHint(unknown.agent)} Available: ${available}.`;
+      await this.auditApproval({ decision: "denied", toolCallId, toolName: SUBAGENT_TOOL_NAME, args, reason });
+      return { block: true, reason };
+    }
     if (!this.dispatchCanMutate(settings, args)) {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
       return undefined;
@@ -372,12 +383,14 @@ export class AgentToolCallController {
   private dispatchCanMutate(settings: AgenticChatSettings, args: unknown): boolean {
     const tasks = normalizeTasks((args ?? {}));
     return tasks.some((task) => {
-      const profile = this.getProfiles().find((candidate) => candidate.name === task.agent);
+      const profile = findAgentRole(this.getProfiles(), task.agent);
       if (!profile) return false;
       return profile.toolAllowlist.some((name) => {
-        const isMutating =
-          MUTATING_TOOLS.has(name) || isMcpToolName(name) || name === "load_skill" || name === "unload_skill";
-        if (!isMutating) return false;
+        // Child agents only ever receive vault + web + artifact + read-skill tools
+        // (see AgentSubagentRuntime.createChildAgent) — never MCP/memory/load_skill.
+        // Gating on those names here would false-trigger a deny prompt for a role
+        // that lists them aspirationally, so only MUTATING_TOOLS counts.
+        if (!MUTATING_TOOLS.has(name)) return false;
         // Per-tool deny means this mutating tool is effectively read-only for dispatch purposes.
         if (getPerToolApproval(settings.approval, name) === "deny") return false;
         return true;

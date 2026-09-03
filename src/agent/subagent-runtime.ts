@@ -117,10 +117,19 @@ export function childModelConfig(settings: AgenticChatSettings, modelOverride?: 
  * parent approval gates still govern execution.
  */
 export function filterChildTools(tools: AgentTool[], allowlist: string[], readOnly: boolean): AgentTool[] {
+  // Allowlist entries come from vault frontmatter — normalize case/whitespace
+  // so "Read, search" does not silently lobotomise the child to zero tools.
+  const normalized = allowlist.map((name) => name.trim().toLowerCase()).filter(Boolean);
   let allowed =
-    allowlist.length > 0
-      ? tools.filter((tool) => allowlist.includes(tool.name))
+    normalized.length > 0
+      ? tools.filter((tool) => normalized.includes(tool.name.toLowerCase()))
       : tools.filter((tool) => !MUTATING_TOOLS.has(tool.name));
+  if (normalized.length > 0 && allowed.length === 0) {
+    console.warn(
+      `Agentic chat: subagent allowlist [${allowlist.join(", ")}] matched no tools — falling back to read-only vault tools.`,
+    );
+    allowed = tools.filter((tool) => !MUTATING_TOOLS.has(tool.name));
+  }
   if (readOnly) allowed = allowed.filter((tool) => !MUTATING_TOOLS.has(tool.name));
   return allowed;
 }

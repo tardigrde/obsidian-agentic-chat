@@ -1,7 +1,7 @@
 import { type Agent, type AgentEvent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import type { AgentRole } from "../agent/subagents";
+import { findAgentRole, retiredAgentHint, type AgentRole } from "../agent/subagents";
 import { sumAssistantUsage } from "../agent/usage";
 import { redactText } from "../privacy/redaction";
 import { truncateToolOutput } from "../vault/truncate";
@@ -130,13 +130,11 @@ export function createSubagentTool(
         throw new Error("subagent: provide both {agent, task}.");
       }
       const profiles = deps.getProfiles();
-      const profile = profiles.find((candidate) => candidate.name === agent);
+      const profile = findAgentRole(profiles, agent);
       if (!profile) {
         const available = profiles.map((candidate) => candidate.name).join(", ") || "(none)";
-        const retiredHint = ["researcher", "reviewer", "editor"].includes(agent.toLowerCase())
-          ? ` "${agent}" was retired in the S8 role reframe — use "explorer" instead.`
-          : "";
-        throw new Error(`subagent: unknown agent "${agent}".${retiredHint} Available: ${available}.`);
+        const retiredHint = retiredAgentHint(agent);
+        throw new Error(`subagent: unknown agent "${agent.trim()}".${retiredHint} Available: ${available}.`);
       }
 
       const status: SubagentChildStatus = { agent, task, status: "queued" };

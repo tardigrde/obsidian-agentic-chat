@@ -37,6 +37,7 @@ const EXPLORER_PROMPT = `You are an explorer subagent inside Obsidian. You inves
 - Fetch promising web results before relying on them. Prefer primary/authoritative sources and keep their source artifact ids or URLs.
 - Read relevant notes/source artifacts before drawing conclusions; never guess paths or cite snippets you did not inspect.
 - Return a tight, sourced summary: answer first, then the note paths, source artifact ids, and URLs you relied on.
+- When asked to review a draft claim set, source list, note, or plan, be skeptical: flag unsupported claims, stale/low-authority sources, missing citations, and contradictions, ordered by severity with evidence for each finding.
 - You cannot change the vault. Do not propose running other tools.`;
 
 /** Single built-in role: read-only recon (S8 consolidation from researcher/reviewer/editor). */
@@ -59,11 +60,57 @@ export const BUILTIN_AGENT_ROLES: AgentRole[] = [
   },
 ];
 
+// Freeze the built-in roster so a caller mutating a returned role cannot
+// escalate the singleton for the rest of the session (shallow array copies
+// share element refs — see loadAgentRoles deep-clone below).
+for (const role of BUILTIN_AGENT_ROLES) {
+  Object.freeze(role.toolAllowlist);
+  Object.freeze(role);
+}
+Object.freeze(BUILTIN_AGENT_ROLES);
+
 /**
  * @deprecated Use BUILTIN_AGENT_ROLES – alias for backward compatibility.
- * Points to the same single Explorer roster.
+ * Deep copy (not a shared ref) so mutating one roster's entry cannot corrupt the other.
  */
-export const BUILTIN_AGENT_PROFILES: AgentRole[] = [...BUILTIN_AGENT_ROLES];
+export const BUILTIN_AGENT_PROFILES: AgentRole[] = BUILTIN_AGENT_ROLES.map((role) => ({
+  ...role,
+  toolAllowlist: [...role.toolAllowlist],
+}));
+
+/** Built-in names retired by the S8 role reframe (single Explorer role). Single source of truth. */
+export const RETIRED_AGENT_NAMES: ReadonlySet<string> = new Set(["researcher", "reviewer", "editor"]);
+
+/** Normalize a dispatch name for lookup: trim + case-insensitive (models capitalize). */
+export function normalizeAgentName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/** Case-insensitive role lookup (trims the request). */
+export function findAgentRole(roles: Pick<AgentRole, "name">[], name: string): AgentRole | undefined {
+  const wanted = normalizeAgentName(name);
+  return (roles as AgentRole[]).find((candidate) => candidate.name.trim().toLowerCase() === wanted);
+}
+
+/** Retired-name migration hint, or "" when the name was never a built-in. */
+export function retiredAgentHint(name: string): string {
+  return RETIRED_AGENT_NAMES.has(normalizeAgentName(name))
+    ? ` "${name.trim()}" was retired in the S8 role reframe — use "explorer" instead.`
+    : "";
+}
+
+/** One-shot deprecation flag: loadAgentRoles runs per turn, so warn once per session. */
+let warnedDeprecatedRoles = false;
+
+/** Reset the once-flag (tests only). */
+export function resetDeprecatedRolesWarning(): void {
+  warnedDeprecatedRoles = false;
+}
+
+/** Strip newlines/control chars and cap length so vault text cannot inject prompt structure. */
+function sanitizeRoleText(value: string, maxLength: number): string {
+  return value.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
 
 /**
  * Load the available subagent roles: the built-in roster (optional) plus any
@@ -78,16 +125,20 @@ export async function loadAgentRoles(
 ): Promise<AgentRole[]> {
   const byName = new Map<string, AgentRole>();
   if (includeBuiltins) {
-    for (const role of BUILTIN_AGENT_ROLES) byName.set(role.name, role);
+    // Deep-clone: callers may mutate the returned roles; the frozen singleton must survive.
+    for (const role of BUILTIN_AGENT_ROLES) {
+      byName.set(normalizeAgentName(role.name), { ...role, toolAllowlist: [...role.toolAllowlist] });
+    }
   }
   const vaultRoles = await loadVaultAgentRoles(app, folderInput);
-  if (vaultRoles.length > 0) {
+  if (vaultRoles.length > 0 && !warnedDeprecatedRoles) {
+    warnedDeprecatedRoles = true;
     console.warn(
       "Agentic chat: AGENT.md subagent profiles are deprecated – subagents now inherit from parent; vault AGENT.md still loaded but will be removed in a future version. Migrate to the built-in Explorer role.",
     );
   }
   for (const role of vaultRoles) {
-    byName.set(role.name, role);
+    byName.set(normalizeAgentName(role.name), role);
   }
   return [...byName.values()];
 }
@@ -98,7 +149,11 @@ export const loadAgentProfiles = loadAgentRoles;
 /** Format the model-visible block advertising the available subagents. */
 export function formatAgentRolesForSystemPrompt(roles: AgentRole[]): string {
   if (roles.length === 0) return "";
-  const lines = roles.map((role) => `- **${role.name}**: ${role.description}`);
+  // Vault descriptions are untrusted data: strip newlines so a malicious
+  // AGENT.md cannot inject prompt structure, cap length for context hygiene.
+  const lines = roles.map(
+    (role) => `- **${sanitizeRoleText(role.name, 64)}**: ${sanitizeRoleText(role.description, 200)}`,
+  );
   return [
     "## Subagents",
     "",
@@ -106,7 +161,7 @@ export function formatAgentRolesForSystemPrompt(roles: AgentRole[]): string {
       "One call runs one subagent ({agent, task}); make several `subagent` calls in one message " +
       "to run several in parallel (up to 10 at once). " +
       "Delegate work that is self-contained (research, review) to keep your own context clean. " +
-      "Subagents inherit your approval/mode controls; the Explorer role is read-only recon.",
+      "Subagents inherit your approval/mode controls; the built-in Explorer role is read-only recon.",
     "",
     ...lines,
   ].join("\n");
@@ -135,9 +190,14 @@ async function loadVaultAgentRoles(app: App, folderInput: string): Promise<Agent
       console.warn(`Agentic chat: could not read agent file ${file.path}`, error);
       continue;
     }
-    const { data, body } = splitFrontmatter(raw);
+    const { data, body, parseProblem } = splitFrontmatter(raw);
+    if (parseProblem) {
+      console.warn(`Agentic chat: ignoring agent file with invalid frontmatter ${file.path}: ${parseProblem}`);
+      continue;
+    }
     if (!body.trim()) continue;
-    const name = stringField(data, "name") ?? deriveName(file);
+    const name = (stringField(data, "name") ?? deriveName(file)).trim();
+    if (!name) continue;
     roles.push({
       name,
       description: stringField(data, "description") ?? name,
@@ -166,9 +226,9 @@ function parseToolList(value: unknown): string[] {
 function deriveName(file: TFile): string {
   // An `AGENT.md` is named after its containing folder; a bare note after itself.
   if (file.name.toLowerCase() === "agent.md") {
-    return file.parent?.path ? file.parent.name : file.basename;
+    return (file.parent?.path ? file.parent.name : file.basename).trim();
   }
-  return file.basename;
+  return file.basename.trim();
 }
 
 function isUnder(path: string, folder: string): boolean {
@@ -176,7 +236,7 @@ function isUnder(path: string, folder: string): boolean {
 }
 
 function safeFolder(folderInput: string): string | null {
-  if (!folderInput.trim()) return null;
+  if (typeof folderInput !== "string" || !folderInput.trim()) return null;
   try {
     return normalizeFolderPath(folderInput);
   } catch {

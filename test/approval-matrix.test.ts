@@ -217,7 +217,7 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     return { isError: tr.isError, text };
   }
 
-  it("safe + no working set: a mutating dispatch does not prompt before child tool calls (S8: explorer read-only, inherits parent)", async () => {
+  it("safe + no working set: a read-only explorer dispatch does not prompt (S8: explorer read-only, inherits parent)", async () => {
     const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("all set")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "safe",
@@ -241,7 +241,7 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     expect(toolResult(service)?.text).toContain("found 3 notes");
   });
 
-  it("yolo auto-approves a dispatch even when settings deny mutating (S8: explorer read-only)", async () => {
+  it("yolo auto-approves a read-only explorer dispatch (S8: explorer has no mutating tools, gate is vacuous by design)", async () => {
     const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer reply"), parentFollowup("done")]);
     const { service, confirmCalls } = makeService(streamFn, {
       mode: "yolo",

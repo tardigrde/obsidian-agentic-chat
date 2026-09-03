@@ -14,7 +14,7 @@ Providers:
 
 ## Agent
 
-Configure standing instructions, output style, compaction, memory, subagent profile folders, skills folders, and runtime resource behavior.
+Configure standing instructions, output style, compaction, memory, subagent role folders (legacy AGENT.md, deprecated), skills folders, and runtime resource behavior.
 
 - **Permission mode** — Safe honors approval gates; YOLO auto-approves mutating tools for the session. Plan mode is entered via `/plan` in chat.
 - **Temperature** — Sampling randomness (0–2).

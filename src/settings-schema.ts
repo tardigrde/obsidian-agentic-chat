@@ -307,6 +307,13 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     },
     mcp: healedMcp,
     plugins: healedPlugins,
+    // Deprecated subagent roster keys: coerce so a corrupt non-string/bool in a
+    // legacy data.json can't crash the per-turn vault role loader (.trim() on 123).
+    agentsFolder: typeof stored?.agentsFolder === "string" ? stored.agentsFolder : DEFAULT_SETTINGS.agentsFolder,
+    enableBuiltinAgents:
+      typeof stored?.enableBuiltinAgents === "boolean"
+        ? stored.enableBuiltinAgents
+        : DEFAULT_SETTINGS.enableBuiltinAgents,
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),

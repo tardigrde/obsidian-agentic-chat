@@ -1,12 +1,9 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
-import type { AgentRole } from "./subagents";
+import { normalizeAgentName, RETIRED_AGENT_NAMES, type AgentRole } from "./subagents";
 
 export function buildSubagentInvocation(name: string, task: string): string {
   return `Use the subagent tool to delegate this task to the "${name}" subagent: ${task}`;
 }
-
-/** Built-in names retired by the S8 role reframe (single Explorer role). */
-const RETIRED_AGENT_NAMES: ReadonlySet<string> = new Set(["researcher", "reviewer", "editor"]);
 
 export function buildInitInvocation(instructions?: string): string {
   const parts = [
@@ -45,7 +42,7 @@ export function unknownAgentMessage(
   skills: Pick<Skill, "name">[],
 ): string {
   const available = profiles.map((item) => item.name);
-  const lower = name.toLowerCase();
+  const lower = normalizeAgentName(name);
   const skill = skills.find(
     (item) => item.name.toLowerCase() === lower || item.name.toLowerCase().includes(lower),
   );
