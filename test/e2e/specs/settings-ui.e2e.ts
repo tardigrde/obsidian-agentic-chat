@@ -3,6 +3,7 @@ import { before, describe, it } from "mocha";
 import { createServer } from "node:http";
 import { zipSync } from "../../../src/vendor/fflate";
 import {
+  clickMcpAddButton,
   clickSettingButton,
   openAgenticChatSettings,
   readAgenticChatSettings,
@@ -14,6 +15,7 @@ import {
   setSettingText,
   setSettingTextByPlaceholder,
   setSettingToggle,
+  waitForMcpAddRow,
   waitForSettingButton,
   waitForAgenticChatSetting,
   waitForSetting,
@@ -51,10 +53,19 @@ interface SettingsSnapshot {
       source: string;
     }>;
   };
-  plugins: { folder: string; sources?: Record<string, string> };
+  plugins: { folder: string; sources?: Record<string, string>; mcpState?: Record<string, McpServerStateSnapshot> };
   enableBuiltinAgents: boolean;
   agentsFolder: string;
   ignoredGlobs: string;
+}
+
+interface McpServerStateSnapshot {
+  enabled?: boolean;
+  approval?: string;
+  authType?: string;
+  authHeaderName?: string;
+  authHeaderValue?: string;
+  lastUrl?: string;
 }
 const OPENAI_COMPATIBLE_KEY_SECRET_ID = "agentic-chat-openai-compatible-api-key";
 const OPENAI_COMPATIBLE_KEY = "e2e-openai-compatible-key";
@@ -83,7 +94,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
       openaiCompatibleApiKey: string;
       openaiCompatibleModel: string;
       approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
-      web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
+      web: { enabled: boolean; searchProvider: string; searchApiKeySecretId: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number; allowedHosts: string };
       observability: {
         enabled: boolean;
         backend: string;
@@ -105,6 +116,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
         folder: string;
         enabled: Record<string, boolean>;
         sources: Record<string, string>;
+        mcpState: Record<string, unknown>;
       };
       enableBuiltinAgents: boolean;
       agentsFolder: string;
@@ -119,10 +131,12 @@ async function resetSettingsForUiSpec(): Promise<void> {
     settings.web = {
       enabled: false,
       searchProvider: "tavily",
+      searchApiKeySecretId: "agentic-chat-web-search-api-key",
       searchApiKey: "",
       searxngUrl: "",
       maxResults: 5,
       fetchCharLimit: 10_000,
+      allowedHosts: "",
     };
     settings.mcp = {
       enabled: false,
@@ -146,7 +160,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
       authHeaderValueSecretId: "agentic-chat-observability-auth-header-value",
       authHeaderValue: "",
     };
-    settings.plugins = { folder: ".agentic-plugins", enabled: {}, sources: {} };
+    settings.plugins = { folder: ".agentic-plugins", enabled: {}, sources: {}, mcpState: {} };
     settings.enableBuiltinAgents = true;
     settings.agentsFolder = "";
     settings.ignoredGlobs = "";
@@ -221,10 +235,10 @@ describe("agentic-chat settings UI", function () {
   it("generates a plugin package and persists its MCP server through the MCP tab", async function () {
     await selectSettingsTab("MCP");
     await setSettingToggle("Enable MCP", true);
-    await waitForSetting("Add MCP server");
-    await setSettingText("Add MCP server", "docs");
+    await waitForMcpAddRow();
+    await setSettingTextByPlaceholder("Server name", "docs");
     await setSettingTextByPlaceholder("https://mcp.example.com/mcp", "https://docs.example.com/mcp");
-    await clickSettingButton("Add MCP server", "Add MCP server");
+    await clickMcpAddButton("Add MCP server");
     await waitForSetting("Setup guide");
     await setSettingSelect("Approval", "allow");
     await setSettingSelect("Authentication", "header");
@@ -235,17 +249,15 @@ describe("agentic-chat settings UI", function () {
 
     await waitForAgenticChatSetting((settings) => {
       const snapshot = settings as unknown as SettingsSnapshot;
-      const server = snapshot.mcp.servers[0];
+      const state = snapshot.plugins.mcpState?.["plugin_docs_docs_889dfa93cd1a"];
       return (
         snapshot.mcp.enabled &&
-        server?.name === "docs: docs" &&
-        server.id === "plugin_docs_docs_889dfa93cd1a" &&
-        server.url === "https://docs.example.com/mcp" &&
-        server.enabled &&
-        server.approval === "allow" &&
-        server.authType === "header" &&
-        server.authHeaderName === "X-E2E-Key" &&
-        server.authHeaderValue === "mcp-secret"
+        state?.enabled === true &&
+        state?.lastUrl === "https://docs.example.com/mcp" &&
+        state?.approval === "allow" &&
+        state?.authType === "header" &&
+        state?.authHeaderName === "X-E2E-Key" &&
+        state?.authHeaderValue === "mcp-secret"
       );
     }, "MCP settings were not persisted from the settings UI");
   });
@@ -311,8 +323,8 @@ describe("agentic-chat settings UI", function () {
       );
       await waitForAgenticChatSetting((settings) => {
         const snapshot = settings as unknown as SettingsSnapshot;
-        const entry = snapshot.mcp.servers.find((candidate) => candidate.id.startsWith("plugin_my_tool_"));
-        return entry?.enabled === false && entry?.source === "plugin";
+        const key = Object.keys(snapshot.plugins.mcpState ?? {}).find((candidate) => candidate.startsWith("plugin_my_tool_"));
+        return key !== undefined && snapshot.plugins.mcpState?.[key]?.enabled === false;
       }, "Imported MCP server did not persist disabled by default");
 
       await browser.waitUntil(

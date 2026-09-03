@@ -125,7 +125,7 @@ export function hydrateSettingsSecrets(settings: AgenticChatSettings, store: Sec
   ensureSecretRefs(settings);
   for (const slot of SETTINGS_SECRET_SLOTS) hydrateSettingsSecretSlot(settings, slot, store);
   for (const server of settings.mcp.servers) hydrateMcpServerSecrets(server, store);
-  for (const [id, state] of Object.entries(settings.plugins.mcpState)) hydrateMcpStateSecrets(id, state, store);
+  for (const [id, state] of Object.entries(settings.plugins.mcpState ?? {})) hydrateMcpStateSecrets(id, state, store);
 }
 
 export function settingsForStorage(settings: AgenticChatSettings, store: SecretStore): AgenticChatSettings {
@@ -135,8 +135,8 @@ export function settingsForStorage(settings: AgenticChatSettings, store: SecretS
   for (let index = 0; index < settings.mcp.servers.length; index += 1) {
     storeMcpServerSecrets(settings.mcp.servers[index], stored.mcp.servers[index], store);
   }
-  for (const [id, state] of Object.entries(settings.plugins.mcpState)) {
-    const storedState = stored.plugins.mcpState[id];
+  for (const [id, state] of Object.entries(settings.plugins.mcpState ?? {})) {
+    const storedState = stored.plugins.mcpState?.[id];
     if (storedState) storeMcpStateSecrets(id, state, storedState, store);
   }
   return stored;
@@ -147,7 +147,7 @@ export function ensureSecretRefs(settings: AgenticChatSettings): void {
     if (!stringAt(settings, slot.secretIdPath).trim()) writePath(settings, slot.secretIdPath, slot.defaultSecretId);
   }
   for (const server of settings.mcp.servers) ensureMcpServerSecretRefs(server);
-  for (const [id, state] of Object.entries(settings.plugins.mcpState)) ensureMcpStateSecretRefs(id, state);
+  for (const [id, state] of Object.entries(settings.plugins.mcpState ?? {})) ensureMcpStateSecretRefs(id, state);
 }
 
 export function ensureMcpServerSecretRefs(server: McpServerSettings): void {
