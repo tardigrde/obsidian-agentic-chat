@@ -184,7 +184,7 @@ export function settingsForStorage(settings: AgenticChatSettings, store: SecretS
     const storedState = stored.plugins.mcpState?.[id];
     if (storedState) storeMcpStateSecrets(id, state, storedState, store);
   }
-  return stored as unknown as PersistedSettings;
+  return stored;
 }
 
 export function ensureSecretRefs(settings: AgenticChatSettings): void {
@@ -287,11 +287,11 @@ function storeSecretSlot<TRuntime, K extends Extract<keyof TRuntime, string>>(
   // Absent (non-string) runtime value must not wipe a good secret: with JSON
   // omission there is no persisted backup. Only an explicit "" clears.
   if (typeof raw !== "string") {
-    delete (stored as Record<string, unknown>)[key];
+    delete stored[key];
     return;
   }
   store.setSecret(secretId, raw.trim());
-  delete (stored as Record<string, unknown>)[key];
+  delete stored[key];
 }
 
 function hydrateSettingsSecretSlot(settings: AgenticChatSettings, slot: SettingsSecretSlot, store: SecretStore): void {
