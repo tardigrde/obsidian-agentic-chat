@@ -263,6 +263,31 @@ export async function waitForSettingButton(name: string, buttonText: string): Pr
   );
 }
 
+/**
+ * The MCP tab's add-server row is a nameless Setting (class
+ * `agentic-chat-mcp-add`: name + URL inputs + action button under a plain-div
+ * heading), so the name-based helpers above cannot see it. Locate it by class.
+ */
+export async function waitForMcpAddRow(): Promise<void> {
+  await focusSettingsWindow();
+  await browser.waitUntil(
+    async () => await browser.execute(() => document.querySelector(".agentic-chat-mcp-add") !== null),
+    { timeout: 5_000, timeoutMsg: "MCP add-server row did not render" },
+  );
+}
+
+export async function clickMcpAddButton(buttonText: string): Promise<void> {
+  await waitForMcpAddRow();
+  await browser.execute((text) => {
+    const row = document.querySelector(".agentic-chat-mcp-add");
+    const button = Array.from(row?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
+      (candidate) => candidate.innerText.trim() === text,
+    );
+    if (!button) throw new Error(`Button "${text}" in MCP add-server row not found`);
+    button.click();
+  }, buttonText);
+}
+
 export async function readAgenticChatSettings<T = Record<string, unknown>>(): Promise<T> {
   return await fromMainWindow(async () => {
     return await browser.executeObsidian(async ({ app }, pluginId) => {

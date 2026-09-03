@@ -514,14 +514,27 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Per-turn timeline (E10): reasoning trace + tool steps share one container and
-   a single continuous left rail, sized by ResizeObserver to hug the content. */
+/* Per-turn timeline (E10): reasoning trace + transcript text + tool steps share
+   one container and a single continuous left rail, sized by ResizeObserver to
+   hug the content. Text lives before steps (stream order: message_end precedes
+   tool_execution_start) so commentary renders above the tool call it introduces. */
 .agentic-chat-timeline {
   position: relative;
   padding-left: 14px;
   margin-bottom: var(--size-2-1);
   min-width: 0;
   max-width: 100%;
+}
+
+/* An empty transcript adds no gap while its turn has only reasoning/steps.
+   JS toggles is-empty for truly empty AND whitespace-only streaming text,
+   since CSS :empty does not match whitespace text nodes. */
+.agentic-chat-timeline .agentic-chat-text.is-empty {
+  display: none;
+}
+
+.agentic-chat-timeline .agentic-chat-text:not(.is-empty) {
+  margin-bottom: var(--size-2-2);
 }
 
 .agentic-chat-timeline-rail {

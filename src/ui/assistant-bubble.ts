@@ -114,9 +114,15 @@ export class AssistantBubble {
     private readonly actions: BubbleActions = {},
   ) {
     this.el = parent.createDiv({ cls: ["agentic-chat-message", "agentic-chat-assistant"] });
-    this.textEl = this.el.createDiv({ cls: ["agentic-chat-text", "is-streaming"] });
+    this.textEl = this.el.createDiv({ cls: ["agentic-chat-text", "is-streaming", "is-empty"] });
     this.stepsEl = this.el.createDiv({ cls: "agentic-chat-steps" });
     this.actionsEl = this.el.createDiv({ cls: "agentic-chat-actions" });
+  }
+
+  /** Hide the transcript node when it holds no meaningful text (incl. whitespace-only). */
+  private syncTextEmpty(): void {
+    const empty = (this.textEl.textContent ?? "").trim().length === 0 && this.textEl.childElementCount === 0;
+    this.textEl.toggleClass("is-empty", empty);
   }
 
   appendText(delta: string): void {
@@ -161,8 +167,12 @@ export class AssistantBubble {
     this.reasoningTimeEl = summary.createSpan({ cls: "agentic-chat-reasoning-time" });
     this.reasoningBody = details.createDiv({ cls: "agentic-chat-reasoning-body" });
     this.ensureTimeline();
-    const stepsRef = this.timelineEl?.querySelector(".agentic-chat-steps") ?? null;
-    this.timelineEl?.insertBefore(details, stepsRef);
+    // Transcript text streams before tool execution (message_end precedes
+    // tool_execution_start), so the text node lives before the steps node.
+    // Insert reasoning at the top so order stays: reasoning → text → steps.
+    const anchor = this.textEl.parentElement === this.timelineEl ? this.textEl : (this.timelineEl?.querySelector(".agentic-chat-steps") ?? null);
+    if (anchor) this.timelineEl?.insertBefore(details, anchor);
+    else this.timelineEl?.appendChild(details);
     this.reasoningStart = performance.now();
     this.reasoningTimerHandle = window.setInterval(() => {
       this.reasoningTimeEl?.setText(formatElapsed(performance.now() - this.reasoningStart));
@@ -191,7 +201,10 @@ export class AssistantBubble {
       this.pendingReasoning = "";
       changed = true;
     }
-    if (changed) this.actions.onContentChange?.();
+    if (changed) {
+      this.syncTextEmpty();
+      this.actions.onContentChange?.();
+    }
   }
 
   /** Free live timers (reasoning) without touching the rendered DOM. */
@@ -202,20 +215,32 @@ export class AssistantBubble {
   }
 
   /**
-   * Lazily create the per-turn timeline container (reasoning + steps share one
-   * pixel rail). Inserted above the text so it reads as "how the agent got here",
-   * then the answer. Rail height tracks the container via ResizeObserver so the
-   * line hugs the visible blocks whether they're collapsed or expanded.
+   * Lazily create the per-turn timeline container (reasoning + transcript text +
+   * tool steps share one pixel rail). Order inside is reasoning → text → steps,
+   * matching stream order: assistant text finalizes at message_end before
+   * tool_execution_start adds step cards. Rail height tracks the container via
+   * ResizeObserver so the line hugs the visible blocks whether they're
+   * collapsed or expanded.
    */
   private ensureTimeline(): void {
-    if (this.timelineEl) return;
-    const timeline = this.el.createDiv({ cls: "agentic-chat-timeline" });
-    this.railEl = timeline.createDiv({ cls: "agentic-chat-timeline-rail" });
-    this.el.insertBefore(timeline, this.textEl);
-    this.timelineEl = timeline;
-    this.timelineObserver = new ResizeObserver(() => this.updateRail());
-    this.timelineObserver.observe(timeline);
-    this.updateRail();
+    if (!this.timelineEl) {
+      const timeline = this.el.createDiv({ cls: "agentic-chat-timeline" });
+      this.railEl = timeline.createDiv({ cls: "agentic-chat-timeline-rail" });
+      this.el.insertBefore(timeline, this.textEl);
+      // Move the transcript node inside the timeline, ahead of the steps node,
+      // so commentary renders above the tool call it introduces.
+      timeline.appendChild(this.textEl);
+      this.timelineEl = timeline;
+      this.timelineObserver = new ResizeObserver(() => this.updateRail());
+      this.timelineObserver.observe(timeline);
+      this.updateRail();
+    }
+    if (this.stepsEl.parentElement !== this.timelineEl) this.timelineEl?.appendChild(this.stepsEl);
+    // Keep text before steps even when startStep runs before any text streamed.
+    if (this.textEl.parentElement === this.timelineEl && this.stepsEl.parentElement === this.timelineEl) {
+      this.timelineEl.insertBefore(this.textEl, this.stepsEl);
+    }
+    this.syncTextEmpty();
   }
 
   private updateRail(): void {
@@ -284,7 +309,6 @@ export class AssistantBubble {
     this.renderCallSection(body, name, rawArgs);
     this.syncStepCollapsible(row, body);
     this.ensureTimeline();
-    if (this.stepsEl.parentElement !== this.timelineEl) this.timelineEl?.appendChild(this.stepsEl);
     this.steps.set(id, { card, icon, body, name, startedAt: performance.now() });
     // Record the tool's vault target (if any) so finalized turns can surface a
     // compact list of source files as chips under the response text. Only
@@ -682,6 +706,7 @@ export class AssistantBubble {
     enhanceCallouts(this.textEl);
     installRenderedLinkHandlers(this.textEl, app, this.actions.onOpenExternalLink);
     await renderMermaidBlocks(this.textEl);
+    this.syncTextEmpty();
   }
 
   /**
@@ -690,6 +715,7 @@ export class AssistantBubble {
    * to its static state, but never render markdown. Idempotent.
    */
   finalizeWithoutText(): void {
+    this.syncTextEmpty();
     this.finalizeChrome();
   }
 
