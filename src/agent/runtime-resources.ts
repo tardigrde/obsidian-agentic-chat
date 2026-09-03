@@ -14,7 +14,7 @@ import { createDocumentTools } from "../tools/document-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
 import { createReadSkillTool, createReadSkillFileTool } from "../tools/read-skill-tool";
-import { createSkillLoadTools } from "../tools/skill-tools";
+import { createSkillLoadTools, createCreateSkillTool, type SkillScaffolder } from "../tools/skill-tools";
 import { getLoadedSkillNames, pruneLoadedSkills } from "../skills/skill-load-state";
 import { formatSkillInvocation } from "../skills/skills";
 import { wrapToolOutput } from "../tools/tool-output-wrapper";
@@ -124,7 +124,7 @@ export function composeAgentSystemPrompt(
     MODES[settings.mode].promptOverlay,
     OUTPUT_STYLES[settings.outputStyle].promptOverlay,
     formatAgentRolesForSystemPrompt(resources.profiles),
-    pluginSkillTrustBoundary(resources.plugins),
+    pluginSkillTrustBoundary(resources.plugins, settings.plugins.folder),
     formatLoadedSkillsOverlay(resources.skills),
   ];
   return buildSystemPrompt(settings.systemPrompt, resources.skills, overlays);
@@ -157,15 +157,25 @@ function formatLoadedSkillsOverlay(skills: Skill[]): string {
  * Third-party plugin skill bodies are injected verbatim into the model context,
  * so they are untrusted data as far as instructions go. Emits a clear boundary
  * only when the runtime actually loads skills from packages the user did not
- * author: imported/converted third-party packages. First-party packages the
- * plugin or the user created (builtins, the legacy-skills migration) are the
- * user's own content and are not flagged as untrusted.
+ * author: imported/converted third-party packages. First-party status is
+ * location-based, not name-based: only the exact paths the plugin itself
+ * created (<plugins-folder>/builtins, legacy-skills, my-skills) count. A
+ * third-party package merely *claiming* one of those names at another path
+ * stays untrusted.
  */
-const FIRST_PARTY_PACKAGES = new Set(["builtins", "legacy-skills"]);
+const FIRST_PARTY_PACKAGE_NAMES = new Set(["builtins", "legacy-skills", "my-skills"]);
 
-function pluginSkillTrustBoundary(plugins: LoadedPlugin[]): string {
+function firstPartyRootPaths(folder: string): Set<string> {
+  const root = folder.replace(/\/+$/, "");
+  return new Set([...FIRST_PARTY_PACKAGE_NAMES].map((name) => `${root}/${name}`));
+}
+
+function pluginSkillTrustBoundary(plugins: LoadedPlugin[], folder?: string): string {
+  const firstParty = folder ? firstPartyRootPaths(folder) : FIRST_PARTY_PACKAGE_NAMES;
+  const isFirstParty = (plugin: LoadedPlugin): boolean =>
+    folder ? firstParty.has(plugin.rootPath) : FIRST_PARTY_PACKAGE_NAMES.has(plugin.name);
   const hasThirdPartySkills = plugins.some(
-    (plugin) => plugin.enabled && plugin.skills.length > 0 && !FIRST_PARTY_PACKAGES.has(plugin.name),
+    (plugin) => plugin.enabled && plugin.skills.length > 0 && !isFirstParty(plugin),
   );
   if (!hasThirdPartySkills) return "";
   return (
@@ -190,6 +200,8 @@ export function buildAgentParentTools(options: {
   subagentTool?: AgentTool;
   contextWindow?: number;
   toolBudgetState?: ToolBudgetState;
+  /** When present, the agent gets a `create_skill` tool backed by the New skill wizard writer. */
+  skillScaffolder?: SkillScaffolder;
 }): { tools: AgentTool[]; toolBudget: ToolBudgetSnapshot } {
   const tools = [
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
@@ -202,6 +214,7 @@ export function buildAgentParentTools(options: {
     createReadSkillTool(options.resources.skills),
     createReadSkillFileTool(options.app, options.resources.skills),
     ...createSkillLoadTools(options.resources.skills),
+    ...(options.skillScaffolder ? [createCreateSkillTool(options.skillScaffolder)] : []),
     ...(options.subagentTool ? [options.subagentTool] : []),
   ];
   const budgeted = applyToolBudget({

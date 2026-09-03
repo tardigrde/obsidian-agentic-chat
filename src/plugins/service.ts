@@ -26,7 +26,9 @@ import {
   pluginMcpServerId,
   type LoadedPlugin,
 } from "./loader";
-import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, slugifyPluginName, validatePluginManifest } from "./manifest";
+import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, USER_SKILLS_PACKAGE, slugifyPluginName, validatePluginManifest, validatePluginName } from "./manifest";
+
+export { FIRST_PARTY_PACKAGE_NAMES, USER_SKILLS_PACKAGE } from "./manifest";
 
 export interface GenerateMcpPackageResult {
   /** Vault path of the generated package directory. */
@@ -315,12 +317,31 @@ export class PluginService {
     return this.vaultWriter().folderExists(`${this.pluginsFolder()}/${name}`);
   }
 
-  async scaffoldSkill(input: { name: string; description: string; body: string }): Promise<InstallResult> {
+  /** Body cap for scaffolded skills (agent path has no modal textarea limit). */
+  private static readonly MAX_SKILL_BODY_CHARS = 64 * 1024;
+
+  async scaffoldSkill(
+    input: { name: string; description: string; body: string },
+    options: { source?: string; allowOverwrite?: boolean } = {},
+  ): Promise<InstallResult> {
     if (!/[a-z0-9]/i.test(input.name)) {
       throw new Error("Skill name must contain at least one letter or digit.");
     }
     const name = slugifyPluginName(input.name);
-    if (!name) throw new Error("Skill name must contain at least one letter or digit.");
+    if (!name || !validatePluginName(name)) throw new Error("Skill name must contain at least one letter or digit.");
+    if (input.body.trim().length > PluginService.MAX_SKILL_BODY_CHARS) {
+      throw new Error(
+        `Skill body is too large (${input.body.trim().length} chars, max ${PluginService.MAX_SKILL_BODY_CHARS}). Split it or shorten it.`,
+      );
+    }
+    // Fail closed on collision: the writer replaces same-named packages in
+    // place (unrecoverable, no undo), so the caller must opt into overwrite
+    // explicitly after the user confirmed it.
+    if (!options.allowOverwrite && (await this.packageExists(name))) {
+      throw new Error(
+        `A plugin named "${name}" already exists. Pick another name, or confirm the replacement first.`,
+      );
+    }
     const result = await installPackage(
       this.vaultWriter(),
       {
@@ -351,7 +372,7 @@ export class PluginService {
         pluginsFolder: this.pluginsFolder(),
       },
     );
-    this.recordSource(result.name, "New skill wizard");
+    this.recordSource(result.name, options.source ?? "New skill wizard");
     this.invalidate();
     return result;
   }
@@ -442,10 +463,57 @@ export class PluginService {
     return true;
   }
 
-  /** Recreate the `builtins` package from scratch (Repair button). */
+  /** Recreate the `builtins` package from scratch (Repair button). Also restores `my-skills` when missing. */
   async repairBuiltins(): Promise<void> {
     await this.vaultWriter().removeFolder(`${this.pluginsFolder()}/builtins`);
     await this.ensureBuiltinsMaterialized();
+    await this.ensureMySkillsMaterialized();
+  }
+
+  /**
+   * Materialize the user's own `my-skills` collection package. Ships empty
+   * (manifest + README, no skills/, no mcp.json) — both are optional under
+   * Agent Plugins §6.2, so the loader reports it `ok` with 0 skills / 0
+   * servers. Only creates missing files — never overwrites user content, and
+   * self-heals a half-written package (missing plugin.json or README).
+   */
+  async ensureMySkillsMaterialized(): Promise<boolean> {
+    const writer = this.vaultWriter();
+    const target = `${this.pluginsFolder()}/${USER_SKILLS_PACKAGE}`;
+    await writer.ensureFolder(target);
+    let created = false;
+    if (!(await this.vaultFileExists(`${target}/plugin.json`))) {
+      await writer.writeFile(
+        `${target}/plugin.json`,
+        scaffoldManifest(
+          USER_SKILLS_PACKAGE,
+          "Your personal skill collection. Add skills here as skills/<name>/SKILL.md; this package is never overwritten.",
+        ),
+      );
+      created = true;
+    }
+    if (!(await this.vaultFileExists(`${target}/README.md`))) {
+      await writer.writeFile(
+        `${target}/README.md`,
+        "This is your personal skill collection. Each `skills/<name>/SKILL.md` you add here becomes " +
+          "an agent skill (the skill `name` frontmatter must match its folder name). " +
+          "The plugin only creates this package when it is missing and never overwrites your edits.\n",
+      );
+      created = true;
+    }
+    if (created) this.invalidate();
+    return created;
+  }
+
+  /** True when a vault file exists in the tree or on disk (stale-tree safe). */
+  private async vaultFileExists(path: string): Promise<boolean> {
+    if (this.app.vault.getAbstractFileByPath(path)) return true;
+    try {
+      await this.app.vault.adapter.read(path);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -618,9 +686,26 @@ export class PluginService {
       if (this.app.vault.getAbstractFileByPath(current) instanceof TFolder) continue;
       // The vault's live tree does not index dot-folders (e.g. .agentic-plugins)
       // created outside the session; trust the adapter when the folder is on
-      // disk, or vault.createFolder throws "Folder already exists.".
-      if (await this.app.vault.adapter.exists(current)) continue;
-      await this.app.vault.createFolder(current);
+      // disk, or vault.createFolder throws "Folder already exists.". Folder-aware:
+      // a file at this path is a real conflict, not a skip.
+      if (await this.isFolderOnDisk(current)) continue;
+      try {
+        await this.app.vault.createFolder(current);
+      } catch (error) {
+        // Lost a race with an external sync — folder landed after the probe.
+        if (isFolderCollision(error) && (await this.isFolderOnDisk(current))) continue;
+        throw error;
+      }
+    }
+  }
+
+  /** True when the path exists on disk as a folder (single list probe). */
+  private async isFolderOnDisk(path: string): Promise<boolean> {
+    try {
+      await this.app.vault.adapter.list(path);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -635,6 +720,11 @@ export class PluginService {
     }
     return `${base}-${Date.now()}`;
   }
+}
+
+/** True for "Folder already exists" races (narrow: file collisions must not match). */
+function isFolderCollision(error: unknown): boolean {
+  return String((error as Error)?.message ?? error ?? "").toLowerCase().includes("folder already exists");
 }
 
 /** Drop a folder from the vault file tree after an adapter-level removal. */

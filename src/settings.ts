@@ -2040,7 +2040,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       text:
         "Plugins are packages in the vault that contribute skills and MCP servers. They follow the " +
         "Agent Plugins 1.0.0 specification and are the single source of truth for skills and MCP. " +
-        "Skill precedence: plugin skills win over built-ins of the same name.",
+        "Skill precedence: plugin skills win over built-ins of the same name. " +
+        "The my-skills package is your personal collection space for hand-curated custom skills.",
     });
 
     new Setting(containerEl)

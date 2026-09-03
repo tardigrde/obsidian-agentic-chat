@@ -31,4 +31,18 @@ describe("approval memory", () => {
     expect(applyRememberedApprovalChoice(deny, "write", { approved: false, remember: true })).toBe(true);
     expect(deny.approval.perTool.write).toBe("deny");
   });
+
+  it("never remembers allow for persistent skill tools (injection gate)", () => {
+    for (const tool of ["create_skill", "load_skill", "unload_skill"]) {
+      const current = settings();
+      expect(applyRememberedApprovalChoice(current, tool, { approved: true, remember: true })).toBe(false);
+      expect(current.approval.perTool[tool]).toBeUndefined();
+    }
+  });
+
+  it("still remembers deny for persistent skill tools", () => {
+    const current = settings();
+    expect(applyRememberedApprovalChoice(current, "create_skill", { approved: false, remember: true })).toBe(true);
+    expect(current.approval.perTool.create_skill).toBe("deny");
+  });
 });

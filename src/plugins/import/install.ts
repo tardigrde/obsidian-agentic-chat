@@ -1,4 +1,4 @@
-import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, slugifyPluginName } from "../manifest";
+import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, FIRST_PARTY_PACKAGE_NAMES, slugifyPluginName } from "../manifest";
 import type { ConvertedPackage } from "./convert";
 
 /** Minimal vault write surface so installs run against the real vault or a test double. */
@@ -49,6 +49,14 @@ export interface InstallResult {
 export async function installPackage(writer: PackageWriter, options: InstallPackageOptions): Promise<InstallResult> {
   const { converted, pluginsFolder } = options;
   const name = slugifyPluginName(converted.name) || "plugin";
+  // First-party packages (builtins, legacy-skills, my-skills) are trusted
+  // user/plugin content — an install claiming one of those names would
+  // silently replace it (and inherit its trust), so refuse instead.
+  if (FIRST_PARTY_PACKAGE_NAMES.has(name)) {
+    throw new Error(
+      `Refusing to install over the first-party "${name}" package. Pick another name, or manage it by hand.`,
+    );
+  }
   const stage = `${pluginsFolder}/.importing-${name}-${Date.now().toString(36)}`;
   const target = `${pluginsFolder}/${name}`;
 

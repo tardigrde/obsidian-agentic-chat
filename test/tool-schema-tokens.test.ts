@@ -37,13 +37,19 @@ const noopArtifactStore: ToolArtifactStoreLike = {
   },
 };
 
-function parentTools(): AgentTool[] {
+function parentTools(withScaffolder: boolean): AgentTool[] {
   const subagentTool = createSubagentTool({
     getProfiles: () => [],
     createChildAgent: () => {
       throw new Error("n/a");
     },
   }) as unknown as AgentTool;
+  const scaffolder = {
+    packageExists: async () => false,
+    async scaffoldSkill() {
+      return { rootPath: ".agentic-plugins/x", name: "x", updated: false, skills: 1 };
+    },
+  };
   const { tools } = buildAgentParentTools({
     app: { vault: {}, workspace: {} } as unknown as App,
     settings: { ...DEFAULT_SETTINGS, web: { ...DEFAULT_SETTINGS.web, enabled: true } },
@@ -61,18 +67,27 @@ function parentTools(): AgentTool[] {
     artifactStore: noopArtifactStore,
     askUser: async () => "answer",
     subagentTool,
+    ...(withScaffolder ? { skillScaffolder: scaffolder } : {}),
   });
   return tools;
 }
 
 describe("tool schema token budget", () => {
   it("keeps the full parent tool set under 2400 model-visible schema tokens", () => {
-    const tokens = estimateToolDefinitionTokens(parentTools());
+    const tokens = estimateToolDefinitionTokens(parentTools(false));
     // Trimmed tool descriptions are a per-turn context + cost win and keep the
     // tool budget (2% of a 128k window = 2560) from silently dropping optional
     // tools. This ceiling guards against prose creeping back in. F10+H8 added
     // read_skill_file + load/unload_skill (+~150 tokens) so limit raised 2200→2400.
     expect(tokens).toBeLessThan(2400);
+  });
+
+  it("keeps the production parent tool set (with create_skill) under the same ceiling", () => {
+    const tokens = estimateToolDefinitionTokens(parentTools(true));
+    // create_skill adds ~750 tokens of schema (name/description/body/overwrite
+    // params + safety description). Production already carries MCP tools on top,
+    // so this ceiling only guards prose creep in the fixed test config.
+    expect(tokens).toBeLessThan(2700);
   });
 
   it("keeps the default vault surface under 1000 tokens (eval max_tool_schema_tokens is 1200)", () => {

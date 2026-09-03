@@ -14,6 +14,7 @@ import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { effectiveProxy } from "../network/proxy";
 import { createObsidianFetcher, type WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
+import type { SkillScaffolder } from "../tools/skill-tools";
 import { createDynamicProxiedFetcher } from "../mcp/fetcher";
 import { AgentObservabilityRuntime } from "../observability/agent-observability";
 import { type ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
@@ -88,6 +89,8 @@ export interface AgentServiceOptions {
   saveSettings?: () => void | Promise<void>;
   /** Store large tool outputs so the transcript can reference them by id. */
   artifactStore?: ToolArtifactStoreLike;
+  /** Backs the agent `create_skill` tool with the New skill wizard writer. Omitted in tests without a vault. */
+  skillScaffolder?: SkillScaffolder;
 }
 
 export type ManualCompactionResult =
@@ -179,6 +182,7 @@ export class AgentService {
         }),
       saveSettings: options.saveSettings,
       artifactStore: options.artifactStore,
+      skillScaffolder: options.skillScaffolder,
     });
     this.toolCalls = new AgentToolCallController({
       app: this.app,

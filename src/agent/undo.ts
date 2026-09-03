@@ -92,7 +92,17 @@ export async function applyUndo(app: App, entry: UndoEntry): Promise<string> {
   }
   if (entry.kind === "delete_folder") {
     await ensureParentFolders(app, entry.path);
-    if (!app.vault.getFolderByPath(entry.path)) await app.vault.createFolder(entry.path);
+    if (!(app.vault.getAbstractFileByPath(entry.path) instanceof TFolder) && !(await existsOnDisk(app, entry.path))) {
+      try {
+        await app.vault.createFolder(entry.path);
+      } catch (error) {
+        // Concurrent undo of the same folder — already restored, nothing to do.
+        if (isFolderCollision(error) && (await existsOnDisk(app, entry.path))) {
+          return `Restored folder ${entry.path}.`;
+        }
+        throw error;
+      }
+    }
     return `Restored folder ${entry.path}.`;
   }
   const existing = app.vault.getAbstractFileByPath(entry.path);
@@ -128,6 +138,30 @@ async function ensureParentFolders(app: App, path: string): Promise<void> {
   // to create a folder with an empty name.
   for (const segment of parent.split("/").filter(Boolean)) {
     current = current ? `${current}/${segment}` : segment;
-    if (!app.vault.getFolderByPath(current)) await app.vault.createFolder(current);
+    if (app.vault.getFolderByPath(current)) continue;
+    // Same stale-tree guard as the vault tools: dot-folders on disk but
+    // missing from the vault index must not trigger "Folder already exists."
+    if (await existsOnDisk(app, current)) continue;
+    try {
+      await app.vault.createFolder(current);
+    } catch (error) {
+      // Lost a race with an external sync — folder landed after the probe.
+      if (isFolderCollision(error) && (await existsOnDisk(app, current))) continue;
+      throw error;
+    }
   }
+}
+
+/** True when the path exists on disk as a folder (single list probe). */
+async function existsOnDisk(app: App, path: string): Promise<boolean> {
+  try {
+    await app.vault.adapter.list(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isFolderCollision(error: unknown): boolean {
+  return String((error as Error)?.message ?? error ?? "").toLowerCase().includes("folder already exists");
 }

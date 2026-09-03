@@ -206,21 +206,21 @@ export class AgentToolCallController {
     if (isMcpToolName(toolName)) return this.gateMcpToolCall(settings, toolCallId, toolName, args);
     const decision = modeDecision;
     const { reason } = decision;
-    // Working-dir boundary keys off path/newPath args, so only Safe mode (which can scope
-    // calls to granted dirs) needs it; YOLO is a session-wide allow and plan is read-only.
-    // Skill resources are vault-hosted plugin content, not user notes — exempt from the
-    // working-dir allow-list so `read_skill*`/`load_skill` doesn't require an ask when dirs are scoped.
-    const isSkillTool =
+    // Skill resources are vault-hosted plugin content — reads stay exempt from
+    // the working-dir allow-list, but create_skill WRITES a new package and is
+    // not exempt: scoped dirs must still route it through ask.
+    const isSkillReadTool =
       toolName === "read_skill" ||
       toolName === "read_skill_file" ||
       toolName === "load_skill" ||
       toolName === "unload_skill";
-    const scoped = settings.mode === "safe" && !isSkillTool;
+    const scoped = settings.mode === "safe" && !isSkillReadTool;
     // H8 load/unload mutates prompt overlay (persistent) — default to ask to prevent
     // auto-injection via indirect prompt injection (fetch_url -> load_skill evil).
+    // create_skill persists a new vault package — same ask default.
     // Respects perTool override so user can set allow/deny explicitly.
-    const isLoadSkillTool = toolName === "load_skill" || toolName === "unload_skill";
-    const basePolicy = isLoadSkillTool ? (getPerToolApproval(settings.approval, toolName) ?? "ask") : decision.policy;
+    const isPersistentSkillTool = toolName === "load_skill" || toolName === "unload_skill" || toolName === "create_skill";
+    const basePolicy = isPersistentSkillTool ? (getPerToolApproval(settings.approval, toolName) ?? "ask") : decision.policy;
     // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
     // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
     // already forces read-only, so the boundary only refines Safe.

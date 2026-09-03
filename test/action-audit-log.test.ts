@@ -5,9 +5,11 @@ import {
   buildApprovalAuditEvent,
   buildCheckpointAuditEvent,
   diffSummaryForContent,
+  diffSummaryForTool,
   filterActionAuditEvents,
   redactAuditResult,
   redactAuditValue,
+  touchedFilesForTool,
   type ActionAuditEvent,
 } from "../src/agent/action-audit-log";
 import { ObsidianSessionManager } from "../src/session/session-manager";
@@ -177,5 +179,19 @@ describe("AgentActionAuditRecorder", () => {
     const redacted = redactAuditValue(args) as { path: string; content: string };
     expect(redacted.path).toBe("Notes/A.md");
     expect(redacted.content).toBe("[content 14 chars]");
+  });
+
+  it("attributes create_skill audit to its package paths", () => {
+    const args = { name: "my-skill", description: "D", body: "# Body" };
+    expect(touchedFilesForTool("create_skill", args)).toEqual([
+      ".agentic-plugins/my-skill/plugin.json",
+      ".agentic-plugins/my-skill/skills/my-skill/SKILL.md",
+    ]);
+    expect(diffSummaryForTool("create_skill", args)).toMatchObject({
+      kind: "write",
+      path: ".agentic-plugins/my-skill/skills/my-skill/SKILL.md",
+      afterCharLength: "# Body".length,
+    });
+    expect(touchedFilesForTool("create_skill", {})).toEqual([]);
   });
 });

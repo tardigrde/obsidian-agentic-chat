@@ -88,7 +88,8 @@ export class NewSkillModal extends Modal {
           if (existing && !confirm(`A plugin named "${slugifyPluginName(name)}" already exists. Replace it with this new skill package?`)) {
             return;
           }
-          const result = await this.pluginService.scaffoldSkill({ name, description, body });
+          // The user confirmed via the dialog above, so opt into overwrite explicitly.
+          const result = await this.pluginService.scaffoldSkill({ name, description, body }, { allowOverwrite: true });
           this.onInstalled(result);
           this.close();
         } catch (error) {

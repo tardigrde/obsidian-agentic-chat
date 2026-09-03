@@ -379,6 +379,30 @@ describe("PluginService.scaffoldSkill", () => {
       .rejects.toThrow(/letter or digit/);
   });
 
+  it("refuses to install over a first-party package name", async () => {
+    const { app } = await seed();
+    const service = serviceFor(app, settings());
+    for (const name of ["my-skills", "builtins", "legacy-skills", "My Skills"]) {
+      await expect(service.scaffoldSkill({ name, description: "x", body: "# x\n" })).rejects.toThrow(
+        /first-party/i,
+      );
+    }
+  });
+
+  it("refuses silent overwrite of an existing package without allowOverwrite", async () => {
+    const { app } = await seed();
+    const service = serviceFor(app, settings());
+    await service.scaffoldSkill({ name: "notes", description: "a", body: "# a\n" });
+    await expect(service.scaffoldSkill({ name: "notes", description: "b", body: "# b\n" })).rejects.toThrow(
+      /already exists/i,
+    );
+    const result = await service.scaffoldSkill(
+      { name: "notes", description: "b", body: "# b\n" },
+      { allowOverwrite: true },
+    );
+    expect(result.updated).toBe(true);
+  });
+
   it("reports whether a package name is already installed", async () => {
     const { app } = await seed();
     const service = serviceFor(app, settings());

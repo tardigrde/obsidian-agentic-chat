@@ -3,6 +3,7 @@ import type { AgentTool, Skill } from "@earendil-works/pi-agent-core";
 import type { AgenticChatSettings } from "../settings";
 import type { WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
+import type { SkillScaffolder } from "../tools/skill-tools";
 import type { ReadMemo } from "../vault/read-memo";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import type { AgentRole } from "./subagents";
@@ -33,6 +34,7 @@ export interface AgentRuntimeResourceStateOptions {
   askUser?: AskUserHandler;
   saveSettings?: () => void | Promise<void>;
   artifactStore?: ToolArtifactStoreLike;
+  skillScaffolder?: SkillScaffolder;
 }
 
 export class AgentRuntimeResourceState {
@@ -125,6 +127,7 @@ export class AgentRuntimeResourceState {
       subagentTool,
       contextWindow: buildOptions.contextWindow,
       toolBudgetState: this.toolBudgetState,
+      skillScaffolder: this.options.skillScaffolder,
     });
     this.toolBudgetSnapshot = result.toolBudget;
     return result.tools;

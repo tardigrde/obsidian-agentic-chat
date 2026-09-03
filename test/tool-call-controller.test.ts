@@ -400,4 +400,63 @@ describe("AgentToolCallController", () => {
     expect(controller.canUndo()).toBe(false);
     expect(await controller.undoLastChange()).toBe("Nothing to undo.");
   });
+
+  it("asks for create_skill even in yolo mode (persistent-skill injection guard)", async () => {
+    const { controller, requests } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] } },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "create_skill" },
+      args: { name: "my-skill", description: "D", body: "B" },
+    });
+    expect(decision).toBeUndefined();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.toolName).toBe("create_skill");
+  });
+
+  it("honors an explicit per-tool allow for create_skill", async () => {
+    const { controller, requests } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: { create_skill: "allow" }, workingDirs: [] } },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "create_skill" },
+      args: { name: "my-skill", description: "D", body: "B" },
+    });
+    expect(decision).toBeUndefined();
+    expect(requests).toHaveLength(0);
+  });
+
+  it("honors an explicit per-tool deny for create_skill", async () => {
+    const { controller } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: { create_skill: "deny" }, workingDirs: [] } },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "create_skill" },
+      args: { name: "my-skill", description: "D", body: "B" },
+    });
+    expect(decision).toEqual({ block: true, reason: expect.any(String) });
+  });
+
+  it("denies create_skill in plan mode", async () => {
+    const { controller } = makeController({
+      settings: { mode: "plan", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "create_skill" },
+      args: { name: "my-skill", description: "D", body: "B" },
+    });
+    expect(decision).toEqual({ block: true, reason: expect.stringContaining("Plan mode") });
+  });
+
+  it("routes create_skill through ask under a scoped working-dirs config", async () => {
+    const { controller, requests } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes"] } },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "create_skill" },
+      args: { name: "my-skill", description: "D", body: "B" },
+    });
+    expect(decision).toBeUndefined();
+    expect(requests).toHaveLength(1);
+  });
 });

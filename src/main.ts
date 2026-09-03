@@ -58,12 +58,23 @@ export default class AgenticChatPlugin extends Plugin {
     await this.loadSettings();
     initPricingCache(this.app, this);
 
-    // Materialize the plugin's own skills as an editable Agent Plugins package
-    // on first load (only when absent; never overwrites edits). Fire-and-forget:
-    // failures must not block plugin startup.
-    void this.pluginService.ensureBuiltinsMaterialized().catch((error: unknown) => {
-      console.warn("Agentic chat: could not materialize built-in agent plugins", error);
-    });
+    // Materialize the plugin's own skills and the user's empty skill collection
+    // as editable Agent Plugins packages on first load (only when absent; never
+    // overwrites edits). Sequential: both share the parent plugins folder, and
+    // parallel ensures could race on its creation. Fire-and-forget: failures
+    // must not block plugin startup.
+    void (async () => {
+      try {
+        await this.pluginService.ensureBuiltinsMaterialized();
+      } catch (error: unknown) {
+        console.warn("Agentic chat: could not materialize built-in agent plugins", error);
+      }
+      try {
+        await this.pluginService.ensureMySkillsMaterialized();
+      } catch (error: unknown) {
+        console.warn("Agentic chat: could not materialize the user skill collection", error);
+      }
+    })();
 
     this.registerView(VIEW_TYPE_AGENT_CHAT, (leaf) => new ChatView(leaf, this));
     this.registerObsidianProtocolHandler(MCP_OAUTH_OBSIDIAN_PROTOCOL_ACTION, (params) => {
@@ -119,6 +130,7 @@ export default class AgenticChatPlugin extends Plugin {
       askUser: options.askUser,
       streamFn: createWindowE2EStreamFn({ enabled: __AGENTIC_CHAT_ENABLE_E2E_STREAM__ }),
       saveSettings: () => this.saveSettings(),
+      skillScaffolder: this.pluginService,
       artifactStore: ToolArtifactStore.forPlugin(this.app, this, {
         referencedArtifactIds: () => sessionManager.listReferencedArtifactIds(),
       }),

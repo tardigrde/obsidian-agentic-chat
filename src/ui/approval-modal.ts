@@ -2,6 +2,7 @@ import { App, ButtonComponent, Modal, Setting, TFile } from "obsidian";
 import type { ToolApprovalRequest } from "../agent/agent-service";
 import type { UserApprovalChoice } from "../agent/tool-call-controller";
 import { buildEditPreview, buildExactEditPreviewWindow, type EditPreview } from "../agent/edit-preview";
+import { slugifyPluginName } from "../plugins/manifest";
 import { approvalPreviewNeedsContent, toolApprovalDescription } from "../tools/tool-contracts";
 import { compactDiffLines, diffLines, diffStat, diffTooLarge, type CompactDiffWindow } from "../vault/diff";
 import { normalizeVaultPath } from "../vault/path";
@@ -34,6 +35,12 @@ export class ApprovalModal extends Modal {
     const { contentEl, titleEl } = this;
     const label = this.request.sessionLabel ? `[${this.request.sessionLabel}] Allow "${this.request.label}"?` : `Allow "${this.request.label}"?`;
     titleEl.setText(label);
+    if (this.isCreateSkillRequest()) {
+      contentEl.createEl("p", {
+        cls: "agentic-chat-approval-warning",
+        text: "This creates a persistent skill package that loads into future sessions. Review the full body below — anything pasted from the web or another skill stays active until removed.",
+      });
+    }
     if (this.request.sessionLabel) {
       contentEl.createEl("p", { cls: "agentic-chat-approval-session", text: `Session: ${this.request.sessionLabel}` });
     }
@@ -42,19 +49,40 @@ export class ApprovalModal extends Modal {
     contentEl.createEl("p", {
       text: toolApprovalDescription(this.request.toolName),
     });
-    // Render the change preview asynchronously (it reads the file from the vault);
-    // show the raw arguments immediately as a fallback until it resolves.
     const previewEl = contentEl.createDiv({ cls: "agentic-chat-approval-preview" });
-    previewEl.createEl("pre", { cls: "agentic-chat-approval-args", text: previewArgs(this.request.args) });
-    void this.renderPreview(previewEl);
+    if (this.isCreateSkillRequest()) {
+      // Full-body preview for create_skill: the generic 2000-char raw-args dump
+      // can hide a malicious tail. Render the resolved slug, target package
+      // path, and the complete scrollable body instead. Falls through to the
+      // shared remember/buttons wiring below.
+      this.renderCreateSkillPreview(previewEl);
+    } else {
+      // Render the change preview asynchronously (it reads the file from the vault);
+      // show the raw arguments immediately as a fallback until it resolves.
+      previewEl.createEl("pre", { cls: "agentic-chat-approval-args", text: previewArgs(this.request.args) });
+      void this.renderPreview(previewEl);
+    }
 
     let remember = false;
-    const rememberSetting = new Setting(contentEl)
-      .setName("Don't ask again for this tool")
-      .setDesc("After you choose Allow or Deny, remember that decision for this tool. Changeable in settings.")
-      .addToggle((toggle) => toggle.setValue(false).onChange((value) => (remember = value)));
-    for (const eventName of ["click", "mousedown", "mouseup", "keydown"]) {
-      rememberSetting.settingEl.addEventListener(eventName, (event) => event.stopPropagation());
+    // Persistent prompt-implant primitives must never offer "don't ask again":
+    // one fatigued Allow+remember would auto-approve all future skill writes.
+    const isPersistentSkillTool =
+      this.request.toolName === "create_skill" ||
+      this.request.toolName === "load_skill" ||
+      this.request.toolName === "unload_skill";
+    if (isPersistentSkillTool) {
+      contentEl.createEl("p", {
+        cls: "agentic-chat-approval-note",
+        text: "This decision cannot be remembered — each use asks again.",
+      });
+    } else {
+      const rememberSetting = new Setting(contentEl)
+        .setName("Don't ask again for this tool")
+        .setDesc("After you choose Allow or Deny, remember that decision for this tool. Changeable in settings.")
+        .addToggle((toggle) => toggle.setValue(false).onChange((value) => (remember = value)));
+      for (const eventName of ["click", "mousedown", "mouseup", "keydown"]) {
+        rememberSetting.settingEl.addEventListener(eventName, (event) => event.stopPropagation());
+      }
     }
 
     // Two-step deny: the first click arms the flow and reveals an optional
@@ -137,6 +165,30 @@ export class ApprovalModal extends Modal {
   }
 
   /** Read the target file and render a structured preview of the pending change. */
+  private isCreateSkillRequest(): boolean {
+    return this.request.toolName === "create_skill";
+  }
+
+  /** Structured preview for create_skill: slug + package path + full body (no truncation). */
+  private renderCreateSkillPreview(container: HTMLElement): void {
+    const raw = (this.request.args ?? {}) as { name?: unknown; description?: unknown; body?: unknown; overwrite?: unknown };
+    const requested = typeof raw.name === "string" ? raw.name.trim() : "";
+    const slug = slugifyPluginName(requested);
+    const description = typeof raw.description === "string" ? raw.description : "";
+    const body = typeof raw.body === "string" ? raw.body : "";
+    const overwrite = raw.overwrite === true;
+    const slugNote = slug !== requested.toLowerCase() ? ` (from "${requested}")` : "";
+    container.createEl("p", {
+      cls: "agentic-chat-approval-summary",
+      text: `Create skill "${slug}"${slugNote} → .agentic-plugins/${slug}/skills/${slug}/SKILL.md${overwrite ? " (REPLACE existing package)" : ""}`,
+    });
+    if (description) {
+      container.createEl("p", { cls: "agentic-chat-approval-summary", text: `Description: ${description}` });
+    }
+    const bodyEl = container.createDiv({ cls: "agentic-chat-approval-skill-body" });
+    bodyEl.createEl("pre", { cls: "agentic-chat-approval-args", text: body || "(empty body)" });
+  }
+
   private async renderPreview(container: HTMLElement): Promise<void> {
     const rawPath = (this.request.args as { path?: unknown })?.path;
     const path = typeof rawPath === "string" ? rawPath : "";

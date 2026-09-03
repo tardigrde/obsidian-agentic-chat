@@ -19,6 +19,17 @@ export function applyRememberedApprovalChoice(
 ): boolean {
   const policy = approvalPolicyForRememberedChoice(choice);
   if (!policy) return false;
+  if (isPersistentSkillTool(toolName) && policy === "allow") {
+    // Persistent prompt-implant primitives (create/load/unload_skill) must
+    // never be silently auto-allowed: one fatigued "don't ask again" would
+    // disarm the injection gate for all future calls. Remember deny, not allow.
+    return false;
+  }
   setPerToolApproval(settings.approval, toolName, policy);
   return true;
+}
+
+/** Tools whose effect persists across sessions via the prompt overlay or vault packages. */
+function isPersistentSkillTool(toolName: string): boolean {
+  return toolName === "create_skill" || toolName === "load_skill" || toolName === "unload_skill";
 }

@@ -1,6 +1,7 @@
 import type { AgentEvent, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ObsidianSessionManager } from "../session/session-manager";
 import { redactValue } from "../privacy/redaction";
+import { slugifyPluginName } from "../plugins/manifest";
 import { diffLines, diffStat, diffTooLarge, type DiffStat } from "../vault/diff";
 import type { UndoEntry } from "./undo";
 
@@ -288,6 +289,12 @@ export function redactAuditResult(value: unknown): unknown {
 }
 
 export function touchedFilesForTool(toolName: string, args: unknown): readonly string[] {
+  if (toolName === "create_skill") {
+    const raw = args && typeof args === "object" ? (args as { name?: unknown }) : {};
+    const slug = typeof raw.name === "string" ? slugifySkillName(raw.name) : "";
+    if (!slug) return [];
+    return [`.agentic-plugins/${slug}/plugin.json`, `.agentic-plugins/${slug}/skills/${slug}/SKILL.md`];
+  }
   const raw = args && typeof args === "object" ? (args as { path?: unknown; newPath?: unknown }) : {};
   const paths = [raw.path, raw.newPath].filter((path): path is string => typeof path === "string" && path.trim() !== "");
   if (paths.length === 0) return [];
@@ -303,6 +310,7 @@ export function diffSummaryForTool(toolName: string, args: unknown): ActionAudit
     case "set_properties": return diffSummaryForSetProperties(raw, path);
     case "delete": return { kind: "delete", path };
     case "rename": return diffSummaryForRename(raw, path);
+    case "create_skill": return diffSummaryForCreateSkill(raw);
     default: return undefined;
   }
 }
@@ -311,9 +319,25 @@ function extractToolArgs(args: unknown): Record<string, unknown> {
   return args && typeof args === "object" ? (args as Record<string, unknown>) : {};
 }
 
+/** Best-effort slug preview for audit paths (writer enforces the real slug). */
+function slugifySkillName(input: string): string {
+  return slugifyPluginName(input.trim());
+}
+
 function diffSummaryForWrite(raw: Record<string, unknown>, path: string | undefined): ActionAuditDiffSummary {
   const after = typeof raw.content === "string" ? raw.content : "";
   return { kind: "write", path, beforeCharLength: 0, afterCharLength: after.length };
+}
+
+function diffSummaryForCreateSkill(raw: Record<string, unknown>): ActionAuditDiffSummary {
+  const name = typeof raw.name === "string" ? slugifySkillName(raw.name) : "";
+  const body = typeof raw.body === "string" ? raw.body : "";
+  return {
+    kind: "write",
+    path: name ? `.agentic-plugins/${name}/skills/${name}/SKILL.md` : undefined,
+    beforeCharLength: 0,
+    afterCharLength: body.length,
+  };
 }
 
 function diffSummaryForEdit(raw: Record<string, unknown>, path: string | undefined): ActionAuditDiffSummary {

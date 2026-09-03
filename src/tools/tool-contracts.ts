@@ -361,5 +361,12 @@ export function approvalPreviewNeedsContent(name: string): boolean {
 export function toolApprovalDescription(name: string): string {
   const contract = getBuiltinToolContract(name);
   if (contract) return contract.approval.description;
+  if (name === "create_skill") {
+    return (
+      "The agent wants to create a persistent skill package (writes plugin.json + skills/<name>/SKILL.md " +
+      "under the plugins folder). The package persists across sessions and cannot be undone with /undo. " +
+      "YOLO does not auto-approve this — review the full body before allowing it."
+    );
+  }
   return `The agent wants to run the ${name} tool. Review the arguments before allowing it.`;
 }

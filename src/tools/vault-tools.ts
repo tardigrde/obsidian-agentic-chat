@@ -190,6 +190,34 @@ function requiredString(value: unknown, name: string): string {
   return text;
 }
 
+function finishRead(
+  path: string,
+  content: string,
+  window: LineWindow,
+  readKey: { path: string; offset: number | undefined; limit: number | undefined },
+  mtime: number,
+  memo?: ReadMemo,
+): AgentToolResult<Record<string, unknown>> {
+  const slice = sliceTextByLines(content, window);
+  // Record only after a successful read — a failed/refused read must
+  // not poison the memo, or the next identical read would return a stale
+  // "already read" pointer instead of retrying.
+  memo?.mark(readKey);
+  memo?.cache(readKey, mtime, formatTextSlice(path, slice));
+  memo?.recordCoverage(
+    { path, startLine: slice.startLine, endLine: slice.endLine, content: slice.text },
+    mtime,
+    slice.startLine === 1 && slice.endLine === slice.totalLines && !slice.truncated,
+  );
+  return untrustedTextResult(formatTextSlice(path, slice), {
+    path,
+    startLine: slice.startLine,
+    endLine: slice.endLine,
+    totalLines: slice.totalLines,
+    truncated: slice.truncated,
+  }, "read");
+}
+
 function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof ReadParameters> {
   return {
     ...vaultToolDefinition("read"),
@@ -201,7 +229,7 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       if (entry instanceof TFolder) {
         throw new Error(`${path} is a folder — use ls to list its contents.`);
       }
-      const file = getVaultFile(app, path);
+      const file = app.vault.getFileByPath(path);
       const range = {
         startLine: params.startLine,
         endLine: params.endLine,
@@ -210,51 +238,70 @@ function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): Ag
       };
       const window = resolveLineWindow(range);
       const readKey = { path, offset: window.offset, limit: window.limit };
-      const mtime = file.stat?.mtime ?? 0;
-      // De-dup: a repeat read of the same range in the same turn is handed a
-      // short pointer so the prompt can't quietly double a file.
+      if (file) {
+        const mtime = file.stat?.mtime ?? 0;
+        // De-dup: a repeat read of the same range in the same turn is handed a
+        // short pointer so the prompt can't quietly double a file.
+        if (memo?.has(readKey)) {
+          return textResult(alreadyReadMessage(path), { path, deduplicated: true });
+        }
+
+        // Harness-side cache: when the file has not changed since the last read
+        // of this range, serve the stored slice with zero I/O cost.
+        const cached = memo?.getCached(readKey, mtime);
+        if (cached) {
+          memo?.mark(readKey);
+          return untrustedTextResult(cachedReadMessage(path, cached.timestamp) + cached.content, {
+            path,
+            cached: true,
+            timestamp: cached.timestamp,
+          }, "read");
+        }
+
+        // Redundant-range guard: the requested lines were already served this
+        // session (exactly or inside a wider range) and the file is unchanged, so
+        // hand the model a pointer plus the prior content instead of re-pulling.
+        const covered = memo?.coverageFor(requestedWindow(path, window), mtime);
+        if (covered) {
+          return untrustedTextResult(coveredReadMessage(path, covered), { path, deduplicated: true, covered: true }, "read");
+        }
+
+        // Size guardrail: refuse a bulk dump of a very large file; guide the model
+        // to paginate so one read can't blow the context window.
+        const guidance = readSizeGuardrail({ path, size: file.stat?.size ?? 0, ...range });
+        if (guidance) {
+          return textResult(guidance, { path, tooLarge: true });
+        }
+        const content = await app.vault.cachedRead(file);
+        return finishRead(path, content, window, readKey, mtime, memo);
+      }
+      // Stale tree: the file is on disk (e.g. under a dot-folder the vault
+      // index has not picked up) but missing from getFileByPath — fall back
+      // to the adapter like the plugin loader does. A path that is a folder
+      // on disk still reports as a folder so the model lists it and moves on.
+      // De-dup first so a repeat read never pays the adapter cost twice.
       if (memo?.has(readKey)) {
         return textResult(alreadyReadMessage(path), { path, deduplicated: true });
       }
-
-      // Harness-side cache: when the file has not changed since the last read
-      // of this range, serve the stored slice with zero I/O cost.
-      const cached = memo?.getCached(readKey, mtime);
-      if (cached) {
-        memo?.mark(readKey);
-        return untrustedTextResult(cachedReadMessage(path, cached.timestamp) + cached.content, {
-          path,
-          cached: true,
-          timestamp: cached.timestamp,
-        }, "read");
+      let content: string;
+      try {
+        content = await app.vault.adapter.read(path);
+      } catch (readError) {
+        try {
+          await app.vault.adapter.list(path);
+        } catch (listError) {
+          throw new Error(`File not found: ${path}`, { cause: listError });
+        }
+        throw new Error(`${path} is a folder — use ls to list its contents.`, { cause: readError });
       }
-
-      // Redundant-range guard: the requested lines were already served this
-      // session (exactly or inside a wider range) and the file is unchanged, so
-      // hand the model a pointer plus the prior content instead of re-pulling.
-      const covered = memo?.coverageFor(requestedWindow(path, window), mtime);
-      if (covered) {
-        return untrustedTextResult(coveredReadMessage(path, covered), { path, deduplicated: true, covered: true }, "read");
-      }
-
-      // Size guardrail: refuse a bulk dump of a very large file; guide the model
-      // to paginate so one read can't blow the context window.
-      const guidance = readSizeGuardrail({ path, size: file.stat?.size ?? 0, ...range });
+      const guidance = readSizeGuardrail({ path, size: content.length, ...range });
       if (guidance) {
         return textResult(guidance, { path, tooLarge: true });
       }
-      const content = await app.vault.cachedRead(file);
+      // No mtime is available off-tree; skip the mtime-keyed cache/coverage so
+      // a later indexed read cannot be poisoned by this fallback slice.
       const slice = sliceTextByLines(content, window);
-      // Record only after a successful read — a failed/refused read (above) must
-      // not poison the memo, or the next identical read would return a stale
-      // "already read" pointer instead of retrying.
       memo?.mark(readKey);
-      memo?.cache(readKey, mtime, formatTextSlice(path, slice));
-      memo?.recordCoverage(
-        { path, startLine: slice.startLine, endLine: slice.endLine, content: slice.text },
-        mtime,
-        slice.startLine === 1 && slice.endLine === slice.totalLines && !slice.truncated,
-      );
       return untrustedTextResult(formatTextSlice(path, slice), {
         path,
         startLine: slice.startLine,
@@ -422,16 +469,39 @@ function createLsTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LsPa
       const path = normalizeFolderPath(params.path ?? "");
       if (path && isIgnored(path)) throw new Error(`Folder not found: ${path}`);
       const folder = path ? app.vault.getFolderByPath(path) : app.vault.getRoot();
-      if (!folder) throw new Error(`Folder not found: ${path || "/"}`);
-      const rows = folder.children
-        .slice()
-        .filter((child) => !isIgnored(child.path))
-        .sort((left, right) => left.path.localeCompare(right.path))
-        .map((child) => `${child instanceof TFolder ? "folder" : "file"}\t${child.path}`);
-      return textResult(rows.length === 0 ? "(empty folder)" : truncateToolOutput(rows.join("\n")), {
-        path,
-        count: rows.length,
-      });
+      if (folder) {
+        const rows = folder.children
+          .slice()
+          .filter((child) => !isIgnored(child.path))
+          .sort((left, right) => left.path.localeCompare(right.path))
+          .map((child) => `${child instanceof TFolder ? "folder" : "file"}\t${child.path}`);
+        return textResult(rows.length === 0 ? "(empty folder)" : truncateToolOutput(rows.join("\n")), {
+          path,
+          count: rows.length,
+        });
+      }
+      // Stale tree: dot-folders (e.g. .agentic-plugins) created outside the
+      // session are on disk but missing from the vault index — fall back to
+      // the adapter like the plugin loader does. A missing path still throws
+      // below, so "not found" keeps meaning "nowhere", not "stale".
+      try {
+        const listing = await app.vault.adapter.list(path);
+        // Sort by path like the tree branch (which sorts child.path), not by
+        // rendered row — "file\t" sorts before "folder\t" and would regroup.
+        const entries = [
+          ...(listing?.folders ?? []).map((entry) => ({ kind: "folder", path: trimSlashes(entry) })),
+          ...(listing?.files ?? []).map((entry) => ({ kind: "file", path: trimSlashes(entry) })),
+        ]
+          .filter((entry) => entry.path && !isIgnored(entry.path))
+          .sort((left, right) => left.path.localeCompare(right.path));
+        const rows = entries.map((entry) => `${entry.kind}\t${entry.path}`);
+        return textResult(rows.length === 0 ? "(empty folder)" : truncateToolOutput(rows.join("\n")), {
+          path,
+          count: rows.length,
+        });
+      } catch {
+        throw new Error(`Folder not found: ${path || "/"}`);
+      }
     },
   };
 }
@@ -858,11 +928,43 @@ async function ensureParentFolders(app: App, path: string): Promise<void> {
   const parentPath = getParentPath(path);
   if (!parentPath) return;
   let currentPath = "";
-  for (const segment of parentPath.split("/")) {
+  for (const segment of parentPath.split("/").filter(Boolean)) {
     currentPath = currentPath ? `${currentPath}/${segment}` : segment;
-    if (!app.vault.getFolderByPath(currentPath)) {
+    if (app.vault.getFolderByPath(currentPath)) continue;
+    // The vault tree misses dot-folders (e.g. .agentic-plugins) created
+    // outside the session; trust the adapter or createFolder throws
+    // "Folder already exists." (same guard as PluginService.ensureFolder).
+    // Folder-aware: a file at this path is a real conflict, not a skip.
+    if (await isFolderOnDisk(app, currentPath)) continue;
+    try {
       await app.vault.createFolder(currentPath);
+    } catch (error) {
+      // Lost a race with an external sync: the folder landed after the probe.
+      // Only folder collisions are safe to absorb — a file at this path is a
+      // real conflict, and the adapter probe is type-blind (true for files).
+      if (isFolderAlreadyExistsError(error) && (await isFolderOnDisk(app, currentPath))) continue;
+      throw error;
     }
+  }
+}
+
+function isFolderAlreadyExistsError(error: unknown): boolean {
+  return String((error as Error)?.message ?? error ?? "").toLowerCase().includes("folder already exists");
+}
+
+/** Strip edge slashes from adapter entries (loader parity: trimEdges). */
+function trimSlashes(entry: string): string {
+  return entry.replace(/^\/+|\/+$/g, "");
+}
+
+/** True when the path exists on disk as a folder (tree or adapter). */
+async function isFolderOnDisk(app: App, path: string): Promise<boolean> {
+  if (app.vault.getAbstractFileByPath(path) instanceof TFolder) return true;
+  try {
+    await app.vault.adapter.list(path);
+    return true;
+  } catch {
+    return false;
   }
 }
 

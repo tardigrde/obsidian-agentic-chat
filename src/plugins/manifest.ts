@@ -22,6 +22,12 @@ import { mcpUrlProblem } from "../utils/host-policy";
 export const AGENT_PLUGINS_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 /** Canonical MCP configuration schema identifier for Agent Plugins 1.0.0. */
 export const AGENT_PLUGINS_MCP_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
+
+/** Vault-scoped user collection package: ships empty, holds the user's own custom skills. */
+export const USER_SKILLS_PACKAGE = "my-skills";
+
+/** First-party package names: created by the plugin or the user, trusted content, never silently replaced by installs. */
+export const FIRST_PARTY_PACKAGE_NAMES: ReadonlySet<string> = new Set(["builtins", "legacy-skills", USER_SKILLS_PACKAGE]);
 /** The Agent Plugins spec version this client implements. */
 export const AGENT_PLUGINS_VERSION = "1.0.0";
 

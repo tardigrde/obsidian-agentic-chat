@@ -182,6 +182,7 @@ export async function assertDogfoodInvariants(manifestOrPath: DogfoodManifest | 
   const approvalDecisions: Record<string, number> = {};
   const toolErrors: Record<string, number> = {};
   const approvedMutationToolCalls = new Set<string>();
+  const createdSkillToolCalls = new Set<string>();
   const checkpointToolCalls = new Set<string>();
   const completedToolCalls = new Set<string>();
   let userMessages = 0;
@@ -246,6 +247,12 @@ export async function assertDogfoodInvariants(manifestOrPath: DogfoodManifest | 
           mutationApprovals += 1;
           if (event.toolCallId) approvedMutationToolCalls.add(event.toolCallId);
         }
+        // create_skill writes vault packages but captures no file checkpoint by
+        // design (not undoable) — track separately so the checkpoint invariant
+        // below doesn't fire, and audit it as its own finding instead.
+        if (event.toolName === "create_skill" && event.toolCallId) {
+          createdSkillToolCalls.add(event.toolCallId);
+        }
         for (const targetPath of touched) {
           if (!isAllowedMutationPath(targetPath, manifest.allowedMutationRoots)) {
             findings.push(error("approvals", `Approved mutation outside allowed roots: ${targetPath}`));
@@ -267,11 +274,19 @@ export async function assertDogfoodInvariants(manifestOrPath: DogfoodManifest | 
   }
 
   for (const toolCallId of approvedMutationToolCalls) {
+    // create_skill is audited separately below (no checkpoint by design).
+    if (createdSkillToolCalls.has(toolCallId)) continue;
     if (!checkpointToolCalls.has(toolCallId)) {
       findings.push(error("checkpoints", `Approved mutation ${toolCallId} did not capture a file checkpoint.`));
     }
     if (!completedToolCalls.has(toolCallId)) {
       findings.push(error("tool-results", `Approved mutation ${toolCallId} did not record a final tool result.`));
+    }
+  }
+
+  for (const toolCallId of createdSkillToolCalls) {
+    if (!completedToolCalls.has(toolCallId)) {
+      findings.push(error("tool-results", `Approved create_skill ${toolCallId} did not record a final tool result.`));
     }
   }
 

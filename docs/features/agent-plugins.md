@@ -21,12 +21,28 @@ Plugins live in `.agentic-plugins/` at the vault root (configurable in Settings 
 
 A plugin with only an `mcp.json` (no skills) is valid — MCP-only plugins are allowed by the spec.
 
+A plugin with neither `skills/` nor `mcp.json` (manifest only) is also valid: per §6.2 a missing
+component location is not an error, so the loader reports it `ok` with 0 skills / 0 servers.
+The vault ships one such package, `my-skills`, as your personal collection space for hand-curated
+custom skills (`skills/<name>/SKILL.md` inside it). It is created only when absent and never overwritten;
+deleting it restores on next restart (or via **Repair built-ins**, which also restores `my-skills`).
+
+> **Note on built-ins staleness.** The `builtins` package in your vault is a materialized copy: it is
+> only created when missing and never auto-updated, so after a plugin update it can lag behind the
+> bundled skill text until you hit **Repair built-ins**. The agent always falls back to the bundled
+> text for skills shadowed by nothing, but vault edits win — when in doubt, repair.
+
 ## Creating plugins
 
 The settings UI writes real packages for you:
 
 - **MCP tab → Add MCP server** — enter a server name and an HTTPS (or loopback HTTP) endpoint, hit **Add MCP server**, and a package is created with that server's `plugin.json` + `mcp.json`. You then configure authentication, approval, and enable state from the same tab; endpoint and literal headers remain owned by the package.
-- **Resources tab → New skill…** — scaffold a single-skill package (`skills/<name>/SKILL.md`) with a ready-to-fill template.
+- **Resources tab → New skill…** — scaffold a single-skill package (`skills/<name>/SKILL.md`) with a ready-to-fill template. The agent has the same capability in chat via the `create_skill` tool (same writer, always approval-gated — YOLO never auto-approves it, the package replaces same-named ones only after explicit confirmation, and created packages are not undoable via `/undo`).
+
+Known limitation: generic file tools (`read`, `ls`) fall back to disk when the vault index is stale
+(e.g. dot-folders created outside the session), but `edit`/`rename`/`delete` are still index-only —
+editing an installed skill's files may need an Obsidian restart to re-index first. Skill *creation*
+always works via `create_skill` / the wizard regardless.
 
 ## Importing plugins
 

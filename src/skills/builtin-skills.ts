@@ -33,6 +33,7 @@ You have these tool categories. Each is callable via function call when present 
 - **MCP** (optional): remote tools from configured MCP servers.
 - **Ask-user**: ask_user — ask the user a question with optional choices.
 - **Read-skill**: read_skill — load the full body of any skill by name, including this one.
+- **Skill authoring**: create_skill — scaffold a single-skill package through the New skill wizard writer. Prefer it over hand-writing files under the plugins folder with \`write\` (generic file tools go stale on dot-folders).
 
 ## Edit semantics
 
@@ -142,6 +143,7 @@ Claude/Copilot/VS Code plugin packages are converted automatically: skills are c
 - To install from a repository subfolder (e.g. a repo with many plugins), use the \`/tree/<ref>/<subfolder>\` form of the GitHub URL.
 - After install, tell the user the plugin now appears in the Resources tab and that MCP servers from imported plugins start **disabled** until enabled in the MCP tab.
 - The plugins folder is a dot-folder: hidden in the file explorer. Use **Open folder** on a plugin row to reveal it, or tell the user to toggle "Show hidden files" in Obsidian's explorer menu.
+- When the user wants a new skill of their own, use the \`create_skill\` tool (same writer as the **New skill** wizard) instead of hand-writing files with \`write\` — generic file tools cannot reliably create dot-folder paths. The vault also ships an empty \`my-skills\` package as the user's personal collection space; single-skill packages are fine, \`my-skills\` is for hand-curated customs.
 
 ## Authoring plugins
 
@@ -168,7 +170,7 @@ A minimal package:
 }
 \`\`\`
 
-Skill \`name\` frontmatter must equal the skill folder name; other frontmatter fields are ignored. When the user wants a new skill of their own, suggest the **New skill** wizard on the Resources tab instead of hand-writing files.
+Skill \`name\` frontmatter must equal the skill folder name; other frontmatter fields are ignored. When the user wants a new skill of their own, scaffold it with the \`create_skill\` tool (or point them at the **New skill** wizard on the Resources tab) instead of hand-writing files.
 
 ## Limits
 

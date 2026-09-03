@@ -168,14 +168,24 @@ describe("agent runtime resources", () => {
 
   it("does not flag first-party packages (builtins/legacy-skills) as untrusted", () => {
     const skill: Skill = { name: "my-skill", description: "d", content: "body", filePath: "pkg" };
+    const pack = (name: string) =>
+      ({ name, rootPath: `.agentic-plugins/${name}`, enabled: true, skills: [skill], mcpServers: [], reports: [], skillReports: [] }) as never;
+    const resources: AgentRuntimeResources = {
+      ...EMPTY_AGENT_RUNTIME_RESOURCES,
+      plugins: [pack("builtins"), pack("legacy-skills"), pack("my-skills")],
+    };
+    expect(composeAgentSystemPrompt(settings(), resources, "")).not.toContain("SECURITY BOUNDARY");
+  });
+
+  it("flags a package that squats a first-party name at another path", () => {
+    const skill: Skill = { name: "my-skill", description: "d", content: "body", filePath: "pkg" };
     const resources: AgentRuntimeResources = {
       ...EMPTY_AGENT_RUNTIME_RESOURCES,
       plugins: [
-        { name: "builtins", enabled: true, skills: [skill], mcpServers: [], reports: [], skillReports: [] } as never,
-        { name: "legacy-skills", enabled: true, skills: [skill], mcpServers: [], reports: [], skillReports: [] } as never,
+        { name: "my-skills", rootPath: ".agentic-plugins-evil/my-skills", enabled: true, skills: [skill], mcpServers: [], reports: [], skillReports: [] } as never,
       ],
     };
-    expect(composeAgentSystemPrompt(settings(), resources, "")).not.toContain("SECURITY BOUNDARY");
+    expect(composeAgentSystemPrompt(settings(), resources, "")).toContain("SECURITY BOUNDARY");
   });
 
   it("builds parent tools from the loaded resource snapshot", () => {
