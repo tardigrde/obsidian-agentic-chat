@@ -116,6 +116,17 @@ function makeStaleDotFolderApp() {
           if (content === undefined) throw new Error(`File not found: ${path}`);
           return content;
         },
+        stat: async (path: string) => {
+          if (diskFiles.has(path)) return { type: "file", ctime: 0, mtime: 0, size: 0 };
+          if (
+            diskFolders.has(path) ||
+            [...diskFolders].some((key) => key.startsWith(`${path}/`)) ||
+            [...diskFiles.keys()].some((key) => key.startsWith(`${path}/`))
+          ) {
+            return { type: "folder", ctime: 0, mtime: 0, size: 0 };
+          }
+          return null;
+        },
         trashSystem: async (path: string) => {
           trashed.push(path);
           diskFiles.delete(path);
@@ -224,5 +235,20 @@ describe("dot-folder stale tree", () => {
     await expect(runText("delete", app, { path: ".agentic-plugins/nope" })).rejects.toThrow(
       /File or folder not found/,
     );
+  });
+
+  it("fails closed when a stale folder cannot be listed (never demotes to file delete)", async () => {
+    const { app, trashed } = makeStaleDotFolderApp();
+    const adapter = app.vault.adapter as unknown as Record<string, unknown>;
+    app.vault.adapter = {
+      ...(adapter as object),
+      list: async () => {
+        throw new Error("EACCES: permission denied");
+      },
+    } as unknown as typeof app.vault.adapter;
+    await expect(
+      runText("delete", app, { path: ".agentic-plugins/builtins", recursive: true }),
+    ).rejects.toThrow(/unable to inspect|Refusing/);
+    expect(trashed).toHaveLength(0);
   });
 });

@@ -70,8 +70,9 @@ export class AutocompleteMenu {
     if (!parent || !target) return;
     if (target.offsetWidth <= 0) return;
     const gap = 8;
+    // left + width win over the stylesheet's right:0 (over-constrained
+    // absolute positioning ignores right in LTR), so right needs no inline set.
     this.el.style.left = `${target.offsetLeft}px`;
-    this.el.style.right = "auto";
     this.el.style.width = `${target.offsetWidth}px`;
     this.el.style.bottom = `${parent.clientHeight - target.offsetTop + gap}px`;
   }

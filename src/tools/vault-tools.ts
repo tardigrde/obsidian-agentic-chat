@@ -723,6 +723,7 @@ function createRenameTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): 
   };
 }
 
+/** Delete via the vault index when present, else the adapter (stale dot-folder tree). */
 function createDeleteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): AgentTool<typeof DeleteParameters> {
   return {
     ...vaultToolDefinition("delete"),
@@ -746,9 +747,10 @@ function createDeleteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): 
           memo?.invalidate(path);
           return textResult(`Moved ${path} to trash.`, { path, kind: "folder" });
         }
-        // Indexed recursive delete stays on the vault API so the tree,
-        // undo, and trash semantics match single-file deletes (no adapter
-        // needed — works in tests and offline).
+        // Indexed recursive delete stays on the vault API so the tree and
+        // trash semantics match single-file deletes (no adapter needed —
+        // works in tests and offline). No per-file undo is captured, so a
+        // recursive delete is OS-trash-only: /undo covers single files.
         await trashTreeFolderRecursive(app, entry);
         memo?.invalidate(path);
         return textResult(`Moved ${path} to trash.`, { path, kind: "folder", recursive: true });
@@ -765,14 +767,25 @@ function createDeleteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): 
         onDisk = false;
       }
       if (!onDisk) throw new Error(`File or folder not found: ${path}`);
+      // Fail closed: classify via stat, never by elimination. A listing
+      // failure must not demote a folder to the file path (which would trash
+      // a non-empty folder past the recursive guard).
       let isDiskFolder: boolean;
       let childCount = 0;
       try {
-        const listing = await adapter.list(path);
-        isDiskFolder = true;
-        childCount = (listing?.folders?.length ?? 0) + (listing?.files?.length ?? 0);
-      } catch {
-        isDiskFolder = false;
+        const stat = await adapter.stat(path);
+        if (!stat) throw new Error(`File or folder not found: ${path}`);
+        isDiskFolder = stat.type === "folder";
+        if (isDiskFolder) {
+          const listing = await adapter.list(path);
+          childCount = (listing?.folders?.length ?? 0) + (listing?.files?.length ?? 0);
+        }
+      } catch (error) {
+        if (/not found/i.test(error instanceof Error ? error.message : String(error))) throw error;
+        throw new Error(
+          `Cannot delete ${path}: unable to inspect it (${error instanceof Error ? error.message : String(error)}). Refusing to guess file vs folder.`,
+          { cause: error },
+        );
       }
       if (isDiskFolder) {
         if (childCount > 0 && !recursive) {
@@ -780,7 +793,7 @@ function createDeleteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): 
             `Folder not empty: ${path} (${childCount} items). Use recursive:true or delete the contents first.`,
           );
         }
-        const disposition = await trashAdapterFolder(app, path, recursive || childCount === 0);
+        const disposition = await trashAdapterFolder(app, path, recursive);
         memo?.invalidate(path);
         return textResult(
           disposition === "trash" ? `Moved ${path} to trash.` : `Deleted ${path} (bypassed trash).`,

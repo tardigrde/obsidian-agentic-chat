@@ -1814,6 +1814,7 @@ export class ChatView extends ItemView {
     this.showServiceError();
   }
 
+  /** Run a skill by name: render a loaded-signal, then invoke it as a prompt. */
   private async runSkill(name: string | undefined, extra: string, display?: string): Promise<void> {
     if (!name) {
       this.showSkillList();

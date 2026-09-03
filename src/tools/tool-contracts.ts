@@ -218,7 +218,7 @@ export const BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = [
     pathArgs: TARGET_FILE_OR_FOLDER,
     ignoreBehavior: "target-hidden",
     approval: {
-      description: "The agent wants to move a vault file or folder to trash. Non-empty folders need recursive:true, which is allowed ONLY when the user plainly asked to delete that exact folder — otherwise ask back first. Review the deletion before allowing it.",
+      description: "The agent wants to move a vault file or folder to trash. Non-empty folders need recursive:true, which always asks (even in YOLO) unless deletes are explicitly per-tool allowed — otherwise ask back first. Rare adapter fallback may bypass trash when system trash is unavailable. Review the deletion before allowing it.",
       preview: "delete",
       requiresContent: true,
     },

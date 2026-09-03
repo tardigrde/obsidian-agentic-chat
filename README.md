@@ -77,7 +77,7 @@ All paths are vault-relative; absolute paths and `..` escapes are rejected, and 
 | `edit` | Exact-string replacements within a note. |
 | `set_properties` | Write YAML frontmatter via Obsidian's API (won't corrupt the body). |
 | `rename` | Rename or move a note — **inbound wikilinks and backlinks are updated automatically**. |
-| `delete` | Move a note or folder to trash (`recursive:true` for non-empty folders). |
+| `delete` | Move a note or folder to trash (`recursive:true` for non-empty folders, always asks). |
 
 The `search` meta-tool keeps path and content search behind one model-facing decision surface; the older `find` and `grep` tools remain compatibility implementations for tests/internal surfaces. The graph (`local_graph`), frontmatter (`get_properties` / `set_properties`), and link-aware `rename` tools are Obsidian-native: they let the agent traverse the `[[wikilink]]` graph and edit structured metadata reliably instead of brute-grepping or hand-editing raw YAML. `get_backlinks` and `get_links` also remain compatibility implementations, but the default model-facing surface uses `local_graph` to avoid three overlapping graph tools.
 

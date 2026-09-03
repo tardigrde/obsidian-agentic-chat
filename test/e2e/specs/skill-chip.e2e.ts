@@ -20,6 +20,13 @@ describe("skill invocation chip", function () {
   });
 
   it("renders a Skill block naming the loaded skill", async function () {
+    const countSkillPanels = async (): Promise<number> =>
+      browser.execute(() => {
+        const infos = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-info"));
+        return infos.filter((el) => el.querySelector("summary")?.innerText.trim() === "Skill").length;
+      });
+    const before = await countSkillPanels();
+
     await browser.execute(() => {
       const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
       const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
@@ -29,17 +36,18 @@ describe("skill invocation chip", function () {
       send.click();
     });
 
-    await browser.waitUntil(
-      async () =>
-        await browser.execute(() => {
-          const infos = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-info"));
-          return infos.some((el) => {
-            const title = el.querySelector("summary")?.innerText.trim() ?? "";
-            return title === "Skill" && (el.innerText ?? "").includes("self-knowledge");
-          });
-        }),
-      { timeout: 10_000, timeoutMsg: "Skill loaded chip did not render for /skill self-knowledge" },
-    );
+    // Count-based: a restored prior session may already contain a Skill
+    // panel, so only a NEW panel from this invocation passes.
+    await browser.waitUntil(async () => (await countSkillPanels()) > before, {
+      timeout: 10_000,
+      timeoutMsg: "Skill loaded chip did not render for /skill self-knowledge",
+    });
+
+    // Stop the follow-up model turn: the chip is the assertion, the turn
+    // itself needs no API key and must not bleed into later specs.
+    await browser.execute(() => {
+      document.querySelector<HTMLButtonElement>(".agentic-chat-stop")?.click();
+    });
 
     const text = await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-messages")?.innerText ?? "");
     expect(text).toContain("self-knowledge");
