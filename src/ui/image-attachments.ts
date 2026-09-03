@@ -106,38 +106,68 @@ export function rewriteMarkdownImages(
     .join("");
 }
 
+/** Wiki image embed: `![[pic.png]]` (no newlines inside the brackets). */
+const WIKI_IMAGE_PATTERN = /!\[\[([^\]\n]+)\]\]/g;
+/** Markdown image: `![alt](dest title)` on one line; dest/title split afterward. */
+const MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)\n]*)\)/g;
+/** Valid trailing title after a markdown image destination. */
+const IMAGE_TITLE_PATTERN = /^\s*("[^"]*"|'[^']*'|\([^)]*\))\s*$/;
+
 function rewriteMarkdownImagesInText(
   text: string,
   resolve: (target: string) => string | null,
 ): string {
-  const withWiki = text.replace(/!\[\[([^\]\n]+)\]\]/g, (match, inner: string) => {
+  const withWiki = text.replace(WIKI_IMAGE_PATTERN, (match, inner: string) => {
     const target = parseWikiImageTarget(String(inner ?? ""));
     if (!target) return match;
-    if (!isImagePath(stripImageQueryFragment(target))) return match;
-    const resolved = safeResolve(resolve, target);
-    if (!resolved) return match;
     // Brackets would break the generated alt text — strip them (render-escaped anyway).
     const alt = imageBasename(target).replace(/[[\]]/g, "");
-    return `![${alt}](${resolved})`;
+    return resolvedImageMarkdown(alt, target, "", resolve) ?? match;
   });
-  return withWiki.replace(
-    /!\[([^\]]*)\]\(\s*(<[^>]+>|[^)\s]+)(\s+("[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g,
-    (match, alt: string, rawDest: string, title: string | undefined) => {
-      let dest = String(rawDest ?? "").trim();
-      if (dest.startsWith("<") && dest.endsWith(">")) dest = dest.slice(1, -1).trim();
-      if (!dest || isExternalImageSrc(dest)) return match;
-      if (!isImagePath(stripImageQueryFragment(dest))) return match;
-      const resolved = safeResolve(resolve, dest);
-      if (!resolved) return match;
-      return `![${String(alt ?? "")}](${resolved}${title ?? ""})`;
-    },
-  );
+  return withWiki.replace(MARKDOWN_IMAGE_PATTERN, (match, alt: string, inner: string) => {
+    const split = splitImageTarget(String(inner ?? ""));
+    if (!split) return match;
+    if (split.title && !IMAGE_TITLE_PATTERN.test(split.title)) return match;
+    return resolvedImageMarkdown(String(alt ?? ""), split.dest, split.title, resolve) ?? match;
+  });
+}
+
+/** Split a markdown image's paren content into destination + title. Null when empty. */
+function splitImageTarget(inner: string): { dest: string; title: string } | null {
+  const text = inner.trim();
+  if (!text) return null;
+  if (text.startsWith("<")) {
+    const close = text.indexOf(">");
+    if (close === -1) return null;
+    return { dest: text.slice(1, close).trim(), title: text.slice(close + 1).trim() };
+  }
+  const boundary = text.search(/\s/);
+  if (boundary === -1) return { dest: text, title: "" };
+  return { dest: text.slice(0, boundary), title: text.slice(boundary).trim() };
+}
+
+/**
+ * Rebuild a markdown image around a resolved resource URL. Null when the
+ * destination is external, non-image, or unresolvable (caller keeps the original).
+ */
+function resolvedImageMarkdown(
+  alt: string,
+  dest: string,
+  title: string,
+  resolve: (target: string) => string | null,
+): string | null {
+  const clean = dest.trim();
+  if (!clean || isExternalImageSrc(clean)) return null;
+  if (!isImagePath(stripImageQueryFragment(clean))) return null;
+  const resolved = safeResolve(resolve, clean);
+  if (!resolved) return null;
+  return `![${alt}](${resolved}${title ? ` ${title}` : ""})`;
 }
 
 function safeResolve(resolve: (target: string) => string | null, target: string): string | null {
   try {
     const resolved = resolve(target);
-    return resolved && resolved.trim() ? resolved : null;
+    return resolved?.trim() ? resolved : null;
   } catch {
     return null;
   }
@@ -155,75 +185,18 @@ interface MarkdownSegment {
  */
 function splitMarkdownByCode(markdown: string): MarkdownSegment[] {
   const segments: MarkdownSegment[] = [];
-  const lines = markdown.split("\n");
-  let prose: string[] = [];
-  let code: string[] = [];
-  let fenceChar: "`" | "~" | null = null;
-  let fenceLen = 0;
-  // Indented code blocks (4+ spaces/tab) start after a blank line — or the
-  // document start — and run through blank lines until non-indented content.
-  // They can't interrupt a paragraph, so mid-paragraph indented lines stay prose.
-  let afterBlank = true;
-  let inIndentedCode = false;
-
-  const flushProse = (): void => {
-    if (prose.length > 0) {
-      segments.push({ text: prose.join("\n"), isCode: false });
-      prose = [];
-    }
+  const state: FenceSplitState = {
+    prose: [],
+    code: [],
+    fenceChar: null,
+    fenceLen: 0,
+    afterBlank: true,
+    inIndentedCode: false,
   };
-  const flushCode = (): void => {
-    if (code.length > 0) {
-      segments.push({ text: code.join("\n"), isCode: true });
-      code = [];
-    }
-  };
-
-  for (const line of lines) {
-    if (fenceChar !== null) {
-      code.push(line);
-      if (isFenceClose(line, fenceChar, fenceLen)) {
-        flushCode();
-        fenceChar = null;
-        fenceLen = 0;
-      }
-      afterBlank = false;
-      inIndentedCode = false;
-      continue;
-    }
-    if (line.trim() === "") {
-      // Blank lines belong to the open run (a trailing blank is still code);
-      // either way they enable the next indented block.
-      (inIndentedCode ? code : prose).push(line);
-      afterBlank = true;
-      continue;
-    }
-    const opening = fenceMarkerLength(line);
-    if (opening) {
-      flushProse();
-      flushCode();
-      fenceChar = opening.char;
-      fenceLen = opening.len;
-      code.push(line);
-      afterBlank = false;
-      inIndentedCode = false;
-      continue;
-    }
-    if (isIndentedCodeLine(line) && (afterBlank || inIndentedCode)) {
-      flushProse();
-      code.push(line);
-      inIndentedCode = true;
-      afterBlank = false;
-      continue;
-    }
-    flushCode();
-    prose.push(line);
-    inIndentedCode = false;
-    afterBlank = false;
-  }
+  for (const line of markdown.split("\n")) feedSplitLine(segments, state, line);
   // An unclosed fence swallows the rest of the document — same as the renderer.
-  flushCode();
-  flushProse();
+  flushSplitRun(segments, state.code, true);
+  flushSplitRun(segments, state.prose, false);
   // Re-attach the "\n" separators lost to split, then split prose on inline code.
   const withBreaks: MarkdownSegment[] = [];
   for (let i = 0; i < segments.length; i++) {
@@ -241,6 +214,76 @@ function splitMarkdownByCode(markdown: string): MarkdownSegment[] {
   return expanded;
 }
 
+interface FenceSplitState {
+  prose: string[];
+  code: string[];
+  fenceChar: "`" | "~" | null;
+  fenceLen: number;
+  // Indented code blocks (4+ spaces/tab) start after a blank line — or the
+  // document start — and run through blank lines until non-indented content.
+  // They can't interrupt a paragraph, so mid-paragraph indented lines stay prose.
+  afterBlank: boolean;
+  inIndentedCode: boolean;
+}
+
+function flushSplitRun(segments: MarkdownSegment[], lines: string[], isCode: boolean): void {
+  if (lines.length > 0) {
+    segments.push({ text: lines.join("\n"), isCode });
+    lines.splice(0);
+  }
+}
+
+function feedSplitLine(segments: MarkdownSegment[], state: FenceSplitState, line: string): void {
+  if (state.fenceChar !== null) {
+    feedFenceLine(segments, state, line);
+    return;
+  }
+  if (line.trim() === "") {
+    feedBlankLine(state, line);
+    return;
+  }
+  const opening = fenceMarkerLength(line);
+  if (opening) {
+    flushSplitRun(segments, state.prose, false);
+    flushSplitRun(segments, state.code, true);
+    state.fenceChar = opening.char;
+    state.fenceLen = opening.len;
+    state.code.push(line);
+    state.afterBlank = false;
+    state.inIndentedCode = false;
+    return;
+  }
+  if (isIndentedCodeLine(line) && (state.afterBlank || state.inIndentedCode)) {
+    flushSplitRun(segments, state.prose, false);
+    state.code.push(line);
+    state.inIndentedCode = true;
+    state.afterBlank = false;
+    return;
+  }
+  flushSplitRun(segments, state.code, true);
+  state.prose.push(line);
+  state.inIndentedCode = false;
+  state.afterBlank = false;
+}
+
+function feedFenceLine(segments: MarkdownSegment[], state: FenceSplitState, line: string): void {
+  state.code.push(line);
+  if (state.fenceChar !== null && isFenceClose(line, state.fenceChar, state.fenceLen)) {
+    flushSplitRun(segments, state.code, true);
+    state.fenceChar = null;
+    state.fenceLen = 0;
+  }
+  state.afterBlank = false;
+  state.inIndentedCode = false;
+}
+
+function feedBlankLine(state: FenceSplitState, line: string): void {
+  // A blank belongs to the open run (a trailing blank is still code); either
+  // way it enables the next indented block.
+  (state.inIndentedCode ? state.code : state.prose).push(line);
+  state.afterBlank = true;
+}
+
 /**
  * Opening fence run on a line (` ```js `, ` ~~~ `, `> ``` `), or null.
  * Up to 3 leading spaces (4+ is an indented code block, not a fence) with an
@@ -250,7 +293,7 @@ function fenceMarkerLength(line: string): { char: "`" | "~"; len: number } | nul
   const match = /^(?: {0,3}>\s?)* {0,3}(`{3,}|~{3,})/.exec(line);
   if (!match) return null;
   const run = match[1];
-  return { char: run[0] === "`" ? "`" : "~", len: run.length };
+  return { char: run.startsWith("`") ? "`" : "~", len: run.length };
 }
 
 /**
@@ -261,7 +304,7 @@ function isFenceClose(line: string, char: "`" | "~", minLen: number): boolean {
   const match = /^(?: {0,3}>\s?)* {0,3}(`+|~+)/.exec(line);
   if (!match) return false;
   const run = match[1];
-  if (run[0] !== char || run.length < minLen) return false;
+  if (!run.startsWith(char) || run.length < minLen) return false;
   return line.slice(match[0].length).trim() === "";
 }
 
@@ -341,23 +384,37 @@ export function collectUserImageThumbs(
   const thumbs: UserImageThumb[] = [];
   for (const entry of attachments) {
     if (thumbs.length >= max) break;
-    if (typeof entry !== "string") continue;
-    const base = stripImageQueryFragment(attachmentBasePath(entry));
-    if (!base || !isImagePath(base)) continue;
-    let src: string | null;
-    try {
-      src = resolvePath(base);
-    } catch {
-      src = null;
-    }
-    if (!src) continue;
-    thumbs.push({ src, alt: base, path: base });
+    const thumb = attachmentImageThumb(entry, resolvePath);
+    if (thumb) thumbs.push(thumb);
   }
   for (const image of historyImages ?? []) {
     if (thumbs.length >= max) break;
-    const data = typeof image?.data === "string" ? image.data.trim() : "";
-    if (!data) continue;
-    thumbs.push({ src: `data:${sanitizeImageMimeType(image?.mimeType)};base64,${data}`, alt: "Attached image" });
+    const thumb = historyImageThumb(image);
+    if (thumb) thumbs.push(thumb);
   }
   return thumbs;
+}
+
+/** A live vault-path attachment as a thumbnail, or null when not an image. */
+function attachmentImageThumb(
+  entry: ContextAttachment,
+  resolvePath: (path: string) => string | null,
+): UserImageThumb | null {
+  if (typeof entry !== "string") return null;
+  const base = stripImageQueryFragment(attachmentBasePath(entry));
+  if (!base || !isImagePath(base)) return null;
+  let src: string | null;
+  try {
+    src = resolvePath(base);
+  } catch {
+    src = null;
+  }
+  return src ? { src, alt: base, path: base } : null;
+}
+
+/** A persisted vision block as a thumbnail, or null when empty. */
+function historyImageThumb(image: { data: unknown; mimeType: unknown }): UserImageThumb | null {
+  const data = typeof image?.data === "string" ? image.data.trim() : "";
+  if (!data) return null;
+  return { src: `data:${sanitizeImageMimeType(image?.mimeType)};base64,${data}`, alt: "Attached image" };
 }
