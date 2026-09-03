@@ -15,7 +15,7 @@ import type { AskUserRequest } from "../tools/ask-user-tool";
 import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
 import { applyRememberedApprovalChoice } from "../agent/approval-memory";
 import { ApprovalModal } from "./approval-modal";
-import { isImagePath } from "./image-attachments";
+import { collectUserImageThumbs, isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, apiKeyForProvider } from "../settings";
@@ -31,9 +31,11 @@ import {
   assistantUsage,
   collectToolResults,
   lastUserTurn,
+  messageImages,
   messageText,
   thinkingText,
   toolCalls,
+  type MessageImageLite,
   type ToolResultLite,
   toolResultText,
 } from "./message-content";
@@ -134,6 +136,9 @@ const CONTEXT_THRESHOLDS = [0.75, 0.9] as const;
 
 /** Maximum independent sessions ("tabs") in one chat leaf. */
 const MAX_TABS = 3;
+
+/** Cap inline image thumbnails per user bubble so a turn can't flood the pane. */
+const MAX_USER_IMAGE_THUMBS = 8;
 
 /** One open conversation in the leaf: its own agent service + saved UI state. */
 interface ChatTab {
@@ -1478,7 +1483,7 @@ export class ChatView extends ItemView {
       if (!prepared) return;
       this.lastSentPrompt = prepared.prompt;
       this.lastSentDisplay = text;
-      this.renderOutgoingUserMessage(text, attachments);
+      this.renderOutgoingUserMessage(text, attachments, prepared.images);
       await service.sendPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
       if (!this.isLiveTab(tab)) {
         this.discardPendingSend(activeNoteCache, contextCache);
@@ -1580,7 +1585,8 @@ export class ChatView extends ItemView {
     const images = lastTurn?.text === prompt ? lastTurn.images : [];
     const display = this.lastSentDisplay ?? stripContextPreamble(prompt);
     this.clearEmptyState();
-    this.renderOutgoingUserMessage(display, []);
+    // A retried image turn shows the same thumbnails it sends (#250).
+    this.renderOutgoingUserMessage(display, [], images);
     await service.sendPrompt(prompt, images);
     if (!this.isLiveTab(tab)) return;
     this.showServiceError();
@@ -2476,7 +2482,10 @@ export class ChatView extends ItemView {
       } else if (message.role === "user") {
         // Hide the attachment <context> preamble so history reads like the
         // live transcript (which renders the user's text, not the prompt).
-        this.renderUserMessage(stripContextPreamble(messageText(message)), [], index);
+        // Vision attachments persist as image blocks — render them as thumbnails.
+        this.renderUserMessage(stripContextPreamble(messageText(message)), [], index, {
+          historyImages: messageImages(message),
+        });
         rendered += 1;
       } else if (message.role === "assistant") {
         this.renderAssistantMessage(message, toolResults, index === lastAssistant);
@@ -2530,7 +2539,7 @@ export class ChatView extends ItemView {
     text: string,
     attachments: ContextAttachment[],
     editIndex?: number,
-    options: { forceScroll?: boolean } = {},
+    options: { forceScroll?: boolean; historyImages?: MessageImageLite[] } = {},
   ): void {
     const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-user"] });
     if (attachments.length > 0) {
@@ -2540,6 +2549,26 @@ export class ChatView extends ItemView {
           : contextAttachmentLabel(entry),
       );
       el.createDiv({ cls: "agentic-chat-user-attachments", text: `Attached: ${labels.join(", ")}` });
+    }
+    const thumbs = this.userImageThumbs(attachments, options.historyImages);
+    if (thumbs.length > 0) {
+      const wrap = el.createDiv({ cls: "agentic-chat-user-images" });
+      for (const thumb of thumbs) {
+        const img = wrap.createEl("img", {
+          cls: ["agentic-chat-user-image", ...(thumb.path ? ["is-openable"] : [])],
+          attr: { src: thumb.src, alt: thumb.alt },
+        });
+        img.setAttr("title", thumb.alt);
+        if (thumb.path) {
+          const path = thumb.path;
+          img.addEventListener("click", (event) => {
+            // History bubbles are editable: don't let a thumbnail click fall
+            // through to the bubble's click-to-edit handler.
+            event.stopPropagation();
+            void this.app.workspace.openLinkText(path, "", false);
+          });
+        }
+      }
     }
     el.createDiv({ cls: "agentic-chat-user-text", text });
     // Persisted turns are editable: click to reload the prompt and rewrite it.
@@ -2557,9 +2586,30 @@ export class ChatView extends ItemView {
     this.scrollToBottom({ force: options.forceScroll });
   }
 
-  private renderOutgoingUserMessage(text: string, attachments: ContextAttachment[]): void {
+  private renderOutgoingUserMessage(text: string, attachments: ContextAttachment[], images?: ImageContent[]): void {
     this.locallyRenderedUserMessages += 1;
-    this.renderUserMessage(text, attachments, undefined, { forceScroll: true });
+    this.renderUserMessage(text, attachments, undefined, { forceScroll: true, historyImages: images });
+  }
+
+  /**
+   * Thumbnail sources for a user bubble: live vault-path attachments resolve to
+   * resource URLs (click opens the vault image); replayed vision blocks render
+   * from their persisted base64 data. Capped so a turn can't flood the pane.
+   */
+  private userImageThumbs(
+    attachments: ContextAttachment[],
+    historyImages?: MessageImageLite[],
+  ): Array<{ src: string; alt: string; path?: string }> {
+    return collectUserImageThumbs(
+      attachments,
+      historyImages,
+      (base) => {
+        const file = this.app.vault.getFileByPath(base);
+        if (!file) return null;
+        return this.app.vault.getResourcePath(file);
+      },
+      MAX_USER_IMAGE_THUMBS,
+    );
   }
 
   // --- rendering: live events ---
@@ -2588,7 +2638,10 @@ export class ChatView extends ItemView {
       case "message_end":
         if (event.message.role === "user") {
           if (this.locallyRenderedUserMessages > 0) this.locallyRenderedUserMessages -= 1;
-          else this.renderUserMessage(stripContextPreamble(messageText(event.message)), []);
+          else
+            this.renderUserMessage(stripContextPreamble(messageText(event.message)), [], undefined, {
+              historyImages: messageImages(event.message),
+            });
         }
         if (event.message.role === "assistant") this.finalizeBubble(event.message);
         break;
