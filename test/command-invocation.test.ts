@@ -53,6 +53,7 @@ describe("AgentCommandInvocationRuntime", () => {
   });
 
   it("runs named subagent, init, and instruction commands through the prompt runner", async () => {
+    // Arbitrary fixture name, not a built-in role.
     const profile: AgentRole = {
       name: "reviewer",
       description: "Review work",

@@ -85,7 +85,7 @@ export interface SubagentTask {
 }
 
 export interface SubagentToolDeps {
-  /** The subagent roles available to dispatch right now (formerly profiles). */
+  /** The subagent roles available to dispatch right now. */
   getProfiles: () => AgentRole[];
   /** Build a ready-to-run child Agent for a role (tools/model/stream wired by the caller). */
   createChildAgent: (profile: AgentRole) => Agent;
@@ -121,7 +121,7 @@ export function createSubagentTool(
       "Run one specialist subagent in an isolated context; it returns a summary. " +
       "One call = one subagent ({agent, task}). To delegate several tasks, make several " +
       "subagent calls in one message — they run in parallel (up to 10 at once). " +
-      "Roles are in the system prompt (formerly profiles); Explorer inherits parent approval/mode.",
+      "Roles are in the system prompt; Explorer inherits parent approval/mode.",
     parameters: SubagentParameters,
     execute: async (toolCallId, params, signal, onUpdate) => {
       const agent = params.agent?.trim();

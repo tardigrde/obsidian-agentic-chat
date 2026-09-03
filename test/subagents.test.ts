@@ -167,6 +167,7 @@ function makeChild(streamFn: StreamFn): Agent {
   });
 }
 
+/** Arbitrary dispatch fixture — the name is test data, not a built-in role. */
 const RESEARCHER: AgentRole = {
   name: "researcher",
   description: "test researcher",

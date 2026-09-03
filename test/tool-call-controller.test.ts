@@ -195,6 +195,7 @@ describe("AgentToolCallController", () => {
       settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes"] } },
       profiles: [
         {
+          // Arbitrary fixture name, not a built-in role.
           name: "researcher",
           description: "Research",
           systemPrompt: "Research.",
@@ -220,6 +221,7 @@ describe("AgentToolCallController", () => {
       settings: { mode: "safe", approval: { mutating: "deny", perTool: {}, workingDirs: [] } },
       profiles: [
         {
+          // Arbitrary fixture name, not a built-in role.
           name: "editor",
           description: "Vault editor role",
           systemPrompt: "Edit.",

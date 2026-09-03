@@ -372,7 +372,7 @@ export class AgentService {
   }
 
   /**
-   * Re-read vault-backed runtime resources (plugins, skills, profiles, MCP
+   * Re-read vault-backed runtime resources (plugins, skills, roles, MCP
    * servers) so diagnostics and the next turn reflect the current vault.
    */
   async reloadRuntimeResources(): Promise<AgentRuntimeResources> {

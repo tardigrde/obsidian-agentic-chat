@@ -2090,6 +2090,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
     this.renderPluginsList(containerEl, settings);
 
+    new Setting(containerEl).setName("Subagents").setHeading();
     new Setting(containerEl)
       .setName("Subagent timeout")
       .setDesc(

@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import type { WebFetcher } from "../src/tools/web-fetch";
 import type { AgentToolCallController } from "../src/agent/tool-call-controller";
 
+/** Arbitrary dispatch fixture — the name is test data, not a built-in role. */
 const PROFILE: AgentRole = {
   name: "editor",
   description: "Edit notes",
