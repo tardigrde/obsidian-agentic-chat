@@ -23,11 +23,12 @@ import {
 
 interface SettingsSnapshot {
   provider: string;
+  openrouterApiKey: string;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
   approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
-  web: { enabled: boolean; searchProvider: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
+  web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
   observability: {
     enabled: boolean;
     backend: string;
@@ -65,10 +66,15 @@ interface McpServerStateSnapshot {
   authType?: string;
   authHeaderName?: string;
   authHeaderValue?: string;
+  authHeaderValueSecretId?: string;
   lastUrl?: string;
 }
 const OPENAI_COMPATIBLE_KEY_SECRET_ID = "agentic-chat-openai-compatible-api-key";
 const OPENAI_COMPATIBLE_KEY = "e2e-openai-compatible-key";
+const OPENROUTER_KEY_SECRET_ID = "agentic-chat-openrouter-api-key";
+const OPENROUTER_KEY = "e2e-openrouter-key";
+const WEB_SEARCH_KEY_SECRET_ID = "agentic-chat-web-search-api-key";
+const WEB_SEARCH_KEY = "e2e-web-search-key";
 const LANGFUSE_PUBLIC_KEY_SECRET_ID = "agentic-chat-langfuse-public-key";
 const LANGFUSE_SECRET_KEY_SECRET_ID = "agentic-chat-langfuse-secret-key";
 
@@ -179,6 +185,21 @@ describe("agentic-chat settings UI", function () {
 
   it("persists provider, API key, base URL, and model through the Models tab", async function () {
     await selectSettingsTab("Models");
+    await setSettingSelect("Model provider", "openrouter");
+    await waitForSetting("OpenRouter API key");
+    await setSettingText("OpenRouter API key", OPENROUTER_KEY);
+
+    await waitForAgenticChatSetting((settings) => {
+      const snapshot = settings as unknown as SettingsSnapshot;
+      return snapshot.provider === "openrouter" && snapshot.openrouterApiKey === OPENROUTER_KEY;
+    }, "OpenRouter settings were not persisted from the settings UI");
+
+    expect(await readSecret(OPENROUTER_KEY_SECRET_ID)).toBe(OPENROUTER_KEY);
+    {
+      const storedAfter = await readStoredData();
+      expect("openrouterApiKey" in storedAfter).toBe(false);
+    }
+
     await setSettingSelect("Model provider", "openai-compatible");
     await waitForSetting("Base URL");
     await setSettingText("Base URL", "https://llm.example/api");
@@ -218,6 +239,20 @@ describe("agentic-chat settings UI", function () {
     await selectSettingsTab("Web");
     await setSettingToggle("Enable web search & fetch", true);
     await waitForSetting("Search provider");
+    await setSettingText("Search API key", WEB_SEARCH_KEY);
+
+    await waitForAgenticChatSetting((settings) => {
+      const snapshot = settings as unknown as SettingsSnapshot;
+      return snapshot.web.enabled && snapshot.web.searchApiKey === WEB_SEARCH_KEY;
+    }, "Web search API key was not persisted from the settings UI");
+
+    expect(await readSecret(WEB_SEARCH_KEY_SECRET_ID)).toBe(WEB_SEARCH_KEY);
+    {
+      const storedAfter = await readStoredData();
+      const storedWeb = storedAfter.web as Record<string, unknown>;
+      expect("searchApiKey" in storedWeb).toBe(false);
+    }
+
     await setSettingSelect("Search provider", "searxng");
     await waitForSetting("SearXNG instance URL");
     await setSettingText("SearXNG instance URL", "https://search.example.com");
@@ -264,6 +299,19 @@ describe("agentic-chat settings UI", function () {
         state?.authHeaderValue === "mcp-secret"
       );
     }, "MCP settings were not persisted from the settings UI");
+
+    const mcpSettingsNow = await readAgenticChatSettings<SettingsSnapshot>();
+    const mcpSecretIdForDocs = mcpSettingsNow.plugins.mcpState?.["plugin_docs_docs_889dfa93cd1a"]?.authHeaderValueSecretId;
+    expect(mcpSecretIdForDocs).toBeTruthy();
+    expect(await readSecret(mcpSecretIdForDocs as string)).toBe("mcp-secret");
+    {
+      const storedAfter = await readStoredData();
+      const storedPlugins = storedAfter.plugins as {
+        mcpState?: Record<string, Record<string, unknown>>;
+      };
+      const storedState = storedPlugins.mcpState?.["plugin_docs_docs_889dfa93cd1a"] ?? {};
+      expect("authHeaderValue" in storedState).toBe(false);
+    }
   });
 
   it("installs a plugin package from an archive URL through the Install plugin modal", async function () {
@@ -384,8 +432,10 @@ describe("agentic-chat settings UI", function () {
     const storedObservability = stored.observability as { langfusePublicKey?: string; langfuseSecretKey?: string; authHeaderValue?: string };
     expect(storedObservability.langfusePublicKey).toBeUndefined();
     expect(storedObservability.langfuseSecretKey).toBeUndefined();
+    expect(storedObservability.authHeaderValue).toBeUndefined();
     expect("langfusePublicKey" in storedObservability).toBe(false);
     expect("langfuseSecretKey" in storedObservability).toBe(false);
+    expect("authHeaderValue" in storedObservability).toBe(false);
   });
 
   it("persists plugin folder, subagent folder, and ignored globs through the Resources tab", async function () {

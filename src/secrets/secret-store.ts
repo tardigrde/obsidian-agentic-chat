@@ -104,8 +104,8 @@ export function mcpSecretId(serverId: string, kind: string): string {
   return normalizeSecretId(`agentic-chat-mcp-${serverId}-${kind}`);
 }
 
-/** Omit plaintext secret keys from a settings shape; persisted JSON carries only secretStorage refs. */
-type WithoutPlaintext<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+/** Omit plaintext secret keys from a settings shape; persisted JSON must never carry them. */
+type WithoutPlaintext<T, K extends keyof T> = Omit<T, K>;
 
 export type PersistedMcpOAuthSettings = WithoutPlaintext<
   McpOAuthSettings,
@@ -135,7 +135,8 @@ export type PersistedSettings = WithoutPlaintext<
     "langfusePublicKey" | "langfuseSecretKey" | "authHeaderValue"
   >;
   mcp: Omit<McpSettings, "servers"> & { servers: PersistedMcpServerSettings[] };
-  plugins: Omit<PluginSettings, "mcpState"> & { mcpState: Record<string, PersistedMcpServerState> };
+  // Optional: pre-S7 data.json predates client-owned plugin server state.
+  plugins: Omit<PluginSettings, "mcpState"> & { mcpState?: Record<string, PersistedMcpServerState> };
 };
 
 /** Sanitize a secret id to Obsidian-safe characters (no length cap). */
@@ -172,7 +173,9 @@ export function hydrateSettingsSecrets(settings: AgenticChatSettings, store: Sec
 
 export function settingsForStorage(settings: AgenticChatSettings, store: SecretStore): PersistedSettings {
   ensureSecretRefs(settings);
-  const stored = cloneSettings(settings) as unknown as PersistedSettings;
+  // Clone as runtime shape; every plaintext key is deleted below before the
+  // PersistedSettings cast at return, so the cast is covered by construction.
+  const stored: AgenticChatSettings = cloneSettings(settings);
   for (const slot of SETTINGS_SECRET_SLOTS) storeSettingsSecretSlot(settings, stored, slot, store);
   for (let index = 0; index < settings.mcp.servers.length; index += 1) {
     storeMcpServerSecrets(settings.mcp.servers[index], stored.mcp.servers[index], store);
@@ -181,7 +184,7 @@ export function settingsForStorage(settings: AgenticChatSettings, store: SecretS
     const storedState = stored.plugins.mcpState?.[id];
     if (storedState) storeMcpStateSecrets(id, state, storedState, store);
   }
-  return stored;
+  return stored as unknown as PersistedSettings;
 }
 
 export function ensureSecretRefs(settings: AgenticChatSettings): void {
@@ -273,9 +276,9 @@ function hydrateSecretSlot<T extends Record<K, string>, K extends string>(
   if (stored) target[key] = stored as T[K];
 }
 
-function storeSecretSlot<TRuntime, TStored, K extends Extract<keyof TRuntime & keyof TStored, string>>(
+function storeSecretSlot<TRuntime, K extends Extract<keyof TRuntime, string>>(
   runtime: TRuntime,
-  stored: TStored,
+  stored: Record<string, unknown>,
   key: K,
   secretId: string,
   store: SecretStore,
@@ -299,7 +302,7 @@ function hydrateSettingsSecretSlot(settings: AgenticChatSettings, slot: Settings
 
 function storeSettingsSecretSlot(
   runtime: AgenticChatSettings,
-  stored: PersistedSettings,
+  stored: AgenticChatSettings,
   slot: SettingsSecretSlot,
   store: SecretStore,
 ): void {

@@ -262,10 +262,14 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     // Heal enum-like fields so an unknown (or retired ask/plan/agent) value can't break the gate or prompt.
     provider: healProvider(stored?.provider),
     openrouterApiKeySecretId: stringSetting(stored?.openrouterApiKeySecretId, OPENROUTER_API_KEY_SECRET_ID),
+    // Deprecated runtime-only plaintext: coerce so a corrupt non-string value
+    // can't reach apiKeyForProvider's .trim().
+    openrouterApiKey: typeof stored?.openrouterApiKey === "string" ? stored.openrouterApiKey : "",
     openaiCompatibleApiKeySecretId: stringSetting(
       stored?.openaiCompatibleApiKeySecretId,
       OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
     ),
+    openaiCompatibleApiKey: typeof stored?.openaiCompatibleApiKey === "string" ? stored.openaiCompatibleApiKey : "",
     mode: healMode(stored?.mode),
     openaiCompatibleContextWindow: healContextWindow(stored?.openaiCompatibleContextWindow),
     outputStyle:

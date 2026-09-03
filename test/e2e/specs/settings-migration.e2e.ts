@@ -6,6 +6,9 @@ const SECRET_IDS = {
   openrouter: "agentic-chat-openrouter-api-key",
   openaiCompatible: "agentic-chat-openai-compatible-api-key",
   webSearch: "agentic-chat-web-search-api-key",
+  langfusePublic: "agentic-chat-langfuse-public-key",
+  langfuseSecret: "agentic-chat-langfuse-secret-key",
+  obsAuth: "agentic-chat-observability-auth-header-value",
   mcpAuth: "agentic-chat-mcp-docs-auth-header-value",
   mcpClientSecret: "agentic-chat-mcp-docs-oauth-client-secret",
   mcpAccessToken: "agentic-chat-mcp-docs-oauth-access-token",
@@ -57,6 +60,16 @@ const LEGACY_SETTINGS = {
       },
     ],
   },
+  observability: {
+    enabled: true,
+    backend: "langfuse",
+    endpoint: "https://langfuse.example.com",
+    sampleRate: 50,
+    payloadMode: "redacted-previews",
+    langfusePublicKey: "legacy-lf-public",
+    langfuseSecretKey: "legacy-lf-secret",
+    authHeaderValue: "Bearer legacy-otel",
+  },
 };
 
 interface MigrationState {
@@ -69,6 +82,16 @@ interface MigrationState {
     mode: string;
     approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
     web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
+    observability: {
+      enabled: boolean;
+      backend: string;
+      endpoint: string;
+      sampleRate: number;
+      payloadMode: string;
+      langfusePublicKey: string;
+      langfuseSecretKey: string;
+      authHeaderValue: string;
+    };
     mcp: {
       enabled: boolean;
       proxyUrl: string;
@@ -159,9 +182,23 @@ function objectAt(value: Record<string, unknown>, key: string): Record<string, u
   return next as Record<string, unknown>;
 }
 
+/** The migration rewrite on enable is async; poll until data.json drops plaintext keys. */
+async function waitForMigratedStorage(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      await browser.executeObsidian(async ({ app }, pluginId) => {
+        const raw = await app.vault.adapter.read(`${app.vault.configDir}/plugins/${pluginId}/data.json`);
+        const stored = JSON.parse(raw) as Record<string, unknown>;
+        return !("openrouterApiKey" in stored) && !("openaiCompatibleApiKey" in stored);
+      }, PLUGIN_ID),
+    { timeout: 10_000, timeoutMsg: "migrated data.json was not rewritten without plaintext keys" },
+  );
+}
+
 describe("agentic-chat settings migration", function () {
   it("loads existing data.json, heals legacy fields, and migrates plaintext secrets", async function () {
     await installLegacyDataAndReloadPlugin();
+    await waitForMigratedStorage();
     const state = await readMigrationState();
 
     expect(state.settings.provider).toBe("openai-compatible");
@@ -182,6 +219,16 @@ describe("agentic-chat settings migration", function () {
       searxngUrl: "https://search.example.com",
       maxResults: 8,
       fetchCharLimit: 15_000,
+    });
+    expect(state.settings.observability).toMatchObject({
+      enabled: true,
+      backend: "langfuse",
+      endpoint: "https://langfuse.example.com",
+      sampleRate: 50,
+      payloadMode: "redacted-previews",
+      langfusePublicKey: "legacy-lf-public",
+      langfuseSecretKey: "legacy-lf-secret",
+      authHeaderValue: "Bearer legacy-otel",
     });
 
     const server = state.settings.mcp.servers[0];
@@ -213,6 +260,9 @@ describe("agentic-chat settings migration", function () {
     expect(state.secrets[SECRET_IDS.openrouter]).toBe("legacy-openrouter-key");
     expect(state.secrets[SECRET_IDS.openaiCompatible]).toBe("legacy-openai-compatible-key");
     expect(state.secrets[SECRET_IDS.webSearch]).toBe("legacy-web-key");
+    expect(state.secrets[SECRET_IDS.langfusePublic]).toBe("legacy-lf-public");
+    expect(state.secrets[SECRET_IDS.langfuseSecret]).toBe("legacy-lf-secret");
+    expect(state.secrets[SECRET_IDS.obsAuth]).toBe("Bearer legacy-otel");
     expect(state.secrets[SECRET_IDS.mcpAuth]).toBe("legacy-mcp-token");
     expect(state.secrets[SECRET_IDS.mcpClientSecret]).toBe("legacy-client-secret");
     expect(state.secrets[SECRET_IDS.mcpAccessToken]).toBe("legacy-access-token");
@@ -224,6 +274,13 @@ describe("agentic-chat settings migration", function () {
     expect("openrouterApiKey" in state.stored).toBe(false);
     expect("openaiCompatibleApiKey" in state.stored).toBe(false);
     expect("searchApiKey" in objectAt(state.stored, "web")).toBe(false);
+    const storedObs = objectAt(state.stored, "observability");
+    expect(storedObs.langfusePublicKey).toBeUndefined();
+    expect(storedObs.langfuseSecretKey).toBeUndefined();
+    expect(storedObs.authHeaderValue).toBeUndefined();
+    expect("langfusePublicKey" in storedObs).toBe(false);
+    expect("langfuseSecretKey" in storedObs).toBe(false);
+    expect("authHeaderValue" in storedObs).toBe(false);
     const storedMcp = objectAt(state.stored, "mcp");
     const storedServer = (storedMcp.servers as Array<Record<string, unknown>>)[0];
     expect(storedServer.authHeaderValue).toBeUndefined();
