@@ -954,7 +954,11 @@ function isFolderAlreadyExistsError(error: unknown): boolean {
 
 /** Strip edge slashes from adapter entries (loader parity: trimEdges). */
 function trimSlashes(entry: string): string {
-  return entry.replace(/^\/+|\/+$/g, "");
+  let start = 0;
+  let end = entry.length;
+  while (start < end && entry[start] === "/") start += 1;
+  while (end > start && entry[end - 1] === "/") end -= 1;
+  return entry.slice(start, end);
 }
 
 /** True when the path exists on disk as a folder (tree or adapter). */

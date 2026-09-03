@@ -166,7 +166,7 @@ function formatLoadedSkillsOverlay(skills: Skill[]): string {
 const FIRST_PARTY_PACKAGE_NAMES = new Set(["builtins", "legacy-skills", "my-skills"]);
 
 function firstPartyRootPaths(folder: string): Set<string> {
-  const root = folder.replace(/\/+$/, "");
+  const root = folder.endsWith("/") ? folder.slice(0, -1) : folder;
   return new Set([...FIRST_PARTY_PACKAGE_NAMES].map((name) => `${root}/${name}`));
 }
 

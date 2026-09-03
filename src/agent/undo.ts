@@ -79,32 +79,45 @@ export async function captureUndo(app: App, toolName: string, args: unknown): Pr
 
 /** Revert a captured change. Returns a human summary; throws if the revert can't be applied. */
 export async function applyUndo(app: App, entry: UndoEntry): Promise<string> {
-  if (entry.kind === "rename") {
-    const file = app.vault.getAbstractFileByPath(entry.to);
-    if (!(file instanceof TFile)) throw new Error(`${entry.to} no longer exists.`);
-    await app.fileManager.renameFile(file, entry.from);
-    return `Renamed ${entry.to} back to ${entry.from}.`;
-  }
-  if (entry.kind === "delete") {
-    await ensureParentFolders(app, entry.path);
-    await app.vault.create(entry.path, entry.before);
-    return `Restored ${entry.path}.`;
-  }
-  if (entry.kind === "delete_folder") {
-    await ensureParentFolders(app, entry.path);
-    if (!(app.vault.getAbstractFileByPath(entry.path) instanceof TFolder) && !(await existsOnDisk(app, entry.path))) {
-      try {
-        await app.vault.createFolder(entry.path);
-      } catch (error) {
-        // Concurrent undo of the same folder — already restored, nothing to do.
-        if (isFolderCollision(error) && (await existsOnDisk(app, entry.path))) {
-          return `Restored folder ${entry.path}.`;
-        }
-        throw error;
+  if (entry.kind === "rename") return applyRenameUndo(app, entry);
+  if (entry.kind === "delete") return applyDeleteUndo(app, entry);
+  if (entry.kind === "delete_folder") return applyDeleteFolderUndo(app, entry);
+  return applyContentUndo(app, entry);
+}
+
+async function applyRenameUndo(app: App, entry: Extract<UndoEntry, { kind: "rename" }>): Promise<string> {
+  const file = app.vault.getAbstractFileByPath(entry.to);
+  if (!(file instanceof TFile)) throw new Error(`${entry.to} no longer exists.`);
+  await app.fileManager.renameFile(file, entry.from);
+  return `Renamed ${entry.to} back to ${entry.from}.`;
+}
+
+async function applyDeleteUndo(app: App, entry: Extract<UndoEntry, { kind: "delete" }>): Promise<string> {
+  await ensureParentFolders(app, entry.path);
+  await app.vault.create(entry.path, entry.before);
+  return `Restored ${entry.path}.`;
+}
+
+async function applyDeleteFolderUndo(app: App, entry: Extract<UndoEntry, { kind: "delete_folder" }>): Promise<string> {
+  await ensureParentFolders(app, entry.path);
+  if (
+    !(app.vault.getAbstractFileByPath(entry.path) instanceof TFolder) &&
+    !(await existsOnDisk(app, entry.path))
+  ) {
+    try {
+      await app.vault.createFolder(entry.path);
+    } catch (error) {
+      // Concurrent undo of the same folder — already restored, nothing to do.
+      if (isFolderCollision(error) && (await existsOnDisk(app, entry.path))) {
+        return `Restored folder ${entry.path}.`;
       }
+      throw error;
     }
-    return `Restored folder ${entry.path}.`;
   }
+  return `Restored folder ${entry.path}.`;
+}
+
+async function applyContentUndo(app: App, entry: Extract<UndoEntry, { kind: "content" }>): Promise<string> {
   const existing = app.vault.getAbstractFileByPath(entry.path);
   if (entry.before === null) {
     if (existing instanceof TFile) {
