@@ -211,6 +211,7 @@ export class ChatView extends ItemView {
   private emptyStateEl: HTMLElement | null = null;
   private planTrackerEl!: HTMLElement;
   private chipsEl!: HTMLElement;
+  private fieldEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
   private modeToggleEl!: HTMLElement;
   private planBadgeEl!: HTMLElement;
@@ -291,6 +292,7 @@ export class ChatView extends ItemView {
   async onClose(): Promise<void> {
     this.closed = true;
     this.cancelAutocomplete();
+    this.menu?.detach();
     this.bubble?.dispose();
     this.bubble = null;
     if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
@@ -680,6 +682,7 @@ export class ChatView extends ItemView {
     // The single bordered input card: context row (chips) + textarea + bottom toolbar
     // all live *inside* one rectangle, instead of stacked around a bordered textarea.
     const field = composer.createDiv({ cls: "agentic-chat-field" });
+    this.fieldEl = field;
     this.chipsEl = field.createDiv({ cls: "agentic-chat-chips" });
 
     const inputWrap = field.createDiv({ cls: "agentic-chat-input-wrap" });
@@ -687,7 +690,11 @@ export class ChatView extends ItemView {
       cls: "agentic-chat-input",
       attr: { rows: "3", placeholder: "Ask about your vault — / for commands, @ to attach a note… (Enter to send)" },
     });
-    this.menu = new AutocompleteMenu(inputWrap, (item) => this.chooseAutocomplete(item));
+    this.menu = new AutocompleteMenu(
+      composer,
+      (item) => this.chooseAutocomplete(item),
+      () => this.fieldEl,
+    );
     this.inputEl.addEventListener("keydown", (event) => {
       if (this.menu.handleKey(event)) return;
       if (event.key === "Escape" && this.promptEdit.isEditing) {
@@ -1815,6 +1822,10 @@ export class ChatView extends ItemView {
     this.clearEmptyState();
     const extraPart = extra ? ` ${extra}` : "";
     this.renderOutgoingUserMessage(display ?? `/skill ${name}${extraPart}`, []);
+    const skill = this.service.getSkills().find((item) => item.name.toLowerCase() === name.toLowerCase());
+    // Visible success signal: /skill otherwise injects silently and the
+    // transcript jumps straight to the first thought/tool step.
+    if (skill) this.renderInfoMessage("Skill", [[skill.name, skill.description]]);
     await this.service.invokeSkill(name, extra || undefined);
     this.showServiceError();
   }

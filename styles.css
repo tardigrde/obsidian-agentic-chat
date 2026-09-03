@@ -1040,6 +1040,7 @@
 /* --- Composer --- */
 
 .agentic-chat-composer {
+  position: relative;
   padding: var(--size-4-2) var(--size-4-3) var(--size-4-3);
   display: flex;
   flex-direction: column;
