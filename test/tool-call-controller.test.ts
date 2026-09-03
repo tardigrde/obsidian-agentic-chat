@@ -213,6 +213,34 @@ describe("AgentToolCallController", () => {
     expect(requests).toEqual([]);
   });
 
+  it("blocks a mutating vault-role dispatch when mutating tools are denied", async () => {
+    // S8: no built-in role can mutate anymore, so the deny branch is only
+    // reachable via a vault AGENT.md role with mutating tools — keep it covered.
+    const { controller, requests } = makeController({
+      settings: { mode: "safe", approval: { mutating: "deny", perTool: {}, workingDirs: [] } },
+      profiles: [
+        {
+          name: "editor",
+          description: "Vault editor role",
+          systemPrompt: "Edit.",
+          toolAllowlist: ["read", "edit"],
+        },
+      ],
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+    });
+
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "subagent" },
+      args: { agent: "editor", task: "fix it" },
+    });
+
+    expect(decision).toEqual({
+      block: true,
+      reason: "Subagent dispatch is blocked because mutating tools are denied.",
+    });
+    expect(requests).toEqual([]);
+  });
+
   it("records undo only after a captured mutating call succeeds", async () => {
     const { app, vault } = fakeApp();
     await vault.createFolder("Notes");

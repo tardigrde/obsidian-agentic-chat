@@ -121,7 +121,7 @@ export function createSubagentTool(
       "Run one specialist subagent in an isolated context; it returns a summary. " +
       "One call = one subagent ({agent, task}). To delegate several tasks, make several " +
       "subagent calls in one message — they run in parallel (up to 10 at once). " +
-      "Roles are in the system prompt (formerly profiles); Explorer inherits parent context.",
+      "Roles are in the system prompt (formerly profiles); Explorer inherits parent approval/mode.",
     parameters: SubagentParameters,
     execute: async (toolCallId, params, signal, onUpdate) => {
       const agent = params.agent?.trim();
@@ -133,7 +133,10 @@ export function createSubagentTool(
       const profile = profiles.find((candidate) => candidate.name === agent);
       if (!profile) {
         const available = profiles.map((candidate) => candidate.name).join(", ") || "(none)";
-        throw new Error(`subagent: unknown agent "${agent}". Available: ${available}.`);
+        const retiredHint = ["researcher", "reviewer", "editor"].includes(agent.toLowerCase())
+          ? ` "${agent}" was retired in the S8 role reframe — use "explorer" instead.`
+          : "";
+        throw new Error(`subagent: unknown agent "${agent}".${retiredHint} Available: ${available}.`);
       }
 
       const status: SubagentChildStatus = { agent, task, status: "queued" };

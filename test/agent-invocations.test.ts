@@ -51,4 +51,10 @@ describe("agent invocation helpers", () => {
       'No subagent named "writer". No subagents are configured.',
     );
   });
+
+  it("hints explorer for retired S8 role names", () => {
+    expect(unknownAgentMessage("reviewer", [{ name: "explorer" }], [])).toBe(
+      'No subagent named "reviewer". "reviewer" was retired in the S8 role reframe — use the "explorer" role instead (vault AGENT.md roles still work). Available subagents: explorer.',
+    );
+  });
 });

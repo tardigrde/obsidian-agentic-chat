@@ -219,7 +219,7 @@ describe("loadAgentProfiles", () => {
     const app = { vault: {} } as unknown as App;
     const roles = await loadAgentRoles(app, "", true);
     expect(roles.map((p) => p.name).sort()).toEqual(["explorer"]);
-    expect(BUILTIN_AGENT_PROFILES).toBe(BUILTIN_AGENT_ROLES);
+    expect(BUILTIN_AGENT_PROFILES).toEqual(BUILTIN_AGENT_ROLES);
   });
 
   it("returns nothing when built-ins are disabled and no folder is set", async () => {
@@ -332,6 +332,9 @@ describe("createSubagentTool", () => {
       createChildAgent: () => makeChild(childStreamFn("x")),
     });
     await expect(tool.execute("id", { agent: "ghost", task: "x" }, undefined)).rejects.toThrow(/unknown agent/i);
+    await expect(tool.execute("id", { agent: "editor", task: "x" }, undefined)).rejects.toThrow(
+      /"editor" was retired.*use "explorer" instead/,
+    );
     await expect(tool.execute("id", { agent: "researcher", task: "" }, undefined)).rejects.toThrow(
       /provide both \{agent, task\}/i,
     );

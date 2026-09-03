@@ -63,7 +63,7 @@ export const BUILTIN_AGENT_ROLES: AgentRole[] = [
  * @deprecated Use BUILTIN_AGENT_ROLES – alias for backward compatibility.
  * Points to the same single Explorer roster.
  */
-export const BUILTIN_AGENT_PROFILES: AgentRole[] = BUILTIN_AGENT_ROLES;
+export const BUILTIN_AGENT_PROFILES: AgentRole[] = [...BUILTIN_AGENT_ROLES];
 
 /**
  * Load the available subagent roles: the built-in roster (optional) plus any
@@ -105,7 +105,7 @@ export function formatAgentRolesForSystemPrompt(roles: AgentRole[]): string {
     "You can delegate focused subtasks to these specialist subagents with the `subagent` tool. " +
       "One call runs one subagent ({agent, task}); make several `subagent` calls in one message " +
       "to run several in parallel (up to 10 at once). " +
-      "Delegate work that is self-contained (research, review, bulk edits) to keep your own context clean. " +
+      "Delegate work that is self-contained (research, review) to keep your own context clean. " +
       "Subagents inherit your approval/mode controls; the Explorer role is read-only recon.",
     "",
     ...lines,

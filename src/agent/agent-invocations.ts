@@ -5,6 +5,9 @@ export function buildSubagentInvocation(name: string, task: string): string {
   return `Use the subagent tool to delegate this task to the "${name}" subagent: ${task}`;
 }
 
+/** Built-in names retired by the S8 role reframe (single Explorer role). */
+const RETIRED_AGENT_NAMES: ReadonlySet<string> = new Set(["researcher", "reviewer", "editor"]);
+
 export function buildInitInvocation(instructions?: string): string {
   const parts = [
     "Curate this vault's standing-instructions file for the agentic-chat agent.",
@@ -47,6 +50,11 @@ export function unknownAgentMessage(
     (item) => item.name.toLowerCase() === lower || item.name.toLowerCase().includes(lower),
   );
   const parts = [`No subagent named "${name}".`];
+  if (RETIRED_AGENT_NAMES.has(lower)) {
+    parts.push(
+      `"${name}" was retired in the S8 role reframe — use the "explorer" role instead (vault AGENT.md roles still work).`,
+    );
+  }
   if (skill) parts.push(`Did you mean the skill "${skill.name}"? Run it with /${skill.name} or /skill ${skill.name}.`);
   parts.push(available.length > 0 ? `Available subagents: ${available.join(", ")}.` : "No subagents are configured.");
   return parts.join(" ");
