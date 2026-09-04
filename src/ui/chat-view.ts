@@ -112,7 +112,8 @@ import {
   semanticIndexPath,
   type SemanticIndexFile,
 } from "../retrieval/semantic-index";
-import { memoryPathForApp } from "../tools/memory-tools";
+import { flushSessionToDaily, distillDailyToMemory } from "../memory/distill-runtime";
+import { memorySettingsOf } from "../memory/vault-memory";
 import { planTrackerRows } from "../agent/plan-tracker";
 import { buildPlanTrackerPanelState } from "./plan-tracker-panel";
 import { renderPlanTrackerPanel as renderPlanTrackerPanelDom } from "./plan-tracker-renderer";
@@ -287,6 +288,7 @@ export class ChatView extends ItemView {
       () => this.service.initialize(),
       (error) => new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`),
     );
+    this.distillPendingOnStartup();
   }
 
   async onClose(): Promise<void> {
@@ -295,6 +297,13 @@ export class ChatView extends ItemView {
     this.menu?.detach();
     this.bubble?.dispose();
     this.bubble = null;
+    if (this.memoryDistillTimer !== null) window.clearTimeout(this.memoryDistillTimer);
+    this.memoryDistillTimer = null;
+    try {
+      this.flushSessionMemory();
+    } catch {
+      // Best-effort.
+    }
     if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
     this.userScrollIntentTimer = null;
     // The view owns its tab services; dispose them so no detached agent keeps running.
@@ -404,6 +413,7 @@ export class ChatView extends ItemView {
 
   private async switchToTab(index: number): Promise<void> {
     if (index === this.activeTabIndex || index < 0 || index >= this.tabs.length) return;
+    this.flushSessionMemory();
     this.cancelAutocomplete();
     this.menu.hide();
     this.endEditing(false);
@@ -416,6 +426,7 @@ export class ChatView extends ItemView {
   /** `+`: open a new tab on a fresh session and switch to it (capped at MAX_TABS). */
   private async addTab(): Promise<void> {
     if (this.tabs.length >= MAX_TABS) return;
+    this.flushSessionMemory();
     this.endEditing(false);
     this.saveActiveState();
     const tab = this.createTab();
@@ -437,6 +448,8 @@ export class ChatView extends ItemView {
       void this.startNewConversation();
       return;
     }
+    const closing = this.tabs[index];
+    if (closing) this.flushTabMemory(closing);
     const closingActive = index === this.activeTabIndex;
     if (closingActive) this.endEditing(false);
     const [tab] = this.tabs.splice(index, 1);
@@ -2119,20 +2132,101 @@ export class ChatView extends ItemView {
   private createMemoryWorkflow(): MemoryWorkflowController {
     return new MemoryWorkflowController({
       adapter: this.app.vault.adapter,
-      memoryPath: () => memoryPathForApp(this.app),
+      getSettings: () => this.plugin.settings,
+      configDir: this.app.vault.configDir,
       messages: () => this.service.getMessages(),
-      defaultScope: () => "vault",
       sessionSource: () => {
         const session = this.service.getSessionInfo();
         return session ? `[[Agentic Chat Sessions/${session.id}|Chat session]]` : undefined;
       },
+      sessionCostUsd: () => this.service.getSessionUsage().cost?.total ?? 0,
       renderer: this.workflowRenderer(),
-      writeExport: async (filename, contents) => {
-        await this.ensureExportFolder();
-        const file = await this.app.vault.create(`${EXPORT_FOLDER}/${filename}`, contents);
-        return file.path;
-      },
     });
+  }
+
+  /** Tier-1: capture the outgoing session to today's daily note (deterministic, zero tokens). */
+  private flushTabMemory(tab: { service: { getMessages: () => AgentMessage[]; getSessionInfo: () => { id: string } | undefined } }): void {
+    try {
+      const settings = this.plugin.settings;
+      if (!memorySettingsOf(settings).enabled) return;
+      const messages = tab.service.getMessages();
+      if (messages.length === 0) return;
+      const session = tab.service.getSessionInfo();
+      void flushSessionToDaily({
+        adapter: this.app.vault.adapter,
+        configDir: this.app.vault.configDir,
+        settings,
+        messages,
+        sessionId: session?.id,
+        modelId: undefined,
+      }).then((result) => {
+        if (result.status === "appended") this.scheduleIdleDistill();
+      }).catch(() => {});
+    } catch {
+      // Best-effort background capture; never blocks session switches.
+    }
+  }
+
+  /** Tier-1: capture the outgoing session to today's daily note (deterministic, zero tokens). */
+  private flushSessionMemory(): void {
+    try {
+      const settings = this.plugin.settings;
+      if (!memorySettingsOf(settings).enabled) return;
+      const messages = this.service.getMessages();
+      if (messages.length === 0) return;
+      const session = this.service.getSessionInfo();
+      const configDir = this.app.vault.configDir;
+      void flushSessionToDaily({
+        adapter: this.app.vault.adapter,
+        configDir,
+        settings,
+        messages,
+        sessionId: session?.id,
+        modelId: undefined,
+      }).then((result) => {
+        if (result.status === "appended") this.scheduleIdleDistill();
+      }).catch(() => {});
+    } catch {
+      // Best-effort background capture; never blocks session switches.
+    }
+  }
+
+  private memoryDistillTimer: number | null = null;
+
+  /** Tier-2: idle consolidation 5min after Tier-1 (non-forced; respects pending/mtime/backoff). */
+  private scheduleIdleDistill(): void {
+    try {
+      if (this.memoryDistillTimer !== null) window.clearTimeout(this.memoryDistillTimer);
+      this.memoryDistillTimer = window.setTimeout(() => {
+        this.memoryDistillTimer = null;
+        const settings = this.plugin.settings;
+        if (!memorySettingsOf(settings).enabled) return;
+        void distillDailyToMemory({
+          adapter: this.app.vault.adapter,
+          configDir: this.app.vault.configDir,
+          settings,
+          sessionCostUsd: this.service.getSessionUsage().cost?.total ?? 0,
+        }).catch(() => {});
+      }, 5 * 60 * 1000);
+    } catch {
+      // Timer unavailable (tests); skip.
+    }
+  }
+
+  /** Startup: consolidate pending dailies before the first prompt (async, never blocks). */
+  private distillPendingOnStartup(): void {
+    try {
+      const settings = this.plugin.settings;
+      if (!memorySettingsOf(settings).enabled) return;
+      void distillDailyToMemory({
+        adapter: this.app.vault.adapter,
+        configDir: this.app.vault.configDir,
+        settings,
+        sessionCostUsd: 0,
+      }).catch(() => {});
+    } catch {
+      // Best-effort.
+    }
   }
 
   private workflowRenderer(): WorkflowRenderer {
@@ -2297,6 +2391,7 @@ export class ChatView extends ItemView {
   // --- session + model actions ---
 
   private async newSession(): Promise<void> {
+    this.flushSessionMemory();
     const coordinator = this.createSessionActivationCoordinator();
     try {
       await coordinator.startNewConversation(() => this.service.newSession());

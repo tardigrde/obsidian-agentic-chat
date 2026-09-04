@@ -43,7 +43,10 @@ Observability sends trace data to the OTLP or Langfuse endpoint you configure. M
 
 ## Memory privacy
 
-Memories are stored locally in `memories.jsonl` inside the plugin directory. They are never sent to providers unless the agent calls `search_memory` and the result is included in a prompt. You can clear all memories with `/memory clear --confirm`.
+Tier-1 daily notes + Tier-2 MEMORY.md live in the plugin folder by default (stays on this device) or a vault folder you choose
+(synced like any note). Tier-1 is deterministic and sends nothing. Tier-2 sends recent daily notes + the MEMORY.md auto-section
+to the chat model for distillation. Secret-like text is filtered, but names and vault content you discussed can be remembered —
+review before sharing the vault. Full lifecycle: `docs/features/memory.md`.
 
 ## Semantic retrieval privacy
 

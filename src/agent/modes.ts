@@ -103,7 +103,6 @@ const READONLY_TOOLS: ReadonlySet<string> = new Set([
   "get_links",
   "local_graph",
   "get_properties",
-  "search_memory",
   "web_search",
   "fetch_url",
   "read_skill",

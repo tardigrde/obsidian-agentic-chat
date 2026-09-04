@@ -496,3 +496,65 @@ describe("AgentToolCallController", () => {
     expect(requests).toHaveLength(1);
   });
 });
+
+describe("memory write boundary (H2)", () => {
+  const memoryOn = {
+    memory: { enabled: true, store: "plugin" as const, vaultFolder: "memory", modelOverride: "" },
+  };
+  const memoryVault = {
+    memory: { enabled: true, store: "vault" as const, vaultFolder: "memory", modelOverride: "" },
+  };
+
+  it("denies generic writes to MEMORY.md even in YOLO", async () => {
+    const { controller, requests } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, ...memoryVault },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "write" },
+      args: { path: "memory/MEMORY.md", content: "pwned" },
+    });
+    expect(decision).toEqual({ block: true, reason: expect.stringContaining("managed automatically") });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("denies plugin-store daily writes via raw dot-paths", async () => {
+    const { controller } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, ...memoryOn },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "edit" },
+      args: { path: ".obsidian/plugins/agentic-chat/memory/daily/2026-06-28.md", oldText: "a", newText: "b" },
+    });
+    expect(decision).toEqual({ block: true, reason: expect.stringContaining("managed automatically") });
+  });
+
+  it("lets remember_memory through and leaves normal notes alone", async () => {
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] }, ...memoryVault },
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+    });
+    const remember = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "remember_memory" },
+      args: { text: "Prefer concise answers." },
+    });
+    expect(remember).toBeUndefined();
+
+    const note = await controller.beforeToolCall({
+      toolCall: { id: "call-2", name: "write" },
+      args: { path: "Notes/a.md", content: "hi" },
+    });
+    expect(note).toBeUndefined();
+  });
+
+  it("does not gate memory paths when memory is disabled", async () => {
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "write" },
+      args: { path: "memory/MEMORY.md", content: "hi" },
+    });
+    expect(decision).toBeUndefined();
+  });
+});

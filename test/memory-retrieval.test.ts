@@ -5,25 +5,22 @@ import { addEvidenceSource, createEvidenceLedger } from "../src/retrieval/eviden
 import { memoryRecordsToJsonl } from "../src/memory/management";
 import {
   formatMemorySearchResponse,
-  loadMemoryRecords,
   memoryCitations,
   parseMemoryRecords,
   searchMemories,
 } from "../src/memory/memory";
 import { createMemoryTools } from "../src/tools/memory-tools";
 import { MemoryAdapter } from "./helpers/memory-adapter";
-import { FAKE_MEMORY_FIXTURE, fakeMemoryJsonl } from "./helpers/memory-fixtures";
+import { FAKE_MEMORY_FIXTURE } from "./helpers/memory-fixtures";
 
-const MEMORY_PATH = ".obsidian/plugins/agentic-chat/memory/memories.jsonl";
+function appWithAdapter(adapter: DataAdapter): App {
+  return { vault: { adapter, configDir: ".obsidian" } } as unknown as App;
+}
 
 async function run(tool: AgentTool, params: unknown): Promise<{ text: string; details: Record<string, unknown> }> {
   const result = await tool.execute("call-1", params as never);
   const text = result.content.map((part) => (part.type === "text" ? part.text : "")).join("");
   return { text, details: (result.details ?? {}) as Record<string, unknown> };
-}
-
-function appWithAdapter(adapter: DataAdapter): App {
-  return { vault: { adapter, configDir: ".obsidian" } } as unknown as App;
 }
 
 describe("memory retrieval", () => {
@@ -129,43 +126,36 @@ describe("memory retrieval", () => {
     });
   });
 
-  it("loads plugin-managed memory JSONL and exposes it through explicit search_memory tool calls", async () => {
+  it("writes remember_memory to today's daily note and bumps distill pending", async () => {
     const adapter = new MemoryAdapter();
-    await adapter.write(MEMORY_PATH, fakeMemoryJsonl());
-    const [tool] = createMemoryTools(appWithAdapter(adapter.asDataAdapter()));
-    if (!tool) throw new Error("Expected search_memory tool.");
-
-    const { text, details } = await run(tool, { query: "embedding gpu citations", maxResults: 5 });
-
-    expect(text).toContain("Memory search: embedding gpu citations");
-    expect(text).toContain("Large vault embedding generation can be expensive without GPU acceleration.");
-    expect(text).toContain("The user prefers concise answers with exact source citations.");
-    expect(text).not.toContain("Disabled memory");
-    expect(details).toMatchObject({
-      memoryPath: MEMORY_PATH,
-      query: "embedding gpu citations",
-      returned: 2,
-      totalMatches: 2,
-      filteredCount: 0,
-      disabledCount: 1,
-      memoryIds: ["mem-fact-embeddings", "mem-pref-concise"],
-      citations: [
-        "[Embedding note](https://example.com/embedding-costs)",
-        "[[Notes/Preferences.md#Style|Style preference]]",
-      ],
+    const app = appWithAdapter(adapter.asDataAdapter());
+    const [tool] = createMemoryTools(app, {
+      getSettings: () => ({ memory: { enabled: true, store: "plugin", vaultFolder: "memory", modelOverride: "" } }),
     });
+    if (!tool) throw new Error("Expected remember_memory tool.");
+    expect(tool.name).toBe("remember_memory");
+
+    const { text, details } = await run(tool, { text: "Prefer concise answers", kind: "preference" });
+
+    expect(text).toContain("Saved to");
+    expect(details).toMatchObject({ kind: "memory", version: 1 });
+    const dailyPath = String((details as Record<string, unknown>).dailyPath);
+    await expect(adapter.read(dailyPath)).resolves.toContain("Prefer concise answers.");
   });
 
-  it("returns an explicit empty result instead of silently injecting memories", async () => {
+  it("refuses remember_memory when disabled or secret-like", async () => {
     const adapter = new MemoryAdapter();
-    const [tool] = createMemoryTools(appWithAdapter(adapter.asDataAdapter()));
-    if (!tool) throw new Error("Expected search_memory tool.");
+    const app = appWithAdapter(adapter.asDataAdapter());
+    const [disabled] = createMemoryTools(app, {
+      getSettings: () => ({ memory: { enabled: false, store: "plugin", vaultFolder: "memory", modelOverride: "" } }),
+    });
+    if (!disabled) throw new Error("Expected remember_memory tool.");
+    await expect(run(disabled, { text: "hello" })).rejects.toThrow("disabled");
 
-    const { text, details } = await run(tool, { query: "anything" });
-
-    expect(text).toContain("No matching stored memories");
-    expect(text).toContain("only searched when search_memory is called");
-    expect(details).toMatchObject({ returned: 0, totalMatches: 0 });
-    await expect(loadMemoryRecords(adapter.asDataAdapter(), MEMORY_PATH)).resolves.toEqual([]);
+    const [tool] = createMemoryTools(app, {
+      getSettings: () => ({ memory: { enabled: true, store: "plugin", vaultFolder: "memory", modelOverride: "" } }),
+    });
+    if (!tool) throw new Error("Expected remember_memory tool.");
+    await expect(run(tool, { text: "api_key = sk-test-secret-value" })).rejects.toThrow("secret");
   });
 });

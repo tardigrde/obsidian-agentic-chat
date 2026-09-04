@@ -107,18 +107,15 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 *H1 · `fetch_url` destination allowlist — **DONE** in #110.* `settings.web.allowedHosts` (`src/tools/web-allowlist.ts` / `src/settings-schema.ts:138` / `src/settings.ts:Web tab` / `src/tools/web-fetch.ts`) enforces label-boundary-aware suffix match (`example.com` → `sub.example.com` ok, `evil-example.com` blocked) after `isBlockedHost` (deny wins), including redirect hops. Empty = allow all public. UI normalizes on save; tests cover `normalizeAllowedHosts`/`isHostAllowedByAllowlist`, `*` wildcard, SSRF deny-wins, redirect block. Harness #18 gap closed.
 
-### H2 · Seamless cross-session memory (Tier-1 daily + Tier-2 distilled) — DEFERRED (big feature, not now)
-- **Problem**: Only durable cross-session signal is hand-curated `AGENTS.md` + per-conversation JSONL. No automatic Tier-1 daily log nor Tier-2 long-term MEMORY distilled file. Harness #11 `partial` / #13 `deviates`. JTBD "remember across sessions without me curating" unmet.
-- **Decision 2026-08-28**: **Postponed** — new big feature, needs vault file lifecycle + privacy docs. Keep design here, implement later.
-- **Design (when built):**
-  - **Off by default**, `Settings → Agent → Memory [ ] Enable vault memory` with short note: `When on, writes daily summaries to memory/daily/ + distilled memory/MEMORY.md in your vault (plain Markdown, synced like any note). Both auto-loaded into every new chat. May contain session summaries — review before sharing vault. Costs ~500-800 tokens/chat.` Links to `docs/features/memory.md` (full page: where files live, when it runs, what's sent to model, redaction limits, how to review/delete, how to disable).
-  - **No `/memory distill` friction — fully automated:** Tier-1 appends on session end (debounced 30s after last turn) to `memory/daily/YYYY-MM-DD.md` (redacted via `privacy/redaction.ts`). Tier-2 auto-consolidates without command: (a) idle debounce 2-5min after Tier-1 if `MEMORY.md` >24h old or >3 new Tier-1 entries, (b) on vault open before first prompt if pending, (c) weekly fallback. `/memory distill` stays as manual `distill now` only. Only consolidation path may write `MEMORY.md` — deny generic `write`/`edit` even in YOLO + subagents; Tier-2 read-only otherwise.
-  - Alternative `MEMORY.md` in plugin folder — rejected, vault is memory substrate.
-- **Files**: `src/agent/instructions.ts` (load slot, truncate `2500t`), `src/agent/runtime-resources.ts` (`composeSystemPrompt` order), `src/session/session-manager.ts` (hooks, idle timer, startup check), `src/tools/memory-tools.ts` (distill, manual trigger), `src/privacy/redaction.ts`, `src/agent/tool-call-controller.ts` (write boundary), `src/settings.ts` (toggle + note), `docs/features/memory.md`
-- **Acceptance**: Enable → next session end writes redacted `daily/`; idle consolidates to `MEMORY.md`; two sessions on different days: second prompt contains distilled facts; generic `write memory/MEMORY.md` denied even in YOLO; disable stops writing/loading.
-- **Effort**: M–L
-- **Deps**: none
-- **Codex**: Borrow but vault-adapt the two-phase pattern (`memory_summary.md v1 2500t` + `MEMORY.md` handbook + `rollout_summaries`); adapt to vault paths and redaction. See previous revision for full Codex file map.
+*H2 · Seamless cross-session memory (Tier-1 daily + Tier-2 distilled) — **DONE**.* Off-by-default `Settings → Agent → Memory`
+(`src/settings-schema.ts` `memory`, `src/settings.ts` `renderMemory`); store is user-chosen, default hidden plugin folder
+(`src/memory/vault-memory.ts` `resolveMemoryPaths`). Tier-1 deterministic daily append on `/new`/tab switch/close/startup
+(`src/memory/distill-runtime.ts` `flushSessionToDaily`, `src/ui/chat-view.ts` `flushSessionMemory`), gated ≥3 turns/≥500 chars.
+Tier-2 consolidates idle-5min/startup/`/memory distill` via chat model (override-able) with deterministic offline fallback,
+lock + 24h backoff + spend-cap guard. Agent writes daily-only (`remember_memory`); generic writes to memory paths denied
+even in YOLO (`src/agent/tool-call-controller.ts`). MEMORY.md merges below `<!-- AGENTIC-CHAT-AUTO-MEMORY -->`, human section
+preserved. Legacy `memories.jsonl` migrates once; `search_memory` + `/memory review|manage|export|clear` removed.
+Full lifecycle: `docs/features/memory.md`.
 
 *H3 · Central error classification + exponential backoff — **DONE** in #112.* `src/agent/error-classifier.ts` (`classifyError`/`classifyHttpResponse`/`backoffDelayMs` 500ms→8s+jitter, `Retry-After` capped `60s`, `secureRandom` via `crypto.getRandomValues`), `src/agent/stream-runtime.ts` + `src/mcp/client.ts`/`src/mcp/fetcher.ts` bounded retry (transient 408/409/425/429/5xx, permanent 401/403/404 never retry, `resource`/`aborted`/`model` never retry). Harness #38/#39 gap closed.
 
@@ -183,10 +180,10 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 ## Recommended order
 
-**Stability first:** `H5 → R2 → A7 → R3` (`C6` auto-decay removed, `H6` done, `H2` deferred — big feature).
+**Stability first:** `H5 → R2 → A7 → R3` (`C6` auto-decay removed, `H6` done, `H2` done).
 
-(Group S `S1-S11` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (#122), **S5 done**, **S7 done** (#138), **S8 done**, **S11 added** (read-only globs), S-cluster complete. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `H6` done #131, `S2/S3` done #108, `E10` done #98. `F8` + `H2` deferred/dropped.)
+(Group S `S1-S11` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (#122), **S5 done**, **S7 done** (#138), **S8 done**, **S11 added** (read-only globs), S-cluster complete. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `H6` done #131, `H2` done (this PR), `S2/S3` done #108, `E10` done #98. `F8` deferred.)
 
-*First-principles rationale*: security/reliability done — next small wins are evaluator routing (`H5` `S`) then diff polish (`R2` `S`) before audit (`A7`). Memory (`H2`) is `M–L` and needs docs/privacy pass, so pushed. No babysitting — user controls `/compact`, threshold `80%` is the safety net. S-cluster high-ROI but `L-effort` and cross-cuts every gate, so batch separately. `H5` reuses `AgentRole.model` (S8 done, no legacy aliases).
+*First-principles rationale*: security/reliability done — next small wins are evaluator routing (`H5` `S`) then diff polish (`R2` `S`) before audit (`A7`). Memory (`H2`) shipped (off by default, docs/privacy pass included). No babysitting — user controls `/compact`, threshold `80%` is the safety net. S-cluster high-ROI but `L-effort` and cross-cuts every gate, so batch separately. `H5` reuses `AgentRole.model` (S8 done, no legacy aliases).
 
-*Codex borrow summary*: `C6` no auto-decay; `H6` revived on real evidence (identical-batch guard, soft stop); `H2` deferred but design kept (auto Tier-1 + idle Tier-2, off by default); `H5` `review_model`+rubric JSON+`spawn_agent` routing; `R2` preview budget/highlight; `R3` structural artifact digest; `S` copy Codex lattices.
+*Codex borrow summary*: `C6` no auto-decay; `H6` revived on real evidence (identical-batch guard, soft stop); `H2` done (auto Tier-1 + idle Tier-2, off by default); `H5` `review_model`+rubric JSON+`spawn_agent` routing; `R2` preview budget/highlight; `R3` structural artifact digest; `S` copy Codex lattices.
