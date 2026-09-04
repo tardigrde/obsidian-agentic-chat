@@ -23,6 +23,7 @@ import { resolveModePolicy } from "./modes";
 import { resolveWorkingDirPolicy, toolTargetPaths } from "./working-dir";
 import { UNDOABLE_TOOLS, captureUndo } from "./undo";
 import { memorySettingsOf, resolveMemoryPaths, isMemoryPath } from "../memory/vault-memory";
+import { normalizeVaultPath } from "../vault/path";
 
 /** A pending tool call the user must approve. */
 export interface ToolApprovalRequest {
@@ -206,10 +207,12 @@ export class AgentToolCallController {
       if (memory.enabled) {
         const configDir = (this.app.vault as unknown as { configDir?: string }).configDir;
         const paths = resolveMemoryPaths(configDir, memory);
-        // Raw args (not toolTargetPaths): plugin-internal dot-paths are dropped
-        // by normalizeVaultPath, but the vault tool layer rejects them anyway —
-        // belt and suspenders so the denial reason names memory, even in YOLO.
-        const targets = rawMemoryTargetPaths(args);
+        // Match the same normalization the vault tools apply (normalizeVaultPath
+        // strips `@/`, collapses `./`, converts backslashes): compare both the
+        // raw and normalized forms so prefix tricks like `./memory/...` or
+        // `@/memory/...` cannot slip past. Raw is kept too because normalized
+        // helpers drop plugin-internal dot-paths that must still match.
+        const targets = memoryTargetPaths(args);
         if (targets.some((target) => isMemoryPath(target, paths))) {
           const reason = `Memory files under "${paths.dir}" are managed automatically (daily notes + distilled MEMORY.md). The agent cannot write them directly — use remember_memory for daily notes; distillation owns MEMORY.md.`;
           await this.auditApproval({ decision: "denied", toolCallId, toolName, label: this.labelForTool(toolName), args, reason });
@@ -427,12 +430,12 @@ export class AgentToolCallController {
 }
 
 /**
- * Raw vault-target paths from tool args without vault normalization. Used only
- * for the memory write-boundary: normalized helpers drop plugin-internal
- * dot-paths (the tool layer rejects those separately), but the denial reason
- * should still name memory when the agent aims at it.
+ * Vault-target paths from tool args for the memory write-boundary: both the
+ * raw form (plugin-internal dot-paths, which normalized helpers drop but the
+ * tool layer rejects separately) and the tool-normalized form (which collapses
+ * `./`, `@/`, backslashes exactly as the vault tools will resolve them).
  */
-function rawMemoryTargetPaths(args: unknown): string[] {
+function memoryTargetPaths(args: unknown): string[] {
   if (!args || typeof args !== "object") return [];
   const record = args as Record<string, unknown>;
   const paths: string[] = [];
@@ -440,6 +443,11 @@ function rawMemoryTargetPaths(args: unknown): string[] {
     const value = record[field];
     if (typeof value !== "string" || value.trim() === "") continue;
     paths.push(value.trim().replaceAll("\\", "/").replace(/^\/+/, ""));
+    try {
+      paths.push(normalizeVaultPath(value, { allowPluginInternals: true }));
+    } catch {
+      // Invalid/escaping paths never resolve to memory files; raw already covered.
+    }
   }
   return paths;
 }

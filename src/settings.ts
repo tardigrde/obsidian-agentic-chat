@@ -756,9 +756,13 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setName("Enable vault memory")
       .setDesc(
         "When on, appends session summaries to daily notes on session end (/new, tab switch/close) " +
-          "and distills them into MEMORY.md (idle 5min, startup, or /memory distill). Both auto-load into every new chat. " +
+          "and distills them into MEMORY.md (idle 5min, startup, or /memory distill). MEMORY.md auto-loads into " +
+          "every new chat (~8k chars of context); daily notes are distillation feedstock only. " +
           "May contain session summaries — review before sharing the vault. " +
-          "Tier-1 daily: zero tokens (deterministic). Tier-2 distill: concise, ~1-2k tokens. See docs/features/memory.md.",
+          "Tier-2 sends recent daily notes to your chat model provider; only secret-shaped text is filtered — " +
+          "names and vault content you discussed can be remembered. " +
+          "Tier-1 daily: zero tokens (deterministic). Tier-2 distill: typically ~1-2k tokens " +
+          "(bounded by 5×2k-char dailies + MEMORY.md auto-section, ≤800 output tokens). See docs/features/memory.md.",
       )
       .addToggle((toggle) =>
         toggle.setValue(settings.memory.enabled).onChange(async (value) => {
@@ -795,8 +799,11 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             .setPlaceholder("memory")
             .setValue(settings.memory.vaultFolder)
             .onChange(async (value) => {
-              settings.memory.vaultFolder = value.trim().replace(/^\/+|\/+$/g, "") || "memory";
+              const { healVaultFolder } = await import("./memory/vault-memory");
+              settings.memory.vaultFolder = healVaultFolder(value);
               await this.save();
+              // Echo the healed value so rejected input (.., .obsidian, etc.) is visible immediately.
+              text.setValue(settings.memory.vaultFolder);
             }),
         );
     }

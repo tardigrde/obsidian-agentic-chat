@@ -5,13 +5,15 @@ import { PLUGIN_ID } from "../constants";
 import { containsSensitiveText } from "../privacy/redaction";
 import {
   appendDailyEntry,
+  bumpPendingAtomic,
   formatDailyEntry,
   memorySettingsOf,
   resolveMemoryPaths,
   todayKey,
   VAULT_MEMORY_PROMPT_VERSION,
-  type ResolvedMemoryPaths,
 } from "../memory/vault-memory";
+
+const REMEMBER_KINDS = new Set(["preference", "fact", "instruction", "summary"]);
 
 const RememberMemoryParameters = Type.Object({
   text: Type.String({ description: "fact, preference, or decision to remember (one concise sentence)" }),
@@ -51,30 +53,24 @@ function createRememberMemoryTool(
       if (!adapter) throw new Error("Vault adapter is unavailable.");
       const configDir = (app.vault as unknown as { configDir?: string }).configDir;
       const paths = resolveMemoryPaths(configDir, settings);
-      const kind = typeof params.kind === "string" && params.kind.trim() ? params.kind.trim() : "fact";
+      // Allowlisted kind only: the value is interpolated into a markdown bullet
+      // with no approval gate in front of this tool, so anything else (line
+      // breaks, headings, directives) could break out of the bullet line.
+      const rawKind = typeof params.kind === "string" ? params.kind.trim().toLowerCase() : "";
+      const kind = REMEMBER_KINDS.has(rawKind) ? rawKind : "fact";
       const entry = formatDailyEntry({
         date: todayKey(),
         bullets: [`[${kind}] ${text.endsWith(".") ? text : `${text}.`}`],
         note: `remembered via tool · v${VAULT_MEMORY_PROMPT_VERSION}`,
       });
       const dailyPath = await appendDailyEntry(adapter, paths, entry);
-      await bumpPending(adapter, paths);
+      await bumpPendingAtomic(adapter, paths);
       return {
         content: [{ type: "text", text: `Saved to ${dailyPath}. Distillation to MEMORY.md runs automatically.` }],
         details: { kind: "memory", dailyPath, version: VAULT_MEMORY_PROMPT_VERSION, text },
       };
     },
   };
-}
-
-async function bumpPending(adapter: DataAdapter, paths: ResolvedMemoryPaths): Promise<void> {
-  try {
-    const { readDistillState, writeDistillState } = await import("../memory/vault-memory");
-    const state = await readDistillState(adapter, paths);
-    await writeDistillState(adapter, paths, { ...state, pending: state.pending + 1, lastAttempt: new Date().toISOString() });
-  } catch {
-    // Best-effort counter; distillation still triggers on mtime fallback.
-  }
 }
 
 export function memoryPathForApp(app: App): string {

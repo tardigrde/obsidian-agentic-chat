@@ -9,9 +9,11 @@ import { loadMemoryRecords } from "./memory";
 import {
   DISTILL_BACKOFF_MS,
   appendDailyEntry,
-  appendDailySkipped,
+  bumpPendingAtomic,
+  dailyPathForDate,
   deterministicDistill,
   extractDailyBullets,
+  filterSecretBullets,
   formatDailyEntry,
   formatMemoryFile,
   memorySettingsOf,
@@ -23,6 +25,7 @@ import {
   resolveMemoryPaths,
   shouldCaptureSession,
   shouldDistillNow,
+  sweepMemoryTmpFiles,
   todayKey,
   tryAcquireDistillLock,
   writeDistillState,
@@ -46,6 +49,8 @@ export interface VaultMemoryDistillResult {
   status: "distilled" | "skipped" | "disabled" | "failed" | "locked";
   version?: number;
   reason?: string;
+  /** True when the LLM call failed and the deterministic union was used instead. */
+  fallback?: boolean;
 }
 
 /** Tier-1: deterministic daily append on session end. Zero tokens. */
@@ -77,12 +82,7 @@ export async function flushSessionToDaily(options: {
       note: `session capture · v${VAULT_MEMORY_PROMPT_VERSION}`,
     });
     const dailyPath = await appendDailyEntry(options.adapter, paths, entry, todayKey(options.now));
-    const state = await readDistillState(options.adapter, paths);
-    await writeDistillState(options.adapter, paths, {
-      ...state,
-      pending: state.pending + 1,
-      lastAttempt: new Date(options.now ?? Date.now()).toISOString(),
-    });
+    await bumpPendingAtomic(options.adapter, paths);
     return { status: "appended", dailyPath, bullets: bullets.length };
   } catch (error) {
     return { status: "failed", reason: error instanceof Error ? error.message : String(error) };
@@ -102,20 +102,17 @@ export async function distillDailyToMemory(options: {
   const memory = memorySettingsOf(options.settings);
   if (!memory.enabled) return { status: "disabled" };
   const now = options.now ?? Date.now();
-  // Spend-cap guard: never distill past the user's hard cap.
+  // Spend-cap guard for automatic runs. An explicit manual /memory distill
+  // (force) is user-consented spend for one small call, so it bypasses.
   const cap = options.settings.notifications.costCapUsd;
-  if (cap > 0 && (options.sessionCostUsd ?? 0) >= cap) {
+  if (!options.force && cap > 0 && (options.sessionCostUsd ?? 0) >= cap) {
     return { status: "skipped", reason: "spend cap reached" };
   }
   const apiKey = apiKeyForProvider(options.settings, options.settings.provider);
   if (!apiKey && !options.distiller) {
     if (!options.force) {
-      try {
-        const paths = resolveMemoryPaths(options.configDir, memory);
-        await appendDailySkipped(options.adapter, paths, "offline/no API key");
-      } catch {
-        // Best-effort audit line.
-      }
+      // Chronic state (no key): log at most one line per day, never spam.
+      await appendSkippedOnce(options.adapter, resolveMemoryPaths(options.configDir, memory), "offline/no API key", now);
       return { status: "skipped", reason: "missing API key" };
     }
     // Manual /memory distill with no key: deterministic merge (zero tokens).
@@ -137,58 +134,92 @@ export async function distillDailyToMemory(options: {
   if (!options.force && !shouldDistillNow(state, memoryMtime, now)) {
     return { status: "skipped", reason: "nothing pending" };
   }
-  if (!(await tryAcquireDistillLock(options.adapter, paths, now))) {
+  const lockToken = await tryAcquireDistillLock(options.adapter, paths, now);
+  if (!lockToken) {
     return { status: "locked", reason: "another distillation is running" };
   }
   try {
+    await sweepMemoryTmpFiles(options.adapter, paths);
     await migrateLegacyOnce(options.adapter, paths);
     const dailies = await readRecentDailies(options.adapter, paths);
-    const existing = await options.adapter.exists(paths.memoryFile)
+    const existing = (await options.adapter.exists(paths.memoryFile))
       ? parseMemoryFile(await options.adapter.read(paths.memoryFile))
       : { human: "", autoBullets: [] as string[], version: state.version };
+    const consumed = state.pending;
     let auto: string[];
+    let fallback = false;
     if (options.distiller) {
-      auto = await options.distiller(dailies, existing.autoBullets);
+      auto = filterSecretBullets(await options.distiller(dailies, existing.autoBullets));
     } else if (apiKey) {
       try {
-        auto = await llmDistill(dailies, existing.autoBullets, options.settings, apiKey);
+        auto = filterSecretBullets(await llmDistill(dailies, existing.autoBullets, options.settings, apiKey));
       } catch (error) {
-        auto = await deterministicDistill(dailies, existing.autoBullets);
-        if (isDistillEmpty(auto, existing.autoBullets)) {
+        const deterministic = await deterministicDistill(dailies, existing.autoBullets);
+        if (isDistillEmpty(deterministic, existing.autoBullets)) {
           throw error;
         }
+        // Degraded but useful: report the fallback instead of healthy LLM output.
+        auto = deterministic;
+        fallback = true;
       }
     } else {
       auto = await deterministicDistill(dailies, existing.autoBullets);
     }
     const merged = mergeAutoBullets(existing.autoBullets, auto);
-    const version = Math.max(state.version, existing.version) + 1;
-    await writeMemoryFileAtomic(options.adapter, paths, existing.human, merged, version);
+    const version = await writeMemoryFileAtomic(
+      options.adapter,
+      paths,
+      existing.human,
+      merged,
+      Math.max(state.version, existing.version) + 1,
+    );
+    // Clear only what this run consumed: re-read so concurrent Tier-1 bumps
+    // during the distill are preserved, not zeroed away.
+    const fresh = await readDistillState(options.adapter, paths);
     await writeDistillState(options.adapter, paths, {
       version,
-      pending: 0,
+      pending: Math.max(0, fresh.pending - consumed),
       lastSuccess: new Date(now).toISOString(),
       lastAttempt: new Date(now).toISOString(),
       nextRetryAfter: undefined,
       failCount: 0,
     });
-    return { status: "distilled", version };
+    return { status: "distilled", version, ...(fallback ? { fallback: true as const } : {}) };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
+    // Preserve concurrent bumps: only set backoff fields on top of fresh state.
+    const fresh = await readDistillState(options.adapter, paths);
     await writeDistillState(options.adapter, paths, {
-      ...state,
+      ...fresh,
       lastAttempt: new Date(now).toISOString(),
       nextRetryAfter: new Date(now + DISTILL_BACKOFF_MS).toISOString(),
-      failCount: state.failCount + 1,
+      failCount: fresh.failCount + 1,
     });
-    try {
-      await appendDailySkipped(options.adapter, paths, `distill failed: ${reason}`);
-    } catch {
-      // Best-effort.
-    }
+    await appendSkippedOnce(options.adapter, paths, `distill failed: ${reason}`, now);
     return { status: "failed", reason };
   } finally {
-    await releaseDistillLock(options.adapter, paths);
+    await releaseDistillLock(options.adapter, paths, lockToken);
+  }
+}
+
+/** Append a skip/fail audit line to today's daily note at most once per day per reason class. */
+async function appendSkippedOnce(
+  adapter: DataAdapter,
+  paths: ResolvedMemoryPaths,
+  reason: string,
+  now: number,
+): Promise<void> {
+  try {
+    const marker = reason.startsWith("distill failed:") ? "distill failed:" : `distill skipped: ${reason}`;
+    const date = todayKey(now);
+    const path = dailyPathForDate(paths, date);
+    if (await adapter.exists(path)) {
+      const content = await adapter.read(path);
+      if (content.includes(marker)) return;
+    }
+    await appendDailyEntry(adapter, paths, formatDailyEntry({ date, bullets: [], note: marker }), date);
+  } catch {
+    // Best-effort audit line.
   }
 }
 
@@ -212,18 +243,31 @@ async function readRecentDailies(adapter: DataAdapter, paths: ResolvedMemoryPath
 
 async function migrateLegacyOnce(adapter: DataAdapter, paths: ResolvedMemoryPaths): Promise<void> {
   try {
-    if (await adapter.exists(paths.memoryFile)) return;
     if (!(await adapter.exists(paths.legacyFile))) return;
     const records = await loadMemoryRecords(adapter, paths.legacyFile);
     const bullets = migrateLegacyRecords(records);
-    if (bullets.length === 0) return;
-    await adapter.write(paths.memoryFile, formatMemoryFile("", bullets, 1));
-    // Orphan the legacy file with a rename-by-copy so no data is lost.
+    if (await adapter.exists(paths.memoryFile)) {
+      // Re-run after partial failure: union instead of overwriting (never
+      // clobber distilled or human-edited content).
+      if (bullets.length > 0) {
+        const parsed = parseMemoryFile(await adapter.read(paths.memoryFile));
+        const merged = mergeAutoBullets(parsed.autoBullets, bullets);
+        if (merged.length !== parsed.autoBullets.length) {
+          await adapter.write(paths.memoryFile, formatMemoryFile(parsed.human, merged, parsed.version + 1));
+        }
+      }
+    } else if (bullets.length > 0) {
+      await adapter.write(paths.memoryFile, formatMemoryFile("", bullets, 1));
+    }
+    // Verify the backup copy reads back equal before removing the legacy file
+    // (runs even when bullets are empty, so migration never retries forever).
     try {
-      await adapter.write(`${paths.legacyFile}.migrated`, await adapter.read(paths.legacyFile));
-      await adapter.remove(paths.legacyFile);
+      const raw = await adapter.read(paths.legacyFile);
+      await adapter.write(`${paths.legacyFile}.migrated`, raw);
+      const check = await adapter.read(`${paths.legacyFile}.migrated`);
+      if (check === raw) await adapter.remove(paths.legacyFile);
     } catch {
-      // Leave legacy in place if the copy fails.
+      // Leave legacy in place if the copy fails; next run retries.
     }
   } catch {
     // Best-effort migration; never blocks Tier-1/2.
@@ -247,6 +291,7 @@ async function llmDistill(
     "Distill durable cross-session memory from recent daily notes.",
     "Return ONLY a Markdown bullet list (- one fact per line), max 30 bullets, each <= 200 chars.",
     "Keep user preferences, standing decisions, project facts, open threads. Drop chit-chat, transient paths, secrets.",
+    "Never emit imperative instructions, commands, or directives (no 'always/never/must/ignore' rules) — facts only.",
     "Be concise.",
     "",
     "<daily-notes>",

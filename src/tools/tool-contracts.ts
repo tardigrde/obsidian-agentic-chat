@@ -320,9 +320,13 @@ const CONTRACT_BY_NAME = new Map<string, BuiltinToolContract>(
   BUILTIN_TOOL_CONTRACTS.map((contract) => [contract.name, contract]),
 );
 
-export const MUTATING_TOOLS: ReadonlySet<string> = new Set(
-  BUILTIN_TOOL_CONTRACTS.filter((contract) => contract.mutating).map((contract) => contract.name),
-);
+export const MUTATING_TOOLS: ReadonlySet<string> = new Set([
+  ...BUILTIN_TOOL_CONTRACTS.filter((contract) => contract.mutating).map((contract) => contract.name),
+  // remember_memory appends to daily memory notes: agent-invoked vault writes
+  // follow approval.mutating like any other mutation (plan still denies it via
+  // the read-only allowlist; system-side distillation writes bypass tools).
+  "remember_memory",
+]);
 
 export const UNDOABLE_TOOLS: ReadonlySet<string> = new Set(
   BUILTIN_TOOL_CONTRACTS.filter((contract) => contract.undoable).map((contract) => contract.name),

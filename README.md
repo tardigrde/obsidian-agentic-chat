@@ -225,6 +225,7 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/skill [name] [args]` | Run a vault skill (also `/<skill-name>` directly). |
 | `/agent [name] [task]` | Delegate a task to a subagent (no arg = picker). |
 | `/undo` | Undo the last vault change the agent made. |
+| `/memory [add\|distill]` | Append a daily memory or distill dailies into MEMORY.md. |
 | `/status` | Show provider, model, mode, output style, session, MCP servers/tools. |
 | `/usage` | Show token & cost totals. |
 | `/help` | List commands. |

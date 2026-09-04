@@ -300,7 +300,8 @@ export class ChatView extends ItemView {
     if (this.memoryDistillTimer !== null) window.clearTimeout(this.memoryDistillTimer);
     this.memoryDistillTimer = null;
     try {
-      this.flushSessionMemory();
+      // Capture every tab: background tabs can hold long streamed sessions.
+      for (const tab of this.tabs) this.flushTabMemory(tab, { scheduleIdle: false });
     } catch {
       // Best-effort.
     }
@@ -1762,7 +1763,11 @@ export class ChatView extends ItemView {
     return new SessionWorkflowController({
       listSessions: () => this.service.listSessions(),
       activeSessionPath: () => this.service.getSessionInfo()?.path ?? null,
-      clearSessions: () => this.service.clearSessions(),
+      clearSessions: () => {
+        // Capture before the files are deleted (source becomes unrecoverable).
+        this.flushSessionMemory();
+        return this.service.clearSessions();
+      },
       loadSession: (path) => void this.loadSession(path),
       deleteSession: (path) => this.service.deleteSession(path),
       renameSession: (path, name) => this.service.renameSession(path, name),
@@ -2145,13 +2150,22 @@ export class ChatView extends ItemView {
   }
 
   /** Tier-1: capture the outgoing session to today's daily note (deterministic, zero tokens). */
-  private flushTabMemory(tab: { service: { getMessages: () => AgentMessage[]; getSessionInfo: () => { id: string } | undefined } }): void {
+  private flushTabMemory(
+    tab: { service: { getMessages: () => AgentMessage[]; getSessionInfo: () => { id: string } | undefined } },
+    options: { scheduleIdle?: boolean } = {},
+  ): void {
     try {
       const settings = this.plugin.settings;
       if (!memorySettingsOf(settings).enabled) return;
-      const messages = tab.service.getMessages();
+      // Snapshot synchronously: the async chain below must not observe a
+      // torn transcript if the session swaps mid-flush. Skip when this exact
+      // (session, length) was already flushed (fast tab dances double-capture).
+      const messages = [...tab.service.getMessages()];
       if (messages.length === 0) return;
       const session = tab.service.getSessionInfo();
+      const key = `${session?.id ?? "(none)"}:${messages.length}`;
+      if (this.lastFlushedMemoryKey === key) return;
+      this.lastFlushedMemoryKey = key;
       void flushSessionToDaily({
         adapter: this.app.vault.adapter,
         configDir: this.app.vault.configDir,
@@ -2160,7 +2174,7 @@ export class ChatView extends ItemView {
         sessionId: session?.id,
         modelId: undefined,
       }).then((result) => {
-        if (result.status === "appended") this.scheduleIdleDistill();
+        if (result.status === "appended" && options.scheduleIdle !== false) this.scheduleIdleDistill();
       }).catch(() => {});
     } catch {
       // Best-effort background capture; never blocks session switches.
@@ -2169,27 +2183,11 @@ export class ChatView extends ItemView {
 
   /** Tier-1: capture the outgoing session to today's daily note (deterministic, zero tokens). */
   private flushSessionMemory(): void {
-    try {
-      const settings = this.plugin.settings;
-      if (!memorySettingsOf(settings).enabled) return;
-      const messages = this.service.getMessages();
-      if (messages.length === 0) return;
-      const session = this.service.getSessionInfo();
-      const configDir = this.app.vault.configDir;
-      void flushSessionToDaily({
-        adapter: this.app.vault.adapter,
-        configDir,
-        settings,
-        messages,
-        sessionId: session?.id,
-        modelId: undefined,
-      }).then((result) => {
-        if (result.status === "appended") this.scheduleIdleDistill();
-      }).catch(() => {});
-    } catch {
-      // Best-effort background capture; never blocks session switches.
-    }
+    const tab = this.tabs[this.activeTabIndex];
+    if (tab) this.flushTabMemory(tab);
   }
+
+  private lastFlushedMemoryKey: string | null = null;
 
   private memoryDistillTimer: number | null = null;
 
@@ -2199,6 +2197,8 @@ export class ChatView extends ItemView {
       if (this.memoryDistillTimer !== null) window.clearTimeout(this.memoryDistillTimer);
       this.memoryDistillTimer = window.setTimeout(() => {
         this.memoryDistillTimer = null;
+        // The view may have closed while the timer was pending.
+        if (this.closed || this.tabs.length === 0) return;
         const settings = this.plugin.settings;
         if (!memorySettingsOf(settings).enabled) return;
         void distillDailyToMemory({
@@ -2213,9 +2213,14 @@ export class ChatView extends ItemView {
     }
   }
 
+  /** Only the first mounted view runs the startup check (second leaves/windows share it). */
+  private static startupDistillDone = false;
+
   /** Startup: consolidate pending dailies before the first prompt (async, never blocks). */
   private distillPendingOnStartup(): void {
     try {
+      if (ChatView.startupDistillDone) return;
+      ChatView.startupDistillDone = true;
       const settings = this.plugin.settings;
       if (!memorySettingsOf(settings).enabled) return;
       void distillDailyToMemory({
@@ -2438,6 +2443,8 @@ export class ChatView extends ItemView {
       await this.switchToTab(openIn);
       return;
     }
+    // Capture the outgoing session before it is swapped out.
+    this.flushSessionMemory();
     await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
   }
 

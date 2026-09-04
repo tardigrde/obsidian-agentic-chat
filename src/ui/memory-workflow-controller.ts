@@ -4,6 +4,7 @@ import type { AgenticChatSettings } from "../settings";
 import { containsSensitiveText } from "../privacy/redaction";
 import {
   appendDailyEntry,
+  bumpPendingAtomic,
   formatDailyEntry,
   memorySettingsOf,
   resolveMemoryPaths,
@@ -81,6 +82,12 @@ export class MemoryWorkflowController {
     });
     try {
       const dailyPath = await appendDailyEntry(this.options.adapter, this.paths(), entry, todayKey(this.now()));
+      // Manual entries must consolidate like any other Tier-1 input.
+      try {
+        await bumpPendingAtomic(this.options.adapter, this.paths());
+      } catch {
+        // Best-effort counter; distillation still triggers on mtime fallback.
+      }
       this.options.renderer.info("Memory", [[dailyPath, "Saved to today's daily note."]]);
     } catch (error) {
       this.options.renderer.error(`Could not save memory: ${error instanceof Error ? error.message : String(error)}`);
@@ -100,7 +107,8 @@ export class MemoryWorkflowController {
         now: this.now(),
       });
       if (result.status === "distilled") {
-        this.options.renderer.info("Memory", [["MEMORY.md", `Distilled (v${result.version}).`]]);
+        const suffix = result.fallback ? " (deterministic fallback — model call failed)" : "";
+        this.options.renderer.info("Memory", [["MEMORY.md", `Distilled (v${result.version}).${suffix}`]]);
       } else {
         this.options.renderer.info("Memory", [[result.status, result.reason ?? "Nothing distilled."]]);
       }

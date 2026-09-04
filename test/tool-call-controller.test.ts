@@ -558,3 +558,52 @@ describe("memory write boundary (H2)", () => {
     expect(decision).toBeUndefined();
   });
 });
+
+describe("memory write boundary prefix tricks (H2)", () => {
+  const memoryVault = {
+    memory: { enabled: true, store: "vault" as const, vaultFolder: "memory", modelOverride: "" },
+  };
+
+  it.each(["./memory/MEMORY.md", "@/memory/MEMORY.md", "memory/./MEMORY.md"])(
+    "denies vault writes through path prefix %s",
+    async (path) => {
+      const { controller, requests } = makeController({
+        settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, ...memoryVault },
+      });
+      const decision = await controller.beforeToolCall({
+        toolCall: { id: "call-1", name: "write" },
+        args: { path, content: "pwned" },
+      });
+      expect(decision).toEqual({ block: true, reason: expect.stringContaining("managed automatically") });
+      expect(requests).toHaveLength(0);
+    },
+  );
+
+  it("denies memory renames via newPath tricks", async () => {
+    const { controller } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, ...memoryVault },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "rename" },
+      args: { path: "Notes/a.md", newPath: "./memory/MEMORY.md" },
+    });
+    expect(decision).toEqual({ block: true, reason: expect.stringContaining("managed automatically") });
+  });
+
+  it("follows approval.mutating for remember_memory (ask prompts, deny blocks)", async () => {
+    const asked = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] }, ...memoryVault },
+      confirmToolCall: async () => ({ approved: false, remember: false }),
+    });
+    await expect(
+      asked.controller.beforeToolCall({ toolCall: { id: "call-1", name: "remember_memory" }, args: { text: "x" } }),
+    ).resolves.toEqual({ block: true, reason: "The user declined this action." });
+
+    const denied = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: { remember_memory: "deny" }, workingDirs: [] }, ...memoryVault },
+    });
+    await expect(
+      denied.controller.beforeToolCall({ toolCall: { id: "call-1", name: "remember_memory" }, args: { text: "x" } }),
+    ).resolves.toEqual({ block: true, reason: expect.stringContaining("disabled") });
+  });
+});
