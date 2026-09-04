@@ -54,6 +54,15 @@ export interface ResolvedMemoryPaths {
   store: MemoryStore;
 }
 
+/** Strip leading/trailing slashes without regex (linear, sonar-safe). */
+function stripEdgeSlashes(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === "/") start++;
+  while (end > start && value[end - 1] === "/") end--;
+  return value.slice(start, end);
+}
+
 export function healVaultMemorySettings(stored: Partial<VaultMemorySettings> | null | undefined): VaultMemorySettings {
   const store = stored?.store === "vault" ? "vault" : "plugin";
   return {
@@ -73,7 +82,7 @@ export function healVaultMemorySettings(stored: Partial<VaultMemorySettings> | n
 export function healVaultFolder(raw: unknown): string {
   const fallback = DEFAULT_VAULT_MEMORY_SETTINGS.vaultFolder;
   if (typeof raw !== "string") return fallback;
-  const cleaned = raw.trim().replace(/^\/+|\/+$/g, "");
+  const cleaned = stripEdgeSlashes(raw.trim());
   if (!cleaned || cleaned.length > 120) return fallback;
   const segs = cleaned.split("/").filter(Boolean);
   if (segs.length === 0 || segs.length > 5) return fallback;
@@ -167,8 +176,10 @@ export function formatDailyEntry(options: {
   bullets: string[];
   note?: string;
 }): string {
+  const sessionSuffix = options.sessionId ? ` · ${options.sessionId}` : "";
+  const modelSuffix = options.model ? ` · ${options.model}` : "";
   const lines = [
-    `## ${options.date}${options.sessionId ? ` · ${options.sessionId}` : ""}`,
+    `## ${options.date}${sessionSuffix}`,
     "",
     ...options.bullets.map((bullet) => `- ${bullet}`),
   ];
@@ -177,7 +188,7 @@ export function formatDailyEntry(options: {
   }
   lines.push(
     "",
-    `<!-- v${VAULT_MEMORY_PROMPT_VERSION}${options.model ? ` · ${options.model}` : ""} -->`,
+    `<!-- v${VAULT_MEMORY_PROMPT_VERSION}${modelSuffix} -->`,
     "",
   );
   return `${lines.join("\n")}`;
@@ -285,7 +296,18 @@ export function mergeAutoBullets(existing: readonly string[], incoming: readonly
 }
 
 export function normalizeBullet(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "");
+  return stripTrailingPunct(value.toLowerCase().replace(/\s+/g, " ").trim());
+}
+
+/** Strip trailing `.`/`!`/`?` without regex (linear, sonar-safe). */
+function stripTrailingPunct(value: string): string {
+  let end = value.length;
+  while (end > 0) {
+    const last = value[end - 1];
+    if (last !== "." && last !== "!" && last !== "?") break;
+    end--;
+  }
+  return value.slice(0, end);
 }
 
 function sentence(value: string): string {
@@ -354,7 +376,7 @@ export async function tryAcquireDistillLock(adapter: DataAdapter, paths: Resolve
         const lockedAt = Date.parse((iso ?? "").trim());
         if (owner?.trim() && Number.isFinite(lockedAt) && now - lockedAt < LOCK_STALE_MS) return null;
       }
-      const token = `${now.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      const token = `${now.toString(36)}-${randomTokenHex(8)}`;
       await adapter.write(paths.lockFile, `${new Date(now).toISOString()}\n${token}`);
       const check = await adapter.read(paths.lockFile);
       return check.split("\n")[1]?.trim() === token ? token : null;
@@ -517,6 +539,20 @@ export async function ensureDir(adapter: DataAdapter, dir: string): Promise<void
 /** In-process mutex serializing memory read-modify-write sequences per window. */
 let memoryMutex: Promise<void> = Promise.resolve();
 
+/** Unpredictable hex for distill-lock ownership (crypto first, same pattern as error-classifier). */
+function randomTokenHex(chars: number): string {
+  try {
+    const cryptoObj = typeof crypto !== "undefined" ? crypto : undefined;
+    if (cryptoObj?.getRandomValues) {
+      const bytes = new Uint8Array(Math.ceil(chars / 2));
+      cryptoObj.getRandomValues(bytes);
+      return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, chars);
+    }
+  } catch {
+    // fall through
+  }
+  return Math.random().toString(36).slice(2, 2 + chars); // NOSONAR - lock token uniqueness only; crypto is primary
+}
 export async function withMemoryMutex<T>(fn: () => Promise<T>): Promise<T> {
   const run = memoryMutex.then(fn, fn);
   memoryMutex = run.then(

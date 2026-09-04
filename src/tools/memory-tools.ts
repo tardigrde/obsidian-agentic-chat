@@ -58,9 +58,10 @@ function createRememberMemoryTool(
       // breaks, headings, directives) could break out of the bullet line.
       const rawKind = typeof params.kind === "string" ? params.kind.trim().toLowerCase() : "";
       const kind = REMEMBER_KINDS.has(rawKind) ? rawKind : "fact";
+      const sentence = text.endsWith(".") ? text : `${text}.`;
       const entry = formatDailyEntry({
         date: todayKey(),
-        bullets: [`[${kind}] ${text.endsWith(".") ? text : `${text}.`}`],
+        bullets: [`[${kind}] ${sentence}`],
         note: `remembered via tool · v${VAULT_MEMORY_PROMPT_VERSION}`,
       });
       const dailyPath = await appendDailyEntry(adapter, paths, entry);

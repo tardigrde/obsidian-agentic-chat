@@ -90,7 +90,25 @@ export async function flushSessionToDaily(options: {
 }
 
 /** Tier-2: consolidate recent dailies into MEMORY.md. LLM when available, deterministic fallback. */
-export async function distillDailyToMemory(options: {
+export async function distillDailyToMemory(options: DistillOptions): Promise<VaultMemoryDistillResult> {
+  const memory = memorySettingsOf(options.settings);
+  if (!memory.enabled) return { status: "disabled" };
+  const now = options.now ?? Date.now();
+  const paths = resolveMemoryPaths(options.configDir, memory);
+  const guard = await checkDistillGuards(options, paths, now);
+  if (guard) return guard;
+  const lockToken = await tryAcquireDistillLock(options.adapter, paths, now);
+  if (!lockToken) {
+    return { status: "locked", reason: "another distillation is running" };
+  }
+  try {
+    return await runLockedDistill(options, paths, now);
+  } finally {
+    await releaseDistillLock(options.adapter, paths, lockToken);
+  }
+}
+
+interface DistillOptions {
   adapter: DataAdapter;
   configDir?: string;
   settings: AgenticChatSettings;
@@ -98,10 +116,17 @@ export async function distillDailyToMemory(options: {
   force?: boolean;
   distiller?: DistillFn;
   now?: number;
-}): Promise<VaultMemoryDistillResult> {
-  const memory = memorySettingsOf(options.settings);
-  if (!memory.enabled) return { status: "disabled" };
-  const now = options.now ?? Date.now();
+}
+
+/**
+ * Pre-lock gates: spend cap, API key, failure backoff, pending/staleness.
+ * Returns a skip result, or null when distillation may proceed.
+ */
+async function checkDistillGuards(
+  options: DistillOptions,
+  paths: ResolvedMemoryPaths,
+  now: number,
+): Promise<VaultMemoryDistillResult | null> {
   // Spend-cap guard for automatic runs. An explicit manual /memory distill
   // (force) is user-consented spend for one small call, so it bypasses.
   const cap = options.settings.notifications.costCapUsd;
@@ -109,62 +134,48 @@ export async function distillDailyToMemory(options: {
     return { status: "skipped", reason: "spend cap reached" };
   }
   const apiKey = apiKeyForProvider(options.settings, options.settings.provider);
-  if (!apiKey && !options.distiller) {
-    if (!options.force) {
-      // Chronic state (no key): log at most one line per day, never spam.
-      await appendSkippedOnce(options.adapter, resolveMemoryPaths(options.configDir, memory), "offline/no API key", now);
-      return { status: "skipped", reason: "missing API key" };
-    }
-    // Manual /memory distill with no key: deterministic merge (zero tokens).
+  if (!apiKey && !options.distiller && !options.force) {
+    // Chronic state (no key): log at most one line per day, never spam.
+    // (Manual force with no key falls through to the deterministic merge.)
+    await appendSkippedOnce(options.adapter, paths, "offline/no API key", now);
+    return { status: "skipped", reason: "missing API key" };
   }
-  const paths = resolveMemoryPaths(options.configDir, memory);
   const state = await readDistillState(options.adapter, paths);
   if (state.nextRetryAfter && Date.parse(state.nextRetryAfter) > now && !options.force) {
     return { status: "skipped", reason: "in backoff" };
   }
-  let memoryMtime: number | null = null;
-  try {
-    if (await options.adapter.exists(paths.memoryFile)) {
-      const stat = await options.adapter.stat(paths.memoryFile);
-      memoryMtime = stat?.mtime ?? now;
-    }
-  } catch {
-    memoryMtime = null;
-  }
-  if (!options.force && !shouldDistillNow(state, memoryMtime, now)) {
+  if (!options.force && !shouldDistillNow(state, await memoryMtime(options.adapter, paths, now), now)) {
     return { status: "skipped", reason: "nothing pending" };
   }
-  const lockToken = await tryAcquireDistillLock(options.adapter, paths, now);
-  if (!lockToken) {
-    return { status: "locked", reason: "another distillation is running" };
+  return null;
+}
+
+async function memoryMtime(adapter: DataAdapter, paths: ResolvedMemoryPaths, now: number): Promise<number | null> {
+  try {
+    if (await adapter.exists(paths.memoryFile)) {
+      return (await adapter.stat(paths.memoryFile))?.mtime ?? now;
+    }
+    return null;
+  } catch {
+    return null;
   }
+}
+
+async function runLockedDistill(
+  options: DistillOptions,
+  paths: ResolvedMemoryPaths,
+  now: number,
+): Promise<VaultMemoryDistillResult> {
   try {
     await sweepMemoryTmpFiles(options.adapter, paths);
     await migrateLegacyOnce(options.adapter, paths);
+    const state = await readDistillState(options.adapter, paths);
+    const consumed = state.pending;
     const dailies = await readRecentDailies(options.adapter, paths);
     const existing = (await options.adapter.exists(paths.memoryFile))
       ? parseMemoryFile(await options.adapter.read(paths.memoryFile))
       : { human: "", autoBullets: [] as string[], version: state.version };
-    const consumed = state.pending;
-    let auto: string[];
-    let fallback = false;
-    if (options.distiller) {
-      auto = filterSecretBullets(await options.distiller(dailies, existing.autoBullets));
-    } else if (apiKey) {
-      try {
-        auto = filterSecretBullets(await llmDistill(dailies, existing.autoBullets, options.settings, apiKey));
-      } catch (error) {
-        const deterministic = await deterministicDistill(dailies, existing.autoBullets);
-        if (isDistillEmpty(deterministic, existing.autoBullets)) {
-          throw error;
-        }
-        // Degraded but useful: report the fallback instead of healthy LLM output.
-        auto = deterministic;
-        fallback = true;
-      }
-    } else {
-      auto = await deterministicDistill(dailies, existing.autoBullets);
-    }
+    const { auto, fallback } = await computeDistilledBullets(options, dailies, existing.autoBullets);
     const merged = mergeAutoBullets(existing.autoBullets, auto);
     const version = await writeMemoryFileAtomic(
       options.adapter,
@@ -197,9 +208,31 @@ export async function distillDailyToMemory(options: {
     });
     await appendSkippedOnce(options.adapter, paths, `distill failed: ${reason}`, now);
     return { status: "failed", reason };
-  } finally {
-    await releaseDistillLock(options.adapter, paths, lockToken);
   }
+}
+
+async function computeDistilledBullets(
+  options: DistillOptions,
+  dailies: string[],
+  oldAuto: string[],
+): Promise<{ auto: string[]; fallback: boolean }> {
+  const apiKey = apiKeyForProvider(options.settings, options.settings.provider);
+  if (options.distiller) {
+    return { auto: filterSecretBullets(await options.distiller(dailies, oldAuto)), fallback: false };
+  }
+  if (apiKey) {
+    try {
+      return { auto: filterSecretBullets(await llmDistill(dailies, oldAuto, options.settings, apiKey)), fallback: false };
+    } catch (error) {
+      const deterministic = await deterministicDistill(dailies, oldAuto);
+      if (isDistillEmpty(deterministic, oldAuto)) {
+        throw error;
+      }
+      // Degraded but useful: report the fallback instead of healthy LLM output.
+      return { auto: deterministic, fallback: true };
+    }
+  }
+  return { auto: await deterministicDistill(dailies, oldAuto), fallback: false };
 }
 
 /** Append a skip/fail audit line to today's daily note at most once per day per reason class. */

@@ -199,27 +199,8 @@ export class AgentToolCallController {
 
   private async gateToolCall(toolCallId: string, toolName: string, args: unknown): Promise<ToolGateDecision> {
     const settings = this.getSettings();
-    // H2: memory files are system-managed. Only the distillation path (direct
-    // adapter writes, not tools) may touch them — deny generic vault writes
-    // even in YOLO, for parent and subagent calls alike.
-    if (toolName !== "remember_memory") {
-      const memory = memorySettingsOf(settings as { memory?: import("../memory/vault-memory").VaultMemorySettings });
-      if (memory.enabled) {
-        const configDir = (this.app.vault as unknown as { configDir?: string }).configDir;
-        const paths = resolveMemoryPaths(configDir, memory);
-        // Match the same normalization the vault tools apply (normalizeVaultPath
-        // strips `@/`, collapses `./`, converts backslashes): compare both the
-        // raw and normalized forms so prefix tricks like `./memory/...` or
-        // `@/memory/...` cannot slip past. Raw is kept too because normalized
-        // helpers drop plugin-internal dot-paths that must still match.
-        const targets = memoryTargetPaths(args);
-        if (targets.some((target) => isMemoryPath(target, paths))) {
-          const reason = `Memory files under "${paths.dir}" are managed automatically (daily notes + distilled MEMORY.md). The agent cannot write them directly — use remember_memory for daily notes; distillation owns MEMORY.md.`;
-          await this.auditApproval({ decision: "denied", toolCallId, toolName, label: this.labelForTool(toolName), args, reason });
-          return { block: true, reason };
-        }
-      }
-    }
+    const memoryBlock = await this.memoryWriteBoundary(toolCallId, toolName, args);
+    if (memoryBlock) return memoryBlock;
     const modeDecision = resolveModePolicy(settings.mode, settings.approval, toolName);
     if (modeDecision.policy === "deny" && modeDecision.reason) {
       await this.auditApproval({ decision: "denied", toolCallId, toolName, label: this.labelForTool(toolName), args, reason: modeDecision.reason });
@@ -276,6 +257,42 @@ export class AgentToolCallController {
     return choice.approved
       ? undefined
       : { block: true, reason: choice.reason ?? "The user declined this action." };
+  }
+
+  /**
+   * H2: memory files are system-managed. Only the distillation path (direct
+   * adapter writes, not tools) may touch them — deny generic vault writes
+   * even in YOLO, for parent and subagent calls alike.
+   */
+  private async memoryWriteBoundary(
+    toolCallId: string,
+    toolName: string,
+    args: unknown,
+  ): Promise<ToolGateDecision> {
+    if (toolName === "remember_memory") return undefined;
+    const settings = this.getSettings();
+    const memory = memorySettingsOf(settings as { memory?: import("../memory/vault-memory").VaultMemorySettings });
+    if (!memory.enabled) return undefined;
+    const configDir = (this.app.vault as unknown as { configDir?: string }).configDir;
+    const paths = resolveMemoryPaths(configDir, memory);
+    // Match the same normalization the vault tools apply (normalizeVaultPath
+    // strips `@/`, collapses `./`, converts backslashes): compare both the
+    // raw and normalized forms so prefix tricks like `./memory/...` or
+    // `@/memory/...` cannot slip past. Raw is kept too because normalized
+    // helpers drop plugin-internal dot-paths that must still match.
+    if (!memoryTargetPaths(args).some((target) => isMemoryPath(target, paths))) return undefined;
+    const reason =
+      `Memory files under "${paths.dir}" are managed automatically (daily notes + distilled MEMORY.md). ` +
+      "The agent cannot write them directly — use remember_memory for daily notes; distillation owns MEMORY.md.";
+    await this.auditApproval({
+      decision: "denied",
+      toolCallId,
+      toolName,
+      label: this.labelForTool(toolName),
+      args,
+      reason,
+    });
+    return { block: true, reason };
   }
 
   private async gateMcpToolCall(
