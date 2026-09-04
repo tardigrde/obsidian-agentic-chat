@@ -31,7 +31,6 @@ import {
   loadMemoryOverlay,
   memorySettingsOf,
   resolveMemoryPaths,
-  type VaultMemorySettings,
 } from "../memory/vault-memory";
 import {
   type AgentRole,
@@ -249,10 +248,9 @@ async function loadVaultMemoryOverlay(
   app: App,
   settings: AgenticChatSettings,
 ): Promise<string> {
-  const memory = memorySettingsOf(settings as { memory?: VaultMemorySettings });
+  const memory = memorySettingsOf(settings);
   if (!memory.enabled) return "";
-  const configDir = (app.vault as unknown as { configDir?: string }).configDir;
-  return loadMemoryOverlay(adapter, resolveMemoryPaths(configDir, memory), true);
+  return loadMemoryOverlay(adapter, resolveMemoryPaths(app.vault.configDir, memory), true);
 }
 
 async function loadRuntimeSkills(

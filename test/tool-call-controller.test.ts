@@ -51,11 +51,13 @@ function makeController(
 function fakeApp(): { app: App; vault: FakeVault } {
   const vault = new FakeVault() as FakeVault & {
     getFolderByPath: (path: string) => TFolder | null;
+    configDir: string;
   };
   vault.getFolderByPath = (path) => {
     const entry = vault.getAbstractFileByPath(path);
     return entry instanceof TFolder ? entry : null;
   };
+  vault.configDir = ".obsidian";
   return {
     app: {
       vault,

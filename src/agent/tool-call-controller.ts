@@ -271,10 +271,9 @@ export class AgentToolCallController {
   ): Promise<ToolGateDecision> {
     if (toolName === "remember_memory") return undefined;
     const settings = this.getSettings();
-    const memory = memorySettingsOf(settings as { memory?: import("../memory/vault-memory").VaultMemorySettings });
+    const memory = memorySettingsOf(settings);
     if (!memory.enabled) return undefined;
-    const configDir = (this.app.vault as unknown as { configDir?: string }).configDir;
-    const paths = resolveMemoryPaths(configDir, memory);
+    const paths = resolveMemoryPaths(this.app.vault.configDir, memory);
     // Match the same normalization the vault tools apply (normalizeVaultPath
     // strips `@/`, collapses `./`, converts backslashes): compare both the
     // raw and normalized forms so prefix tricks like `./memory/...` or

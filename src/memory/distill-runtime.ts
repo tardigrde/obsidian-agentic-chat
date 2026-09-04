@@ -56,7 +56,7 @@ export interface VaultMemoryDistillResult {
 /** Tier-1: deterministic daily append on session end. Zero tokens. */
 export async function flushSessionToDaily(options: {
   adapter: DataAdapter;
-  configDir?: string;
+  configDir: string;
   settings: AgenticChatSettings;
   messages: readonly AgentMessage[];
   sessionId?: string;
@@ -110,7 +110,7 @@ export async function distillDailyToMemory(options: DistillOptions): Promise<Vau
 
 interface DistillOptions {
   adapter: DataAdapter;
-  configDir?: string;
+  configDir: string;
   settings: AgenticChatSettings;
   sessionCostUsd?: number;
   force?: boolean;
@@ -336,7 +336,7 @@ async function llmDistill(
     "</existing-memory>",
   ].join("\n");
   const streamFn = sharedAgentModels();
-  const responseStream = await streamFn.streamSimple(
+  const responseStream = streamFn.streamSimple(
     model,
     {
       systemPrompt: "You distill durable memory. Output only a Markdown bullet list.",

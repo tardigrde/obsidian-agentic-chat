@@ -51,8 +51,7 @@ function createRememberMemoryTool(
       if (!text) throw new Error("text is required.");
       if (containsSensitiveText(text)) throw new Error("Memory text looks like it may contain a secret. Not saved.");
       if (!adapter) throw new Error("Vault adapter is unavailable.");
-      const configDir = (app.vault as unknown as { configDir?: string }).configDir;
-      const paths = resolveMemoryPaths(configDir, settings);
+      const paths = resolveMemoryPaths(app.vault.configDir, settings);
       // Allowlisted kind only: the value is interpolated into a markdown bullet
       // with no approval gate in front of this tool, so anything else (line
       // breaks, headings, directives) could break out of the bullet line.

@@ -18,7 +18,7 @@ import type { WorkflowRenderer } from "./workflow-renderer";
 export interface MemoryWorkflowControllerOptions {
   adapter: DataAdapter;
   getSettings: () => AgenticChatSettings;
-  configDir?: string;
+  configDir: string;
   /** Legacy/unused by add|distill; kept optional so old callers still typecheck. */
   messages?: () => readonly AgentMessage[];
   sessionSource?: () => string | undefined;

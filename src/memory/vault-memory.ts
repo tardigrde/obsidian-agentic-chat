@@ -87,15 +87,14 @@ export function healVaultFolder(raw: unknown): string {
   const segs = cleaned.split("/").filter(Boolean);
   if (segs.length === 0 || segs.length > 5) return fallback;
   if (segs.some((seg) => seg === "." || seg === ".." || seg.includes("\\") || seg.includes(":"))) return fallback;
-  if (segs[0]?.toLowerCase() === ".obsidian") return fallback;
+  // Vault-store memory must live in a visible folder: leading dot-folders are
+  // hidden (and collide with the config dir) — the plugin store covers that use.
+  if (segs[0]?.startsWith(".")) return fallback;
   return cleaned;
 }
 
-export function resolveMemoryPaths(
-  configDir: string | undefined,
-  settings: VaultMemorySettings,
-): ResolvedMemoryPaths {
-  const pluginDir = `${configDir ?? ".obsidian"}/plugins/${PLUGIN_ID}/memory`;
+export function resolveMemoryPaths(configDir: string, settings: VaultMemorySettings): ResolvedMemoryPaths {
+  const pluginDir = `${configDir}/plugins/${PLUGIN_ID}/memory`;
   const dir = settings.store === "vault" ? settings.vaultFolder || "memory" : pluginDir;
   return {
     dir,
