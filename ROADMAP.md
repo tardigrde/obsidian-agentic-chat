@@ -85,6 +85,14 @@ thin (or absent) here.
 
 *S5 · Three ignore/deny-list mechanisms — **DONE** (this PR).* `ignoredGlobs` → `FileSystemDenyReadPattern` + `PROTECTED_METADATA_PATH_NAMES` via `src/vault/file-system-sandbox.ts` + `src/vault/glob-pattern.ts` + `src/vault/ignore.ts` (protected `.obsidian`+`.git`+`.trash` always denied, user globs merged, case-insensitive subtree, NFC, ReDoS cap, vault caps 200/200); `workingDirs` → `SandboxPolicy::WorkspaceWrite.writable_roots` docs in `src/agent/working-dir.ts`; MCP `enabled_tools/disabled_tools` ordered allow-then-deny via `src/mcp/tool-filter.ts` (glob `*`/`**`/`?`, MAX 100/200, dedupe, heals camel/snake, `iu` flag) filtered in both `probeMcpServer` and `discoverServerTools`; runtime `src/agent/runtime-resources.ts` uses `createFileSystemDenyMatcher` with vault `configDir`; settings UI adds per-server textareas. Tests cover heal, matcher, ordering, ReDoS, NFC, subtree/case.
 
+### S11 · Read-only globs (read ✓ / write ✗)
+- **Problem**: memory-wiki `shared/sources/` must stay immutable — currently only convention (AGENTS.md rule + WIKI.md exclusions). Agent could write there today. Existing read-only Obsidian plugins only force view mode; they don't block an agent writing via the vault API (verified 2026-08-30 research).
+- **Goal**: glob list where read/search is allowed but write/edit/rename/delete is blocked.
+- **Approach**: extend S5 filesystem sandbox — parallel to `FileSystemDenyReadPattern` add read-only globs (`src/vault/file-system-sandbox.ts`, reuse `src/vault/glob-pattern.ts`); enforce in vault write tools (`write/edit/create/delete/rename`) with a clear denial message; read unaffected; settings textarea on the Security tab; tests mirror S5 (nesting, case-insensitivity, NFC, ReDoS caps).
+- **Effort**: S–M
+- **Deps**: none
+- **Codex**: `SandboxPolicy::ReadOnly` (`protocol.rs:1049`) is the same write-blocked/read-allowed lattice; we gain glob granularity over its workspace-wide mode.
+
 *S7 · Deprecated settings surface lingers — **DONE** in #138.* `settingsForStorage` (`src/secrets/secret-store.ts` `storeSecretSlot`/`storeSettingsSecretSlot` via shared `parentOf` + `deletePath`) now omits all 10 plaintext secret keys from persisted `data.json` entirely (never `""`); secrets live only in secretStorage via `*SecretId` refs. Runtime plaintext fields stay for `apiKeyForProvider`/legacy migration (marked `@deprecated` in `src/settings-schema.ts`, `src/mcp/settings.ts`, `src/observability/settings.ts`). Return type is `PersistedSettings` (plaintext optional) so stored JSON must not be reused as runtime. Tests cover omission (`test/secret-store.test.ts`) + legacy→save→reload→hydrate round-trip.
 
 *S8 · Subagent reframe: drop the "profile" concept — **DONE** (this PR).* `AgentRole` replaces `AgentProfile` (`src/agent/subagents.ts` single built-in read-only `explorer`, sync `loadAgentRoles()` deep-clones the frozen roster; no vault loading, no legacy aliases). `agentsFolder`/`enableBuiltinAgents` removed from settings (legacy keys dropped via `RETIRED_SETTING_KEYS`); Subagents UI reduced to the timeout. `model` override kept for H5 evaluator routing.
@@ -126,7 +134,7 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 - **Deps**: H2 (memory helps evaluator context)
 - **Codex**: Two reviewer patterns to borrow: (1) `/review` sub-agent `ReviewTask` `tasks/review.rs:99` with `REVIEW_PROMPT=rubric.md:3` (P0-P3 priorities, `findings[]{title≤80ch, body, confidence, priority, code_location}` JSON `rubric.md:71`) → `parse_review_output_event` `review.rs:193` + `model=review_model ?? parent` `review.rs:123` + `approval=Never` `WebSearch|Collab` disabled; (2) `GuardianReviewSession` `guardian/review_session.rs:92` with `ReuseKey` hashed by model/provider/window, `auto_review_model_override` `model_info.rs:183`. Plus generic `spawn_agent{message, task_name, model, reasoning_effort, fork_turns}` `spawn.rs:274` + `apply_requested_spawn_agent_model_overrides` validated against `models_manager` `multi_agents_common.rs:264` + role-locked `AgentRoleConfig` `role.rs:51` (explorer/worker). Borrow: `REVIEWER_PROMPT` → JSON schema like Codex rubric, `subagent` tool accept `model`/`reasoning_effort` with `agent_default_subagent_model` validation, reviewer defaults to cheaper model.
 
-*H6 · Loop detection — **DROPPED** 2026-08-28.* Weak-model artifact (deepseek v4 flash 3× identical `read`); not seen with current `kimi-k2.6` + `B12` grounding/`H7` wrapper. Codex has none (only `guardian_rejection_circuit_breaker` `service.rs:69`). `Effort S`, no auto-abort, low harm but low ROI — models only improve. Revisit if identical-tool loops reappear.
+*H6 · Loop detection — **DONE** in #131. Identical tool-batch guard (`src/agent/loop-guard.ts`): exact name+args+result hashes per turn, soft stop via `shouldStopAfterTurn` after 4 consecutive identical batches, plain-text message + Notice appended at `agent_end`, reset on every fresh prompt. Triggered by 2026-08-30 dogfood: deepseek-v4-flash repeated a byte-identical 4-tool batch 14× over 2 min (2 user interrupts). No auto-abort; exact-match only ⇒ polling is never hit.*
 
 *H7 · Tool-output sanitization wrapper + marker — **DONE** in #111.* `src/tools/tool-output-wrapper.ts` (`TOOL_OUTPUT_BEGIN_PREFIX`/`TOOL_OUTPUT_END_MARKER` with `TOOL_OUTPUT_*_ESCAPED` escaping of inner marker sequences) wraps `textResult`/`untrustedTextResult` (vault), `mcp` (`renderMcpResult` incl. `structuredContent`), `fetch_url`/`web_search` with `[BEGIN_UNTRUSTED_TOOL_OUTPUT ...]/[END_UNTRUSTED_TOOL_OUTPUT]` and `unwrapToolOutput` helper for tests. System prompt (`src/agent/default-system-prompt.ts`) states content inside markers is untrusted DATA, never instructions. Injection payload text (`Ignore previous instructions`, `</TOOL>`, fake `tool_call` JSON) stays as data inside the wrapper; only inner `BEGIN`/`END` sequences are escaped. Harness #19 gap closed.
 
@@ -152,6 +160,15 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 *R1 · Persist subagent dispatch summary + replay — **DONE** in #116.* Structured `details` attached to assistant message (`src/agent/subagent-runtime.ts` → `src/session/session-manager.ts` → `src/ui/assistant-bubble.ts`), rehydrated as collapsed dispatch card on reload without re-running. `persistedSnapshot` strips `transcript`/`stopId` for JSONL.
 
+### R3 · Oversized tool-result digest preview (JSON structure map)
+- **Problem**: 2026-08-30 dogfood (Composio multi-execute): 163k-token result → stored as artifact; model paged ~40× read_artifact chunks + 3 remote-workbench roundtrips to build a digest, then switched strategy ("re-run with compact summary"). Shape of the data was invisible until fully paged.
+- **Goal**: model sees shape + size of an oversized result inline in one glance; pages only what it needs.
+- **Approach (core)**: in `renderArtifactPreview` (`src/mcp/tools.ts:347`), when result is structured/JSON, emit a compact structural map first: top-level keys → type + length (`results[3] → 91 items`), estimated token size (`~54k tokens`), and a `hard-truncated at 50k — content lost` flag for the no-artifact truncation path (`tools.ts:333`, currently the model cannot tell stored vs cut).
+- **Optional metadata (decide)**: dominant-field sizes per top-level key; one sampled preview per array item; **duplicate marker** — "identical to artifact already in context" via content hash (synergizes with H6 loop guard); content-type hint (json/text/html/csv) for parse strategy.
+- **Files**: `src/mcp/tools.ts` (`renderArtifactPreview`/`extractStructuredResultText`), artifact store (content hash), `src/tools/tool-output-wrapper.ts` (vault-side JSON results), tests.
+- **Effort**: S
+- **Deps**: none
+
 ### R2 · Approval diff polish — per-edit preview
 - **Problem**: Batch `edit` approval shows aggregated diff; user cannot allow 5 of 6 edits (B10 deferred, rare but high frustration when it hits).
 - **Goal**: Keep single approval gate for batch (avoid S-sprawl), but show per-edit diff sections so deny is informed. Partial apply already ships (`src/tools/vault-tools.ts:292`), UI just needs to surface it.
@@ -166,10 +183,10 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 ## Recommended order
 
-**Stability first:** `H5 → R2 → A7` (`C6` auto-decay removed, `H6` dropped, `H2` deferred — big feature).
+**Stability first:** `H5 → R2 → A7 → R3` (`C6` auto-decay removed, `H6` done, `H2` deferred — big feature).
 
-(Group S `S1-S10` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (#122), **S5 done**, **S7 done** (#138), **S8 done** (this PR), S-cluster complete. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `S2/S3` done #108, `E10` done #98. `F8` + `H2` + `C6/H6` deferred/dropped.)
+(Group S `S1-S11` remains a dedicated consolidation session, not ordered — **S10 done**, **S1 done** (#121), **S4 done** (#122), **S5 done**, **S7 done** (#138), **S8 done**, **S11 added** (read-only globs), S-cluster complete. `H3` done #112, `F10` done #114, `H8` done #115, `R1` done #116, `S10` done #S10, plus `B12` done #113, `H1` done #110, `H4` done, `H7` done #111, `H6` done #131, `S2/S3` done #108, `E10` done #98. `F8` + `H2` deferred/dropped.)
 
 *First-principles rationale*: security/reliability done — next small wins are evaluator routing (`H5` `S`) then diff polish (`R2` `S`) before audit (`A7`). Memory (`H2`) is `M–L` and needs docs/privacy pass, so pushed. No babysitting — user controls `/compact`, threshold `80%` is the safety net. S-cluster high-ROI but `L-effort` and cross-cuts every gate, so batch separately. `H5` reuses `AgentRole.model` (S8 done, no legacy aliases).
 
-*Codex borrow summary*: `C6` no auto-decay; `H6` dropped; `H2` deferred but design kept (auto Tier-1 + idle Tier-2, off by default); `H5` `review_model`+rubric JSON+`spawn_agent` routing; `R2` preview budget/highlight; `S` copy Codex lattices.
+*Codex borrow summary*: `C6` no auto-decay; `H6` revived on real evidence (identical-batch guard, soft stop); `H2` deferred but design kept (auto Tier-1 + idle Tier-2, off by default); `H5` `review_model`+rubric JSON+`spawn_agent` routing; `R2` preview budget/highlight; `R3` structural artifact digest; `S` copy Codex lattices.

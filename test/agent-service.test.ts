@@ -567,6 +567,45 @@ describe("AgentService", () => {
     expect(resultText).toMatch(/read-only/i);
   });
 
+  it("loop guard soft-stops after 4 identical scripted tool batches and appends a plain-text message", async () => {
+    const toolTurn: { content: AssistantMessage["content"]; stopReason: "stop" | "toolUse" } = {
+      content: [{ type: "toolCall", id: "call-loop", name: "write", arguments: { path: "loop.md", content: "x" } }],
+      stopReason: "toolUse",
+    };
+    // The 5th scripted turn ("final answer") must never be requested: the guard
+    // stops the run after the 4th identical batch.
+    const streamFn = scriptedStreamFn([
+      toolTurn,
+      toolTurn,
+      toolTurn,
+      toolTurn,
+      { content: [{ type: "text", text: "final answer" }], stopReason: "stop" },
+    ]);
+    const { service, settings, adapter } = makeService(streamFn, async () => ({ approved: true, remember: false }));
+    // Per-tool deny blocks every scripted write without a modal; the denial
+    // text is identical each time, so the batches hash identically.
+    settings.approval = { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] };
+    await service.sendPrompt("Loop please");
+
+    const assistants = service.getMessages().filter((message) => message.role === "assistant");
+    // 4 scripted tool turns + loop-guard note appended to live context so retry sees why it stopped.
+    expect(assistants).toHaveLength(5);
+    expect(JSON.stringify(assistants[4].content)).toMatch(/Loop guard.*write/);
+    // The scripted 5th turn was never consumed — the run ended at the guard.
+    expect(
+      service.getMessages().some((message) => "content" in message && JSON.stringify(message.content).includes("final answer")),
+    ).toBe(false);
+    // The guard message is persisted with the session and survives reload.
+    const entries = parseSessionEntries(await adapter.read(service.getSessionInfo()?.path ?? ""));
+    const assistantMessages = entries
+      .filter((entry) => entry.type === "message")
+      .map((entry) => entry.message)
+      .filter((message) => message.role === "assistant")
+      .map((message) => JSON.stringify(message.content));
+    expect(assistantMessages).toHaveLength(5); // 4 scripted tool turns + loop-guard message
+    expect(assistantMessages[4]).toMatch(/Loop guard/);
+  });
+
   it("yolo mode auto-approves mutating tools, but an explicit per-tool deny still wins", async () => {
     const streamFn = scriptedStreamFn([
       { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "note.md", content: "hi" } }], stopReason: "toolUse" },

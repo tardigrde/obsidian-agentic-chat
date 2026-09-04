@@ -7,6 +7,7 @@ import type { AgentStreamRuntime } from "./stream-runtime";
 import type { AgentSubagentRuntime } from "./subagent-runtime";
 import type { AgentToolCallController } from "./tool-call-controller";
 import type { AgentTurnConfiguration } from "./turn-configuration";
+import type { AgentLoopGuard } from "./loop-guard";
 
 export interface AgentParentConfigurationOptions {
   getSettings: () => AgenticChatSettings;
@@ -18,6 +19,7 @@ export interface AgentParentConfigurationOptions {
   >;
   subagents: Pick<AgentSubagentRuntime, "createTool">;
   toolCalls: Pick<AgentToolCallController, "afterToolCall" | "beforeToolCall">;
+  loopGuard: Pick<AgentLoopGuard, "shouldStopAfterTurn">;
   sessions: Pick<AgentActiveSessionRuntime, "ensureConfiguration" | "info">;
   onEvent: (event: AgentEvent) => Promise<void> | void;
 }
@@ -50,6 +52,7 @@ export class AgentParentConfigurationRuntime {
       getApiKey: (provider) => apiKeyForProvider(this.options.getSettings(), provider),
       beforeToolCall: (context) => this.options.toolCalls.beforeToolCall(context),
       afterToolCall: (context) => this.options.toolCalls.afterToolCall(context),
+      shouldStopAfterTurn: (context) => this.options.loopGuard.shouldStopAfterTurn(context),
       sessionId: this.options.sessions.info?.id,
       onEvent: (event) => this.options.onEvent(event),
     };

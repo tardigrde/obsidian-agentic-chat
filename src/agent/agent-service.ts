@@ -1,4 +1,4 @@
-import { TFile, type App, type EventRef } from "obsidian";
+import { TFile, Notice, type App, type EventRef } from "obsidian";
 import {
   type Agent,
   type AgentEvent,
@@ -7,7 +7,7 @@ import {
   type StreamFn,
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import { type ImageContent, type Usage, type UserMessage } from "@earendil-works/pi-ai";
+import { type AssistantMessage, type ImageContent, type Usage, type UserMessage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider } from "../settings";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
@@ -50,6 +50,7 @@ import {
   type AgentServiceEventListener,
 } from "./service-listeners";
 import { AgentStreamRuntime } from "./stream-runtime";
+import { AgentLoopGuard } from "./loop-guard";
 import { AgentRuntimeResourceState } from "./runtime-resource-state";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import { AgentSubagentRuntime } from "./subagent-runtime";
@@ -77,6 +78,12 @@ export interface AgentServiceOptions {
   confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
   /** Injected for tests; production streams through the pi-ai Models runtime. */
   streamFn?: StreamFn;
+  /**
+   * Disable the loop guard for scripted e2e runs: the guard would soft-stop a
+   * scripted stream that repeats an identical tool batch, failing the spec
+   * with an unrelated-looking transcript divergence.
+   */
+  loopGuardDisabled?: boolean;
   /** Injected for tests; production summarizes through the chat stream runtime. */
   summarize?: SummarizeFn;
   /** Injected for tests; production wraps Obsidian's `requestUrl` for the web tools. */
@@ -101,6 +108,11 @@ export type ManualCompactionResult =
  * Owns the pi Agent for the chat view: model/tool/skill wiring, approval gates,
  * JSONL session persistence, and event/state fan-out to the UI.
  */
+/** No-op loop guard used for scripted e2e runs (see `AgentServiceOptions.loopGuardDisabled`). */
+const DISABLED_LOOP_GUARD: Pick<AgentLoopGuard, "shouldStopAfterTurn"> = {
+  shouldStopAfterTurn: () => false,
+};
+
 export class AgentService {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
@@ -123,6 +135,7 @@ export class AgentService {
   private readonly parentAgent: ParentAgentRuntime;
   private readonly sessionState = new AgentSessionLocalState();
   private readonly listeners = new AgentServiceListeners();
+  private readonly loopGuard = new AgentLoopGuard();
   private readonly recentEvents: string[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
   private readonly commandInvocations: AgentCommandInvocationRuntime;
@@ -215,6 +228,7 @@ export class AgentService {
       runtimeResources: this.runtimeResources,
       subagents: this.subagents,
       toolCalls: this.toolCalls,
+      loopGuard: options.loopGuardDisabled ? DISABLED_LOOP_GUARD : this.loopGuard,
       sessions: this.sessions,
       onEvent: (event) => this.handleAgentEvent(event),
     });
@@ -594,6 +608,7 @@ export class AgentService {
   }
 
   async newSession(): Promise<void> {
+    this.loopGuard.reset();
     return this.sessionActions.newSession();
   }
 
@@ -606,6 +621,7 @@ export class AgentService {
   }
 
   async loadSession(path: string): Promise<void> {
+    this.loopGuard.reset();
     return this.sessionActions.loadSession(path);
   }
 
@@ -627,6 +643,7 @@ export class AgentService {
    * resend an edited prompt as a fresh branch.
    */
   async truncateMessages(index: number): Promise<void> {
+    this.loopGuard.reset();
     return this.sessionActions.truncateMessages(index);
   }
 
@@ -640,6 +657,9 @@ export class AgentService {
 
   private async runPrompt(run: PromptTurnRun): Promise<void> {
     await this.initialize();
+    // A fresh prompt starts a new epoch: any identical-batch streak from a
+    // previous user turn must not carry into this one (loop guard).
+    this.loopGuard.reset();
     await this.promptTurns.run(run);
   }
 
@@ -656,6 +676,8 @@ export class AgentService {
 
     const message = createUserMessage(text, attached);
     this.sessionState.clearError();
+    // Steering is user input too: user-provided info ends any running streak.
+    this.loopGuard.reset();
     if (mode === "follow-up") agent.followUp(message);
     else agent.steer(message);
     this.notifyChange();
@@ -679,7 +701,16 @@ export class AgentService {
     this.observability.handleAgentEvent(event);
     await handleAgentRuntimeEvent(event, {
       recordMessageEnd: (message) => this.sessionEvents.recordMessageEnd(message),
-      recordAgentEnd: (messages) => this.sessionEvents.recordAgentEnd(messages),
+      recordAgentEnd: async (messages) => {
+        // Persist the run first so a guard-message failure can never drop the
+        // transcript; the guard note is appended after, never injected mid-context.
+        await this.sessionEvents.recordAgentEnd(messages);
+        try {
+          await this.emitLoopGuardMessage();
+        } catch {
+          // UI/persist for the synthetic note is best-effort — the run above won.
+        }
+      },
       recordAuditEvent: (agentEvent) => this.actionAudit.recordAgentEvent(agentEvent),
       enforceSpendCap: () => this.enforceSpendCap(),
       setError: (error) => this.sessionState.setError(error),
@@ -705,6 +736,48 @@ export class AgentService {
     if (!reason) return;
     this.sessionState.setErrorMessage(reason);
     agent?.abort();
+  }
+
+  /**
+   * When the loop guard fired, append the plain-text explanation at the end of
+   * the transcript (live context + JSONL + chat bubble) plus a transient
+   * Notice. Append-only by design: the model sees why the run stopped on retry.
+   * Runs once per fire — the guard clears its notice on the next prompt.
+   */
+  private async emitLoopGuardMessage(): Promise<void> {
+    const text = this.loopGuard.noticeText;
+    if (!text) return;
+    const message = this.buildLoopGuardMessage(text);
+    // Append to live agent context first so the next turn sees the stop reason.
+    this.agent?.state.messages.push(message);
+    await this.sessionEvents.recordMessageEnd(message);
+    this.listeners.emitEvent({ type: "message_start", message });
+    this.listeners.emitEvent({ type: "message_end", message });
+    try {
+      new Notice(text);
+    } catch {
+      // Headless tests / no DOM — chat bubble above already carries the note.
+    }
+  }
+
+  /**
+   * Synthetic assistant message explaining the loop-guard stop. Same shape as
+   * replay turns, so the chat bubble and JSONL rehydration render it normally.
+   */
+  private buildLoopGuardMessage(text: string): AssistantMessage {
+    const model = this.agent?.state.model as
+      | { api?: AssistantMessage["api"]; provider?: string; id?: string }
+      | undefined;
+    return {
+      role: "assistant",
+      content: [{ type: "text", text }],
+      api: model?.api ?? "openai-completions",
+      provider: model?.provider ?? "openrouter",
+      model: model?.id ?? "unknown",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    };
   }
 
   /**
