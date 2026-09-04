@@ -58,6 +58,7 @@ function parentTools(withScaffolder: boolean): AgentTool[] {
       plugins: [],
       profiles: [],
       instructionsOverlay: "",
+      memoryOverlay: "",
       ignoreMatcher: () => false,
       mcpTools: [],
       mcpDiagnostics: [],

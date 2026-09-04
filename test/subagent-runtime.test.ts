@@ -36,6 +36,7 @@ function resources(profiles: AgentRole[] = [PROFILE]): AgentRuntimeResources {
     plugins: [],
     profiles,
     instructionsOverlay: "",
+    memoryOverlay: "",
     ignoreMatcher: () => false,
     mcpTools: [],
     mcpDiagnostics: [],

@@ -39,8 +39,8 @@ function assistantMessage(content: string): AgentMessage {
 function session(n: number): AgentMessage[] {
   const messages: AgentMessage[] = [];
   for (let i = 0; i < n; i++) {
-    messages.push(userMessage(`User question number ${i} about the vault structure and notes organization`));
-    messages.push(assistantMessage(`Assistant answer number ${i} with some detail about notes and folders`));
+    messages.push(userMessage(`User question number ${i} about the vault structure, notes organization, and how the weekly review process should handle the growing backlog of meeting notes`));
+    messages.push(assistantMessage(`Assistant answer number ${i} with some detail about notes, folders, tags, and the proposed dataview queries for the review dashboard`));
   }
   return messages;
 }

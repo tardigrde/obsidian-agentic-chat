@@ -214,7 +214,7 @@ async function migrateLegacyOnce(adapter: DataAdapter, paths: ResolvedMemoryPath
   try {
     if (await adapter.exists(paths.memoryFile)) return;
     if (!(await adapter.exists(paths.legacyFile))) return;
-    const records = loadMemoryRecords(adapter, paths.legacyFile);
+    const records = await loadMemoryRecords(adapter, paths.legacyFile);
     const bullets = migrateLegacyRecords(records);
     if (bullets.length === 0) return;
     await adapter.write(paths.memoryFile, formatMemoryFile("", bullets, 1));
