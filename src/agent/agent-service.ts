@@ -7,8 +7,7 @@ import {
   type StreamFn,
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import { type ImageContent, type Usage, type UserMessage } from "@earendil-works/pi-ai";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { type AssistantMessage, type ImageContent, type Usage, type UserMessage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider } from "../settings";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
@@ -609,6 +608,7 @@ export class AgentService {
   }
 
   async newSession(): Promise<void> {
+    this.loopGuard.reset();
     return this.sessionActions.newSession();
   }
 
@@ -621,6 +621,7 @@ export class AgentService {
   }
 
   async loadSession(path: string): Promise<void> {
+    this.loopGuard.reset();
     return this.sessionActions.loadSession(path);
   }
 
@@ -642,6 +643,7 @@ export class AgentService {
    * resend an edited prompt as a fresh branch.
    */
   async truncateMessages(index: number): Promise<void> {
+    this.loopGuard.reset();
     return this.sessionActions.truncateMessages(index);
   }
 
@@ -700,10 +702,14 @@ export class AgentService {
     await handleAgentRuntimeEvent(event, {
       recordMessageEnd: (message) => this.sessionEvents.recordMessageEnd(message),
       recordAgentEnd: async (messages) => {
-        // Loop-guard message must stream through the normal message path so the
-        // live chat shows it: agent_end payloads are not rendered bubble-by-bubble.
-        await this.emitLoopGuardMessage();
+        // Persist the run first so a guard-message failure can never drop the
+        // transcript; the guard note is appended after, never injected mid-context.
         await this.sessionEvents.recordAgentEnd(messages);
+        try {
+          await this.emitLoopGuardMessage();
+        } catch {
+          // UI/persist for the synthetic note is best-effort — the run above won.
+        }
       },
       recordAuditEvent: (agentEvent) => this.actionAudit.recordAgentEvent(agentEvent),
       enforceSpendCap: () => this.enforceSpendCap(),
@@ -733,19 +739,25 @@ export class AgentService {
   }
 
   /**
-   * When the loop guard fired, surface the plain-text explanation live in the
-   * chat: emits synthetic message_start/message_end (persists + renders like any
-   * assistant message), plus a transient Notice. Runs once per fire — the guard
-   * clears its notice on the next prompt.
+   * When the loop guard fired, append the plain-text explanation at the end of
+   * the transcript (live context + JSONL + chat bubble) plus a transient
+   * Notice. Append-only by design: the model sees why the run stopped on retry.
+   * Runs once per fire — the guard clears its notice on the next prompt.
    */
   private async emitLoopGuardMessage(): Promise<void> {
     const text = this.loopGuard.noticeText;
     if (!text) return;
     const message = this.buildLoopGuardMessage(text);
+    // Append to live agent context first so the next turn sees the stop reason.
+    this.agent?.state.messages.push(message);
     await this.sessionEvents.recordMessageEnd(message);
     this.listeners.emitEvent({ type: "message_start", message });
     this.listeners.emitEvent({ type: "message_end", message });
-    new Notice(text);
+    try {
+      new Notice(text);
+    } catch {
+      // Headless tests / no DOM — chat bubble above already carries the note.
+    }
   }
 
   /**

@@ -588,7 +588,9 @@ describe("AgentService", () => {
     await service.sendPrompt("Loop please");
 
     const assistants = service.getMessages().filter((message) => message.role === "assistant");
-    expect(assistants).toHaveLength(4); // the loop-guard message is streamed, not part of agent state
+    // 4 scripted tool turns + loop-guard note appended to live context so retry sees why it stopped.
+    expect(assistants).toHaveLength(5);
+    expect(JSON.stringify(assistants[4].content)).toMatch(/Loop guard.*write/);
     // The scripted 5th turn was never consumed — the run ended at the guard.
     expect(
       service.getMessages().some((message) => "content" in message && JSON.stringify(message.content).includes("final answer")),

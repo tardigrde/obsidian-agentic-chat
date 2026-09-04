@@ -4,10 +4,21 @@ import type { ToolResultMessage } from "@earendil-works/pi-ai";
 /** Default streak of consecutive identical tool batches that triggers the guard. */
 export const LOOP_GUARD_DEFAULT_MAX_IDENTICAL_BATCHES = 4;
 
-/** Plain-text message surfaced in chat + Notice when the guard fires. */
-export const LOOP_GUARD_NOTICE_TEXT =
-  "Loop guard: the same tool batch repeated with identical results. " +
-  "Stopped to avoid burning tokens — tell me how to continue.";
+/** Static prefix kept for tests/grep; fired notices append batch detail. */
+export const LOOP_GUARD_NOTICE_TEXT = "Loop guard: the same tool batch repeated with identical results.";
+
+/**
+ * Build the fired notice. Names the repeated tools so the user sees the cause
+ * at a glance; denial loops (all results are errors) get an approval hint.
+ * Plain text, appended at the end of the transcript — never injected mid-context.
+ */
+export function buildLoopGuardNotice(toolNames: readonly string[], count: number, allError: boolean): string {
+  const batch = toolNames.length <= 3 ? toolNames.map((name) => `“${name}”`).join(" + ") : `${toolNames.length} tools`;
+  const cause = allError
+    ? " All results were errors (often a denied approval) — allow the tool or change approach."
+    : " Stopped to avoid burning tokens — tell me how to continue.";
+  return `Loop guard: stopped after ${count} identical ${batch} calls with identical results.${cause}`;
+}
 
 /** Deterministic FNV-1a 32-bit hex hash (matches undo/observability style). */
 export function fnv1a(value: string): string {
@@ -33,7 +44,7 @@ export function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
   const record = value as Record<string, unknown>;
   const entries = Object.keys(record)
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
   return `{${entries.join(",")}}`;
 }
@@ -58,9 +69,24 @@ export function toolBatchKey(message: { content: readonly unknown[] }): string |
   return calls.map((call) => `${call.name}:${fnv1a(stableStringify(call.arguments))}`).join("\n");
 }
 
-/** Ordered result key for the tool results of one turn. */
+/** Tool names of one assistant turn, in call order. Empty for tool-free turns. */
+export function toolBatchNames(message: { content: readonly unknown[] }): string[] {
+  return message.content
+    .filter(
+      (block): block is { type: "toolCall"; name: string } =>
+        typeof block === "object" && block !== null && (block as { type?: string }).type === "toolCall",
+    )
+    .map((call) => (typeof call.name === "string" ? call.name : "unknown"));
+}
+
+/** Ordered result key for the tool results of one turn (text + error flag). */
 export function toolResultKey(results: readonly ToolResultMessage[]): string {
-  return results.map((result) => hashToolContent(result.content as readonly { type: string; text?: string }[])).join("\n");
+  return results
+    .map(
+      (result) =>
+        `${result.isError ? "err" : "ok"}:${hashToolContent(result.content as readonly { type: string; text?: string }[])}`,
+    )
+    .join("\n");
 }
 
 export interface LoopGuardOptions {
@@ -83,6 +109,8 @@ export interface LoopGuardOptions {
 export class AgentLoopGuard {
   private lastBatchKey: string | null = null;
   private lastResultKey: string | null = null;
+  private lastToolNames: string[] = [];
+  private lastAllError = false;
   private identicalRuns = 0;
   private firedText: string | null = null;
 
@@ -101,6 +129,8 @@ export class AgentLoopGuard {
   reset(): void {
     this.lastBatchKey = null;
     this.lastResultKey = null;
+    this.lastToolNames = [];
+    this.lastAllError = false;
     this.identicalRuns = 0;
     this.firedText = null;
   }
@@ -122,10 +152,13 @@ export class AgentLoopGuard {
       } else {
         this.lastBatchKey = batchKey;
         this.lastResultKey = resultKey;
+        this.lastToolNames = toolBatchNames(context.message);
+        this.lastAllError =
+          context.toolResults.length > 0 && context.toolResults.every((result) => result.isError === true);
         this.identicalRuns = 1;
       }
       if (this.identicalRuns < this.maxIdenticalBatches) return false;
-      this.firedText = LOOP_GUARD_NOTICE_TEXT;
+      this.firedText = buildLoopGuardNotice(this.lastToolNames, this.maxIdenticalBatches, this.lastAllError);
       return true;
     } catch {
       return false;
