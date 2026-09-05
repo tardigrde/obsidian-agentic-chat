@@ -2,7 +2,6 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { describe, expect, it } from "vitest";
 import {
   appendDailyEntry,
-  dailyPathForDate,
   deleteMemoryFiles,
   formatDailyEntry,
   formatMemoryFile,
@@ -12,13 +11,12 @@ import {
   migrateLegacyRecords,
   parseMemoryFile,
   resolveMemoryPaths,
-  shouldCaptureSession,
   shouldDistillNow,
-  extractDailyBullets,
   MEMORY_AUTO_MARKER,
   type VaultMemorySettings,
 } from "../src/memory/vault-memory";
-import { distillDailyToMemory, flushSessionToDaily } from "../src/memory/distill-runtime";
+import { distillDailyToMemory } from "../src/memory/distill-runtime";
+import { meetsDistillThreshold } from "../src/memory/session-feedstock";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
@@ -45,50 +43,11 @@ function session(n: number): AgentMessage[] {
   return messages;
 }
 
-describe("vault memory Tier-1", () => {
-  it("skips tiny sessions without spending tokens", () => {
-    expect(shouldCaptureSession([]).capture).toBe(false);
-    expect(shouldCaptureSession([userMessage("hi"), assistantMessage("hello there")]).capture).toBe(false);
-    const gate = shouldCaptureSession(session(3));
-    expect(gate.capture).toBe(true);
-  });
-
-  it("extracts deterministic bullets and filters secrets", () => {
-    const bullets = extractDailyBullets([
-      userMessage("Please remember that my main project is in /Work and I prefer concise answers."),
-      assistantMessage("Noted."),
-      userMessage("Also remember that the api_key = sk-test-secret-value-here for later use please."),
-      assistantMessage("Hmm."),
-      userMessage("My editor font size is 14 for reading notes comfortably every day."),
-    ]);
-    expect(bullets.length).toBeGreaterThan(0);
-    expect(bullets.join("\n")).toContain("concise");
-    expect(bullets.join("\n")).not.toContain("sk-test");
-  });
-
-  it("appends Tier-1 entries to today's daily note", async () => {
-    const adapter = new MemoryAdapter();
-    const result = await flushSessionToDaily({
-      adapter: adapter.asDataAdapter(),
-      configDir: ".obsidian",
-      settings: SETTINGS,
-      messages: session(3),
-      sessionId: "session-1",
-    });
-    expect(result.status).toBe("appended");
-    const daily = await adapter.read(dailyPathForDate(PATHS, new Date().toISOString().slice(0, 10)));
-    expect(daily).toContain("session-1");
-  });
-
-  it("skips flush when disabled", async () => {
-    const adapter = new MemoryAdapter();
-    const result = await flushSessionToDaily({
-      adapter: adapter.asDataAdapter(),
-      configDir: ".obsidian",
-      settings: { ...DEFAULT_SETTINGS },
-      messages: session(3),
-    });
-    expect(result.status).toBe("disabled");
+describe("distill delta threshold", () => {
+  it("skips tiny deltas without spending tokens", () => {
+    expect(meetsDistillThreshold([]).eligible).toBe(false);
+    expect(meetsDistillThreshold([userMessage("hi"), assistantMessage("hello there")]).eligible).toBe(false);
+    expect(meetsDistillThreshold(session(3)).eligible).toBe(true);
   });
 });
 

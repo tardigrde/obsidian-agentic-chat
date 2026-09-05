@@ -746,7 +746,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   /**
-   * H2 seamless cross-session memory (Tier-1 daily + Tier-2 distilled MEMORY.md).
+   * H2 seamless cross-session memory (session transcripts + distilled MEMORY.md).
    * Off by default. Plugin-folder store is hidden (default); vault-folder store
    * syncs like any note. Full lifecycle in docs/features/memory.md.
    */
@@ -755,14 +755,13 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Enable vault memory")
       .setDesc(
-        "When on, appends session summaries to daily notes on session end (/new, tab switch/close) " +
-          "and distills them into MEMORY.md (idle 5min, startup, or /memory distill). MEMORY.md auto-loads into " +
-          "every new chat (~8k chars of context); daily notes are distillation feedstock only. " +
+        "When on, distills past sessions + daily notes into MEMORY.md (idle 10min, startup, " +
+          "session switch, or /memory distill). MEMORY.md auto-loads into " +
+          "every new chat (~8k chars of context). " +
           "May contain session summaries — review before sharing the vault. " +
-          "Tier-2 sends recent daily notes to your chat model provider; only secret-shaped text is filtered — " +
+          "Distillation sends recent session transcripts to your chat model provider; only secret-shaped text is filtered — " +
           "names and vault content you discussed can be remembered. " +
-          "Tier-1 daily: zero tokens (deterministic). Tier-2 distill: typically ~1-2k tokens " +
-          "(bounded by 5×2k-char dailies + MEMORY.md auto-section, ≤800 output tokens). See docs/features/memory.md.",
+          "Typically ~1-2k tokens per run (bounded feedstock, ≤2k output tokens). See docs/features/memory.md.",
       )
       .addToggle((toggle) =>
         toggle.setValue(settings.memory.enabled).onChange(async (value) => {

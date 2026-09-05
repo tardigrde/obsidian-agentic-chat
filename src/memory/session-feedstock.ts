@@ -6,6 +6,34 @@ export const FEEDSTOCK_TOOL_RESULT_CHARS = 1_000;
 /** Per-session char budget (final slice enforces the join). */
 export const FEEDSTOCK_SESSION_CHARS = 4_000;
 
+/** Zero-token quality gate for distillation deltas (replaces the Tier-1 capture gate). */
+export const MIN_DISTILL_USER_TURNS = 3;
+export const MIN_DISTILL_CHARS = 500;
+
+export interface DistillDeltaGate {
+  eligible: boolean;
+  reason: string;
+}
+
+/** True when an uncovered message delta is worth a distill run (trivial chatter skipped). */
+export function meetsDistillThreshold(messages: readonly AgentMessage[]): DistillDeltaGate {
+  let userTurns = 0;
+  let chars = 0;
+  for (const message of messages) {
+    const text = feedstockMessageText(message);
+    if (!text) continue;
+    chars += text.length;
+    if ((message as { role?: unknown }).role === "user") userTurns += 1;
+  }
+  if (userTurns < MIN_DISTILL_USER_TURNS) {
+    return { eligible: false, reason: `only ${userTurns} user turns (min ${MIN_DISTILL_USER_TURNS})` };
+  }
+  if (chars < MIN_DISTILL_CHARS) {
+    return { eligible: false, reason: `only ${chars} chars (min ${MIN_DISTILL_CHARS})` };
+  }
+  return { eligible: true, reason: "ok" };
+}
+
 export const FEEDSTOCK_BEGIN = "<untrusted-transcripts>";
 export const FEEDSTOCK_END = "</untrusted-transcripts>";
 const FEEDSTOCK_END_ESCAPED = "</untrusted-transcripts (escaped)>";

@@ -1,5 +1,4 @@
 import type { DataAdapter } from "obsidian";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings-schema";
 import { activeModelConfig, apiKeyForProvider } from "../settings-schema";
@@ -9,10 +8,8 @@ import { loadMemoryRecords } from "./memory";
 import {
   DISTILL_BACKOFF_MS,
   appendDailyEntry,
-  bumpPendingAtomic,
   dailyPathForDate,
   deterministicDistill,
-  extractDailyBullets,
   filterSecretBullets,
   formatDailyEntry,
   formatMemoryFile,
@@ -23,14 +20,12 @@ import {
   readDistillState,
   releaseDistillLock,
   resolveMemoryPaths,
-  shouldCaptureSession,
   shouldDistillNow,
   sweepMemoryTmpFiles,
   todayKey,
   tryAcquireDistillLock,
   writeDistillState,
   writeMemoryFileAtomic,
-  VAULT_MEMORY_PROMPT_VERSION,
   TIER2_DAILY_CHARS,
   MAX_TIER2_DAILIES,
   MAX_DISTILL_OUTPUT_TOKENS,
@@ -38,55 +33,13 @@ import {
   type ResolvedMemoryPaths,
 } from "./vault-memory";
 
-export interface VaultMemoryFlushResult {
-  status: "appended" | "skipped" | "disabled" | "failed";
-  dailyPath?: string;
-  bullets?: number;
-  reason?: string;
-}
-
+/** Tier-2: consolidate recent dailies into MEMORY.md. LLM when available, deterministic fallback. */
 export interface VaultMemoryDistillResult {
   status: "distilled" | "skipped" | "disabled" | "failed" | "locked";
   version?: number;
   reason?: string;
   /** True when the LLM call failed and the deterministic union was used instead. */
   fallback?: boolean;
-}
-
-/** Tier-1: deterministic daily append on session end. Zero tokens. */
-export async function flushSessionToDaily(options: {
-  adapter: DataAdapter;
-  configDir: string;
-  settings: AgenticChatSettings;
-  messages: readonly AgentMessage[];
-  sessionId?: string;
-  modelId?: string;
-  now?: number;
-}): Promise<VaultMemoryFlushResult> {
-  const memory = memorySettingsOf(options.settings);
-  if (!memory.enabled) return { status: "disabled" };
-  const gate = shouldCaptureSession(options.messages);
-  if (!gate.capture) {
-    return { status: "skipped", reason: gate.reason };
-  }
-  try {
-    const paths = resolveMemoryPaths(options.configDir, memory);
-    await migrateLegacyOnce(options.adapter, paths);
-    const bullets = extractDailyBullets(options.messages);
-    if (bullets.length === 0) return { status: "skipped", reason: "no durable bullets" };
-    const entry = formatDailyEntry({
-      date: todayKey(options.now),
-      sessionId: options.sessionId,
-      model: options.modelId,
-      bullets,
-      note: `session capture · v${VAULT_MEMORY_PROMPT_VERSION}`,
-    });
-    const dailyPath = await appendDailyEntry(options.adapter, paths, entry, todayKey(options.now));
-    await bumpPendingAtomic(options.adapter, paths);
-    return { status: "appended", dailyPath, bullets: bullets.length };
-  } catch (error) {
-    return { status: "failed", reason: error instanceof Error ? error.message : String(error) };
-  }
 }
 
 /** Tier-2: consolidate recent dailies into MEMORY.md. LLM when available, deterministic fallback. */

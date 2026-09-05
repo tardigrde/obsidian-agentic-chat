@@ -1,19 +1,12 @@
 import type { DataAdapter } from "obsidian";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { PLUGIN_ID } from "../constants";
-import { extractMemoryProposals } from "./extraction";
 import { containsSensitiveText } from "../privacy/redaction";
 import type { MemoryRecord } from "./memory";
 
 /** Prompt version stamped into daily + MEMORY headers for observability. */
 export const VAULT_MEMORY_PROMPT_VERSION = 1;
 
-/** Minimum session size before Tier-1 captures anything (zero-token gate). */
-export const MIN_MEMORY_USER_TURNS = 3;
-export const MIN_MEMORY_CHARS = 500;
-
 /** Caps keep costs bounded regardless of model. */
-export const TIER1_TAIL_CHARS = 4_000;
 export const TIER2_DAILY_CHARS = 2_000;
 export const MAX_TIER2_DAILIES = 5;
 export const MAX_MEMORY_CHARS = 12_000;
@@ -115,57 +108,6 @@ export function isMemoryPath(path: string, paths: ResolvedMemoryPaths): boolean 
 
 export function memorySettingsOf(settings: { memory?: VaultMemorySettings }): VaultMemorySettings {
   return settings.memory ?? DEFAULT_VAULT_MEMORY_SETTINGS;
-}
-
-export interface SessionCaptureGate {
-  capture: boolean;
-  reason: string;
-  userTurns: number;
-  chars: number;
-}
-
-export function shouldCaptureSession(messages: readonly AgentMessage[]): SessionCaptureGate {
-  let userTurns = 0;
-  let chars = 0;
-  for (const message of messages) {
-    const text = messageText(message);
-    if (!text.trim()) continue;
-    chars += text.length;
-    if (message.role === "user") userTurns += 1;
-  }
-  if (userTurns < MIN_MEMORY_USER_TURNS) {
-    return { capture: false, reason: `only ${userTurns} user turns (min ${MIN_MEMORY_USER_TURNS})`, userTurns, chars };
-  }
-  if (chars < MIN_MEMORY_CHARS) {
-    return { capture: false, reason: `only ${chars} chars (min ${MIN_MEMORY_CHARS})`, userTurns, chars };
-  }
-  return { capture: true, reason: "ok", userTurns, chars };
-}
-
-/** Deterministic Tier-1 bullets: regex proposals first, fallback to first user line. Zero tokens. */
-export function extractDailyBullets(messages: readonly AgentMessage[], defaultScope = "vault"): string[] {
-  const proposals = extractMemoryProposals(messages, { defaultScope: defaultScope as "vault" | "global" });
-  const bullets = proposals
-    .map((proposal) => proposal.text.trim())
-    .filter(Boolean)
-    .filter((text) => !containsSensitiveText(text));
-  const seen = new Set<string>();
-  const deduped: string[] = [];
-  for (const bullet of bullets) {
-    const key = normalizeBullet(bullet);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(sentence(bullet));
-  }
-  if (deduped.length > 0) return deduped.slice(0, 12);
-  // Fallback: one concise bullet from the first substantive user message.
-  for (const message of messages) {
-    if (message.role !== "user") continue;
-    const text = messageText(message).replace(/\s+/g, " ").trim();
-    if (text.length < 20 || containsSensitiveText(text)) continue;
-    return [sentence(text.slice(0, 220))];
-  }
-  return [];
 }
 
 export function formatDailyEntry(options: {
@@ -566,19 +508,6 @@ export async function deleteMemoryFiles(adapter: DataAdapter, paths: ResolvedMem
     // No daily dir is fine.
   }
   return deleted;
-}
-
-function messageText(message: AgentMessage): string {
-  const content = (message as { content?: unknown }).content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter(
-      (block): block is { type: "text"; text: string } =>
-        typeof block === "object" && block !== null && (block as { type?: unknown }).type === "text",
-    )
-    .map((block) => block.text)
-    .join("\n");
 }
 
 export async function ensureDir(adapter: DataAdapter, dir: string): Promise<void> {
