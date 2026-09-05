@@ -401,7 +401,9 @@ export class ObsidianSessionManager {
       await this.ensureArchiveDirectory(dir);
       const base = this.sessionFile.split("/").pop()?.replace(/\.jsonl$/, "") ?? "session";
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const name = `${base}__${stamp}.jsonl`;
+      // Random suffix: two compactions in the same millisecond must not collide.
+      const rand = Math.random().toString(36).slice(2, 8);
+      const name = `${base}__${stamp}__${rand}.jsonl`;
       await this.adapter.write(`${dir}/${name}`, serializeArchiveTurns(turns));
       await this.pruneArchives(dir, base);
       return { name, turns: turns.length };
@@ -427,6 +429,7 @@ export class ObsidianSessionManager {
       for (const path of names) {
         try {
           const stat = await this.adapter.stat(path);
+          // Bytes vs the chars-named limit: exact for ASCII JSONL, conservative otherwise.
           if (stat && stat.size > MAX_ARCHIVE_FILE_CHARS) continue;
           const turns = parseArchiveTurns(await this.adapter.read(path));
           if (turns.length === 0) continue;

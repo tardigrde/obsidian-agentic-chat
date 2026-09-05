@@ -1,8 +1,8 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 // Canonical thinking-strip lives with the Tier-2 feedstock serializer (shared helper,
 // re-exported here so recall + distillation consume one implementation).
-export { stripThinkingBlocks } from "../memory/session-feedstock";
 import { stripThinkingBlocks } from "../memory/session-feedstock";
+export { stripThinkingBlocks };
 
 /** One archived pre-compaction turn. Thinking blocks are never archived. */
 export interface CompactionArchiveTurn {
@@ -106,7 +106,7 @@ export function parseArchiveTurns(content: string): CompactionArchiveTurn[] {
   return turns;
 }
 
-/** Machine-readable index line embedded in the compaction summary message. */
+/** Machine-readable index line embedded in the compaction summary message (model hint; nothing parses it yet). */
 export function formatRecallIndex(archiveName: string, turns: number): string {
-  return `<!-- recall-index archive="${archiveName}" turns=${turns} -->`;
+  return `<!-- recall-index archive="${archiveName}" turns="${turns}" -->`;
 }

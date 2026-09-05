@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream,
@@ -318,5 +318,45 @@ describe("AgentCompactionRuntime", () => {
     expect(calls[0].previousSummary).toBeUndefined();
     expect(calls[1].previousSummary).toBe("summary-1");
     expect(JSON.stringify(compacted![0])).toContain("summary-");
+  });
+});
+
+describe("AgentCompactionRuntime memory hooks", () => {
+  it("survives a failing archive write without a recall index", async () => {
+    const { manager, runtime, path, adapter } = await setup();
+    vi.spyOn(manager, "archivePreCompactionTurns").mockRejectedValue(new Error("disk gone"));
+    const compacted = await runtime.compact(largeTranscript(), 1_000);
+    expect(compacted).not.toBeNull();
+    expect(JSON.stringify(compacted![0])).not.toContain("recall-index");
+    expect(await manager.listCompactionArchives()).toEqual([]);
+    expect(adapter.files.has(path)).toBe(true);
+  });
+
+  it("deposits the raw summary after the rewrite, tolerating deposit failure", async () => {
+    const { adapter, manager, runtime, path } = await setup();
+    const seen: string[] = [];
+    const runtimeWithHook = new AgentCompactionRuntime({
+      getSettings: () => settings(),
+      sessionManager: manager,
+      summarize: async () => "Summary of earlier turns.",
+      onCompacted: async (summary) => {
+        seen.push(summary);
+      },
+    });
+    const compacted = await runtimeWithHook.compact(largeTranscript(), 1_000);
+    expect(compacted).not.toBeNull();
+    expect(seen).toEqual(["Summary of earlier turns."]);
+    // Failure afterwards must not fail the compaction.
+    const failing = new AgentCompactionRuntime({
+      getSettings: () => settings(),
+      sessionManager: manager,
+      summarize: async () => "Summary of earlier turns.",
+      onCompacted: async () => {
+        throw new Error("deposit gone");
+      },
+    });
+    await expect(failing.compact(largeTranscript(), 1_000)).resolves.not.toBeNull();
+    expect(adapter.files.has(path)).toBe(true);
+    void runtime;
   });
 });
