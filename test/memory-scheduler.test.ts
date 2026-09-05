@@ -38,6 +38,11 @@ function scheduler(adapter: MemoryAdapter, overrides: Record<string, unknown> = 
     isQuiet: () => true,
     isClosed: () => false,
     distiller: async () => ["Scheduled bullet."],
+    // Node timers so fake clocks drive the idle clock (production uses window).
+    timers: {
+      setTimeout: (fn: () => void, ms: number) => Number(setTimeout(fn, ms)),
+      clearTimeout: (id: number) => clearTimeout(id),
+    },
     ...overrides,
   });
 }

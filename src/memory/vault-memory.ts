@@ -294,13 +294,16 @@ function parseSessionCoverage(value: unknown): Record<string, SessionCoverage> |
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
     const record = entry as Record<string, unknown>;
-    if (typeof record.lastEntryId !== "string" || !record.lastEntryId) continue;
+    const lastEntryId = typeof record.lastEntryId === "string" ? record.lastEntryId : "";
+    if (!lastEntryId) continue;
+    const size = parseNonNegativeNumber(record.size);
+    const mtime = parseNonNegativeNumber(record.mtime);
     out[key] = {
-      lastEntryId: record.lastEntryId,
+      lastEntryId,
       version: typeof record.version === "number" ? record.version : 0,
       at: typeof record.at === "string" ? record.at : "",
-      ...(parseNonNegativeNumber(record.size) !== undefined ? { size: record.size as number } : {}),
-      ...(parseNonNegativeNumber(record.mtime) !== undefined ? { mtime: record.mtime as number } : {}),
+      ...(size !== undefined ? { size } : {}),
+      ...(mtime !== undefined ? { mtime } : {}),
     };
   }
   return Object.keys(out).length > 0 ? out : undefined;
@@ -319,6 +322,10 @@ export function parseDistillState(raw: string | null): DistillState {
   if (!raw) return { version: 0, pending: 0, failCount: 0 };
   try {
     const parsed = JSON.parse(raw) as Partial<DistillState>;
+    const coverage = parseSessionCoverage(parsed.sessions);
+    const bgTokens = parseNonNegativeNumber(parsed.bgTokens);
+    const bgCostUsd = parseNonNegativeNumber(parsed.bgCostUsd);
+    const lastRunCostUsd = parseNonNegativeNumber(parsed.lastRunCostUsd);
     return {
       version: finiteNonNeg(parsed.version),
       pending: finiteNonNeg(parsed.pending),
@@ -326,12 +333,10 @@ export function parseDistillState(raw: string | null): DistillState {
       lastAttempt: typeof parsed.lastAttempt === "string" ? parsed.lastAttempt : undefined,
       nextRetryAfter: typeof parsed.nextRetryAfter === "string" ? parsed.nextRetryAfter : undefined,
       failCount: finiteNonNeg(parsed.failCount),
-      ...(parseSessionCoverage(parsed.sessions) ? { sessions: parseSessionCoverage(parsed.sessions) } : {}),
-      ...(parseNonNegativeNumber(parsed.bgTokens) !== undefined ? { bgTokens: parsed.bgTokens as number } : {}),
-      ...(parseNonNegativeNumber(parsed.bgCostUsd) !== undefined ? { bgCostUsd: parsed.bgCostUsd as number } : {}),
-      ...(parseNonNegativeNumber(parsed.lastRunCostUsd) !== undefined
-        ? { lastRunCostUsd: parsed.lastRunCostUsd as number }
-        : {}),
+      ...(coverage ? { sessions: coverage } : {}),
+      ...(bgTokens !== undefined ? { bgTokens } : {}),
+      ...(bgCostUsd !== undefined ? { bgCostUsd } : {}),
+      ...(lastRunCostUsd !== undefined ? { lastRunCostUsd } : {}),
     };
   } catch {
     return { version: 0, pending: 0, failCount: 0 };

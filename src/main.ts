@@ -129,7 +129,7 @@ export default class AgenticChatPlugin extends Plugin {
     this.memoryScheduler.start();
   }
 
-  async onunload(): Promise<void> {
+  onunload(): void {
     this.memoryScheduler?.stop();
     this.memoryScheduler = null;
   }

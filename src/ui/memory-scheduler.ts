@@ -12,6 +12,11 @@ const KICK_DEBOUNCE_MS = 30 * 1000;
 /** Startup auto-distills at most one session; the rest wait for idle. */
 const STARTUP_MAX_SESSIONS = 1;
 
+export interface MemorySchedulerTimers {
+  setTimeout: (fn: () => void, ms: number) => number;
+  clearTimeout: (id: number) => void;
+}
+
 export interface MemorySchedulerOptions {
   adapter: DataAdapter;
   configDir: string;
@@ -23,6 +28,8 @@ export interface MemorySchedulerOptions {
   now?: () => number;
   /** Injected for tests; production distills via the chat model or deterministic fallback. */
   distiller?: DistillFn;
+  /** Timer host (tests inject node timers); defaults to the Obsidian window. */
+  timers?: MemorySchedulerTimers;
 }
 
 /**
@@ -47,9 +54,9 @@ export class MemoryScheduler {
   stop(): void {
     if (this.timer !== null) {
       try {
-        globalThis.clearTimeout(this.timer);
+        this.timers().clearTimeout(this.timer);
       } catch {
-        // Timer unavailable (tests); ignore.
+        // Timer host unavailable; ignore.
       }
       this.timer = null;
     }
@@ -85,15 +92,20 @@ export class MemoryScheduler {
     }
   }
 
+  private timers(): MemorySchedulerTimers {
+    if (this.options.timers) return this.options.timers;
+    return { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: (id) => window.clearTimeout(id) };
+  }
+
   private armIdle(): void {
     this.stop();
     try {
-      this.timer = Number(globalThis.setTimeout(() => {
+      this.timer = this.timers().setTimeout(() => {
         this.timer = null;
         void this.onIdle();
-      }, IDLE_DISTILL_MS));
+      }, IDLE_DISTILL_MS);
     } catch {
-      // Timer unavailable (tests); skip.
+      // Timer host unavailable; skip.
     }
   }
 
