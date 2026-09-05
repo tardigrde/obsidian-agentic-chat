@@ -45,11 +45,13 @@ import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
 import {
   appendDailyEntry,
   bumpPendingAtomic,
+  containsInjectionAttempt,
   formatDailyEntry,
   memorySettingsOf,
   resolveMemoryPaths,
   todayKey,
 } from "../memory/vault-memory";
+import { containsSensitiveText } from "../privacy/redaction";
 import { maybeCompactAgentTranscript } from "./compaction-orchestrator";
 import { estimateContextUsage } from "./compaction";
 import {
@@ -827,7 +829,10 @@ export class AgentService {
       const bullets = summary
         .split("\n")
         .map((line) => line.trim().replace(/^[-*#>]+\s*/, ""))
-        .filter((line) => line.length >= 10)
+        .filter(
+          (line) =>
+            line.length >= 10 && !containsSensitiveText(line) && !containsInjectionAttempt(line),
+        )
         .slice(0, 10)
         .map((line) => line.slice(0, 200));
       if (bullets.length === 0) return;

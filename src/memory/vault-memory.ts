@@ -310,17 +310,22 @@ function parseNonNegativeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+/** Corrupt counters heal to 0 (NaN/negative must never poison gates or math). */
+function finiteNonNeg(value: unknown): number {
+  return parseNonNegativeNumber(value) ?? 0;
+}
+
 export function parseDistillState(raw: string | null): DistillState {
   if (!raw) return { version: 0, pending: 0, failCount: 0 };
   try {
     const parsed = JSON.parse(raw) as Partial<DistillState>;
     return {
-      version: typeof parsed.version === "number" ? parsed.version : 0,
-      pending: typeof parsed.pending === "number" ? parsed.pending : 0,
+      version: finiteNonNeg(parsed.version),
+      pending: finiteNonNeg(parsed.pending),
       lastSuccess: typeof parsed.lastSuccess === "string" ? parsed.lastSuccess : undefined,
       lastAttempt: typeof parsed.lastAttempt === "string" ? parsed.lastAttempt : undefined,
       nextRetryAfter: typeof parsed.nextRetryAfter === "string" ? parsed.nextRetryAfter : undefined,
-      failCount: typeof parsed.failCount === "number" ? parsed.failCount : 0,
+      failCount: finiteNonNeg(parsed.failCount),
       ...(parseSessionCoverage(parsed.sessions) ? { sessions: parseSessionCoverage(parsed.sessions) } : {}),
       ...(parseNonNegativeNumber(parsed.bgTokens) !== undefined ? { bgTokens: parsed.bgTokens as number } : {}),
       ...(parseNonNegativeNumber(parsed.bgCostUsd) !== undefined ? { bgCostUsd: parsed.bgCostUsd as number } : {}),
@@ -642,11 +647,27 @@ export function containsInjectionAttempt(text: string): boolean {
 }
 
 /** Broader output-side check: directive phrasing has no place in distilled facts. */
-const DIRECTIVE_HINTS = [...IMPERATIVE_HINTS, "always ", "never ", "you must", "you should", "remember to "];
+const DIRECTIVE_HINTS = ["always ", "never ", "you must", "you should", "remember to "];
 
 export function containsDirectiveText(text: string): boolean {
   const haystack = text.toLowerCase();
-  return DIRECTIVE_HINTS.some((hint) => haystack.includes(hint));
+  // Injection verbs match anywhere; directive phrasing is sentence-anchored so
+  // mid-sentence declaratives survive ("User always uses pnpm" is kept).
+  if (IMPERATIVE_HINTS.some((hint) => haystack.includes(hint))) return true;
+  const sentences = text.toLowerCase().split(/[.!?;]\s+/);
+  return sentences.some((sentence) =>
+    DIRECTIVE_HINTS.some((hint) => startsDirective(sentence, hint)),
+  );
+}
+
+function startsDirective(sentence: string, hint: string): boolean {
+  if (!sentence.startsWith(hint)) return false;
+  // Bare-word hints need a word boundary ("bypass" must not catch "bypassing").
+  if (!hint.endsWith(" ")) {
+    const rest = sentence.slice(hint.length, hint.length + 1);
+    if (rest !== "" && rest !== " ") return false;
+  }
+  return true;
 }
 
 /** Drop directive-shaped bullets from distiller output before persistence. */

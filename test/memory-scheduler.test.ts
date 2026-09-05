@@ -50,22 +50,30 @@ describe("MemoryScheduler", () => {
     vi.useRealTimers();
   });
 
-  it("stays idle when memory is disabled", async () => {
+  it("startup sweep distills once when quiet at start", async () => {
     const adapter = new MemoryAdapter();
+    await adapter.write(`${SESSION_DIR}/2026-01-01_a.jsonl`, sessionFile("a"));
+    let calls = 0;
+    const idle = scheduler(adapter, {
+      distiller: async () => {
+        calls += 1;
+        return ["Scheduled bullet."];
+      },
+    });
+    idle.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(calls).toBe(1);
+    expect(idle.getSummary()).toMatch(/^distilled v\d+/);
+    idle.stop();
+  });
+
+  it("idle clock does not fire while disabled at startup", async () => {
+    const adapter = new MemoryAdapter();
+    await adapter.write(`${SESSION_DIR}/2026-01-01_a.jsonl`, sessionFile("a"));
     const idle = scheduler(adapter, { getSettings: () => DEFAULT_SETTINGS });
     idle.start();
     await vi.advanceTimersByTimeAsync(IDLE_DISTILL_MS + 1_000);
     expect(idle.getSummary()).toBe("idle");
-    idle.stop();
-  });
-
-  it("distills on idle and reports the version", async () => {
-    const adapter = new MemoryAdapter();
-    await adapter.write(`${SESSION_DIR}/2026-01-01_a.jsonl`, sessionFile("a"));
-    const idle = scheduler(adapter);
-    idle.start();
-    await vi.advanceTimersByTimeAsync(IDLE_DISTILL_MS + 1_000);
-    expect(idle.getSummary()).toMatch(/^distilled v\d+/);
     idle.stop();
   });
 

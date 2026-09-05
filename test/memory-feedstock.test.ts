@@ -64,7 +64,8 @@ describe("serializeSessionFeedstock", () => {
       message({ role: "user", content: [{ type: "text", text: `note number ${i} ${"y".repeat(500)}` }], timestamp: i }));
     const out = serializeSessionFeedstock(entries, "sess-3");
     expect(out).toContain("[…truncated]");
-    expect(out.length).toBeLessThanOrEqual(FEEDSTOCK_SESSION_CHARS + 300);
+    // Framing overhead is ~100 chars (header + truncation marker + end tag).
+    expect(out.length).toBeLessThanOrEqual(FEEDSTOCK_SESSION_CHARS + 128);
   });
 
   it("escapes frame closers inside content", () => {

@@ -116,7 +116,6 @@ export class MemoryScheduler {
         this.options.adapter,
         `${this.options.configDir}/plugins/${PLUGIN_ID}/sessions`,
         state,
-        this.now(),
         STARTUP_MAX_SESSIONS,
       );
       const explicit = state.pending > 0 ? 1 : 0;

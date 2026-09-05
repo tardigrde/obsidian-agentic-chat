@@ -104,14 +104,19 @@ export interface EligibleSession {
  * Find sessions with undistilled content, newest-first, capped.
  * Stat match against the coverage map skips unchanged files without reading them.
  */
+/** Session files above this size are skipped (pathological logs must not OOM the scan). */
+const MAX_SESSION_SCAN_BYTES = 5_000_000;
+
+/**
+ * Find sessions with undistilled content, newest-first, capped.
+ * Stat match against the coverage map skips unchanged files without reading them.
+ */
 export async function findEligibleSessions(
   adapter: DataAdapter,
   sessionDir: string,
   state: DistillState,
-  now = Date.now(),
   maxSessions: number = MAX_DISTILL_SESSIONS,
 ): Promise<EligibleSession[]> {
-  void now;
   let files: string[];
   try {
     const listing = await adapter.list(sessionDir);
@@ -121,25 +126,21 @@ export async function findEligibleSessions(
   } catch {
     return [];
   }
-  const withMtime: { path: string; mtime: number }[] = [];
+  const stats: { path: string; mtime: number; size: number }[] = [];
   for (const path of files) {
     try {
-      withMtime.push({ path, mtime: (await adapter.stat(path))?.mtime ?? 0 });
+      const stat = await adapter.stat(path);
+      if (!stat || stat.size > MAX_SESSION_SCAN_BYTES) continue;
+      stats.push({ path, mtime: stat.mtime, size: stat.size });
     } catch {
       continue;
     }
   }
-  withMtime.sort((left, right) => right.mtime - left.mtime);
+  stats.sort((left, right) => right.mtime - left.mtime);
   const eligible: EligibleSession[] = [];
-  const cap = Math.max(1, Math.trunc(maxSessions));
-  for (const { path, mtime } of withMtime) {
+  const cap = Number.isFinite(maxSessions) ? Math.max(1, Math.trunc(maxSessions)) : MAX_DISTILL_SESSIONS;
+  for (const { path, mtime, size } of stats) {
     if (eligible.length >= cap) break;
-    let size: number;
-    try {
-      size = (await adapter.stat(path))?.size ?? 0;
-    } catch {
-      continue;
-    }
     let entries: SessionEntry[];
     try {
       entries = parseSessionEntries(await adapter.read(path));
@@ -173,8 +174,10 @@ async function checkDistillGuards(
   const state = await readDistillState(options.adapter, paths);
   // Spend-cap guard for automatic runs. An explicit manual /memory distill
   // (force) is user-consented spend for one small call, so it bypasses.
+  // Background spend is day-scoped: yesterday's ledger must not latch today's runs.
+  const bgToday = (state.lastSuccess ?? "").slice(0, 10) === todayKey(now) ? (state.bgCostUsd ?? 0) : 0;
   const cap = options.settings.notifications.costCapUsd;
-  if (!options.force && cap > 0 && (options.sessionCostUsd ?? 0) + (state.bgCostUsd ?? 0) >= cap) {
+  if (!options.force && cap > 0 && (options.sessionCostUsd ?? 0) + bgToday >= cap) {
     return { status: "skipped", reason: "spend cap reached" };
   }
   const apiKey = apiKeyForProvider(options.settings, options.settings.provider);
@@ -189,7 +192,7 @@ async function checkDistillGuards(
   }
   if (options.force) return null;
   const sessionDir = options.sessionDir ?? `${options.configDir}/plugins/${PLUGIN_ID}/sessions`;
-  const eligible = await findEligibleSessions(options.adapter, sessionDir, state, now, options.maxSessions);
+  const eligible = await findEligibleSessions(options.adapter, sessionDir, state, options.maxSessions);
   const hasWork = eligible.length > 0 || state.pending > 0;
   if (!shouldAutoDistill(state, hasWork, now)) {
     return { status: "skipped", reason: hasWork ? "in cooldown" : "nothing eligible" };
@@ -208,13 +211,15 @@ async function runLockedDistill(
     const state = await readDistillState(options.adapter, paths);
     const consumedPending = state.pending;
     const sessionDir = options.sessionDir ?? `${options.configDir}/plugins/${PLUGIN_ID}/sessions`;
-    const eligible = await findEligibleSessions(options.adapter, sessionDir, state, now, options.maxSessions);
+    const eligible = await findEligibleSessions(options.adapter, sessionDir, state, options.maxSessions);
     const dailies = await readRecentDailies(options.adapter, paths);
     const existing = (await options.adapter.exists(paths.memoryFile))
       ? parseMemoryFile(await options.adapter.read(paths.memoryFile))
       : { human: "", autoBullets: [] as string[], version: state.version };
     const feedstock = buildFeedstock(eligible, dailies);
-    if (feedstock.length === 0 && existing.autoBullets.length === 0) {
+    if (feedstock.length === 0) {
+      // Nothing new to say: a union of nothing is a no-op, and an LLM rewrite
+      // would only burn budget plus the success cooldown. Defer.
       return { status: "skipped", reason: "nothing to distill" };
     }
     const { auto, dropped, fallback, promptChars, outputChars, modelId, provider } =
@@ -441,8 +446,9 @@ function estimateRunCost(provider: string, modelId: string, promptChars: number,
   let costUsd = 0;
   if (modelId && (provider === "openrouter" || provider === "openai-compatible" || provider === "ollama")) {
     try {
+      // Pricing is per million tokens.
       const pricing = resolveModelPricingSync(provider, modelId);
-      costUsd = tokensIn * pricing.input + tokensOut * pricing.output;
+      costUsd = (tokensIn * pricing.input + tokensOut * pricing.output) / 1_000_000;
     } catch {
       costUsd = 0;
     }
@@ -597,8 +603,10 @@ async function llmDistillSurgical(
   const dropped: string[] = [];
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
-    if (/^dropped:/i.test(trimmed)) {
-      dropped.push(trimmed.replace(/^dropped:/i, "").trim());
+    // Models often keep the bullet: "- dropped: <old> — reason".
+    const body = trimmed.startsWith("- ") ? trimmed.slice(2).trim() : trimmed;
+    if (/^dropped:/i.test(body)) {
+      dropped.push(body.replace(/^dropped:/i, "").trim());
     } else if (trimmed.startsWith("- ")) {
       const bullet = trimmed.slice(2).trim().slice(0, 200);
       if (bullet) auto.push(bullet);
