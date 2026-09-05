@@ -63,7 +63,7 @@ export function serializeSessionFeedstock(
   return `${FEEDSTOCK_BEGIN} session="${label}"\n${escapeFeedstock(capped)}\n${FEEDSTOCK_END}`;
 }
 
-/** Strip thinking blocks (reasoning leakage + noise). Exported for #145 rebase unification. */
+/** Strip thinking blocks (reasoning leakage + noise). Shared with compaction archives. */
 export function stripThinkingBlocks(message: AgentMessage): AgentMessage {
   const content = (message as { content?: unknown }).content;
   if (typeof content === "string" || !Array.isArray(content)) return message;

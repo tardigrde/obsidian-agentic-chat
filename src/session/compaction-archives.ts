@@ -1,4 +1,8 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+// Canonical thinking-strip lives with the Tier-2 feedstock serializer (shared helper,
+// re-exported here so recall + distillation consume one implementation).
+export { stripThinkingBlocks } from "../memory/session-feedstock";
+import { stripThinkingBlocks } from "../memory/session-feedstock";
 
 /** One archived pre-compaction turn. Thinking blocks are never archived. */
 export interface CompactionArchiveTurn {
@@ -25,17 +29,6 @@ export const MAX_ARCHIVE_FILE_CHARS = 200_000;
 
 export function compactedArchiveDir(sessionDir: string): string {
   return `${sessionDir}/compacted`;
-}
-
-/** Strip thinking blocks (reasoning leakage + noise for weak models). */
-export function stripThinkingBlocks(message: AgentMessage): AgentMessage {
-  const content = (message as { content?: unknown }).content;
-  if (typeof content === "string" || !Array.isArray(content)) return message;
-  const kept = content.filter(
-    (block) => typeof block !== "object" || block === null || (block as { type?: unknown }).type !== "thinking",
-  );
-  if (kept.length === content.length) return message;
-  return { ...(message as unknown as Record<string, unknown>), content: kept } as AgentMessage;
 }
 
 /** Extract recall-safe text from one message. Empty string when nothing recallable. */
