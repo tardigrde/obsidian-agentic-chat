@@ -160,6 +160,7 @@ describe("tool budget", () => {
     expect(toolBudgetDropReason("write")).toBeNull();
     expect(toolBudgetDropReason("ask_user")).toBeNull();
     expect(toolBudgetDropReason("remember_memory")).toBeNull();
+    expect(toolBudgetDropReason("recall_memory")).toBeNull();
     expect(toolBudgetDropReason("get_active_note")).toBeNull();
     expect(toolBudgetDropReason("web_search")).toBe("web egress");
     expect(toolBudgetDropReason("mcp__docs__lookup")).toBe("remote MCP");

@@ -67,6 +67,8 @@ describe("resolveModePolicy", () => {
     expect(resolveModePolicy("plan", allow, "read").policy).toBe("allow");
     expect(resolveModePolicy("plan", allow, "grep").policy).toBe("allow");
     expect(resolveModePolicy("yolo", allow, "grep").policy).toBe("allow");
+    // recall_memory is read-only search over MEMORY.md + dailies, so plan allows it.
+    expect(resolveModePolicy("plan", allow, "recall_memory").policy).toBe("allow");
   });
 });
 

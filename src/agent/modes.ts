@@ -107,6 +107,7 @@ const READONLY_TOOLS: ReadonlySet<string> = new Set([
   "fetch_url",
   "read_skill",
   "read_skill_file",
+  "recall_memory",
 ]);
 
 function planDenyReason(toolName: string): string {

@@ -177,3 +177,55 @@ describe("memory retrieval", () => {
     await expect(adapter.read(files[0]!)).resolves.toContain("[preference] Dark mode.");
   });
 });
+
+describe("recall_memory", () => {
+  const settings = () => ({ memory: { enabled: true, store: "plugin" as const, vaultFolder: "memory", modelOverride: "" } });
+
+  function recallTool(adapter: MemoryAdapter, enabled = true): AgentTool {
+    const app = appWithAdapter(adapter.asDataAdapter());
+    const [, recall] = createMemoryTools(app, {
+      getSettings: () => ({ memory: enabled ? settings().memory : { ...settings().memory, enabled: false } }),
+    });
+    if (!recall || recall.name !== "recall_memory") throw new Error("Expected recall_memory tool.");
+    return recall;
+  }
+
+  it("finds MEMORY.md + daily bullets with citations, distilled first, wrapped as untrusted", async () => {
+    const adapter = new MemoryAdapter();
+    const dir = ".obsidian/plugins/agentic-chat/memory";
+    await adapter.write(
+      `${dir}/MEMORY.md`,
+      "# Memory\n\n<!-- AGENTIC-CHAT-AUTO-MEMORY -->\n<!-- memory-v1 -->\n\n- Prefer concise answers.\n",
+    );
+    await adapter.write(`${dir}/daily/2026-09-01.md`, "## 2026-09-01\n\n- Deploys go through staging first.\n");
+    await adapter.write(`${dir}/daily/2026-09-02.md`, "## 2026-09-02\n\n- Prefer concise answers.\n");
+    const { text, details } = await run(recallTool(adapter), { query: "concise staging" });
+    expect(text).toContain("[BEGIN_UNTRUSTED_TOOL_OUTPUT");
+    expect(text).toContain("[MEMORY] Prefer concise answers.");
+    expect(text).toContain("[daily 2026-09-01] Deploys go through staging first.");
+    // Deduped: the daily duplicate of the distilled bullet appears once.
+    expect(text.match(/Prefer concise answers\./g)).toHaveLength(1);
+    // Distilled ranks before daily.
+    expect(text.indexOf("[MEMORY]")).toBeLessThan(text.indexOf("[daily"));
+    expect(details).toMatchObject({ kind: "recall", matches: 2 });
+  });
+
+  it("returns no-match text, honors maxResults, and rejects disabled/empty queries", async () => {
+    const adapter = new MemoryAdapter();
+    const { text } = await run(recallTool(adapter), { query: "nothing stored here" });
+    expect(text).toContain("No matching stored memories");
+    await expect(run(recallTool(adapter), { query: "   " })).rejects.toThrow("query is required");
+    await expect(run(recallTool(adapter, false), { query: "anything" })).rejects.toThrow("disabled");
+    const capped = await run(recallTool(adapter), { query: "a", maxResults: 50 });
+    expect((capped.details as Record<string, unknown>).matches).toBeLessThanOrEqual(10);
+  });
+
+  it("skips secret-shaped bullets instead of surfacing them", async () => {
+    const adapter = new MemoryAdapter();
+    const dir = ".obsidian/plugins/agentic-chat/memory";
+    await adapter.write(`${dir}/daily/2026-09-03.md`, "## 2026-09-03\n\n- api_key = sk-test-secret-value\n- Prefers morning deploys.\n");
+    const { text } = await run(recallTool(adapter), { query: "deploys secret" });
+    expect(text).not.toContain("sk-test");
+    expect(text).toContain("Prefers morning deploys.");
+  });
+});

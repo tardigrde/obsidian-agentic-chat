@@ -38,8 +38,9 @@ Daily/MEMORY.md plaintext may contain session summaries. Automatic filters block
 ## Review / delete
 
 - Review: **Open MEMORY.md** / **Open today's note** buttons in settings, or open the files directly (edits to MEMORY.md above the `<!-- AGENTIC-CHAT-AUTO-MEMORY -->` marker are never overwritten — distillation merges below it).
-- The agent can only append to **today's daily note** (`remember_memory` — say "remember this"; follows your mutating approval gate like any vault write, blocked in plan mode). It can never write MEMORY.md: generic `write`/`edit` to memory paths is denied even in YOLO, for parent and subagents (children never receive the memory tool at all).
+- The agent can only append to **today's daily note** (`remember_memory` — say "remember this"; follows your mutating approval gate like any vault write, blocked in plan mode). It can never write MEMORY.md: generic `write`/`edit` to memory paths is denied even in YOLO, for parent and subagents (children never receive `remember_memory`; explorers may receive read-only `recall_memory`).
 - Manual: `/memory add <text>` appends to today's daily note. `/memory distill` forces consolidation now.
+- Recall: `recall_memory` (read-only, plan-allowed, child-grantable) searches MEMORY.md + recent daily notes with `{query, maxResults?}` and returns ≤500-char snippets with `[MEMORY]`/`[daily DATE]` citations as untrusted DATA. Never scans session JSONL in v1.
 - Legacy `memories.jsonl` (old `search_memory` system) migrates once into MEMORY.md on first capture/distill (`memories.jsonl.migrated` backup); `search_memory` and `/memory review|manage|export|clear` are removed.
 
 ## Disable
