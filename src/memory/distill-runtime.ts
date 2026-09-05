@@ -88,6 +88,8 @@ interface DistillOptions {
   now?: number;
   /** Session dir override (tests); defaults to the plugin sessions folder. */
   sessionDir?: string;
+  /** Cap eligible sessions for this run (startup uses 1); defaults to MAX_DISTILL_SESSIONS. */
+  maxSessions?: number;
 }
 
 export interface EligibleSession {
@@ -107,6 +109,7 @@ export async function findEligibleSessions(
   sessionDir: string,
   state: DistillState,
   now = Date.now(),
+  maxSessions: number = MAX_DISTILL_SESSIONS,
 ): Promise<EligibleSession[]> {
   void now;
   let files: string[];
@@ -128,8 +131,9 @@ export async function findEligibleSessions(
   }
   withMtime.sort((left, right) => right.mtime - left.mtime);
   const eligible: EligibleSession[] = [];
+  const cap = Math.max(1, Math.trunc(maxSessions));
   for (const { path, mtime } of withMtime) {
-    if (eligible.length >= MAX_DISTILL_SESSIONS) break;
+    if (eligible.length >= cap) break;
     let size: number;
     try {
       size = (await adapter.stat(path))?.size ?? 0;
@@ -185,7 +189,7 @@ async function checkDistillGuards(
   }
   if (options.force) return null;
   const sessionDir = options.sessionDir ?? `${options.configDir}/plugins/${PLUGIN_ID}/sessions`;
-  const eligible = await findEligibleSessions(options.adapter, sessionDir, state, now);
+  const eligible = await findEligibleSessions(options.adapter, sessionDir, state, now, options.maxSessions);
   const hasWork = eligible.length > 0 || state.pending > 0;
   if (!shouldAutoDistill(state, hasWork, now)) {
     return { status: "skipped", reason: hasWork ? "in cooldown" : "nothing eligible" };
@@ -205,8 +209,8 @@ async function runLockedDistill(
     const consumedPending = state.pending;
     const sessionDir = options.sessionDir ?? `${options.configDir}/plugins/${PLUGIN_ID}/sessions`;
     const eligible = options.force
-      ? await findEligibleSessions(options.adapter, sessionDir, { ...state, lastSuccess: undefined }, now)
-      : await findEligibleSessions(options.adapter, sessionDir, state, now);
+      ? await findEligibleSessions(options.adapter, sessionDir, { ...state, lastSuccess: undefined }, now, options.maxSessions)
+      : await findEligibleSessions(options.adapter, sessionDir, state, now, options.maxSessions);
     const dailies = await readRecentDailies(options.adapter, paths);
     const existing = (await options.adapter.exists(paths.memoryFile))
       ? parseMemoryFile(await options.adapter.read(paths.memoryFile))

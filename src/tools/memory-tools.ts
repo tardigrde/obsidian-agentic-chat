@@ -8,6 +8,7 @@ import { wrapToolOutputTruncated } from "./tool-output-wrapper";
 import {
   appendDailyEntry,
   bumpPendingAtomic,
+  containsInjectionAttempt,
   formatDailyEntry,
   memorySettingsOf,
   normalizeBullet,
@@ -206,6 +207,7 @@ function createRememberMemoryTool(
       const text = String(params.text ?? "").trim().replace(/\s+/g, " ");
       if (!text) throw new Error("text is required.");
       if (containsSensitiveText(text)) throw new Error("Memory text looks like it may contain a secret. Not saved.");
+      if (containsInjectionAttempt(text)) throw new Error("Memory text looks like an instruction to the agent. Save facts, not directives.");
       if (!adapter) throw new Error("Vault adapter is unavailable.");
       const paths = resolveMemoryPaths(app.vault.configDir, settings);
       // Allowlisted kind only: the value is interpolated into a markdown bullet

@@ -116,6 +116,9 @@ import { planTrackerRows } from "../agent/plan-tracker";
 import { buildPlanTrackerPanelState } from "./plan-tracker-panel";
 import { renderPlanTrackerPanel as renderPlanTrackerPanelDom } from "./plan-tracker-renderer";
 import { MemoryWorkflowController } from "./memory-workflow-controller";
+import { MemoryScheduler } from "./memory-scheduler";
+import type { AgenticChatSettings } from "../settings";
+import { memorySettingsOf } from "../memory/vault-memory";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
 import { SessionWorkflowController } from "./session-workflow-controller";
@@ -231,6 +234,9 @@ export class ChatView extends ItemView {
   private userScrollIntent = false;
   private userScrollIntentTimer: number | null = null;
   private closed = true;
+  private memoryScheduler: MemoryScheduler | null = null;
+  /** Only the first mounted view runs the memory scheduler (leaves share it). */
+  private static schedulerStarted = false;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -286,10 +292,27 @@ export class ChatView extends ItemView {
       () => this.service.initialize(),
       (error) => new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`),
     );
+    if (!ChatView.schedulerStarted) {
+      ChatView.schedulerStarted = true;
+      this.memoryScheduler = new MemoryScheduler({
+        adapter: this.app.vault.adapter,
+        configDir: this.app.vault.configDir,
+        getSettings: () => this.plugin.settings,
+        sessionCostUsd: () => this.service.getSessionUsage().cost?.total ?? 0,
+        isQuiet: () => !this.plugin.isAnyViewStreaming(),
+        isClosed: () => this.closed,
+      });
+      this.memoryScheduler.start();
+    }
   }
 
   async onClose(): Promise<void> {
     this.closed = true;
+    if (this.memoryScheduler) {
+      this.memoryScheduler.stop();
+      this.memoryScheduler = null;
+      ChatView.schedulerStarted = false;
+    }
     this.cancelAutocomplete();
     this.menu?.detach();
     this.bubble?.dispose();
@@ -403,6 +426,7 @@ export class ChatView extends ItemView {
 
   private async switchToTab(index: number): Promise<void> {
     if (index === this.activeTabIndex || index < 0 || index >= this.tabs.length) return;
+    this.memoryScheduler?.kick();
     this.cancelAutocomplete();
     this.menu.hide();
     this.endEditing(false);
@@ -415,6 +439,7 @@ export class ChatView extends ItemView {
   /** `+`: open a new tab on a fresh session and switch to it (capped at MAX_TABS). */
   private async addTab(): Promise<void> {
     if (this.tabs.length >= MAX_TABS) return;
+    this.memoryScheduler?.kick();
     this.endEditing(false);
     this.saveActiveState();
     const tab = this.createTab();
@@ -1453,6 +1478,7 @@ export class ChatView extends ItemView {
   private async sendPrompt(text: string): Promise<void> {
     const tab = this.activeTab;
     const service = tab.service;
+    this.memoryScheduler?.markActivity();
     const activeNoteCache = this.activeNoteCache;
     const contextCache = this.contextCache;
     const explicitAttachments = [...this.attachments];
@@ -1493,6 +1519,7 @@ export class ChatView extends ItemView {
       if (!this.isLiveTab(tab)) return;
       throw error;
     }
+    this.memoryScheduler?.markActivity();
     this.showServiceError();
   }
 
@@ -2164,9 +2191,16 @@ export class ChatView extends ItemView {
       ["Approval (mutating)", settings.approval.mutating],
       ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],
       ["Session", session ? `${session.messageCount} messages` : "(none)"],
+      ["Memory", this.memoryStatusLine(settings)],
       ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
       ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
     ]);
+  }
+
+  /** Sync memory line for /status (scheduler summary; no I/O). */
+  private memoryStatusLine(settings: AgenticChatSettings): string {
+    if (!memorySettingsOf(settings).enabled) return "off";
+    return this.memoryScheduler?.getSummary() ?? "idle";
   }
 
   /** `/config`: clickable mode picker, applied in-pane. Output style lives under /style. */
@@ -2292,6 +2326,7 @@ export class ChatView extends ItemView {
   // --- session + model actions ---
 
   private async newSession(): Promise<void> {
+    this.memoryScheduler?.kick();
     const coordinator = this.createSessionActivationCoordinator();
     try {
       await coordinator.startNewConversation(() => this.service.newSession());
@@ -2338,6 +2373,7 @@ export class ChatView extends ItemView {
       await this.switchToTab(openIn);
       return;
     }
+    this.memoryScheduler?.kick();
     await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
   }
 

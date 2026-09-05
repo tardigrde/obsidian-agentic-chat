@@ -42,6 +42,14 @@ import { AgentSessionActivation } from "./session-activation";
 import { AgentSessionActions } from "./session-actions";
 import { AgentCommandInvocationRuntime } from "./command-invocation";
 import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
+import {
+  appendDailyEntry,
+  bumpPendingAtomic,
+  formatDailyEntry,
+  memorySettingsOf,
+  resolveMemoryPaths,
+  todayKey,
+} from "../memory/vault-memory";
 import { maybeCompactAgentTranscript } from "./compaction-orchestrator";
 import { estimateContextUsage } from "./compaction";
 import {
@@ -182,6 +190,7 @@ export class AgentService {
       sessionManager,
       buildStreamFn: () => this.streams.buildStreamFn(),
       summarize: options.summarize,
+      onCompacted: (summary) => void this.depositCompactionSummary(summary),
     });
     this.runtimeResources = new AgentRuntimeResourceState({
       app: this.app,
@@ -802,6 +811,36 @@ export class AgentService {
       refreshActiveSessionInfo: () => this.sessions.refreshInfoIfActive(),
       notifyChange: () => this.notifyChange(),
     });
+  }
+
+  /**
+   * Deposit a compaction summary as distillation feedstock (today's daily note).
+   * The summary was already paid for — this makes it Tier-2 input asynchronously
+   * instead of chaining a second LLM call onto the compaction hot path.
+   */
+  private async depositCompactionSummary(summary: string): Promise<void> {
+    try {
+      const settings = this.getSettings();
+      if (!memorySettingsOf(settings).enabled) return;
+      const resolved = memorySettingsOf(settings);
+      const paths = resolveMemoryPaths(this.app.vault.configDir, resolved);
+      const bullets = summary
+        .split("\n")
+        .map((line) => line.trim().replace(/^[-*#>]+\s*/, ""))
+        .filter((line) => line.length >= 10)
+        .slice(0, 10)
+        .map((line) => line.slice(0, 200));
+      if (bullets.length === 0) return;
+      const date = todayKey();
+      await appendDailyEntry(this.app.vault.adapter, paths, formatDailyEntry({
+        date,
+        bullets,
+        note: "compaction summary deposit",
+      }), date);
+      await bumpPendingAtomic(this.app.vault.adapter, paths);
+    } catch {
+      // Feedstock deposit never fails anything.
+    }
   }
 
   private recordRecentEvent(event: AgentEvent): void {

@@ -75,14 +75,15 @@ export class MemoryWorkflowController {
       this.options.renderer.error("Memory text looks like it may contain a secret. Not saved.");
       return;
     }
+    const date = todayKey(this.now());
     const entry = formatDailyEntry({
-      date: todayKey(this.now()),
+      date,
       bullets: [text.endsWith(".") ? text : `${text}.`],
       note: `manual /memory add · v${VAULT_MEMORY_PROMPT_VERSION}`,
     });
     try {
-      const dailyPath = await appendDailyEntry(this.options.adapter, this.paths(), entry, todayKey(this.now()));
-      // Manual entries must consolidate like any other Tier-1 input.
+      const dailyPath = await appendDailyEntry(this.options.adapter, this.paths(), entry, date);
+      // Manual entries must consolidate like any other explicit daily input.
       try {
         await bumpPendingAtomic(this.options.adapter, this.paths());
       } catch {
