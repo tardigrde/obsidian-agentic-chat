@@ -326,3 +326,33 @@ describe("vault memory hardening (review)", () => {
     await expect(adapter.read(dailyPath)).resolves.toContain("Dotted folder fact.");
   });
 });
+
+describe("distill coverage map", () => {
+  it("round-trips sessions + ledger through parse", async () => {
+    const { parseDistillState, uncoveredEntries, withSessionCoverage } = await import(
+      "../src/memory/vault-memory"
+    );
+    const state = withSessionCoverage(
+      { ...parseDistillState(null), bgTokens: 100, bgCostUsd: 0.01, lastRunCostUsd: 0.002 },
+      "sess-1",
+      { lastEntryId: "e3", version: 2, at: new Date(1_000).toISOString() },
+    );
+    const reparsed = parseDistillState(JSON.stringify(state));
+    expect(reparsed.sessions?.["sess-1"]).toMatchObject({ lastEntryId: "e3", version: 2 });
+    expect(reparsed.bgTokens).toBe(100);
+    const entries = [{ id: "e1" }, { id: "e2" }, { id: "e3" }, { id: "e4" }];
+    expect(uncoveredEntries(entries, "e3").map((entry) => entry.id)).toEqual(["e4"]);
+    expect(uncoveredEntries(entries, undefined).map((entry) => entry.id)).toEqual(["e1", "e2", "e3", "e4"]);
+    expect(uncoveredEntries(entries, "gone").map((entry) => entry.id)).toEqual(["e1", "e2", "e3", "e4"]);
+    expect(uncoveredEntries(entries, "e4")).toEqual([]);
+  });
+
+  it("drops malformed coverage and negative ledger values", async () => {
+    const { parseDistillState } = await import("../src/memory/vault-memory");
+    const state = parseDistillState(
+      JSON.stringify({ version: 1, sessions: { bad: { version: 2 }, ok: { lastEntryId: "e9" } }, bgTokens: -5 }),
+    );
+    expect(Object.keys(state.sessions ?? {})).toEqual(["ok"]);
+    expect(state.bgTokens).toBeUndefined();
+  });
+});

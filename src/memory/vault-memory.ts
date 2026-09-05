@@ -315,6 +315,13 @@ function sentence(value: string): string {
   return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
+export interface SessionCoverage {
+  /** Last session-entry id covered by a successful distill (positional delta resumes after it). */
+  lastEntryId: string;
+  version: number;
+  at: string;
+}
+
 export interface DistillState {
   version: number;
   pending: number;
@@ -322,6 +329,31 @@ export interface DistillState {
   lastAttempt?: string;
   nextRetryAfter?: string;
   failCount: number;
+  /** Per-session distill coverage; replaces the Tier-1 pending counter as the eligibility source. */
+  sessions?: Record<string, SessionCoverage>;
+  bgTokens?: number;
+  bgCostUsd?: number;
+  lastRunCostUsd?: number;
+}
+
+function parseSessionCoverage(value: unknown): Record<string, SessionCoverage> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const out: Record<string, SessionCoverage> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    if (typeof record.lastEntryId !== "string" || !record.lastEntryId) continue;
+    out[key] = {
+      lastEntryId: record.lastEntryId,
+      version: typeof record.version === "number" ? record.version : 0,
+      at: typeof record.at === "string" ? record.at : "",
+    };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function parseNonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 export function parseDistillState(raw: string | null): DistillState {
@@ -335,6 +367,12 @@ export function parseDistillState(raw: string | null): DistillState {
       lastAttempt: typeof parsed.lastAttempt === "string" ? parsed.lastAttempt : undefined,
       nextRetryAfter: typeof parsed.nextRetryAfter === "string" ? parsed.nextRetryAfter : undefined,
       failCount: typeof parsed.failCount === "number" ? parsed.failCount : 0,
+      ...(parseSessionCoverage(parsed.sessions) ? { sessions: parseSessionCoverage(parsed.sessions) } : {}),
+      ...(parseNonNegativeNumber(parsed.bgTokens) !== undefined ? { bgTokens: parsed.bgTokens as number } : {}),
+      ...(parseNonNegativeNumber(parsed.bgCostUsd) !== undefined ? { bgCostUsd: parsed.bgCostUsd as number } : {}),
+      ...(parseNonNegativeNumber(parsed.lastRunCostUsd) !== undefined
+        ? { lastRunCostUsd: parsed.lastRunCostUsd as number }
+        : {}),
     };
   } catch {
     return { version: 0, pending: 0, failCount: 0 };
@@ -353,6 +391,29 @@ export async function readDistillState(adapter: DataAdapter, paths: ResolvedMemo
 export async function writeDistillState(adapter: DataAdapter, paths: ResolvedMemoryPaths, state: DistillState): Promise<void> {
   await ensureDir(adapter, paths.dir);
   await adapter.write(paths.stateFile, JSON.stringify(state));
+}
+
+/**
+ * Positional delta: entries after the covered id. Unknown/missing id → full list
+ * (rewrite churned the ids — full re-distill is the safe fallback).
+ */
+export function uncoveredEntries<TEntry extends { id: string }>(
+  entries: readonly TEntry[],
+  lastEntryId: string | undefined,
+): TEntry[] {
+  if (!lastEntryId) return [...entries];
+  const index = entries.findIndex((entry) => entry.id === lastEntryId);
+  if (index === -1) return [...entries];
+  return entries.slice(index + 1);
+}
+
+/** Record coverage for a session (pure — caller persists the returned state). */
+export function withSessionCoverage(
+  state: DistillState,
+  sessionId: string,
+  coverage: SessionCoverage,
+): DistillState {
+  return { ...state, sessions: { ...(state.sessions ?? {}), [sessionId]: coverage } };
 }
 
 /** Tier-2 trigger: >24h since success or >=3 new Tier-1 entries; honors 24h failure backoff. */
