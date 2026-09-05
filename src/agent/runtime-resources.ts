@@ -14,6 +14,7 @@ import { createDocumentTools } from "../tools/document-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
 import { createReadSkillTool, createReadSkillFileTool } from "../tools/read-skill-tool";
+import { createRecallCompactedTurnsTool, type CompactionArchiveProvider } from "../tools/compaction-recall-tools";
 import { createSkillLoadTools, createCreateSkillTool, type SkillScaffolder } from "../tools/skill-tools";
 import { getLoadedSkillNames, pruneLoadedSkills } from "../skills/skill-load-state";
 import { formatSkillInvocation } from "../skills/skills";
@@ -214,11 +215,14 @@ export function buildAgentParentTools(options: {
   toolBudgetState?: ToolBudgetState;
   /** When present, the agent gets a `create_skill` tool backed by the New skill wizard writer. */
   skillScaffolder?: SkillScaffolder;
+  /** When present, the agent gets a `recall_compacted_turns` tool over this session's archives. */
+  getCompactionArchives?: CompactionArchiveProvider;
 }): { tools: AgentTool[]; toolBudget: ToolBudgetSnapshot } {
   const tools = [
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
     ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
     ...createMemoryTools(options.app, { getSettings: () => options.settings }),
+    ...(options.getCompactionArchives ? [createRecallCompactedTurnsTool(options.getCompactionArchives)] : []),
     ...createDocumentTools(options.app, options.artifactStore),
     ...createWebTools(options.settings.web, options.webFetch, options.artifactStore),
     ...createToolArtifactTools(options.artifactStore),

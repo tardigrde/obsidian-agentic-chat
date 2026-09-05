@@ -69,6 +69,8 @@ describe("resolveModePolicy", () => {
     expect(resolveModePolicy("yolo", allow, "grep").policy).toBe("allow");
     // recall_memory is read-only search over MEMORY.md + dailies, so plan allows it.
     expect(resolveModePolicy("plan", allow, "recall_memory").policy).toBe("allow");
+    // recall_compacted_turns is read-only search over this session's archives.
+    expect(resolveModePolicy("plan", allow, "recall_compacted_turns").policy).toBe("allow");
   });
 });
 

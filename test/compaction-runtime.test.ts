@@ -103,6 +103,18 @@ describe("AgentCompactionRuntime", () => {
     expect(entries.filter((entry) => entry.type === "message")).toHaveLength(compacted!.length);
   });
 
+  it("archives the pre-compaction slice and embeds a recall index in the summary", async () => {
+    const { manager, runtime } = await setup();
+    const compacted = await runtime.compact(largeTranscript(), 1_000);
+    expect(compacted).not.toBeNull();
+    const archives = await manager.listCompactionArchives();
+    expect(archives).toHaveLength(1);
+    expect(archives[0]!.turns.length).toBeGreaterThan(0);
+    const summaryText = JSON.stringify(compacted![0]);
+    expect(summaryText).toContain("recall-index");
+    expect(summaryText).toContain(archives[0]!.name);
+  });
+
   it("preserves artifact cache references on the summary message", async () => {
     const { adapter, runtime, path } = await setup();
     const artifactResult = {

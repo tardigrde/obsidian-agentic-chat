@@ -157,3 +157,43 @@ describe("deriveAutoName", () => {
     expect(deriveAutoName("   ")).toBeUndefined();
   });
 });
+
+describe("ObsidianSessionManager compaction archives", () => {
+  it("archives pre-compaction turns and lists them back", async () => {
+    const { sm } = manager();
+    await sm.createSession(DEFAULTS);
+    const ref = await sm.archivePreCompactionTurns([
+      userMessage("the deploy requirement is friday"),
+      userMessage("   "),
+    ]);
+    expect(ref).not.toBeNull();
+    const archives = await sm.listCompactionArchives();
+    expect(archives).toHaveLength(1);
+    expect(archives[0]?.turns.map((turn) => turn.text)).toEqual(["the deploy requirement is friday"]);
+  });
+
+  it("returns null with no active session and prunes to the last two archives", async () => {
+    const { sm, adapter } = manager();
+    expect(await sm.archivePreCompactionTurns([userMessage("x")])).toBeNull();
+    expect(await sm.listCompactionArchives()).toEqual([]);
+    const info = await sm.createSession(DEFAULTS);
+    const base = info.path.split("/").pop()?.replace(/\.jsonl$/, "");
+    // Pre-seed two older archives, then one real archive prunes the oldest.
+    await adapter.write(`sessions/compacted/${base}__2000-01-01T00-00-00-000Z.jsonl`, '{"turnIndex":0,"role":"user","text":"oldest","toolDerived":false}\n');
+    await adapter.write(`sessions/compacted/${base}__2000-01-02T00-00-00-000Z.jsonl`, '{"turnIndex":0,"role":"user","text":"middle","toolDerived":false}\n');
+    await sm.archivePreCompactionTurns([userMessage("newest")]);
+    const archives = await sm.listCompactionArchives();
+    expect(archives).toHaveLength(2);
+    expect(archives.map((archive) => archive.turns[0]?.text).sort()).toEqual(["middle", "newest"]);
+  });
+
+  it("skips corrupt archives instead of failing the list", async () => {
+    const { sm, adapter } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    const base = info.path.split("/").pop()?.replace(/\.jsonl$/, "");
+    await adapter.write(`sessions/compacted/${base}__2000-01-01T00-00-00-000Z.jsonl`, "not json\n");
+    await sm.archivePreCompactionTurns([userMessage("good")]);
+    const archives = await sm.listCompactionArchives();
+    expect(archives.map((archive) => archive.turns[0]?.text)).toEqual(["good"]);
+  });
+});
