@@ -29,7 +29,7 @@ Diff previews color removed lines red and added lines green.
 
 **YOLO** auto-approves mutating tools for the current session, except for tools explicitly set to deny.
 
-`/plan` enters read-only planning mode. It blocks mutations until `/endplan` restores the previous posture.
+`/plan` enters read-only planning mode. It blocks mutations until you approve the inline plan card (choosing the next posture), send revision feedback, or leave plan mode via the Plan badge or `/config`, which restores the previous posture.
 
 Run `/compact [instructions]` to summarize older turns on demand. The optional instructions are passed to the compaction request so important details survive the summary.
 
