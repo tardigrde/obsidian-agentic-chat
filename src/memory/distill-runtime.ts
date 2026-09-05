@@ -208,14 +208,15 @@ async function runLockedDistill(
     const state = await readDistillState(options.adapter, paths);
     const consumedPending = state.pending;
     const sessionDir = options.sessionDir ?? `${options.configDir}/plugins/${PLUGIN_ID}/sessions`;
-    const eligible = options.force
-      ? await findEligibleSessions(options.adapter, sessionDir, { ...state, lastSuccess: undefined }, now, options.maxSessions)
-      : await findEligibleSessions(options.adapter, sessionDir, state, now, options.maxSessions);
+    const eligible = await findEligibleSessions(options.adapter, sessionDir, state, now, options.maxSessions);
     const dailies = await readRecentDailies(options.adapter, paths);
     const existing = (await options.adapter.exists(paths.memoryFile))
       ? parseMemoryFile(await options.adapter.read(paths.memoryFile))
       : { human: "", autoBullets: [] as string[], version: state.version };
     const feedstock = buildFeedstock(eligible, dailies);
+    if (feedstock.length === 0 && existing.autoBullets.length === 0) {
+      return { status: "skipped", reason: "nothing to distill" };
+    }
     const { auto, dropped, fallback, promptChars, outputChars, modelId, provider } =
       await computeDistilledBullets(options, feedstock, dailies, existing.autoBullets);
     const validated = filterDirectiveBullets(filterSecretBullets(auto));

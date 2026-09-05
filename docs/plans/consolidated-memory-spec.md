@@ -1,4 +1,26 @@
-# Consolidated memory spec v2 (post-critique)
+# Consolidated memory spec v3 (as built — amendments over v2)
+
+v2 → built deviations (critic-driven, all adopted during implementation):
+- §3 markers-in-JSONL **dropped**: per-session coverage map lives in `.distill-state.json`
+  (`{sessionId: {lastEntryId, version, at, size?, mtime?}}`) — no transcript mutation, no
+  parser/leaf/mtime/rewrite impact. Stat match (size+mtime) skips unchanged files without reading.
+- §4 <50% verbatim gate **replaced** by coverage validation (fuzzy token-overlap ≥0.8 or explicit
+  `dropped:` reason; silent vanish → deterministic-union fallback, file kept).
+- §4 version-mismatch → **defer** (single attempt, no retry loop, never union a surgical result).
+- Missing numbers defined: per-tool-result 1k, per-session 4k, per-run 12k, existing-memory input 6k,
+  output 2k tokens, idle 10min, ≤3 sessions/run sequential, ≤1 auto-distill per startup sweep.
+- Zero-token pre-gates: delta thresholds on uncovered delta + success cooldown 1h (auto only).
+- Producer-side DATA framing (`<untrusted-transcripts>` + closer escaping), imperative-bullet output
+  filter, injection check on `remember_memory` input (narrow: classic injection verbs only).
+- Silent auto-success (daily audit line + `/status` row); Notice only manual/failures.
+- Background ledger (`bgTokens/bgCostUsd/lastRunCostUsd` in state); cap guard = session + bg spend.
+- One feedstock serializer shared with #145 (`buildArchiveTurns` semantics + `serializeSessionFeedstock`).
+- `MEMORY.md.prev` rotating backup; delete-flow purges `.prev`/legacy/`.migrated`/tmp.
+- `pending` kept with narrowed semantics (explicit daily writes only) instead of deleted.
+
+Original v2 below for history.
+
+---
 
 Status: revised after 3 critic rounds (ses_f900279c4ffeqlEICD1WQC6eOr, ses_f900279bdffeGhTcvGAB5T0CPP,
 ses_f900279b9ffekOYF3xo4ZB7keB). Stack: `feat/h2-memory` (PR #143) first,

@@ -107,12 +107,14 @@ Derived from `docs/harness-guide-audit.md` deviation matrix + vault-owned agent 
 
 *H1 · `fetch_url` destination allowlist — **DONE** in #110.* `settings.web.allowedHosts` (`src/tools/web-allowlist.ts` / `src/settings-schema.ts:138` / `src/settings.ts:Web tab` / `src/tools/web-fetch.ts`) enforces label-boundary-aware suffix match (`example.com` → `sub.example.com` ok, `evil-example.com` blocked) after `isBlockedHost` (deny wins), including redirect hops. Empty = allow all public. UI normalizes on save; tests cover `normalizeAllowedHosts`/`isHostAllowedByAllowlist`, `*` wildcard, SSRF deny-wins, redirect block. Harness #18 gap closed.
 
-*H2 · Seamless cross-session memory (Tier-1 daily + Tier-2 distilled) — **DONE**.* Off-by-default `Settings → Agent → Memory`
+*H2 · Seamless cross-session memory (session-fed surgical distillation) — **DONE**.* Off-by-default `Settings → Agent → Memory`
 (`src/settings-schema.ts` `memory`, `src/settings.ts` `renderMemory`); store is user-chosen, default hidden plugin folder
-(`src/memory/vault-memory.ts` `resolveMemoryPaths`). Tier-1 deterministic daily append on `/new`/tab switch/close/startup
-(`src/memory/distill-runtime.ts` `flushSessionToDaily`, `src/ui/chat-view.ts` `flushSessionMemory`), gated ≥3 turns/≥500 chars.
-Tier-2 consolidates idle-5min/startup/`/memory distill` via chat model (override-able) with deterministic offline fallback,
-lock + 24h backoff + spend-cap guard. Agent writes daily-only (`remember_memory`); generic writes to memory paths denied
+(`src/memory/vault-memory.ts` `resolveMemoryPaths`). Explicit daily notes (`remember_memory`, `/memory add`) plus
+past sessions serialized on demand (`src/memory/session-feedstock.ts`, thinking stripped, capped) feed Tier-2,
+which rewrites the MEMORY.md auto-section surgically with contradiction checks, backup, and validation
+(`src/memory/distill-runtime.ts`), triggered by 10-min idle/session-switch/startup-sweep/`/memory distill`
+(`src/ui/memory-scheduler.ts`), sequential with per-session coverage, background ledger, and silent auto runs.
+Agent writes daily-only (`remember_memory` + injection filter); generic writes to memory paths denied
 even in YOLO (`src/agent/tool-call-controller.ts`). MEMORY.md merges below `<!-- AGENTIC-CHAT-AUTO-MEMORY -->`, human section
 preserved. Legacy `memories.jsonl` migrates once; `search_memory` + `/memory review|manage|export|clear` removed.
 Full lifecycle: `docs/features/memory.md`.
@@ -186,4 +188,4 @@ Full lifecycle: `docs/features/memory.md`.
 
 *First-principles rationale*: security/reliability done — next small wins are evaluator routing (`H5` `S`) then diff polish (`R2` `S`) before audit (`A7`). Memory (`H2`) shipped (off by default, docs/privacy pass included). No babysitting — user controls `/compact`, threshold `80%` is the safety net. S-cluster high-ROI but `L-effort` and cross-cuts every gate, so batch separately. `H5` reuses `AgentRole.model` (S8 done, no legacy aliases).
 
-*Codex borrow summary*: `C6` no auto-decay; `H6` revived on real evidence (identical-batch guard, soft stop); `H2` done (auto Tier-1 + idle Tier-2, off by default); `H5` `review_model`+rubric JSON+`spawn_agent` routing; `R2` preview budget/highlight; `R3` structural artifact digest; `S` copy Codex lattices.
+*Codex borrow summary*: `C6` no auto-decay; `H6` revived on real evidence (identical-batch guard, soft stop); `H2` done (session-fed surgical distill, off by default); `H5` `review_model`+rubric JSON+`spawn_agent` routing; `R2` preview budget/highlight; `R3` structural artifact digest; `S` copy Codex lattices.
