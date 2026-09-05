@@ -423,7 +423,7 @@ describe("AgentService", () => {
 
     await service.sendPrompt("Use the normal prompt context");
 
-    expect(seenContext?.tools?.map((tool) => tool.name)).toContain("search_memory");
+    expect(seenContext?.tools?.map((tool) => tool.name)).toContain("remember_memory");
     const serializedContext = JSON.stringify({
       systemPrompt: seenContext?.systemPrompt,
       messages: seenContext?.messages,

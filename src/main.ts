@@ -31,6 +31,7 @@ import { ObsidianSessionManager } from "./session/session-manager";
 import { initPricingCache } from "./llm/pricing-cache";
 import { ApprovalModal } from "./ui/approval-modal";
 import { ChatView } from "./ui/chat-view";
+import { MemoryScheduler } from "./ui/memory-scheduler";
 import { buildQuickAskTarget } from "./ui/quick-ask";
 import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
@@ -47,6 +48,8 @@ export default class AgenticChatPlugin extends Plugin {
   private lastSyncedMode: AgentMode | null = null;
   private secretStore!: ObsidianSecretStore;
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
+  /** Plugin-owned background distillation scheduler (one per app, not per view). */
+  private memoryScheduler: MemoryScheduler | null = null;
   readonly pluginService = new PluginService(
     this.app,
     () => this.settings,
@@ -114,6 +117,39 @@ export default class AgenticChatPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("create", invalidateFor));
     this.registerEvent(this.app.vault.on("delete", invalidateFor));
     this.registerEvent(this.app.vault.on("rename", invalidateFor));
+
+    this.memoryScheduler = new MemoryScheduler({
+      adapter: this.app.vault.adapter,
+      configDir: this.app.vault.configDir,
+      getSettings: () => this.settings,
+      sessionCostUsd: () => this.foregroundSessionCostUsd(),
+      isQuiet: () => !this.isAnyViewStreaming(),
+      isClosed: () => false,
+    });
+    this.memoryScheduler.start();
+  }
+
+  onunload(): void {
+    this.memoryScheduler?.stop();
+    this.memoryScheduler = null;
+  }
+
+  /** Background distillation hooks for views (no-op before onload/after unload). */
+  memoryKick(): void {
+    this.memoryScheduler?.kick();
+  }
+
+  memoryMarkActivity(): void {
+    this.memoryScheduler?.markActivity();
+  }
+
+  memorySummary(): string {
+    return this.memoryScheduler?.getSummary() ?? "idle";
+  }
+
+  private foregroundSessionCostUsd(): number {
+    const view = this.app.workspace.getActiveViewOfType(ChatView);
+    return view?.activeSessionCostUsd() ?? 0;
   }
 
   /**

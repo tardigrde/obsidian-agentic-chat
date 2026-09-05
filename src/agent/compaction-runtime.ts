@@ -143,6 +143,8 @@ export interface AgentCompactionRuntimeOptions {
   sessionManager: ObsidianSessionManager;
   buildStreamFn?: () => StreamFn;
   summarize?: SummarizeFn;
+  /** Async feedstock deposit after a successful compaction (never blocks the result). */
+  onCompacted?: (summary: string) => void | Promise<void>;
 }
 
 /**
@@ -155,6 +157,7 @@ export class AgentCompactionRuntime {
   private readonly sessionManager: ObsidianSessionManager;
   private readonly buildStreamFn: () => StreamFn;
   private readonly injectedSummarize?: SummarizeFn;
+  private readonly onCompacted?: (summary: string) => void | Promise<void>;
 
   constructor(options: AgentCompactionRuntimeOptions) {
     this.getSettings = options.getSettings;
@@ -163,6 +166,7 @@ export class AgentCompactionRuntime {
       options.buildStreamFn ??
       (() => (model, context, streamOptions) => sharedAgentModels().streamSimple(model, context, streamOptions));
     this.injectedSummarize = options.summarize;
+    this.onCompacted = options.onCompacted;
   }
 
   async compact(
@@ -207,6 +211,14 @@ export class AgentCompactionRuntime {
     const newMessages = [buildSummaryMessage(summary.summary, Date.now(), dropped, manifest), ...plan.keep];
     // Persist the rewrite first; only mutate in-memory state once disk succeeds.
     await this.sessionManager.rewriteMessages(newMessages);
+    // Deposit the paid-for summary as distillation feedstock (async, best-effort).
+    if (this.onCompacted) {
+      try {
+        await this.onCompacted(summary.summary);
+      } catch {
+        // Feedstock deposit never fails the compaction.
+      }
+    }
     return { status: "compacted", messages: newMessages };
   }
 

@@ -40,6 +40,11 @@ import {
   type EmbeddingProviderId,
   type EmbeddingSettings,
 } from "./retrieval/embeddings";
+import {
+  DEFAULT_VAULT_MEMORY_SETTINGS,
+  healVaultMemorySettings,
+  type VaultMemorySettings,
+} from "./memory/vault-memory";
 
 export interface AgenticChatSettings {
   provider: ProviderId;
@@ -111,6 +116,8 @@ export interface AgenticChatSettings {
   embeddings: EmbeddingSettings;
   /** Optional opt-in OTLP/Langfuse observability export. */
   observability: ObservabilitySettings;
+  /** Seamless cross-session memory (Tier-1 daily + Tier-2 distilled MEMORY.md). Off by default. */
+  memory: VaultMemorySettings;
 }
 
 /**
@@ -211,6 +218,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   },
   embeddings: DEFAULT_EMBEDDING_SETTINGS,
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
+  memory: { ...DEFAULT_VAULT_MEMORY_SETTINGS },
 };
 
 /** Merge stored settings over defaults, healing nested objects. */
@@ -298,6 +306,9 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
+    memory: healVaultMemorySettings(
+      (stored as { memory?: Partial<VaultMemorySettings> } | null | undefined)?.memory,
+    ),
   };
 }
 
@@ -413,6 +424,7 @@ export function apiKeyForProvider(settings: AgenticChatSettings, provider: strin
 
 // Re-exported for the settings UI and tests; defined next to ProviderId in llm/models.
 export { PROVIDERS } from "./llm/models";
+export type { VaultMemorySettings } from "./memory/vault-memory";
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
   openrouter: "OpenRouter",

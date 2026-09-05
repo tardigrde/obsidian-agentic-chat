@@ -58,6 +58,7 @@ function parentTools(withScaffolder: boolean): AgentTool[] {
       plugins: [],
       profiles: [],
       instructionsOverlay: "",
+      memoryOverlay: "",
       ignoreMatcher: () => false,
       mcpTools: [],
       mcpDiagnostics: [],
@@ -73,13 +74,16 @@ function parentTools(withScaffolder: boolean): AgentTool[] {
 }
 
 describe("tool schema token budget", () => {
-  it("keeps the full parent tool set under 2400 model-visible schema tokens", () => {
+  it("keeps the full parent tool set under 2550 model-visible schema tokens", () => {
     const tokens = estimateToolDefinitionTokens(parentTools(false));
     // Trimmed tool descriptions are a per-turn context + cost win and keep the
     // tool budget (2% of a 128k window = 2560) from silently dropping optional
     // tools. This ceiling guards against prose creeping back in. F10+H8 added
     // read_skill_file + load/unload_skill (+~150 tokens) so limit raised 2200→2400.
-    expect(tokens).toBeLessThan(2400);
+    // H2 recall_memory (read-only MEMORY.md + daily search, #144) adds ~65 tokens
+    // of minimal schema (query + maxResults), so limit raised 2400→2550. Still
+    // under the 2560 tool-budget threshold for 128k models.
+    expect(tokens).toBeLessThan(2550);
   });
 
   it("keeps the production parent tool set (with create_skill) under the same ceiling", () => {

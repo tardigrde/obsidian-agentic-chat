@@ -112,11 +112,12 @@ import {
   semanticIndexPath,
   type SemanticIndexFile,
 } from "../retrieval/semantic-index";
-import { memoryPathForApp } from "../tools/memory-tools";
 import { planTrackerRows } from "../agent/plan-tracker";
 import { buildPlanTrackerPanelState } from "./plan-tracker-panel";
 import { renderPlanTrackerPanel as renderPlanTrackerPanelDom } from "./plan-tracker-renderer";
 import { MemoryWorkflowController } from "./memory-workflow-controller";
+import type { AgenticChatSettings } from "../settings";
+import { memorySettingsOf } from "../memory/vault-memory";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
 import { SessionWorkflowController } from "./session-workflow-controller";
@@ -250,6 +251,15 @@ export class ChatView extends ItemView {
 
   getIcon(): string {
     return "messages-square";
+  }
+
+  /** Foreground session cost for the background distillation spend-cap guard. */
+  activeSessionCostUsd(): number {
+    try {
+      return this.service.getSessionUsage().cost?.total ?? 0;
+    } catch {
+      return 0;
+    }
   }
 
   /** The active tab's agent service. Tabs are created before any service access. */
@@ -404,6 +414,7 @@ export class ChatView extends ItemView {
 
   private async switchToTab(index: number): Promise<void> {
     if (index === this.activeTabIndex || index < 0 || index >= this.tabs.length) return;
+    this.memoryHook((plugin) => plugin.memoryKick());
     this.cancelAutocomplete();
     this.menu.hide();
     this.endEditing(false);
@@ -416,6 +427,7 @@ export class ChatView extends ItemView {
   /** `+`: open a new tab on a fresh session and switch to it (capped at MAX_TABS). */
   private async addTab(): Promise<void> {
     if (this.tabs.length >= MAX_TABS) return;
+    this.memoryHook((plugin) => plugin.memoryKick());
     this.endEditing(false);
     this.saveActiveState();
     const tab = this.createTab();
@@ -1454,6 +1466,7 @@ export class ChatView extends ItemView {
   private async sendPrompt(text: string): Promise<void> {
     const tab = this.activeTab;
     const service = tab.service;
+    this.memoryHook((plugin) => plugin.memoryMarkActivity());
     const activeNoteCache = this.activeNoteCache;
     const contextCache = this.contextCache;
     const explicitAttachments = [...this.attachments];
@@ -1494,6 +1507,7 @@ export class ChatView extends ItemView {
       if (!this.isLiveTab(tab)) return;
       throw error;
     }
+    this.memoryHook((plugin) => plugin.memoryMarkActivity());
     this.showServiceError();
   }
 
@@ -2119,19 +2133,15 @@ export class ChatView extends ItemView {
   private createMemoryWorkflow(): MemoryWorkflowController {
     return new MemoryWorkflowController({
       adapter: this.app.vault.adapter,
-      memoryPath: () => memoryPathForApp(this.app),
+      getSettings: () => this.plugin.settings,
+      configDir: this.app.vault.configDir,
       messages: () => this.service.getMessages(),
-      defaultScope: () => "vault",
       sessionSource: () => {
         const session = this.service.getSessionInfo();
         return session ? `[[Agentic Chat Sessions/${session.id}|Chat session]]` : undefined;
       },
+      sessionCostUsd: () => this.service.getSessionUsage().cost?.total ?? 0,
       renderer: this.workflowRenderer(),
-      writeExport: async (filename, contents) => {
-        await this.ensureExportFolder();
-        const file = await this.app.vault.create(`${EXPORT_FOLDER}/${filename}`, contents);
-        return file.path;
-      },
     });
   }
 
@@ -2169,9 +2179,32 @@ export class ChatView extends ItemView {
       ["Approval (mutating)", settings.approval.mutating],
       ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],
       ["Session", session ? `${session.messageCount} messages` : "(none)"],
+      ["Memory", this.memoryStatusLine(settings)],
       ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
       ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
     ]);
+  }
+
+  /**
+   * Best-effort background hook: memory must never throw into UI flows
+   * (partial test harnesses may lack the plugin scheduler surface).
+   */
+  private memoryHook(fn: (plugin: AgenticChatPlugin) => void): void {
+    try {
+      fn(this.plugin);
+    } catch {
+      // Best-effort background bookkeeping; never blocks UI flows.
+    }
+  }
+
+  /** Sync memory line for /status (scheduler summary; no I/O). */
+  private memoryStatusLine(settings: AgenticChatSettings): string {
+    if (!memorySettingsOf(settings).enabled) return "off";
+    try {
+      return this.plugin.memorySummary();
+    } catch {
+      return "idle";
+    }
   }
 
   /** `/config`: clickable mode picker, applied in-pane. Output style lives under /style. */
@@ -2297,6 +2330,7 @@ export class ChatView extends ItemView {
   // --- session + model actions ---
 
   private async newSession(): Promise<void> {
+    this.memoryHook((plugin) => plugin.memoryKick());
     const coordinator = this.createSessionActivationCoordinator();
     try {
       await coordinator.startNewConversation(() => this.service.newSession());
@@ -2343,6 +2377,7 @@ export class ChatView extends ItemView {
       await this.switchToTab(openIn);
       return;
     }
+    this.memoryHook((plugin) => plugin.memoryKick());
     await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
   }
 

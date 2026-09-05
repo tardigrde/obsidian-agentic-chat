@@ -46,6 +46,7 @@ export const BUILTIN_AGENT_ROLES: AgentRole[] = [
       "list_artifacts",
       "read_artifact",
       "search_artifact",
+      "recall_memory",
     ],
   },
 ];

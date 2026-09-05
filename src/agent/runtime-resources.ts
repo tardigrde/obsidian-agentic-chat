@@ -28,6 +28,11 @@ import { createFileSystemDenyMatcher } from "../vault/file-system-sandbox";
 import type { ReadMemo } from "../vault/read-memo";
 import { formatInstructionsOverlay, loadVaultInstructions } from "./instructions";
 import {
+  loadMemoryOverlay,
+  memorySettingsOf,
+  resolveMemoryPaths,
+} from "../memory/vault-memory";
+import {
   type AgentRole,
   formatAgentRolesForSystemPrompt,
   loadAgentRoles,
@@ -46,6 +51,7 @@ export interface AgentRuntimeResources {
   plugins: LoadedPlugin[];
   profiles: AgentRole[];
   instructionsOverlay: string;
+  memoryOverlay: string;
   ignoreMatcher: IgnoreMatcher;
   mcpTools: AgentTool[];
   mcpDiagnostics: McpServerDiagnostic[];
@@ -56,6 +62,7 @@ export const EMPTY_AGENT_RUNTIME_RESOURCES: AgentRuntimeResources = {
   plugins: [],
   profiles: [],
   instructionsOverlay: "",
+  memoryOverlay: "",
   ignoreMatcher: () => false,
   mcpTools: [],
   mcpDiagnostics: [],
@@ -84,6 +91,9 @@ export async function loadAgentRuntimeResources(
   // adapter guard keeps minimal test harnesses working.
   const adapter = app.vault.adapter;
   const instructionsOverlay = adapter ? formatInstructionsOverlay(await loadVaultInstructions(adapter)) : "";
+  const memoryOverlay = adapter
+    ? await loadVaultMemoryOverlay(adapter, app, settings)
+    : "";
   const mcpProxySettings = settings.mcp.proxyUrl
     ? settings.mcp
     : { proxyUrl: settings.network.proxyUrl, noProxy: settings.network.noProxy };
@@ -107,6 +117,7 @@ export async function loadAgentRuntimeResources(
     plugins,
     profiles,
     instructionsOverlay,
+    memoryOverlay,
     ignoreMatcher,
     mcpTools: mcp.tools,
     mcpDiagnostics: mcp.diagnostics,
@@ -121,6 +132,7 @@ export function composeAgentSystemPrompt(
   const overlays = [
     selfAwarenessOverlay,
     resources.instructionsOverlay,
+    resources.memoryOverlay,
     MODES[settings.mode].promptOverlay,
     OUTPUT_STYLES[settings.outputStyle].promptOverlay,
     formatAgentRolesForSystemPrompt(resources.profiles),
@@ -206,7 +218,7 @@ export function buildAgentParentTools(options: {
   const tools = [
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
     ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
-    ...createMemoryTools(options.app),
+    ...createMemoryTools(options.app, { getSettings: () => options.settings }),
     ...createDocumentTools(options.app, options.artifactStore),
     ...createWebTools(options.settings.web, options.webFetch, options.artifactStore),
     ...createToolArtifactTools(options.artifactStore),
@@ -229,6 +241,16 @@ export function buildAgentParentTools(options: {
     contextWindow: options.contextWindow,
   });
   return { tools: budgeted.tools, toolBudget: budgeted.snapshot };
+}
+
+async function loadVaultMemoryOverlay(
+  adapter: App["vault"]["adapter"],
+  app: App,
+  settings: AgenticChatSettings,
+): Promise<string> {
+  const memory = memorySettingsOf(settings);
+  if (!memory.enabled) return "";
+  return loadMemoryOverlay(adapter, resolveMemoryPaths(app.vault.configDir, memory), true);
 }
 
 async function loadRuntimeSkills(

@@ -850,3 +850,24 @@ describe("mergeSettings — MCP", () => {
     else delete (globalThis as { navigator?: Navigator }).navigator;
   });
 });
+
+describe("mergeSettings — vault memory (H2)", () => {
+  it("defaults memory to disabled plugin-store", () => {
+    expect(mergeSettings(null).memory).toEqual({
+      enabled: false,
+      store: "plugin",
+      vaultFolder: "memory",
+      modelOverride: "",
+    });
+  });
+
+  it("heals memory store and folder values", () => {
+    expect(mergeSettings({ memory: { store: "vault", vaultFolder: "  ", modelOverride: "  mini " } } as never).memory).toEqual({
+      enabled: false,
+      store: "vault",
+      vaultFolder: "memory",
+      modelOverride: "mini",
+    });
+    expect(mergeSettings({ memory: { store: "nope" } } as never).memory.store).toBe("plugin");
+  });
+});
