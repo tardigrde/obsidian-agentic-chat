@@ -208,7 +208,12 @@ export class AgentCompactionRuntime {
     // Archive the pre-compaction slice BEFORE the rewrite destroys it, so
     // recall_compacted_turns can recover verbatim detail later. Best-effort:
     // a failed archive never blocks the compaction itself.
-    const archived = await this.sessionManager.archivePreCompactionTurns(plan.summarize);
+    let archived: { name: string; turns: number } | null;
+    try {
+      archived = await this.sessionManager.archivePreCompactionTurns(plan.summarize);
+    } catch {
+      archived = null;
+    }
     const recallIndex = archived ? formatRecallIndex(archived.name, archived.turns) : undefined;
     const newMessages = [buildSummaryMessage(summary.summary, Date.now(), dropped, manifest, recallIndex), ...plan.keep];
     // Persist the rewrite first; only mutate in-memory state once disk succeeds.

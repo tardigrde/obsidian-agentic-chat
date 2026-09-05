@@ -62,7 +62,7 @@ describe("compaction archives", () => {
 
   it("formats a machine-readable recall index", () => {
     expect(formatRecallIndex("abc__2026-09-05.jsonl", 12)).toBe(
-      '<!-- recall-index archive="abc__2026-09-05.jsonl" turns=12 -->',
+      '<!-- recall-index archive="abc__2026-09-05.jsonl" turns="12" -->',
     );
   });
 });

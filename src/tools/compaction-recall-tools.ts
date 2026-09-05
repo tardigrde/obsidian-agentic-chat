@@ -61,7 +61,8 @@ interface RankedTurn {
 function rankArchiveTurns(archives: readonly CompactionArchive[], query: string): RankedTurn[] {
   const queryTokens = tokenizeRetrievalQuery(query);
   if (queryTokens.length === 0) return [];
-  const scored: { turn: RankedTurn; score: number }[] = [];
+  const scored: { turn: RankedTurn; score: number; ord: number }[] = [];
+  let ord = 0;
   for (const archive of archives) {
     for (const turn of archive.turns) {
       if (!turn.text || containsSensitiveText(turn.text)) continue;
@@ -81,11 +82,12 @@ function rankArchiveTurns(archives: readonly CompactionArchive[], query: string)
           toolDerived: turn.toolDerived,
         },
         score: matched,
+        ord: ord++,
       });
     }
   }
-  // Newest archive first on ties (archives are stored newest-last).
-  scored.sort((left, right) => right.score - left.score);
+  // Later archives/turns first on ties (archives are stored newest-last).
+  scored.sort((left, right) => right.score - left.score || right.ord - left.ord);
   return scored.map((entry) => entry.turn);
 }
 

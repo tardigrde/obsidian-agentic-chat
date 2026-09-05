@@ -197,3 +197,21 @@ describe("ObsidianSessionManager compaction archives", () => {
     expect(archives.map((archive) => archive.turns[0]?.text)).toEqual(["good"]);
   });
 });
+
+describe("ObsidianSessionManager archive failure modes", () => {
+  it("returns null for empty slices", async () => {
+    const { sm } = manager();
+    await sm.createSession(DEFAULTS);
+    const blank = { role: "user", content: [{ type: "text", text: "   " }], timestamp: 1 } as AgentMessage;
+    expect(await sm.archivePreCompactionTurns([blank])).toBeNull();
+    expect(await sm.listCompactionArchives()).toEqual([]);
+  });
+
+  it("skips oversize archive files", async () => {
+    const { sm, adapter } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    const base = info.path.split("/").pop()?.replace(/\.jsonl$/, "");
+    await adapter.write(`sessions/compacted/${base}__2000-01-01T00-00-00-000Z.jsonl`, "x".repeat(200_001));
+    expect(await sm.listCompactionArchives()).toEqual([]);
+  });
+});

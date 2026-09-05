@@ -41,13 +41,14 @@ describe("recall_compacted_turns", () => {
     const tool = createRecallCompactedTurnsTool(async () => [
       archive("sess__t1.jsonl", [
         { text: "test output: deploy checks passed", role: "toolResult", toolDerived: true },
-        { text: `deploy note ${"x".repeat(800)}` },
+        { text: "deploy note with plenty of surrounding context here" },
         { text: "deploy debrief" },
         { text: "deploy retro" },
         { text: "deploy followup" },
       ]),
     ]);
-    const { text } = await run(tool, { query: "deploy" });
+    // "deploy checks" scores 2 for the tool turn vs 1 for the rest: deterministic rank.
+    const { text } = await run(tool, { query: "deploy checks" });
     expect(text).toContain("(from tool output)");
     expect(text).toContain("BEGIN_UNTRUSTED_TOOL_OUTPUT_ESCAPED");
     expect(text.match(/^\d\. /gm)).toHaveLength(3);
@@ -69,3 +70,12 @@ describe("recall_compacted_turns", () => {
     await expect(run(tool, { query: "  " })).rejects.toThrow("query is required");
   });
 });
+
+  it("prefers later archives on equal scores", async () => {
+    const tool = createRecallCompactedTurnsTool(async () => [
+      archive("sess__old.jsonl", [{ text: "deploy window friday" }]),
+      archive("sess__new.jsonl", [{ text: "deploy window friday" }]),
+    ]);
+    const { text } = await run(tool, { query: "deploy window friday" });
+    expect(text.indexOf("sess__new.jsonl")).toBeLessThan(text.indexOf("sess__old.jsonl"));
+  });
