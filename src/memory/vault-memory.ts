@@ -11,15 +11,20 @@ export const TIER2_DAILY_CHARS = 2_000;
 export const MAX_TIER2_DAILIES = 5;
 export const MAX_MEMORY_CHARS = 12_000;
 export const MAX_MEMORY_OVERLAY_CHARS = 8_000;
-export const MAX_DISTILL_OUTPUT_TOKENS = 800;
+/** Surgical rewrite needs headroom for the full revised list (30×200 chars). */
+export const MAX_DISTILL_OUTPUT_TOKENS = 2_000;
+/** Per-run feedstock totals: 3 sessions × 4k + existing-memory 6k. */
+export const MAX_DISTILL_SESSIONS = 3;
+export const FEEDSTOCK_RUN_CHARS = 12_000;
+export const EXISTING_MEMORY_INPUT_CHARS = 6_000;
+/** No automatic distill within this window after a success (manual force bypasses). */
+export const DISTILL_SUCCESS_COOLDOWN_MS = 60 * 60 * 1000;
 
 export const MEMORY_AUTO_MARKER = "<!-- AGENTIC-CHAT-AUTO-MEMORY -->";
 const MEMORY_HEADER_LINE_1 = "> Auto-generated memory — may contain session summaries. Review before sharing this vault.";
 const MEMORY_HEADER_LINE_2 = "> Edit above the marker freely; the section below the marker is rewritten by distillation.";
 const LOCK_STALE_MS = 10 * 60 * 1000;
 const DISTILL_BACKOFF_MS = 24 * 60 * 60 * 1000;
-const DISTILL_STALE_MS = 24 * 60 * 60 * 1000;
-const DISTILL_PENDING_THRESHOLD = 3;
 
 export type MemoryStore = "plugin" | "vault";
 
@@ -41,6 +46,7 @@ export interface ResolvedMemoryPaths {
   dir: string;
   dailyDir: string;
   memoryFile: string;
+  prevFile: string;
   lockFile: string;
   stateFile: string;
   legacyFile: string;
@@ -93,6 +99,7 @@ export function resolveMemoryPaths(configDir: string, settings: VaultMemorySetti
     dir,
     dailyDir: `${dir}/daily`,
     memoryFile: `${dir}/MEMORY.md`,
+    prevFile: `${dir}/MEMORY.md.prev`,
     lockFile: `${dir}/.distilling`,
     stateFile: `${dir}/.distill-state.json`,
     legacyFile: `${pluginDir}/memories.jsonl`,
@@ -101,8 +108,8 @@ export function resolveMemoryPaths(configDir: string, settings: VaultMemorySetti
 }
 
 export function isMemoryPath(path: string, paths: ResolvedMemoryPaths): boolean {
-  return path === paths.memoryFile || path === paths.lockFile || path === paths.stateFile
-    || path === paths.legacyFile
+  return path === paths.memoryFile || path === paths.prevFile || path === paths.lockFile || path === paths.stateFile
+    || path === paths.legacyFile || `${paths.legacyFile}.migrated` === path
     || path === paths.dir || path.startsWith(`${paths.dir}/`);
 }
 
@@ -262,6 +269,9 @@ export interface SessionCoverage {
   lastEntryId: string;
   version: number;
   at: string;
+  /** File size/mtime at cover time — stat match means "no change" without reading. */
+  size?: number;
+  mtime?: number;
 }
 
 export interface DistillState {
@@ -289,6 +299,8 @@ function parseSessionCoverage(value: unknown): Record<string, SessionCoverage> |
       lastEntryId: record.lastEntryId,
       version: typeof record.version === "number" ? record.version : 0,
       at: typeof record.at === "string" ? record.at : "",
+      ...(parseNonNegativeNumber(record.size) !== undefined ? { size: record.size as number } : {}),
+      ...(parseNonNegativeNumber(record.mtime) !== undefined ? { mtime: record.mtime as number } : {}),
     };
   }
   return Object.keys(out).length > 0 ? out : undefined;
@@ -358,12 +370,11 @@ export function withSessionCoverage(
   return { ...state, sessions: { ...(state.sessions ?? {}), [sessionId]: coverage } };
 }
 
-/** Tier-2 trigger: >24h since success or >=3 new Tier-1 entries; honors 24h failure backoff. */
-export function shouldDistillNow(state: DistillState, memoryMtime: number | null, now = Date.now()): boolean {
+/** Auto trigger: backoff respected, success cooldown respected, and real work waiting. */
+export function shouldAutoDistill(state: DistillState, hasWork: boolean, now = Date.now()): boolean {
   if (state.nextRetryAfter && Date.parse(state.nextRetryAfter) > now) return false;
-  if (state.pending >= DISTILL_PENDING_THRESHOLD) return true;
-  if (memoryMtime === null) return state.pending > 0;
-  return now - memoryMtime > DISTILL_STALE_MS && state.pending > 0;
+  if (state.lastSuccess && now - Date.parse(state.lastSuccess) < DISTILL_SUCCESS_COOLDOWN_MS) return false;
+  return hasWork;
 }
 
 export async function tryAcquireDistillLock(adapter: DataAdapter, paths: ResolvedMemoryPaths, now = Date.now()): Promise<string | null> {
@@ -465,6 +476,7 @@ export function migrateLegacyRecords(records: readonly MemoryRecord[]): string[]
  * Union write: re-reads MEMORY.md, unions auto bullets (last-writer unions,
  * not clobbers), re-bumps the version past whatever is on disk, single write.
  * Returns the stamped version so callers persist what they actually wrote.
+ * Used by the deterministic offline fallback (which cannot resolve contradictions).
  */
 export async function writeMemoryFileAtomic(
   adapter: DataAdapter,
@@ -483,6 +495,39 @@ export async function writeMemoryFileAtomic(
   return finalVersion;
 }
 
+export type SurgicalWriteResult =
+  | { status: "replaced"; version: number }
+  | { status: "mismatch"; version: number };
+
+/**
+ * Surgical replace of the auto-section with optimistic concurrency: re-reads MEMORY.md
+ * and only writes when the on-disk version still matches what the distiller saw.
+ * On mismatch nothing is written (caller defers — never union a surgical result,
+ * which would resurrect just-killed bullets). Backs up the previous file first.
+ */
+export async function writeMemoryFileSurgical(
+  adapter: DataAdapter,
+  paths: ResolvedMemoryPaths,
+  human: string,
+  autoBullets: string[],
+  baseVersion: number,
+): Promise<SurgicalWriteResult> {
+  await ensureDir(adapter, paths.dir);
+  const latest = (await adapter.exists(paths.memoryFile)) ? await adapter.read(paths.memoryFile) : "";
+  const parsed = latest ? parseMemoryFile(latest) : { human, autoBullets: [], version: 0 };
+  if (parsed.version !== baseVersion) return { status: "mismatch", version: parsed.version };
+  if (latest) {
+    try {
+      await adapter.write(paths.prevFile, latest);
+    } catch {
+      // Backup is best-effort; the replace still proceeds.
+    }
+  }
+  const finalVersion = baseVersion + 1;
+  await adapter.write(paths.memoryFile, formatMemoryFile(parsed.human || human, autoBullets, finalVersion));
+  return { status: "replaced", version: finalVersion };
+}
+
 export async function deleteMemoryFiles(adapter: DataAdapter, paths: ResolvedMemoryPaths): Promise<number> {
   let deleted = 0;
   const removeIfExists = async (path: string): Promise<void> => {
@@ -496,17 +541,20 @@ export async function deleteMemoryFiles(adapter: DataAdapter, paths: ResolvedMem
     }
   };
   await removeIfExists(paths.memoryFile);
+  await removeIfExists(paths.prevFile);
   await removeIfExists(paths.lockFile);
   await removeIfExists(paths.stateFile);
+  await removeIfExists(paths.legacyFile);
+  await removeIfExists(`${paths.legacyFile}.migrated`);
   try {
     const listing = await adapter.list(paths.dailyDir);
     for (const file of listing.files) {
       await removeIfExists(file);
-      deleted += 1;
     }
   } catch {
     // No daily dir is fine.
   }
+  await sweepMemoryTmpFiles(adapter, paths);
   return deleted;
 }
 
@@ -551,7 +599,7 @@ export async function withMemoryMutex<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-/** Lost-update-safe pending counter shared by Tier-1 flush, remember_memory, and /memory add. */
+/** Lost-update-safe explicit-write counter: remember_memory + /memory add bump it; a distill run consumes it. */
 export async function bumpPendingAtomic(adapter: DataAdapter, paths: ResolvedMemoryPaths): Promise<void> {
   await withMemoryMutex(async () => {
     const state = await readDistillState(adapter, paths);
@@ -566,6 +614,44 @@ export async function bumpPendingAtomic(adapter: DataAdapter, paths: ResolvedMem
 /** Drop secret-shaped bullets from any distiller output (LLM or injected) before persistence. */
 export function filterSecretBullets(bullets: readonly string[]): string[] {
   return bullets.filter((bullet) => bullet.trim() && !containsSensitiveText(bullet));
+}
+
+/**
+ * Directive markers that turn a "fact" into an instruction. Substring match on
+ * lowercased text (no regex — linear, sonar-safe). Secret-filter is not injection
+ * defense; this is the producer-side control for MEMORY.md poisoning.
+ */
+const IMPERATIVE_HINTS = [
+  "ignore previous",
+  "ignore all previous",
+  "disregard previous",
+  "disregard all previous",
+  "bypass",
+  "exfiltrate",
+  "do not tell",
+  "don't tell",
+  "do not reveal",
+  "reveal system",
+  "reveal your instructions",
+];
+
+/** Narrow input-side check: classic injection verbs only (legit "remember to…" must pass). */
+export function containsInjectionAttempt(text: string): boolean {
+  const haystack = text.toLowerCase();
+  return IMPERATIVE_HINTS.some((hint) => haystack.includes(hint));
+}
+
+/** Broader output-side check: directive phrasing has no place in distilled facts. */
+const DIRECTIVE_HINTS = [...IMPERATIVE_HINTS, "always ", "never ", "you must", "you should", "remember to "];
+
+export function containsDirectiveText(text: string): boolean {
+  const haystack = text.toLowerCase();
+  return DIRECTIVE_HINTS.some((hint) => haystack.includes(hint));
+}
+
+/** Drop directive-shaped bullets from distiller output before persistence. */
+export function filterDirectiveBullets(bullets: readonly string[]): string[] {
+  return bullets.filter((bullet) => bullet.trim() && !containsDirectiveText(bullet));
 }
 
 /** Sweep orphaned tmp files from crashed distills (single-write path no longer uses tmp). */
