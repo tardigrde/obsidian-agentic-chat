@@ -1,7 +1,9 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { SessionEntry } from "../session/jsonl";
 
-/** Per-tool-result char budget inside Tier-2 feedstock (unbounded dumps are the norm). */
+/** Per-tool-result char budget inside Tier-2 feedstock (unbounded dumps are the norm).
+ * Deliberately lossier than recall archives (ARCHIVE_TURN_CHARS): feedstock is
+ * model-prompt input, archives are verbatim recall. */
 export const FEEDSTOCK_TOOL_RESULT_CHARS = 1_000;
 /** Per-session char budget (final slice enforces the join). */
 export const FEEDSTOCK_SESSION_CHARS = 4_000;
@@ -63,7 +65,7 @@ export function serializeSessionFeedstock(
   return `${FEEDSTOCK_BEGIN} session="${label}"\n${escapeFeedstock(capped)}\n${FEEDSTOCK_END}`;
 }
 
-/** Strip thinking blocks (reasoning leakage + noise). Exported for #145 rebase unification. */
+/** Strip thinking blocks (reasoning leakage + noise). Shared with compaction archives. */
 export function stripThinkingBlocks(message: AgentMessage): AgentMessage {
   const content = (message as { content?: unknown }).content;
   if (typeof content === "string" || !Array.isArray(content)) return message;
@@ -97,7 +99,8 @@ function feedstockMessageText(message: AgentMessage): string {
   const role = (stripped as { role?: unknown }).role;
   if (role === "toolResult") {
     // Tool output is the injection vector: keep it, but hard-cap it.
-    const combined = texts.join("\n");
+    // Call names are kept like the recall archives (same input, same shape).
+    const combined = calls.length > 0 ? [...texts, `[tool calls: ${calls.join("; ")}]`].join("\n") : texts.join("\n");
     return capLine(combined, true);
   }
   const combined = calls.length > 0 ? [...texts, `[tool calls: ${calls.join("; ")}]`].join("\n") : texts.join("\n");

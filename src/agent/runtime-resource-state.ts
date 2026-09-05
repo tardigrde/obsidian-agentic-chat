@@ -4,6 +4,7 @@ import type { AgenticChatSettings } from "../settings";
 import type { WebFetcher } from "../tools/web-fetch";
 import type { AskUserHandler } from "../tools/ask-user-tool";
 import type { SkillScaffolder } from "../tools/skill-tools";
+import type { CompactionArchiveProvider } from "../tools/compaction-recall-tools";
 import type { ReadMemo } from "../vault/read-memo";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import type { AgentRole } from "./subagents";
@@ -24,6 +25,7 @@ import {
 
 export interface BuildParentToolsOptions {
   contextWindow?: number;
+  getCompactionArchives?: CompactionArchiveProvider;
 }
 
 export interface AgentRuntimeResourceStateOptions {
@@ -35,6 +37,7 @@ export interface AgentRuntimeResourceStateOptions {
   saveSettings?: () => void | Promise<void>;
   artifactStore?: ToolArtifactStoreLike;
   skillScaffolder?: SkillScaffolder;
+  getCompactionArchives?: CompactionArchiveProvider;
 }
 
 export class AgentRuntimeResourceState {
@@ -128,6 +131,7 @@ export class AgentRuntimeResourceState {
       contextWindow: buildOptions.contextWindow,
       toolBudgetState: this.toolBudgetState,
       skillScaffolder: this.options.skillScaffolder,
+      getCompactionArchives: buildOptions.getCompactionArchives ?? this.options.getCompactionArchives,
     });
     this.toolBudgetSnapshot = result.toolBudget;
     return result.tools;

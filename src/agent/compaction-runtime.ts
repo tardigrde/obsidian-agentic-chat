@@ -19,6 +19,7 @@ import {
   planCompaction,
   type CompactionConfig,
 } from "./compaction";
+import { formatRecallIndex } from "../session/compaction-archives";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
@@ -208,10 +209,22 @@ export class AgentCompactionRuntime {
     // earlier summary in this slice, so iterative compaction never loses it.
     const dropped = collectDroppedUsage(plan.summarize);
     const manifest = collectCompactionManifest(plan.summarize);
-    const newMessages = [buildSummaryMessage(summary.summary, Date.now(), dropped, manifest), ...plan.keep];
+    // Archive the pre-compaction slice BEFORE the rewrite destroys it, so
+    // recall_compacted_turns can recover verbatim detail later. Best-effort:
+    // a failed archive never blocks the compaction itself.
+    let archived: { name: string; turns: number } | null;
+    try {
+      archived = await this.sessionManager.archivePreCompactionTurns(plan.summarize);
+    } catch {
+      archived = null;
+    }
+    const recallIndex = archived ? formatRecallIndex(archived.name, archived.turns) : undefined;
+    const newMessages = [buildSummaryMessage(summary.summary, Date.now(), dropped, manifest, recallIndex), ...plan.keep];
     // Persist the rewrite first; only mutate in-memory state once disk succeeds.
     await this.sessionManager.rewriteMessages(newMessages);
     // Deposit the paid-for summary as distillation feedstock (async, best-effort).
+    // Note: deposits the raw summary, not the persisted summary message (which
+    // additionally carries usage/manifest/index) — distillation wants content only.
     if (this.onCompacted) {
       try {
         await this.onCompacted(summary.summary);
