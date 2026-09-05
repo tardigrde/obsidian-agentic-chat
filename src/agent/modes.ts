@@ -10,8 +10,9 @@ import { type ApprovalPolicy, type ApprovalSettings, resolvePolicy } from "./app
  * - `yolo`  — session master auto-approve: force `mutating: "allow"`, but an explicit
  *             per-tool `"deny"` still wins.
  * - `plan`  — read-only (deny every tool except a small allowlist) plus the plan-framing overlay.
- *             Entered with `/plan`. The model signals completion by ending a message
- *             with `PLAN_COMPLETE`; the user then clicks "Implement this plan" to exit.
+ *             Entered with `/plan`. The UI detects the structured plan block in
+ *             the model's reply and shows an inline plan card for review; the
+ *             user then approves (choosing the next posture) or keeps planning.
  *
  * Precedence: plan > slider (yolo) > per-tool override > settings default.
  */
@@ -54,12 +55,14 @@ export const MODES: Record<AgentMode, ModeDefinition> = {
     id: "plan",
     label: "Plan",
     icon: "clipboard-list",
-    description: "Read-only: investigate, then propose a step-by-step plan before any writes. The model signals completion with PLAN_COMPLETE; click Implement to execute.",
+    description: "Read-only: investigate, then propose a step-by-step plan before any writes. Approve the inline plan card to implement.",
     promptOverlay:
-      "You are in **plan mode**: read-only. No tool calls are allowed — gather context from the " +
-      "conversation history only. When your plan is final and ready for implementation, end your " +
-      "message with the exact line `PLAN_COMPLETE`. Do not include this marker until the plan is " +
-      "truly complete and you have gathered all necessary context.",
+      "You are in **plan mode**: read-only investigation and planning. You may use read-only tools " +
+      "(read, search, grep, vault inspection, graph/backlink lookups, web search) to gather context, but " +
+      "do not edit, write, delete, or execute anything. Present your proposal as a structured plan with a " +
+      "title and numbered steps (name affected files in backticks where relevant). When the plan is final " +
+      "and ready for implementation, end your message with the exact line `PLAN_COMPLETE`. Do not include " +
+      "this marker until the plan is truly complete and you have gathered all necessary context.",
   },
 };
 
