@@ -35,6 +35,8 @@ export interface PlanCardCallbacks {
   onEdit: (rawMarkdown: string) => void;
   /** Unsent feedback text as typed (parent persists the draft; cheap, debounced). */
   onFeedbackDraft?: (text: string) => void;
+  /** Click-time guard (e.g. streaming): returns the stated reason when deciding is blocked. */
+  isDecisionBlocked?: () => string | null;
 }
 
 export interface PlanCardHandle {
@@ -104,16 +106,18 @@ export function renderPlanCard(
     autoBtn.disabled = true;
     autoBtn.setAttr("title", options.autoApplyDisabledReason ?? "Auto-apply unavailable for this session.");
   }
-  approveBtn.addEventListener("click", () => {
-    new PlanApproveModal(app, artifact, options, "manual", (posture, freshThread) =>
+  const openGate = (defaultPosture: PlanApprovePosture) => {
+    const blocked = callbacks.isDecisionBlocked?.();
+    if (blocked) {
+      new Notice(blocked);
+      return;
+    }
+    new PlanApproveModal(app, artifact, options, defaultPosture, (posture, freshThread) =>
       callbacks.onApprove(posture, freshThread),
     ).open();
-  });
-  autoBtn.addEventListener("click", () => {
-    new PlanApproveModal(app, artifact, options, "auto", (posture, freshThread) =>
-      callbacks.onApprove(posture, freshThread),
-    ).open();
-  });
+  };
+  approveBtn.addEventListener("click", () => openGate("manual"));
+  autoBtn.addEventListener("click", () => openGate("auto"));
   keepBtn.addEventListener("click", () => callbacks.onKeepPlanning());
 
   const feedbackWrap = row("agentic-chat-plan-card-feedback");

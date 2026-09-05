@@ -331,6 +331,14 @@ export default class AgenticChatPlugin extends Plugin {
         }
       }
     } catch {
+      // Don't silently destroy evidence: stash the corrupt file once, then
+      // start fresh. Queued saves serialize behind this load.
+      try {
+        const raw = await this.app.vault.adapter.read(this.planArtifactsPath());
+        await this.app.vault.adapter.write(`${this.planArtifactsPath()}.corrupt.${Date.now()}.json`, raw);
+      } catch {
+        // Best-effort backup; a fresh map is still safe to use.
+      }
       parsed = {};
     }
     this.planArtifacts = parsed;
@@ -347,6 +355,8 @@ export default class AgenticChatPlugin extends Plugin {
 
   /** Active plan artifact for a session key (null when none or decided). */
   async getPlanArtifact(sessionKey: string): Promise<PlanArtifact | null> {
+    // Drain queued writes first so reads never see a stale cache mid-save.
+    await this.planWriteQueue;
     const all = await this.loadPlanArtifacts();
     return all[sessionKey] ?? null;
   }
