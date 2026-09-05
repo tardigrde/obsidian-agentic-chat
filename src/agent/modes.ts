@@ -108,6 +108,7 @@ const READONLY_TOOLS: ReadonlySet<string> = new Set([
   "read_skill",
   "read_skill_file",
   "recall_memory",
+  "recall_compacted_turns",
 ]);
 
 function planDenyReason(toolName: string): string {

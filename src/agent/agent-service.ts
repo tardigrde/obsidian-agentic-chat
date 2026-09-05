@@ -207,6 +207,7 @@ export class AgentService {
       saveSettings: options.saveSettings,
       artifactStore: options.artifactStore,
       skillScaffolder: options.skillScaffolder,
+      getCompactionArchives: () => sessionManager.listCompactionArchives(),
     });
     this.toolCalls = new AgentToolCallController({
       app: this.app,
@@ -241,6 +242,7 @@ export class AgentService {
       toolCalls: this.toolCalls,
       loopGuard: options.loopGuardDisabled ? DISABLED_LOOP_GUARD : this.loopGuard,
       sessions: this.sessions,
+      getCompactionArchives: () => sessionManager.listCompactionArchives(),
       onEvent: (event) => this.handleAgentEvent(event),
     });
     this.parentAgent = new ParentAgentRuntime(() => this.parentConfiguration.build());
