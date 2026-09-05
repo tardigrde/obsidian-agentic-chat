@@ -414,7 +414,7 @@ export class ChatView extends ItemView {
 
   private async switchToTab(index: number): Promise<void> {
     if (index === this.activeTabIndex || index < 0 || index >= this.tabs.length) return;
-    this.plugin.memoryKick();
+    this.memoryHook((plugin) => plugin.memoryKick());
     this.cancelAutocomplete();
     this.menu.hide();
     this.endEditing(false);
@@ -427,7 +427,7 @@ export class ChatView extends ItemView {
   /** `+`: open a new tab on a fresh session and switch to it (capped at MAX_TABS). */
   private async addTab(): Promise<void> {
     if (this.tabs.length >= MAX_TABS) return;
-    this.plugin.memoryKick();
+    this.memoryHook((plugin) => plugin.memoryKick());
     this.endEditing(false);
     this.saveActiveState();
     const tab = this.createTab();
@@ -1466,7 +1466,7 @@ export class ChatView extends ItemView {
   private async sendPrompt(text: string): Promise<void> {
     const tab = this.activeTab;
     const service = tab.service;
-    this.plugin.memoryMarkActivity();
+    this.memoryHook((plugin) => plugin.memoryMarkActivity());
     const activeNoteCache = this.activeNoteCache;
     const contextCache = this.contextCache;
     const explicitAttachments = [...this.attachments];
@@ -1507,7 +1507,7 @@ export class ChatView extends ItemView {
       if (!this.isLiveTab(tab)) return;
       throw error;
     }
-    this.plugin.memoryMarkActivity();
+    this.memoryHook((plugin) => plugin.memoryMarkActivity());
     this.showServiceError();
   }
 
@@ -2185,10 +2185,26 @@ export class ChatView extends ItemView {
     ]);
   }
 
+  /**
+   * Best-effort background hook: memory must never throw into UI flows
+   * (partial test harnesses may lack the plugin scheduler surface).
+   */
+  private memoryHook(fn: (plugin: AgenticChatPlugin) => void): void {
+    try {
+      fn(this.plugin);
+    } catch {
+      // Best-effort background bookkeeping; never blocks UI flows.
+    }
+  }
+
   /** Sync memory line for /status (scheduler summary; no I/O). */
   private memoryStatusLine(settings: AgenticChatSettings): string {
     if (!memorySettingsOf(settings).enabled) return "off";
-    return this.plugin.memorySummary();
+    try {
+      return this.plugin.memorySummary();
+    } catch {
+      return "idle";
+    }
   }
 
   /** `/config`: clickable mode picker, applied in-pane. Output style lives under /style. */
@@ -2314,7 +2330,7 @@ export class ChatView extends ItemView {
   // --- session + model actions ---
 
   private async newSession(): Promise<void> {
-    this.plugin.memoryKick();
+    this.memoryHook((plugin) => plugin.memoryKick());
     const coordinator = this.createSessionActivationCoordinator();
     try {
       await coordinator.startNewConversation(() => this.service.newSession());
@@ -2361,7 +2377,7 @@ export class ChatView extends ItemView {
       await this.switchToTab(openIn);
       return;
     }
-    this.plugin.memoryKick();
+    this.memoryHook((plugin) => plugin.memoryKick());
     await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
   }
 
