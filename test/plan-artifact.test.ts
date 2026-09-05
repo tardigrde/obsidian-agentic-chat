@@ -90,6 +90,26 @@ describe("artifactFromDetection", () => {
     expect(second.id).not.toBe(first.id);
     expect(second.revision).toBe(1);
   });
+
+  it("resets transient drafts on a new plan id but carries the origin posture", () => {
+    const first = artifactFromDetection(detected, null);
+    first.originPosture = "yolo";
+    const withDraft: PlanArtifact = { ...first, feedbackDraft: "keep me?" };
+    const other = detectPlanBody(`# Totally different plan\n\n- One\n- Two`)!;
+    const second = artifactFromDetection(other, withDraft);
+    expect(second.feedbackDraft).toBeUndefined();
+    expect(second.originPosture).toBe("yolo");
+  });
+
+  it("carries drafts and posture across same-id revisions", () => {
+    const first = artifactFromDetection(detected, null);
+    first.originPosture = "safe";
+    const withDraft: PlanArtifact = { ...first, feedbackDraft: "skip the migration" };
+    const edited = detectPlanBody(`${HEADING_PLAN}\n- Update docs`)!;
+    const second = artifactFromDetection(edited, withDraft);
+    expect(second.feedbackDraft).toBe("skip the migration");
+    expect(second.originPosture).toBe("safe");
+  });
 });
 
 describe("manualPlanBody", () => {
@@ -105,6 +125,10 @@ describe("manualPlanBody", () => {
 });
 
 describe("teaserLines", () => {
+  it("skips blank lines instead of stopping at them", () => {
+    const artifact = artifactFromDetection(detectPlanBody(`# Plan\n\n- Alpha\n\n- Beta\n- Gamma`)!, null);
+    expect(teaserLines(artifact)).toEqual(["Alpha", "Beta", "Gamma"]);
+  });
   it("caps the teaser at the heading plus first bullets", () => {
     const artifact = artifactFromDetection(detectPlanBody(HEADING_PLAN)!, null);
     const teaser = teaserLines(artifact);
@@ -143,6 +167,18 @@ describe("healPlanArtifact", () => {
 
   it("round-trips a persisted artifact", () => {
     expect(healPlanArtifact(JSON.parse(JSON.stringify(artifact)))).toEqual(artifact);
+  });
+
+  it("heals adversarial shapes", () => {
+    expect(healPlanArtifact({ ...artifact, steps: "nope" })?.steps).toEqual([]);
+    expect(healPlanArtifact({ ...artifact, steps: [{ nope: 1 }, { title: "ok" }] })?.steps).toEqual([
+      { title: "ok", scope: undefined },
+    ]);
+    expect(healPlanArtifact({ ...artifact, revision: 0 })?.revision).toBe(1);
+    expect(healPlanArtifact({ ...artifact, revision: NaN })?.revision).toBe(1);
+    expect(healPlanArtifact({ ...artifact, originPosture: "yolo" })?.originPosture).toBe("yolo");
+    expect(healPlanArtifact({ ...artifact, originPosture: "bogus" })?.originPosture).toBeNull();
+    expect(healPlanArtifact({ ...artifact, title: `x`.repeat(500) })?.title).toBeTruthy();
   });
 
   it("rejects unusable shapes", () => {

@@ -23,8 +23,6 @@ export interface PlanCardOptions {
   /** Auto-apply (YOLO) is only offered when the posture permits it. */
   autoApplyAllowed: boolean;
   autoApplyDisabledReason?: string;
-  /** Disables approve buttons with a stated reason (e.g. while streaming). */
-  approveDisabledReason?: string;
 }
 
 export interface PlanCardCallbacks {
@@ -35,6 +33,8 @@ export interface PlanCardCallbacks {
   onFeedback: (text: string) => void;
   /** Edited plan markdown (parent re-detects, bumps revision, persists). */
   onEdit: (rawMarkdown: string) => void;
+  /** Unsent feedback text as typed (parent persists the draft; cheap, debounced). */
+  onFeedbackDraft?: (text: string) => void;
 }
 
 export interface PlanCardHandle {
@@ -62,11 +62,12 @@ export function renderPlanCard(
   const meta = card.createDiv({ cls: "agentic-chat-plan-card-meta", text: planEffortSummary(artifact) });
 
   const teaser = card.createEl("ul", { cls: "agentic-chat-plan-card-teaser" });
-  for (const line of teaserLines(artifact)) {
+  const teaserEntries = teaserLines(artifact);
+  for (const line of teaserEntries) {
     teaser.createEl("li", { text: line });
   }
-  if (artifact.steps.length > teaserLines(artifact).length) {
-    meta.setText(`${planEffortSummary(artifact)} · showing ${teaserLines(artifact).length} of ${artifact.steps.length}`);
+  if (artifact.steps.length > teaserEntries.length) {
+    meta.setText(`${planEffortSummary(artifact)} · showing ${teaserEntries.length} of ${artifact.steps.length}`);
   }
 
   const full = card.createDiv({ cls: "agentic-chat-plan-card-full" });
@@ -99,12 +100,6 @@ export function renderPlanCard(
   const approveBtn = decisionRow.createEl("button", { cls: "mod-cta", text: "Approve & implement" });
   const autoBtn = decisionRow.createEl("button", { cls: "mod-warning", text: "Approve & auto-apply" });
   const keepBtn = decisionRow.createEl("button", { text: "Keep planning" });
-  if (options.approveDisabledReason) {
-    for (const btn of [approveBtn, autoBtn]) {
-      btn.disabled = true;
-      btn.setAttr("title", options.approveDisabledReason);
-    }
-  }
   if (!options.autoApplyAllowed) {
     autoBtn.disabled = true;
     autoBtn.setAttr("title", options.autoApplyDisabledReason ?? "Auto-apply unavailable for this session.");
@@ -127,6 +122,9 @@ export function renderPlanCard(
     attr: { placeholder: "Feedback… (⌘/Ctrl+Enter sends, keeps planning)", rows: "2" },
   });
   if (artifact.feedbackDraft) feedbackInput.value = artifact.feedbackDraft;
+  // Drafts persist into the artifact (debounced by the parent) so typed but
+  // unsent feedback survives plan revisions instead of being wiped.
+  feedbackInput.addEventListener("input", () => callbacks.onFeedbackDraft?.(feedbackInput.value));
   const feedbackBtn = feedbackWrap.createEl("button", { text: "Send feedback" });
   const sendFeedback = () => {
     const text = feedbackInput.value.trim();

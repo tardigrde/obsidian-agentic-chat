@@ -96,6 +96,7 @@ import {
   planIdFor,
   manualPlanBody,
   PlanMemoryStore,
+  type DetectedPlanBody,
   planSessionKey,
   stripPlanCompleteMarker,
   type PlanArtifact,
@@ -1046,8 +1047,21 @@ export class ChatView extends ItemView {
   // validateModeTransition + resolveModeTransition so the four surfaces stay
   // atomically in sync (Codex ThreadSettingsOverrides pattern).
 
-  private async setMode(mode: AgentMode): Promise<boolean> {
+  private async setMode(mode: AgentMode, opts: { skipPlanConfirm?: boolean } = {}): Promise<boolean> {
     const current = this.plugin.settings.mode;
+    // Leaving plan mode with a pending plan is destructive: confirm on every
+    // surface (badge, /config picker, settings dropdown) — never silently.
+    // approvePlan/exitPlanMode pass skipPlanConfirm (already decided there).
+    if (!opts.skipPlanConfirm && current === "plan" && mode !== "plan" && this.hasPendingPlan()) {
+      new ConfirmModal(
+        this.app,
+        "Leave plan mode?",
+        "A proposed plan is still awaiting review. Leaving restores the previous posture; the plan stays in the transcript.",
+        "Leave plan mode",
+        () => void this.setMode(mode, { skipPlanConfirm: true }),
+      ).open();
+      return false;
+    }
     const blocked = validateModeTransition(
       current,
       mode,
@@ -1130,9 +1144,15 @@ export class ChatView extends ItemView {
     }
     this.clearEmptyState();
     // Do not clear modeBeforePlan before setMode — resolveModeTransition owns it atomically.
-    if (await this.setMode(target)) {
+    // skipPlanConfirm: the badge already confirmed; other surfaces confirm in setMode.
+    if (await this.setMode(target, { skipPlanConfirm: true })) {
       this.renderInfoMessage("Mode", [[MODES[target].label, MODES[target].description]]);
     }
+  }
+
+  /** Whether the session's active plan still awaits a review decision. */
+  private hasPendingPlan(): boolean {
+    return this.activePlans.get(this.planKeyForActiveSession())?.status === "pending";
   }
 
   /** Whether the current tab's agent is streaming — exposed for the plugin's S4 broadcast. */
@@ -2352,6 +2372,7 @@ export class ChatView extends ItemView {
   private async newSession(): Promise<void> {
     const coordinator = this.createSessionActivationCoordinator();
     try {
+      this.forgetSessionPlanState();
       await coordinator.startNewConversation(() => this.service.newSession());
     } finally {
       // A new conversation starts in the default (normal) output style.
@@ -2396,7 +2417,22 @@ export class ChatView extends ItemView {
       await this.switchToTab(openIn);
       return;
     }
+    this.forgetSessionPlanState();
     await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
+  }
+
+  /**
+   * Drop this tab's in-memory plan state (artifact, posture memory, hydration
+   * marker) before the session identity changes, so a new conversation never
+   * inherits the previous session's pending plan via a reused session key.
+   * Persisted artifacts are left alone: the old session can still resume them.
+   */
+  private forgetSessionPlanState(): void {
+    const key = this.planKeyForActiveSession();
+    this.activePlans.delete(key);
+    this.planMemory.clear(key);
+    this.hydratedPlanKeys.delete(key);
+    this.disposePlanCards();
   }
 
   private async switchModel(): Promise<void> {
@@ -2613,6 +2649,9 @@ export class ChatView extends ItemView {
     try {
       const stored = await this.plugin.getPlanArtifact(key);
       if (!stored) return;
+      if (stored.originPosture && this.planMemory.get(key) === null) {
+        this.planMemory.set(key, stored.originPosture);
+      }
       if (stored.status === "pending" && !this.activePlans.has(key)) {
         this.activePlans.set(key, stored);
       } else if (stored.status !== "pending") {
@@ -2680,7 +2719,7 @@ export class ChatView extends ItemView {
     const displayText = stripPlanCompleteMarker(text ?? "");
     if (displayText) {
       void bubble.finalizeText(displayText, this.app, this);
-      const artifact = this.captureDetectedPlan(displayText) ?? this.matchStoredPlan(displayText);
+      const artifact = this.captureDetectedPlan(displayText, "replay");
       const pending = artifact && artifact.status === "pending" ? artifact : null;
       // Manual fallback: a plan the detector missed can still be captured —
       // no more stranded states with no Implement path.
@@ -2690,10 +2729,13 @@ export class ChatView extends ItemView {
       bubble.showActions({
         canRetry: isLast,
         canImplement: isLast && !!pending,
-        canMarkAsPlan: isLast && !artifact,
+        // Manual fallback on any assistant message without an artifact —
+        // an older undetected plan can still be captured.
+        canMarkAsPlan: !artifact,
       });
-      // One card per transcript: only the latest plan message carries it.
-      if (isLast && pending) this.mountPlanCard(bubble, pending);
+      // One card per transcript: only the latest plan message carries it
+      // (unless dismissed via Keep planning for this view lifetime).
+      if (isLast && pending && !this.isPlanDismissed(pending)) this.mountPlanCard(bubble, pending);
     } else {
       bubble.finalizeWithoutText();
     }
@@ -2816,7 +2858,7 @@ export class ChatView extends ItemView {
     const displayText = stripPlanCompleteMarker(text ?? "");
     if (displayText) {
       void bubble.finalizeText(displayText, this.app, this);
-      const artifact = this.captureDetectedPlan(displayText) ?? this.matchStoredPlan(displayText);
+      const artifact = this.captureDetectedPlan(displayText, "live");
       const pending = artifact && artifact.status === "pending" ? artifact : null;
       bubble.setMarkAsPlanHandler(
         !artifact ? () => this.captureManualPlan(bubble, displayText) : undefined,
@@ -2866,23 +2908,53 @@ export class ChatView extends ItemView {
   /**
    * Detect a structured plan in a rendered message and capture it as the
    * session's active artifact (revision-bumped on same-id edits). Returns the
-   * artifact when its card should mount, else null. Idempotent for identical
-   * re-renders so transcript rebuilds don't inflate revisions.
+   * artifact when its card should mount, else null.
+   *
+   * Live turns may create/revise; transcript replays are conservative (they
+   * never bump revisions or clobber a pending artifact with an older/different
+   * plan) so rebuilds, tab switches, and reopens keep state stable.
    */
-  private captureDetectedPlan(displayText: string): PlanArtifact | null {
-    const detected = detectPlanBody(displayText);
-    if (!detected) return null;
+  private captureDetectedPlan(displayText: string, source: "live" | "replay"): PlanArtifact | null {
+    const stripped = stripPlanCompleteMarker(displayText).trim();
+    const detected = detectPlanBody(stripped);
+    if (!detected) return this.matchStoredPlan(stripped);
     const key = this.planKeyForActiveSession();
     const previous = this.activePlans.get(key) ?? null;
-    if (
-      previous &&
-      previous.id === planIdFor(detected.title, detected.steps[0]?.title ?? "") &&
-      previous.rawMarkdown === detected.rawMarkdown
-    ) {
+    const sameId = previous?.id === planIdFor(detected.title, detected.steps[0]?.title ?? "");
+    if (source === "replay") return this.resolveReplayPlan(key, stripped, detected, previous, sameId);
+    if (previous && sameId && previous.rawMarkdown === detected.rawMarkdown) {
+      // Idempotent re-render of the captured turn: no revision inflation.
       return previous.status === "pending" ? previous : null;
     }
-    const artifact = artifactFromDetection(detected, previous);
-    artifact.messageHash = messageHashFor(detected.rawMarkdown);
+    return this.storePlanArtifact(key, artifactFromDetection(detected, previous), stripped);
+  }
+
+  /** Replay policy: never revise or clobber; only adopt when nothing pending. */
+  private resolveReplayPlan(
+    key: string,
+    stripped: string,
+    detected: DetectedPlanBody,
+    previous: PlanArtifact | null,
+    sameId: boolean,
+  ): PlanArtifact | null {
+    if (previous?.status === "pending") {
+      // A pending plan (possibly user-edited) outranks transcript order:
+      // same plan returns it without a revision bump; anything else must
+      // hash-match its source message, otherwise no card here.
+      if (sameId) return previous;
+      return this.matchStoredPlan(stripped);
+    }
+    if (previous && sameId && previous.rawMarkdown === detected.rawMarkdown) {
+      // Decided plan re-rendered identically: never resurrect its card.
+      return null;
+    }
+    return this.storePlanArtifact(key, artifactFromDetection(detected, previous), stripped);
+  }
+
+  /** Store + persist a fresh artifact, stamping message hash and origin posture. */
+  private storePlanArtifact(key: string, artifact: PlanArtifact, strippedDisplayText: string): PlanArtifact | null {
+    artifact.messageHash = messageHashFor(strippedDisplayText);
+    artifact.originPosture ??= this.modeBeforePlan;
     this.activePlans.set(key, artifact);
     void this.plugin.savePlanArtifact(key, artifact);
     return artifact.status === "pending" ? artifact : null;
@@ -2905,15 +2977,25 @@ export class ChatView extends ItemView {
       this.renderErrorMessage(blocked);
       return;
     }
-    const body = detectPlanBody(displayText) ?? manualPlanBody(displayText);
+    const stripped = stripPlanCompleteMarker(displayText).trim();
+    const body = detectPlanBody(stripped) ?? manualPlanBody(stripped);
     if (!body) return;
     const key = this.planKeyForActiveSession();
-    const artifact = artifactFromDetection(body, this.activePlans.get(key) ?? null);
-    artifact.messageHash = messageHashFor(body.rawMarkdown);
-    this.activePlans.set(key, artifact);
-    void this.plugin.savePlanArtifact(key, artifact);
-    if (artifact.status === "pending") this.mountPlanCard(bubble, artifact);
+    const artifact = this.storePlanArtifact(key, artifactFromDetection(body, this.activePlans.get(key) ?? null), stripped);
+    if (artifact) {
+      this.disposePlanCards();
+      this.mountPlanCard(bubble, artifact);
+    }
     this.scrollToBottom({ force: true });
+  }
+
+  /** Dismissed (Keep planning) plan revisions for this view lifetime. */
+  private readonly dismissedPlans = new Set<string>();
+  private planDismissKey(artifact: PlanArtifact): string {
+    return `${this.planKeyForActiveSession()}:${artifact.id}:v${artifact.revision}`;
+  }
+  private isPlanDismissed(artifact: PlanArtifact): boolean {
+    return this.dismissedPlans.has(this.planDismissKey(artifact));
   }
 
   private disposePlanCards(): void {
@@ -2931,6 +3013,11 @@ export class ChatView extends ItemView {
     this.scrollToBottom();
   }
 
+  /** Auto-apply restores only the YOLO posture the plan was drafted from. */
+  private planAutoApplyAllowed(artifact: PlanArtifact): boolean {
+    return (artifact.originPosture ?? this.modeBeforePlan) === "yolo";
+  }
+
   private renderPlanCardInto(slot: HTMLElement, artifact: PlanArtifact): void {
     slot.empty();
     const key = this.planKeyForActiveSession();
@@ -2940,22 +3027,48 @@ export class ChatView extends ItemView {
       {
         artifact,
         contextFraction: this.service.getContextFraction() ?? null,
-        autoApplyAllowed: this.modeBeforePlan === "yolo",
+        autoApplyAllowed: this.planAutoApplyAllowed(artifact),
         autoApplyDisabledReason: "Auto-apply restores only the YOLO posture this plan was drafted from.",
       },
       {
         onApprove: (posture, freshThread) => void this.approvePlan(artifact, posture, freshThread),
         onKeepPlanning: () => {
+          // Dismiss for this view lifetime: the artifact stays pending, but
+          // re-renders won't resurrect the card until a new revision arrives.
+          this.dismissedPlans.add(this.planDismissKey(artifact));
           this.removePlanCard(handle);
           handle.dispose();
         },
         onFeedback: (text) => void this.sendPlanFeedback(artifact, text),
-        onEdit: (next) => void this.revisePlanFromEdit(key, artifact, next, (revised) =>
-          this.renderPlanCardInto(slot, revised),
-        ),
+        onFeedbackDraft: (text) => this.stashFeedbackDraft(key, artifact, text),
+        onEdit: (next) => void this.revisePlanFromEdit(key, artifact, next, (revised) => {
+          this.removePlanCard(handle);
+          handle.dispose();
+          this.renderPlanCardInto(slot, revised);
+        }),
       },
     );
     this.planCardHandles.push(handle);
+  }
+
+  /** Debounced draft persistence so typed-but-unsent feedback survives revisions. */
+  private readonly feedbackDraftTimers = new Map<string, number>();
+  private stashFeedbackDraft(key: string, artifact: PlanArtifact, text: string): void {
+    const current = this.activePlans.get(key);
+    if (!current || current.id !== artifact.id || current.status !== "pending") return;
+    const trimmed = text.trim();
+    this.activePlans.set(key, { ...current, feedbackDraft: trimmed ? trimmed.slice(0, 2000) : undefined });
+    const timerKey = `${key}:${artifact.id}`;
+    const pending = this.feedbackDraftTimers.get(timerKey);
+    if (pending !== undefined) window.clearTimeout(pending);
+    this.feedbackDraftTimers.set(
+      timerKey,
+      window.setTimeout(() => {
+        this.feedbackDraftTimers.delete(timerKey);
+        const latest = this.activePlans.get(key);
+        if (latest && latest.id === artifact.id) void this.plugin.savePlanArtifact(key, latest);
+      }, 750),
+    );
   }
 
   /** Legacy play-button path: open the approve gate for the session's plan. */
@@ -2966,13 +3079,18 @@ export class ChatView extends ItemView {
   }
 
   private openPlanApproveGate(artifact: PlanArtifact, defaultPosture: PlanApprovePosture): void {
+    const blocked = this.planActionBlocked();
+    if (blocked) {
+      new Notice(blocked);
+      return;
+    }
     new PlanApproveModal(
       this.app,
       artifact,
       {
         artifact,
         contextFraction: this.service.getContextFraction() ?? null,
-        autoApplyAllowed: this.modeBeforePlan === "yolo",
+        autoApplyAllowed: this.planAutoApplyAllowed(artifact),
         autoApplyDisabledReason: "Auto-apply restores only the YOLO posture this plan was drafted from.",
       },
       defaultPosture,
@@ -3002,29 +3120,36 @@ export class ChatView extends ItemView {
     const key = this.planKeyForActiveSession();
     const target: AgentMode = posture === "auto" ? "yolo" : "safe";
     const fraction = this.service.getContextFraction() ?? null;
-    const decided: PlanArtifact = { ...artifact, status: "approved" };
+    // The decision is consumed: clear any stashed draft and unmount first so
+    // a mid-flight failure can't leave a live card over a moved-on state.
+    const decided: PlanArtifact = { ...artifact, status: "approved", feedbackDraft: undefined };
     this.activePlans.set(key, decided);
     await this.plugin.savePlanArtifact(key, decided);
     this.disposePlanCards();
-    // Wire plan steps into the existing /todo tracker; the card collapses to
-    // a progress state once executing (tracker panel shows live step state).
-    await this.importPlanStepsIntoTracker(decided);
-    if (this.plugin.settings.mode === "plan") {
-      await this.setMode(target);
+    try {
+      // Wire plan steps into the existing /todo tracker; the tracker panel
+      // shows live step state once executing.
+      await this.importPlanStepsIntoTracker(decided);
+      // Always enforce the chosen posture (no-op when already there), so
+      // approving after an abort still runs under the approved posture.
+      await this.setMode(target, { skipPlanConfirm: true });
+      const executing: PlanArtifact = { ...decided, status: "executing" };
+      this.activePlans.set(key, executing);
+      await this.plugin.savePlanArtifact(key, executing);
+      this.renderInfoMessage("Plan", [
+        ["Approved", `${decided.title} — executing in ${target === "yolo" ? "YOLO (auto-apply)" : "Safe (manual approval)"}.`],
+        ["Steps", `${decided.steps.length} tracked in the /todo panel.`],
+      ]);
+      await this.sendPrompt(
+        buildPlanHandoff(decided, {
+          freshThread,
+          contextPercent: fraction === null ? undefined : Math.round(fraction * 100),
+        }),
+      );
+    } catch (error) {
+      this.renderErrorMessage(`Plan approval failed: ${error instanceof Error ? error.message : String(error)}`);
+      return;
     }
-    const executing: PlanArtifact = { ...decided, status: "executing" };
-    this.activePlans.set(key, executing);
-    await this.plugin.savePlanArtifact(key, executing);
-    this.renderInfoMessage("Plan", [
-      ["Approved", `${decided.title} — executing in ${target === "yolo" ? "YOLO (auto-apply)" : "Safe (manual approval)"}.`],
-      ["Steps", `${decided.steps.length} tracked in the /todo panel.`],
-    ]);
-    await this.sendPrompt(
-      buildPlanHandoff(decided, {
-        freshThread,
-        contextPercent: fraction === null ? undefined : Math.round(fraction * 100),
-      }),
-    );
     // Terminal: the decision is consumed — reopening must not resurrect a card.
     this.activePlans.delete(key);
     await this.plugin.savePlanArtifact(key, null);
@@ -3039,8 +3164,11 @@ export class ChatView extends ItemView {
       return;
     }
     const key = this.planKeyForActiveSession();
-    this.activePlans.set(key, { ...artifact, status: "pending", feedbackDraft: undefined });
-    await this.plugin.savePlanArtifact(key, this.activePlans.get(key) ?? null);
+    // Keep the sent text as the draft: if the turn fails, the feedback is not
+    // lost, and it pre-fills the card when the revised plan arrives.
+    const pending: PlanArtifact = { ...artifact, status: "pending", feedbackDraft: text.slice(0, 2000) };
+    this.activePlans.set(key, pending);
+    await this.plugin.savePlanArtifact(key, pending);
     this.disposePlanCards();
     await this.sendPrompt(
       `Feedback on the proposed plan "${artifact.title}":\n\n${text}\n\nRevise the plan accordingly and present the updated plan.`,

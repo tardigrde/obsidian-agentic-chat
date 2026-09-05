@@ -10,7 +10,13 @@
  * The plan id is stable across revisions (feedback survives in-place plan
  * revisions; transient state resets only on a new id) — the obsidian-copilot
  * `CurrentPlan` pattern.
+ *
+ * Persistence is plugin-private JSON only for now. Saving plans as real vault
+ * notes (`vault/plans/`) is deliberately deferred: note-save affects the
+ * user's vault, which the owner hasn't approved yet.
  */
+
+import type { AgentMode } from "./modes";
 
 export type PlanArtifactStatus = "pending" | "approved" | "rejected" | "executing" | "implemented";
 
@@ -37,6 +43,12 @@ export interface PlanArtifact {
   feedbackDraft?: string;
   /** Hash of the source message, so a manually-marked plan can be re-found. */
   messageHash?: string;
+  /**
+   * Posture the session held when the plan was drafted. Persisted with the
+   * artifact so auto-apply eligibility survives restarts (the in-memory
+   * per-session posture memory does not).
+   */
+  originPosture?: AgentMode | null;
 }
 
 /** Legacy completion handshake: kept as backward tolerance, not the trigger. */
@@ -118,6 +130,7 @@ export function artifactFromDetection(
       status: "pending",
       // feedbackDraft survives in-place revisions (copilot CurrentPlan pattern).
       feedbackDraft: previous.feedbackDraft,
+      originPosture: previous.originPosture ?? null,
     };
   }
   return {
@@ -129,7 +142,9 @@ export function artifactFromDetection(
     rawMarkdown: detected.rawMarkdown,
     createdAt: now,
     status: "pending",
-    feedbackDraft: previous?.feedbackDraft && planIdFor(previous.title, "") === id ? previous.feedbackDraft : undefined,
+    // Transient state resets on a new plan id: no draft carry-over.
+    feedbackDraft: undefined,
+    originPosture: previous?.originPosture ?? null,
   };
 }
 
@@ -152,7 +167,8 @@ export function teaserLines(artifact: PlanArtifact, maxBullets = 3): string[] {
   const lines = artifact.rawMarkdown.split("\n").map((line) => line.trim());
   const out: string[] = [];
   for (const line of lines) {
-    if (!line || out.length >= maxBullets) break;
+    if (out.length >= maxBullets) break;
+    if (!line) continue;
     if (/^#{1,6}\s+/.test(line)) continue;
     if (/^([-*+]|\d+[.)])\s+/.test(line)) out.push(line.replace(/^([-*+]|\d+[.)])\s+/, "").slice(0, 160));
   }
@@ -341,7 +357,8 @@ export function healPlanArtifact(value: unknown): PlanArtifact | null {
       ? record.feedbackDraft.slice(0, 2000)
       : undefined;
   const messageHash = typeof record.messageHash === "string" && record.messageHash ? record.messageHash : undefined;
-  return { id, revision, title, steps, scopeFiles, rawMarkdown, createdAt, status, feedbackDraft, messageHash };
+  const originPosture = record.originPosture === "safe" || record.originPosture === "yolo" ? record.originPosture : null;
+  return { id, revision, title, steps, scopeFiles, rawMarkdown, createdAt, status, feedbackDraft, messageHash, originPosture };
 }
 
 function healPlanStatus(value: unknown): PlanArtifactStatus {

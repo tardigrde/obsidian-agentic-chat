@@ -51,6 +51,10 @@ export const MODES: Record<AgentMode, ModeDefinition> = {
     description: "Auto-approve every mutating tool for this session (an explicit per-tool deny still wins).",
     promptOverlay: "",
   },
+  // Note: the overlay still asks for the legacy PLAN_COMPLETE marker. That is
+  // intentional: single-bullet plans are only detectable via the marker path,
+  // and the manual "mark as plan" fallback covers the rest. The marker is a
+  // backstop, not the trigger — the inline card renders from detection.
   plan: {
     id: "plan",
     label: "Plan",

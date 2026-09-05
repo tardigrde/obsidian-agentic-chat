@@ -54,6 +54,8 @@ export default class AgenticChatPlugin extends Plugin {
   modeBeforePlan: AgentMode | null = null;
   /** Persisted active plan artifacts by session key (`plans.json` in the plugin dir). */
   private planArtifacts: Record<string, PlanArtifact> | null = null;
+  /** Serializes plans.json read-modify-writes so rapid saves can't interleave. */
+  private planWriteQueue: Promise<void> = Promise.resolve();
   private lastSyncedMode: AgentMode | null = null;
   private secretStore!: ObsidianSecretStore;
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
@@ -303,7 +305,11 @@ export default class AgenticChatPlugin extends Plugin {
     return false;
   }
 
-  /** Plugin-private file holding the active plan artifact per session. */
+  /**
+   * Plugin-private file holding the active plan artifact per session.
+   * A sidecar via the vault adapter (not loadData/saveData): plans are keyed
+   * per session and healed on load, which doesn't fit the settings schema.
+   */
   private planArtifactsPath(): string {
     const dir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
     return `${dir}/plans.json`;
@@ -347,10 +353,14 @@ export default class AgenticChatPlugin extends Plugin {
 
   /** Persist (or clear, with null) the active plan artifact for a session key. */
   async savePlanArtifact(sessionKey: string, artifact: PlanArtifact | null): Promise<void> {
-    const all = await this.loadPlanArtifacts();
-    if (artifact) all[sessionKey] = artifact;
-    else delete all[sessionKey];
-    await this.writePlanArtifacts();
+    const task = this.planWriteQueue.then(async () => {
+      const all = await this.loadPlanArtifacts();
+      if (artifact) all[sessionKey] = artifact;
+      else delete all[sessionKey];
+      await this.writePlanArtifacts();
+    });
+    this.planWriteQueue = task.catch(() => {});
+    await task;
   }
 
   /** S4: settings tab delegates to the active chat view so modeBeforePlan is handled atomically; falls back to direct mutate when no view is open. */
