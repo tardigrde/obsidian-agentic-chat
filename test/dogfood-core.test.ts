@@ -124,7 +124,7 @@ async function writeSession(manifest: DogfoodManifest, entries: unknown[]): Prom
 }
 
 function validSessionEntries(_manifest: DogfoodManifest): unknown[] {
-  const toolNames = ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "search_memory", "ask_user"];
+  const toolNames = ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "remember_memory", "ask_user"];
   return [
     { type: "message", message: { role: "user", content: [{ type: "text", text: 'Active note "Dogfood Scratch.md":\n# Scratch' }] } },
     { type: "message", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } },

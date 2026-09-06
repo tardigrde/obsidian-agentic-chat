@@ -51,11 +51,13 @@ function makeController(
 function fakeApp(): { app: App; vault: FakeVault } {
   const vault = new FakeVault() as FakeVault & {
     getFolderByPath: (path: string) => TFolder | null;
+    configDir: string;
   };
   vault.getFolderByPath = (path) => {
     const entry = vault.getAbstractFileByPath(path);
     return entry instanceof TFolder ? entry : null;
   };
+  vault.configDir = ".obsidian";
   return {
     app: {
       vault,
@@ -494,5 +496,116 @@ describe("AgentToolCallController", () => {
     });
     expect(decision).toBeUndefined();
     expect(requests).toHaveLength(1);
+  });
+});
+
+describe("memory write boundary (H2)", () => {
+  const memoryOn = {
+    memory: { enabled: true, store: "plugin" as const, vaultFolder: "memory", modelOverride: "" },
+  };
+  const memoryVault = {
+    memory: { enabled: true, store: "vault" as const, vaultFolder: "memory", modelOverride: "" },
+  };
+
+  it("denies generic writes to MEMORY.md even in YOLO", async () => {
+    const { controller, requests } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, ...memoryVault },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "write" },
+      args: { path: "memory/MEMORY.md", content: "pwned" },
+    });
+    expect(decision).toEqual({ block: true, reason: expect.stringContaining("managed automatically") });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("denies plugin-store daily writes via raw dot-paths", async () => {
+    const { controller } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, ...memoryOn },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "edit" },
+      args: { path: ".obsidian/plugins/agentic-chat/memory/daily/2026-06-28.md", oldText: "a", newText: "b" },
+    });
+    expect(decision).toEqual({ block: true, reason: expect.stringContaining("managed automatically") });
+  });
+
+  it("lets remember_memory through and leaves normal notes alone", async () => {
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] }, ...memoryVault },
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+    });
+    const remember = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "remember_memory" },
+      args: { text: "Prefer concise answers." },
+    });
+    expect(remember).toBeUndefined();
+
+    const note = await controller.beforeToolCall({
+      toolCall: { id: "call-2", name: "write" },
+      args: { path: "Notes/a.md", content: "hi" },
+    });
+    expect(note).toBeUndefined();
+  });
+
+  it("does not gate memory paths when memory is disabled", async () => {
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "write" },
+      args: { path: "memory/MEMORY.md", content: "hi" },
+    });
+    expect(decision).toBeUndefined();
+  });
+});
+
+describe("memory write boundary prefix tricks (H2)", () => {
+  const memoryVault = {
+    memory: { enabled: true, store: "vault" as const, vaultFolder: "memory", modelOverride: "" },
+  };
+
+  it.each(["./memory/MEMORY.md", "@/memory/MEMORY.md", "memory/./MEMORY.md"])(
+    "denies vault writes through path prefix %s",
+    async (path) => {
+      const { controller, requests } = makeController({
+        settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, ...memoryVault },
+      });
+      const decision = await controller.beforeToolCall({
+        toolCall: { id: "call-1", name: "write" },
+        args: { path, content: "pwned" },
+      });
+      expect(decision).toEqual({ block: true, reason: expect.stringContaining("managed automatically") });
+      expect(requests).toHaveLength(0);
+    },
+  );
+
+  it("denies memory renames via newPath tricks", async () => {
+    const { controller } = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, ...memoryVault },
+    });
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "rename" },
+      args: { path: "Notes/a.md", newPath: "./memory/MEMORY.md" },
+    });
+    expect(decision).toEqual({ block: true, reason: expect.stringContaining("managed automatically") });
+  });
+
+  it("follows approval.mutating for remember_memory (ask prompts, deny blocks)", async () => {
+    const asked = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] }, ...memoryVault },
+      confirmToolCall: async () => ({ approved: false, remember: false }),
+    });
+    await expect(
+      asked.controller.beforeToolCall({ toolCall: { id: "call-1", name: "remember_memory" }, args: { text: "x" } }),
+    ).resolves.toEqual({ block: true, reason: "The user declined this action." });
+
+    const denied = makeController({
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: { remember_memory: "deny" }, workingDirs: [] }, ...memoryVault },
+    });
+    await expect(
+      denied.controller.beforeToolCall({ toolCall: { id: "call-1", name: "remember_memory" }, args: { text: "x" } }),
+    ).resolves.toEqual({ block: true, reason: expect.stringContaining("disabled") });
   });
 });

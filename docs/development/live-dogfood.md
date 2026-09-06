@@ -293,10 +293,10 @@ Add focused scenarios that each run in their own conversation/session:
   - multiple attached notes
   - exported session note exists but must not become active context
 - Memory system:
-  - add a preference and retrieve it later
-  - add conflicting memory and verify how it is presented
-  - export memory
-  - exercise memory clear guards
+  - `/memory add` a preference, then verify today's daily note
+  - `/memory distill` and verify MEMORY.md gained the fact
+  - conflicting memory: verify merge keeps both, human section untouched
+  - disable memory, verify orphaned files, then Delete files
   - verify unrelated vault content is not leaked through memory
 - MCP usage:
   - disabled MCP
@@ -393,7 +393,7 @@ Then run sad paths that a naive user is likely to hit:
 
 Cover feature areas that are easy to miss in basic dogfood:
 
-- memory add, recall, conflict, export, and clear flows
+- `/memory add`, `/memory distill`, merge conflicts, and disable/delete flows
 - MCP disabled state, bad URL, approval deny/ask/allow, and tool failure
   recovery
 - slash commands beyond `/status`, especially commands that mutate session,
@@ -426,7 +426,7 @@ model tokens:
   ignored/restricted notes, multilingual filenames, and existing memory records
 - script the model to force each default tool at least once: read,
   vault_inspect, write, edit, rename, delete, set_properties,
-  search_memory, and ask_user
+  remember_memory, and ask_user
 - change approval and tool-budget settings mid-run; verify the
   harness behavior changes, then restore defaults
 - include sad paths that should fail safely: ignored active note, denied

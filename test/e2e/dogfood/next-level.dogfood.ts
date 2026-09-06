@@ -53,7 +53,7 @@ function scriptedTurns(): ScriptedTurn[] {
       { id: "o-props", name: "vault_inspect", args: { action: "properties", path: "Messy/Home.md" } },
       { id: "o-read", name: "read", args: { path: "Odd Files/Invalid Frontmatter.md" } },
       { id: "o-read-range", name: "read", args: { path: "Odd Files/Invalid Frontmatter.md", startLine: 1, endLine: 3 } },
-      { id: "o-memory", name: "search_memory", args: { query: "DevOps knowledge-base", scope: "vault", maxResults: 3 } },
+      { id: "o-memory", name: "remember_memory", args: { text: "Synthetic dogfood user is validating a DevOps knowledge-base workflow.", kind: "fact" } },
       {
         id: "o-write",
         name: "write",
@@ -273,6 +273,7 @@ async function configurePlugin(manifest: DogfoodManifest): Promise<boolean> {
     settings.toolBudget.thresholdPercent = 25;
     settings.web.enabled = false;
     settings.mcp = { enabled: false, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] };
+    (settings as { memory?: unknown }).memory = { enabled: true, store: "plugin", vaultFolder: "memory", modelOverride: "" };
     await plugin.saveSettings?.();
     return true;
   }, { pluginId: PLUGIN_ID, ignoredGlobs: manifest.ignoredGlobs });

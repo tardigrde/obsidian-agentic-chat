@@ -6,6 +6,7 @@ import { activeModelConfig, apiKeyForProvider } from "../settings";
 import type { AgenticChatSettings } from "../settings";
 import { buildModel, type ModelConfig } from "../llm/models";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
+import { createRecallMemoryTool } from "../tools/memory-tools";
 import { createReadSkillFileTool, createReadSkillTool } from "../tools/read-skill-tool";
 import { createVaultTools } from "../tools/vault-tools";
 import { createSubagentTool } from "../tools/subagent-tool";
@@ -78,6 +79,7 @@ export class AgentSubagentRuntime {
       ...createToolArtifactTools(this.artifactStore),
       createReadSkillTool(skills),
       createReadSkillFileTool(this.app, skills),
+      createRecallMemoryTool(this.app, this.app.vault.adapter, () => this.getSettings()),
     ].filter(
       (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
     );

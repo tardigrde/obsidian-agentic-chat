@@ -2,8 +2,6 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { describe, expect, it, vi } from "vitest";
 import type { AskUserRequest } from "../src/tools/ask-user-tool";
 import { ChatView } from "../src/ui/chat-view";
-import { writeMemoryRecords } from "../src/memory/management";
-import type { MemoryRecord } from "../src/memory/memory";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 class FakeElement {
@@ -107,41 +105,30 @@ describe("ChatView ask_user prompt", () => {
     expect(messagesEl.findByClass("agentic-chat-ask-user")).toBeUndefined();
   });
 
-  it("exports memory JSONL without opening the export as the active file", async () => {
-    const memoryPath = ".obsidian/plugins/agentic-chat/memory/memories.jsonl";
+  it("saves /memory add to today's daily note without touching the workspace", async () => {
     const adapter = new MemoryAdapter();
-    const record: MemoryRecord = {
-      id: "mem-export",
-      kind: "fact",
-      scope: "vault",
-      text: "Dogfood memory export should save quietly.",
-      enabled: true,
-      createdAt: "2026-07-01T00:00:00.000Z",
-    };
-    await writeMemoryRecords(adapter.asDataAdapter(), memoryPath, [record]);
 
     const openFile = vi.fn();
     const getLeaf = vi.fn(() => ({ openFile }));
-    const create = vi.fn(async (path: string, contents: string) => {
-      await adapter.asDataAdapter().write(path, contents);
-      return { path };
-    });
     const renderInfoMessage = vi.fn();
     const fakeView = {
       app: {
         vault: {
           configDir: ".obsidian",
           adapter: adapter.asDataAdapter(),
-          create,
         },
         workspace: { getLeaf },
       },
-      plugin: { settings: {} },
+      plugin: {
+        settings: {
+          memory: { enabled: true, store: "plugin", vaultFolder: "memory", modelOverride: "" },
+        },
+      },
       service: {
         getMessages: (): AgentMessage[] => [],
         getSessionInfo: () => ({ id: "session-1" }),
+        getSessionUsage: () => ({ totalTokens: 0 }),
       },
-      ensureExportFolder: vi.fn(async () => undefined),
       workflowRenderer: (ChatView.prototype as unknown as { workflowRenderer: () => unknown }).workflowRenderer,
       clearEmptyState: vi.fn(),
       renderInfoMessage,
@@ -153,13 +140,15 @@ describe("ChatView ask_user prompt", () => {
     }).createMemoryWorkflow;
 
     const controller = createMemoryWorkflow.call(fakeView);
-    await controller.run("export");
+    await controller.run("add The user prefers concise answers");
 
-    expect(create).toHaveBeenCalledWith(expect.stringMatching(/^Agentic Chat Exports\/Agentic chat memories .*\.jsonl$/), expect.any(String));
+    const date = new Date().toISOString().slice(0, 10);
+    const dailyPath = `.obsidian/plugins/agentic-chat/memory/daily/${date}.md`;
+    await expect(adapter.read(dailyPath)).resolves.toContain("The user prefers concise answers.");
     expect(getLeaf).not.toHaveBeenCalled();
     expect(openFile).not.toHaveBeenCalled();
     expect(renderInfoMessage).toHaveBeenCalledWith("Memory", [
-      ["Exported", expect.stringMatching(/^1 memories to Agentic Chat Exports\/Agentic chat memories .*\.jsonl\.$/)],
+      [dailyPath, "Saved to today's daily note."],
     ]);
   });
 });

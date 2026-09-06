@@ -113,7 +113,7 @@ export async function generateDogfoodVault(options: GenerateDogfoodVaultOptions)
       "rename",
       "delete",
       "set_properties",
-      "search_memory",
+      "remember_memory",
       "ask_user",
     ],
     requiredGeneratedNotes: [
@@ -416,22 +416,7 @@ async function seedVault(vaultPath: string, manifest: DogfoodManifest): Promise<
   await writeText(vaultPath, "Odd Files/Name With Spaces.md", "# Name With Spaces\nPath handling fixture.\n");
   await writeText(vaultPath, "Stale Generated/Old Output.md", "---\ntags: [dogfood, stale]\n---\n# Old Output\nShould not be treated as current run evidence.\n");
   await writeText(vaultPath, "Agentic Chat Exports/Fake Export.md", "# Fake Export\nThis must not become active context.\n");
-  await writeText(vaultPath, ".obsidian/plugins/agentic-chat/memory/memories.jsonl", `${JSON.stringify({
-    id: "mem-next-level-devops",
-    kind: "fact",
-    scope: "vault",
-    text: "Next-level dogfood is validating a DevOps knowledge-base workflow.",
-    enabled: true,
-    createdAt: manifest.createdAt,
-  })}\n${JSON.stringify({
-    id: "mem-next-level-conflict",
-    kind: "fact",
-    scope: "vault",
-    text: "Conflicting memory says generated notes should be ignored.",
-    enabled: false,
-    forgottenAt: manifest.createdAt,
-    createdAt: manifest.createdAt,
-  })}\n`);
+  await writeText(vaultPath, `.obsidian/plugins/agentic-chat/memory/daily/${manifest.createdAt.slice(0, 10)}.md`, `## ${manifest.createdAt.slice(0, 10)}\n\n- Next-level dogfood is validating a DevOps knowledge-base workflow.\n\n<!-- v1 · dogfood seed -->\n`);
 }
 
 async function writeText(root: string, relativePath: string, content: string): Promise<void> {
