@@ -50,6 +50,7 @@ export default class AgenticChatPlugin extends Plugin {
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
   /** Plugin-owned background distillation scheduler (one per app, not per view). */
   private memoryScheduler: MemoryScheduler | null = null;
+  private schedulerDisposed = false;
   readonly pluginService = new PluginService(
     this.app,
     () => this.settings,
@@ -124,12 +125,13 @@ export default class AgenticChatPlugin extends Plugin {
       getSettings: () => this.settings,
       sessionCostUsd: () => this.foregroundSessionCostUsd(),
       isQuiet: () => !this.isAnyViewStreaming(),
-      isClosed: () => false,
+      isClosed: () => this.schedulerDisposed,
     });
     this.memoryScheduler.start();
   }
 
   onunload(): void {
+    this.schedulerDisposed = true;
     this.memoryScheduler?.stop();
     this.memoryScheduler = null;
   }

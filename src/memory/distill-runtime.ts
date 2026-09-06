@@ -243,6 +243,11 @@ async function runLockedDistill(
     const ledger = estimateRunCost(provider, modelId, promptChars, outputChars);
     await withMemoryMutex(async () => {
       const fresh = await readDistillState(options.adapter, paths);
+      // Day-scoped ledger: a new day starts from this run alone, otherwise
+      // lifetime accumulation would latch the spend cap forever.
+      const sameDay = (fresh.lastSuccess ?? "").slice(0, 10) === todayKey(now);
+      const baseTokens = sameDay ? (fresh.bgTokens ?? 0) : 0;
+      const baseCost = sameDay ? (fresh.bgCostUsd ?? 0) : 0;
       let next: DistillState = {
         ...fresh,
         version: write.version,
@@ -251,8 +256,8 @@ async function runLockedDistill(
         lastAttempt: new Date(now).toISOString(),
         nextRetryAfter: undefined,
         failCount: 0,
-        bgTokens: (fresh.bgTokens ?? 0) + ledger.tokens,
-        bgCostUsd: Number((((fresh.bgCostUsd ?? 0) + ledger.costUsd)).toFixed(6)),
+        bgTokens: baseTokens + ledger.tokens,
+        bgCostUsd: Number((baseCost + ledger.costUsd).toFixed(6)),
         lastRunCostUsd: ledger.costUsd,
       };
       for (const session of eligible) {

@@ -156,14 +156,18 @@ export async function appendDailyEntry(
   entry: string,
   date = todayKey(),
 ): Promise<string> {
-  await ensureDir(adapter, paths.dailyDir);
-  const path = dailyPathForDate(paths, date);
-  if (await adapter.exists(path)) {
-    await adapter.append(path, entry.endsWith("\n") ? entry : `${entry}\n`);
-  } else {
-    await adapter.write(path, entry.endsWith("\n") ? entry : `${entry}\n`);
-  }
-  return path;
+  // Serialized: concurrent first-writes (remember + deposit + audit lines)
+  // must not interleave exists→write and clobber each other.
+  return withMemoryMutex(async () => {
+    await ensureDir(adapter, paths.dailyDir);
+    const path = dailyPathForDate(paths, date);
+    if (await adapter.exists(path)) {
+      await adapter.append(path, entry.endsWith("\n") ? entry : `${entry}\n`);
+    } else {
+      await adapter.write(path, entry.endsWith("\n") ? entry : `${entry}\n`);
+    }
+    return path;
+  });
 }
 
 export async function appendDailySkipped(
@@ -525,7 +529,9 @@ export async function writeMemoryFileSurgical(
   await ensureDir(adapter, paths.dir);
   const latest = (await adapter.exists(paths.memoryFile)) ? await adapter.read(paths.memoryFile) : "";
   const parsed = latest ? parseMemoryFile(latest) : { human, autoBullets: [], version: 0 };
-  if (parsed.version !== baseVersion) return { status: "mismatch", version: parsed.version };
+  // Missing file is always a match (nothing to clobber); otherwise the version
+  // must agree or another writer won the race and the caller defers.
+  if (latest && parsed.version !== baseVersion) return { status: "mismatch", version: parsed.version };
   if (latest) {
     try {
       await adapter.write(paths.prevFile, latest);

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { distillDailyToMemory, findEligibleSessions } from "../src/memory/distill-runtime";
-import { parseMemoryFile, withSessionCoverage } from "../src/memory/vault-memory";
+import { parseMemoryFile, readDistillState, resolveMemoryPaths, withSessionCoverage } from "../src/memory/vault-memory";
 import type { DistillState } from "../src/memory/vault-memory";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import type { VaultMemorySettings } from "../src/memory/vault-memory";
@@ -121,5 +121,32 @@ describe("distill end-to-end with sessions", () => {
       distiller: async () => ["Should never be used."],
     });
     expect(second).toMatchObject({ status: "skipped", reason: "nothing eligible" });
+  });
+});
+
+describe("background spend ledger", () => {
+  it("resets day-scoped spend on rollover instead of latching the cap", async () => {
+    const adapter = new MemoryAdapter();
+    await seed(adapter);
+    const data = adapter.asDataAdapter();
+    const paths = resolveMemoryPaths(".obsidian", SETTINGS.memory);
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    await data.write(
+      paths.stateFile,
+      JSON.stringify({ version: 1, pending: 0, failCount: 0, lastSuccess: yesterday, bgTokens: 1000, bgCostUsd: 5 }),
+    );
+    const result = await distillDailyToMemory({
+      adapter: data,
+      configDir: ".obsidian",
+      settings: SETTINGS,
+      force: true,
+      sessionDir: SESSION_DIR,
+      distiller: async () => ["Distilled preference."],
+    });
+    expect(result.status).toBe("distilled");
+    const state = await readDistillState(data, paths);
+    // Yesterday's $5 must not carry into today (injected distiller costs nothing).
+    expect(state.bgCostUsd).toBe(0);
+    expect(state.bgTokens).toBe(0);
   });
 });

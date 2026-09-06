@@ -78,6 +78,27 @@ describe("serializeSessionFeedstock", () => {
     expect(body).toContain("(escaped)");
   });
 
+  it("redacts secret-shaped text before any provider sees it", () => {
+    const out = serializeSessionFeedstock(
+      [
+        message({
+          role: "user",
+          content: [{ type: "text", text: "deploy with api_key = sk-test-secret-value tonight" }],
+          timestamp: 1,
+        }),
+        message({
+          role: "toolResult",
+          content: [{ type: "text", text: "login failed: password = supersecretvalue123 retry" }],
+          timestamp: 2,
+        }),
+      ],
+      "sess-5",
+    );
+    expect(out).not.toContain("sk-test-secret-value");
+    expect(out).not.toContain("supersecretvalue123");
+    expect(out).toMatch(/redacted/i);
+  });
+
   it("returns empty when nothing recallable", () => {
     expect(serializeSessionFeedstock([], "empty")).toBe("");
     expect(

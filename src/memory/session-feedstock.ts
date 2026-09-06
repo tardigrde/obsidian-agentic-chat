@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { SessionEntry } from "../session/jsonl";
+import { redactText } from "../privacy/redaction";
 
 /** Per-tool-result char budget inside Tier-2 feedstock (unbounded dumps are the norm). */
 export const FEEDSTOCK_TOOL_RESULT_CHARS = 1_000;
@@ -107,10 +108,13 @@ function feedstockMessageText(message: AgentMessage): string {
 function capLine(text: string, isToolResult: boolean): string {
   const collapsed = text.replace(/\s+/g, " ").trim();
   if (!collapsed) return "";
-  if (isToolResult && collapsed.length > FEEDSTOCK_TOOL_RESULT_CHARS) {
-    return `${collapsed.slice(0, FEEDSTOCK_TOOL_RESULT_CHARS)}…`;
+  // Redact before any provider sees it; length caps apply after (generous limit:
+  // redactText is about secrets, not length).
+  const redacted = redactText(collapsed, { redactHighEntropy: true, maxLength: 100_000 });
+  if (isToolResult && redacted.length > FEEDSTOCK_TOOL_RESULT_CHARS) {
+    return `${redacted.slice(0, FEEDSTOCK_TOOL_RESULT_CHARS)}…`;
   }
-  return collapsed;
+  return redacted;
 }
 
 function escapeFeedstock(text: string): string {

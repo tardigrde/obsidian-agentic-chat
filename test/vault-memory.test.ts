@@ -349,6 +349,16 @@ describe("surgical memory write", () => {
     expect(parseMemoryFile(await adapter.read(PATHS.memoryFile)).autoBullets).toEqual(["New fact."]);
   });
 
+  it("recovers when MEMORY.md is missing (nothing to clobber)", async () => {
+    const { writeMemoryFileSurgical, parseMemoryFile } = await import(
+      "../src/memory/vault-memory"
+    );
+    const adapter = new MemoryAdapter();
+    const written = await writeMemoryFileSurgical(adapter.asDataAdapter(), PATHS, "", ["Fresh fact."], 5);
+    expect(written).toMatchObject({ status: "replaced", version: 6 });
+    expect(parseMemoryFile(await adapter.read(PATHS.memoryFile)).autoBullets).toEqual(["Fresh fact."]);
+  });
+
   it("purges prev/legacy/migrated files without double counting", async () => {
     const { deleteMemoryFiles } = await import("../src/memory/vault-memory");
     const adapter = new MemoryAdapter();

@@ -455,6 +455,8 @@ export class ChatView extends ItemView {
     tab.unsubscribe();
     tab.pendingApprovalModal?.close();
     tab.service.dispose();
+    // The closed session is now inactive with possibly undistilled content.
+    this.memoryHook((plugin) => plugin.memoryKick());
     if (index < this.activeTabIndex) {
       this.activeTabIndex -= 1;
     } else if (closingActive) {

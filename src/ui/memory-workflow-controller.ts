@@ -5,6 +5,7 @@ import { containsSensitiveText } from "../privacy/redaction";
 import {
   appendDailyEntry,
   bumpPendingAtomic,
+  containsInjectionAttempt,
   formatDailyEntry,
   memorySettingsOf,
   resolveMemoryPaths,
@@ -73,6 +74,10 @@ export class MemoryWorkflowController {
     }
     if (containsSensitiveText(text)) {
       this.options.renderer.error("Memory text looks like it may contain a secret. Not saved.");
+      return;
+    }
+    if (containsInjectionAttempt(text)) {
+      this.options.renderer.error("Memory text looks like an instruction to the agent. Save facts, not directives.");
       return;
     }
     const date = todayKey(this.now());
