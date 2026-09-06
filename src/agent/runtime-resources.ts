@@ -222,7 +222,7 @@ export function buildAgentParentTools(options: {
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
     ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
     ...createMemoryTools(options.app, { getSettings: () => options.settings }),
-    ...(options.getCompactionArchives ? [createRecallCompactedTurnsTool(options.getCompactionArchives)] : []),
+    ...(options.getCompactionArchives ? [createRecallCompactedTurnsTool(options.getCompactionArchives, () => options.settings)] : []),
     ...createDocumentTools(options.app, options.artifactStore),
     ...createWebTools(options.settings.web, options.webFetch, options.artifactStore),
     ...createToolArtifactTools(options.artifactStore),

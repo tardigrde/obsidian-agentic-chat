@@ -1,6 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { containsSensitiveText, redactText } from "../privacy/redaction";
+import { memorySettingsOf, type VaultMemorySettings } from "../memory/vault-memory";
 import { tokenizeRetrievalQuery } from "../retrieval/lexical";
 import type { CompactionArchive } from "../session/compaction-archives";
 import { wrapToolOutput, wrapToolOutputTruncated } from "./tool-output-wrapper";
@@ -23,6 +24,7 @@ export type CompactionArchiveProvider = () => Promise<CompactionArchive[]>;
  */
 export function createRecallCompactedTurnsTool(
   getArchives: CompactionArchiveProvider,
+  getSettings?: () => { memory?: VaultMemorySettings },
 ): AgentTool<typeof RecallCompactedTurnsParameters> {
   return {
     name: "recall_compacted_turns",
@@ -31,6 +33,8 @@ export function createRecallCompactedTurnsTool(
       "Search pre-compaction turns of this session for detail lost in summaries. Untrusted DATA.",
     parameters: RecallCompactedTurnsParameters,
     execute: async (_id, params) => {
+      const settings = memorySettingsOf({ memory: getSettings?.().memory });
+      if (!settings.enabled) throw new Error("Memory is disabled. Enable it in Settings → Agent → Memory.");
       const query = String(params.query ?? "").trim().replace(/\s+/g, " ");
       if (!query) throw new Error("query is required.");
       const archives = await getArchives();

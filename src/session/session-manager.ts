@@ -9,6 +9,7 @@ import type { UndoEntry } from "../agent/undo";
 import type { PlanTrackerState } from "../agent/plan-tracker";
 import { normalizeFolderPath } from "../vault/path";
 import {
+  ARCHIVE_TURN_CHARS,
   MAX_ARCHIVE_FILE_CHARS,
   MAX_ARCHIVES_PER_SESSION,
   buildArchiveTurns,
@@ -141,6 +142,27 @@ export class ObsidianSessionManager {
     const sessionPath = normalizeFolderPath(path, { allowPluginInternals: true });
     if (await this.adapter.exists(sessionPath)) {
       await this.adapter.remove(sessionPath);
+    }
+    // Sidecars must not outlive their session: a deleted session stays unrecallable.
+    try {
+      const base = sessionPath.split("/").pop()?.replace(/\.jsonl$/, "");
+      if (base) {
+        const dir = compactedArchiveDir(this.sessionDir);
+        if (await this.adapter.exists(dir)) {
+          const listing = await this.adapter.list(dir);
+          for (const file of listing.files) {
+            if (file.startsWith(`${dir}/${base}__`) && file.endsWith(".jsonl")) {
+              try {
+                await this.adapter.remove(file);
+              } catch {
+                // Best-effort per file.
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Best-effort cleanup.
     }
     if (this.sessionFile === sessionPath) {
       this.sessionFile = null;
@@ -404,9 +426,18 @@ export class ObsidianSessionManager {
       // Random suffix: two compactions in the same millisecond must not collide.
       const rand = Math.random().toString(36).slice(2, 8);
       const name = `${base}__${stamp}__${rand}.jsonl`;
-      await this.adapter.write(`${dir}/${name}`, serializeArchiveTurns(turns));
+      // Total cap at write time (newest turns win): guarantees our own files
+      // always pass the read guard, so long sessions stay recallable.
+      const maxTurns = Math.max(1, Math.floor(MAX_ARCHIVE_FILE_CHARS / (ARCHIVE_TURN_CHARS + 128)));
+      const kept = turns.length > maxTurns ? turns.slice(turns.length - maxTurns) : turns;
+      let serialized = serializeArchiveTurns(kept);
+      while (serialized.length > MAX_ARCHIVE_FILE_CHARS && kept.length > 1) {
+        kept.shift();
+        serialized = serializeArchiveTurns(kept);
+      }
+      await this.adapter.write(`${dir}/${name}`, serialized);
       await this.pruneArchives(dir, base);
-      return { name, turns: turns.length };
+      return { name, turns: kept.length };
     } catch {
       return null;
     }

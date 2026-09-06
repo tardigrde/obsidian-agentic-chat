@@ -207,6 +207,36 @@ describe("ObsidianSessionManager archive failure modes", () => {
     expect(await sm.listCompactionArchives()).toEqual([]);
   });
 
+  it("prunes sidecars when their session is deleted", async () => {
+    const { sm, adapter } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    await sm.archivePreCompactionTurns([userMessage("doomed detail")]);
+    expect(await sm.listCompactionArchives()).toHaveLength(1);
+    await sm.deleteSession(info.path);
+    expect(await sm.listCompactionArchives()).toEqual([]);
+    expect([...adapter.files.keys()].some((file) => file.includes("/compacted/"))).toBe(false);
+  });
+
+  it("caps very long sessions at write time, keeping the newest turns", async () => {
+    const { sm, adapter } = manager();
+    await sm.createSession(DEFAULTS);
+    const long = Array.from(
+      { length: 300 },
+      (_, i) => userMessage(`turn number ${i} ` + "x".repeat(1_900)),
+    );
+    const ref = await sm.archivePreCompactionTurns(long);
+    expect(ref).not.toBeNull();
+    const archives = await sm.listCompactionArchives();
+    expect(archives).toHaveLength(1);
+    expect(archives[0]!.turns.length).toBeLessThan(long.length);
+    expect(archives[0]!.turns.at(-1)!.text).toContain("turn number 299");
+    for (const file of adapter.files.keys()) {
+      if (file.includes("/compacted/")) {
+        expect(adapter.files.get(file)!.length).toBeLessThanOrEqual(200_000);
+      }
+    }
+  });
+
   it("skips oversize archive files", async () => {
     const { sm, adapter } = manager();
     const info = await sm.createSession(DEFAULTS);

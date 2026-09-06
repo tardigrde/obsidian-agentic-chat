@@ -20,6 +20,7 @@ import {
   type CompactionConfig,
 } from "./compaction";
 import { formatRecallIndex } from "../session/compaction-archives";
+import { memorySettingsOf } from "../memory/vault-memory";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
@@ -207,10 +208,13 @@ export class AgentCompactionRuntime {
     const manifest = collectCompactionManifest(plan.summarize);
     // Archive the pre-compaction slice BEFORE the rewrite destroys it, so
     // recall_compacted_turns can recover verbatim detail later. Best-effort:
-    // a failed archive never blocks the compaction itself.
+    // a failed archive never blocks the compaction itself. Skipped entirely
+    // when memory is disabled (no sidecars for opted-out users).
     let archived: { name: string; turns: number } | null;
     try {
-      archived = await this.sessionManager.archivePreCompactionTurns(plan.summarize);
+      archived = memorySettingsOf(this.getSettings()).enabled
+        ? await this.sessionManager.archivePreCompactionTurns(plan.summarize)
+        : null;
     } catch {
       archived = null;
     }

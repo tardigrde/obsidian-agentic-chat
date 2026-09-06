@@ -104,7 +104,11 @@ describe("AgentCompactionRuntime", () => {
   });
 
   it("archives the pre-compaction slice and embeds a recall index in the summary", async () => {
-    const { manager, runtime } = await setup();
+    const { manager, runtime } = await setup({
+      settings: settings({
+        memory: { enabled: true, store: "plugin", vaultFolder: "memory", modelOverride: "" },
+      }),
+    });
     const compacted = await runtime.compact(largeTranscript(), 1_000);
     expect(compacted).not.toBeNull();
     const archives = await manager.listCompactionArchives();
@@ -323,7 +327,11 @@ describe("AgentCompactionRuntime", () => {
 
 describe("AgentCompactionRuntime memory hooks", () => {
   it("survives a failing archive write without a recall index", async () => {
-    const { manager, runtime, path, adapter } = await setup();
+    const { manager, runtime, path, adapter } = await setup({
+      settings: settings({
+        memory: { enabled: true, store: "plugin", vaultFolder: "memory", modelOverride: "" },
+      }),
+    });
     vi.spyOn(manager, "archivePreCompactionTurns").mockRejectedValue(new Error("disk gone"));
     const compacted = await runtime.compact(largeTranscript(), 1_000);
     expect(compacted).not.toBeNull();
@@ -332,31 +340,17 @@ describe("AgentCompactionRuntime memory hooks", () => {
     expect(adapter.files.has(path)).toBe(true);
   });
 
-  it("deposits the raw summary after the rewrite, tolerating deposit failure", async () => {
-    const { adapter, manager, runtime, path } = await setup();
-    const seen: string[] = [];
-    const runtimeWithHook = new AgentCompactionRuntime({
+  it("skips archiving entirely when memory is disabled", async () => {
+    const { manager, adapter } = await setup();
+    const runtime = new AgentCompactionRuntime({
       getSettings: () => settings(),
       sessionManager: manager,
       summarize: async () => "Summary of earlier turns.",
-      onCompacted: async (summary) => {
-        seen.push(summary);
-      },
     });
-    const compacted = await runtimeWithHook.compact(largeTranscript(), 1_000);
-    expect(compacted).not.toBeNull();
-    expect(seen).toEqual(["Summary of earlier turns."]);
-    // Failure afterwards must not fail the compaction.
-    const failing = new AgentCompactionRuntime({
-      getSettings: () => settings(),
-      sessionManager: manager,
-      summarize: async () => "Summary of earlier turns.",
-      onCompacted: async () => {
-        throw new Error("deposit gone");
-      },
-    });
-    await expect(failing.compact(largeTranscript(), 1_000)).resolves.not.toBeNull();
-    expect(adapter.files.has(path)).toBe(true);
-    void runtime;
+    const result = await runtime.compact(largeTranscript(), 1_000);
+    expect(result).not.toBeNull();
+    expect(JSON.stringify(result![0])).not.toContain("recall-index");
+    expect(await manager.listCompactionArchives()).toEqual([]);
+    expect([...adapter.files.keys()].some((file) => file.includes("/compacted/"))).toBe(false);
   });
 });

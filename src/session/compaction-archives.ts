@@ -24,7 +24,10 @@ export interface CompactionArchive {
 export const ARCHIVE_TURN_CHARS = 2_000;
 /** Keep the last N archives per session; older ones are pruned on write. */
 export const MAX_ARCHIVES_PER_SESSION = 2;
-/** Never read an archive file larger than this (stale/corrupt guard). */
+/** Never read an archive file larger than this (stale/corrupt guard). Doubles as the
+ * write-time total budget (see archivePreCompactionTurns): files we write always fit,
+ * so the guard only ever trips on foreign or corrupt files. Compared against
+ * stat.size bytes; serialization is ASCII-heavy JSONL so chars ≈ bytes. */
 export const MAX_ARCHIVE_FILE_CHARS = 200_000;
 
 export function compactedArchiveDir(sessionDir: string): string {
