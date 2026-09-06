@@ -6,7 +6,7 @@ Two inputs, one distilled file. Only MEMORY.md auto-loads into every new chat (c
 
 | Input | File | Written | Cost |
 | --- | --- | --- | --- |
-| Explicit notes | `<store>/daily/YYYY-MM-DD.md` | `remember_memory` / `/memory add` / compaction-summary deposits | Zero tokens (direct append) |
+| Explicit notes | `<store>/daily/YYYY-MM-DD.md` | `remember_memory` / `/memory add` | Zero tokens (direct append) |
 | Past sessions | Session JSONL (read on demand) | Every chat, automatically | Zero tokens until distilled |
 | Distilled output | `<store>/MEMORY.md` | Idle 10min, startup sweep, session switch, or `/memory distill` | Typically ~1-2k tokens per run (bounded feedstock, ≤2k output tokens) |
 
@@ -43,6 +43,7 @@ Daily/MEMORY.md plaintext may contain session summaries. Automatic filters block
 - The agent can only append to **today's daily note** (`remember_memory` — say "remember this"; follows your mutating approval gate like any vault write, blocked in plan mode). It can never write MEMORY.md: generic `write`/`edit` to memory paths is denied even in YOLO, for parent and subagents (children never receive `remember_memory`; explorers may receive read-only `recall_memory`).
 - Manual: `/memory add <text>` appends to today's daily note. `/memory distill` forces consolidation now.
 - Recall: `recall_memory` (read-only, plan-allowed, child-grantable) searches MEMORY.md + recent daily notes with `{query, maxResults?}` and returns ≤500-char snippets with `[MEMORY]`/`[daily DATE]` citations as untrusted DATA. Never scans session JSONL in v1.
+- Recall (verbatim): `recall_compacted_turns` (read-only, plan-allowed, parent-only) searches this session's pre-compaction archive sidecars (`compacted/` next to the sessions folder) for detail the summary dropped — tool-call names are kept but arguments are not, thinking blocks are never archived. Only runs when memory is enabled; deleting a session deletes its sidecars. If the transcript shows a `recall-index` comment, prefer this tool for verbatim detail and `recall_memory` for distilled facts.
 - Legacy `memories.jsonl` (old `search_memory` system) migrates once into MEMORY.md on first distill (`memories.jsonl.migrated` backup); `search_memory` and `/memory review|manage|export|clear` are removed.
 
 ## Disable

@@ -157,3 +157,91 @@ describe("deriveAutoName", () => {
     expect(deriveAutoName("   ")).toBeUndefined();
   });
 });
+
+describe("ObsidianSessionManager compaction archives", () => {
+  it("archives pre-compaction turns and lists them back", async () => {
+    const { sm } = manager();
+    await sm.createSession(DEFAULTS);
+    const ref = await sm.archivePreCompactionTurns([
+      userMessage("the deploy requirement is friday"),
+      userMessage("   "),
+    ]);
+    expect(ref).not.toBeNull();
+    const archives = await sm.listCompactionArchives();
+    expect(archives).toHaveLength(1);
+    expect(archives[0]?.turns.map((turn) => turn.text)).toEqual(["the deploy requirement is friday"]);
+  });
+
+  it("returns null with no active session and prunes to the last two archives", async () => {
+    const { sm, adapter } = manager();
+    expect(await sm.archivePreCompactionTurns([userMessage("x")])).toBeNull();
+    expect(await sm.listCompactionArchives()).toEqual([]);
+    const info = await sm.createSession(DEFAULTS);
+    const base = info.path.split("/").pop()?.replace(/\.jsonl$/, "");
+    // Pre-seed two older archives, then one real archive prunes the oldest.
+    await adapter.write(`sessions/compacted/${base}__2000-01-01T00-00-00-000Z.jsonl`, '{"turnIndex":0,"role":"user","text":"oldest","toolDerived":false}\n');
+    await adapter.write(`sessions/compacted/${base}__2000-01-02T00-00-00-000Z.jsonl`, '{"turnIndex":0,"role":"user","text":"middle","toolDerived":false}\n');
+    await sm.archivePreCompactionTurns([userMessage("newest")]);
+    const archives = await sm.listCompactionArchives();
+    expect(archives).toHaveLength(2);
+    expect(archives.map((archive) => archive.turns[0]?.text).sort()).toEqual(["middle", "newest"]);
+  });
+
+  it("skips corrupt archives instead of failing the list", async () => {
+    const { sm, adapter } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    const base = info.path.split("/").pop()?.replace(/\.jsonl$/, "");
+    await adapter.write(`sessions/compacted/${base}__2000-01-01T00-00-00-000Z.jsonl`, "not json\n");
+    await sm.archivePreCompactionTurns([userMessage("good")]);
+    const archives = await sm.listCompactionArchives();
+    expect(archives.map((archive) => archive.turns[0]?.text)).toEqual(["good"]);
+  });
+});
+
+describe("ObsidianSessionManager archive failure modes", () => {
+  it("returns null for empty slices", async () => {
+    const { sm } = manager();
+    await sm.createSession(DEFAULTS);
+    const blank = { role: "user", content: [{ type: "text", text: "   " }], timestamp: 1 } as AgentMessage;
+    expect(await sm.archivePreCompactionTurns([blank])).toBeNull();
+    expect(await sm.listCompactionArchives()).toEqual([]);
+  });
+
+  it("prunes sidecars when their session is deleted", async () => {
+    const { sm, adapter } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    await sm.archivePreCompactionTurns([userMessage("doomed detail")]);
+    expect(await sm.listCompactionArchives()).toHaveLength(1);
+    await sm.deleteSession(info.path);
+    expect(await sm.listCompactionArchives()).toEqual([]);
+    expect([...adapter.files.keys()].some((file) => file.includes("/compacted/"))).toBe(false);
+  });
+
+  it("caps very long sessions at write time, keeping the newest turns", async () => {
+    const { sm, adapter } = manager();
+    await sm.createSession(DEFAULTS);
+    const long = Array.from(
+      { length: 300 },
+      (_, i) => userMessage(`turn number ${i} ` + "x".repeat(1_900)),
+    );
+    const ref = await sm.archivePreCompactionTurns(long);
+    expect(ref).not.toBeNull();
+    const archives = await sm.listCompactionArchives();
+    expect(archives).toHaveLength(1);
+    expect(archives[0]!.turns.length).toBeLessThan(long.length);
+    expect(archives[0]!.turns.at(-1)!.text).toContain("turn number 299");
+    for (const file of adapter.files.keys()) {
+      if (file.includes("/compacted/")) {
+        expect(adapter.files.get(file)!.length).toBeLessThanOrEqual(200_000);
+      }
+    }
+  });
+
+  it("skips oversize archive files", async () => {
+    const { sm, adapter } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    const base = info.path.split("/").pop()?.replace(/\.jsonl$/, "");
+    await adapter.write(`sessions/compacted/${base}__2000-01-01T00-00-00-000Z.jsonl`, "x".repeat(200_001));
+    expect(await sm.listCompactionArchives()).toEqual([]);
+  });
+});

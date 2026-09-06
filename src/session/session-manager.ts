@@ -9,6 +9,16 @@ import type { UndoEntry } from "../agent/undo";
 import type { PlanTrackerState } from "../agent/plan-tracker";
 import { normalizeFolderPath } from "../vault/path";
 import {
+  ARCHIVE_TURN_CHARS,
+  MAX_ARCHIVE_FILE_CHARS,
+  MAX_ARCHIVES_PER_SESSION,
+  buildArchiveTurns,
+  compactedArchiveDir,
+  parseArchiveTurns,
+  serializeArchiveTurns,
+  type CompactionArchive,
+} from "./compaction-archives";
+import {
   type ActionAuditSessionEntry,
   type FileCheckpointSessionEntry,
   buildSessionContext,
@@ -132,6 +142,27 @@ export class ObsidianSessionManager {
     const sessionPath = normalizeFolderPath(path, { allowPluginInternals: true });
     if (await this.adapter.exists(sessionPath)) {
       await this.adapter.remove(sessionPath);
+    }
+    // Sidecars must not outlive their session: a deleted session stays unrecallable.
+    try {
+      const base = sessionPath.split("/").pop()?.replace(/\.jsonl$/, "");
+      if (base) {
+        const dir = compactedArchiveDir(this.sessionDir);
+        if (await this.adapter.exists(dir)) {
+          const listing = await this.adapter.list(dir);
+          for (const file of listing.files) {
+            if (file.startsWith(`${dir}/${base}__`) && file.endsWith(".jsonl")) {
+              try {
+                await this.adapter.remove(file);
+              } catch {
+                // Best-effort per file.
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Best-effort cleanup.
     }
     if (this.sessionFile === sessionPath) {
       this.sessionFile = null;
@@ -373,6 +404,109 @@ export class ObsidianSessionManager {
       if (!(await this.adapter.exists(current))) {
         await this.adapter.mkdir(current);
       }
+    }
+  }
+
+  /**
+   * Persist the pre-compaction summarize slice as a bounded sidecar so
+   * `recall_compacted_turns` can recover verbatim detail after the rewrite.
+   * Thinking blocks are never archived. Keeps the last
+   * MAX_ARCHIVES_PER_SESSION archives for this session; best-effort, never throws.
+   * Returns the archive name + turn count for the summary recall-index, or null.
+   */
+  async archivePreCompactionTurns(messages: readonly AgentMessage[]): Promise<{ name: string; turns: number } | null> {
+    if (!this.sessionFile) return null;
+    const turns = buildArchiveTurns(messages);
+    if (turns.length === 0) return null;
+    try {
+      const dir = compactedArchiveDir(this.sessionDir);
+      await this.ensureArchiveDirectory(dir);
+      const base = this.sessionFile.split("/").pop()?.replace(/\.jsonl$/, "") ?? "session";
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      // Random suffix: two compactions in the same millisecond must not collide.
+      const rand = Math.random().toString(36).slice(2, 8);
+      const name = `${base}__${stamp}__${rand}.jsonl`;
+      // Total cap at write time (newest turns win): guarantees our own files
+      // always pass the read guard, so long sessions stay recallable.
+      const maxTurns = Math.max(1, Math.floor(MAX_ARCHIVE_FILE_CHARS / (ARCHIVE_TURN_CHARS + 128)));
+      const kept = turns.length > maxTurns ? turns.slice(turns.length - maxTurns) : turns;
+      let serialized = serializeArchiveTurns(kept);
+      while (serialized.length > MAX_ARCHIVE_FILE_CHARS && kept.length > 1) {
+        kept.shift();
+        serialized = serializeArchiveTurns(kept);
+      }
+      await this.adapter.write(`${dir}/${name}`, serialized);
+      await this.pruneArchives(dir, base);
+      return { name, turns: kept.length };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Read this session's compaction archives (newest last), bounded and corruption-tolerant. */
+  async listCompactionArchives(): Promise<CompactionArchive[]> {
+    if (!this.sessionFile) return [];
+    try {
+      const dir = compactedArchiveDir(this.sessionDir);
+      if (!(await this.adapter.exists(dir))) return [];
+      const base = this.sessionFile.split("/").pop()?.replace(/\.jsonl$/, "") ?? "session";
+      const prefix = `${base}__`;
+      const listing = await this.adapter.list(dir);
+      const names = listing.files
+        .filter((file) => file.startsWith(`${dir}/${prefix}`) && file.endsWith(".jsonl"))
+        .sort()
+        .slice(-MAX_ARCHIVES_PER_SESSION);
+      const archives: CompactionArchive[] = [];
+      for (const path of names) {
+        try {
+          const stat = await this.adapter.stat(path);
+          // Bytes vs the chars-named limit: exact for ASCII JSONL, conservative otherwise.
+          if (stat && stat.size > MAX_ARCHIVE_FILE_CHARS) continue;
+          const turns = parseArchiveTurns(await this.adapter.read(path));
+          if (turns.length === 0) continue;
+          archives.push({
+            name: path.split("/").pop() ?? path,
+            createdAt: new Date(stat?.mtime ?? Date.now()).toISOString(),
+            turns,
+          });
+        } catch {
+          continue;
+        }
+      }
+      return archives;
+    } catch {
+      return [];
+    }
+  }
+
+  private async ensureArchiveDirectory(dir: string): Promise<void> {
+    let current = "";
+    for (const segment of dir.split("/").filter(Boolean)) {
+      current = current ? `${current}/${segment}` : segment;
+      try {
+        if (!(await this.adapter.exists(current))) await this.adapter.mkdir(current);
+      } catch {
+        // Best-effort; the write surfaces real failures.
+      }
+    }
+  }
+
+  private async pruneArchives(dir: string, base: string): Promise<void> {
+    try {
+      const prefix = `${base}__`;
+      const listing = await this.adapter.list(dir);
+      const names = listing.files
+        .filter((file) => file.startsWith(`${dir}/${prefix}`) && file.endsWith(".jsonl"))
+        .sort();
+      for (const stale of names.slice(0, Math.max(0, names.length - MAX_ARCHIVES_PER_SESSION))) {
+        try {
+          await this.adapter.remove(stale);
+        } catch {
+          // Best-effort per file.
+        }
+      }
+    } catch {
+      // Best-effort pruning.
     }
   }
 

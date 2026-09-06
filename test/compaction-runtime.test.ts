@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream,
@@ -101,6 +101,22 @@ describe("AgentCompactionRuntime", () => {
 
     const entries = parseSessionEntries(adapter.files.get(path) ?? "");
     expect(entries.filter((entry) => entry.type === "message")).toHaveLength(compacted!.length);
+  });
+
+  it("archives the pre-compaction slice and embeds a recall index in the summary", async () => {
+    const { manager, runtime } = await setup({
+      settings: settings({
+        memory: { enabled: true, store: "plugin", vaultFolder: "memory", modelOverride: "" },
+      }),
+    });
+    const compacted = await runtime.compact(largeTranscript(), 1_000);
+    expect(compacted).not.toBeNull();
+    const archives = await manager.listCompactionArchives();
+    expect(archives).toHaveLength(1);
+    expect(archives[0]!.turns.length).toBeGreaterThan(0);
+    const summaryText = JSON.stringify(compacted![0]);
+    expect(summaryText).toContain("recall-index");
+    expect(summaryText).toContain(archives[0]!.name);
   });
 
   it("preserves artifact cache references on the summary message", async () => {
@@ -306,5 +322,35 @@ describe("AgentCompactionRuntime", () => {
     expect(calls[0].previousSummary).toBeUndefined();
     expect(calls[1].previousSummary).toBe("summary-1");
     expect(JSON.stringify(compacted![0])).toContain("summary-");
+  });
+});
+
+describe("AgentCompactionRuntime memory hooks", () => {
+  it("survives a failing archive write without a recall index", async () => {
+    const { manager, runtime, path, adapter } = await setup({
+      settings: settings({
+        memory: { enabled: true, store: "plugin", vaultFolder: "memory", modelOverride: "" },
+      }),
+    });
+    vi.spyOn(manager, "archivePreCompactionTurns").mockRejectedValue(new Error("disk gone"));
+    const compacted = await runtime.compact(largeTranscript(), 1_000);
+    expect(compacted).not.toBeNull();
+    expect(JSON.stringify(compacted![0])).not.toContain("recall-index");
+    expect(await manager.listCompactionArchives()).toEqual([]);
+    expect(adapter.files.has(path)).toBe(true);
+  });
+
+  it("skips archiving entirely when memory is disabled", async () => {
+    const { manager, adapter } = await setup();
+    const runtime = new AgentCompactionRuntime({
+      getSettings: () => settings(),
+      sessionManager: manager,
+      summarize: async () => "Summary of earlier turns.",
+    });
+    const result = await runtime.compact(largeTranscript(), 1_000);
+    expect(result).not.toBeNull();
+    expect(JSON.stringify(result![0])).not.toContain("recall-index");
+    expect(await manager.listCompactionArchives()).toEqual([]);
+    expect([...adapter.files.keys()].some((file) => file.includes("/compacted/"))).toBe(false);
   });
 });

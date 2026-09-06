@@ -125,15 +125,17 @@ export function buildSummaryMessage(
   timestamp: number,
   compactedUsage?: Usage,
   compactionManifest?: CompactionManifest,
+  recallIndex?: string,
 ): AgentMessage {
   const manifest = compactionManifest && hasCompactionManifestEntries(compactionManifest) ? compactionManifest : undefined;
   const summaryWithManifest = appendCompactionManifest(summary, manifest);
+  const summaryWithIndex = recallIndex ? `${summaryWithManifest}\n\n${recallIndex}` : summaryWithManifest;
   return {
     role: "user",
     content: [
       {
         type: "text",
-        text: `Earlier conversation was summarized to save context:\n\n<conversation-summary>\n${summaryWithManifest}\n</conversation-summary>`,
+        text: `Earlier conversation was summarized to save context:\n\n<conversation-summary>\n${summaryWithIndex}\n</conversation-summary>`,
       },
     ],
     timestamp,
