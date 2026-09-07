@@ -158,7 +158,11 @@ function printSetup(hotReloadIds: string[]): void {
 
 async function openVault(): Promise<void> {
   if (noOpen) return;
-  const uri = `obsidian://open?path=${encodeURIComponent(vaultPath)}`;
+  const uri = vaultOpenUri(vaultPath);
+  if (!uri) {
+    console.log(`Vault path looks invalid (${vaultPath}). Open Obsidian manually.`);
+    return;
+  }
   const command = openCommand(uri);
   if (!command) {
     console.log(`Open Obsidian manually: ${uri}`);
@@ -166,9 +170,11 @@ async function openVault(): Promise<void> {
   }
 
   try {
-    // codeql[js/shell-command-injection-from-environment] -- vaultPath is URI-encoded; spawn uses array args.
+    // codeql[js/shell-command-injection-from-environment] -- bin is a hardcoded
+    // platform opener, args are a single validated URI-encoded vault path, shell is off.
     const child = spawn(command.bin, command.args, {
       detached: true,
+      shell: false,
       stdio: "ignore",
     });
     child.unref();
@@ -177,6 +183,12 @@ async function openVault(): Promise<void> {
     console.log(`Open Obsidian manually: ${uri}`);
     console.warn(error instanceof Error ? error.message : String(error));
   }
+}
+
+/** Build the `obsidian://open` URI, or undefined when the vault path is not a sane absolute path. */
+function vaultOpenUri(resolvedVaultPath: string): string | undefined {
+  if (!path.isAbsolute(resolvedVaultPath) || resolvedVaultPath.includes("\0")) return undefined;
+  return `obsidian://open?path=${encodeURIComponent(resolvedVaultPath)}`;
 }
 
 function openCommand(uri: string): { bin: string; args: string[] } | undefined {

@@ -196,12 +196,12 @@ export function buildFocusHint(explicitRequest: string): string {
   return FOCUS_HINT;
 }
 
-/** Escape attacker-controllable `</context>` / `<context>` / `Focus:` inside attached sections so they cannot forge the wrapper or a fake hint. */
+/** Escape attacker-controllable `</context>` / `<context>` / `Focus:` inside attached sections so they cannot forge the wrapper or a fake hint. Each token is broken with a backslash, mirroring the tag escapes above. */
 function escapeContextSection(text: string): string {
   return text
     .replaceAll("</context>", "<\\/context>")
     .replaceAll("<context>", "<\\context>")
-    .replaceAll("Focus:", "F\u006fcus:");
+    .replaceAll("Focus:", "F\\ocus:");
 }
 
 /** Assemble final prompt with optional focus hint between context and request. */
