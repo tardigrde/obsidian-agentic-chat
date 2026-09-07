@@ -37,13 +37,25 @@ import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from 
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
 import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
+import { healPlanArtifact, type PlanArtifact } from "./agent/plan-artifact";
 
 declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
 
 export default class AgenticChatPlugin extends Plugin {
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
-  /** S4: single-source memory for plan restore — one value for all leaves, not per-view (Codex atomic override). */
+  /**
+   * S4: legacy single-source memory for plan restore. Plan posture memory now
+   * lives per-session in the chat view (`PlanMemoryStore`); this field remains
+   * only as a fallback for the no-open-view settings path. New code should
+   * scope plan state to the session, not the plugin singleton.
+   *
+   * @deprecated Use the view's per-session plan memory instead.
+   */
   modeBeforePlan: AgentMode | null = null;
+  /** Persisted active plan artifacts by session key (`plans.json` in the plugin dir). */
+  private planArtifacts: Record<string, PlanArtifact> | null = null;
+  /** Serializes plans.json read-modify-writes so rapid saves can't interleave. */
+  private planWriteQueue: Promise<void> = Promise.resolve();
   private lastSyncedMode: AgentMode | null = null;
   private secretStore!: ObsidianSecretStore;
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
@@ -291,6 +303,74 @@ export default class AgenticChatPlugin extends Plugin {
       if (leaf.view instanceof ChatView && leaf.view.isStreaming()) return true;
     }
     return false;
+  }
+
+  /**
+   * Plugin-private file holding the active plan artifact per session.
+   * A sidecar via the vault adapter (not loadData/saveData): plans are keyed
+   * per session and healed on load, which doesn't fit the settings schema.
+   */
+  private planArtifactsPath(): string {
+    const dir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+    return `${dir}/plans.json`;
+  }
+
+  private async loadPlanArtifacts(): Promise<Record<string, PlanArtifact>> {
+    if (this.planArtifacts) return this.planArtifacts;
+    let parsed: Record<string, PlanArtifact> = {};
+    try {
+      if (await this.app.vault.adapter.exists(this.planArtifactsPath())) {
+        const raw = await this.app.vault.adapter.read(this.planArtifactsPath());
+        const value: unknown = JSON.parse(raw);
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          parsed = {};
+          for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+            const healed = healPlanArtifact(entry);
+            if (healed) parsed[key] = healed;
+          }
+        }
+      }
+    } catch {
+      // Don't silently destroy evidence: stash the corrupt file once, then
+      // start fresh. Queued saves serialize behind this load.
+      try {
+        const raw = await this.app.vault.adapter.read(this.planArtifactsPath());
+        await this.app.vault.adapter.write(`${this.planArtifactsPath()}.corrupt.${Date.now()}.json`, raw);
+      } catch {
+        // Best-effort backup; a fresh map is still safe to use.
+      }
+      parsed = {};
+    }
+    this.planArtifacts = parsed;
+    return parsed;
+  }
+
+  private async writePlanArtifacts(): Promise<void> {
+    try {
+      await this.app.vault.adapter.write(this.planArtifactsPath(), JSON.stringify(this.planArtifacts ?? {}));
+    } catch (error) {
+      console.warn("Agentic chat: could not persist plan artifacts", error);
+    }
+  }
+
+  /** Active plan artifact for a session key (null when none or decided). */
+  async getPlanArtifact(sessionKey: string): Promise<PlanArtifact | null> {
+    // Drain queued writes first so reads never see a stale cache mid-save.
+    await this.planWriteQueue;
+    const all = await this.loadPlanArtifacts();
+    return all[sessionKey] ?? null;
+  }
+
+  /** Persist (or clear, with null) the active plan artifact for a session key. */
+  async savePlanArtifact(sessionKey: string, artifact: PlanArtifact | null): Promise<void> {
+    const task = this.planWriteQueue.then(async () => {
+      const all = await this.loadPlanArtifacts();
+      if (artifact) all[sessionKey] = artifact;
+      else delete all[sessionKey];
+      await this.writePlanArtifacts();
+    });
+    this.planWriteQueue = task.catch(() => {});
+    await task;
   }
 
   /** S4: settings tab delegates to the active chat view so modeBeforePlan is handled atomically; falls back to direct mutate when no view is open. */

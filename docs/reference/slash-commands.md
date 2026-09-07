@@ -13,8 +13,7 @@ Slash commands run locally and are not sent to the model.
 | `/mode` | Alias for `/config`. |
 | `/add-dir [folder]` | Grant a vault working directory. Without an argument, opens a vault folder picker. |
 | `/dirs` | List or revoke granted working directories. |
-| `/plan` | Enter sticky read-only planning mode. |
-| `/endplan` | Leave planning mode and restore the prior posture. |
+| `/plan` | Enter sticky read-only planning mode (approve the inline plan card to implement). |
 | `/compact [instructions]` | Summarize older turns now. Optional instructions are passed to the compaction request. |
 | `/init [instructions]` | Create or curate the vault standing-instructions file. Optional text guides that update. |
 | `/style [name]` | Switch output style. |

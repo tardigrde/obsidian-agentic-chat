@@ -63,6 +63,8 @@ export interface BubbleActions {
   onRetry?: () => void;
   /** Exit plan mode and send the implement prompt. */
   onImplementPlan?: () => void;
+  /** Capture this message as a plan artifact (manual fallback for missed detection). */
+  onMarkAsPlan?: () => void;
   /** Open an external rendered link such as https://. */
   onOpenExternalLink?: (target: string) => void;
   /** Open a vault-relative note path shown in a tool-call section (e.g. read/write/edit target). */
@@ -797,13 +799,16 @@ export class AssistantBubble {
     // no-op — usage is shown in the view's single bottom bar
   }
 
-  /** Render the inline action row (copy, retry, implement). Safe to call once. */
-  showActions(opts: { canRetry: boolean; canImplement?: boolean }): void {
+  /** Render the inline action row (copy, retry, implement, mark-as-plan). Safe to call once. */
+  showActions(opts: { canRetry: boolean; canImplement?: boolean; canMarkAsPlan?: boolean }): void {
     if (this.actionsEl.childElementCount > 0) return;
     if (!this.markdown.trim()) return;
     this.actionButton("copy", "Copy response", () => void this.copy());
     if (opts.canImplement && this.actions.onImplementPlan) {
       this.actionButton("play", "Implement this plan", this.actions.onImplementPlan);
+    }
+    if (opts.canMarkAsPlan && this.actions.onMarkAsPlan) {
+      this.actionButton("clipboard-list", "Mark as plan", this.actions.onMarkAsPlan);
     }
     if (opts.canRetry && this.actions.onRetry) {
       this.actionButton("refresh-cw", "Ask again", this.actions.onRetry);
@@ -826,6 +831,16 @@ export class AssistantBubble {
     } catch {
       new Notice("Could not copy to clipboard.");
     }
+  }
+
+  /** Late-bind the manual plan-capture action (live bubbles predate detection). */
+  setMarkAsPlanHandler(handler: (() => void) | undefined): void {
+    this.actions.onMarkAsPlan = handler;
+  }
+
+  /** Slot for the inline plan card, mounted below the action row. */
+  createPlanSlot(): HTMLElement {
+    return this.el.createDiv({ cls: "agentic-chat-plan-slot" });
   }
 }
 
