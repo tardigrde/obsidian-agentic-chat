@@ -44,5 +44,6 @@ npm run docs:preview
 
 ## Live dogfood
 
-Use [Live dogfood harness](./live-dogfood.md) for exploratory WebDriver/manual
-bug sweeps against a real vault and external multi-repo workspace.
+Exploratory WebDriver/manual bug sweeps against a real vault run from
+[`docs/development/live-dogfood.md`](https://github.com/tardigrde/obsidian-agentic-chat/blob/main/docs/development/live-dogfood.md)
+in the repo (kept out of the public site because it is a maintainer runbook, not user docs).
