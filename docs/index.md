@@ -4,25 +4,25 @@ layout: home
 hero:
   name: Agentic Chat
   text: Agent-led AI chat for Obsidian
-  tagline: A privacy-first sidebar assistant that can read, search, write, edit, rename, and organize your vault through visible, approval-gated tool calls.
+  tagline: A sidebar assistant that reads, searches, and edits your vault through visible, approval-gated tool calls. Telemetry off, web/MCP/observability off, OpenRouter zero-retention routing on — all by default.
   actions:
     - theme: brand
       text: Install
       link: /guide/install
     - theme: alt
-      text: Configure a provider
-      link: /guide/setup
+      text: First chat in 5 minutes
+      link: /guide/setup#first-chat
     - theme: alt
       text: View commands
       link: /reference/slash-commands
 
 features:
   - title: Vault-native tools
-    details: The agent works through Obsidian APIs for notes, links, frontmatter, sessions, and trash-safe deletes.
-  - title: Privacy-first defaults
-    details: OpenRouter routing starts with zero-data-retention constraints, Ollama keeps everything local, and telemetry is off by default.
+    details: Read, search, write, edit, rename, and trash-safe delete through Obsidian APIs, with backlink preservation and an ignore list that stays invisible.
+  - title: Privacy defaults you can verify
+    details: OpenRouter routing requires zero-data-retention endpoints and denies training/logging; Ollama keeps everything local; telemetry is off.
   - title: Visible control
-    details: Tool calls render inline, mutating actions can require approval with diffs, and plan mode blocks writes while you reason.
-  - title: Extensible workflows
-    details: Add skills, subagents, web research, remote MCP tools, and optional observability only when you need them.
+    details: Every tool call renders inline with args and timing; mutating calls show diffs for approval; plan mode blocks writes; /undo reverts the last change.
+  - title: Opt-in power only
+    details: Skills, subagents, web research, remote MCP tools, and observability export are disabled until you enable them in Settings.
 ---

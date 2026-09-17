@@ -1,12 +1,21 @@
 # Semantic Retrieval
 
-Semantic retrieval adds vector-based note search to the agent. It is opt-in and scoped so you control exactly what gets indexed and when.
+Semantic retrieval adds opt-in vector search over your notes. It is off by default; you choose the scope (vault, folder, tag, or the active note's folder) each time you index.
 
 ## How it works
 
-1. **Index** — The plugin sends note text to an embedding provider and stores the resulting vectors in a local index file.
-2. **Query** — When the agent needs relevant context, the index returns the most semantically similar notes.
-3. **Scope** — Indexing is scoped to a vault, folder, tag, or the active note's folder. You choose the scope each time you index.
+1. **Index** — The plugin sends note text to an embedding provider and stores vectors in a local index file.
+2. **Query** — The agent searches the index when keyword lookup (`vault_inspect`) is unlikely to find paraphrased or conceptually related notes.
+3. **Scope** — Indexing covers exactly the scope you indexed. Re-run per scope; `/semantic-index estimate` shows note/token counts first so you know the embedding cost.
+
+## When to use it vs alternatives
+
+| Need | Use |
+| --- | --- |
+| Exact names, links, frontmatter | `vault_inspect` keyword search (free, always on) |
+| "Notes about X" phrased differently than the notes | Semantic index (costs embedding calls) |
+| Standing rules the agent must always follow | `AGENTS.md` via `/init` (auto-loaded every turn) |
+| Facts across sessions | `/memory add` (explicit recall only) |
 
 ## Setup
 
@@ -19,7 +28,7 @@ Enable and configure embeddings in **Settings > Resources > Semantic retrieval**
 - **Batch size** — Notes per embedding request (default 32).
 - **Max indexed characters per note** — Upper bound on text sent to the provider per note (default 12,000).
 
-Provider API keys reuse the same secrets configured in **Settings > Models**.
+Provider API keys reuse the same secrets configured in **Settings > Agentic Chat** on the **Models** tab.
 
 ## Commands
 
@@ -32,6 +41,6 @@ Provider API keys reuse the same secrets configured in **Settings > Models**.
 
 ## Privacy
 
-- Embeddings are sent to the provider you configure. If you use a remote provider, note content leaves your device.
+- Embedding text is sent to the provider you configure — with a remote provider, note content leaves your device.
 - The local index file lives inside the plugin directory (`semantic-index.json`).
-- Use Ollama for fully local embeddings.
+- Use Ollama for fully local embeddings. See [Privacy](../guide/privacy.md) for the full egress contract.

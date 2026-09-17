@@ -19,9 +19,7 @@ The active note is attached automatically unless it is ignored, is a root standi
 
 Tool calls render inline in the transcript. You can expand them to inspect arguments, results, and timing.
 
-Mutating calls are controlled by the approval policy. When a call is set to **ask**, the plugin shows the pending arguments and a line-level diff before anything changes.
-
-Diff previews color removed lines red and added lines green.
+Mutating calls are controlled by the approval policy. When a call is set to **ask**, the plugin shows the pending arguments and a line-level diff (red removed, green added) before anything changes.
 
 ## Safe, YOLO, and plan modes
 
@@ -29,7 +27,7 @@ Diff previews color removed lines red and added lines green.
 
 **YOLO** auto-approves mutating tools for the current session, except for tools explicitly set to deny.
 
-`/plan` enters read-only planning mode. It blocks mutations until `/endplan` restores the previous posture.
+`/plan` enters sticky read-only planning mode. It blocks mutations until you leave: click the **Plan** badge in chat or run `/config` to switch back to Safe/YOLO.
 
 Run `/compact [instructions]` to summarize older turns on demand. The optional instructions are passed to the compaction request so important details survive the summary.
 
@@ -49,9 +47,9 @@ Cancel an in-progress build with `/semantic-index cancel`.
 
 ## Todo tracking
 
-Use `/todo add <milestone>` to add a milestone. Update status with `/todo set <id> <pending|active|done|blocked>`. Track tests with `/todo test <id> <not-run|running|passed|failed|skipped>`. Attach checkpoint commits with `/todo commit <id> <commit>`.
+Use `/todo add <milestone>` to add a milestone. Update status with `/todo set <id> <pending|active|done|blocked>`. Track tests with `/todo test <id> <not-run|running|passed|failed|skipped>`. Attach checkpoint commits with `/todo commit <id> <commit>`, notes with `/todo note <id> <note>`, and retitle the plan with `/todo title <name>`.
 
-The plan tracker panel shows live progress.
+Find the live progress in the plan tracker panel.
 
 ## Real-time controls
 
