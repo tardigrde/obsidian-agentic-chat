@@ -1,107 +1,83 @@
 # Settings Reference
 
-The settings page is split into virtual tabs so setup and advanced features stay separate.
+**Settings > Agentic Chat**, organized into virtual tabs. Defaults shown are the plugin defaults.
 
 ## Models
 
-Configure provider, API key, model id, temperature, max tokens, timeouts, retries, and model-network proxy settings.
+Provider, key, model id, and request behavior.
 
-Providers:
+| Setting | Default | Notes |
+| --- | --- | --- |
+| Provider | `openrouter` | `openrouter`, `ollama`, or `openai-compatible`. |
+| OpenRouter model | `moonshotai/kimi-k2.6` | Must be tool-capable. Browsing filters to zero-retention endpoints while strict routing is on. |
+| Ollama server URL | `http://localhost:11434` | No key needed. |
+| Ollama model | `llama3.1` | Tool-capable tag required. |
+| OpenAI-compatible base URL | empty | Must serve `/chat/completions`; bare OpenWebUI roots resolve to `/api` (`http://localhost:3000/api`). |
+| Context window override | `0` (auto-detect) | OpenRouter catalog first, then suffix match; unknown windows keep all tools and disable auto-compaction. |
+| Temperature | `0.3` | Sampling randomness, 0–2. |
+| Max response tokens | `0` | 0 lets the provider decide. |
+| Request timeout | `90s` | How long to wait for the provider to start responding. |
+| Network retries | `2` | Automatic retries on rate limits and transient errors. |
+| HTTP proxy (desktop) | empty | `scheme://host:port`, no trailing slash. Mobile: leave empty, use device/VPN proxy. |
 
-- OpenRouter
-- Ollama
-- OpenAI-compatible
+Keys live in Obsidian secret storage; `data.json` holds secret ids, not values.
 
 ## Agent
 
-Configure standing instructions, output style, compaction, memory, skills folders, and runtime resource behavior.
-
-- **Permission mode** — Safe honors approval gates; YOLO auto-approves mutating tools for the session. Plan mode is entered via `/plan` in chat.
-- **Temperature** — Sampling randomness (0–2).
-- **Max response tokens** — Per model request. 0 lets the provider decide.
-- **Request timeout** — How long to wait for the provider to start responding.
-- **Network retries** — Automatic retries on rate limits and transient errors.
-- **System prompt** — Sent at the start of every conversation.
-- **Standing instructions** — `AGENTS.md` (or `CLAUDE.md` / `GEMINI.md`) loaded from the vault root every turn.
-- **Context window** — Auto-compaction settings: summarize older turns automatically as the context window fills.
-- **Tool budget** — Drop optional tools when registered tool schemas exceed a threshold percent of the context window.
-- **Subagents** — Subagent timeout (auto-abort a child after N seconds; 0 disables, max 86400).
-
-### Context-window resolution
-
-OpenRouter models use the live `/models` catalog for their context window. For the
-OpenAI-compatible provider, the plugin tries the OpenRouter catalog for the same
-model slug (exact, or an unambiguous suffix match); otherwise the window is treated
-as **unknown**. Unknown windows keep every tool (the tool budget never drops) and
-disable auto-compaction rather than guessing 128k and silently dropping optional
-tools. If your gateway exposes a window different from OpenRouter's, set the
-provider's **Context window (tokens)** setting (0 = auto-detect).
+| Setting | Default | Notes |
+| --- | --- | --- |
+| Permission mode | Safe | Safe honors approval gates; YOLO auto-approves mutating tools for the session. Plan is entered via `/plan`, not here. |
+| Thinking level | `off` | `off/minimal/low/medium/high/xhigh`; only reasoning-capable models are affected. |
+| System prompt | built-in | Sent at the start of every conversation. |
+| Standing instructions | vault root | `AGENTS.md` (fallback `CLAUDE.md` / `GEMINI.md`), injected every turn, truncated past 16,000 chars with notice. |
+| Auto-compaction | on at 80% | Triggers at 50–95% context fill (configurable). |
+| Tool budget | on | Withholds `web_*`, `list_artifacts`, etc. once schemas get large; unknown windows never drop. |
 
 ## Approval
 
-Set the default mode, mutating-tool policy, per-tool overrides, working directories, and ignore patterns.
-
-- **Before mutating tools** — Global allow/ask/deny for tools that change the vault.
-- **Working directories** — Grant folders as a working set. Inside granted folders reads and writes auto-run; outside asks first.
-- **Per-tool overrides** — Allow, ask, or deny for individual tools.
+| Setting | Notes |
+| --- | --- |
+| Before mutating tools | Global allow / ask / deny for vault-changing tools. |
+| Working directories | Folders granted via `/add-dir`. Inside: policy applies; outside: asks first, including reads. |
+| Per-tool overrides | Per-tool allow / ask / deny. Deny wins over everything, including YOLO. |
+| Ignore patterns | Gitignore-style globs. Matched files are invisible (report as not found), not just denied. |
 
 ## Web
 
-Enable web access and configure Tavily, Brave, or SearXNG credentials and endpoints, plus an optional destination allowlist.
+Off by default (tools not registered until enabled).
 
-- **Search provider** — Tavily, Brave, or SearXNG.
-- **Max results** — Default search results to return (1–10).
-- **Fetch character limit** — Cap on characters of fetched page text returned to the model.
-- **Fetch allowlist** (`settings.web.allowedHosts`, comma-separated host suffixes, e.g. `example.com, *.wikipedia.org, *`) — limits `fetch_url` destinations with label-boundary-aware matching; empty allows all public hosts. Deny wins over SSRF and on every redirect hop. Web/MCP/vault tool outputs are wrapped as untrusted data (`[BEGIN_UNTRUSTED_TOOL_OUTPUT ...]` / `[END_UNTRUSTED_TOOL_OUTPUT]`, inner markers escaped) so the model does not follow injected instructions inside tool results.
+| Setting | Default |
+| --- | --- |
+| Search provider | Tavily (Brave needs key, SearXNG needs instance URL) |
+| Max results | `5` (1–10) |
+| Fetch character limit | `10,000` chars per page |
+| Fetch allowlist | empty (all public hosts); comma-separated suffixes, deny wins on every redirect hop |
 
 ## MCP
 
-Enable remote MCP, generate agent plugin packages for HTTPS Streamable HTTP servers, choose auth, test discovery, and set per-server approval policy.
-
-MCP servers now live inside **agent plugins** (`.agentic-plugins/` by default) — the plugins folder is the single source of truth. The MCP tab's **Add MCP server** form writes a real plugin package (`plugin.json` + `mcp.json`); endpoint and headers come from the package, while authentication, approval, and enable state stay client-owned.
-
-Supported auth modes:
-
-- none
-- bearer token
-- custom static header
-- MCP OAuth
+Off by default. Servers live in agent plugin packages (`.agentic-plugins/`); **Add MCP server** writes a real package. Auth: none, bearer, custom header, or OAuth. Each server has its own enable toggle and allow / ask / deny policy. See [Agent Plugins](../features/agent-plugins.md).
 
 ## Observability
 
-Enable trace export, choose Langfuse or generic OTLP, set endpoint and auth, choose payload mode, and configure observability-specific proxy settings.
-
-Payload modes:
-
-| Mode | Sends |
-| --- | --- |
-| Metadata only | Turn, model, tool, approval timing, token and cost totals, and errors. |
-| Redacted text previews | Metadata plus short masked prompt and answer previews. |
-| Full prompt/output content | Full prompt and answer text. Use deliberately. |
+No endpoint bundled or enabled by default. Langfuse or generic OTLP HTTP. Payload: **Metadata only** (turn, model, tool, approval timing, tokens, cost, errors), **Redacted text previews**, or **Full prompt/output content**.
 
 ## Notifications
 
-Configure cost alerts, spend caps, and related usage notifications.
-
-- **Cost alert** — Notify once when session cost crosses a USD amount.
-- **Cost cap** — Hard cap: block new turns once session cost reaches this USD amount.
+Master switch for background toasts (errors always show). **Cost alert** notifies once past a USD amount; **Cost cap** blocks new turns past a USD amount. Both default `0` (disabled).
 
 ## Resources
 
-Inspect runtime resources such as agent plugins, MCP tools, artifacts, retrieval state, and diagnostics surfaced by the plugin.
+Read-only diagnostics: agent plugins, MCP tools, artifacts, retrieval state. Plugin management lives here too: **Install plugin…**, **New skill…**, **Remove**, **Repair built-ins**. See [Install](../guide/install.md#installing-agent-plugins).
 
-Also includes:
+- **Subagent timeout** — `0` (disabled). Auto-abort a child after N seconds, max 86400.
 
-- **Agent plugins** — Vault folder scanned for agent plugin packages (`plugin.json` + `skills/` + `mcp.json`), with per-plugin enable toggles and open-folder shortcuts. See [Agent Plugins](../features/agent-plugins.md).
-- **Subagents** — Subagent timeout.
+### Semantic retrieval
 
-## Semantic retrieval
+Off by default; reuses the Models-tab secrets. Lives under **Resources > Semantic retrieval**.
 
-Opt-in semantic index configuration. Uses the same provider secrets as the Models tab.
-
-- **Embedding provider** — OpenRouter, Ollama, or OpenAI-compatible.
-- **Embedding model** — Model id for the chosen provider.
-- **Vector dimensions** — Expected embedding vector size.
-- **Language coverage** — Multilingual, monolingual, or unknown.
-- **Batch size** — Maximum notes per embedding request.
-- **Max indexed characters per note** — Upper bound sent to the embedding provider.
+| Setting | Default |
+| --- | --- |
+| Embedding provider | OpenRouter, Ollama, or OpenAI-compatible |
+| Vector dimensions | `1536` (must match the model) |
+| Batch size | `32` notes per request |
+| Max chars per note | `12,000` |

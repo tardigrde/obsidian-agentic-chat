@@ -47,4 +47,4 @@ Installing over an existing plugin with the same name replaces it in place (your
 
 Use **New skill…** on the same tab to scaffold a single-skill package, **Remove** on a plugin row to delete a package and its MCP servers, and **Repair built-ins** to recreate the bundled `builtins` package if it was deleted.
 
-See also [`/install-plugin` chat support](../features/agent-plugins.md) — Agentic Chat can walk you through fetching and authoring a package.
+See also the `install-plugin` skill — run `/skill install-plugin` (or `/install-plugin`) in chat and Agentic Chat will walk you through fetching and authoring a package.
