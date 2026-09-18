@@ -8,6 +8,18 @@ import {
   type FileCheckpoint,
 } from "./file-checkpoints";
 import { type ApprovalPolicy, getPerToolApproval } from "./approval";
+import {
+  CACHED_ESCALATION,
+  JEV_MAX_SCANS_PER_SESSION,
+  JEV_SCAN_CACHE_MAX,
+  JEV_SCAN_CACHE_TTL_MS,
+  JEV_SCAN_READ_TOOLS,
+  safeJsonPreview,
+  scanToolArgsForInjection,
+  shouldEscalateToAsk,
+  type InjectionScan,
+} from "./jev-injection";
+import type { JevTransport } from "./jev-client";
 import { isMcpToolName, mcpServerIdFromToolName } from "../mcp/tools";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import {
@@ -70,6 +82,15 @@ interface ToolCallControllerOptions {
   recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
   recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
+  /**
+   * Resolves the TypeSafe API key for the opt-in Jev injection guard
+   * (e.g. from secretStorage). When absent, the guard resolves the
+   * deprecated plaintext `settings.jev.apiKey` fallback and stays disabled
+   * unless a key is present.
+   */
+  resolveJevApiKey?: () => Promise<string | undefined> | string | undefined;
+  /** Test seam for the Jev transport (production uses Obsidian requestUrl). */
+  jevTransport?: JevTransport;
 }
 
 /**
@@ -86,6 +107,11 @@ export class AgentToolCallController {
   private readonly recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   private readonly recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
   private readonly recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
+  private readonly resolveJevApiKey?: () => Promise<string | undefined> | string | undefined;
+  private readonly jevTransport?: JevTransport;
+  /** Memoized scan verdicts (fail-open escalations), bounded + TTL'd. */
+  private readonly jevScanCache = new Map<string, { flag: boolean; ts: number }>();
+  private jevScans = 0;
 
   /** Reversible records of mutating tool calls, newest last (for undo-last-change). */
   private undoStack: FileCheckpoint[] = [];
@@ -102,6 +128,8 @@ export class AgentToolCallController {
     this.recordApproval = options.recordApproval;
     this.recordCheckpoint = options.recordCheckpoint;
     this.recordFileCheckpoint = options.recordFileCheckpoint;
+    this.resolveJevApiKey = options.resolveJevApiKey;
+    this.jevTransport = options.jevTransport;
   }
 
   canUndo(): boolean {
@@ -128,6 +156,8 @@ export class AgentToolCallController {
   clearSessionState(): void {
     this.undoStack = [];
     this.pendingUndo.clear();
+    this.jevScanCache.clear();
+    this.jevScans = 0;
     pendingSubagentErrorDetails.clear();
   }
 
@@ -237,6 +267,22 @@ export class AgentToolCallController {
         : policy;
     const label = this.labelForTool(toolName);
     if (effectivePolicy === "allow") {
+      // Opt-in Jev injection guard: escalate auto-allowed calls with
+      // high-confidence malicious args to ask. Fail-open (see jev-injection).
+      const jevScan = await this.jevScanArgs(toolName, args);
+      if (jevScan) {
+        const note = `Jev injection guard escalated this auto-allowed call (signals: ${(jevScan.signals ?? []).join(",") || "n/a"}, confidence ${jevScan.confidence.toFixed(2)}).`;
+        return this.confirmWithAudit(
+          { toolName, label, args },
+          toolCallId,
+          "Blocked by the injection guard: the arguments look like prompt injection. The user declined this action.",
+          note,
+        ).then((choice) =>
+          choice.approved
+            ? undefined
+            : { block: true as const, reason: choice.reason ?? "The user declined this action." },
+        );
+      }
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });
       return undefined;
     }
@@ -282,6 +328,20 @@ export class AgentToolCallController {
     const policy = scoped ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, basePolicy) : basePolicy;
     const label = this.labelForTool(toolName);
     if (policy === "allow") {
+      const jevScan = await this.jevScanArgs(toolName, args);
+      if (jevScan) {
+        const note = `Jev injection guard escalated this auto-allowed MCP call (signals: ${(jevScan.signals ?? []).join(",") || "n/a"}, confidence ${jevScan.confidence.toFixed(2)}).`;
+        return this.confirmWithAudit(
+          { toolName, label, args },
+          toolCallId,
+          "Blocked by the injection guard: the arguments look like prompt injection. The user declined this MCP tool call.",
+          note,
+        ).then((choice) =>
+          choice.approved
+            ? undefined
+            : { block: true as const, reason: choice.reason ?? "The user declined this MCP tool call." },
+        );
+      }
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });
       return undefined;
     }
@@ -337,11 +397,37 @@ export class AgentToolCallController {
       return { block: true, reason };
     }
     if (!this.dispatchCanMutate(settings, args)) {
+      const jevScan = await this.jevScanArgs(SUBAGENT_TOOL_NAME, args);
+      if (jevScan) {
+        return this.confirmWithAudit(
+          { toolName: SUBAGENT_TOOL_NAME, label: this.labelForTool(SUBAGENT_TOOL_NAME), args },
+          toolCallId,
+          "Blocked by the injection guard: the dispatch looks like prompt injection. The user declined this action.",
+          `Jev injection guard escalated this auto-approved dispatch (signals: ${(jevScan.signals ?? []).join(",") || "n/a"}, confidence ${jevScan.confidence.toFixed(2)}).`,
+        ).then((choice) =>
+          choice.approved
+            ? undefined
+            : { block: true as const, reason: choice.reason ?? "The user declined this action." },
+        );
+      }
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
       return undefined;
     }
     const policy = settings.mode === "yolo" ? "allow" : settings.approval.mutating;
     if (policy === "allow") {
+      const jevScan = await this.jevScanArgs(SUBAGENT_TOOL_NAME, args);
+      if (jevScan) {
+        return this.confirmWithAudit(
+          { toolName: SUBAGENT_TOOL_NAME, label: this.labelForTool(SUBAGENT_TOOL_NAME), args },
+          toolCallId,
+          "Blocked by the injection guard: the dispatch looks like prompt injection. The user declined this action.",
+          `Jev injection guard escalated this auto-approved dispatch (signals: ${(jevScan.signals ?? []).join(",") || "n/a"}, confidence ${jevScan.confidence.toFixed(2)}).`,
+        ).then((choice) =>
+          choice.approved
+            ? undefined
+            : { block: true as const, reason: choice.reason ?? "The user declined this action." },
+        );
+      }
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
       return undefined;
     }
@@ -354,10 +440,68 @@ export class AgentToolCallController {
     return undefined;
   }
 
+  /**
+   * Opt-in Jev injection scan. Returns the scan when an otherwise auto-allowed
+   * call should escalate to ask, else null. Fail-open: any misconfiguration,
+   * missing key, missing egress acknowledgement, timeout, or scan error
+   * returns null (no behavior change). Results memoized per tool+args (60s
+   * TTL, 200 entries) and capped at 300 scans/session to bound spend.
+   */
+  private async jevScanArgs(toolName: string, args: unknown): Promise<InjectionScan | null> {
+    try {
+      const settings = this.getSettings();
+      const guard = settings.jev?.injectionGuard;
+      if (!guard?.enabled || !guard.allowEgress) return null;
+      if (!this.isJevScanWorthyTool(toolName)) return null;
+      if (this.jevScans >= JEV_MAX_SCANS_PER_SESSION) return null;
+      const key = `${toolName}:${safeJsonPreview(args)}`;
+      const cached = this.jevScanCache.get(key);
+      if (cached && Date.now() - cached.ts < JEV_SCAN_CACHE_TTL_MS) {
+        return cached.flag ? CACHED_ESCALATION : null;
+      }
+      let apiKey: string | undefined;
+      try {
+        apiKey = await this.resolveJevApiKey?.();
+      } catch {
+        apiKey = undefined;
+      }
+      apiKey = apiKey?.trim() || settings.jev?.apiKey?.trim() || undefined;
+      if (!apiKey) return null;
+      this.jevScans += 1;
+      const scan = await scanToolArgsForInjection(toolName, args, {
+        enabled: true,
+        apiKey,
+        timeoutMs: guard.timeoutMs,
+        minConfidence: guard.minConfidence,
+        transport: this.jevTransport,
+      });
+      const flag = shouldEscalateToAsk(scan);
+      this.jevScanCache.set(key, { flag, ts: Date.now() });
+      if (this.jevScanCache.size > JEV_SCAN_CACHE_MAX) {
+        const oldest = this.jevScanCache.keys().next();
+        if (!oldest.done) this.jevScanCache.delete(oldest.value);
+      }
+      return flag ? scan : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Scan-worthy: mutating tools, MCP tools, subagent dispatch, risky reads. */
+  private isJevScanWorthyTool(toolName: string): boolean {
+    return (
+      MUTATING_TOOLS.has(toolName) ||
+      isMcpToolName(toolName) ||
+      toolName === SUBAGENT_TOOL_NAME ||
+      JEV_SCAN_READ_TOOLS.has(toolName)
+    );
+  }
+
   private async confirmWithAudit(
     request: ToolApprovalRequest,
     toolCallId: string,
     deniedReason: string,
+    requestedNote?: string,
   ): Promise<UserApprovalChoice> {
     await this.auditApproval({
       decision: "requested",
@@ -365,6 +509,7 @@ export class AgentToolCallController {
       toolName: request.toolName,
       label: request.label,
       args: request.args,
+      reason: requestedNote,
     });
     const choice = await this.confirmToolCall(request);
     await this.auditApproval({
