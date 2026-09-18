@@ -17,6 +17,7 @@ import { DEFAULT_PLUGINS_FOLDER } from "./plugins/loader";
 import { healMcpSettings, mcpServerStateFromServer, type McpSettings } from "./mcp/settings";
 import { WEB_SEARCH_PROVIDERS, type WebSearchProvider } from "./tools/web-search";
 import {
+  JEV_API_KEY_SECRET_ID,
   OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
   OPENROUTER_API_KEY_SECRET_ID,
   WEB_SEARCH_API_KEY_SECRET_ID,
@@ -111,7 +112,50 @@ export interface AgenticChatSettings {
   embeddings: EmbeddingSettings;
   /** Optional opt-in OTLP/Langfuse observability export. */
   observability: ObservabilitySettings;
+  /**
+   * Optional opt-in Jev (TypeSafe System One) guards. Disabled by default.
+   * Jev makes fast typed decisions (noul/choice/score) without generating
+   * text; the plugin uses it only as an advisor/escalator, never as a
+   * silent decider. Secrets stay in secretStorage (see apiKeySecretId);
+   * `apiKey` is the deprecated runtime-only plaintext fallback, matching
+   * the legacy `web.searchApiKey` pattern.
+   */
+  jev: JevSettings;
 }
+
+export interface JevInjectionGuardSettings {
+  /** Master switch. Default false. */
+  enabled: boolean;
+  /**
+   * Explicit acknowledgement that redacted tool args leave the device to
+   * api.typesafe.ai for classification. Required even when `enabled` — the
+   * plugin is privacy-first and defaults to zero data retention +
+   * deny-data-collection, for which TypeSafe offers no ZDR contract.
+   * Default false.
+   */
+  allowEgress: boolean;
+  /** Fail-open timeout for the scan (50–2000ms). Default 300. */
+  timeoutMs: number;
+  /** Escalation threshold (0–1). Default 0.8. */
+  minConfidence: number;
+}
+
+export interface JevSettings {
+  /** Secret id in Obsidian secretStorage for the TypeSafe API key. */
+  apiKeySecretId: string;
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   */
+  apiKey: string;
+  /** Prompt-injection / jailbreak scan on auto-allowed tool args. */
+  injectionGuard: JevInjectionGuardSettings;
+}
+
+export const DEFAULT_JEV_SETTINGS: JevSettings = {
+  apiKeySecretId: JEV_API_KEY_SECRET_ID,
+  apiKey: "",
+  injectionGuard: { enabled: false, allowEgress: false, timeoutMs: 300, minConfidence: 0.8 },
+};
 
 /**
  * The global network proxy every plugin-owned request path can inherit.
@@ -211,6 +255,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   },
   embeddings: DEFAULT_EMBEDDING_SETTINGS,
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
+  jev: { ...DEFAULT_JEV_SETTINGS, injectionGuard: { ...DEFAULT_JEV_SETTINGS.injectionGuard } },
 };
 
 /** Merge stored settings over defaults, healing nested objects. */
@@ -298,6 +343,29 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
+    jev: healJevSettings(stored?.jev),
+  };
+}
+
+function healJevSettings(stored: Partial<JevSettings> | null | undefined): JevSettings {
+  const guard: Partial<JevInjectionGuardSettings> = stored?.injectionGuard ?? {};
+  const timeoutMs =
+    typeof guard.timeoutMs === "number" && Number.isFinite(guard.timeoutMs)
+      ? Math.min(Math.max(Math.trunc(guard.timeoutMs), 50), 2000)
+      : DEFAULT_JEV_SETTINGS.injectionGuard.timeoutMs;
+  const minConfidence =
+    typeof guard.minConfidence === "number" && Number.isFinite(guard.minConfidence)
+      ? Math.min(Math.max(guard.minConfidence, 0), 1)
+      : DEFAULT_JEV_SETTINGS.injectionGuard.minConfidence;
+  return {
+    apiKeySecretId: stringSetting(stored?.apiKeySecretId, JEV_API_KEY_SECRET_ID),
+    apiKey: typeof stored?.apiKey === "string" ? stored.apiKey : "",
+    injectionGuard: {
+      enabled: guard.enabled === true,
+      allowEgress: guard.allowEgress === true,
+      timeoutMs,
+      minConfidence,
+    },
   };
 }
 

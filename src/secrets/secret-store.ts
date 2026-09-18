@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
 import type { AgenticChatSettings } from "../settings";
-import type { WebSettings } from "../settings-schema";
+import type { JevSettings, WebSettings } from "../settings-schema";
 import type {
   McpOAuthSettings,
   McpServerSettings,
@@ -60,6 +60,7 @@ export class MemorySecretStore implements SecretStore {
 export const OPENROUTER_API_KEY_SECRET_ID = "agentic-chat-openrouter-api-key";
 export const OPENAI_COMPATIBLE_API_KEY_SECRET_ID = "agentic-chat-openai-compatible-api-key";
 export const WEB_SEARCH_API_KEY_SECRET_ID = "agentic-chat-web-search-api-key";
+export const JEV_API_KEY_SECRET_ID = "agentic-chat-typesafe-api-key";
 
 type SettingsSecretSlot = {
   readonly valuePath: readonly string[];
@@ -82,6 +83,11 @@ export const SETTINGS_SECRET_SLOTS: readonly SettingsSecretSlot[] = [
     valuePath: ["web", "searchApiKey"],
     secretIdPath: ["web", "searchApiKeySecretId"],
     defaultSecretId: WEB_SEARCH_API_KEY_SECRET_ID,
+  },
+  {
+    valuePath: ["jev", "apiKey"],
+    secretIdPath: ["jev", "apiKeySecretId"],
+    defaultSecretId: JEV_API_KEY_SECRET_ID,
   },
   {
     valuePath: ["observability", "langfusePublicKey"],
@@ -130,6 +136,7 @@ export type PersistedSettings = WithoutPlaintext<
   "openrouterApiKey" | "openaiCompatibleApiKey"
 > & {
   web: WithoutPlaintext<WebSettings, "searchApiKey">;
+  jev: WithoutPlaintext<JevSettings, "apiKey">;
   observability: WithoutPlaintext<
     ObservabilitySettings,
     "langfusePublicKey" | "langfuseSecretKey" | "authHeaderValue"
