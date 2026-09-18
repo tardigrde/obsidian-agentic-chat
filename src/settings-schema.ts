@@ -17,6 +17,7 @@ import { DEFAULT_PLUGINS_FOLDER } from "./plugins/loader";
 import { healMcpSettings, mcpServerStateFromServer, type McpSettings } from "./mcp/settings";
 import { WEB_SEARCH_PROVIDERS, type WebSearchProvider } from "./tools/web-search";
 import {
+  JEV_API_KEY_SECRET_ID,
   OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
   OPENROUTER_API_KEY_SECRET_ID,
   WEB_SEARCH_API_KEY_SECRET_ID,
@@ -111,7 +112,57 @@ export interface AgenticChatSettings {
   embeddings: EmbeddingSettings;
   /** Optional opt-in OTLP/Langfuse observability export. */
   observability: ObservabilitySettings;
+  /**
+   * Optional opt-in Jev (TypeSafe System One) helpers. Disabled by default.
+   * Jev makes fast typed decisions (noul/choice/score) without generating
+   * text; the plugin uses it only as an advisor/gate, never as a
+   * silent decider. Secrets stay in secretStorage (see apiKeySecretId);
+   * `apiKey` is the deprecated runtime-only plaintext fallback, matching
+   * the legacy `web.searchApiKey` pattern.
+   *
+   * NOTE: sibling PRs #159 (injectionGuard) and #160 (rerank) extend this
+   * same block — rebase additively (identical apiKey plumbing by design).
+   */
+  jev: JevSettings;
 }
+
+export type JevAutoMode = "block" | "escalate";
+
+export interface JevAutoModeSettings {
+  /** Master switch for AutoMode tool-risk gating. Default false. */
+  enabled: boolean;
+  /**
+   * Explicit acknowledgement that redacted tool args leave the device to
+   * api.typesafe.ai for risk classification. Required even when `enabled`.
+   * Default false.
+   */
+  allowEgress: boolean;
+  /** block: refuse risky calls; escalate: route them to ask. Default block. */
+  mode: JevAutoMode;
+  /** Extra tool names to gate (defaults + mcp__* always gated). */
+  tools: string[];
+  /** Fail-open timeout for the assessment (50–2000ms). Default 300. */
+  timeoutMs: number;
+  /** Block/escalation threshold (0–1). Default 0.8. */
+  minConfidence: number;
+}
+
+export interface JevSettings {
+  /** Secret id in Obsidian secretStorage for the TypeSafe API key. */
+  apiKeySecretId: string;
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   */
+  apiKey: string;
+  /** AutoMode tool-risk gating (see `src/agent/jev-automode.ts`). */
+  autoMode: JevAutoModeSettings;
+}
+
+export const DEFAULT_JEV_SETTINGS: JevSettings = {
+  apiKeySecretId: JEV_API_KEY_SECRET_ID,
+  apiKey: "",
+  autoMode: { enabled: false, allowEgress: false, mode: "block", tools: [], timeoutMs: 300, minConfidence: 0.8 },
+};
 
 /**
  * The global network proxy every plugin-owned request path can inherit.
@@ -211,6 +262,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   },
   embeddings: DEFAULT_EMBEDDING_SETTINGS,
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
+  jev: { ...DEFAULT_JEV_SETTINGS, autoMode: { ...DEFAULT_JEV_SETTINGS.autoMode, tools: [] } },
 };
 
 /** Merge stored settings over defaults, healing nested objects. */
@@ -298,8 +350,52 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
+    jev: healJevSettings(stored?.jev),
   };
 }
+
+function healJevSettings(stored: Partial<JevSettings> | null | undefined): JevSettings {
+  const auto: Partial<JevAutoModeSettings> = stored?.autoMode ?? {};
+  const timeoutMs =
+    typeof auto.timeoutMs === "number" && Number.isFinite(auto.timeoutMs)
+      ? Math.min(Math.max(Math.trunc(auto.timeoutMs), 50), 2000)
+      : DEFAULT_JEV_SETTINGS.autoMode.timeoutMs;
+  const minConfidence =
+    typeof auto.minConfidence === "number" && Number.isFinite(auto.minConfidence)
+      ? Math.min(Math.max(auto.minConfidence, 0), 1)
+      : DEFAULT_JEV_SETTINGS.autoMode.minConfidence;
+  // Preserve-forward: sibling PRs (#159 injectionGuard, #160 rerank) add keys
+  // to this same block. A literal return would wipe them on load, so carry
+  // any unknown keys through untouched (they heal in their own branch).
+  const { autoMode: _droppedAuto, apiKey: _droppedKey, apiKeySecretId: _droppedId, ...rest } =
+    (stored ?? {}) as Record<string, unknown>;
+  void _droppedAuto;
+  void _droppedKey;
+  void _droppedId;
+  return {
+    ...(rest as Partial<JevSettings>),
+    apiKeySecretId: stringSetting(stored?.apiKeySecretId, JEV_API_KEY_SECRET_ID),
+    apiKey: typeof stored?.apiKey === "string" ? stored.apiKey : "",
+    autoMode: {
+      enabled: auto.enabled === true,
+      allowEgress: auto.allowEgress === true,
+      mode: auto.mode === "escalate" ? "escalate" : "block",
+      tools: Array.isArray(auto.tools)
+        ? auto.tools
+            .filter((t): t is string => typeof t === "string")
+            .map((t) => t.trim())
+            .filter((t) => t.length > 0 && t.length <= 128)
+            .slice(0, 50)
+        : [],
+      timeoutMs,
+      minConfidence,
+    },
+  };
+}
+
+// NOTE (sibling-merge): PRs #159 (injectionGuard) and #160 (rerank) add keys
+// to JevSettings with byte-identical apiKey slot + client. If they land
+// first, extend JevSettings + this healer additively (keep all keys).
 
 function stringSetting(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;

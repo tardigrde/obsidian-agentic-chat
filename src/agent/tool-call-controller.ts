@@ -8,6 +8,13 @@ import {
   type FileCheckpoint,
 } from "./file-checkpoints";
 import { type ApprovalPolicy, getPerToolApproval } from "./approval";
+import { assessToolRisk, buildRiskState, isAutoModeGatedTool } from "./jev-automode";
+import {
+  JEV_AUTOMODE_CACHE_MAX,
+  JEV_AUTOMODE_CACHE_TTL_MS,
+  JEV_AUTOMODE_MAX_SCANS,
+} from "./jev-automode";
+import type { JevTransport } from "./jev-client";
 import { isMcpToolName, mcpServerIdFromToolName } from "../mcp/tools";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import {
@@ -70,6 +77,15 @@ interface ToolCallControllerOptions {
   recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
   recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
+  /**
+   * Resolves the TypeSafe API key for opt-in Jev AutoMode (e.g. from
+   * secretStorage). Test seam only in practice: production relies on
+   * `hydrateSettingsSecrets` (main.ts) filling `settings.jev.apiKey` via the
+   * secret slot, which this falls back to below.
+   */
+  resolveJevApiKey?: () => Promise<string | undefined> | string | undefined;
+  /** Test seam for the Jev transport (production uses Obsidian requestUrl). */
+  jevTransport?: JevTransport;
 }
 
 /**
@@ -86,6 +102,11 @@ export class AgentToolCallController {
   private readonly recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   private readonly recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
   private readonly recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
+  private readonly resolveJevApiKey?: () => Promise<string | undefined> | string | undefined;
+  private readonly jevTransport?: JevTransport;
+  private readonly jevAutoCache = new Map<string, { risky: boolean; confidence: number; ts: number }>();
+  private jevAutoScans = 0;
+  private jevAutoCapWarned = false;
 
   /** Reversible records of mutating tool calls, newest last (for undo-last-change). */
   private undoStack: FileCheckpoint[] = [];
@@ -102,6 +123,8 @@ export class AgentToolCallController {
     this.recordApproval = options.recordApproval;
     this.recordCheckpoint = options.recordCheckpoint;
     this.recordFileCheckpoint = options.recordFileCheckpoint;
+    this.resolveJevApiKey = options.resolveJevApiKey;
+    this.jevTransport = options.jevTransport;
   }
 
   canUndo(): boolean {
@@ -128,6 +151,9 @@ export class AgentToolCallController {
   clearSessionState(): void {
     this.undoStack = [];
     this.pendingUndo.clear();
+    this.jevAutoCache.clear();
+    this.jevAutoScans = 0;
+    this.jevAutoCapWarned = false;
     pendingSubagentErrorDetails.clear();
   }
 
@@ -237,6 +263,9 @@ export class AgentToolCallController {
         : policy;
     const label = this.labelForTool(toolName);
     if (effectivePolicy === "allow") {
+      // Opt-in Jev AutoMode: block/escalate confidently-risky gated calls.
+      const auto = await this.jevAutoModeCheck(toolCallId, toolName, label, args);
+      if (auto) return auto;
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });
       return undefined;
     }
@@ -282,6 +311,8 @@ export class AgentToolCallController {
     const policy = scoped ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, basePolicy) : basePolicy;
     const label = this.labelForTool(toolName);
     if (policy === "allow") {
+      const auto = await this.jevAutoModeCheck(toolCallId, toolName, label, args);
+      if (auto) return auto;
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });
       return undefined;
     }
@@ -337,11 +368,15 @@ export class AgentToolCallController {
       return { block: true, reason };
     }
     if (!this.dispatchCanMutate(settings, args)) {
+      const autoDispatch = await this.jevAutoModeCheck(toolCallId, SUBAGENT_TOOL_NAME, this.labelForTool(SUBAGENT_TOOL_NAME), args, [SUBAGENT_TOOL_NAME]);
+      if (autoDispatch) return autoDispatch;
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
       return undefined;
     }
     const policy = settings.mode === "yolo" ? "allow" : settings.approval.mutating;
     if (policy === "allow") {
+      const autoDispatch = await this.jevAutoModeCheck(toolCallId, SUBAGENT_TOOL_NAME, this.labelForTool(SUBAGENT_TOOL_NAME), args, [SUBAGENT_TOOL_NAME]);
+      if (autoDispatch) return autoDispatch;
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
       return undefined;
     }
@@ -354,10 +389,117 @@ export class AgentToolCallController {
     return undefined;
   }
 
+  /**
+   * Opt-in Jev AutoMode risk gate. Returns a block/escalation decision when a
+   * listed tool call is confidently risky, else null.
+   *
+   * Scope: allow paths ONLY (vault, MCP, subagent dispatch). Deny/ask paths
+   * never scan — `ask` already prompts, `deny` already refuses — so in Safe
+   * mode (destructive tools typically `ask`) block mode adds no hard-block;
+   * it upgrades `allow → block/escalate`. Recursive deletes force `ask`
+   * upstream and likewise bypass the scan (the prompt is the protection).
+   *
+   * Fail-open everywhere else (disabled, keyless, egress-unacknowledged,
+   * unlisted tool, timeout, low confidence). Memoized per redacted tool+args
+   * (60s TTL, 200 entries), capped at 300 scans/session with a one-time
+   * console warning at exhaustion (protection silently stops after).
+   */
+  private async jevAutoModeCheck(
+    toolCallId: string,
+    toolName: string,
+    label: string,
+    args: unknown,
+    extraTools?: readonly string[],
+  ): Promise<ToolGateDecision> {
+    try {
+      const settings = this.getSettings();
+      const auto = settings.jev?.autoMode;
+      if (!auto?.enabled || !auto.allowEgress) return undefined;
+      if (!isAutoModeGatedTool(toolName, [...(auto.tools ?? []), ...(extraTools ??[])])) return undefined;
+      if (this.jevAutoScans >= JEV_AUTOMODE_MAX_SCANS) {
+        if (!this.jevAutoCapWarned) {
+          this.jevAutoCapWarned = true;
+          console.warn("Agentic chat: Jev AutoMode scan budget exhausted for this session; remaining calls skip the risk gate.");
+        }
+        return undefined;
+      }
+      // Memo key is the redacted state (never raw args — avoids retaining
+      // secrets in memory and colliding on long-arg prefixes).
+      const key = `${toolName}:${buildRiskState(toolName, args)}`;
+      const cached = this.jevAutoCache.get(key);
+      if (cached && Date.now() - cached.ts < JEV_AUTOMODE_CACHE_TTL_MS) {
+        return cached.risky ? this.autoModeDecision(toolCallId, toolName, label, args, cached.confidence, auto.mode) : undefined;
+      }
+      let apiKey: string | undefined;
+      try {
+        apiKey = await this.resolveJevApiKey?.();
+      } catch {
+        apiKey = undefined;
+      }
+      apiKey = apiKey?.trim() || settings.jev?.apiKey?.trim() || undefined;
+      if (!apiKey) return undefined;
+      this.jevAutoScans += 1;
+      const tools = [...(auto.tools ?? []), ...(extraTools ?? [])];
+      const assessment = await assessToolRisk(toolName, args, {
+        enabled: true,
+        apiKey,
+        allowEgress: true,
+        mode: auto.mode,
+        tools,
+        timeoutMs: auto.timeoutMs,
+        minConfidence: auto.minConfidence,
+        transport: this.jevTransport,
+      });
+      this.jevAutoCache.set(key, { risky: assessment.risky, confidence: assessment.confidence, ts: Date.now() });
+      if (this.jevAutoCache.size > JEV_AUTOMODE_CACHE_MAX) {
+        const oldest = this.jevAutoCache.keys().next();
+        if (!oldest.done) this.jevAutoCache.delete(oldest.value);
+      }
+      if (!assessment.risky) return undefined;
+      return this.autoModeDecision(toolCallId, toolName, label, args, assessment.confidence, auto.mode);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async autoModeDecision(
+    toolCallId: string,
+    toolName: string,
+    label: string,
+    args: unknown,
+    confidence: number,
+    mode: "block" | "escalate",
+  ): Promise<ToolGateDecision> {
+    const note = `Jev AutoMode flagged this call as risky (confidence ${confidence.toFixed(2)}; redacted args were sent to api.typesafe.ai for classification).`;
+    if (mode === "escalate") {
+      const choice = await this.confirmWithAudit(
+        { toolName, label, args },
+        toolCallId,
+        "Blocked by Jev AutoMode: the call looks risky. The user declined this action.",
+        note,
+      );
+      return choice.approved
+        ? undefined
+        : { block: true, reason: choice.reason ? `[AutoMode] ${choice.reason}` : "The user declined this action." };
+    }
+    await this.auditApproval({
+      decision: "denied",
+      toolCallId,
+      toolName,
+      label,
+      args,
+      reason: `Blocked by Jev AutoMode: the call looks risky (confidence ${confidence.toFixed(2)}; redacted args were sent to api.typesafe.ai for classification). Adjust approval settings or disable AutoMode to proceed.`,
+    });
+    return {
+      block: true,
+      reason: `Blocked by Jev AutoMode: this ${toolName} call looks risky (confidence ${confidence.toFixed(2)}). Redacted args were sent to api.typesafe.ai for classification.`,
+    };
+  }
   private async confirmWithAudit(
     request: ToolApprovalRequest,
     toolCallId: string,
     deniedReason: string,
+    requestedNote?: string,
   ): Promise<UserApprovalChoice> {
     await this.auditApproval({
       decision: "requested",
@@ -365,6 +507,7 @@ export class AgentToolCallController {
       toolName: request.toolName,
       label: request.label,
       args: request.args,
+      reason: requestedNote,
     });
     const choice = await this.confirmToolCall(request);
     await this.auditApproval({
