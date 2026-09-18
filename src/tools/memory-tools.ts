@@ -2,6 +2,9 @@ import type { App, DataAdapter } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { PLUGIN_ID } from "../constants";
+import type { JevTransport } from "../agent/jev-client";
+import { rerankMemoryMatches } from "../memory/jev-rerank";
+import type { AgenticChatSettings } from "../settings";
 import {
   formatMemorySearchResponse,
   loadMemoryRecords,
@@ -22,15 +25,26 @@ const SearchMemoryParameters = Type.Object({
 export interface MemoryToolsOptions {
   adapter?: DataAdapter;
   memoryPath?: string;
+  /**
+   * Opt-in Jev rerank plumbing. `settings` carries `settings.jev`
+   * (key arrives via secretStorage hydration); `transport` is a test seam
+   * (production uses Obsidian requestUrl).
+   */
+  jev?: {
+    settings: AgenticChatSettings;
+    transport?: JevTransport;
+    resolveApiKey?: () => Promise<string | undefined> | string | undefined;
+  };
 }
 
 export function createMemoryTools(app: App, options: MemoryToolsOptions = {}): AgentTool[] {
-  return [createSearchMemoryTool(options.adapter ?? app.vault.adapter, options.memoryPath ?? memoryPathForApp(app))];
+  return [createSearchMemoryTool(options.adapter ?? app.vault.adapter, options.memoryPath ?? memoryPathForApp(app), options.jev)];
 }
 
 function createSearchMemoryTool(
   adapter: DataAdapter | undefined,
   memoryPath: string,
+  jev?: MemoryToolsOptions["jev"],
 ): AgentTool<typeof SearchMemoryParameters> {
   return {
     name: "search_memory",
@@ -55,17 +69,54 @@ function createSearchMemoryTool(
           allowedScopes: ["global", "vault"],
         },
       );
+      // Opt-in Jev rerank (fail-soft to lexical order). Reranks the top
+      // candidates and keeps the tail lexical; vault-scoped memories are
+      // pinned unless includeVaultScope is set (see jev-rerank.ts).
+      let matches = response.matches;
+      let jevReranked = false;
+      if (jev) {
+        try {
+          const guard = jev.settings.jev?.rerank;
+          if (guard?.enabled && guard.allowEgress) {
+            let apiKey: string | undefined;
+            try {
+              apiKey = await jev.resolveApiKey?.();
+            } catch {
+              apiKey = undefined;
+            }
+            apiKey = apiKey?.trim() || jev.settings.jev?.apiKey?.trim() || undefined;
+            if (apiKey) {
+              const reranked = await rerankMemoryMatches(query, response.matches, {
+                enabled: true,
+                apiKey,
+                allowEgress: guard.allowEgress,
+                includeVaultScope: guard.includeVaultScope,
+                timeoutMs: guard.timeoutMs,
+                transport: jev.transport,
+              });
+              if (reranked.source === "jev") {
+                matches = reranked.matches;
+                jevReranked = true;
+              }
+            }
+          }
+        } catch {
+          // Fail-open: lexical order stands.
+        }
+      }
+      const ranked = { ...response, matches };
       return {
-        content: [{ type: "text", text: formatMemorySearchResponse({ query }, response) }],
+        content: [{ type: "text", text: formatMemorySearchResponse({ query }, ranked) }],
         details: {
           memoryPath,
           query,
-          returned: response.matches.length,
+          returned: matches.length,
           totalMatches: response.totalMatches,
           filteredCount: response.filteredCount,
           disabledCount: response.disabledCount,
-          citations: memoryCitations(response.matches),
-          memoryIds: response.matches.map((match) => match.record.id),
+          citations: memoryCitations(matches),
+          memoryIds: matches.map((match) => match.record.id),
+          jevReranked,
         },
       };
     },
