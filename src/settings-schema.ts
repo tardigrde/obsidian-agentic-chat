@@ -357,7 +357,16 @@ function healJevSettings(stored: Partial<JevSettings> | null | undefined): JevSe
     typeof guard.minConfidence === "number" && Number.isFinite(guard.minConfidence)
       ? Math.min(Math.max(guard.minConfidence, 0), 1)
       : DEFAULT_JEV_SETTINGS.injectionGuard.minConfidence;
+  // Preserve-forward: sibling Jev PRs add keys to this same block
+  // (rerank, autoMode). A literal return would wipe them on load, so carry
+  // any unknown keys through untouched.
+  const { injectionGuard: _droppedGuard, apiKey: _droppedKey, apiKeySecretId: _droppedId, ...rest } =
+    (stored ?? {}) as Record<string, unknown>;
+  void _droppedGuard;
+  void _droppedKey;
+  void _droppedId;
   return {
+    ...(rest as Partial<JevSettings>),
     apiKeySecretId: stringSetting(stored?.apiKeySecretId, JEV_API_KEY_SECRET_ID),
     apiKey: typeof stored?.apiKey === "string" ? stored.apiKey : "",
     injectionGuard: {
