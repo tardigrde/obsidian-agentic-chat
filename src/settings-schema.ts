@@ -357,7 +357,16 @@ function healJevSettings(stored: Partial<JevSettings> | null | undefined): JevSe
     typeof rerank.timeoutMs === "number" && Number.isFinite(rerank.timeoutMs)
       ? Math.min(Math.max(Math.trunc(rerank.timeoutMs), 50), 2000)
       : DEFAULT_JEV_SETTINGS.rerank.timeoutMs;
+  // Preserve-forward: sibling Jev PRs add keys to this same block
+  // (autoMode). A literal return would wipe them on load, so carry any
+  // unknown keys through untouched.
+  const { rerank: _droppedRerank, apiKey: _droppedKey, apiKeySecretId: _droppedId, ...rest } =
+    (stored ?? {}) as Record<string, unknown>;
+  void _droppedRerank;
+  void _droppedKey;
+  void _droppedId;
   return {
+    ...(rest as Partial<JevSettings>),
     apiKeySecretId: stringSetting(stored?.apiKeySecretId, JEV_API_KEY_SECRET_ID),
     apiKey: typeof stored?.apiKey === "string" ? stored.apiKey : "",
     rerank: {
