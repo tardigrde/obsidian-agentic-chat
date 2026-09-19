@@ -87,14 +87,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-        run: |
-          if [[ "$HEAD_REF" == dependabot/* ]]; then
-            npm install
-          else
-            npm ci
-          fi
+        run: npm ci # NOSONAR:S6505 -- install scripts required: esbuild postinstall fetches its platform binary; all deps pinned by package-lock.json
 
       - name: Install Electron system dependencies
         run: |
