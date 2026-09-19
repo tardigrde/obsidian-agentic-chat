@@ -9,3 +9,10 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    # Mocha 12 is incompatible with @wdio/mocha-framework 9.31.x (removed
+    # mocha/lib/cli/run-helpers.js import; dual-copy describe crash). Hold the
+    # major until upstream supports it. Remove when #162 is closed.
+    # https://github.com/tardigrde/obsidian-agentic-chat/issues/162
+    ignore:
+      - dependency-name: "mocha"
+        update-types: ["version-update:semver-major"]
