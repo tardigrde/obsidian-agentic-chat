@@ -70,3 +70,45 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+  # Catches e2e-only breakage (e.g. the mocha 11/12 split that stayed green in
+  # `ci` for two weeks). Runs just the no-API-key smoke spec under a virtual
+  # display — headless ozone lacks the accessibility tree `toHaveText` needs.
+  smoke-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # @earendil-works/pi-* require node >=22.19 (tested on 24).
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci # NOSONAR:S6505 -- install scripts required: esbuild postinstall fetches its platform binary; all deps pinned by package-lock.json
+
+      - name: Install Electron system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libxss1 libxtst6 libxrandr2 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libdrm2 libsecret-1-0 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64
+
+      - name: Cache Obsidian runtime
+        uses: actions/cache@v4
+        with:
+          path: .obsidian-cache
+          key: e2e-obsidian-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            e2e-obsidian-${{ runner.os }}-
+
+      - name: Smoke e2e (xvfb)
+        run: xvfb-run -a npm run test:e2e -- --spec test/e2e/specs/smoke.e2e.ts
+
+      - name: Upload e2e failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: logs/e2e-artifacts/
+          retention-days: 14

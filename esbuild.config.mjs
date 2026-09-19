@@ -45,6 +45,9 @@ const piAiMobileEntry = {
         export { uuidv7 } from ${JSON.stringify(path.join(piAiDistDir, "utils/uuid.js"))};
         export { contentText } from ${JSON.stringify(path.join(piAiDistDir, "utils/text.js"))};
         export { retryAssistantCall } from ${JSON.stringify(path.join(piAiDistDir, "utils/retry.js"))};
+        export { isRetryableAssistantError } from ${JSON.stringify(path.join(piAiDistDir, "utils/retry.js"))};
+        export { isContextOverflow, isRecoverableLength } from ${JSON.stringify(path.join(piAiDistDir, "utils/overflow.js"))};
+        export { AssistantMessageFrameEncoder, reduceAssistantMessageFrames } from ${JSON.stringify(path.join(piAiDistDir, "utils/assistant-message-frame.js"))};
       `,
     }));
   },
