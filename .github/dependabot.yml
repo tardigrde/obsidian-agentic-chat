@@ -24,3 +24,19 @@ updates:
       earendil-works:
         patterns:
           - "@earendil-works/*"
+      # vitest + @vitest/* must bump together: coverage-v8 peers exact
+      # vitest version, so lone-package PRs fail npm install with ERESOLVE
+      # (see #163/#165, both red alone, green combined 5.0.1). Group them
+      # into a single PR.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+      # Batch low-risk patch-only updates to reduce PR/CI noise. Keep
+      # minor/major separate for visibility (e.g. globals minor, vitest
+      # major, typescript major).
+      patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
