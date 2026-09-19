@@ -16,3 +16,11 @@ updates:
     ignore:
       - dependency-name: "mocha"
         update-types: ["version-update:semver-major"]
+    # pi-ai + pi-agent-core must bump together: core nests its own pi-ai copy,
+    # so lone-package PRs split the AssistantMessageEventStream class identity
+    # and break typecheck (see #154/#156, both superseded by #158). Group them
+    # into a single PR.
+    groups:
+      earendil-works:
+        patterns:
+          - "@earendil-works/*"
