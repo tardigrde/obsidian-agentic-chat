@@ -14,6 +14,7 @@ describe("secret storage migration", () => {
       "openrouterApiKey",
       "openaiCompatibleApiKey",
       "web.searchApiKey",
+      "jev.apiKey",
       "observability.langfusePublicKey",
       "observability.langfuseSecretKey",
       "observability.authHeaderValue",
@@ -48,6 +49,10 @@ describe("secret storage migration", () => {
         langfuseSecretKey: "sk-lf-secret",
         authHeaderValue: "Bearer otel-token",
       },
+      jev: {
+        ...DEFAULT_SETTINGS.jev,
+        apiKey: "jev-secret",
+      },
       mcp: {
         ...DEFAULT_SETTINGS.mcp,
         enabled: true,
@@ -70,6 +75,7 @@ describe("secret storage migration", () => {
     expect("openrouterApiKey" in stored).toBe(false);
     expect("openaiCompatibleApiKey" in stored).toBe(false);
     expect("searchApiKey" in stored.web).toBe(false);
+    expect("apiKey" in stored.jev).toBe(false);
     expect("langfusePublicKey" in stored.observability).toBe(false);
     expect("langfuseSecretKey" in stored.observability).toBe(false);
     expect("authHeaderValue" in stored.observability).toBe(false);
@@ -80,6 +86,7 @@ describe("secret storage migration", () => {
     expect("refreshToken" in storedOAuth).toBe(false);
 
     expect(store.getSecret(stored.openrouterApiKeySecretId)).toBe("openrouter-secret");
+    expect(store.getSecret(stored.jev.apiKeySecretId)).toBe("jev-secret");
     expect(store.getSecret(stored.openaiCompatibleApiKeySecretId)).toBe("openai-secret");
     expect(store.getSecret(stored.web.searchApiKeySecretId)).toBe("search-secret");
     expect(store.getSecret(stored.observability.langfusePublicKeySecretId)).toBe("pk-lf-public");
@@ -97,6 +104,7 @@ describe("secret storage migration", () => {
     store.setSecret(settings.openrouterApiKeySecretId, "openrouter-secret");
     store.setSecret(settings.openaiCompatibleApiKeySecretId, "openai-secret");
     store.setSecret(settings.web.searchApiKeySecretId, "search-secret");
+    store.setSecret(settings.jev.apiKeySecretId, "jev-secret");
     store.setSecret(settings.observability.langfusePublicKeySecretId, "pk-lf-public");
     store.setSecret(settings.observability.langfuseSecretKeySecretId, "sk-lf-secret");
     store.setSecret(settings.observability.authHeaderValueSecretId, "Bearer otel-token");
@@ -106,6 +114,7 @@ describe("secret storage migration", () => {
     expect(settings.openrouterApiKey).toBe("openrouter-secret");
     expect(settings.openaiCompatibleApiKey).toBe("openai-secret");
     expect(settings.web.searchApiKey).toBe("search-secret");
+    expect(settings.jev.apiKey).toBe("jev-secret");
     expect(settings.observability.langfusePublicKey).toBe("pk-lf-public");
     expect(settings.observability.langfuseSecretKey).toBe("sk-lf-secret");
     expect(settings.observability.authHeaderValue).toBe("Bearer otel-token");

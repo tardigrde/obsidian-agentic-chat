@@ -17,6 +17,7 @@ import { DEFAULT_PLUGINS_FOLDER } from "./plugins/loader";
 import { healMcpSettings, mcpServerStateFromServer, type McpSettings } from "./mcp/settings";
 import { WEB_SEARCH_PROVIDERS, type WebSearchProvider } from "./tools/web-search";
 import {
+  JEV_API_KEY_SECRET_ID,
   OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
   OPENROUTER_API_KEY_SECRET_ID,
   WEB_SEARCH_API_KEY_SECRET_ID,
@@ -111,7 +112,54 @@ export interface AgenticChatSettings {
   embeddings: EmbeddingSettings;
   /** Optional opt-in OTLP/Langfuse observability export. */
   observability: ObservabilitySettings;
+  /**
+   * Optional opt-in Jev (TypeSafe System One) helpers. Disabled by default.
+   * Jev makes fast typed decisions (noul/choice/score) without generating
+   * text; the plugin uses it only as an advisor/reranker, never as a
+   * silent decider. Secrets stay in secretStorage (see apiKeySecretId);
+   * `apiKey` is the deprecated runtime-only plaintext fallback, matching
+   * the legacy `web.searchApiKey` pattern.
+   *
+   * NOTE: sibling PR #159 (injection guard) adds `injectionGuard` to this
+   * same block — rebase will trivially merge (identical apiKey plumbing).
+   */
+  jev: JevSettings;
 }
+
+export interface JevRerankSettings {
+  /** Master switch for memory-result reranking. Default false. */
+  enabled: boolean;
+  /**
+   * Explicit acknowledgement that the query + top candidate texts leave the
+   * device to api.typesafe.ai for ranking. Required even when `enabled`.
+   * Default false.
+   */
+  allowEgress: boolean;
+  /**
+   * Include `vault`-scoped memories in the rerank input. Default false:
+   * vault memories keep lexical order and never leave the device.
+   */
+  includeVaultScope: boolean;
+  /** Fail-open timeout for the rerank call (50–2000ms). Default 300. */
+  timeoutMs: number;
+}
+
+export interface JevSettings {
+  /** Secret id in Obsidian secretStorage for the TypeSafe API key. */
+  apiKeySecretId: string;
+  /**
+   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
+   */
+  apiKey: string;
+  /** Memory-result reranking (see `src/memory/jev-rerank.ts`). */
+  rerank: JevRerankSettings;
+}
+
+export const DEFAULT_JEV_SETTINGS: JevSettings = {
+  apiKeySecretId: JEV_API_KEY_SECRET_ID,
+  apiKey: "",
+  rerank: { enabled: false, allowEgress: false, includeVaultScope: false, timeoutMs: 300 },
+};
 
 /**
  * The global network proxy every plugin-owned request path can inherit.
@@ -211,6 +259,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   },
   embeddings: DEFAULT_EMBEDDING_SETTINGS,
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
+  jev: { ...DEFAULT_JEV_SETTINGS, rerank: { ...DEFAULT_JEV_SETTINGS.rerank } },
 };
 
 /** Merge stored settings over defaults, healing nested objects. */
@@ -298,8 +347,42 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
+    jev: healJevSettings(stored?.jev),
   };
 }
+
+function healJevSettings(stored: Partial<JevSettings> | null | undefined): JevSettings {
+  const rerank: Partial<JevRerankSettings> = stored?.rerank ?? {};
+  const timeoutMs =
+    typeof rerank.timeoutMs === "number" && Number.isFinite(rerank.timeoutMs)
+      ? Math.min(Math.max(Math.trunc(rerank.timeoutMs), 50), 2000)
+      : DEFAULT_JEV_SETTINGS.rerank.timeoutMs;
+  // Preserve-forward: sibling Jev PRs add keys to this same block
+  // (autoMode). A literal return would wipe them on load, so carry any
+  // unknown keys through untouched.
+  const { rerank: _droppedRerank, apiKey: _droppedKey, apiKeySecretId: _droppedId, ...rest } =
+    (stored ?? {}) as Record<string, unknown>;
+  void _droppedRerank;
+  void _droppedKey;
+  void _droppedId;
+  return {
+    ...(rest as Partial<JevSettings>),
+    apiKeySecretId: stringSetting(stored?.apiKeySecretId, JEV_API_KEY_SECRET_ID),
+    apiKey: typeof stored?.apiKey === "string" ? stored.apiKey : "",
+    rerank: {
+      enabled: rerank.enabled === true,
+      allowEgress: rerank.allowEgress === true,
+      includeVaultScope: rerank.includeVaultScope === true,
+      timeoutMs,
+    },
+  };
+}
+
+// NOTE (sibling-merge): PR #159 (injection guard) adds `injectionGuard` to
+// JevSettings with an identical apiKey slot. If it lands first, extend
+// JevSettings + this healer additively (keep both keys); the apiKey slot,
+// PersistedSettings.jev, and jev-client.ts copies are byte-identical by
+// design so only the settings-shape hunk needs combining.
 
 function stringSetting(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;

@@ -206,7 +206,9 @@ export function buildAgentParentTools(options: {
   const tools = [
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
     ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
-    ...createMemoryTools(options.app),
+    ...createMemoryTools(options.app, {
+      jev: { settings: options.settings },
+    }),
     ...createDocumentTools(options.app, options.artifactStore),
     ...createWebTools(options.settings.web, options.webFetch, options.artifactStore),
     ...createToolArtifactTools(options.artifactStore),
