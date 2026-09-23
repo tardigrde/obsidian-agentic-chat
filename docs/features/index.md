@@ -36,11 +36,9 @@ Agentic Chat turns the Obsidian sidebar into an agent workspace rather than a pl
 
 ## Memory
 
-- Long-term memory with kinds: preference, fact, instruction, summary.
-- Scopes: global, vault.
-- Add memories with `/memory add`.
-- Search memories with the `search_memory` tool.
-- Export or clear memory stores.
+- Tier-1 daily notes + Tier-2 distilled MEMORY.md (off by default; Settings → Agent → Memory).
+- Plugin-folder (hidden) or vault-folder (synced) store.
+- `/memory add`, `/memory distill`, and the `remember_memory` tool (daily only; MEMORY.md is distillation-owned).
 
 ## Semantic retrieval
 

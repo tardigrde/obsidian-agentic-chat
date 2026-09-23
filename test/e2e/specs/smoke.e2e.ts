@@ -129,51 +129,30 @@ describe("agentic-chat smoke", function () {
     );
   });
 
-  it("forgets a saved memory through the memory manager", async function () {
+  it("saves a manual memory to today's daily note without calling the model", async function () {
     await browser.executeObsidian(async ({ app }) => {
-      const adapter = app.vault.adapter as unknown as {
-        exists: (path: string) => Promise<boolean>;
-        mkdir: (path: string) => Promise<void>;
-        write: (path: string, data: string) => Promise<void>;
-      };
-      const memoryDir = `${app.vault.configDir}/plugins/agentic-chat/memory`;
-      if (!(await adapter.exists(memoryDir))) await adapter.mkdir(memoryDir);
-      const memoryPath = `${memoryDir}/memories.jsonl`;
-      await adapter.write(
-        memoryPath,
-        `${JSON.stringify({
-          id: "mem-e2e",
-          kind: "preference",
-          scope: "vault",
-          text: "The user prefers concise answers in e2e.",
-          enabled: true,
-          createdAt: "2026-06-26T00:00:00.000Z",
-        })}\n`,
-      );
+      const plugin = (app as unknown as { plugins?: { plugins?: Record<string, {
+        settings?: { memory?: { enabled?: boolean } };
+        saveSettings?: () => Promise<void>;
+      }> } }).plugins?.plugins?.["agentic-chat"];
+      if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
+      plugin.settings.memory = { ...(plugin.settings.memory ?? {}), enabled: true };
+      await plugin.saveSettings?.();
     });
 
-    await runSlashCommand("/memory manage");
-    await $(".agentic-chat-action-list").waitForExist();
-    await browser.execute(() => {
-      const row = Array.from(document.querySelectorAll<HTMLButtonElement>(".agentic-chat-action-row")).find((item) =>
-        item.innerText.includes("The user prefers concise answers in e2e."),
-      );
-      if (!row) throw new Error("memory row not found");
-      row.click();
-    });
-    await browser.waitUntil(async () => (await latestInfoText()).includes("Forgotten"), {
+    await runSlashCommand("/memory add The user prefers concise answers in e2e");
+    await browser.waitUntil(async () => (await latestInfoText()).includes("Saved to today's daily note"), {
       timeout: 5_000,
-      timeoutMsg: "memory forget confirmation did not render",
+      timeoutMsg: "/memory add confirmation did not render",
     });
 
     const saved = await browser.executeObsidian(async ({ app }) => {
-      const raw = await app.vault.adapter.read(
-        `${app.vault.configDir}/plugins/agentic-chat/memory/memories.jsonl`,
+      const date = new Date().toISOString().slice(0, 10);
+      return await app.vault.adapter.read(
+        `${app.vault.configDir}/plugins/agentic-chat/memory/daily/${date}.md`,
       );
-      return JSON.parse(raw.trim()) as { enabled?: boolean; forgottenAt?: string };
     });
-    expect(saved.enabled).toBe(false);
-    expect(saved.forgottenAt).toBeTruthy();
+    expect(saved).toContain("The user prefers concise answers in e2e.");
   });
 
   it("renders the context-window arc gauge in the toolbar (NB1)", async function () {

@@ -80,9 +80,9 @@ describe("built-in tool contracts", () => {
     const mutating = BUILTIN_TOOL_CONTRACTS.filter((contract) => contract.mutating).map((contract) => contract.name);
     const undoable = BUILTIN_TOOL_CONTRACTS.filter((contract) => contract.undoable).map((contract) => contract.name);
 
-    expect([...MUTATING_TOOLS]).toEqual(mutating);
+    expect([...MUTATING_TOOLS]).toEqual([...mutating, "remember_memory"]);
     expect([...UNDOABLE_TOOLS]).toEqual(undoable);
-    expect([...MUTATING_TOOLS]).toEqual(["write", "edit", "rename", "delete", "set_properties"]);
+    expect([...MUTATING_TOOLS]).toEqual(["write", "edit", "rename", "delete", "set_properties", "remember_memory"]);
     expect([...UNDOABLE_TOOLS]).toEqual(["write", "edit", "rename", "delete", "set_properties"]);
     for (const tool of UNDOABLE_TOOLS) expect(MUTATING_TOOLS.has(tool)).toBe(true);
 

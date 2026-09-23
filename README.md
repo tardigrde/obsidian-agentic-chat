@@ -45,7 +45,7 @@ Your notes are yours. This plugin is built so that using AI on them does not mea
 - **Conversation history** — every chat is stored as JSONL under the plugin folder and resumed on reload. Browse, search/filter, reopen, rename, delete, export, or clear past conversations; sessions are auto-titled from the first prompt. Works on mobile (no SQLite, no Node `fs`).
 - **Token, cost & context management** — per-message and per-conversation token/USD usage (`/usage`, `/status`), a pre-send "next ~$x" estimate, a one-time **cost alert**, a hard **spend cap** that blocks/aborts at a limit, and a context-window progress bar. Long sessions **auto-compact** older turns into a summary before they overflow the model's window, and `/compact [instructions]` can summarize older turns on demand.
 - **Observability export (opt-in)** — send mobile-safe OTLP/HTTP traces to your own Langfuse or generic OTLP endpoint. Metadata-only is the default: turn/model/tool/approval timing, token/cost totals, and errors without prompts, note bodies, tool args, or tool results. See [Observability](#observability).
-- **Local data lifecycle** — `/export` saves the active conversation as Markdown, `/sessions clear --confirm` clears conversation history for the current scope, and `/memory add`, `/memory review`, `/memory manage`, `/memory export`, and `/memory clear --confirm` give stored long-term memories an explicit local lifecycle.
+- **Local data lifecycle** — `/export` saves the active conversation as Markdown, `/sessions clear --confirm` clears conversation history for the current scope, and `/memory add` + `/memory distill` manage explicit daily notes and the distilled MEMORY.md (see `docs/features/memory.md`).
 - **Subagents (delegation)** — the agent can fan out focused child agents, each with its own context window, model, and tool subset, then merge their summaries. Subagents are roles that inherit the parent's approval/mode controls (isolated context is the value, not a switchable persona); the single built-in **Explorer** role covers read-only recon. Custom roles are not supported — extend the roster in code. Invoke with `/agent <name> <task>`. See [Subagents](#subagents).
 - **Skills** — Agent Plugins packages in the vault's `.agentic-plugins/` folder contribute `SKILL.md` skills (name + description only, body loaded on demand), invokable with `/skill <name>` or directly as `/<name>`. Skills with `$ARGUMENTS` / `$1` absorb the old "prompt template" concept. See [Skills](#skills).
 - **Output styles** — switch *how* the assistant talks (default / brainstorm / learning) with `/style`.
@@ -225,6 +225,7 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/skill [name] [args]` | Run a vault skill (also `/<skill-name>` directly). |
 | `/agent [name] [task]` | Delegate a task to a subagent (no arg = picker). |
 | `/undo` | Undo the last vault change the agent made. |
+| `/memory [add\|distill]` | Append a daily memory or distill dailies into MEMORY.md. |
 | `/status` | Show provider, model, mode, output style, session, MCP servers/tools. |
 | `/usage` | Show token & cost totals. |
 | `/help` | List commands. |

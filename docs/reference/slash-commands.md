@@ -24,7 +24,7 @@ Slash commands run locally and are not sent to the model.
 | `/undo` | Undo the last vault change made by the agent. |
 | `/status` | Show provider, model, mode, output style, session, MCP servers, and tools. |
 | `/usage` | Show token and cost totals. |
-| `/memory [add\|review\|manage\|export\|clear]` | Add, review, export, or clear stored long-term memories. |
+| `/memory [add\|distill]` | Append a daily memory or distill dailies into MEMORY.md. |
 | `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. Alias: `/semindex`. |
 | `/todo [add\|set\|test\|commit]` | Track milestones, tests, and checkpoint commits. Alias: `/todos`. |
 | `/steer [text]` | Steer the active turn while the agent is responding. |

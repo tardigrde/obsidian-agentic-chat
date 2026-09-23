@@ -28,7 +28,7 @@ You have these tool categories. Each is callable via function call when present 
 - **Web** (optional): web_search, fetch_url.
 - **Subagent** (optional): subagent — delegate focused subtasks to specialist child agents. One call = one subagent ({agent, task}); make several parallel calls to delegate multiple tasks (up to 10 run at once). Do not spawn subagents after being told not to.
 - **Artifacts** (optional): list_artifacts, read_artifact, search_artifact, export_artifact.
-- **Memory** (optional): search_memory.
+- **Memory** (optional): remember_memory.
 - **Documents** (optional): import_pdf, import_document.
 - **MCP** (optional): remote tools from configured MCP servers.
 - **Ask-user**: ask_user — ask the user a question with optional choices.

@@ -206,6 +206,8 @@ export class AgentCompactionRuntime {
     const manifest = collectCompactionManifest(plan.summarize);
     const newMessages = [buildSummaryMessage(summary.summary, Date.now(), dropped, manifest), ...plan.keep];
     // Persist the rewrite first; only mutate in-memory state once disk succeeds.
+    // The rewritten session starts with the summary message, so the next
+    // distillation ingests it once via the normal session path (no deposit needed).
     await this.sessionManager.rewriteMessages(newMessages);
     return { status: "compacted", messages: newMessages };
   }

@@ -131,6 +131,7 @@ async function configurePlugin(): Promise<boolean> {
     settings.toolBudget.thresholdPercent = 25;
     settings.web.enabled = false;
     settings.mcp = { enabled: false, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] };
+    (settings as { memory?: unknown }).memory = { enabled: true, store: "plugin", vaultFolder: "memory", modelOverride: "" };
     await plugin.saveSettings?.();
     return true;
   });
@@ -205,19 +206,8 @@ async function seedVaultShapes(): Promise<void> {
       mkdir: (path: string) => Promise<void>;
       write: (path: string, data: string) => Promise<void>;
     };
-    const memoryDir = `${app.vault.configDir}/plugins/agentic-chat/memory`;
+    const memoryDir = `${app.vault.configDir}/plugins/agentic-chat/memory/daily`;
     if (!(await adapter.exists(memoryDir))) await adapter.mkdir(memoryDir);
-    await adapter.write(
-      `${memoryDir}/memories.jsonl`,
-      `${JSON.stringify({
-        id: "mem-stretch",
-        kind: "fact",
-        scope: "vault",
-        text: "Synthetic dogfood user is validating a DevOps knowledge-base workflow.",
-        enabled: true,
-        createdAt: "2026-07-01T00:00:00.000Z",
-      })}\n`,
-    );
   }, SECRET_TEXT);
 }
 
@@ -327,7 +317,7 @@ function scriptedTurns(): ScriptedTurn[] {
       { id: "m-graph", name: "vault_inspect", args: { action: "local_graph", path: "Messy/Target.md" } },
       { id: "m-props", name: "vault_inspect", args: { action: "properties", path: "Messy/Home.md" } },
       { id: "m-read", name: "read", args: { path: "Messy/Home.md" } },
-      { id: "m-memory", name: "search_memory", args: { query: "DevOps knowledge-base", scope: "vault", maxResults: 3 } },
+      { id: "m-memory", name: "remember_memory", args: { text: "Synthetic dogfood user is validating a DevOps knowledge-base workflow.", kind: "fact" } },
       {
         id: "m-write",
         name: "write",
@@ -415,7 +405,7 @@ describe("agentic-chat stretched synthetic dogfood", function () {
     expect(matrix).toContain("verified: true");
 
     const toolNames = (await scriptedToolNamesByCall())[0] ?? [];
-    for (const expected of ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "search_memory", "ask_user"]) {
+    for (const expected of ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "remember_memory", "ask_user"]) {
       expect(toolNames).toContain(expected);
     }
   });
@@ -494,7 +484,7 @@ describe("agentic-chat stretched synthetic dogfood", function () {
 
     const stats = await sessionStats();
     expect(stats.maxUserMessageChars).toBeLessThan(2_500);
-    for (const tool of ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "search_memory", "ask_user"]) {
+    for (const tool of ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "remember_memory", "ask_user"]) {
       expect(stats.toolStarts[tool]).toBeGreaterThanOrEqual(1);
     }
     expect(stats.toolErrors.write).toBeGreaterThanOrEqual(1);

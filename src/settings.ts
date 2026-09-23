@@ -96,6 +96,7 @@ export type {
   CompactionSettings,
   NetworkSettings,
   NotificationSettings,
+  VaultMemorySettings,
   WebSettings,
 } from "./settings-schema";
 const OBSERVABILITY_BACKEND_LABELS: Record<ObservabilityBackend, string> = {
@@ -690,6 +691,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           "Edit the file directly, or run /init to have the agent curate it.",
       );
 
+    this.renderMemory(containerEl, settings);
+
     new Setting(containerEl).setName("Context window").setHeading();
     new Setting(containerEl)
       .setName("Auto-compaction")
@@ -740,6 +743,143 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             await this.save();
           }),
       );
+  }
+
+  /**
+   * H2 seamless cross-session memory (session transcripts + distilled MEMORY.md).
+   * Off by default. Plugin-folder store is hidden (default); vault-folder store
+   * syncs like any note. Full lifecycle in docs/features/memory.md.
+   */
+  private renderMemory(containerEl: HTMLElement, settings: AgenticChatSettings): void {
+    new Setting(containerEl).setName("Memory").setHeading();
+    new Setting(containerEl)
+      .setName("Enable vault memory")
+      .setDesc(
+        "When on, distills past sessions + daily notes into MEMORY.md (idle 10min, startup, " +
+          "session switch, or /memory distill). MEMORY.md auto-loads into " +
+          "every new chat (~8k chars of context). " +
+          "May contain session summaries — review before sharing the vault. " +
+          "Distillation sends recent session transcripts to your chat model provider; only secret-shaped text is filtered — " +
+          "names and vault content you discussed can be remembered. " +
+          "Typically ~1-2k tokens per run (bounded feedstock, ≤2k output tokens). See docs/features/memory.md.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.memory.enabled).onChange(async (value) => {
+          settings.memory.enabled = value;
+          await this.save();
+          this.redraw();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Memory location")
+      .setDesc(
+        "Plugin folder (default): hidden dot-folder, stays on this device. " +
+          "Vault folder: synced like any note, visible in the file explorer.",
+      )
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("plugin", "Plugin folder (hidden)")
+          .addOption("vault", "Vault folder (synced)")
+          .setValue(settings.memory.store)
+          .onChange(async (value) => {
+            settings.memory.store = value === "vault" ? "vault" : "plugin";
+            await this.save();
+            this.redraw();
+          }),
+      );
+
+    if (settings.memory.store === "vault") {
+      new Setting(containerEl)
+        .setName("Vault memory folder")
+        .setDesc("Vault-relative folder for MEMORY.md + daily/. Default: memory.")
+        .addText((text) =>
+          text
+            .setPlaceholder("memory")
+            .setValue(settings.memory.vaultFolder)
+            .onChange(async (value) => {
+              const { healVaultFolder } = await import("./memory/vault-memory");
+              settings.memory.vaultFolder = healVaultFolder(value);
+              await this.save();
+              // Echo the healed value so rejected input (.., .obsidian, etc.) is visible immediately.
+              text.setValue(settings.memory.vaultFolder);
+            }),
+        );
+    }
+
+    new Setting(containerEl)
+      .setName("Distill model override")
+      .setDesc("Optional model id for Tier-2 distillation. Empty uses the active chat model.")
+      .addText((text) =>
+        text
+          .setPlaceholder("(active chat model)")
+          .setValue(settings.memory.modelOverride)
+          .onChange(async (value) => {
+            settings.memory.modelOverride = value.trim();
+            await this.save();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Open memory files")
+      .setDesc("Review what was remembered. Daily notes hold raw session bullets; MEMORY.md holds distilled facts.")
+      .addButton((button) =>
+        button.setButtonText("Open MEMORY.md").onClick(() => void this.openMemoryFile()),
+      )
+      .addButton((button) =>
+        button.setButtonText("Open today's note").onClick(() => void this.openTodayDaily()),
+      );
+
+    if (!settings.memory.enabled) {
+      new Setting(containerEl)
+        .setName("Delete memory files")
+        .setDesc("Disabling orphans files by default. Delete daily notes, MEMORY.md, and distill state now.")
+        .addButton((button) =>
+          button
+            .setButtonText("Delete files")
+            .setClass("mod-warning")
+            .onClick(async () => {
+              const { resolveMemoryPaths, deleteMemoryFiles } = await import("./memory/vault-memory");
+              const paths = resolveMemoryPaths(this.app.vault.configDir, settings.memory);
+              const deleted = await deleteMemoryFiles(this.app.vault.adapter, paths);
+              new Notice(deleted > 0 ? `Agentic Chat: deleted ${deleted} memory file(s).` : "Agentic Chat: no memory files found.");
+              this.redraw();
+            }),
+        );
+    }
+  }
+
+  private async openMemoryFile(): Promise<void> {
+    const { resolveMemoryPaths } = await import("./memory/vault-memory");
+    const paths = resolveMemoryPaths(this.app.vault.configDir, this.plugin.settings.memory);
+    try {
+      if (!(await this.app.vault.adapter.exists(paths.memoryFile))) {
+        new Notice("Agentic Chat: no MEMORY.md yet — run /memory distill after a session.");
+        return;
+      }
+      await this.app.workspace.openLinkText(paths.memoryFile, "", false);
+    } catch (error) {
+      new Notice(
+        `Agentic Chat: could not open ${paths.memoryFile} (${error instanceof Error ? error.message : String(error)}).`,
+      );
+    }
+  }
+
+  private async openTodayDaily(): Promise<void> {
+    const { resolveMemoryPaths, dailyPathForDate, todayKey } = await import("./memory/vault-memory");
+    const paths = resolveMemoryPaths(this.app.vault.configDir, this.plugin.settings.memory);
+    const path = dailyPathForDate(paths, todayKey());
+    try {
+      if (!(await this.app.vault.adapter.exists(path))) {
+        new Notice("Agentic Chat: no daily note for today yet.");
+        return;
+      }
+      await this.app.workspace.openLinkText(path, "", false);
+    } catch (error) {
+      new Notice(
+        `Agentic Chat: could not open ${path} (${error instanceof Error ? error.message : String(error)}).`,
+      );
+    }
   }
 
   private renderApproval(containerEl: HTMLElement, settings: AgenticChatSettings): void {
