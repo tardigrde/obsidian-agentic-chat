@@ -37,7 +37,7 @@ YOLO is a session-level allow switch for mutating tools. Per-tool deny still win
 
 ## Plan mode
 
-`/plan` is sticky and read-only. It blocks writes, edits, renames, deletes, frontmatter changes, and subagent writes until `/endplan`.
+`/plan` is sticky and read-only. It blocks writes, edits, renames, deletes, frontmatter changes, and subagent writes until you approve the inline plan card or leave plan mode (Plan badge, `/config`).
 
 ## Compaction
 
