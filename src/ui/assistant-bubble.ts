@@ -1,7 +1,14 @@
-import { type App, type Component, loadMermaid, MarkdownRenderer, Notice, setIcon } from "obsidian";
+import { type App, type Component, loadMermaid, MarkdownRenderer, Notice, setIcon, TFile } from "obsidian";
 import type { Usage } from "@earendil-works/pi-ai";
 import { SUBAGENT_TOOL_NAME, type SubagentChildStatus } from "../tools/subagent-tool";
 import type { AskUserDetails } from "../tools/ask-user-tool";
+import {
+  imageBasename,
+  isExternalImageSrc,
+  isImagePath,
+  rewriteMarkdownImages,
+  stripImageQueryFragment,
+} from "./image-attachments";
 import {
   callPath,
   describeCall,
@@ -702,7 +709,14 @@ export class AssistantBubble {
     // never double-settle or stamp the timers at a stale moment. Idempotent via
     // the finalized guard.
     this.finalizeChrome();
-    await MarkdownRenderer.render(app, markdown, this.textEl, "", component);
+    // Vault-local images need a real sourcePath: "" leaves ![[pic.png]] embeds
+    // and vault-relative ![](path/pic.png) destinations unresolved. Rewrite
+    // resolvable ones to resource URLs up front, then fix up whatever the
+    // renderer still leaves behind (relative <img> srcs, unresolved embeds).
+    const sourcePath = assistantImageSourcePath(app);
+    const rewritten = rewriteAssistantMarkdownImages(app, markdown, sourcePath);
+    await MarkdownRenderer.render(app, rewritten, this.textEl, sourcePath, component);
+    fixupRenderedAssistantImages(this.textEl, app, sourcePath);
     enhanceCallouts(this.textEl);
     installRenderedLinkHandlers(this.textEl, app, this.actions.onOpenExternalLink);
     await renderMermaidBlocks(this.textEl);
@@ -940,6 +954,78 @@ function decodeVaultLinkTarget(target: string): string {
     return decodeURI(target);
   } catch {
     return target;
+  }
+}
+
+/**
+ * Vault path Obsidian uses to resolve relative links in chat markdown. The chat
+ * pane is not a file, so the active note stands in — any vault path lets
+ * `getFirstLinkpathDest` find a `![[pic.png]]` embed by name, and a missing
+ * note degrades to the old "" behavior.
+ */
+export function assistantImageSourcePath(app: App): string {
+  try {
+    const path = app.workspace?.getActiveFile?.()?.path;
+    return typeof path === "string" && path ? path : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Resolve a vault-local image target to a renderable resource URL, or null. */
+export function resolveVaultImageResource(app: App, target: string, sourcePath: string): string | null {
+  const trimmed = target.trim();
+  if (!trimmed || isExternalImageSrc(trimmed)) return null;
+  let decoded = trimmed;
+  try {
+    decoded = decodeURI(trimmed);
+  } catch {
+    // Keep the raw target when it isn't valid percent-encoding.
+  }
+  const linkpath = stripImageQueryFragment(decoded).trim().replace(/^\/+/, "");
+  if (!linkpath) return null;
+  try {
+    const viaLinks = app.metadataCache?.getFirstLinkpathDest?.(linkpath, sourcePath) as TFile | null | undefined;
+    const file = viaLinks ?? app.vault?.getFileByPath?.(linkpath) ?? null;
+    if (!file || !(file instanceof TFile)) return null;
+    if (!isImagePath(file.path)) return null;
+    return app.vault.getResourcePath(file);
+  } catch {
+    return null;
+  }
+}
+
+/** Rewrite vault-local image references in assistant markdown to resource URLs. */
+export function rewriteAssistantMarkdownImages(app: App, markdown: string, sourcePath: string): string {
+  return rewriteMarkdownImages(markdown, (target) => resolveVaultImageResource(app, target, sourcePath));
+}
+
+/**
+ * Post-render fixup for assistant images: point vault-path `<img>` srcs at
+ * resource URLs and materialize unresolved internal image embeds the renderer
+ * left behind (e.g. a `![[pic.png]]` it couldn't resolve with the sourcePath).
+ */
+export function fixupRenderedAssistantImages(root: HTMLElement, app: App, sourcePath: string): void {
+  for (const img of Array.from(root.querySelectorAll("img"))) {
+    const src = img.getAttribute("src");
+    if (!src || isExternalImageSrc(src)) continue;
+    const resolved = resolveVaultImageResource(app, src, sourcePath);
+    if (resolved) {
+      img.setAttribute("src", resolved);
+      img.addClass("agentic-chat-image");
+    }
+  }
+  for (const embed of Array.from(root.querySelectorAll(".internal-embed"))) {
+    if (embed.querySelector("img")) continue;
+    const src = embed.getAttribute("src") ?? "";
+    if (!src || !isImagePath(stripImageQueryFragment(src))) continue;
+    const resolved = resolveVaultImageResource(app, src, sourcePath);
+    if (!resolved) continue;
+    embed.empty();
+    embed.removeClass("is-unresolved");
+    embed.addClass("image-embed");
+    const img = embed.createEl("img", { attr: { src: resolved, alt: imageBasename(src) } });
+    img.addClass("agentic-chat-image");
   }
 }
 
