@@ -1,17 +1,24 @@
 # Setup
 
-Open the Agentic Chat settings tab after installing the plugin. The main setup choice is the model provider.
+Open **Settings > Agentic Chat** after installing the plugin, then pick a provider on the **Models** virtual tab.
 
 ## OpenRouter
 
-OpenRouter is the default hosted provider path.
+OpenRouter is the default provider (default model `moonshotai/kimi-k2.6`).
 
 1. Create an API key at [openrouter.ai/keys](https://openrouter.ai/keys).
-2. Paste it into **Settings > Agentic Chat > Models**.
-3. Pick a tool-capable model. The default model is `moonshotai/kimi-k2.6`.
-4. Keep the strict privacy routing defaults enabled unless you deliberately want a broader provider set.
+2. Paste it into **Settings > Agentic Chat** on the **Models** tab.
+3. Pick a tool-capable model. Model browsing only shows options that satisfy the zero-data-retention routing requirements while the strict defaults are on.
+4. Keep the strict privacy routing defaults enabled unless you deliberately want a broader provider set. Strict routing can mean a model has no compliant endpoint — then pick another model, deliberately relax **Require zero data retention** / **Deny prompt logging** (prompts may then be retained or trained on), or use Ollama.
 
-With the default privacy settings, model browsing only shows options that can satisfy the zero-data-retention routing requirements.
+## First chat
+
+1. Click the ribbon icon or run **Agentic Chat: Open chat**.
+2. Open any note so it auto-attaches, then send something like `Summarize @Meeting-notes`.
+3. Watch the inline step card: it shows which notes were read before the answer.
+4. Ask for a small edit, approve the diff, then run `/undo` to see the safety net work.
+
+If the model list is empty, see [Troubleshoot](./troubleshoot.md#no-model-answers).
 
 ## Ollama
 
@@ -39,26 +46,20 @@ Then paste the gateway bearer token and model id exposed by that gateway.
 
 ## Thinking level
 
-Some models support adjustable reasoning effort. Set it in **Settings > Agent > Thinking level**:
+Some models support adjustable reasoning effort. Default `off`. Set it in **Settings > Agentic Chat** on the **Agent** tab, or per message with `/effort [level]` in chat:
 
-| Level | Behavior |
+| Level | When to use it |
 | --- | --- |
-| `off` | No extra reasoning tokens. |
-| `minimal` | Light internal reasoning. |
-| `low` | Moderate reasoning. |
-| `medium` | Balanced depth. |
-| `high` | Deep reasoning, more tokens. |
-| `xhigh` | Maximum reasoning depth. |
+| `off` | Default. Simple Q&A and small edits. |
+| `minimal`, `low` | Slightly harder reasoning without much extra cost. |
+| `medium` | Balanced depth for multi-step vault tasks. |
+| `high`, `xhigh` | Hard planning and research; costs more tokens. |
 
-You can also set effort per message with `/effort [level]` in chat.
+Only models that support reasoning effort are affected; others ignore the setting.
 
 ## Proxy settings
 
-On desktop, **Models > Network proxy > HTTP proxy** lets plugin-owned model, model-browsing, web, MCP, and observability requests use an HTTP proxy such as:
-
-```text
-http://host:port
-```
+On desktop, **Models > Network proxy > HTTP proxy** lets plugin-owned model, model-browsing, web, MCP, and observability requests use an HTTP proxy. Enter it as `http://host:port` (http only, no trailing slash).
 
 On mobile, leave plugin proxy fields empty and use the device, VPN, or network-level proxy path.
 
@@ -71,4 +72,4 @@ If you want vector-based note search, enable **Settings > Resources > Semantic r
 3. Set vector dimensions to match the model (default 1536).
 4. Use Ollama for fully local embeddings if you do not want note content sent to a remote provider.
 
-After setup, run `/semantic-index start` in chat to build the index for your current scope.
+After setup, run `/semantic-index estimate` to preview note/token counts, then `/semantic-index start` to build the index for your current scope.
