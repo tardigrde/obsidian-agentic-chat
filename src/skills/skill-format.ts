@@ -1,4 +1,4 @@
-import type { Skill } from "@earendil-works/pi-agent-core";
+import type { Skill } from "./skill-prompt";
 import { splitFrontmatter, stringField } from "./skills";
 
 /**

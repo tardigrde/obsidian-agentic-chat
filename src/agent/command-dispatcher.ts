@@ -1,4 +1,4 @@
-import type { Skill } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../skills/skill-prompt";
 import { buildSkillInvocation } from "../skills/skills";
 import {
   buildInitInvocation,

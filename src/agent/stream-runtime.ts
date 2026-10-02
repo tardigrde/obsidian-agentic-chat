@@ -3,10 +3,10 @@ import {
   createAssistantMessageEventStream,
   type Api,
   type AssistantMessageEventStream,
-  type Context,
   type Model,
   type SimpleStreamOptions,
   type StopReason,
+  type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import {
@@ -22,7 +22,7 @@ const X_TITLE = "Obsidian Agentic Chat";
 
 export type StreamSimpleFn = (
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
   options?: SimpleStreamOptions,
 ) => AssistantMessageEventStream;
 type OpenAICompatibleStreamFn = typeof streamOpenAICompatibleViaRequestUrl;
@@ -90,7 +90,7 @@ export class AgentStreamRuntime {
 
   private wrapStreamSimpleWithRetry(
     model: Model<Api>,
-    context: Context,
+    context: TranscriptContext,
     streamOptions: SimpleStreamOptions,
     signal?: AbortSignal,
   ): AssistantMessageEventStream {

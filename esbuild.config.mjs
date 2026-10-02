@@ -21,6 +21,13 @@ const piAiModelsStubPath = path.join(process.cwd(), "src", "vendor", "pi-ai-mode
  * pi-agent-core imports the broad pi-ai entry point, which registers every
  * provider and probes Node.js APIs. The plugin only supports the
  * openai-completions transport, so expose a browser-safe subset at bundle time.
+ *
+ * Since pi 1.0.0 the agent owns the system prompt as a transcript message, so
+ * pi-agent-core needs the transcript replay helpers (`normalizeContext`,
+ * `getCurrentTools`, `getCurrentSystemPrompt`, `toToolDeclaration`,
+ * `getToolStateChanges`, ...) rather than plain message fields. Keep this list
+ * in sync with the pi-ai imports in `pi-agent-core/dist/agent.js` and
+ * `agent-loop.js`; `npm run build` fails loudly when one is missing.
  */
 
 const piAiMobileEntry = {
@@ -43,7 +50,18 @@ const piAiMobileEntry = {
         export { parseStreamingJson } from ${JSON.stringify(path.join(piAiDistDir, "utils/json-parse.js"))};
         export { validateToolArguments } from ${JSON.stringify(path.join(piAiDistDir, "utils/validation.js"))};
         export { uuidv7 } from ${JSON.stringify(path.join(piAiDistDir, "utils/uuid.js"))};
-        export { contentText } from ${JSON.stringify(path.join(piAiDistDir, "utils/text.js"))};
+        export { contentText, getSystemMessageText } from ${JSON.stringify(path.join(piAiDistDir, "utils/text.js"))};
+        export {
+          collapseSystemMessages,
+          createInitialSystemMessage,
+          getCurrentSystemMessage,
+          getCurrentSystemPrompt,
+          getCurrentTools,
+          getToolStateChanges,
+          normalizeContext,
+          resolveTranscript,
+          toToolDeclaration
+        } from ${JSON.stringify(path.join(piAiDistDir, "utils/transcript.js"))};
         export { retryAssistantCall } from ${JSON.stringify(path.join(piAiDistDir, "utils/retry.js"))};
         export { isRetryableAssistantError } from ${JSON.stringify(path.join(piAiDistDir, "utils/retry.js"))};
         export { isContextOverflow, isRecoverableLength } from ${JSON.stringify(path.join(piAiDistDir, "utils/overflow.js"))};

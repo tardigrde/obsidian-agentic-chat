@@ -1,4 +1,4 @@
-import type { Skill } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../src/skills/skill-prompt";
 import { describe, expect, it } from "vitest";
 import { AgentCommandInvocationRuntime } from "../src/agent/command-invocation";
 import type { AgentRole } from "../src/agent/subagents";

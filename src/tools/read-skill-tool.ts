@@ -1,4 +1,5 @@
-import { type AgentTool, type Skill, formatSkillInvocation } from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { formatSkillInvocation, type Skill } from "../skills/skill-prompt";
 import { TFolder, type App } from "obsidian";
 import { Type } from "typebox";
 import { resolveSkillResourcePath } from "../skills/skills";

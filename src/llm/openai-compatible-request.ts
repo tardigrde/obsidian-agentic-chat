@@ -1,17 +1,20 @@
 import { requestUrl } from "obsidian";
 import {
   createAssistantMessageEventStream,
+  getCurrentTools,
   parseStreamingJson,
   type Api,
   type AssistantMessage,
   type AssistantMessageEventStream,
-  type Context,
+  type JsonObject,
+  type JsonValue,
   type Model,
   type ProviderStreams,
   type SimpleStreamOptions,
   type StopReason,
   type Tool,
   type ToolCall,
+  type TranscriptContext,
   type Usage,
 } from "@earendil-works/pi-ai";
 import { convertMessages } from "@earendil-works/pi-ai/api/openai-completions";
@@ -105,7 +108,7 @@ const MESSAGE_COMPAT: MessageCompat = {
  */
 export function streamOpenAICompatibleViaRequestUrl(
   model: Model<"openai-completions">,
-  context: Context,
+  context: TranscriptContext,
   options: SimpleStreamOptions | undefined,
   requester: OpenAICompatibleRequester = defaultOpenAICompatibleRequester,
 ): AssistantMessageEventStream {
@@ -193,7 +196,7 @@ export function obsidianOpenAICompletionsApi(): ProviderStreams {
     stream: () => {
       throw new Error("Raw streaming is not supported by the Obsidian requestUrl fallback; use streamSimple.");
     },
-    streamSimple: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
+    streamSimple: (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) =>
       streamOpenAICompatibleViaRequestUrl(model as Model<"openai-completions">, context, options),
   };
 }
@@ -245,7 +248,7 @@ export function isRetryableResponse(response: OpenAICompatibleResponse): boolean
 
 function buildPayload(
   model: Model<"openai-completions">,
-  context: Context,
+  context: TranscriptContext,
   options: SimpleStreamOptions | undefined,
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {
@@ -259,8 +262,11 @@ function buildPayload(
   }
   if (options?.temperature !== undefined) payload.temperature = options.temperature;
   if (options?.maxTokens && options.maxTokens > 0) payload.max_tokens = options.maxTokens;
-  if (context.tools && context.tools.length > 0) {
-    payload.tools = convertTools(context.tools, MESSAGE_COMPAT);
+  // pi 1.0.0 moved the tool set into the transcript's system messages, so it
+  // is resolved by replay rather than read off `context.tools`.
+  const tools = getCurrentTools(context.messages);
+  if (tools.length > 0) {
+    payload.tools = convertTools(tools, MESSAGE_COMPAT);
     const toolChoice = (options as { toolChoice?: unknown } | undefined)?.toolChoice;
     if (toolChoice !== undefined) payload.tool_choice = toolChoice;
   } else if (hasToolHistory(context)) {
@@ -271,10 +277,12 @@ function buildPayload(
   return payload;
 }
 
-function hasToolHistory(context: Context): boolean {
+function hasToolHistory(context: TranscriptContext): boolean {
   for (const message of context.messages) {
     if (message.role === "toolResult") return true;
-    if (message.role === "assistant" && message.content.some((block) => block.type === "toolCall")) return true;
+    if (message.role === "assistant" && message.content.some((block: { type: string }) => block.type === "toolCall")) {
+      return true;
+    }
   }
   return false;
 }
@@ -361,10 +369,58 @@ function parseToolCalls(rawToolCalls: unknown): ToolCall[] {
   });
 }
 
-function parseToolArguments(rawArguments: unknown): Record<string, unknown> {
-  if (recordValue(rawArguments)) return rawArguments as Record<string, unknown>;
-  if (typeof rawArguments !== "string") return {};
-  return parseStreamingJson<Record<string, unknown>>(rawArguments);
+/**
+ * Tool arguments as a `JsonObject`.
+ *
+ * pi 1.0.0 narrowed `ToolCall.arguments` from `Record<string, unknown>` to
+ * `JsonObject`, so this must drop any non-JSON value rather than just
+ * asserting the shape. Provider payloads are not fully trusted here: a gateway
+ * can return arrays, `null`, or function-ish placeholders inside the arguments
+ * object. Rejecting those is safe because pi validates the arguments against
+ * the target tool's schema before executing it.
+ */
+function parseToolArguments(rawArguments: unknown): JsonObject {
+  return toJsonObject(recordValue(rawArguments) ?? (typeof rawArguments === "string" ? parseStreamingJson(rawArguments) : undefined));
+}
+
+/** Keep only entries whose values are JSON-representable, recursively. */
+function toJsonObject(value: Record<string, unknown> | undefined): JsonObject {
+  if (!value) return {};
+  const result: JsonObject = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const json = toJsonValue(entry);
+    if (json !== undefined) result[key] = json;
+  }
+  return result;
+}
+
+/** A `JsonValue`, or undefined when the input cannot be represented as JSON. */
+function toJsonValue(value: unknown): JsonValue | undefined {
+  if (value === null) return null;
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return value;
+    case "number":
+      // NaN/Infinity serialize to null rather than round-tripping.
+      return Number.isFinite(value) ? value : null;
+    case "object":
+      break;
+    default:
+      // undefined, bigint, symbol, function.
+      return undefined;
+  }
+  if (Array.isArray(value)) {
+    // `JsonValue` arrays are readonly, hence the collect-then-freeze shape.
+    const items: JsonValue[] = [];
+    for (const entry of value) {
+      const json = toJsonValue(entry);
+      // JSON.stringify turns holes and undefined array entries into null.
+      items.push(json === undefined ? null : json);
+    }
+    return items;
+  }
+  return toJsonObject(value as Record<string, unknown>);
 }
 
 function textFromContent(content: unknown): string {

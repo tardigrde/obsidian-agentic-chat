@@ -1,4 +1,4 @@
-import type { Skill } from "@earendil-works/pi-agent-core";
+import type { Skill } from "./skill-prompt";
 import { parseSkillMarkdown } from "./skill-format";
 
 /** Marker `filePath` for skills that ship with the plugin (no vault file backs them). */

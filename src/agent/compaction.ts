@@ -1,4 +1,5 @@
-import { estimateTokens, type AgentMessage } from "@earendil-works/pi-agent-core";
+import { estimateMessageTokens } from "@earendil-works/pi-ai/utils/estimate";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import { collectArtifactIdsFromText } from "../artifacts/artifact-references";
 
@@ -44,7 +45,7 @@ export interface CompactionManifest {
 
 /** Estimated context tokens the transcript currently occupies. */
 export function estimateContextUsage(messages: AgentMessage[]): number {
-  return messages.reduce((total, message) => total + estimateTokens(message), 0);
+  return messages.reduce((total, message) => total + estimateMessageTokens(message), 0);
 }
 
 /**
@@ -95,7 +96,7 @@ export function planCompaction(
   const suffixTokens = new Array<number>(messages.length + 1);
   suffixTokens[messages.length] = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
-    suffixTokens[i] = suffixTokens[i + 1] + estimateTokens(messages[i]);
+    suffixTokens[i] = suffixTokens[i + 1] + estimateMessageTokens(messages[i]);
   }
   // Candidate cut points are user boundaries after the first turn. Pick the
   // earliest cut whose retained tokens fit the keep budget (i.e. retain as much
@@ -141,7 +142,7 @@ export function buildSummaryMessage(
     // survives JSONL reload and conversation rewind. See AgentService.getSessionUsage.
     ...(compactedUsage ? { compactedUsage } : {}),
     ...(manifest ? { compactionManifest: manifest } : {}),
-  } as AgentMessage;
+  };
 }
 
 /** Usage of the turns folded into a summary message, if recorded. */

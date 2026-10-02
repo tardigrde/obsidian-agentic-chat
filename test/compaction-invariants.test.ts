@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { estimateTokens, type AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { estimateMessageTokens } from "@earendil-works/pi-ai/utils/estimate";
 import type { Usage } from "@earendil-works/pi-ai";
 import {
   buildSummaryMessage,
@@ -21,7 +22,7 @@ import {
  */
 
 const CONFIG: CompactionConfig = { enabled: true, thresholdFraction: 0.8, keepFraction: 0.3 };
-// estimateTokens ≈ chars/4 for text; user(N)/assistant(N) yield N/4 tokens each.
+// estimateMessageTokens ≈ chars/4 for text; user(N)/assistant(N) yield N/4 tokens each.
 const WINDOW = 1000;
 const KEEP_BUDGET = WINDOW * CONFIG.keepFraction; // 300
 
@@ -150,7 +151,7 @@ describe("compaction plan shape", () => {
     const messages = Array.from({ length: 10 }, () => [user(200), assistant(200)]).flat();
     const plan = planCompaction(messages, WINDOW, CONFIG);
     expect(plan).not.toBeNull();
-    const keptTokens = plan!.keep.reduce((sum, m) => sum + estimateTokens(m), 0);
+    const keptTokens = plan!.keep.reduce((sum, m) => sum + estimateMessageTokens(m), 0);
     expect(keptTokens).toBeLessThanOrEqual(KEEP_BUDGET);
     // More than a single message is retained when the budget allows — it doesn't
     // naively keep only the last turn.

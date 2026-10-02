@@ -1,9 +1,6 @@
-import {
-  convertToLlm,
-  type AgentMessage,
-  type StreamFn,
-} from "@earendil-works/pi-agent-core";
-import { contentText, type Model, type Usage } from "@earendil-works/pi-ai";
+import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
+import { contentText, normalizeContext, type Model, type Usage } from "@earendil-works/pi-ai";
+import { conversationMessages } from "./conversation-messages";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelConfig, apiKeyForProvider } from "../settings";
 import { buildModel } from "../llm/models";
@@ -320,9 +317,23 @@ function truncateForSummary(text: string, maxChars: number): string {
   return `${text.slice(0, maxChars)}\n\n[... ${truncatedChars} more characters truncated]`;
 }
 
+/**
+ * Reduce an agent transcript to the roles a provider can consume.
+ *
+ * pi 1.0.0 removed the exported `convertToLlm` harness helper. Summarization
+ * only wants the real conversation, and the transcript now also carries
+ * `system` messages that own the system prompt and tool declarations —
+ * re-serializing those into the summary prompt would duplicate the prompt we
+ * already send as `SUMMARIZATION_SYSTEM_PROMPT`. Dropping them matches what
+ * pi's own default `convertToLlm` forwards to a provider.
+ */
+function toProviderMessages(messages: readonly AgentMessage[]): AgentMessage[] {
+  return conversationMessages(messages);
+}
+
 /** Serialize LLM messages to plain text for summarization prompts.
  * Copied from pi-agent-core with a higher tool-result truncation budget. */
-function serializeConversation(messages: AgentMessage[]): string {
+function serializeConversation(messages: readonly AgentMessage[]): string {
   const parts: string[] = [];
   for (const msg of messages) {
     const part = serializeMessage(msg);
@@ -412,8 +423,7 @@ async function generateSummaryWithStream(
   if (customInstructions) {
     basePrompt = `${basePrompt}\n\nAdditional instructions: ${customInstructions}`;
   }
-  const llmMessages = convertToLlm(currentMessages);
-  const conversationText = serializeConversation(llmMessages);
+  const conversationText = serializeConversation(toProviderMessages(currentMessages));
   let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
   if (previousSummary) {
     promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
@@ -430,7 +440,9 @@ async function generateSummaryWithStream(
 
   const responseStream = await streamFn(
     model,
-    { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+    // `StreamFn` takes a `TranscriptContext`, which carries the prompt as a
+    // leading system message rather than a `systemPrompt` field.
+    normalizeContext({ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages }),
     model.reasoning && thinkingLevel && thinkingLevel !== "off"
       ? { maxTokens, signal, apiKey, headers, reasoning: thinkingLevel }
       : { maxTokens, signal, apiKey, headers },

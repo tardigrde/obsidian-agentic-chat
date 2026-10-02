@@ -1,5 +1,4 @@
-import type { Skill } from "@earendil-works/pi-agent-core";
-import { formatSkillsForSystemPrompt } from "../skills/skills";
+import { formatSkillsForSystemPrompt, type Skill } from "../skills/skill-prompt";
 import { DEFAULT_SYSTEM_PROMPT } from "./default-system-prompt";
 
 export { DEFAULT_SYSTEM_PROMPT } from "./default-system-prompt";
