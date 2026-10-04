@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   createAssistantMessageEventStream,
+  normalizeContext,
   type Api,
-  type Context,
   type Model,
   type SimpleStreamOptions,
+  type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
@@ -14,7 +15,7 @@ import type { streamOpenAICompatibleViaRequestUrl } from "../src/llm/openai-comp
 
 type CapturedCall = {
   model: Model<Api>;
-  context: Context;
+  context: TranscriptContext;
   options?: SimpleStreamOptions;
 };
 type CompatibleRequester = Parameters<typeof streamOpenAICompatibleViaRequestUrl>[3];
@@ -72,7 +73,7 @@ describe("AgentStreamRuntime", () => {
       return stream();
     };
     const runtime = new AgentStreamRuntime({ getSettings: () => settings(), streamSimpleFn });
-    const context: Context = { messages: [{ role: "user", content: "hello", timestamp: 1 }] };
+    const context: TranscriptContext = normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }] });
     const signal = new AbortController().signal;
 
     void runtime.buildStreamFn()(openRouterModel(), context, {
@@ -110,7 +111,7 @@ describe("AgentStreamRuntime", () => {
     };
     const runtime = new AgentStreamRuntime({ getSettings: () => settings({ maxTokens: 0 }), streamSimpleFn });
 
-    void runtime.buildStreamFn()(openRouterModel(), { messages: [] });
+    void runtime.buildStreamFn()(openRouterModel(), normalizeContext({ messages: [] }));
 
     expect(calls[0].options).not.toHaveProperty("maxTokens");
   });
@@ -131,7 +132,7 @@ describe("AgentStreamRuntime", () => {
       streamSimpleFn,
       openAICompatibleStreamFn,
     });
-    const context: Context = { messages: [] };
+    const context: TranscriptContext = normalizeContext({ messages: [] });
 
     void runtime.buildStreamFn()(openAICompatibleModel(), context, { apiKey: "test-key" });
 
@@ -161,7 +162,7 @@ describe("AgentStreamRuntime", () => {
       streamSimpleFn,
       openAICompatibleStreamFn,
     });
-    const context: Context = { messages: [] };
+    const context: TranscriptContext = normalizeContext({ messages: [] });
 
     void runtime.buildStreamFn()(openRouterModel(), context, { apiKey: "test-key" });
 

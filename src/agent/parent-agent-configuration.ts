@@ -19,7 +19,7 @@ export interface AgentParentConfigurationOptions {
   >;
   subagents: Pick<AgentSubagentRuntime, "createTool">;
   toolCalls: Pick<AgentToolCallController, "afterToolCall" | "beforeToolCall">;
-  loopGuard: Pick<AgentLoopGuard, "shouldStopAfterTurn">;
+  loopGuard: Pick<AgentLoopGuard, "finishTurn">;
   sessions: Pick<AgentActiveSessionRuntime, "ensureConfiguration" | "info">;
   onEvent: (event: AgentEvent) => Promise<void> | void;
 }
@@ -52,7 +52,9 @@ export class AgentParentConfigurationRuntime {
       getApiKey: (provider) => apiKeyForProvider(this.options.getSettings(), provider),
       beforeToolCall: (context) => this.options.toolCalls.beforeToolCall(context),
       afterToolCall: (context) => this.options.toolCalls.afterToolCall(context),
-      shouldStopAfterTurn: (context) => this.options.loopGuard.shouldStopAfterTurn(context),
+      // `finishTurn` also receives the run's abort signal; the loop guard does not
+// need it, so it is intentionally left unbound.
+finishTurn: (turn) => this.options.loopGuard.finishTurn(turn),
       sessionId: this.options.sessions.info?.id,
       onEvent: (event) => this.options.onEvent(event),
     };

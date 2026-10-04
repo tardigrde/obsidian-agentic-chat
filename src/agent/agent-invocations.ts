@@ -1,4 +1,4 @@
-import type { Skill } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../skills/skill-prompt";
 import type { AgentRole } from "./subagents";
 
 export function buildSubagentInvocation(name: string, task: string): string {

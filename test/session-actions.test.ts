@@ -267,6 +267,24 @@ describe("AgentSessionActions", () => {
     expect(events).toEqual(["activate:2:no-reload", "notify"]);
   });
 
+  // pi 1.0.0 keeps the system prompt as a leading transcript message, but the
+  // UI indexes the conversation only. Rewinding to index N must therefore drop
+  // N conversation messages and never persist the system context.
+  it("rewinds by conversation index without persisting pi's system message", async () => {
+    const one = userMessage("one");
+    const two = userMessage("two");
+    const three = userMessage("three");
+    const system = { role: "system", content: "prompt", timestamp: 0 } as unknown as AgentMessage;
+    const sessions = new FakeSessionRuntime();
+    await sessions.create();
+    const { actions, events } = makeActions({ sessions, agent: agentWith([system, one, two, three]) });
+
+    await actions.truncateMessages(2);
+
+    expect(sessions.rewrites).toEqual([[one, two]]);
+    expect(events).toEqual(["activate:2:no-reload", "notify"]);
+  });
+
   it("does not rewind while the live agent is streaming", async () => {
     const sessions = new FakeSessionRuntime();
     await sessions.create();

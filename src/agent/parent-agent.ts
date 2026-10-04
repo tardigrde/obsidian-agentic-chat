@@ -11,7 +11,9 @@ import type { Model } from "@earendil-works/pi-ai";
 
 type BeforeToolCall = NonNullable<AgentOptions["beforeToolCall"]>;
 type AfterToolCall = NonNullable<AgentOptions["afterToolCall"]>;
-type ShouldStopAfterTurn = NonNullable<AgentOptions["shouldStopAfterTurn"]>;
+// pi 0.87.0 removed `shouldStopAfterTurn`; `finishTurn` ends a normal run by
+// returning `{ action: "end" }`.
+type FinishTurn = NonNullable<AgentOptions["finishTurn"]>;
 
 export interface ParentAgentOptions {
   streamFn: StreamFn;
@@ -23,7 +25,7 @@ export interface ParentAgentOptions {
   getApiKey: (provider: string) => Promise<string | undefined> | string | undefined;
   beforeToolCall: BeforeToolCall;
   afterToolCall: AfterToolCall;
-  shouldStopAfterTurn?: ShouldStopAfterTurn;
+  finishTurn?: FinishTurn;
   sessionId?: string;
   onEvent: (event: AgentEvent) => Promise<void> | void;
 }
@@ -46,7 +48,7 @@ export function createParentAgent(options: ParentAgentOptions): ParentAgentHandl
     getApiKey: options.getApiKey,
     beforeToolCall: options.beforeToolCall,
     afterToolCall: options.afterToolCall,
-    shouldStopAfterTurn: options.shouldStopAfterTurn,
+    finishTurn: options.finishTurn,
     sessionId: options.sessionId,
     // N `subagent` calls in one message run concurrently; the subagent tool's
     // own semaphore caps the fan-out. Stateful/interactive tools (ask-user)

@@ -3,10 +3,10 @@ import {
   type Agent,
   type AgentEvent,
   type AgentMessage,
-  type Skill,
   type StreamFn,
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../skills/skill-prompt";
 import { type AssistantMessage, type ImageContent, type Usage, type UserMessage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider } from "../settings";
@@ -44,6 +44,7 @@ import { AgentCommandInvocationRuntime } from "./command-invocation";
 import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
 import { maybeCompactAgentTranscript } from "./compaction-orchestrator";
 import { estimateContextUsage } from "./compaction";
+import { conversationMessages } from "./conversation-messages";
 import {
   AgentServiceListeners,
   type AgentServiceChangeListener,
@@ -109,8 +110,8 @@ export type ManualCompactionResult =
  * JSONL session persistence, and event/state fan-out to the UI.
  */
 /** No-op loop guard used for scripted e2e runs (see `AgentServiceOptions.loopGuardDisabled`). */
-const DISABLED_LOOP_GUARD: Pick<AgentLoopGuard, "shouldStopAfterTurn"> = {
-  shouldStopAfterTurn: () => false,
+const DISABLED_LOOP_GUARD: Pick<AgentLoopGuard, "finishTurn"> = {
+  finishTurn: () => undefined,
 };
 
 export class AgentService {
@@ -284,8 +285,16 @@ export class AgentService {
     return this.listeners.onChange(listener);
   }
 
+  /**
+   * The conversation transcript, without pi's system-context message.
+   *
+   * pi 1.0.0 seeds a leading `system` message into `agent.state.messages`
+   * carrying the system prompt and tool declarations. That is runtime context,
+   * not conversation: exposing it here would leak the whole prompt and tool
+   * schemas into the UI, session persistence, and the export path.
+   */
   getMessages(): AgentMessage[] {
-    return this.agent?.state.messages ?? [];
+    return conversationMessages(this.agent?.state.messages ?? []);
   }
 
   isStreaming(): boolean {
@@ -540,7 +549,9 @@ export class AgentService {
     }
     const agent = this.agent;
     if (!agent) return { compacted: false, message: "Nothing compacted. No active conversation is loaded." };
-    const messages = agent.state.messages;
+    // Compact the conversation only. pi's system message stays as agent state,
+    // and the replacement agent re-seeds it from the current system prompt.
+    const messages = conversationMessages(agent.state.messages);
     const contextWindow = agent.state.model?.contextWindow ?? 0;
     const stats = {
       messageCount: messages.length,
@@ -791,8 +802,10 @@ export class AgentService {
       getTranscript: () => {
         const agent = this.agent;
         if (!agent) return null;
+        // Compact the conversation only; pi's system message is agent state and
+        // is re-seeded from the current prompt when the agent is replaced.
         return {
-          messages: agent.state.messages,
+          messages: conversationMessages(agent.state.messages),
           contextWindow: agent.state.model?.contextWindow ?? 0,
         };
       },

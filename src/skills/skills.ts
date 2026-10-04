@@ -1,15 +1,16 @@
-import type { Skill } from "@earendil-works/pi-agent-core";
-import { formatSkillInvocation, parseCommandArgs, substituteArgs } from "@earendil-works/pi-agent-core";
 import { parseYaml } from "obsidian";
 import { normalizeVaultPath } from "../vault/path";
+import type { Skill } from "./skill-prompt";
+import { formatSkillInvocation } from "./skill-prompt";
+import { parseCommandArgs, substituteArgs } from "./command-args";
 
-// pi owns the spec-compatible formatting; we only handle loading from the vault.
-export {
-  formatSkillsForSystemPrompt,
-  formatSkillInvocation,
-  parseCommandArgs,
-  substituteArgs,
-} from "@earendil-works/pi-agent-core";
+// pi 1.0.0 removed the experimental harness that used to own the spec-compatible
+// skill formatting and command-argument parsing, and no replacement package
+// exports them. The plugin owns them in ./skill-prompt and ./command-args; this
+// module keeps handling only vault-side loading.
+export { formatSkillsForSystemPrompt, formatSkillInvocation } from "./skill-prompt";
+export { parseCommandArgs, substituteArgs } from "./command-args";
+export type { Skill } from "./skill-prompt";
 
 // $1–$9 / $@ / $ARGUMENTS / ${@:N} — the placeholders pi's substituteArgs understands.
 // The positional case requires the digit not be followed by another digit, a period, or

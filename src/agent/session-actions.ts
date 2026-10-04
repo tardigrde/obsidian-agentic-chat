@@ -2,6 +2,7 @@ import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { SessionInfo } from "../session/session-manager";
 import type { ActiveSessionSnapshot } from "./active-session-runtime";
 import type { ActivateSessionOptions } from "./session-activation";
+import { conversationMessages } from "./conversation-messages";
 import { AgentSessionSwapQueue } from "./session-swap-queue";
 
 export interface AgentSessionActionsRuntime {
@@ -92,8 +93,12 @@ export class AgentSessionActions {
   async truncateMessages(index: number): Promise<void> {
     const agent = this.options.activation.currentAgent;
     if (!agent || agent.state.isStreaming) return;
-    const messages = agent.state.messages.slice(0, Math.max(0, index));
-    const snapshot = await this.options.sessions.rewriteMessages(messages);
+    // `index` addresses the conversation transcript the UI renders, which excludes
+    // pi's system-context message. Rewind the persisted conversation to that
+    // index; the replacement agent re-seeds its own system message from the
+    // current system prompt.
+    const conversation = conversationMessages(agent.state.messages).slice(0, Math.max(0, index));
+    const snapshot = await this.options.sessions.rewriteMessages(conversation);
     await this.options.activation.activate(snapshot.messages, { reloadResources: false });
     this.options.notifyChange();
   }
