@@ -58,26 +58,32 @@ export class ParentAgentRuntime {
 }
 
 /**
- * Swap the agent's system prompt in place.
+ * Swap the agent's system prompt.
  *
- * pi 1.0.0 makes `state.systemPrompt` read-only: the prompt is replayed from
- * the transcript's system messages, and mid-conversation changes are made by
+ * pi 1.0.0 makes `state.systemPrompt` read-only: the prompt is replayed from the
+ * transcript's system messages, and mid-conversation changes are made by
  * appending a system message rather than mutating state. Refreshing config on a
  * live agent must replace the prompt outright, not append a delta, so rewrite
- * the leading system message's `content` instead. Its `toolsAdded` is left
- * alone because tool changes are declared separately by assigning
- * `state.tools`, which the agent loop diffs and announces itself.
+ * the leading system message's `content`. Its `toolsAdded` is left alone because
+ * tool changes are declared separately by assigning `state.tools`, which the
+ * agent loop diffs and announces itself.
  *
- * A leading system message is expected because the agent seeds one from
- * `initialState.systemPrompt`; when the prompt is empty and no message exists
- * there is nothing to rewrite.
+ * When no leading system message exists, seed one instead of giving up. pi's
+ * `createInitialSystemMessage` returns nothing when both the initial prompt and
+ * the initial tool set were empty, so an agent built that way has no system
+ * message at all; bailing here would leave `systemPrompt` pinned at its empty
+ * seed value for the rest of the session and silently never send the newly
+ * composed prompt. The seeded message carries no `toolsAdded`; the agent loop
+ * reconciles the real tool set on the next request via `declareToolChanges`.
  */
 function replaceSystemPrompt(agent: Agent, systemPrompt: string): void {
   const messages = agent.state.messages;
   const first = messages[0];
-  if (!first || first.role !== "system") return;
+  if (!first || first.role !== "system") {
+    if (systemPrompt.length === 0) return;
+    agent.state.messages = [{ role: "system", content: systemPrompt, timestamp: 0 }, ...messages];
+    return;
+  }
   if (first.content === systemPrompt) return;
-  messages[0] = { ...first, content: systemPrompt };
-  // Assigning the array is what publishes the edit to the agent's state.
-  agent.state.messages = messages;
+  agent.state.messages = [{ ...first, content: systemPrompt }, ...messages.slice(1)];
 }

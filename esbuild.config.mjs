@@ -26,8 +26,10 @@ const piAiModelsStubPath = path.join(process.cwd(), "src", "vendor", "pi-ai-mode
  * pi-agent-core needs the transcript replay helpers (`normalizeContext`,
  * `getCurrentTools`, `getCurrentSystemPrompt`, `toToolDeclaration`,
  * `getToolStateChanges`, ...) rather than plain message fields. Keep this list
- * in sync with the pi-ai imports in `pi-agent-core/dist/agent.js` and
- * `agent-loop.js`; `npm run build` fails loudly when one is missing.
+ * in sync with the pi-ai imports in `pi-agent-core/dist/agent.js`,
+ * `agent-loop.js`, and `proxy.js`; `npm run build` fails loudly when a
+ * required symbol is missing. (The reverse is not enforced: the list also
+ * carries entries nothing imports any more, which are tree-shaken away.)
  */
 
 const piAiMobileEntry = {

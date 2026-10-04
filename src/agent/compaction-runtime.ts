@@ -1,6 +1,5 @@
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import { contentText, normalizeContext, type Model, type Usage } from "@earendil-works/pi-ai";
-import { conversationMessages } from "./conversation-messages";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelConfig, apiKeyForProvider } from "../settings";
 import { buildModel } from "../llm/models";
@@ -317,20 +316,6 @@ function truncateForSummary(text: string, maxChars: number): string {
   return `${text.slice(0, maxChars)}\n\n[... ${truncatedChars} more characters truncated]`;
 }
 
-/**
- * Reduce an agent transcript to the roles a provider can consume.
- *
- * pi 1.0.0 removed the exported `convertToLlm` harness helper. Summarization
- * only wants the real conversation, and the transcript now also carries
- * `system` messages that own the system prompt and tool declarations —
- * re-serializing those into the summary prompt would duplicate the prompt we
- * already send as `SUMMARIZATION_SYSTEM_PROMPT`. Dropping them matches what
- * pi's own default `convertToLlm` forwards to a provider.
- */
-function toProviderMessages(messages: readonly AgentMessage[]): AgentMessage[] {
-  return conversationMessages(messages);
-}
-
 /** Serialize LLM messages to plain text for summarization prompts.
  * Copied from pi-agent-core with a higher tool-result truncation budget. */
 function serializeConversation(messages: readonly AgentMessage[]): string {
@@ -423,7 +408,12 @@ async function generateSummaryWithStream(
   if (customInstructions) {
     basePrompt = `${basePrompt}\n\nAdditional instructions: ${customInstructions}`;
   }
-  const conversationText = serializeConversation(toProviderMessages(currentMessages));
+  // Summarization only wants the dialogue: the transcript also carries pi's
+  // system message, which holds the full system prompt and every tool schema
+  // and would duplicate the `SUMMARIZATION_SYSTEM_PROMPT` sent alongside it.
+  // `serializeMessage` returns undefined for that role, so the filter is
+  // belt-and-braces rather than load-bearing.
+  const conversationText = serializeConversation(currentMessages);
   let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
   if (previousSummary) {
     promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;

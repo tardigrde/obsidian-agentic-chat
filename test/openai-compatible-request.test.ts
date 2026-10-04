@@ -307,6 +307,44 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     });
   });
 
+  it("keeps a __proto__ tool argument as data instead of touching the prototype", async () => {
+    const requester: OpenAICompatibleRequester = async () => ({
+      status: 200,
+      text: "",
+      json: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              tool_calls: [
+                {
+                  id: "call_1",
+                  function: {
+                    name: "read",
+                    arguments: '{"__proto__":{"polluted":true},"path":"Welcome.md"}',
+                  },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      },
+    });
+
+    const { result } = await collect(
+      streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [] }), { apiKey: "k" }, requester),
+    );
+
+    const call = result.content[0] as { arguments: Record<string, unknown> };
+    // A plain `result[key] = …` would hit the inherited __proto__ setter and
+    // drop the argument while mutating the object's prototype.
+    expect(Object.keys(call.arguments).sort()).toEqual(["__proto__", "path"]);
+    expect(Object.getPrototypeOf(call.arguments)).toBe(Object.prototype);
+    expect((call.arguments as { polluted?: unknown }).polluted).toBeUndefined();
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+  });
+
   it("parses a JSON string of tool-call arguments", async () => {
     const requester: OpenAICompatibleRequester = async () => ({
       status: 200,

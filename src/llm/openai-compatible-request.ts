@@ -389,7 +389,11 @@ function toJsonObject(value: Record<string, unknown> | undefined): JsonObject {
   const result: JsonObject = {};
   for (const [key, entry] of Object.entries(value)) {
     const json = toJsonValue(entry);
-    if (json !== undefined) result[key] = json;
+    // Assign through `defineProperty`: a plain assignment to a `__proto__` key
+    // would hit the inherited setter and mutate this object's prototype instead
+    // of recording the argument, silently dropping it.
+    if (json === undefined) continue;
+    Object.defineProperty(result, key, { value: json, enumerable: true, writable: true, configurable: true });
   }
   return result;
 }

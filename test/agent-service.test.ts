@@ -10,7 +10,7 @@ import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
-import { parseSessionEntries } from "../src/session/jsonl";
+import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 import { fakeMemoryJsonl } from "./helpers/memory-fixtures";
 import { FakeVault } from "./helpers/fake-vault";
@@ -501,9 +501,63 @@ describe("AgentService", () => {
 
     expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(await persistedMessageRoles(adapter, service)).toEqual(["user", "assistant"]);
-    // The prompt still reaches the model: it lives in agent state, and pi
-    // replays it out of the transcript system messages.
+  });
+
+  // A session file written by an older build, hand-edited, or synced between
+  // installs can carry a system message. Loading it must not let the stale
+  // prompt win: pi only seeds a system message when the transcript does not
+  // already start with one.
+  it("loads a session file containing a system message without pinning its prompt", async () => {
+    const base = scriptedStreamFn([
+      { content: [{ type: "text", text: "Reply." }], stopReason: "stop" },
+      { content: [{ type: "text", text: "Reply again." }], stopReason: "stop" },
+    ]);
+    const seenPrompts: string[] = [];
+    const streamFn: StreamFn = ((model: Model<"openai-completions">, context: TranscriptContext, options: unknown) => {
+      seenPrompts.push(getCurrentSystemPrompt(context.messages));
+      return (base as (...args: unknown[]) => unknown)(model, context, options);
+    }) as unknown as StreamFn;
+    const { adapter, service } = makeService(streamFn);
+
+    await service.sendPrompt("first turn");
+    const path = service.getSessionInfo()?.path as string;
+
+    // Simulate a session file that carries a stale system message.
+    const entries = parseSessionEntries(adapter.files.get(path) as string);
+    const header = entries[0];
+    const stale = {
+      type: "message" as const,
+      id: "zz-stale",
+      parentId: header.id,
+      timestamp: new Date().toISOString(),
+      message: { role: "system" as const, content: "STALE PROMPT FROM AN OLD BUILD", timestamp: 0 },
+    };
+    adapter.files.set(path, serializeSessionEntries([header, stale, ...entries.slice(1)]));
+
+    await service.loadSession(path);
+
+    // The conversation survives; the stale prompt never becomes authoritative.
     expect(service.getMessages().some((message) => message.role === "system")).toBe(false);
+    expect(service.getMessages().some((message) => JSON.stringify(message).includes("first turn"))).toBe(true);
+
+    await service.sendPrompt("second turn");
+
+    // The prompt that reaches the provider is the freshly composed one. Note
+    // this holds two ways over: `replace()` strips the persisted system message
+    // on load, and `refreshConfiguration` rewrites the leading system message
+    // before every prompt anyway. The assertion below pins the outcome, not
+    // which of the two defences is doing the work; `test/conversation-messages`
+    // pins the state-level property directly.
+    const last = seenPrompts.at(-1) ?? "";
+    expect(last).not.toContain("STALE PROMPT");
+    expect(last).toContain("Obsidian");
+
+    // The plugin never appends a system entry of its own: the only one in the
+    // file is the stale entry this test injected, so the next reload is clean.
+    const after = parseSessionEntries(adapter.files.get(path) as string)
+      .filter((entry) => entry.type === "message")
+      .map((entry) => entry.message.role);
+    expect(after.filter((role) => role === "system")).toEqual(["system"]);
   });
 
   it("clears session-local state when loading another session", async () => {
