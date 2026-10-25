@@ -482,24 +482,34 @@ function formatSummary(summary: EvalRunSummary): string {
     "## Cases",
   ];
   for (const result of summary.results) {
-    lines.push("", `### ${result.id}`, "", `Status: ${result.status}`);
-    if (result.skippedReason) lines.push(`Skipped: ${result.skippedReason}`);
-    if (result.artifacts) {
-      lines.push("", "Artifacts:");
-      for (const [name, artifactPath] of Object.entries(result.artifacts)) lines.push(`- ${name}: ${artifactPath}`);
-    }
-    if (result.findings.length > 0) {
-      lines.push("", "Findings:");
-      for (const finding of result.findings) {
-        lines.push(`- ${finding.severity.toUpperCase()} [${finding.area}] ${finding.message}`);
-        if (finding.details !== undefined) lines.push(`  Details: ${JSON.stringify(finding.details)}`);
-      }
-    } else {
-      lines.push("", "Findings:", "- none");
-    }
+    lines.push(...formatCaseSummary(result));
   }
   lines.push("");
   return `${lines.join("\n")}\n`;
+}
+
+function formatCaseSummary(result: EvalCaseResult): string[] {
+  const lines = ["", `### ${result.id}`, "", `Status: ${result.status}`];
+  if (result.skippedReason) lines.push(`Skipped: ${result.skippedReason}`);
+  if (result.artifacts) lines.push(...formatArtifacts(result.artifacts));
+  lines.push(...formatCaseFindings(result.findings));
+  return lines;
+}
+
+function formatArtifacts(artifacts: Record<string, string>): string[] {
+  const lines = ["", "Artifacts:"];
+  for (const [name, artifactPath] of Object.entries(artifacts)) lines.push(`- ${name}: ${artifactPath}`);
+  return lines;
+}
+
+function formatCaseFindings(findings: EvalCaseResult["findings"]): string[] {
+  if (findings.length === 0) return ["", "Findings:", "- none"];
+  const lines = ["", "Findings:"];
+  for (const finding of findings) {
+    lines.push(`- ${finding.severity.toUpperCase()} [${finding.area}] ${finding.message}`);
+    if (finding.details !== undefined) lines.push(`  Details: ${JSON.stringify(finding.details)}`);
+  }
+  return lines;
 }
 
 function formatConsoleSummary(summary: EvalRunSummary, summaryMdPath: string, summaryJsonPath: string): string {

@@ -218,16 +218,16 @@ function startLogTailers(): void {
   tailer.start();
 }
 
+interface TailRoot {
+  label: string;
+  dir: string;
+  extensions: string[];
+}
+
 class Tailer {
   private offsets = new Map<string, number>();
 
-  constructor(
-    private readonly roots: Array<{
-      label: string;
-      dir: string;
-      extensions: string[];
-    }>,
-  ) {}
+  constructor(private readonly roots: TailRoot[]) {}
 
   start(): void {
     console.log("Tailing local session JSONL and e2e artifacts. Press Ctrl+C to stop.");
@@ -237,20 +237,28 @@ class Tailer {
 
   private async scan(seed: boolean): Promise<void> {
     for (const rootInfo of this.roots) {
-      for (const file of await listFiles(rootInfo.dir, rootInfo.extensions)) {
-        const stats = await stat(file);
-        const previous = this.offsets.get(file);
-        if (previous === undefined) {
-          this.offsets.set(file, seed ? stats.size : 0);
-          continue;
-        }
-        if (stats.size <= previous) continue;
-        const content = await readFile(file, "utf8");
-        this.offsets.set(file, stats.size);
-        const chunk = content.slice(previous).trim();
-        if (chunk) console.log(`\n[${rootInfo.label}] ${path.relative(root, file)}\n${chunk}`);
-      }
+      await this.scanRoot(rootInfo, seed);
     }
+  }
+
+  private async scanRoot(rootInfo: TailRoot, seed: boolean): Promise<void> {
+    for (const file of await listFiles(rootInfo.dir, rootInfo.extensions)) {
+      await this.scanFile(rootInfo, file, seed);
+    }
+  }
+
+  private async scanFile(rootInfo: TailRoot, file: string, seed: boolean): Promise<void> {
+    const stats = await stat(file);
+    const previous = this.offsets.get(file);
+    if (previous === undefined) {
+      this.offsets.set(file, seed ? stats.size : 0);
+      return;
+    }
+    if (stats.size <= previous) return;
+    const content = await readFile(file, "utf8");
+    this.offsets.set(file, stats.size);
+    const chunk = content.slice(previous).trim();
+    if (chunk) console.log(`\n[${rootInfo.label}] ${path.relative(root, file)}\n${chunk}`);
   }
 }
 

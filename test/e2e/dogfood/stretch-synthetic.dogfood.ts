@@ -279,42 +279,74 @@ async function sessionStats(): Promise<{
   maxUserMessageChars: number;
 }> {
   return await browser.executeObsidian(async ({ app }) => {
+    type SessionStats = {
+      toolStarts: Record<string, number>;
+      toolErrors: Record<string, number>;
+      approvalDecisions: Record<string, number>;
+      maxUserMessageChars: number;
+    };
+    type SessionEntry = {
+      type?: string;
+      message?: { role?: string; content?: Array<{ text?: string }> };
+      event?: { category?: string; action?: string; toolName?: string; decision?: string; isError?: boolean };
+    };
+
     const sessionDir = `${app.vault.configDir}/plugins/agentic-chat/sessions`;
     const listing = await app.vault.adapter.list(sessionDir);
     const latest = listing.files.filter((path) => path.endsWith(".jsonl")).sort().at(-1);
-    const stats = {
-      toolStarts: {} as Record<string, number>,
-      toolErrors: {} as Record<string, number>,
-      approvalDecisions: {} as Record<string, number>,
+    const stats: SessionStats = {
+      toolStarts: {},
+      toolErrors: {},
+      approvalDecisions: {},
       maxUserMessageChars: 0,
     };
     if (!latest) return stats;
     const raw = await app.vault.adapter.read(latest);
     for (const line of raw.split("\n")) {
-      if (!line.trim()) continue;
-      const entry = JSON.parse(line) as {
-        type?: string;
-        message?: { role?: string; content?: Array<{ text?: string }> };
-        event?: { category?: string; action?: string; toolName?: string; decision?: string; isError?: boolean };
-      };
-      if (entry.type === "message" && entry.message?.role === "user") {
-        const text = (entry.message.content ?? []).map((part) => part.text ?? "").join("\n");
-        stats.maxUserMessageChars = Math.max(stats.maxUserMessageChars, text.length);
-      }
+      collectStatsLine(line, stats);
+    }
+    return stats;
+
+    function collectStatsLine(line: string, stats: SessionStats): void {
+      if (!line.trim()) return;
+      const entry = JSON.parse(line) as SessionEntry;
+      collectMessageStats(entry, stats);
+      collectAuditStats(entry, stats);
+    }
+
+    function collectMessageStats(entry: SessionEntry, stats: SessionStats): void {
+      const message = entry.message;
+      if (entry.type !== "message" || message?.role !== "user") return;
+      const text = (message.content ?? []).map((part) => part.text ?? "").join("\n");
+      stats.maxUserMessageChars = Math.max(stats.maxUserMessageChars, text.length);
+    }
+
+    function collectAuditStats(entry: SessionEntry, stats: SessionStats): void {
       const event = entry.event;
-      if (entry.type !== "action_audit" || !event) continue;
+      if (entry.type !== "action_audit" || !event) return;
+      collectToolStart(event, stats);
+      collectToolError(event, stats);
+      collectApprovalDecision(event, stats);
+    }
+
+    function collectToolStart(event: NonNullable<SessionEntry["event"]>, stats: SessionStats): void {
       if (event.category === "tool_call" && event.action === "start" && event.toolName) {
         stats.toolStarts[event.toolName] = (stats.toolStarts[event.toolName] ?? 0) + 1;
       }
+    }
+
+    function collectToolError(event: NonNullable<SessionEntry["event"]>, stats: SessionStats): void {
       if (event.category === "tool_call" && event.action === "end" && event.toolName && event.isError) {
         stats.toolErrors[event.toolName] = (stats.toolErrors[event.toolName] ?? 0) + 1;
       }
+    }
+
+    function collectApprovalDecision(event: NonNullable<SessionEntry["event"]>, stats: SessionStats): void {
       if (event.category === "approval" && event.action === "decision" && event.toolName && event.decision) {
         const key = `${event.toolName}:${event.decision}`;
         stats.approvalDecisions[key] = (stats.approvalDecisions[key] ?? 0) + 1;
       }
     }
-    return stats;
   });
 }
 
