@@ -1,4 +1,4 @@
-import { type App, TFile, TFolder, MarkdownView, parseYaml } from "obsidian";
+import { type App, TAbstractFile, TFile, TFolder, MarkdownView, parseYaml } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { applyExactEditsPartial, type EditApplyResult } from "../vault/edit";
 import { diffLines, diffStat, diffTooLarge } from "../vault/diff";
@@ -731,89 +731,128 @@ function createDeleteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): 
       const path = normalizeVisibleVaultPath(isIgnored, params.path);
       const recursive = params.recursive === true;
       const entry = app.vault.getAbstractFileByPath(path);
-      if (entry instanceof TFile) {
-        await app.fileManager.trashFile(entry);
-        memo?.invalidate(path);
-        return textResult(`Moved ${path} to trash.`, { path, kind: "file" });
-      }
-      if (entry instanceof TFolder) {
-        if (entry.children.length > 0 && !recursive) {
-          throw new Error(
-            `Folder not empty: ${path} (${entry.children.length} items). Use recursive:true or delete the contents first.`,
-          );
-        }
-        if (entry.children.length === 0) {
-          await app.fileManager.trashFile(entry);
-          memo?.invalidate(path);
-          return textResult(`Moved ${path} to trash.`, { path, kind: "folder" });
-        }
-        // Indexed recursive delete stays on the vault API so the tree and
-        // trash semantics match single-file deletes (no adapter needed —
-        // works in tests and offline). No per-file undo is captured, so a
-        // recursive delete is OS-trash-only: /undo covers single files.
-        await trashTreeFolderRecursive(app, entry);
-        memo?.invalidate(path);
-        return textResult(`Moved ${path} to trash.`, { path, kind: "folder", recursive: true });
-      }
-      // Stale tree: dot-folders (e.g. .agentic-plugins) created outside the
-      // session are on disk but missing from the vault index — fall back to
-      // the adapter like read/ls do. A missing path still throws below, so
-      // "not found" keeps meaning "nowhere", not "stale".
-      const adapter = app.vault.adapter;
-      let onDisk: boolean;
-      try {
-        onDisk = (await adapter?.exists(path)) === true;
-      } catch {
-        onDisk = false;
-      }
-      if (!onDisk) throw new Error(`File or folder not found: ${path}`);
-      // Fail closed: classify via stat, never by elimination. A listing
-      // failure must not demote a folder to the file path (which would trash
-      // a non-empty folder past the recursive guard).
-      let isDiskFolder: boolean;
-      let childCount = 0;
-      try {
-        const stat = await adapter.stat(path);
-        if (!stat) throw new Error(`File or folder not found: ${path}`);
-        isDiskFolder = stat.type === "folder";
-        if (isDiskFolder) {
-          const listing = await adapter.list(path);
-          childCount = (listing?.folders?.length ?? 0) + (listing?.files?.length ?? 0);
-        }
-      } catch (error) {
-        if (/not found/i.test(error instanceof Error ? error.message : String(error))) throw error;
-        throw new Error(
-          `Cannot delete ${path}: unable to inspect it (${error instanceof Error ? error.message : String(error)}). Refusing to guess file vs folder.`,
-          { cause: error },
-        );
-      }
-      if (isDiskFolder) {
-        if (childCount > 0 && !recursive) {
-          throw new Error(
-            `Folder not empty: ${path} (${childCount} items). Use recursive:true or delete the contents first.`,
-          );
-        }
-        const disposition = await trashAdapterFolder(app, path, recursive);
-        memo?.invalidate(path);
-        return textResult(
-          disposition === "trash" ? `Moved ${path} to trash.` : `Deleted ${path} (bypassed trash).`,
-          {
-            path,
-            kind: "folder",
-            staleTree: true,
-            ...(recursive ? { recursive: true } : {}),
-            ...(disposition === "trash" ? {} : { bypassedTrash: true }),
-          },
-        );
-      }
-      const disposition = await trashAdapterFile(app, path);
-      memo?.invalidate(path);
-      return textResult(
-        disposition === "trash" ? `Moved ${path} to trash.` : `Deleted ${path} (bypassed trash).`,
-        { path, kind: "file", staleTree: true, ...(disposition === "trash" ? {} : { bypassedTrash: true }) },
-      );
+      const indexed = entry ? await deleteIndexedEntry(app, entry, path, recursive, memo) : null;
+      return indexed ?? deleteStaleEntry(app, path, recursive, memo);
     },
   };
+}
+
+async function deleteIndexedEntry(
+  app: App,
+  entry: TAbstractFile,
+  path: string,
+  recursive: boolean,
+  memo: ReadMemo | undefined,
+): Promise<AgentToolResult<Record<string, unknown>> | null> {
+  if (entry instanceof TFile) {
+    await app.fileManager.trashFile(entry);
+    memo?.invalidate(path);
+    return textResult(`Moved ${path} to trash.`, { path, kind: "file" });
+  }
+  if (!(entry instanceof TFolder)) return null;
+  if (entry.children.length > 0 && !recursive) {
+    throw new Error(
+      `Folder not empty: ${path} (${entry.children.length} items). Use recursive:true or delete the contents first.`,
+    );
+  }
+  if (entry.children.length === 0) {
+    await app.fileManager.trashFile(entry);
+    memo?.invalidate(path);
+    return textResult(`Moved ${path} to trash.`, { path, kind: "folder" });
+  }
+  // Indexed recursive delete stays on the vault API so the tree and
+  // trash semantics match single-file deletes (no adapter needed —
+  // works in tests and offline). No per-file undo is captured, so a
+  // recursive delete is OS-trash-only: /undo covers single files.
+  await trashTreeFolderRecursive(app, entry);
+  memo?.invalidate(path);
+  return textResult(`Moved ${path} to trash.`, { path, kind: "folder", recursive: true });
+}
+
+/**
+ * Stale tree: dot-folders (e.g. .agentic-plugins) created outside the session
+ * are on disk but missing from the vault index — fall back to the adapter like
+ * read/ls do. A missing path still throws here, so "not found" keeps meaning
+ * "nowhere", not "stale".
+ */
+async function deleteStaleEntry(
+  app: App,
+  path: string,
+  recursive: boolean,
+  memo: ReadMemo | undefined,
+): Promise<AgentToolResult<Record<string, unknown>>> {
+  const adapter = app.vault.adapter;
+  if (!(await adapterPathExists(adapter, path))) throw new Error(`File or folder not found: ${path}`);
+  const target = await inspectAdapterTarget(adapter, path);
+  if (target.isFolder) {
+    if (target.childCount > 0 && !recursive) {
+      throw new Error(
+        `Folder not empty: ${path} (${target.childCount} items). Use recursive:true or delete the contents first.`,
+      );
+    }
+    const disposition = await trashAdapterFolder(app, path, recursive);
+    memo?.invalidate(path);
+    return textResult(adapterDeletionMessage(path, disposition), {
+      path,
+      kind: "folder",
+      staleTree: true,
+      ...(recursive ? { recursive: true } : {}),
+      ...(disposition === "trash" ? {} : { bypassedTrash: true }),
+    });
+  }
+  const disposition = await trashAdapterFile(app, path);
+  memo?.invalidate(path);
+  return textResult(adapterDeletionMessage(path, disposition), {
+    path,
+    kind: "file",
+    staleTree: true,
+    ...(disposition === "trash" ? {} : { bypassedTrash: true }),
+  });
+}
+
+async function adapterPathExists(adapter: App["vault"]["adapter"], path: string): Promise<boolean> {
+  try {
+    return (await adapter?.exists(path)) === true;
+  } catch {
+    return false;
+  }
+}
+
+interface AdapterDeletionTarget {
+  isFolder: boolean;
+  childCount: number;
+}
+
+/**
+ * Fail closed: classify via stat, never by elimination. A listing failure must
+ * not demote a folder to the file path (which would trash a non-empty folder
+ * past the recursive guard).
+ */
+async function inspectAdapterTarget(
+  adapter: App["vault"]["adapter"],
+  path: string,
+): Promise<AdapterDeletionTarget> {
+  try {
+    const stat = await adapter.stat(path);
+    if (!stat) throw new Error(`File or folder not found: ${path}`);
+    const isFolder = stat.type === "folder";
+    return { isFolder, childCount: isFolder ? await countAdapterChildren(adapter, path) : 0 };
+  } catch (error) {
+    if (/not found/i.test(error instanceof Error ? error.message : String(error))) throw error;
+    throw new Error(
+      `Cannot delete ${path}: unable to inspect it (${error instanceof Error ? error.message : String(error)}). Refusing to guess file vs folder.`,
+      { cause: error },
+    );
+  }
+}
+
+async function countAdapterChildren(adapter: App["vault"]["adapter"], path: string): Promise<number> {
+  const listing = await adapter.list(path);
+  return (listing?.folders?.length ?? 0) + (listing?.files?.length ?? 0);
+}
+
+function adapterDeletionMessage(path: string, disposition: "trash" | "removed"): string {
+  return disposition === "trash" ? `Moved ${path} to trash.` : `Deleted ${path} (bypassed trash).`;
 }
 
 /** Trash an indexed folder bottom-up so non-empty deletes work without the adapter. */

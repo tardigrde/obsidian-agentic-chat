@@ -616,25 +616,39 @@ export class AssistantBubble {
   endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
     const step = this.steps.get(id);
     if (!step) return;
-    if (step.name === SUBAGENT_TOOL_NAME && subagentResultForcesError(resultObject)) {
-      isError = true;
-    }
+    const failed = isError || (step.name === SUBAGENT_TOOL_NAME && subagentResultForcesError(resultObject));
     // Replay path: `ChatView.renderAssistantMessage` only calls startStep+endStep,
-    // so the dispatch card would stay empty without this. Ensure persisted
-    // children are rendered here without auto-opening the outer card — reload
-    // shows a collapsed Dispatch card for `done` (Codex `ReplayKind` parity)
-    // while live `updateStep` already auto-opened. `isError` (failed/stopped)
-    // keeps the step expanded via `retractFailedSource` below so the error is
-    // visible without an extra click.
-    if (step.name === SUBAGENT_TOOL_NAME) {
-      const maybeDetails = (resultObject as { details?: unknown } | undefined)?.details;
-      const children = subagentChildren(maybeDetails);
-      if (children.length > 0) {
-        this.renderSubagentChildren(step.body, children);
-        const row = step.card.parentElement;
-        if (row) this.syncStepCollapsible(row, step.body);
-      }
-    }
+    // so the dispatch card would stay empty without this.
+    if (step.name === SUBAGENT_TOOL_NAME) this.renderReplayedSubagent(step, resultObject);
+    this.markStepSettled(step, failed);
+    // get_active_note carries its target path in the RESULT, not the args, so
+    // harvest it here (startStep can only see args). Live calls pass the raw
+    // result object; history replay passes only the rendered text, whose first
+    // line is `Active note: <path>` — parse that so replay chips match live.
+    if (!failed) this.harvestActiveNotePath(step, result, resultObject, id);
+    // A failed tool call is not a citation: retract its source chip and keep the
+    // step expanded so the human can see WHY it failed (no hidden error reason).
+    if (failed) this.retractFailedSource(step, id);
+    this.renderStepResult(step, result, failed);
+    const row = step.card.parentElement;
+    if (row) this.syncStepCollapsible(row, step.body);
+  }
+
+  /**
+   * Render persisted Dispatch children without auto-opening the outer card —
+   * reload shows a collapsed card for `done` (Codex `ReplayKind` parity) while
+   * live `updateStep` already auto-opened.
+   */
+  private renderReplayedSubagent(step: StepEntry, resultObject: unknown): void {
+    const maybeDetails = (resultObject as { details?: unknown } | undefined)?.details;
+    const children = subagentChildren(maybeDetails);
+    if (children.length === 0) return;
+    this.renderSubagentChildren(step.body, children);
+    const row = step.card.parentElement;
+    if (row) this.syncStepCollapsible(row, step.body);
+  }
+
+  private markStepSettled(step: StepEntry, isError: boolean): void {
     step.card.removeClass("is-running");
     step.card.addClass(isError ? "is-error" : "is-done");
     setIcon(step.icon, isError ? "x-circle" : "check-circle-2");
@@ -643,27 +657,18 @@ export class AssistantBubble {
       cls: "agentic-chat-step-time",
       text: formatElapsed(performance.now() - step.startedAt),
     });
-    // get_active_note carries its target path in the RESULT, not the args, so
-    // harvest it here (startStep can only see args). Live calls pass the raw
-    // result object; history replay passes only the rendered text, whose first
-    // line is `Active note: <path>` — parse that so replay chips match live.
-    if (!isError) this.harvestActiveNotePath(step, result, resultObject, id);
-    // A failed tool call is not a citation: retract its source chip and keep the
-    // step expanded so the human can see WHY it failed (no hidden error reason).
-    if (isError) this.retractFailedSource(step, id);
-    // Result/Error as a body section. A read/write/get_active_note success result
-    // is just file contents (already on disk / in context), so hide it; errors
-    // always show. Re-sync the chevron: it only appears once the body has content.
-    const hideResult = !isError && HIDE_RESULT_TOOLS.has(step.name);
-    if (!hideResult) {
-      const resultSection = step.body.createDiv({ cls: "agentic-chat-step-result" });
-      resultSection.createDiv({ cls: "agentic-chat-step-section-label", text: isError ? "Error" : "Result" });
-      resultSection.createEl("pre", { text: truncateText(result, 4_000) });
-    }
-    {
-      const row = step.card.parentElement;
-      if (row) this.syncStepCollapsible(row, step.body);
-    }
+  }
+
+  /**
+   * Result/Error as a body section. A read/write/get_active_note success result
+   * is just file contents (already on disk / in context), so hide it; errors
+   * always show.
+   */
+  private renderStepResult(step: StepEntry, result: string, isError: boolean): void {
+    if (!isError && HIDE_RESULT_TOOLS.has(step.name)) return;
+    const resultSection = step.body.createDiv({ cls: "agentic-chat-step-result" });
+    resultSection.createDiv({ cls: "agentic-chat-step-section-label", text: isError ? "Error" : "Result" });
+    resultSection.createEl("pre", { text: truncateText(result, 4_000) });
   }
 
   /** Record a successful get_active_note's target as a source chip. */

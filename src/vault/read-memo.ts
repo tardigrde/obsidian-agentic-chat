@@ -130,18 +130,7 @@ export class ReadMemo {
    */
   coverageFor(request: RequestedWindow, mtime: number): CoverageMatch | null {
     const windows = this.coverage.get(request.path) ?? [];
-    let best: ServedWindow | null = null;
-    for (const window of windows) {
-      if (window.mtime !== mtime) continue;
-      if (window.start > request.start) continue;
-      // A degenerate request (limit 0, inverted startLine>endLine) or a to-end
-      // request starting past the served window is not covered: the lines asked
-      // for were never served.
-      if (request.start > window.end) continue;
-      if (request.toEnd ? !window.full : request.end > window.end) continue;
-      // Prefer the tightest containing window so the quote is most relevant.
-      if (!best || window.end - window.start < best.end - best.start) best = window;
-    }
+    const best = findBestCoverageWindow(windows, request, mtime);
     if (!best) return null;
     // Quote the *requested* slice of the served window (line offsets into the
     // served content), so a request for later lines still sees its text even
@@ -186,6 +175,32 @@ export class ReadMemo {
     this.contentCache.clear();
     this.coverage.clear();
   }
+}
+
+/**
+ * Pick the tightest served window that fully covers the request at this mtime.
+ * A degenerate request (limit 0, inverted startLine>endLine) or a to-end request
+ * starting past the served window is not covered: the lines asked for were never
+ * served.
+ */
+function findBestCoverageWindow(
+  windows: readonly ServedWindow[],
+  request: RequestedWindow,
+  mtime: number,
+): ServedWindow | null {
+  let best: ServedWindow | null = null;
+  for (const window of windows) {
+    if (!windowCoversRequest(window, request, mtime)) continue;
+    if (!best || window.end - window.start < best.end - best.start) best = window;
+  }
+  return best;
+}
+
+function windowCoversRequest(window: ServedWindow, request: RequestedWindow, mtime: number): boolean {
+  if (window.mtime !== mtime) return false;
+  if (window.start > request.start) return false;
+  if (request.start > window.end) return false;
+  return request.toEnd ? window.full : request.end <= window.end;
 }
 
 /** The message returned in place of re-dumped content when a read is a memo hit. */

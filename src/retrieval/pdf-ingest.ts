@@ -226,34 +226,39 @@ function extractLiteralStrings(input: string): string[] {
       index += 1;
       continue;
     }
-    let depth = 1;
-    let value = "";
-    index += 1;
-    for (; index < input.length; index += 1) {
-      const char = input[index];
-      if (char === "\\") {
-        value += char;
-        index += 1;
-        if (index < input.length) value += input[index];
-        continue;
-      }
-      if (char === "(") {
-        depth += 1;
-        value += char;
-        continue;
-      }
-      if (char === ")") {
-        depth -= 1;
-        if (depth === 0) break;
-        value += char;
-        continue;
-      }
-      value += char;
-    }
-    if (value) values.push(value);
-    index += 1;
+    const literal = readPdfLiteralString(input, index);
+    if (literal.value) values.push(literal.value);
+    index = literal.nextIndex;
   }
   return values;
+}
+
+interface PdfLiteralScan {
+  value: string;
+  nextIndex: number;
+}
+
+function readPdfLiteralString(input: string, openIndex: number): PdfLiteralScan {
+  let depth = 1;
+  let value = "";
+  let index = openIndex + 1;
+  for (; index < input.length; index += 1) {
+    const char = input[index];
+    if (char === "\\") {
+      value += char;
+      index += 1;
+      if (index < input.length) value += input[index];
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      value += char;
+      continue;
+    }
+    if (char === ")" && --depth === 0) break;
+    value += char;
+  }
+  return { value, nextIndex: index + 1 };
 }
 
 function extractHexStrings(input: string): string[] {
@@ -265,6 +270,22 @@ function extractHexStrings(input: string): string[] {
   return values;
 }
 
+const PDF_LITERAL_ESCAPES: Record<string, string> = {
+  n: "\n",
+  r: "\r",
+  t: "\t",
+  b: "\b",
+  f: "\f",
+  "(": "(",
+  ")": ")",
+  "\\": "\\",
+};
+
+interface DecodedPdfEscape {
+  text: string;
+  consumed: number;
+}
+
 function decodePdfLiteralString(input: string): string {
   let output = "";
   for (let index = 0; index < input.length; index += 1) {
@@ -273,37 +294,32 @@ function decodePdfLiteralString(input: string): string {
       output += char;
       continue;
     }
-    const next = input[index + 1];
-    if (next === undefined) break;
-    if (next === "\r" || next === "\n") {
-      index += next === "\r" && input[index + 2] === "\n" ? 2 : 1;
-      continue;
-    }
-    if (/[0-7]/.test(next)) {
-      let octal = next;
-      let consumed = 1;
-      while (consumed < 3 && /[0-7]/.test(input[index + 1 + consumed] ?? "")) {
-        octal += input[index + 1 + consumed];
-        consumed += 1;
-      }
-      output += String.fromCodePoint(Number.parseInt(octal, 8));
-      index += consumed;
-      continue;
-    }
-    const escapes: Record<string, string> = {
-      n: "\n",
-      r: "\r",
-      t: "\t",
-      b: "\b",
-      f: "\f",
-      "(": "(",
-      ")": ")",
-      "\\": "\\",
-    };
-    output += escapes[next] ?? next;
-    index += 1;
+    const decoded = decodePdfEscape(input, index);
+    if (!decoded) break;
+    output += decoded.text;
+    index += decoded.consumed;
   }
   return output;
+}
+
+function decodePdfEscape(input: string, backslashIndex: number): DecodedPdfEscape | null {
+  const next = input[backslashIndex + 1];
+  if (next === undefined) return null;
+  if (next === "\r" || next === "\n") {
+    return { text: "", consumed: next === "\r" && input[backslashIndex + 2] === "\n" ? 2 : 1 };
+  }
+  if (/[0-7]/.test(next)) return decodePdfOctalEscape(input, backslashIndex, next);
+  return { text: PDF_LITERAL_ESCAPES[next] ?? next, consumed: 1 };
+}
+
+function decodePdfOctalEscape(input: string, backslashIndex: number, firstDigit: string): DecodedPdfEscape {
+  let octal = firstDigit;
+  let consumed = 1;
+  while (consumed < 3 && /[0-7]/.test(input[backslashIndex + 1 + consumed] ?? "")) {
+    octal += input[backslashIndex + 1 + consumed];
+    consumed += 1;
+  }
+  return { text: String.fromCodePoint(Number.parseInt(octal, 8)), consumed };
 }
 
 function decodePdfHexString(input: string): string {
