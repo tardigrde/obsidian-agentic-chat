@@ -86,35 +86,50 @@ console.warn("[verify:mobile] mobile compatibility checks passed");
 
 function scanSourceFile(relPath, source) {
   const allow = desktopOnlyAllowlist.get(relPath);
+  scanImports(relPath, source);
+  scanExports(relPath, source);
+  scanRequires(relPath, source);
+  scanOptionalRequires(relPath, source, allow);
+  scanGlobals(relPath, source, allow);
+}
 
+function scanImports(relPath, source) {
   for (const match of source.matchAll(/^\s*import\s+(?!type\b)[\s\S]*?\s+from\s+["']([^"']+)["']/gm)) {
     const moduleName = match[1];
     if (isForbiddenModule(moduleName)) {
       failures.push(`${relPath}:${lineOf(source, match.index)} imports desktop-only module ${moduleName}; use a guarded optional path.`);
     }
   }
+}
 
+function scanExports(relPath, source) {
   for (const match of source.matchAll(/^\s*export\s+[^;]*?\s+from\s+["']([^"']+)["']/gm)) {
     const moduleName = match[1];
     if (isForbiddenModule(moduleName)) {
       failures.push(`${relPath}:${lineOf(source, match.index)} re-exports desktop-only module ${moduleName}.`);
     }
   }
+}
 
+function scanRequires(relPath, source) {
   for (const match of source.matchAll(/\brequire\s*\(\s*["']([^"']+)["']\s*\)/g)) {
     const moduleName = match[1];
     if (isForbiddenModule(moduleName)) {
       failures.push(`${relPath}:${lineOf(source, match.index)} directly requires desktop-only module ${moduleName}; use optional require with fallback.`);
     }
   }
+}
 
+function scanOptionalRequires(relPath, source, allow) {
   for (const match of source.matchAll(/\brequireFn\s*\(\s*["']([^"']+)["']\s*\)/g)) {
     const moduleName = match[1];
     if (isForbiddenModule(moduleName) && !allow?.modules.has(moduleName)) {
       failures.push(`${relPath}:${lineOf(source, match.index)} uses optional desktop module ${moduleName} without a mobile allowlist.`);
     }
   }
+}
 
+function scanGlobals(relPath, source, allow) {
   const globalChecks = [
     { label: "Buffer", pattern: /\bBuffer\b/g },
     { label: "require", pattern: /globalThis\.require|typeof\s+require/g },
