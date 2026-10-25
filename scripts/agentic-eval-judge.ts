@@ -92,6 +92,18 @@ interface SessionDigest {
   approvalDenials: Array<{ key: string; count: number }>;
 }
 
+interface SessionDigestEntry {
+  type?: string;
+  message?: { role?: string; content?: Array<{ type?: string; text?: string }> };
+  event?: { category?: string; action?: string; toolName?: string; decision?: string; reason?: string };
+}
+
+interface DigestAccumulator {
+  userPrompts: string[];
+  assistantResponses: string[];
+  approvalDenials: Map<string, number>;
+}
+
 interface ChatCompletionResponse {
   choices?: Array<{
     message?: {
@@ -340,40 +352,55 @@ function normalizeOpenAICompatibleApiBaseUrl(baseUrl: string): string {
 async function readSessionDigest(sessionDir: string): Promise<SessionDigest> {
   if (!(await exists(sessionDir))) return { userPrompts: [], assistantResponses: [], approvalDenials: [] };
   const files = (await readdir(sessionDir)).filter((name) => name.endsWith(".jsonl")).sort();
-  const userPrompts: string[] = [];
-  const assistantResponses: string[] = [];
-  const approvalDenials = new Map<string, number>();
+  const accumulator: DigestAccumulator = {
+    userPrompts: [],
+    assistantResponses: [],
+    approvalDenials: new Map<string, number>(),
+  };
 
   for (const name of files) {
     const raw = await readFile(path.join(sessionDir, name), "utf8");
-    for (const line of raw.split("\n")) {
-      if (!line.trim()) continue;
-      const entry = JSON.parse(line) as {
-        type?: string;
-        message?: { role?: string; content?: Array<{ type?: string; text?: string }> };
-        event?: { category?: string; action?: string; toolName?: string; decision?: string; reason?: string };
-      };
-      if (entry.type === "message" && entry.message?.role === "user") {
-        userPrompts.push(compactText(messageText(entry.message.content), MAX_PACKET_TEXT_CHARS));
-      }
-      if (entry.type === "message" && entry.message?.role === "assistant") {
-        const text = messageText(entry.message.content);
-        if (text.trim()) assistantResponses.push(compactText(text, MAX_PACKET_TEXT_CHARS));
-      }
-      if (entry.type === "action_audit" && entry.event?.category === "approval" && entry.event.action === "decision" && entry.event.decision === "denied") {
-        const key = `${entry.event.toolName ?? "(unknown)"}: ${entry.event.reason ?? "(none)"}`;
-        approvalDenials.set(key, (approvalDenials.get(key) ?? 0) + 1);
-      }
-    }
+    for (const line of raw.split("\n")) collectDigestLine(line, accumulator);
   }
 
   return {
-    userPrompts: userPrompts.slice(-MAX_PROMPTS),
-    assistantResponses: assistantResponses.slice(-MAX_ASSISTANT_RESPONSES),
-    approvalDenials: [...approvalDenials.entries()]
+    userPrompts: accumulator.userPrompts.slice(-MAX_PROMPTS),
+    assistantResponses: accumulator.assistantResponses.slice(-MAX_ASSISTANT_RESPONSES),
+    approvalDenials: [...accumulator.approvalDenials.entries()]
       .map(([key, count]) => ({ key, count }))
       .sort((left, right) => right.count - left.count),
   };
+}
+
+function collectDigestLine(line: string, accumulator: DigestAccumulator): void {
+  if (!line.trim()) return;
+  const entry = JSON.parse(line) as SessionDigestEntry;
+  collectUserPrompt(entry, accumulator);
+  collectAssistantResponse(entry, accumulator);
+  collectApprovalDenial(entry, accumulator);
+}
+
+function collectUserPrompt(entry: SessionDigestEntry, accumulator: DigestAccumulator): void {
+  const message = entry.message;
+  if (entry.type !== "message" || !message) return;
+  if (message.role !== "user") return;
+  accumulator.userPrompts.push(compactText(messageText(message.content), MAX_PACKET_TEXT_CHARS));
+}
+
+function collectAssistantResponse(entry: SessionDigestEntry, accumulator: DigestAccumulator): void {
+  const message = entry.message;
+  if (entry.type !== "message" || !message) return;
+  if (message.role !== "assistant") return;
+  const text = messageText(message.content);
+  if (text.trim()) accumulator.assistantResponses.push(compactText(text, MAX_PACKET_TEXT_CHARS));
+}
+
+function collectApprovalDenial(entry: SessionDigestEntry, accumulator: DigestAccumulator): void {
+  const event = entry.event;
+  if (entry.type !== "action_audit" || !event) return;
+  if (event.category !== "approval" || event.action !== "decision" || event.decision !== "denied") return;
+  const key = `${event.toolName ?? "(unknown)"}: ${event.reason ?? "(none)"}`;
+  accumulator.approvalDenials.set(key, (accumulator.approvalDenials.get(key) ?? 0) + 1);
 }
 
 async function readGeneratedNotes(runDir: string, manifest: DogfoodManifest): Promise<JudgePacket["generatedNotes"]> {

@@ -37,18 +37,19 @@ export function isHostAllowedByAllowlist(hostname: string, allowlist: string): b
   const host = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
   const patterns = allowlist.split(/[,\s]+/).map((p) => p.trim().toLowerCase()).filter(Boolean);
   for (const pattern of patterns) {
-    if (pattern === "*") return true;
-    if (pattern.startsWith("*.")) {
-      const suffix = pattern.slice(1); // ".example.com"
-      if (host.endsWith(suffix)) return true;
-      continue;
-    }
-    if (pattern.startsWith(".")) {
-      if (host.endsWith(pattern)) return true;
-      continue;
-    }
-    // Bare host: exact or subdomain with label boundary
-    if (host === pattern || host.endsWith("." + pattern)) return true;
+    if (hostMatchesPattern(host, pattern)) return true;
   }
   return false;
+}
+
+/** Match one normalized allowlist pattern against a normalized (lowercase) host. */
+function hostMatchesPattern(host: string, pattern: string): boolean {
+  if (pattern === "*") return true;
+  if (pattern.startsWith("*.")) {
+    // `*.example.com` → suffix ".example.com" (subdomains only).
+    return host.endsWith(pattern.slice(1));
+  }
+  if (pattern.startsWith(".")) return host.endsWith(pattern);
+  // Bare host: exact or subdomain with label boundary.
+  return host === pattern || host.endsWith("." + pattern);
 }

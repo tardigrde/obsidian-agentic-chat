@@ -107,30 +107,38 @@ export function classifyHttpResponse(
 
 export function classifyError(error: unknown, nowMs = Date.now()): ClassifiedError {
   if (isAbortedError(error)) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { class: "aborted", retryable: false, message };
+    return { class: "aborted", retryable: false, message: errorText(error) };
   }
   if (isCostCapError(error)) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { class: "resource", retryable: false, message };
+    return { class: "resource", retryable: false, message: errorText(error) };
   }
   const rawMessage = error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
-  const lower = rawMessage.toLowerCase();
 
   if (/content_filter|finish_reason:\s*content_filter/i.test(rawMessage)) {
     return { class: "model", retryable: false, message: rawMessage };
   }
 
+  const statusClassified = classifyFromStatusText(rawMessage, nowMs);
+  return statusClassified ?? classifyFromMessageText(rawMessage);
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function classifyFromStatusText(rawMessage: string, nowMs: number): ClassifiedError | undefined {
   const statusMatch = /(?:http\s+(\d{3})|status\s+(\d{3}))/i.exec(rawMessage);
   const statusStr = statusMatch?.[1] ?? statusMatch?.[2];
-  if (statusStr) {
-    const status = Number.parseInt(statusStr, 10);
-    if (Number.isFinite(status)) {
-      const retryAfterMs = extractRetryAfterFromMessage(rawMessage);
-      return classifyStatus(status, rawMessage, retryAfterMs ? { "retry-after": String(retryAfterMs / 1000) } : undefined, nowMs);
-    }
-  }
+  if (!statusStr) return undefined;
+  const status = Number.parseInt(statusStr, 10);
+  if (!Number.isFinite(status)) return undefined;
+  const retryAfterMs = extractRetryAfterFromMessage(rawMessage);
+  const headers = retryAfterMs ? { "retry-after": String(retryAfterMs / 1000) } : undefined;
+  return classifyStatus(status, rawMessage, headers, nowMs);
+}
 
+function classifyFromMessageText(rawMessage: string): ClassifiedError {
+  const lower = rawMessage.toLowerCase();
   if (/timed out|timeout/i.test(lower) && !/aborted/i.test(lower)) {
     return { class: "transient", retryable: true, message: rawMessage };
   }

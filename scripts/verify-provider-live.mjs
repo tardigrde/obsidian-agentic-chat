@@ -40,43 +40,54 @@ function readText(path) {
 function validateConfiguredGate() {
   const failures = [];
   const readme = existsSync("README.md") ? readText("README.md") : "";
-
-  if (!readme.includes("npm run verify:provider-live")) {
-    failures.push("README.md does not point release validators at npm run verify:provider-live");
-  }
+  appendReadmeGateFailures(failures, readme);
 
   for (const liveSpec of liveProviderSpecs) {
-    if (!existsSync(liveSpec.spec)) {
-      failures.push(`${liveSpec.spec} does not exist`);
-      continue;
-    }
-    const specText = readText(liveSpec.spec);
-    if (!specText.includes("this.skip()")) {
-      failures.push(`${liveSpec.spec} must skip when its live credential is absent`);
-    }
-    for (const envName of liveSpec.env) {
-      if (!specText.includes(envName)) {
-        failures.push(`${liveSpec.label} does not document or check ${envName}`);
-      }
-    }
+    validateLiveSpec(failures, liveSpec);
   }
 
   const packageJson = existsSync("package.json") ? readText("package.json") : "";
   for (const liveScript of liveProviderScripts) {
-    if (!existsSync(liveScript.script)) {
-      failures.push(`${liveScript.script} does not exist`);
-      continue;
-    }
-    const scriptText = readText(liveScript.script);
-    if (!scriptText.includes("--check")) {
-      failures.push(`${liveScript.script} must support --check`);
-    }
-    if (!packageJson.includes(`"${liveScript.npmScript}"`)) {
-      failures.push(`package.json does not expose npm run ${liveScript.npmScript}`);
-    }
+    validateLiveScript(failures, liveScript, packageJson);
   }
 
   return failures;
+}
+
+function appendReadmeGateFailures(failures, readme) {
+  if (!readme.includes("npm run verify:provider-live")) {
+    failures.push("README.md does not point release validators at npm run verify:provider-live");
+  }
+}
+
+function validateLiveSpec(failures, liveSpec) {
+  if (!existsSync(liveSpec.spec)) {
+    failures.push(`${liveSpec.spec} does not exist`);
+    return;
+  }
+  const specText = readText(liveSpec.spec);
+  if (!specText.includes("this.skip()")) {
+    failures.push(`${liveSpec.spec} must skip when its live credential is absent`);
+  }
+  for (const envName of liveSpec.env) {
+    if (!specText.includes(envName)) {
+      failures.push(`${liveSpec.label} does not document or check ${envName}`);
+    }
+  }
+}
+
+function validateLiveScript(failures, liveScript, packageJson) {
+  if (!existsSync(liveScript.script)) {
+    failures.push(`${liveScript.script} does not exist`);
+    return;
+  }
+  const scriptText = readText(liveScript.script);
+  if (!scriptText.includes("--check")) {
+    failures.push(`${liveScript.script} must support --check`);
+  }
+  if (!packageJson.includes(`"${liveScript.npmScript}"`)) {
+    failures.push(`package.json does not expose npm run ${liveScript.npmScript}`);
+  }
 }
 
 function missingCredentials(env) {

@@ -178,172 +178,331 @@ export async function assertDogfoodInvariants(manifestOrPath: DogfoodManifest | 
   const sessionFiles = await sessionJsonlFiles(manifest.vaultPath);
   const entries = await readSessionEntries(sessionFiles);
   const findings: DogfoodInvariantFinding[] = [];
-  const toolStarts: Record<string, number> = {};
-  const approvalDecisions: Record<string, number> = {};
-  const toolErrors: Record<string, number> = {};
-  const approvedMutationToolCalls = new Set<string>();
-  const createdSkillToolCalls = new Set<string>();
-  const checkpointToolCalls = new Set<string>();
-  const completedToolCalls = new Set<string>();
-  let userMessages = 0;
-  let assistantMessages = 0;
-  let maxUserMessageChars = 0;
-  let cacheHits = 0;
-  let mutationApprovals = 0;
-  let checkpoints = 0;
+  const metrics = emptyInvariantMetrics();
+  const tracking = createToolCallTracking();
 
   if (sessionFiles.length === 0) {
     findings.push(error("sessions", "No session JSONL files were produced."));
   }
 
   for (const entry of entries) {
-    const serialized = JSON.stringify(entry);
-    if (serialized.includes(manifest.secretText)) {
-      findings.push(error("privacy", "Restricted secret marker leaked into session JSONL."));
-    }
-
-    if (entry.type === "message") {
-      const message = entry.message ?? {};
-      if (message.role === "user") {
-        userMessages += 1;
-        const text = contentText(message.content);
-        maxUserMessageChars = Math.max(maxUserMessageChars, text.length);
-        if (text.includes("Restricted/") || text.includes("Secret.secret.md")) {
-          findings.push(error("privacy", "Ignored active-note path leaked into user prompt context."));
-        }
-        if (text.includes("Agentic Chat Exports/")) {
-          findings.push(error("context", "Exported session note became active prompt context."));
-        }
-      }
-      if (message.role === "assistant") assistantMessages += 1;
-      if (message.role === "toolResult" && message.details?.cached === true) cacheHits += 1;
-      continue;
-    }
-
-    if (entry.type === "file_checkpoint" && entry.checkpoint?.toolCallId) {
-      checkpointToolCalls.add(entry.checkpoint.toolCallId);
-      checkpoints += 1;
-      continue;
-    }
-
-    const event = entry.event;
-    if (!event) continue;
-
-    if (event.category === "tool_call" && event.action === "start" && event.toolName) {
-      toolStarts[event.toolName] = (toolStarts[event.toolName] ?? 0) + 1;
-    }
-
-    if (event.category === "tool_call" && event.action === "end" && event.toolName) {
-      if (event.toolCallId) completedToolCalls.add(event.toolCallId);
-      if (event.isError) toolErrors[event.toolName] = (toolErrors[event.toolName] ?? 0) + 1;
-    }
-
-    if (event.category === "approval" && event.action === "decision" && event.toolName && event.decision) {
-      const key = `${event.toolName}:${event.decision}`;
-      approvalDecisions[key] = (approvalDecisions[key] ?? 0) + 1;
-      const touched = diffPaths(event.diff);
-      if (event.decision === "approved" || event.decision === "auto-approved") {
-        if (touched.length > 0) {
-          mutationApprovals += 1;
-          if (event.toolCallId) approvedMutationToolCalls.add(event.toolCallId);
-        }
-        // create_skill writes vault packages but captures no file checkpoint by
-        // design (not undoable) — track separately so the checkpoint invariant
-        // below doesn't fire, and audit it as its own finding instead.
-        if (event.toolName === "create_skill" && event.toolCallId) {
-          createdSkillToolCalls.add(event.toolCallId);
-        }
-        for (const targetPath of touched) {
-          if (!isAllowedMutationPath(targetPath, manifest.allowedMutationRoots)) {
-            findings.push(error("approvals", `Approved mutation outside allowed roots: ${targetPath}`));
-          }
-        }
-      }
-      if (event.decision === "denied") {
-        for (const targetPath of touched) {
-          if (!manifest.deniedMutationPaths.includes(targetPath) && !isAllowedMutationPath(targetPath, manifest.allowedMutationRoots)) {
-            findings.push(warning("approvals", `Denied mutation targeted an unexpected path: ${targetPath}`));
-          }
-        }
-      }
-    }
+    collectEntryInvariants(entry, manifest, findings, metrics, tracking);
   }
 
-  for (const tool of manifest.requiredTools) {
-    if (!toolStarts[tool]) findings.push(error("tool-coverage", `Required tool was not exercised: ${tool}`));
-  }
-
-  for (const toolCallId of approvedMutationToolCalls) {
-    // create_skill is audited separately below (no checkpoint by design).
-    if (createdSkillToolCalls.has(toolCallId)) continue;
-    if (!checkpointToolCalls.has(toolCallId)) {
-      findings.push(error("checkpoints", `Approved mutation ${toolCallId} did not capture a file checkpoint.`));
-    }
-    if (!completedToolCalls.has(toolCallId)) {
-      findings.push(error("tool-results", `Approved mutation ${toolCallId} did not record a final tool result.`));
-    }
-  }
-
-  for (const toolCallId of createdSkillToolCalls) {
-    if (!completedToolCalls.has(toolCallId)) {
-      findings.push(error("tool-results", `Approved create_skill ${toolCallId} did not record a final tool result.`));
-    }
-  }
-
-  if (maxUserMessageChars > manifest.maxUserMessageChars) {
-    findings.push(error("context", `Max user message was ${maxUserMessageChars} chars, over limit ${manifest.maxUserMessageChars}.`));
-  }
-
-
-  for (const deniedPath of manifest.deniedMutationPaths) {
-    if (await exists(path.join(manifest.vaultPath, deniedPath))) {
-      findings.push(error("approvals", `Denied mutation created ${deniedPath}.`));
-    }
-  }
-
-  for (const expected of manifest.requiredGeneratedNotes) {
-    const notePath = path.join(manifest.vaultPath, expected.path);
-    if (!(await exists(notePath))) {
-      findings.push(error("generated-notes", `Required generated note is missing: ${expected.path}`));
-      continue;
-    }
-    const content = await readFile(notePath, "utf8");
-    if (content.includes(manifest.secretText)) {
-      findings.push(error("privacy", `Restricted secret marker leaked into generated note ${expected.path}.`));
-    }
-    if (expected.frontmatter && !content.startsWith("---\n")) {
-      findings.push(error("generated-notes", `Generated note lacks YAML frontmatter: ${expected.path}`));
-    }
-    for (const required of expected.requiredSubstrings) {
-      if (!content.includes(required)) {
-        findings.push(error("generated-notes", `Generated note ${expected.path} is missing required text: ${required}`));
-      }
-    }
-    for (const link of wikiLinks(content)) {
-      if (!(await wikiTargetExists(manifest.vaultPath, link))) {
-        findings.push(error("links", `Generated note ${expected.path} has a broken link: [[${link}]]`));
-      }
-    }
-  }
+  appendRequiredToolFindings(findings, manifest, metrics.toolStarts);
+  appendCheckpointFindings(findings, tracking);
+  appendContextFindings(findings, manifest, metrics.maxUserMessageChars);
+  await appendDeniedMutationFindings(findings, manifest);
+  await appendGeneratedNoteFindings(findings, manifest);
 
   const result: DogfoodInvariantResult = {
     ok: findings.every((finding) => finding.severity !== "error"),
     manifest,
     sessionFiles,
-    metrics: {
-      userMessages,
-      assistantMessages,
-      maxUserMessageChars,
-      toolStarts,
-      approvalDecisions,
-      toolErrors,
-      cacheHits,
-      mutationApprovals,
-      checkpoints,
-    },
+    metrics,
     findings,
   };
   return result;
+}
+
+interface ToolCallTracking {
+  approvedMutationToolCalls: Set<string>;
+  createdSkillToolCalls: Set<string>;
+  checkpointToolCalls: Set<string>;
+  completedToolCalls: Set<string>;
+}
+
+type InvariantMetrics = DogfoodInvariantResult["metrics"];
+
+function emptyInvariantMetrics(): InvariantMetrics {
+  return {
+    userMessages: 0,
+    assistantMessages: 0,
+    maxUserMessageChars: 0,
+    toolStarts: {},
+    approvalDecisions: {},
+    toolErrors: {},
+    cacheHits: 0,
+    mutationApprovals: 0,
+    checkpoints: 0,
+  };
+}
+
+function createToolCallTracking(): ToolCallTracking {
+  return {
+    approvedMutationToolCalls: new Set<string>(),
+    createdSkillToolCalls: new Set<string>(),
+    checkpointToolCalls: new Set<string>(),
+    completedToolCalls: new Set<string>(),
+  };
+}
+
+function collectEntryInvariants(
+  entry: SessionEntry,
+  manifest: DogfoodManifest,
+  findings: DogfoodInvariantFinding[],
+  metrics: InvariantMetrics,
+  tracking: ToolCallTracking,
+): void {
+  if (JSON.stringify(entry).includes(manifest.secretText)) {
+    findings.push(error("privacy", "Restricted secret marker leaked into session JSONL."));
+  }
+
+  if (entry.type === "message") {
+    collectMessageInvariants(entry, findings, metrics);
+    return;
+  }
+
+  if (entry.type === "file_checkpoint" && entry.checkpoint?.toolCallId) {
+    tracking.checkpointToolCalls.add(entry.checkpoint.toolCallId);
+    metrics.checkpoints += 1;
+    return;
+  }
+
+  if (entry.event) collectEventInvariants(entry.event, manifest, findings, metrics, tracking);
+}
+
+function collectMessageInvariants(
+  entry: SessionEntry,
+  findings: DogfoodInvariantFinding[],
+  metrics: InvariantMetrics,
+): void {
+  const message = entry.message ?? {};
+  if (message.role === "user") recordUserMessageInvariants(message, findings, metrics);
+  if (message.role === "assistant") metrics.assistantMessages += 1;
+  if (message.role === "toolResult" && message.details?.cached === true) metrics.cacheHits += 1;
+}
+
+function recordUserMessageInvariants(
+  message: NonNullable<SessionEntry["message"]>,
+  findings: DogfoodInvariantFinding[],
+  metrics: InvariantMetrics,
+): void {
+  metrics.userMessages += 1;
+  const text = contentText(message.content);
+  metrics.maxUserMessageChars = Math.max(metrics.maxUserMessageChars, text.length);
+  if (text.includes("Restricted/") || text.includes("Secret.secret.md")) {
+    findings.push(error("privacy", "Ignored active-note path leaked into user prompt context."));
+  }
+  if (text.includes("Agentic Chat Exports/")) {
+    findings.push(error("context", "Exported session note became active prompt context."));
+  }
+}
+
+function collectEventInvariants(
+  event: NonNullable<SessionEntry["event"]>,
+  manifest: DogfoodManifest,
+  findings: DogfoodInvariantFinding[],
+  metrics: InvariantMetrics,
+  tracking: ToolCallTracking,
+): void {
+  if (event.category === "tool_call" && event.action === "start" && event.toolName) {
+    metrics.toolStarts[event.toolName] = (metrics.toolStarts[event.toolName] ?? 0) + 1;
+  }
+  if (event.category === "tool_call" && event.action === "end" && event.toolName) {
+    recordToolEndInvariants(event, event.toolName, metrics, tracking);
+  }
+  if (event.category === "approval" && event.action === "decision" && event.toolName && event.decision) {
+    recordApprovalInvariants(event, event.toolName, event.decision, manifest, findings, metrics, tracking);
+  }
+}
+
+function recordToolEndInvariants(
+  event: NonNullable<SessionEntry["event"]>,
+  toolName: string,
+  metrics: InvariantMetrics,
+  tracking: ToolCallTracking,
+): void {
+  if (event.toolCallId) tracking.completedToolCalls.add(event.toolCallId);
+  if (event.isError) metrics.toolErrors[toolName] = (metrics.toolErrors[toolName] ?? 0) + 1;
+}
+
+function recordApprovalInvariants(
+  event: NonNullable<SessionEntry["event"]>,
+  toolName: string,
+  decision: string,
+  manifest: DogfoodManifest,
+  findings: DogfoodInvariantFinding[],
+  metrics: InvariantMetrics,
+  tracking: ToolCallTracking,
+): void {
+  const key = `${toolName}:${decision}`;
+  metrics.approvalDecisions[key] = (metrics.approvalDecisions[key] ?? 0) + 1;
+  const touched = diffPaths(event.diff);
+  if (decision === "approved" || decision === "auto-approved") {
+    recordApprovedDecisionInvariants(event, toolName, touched, manifest, findings, metrics, tracking);
+  }
+  if (decision === "denied") {
+    recordDeniedDecisionInvariants(touched, manifest, findings);
+  }
+}
+
+function recordApprovedDecisionInvariants(
+  event: NonNullable<SessionEntry["event"]>,
+  toolName: string,
+  touched: string[],
+  manifest: DogfoodManifest,
+  findings: DogfoodInvariantFinding[],
+  metrics: InvariantMetrics,
+  tracking: ToolCallTracking,
+): void {
+  if (touched.length > 0) {
+    metrics.mutationApprovals += 1;
+    if (event.toolCallId) tracking.approvedMutationToolCalls.add(event.toolCallId);
+  }
+  // create_skill writes vault packages but captures no file checkpoint by
+  // design (not undoable) — track separately so the checkpoint invariant
+  // below doesn't fire, and audit it as its own finding instead.
+  if (toolName === "create_skill" && event.toolCallId) {
+    tracking.createdSkillToolCalls.add(event.toolCallId);
+  }
+  for (const targetPath of touched) {
+    if (!isAllowedMutationPath(targetPath, manifest.allowedMutationRoots)) {
+      findings.push(error("approvals", `Approved mutation outside allowed roots: ${targetPath}`));
+    }
+  }
+}
+
+function recordDeniedDecisionInvariants(
+  touched: string[],
+  manifest: DogfoodManifest,
+  findings: DogfoodInvariantFinding[],
+): void {
+  for (const targetPath of touched) {
+    if (!manifest.deniedMutationPaths.includes(targetPath) && !isAllowedMutationPath(targetPath, manifest.allowedMutationRoots)) {
+      findings.push(warning("approvals", `Denied mutation targeted an unexpected path: ${targetPath}`));
+    }
+  }
+}
+
+function appendRequiredToolFindings(
+  findings: DogfoodInvariantFinding[],
+  manifest: DogfoodManifest,
+  toolStarts: Record<string, number>,
+): void {
+  for (const tool of manifest.requiredTools) {
+    if (!toolStarts[tool]) findings.push(error("tool-coverage", `Required tool was not exercised: ${tool}`));
+  }
+}
+
+function appendCheckpointFindings(findings: DogfoodInvariantFinding[], tracking: ToolCallTracking): void {
+  for (const toolCallId of tracking.approvedMutationToolCalls) {
+    appendApprovedMutationFollowUpFindings(findings, toolCallId, tracking);
+  }
+  for (const toolCallId of tracking.createdSkillToolCalls) {
+    appendCreatedSkillFollowUpFindings(findings, toolCallId, tracking);
+  }
+}
+
+function appendApprovedMutationFollowUpFindings(
+  findings: DogfoodInvariantFinding[],
+  toolCallId: string,
+  tracking: ToolCallTracking,
+): void {
+  // create_skill is audited separately below (no checkpoint by design).
+  if (tracking.createdSkillToolCalls.has(toolCallId)) return;
+  if (!tracking.checkpointToolCalls.has(toolCallId)) {
+    findings.push(error("checkpoints", `Approved mutation ${toolCallId} did not capture a file checkpoint.`));
+  }
+  if (!tracking.completedToolCalls.has(toolCallId)) {
+    findings.push(error("tool-results", `Approved mutation ${toolCallId} did not record a final tool result.`));
+  }
+}
+
+function appendCreatedSkillFollowUpFindings(
+  findings: DogfoodInvariantFinding[],
+  toolCallId: string,
+  tracking: ToolCallTracking,
+): void {
+  if (!tracking.completedToolCalls.has(toolCallId)) {
+    findings.push(error("tool-results", `Approved create_skill ${toolCallId} did not record a final tool result.`));
+  }
+}
+
+function appendContextFindings(
+  findings: DogfoodInvariantFinding[],
+  manifest: DogfoodManifest,
+  maxUserMessageChars: number,
+): void {
+  if (maxUserMessageChars > manifest.maxUserMessageChars) {
+    findings.push(error("context", `Max user message was ${maxUserMessageChars} chars, over limit ${manifest.maxUserMessageChars}.`));
+  }
+}
+
+async function appendDeniedMutationFindings(
+  findings: DogfoodInvariantFinding[],
+  manifest: DogfoodManifest,
+): Promise<void> {
+  for (const deniedPath of manifest.deniedMutationPaths) {
+    if (await exists(path.join(manifest.vaultPath, deniedPath))) {
+      findings.push(error("approvals", `Denied mutation created ${deniedPath}.`));
+    }
+  }
+}
+
+async function appendGeneratedNoteFindings(
+  findings: DogfoodInvariantFinding[],
+  manifest: DogfoodManifest,
+): Promise<void> {
+  await appendGeneratedNoteFindingsFrom(findings, manifest, 0);
+}
+
+async function appendGeneratedNoteFindingsFrom(
+  findings: DogfoodInvariantFinding[],
+  manifest: DogfoodManifest,
+  index: number,
+): Promise<void> {
+  const expected = manifest.requiredGeneratedNotes[index];
+  if (expected === undefined) return;
+  await appendGeneratedNoteFinding(findings, manifest, expected);
+  await appendGeneratedNoteFindingsFrom(findings, manifest, index + 1);
+}
+
+async function appendGeneratedNoteFinding(
+  findings: DogfoodInvariantFinding[],
+  manifest: DogfoodManifest,
+  expected: DogfoodGeneratedNoteExpectation,
+): Promise<void> {
+  const notePath = path.join(manifest.vaultPath, expected.path);
+  if (!(await exists(notePath))) {
+    findings.push(error("generated-notes", `Required generated note is missing: ${expected.path}`));
+    return;
+  }
+  const content = await readFile(notePath, "utf8");
+  appendGeneratedNoteContentFindings(findings, manifest, expected, content);
+  await appendGeneratedNoteLinkFindings(findings, manifest, expected, content);
+}
+
+function appendGeneratedNoteContentFindings(
+  findings: DogfoodInvariantFinding[],
+  manifest: DogfoodManifest,
+  expected: DogfoodGeneratedNoteExpectation,
+  content: string,
+): void {
+  if (content.includes(manifest.secretText)) {
+    findings.push(error("privacy", `Restricted secret marker leaked into generated note ${expected.path}.`));
+  }
+  if (expected.frontmatter && !content.startsWith("---\n")) {
+    findings.push(error("generated-notes", `Generated note lacks YAML frontmatter: ${expected.path}`));
+  }
+  for (const required of expected.requiredSubstrings) {
+    if (!content.includes(required)) {
+      findings.push(error("generated-notes", `Generated note ${expected.path} is missing required text: ${required}`));
+    }
+  }
+}
+
+async function appendGeneratedNoteLinkFindings(
+  findings: DogfoodInvariantFinding[],
+  manifest: DogfoodManifest,
+  expected: DogfoodGeneratedNoteExpectation,
+  content: string,
+): Promise<void> {
+  for (const link of wikiLinks(content)) {
+    if (!(await wikiTargetExists(manifest.vaultPath, link))) {
+      findings.push(error("links", `Generated note ${expected.path} has a broken link: [[${link}]]`));
+    }
+  }
 }
 
 export async function writeDogfoodRunReport(result: DogfoodInvariantResult, outputDir = "logs/dogfood-runs"): Promise<string> {

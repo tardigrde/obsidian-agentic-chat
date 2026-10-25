@@ -261,35 +261,17 @@ async function extractEpubText(entries: readonly ZipEntry[], budget: ZipInflatio
   };
 }
 
+interface OfficeXmlParts {
+  parts: string[];
+  itemCount: number;
+}
+
 async function extractOfficeOpenXmlText(
   entries: readonly ZipEntry[],
   kind: Exclude<DocumentKind, "epub">,
   budget: ZipInflationBudget,
 ): Promise<DocumentExtractionResult> {
-  const parts: string[] = [];
-  let itemCount: number;
-  if (kind === "docx") {
-    const document = entries.find((entry) => entry.name === "word/document.xml");
-    if (!document) throw new Error("DOCX is missing word/document.xml.");
-    parts.push(extractTextTags(await entryText(document, budget)));
-    itemCount = 1;
-  } else if (kind === "pptx") {
-    const slides = entries
-      .filter((entry) => /^ppt\/slides\/slide\d+\.xml$/i.test(entry.name))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    if (slides.length === 0) throw new Error("PPTX contains no slides.");
-    for (const slide of slides) parts.push(extractTextTags(await entryText(slide, budget)));
-    itemCount = slides.length;
-  } else {
-    const sharedStrings = entries.find((entry) => entry.name === "xl/sharedStrings.xml");
-    if (sharedStrings) parts.push(extractTextTags(await entryText(sharedStrings, budget)));
-    const sheets = entries
-      .filter((entry) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(entry.name))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    if (sheets.length === 0 && !sharedStrings) throw new Error("XLSX contains no worksheets.");
-    for (const sheet of sheets) parts.push(extractSpreadsheetSheetText(await entryText(sheet, budget)));
-    itemCount = Math.max(1, sheets.length);
-  }
+  const { parts, itemCount } = await extractOfficeXmlParts(entries, kind, budget);
   const text = normalizeSourceText(parts.join("\n\n"));
   if (!text) throw new Error(`${kind.toUpperCase()} contains no extractable text.`);
   return {
@@ -299,6 +281,55 @@ async function extractOfficeOpenXmlText(
     itemCount,
     warnings: [],
   };
+}
+
+function extractOfficeXmlParts(
+  entries: readonly ZipEntry[],
+  kind: Exclude<DocumentKind, "epub">,
+  budget: ZipInflationBudget,
+): Promise<OfficeXmlParts> {
+  if (kind === "docx") return extractDocxParts(entries, budget);
+  if (kind === "pptx") return extractPptxParts(entries, budget);
+  return extractXlsxParts(entries, budget);
+}
+
+async function extractDocxParts(entries: readonly ZipEntry[], budget: ZipInflationBudget): Promise<OfficeXmlParts> {
+  const document = entries.find((entry) => entry.name === "word/document.xml");
+  if (!document) throw new Error("DOCX is missing word/document.xml.");
+  return { parts: [extractTextTags(await entryText(document, budget))], itemCount: 1 };
+}
+
+async function extractPptxParts(entries: readonly ZipEntry[], budget: ZipInflationBudget): Promise<OfficeXmlParts> {
+  const slides = findSortedEntries(entries, /^ppt\/slides\/slide\d+\.xml$/i);
+  if (slides.length === 0) throw new Error("PPTX contains no slides.");
+  const parts: string[] = [];
+  for (const slide of slides) parts.push(extractTextTags(await entryText(slide, budget)));
+  return { parts, itemCount: slides.length };
+}
+
+async function extractXlsxParts(entries: readonly ZipEntry[], budget: ZipInflationBudget): Promise<OfficeXmlParts> {
+  const sharedStrings = entries.find((entry) => entry.name === "xl/sharedStrings.xml");
+  const parts: string[] = [];
+  if (sharedStrings) parts.push(extractTextTags(await entryText(sharedStrings, budget)));
+  const sheets = findSortedEntries(entries, /^xl\/worksheets\/sheet\d+\.xml$/i);
+  if (sheets.length === 0 && !sharedStrings) throw new Error("XLSX contains no worksheets.");
+  for (const sheet of sheets) parts.push(extractSpreadsheetSheetText(await entryText(sheet, budget)));
+  return { parts, itemCount: Math.max(1, sheets.length) };
+}
+
+function findSortedEntries(entries: readonly ZipEntry[], pattern: RegExp): ZipEntry[] {
+  return entries
+    .filter((entry) => pattern.test(entry.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+
+interface ParsedZipCentralEntry {
+  name: string;
+  method: number;
+  compressedSize: number;
+  uncompressedSize: number;
+  localOffset: number;
+  nextOffset: number;
 }
 
 async function readZipEntries(input: DocumentInput): Promise<ZipEntry[]> {
@@ -311,50 +342,69 @@ async function readZipEntries(input: DocumentInput): Promise<ZipEntry[]> {
   if (entryCount > DOCUMENT_IMPORT_LIMITS.maxEntries) {
     throw new Error(`Document archive contains too many ZIP entries (${entryCount}). Maximum supported entries: ${DOCUMENT_IMPORT_LIMITS.maxEntries}.`);
   }
-  const centralOffset = readUint32(bytes, eocdOffset + 16);
   const entries: ZipEntry[] = [];
-  let offset = centralOffset;
+  let offset = readUint32(bytes, eocdOffset + 16);
   let totalUncompressedBytes = 0;
   for (let index = 0; index < entryCount; index += 1) {
-    if (readUint32(bytes, offset) !== ZIP_CENTRAL_SIGNATURE) throw new Error("Invalid ZIP central directory.");
-    const flags = readUint16(bytes, offset + 8);
-    const method = readUint16(bytes, offset + 10);
-    const compressedSize = readUint32(bytes, offset + 20);
-    const uncompressedSize = readUint32(bytes, offset + 24);
-    const localOffset = readUint32(bytes, offset + 42);
-    const nameLength = readUint16(bytes, offset + 28);
-    const extraLength = readUint16(bytes, offset + 30);
-    const commentLength = readUint16(bytes, offset + 32);
-    if ((flags & 0x01) !== 0) throw new Error("Encrypted ZIP entries are not supported.");
-    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff || localOffset === 0xffffffff) {
-      throw new Error("ZIP64 documents are not supported by the mobile-safe importer.");
-    }
-    const name = decodeUtf8(bytes.slice(offset + 46, offset + 46 + nameLength));
-    if (compressedSize > DOCUMENT_IMPORT_LIMITS.maxEntryCompressedBytes) {
-      throw new Error(`ZIP entry is too large before decompression: ${name || "(unnamed)"}.`);
-    }
-    if (uncompressedSize > DOCUMENT_IMPORT_LIMITS.maxEntryUncompressedBytes) {
-      throw new Error(`ZIP entry is too large after decompression: ${name || "(unnamed)"}.`);
-    }
-    offset += 46 + nameLength + extraLength + commentLength;
-    if (name.endsWith("/")) continue;
-    totalUncompressedBytes += uncompressedSize;
+    const central = parseZipCentralEntry(bytes, offset);
+    offset = central.nextOffset;
+    if (central.name.endsWith("/")) continue;
+    totalUncompressedBytes += central.uncompressedSize;
     if (totalUncompressedBytes > DOCUMENT_IMPORT_LIMITS.maxTotalUncompressedBytes) {
       throw new Error("Document archive expands to too much data.");
     }
-    const localNameLength = readUint16(bytes, localOffset + 26);
-    const localExtraLength = readUint16(bytes, localOffset + 28);
-    if (readUint32(bytes, localOffset) !== ZIP_LOCAL_SIGNATURE) throw new Error("Invalid ZIP local file header.");
-    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
-    if (dataStart + compressedSize > bytes.byteLength) throw new Error("Invalid ZIP entry size.");
     entries.push({
-      name,
-      method,
-      uncompressedSize,
-      compressed: bytes.slice(dataStart, dataStart + compressedSize),
+      name: central.name,
+      method: central.method,
+      uncompressedSize: central.uncompressedSize,
+      compressed: readZipEntryCompressedBytes(bytes, central),
     });
   }
   return entries;
+}
+
+function parseZipCentralEntry(bytes: Uint8Array, offset: number): ParsedZipCentralEntry {
+  if (readUint32(bytes, offset) !== ZIP_CENTRAL_SIGNATURE) throw new Error("Invalid ZIP central directory.");
+  const flags = readUint16(bytes, offset + 8);
+  const method = readUint16(bytes, offset + 10);
+  const compressedSize = readUint32(bytes, offset + 20);
+  const uncompressedSize = readUint32(bytes, offset + 24);
+  const localOffset = readUint32(bytes, offset + 42);
+  const nameLength = readUint16(bytes, offset + 28);
+  const extraLength = readUint16(bytes, offset + 30);
+  const commentLength = readUint16(bytes, offset + 32);
+  if ((flags & 0x01) !== 0) throw new Error("Encrypted ZIP entries are not supported.");
+  if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff || localOffset === 0xffffffff) {
+    throw new Error("ZIP64 documents are not supported by the mobile-safe importer.");
+  }
+  const name = decodeUtf8(bytes.slice(offset + 46, offset + 46 + nameLength));
+  assertZipEntrySizes(name, compressedSize, uncompressedSize);
+  return {
+    name,
+    method,
+    compressedSize,
+    uncompressedSize,
+    localOffset,
+    nextOffset: offset + 46 + nameLength + extraLength + commentLength,
+  };
+}
+
+function assertZipEntrySizes(name: string, compressedSize: number, uncompressedSize: number): void {
+  if (compressedSize > DOCUMENT_IMPORT_LIMITS.maxEntryCompressedBytes) {
+    throw new Error(`ZIP entry is too large before decompression: ${name || "(unnamed)"}.`);
+  }
+  if (uncompressedSize > DOCUMENT_IMPORT_LIMITS.maxEntryUncompressedBytes) {
+    throw new Error(`ZIP entry is too large after decompression: ${name || "(unnamed)"}.`);
+  }
+}
+
+function readZipEntryCompressedBytes(bytes: Uint8Array, entry: ParsedZipCentralEntry): Uint8Array {
+  if (readUint32(bytes, entry.localOffset) !== ZIP_LOCAL_SIGNATURE) throw new Error("Invalid ZIP local file header.");
+  const localNameLength = readUint16(bytes, entry.localOffset + 26);
+  const localExtraLength = readUint16(bytes, entry.localOffset + 28);
+  const dataStart = entry.localOffset + 30 + localNameLength + localExtraLength;
+  if (dataStart + entry.compressedSize > bytes.byteLength) throw new Error("Invalid ZIP entry size.");
+  return bytes.slice(dataStart, dataStart + entry.compressedSize);
 }
 
 async function entryText(entry: ZipEntry, budget: ZipInflationBudget): Promise<string> {

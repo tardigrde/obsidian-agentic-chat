@@ -29,7 +29,9 @@ export type ParsedImportSource =
   | { kind: "github"; owner: string; repo: string; ref?: string; path?: string; remainder?: string; mode?: "tree" | "blob" | "raw" }
   | { kind: "archive-url"; url: string; kindHint?: ArchiveKind };
 
-export function parseImportSource(input: string): { parsed: ParsedImportSource } | { error: string } {
+type ParseResult = { parsed: ParsedImportSource } | { error: string };
+
+export function parseImportSource(input: string): ParseResult {
   const trimmed = input.trim().replace(/[?#].*$/, "");
   if (!trimmed) return { error: "Enter a GitHub URL or repository shorthand (owner/repo)." };
 
@@ -51,81 +53,9 @@ export function parseImportSource(input: string): { parsed: ParsedImportSource }
   }
 
   const host = url.hostname.toLowerCase();
-  if (host === "github.com") {
-    const segments = url.pathname.split("/").filter(Boolean);
-    if (segments.length >= 2) {
-      const owner = segments[0];
-      const repo = segments[1];
-      const rest = segments.slice(2);
-      if (rest.length === 0) return { parsed: { kind: "github", owner, repo } };
-      const mode = rest[0];
-      // Direct archive links (e.g. /releases/download/v1.0/pkg.zip) are valid
-      // import sources even though they are not /tree /blob /raw /archive.
-      if (mode !== "tree" && mode !== "blob" && mode !== "raw") {
-        const hint = archiveKindFromPath(url.pathname);
-        if (hint) return { parsed: { kind: "archive-url", url: url.toString(), kindHint: hint } };
-      }
-      const refAndPath = rest.slice(1).join("/");
-      if (mode === "tree") {
-        if (!refAndPath) return { parsed: { kind: "github", owner, repo } };
-        const [ref, ...pathParts] = refAndPath.split("/");
-        return {
-          parsed: {
-            kind: "github",
-            owner,
-            repo,
-            ref,
-            path: pathParts.join("/") || undefined,
-            remainder: refAndPath,
-            mode: "tree",
-          },
-        };
-      }
-      if (mode === "blob" || mode === "raw") {
-        const [ref, ...pathParts] = refAndPath.split("/");
-        if (!ref || pathParts.length === 0) {
-          return { error: `GitHub "${mode}" URLs must include a ref and a file path (${trimmed}).` };
-        }
-        return {
-          parsed: { kind: "github", owner, repo, ref, path: pathParts.join("/"), remainder: refAndPath, mode },
-        };
-      }
-      if (mode === "archive") {
-        return archiveHintFromUrl(url.toString()) ?? {
-          error: `GitHub archive URLs must end in .zip, .tar.gz, or .tgz (${trimmed}).`,
-        };
-      }
-      return {
-        error: `Unknown GitHub URL shape "${mode}" in ${trimmed}. Supported: owner/repo, /tree/<ref>[/path], /blob/<ref>/<path>, /archive/<...>.zip|.tar.gz, and direct archive links.`,
-      };
-    }
-    return { error: `A GitHub URL must include at least owner and repository (${trimmed}).` };
-  }
-
-  if (host === "raw.githubusercontent.com") {
-    const segments = url.pathname.split("/").filter(Boolean);
-    if (segments.length < 4) {
-      return {
-        error: `raw.githubusercontent.com URLs must be owner/repo/<ref>/<path...> (${trimmed}).`,
-      };
-    }
-    const [owner, repo, ...rest] = segments;
-    return {
-      parsed: { kind: "github", owner, repo, ref: rest[0], path: rest.slice(1).join("/"), remainder: rest.join("/") },
-    };
-  }
-
-  if (host === "codeload.github.com") {
-    const segments = url.pathname.split("/").filter(Boolean);
-    const [owner, repo, kind, ref, ...rest] = segments;
-    if (!owner || !repo || !kind || !ref || rest.length > 0) {
-      return { error: `codeload.github.com URLs must be owner/repo/{zip|tar.gz}/<ref> (${trimmed}).` };
-    }
-    if (kind !== "zip" && kind !== "tar.gz") {
-      return { error: `Unknown codeload archive kind "${kind}"; expected zip or tar.gz (${trimmed}).` };
-    }
-    return { parsed: { kind: "archive-url", url: url.toString(), kindHint: kind } };
-  }
+  if (host === "github.com") return parseGithubUrl(url, trimmed);
+  if (host === "raw.githubusercontent.com") return parseRawGithubUrl(url, trimmed);
+  if (host === "codeload.github.com") return parseCodeloadUrl(url, trimmed);
 
   const hint = archiveKindFromPath(url.pathname);
   if (hint) return { parsed: { kind: "archive-url", url: url.toString(), kindHint: hint } };
@@ -136,6 +66,97 @@ export function parseImportSource(input: string): { parsed: ParsedImportSource }
       `"${hostLabel}" is not a supported source. Import from GitHub (owner/repo or a ` +
       `github.com URL) or from a direct http(s) link to a .zip/.tar.gz/.tgz archive.`,
   };
+}
+
+/** github.com repository, /tree, /blob, /raw, /archive, and direct archive links. */
+function parseGithubUrl(url: URL, trimmed: string): ParseResult {
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments.length < 2) {
+    return { error: `A GitHub URL must include at least owner and repository (${trimmed}).` };
+  }
+  const owner = segments[0];
+  const repo = segments[1];
+  const rest = segments.slice(2);
+  if (rest.length === 0) return { parsed: { kind: "github", owner, repo } };
+  const mode = rest[0];
+  // Direct archive links (e.g. /releases/download/v1.0/pkg.zip) are valid
+  // import sources even though they are not /tree /blob /raw /archive.
+  if (mode !== "tree" && mode !== "blob" && mode !== "raw") {
+    const hint = archiveKindFromPath(url.pathname);
+    if (hint) return { parsed: { kind: "archive-url", url: url.toString(), kindHint: hint } };
+  }
+  const refAndPath = rest.slice(1).join("/");
+  if (mode === "tree") return githubTreeSource(owner, repo, refAndPath);
+  if (mode === "blob" || mode === "raw") return githubFileSource(owner, repo, mode, refAndPath, trimmed);
+  if (mode === "archive") {
+    return archiveHintFromUrl(url.toString()) ?? {
+      error: `GitHub archive URLs must end in .zip, .tar.gz, or .tgz (${trimmed}).`,
+    };
+  }
+  return {
+    error: `Unknown GitHub URL shape "${mode}" in ${trimmed}. Supported: owner/repo, /tree/<ref>[/path], /blob/<ref>/<path>, /archive/<...>.zip|.tar.gz, and direct archive links.`,
+  };
+}
+
+/**
+ * A /tree/<ref>[/path] source. Branches and tags may contain slashes, so the
+ * full remainder is kept for ref/path candidate resolution at download time.
+ */
+function githubTreeSource(owner: string, repo: string, refAndPath: string): ParseResult {
+  if (!refAndPath) return { parsed: { kind: "github", owner, repo } };
+  const [ref, ...pathParts] = refAndPath.split("/");
+  return {
+    parsed: {
+      kind: "github",
+      owner,
+      repo,
+      ref,
+      path: pathParts.join("/") || undefined,
+      remainder: refAndPath,
+      mode: "tree",
+    },
+  };
+}
+
+/** A /blob or /raw single-file source; both require a ref and a file path. */
+function githubFileSource(
+  owner: string,
+  repo: string,
+  mode: "blob" | "raw",
+  refAndPath: string,
+  trimmed: string,
+): ParseResult {
+  const [ref, ...pathParts] = refAndPath.split("/");
+  if (!ref || pathParts.length === 0) {
+    return { error: `GitHub "${mode}" URLs must include a ref and a file path (${trimmed}).` };
+  }
+  return {
+    parsed: { kind: "github", owner, repo, ref, path: pathParts.join("/"), remainder: refAndPath, mode },
+  };
+}
+
+function parseRawGithubUrl(url: URL, trimmed: string): ParseResult {
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments.length < 4) {
+    return {
+      error: `raw.githubusercontent.com URLs must be owner/repo/<ref>/<path...> (${trimmed}).`,
+    };
+  }
+  const [owner, repo, ...rest] = segments;
+  return {
+    parsed: { kind: "github", owner, repo, ref: rest[0], path: rest.slice(1).join("/"), remainder: rest.join("/") },
+  };
+}
+
+function parseCodeloadUrl(url: URL, trimmed: string): ParseResult {
+  const [owner, repo, kind, ref, ...rest] = url.pathname.split("/").filter(Boolean);
+  if (!owner || !repo || !kind || !ref || rest.length > 0) {
+    return { error: `codeload.github.com URLs must be owner/repo/{zip|tar.gz}/<ref> (${trimmed}).` };
+  }
+  if (kind !== "zip" && kind !== "tar.gz") {
+    return { error: `Unknown codeload archive kind "${kind}"; expected zip or tar.gz (${trimmed}).` };
+  }
+  return { parsed: { kind: "archive-url", url: url.toString(), kindHint: kind } };
 }
 
 function archiveHintFromUrl(url: string): { parsed: { kind: "archive-url"; url: string; kindHint?: ArchiveKind } } | null {

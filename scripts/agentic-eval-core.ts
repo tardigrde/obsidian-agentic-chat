@@ -468,77 +468,139 @@ function evaluateStaticAssertion(
 ): EvalFinding[] {
   switch (assertion.type) {
     case "context_contains":
-      return snapshot.systemPrompt.includes(assertion.text)
-        ? []
-        : [finding(caseId, assertion, "prompt", `System prompt does not contain required text: ${assertion.text}`)];
+      return evaluateContextContains(caseId, assertion, snapshot);
     case "context_not_contains":
-      return snapshot.systemPrompt.includes(assertion.text)
-        ? [finding(caseId, assertion, "prompt", `System prompt contains forbidden text: ${assertion.text}`)]
-        : [];
+      return evaluateContextNotContains(caseId, assertion, snapshot);
     case "tool_registered":
-      return hasTool(snapshot, assertion.name)
-        ? []
-        : [finding(caseId, assertion, "tools", `Expected tool is not registered: ${assertion.name}`)];
+      return evaluateToolRegistered(caseId, assertion, snapshot);
     case "tool_not_registered":
-      return hasTool(snapshot, assertion.name)
-        ? [finding(caseId, assertion, "tools", `Tool should not be registered: ${assertion.name}`)]
-        : [];
-    case "tool_description_contains": {
-      const tool = toolByName(snapshot, assertion.name);
-      if (!tool) return [finding(caseId, assertion, "tool-description", `Tool is not registered: ${assertion.name}`)];
-      return (tool.description ?? "").includes(assertion.text)
-        ? []
-        : [
-            finding(
-              caseId,
-              assertion,
-              "tool-description",
-              `Tool ${assertion.name} description does not contain: ${assertion.text}`,
-              { description: tool.description ?? "" },
-            ),
-          ];
-    }
+      return evaluateToolNotRegistered(caseId, assertion, snapshot);
+    case "tool_description_contains":
+      return evaluateToolDescriptionContains(caseId, assertion, snapshot);
     case "max_tool_schema_tokens":
-      return snapshot.toolSchemaTokens <= assertion.max
-        ? []
-        : [
-            finding(
-              caseId,
-              assertion,
-              "context-budget",
-              `Tool schema estimate is ${snapshot.toolSchemaTokens} tokens, over limit ${assertion.max}.`,
-            ),
-          ];
+      return evaluateMaxToolSchemaTokens(caseId, assertion, snapshot);
     case "max_context_chars":
-      return snapshot.contextChars <= assertion.max
-        ? []
-        : [
-            finding(
-              caseId,
-              assertion,
-              "context-budget",
-              `Static context is ${snapshot.contextChars} chars, over limit ${assertion.max}.`,
-            ),
-          ];
-    case "prompt_mentions_only_registered_tools": {
-      const mentionedUnavailable = (assertion.names ?? snapshot.knownToolNames).filter(
-        (name) => !hasTool(snapshot, name) && mentionsToolName(snapshot.systemPrompt, name),
-      );
-      return mentionedUnavailable.length === 0
-        ? []
-        : [
-            finding(
-              caseId,
-              assertion,
-              "prompt-tools",
-              `System prompt mentions unavailable tool(s): ${mentionedUnavailable.join(", ")}.`,
-              { mentionedUnavailable },
-            ),
-          ];
-    }
+      return evaluateMaxContextChars(caseId, assertion, snapshot);
+    case "prompt_mentions_only_registered_tools":
+      return evaluatePromptMentionsOnlyRegisteredTools(caseId, assertion, snapshot);
     default:
       return [];
   }
+}
+
+function evaluateContextContains(
+  caseId: string,
+  assertion: ContextContainsAssertion,
+  snapshot: StaticContextSnapshot,
+): EvalFinding[] {
+  return snapshot.systemPrompt.includes(assertion.text)
+    ? []
+    : [finding(caseId, assertion, "prompt", `System prompt does not contain required text: ${assertion.text}`)];
+}
+
+function evaluateContextNotContains(
+  caseId: string,
+  assertion: ContextNotContainsAssertion,
+  snapshot: StaticContextSnapshot,
+): EvalFinding[] {
+  return snapshot.systemPrompt.includes(assertion.text)
+    ? [finding(caseId, assertion, "prompt", `System prompt contains forbidden text: ${assertion.text}`)]
+    : [];
+}
+
+function evaluateToolRegistered(
+  caseId: string,
+  assertion: ToolRegisteredAssertion,
+  snapshot: StaticContextSnapshot,
+): EvalFinding[] {
+  return hasTool(snapshot, assertion.name)
+    ? []
+    : [finding(caseId, assertion, "tools", `Expected tool is not registered: ${assertion.name}`)];
+}
+
+function evaluateToolNotRegistered(
+  caseId: string,
+  assertion: ToolNotRegisteredAssertion,
+  snapshot: StaticContextSnapshot,
+): EvalFinding[] {
+  return hasTool(snapshot, assertion.name)
+    ? [finding(caseId, assertion, "tools", `Tool should not be registered: ${assertion.name}`)]
+    : [];
+}
+
+function evaluateToolDescriptionContains(
+  caseId: string,
+  assertion: ToolDescriptionContainsAssertion,
+  snapshot: StaticContextSnapshot,
+): EvalFinding[] {
+  const tool = toolByName(snapshot, assertion.name);
+  if (!tool) return [finding(caseId, assertion, "tool-description", `Tool is not registered: ${assertion.name}`)];
+  return (tool.description ?? "").includes(assertion.text)
+    ? []
+    : [
+        finding(
+          caseId,
+          assertion,
+          "tool-description",
+          `Tool ${assertion.name} description does not contain: ${assertion.text}`,
+          { description: tool.description ?? "" },
+        ),
+      ];
+}
+
+function evaluateMaxToolSchemaTokens(
+  caseId: string,
+  assertion: MaxToolSchemaTokensAssertion,
+  snapshot: StaticContextSnapshot,
+): EvalFinding[] {
+  return snapshot.toolSchemaTokens <= assertion.max
+    ? []
+    : [
+        finding(
+          caseId,
+          assertion,
+          "context-budget",
+          `Tool schema estimate is ${snapshot.toolSchemaTokens} tokens, over limit ${assertion.max}.`,
+        ),
+      ];
+}
+
+function evaluateMaxContextChars(
+  caseId: string,
+  assertion: MaxContextCharsAssertion,
+  snapshot: StaticContextSnapshot,
+): EvalFinding[] {
+  return snapshot.contextChars <= assertion.max
+    ? []
+    : [
+        finding(
+          caseId,
+          assertion,
+          "context-budget",
+          `Static context is ${snapshot.contextChars} chars, over limit ${assertion.max}.`,
+        ),
+      ];
+}
+
+function evaluatePromptMentionsOnlyRegisteredTools(
+  caseId: string,
+  assertion: PromptMentionsOnlyRegisteredToolsAssertion,
+  snapshot: StaticContextSnapshot,
+): EvalFinding[] {
+  const mentionedUnavailable = (assertion.names ?? snapshot.knownToolNames).filter(
+    (name) => !hasTool(snapshot, name) && mentionsToolName(snapshot.systemPrompt, name),
+  );
+  return mentionedUnavailable.length === 0
+    ? []
+    : [
+        finding(
+          caseId,
+          assertion,
+          "prompt-tools",
+          `System prompt mentions unavailable tool(s): ${mentionedUnavailable.join(", ")}.`,
+          { mentionedUnavailable },
+        ),
+      ];
 }
 
 function evaluateDogfoodAssertion(

@@ -113,33 +113,47 @@ function main() {
 
 function parseCliArgs(argv) {
   const parsed = { format: "json", input: undefined, compare: undefined, help: false };
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === "-h" || arg === "--help") {
-      parsed.help = true;
-      continue;
-    }
-    if (arg === "--format") {
-      parsed.format = readFormat(argv[++index]);
-      continue;
-    }
-    if (arg?.startsWith("--format=")) {
-      parsed.format = readFormat(arg.slice("--format=".length));
-      continue;
-    }
-    if (arg === "--compare") {
-      const before = argv[++index];
-      const after = argv[++index];
-      if (!before || !after) throw new Error("--compare requires <before-session-path> <after-session-path>.");
-      parsed.compare = [before, after];
-      continue;
-    }
-    if (arg?.startsWith("-")) throw new Error(`Unknown option: ${arg}`);
-    if (parsed.input) throw new Error(`Unexpected extra input: ${arg}`);
-    parsed.input = arg;
+  let index = 0;
+  while (index < argv.length) {
+    index = parseCliArg(argv, index, parsed);
   }
   if (!parsed.input && !parsed.compare) parsed.help = true;
   return parsed;
+}
+
+function parseCliArg(argv, index, parsed) {
+  const arg = argv[index];
+  if (arg === "-h" || arg === "--help") {
+    parsed.help = true;
+    return index + 1;
+  }
+  if (arg === "--format") {
+    parsed.format = readFormat(argv[index + 1]);
+    return index + 2;
+  }
+  if (arg?.startsWith("--format=")) {
+    parsed.format = readFormat(arg.slice("--format=".length));
+    return index + 1;
+  }
+  if (arg === "--compare") {
+    parsed.compare = readCompareArgs(argv, index);
+    return index + 3;
+  }
+  return parsePositionalArg(arg, index, parsed);
+}
+
+function readCompareArgs(argv, index) {
+  const before = argv[index + 1];
+  const after = argv[index + 2];
+  if (!before || !after) throw new Error("--compare requires <before-session-path> <after-session-path>.");
+  return [before, after];
+}
+
+function parsePositionalArg(arg, index, parsed) {
+  if (arg?.startsWith("-")) throw new Error(`Unknown option: ${arg}`);
+  if (parsed.input) throw new Error(`Unexpected extra input: ${arg}`);
+  parsed.input = arg;
+  return index + 1;
 }
 
 function readFormat(value) {
@@ -174,143 +188,193 @@ function resolveSessionFiles(target) {
 }
 
 function analyzeSessionFile(file) {
-  const lines = fs
+  const lines = readSessionLines(file);
+  const state = createSessionState();
+
+  for (const entry of lines) {
+    collectSessionEntry(entry, state);
+  }
+
+  const turns = state.turnStates.map(finalizeTurnState);
+  return buildSessionSummary(file, lines, state, turns);
+}
+
+function readSessionLines(file) {
+  return fs
     .readFileSync(file, "utf8")
     .split("\n")
     .filter((line) => line.trim())
     .map((line) => JSON.parse(line));
-  const usage = emptyUsage();
-  const messages = { user: 0, assistant: 0 };
-  const toolStartsByTool = {};
-  const exactToolCalls = {};
-  const externalPathActions = {};
-  const seenToolCallIds = new Set();
-  const activeNoteBodyCounts = {};
-  const activeNoteCounts = {};
-  const approvalDecisionsByTool = {};
-  const approvalDenialReasons = {};
-  const toolErrorsByTool = {};
-  const noteMutations = {};
-  let toolStarts = 0;
-  let cacheHits = 0;
-  let maxUserMessageChars = 0;
-  let maxAssistantInput = 0;
-  const turnStates = [];
-  let currentTurn = null;
+}
 
-  for (const entry of lines) {
-    if (entry.type === "message") {
-      const message = entry.message ?? {};
-      if (message.role === "user") {
-        const text = contentText(message);
-        currentTurn = createTurnState(turnStates.length, text);
-        turnStates.push(currentTurn);
-        messages.user += 1;
-        maxUserMessageChars = Math.max(maxUserMessageChars, text.length);
-        const active = activeNotePath(text) ?? "(none)";
-        activeNoteCounts[active] = (activeNoteCounts[active] ?? 0) + 1;
-        const body = activeNoteBody(text);
-        if (body) countActiveNoteBody(activeNoteBodyCounts, body);
-      }
-      if (message.role === "assistant") {
-        const turn = ensureTurn(turnStates, currentTurn);
-        currentTurn = turn;
-        messages.assistant += 1;
-        const current = message.usage ?? {};
-        addUsage(usage, current);
-        addUsage(turn.summary.usage, current);
-        maxAssistantInput = Math.max(maxAssistantInput, numeric(current.input));
-        turn.summary.maxAssistantInput = Math.max(turn.summary.maxAssistantInput, numeric(current.input));
-        for (const part of Array.isArray(message.content) ? message.content : []) {
-          if (part?.type === "toolCall") {
-            recordToolStart(part.name ?? "(unknown)", part.id, part.arguments ?? {});
-          }
-        }
-      }
-      if (message.role === "toolResult" && message.details?.cached === true) {
-        const turn = ensureTurn(turnStates, currentTurn);
-        currentTurn = turn;
-        cacheHits += 1;
-        turn.summary.cacheHits += 1;
-      }
-    }
+function createSessionState() {
+  return {
+    usage: emptyUsage(),
+    messages: { user: 0, assistant: 0 },
+    toolStartsByTool: {},
+    exactToolCalls: {},
+    externalPathActions: {},
+    seenToolCallIds: new Set(),
+    activeNoteBodyCounts: {},
+    activeNoteCounts: {},
+    approvalDecisionsByTool: {},
+    approvalDenialReasons: {},
+    toolErrorsByTool: {},
+    noteMutations: {},
+    toolStarts: 0,
+    cacheHits: 0,
+    maxUserMessageChars: 0,
+    maxAssistantInput: 0,
+    turnStates: [],
+    currentTurn: null,
+  };
+}
 
-    const event = entry.event;
-    if (entry.type === "action_audit" && event?.category === "tool_call" && event.action === "start") {
-      recordToolStart(event.toolName, event.toolCallId, event.args ?? {});
-    }
+function collectSessionEntry(entry, state) {
+  if (entry.type === "message") collectMessageEntry(entry, state);
+  collectActionAuditEntry(entry, state);
+}
 
-    if (entry.type === "action_audit" && event?.category === "tool_call" && event.action === "end" && event.isError) {
-      const turn = ensureTurn(turnStates, currentTurn);
-      currentTurn = turn;
-      toolErrorsByTool[event.toolName] = (toolErrorsByTool[event.toolName] ?? 0) + 1;
-      turn.summary.toolErrorsByTool[event.toolName] = (turn.summary.toolErrorsByTool[event.toolName] ?? 0) + 1;
-    }
+function collectMessageEntry(entry, state) {
+  const message = entry.message ?? {};
+  if (message.role === "user") recordUserMessage(message, state);
+  if (message.role === "assistant") recordAssistantMessage(message, state);
+  if (message.role === "toolResult" && message.details?.cached === true) recordCacheHit(state);
+}
 
-    if (entry.type === "action_audit" && event?.category === "approval" && event.action === "decision") {
-      const turn = ensureTurn(turnStates, currentTurn);
-      currentTurn = turn;
-      const decisionKey = `${event.toolName}:${event.decision}`;
-      approvalDecisionsByTool[decisionKey] = (approvalDecisionsByTool[decisionKey] ?? 0) + 1;
-      turn.summary.approvalDecisionsByTool[decisionKey] = (turn.summary.approvalDecisionsByTool[decisionKey] ?? 0) + 1;
-      if (event.decision === "denied") {
-        const reason = event.reason ?? "(none)";
-        const reasonKey = `${event.toolName}: ${reason}`;
-        approvalDenialReasons[reasonKey] = (approvalDenialReasons[reasonKey] ?? 0) + 1;
-        turn.approvalDenialReasons[reasonKey] = (turn.approvalDenialReasons[reasonKey] ?? 0) + 1;
-      }
-      const mutation = mutationKey(event);
-      if (mutation && mutationDecisionApplies(event.decision)) noteMutations[mutation] = (noteMutations[mutation] ?? 0) + 1;
-    }
+function recordUserMessage(message, state) {
+  const text = contentText(message);
+  const turn = createTurnState(state.turnStates.length, text);
+  state.turnStates.push(turn);
+  state.currentTurn = turn;
+  state.messages.user += 1;
+  state.maxUserMessageChars = Math.max(state.maxUserMessageChars, text.length);
+  const active = activeNotePath(text) ?? "(none)";
+  state.activeNoteCounts[active] = (state.activeNoteCounts[active] ?? 0) + 1;
+  const body = activeNoteBody(text);
+  if (body) countActiveNoteBody(state.activeNoteBodyCounts, body);
+}
+
+function recordAssistantMessage(message, state) {
+  const turn = ensureCurrentTurn(state);
+  state.messages.assistant += 1;
+  const current = message.usage ?? {};
+  addUsage(state.usage, current);
+  addUsage(turn.summary.usage, current);
+  state.maxAssistantInput = Math.max(state.maxAssistantInput, numeric(current.input));
+  turn.summary.maxAssistantInput = Math.max(turn.summary.maxAssistantInput, numeric(current.input));
+  for (const part of Array.isArray(message.content) ? message.content : []) {
+    if (part?.type === "toolCall") recordToolStart(state, part.name ?? "(unknown)", part.id, part.arguments ?? {});
   }
+}
 
-  const turns = turnStates.map(finalizeTurnState);
+function recordCacheHit(state) {
+  const turn = ensureCurrentTurn(state);
+  state.cacheHits += 1;
+  turn.summary.cacheHits += 1;
+}
 
+function collectActionAuditEntry(entry, state) {
+  const event = entry.event;
+  if (entry.type !== "action_audit" || !event) return;
+
+  if (isAuditEvent(event, "tool_call", "start")) {
+    recordToolStart(state, event.toolName, event.toolCallId, event.args ?? {});
+  }
+  if (isAuditEvent(event, "tool_call", "end") && event.isError) {
+    recordToolCallError(event, state);
+  }
+  if (isAuditEvent(event, "approval", "decision")) {
+    recordApprovalDecision(event, state);
+  }
+}
+
+function isAuditEvent(event, category, action) {
+  return event.category === category && event.action === action;
+}
+
+function recordToolCallError(event, state) {
+  const turn = ensureCurrentTurn(state);
+  state.toolErrorsByTool[event.toolName] = (state.toolErrorsByTool[event.toolName] ?? 0) + 1;
+  turn.summary.toolErrorsByTool[event.toolName] = (turn.summary.toolErrorsByTool[event.toolName] ?? 0) + 1;
+}
+
+function recordApprovalDecision(event, state) {
+  const turn = ensureCurrentTurn(state);
+  const decisionKey = `${event.toolName}:${event.decision}`;
+  state.approvalDecisionsByTool[decisionKey] = (state.approvalDecisionsByTool[decisionKey] ?? 0) + 1;
+  turn.summary.approvalDecisionsByTool[decisionKey] = (turn.summary.approvalDecisionsByTool[decisionKey] ?? 0) + 1;
+  if (event.decision === "denied") recordApprovalDenial(event, turn, state);
+  recordMutationDecision(event, state);
+}
+
+function recordApprovalDenial(event, turn, state) {
+  const reason = event.reason ?? "(none)";
+  const reasonKey = `${event.toolName}: ${reason}`;
+  state.approvalDenialReasons[reasonKey] = (state.approvalDenialReasons[reasonKey] ?? 0) + 1;
+  turn.approvalDenialReasons[reasonKey] = (turn.approvalDenialReasons[reasonKey] ?? 0) + 1;
+}
+
+function recordMutationDecision(event, state) {
+  const mutation = mutationKey(event);
+  if (mutation && mutationDecisionApplies(event.decision)) {
+    state.noteMutations[mutation] = (state.noteMutations[mutation] ?? 0) + 1;
+  }
+}
+
+function recordToolStart(state, toolName, toolCallId, args) {
+  if (toolCallId && state.seenToolCallIds.has(toolCallId)) return;
+  if (toolCallId) state.seenToolCallIds.add(toolCallId);
+  const turn = ensureCurrentTurn(state);
+  state.toolStarts += 1;
+  state.toolStartsByTool[toolName] = (state.toolStartsByTool[toolName] ?? 0) + 1;
+  const exactKey = exactToolCallKeyFrom(toolName, args);
+  state.exactToolCalls[exactKey] = (state.exactToolCalls[exactKey] ?? 0) + 1;
+  turn.summary.toolStarts += 1;
+  turn.summary.toolStartsByTool[toolName] = (turn.summary.toolStartsByTool[toolName] ?? 0) + 1;
+  turn.summary.toolCalls.push({
+    toolName,
+    toolCallId,
+    argsSummary: summarizeArgs(args),
+  });
+  turn.exactToolCalls[exactKey] = (turn.exactToolCalls[exactKey] ?? 0) + 1;
+  if (toolName === "external_inspect") recordExternalPathAction(state, turn, args);
+}
+
+function recordExternalPathAction(state, turn, args) {
+  const pathActionKey = externalPathActionKeyFrom(args);
+  state.externalPathActions[pathActionKey] = (state.externalPathActions[pathActionKey] ?? 0) + 1;
+  turn.externalPathActions[pathActionKey] = (turn.externalPathActions[pathActionKey] ?? 0) + 1;
+}
+
+function ensureCurrentTurn(state) {
+  const turn = ensureTurn(state.turnStates, state.currentTurn);
+  state.currentTurn = turn;
+  return turn;
+}
+
+function buildSessionSummary(file, lines, state, turns) {
   return {
     file,
     lineCount: lines.length,
-    messages,
-    usage,
+    messages: state.messages,
+    usage: state.usage,
     turns,
-    cacheHits,
-    maxUserMessageChars,
-    maxAssistantInput,
-    toolStarts,
-    toolStartsByTool,
-    duplicateToolStarts: repeated(exactToolCalls),
-    repeatedExternalPathActions: repeated(externalPathActions),
-    approvalDecisionsByTool,
-    approvalDenialReasons: repeatedIncludingSingles(approvalDenialReasons),
-    toolErrorsByTool,
-    noteMutations: repeatedIncludingSingles(noteMutations),
-    activeNoteCounts,
-    activeNoteBodyCounts,
-    repeatedActiveNoteBodies: repeatedActiveNoteBodies(activeNoteBodyCounts),
+    cacheHits: state.cacheHits,
+    maxUserMessageChars: state.maxUserMessageChars,
+    maxAssistantInput: state.maxAssistantInput,
+    toolStarts: state.toolStarts,
+    toolStartsByTool: state.toolStartsByTool,
+    duplicateToolStarts: repeated(state.exactToolCalls),
+    repeatedExternalPathActions: repeated(state.externalPathActions),
+    approvalDecisionsByTool: state.approvalDecisionsByTool,
+    approvalDenialReasons: repeatedIncludingSingles(state.approvalDenialReasons),
+    toolErrorsByTool: state.toolErrorsByTool,
+    noteMutations: repeatedIncludingSingles(state.noteMutations),
+    activeNoteCounts: state.activeNoteCounts,
+    activeNoteBodyCounts: state.activeNoteBodyCounts,
+    repeatedActiveNoteBodies: repeatedActiveNoteBodies(state.activeNoteBodyCounts),
   };
-
-  function recordToolStart(toolName, toolCallId, args) {
-    if (toolCallId && seenToolCallIds.has(toolCallId)) return;
-    if (toolCallId) seenToolCallIds.add(toolCallId);
-    const turn = ensureTurn(turnStates, currentTurn);
-    currentTurn = turn;
-    toolStarts += 1;
-    toolStartsByTool[toolName] = (toolStartsByTool[toolName] ?? 0) + 1;
-    const exactKey = exactToolCallKeyFrom(toolName, args);
-    exactToolCalls[exactKey] = (exactToolCalls[exactKey] ?? 0) + 1;
-    turn.summary.toolStarts += 1;
-    turn.summary.toolStartsByTool[toolName] = (turn.summary.toolStartsByTool[toolName] ?? 0) + 1;
-    turn.summary.toolCalls.push({
-      toolName,
-      toolCallId,
-      argsSummary: summarizeArgs(args),
-    });
-    turn.exactToolCalls[exactKey] = (turn.exactToolCalls[exactKey] ?? 0) + 1;
-    if (toolName === "external_inspect") {
-      const pathActionKey = externalPathActionKeyFrom(args);
-      externalPathActions[pathActionKey] = (externalPathActions[pathActionKey] ?? 0) + 1;
-      turn.externalPathActions[pathActionKey] = (turn.externalPathActions[pathActionKey] ?? 0) + 1;
-    }
-  }
 }
 
 function combineSummaries(summaries) {
