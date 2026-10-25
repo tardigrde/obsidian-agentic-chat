@@ -12,8 +12,15 @@ if (!vaultPath) {
   process.exit(1);
 }
 
-if (/[;&|`$(){}[\]\\*?<>!#]/.test(vaultPath) || vaultPath.includes("\0")) {
-  console.error("Vault path contains unsafe characters.");
+if (
+  !vaultPath.startsWith("/") ||
+  vaultPath.split("/").includes("..") ||
+  /[;&|`$(){}[\]\\*?<>!#]/.test(vaultPath) ||
+  /[\0\r\n\t]/.test(vaultPath)
+) {
+  console.error(
+    "Vault path must be an absolute Android device path without '..', control characters, or unsafe characters.",
+  );
   process.exit(1);
 }
 
@@ -35,7 +42,9 @@ console.warn(`Installed Agentic Chat assets into Android vault plugin dir: ${plu
 console.warn("Open Obsidian Mobile, reload if needed, then enable Agentic Chat from Community plugins.");
 
 function run(command, args) {
-  const result = spawnSync(command, args, { stdio: "inherit" });
+  // `command` is always the literal "adb"; args are validated device paths passed
+  // as an array with shell:false. adb escapes arguments on the device shell.
+  const result = spawnSync(command, args, { stdio: "inherit", shell: false }); // NOSONAR:S8705
   if (result.error) {
     console.error(result.error.message);
     process.exit(1);
