@@ -2064,11 +2064,17 @@
   overflow-wrap: anywhere;
 }
 .agentic-chat-mcp-server-header .setting-item-control {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  max-width: 100%;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--size-2-2);
   margin-left: auto;
+}
+/* Obsidian phone CSS stretches setting buttons to the full control width
+   (.is-phone .modal .setting-item-control button); keep toggle and buttons in one row here. */
+.is-phone .modal .agentic-chat-mcp-server-header .setting-item-control button:not(.clickable-icon) {
+  width: auto;
 }
 
 /* Add MCP server heading — rendered as a plain div instead of a Setting heading
