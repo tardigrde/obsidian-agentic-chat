@@ -242,9 +242,20 @@ class Tailer {
   }
 
   private async scanRoot(rootInfo: TailRoot, seed: boolean): Promise<void> {
-    for (const file of await listFiles(rootInfo.dir, rootInfo.extensions)) {
-      await this.scanFile(rootInfo, file, seed);
-    }
+    const files = await listFiles(rootInfo.dir, rootInfo.extensions);
+    await this.scanFiles(rootInfo, files, seed);
+  }
+
+  private async scanFiles(
+    rootInfo: TailRoot,
+    files: string[],
+    seed: boolean,
+    index = 0,
+  ): Promise<void> {
+    const file = files[index];
+    if (file === undefined) return;
+    await this.scanFile(rootInfo, file, seed);
+    await this.scanFiles(rootInfo, files, seed, index + 1);
   }
 
   private async scanFile(rootInfo: TailRoot, file: string, seed: boolean): Promise<void> {

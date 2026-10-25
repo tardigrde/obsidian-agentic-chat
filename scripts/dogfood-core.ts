@@ -444,9 +444,18 @@ async function appendGeneratedNoteFindings(
   findings: DogfoodInvariantFinding[],
   manifest: DogfoodManifest,
 ): Promise<void> {
-  for (const expected of manifest.requiredGeneratedNotes) {
-    await appendGeneratedNoteFinding(findings, manifest, expected);
-  }
+  await appendGeneratedNoteFindingsFrom(findings, manifest, 0);
+}
+
+async function appendGeneratedNoteFindingsFrom(
+  findings: DogfoodInvariantFinding[],
+  manifest: DogfoodManifest,
+  index: number,
+): Promise<void> {
+  const expected = manifest.requiredGeneratedNotes[index];
+  if (expected === undefined) return;
+  await appendGeneratedNoteFinding(findings, manifest, expected);
+  await appendGeneratedNoteFindingsFrom(findings, manifest, index + 1);
 }
 
 async function appendGeneratedNoteFinding(

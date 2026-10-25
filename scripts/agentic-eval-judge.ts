@@ -382,13 +382,15 @@ function collectDigestLine(line: string, accumulator: DigestAccumulator): void {
 
 function collectUserPrompt(entry: SessionDigestEntry, accumulator: DigestAccumulator): void {
   const message = entry.message;
-  if (entry.type !== "message" || !message || message.role !== "user") return;
+  if (entry.type !== "message" || !message) return;
+  if (message.role !== "user") return;
   accumulator.userPrompts.push(compactText(messageText(message.content), MAX_PACKET_TEXT_CHARS));
 }
 
 function collectAssistantResponse(entry: SessionDigestEntry, accumulator: DigestAccumulator): void {
   const message = entry.message;
-  if (entry.type !== "message" || !message || message.role !== "assistant") return;
+  if (entry.type !== "message" || !message) return;
+  if (message.role !== "assistant") return;
   const text = messageText(message.content);
   if (text.trim()) accumulator.assistantResponses.push(compactText(text, MAX_PACKET_TEXT_CHARS));
 }

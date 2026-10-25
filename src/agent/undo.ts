@@ -191,13 +191,22 @@ export function describeUndo(entry: UndoEntry): string {
 async function ensureParentFolders(app: App, path: string): Promise<void> {
   const parent = getParentPath(path);
   if (!parent) return;
-  let current = "";
   // Drop empty segments (leading/trailing/consecutive slashes) so we never try
   // to create a folder with an empty name.
-  for (const segment of parent.split("/").filter(Boolean)) {
-    current = current ? `${current}/${segment}` : segment;
-    await ensureFolder(app, current);
-  }
+  await ensureFolderChain(app, parent.split("/").filter(Boolean), 0, "");
+}
+
+async function ensureFolderChain(
+  app: App,
+  segments: string[],
+  index: number,
+  prefix: string,
+): Promise<void> {
+  const segment = segments[index];
+  if (segment === undefined) return;
+  const current = prefix ? `${prefix}/${segment}` : segment;
+  await ensureFolder(app, current);
+  await ensureFolderChain(app, segments, index + 1, current);
 }
 
 async function ensureFolder(app: App, path: string): Promise<void> {

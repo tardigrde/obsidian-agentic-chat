@@ -210,9 +210,8 @@ async function requestCompletionWithRetries(
   options: SimpleStreamOptions | undefined,
 ): Promise<OpenAICompatibleResponse> {
   const maxRetries = Math.max(0, Math.floor(options?.maxRetries ?? 0));
-  let attempt = 0;
 
-  for (;;) {
+  async function attemptCompletion(attempt: number): Promise<OpenAICompatibleResponse> {
     throwIfRequestAborted(options?.signal);
     try {
       const response = await performCompletionRequest(requester, request, options);
@@ -225,9 +224,10 @@ async function requestCompletionWithRetries(
       if (!decision) throw error;
       await waitForRetry(attempt, decision, options);
     }
-
-    attempt += 1;
+    return attemptCompletion(attempt + 1);
   }
+
+  return attemptCompletion(0);
 }
 
 interface RetryDecision {
