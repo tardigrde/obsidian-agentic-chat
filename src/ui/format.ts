@@ -92,25 +92,31 @@ export function formatCallBody(name: string, rawArgs: string): string {
     return "";
   }
   if (!isPlainObject(parsed)) return "";
-  if (name === "edit") {
-    const parts: string[] = [];
-    if (typeof parsed.path === "string" && parsed.path) parts.push(`path: ${parsed.path}`);
-    const count = Array.isArray(parsed.edits) ? parsed.edits.length : 0;
-    if (count > 0) parts.push(`${count} edit${count === 1 ? "" : "s"}`);
-    return parts.join("\n");
-  }
-  if (name === "read" || name === "get_active_note") {
-    const parts: string[] = [];
-    if (typeof parsed.path === "string" && parsed.path) parts.push(`path: ${parsed.path}`);
-    const offset = typeof parsed.offset === "number" ? parsed.offset : undefined;
-    const limit = typeof parsed.limit === "number" ? parsed.limit : undefined;
-    if (offset !== undefined || limit !== undefined) {
-      const end = offset !== undefined && limit !== undefined ? offset + limit : "?";
-      parts.push(`lines: ${offset ?? 0}–${end}`);
-    }
-    return parts.join("\n");
-  }
+  if (name === "edit") return formatEditCallBody(parsed);
+  if (name === "read" || name === "get_active_note") return formatReadCallBody(parsed);
   return formatArgsReadable(rawArgs);
+}
+
+/** edit → path + edit count (never the raw oldText/newText, which truncates badly). */
+function formatEditCallBody(parsed: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (typeof parsed.path === "string" && parsed.path) parts.push(`path: ${parsed.path}`);
+  const count = Array.isArray(parsed.edits) ? parsed.edits.length : 0;
+  if (count > 0) parts.push(`${count} edit${count === 1 ? "" : "s"}`);
+  return parts.join("\n");
+}
+
+/** read / get_active_note → path + optional line range. */
+function formatReadCallBody(parsed: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (typeof parsed.path === "string" && parsed.path) parts.push(`path: ${parsed.path}`);
+  const offset = typeof parsed.offset === "number" ? parsed.offset : undefined;
+  const limit = typeof parsed.limit === "number" ? parsed.limit : undefined;
+  if (offset !== undefined || limit !== undefined) {
+    const end = offset !== undefined && limit !== undefined ? offset + limit : "?";
+    parts.push(`lines: ${offset ?? 0}–${end}`);
+  }
+  return parts.join("\n");
 }
 
 /** Tools whose success result is just file contents already on disk / in context — hide it. */

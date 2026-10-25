@@ -29,21 +29,11 @@ export function globToRegExpSource(glob: string): string | null {
   for (let index = 0; index < glob.length; index += 1) {
     const char = glob[index];
     if (char === "*") {
-      if (glob[index + 1] === "*") {
-        // `**/` spans zero or more directories (so `**/x` also matches `x` at root);
-        // a bare `**` spans any characters including separators.
-        if (glob[index + 2] === "/") {
-          doubleStarSegments += 1;
-          if (doubleStarSegments > MAX_DOUBLE_STAR_SEGMENTS) return null;
-          out += "(?:.*/)?";
-          index += 2;
-        } else {
-          out += ".*";
-          index += 1;
-        }
-      } else {
-        out += "[^/]*";
-      }
+      const star = expandStarSegment(glob, index, doubleStarSegments);
+      if (star === null) return null;
+      doubleStarSegments = star.doubleStarSegments;
+      out += star.source;
+      index += star.consumed;
     } else if (char === "?") {
       out += "[^/]";
     } else {
@@ -51,6 +41,27 @@ export function globToRegExpSource(glob: string): string | null {
     }
   }
   return out;
+}
+
+interface ExpandedStarSegment {
+  source: string;
+  /** Extra characters consumed past the current `*` (0, 1, or 2). */
+  consumed: number;
+  doubleStarSegments: number;
+}
+
+function expandStarSegment(
+  glob: string,
+  index: number,
+  doubleStarSegments: number,
+): ExpandedStarSegment | null {
+  if (glob[index + 1] !== "*") return { source: "[^/]*", consumed: 0, doubleStarSegments };
+  // `**/` spans zero or more directories (so `**/x` also matches `x` at root);
+  // a bare `**` spans any characters including separators.
+  if (glob[index + 2] !== "/") return { source: ".*", consumed: 1, doubleStarSegments };
+  const nextSegments = doubleStarSegments + 1;
+  if (nextSegments > MAX_DOUBLE_STAR_SEGMENTS) return null;
+  return { source: "(?:.*/)?", consumed: 2, doubleStarSegments: nextSegments };
 }
 
 /**

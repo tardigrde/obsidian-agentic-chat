@@ -215,41 +215,10 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
 
 /** Merge stored settings over defaults, healing nested objects. */
 export function mergeSettings(stored: Partial<AgenticChatSettings> | null | undefined): AgenticChatSettings {
-  // Drop retired feature keys (e.g. the removed `projects` workspaces) from the
-  // persisted object so a legacy key from an older data.json is neither carried
-  // nor re-saved.
-  const remaining = { ...(stored ?? {}) };
-  const retiredKeys = RETIRED_SETTING_KEYS.filter((key) => key in remaining);
-  for (const key of retiredKeys) {
-    delete (remaining as Record<string, unknown>)[key];
-  }
-  // Make the silent drop of hand-authored config visible (until the next save).
-  if (retiredKeys.length > 0) {
-    console.warn(`Agentic chat: dropped retired setting(s): ${retiredKeys.join(", ")}.`);
-  }
+  const remaining = dropRetiredSettingKeys(stored);
   const healedMcp = healMcpSettings(stored?.mcp);
   const healedPlugins = healPluginSettings(stored?.plugins);
-  // One-time migration S10: legacy plugin servers persisted in mcp.servers → plugins.mcpState map.
-  // Client state (enabled/approval/auth/knownTools/oauth) moves by stable id; shape stays in mcp.json.
-  // User servers (source=user) stay in mcp.servers for backward compat until they are re-created as plugins.
-  if (healedMcp.servers.length > 0) {
-    let migrated = false;
-    const remainingServers: typeof healedMcp.servers = [];
-    for (const server of healedMcp.servers) {
-      if (server.source === "plugin" && !healedPlugins.mcpState[server.id]) {
-        healedPlugins.mcpState[server.id] = mcpServerStateFromServer(server);
-        migrated = true;
-      } else if (server.source === "plugin" && healedPlugins.mcpState[server.id]) {
-        // Already migrated — drop the persisted copy to avoid divergence.
-        migrated = true;
-      } else {
-        remainingServers.push(server);
-      }
-    }
-    if (migrated) {
-      healedMcp.servers = remainingServers;
-    }
-  }
+  migrateLegacyPluginServers(healedMcp, healedPlugins);
   return {
     ...DEFAULT_SETTINGS,
     ...remaining,
@@ -303,6 +272,51 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
 
 function stringSetting(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+/**
+ * Drop retired feature keys (e.g. the removed `projects` workspaces) from the
+ * persisted object so a legacy key from an older data.json is neither carried
+ * nor re-saved.
+ */
+function dropRetiredSettingKeys(
+  stored: Partial<AgenticChatSettings> | null | undefined,
+): Partial<AgenticChatSettings> {
+  const remaining = { ...(stored ?? {}) };
+  const retiredKeys = RETIRED_SETTING_KEYS.filter((key) => key in remaining);
+  for (const key of retiredKeys) {
+    delete (remaining as Record<string, unknown>)[key];
+  }
+  // Make the silent drop of hand-authored config visible (until the next save).
+  if (retiredKeys.length > 0) {
+    console.warn(`Agentic chat: dropped retired setting(s): ${retiredKeys.join(", ")}.`);
+  }
+  return remaining;
+}
+
+/**
+ * One-time migration S10: legacy plugin servers persisted in mcp.servers → plugins.mcpState map.
+ * Client state (enabled/approval/auth/knownTools/oauth) moves by stable id; shape stays in mcp.json.
+ * User servers (source=user) stay in mcp.servers for backward compat until they are re-created as plugins.
+ */
+function migrateLegacyPluginServers(healedMcp: McpSettings, healedPlugins: PluginSettings): void {
+  if (healedMcp.servers.length === 0) return;
+  let migrated = false;
+  const remainingServers: McpSettings["servers"] = [];
+  for (const server of healedMcp.servers) {
+    if (server.source !== "plugin") {
+      remainingServers.push(server);
+      continue;
+    }
+    // Move client state once; an already-migrated copy is dropped to avoid divergence.
+    if (!healedPlugins.mcpState[server.id]) {
+      healedPlugins.mcpState[server.id] = mcpServerStateFromServer(server);
+    }
+    migrated = true;
+  }
+  if (migrated) {
+    healedMcp.servers = remainingServers;
+  }
 }
 
 /** Retired feature keys removed from persisted data.json on load. */
