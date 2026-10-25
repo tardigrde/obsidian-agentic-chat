@@ -181,36 +181,54 @@ export function sanitizeSkillDoc(doc: string, dirName: string, warnings: string[
   if (!match) {
     return `---\nname: ${dirName}\ndescription: ${dirName} skill.\n---\n\n${doc.trimStart()}`;
   }
-  let frontmatter: Record<string, unknown> = {};
-  try {
-    // Obsidian's parseYaml (js-yaml) is the same parser the plugin uses for skills.
-    const parsed = parseYaml(match[1]) as unknown;
-    if (parsed !== null && typeof parsed === "object") frontmatter = parsed as Record<string, unknown>;
-  } catch {
-    warnings.push(`skills/${dirName}/SKILL.md frontmatter is not valid YAML; rewrote it to name + description only.`);
-  }
-  const kept: string[] = [];
-  for (const key of ALLOWED_FRONTMATTER_KEYS) {
-    const value = frontmatter[key];
-    if (value === undefined) continue;
-    if (key === "name") {
-      if (typeof value !== "string" || value !== dirName) {
-        warnings.push(
-          `skills/${dirName}/SKILL.md name "${typeof value === "string" ? value : JSON.stringify(value)}" renamed to the directory name "${dirName}".`,
-        );
-        kept.push(`name: ${yamlScalar(dirName)}`);
-      } else {
-        kept.push(`name: ${yamlScalar(dirName)}`);
-      }
-      continue;
-    }
-    kept.push(`${key}: ${yamlScalar(value)}`);
-  }
+  const frontmatter = parseSkillFrontmatter(match[1], dirName, warnings);
+  const kept = allowedFrontmatterLines(frontmatter, dirName, warnings);
   if (!kept.some((line) => line.startsWith("name:"))) {
     kept.unshift(`name: ${yamlScalar(dirName)}`);
   }
   const body = doc.slice(match[0].length).replace(/^\r?\n/, "");
   return `---\n${kept.join("\n")}\n---\n\n${body.trimStart()}`;
+}
+
+/** Parse the frontmatter block; invalid YAML warns and falls back to an empty object. */
+function parseSkillFrontmatter(yaml: string, dirName: string, warnings: string[]): Record<string, unknown> {
+  try {
+    // Obsidian's parseYaml (js-yaml) is the same parser the plugin uses for skills.
+    const parsed = parseYaml(yaml) as unknown;
+    if (parsed !== null && typeof parsed === "object") return parsed as Record<string, unknown>;
+  } catch {
+    warnings.push(`skills/${dirName}/SKILL.md frontmatter is not valid YAML; rewrote it to name + description only.`);
+  }
+  return {};
+}
+
+/** Serialize the allowed frontmatter keys, forcing `name` to the directory name. */
+function allowedFrontmatterLines(
+  frontmatter: Record<string, unknown>,
+  dirName: string,
+  warnings: string[],
+): string[] {
+  const kept: string[] = [];
+  for (const key of ALLOWED_FRONTMATTER_KEYS) {
+    const value = frontmatter[key];
+    if (value === undefined) continue;
+    if (key === "name") {
+      kept.push(sanitizedNameLine(value, dirName, warnings));
+      continue;
+    }
+    kept.push(`${key}: ${yamlScalar(value)}`);
+  }
+  return kept;
+}
+
+/** The forced `name:` line; warns when the source name differed from the directory name. */
+function sanitizedNameLine(value: unknown, dirName: string, warnings: string[]): string {
+  if (typeof value !== "string" || value !== dirName) {
+    warnings.push(
+      `skills/${dirName}/SKILL.md name "${typeof value === "string" ? value : JSON.stringify(value)}" renamed to the directory name "${dirName}".`,
+    );
+  }
+  return `name: ${yamlScalar(dirName)}`;
 }
 
 /** Extract MCP server entries from the source manifest (Claude/Copilot/VS Code shapes). */
@@ -220,78 +238,103 @@ function convertMcp(
   manifest: Record<string, unknown> | null,
   warnings: string[],
 ): ConvertedMcpEntry[] {
-  const entries: ConvertedMcpEntry[] = [];
   const servers = mcpServersObject(manifest);
-  if (servers) {
-    for (const [key, raw] of Object.entries(servers)) {
-      if (raw === null || typeof raw !== "object") {
-        warnings.push(`MCP server "${key}": entry is not an object; skipped.`);
-        continue;
-      }
-      const entry = raw as Record<string, unknown>;
-      const type = typeof entry.type === "string" ? entry.type : "http";
-      if (type === "stdio") {
-        warnings.push(`MCP server "${key}": stdio servers cannot run inside Obsidian; skipped.`);
-        continue;
-      }
-      if (type !== "http" && type !== "streamable-http") {
-        warnings.push(`MCP server "${key}": transport "${type}" is unsupported; skipped.`);
-        continue;
-      }
-      const url = typeof entry.url === "string" ? entry.url : "";
-      if (!url) {
-        warnings.push(`MCP server "${key}": no URL; skipped.`);
-        continue;
-      }
-      if (typeof entry.headersHelper !== "undefined") {
-        warnings.push(`MCP server "${key}": headersHelper is not supported by Obsidian; dropped.`);
-      }
-      if (typeof entry.disableProxy !== "undefined") {
-        warnings.push(`MCP server "${key}": disableProxy is not supported by Obsidian; dropped.`);
-      }
-      const headers = entry.headers !== null && typeof entry.headers === "object" ? entry.headers : {};
-      entries.push({
-        key,
-        url: substitutePluginRoot(url),
-        headers: Object.fromEntries(
-          Object.entries(headers as Record<string, unknown>)
-            .filter(([, value]) => typeof value === "string")
-            .map(([name, value]) => [name, substitutePluginRoot(value as string)]),
-        ),
-        warnings: [],
-      });
-    }
-  } else if (candidateFormatHasMcp(tree, prefix)) {
-    // A top-level mcp.json that manifests don't reference (rare); parse it too.
-    const raw = tree.get(`${prefix}mcp.json`);
-    const parsed = raw ? parseJson(raw) : null;
-    if (raw && parsed === null) {
-      warnings.push("mcp.json is not valid JSON; the file was not imported.");
-    }
-    const servers = parsed ? (parsed.mcpServers ?? parsed.servers) : null;
-    if (servers === null || (typeof servers === "object" && Object.keys(servers).length === 0)) {
-      if (raw) warnings.push("mcp.json declares no MCP servers; the file was not imported.");
-    } else if (servers !== null && typeof servers === "object") {
-      for (const [key, value] of Object.entries(servers as Record<string, unknown>)) {
-        const entry = value as Record<string, unknown>;
-        const url = typeof entry.url === "string" ? entry.url : "";
-        if (url) {
-          entries.push({
-            key,
-            url: substitutePluginRoot(url),
-            headers:
-              entry.headers && typeof entry.headers === "object"
-                ? (entry.headers as Record<string, unknown> as Record<string, string>)
-                : undefined,
-            warnings: [],
-          });
-        } else {
-          warnings.push(`MCP server "${key}": no URL; skipped.`);
-        }
-      }
-    }
+  if (!servers) {
+    return candidateFormatHasMcp(tree, prefix) ? convertMcpJson(tree, prefix, warnings) : [];
+  }
+  const entries: ConvertedMcpEntry[] = [];
+  for (const [key, raw] of Object.entries(servers)) {
+    const entry = manifestMcpEntry(key, raw, warnings);
+    if (entry) entries.push(entry);
   }
   return entries;
+}
+
+/** One manifest-declared `mcpServers` entry, or null when it is unusable (with a warning). */
+function manifestMcpEntry(key: string, raw: unknown, warnings: string[]): ConvertedMcpEntry | null {
+  if (raw === null || typeof raw !== "object") {
+    warnings.push(`MCP server "${key}": entry is not an object; skipped.`);
+    return null;
+  }
+  const entry = raw as Record<string, unknown>;
+  const type = typeof entry.type === "string" ? entry.type : "http";
+  if (type === "stdio") {
+    warnings.push(`MCP server "${key}": stdio servers cannot run inside Obsidian; skipped.`);
+    return null;
+  }
+  if (type !== "http" && type !== "streamable-http") {
+    warnings.push(`MCP server "${key}": transport "${type}" is unsupported; skipped.`);
+    return null;
+  }
+  const url = typeof entry.url === "string" ? entry.url : "";
+  if (!url) {
+    warnings.push(`MCP server "${key}": no URL; skipped.`);
+    return null;
+  }
+  warnUnsupportedMcpFields(key, entry, warnings);
+  return {
+    key,
+    url: substitutePluginRoot(url),
+    headers: substituteHeaders(entry.headers),
+    warnings: [],
+  };
+}
+
+/** Warning for manifest fields Obsidian cannot honor (the server itself still imports). */
+function warnUnsupportedMcpFields(key: string, entry: Record<string, unknown>, warnings: string[]): void {
+  if (typeof entry.headersHelper !== "undefined") {
+    warnings.push(`MCP server "${key}": headersHelper is not supported by Obsidian; dropped.`);
+  }
+  if (typeof entry.disableProxy !== "undefined") {
+    warnings.push(`MCP server "${key}": disableProxy is not supported by Obsidian; dropped.`);
+  }
+}
+
+/** String-valued headers with plugin-root placeholders resolved. */
+function substituteHeaders(headers: unknown): Record<string, string> {
+  const source = headers !== null && typeof headers === "object" ? headers : {};
+  return Object.fromEntries(
+    Object.entries(source as Record<string, unknown>)
+      .filter(([, value]) => typeof value === "string")
+      .map(([name, value]) => [name, substitutePluginRoot(value as string)]),
+  );
+}
+
+/** A top-level mcp.json that manifests don't reference (rare); parse it too. */
+function convertMcpJson(tree: FileTree, prefix: string, warnings: string[]): ConvertedMcpEntry[] {
+  const raw = tree.get(`${prefix}mcp.json`);
+  const parsed = raw ? parseJson(raw) : null;
+  if (raw && parsed === null) {
+    warnings.push("mcp.json is not valid JSON; the file was not imported.");
+  }
+  const servers = parsed ? (parsed.mcpServers ?? parsed.servers) : null;
+  if (servers === null || (typeof servers === "object" && Object.keys(servers).length === 0)) {
+    if (raw) warnings.push("mcp.json declares no MCP servers; the file was not imported.");
+    return [];
+  }
+  if (typeof servers !== "object") return [];
+  return Object.entries(servers as Record<string, unknown>)
+    .map(([key, value]) => mcpJsonEntry(key, value, warnings))
+    .filter((entry): entry is ConvertedMcpEntry => entry !== null);
+}
+
+/** One `mcpServers` entry from mcp.json (headers pass through unchanged). */
+function mcpJsonEntry(key: string, value: unknown, warnings: string[]): ConvertedMcpEntry | null {
+  const entry = value as Record<string, unknown>;
+  const url = typeof entry.url === "string" ? entry.url : "";
+  if (!url) {
+    warnings.push(`MCP server "${key}": no URL; skipped.`);
+    return null;
+  }
+  return {
+    key,
+    url: substitutePluginRoot(url),
+    headers:
+      entry.headers && typeof entry.headers === "object"
+        ? (entry.headers as Record<string, unknown> as Record<string, string>)
+        : undefined,
+    warnings: [],
+  };
 }
 
 /** The `mcpServers` object in any manifest shape (Claude/Copilot/VS Code all nest it). */

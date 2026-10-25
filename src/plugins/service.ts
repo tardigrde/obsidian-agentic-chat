@@ -12,7 +12,7 @@ import {
   type PackageWriter,
 } from "./import/install";
 import { collectLegacyVaultSkills } from "./import/migrate-legacy-skills";
-import { sniffSource } from "./import/sniff";
+import { sniffSource, type SniffedCandidate } from "./import/sniff";
 import {
   createObsidianBytesFetcher,
   parseImportSource,
@@ -281,20 +281,7 @@ export class PluginService {
     // Native manifests and mcp.json are installed verbatim, so validate them
     // before they are written: a bad manifest must fail the import, not land
     // in the vault and only be rejected by the loader on the next scan.
-    let nativeManifest: string | undefined;
-    let nativeMcpJson: string | undefined;
-    if (converted.native) {
-      const manifestPath = candidate.manifestPath ?? (candidate.root ? `${candidate.root}/plugin.json` : "plugin.json");
-      const manifestBytes = tree.get(manifestPath);
-      if (!manifestBytes) throw new Error("The native plugin package has no plugin.json to install.");
-      nativeManifest = decodeUtf8(manifestBytes);
-      const validation = validatePluginManifest(nativeManifest);
-      if (validation.fatal) {
-        throw new Error(`The plugin package's plugin.json is invalid: ${validation.fatal}`);
-      }
-      const mcpBytes = tree.get(`${candidate.root ? `${candidate.root}/` : ""}mcp.json`);
-      if (mcpBytes) nativeMcpJson = decodeUtf8(mcpBytes);
-    }
+    const { nativeManifest, nativeMcpJson } = readNativePackageFiles(tree, candidate, converted.native);
     const result = await installPackage(this.vaultWriter(), {
       converted,
       pluginsFolder: this.pluginsFolder(),
@@ -388,29 +375,7 @@ export class PluginService {
    */
   async removePackage(name: string, rootPath: string): Promise<boolean> {
     // Determine server ids to prune before the folder is gone (cache miss → read mcp.json).
-    const cached =
-      this.cache?.find((p) => p.rootPath === rootPath) ?? this.cache?.find((p) => p.name === name) ?? null;
-    let serverIds: string[] = [];
-    if (cached) {
-      serverIds = cached.mcpServers.map((server) => server.id);
-    } else {
-      try {
-        const raw = await this.app.vault.adapter.read(`${rootPath}/mcp.json`);
-        if (raw && raw.length <= 128 * 1024) {
-          const parsed = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
-          const mcpServers = parsed?.mcpServers;
-          if (mcpServers && typeof mcpServers === "object") {
-            const keys = Object.keys(mcpServers);
-            // Bound iteration to avoid DOS from crafted huge mcp.json
-            for (const key of keys.slice(0, 100)) {
-              serverIds.push(pluginMcpServerId(name, key));
-            }
-          }
-        }
-      } catch {
-        // Best-effort only; orphans are also pruned on next reload() via aliveIds.
-      }
-    }
+    const serverIds = await this.serverIdsForPackage(name, rootPath);
     const existed = await this.vaultWriter().removeFolder(rootPath);
     const settings = this.getSettings();
     settings.mcp.servers = settings.mcp.servers.filter((server) => server.source !== "plugin" || server.pluginRoot !== rootPath);
@@ -418,15 +383,37 @@ export class PluginService {
       delete settings.plugins.mcpState[id];
       clearMcpPerToolApprovals(settings.approval, id);
     }
-    const enabled = { ...settings.plugins.enabled };
-    delete enabled[name];
-    settings.plugins.enabled = enabled;
-    const sources = { ...settings.plugins.sources };
-    delete sources[name];
-    settings.plugins.sources = sources;
+    settings.plugins.enabled = omitKey(settings.plugins.enabled, name);
+    settings.plugins.sources = omitKey(settings.plugins.sources, name);
     await this.saveSettings?.();
     this.invalidate();
     return existed;
+  }
+
+  /** Server ids owned by a package, from the cache when loaded, else from its on-disk mcp.json. */
+  private async serverIdsForPackage(name: string, rootPath: string): Promise<string[]> {
+    const cached =
+      this.cache?.find((p) => p.rootPath === rootPath) ?? this.cache?.find((p) => p.name === name) ?? null;
+    if (cached) return cached.mcpServers.map((server) => server.id);
+    return this.readMcpServerIds(name, rootPath);
+  }
+
+  /** Best-effort read of the server keys a package declares in `mcp.json` (bounded). */
+  private async readMcpServerIds(name: string, rootPath: string): Promise<string[]> {
+    try {
+      const raw = await this.app.vault.adapter.read(`${rootPath}/mcp.json`);
+      if (!raw || raw.length > 128 * 1024) return [];
+      const parsed = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
+      const mcpServers = parsed?.mcpServers;
+      if (!mcpServers || typeof mcpServers !== "object") return [];
+      // Bound iteration to avoid DOS from crafted huge mcp.json
+      return Object.keys(mcpServers)
+        .slice(0, 100)
+        .map((key) => pluginMcpServerId(name, key));
+    } catch {
+      // Best-effort only; orphans are also pruned on next reload() via aliveIds.
+      return [];
+    }
   }
 
   /**
@@ -533,9 +520,7 @@ export class PluginService {
     const files: Map<string, Uint8Array> = new Map();
     const usedDirs = new Set<string>();
     for (const skill of skills) {
-      const base = slugifyPluginName(skill.name) || "skill";
-      let dir = base;
-      for (let index = 2; usedDirs.has(dir); index += 1) dir = `${base}-${index}`;
+      const dir = uniqueSkillDir(slugifyPluginName(skill.name) || "skill", usedDirs);
       usedDirs.add(dir);
       const description = skill.description.trim() || `${dir} skill.`;
       const doc = `---\nname: ${JSON.stringify(dir)}\ndescription: ${JSON.stringify(description)}\n---\n\n${skill.body.trim()}\n`;
@@ -740,4 +725,45 @@ function pruneTreeFolder(app: App, path: string): void {
 /** Decode bytes as UTF-8 (imported manifests and docs are text). */
 function decodeUtf8(bytes: Uint8Array): string {
   return new TextDecoder("utf-8").decode(bytes);
+}
+
+/** First free directory name in `usedDirs`: `base`, then `base-2`, `base-3`, ... */
+function uniqueSkillDir(base: string, usedDirs: Set<string>): string {
+  let dir = base;
+  let suffix = 2;
+  while (usedDirs.has(dir)) {
+    dir = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return dir;
+}
+
+/** Copy a record without `key` (no in-place mutation of the settings object). */
+function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  const copy = { ...record };
+  delete copy[key];
+  return copy;
+}
+
+/**
+ * Verbatim native-package files, validated before they are written. A bad
+ * manifest fails the import instead of landing in the vault and being
+ * rejected by the loader on the next scan.
+ */
+function readNativePackageFiles(
+  tree: FileTree,
+  candidate: SniffedCandidate,
+  native: boolean,
+): { nativeManifest?: string; nativeMcpJson?: string } {
+  if (!native) return {};
+  const manifestPath = candidate.manifestPath ?? (candidate.root ? `${candidate.root}/plugin.json` : "plugin.json");
+  const manifestBytes = tree.get(manifestPath);
+  if (!manifestBytes) throw new Error("The native plugin package has no plugin.json to install.");
+  const nativeManifest = decodeUtf8(manifestBytes);
+  const validation = validatePluginManifest(nativeManifest);
+  if (validation.fatal) {
+    throw new Error(`The plugin package's plugin.json is invalid: ${validation.fatal}`);
+  }
+  const mcpBytes = tree.get(`${candidate.root ? `${candidate.root}/` : ""}mcp.json`);
+  return mcpBytes ? { nativeManifest, nativeMcpJson: decodeUtf8(mcpBytes) } : { nativeManifest };
 }
