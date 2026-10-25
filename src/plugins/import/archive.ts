@@ -111,48 +111,122 @@ export function looksZip(bytes: Uint8Array): boolean {
 
 const TEXT_DECODER = new TextDecoder("utf-8");
 
+const TAR_BLOCK_BYTES = 512;
+
+/** One parsed tar header block, with its payload bounds resolved. */
+interface TarHeader {
+  rawName: string;
+  prefix: string;
+  size: number;
+  type: number;
+  dataStart: number;
+}
+
+/** Read one 512-byte header block; null ends the archive (end marker or malformed). */
+function readTarHeader(data: Uint8Array, offset: number): TarHeader | null {
+  if (offset + TAR_BLOCK_BYTES > data.length) return null;
+  const header = data.subarray(offset, offset + TAR_BLOCK_BYTES);
+  if (isZeroBlock(header)) return null;
+  const rawName = headerText(header, 0, 100);
+  if (!rawName) return null;
+  const size = parseOctal(headerText(header, 124, 12));
+  if (!Number.isFinite(size) || size < 0) return null;
+  const dataStart = offset + TAR_BLOCK_BYTES;
+  if (dataStart + size > data.length) return null;
+  return { rawName, prefix: headerText(header, 345, 155) || "", size, type: header[156], dataStart };
+}
+
+/** Offset of the block after this entry's payload (payloads are block-padded). */
+function nextTarOffset(header: TarHeader): number {
+  return header.dataStart + Math.ceil(header.size / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;
+}
+
+/** Only these types name the entry that follows (GNU long name / pax extended header). */
+function isTarMetadataEntry(type: number): boolean {
+  return type === 0x4c || type === 0x78 || type === 0x67;
+}
+
+/** True for regular-file entries (plain and GNU/ustar "old" regular). */
+function isTarRegularFile(type: number): boolean {
+  return type === 0x00 || type === 0x30;
+}
+
+/** Path carried by a metadata entry: long name, pax path, or the pending name unchanged. */
+function tarMetadataName(data: Uint8Array, header: TarHeader, pendingName: string | null): string | null {
+  if (header.type === 0x4c) return headerText(data, header.dataStart, header.size) || null;
+  const paxPath = paxRecordPath(data, header.dataStart, header.size);
+  return paxPath || pendingName;
+}
+
+/** The entry path: an explicit metadata name wins; otherwise prefix + name (ustar). */
+function tarEntryName(header: TarHeader, pendingName: string | null): string {
+  if (pendingName !== null) return pendingName;
+  return header.prefix ? `${header.prefix}/${header.rawName}` : header.rawName;
+}
+
+/**
+ * Record a regular file entry. Returns the new running total, or null when the
+ * cumulative cap would be exceeded (the caller stops parsing).
+ */
+function addTarEntry(
+  files: FileTree,
+  data: Uint8Array,
+  header: TarHeader,
+  name: string,
+  total: number,
+): number | null {
+  const path = safeArchivePath(name);
+  if (!path || header.size <= 0 || files.has(path)) return total;
+  const nextTotal = total + header.size;
+  if (nextTotal > ARCHIVE_LIMITS.totalBytes) return null;
+  files.set(path, data.subarray(header.dataStart, header.dataStart + header.size));
+  return nextTotal;
+}
+
+/** Cursor state carried between tar entry parses. */
+interface TarStep {
+  offset: number;
+  pendingName: string | null;
+  total: number;
+}
+
+/**
+ * Parse one entry. Returns the next cursor state, or null when the archive is
+ * done (end marker, malformed header, or the cumulative size cap was hit).
+ */
+function parseTarEntry(
+  data: Uint8Array,
+  offset: number,
+  pendingName: string | null,
+  files: FileTree,
+  total: number,
+): TarStep | null {
+  const header = readTarHeader(data, offset);
+  if (!header) return null;
+  const nextOffset = nextTarOffset(header);
+  // Oversized single entries are skipped, not fatal: codeload tarballs list
+  // entries alphabetically, so a large asset (e.g. assets/huge.bin) can
+  // precede plugin.json and must not abort the whole parse. Bomb protection
+  // is still enforced via the cumulative total below.
+  if (header.size > ARCHIVE_LIMITS.singleFileBytes) return { offset: nextOffset, pendingName, total };
+  if (isTarMetadataEntry(header.type)) {
+    return { offset: nextOffset, pendingName: tarMetadataName(data, header, pendingName), total };
+  }
+  const name = tarEntryName(header, pendingName);
+  if (!isTarRegularFile(header.type)) return { offset: nextOffset, pendingName: null, total };
+  const nextTotal = addTarEntry(files, data, header, name, total);
+  return nextTotal === null ? null : { offset: nextOffset, pendingName: null, total: nextTotal };
+}
+
 function parseTar(data: Uint8Array): FileTree {
   const files: FileTree = new Map();
   let offset = 0;
   let pendingName: string | null = null;
   let total = 0;
-  while (offset + 512 <= data.length && files.size <= ARCHIVE_LIMITS.maxEntries) {
-    const header = data.subarray(offset, offset + 512);
-    if (isZeroBlock(header)) break;
-    const rawName = headerText(header, 0, 100);
-    if (!rawName) break;
-    const size = parseOctal(headerText(header, 124, 12));
-    if (!Number.isFinite(size) || size < 0) break;
-    const dataStart = offset + 512;
-    if (dataStart + size > data.length) break;
-    const type = header[156];
-    const prefix = headerText(header, 345, 155) || "";
-    // Oversized single entries are skipped, not fatal: codeload tarballs list
-    // entries alphabetically, so a large asset (e.g. assets/huge.bin) can
-    // precede plugin.json and must not abort the whole parse. Bomb protection
-    // is still enforced via the cumulative total below.
-    if (size > ARCHIVE_LIMITS.singleFileBytes) {
-      offset = dataStart + Math.ceil(size / 512) * 512;
-      continue;
-    }
-    if (type === 0x4c) {
-      pendingName = headerText(data, dataStart, size) || null;
-    } else if (type === 0x78 || type === 0x67) {
-      const paxPath = paxRecordPath(data, dataStart, size);
-      if (paxPath) pendingName = paxPath;
-    } else {
-      const name = pendingName ?? (prefix ? `${prefix}/${rawName}` : rawName);
-      pendingName = null;
-      if (type === 0x00 || type === 0x30) {
-        const path = safeArchivePath(name);
-        if (path && size > 0 && !files.has(path)) {
-          total += size;
-          if (total > ARCHIVE_LIMITS.totalBytes) break;
-          files.set(path, data.subarray(dataStart, dataStart + size));
-        }
-      }
-    }
-    offset = dataStart + Math.ceil(size / 512) * 512;
+  while (files.size <= ARCHIVE_LIMITS.maxEntries) {
+    const step = parseTarEntry(data, offset, pendingName, files, total);
+    if (!step) break;
+    ({ offset, pendingName, total } = step);
   }
   return files;
 }
