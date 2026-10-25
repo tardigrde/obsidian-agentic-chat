@@ -15,30 +15,35 @@ export const MAX_MCP_TOOL_GLOB_LENGTH = 200;
  * trims, dedupes case-insensitively by lowercased value, caps count/length.
  */
 export function healMcpToolGlobs(value: unknown): string[] {
-  let raw: unknown[];
-  if (Array.isArray(value)) raw = value;
-  else if (typeof value === "string") {
-    // Support legacy comma or newline separated strings
-    raw = value.split(/[\n,]/);
-  } else {
-    return [];
-  }
+  const raw = rawGlobList(value);
   const seen = new Set<string>();
   const out: string[] = [];
   for (const item of raw) {
-    if (typeof item !== "string") continue;
-    const trimmed = item.trim();
-    if (!trimmed) continue;
-    // Drop comment lines like ignore patterns do
-    if (trimmed.startsWith("#")) continue;
-    if (trimmed.length > MAX_MCP_TOOL_GLOB_LENGTH) continue;
-    const key = trimmed.toLowerCase();
+    const glob = healToolGlobItem(item);
+    if (!glob) continue;
+    const key = glob.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(trimmed);
+    out.push(glob);
     if (out.length >= MAX_MCP_TOOL_GLOB_PATTERNS) break;
   }
   return out;
+}
+
+function rawGlobList(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  // Support legacy comma or newline separated strings
+  return typeof value === "string" ? value.split(/[\n,]/) : [];
+}
+
+function healToolGlobItem(item: unknown): string | null {
+  if (typeof item !== "string") return null;
+  const trimmed = item.trim();
+  if (!trimmed) return null;
+  // Drop comment lines like ignore patterns do
+  if (trimmed.startsWith("#")) return null;
+  if (trimmed.length > MAX_MCP_TOOL_GLOB_LENGTH) return null;
+  return trimmed;
 }
 
 /**

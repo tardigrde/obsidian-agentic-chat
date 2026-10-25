@@ -1,4 +1,4 @@
-import { type App, TFile, TFolder } from "obsidian";
+import { type App, TFile, TFolder, type TAbstractFile } from "obsidian";
 import { getParentPath, normalizeVaultPath } from "../vault/path";
 export { UNDOABLE_TOOLS } from "../tools/tool-contracts";
 
@@ -44,55 +44,78 @@ export function summarizeFileBody(body: string): FileBodySummary {
 export async function captureUndo(app: App, toolName: string, args: unknown): Promise<UndoEntry | null> {
   try {
     const raw = (args ?? {}) as { path?: unknown; newPath?: unknown };
-    const path = typeof raw.path === "string" ? normalizeVaultPath(raw.path) : "";
-    if (toolName === "rename") {
-      const to = typeof raw.newPath === "string" ? normalizeVaultPath(raw.newPath) : "";
-      return path && to ? { kind: "rename", from: path, to } : null;
-    }
+    const path = stringPath(raw.path);
+    if (toolName === "rename") return renameEntry(path, raw.newPath);
     if (!path) return null;
     const entry = app.vault.getAbstractFileByPath(path);
-    let content = entry instanceof TFile ? await app.vault.cachedRead(entry) : null;
-    if (content === null) {
-      // Stale tree: dot-folder files on disk but missing from the vault index.
-      try {
-        content = await app.vault.adapter.read(path);
-      } catch {
-        // Not a readable file on disk; delete falls through to folder checks.
-      }
-    }
-    if (toolName === "write") {
-      return {
-        kind: "content",
-        path,
-        before: content,
-        beforeSummary: content === null ? undefined : summarizeFileBody(content),
-      };
-    }
-    // edit/frontmatter need the file to have existed; nothing to restore otherwise.
-    if ((toolName === "edit" || toolName === "set_properties") && content === null) return null;
-    if (toolName === "edit" || toolName === "set_properties") {
-      // Narrowed by the early-return above; `?? ""` is just a type-guard, never triggers.
-      return { kind: "content", path, before: content, beforeSummary: summarizeFileBody(content ?? "") };
-    }
-    if (toolName === "delete") {
-      if (content !== null) return { kind: "delete", path, before: content, beforeSummary: summarizeFileBody(content) };
-      if (entry instanceof TFolder && entry.children.length === 0) return { kind: "delete_folder", path };
-      if (!(entry instanceof TFolder)) {
-        // Stale-tree empty folder: confirm on disk so /undo can restore it.
-        try {
-          const listing = await app.vault.adapter.list(path);
-          if ((listing?.folders?.length ?? 0) + (listing?.files?.length ?? 0) === 0) {
-            return { kind: "delete_folder", path };
-          }
-        } catch {
-          // Not a folder on disk; nothing undoable.
-        }
-      }
-      return null;
-    }
+    const content = await readExistingContent(app, path, entry);
+    if (toolName === "write") return contentEntry(path, content);
+    if (toolName === "edit" || toolName === "set_properties") return editableContentEntry(path, content);
+    if (toolName === "delete") return deleteEntry(app, path, entry, content);
     return null;
   } catch {
     return null;
+  }
+}
+
+function stringPath(value: unknown): string {
+  return typeof value === "string" ? normalizeVaultPath(value) : "";
+}
+
+function renameEntry(from: string, newPath: unknown): UndoEntry | null {
+  const to = stringPath(newPath);
+  return from && to ? { kind: "rename", from, to } : null;
+}
+
+/** Read a file body from the vault index, falling back to a direct disk read. */
+async function readExistingContent(app: App, path: string, entry: TAbstractFile | null): Promise<string | null> {
+  const content = entry instanceof TFile ? await app.vault.cachedRead(entry) : null;
+  if (content !== null) return content;
+  // Stale tree: dot-folder files on disk but missing from the vault index.
+  try {
+    return await app.vault.adapter.read(path);
+  } catch {
+    // Not a readable file on disk; delete falls through to folder checks.
+    return null;
+  }
+}
+
+function contentEntry(path: string, content: string | null): UndoEntry {
+  return {
+    kind: "content",
+    path,
+    before: content,
+    beforeSummary: content === null ? undefined : summarizeFileBody(content),
+  };
+}
+
+function editableContentEntry(path: string, content: string | null): UndoEntry | null {
+  // edit/frontmatter need the file to have existed; nothing to restore otherwise.
+  if (content === null) return null;
+  return { kind: "content", path, before: content, beforeSummary: summarizeFileBody(content) };
+}
+
+async function deleteEntry(
+  app: App,
+  path: string,
+  entry: TAbstractFile | null,
+  content: string | null,
+): Promise<UndoEntry | null> {
+  if (content !== null) return { kind: "delete", path, before: content, beforeSummary: summarizeFileBody(content) };
+  if (entry instanceof TFolder && entry.children.length === 0) return { kind: "delete_folder", path };
+  if (entry instanceof TFolder) return null;
+  // Stale-tree empty folder: confirm on disk so /undo can restore it.
+  if (await isEmptyFolderOnDisk(app, path)) return { kind: "delete_folder", path };
+  return null;
+}
+
+async function isEmptyFolderOnDisk(app: App, path: string): Promise<boolean> {
+  try {
+    const listing = await app.vault.adapter.list(path);
+    return (listing?.folders?.length ?? 0) + (listing?.files?.length ?? 0) === 0;
+  } catch {
+    // Not a folder on disk; nothing undoable.
+    return false;
   }
 }
 
@@ -119,21 +142,24 @@ async function applyDeleteUndo(app: App, entry: Extract<UndoEntry, { kind: "dele
 
 async function applyDeleteFolderUndo(app: App, entry: Extract<UndoEntry, { kind: "delete_folder" }>): Promise<string> {
   await ensureParentFolders(app, entry.path);
-  if (
-    !(app.vault.getAbstractFileByPath(entry.path) instanceof TFolder) &&
-    !(await existsOnDisk(app, entry.path))
-  ) {
-    try {
-      await app.vault.createFolder(entry.path);
-    } catch (error) {
-      // Concurrent undo of the same folder — already restored, nothing to do.
-      if (isFolderCollision(error) && (await existsOnDisk(app, entry.path))) {
-        return `Restored folder ${entry.path}.`;
-      }
-      throw error;
-    }
+  if (!(await folderExists(app, entry.path))) {
+    await createFolderToleratingCollision(app, entry.path);
   }
   return `Restored folder ${entry.path}.`;
+}
+
+async function folderExists(app: App, path: string): Promise<boolean> {
+  return app.vault.getAbstractFileByPath(path) instanceof TFolder || (await existsOnDisk(app, path));
+}
+
+async function createFolderToleratingCollision(app: App, path: string): Promise<void> {
+  try {
+    await app.vault.createFolder(path);
+  } catch (error) {
+    // Concurrent undo of the same folder — already restored, nothing to do.
+    if (isFolderCollision(error) && (await existsOnDisk(app, path))) return;
+    throw error;
+  }
 }
 
 async function applyContentUndo(app: App, entry: Extract<UndoEntry, { kind: "content" }>): Promise<string> {
@@ -170,17 +196,21 @@ async function ensureParentFolders(app: App, path: string): Promise<void> {
   // to create a folder with an empty name.
   for (const segment of parent.split("/").filter(Boolean)) {
     current = current ? `${current}/${segment}` : segment;
-    if (app.vault.getFolderByPath(current)) continue;
-    // Same stale-tree guard as the vault tools: dot-folders on disk but
-    // missing from the vault index must not trigger "Folder already exists."
-    if (await existsOnDisk(app, current)) continue;
-    try {
-      await app.vault.createFolder(current);
-    } catch (error) {
-      // Lost a race with an external sync — folder landed after the probe.
-      if (isFolderCollision(error) && (await existsOnDisk(app, current))) continue;
-      throw error;
-    }
+    await ensureFolder(app, current);
+  }
+}
+
+async function ensureFolder(app: App, path: string): Promise<void> {
+  if (app.vault.getFolderByPath(path)) return;
+  // Same stale-tree guard as the vault tools: dot-folders on disk but
+  // missing from the vault index must not trigger "Folder already exists."
+  if (await existsOnDisk(app, path)) return;
+  try {
+    await app.vault.createFolder(path);
+  } catch (error) {
+    // Lost a race with an external sync — folder landed after the probe.
+    if (isFolderCollision(error) && (await existsOnDisk(app, path))) return;
+    throw error;
   }
 }
 

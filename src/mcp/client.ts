@@ -239,30 +239,43 @@ export class McpHttpClient {
       }
       return parsed.result;
     } catch (error) {
-      if (retryOnTerminatedSession && error instanceof McpOAuthUnauthorizedError) {
-        const refreshed = await this.refreshOAuthAfterUnauthorized(signal);
-        if (refreshed) {
-          if (method !== "initialize") await this.initialize(signal);
-          return this.requestOnce<T>(method, params, signal, false);
-        }
-        throw new Error(this.oauthAuthenticationMessage(error.challenge), { cause: error });
-      }
-      if (retryOnTerminatedSession && error instanceof McpOAuthForbiddenError) {
-        const refreshed = await this.refreshOAuthForRequiredScope(error.challenge, signal);
-        if (refreshed) {
-          if (method !== "initialize") await this.initialize(signal);
-          return this.requestOnce<T>(method, params, signal, false);
-        }
-        throw new Error(this.oauthForbiddenMessage(error.challenge), { cause: error });
-      }
-      if (retryOnTerminatedSession && method !== "initialize" && error instanceof McpSessionTerminatedError) {
-        this.sessionId = undefined;
-        this.initialized = false;
-        await this.initialize(signal);
-        return this.requestOnce<T>(method, params, signal, false);
-      }
-      throw error;
+      if (!retryOnTerminatedSession) throw error;
+      return this.retryAfterTransportFailure<T>(method, params, signal, error);
     }
+  }
+
+  private async retryAfterTransportFailure<T>(
+    method: string,
+    params: Record<string, unknown> | undefined,
+    signal: AbortSignal | undefined,
+    error: unknown,
+  ): Promise<T> {
+    if (error instanceof McpOAuthUnauthorizedError) {
+      const refreshed = await this.refreshOAuthAfterUnauthorized(signal);
+      if (!refreshed) throw new Error(this.oauthAuthenticationMessage(error.challenge), { cause: error });
+      return this.reinitializeAndRetry<T>(method, params, signal);
+    }
+    if (error instanceof McpOAuthForbiddenError) {
+      const refreshed = await this.refreshOAuthForRequiredScope(error.challenge, signal);
+      if (!refreshed) throw new Error(this.oauthForbiddenMessage(error.challenge), { cause: error });
+      return this.reinitializeAndRetry<T>(method, params, signal);
+    }
+    if (method !== "initialize" && error instanceof McpSessionTerminatedError) {
+      this.sessionId = undefined;
+      this.initialized = false;
+      await this.initialize(signal);
+      return this.requestOnce<T>(method, params, signal, false);
+    }
+    throw error;
+  }
+
+  private async reinitializeAndRetry<T>(
+    method: string,
+    params: Record<string, unknown> | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<T> {
+    if (method !== "initialize") await this.initialize(signal);
+    return this.requestOnce<T>(method, params, signal, false);
   }
 
   private async parseOrResumeResponse<T>(
@@ -369,54 +382,112 @@ export class McpHttpClient {
       try {
         response = await doFetch();
       } catch (error) {
-        const classified = classifyError(error);
-        if (!classified.retryable || attempt >= maxRetries || signal?.aborted) throw error;
-        await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
-        if (signal?.aborted) throw new Error("Aborted.", { cause: error });
+        await this.retryFetchAfterError(error, signal, attempt, maxRetries);
         attempt += 1;
         continue;
       }
-      if (response.status === 0) {
-        const classified = classifyHttpResponse(0, response.headers, response.text);
-        if (!classified.retryable || attempt >= maxRetries) throw new Error(statusZeroMessage(response));
-        await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
-        if (signal?.aborted) throw new Error("Aborted.");
-        attempt += 1;
-        continue;
-      }
-      if (response.status < 200 || response.status >= 300) {
-        const auth = response.headers["www-authenticate"];
-        if (response.status === 404 && this.sessionId) throw new McpSessionTerminatedError(`MCP ${this.server.name} session expired.`);
-        if (response.status === 401 && this.server.authType === "oauth") throw new McpOAuthUnauthorizedError(auth ?? "");
-        if (response.status === 403 && this.server.authType === "oauth") throw new McpOAuthForbiddenError(auth ?? "");
-        // Auto-detect OAuth requirement when server advertises resource_metadata but authType is none/bearer/header.
-        // Do not auto-start flow; just set pending challenge and throw a specific error so the UI can show a banner + Switch CTA.
-        if (response.status === 401 && auth && /resource_metadata/i.test(auth)) {
-          const parsed = parseWwwAuthenticate(auth);
-          const resourceUrl = parsed.resource_metadata ?? parsed.resourceMetadata ?? "";
-          if (resourceUrl && isValidOAuthResourceUrl(resourceUrl)) {
-            this.server.pendingOAuthChallenge = auth;
-            this.server.pendingOAuthResourceUrl = resourceUrl;
-            // Persist pending for plugin servers so banner survives redraw (ephemeral copy would be lost)
-            try {
-              await this.onServerChanged?.();
-            } catch {
-              // ignore persist errors, still throw OAuth required
-            }
-            throw new McpOAuthRequiredError(auth, resourceUrl);
-          }
-        }
-        const classified = classifyHttpResponse(response.status, response.headers, response.text);
-        if (!classified.retryable || attempt >= maxRetries) throw new Error(httpErrorMessage(response));
-        await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
-        if (signal?.aborted) throw new Error("Aborted.");
-        attempt += 1;
-        continue;
-      }
-      const sessionId = sanitizeMcpSessionId(response.headers["mcp-session-id"]);
-      if (sessionId) this.sessionId = sessionId;
-      return response;
+      const retried = await this.handleFetchResponse(
+        response,
+        signal,
+        attempt,
+        maxRetries,
+        statusZeroMessage,
+        httpErrorMessage,
+      );
+      if (!retried) return response;
+      attempt += 1;
     }
+  }
+
+  /** Handles one fetched response; returns true when the request was retried. */
+  private async handleFetchResponse(
+    response: WebHttpResponse,
+    signal: AbortSignal | undefined,
+    attempt: number,
+    maxRetries: number,
+    statusZeroMessage: (response: WebHttpResponse) => string,
+    httpErrorMessage: (response: WebHttpResponse) => string,
+  ): Promise<boolean> {
+    if (response.status === 0) {
+      await this.retryStatusZero(response, signal, attempt, maxRetries, statusZeroMessage);
+      return true;
+    }
+    if (response.status >= 200 && response.status < 300) {
+      this.rememberSessionId(response);
+      return false;
+    }
+    await this.handleHttpFailure(response, signal, attempt, maxRetries, httpErrorMessage);
+    return true;
+  }
+
+  private async retryFetchAfterError(
+    error: unknown,
+    signal: AbortSignal | undefined,
+    attempt: number,
+    maxRetries: number,
+  ): Promise<void> {
+    const classified = classifyError(error);
+    if (!classified.retryable || attempt >= maxRetries || signal?.aborted) throw error;
+    await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
+    if (signal?.aborted) throw new Error("Aborted.", { cause: error });
+  }
+
+  private async retryStatusZero(
+    response: WebHttpResponse,
+    signal: AbortSignal | undefined,
+    attempt: number,
+    maxRetries: number,
+    statusZeroMessage: (response: WebHttpResponse) => string,
+  ): Promise<void> {
+    const classified = classifyHttpResponse(0, response.headers, response.text);
+    if (!classified.retryable || attempt >= maxRetries) throw new Error(statusZeroMessage(response));
+    await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
+    if (signal?.aborted) throw new Error("Aborted.");
+  }
+
+  private async handleHttpFailure(
+    response: WebHttpResponse,
+    signal: AbortSignal | undefined,
+    attempt: number,
+    maxRetries: number,
+    httpErrorMessage: (response: WebHttpResponse) => string,
+  ): Promise<void> {
+    await this.throwForAuthChallenge(response);
+    const classified = classifyHttpResponse(response.status, response.headers, response.text);
+    if (!classified.retryable || attempt >= maxRetries) throw new Error(httpErrorMessage(response));
+    await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
+    if (signal?.aborted) throw new Error("Aborted.");
+  }
+
+  private async throwForAuthChallenge(response: WebHttpResponse): Promise<void> {
+    const auth = response.headers["www-authenticate"];
+    if (response.status === 404 && this.sessionId) throw new McpSessionTerminatedError(`MCP ${this.server.name} session expired.`);
+    if (response.status === 401 && this.server.authType === "oauth") throw new McpOAuthUnauthorizedError(auth ?? "");
+    if (response.status === 403 && this.server.authType === "oauth") throw new McpOAuthForbiddenError(auth ?? "");
+    // Auto-detect OAuth requirement when server advertises resource_metadata but authType is none/bearer/header.
+    // Do not auto-start flow; just set pending challenge and throw a specific error so the UI can show a banner + Switch CTA.
+    if (response.status !== 401 || !auth || !/resource_metadata/i.test(auth)) return;
+    await this.markOAuthResourceChallenge(auth);
+  }
+
+  private async markOAuthResourceChallenge(auth: string): Promise<void> {
+    const parsed = parseWwwAuthenticate(auth);
+    const resourceUrl = parsed.resource_metadata ?? parsed.resourceMetadata ?? "";
+    if (!resourceUrl || !isValidOAuthResourceUrl(resourceUrl)) return;
+    this.server.pendingOAuthChallenge = auth;
+    this.server.pendingOAuthResourceUrl = resourceUrl;
+    // Persist pending for plugin servers so banner survives redraw (ephemeral copy would be lost)
+    try {
+      await this.onServerChanged?.();
+    } catch {
+      // ignore persist errors, still throw OAuth required
+    }
+    throw new McpOAuthRequiredError(auth, resourceUrl);
+  }
+
+  private rememberSessionId(response: WebHttpResponse): void {
+    const sessionId = sanitizeMcpSessionId(response.headers["mcp-session-id"]);
+    if (sessionId) this.sessionId = sessionId;
   }
 
   private async headers(signal?: AbortSignal): Promise<Record<string, string>> {

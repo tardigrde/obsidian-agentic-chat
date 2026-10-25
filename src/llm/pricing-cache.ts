@@ -224,39 +224,37 @@ function buildThinkingLevelMap(reasoning: Record<string, unknown> | undefined): 
 function compactifyModels(data: Array<Record<string, unknown>>): Record<string, CompactModelInfo> {
   const result: Record<string, CompactModelInfo> = {};
   for (const m of data) {
-    const id = typeof m.id === "string" ? m.id : "";
-    if (!id) continue;
-    const pricing = m.pricing as Record<string, string> | undefined;
-    const pi = parsePrice(pricing?.prompt);
-    const po = parsePrice(pricing?.completion);
-    const pr = parsePrice(pricing?.input_cache_read);
-    const pw = parsePrice(pricing?.input_cache_write);
-    const topProvider = m.top_provider as Record<string, unknown> | undefined;
-    const supportedParams = m.supported_parameters as string[] | undefined;
-    const reasoning = m.reasoning as Record<string, unknown> | undefined;
-    const name = typeof m.name === "string" ? m.name : id;
-    const contextLength = typeof m.context_length === "number" ? m.context_length : 0;
-    const maxCompletionTokens =
-      typeof topProvider?.max_completion_tokens === "number"
-        ? topProvider.max_completion_tokens
-        : typeof m.maxTokens === "number"
-          ? m.maxTokens
-          : 0;
-    result[id] = {
-      id,
-      n: name,
-      c: contextLength,
-      m: maxCompletionTokens,
-      pi,
-      po,
-      pr,
-      pw,
-      t: supportedParams?.includes("tools") ? 1 : 0,
-      re: (reasoning || supportedParams?.includes("reasoning")) ? 1 : 0,
-      tlm: buildThinkingLevelMap(reasoning),
-    };
+    const compact = compactifyModel(m);
+    if (compact) result[compact.id] = compact;
   }
   return result;
+}
+
+function compactifyModel(m: Record<string, unknown>): CompactModelInfo | null {
+  const id = typeof m.id === "string" ? m.id : "";
+  if (!id) return null;
+  const pricing = m.pricing as Record<string, string> | undefined;
+  const topProvider = m.top_provider as Record<string, unknown> | undefined;
+  const supportedParams = m.supported_parameters as string[] | undefined;
+  const reasoning = m.reasoning as Record<string, unknown> | undefined;
+  return {
+    id,
+    n: typeof m.name === "string" ? m.name : id,
+    c: typeof m.context_length === "number" ? m.context_length : 0,
+    m: maxCompletionTokens(m, topProvider),
+    pi: parsePrice(pricing?.prompt),
+    po: parsePrice(pricing?.completion),
+    pr: parsePrice(pricing?.input_cache_read),
+    pw: parsePrice(pricing?.input_cache_write),
+    t: supportedParams?.includes("tools") ? 1 : 0,
+    re: reasoning || supportedParams?.includes("reasoning") ? 1 : 0,
+    tlm: buildThinkingLevelMap(reasoning),
+  };
+}
+
+function maxCompletionTokens(m: Record<string, unknown>, topProvider: Record<string, unknown> | undefined): number {
+  if (typeof topProvider?.max_completion_tokens === "number") return topProvider.max_completion_tokens;
+  return typeof m.maxTokens === "number" ? m.maxTokens : 0;
 }
 
 async function writeCache(cache: PricingCache): Promise<void> {

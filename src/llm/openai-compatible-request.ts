@@ -22,6 +22,7 @@ import {
   classifyError,
   classifyHttpResponse,
   sleep,
+  type ClassifiedError,
 } from "../agent/error-classifier";
 
 export interface OpenAICompatibleRequest {
@@ -211,32 +212,73 @@ async function requestCompletionWithRetries(
   const maxRetries = Math.max(0, Math.floor(options?.maxRetries ?? 0));
   let attempt = 0;
 
-  while (true) {
+  for (;;) {
     throwIfRequestAborted(options?.signal);
     try {
-      const response = await withRequestGuards(requester(request), options?.timeoutMs, options?.signal);
-      throwIfRequestAborted(options?.signal);
-      const classified = classifyHttpResponse(response.status, response.headers, extractErrorDetail(response) || response.text);
-      if (attempt >= maxRetries || !classified.retryable) return response;
-      const delayMs = backoffDelayMs(attempt, classified.retryAfterMs);
-      if (options?.maxRetryDelayMs !== undefined && options.maxRetryDelayMs > 0 && delayMs > options.maxRetryDelayMs) {
-        throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`, { cause: classified });
-      }
-      await sleep(delayMs, options?.signal);
+      const response = await performCompletionRequest(requester, request, options);
+      const decision = responseRetryDecision(response, attempt, maxRetries);
+      if (!decision) return response;
+      await waitForRetry(attempt, decision, options);
     } catch (error) {
-      if (options?.signal?.aborted || error instanceof RequestAbortError) throw error;
-      const base = classifyError(error);
-      const classified = error instanceof RequestTimeoutError ? { ...base, retryable: true, class: "transient" as const } : base;
-      if (attempt >= maxRetries || !classified.retryable) throw error;
-      const delayMs = backoffDelayMs(attempt, classified.retryAfterMs);
-      if (options?.maxRetryDelayMs !== undefined && options.maxRetryDelayMs > 0 && delayMs > options.maxRetryDelayMs) {
-        throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${options.maxRetryDelayMs}.`, { cause: error });
-      }
-      await sleep(delayMs, options?.signal);
+      if (isRequestAbort(error, options)) throw error;
+      const decision = errorRetryDecision(error, attempt, maxRetries);
+      if (!decision) throw error;
+      await waitForRetry(attempt, decision, options);
     }
 
     attempt += 1;
   }
+}
+
+interface RetryDecision {
+  classified: ClassifiedError;
+  cause: unknown;
+}
+
+function isRequestAbort(error: unknown, options: SimpleStreamOptions | undefined): boolean {
+  return Boolean(options?.signal?.aborted) || error instanceof RequestAbortError;
+}
+
+async function performCompletionRequest(
+  requester: OpenAICompatibleRequester,
+  request: OpenAICompatibleRequest,
+  options: SimpleStreamOptions | undefined,
+): Promise<OpenAICompatibleResponse> {
+  const response = await withRequestGuards(requester(request), options?.timeoutMs, options?.signal);
+  throwIfRequestAborted(options?.signal);
+  return response;
+}
+
+function responseRetryDecision(
+  response: OpenAICompatibleResponse,
+  attempt: number,
+  maxRetries: number,
+): RetryDecision | undefined {
+  const classified = classifyHttpResponse(response.status, response.headers, extractErrorDetail(response) || response.text);
+  if (attempt >= maxRetries || !classified.retryable) return undefined;
+  return { classified, cause: classified };
+}
+
+function errorRetryDecision(error: unknown, attempt: number, maxRetries: number): RetryDecision | undefined {
+  const base = classifyError(error);
+  const classified: ClassifiedError = error instanceof RequestTimeoutError
+    ? { ...base, retryable: true, class: "transient" }
+    : base;
+  if (attempt >= maxRetries || !classified.retryable) return undefined;
+  return { classified, cause: error };
+}
+
+async function waitForRetry(
+  attempt: number,
+  decision: RetryDecision,
+  options: SimpleStreamOptions | undefined,
+): Promise<void> {
+  const delayMs = backoffDelayMs(attempt, decision.classified.retryAfterMs);
+  const maxRetryDelayMs = options?.maxRetryDelayMs;
+  if (maxRetryDelayMs !== undefined && maxRetryDelayMs > 0 && delayMs > maxRetryDelayMs) {
+    throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${maxRetryDelayMs}.`, { cause: decision.cause });
+  }
+  await sleep(delayMs, options?.signal);
 }
 
 export function isRetryableResponse(response: OpenAICompatibleResponse): boolean {

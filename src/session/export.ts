@@ -23,30 +23,40 @@ export function sessionToMarkdown(messages: AgentMessage[], info: SessionInfo | 
 
   const toolResults = collectToolResults(messages);
   for (const message of messages) {
-    if (message.role === "user" && isSummaryMessage(message)) {
-      const summary = messageText(message).trim();
-      if (summary) lines.push("## Summary of earlier conversation", "", summary, "");
-      continue;
-    }
-    if (message.role === "user") {
-      const text = messageText(message).replace(CONTEXT_PREAMBLE, "").trim();
-      if (text) lines.push("## You", "", text, "");
-      continue;
-    }
-    if (message.role === "assistant") {
-      const calls = toolCalls(message);
-      const text = messageText(message).trim();
-      if (calls.length === 0 && !text) continue;
-      lines.push("## Assistant", "");
-      for (const call of calls) {
-        const errored = toolResults.get(call.id)?.isError ? " (error)" : "";
-        lines.push(`- \`${call.name}\`${errored}`);
-      }
-      if (calls.length > 0) lines.push("");
-      if (text) lines.push(text, "");
-    }
+    lines.push(...renderMessage(message, toolResults));
   }
   return `${lines.join("\n").trimEnd()}\n`;
+}
+
+type ToolResultLookup = ReturnType<typeof collectToolResults>;
+
+function renderMessage(message: AgentMessage, toolResults: ToolResultLookup): string[] {
+  if (message.role === "user") return renderUserMessage(message);
+  if (message.role === "assistant") return renderAssistantMessage(message, toolResults);
+  return [];
+}
+
+function renderUserMessage(message: AgentMessage): string[] {
+  if (isSummaryMessage(message)) {
+    const summary = messageText(message).trim();
+    return summary ? ["## Summary of earlier conversation", "", summary, ""] : [];
+  }
+  const text = messageText(message).replace(CONTEXT_PREAMBLE, "").trim();
+  return text ? ["## You", "", text, ""] : [];
+}
+
+function renderAssistantMessage(message: AgentMessage, toolResults: ToolResultLookup): string[] {
+  const calls = toolCalls(message);
+  const text = messageText(message).trim();
+  if (calls.length === 0 && !text) return [];
+  const lines: string[] = ["## Assistant", ""];
+  for (const call of calls) {
+    const errored = toolResults.get(call.id)?.isError ? " (error)" : "";
+    lines.push(`- \`${call.name}\`${errored}`);
+  }
+  if (calls.length > 0) lines.push("");
+  if (text) lines.push(text, "");
+  return lines;
 }
 
 /** Filename for an exported session: sanitized title + a UTC timestamp, `.md`. */

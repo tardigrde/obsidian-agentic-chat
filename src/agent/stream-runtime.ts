@@ -2,6 +2,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream,
   type Api,
+  type AssistantMessage,
   type AssistantMessageEventStream,
   type Context,
   type Model,
@@ -15,10 +16,69 @@ import {
 } from "../llm/openai-compatible-request";
 import { sharedAgentModels } from "../llm/providers";
 import { createProxiedFetcher } from "../mcp/fetcher";
-import { backoffDelayMs, classifyError, sleep } from "./error-classifier";
+import { backoffDelayMs, classifyError, sleep, type ClassifiedError } from "./error-classifier";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
+
+const CONTENT_EVENT_TYPES = new Set([
+  "text_start",
+  "text_delta",
+  "text_end",
+  "thinking_start",
+  "thinking_delta",
+  "thinking_end",
+  "toolcall_start",
+  "toolcall_delta",
+  "toolcall_end",
+]);
+
+interface StreamAttemptResult {
+  kind: "result";
+  buffered: unknown[];
+  hadContent: boolean;
+  result: AssistantMessage;
+  errorMessage?: string;
+}
+
+interface StreamAttemptFailure {
+  kind: "threw";
+  buffered: unknown[];
+  hadContent: boolean;
+  classified: ClassifiedError;
+  errorMessage: string;
+}
+
+type StreamAttemptOutcome = StreamAttemptResult | StreamAttemptFailure;
+
+interface RetryPlan {
+  classified: ClassifiedError;
+  delay: number;
+}
+
+function eventType(event: unknown): string | undefined {
+  return (event as { type?: string }).type;
+}
+
+function isContentEvent(event: unknown): boolean {
+  const type = eventType(event);
+  return type !== undefined && CONTENT_EVENT_TYPES.has(type);
+}
+
+function eventErrorMessage(event: unknown): string | undefined {
+  if (eventType(event) !== "error") return undefined;
+  const err =
+    (event as { error?: { errorMessage?: string } }).error?.errorMessage ??
+    (event as { error?: string }).error ??
+    "stream error";
+  return typeof err === "string" ? err : String(err);
+}
+
+function resultErrorMessage(result: AssistantMessage, previous: string | undefined): string | undefined {
+  if (result.stopReason === "error" && result.errorMessage) return result.errorMessage;
+  if (result.stopReason === "aborted") return result.errorMessage ?? "aborted";
+  return previous;
+}
 
 export type StreamSimpleFn = (
   model: Model<Api>,
@@ -97,81 +157,103 @@ export class AgentStreamRuntime {
     const maxRetries = Math.max(0, Math.floor(streamOptions.maxRetries ?? 0));
     if (maxRetries === 0) return this.streamSimpleFn(model, context, streamOptions);
     const outer = createAssistantMessageEventStream();
-    void (async () => {
-      let attempt = 0;
-      while (true) {
-        const buffered: unknown[] = [];
-        let hadContent = false;
-        let errorMessage: string | undefined;
-        try {
-          const innerOptions: SimpleStreamOptions = { ...streamOptions, maxRetries: 0, signal };
-          const inner = this.streamSimpleFn(model, context, innerOptions);
-          for await (const event of inner) {
-            buffered.push(event);
-            const type = (event as { type?: string }).type;
-            if (
-              type === "text_start" ||
-              type === "text_delta" ||
-              type === "text_end" ||
-              type === "thinking_start" ||
-              type === "thinking_delta" ||
-              type === "thinking_end" ||
-              type === "toolcall_start" ||
-              type === "toolcall_delta" ||
-              type === "toolcall_end"
-            ) {
-              hadContent = true;
-            }
-            if (type === "error") {
-              const err = (event as { error?: { errorMessage?: string }; reason?: string }).error?.errorMessage ?? (event as { error?: string }).error ?? "stream error";
-              errorMessage = typeof err === "string" ? err : String(err);
-            }
-          }
-          const result = await inner.result();
-          if (result.stopReason === "error" && result.errorMessage) errorMessage = result.errorMessage;
-          if (result.stopReason === "aborted") errorMessage = result.errorMessage ?? "aborted";
-          if (errorMessage) {
-            const classified = classifyError(errorMessage);
-            if (!this.shouldRetryStream(classified, hadContent, attempt, maxRetries, signal)) {
-              for (const event of buffered) outer.push(event as never);
-              outer.end(result);
-              break;
-            }
-            const delay = backoffDelayMs(attempt, classified.retryAfterMs);
-            if (this.exceedsMaxDelay(delay, streamOptions.maxRetryDelayMs)) {
-              for (const event of buffered) outer.push(event as never);
-              outer.end(result);
-              break;
-            }
-            console.warn(`Agentic Chat: model stream ${classified.class} (attempt ${attempt + 1}/${maxRetries}) retrying in ${delay}ms: ${classified.message.slice(0, 200)}`);
-            if (!(await this.sleepOrAbort(buffered, outer, model, delay, signal))) break;
-            attempt += 1;
-            continue;
-          }
-          for (const event of buffered) outer.push(event as never);
-          outer.end(result);
-          break;
-        } catch (error) {
-          const classified = classifyError(error);
-          errorMessage = classified.message;
-          if (!this.shouldRetryStream(classified, hadContent, attempt, maxRetries, signal)) {
-            for (const event of buffered) outer.push(event as never);
-            this.pushStreamError(outer, model, signal?.aborted || classified.class === "aborted" ? "aborted" : "error", errorMessage);
-            break;
-          }
-          const delay = backoffDelayMs(attempt, classified.retryAfterMs);
-          if (this.exceedsMaxDelay(delay, streamOptions.maxRetryDelayMs)) {
-            for (const event of buffered) outer.push(event as never);
-            this.pushStreamError(outer, model, signal?.aborted || classified.class === "aborted" ? "aborted" : "error", errorMessage);
-            break;
-          }
-          console.warn(`Agentic Chat: model stream ${classified.class} (attempt ${attempt + 1}/${maxRetries}) retrying in ${delay}ms: ${classified.message.slice(0, 200)}`);
-          if (!(await this.sleepOrAbort(buffered, outer, model, delay, signal))) break;
-          attempt += 1;
-        }
-      }
-    })();
+    void this.runStreamWithRetries(model, context, streamOptions, signal, maxRetries, outer);
     return outer;
+  }
+
+  private async runStreamWithRetries(
+    model: Model<Api>,
+    context: Context,
+    streamOptions: SimpleStreamOptions,
+    signal: AbortSignal | undefined,
+    maxRetries: number,
+    outer: AssistantMessageEventStream,
+  ): Promise<void> {
+    let attempt = 0;
+    for (;;) {
+      const outcome = await this.attemptStream(model, context, streamOptions, signal);
+      const plan = this.planRetry(outcome, attempt, maxRetries, streamOptions, signal);
+      if (!plan) {
+        this.finishAttempt(outer, outcome, model, signal);
+        return;
+      }
+      if (!(await this.delayBeforeRetry(outcome, plan, attempt, maxRetries, outer, model, signal))) return;
+      attempt += 1;
+    }
+  }
+
+  private async attemptStream(
+    model: Model<Api>,
+    context: Context,
+    streamOptions: SimpleStreamOptions,
+    signal?: AbortSignal,
+  ): Promise<StreamAttemptOutcome> {
+    const buffered: unknown[] = [];
+    let hadContent = false;
+    let errorMessage: string | undefined;
+    try {
+      const innerOptions: SimpleStreamOptions = { ...streamOptions, maxRetries: 0, signal };
+      const inner = this.streamSimpleFn(model, context, innerOptions);
+      for await (const event of inner) {
+        buffered.push(event);
+        if (isContentEvent(event)) hadContent = true;
+        const eventError = eventErrorMessage(event);
+        if (eventError !== undefined) errorMessage = eventError;
+      }
+      const result = await inner.result();
+      return { kind: "result", buffered, hadContent, result, errorMessage: resultErrorMessage(result, errorMessage) };
+    } catch (error) {
+      const classified = classifyError(error);
+      return { kind: "threw", buffered, hadContent, classified, errorMessage: classified.message };
+    }
+  }
+
+  private classifyOutcome(outcome: StreamAttemptOutcome): ClassifiedError | undefined {
+    if (outcome.kind === "threw") return outcome.classified;
+    return outcome.errorMessage ? classifyError(outcome.errorMessage) : undefined;
+  }
+
+  private planRetry(
+    outcome: StreamAttemptOutcome,
+    attempt: number,
+    maxRetries: number,
+    streamOptions: SimpleStreamOptions,
+    signal?: AbortSignal,
+  ): RetryPlan | undefined {
+    const classified = this.classifyOutcome(outcome);
+    if (!classified) return undefined;
+    if (!this.shouldRetryStream(classified, outcome.hadContent, attempt, maxRetries, signal)) return undefined;
+    const delay = backoffDelayMs(attempt, classified.retryAfterMs);
+    if (this.exceedsMaxDelay(delay, streamOptions.maxRetryDelayMs)) return undefined;
+    return { classified, delay };
+  }
+
+  private finishAttempt(
+    outer: AssistantMessageEventStream,
+    outcome: StreamAttemptOutcome,
+    model: Model<Api>,
+    signal?: AbortSignal,
+  ): void {
+    for (const event of outcome.buffered) outer.push(event as never);
+    if (outcome.kind === "result") {
+      outer.end(outcome.result);
+      return;
+    }
+    const reason = signal?.aborted || outcome.classified.class === "aborted" ? "aborted" : "error";
+    this.pushStreamError(outer, model, reason, outcome.errorMessage);
+  }
+
+  private async delayBeforeRetry(
+    outcome: StreamAttemptOutcome,
+    plan: RetryPlan,
+    attempt: number,
+    maxRetries: number,
+    outer: AssistantMessageEventStream,
+    model: Model<Api>,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    console.warn(`Agentic Chat: model stream ${plan.classified.class} (attempt ${attempt + 1}/${maxRetries}) retrying in ${plan.delay}ms: ${plan.classified.message.slice(0, 200)}`);
+    return this.sleepOrAbort(outcome.buffered, outer, model, plan.delay, signal);
   }
 
   private shouldRetryStream(
