@@ -81,6 +81,7 @@ import {
   type NetworkSettings,
 } from "./settings-schema";
 export {
+  DEFAULT_JEV_SETTINGS,
   DEFAULT_SETTINGS,
   PROVIDERS,
   PROVIDER_LABELS,
@@ -94,6 +95,8 @@ export {
 export type {
   AgenticChatSettings,
   CompactionSettings,
+  JevRerankSettings,
+  JevSettings,
   NetworkSettings,
   NotificationSettings,
   WebSettings,
