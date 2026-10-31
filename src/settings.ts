@@ -1258,6 +1258,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             syncTestButton();
           });
       });
+    // Name + summary need room; on narrow panes the toggle and buttons wrap below (styles.css).
+    header.settingEl.addClass("agentic-chat-mcp-server-header");
 
     // Show banner when server advertised OAuth via 401 but authType is still none/bearer/header
     if (server.pendingOAuthChallenge && server.pendingOAuthResourceUrl) {
