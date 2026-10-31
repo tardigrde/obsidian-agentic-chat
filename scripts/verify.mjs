@@ -5,6 +5,10 @@ import path from "node:path";
 import process from "node:process";
 
 const NODE = process.execPath;
+// Typecheck with TypeScript 7. The `typescript` package stays on 5.x for
+// typescript-eslint, which needs the JS compiler API that TS 7.0 does not ship
+// (upstream typescript-eslint#10940).
+const TSC7 = path.resolve("scripts", "tsc7.mjs");
 const SMOKE_SPEC = "test/e2e/specs/smoke.e2e.ts";
 const DESIGN_AUDIT_SPEC = "test/e2e/specs/design-audit.e2e.ts";
 
@@ -18,8 +22,8 @@ function step(label, command, args, options = {}) {
 
 const lanes = {
   fast: () => [
-    step("typecheck", bin("tsc"), ["-noEmit"]),
-    step("e2e typecheck", bin("tsc"), ["-p", "tsconfig.e2e.json", "--noEmit"]),
+    step("typecheck", NODE, [TSC7, "-noEmit"]),
+    step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
     step("lint", bin("eslint"), ["."]),
     step("lint:obsidian", bin("eslint"), ["-c", "eslint.config.obsidian.mjs", "src"]),
     step("unit tests", bin("vitest"), ["run"], { expectTests: true }),
@@ -33,7 +37,7 @@ const lanes = {
   ],
 
   ci: () => [
-    step("typecheck", bin("tsc"), ["-noEmit"]),
+    step("typecheck", NODE, [TSC7, "-noEmit"]),
     step("lint", bin("eslint"), ["."]),
     step("lint:obsidian", bin("eslint"), ["-c", "eslint.config.obsidian.mjs", "src"]),
     step("unit tests with coverage", bin("vitest"), ["run", "--coverage"], { expectTests: true }),
