@@ -109,6 +109,11 @@ const versions = await parseObsidianVersions(env.OBSIDIAN_VERSIONS ?? "latest/la
 export const config: WebdriverIO.Config = {
   runner: "local",
   framework: "mocha",
+  // wdio 10 makes `$` throw when a selector matches more than one element. This
+  // suite predates that and relies on first-match semantics for transcript
+  // panels and session rows. Keep v9 behavior; adopting strict selectors is a
+  // separate test-migration change, not part of the harness upgrade.
+  strictSelectors: false,
   ...(externalChromedriverPort
     ? {
         hostname: env.WDIO_EXTERNAL_CHROMEDRIVER_HOST ?? "127.0.0.1",
