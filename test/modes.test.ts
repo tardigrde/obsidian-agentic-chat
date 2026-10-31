@@ -59,12 +59,16 @@ describe("resolveModePolicy", () => {
     expect(resolveModePolicy("plan", allow, "subagent").policy).toBe("deny");
     expect(resolveModePolicy("plan", allow, "mcp_test").policy).toBe("deny");
     expect(resolveModePolicy("plan", allow, "import_pdf").policy).toBe("deny");
+    // remember_memory writes daily notes, so plan (read-only) blocks it too.
+    expect(resolveModePolicy("plan", allow, "remember_memory").policy).toBe("deny");
   });
 
   it("plan and yolo still allow read-only tools", () => {
     expect(resolveModePolicy("plan", allow, "read").policy).toBe("allow");
     expect(resolveModePolicy("plan", allow, "grep").policy).toBe("allow");
     expect(resolveModePolicy("yolo", allow, "grep").policy).toBe("allow");
+    // recall_memory is read-only search over MEMORY.md + dailies, so plan allows it.
+    expect(resolveModePolicy("plan", allow, "recall_memory").policy).toBe("allow");
   });
 });
 

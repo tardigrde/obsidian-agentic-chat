@@ -35,11 +35,9 @@ Run `/compact [instructions]` to summarize older turns on demand. The optional i
 
 ## Memory
 
-Add long-term memories with `/memory add [kind] [scope] <text>`. Kinds are `preference`, `fact`, `instruction`, or `summary`. Scopes are `global` or `vault`.
-
-Review stored memories with `/memory review`. Export them with `/memory export`. Clear everything with `/memory clear --confirm`.
-
-The agent retrieves memories explicitly via the `search_memory` tool; they are never injected automatically.
+Append to today's daily note with `/memory add <text>` (or say "remember this" — the `remember_memory` tool writes daily notes only).
+Consolidate with `/memory distill`. Both tiers auto-load into new chats when enabled in Settings → Agent → Memory
+(full lifecycle: `docs/features/memory.md`).
 
 ## Semantic indexing
 

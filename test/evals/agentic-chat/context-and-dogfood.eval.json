@@ -95,7 +95,7 @@
         },
         {
           "type": "required_tool_started",
-          "name": "search_memory",
+          "name": "remember_memory",
           "severity": "error"
         },
         {
