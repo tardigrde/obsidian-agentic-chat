@@ -1,6 +1,6 @@
 # Feature Map
 
-Agentic Chat turns the Obsidian sidebar into an agent workspace rather than a plain chatbot.
+Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline tool-call step cards, session tabs, and approval-gated vault edits — not a plain chatbot.
 
 ## Core chat
 
@@ -19,7 +19,7 @@ Agentic Chat turns the Obsidian sidebar into an agent workspace rather than a pl
 - Traverse local note graph context.
 - Read and update YAML frontmatter through Obsidian APIs.
 - Rename notes with backlink preservation.
-- Trash-safe file and empty-folder deletes.
+- Trash-safe deletes: files and folders go to system trash (`recursive:true` for non-empty folders, always asks).
 
 ## Agent workflows
 
@@ -57,11 +57,10 @@ Agentic Chat turns the Obsidian sidebar into an agent workspace rather than a pl
 
 ## Extensibility
 
-- [Agent plugins](agent-plugins.md) — packages in the vault (`.agentic-plugins/`) that follow the Agent Plugins 1.0.0 spec and contribute skills and MCP servers; single source of truth for both.
+- [Agent plugins](agent-plugins.md) — packages in the vault (`.agentic-plugins/`) that follow the Agent Plugins 1.0.0 spec and contribute skills and MCP servers.
 - Skills loaded from plugin `SKILL.md` files, alongside built-in skills; plugin skills load first and win name collisions.
-- Built-in self-knowledge skill with tool inventory, doomloop guards, and error patterns.
-- Subagent roles (single built-in Explorer, read-only recon; no custom roles).
-- Built-in subagent: Explorer (single).
+- Built-in self-knowledge skill with tool inventory, loop guards, and error patterns.
+- Read-only Explorer subagent for recon delegation (single built-in role, one level deep).
 - Optional web search and URL fetch.
 - Optional HTTPS Streamable HTTP MCP tools, generated into plugin packages from the settings UI.
 - `/doctor` audit of agent plugin spec compliance.

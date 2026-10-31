@@ -25,6 +25,20 @@ Read-only tools run without approval unless working-directory scoping requires a
 
 Mutating tools are controlled by the approval policy and can be reverted with `/undo` when they are the latest agent vault mutation.
 
+## Other tools you will see as step cards
+
+| Tool | What it does |
+| --- | --- |
+| `ask_user` | Inline clarification prompt; answers steer the run. |
+| `search_memory` | Explicit long-term memory lookup (never automatic). See [Memory](../features/memory.md). |
+| `subagent` | Delegates recon to the read-only Explorer (one level deep). |
+| `load_skill` / `unload_skill` / `read_skill` | Load skill bodies on demand instead of paying schema cost up front. |
+| `create_skill` | Scaffolds a skill package; always approval-gated, never auto-approved, not undoable. |
+| `read_artifact` / `search_artifact` / `list_artifacts` | Inspect large tool outputs kept out of context. |
+| `import_pdf` / `import_document` | Extract PDF/EPUB/DOCX/PPTX/XLSX text into artifacts with citations. |
+| `web_search` / `fetch_url` | Opt-in web tools. See [Web, MCP, observability](../features/web-mcp-observability.md). |
+| `mcp__<id>__<tool>` | Opt-in remote MCP tools behind the approval gate. |
+
 ## Compatibility tools
 
 The following tools remain implemented for backward compatibility but are **not sent to the model by default**. The preferred surface is `vault_inspect`.

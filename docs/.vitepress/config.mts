@@ -5,6 +5,8 @@ export default defineConfig({
   description: "Privacy-first agent-led AI chat for Obsidian.",
   base: "/obsidian-agentic-chat/",
   lastUpdated: true,
+  // Internal runbooks stay in the repo but off the public site.
+  srcExclude: ["**/harness-guide-audit.md", "**/live-dogfood.md"],
   head: [
     ["meta", { name: "theme-color", content: "#46648f" }],
     ["meta", { property: "og:type", content: "website" }],
@@ -27,6 +29,7 @@ export default defineConfig({
           { text: "Setup", link: "/guide/setup" },
           { text: "Daily usage", link: "/guide/usage" },
           { text: "Privacy model", link: "/guide/privacy" },
+          { text: "Troubleshoot", link: "/guide/troubleshoot" },
         ],
       },
       {
@@ -34,6 +37,7 @@ export default defineConfig({
         items: [
           { text: "Feature map", link: "/features/" },
           { text: "Context and control", link: "/features/context-and-control" },
+          { text: "Agent plugins", link: "/features/agent-plugins" },
           { text: "Web, MCP, and observability", link: "/features/web-mcp-observability" },
           { text: "Memory", link: "/features/memory" },
           { text: "Semantic retrieval", link: "/features/semantic-retrieval" },
@@ -45,7 +49,6 @@ export default defineConfig({
           { text: "Vault tools", link: "/reference/vault-tools" },
           { text: "Slash commands", link: "/reference/slash-commands" },
           { text: "Settings", link: "/reference/settings" },
-          { text: "Publishing docs", link: "/reference/publishing-docs" },
         ],
       },
       {
@@ -53,7 +56,7 @@ export default defineConfig({
         items: [
           { text: "Development guide", link: "/development/" },
           { text: "Testing", link: "/development/testing" },
-          { text: "Live dogfood harness", link: "/development/live-dogfood" },
+          { text: "Publishing docs", link: "/reference/publishing-docs" },
         ],
       },
     ],

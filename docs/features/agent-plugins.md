@@ -1,6 +1,6 @@
 # Agent Plugins
 
-Agent plugins are packages in the vault that follow the [Agent Plugins 1.0.0 specification](https://agent-plugins.org). Each package is a folder containing a `plugin.json` manifest plus optional `skills/` and `mcp.json` components. Agentic Chat treats the plugin folder as the **single source of truth** for skills and MCP servers.
+Agent plugins are packages in the vault that follow the [Agent Plugins 1.0.0 specification](https://agent-plugins.org). Each package is a folder containing a `plugin.json` manifest plus optional `skills/` and `mcp.json` components — the plugin folder is where skills and MCP servers are defined.
 
 ## Layout
 
@@ -17,20 +17,18 @@ Plugins live in `.agentic-plugins/` at the vault root (configurable in Settings 
 ```
 
 - **Skills** — each folder under `skills/` holds a `SKILL.md`. The frontmatter `name` and `description` feed the skill registry; the body is the skill content. Plugin skills load first, so a plugin skill of the same name shadows a built-in.
-- **MCP** — `mcp.json` declares `mcpServers` (currently `streamable-http` only). Servers whose transport is unsupported are skipped; valid ones load with their persisted client state (enable toggle, approval, auth, OAuth) preserved by id. Tool names use the id `mcp__plugin_<name>_<key>__<tool>`.
+- **MCP** — `mcp.json` declares `mcpServers` (currently `streamable-http` only). Servers whose transport is unsupported are skipped; valid ones load with their persisted client state (enable toggle, approval, auth, OAuth) preserved by id. Exposed tool names are `mcp__<server-id>__<tool>`, where the server id is derived from the package and server key.
 
 A plugin with only an `mcp.json` (no skills) is valid — MCP-only plugins are allowed by the spec.
 
 A plugin with neither `skills/` nor `mcp.json` (manifest only) is also valid: per §6.2 a missing
 component location is not an error, so the loader reports it `ok` with 0 skills / 0 servers.
-The vault ships one such package, `my-skills`, as your personal collection space for hand-curated
-custom skills (`skills/<name>/SKILL.md` inside it). It is created only when absent and never overwritten;
-deleting it restores on next restart (or via **Repair built-ins**, which also restores `my-skills`).
+Your personal space is the `my-skills` package (`skills/<name>/SKILL.md` inside it): created only
+when absent, never overwritten, restored on restart if deleted.
 
-> **Note on built-ins staleness.** The `builtins` package in your vault is a materialized copy: it is
-> only created when missing and never auto-updated, so after a plugin update it can lag behind the
-> bundled skill text until you hit **Repair built-ins**. The agent always falls back to the bundled
-> text for skills shadowed by nothing, but vault edits win — when in doubt, repair.
+> **Built-ins can go stale.** The `builtins` package is a materialized copy — created when missing,
+> never auto-updated. After a plugin update, hit **Repair built-ins** (Resources tab) to refresh it.
+> Vault edits always win over bundled text.
 
 ## Creating plugins
 
@@ -46,7 +44,7 @@ always works via `create_skill` / the wizard regardless.
 
 ## Importing plugins
 
-**Resources tab → Install plugin…** brings packages into the vault from a GitHub URL, an archive, or a vault folder (desktop). See [Installing agent plugins](../guide/install.md) for the supported input shapes.
+**Resources tab → Install plugin…** brings packages into the vault from a GitHub URL, an archive, or a vault folder (desktop). See [Installing agent plugins](../guide/install.md#installing-agent-plugins) for the supported input shapes.
 
 - Claude / Copilot / VS Code packages are converted to Agent Plugins 1.0 on import (skills copied whole, `mcpServers` → `mcp.json`, unsupported fields dropped with warnings).
 - Imported packages show their install provenance (`Source:` line, e.g. `github:user/repo`) and can be **Removed** from the Resources tab, which also deletes any MCP servers the package contributed.

@@ -1,6 +1,6 @@
 # Privacy Model
 
-Agentic Chat is designed around explicit egress and visible action.
+Agentic Chat sends vault content only to your configured model provider — and only inside chat requests. No network calls happen for web, MCP, or observability unless you enable them, and every tool call is rendered inline.
 
 ## Defaults
 

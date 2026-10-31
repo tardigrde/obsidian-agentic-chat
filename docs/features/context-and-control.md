@@ -1,6 +1,6 @@
 # Context and Control
 
-Agentic Chat gives the model context through explicit attachments and bounded tools.
+Agentic Chat gives the model context through explicit attachments and tools that only accept vault-relative paths (`..` and absolute paths are rejected; ignored paths report as not found).
 
 ## Context attachments
 
@@ -12,7 +12,7 @@ Root standing-instruction files (`AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`) are 
 
 ## Working directories
 
-Working directories grant one or more folders as the active working set.
+Working directories scope auto-approval to folders you trust. Use `/add-dir <folder>` to grant a vault folder and `/dirs` to list or revoke grants.
 
 In Safe mode:
 
@@ -20,8 +20,6 @@ In Safe mode:
 - touching anything outside the granted folders asks first, including reads
 - denied tools remain denied
 - ignored paths remain invisible
-
-Use `/add-dir` to grant a vault folder and `/dirs` to list or revoke grants.
 
 ## Approval gates
 
@@ -37,7 +35,7 @@ YOLO is a session-level allow switch for mutating tools. Per-tool deny still win
 
 ## Plan mode
 
-`/plan` is sticky and read-only. It blocks writes, edits, renames, deletes, frontmatter changes, and subagent writes until `/endplan`.
+`/plan` is sticky and read-only. It blocks writes, edits, renames, deletes, frontmatter changes, and subagent writes until you click the **Plan** badge or run `/config`.
 
 ## Compaction
 

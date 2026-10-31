@@ -1,6 +1,6 @@
 # Web, MCP, and Observability
 
-These features are opt-in because they can send data outside your vault and model provider.
+These features are opt-in because they can send data outside your vault and model provider. Enable each on its tab in **Settings > Agentic Chat** (**Web**, **MCP**, **Observability**); until then the tools are not registered and the agent cannot reach the network.
 
 ## Web access
 
@@ -13,7 +13,15 @@ When enabled, the agent receives:
 
 The built-in `/deep-research` skill is offered only while web access is enabled.
 
-The fetch tool has SSRF guardrails for non-HTTP schemes and localhost, private, and link-local hosts, plus an optional **Fetch allowlist** (`settings.web.allowedHosts`) that restricts destinations to explicit host suffixes (label-boundary-aware, `*.example.com` / `example.com` / `*`; deny wins over SSRF and on every redirect hop; empty = allow all public). Tool outputs (vault via `textResult`, MCP, `fetch_url`/`web_search`) are wrapped with `[BEGIN_UNTRUSTED_TOOL_OUTPUT ...]` / `[END_UNTRUSTED_TOOL_OUTPUT]` (inner markers escaped) so the model treats them as DATA, never as instructions — see `src/tools/tool-output-wrapper.ts` and the system prompt trust boundary.
+The fetch tool refuses non-HTTP schemes and localhost/private/link-local hosts (SSRF guardrails), plus an optional **Fetch allowlist** that restricts destinations to explicit host suffixes (e.g. `example.com, *.wikipedia.org, *`; empty allows all public hosts). Vault, MCP, and web tool outputs are wrapped as untrusted data so the model treats them as data, never instructions. See [Settings](../reference/settings.md#web) for the exact keys.
+
+## When to enable what
+
+| Feature | Enable it when | What leaves the device |
+| --- | --- | --- |
+| Web search + fetch | The task needs information outside the vault | Queries to Tavily/Brave/SearXNG; page URLs to target sites (max 5 results, 10,000 fetched chars by default) |
+| MCP server | An external service has a tool the agent should call | Tool arguments to your HTTPS servers only (no stdio); enable each server after checking its endpoint |
+| Observability | You want to audit turns, cost, and errors externally | Metadata only by default; text previews or full content only if you choose those payload modes |
 
 ## MCP tools
 
@@ -26,7 +34,7 @@ Supported auth modes:
 - custom static header
 - MCP OAuth
 
-Remote tools are named as `mcp__<server-id>__<tool-name>`, flow through the approval gate, and return capped text into model context. Large text results are stored as artifacts that the model can inspect with `read_artifact` and `search_artifact`.
+Remote tools are named `mcp__<server-id>__<tool-name>`, flow through the approval gate, and return capped text into model context. Large results are stored as artifacts the model can inspect with `read_artifact` and `search_artifact`.
 
 ## Observability
 

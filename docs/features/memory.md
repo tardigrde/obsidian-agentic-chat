@@ -1,8 +1,6 @@
 # Memory
 
-Memory stores long-term facts, preferences, instructions, and summaries that persist across sessions.
-
-## Memory kinds
+Persists across sessions with four kinds and two scopes:
 
 | Kind | Use for |
 | --- | --- |
@@ -22,7 +20,7 @@ Memory stores long-term facts, preferences, instructions, and summaries that per
 
 | Command | What it does |
 | --- | --- |
-| `/memory add [kind] [scope] <text>` | Store a new memory. Kind and scope default to `preference` and `vault` if omitted. |
+| `/memory add [kind] [scope] <text>` | Store a new memory. Defaults to kind `fact`, scope `vault`. |
 | `/memory review` | Browse stored memories in a searchable list. |
 | `/memory manage` | Alias for `/memory review`. |
 | `/memory export` | Export memories to a vault note. |
@@ -32,10 +30,4 @@ Memories are stored in `memories.jsonl` inside the plugin directory. They are **
 
 ## When the agent uses memory
 
-The model decides when to search memory based on the conversation. You can prompt it explicitly: "What do you remember about my preferences?"
-
-## Privacy
-
-- Memories are local files inside the plugin directory.
-- Nothing is sent to providers unless the agent calls `search_memory` and the result is included in the prompt.
-- Clear memories with `/memory clear` if you want to reset.
+Memories are never injected automatically — the agent calls the `search_memory` tool only when the conversation suggests stored knowledge is relevant. To force a lookup, ask explicitly: "What do you remember about my preferences?" Use `/memory review` to see what is stored; stale or wrong entries explain most "it forgot" reports.
