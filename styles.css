@@ -2253,3 +2253,121 @@
     min-height: 88px;
   }
 }
+
+/* --- inline plan card (plan-as-artifact review surface) --- */
+
+.agentic-chat-plan-slot {
+  margin-top: 8px;
+}
+
+.agentic-chat-plan-card {
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--color-purple, var(--interactive-accent));
+  border-radius: 8px;
+  background: var(--background-secondary);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agentic-chat-plan-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agentic-chat-plan-card-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.agentic-chat-plan-card-title {
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentic-chat-plan-chip {
+  font-size: var(--font-smallest);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.agentic-chat-plan-chip.is-pending {
+  color: var(--color-purple, var(--text-accent));
+  border-color: var(--color-purple, var(--text-accent));
+}
+
+.agentic-chat-plan-card-meta {
+  font-size: var(--font-small);
+  color: var(--text-muted);
+}
+
+.agentic-chat-plan-card-teaser,
+.agentic-chat-plan-card-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agentic-chat-plan-card-scope {
+  color: var(--text-muted);
+  font-size: var(--font-small);
+  margin-left: 6px;
+}
+
+.agentic-chat-plan-card-scope-files {
+  font-size: var(--font-small);
+  color: var(--text-muted);
+}
+
+.agentic-chat-plan-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agentic-chat-plan-card-feedback {
+  display: flex;
+  gap: 6px;
+}
+
+.agentic-chat-plan-card-feedback-input {
+  flex: 1;
+  min-height: 40px;
+  resize: vertical;
+}
+
+.agentic-chat-plan-edit-input {
+  width: 100%;
+  min-height: 200px;
+  resize: vertical;
+}
+
+.agentic-chat-plan-approve-context {
+  color: var(--text-muted);
+  font-size: var(--font-small);
+  margin: 8px 0;
+}
+
+.agentic-chat-plan-approve-postures {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.agentic-chat-plan-approve-fresh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: var(--font-small);
+}

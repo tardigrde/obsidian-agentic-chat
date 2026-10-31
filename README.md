@@ -40,7 +40,7 @@ Your notes are yours. This plugin is built so that using AI on them does not mea
 - **Undo** — `/undo` reverts the agent's most recent vault change (write/edit/delete/rename/frontmatter).
 - **Safe ↔ YOLO toggle** — a single composer switch over the approval gate. **Safe** honors your settings approval policy; **YOLO** is a session master switch that auto-approves all mutating tools (a per-tool *deny* still wins).
 - **Working directories** — grant folders as a working set (composer folder button, `/add-dir`, or settings). In Safe mode the agent then **auto-runs reads/writes inside** them and **asks before touching anything outside** — even reads. Granted folders show as removable "scope" chips; `/dirs` lists/revokes them. Empty = approval applies vault-wide. (The ignore list still wins inside a granted folder.)
-- **Plan mode** — `/plan` enters a sticky, read-only planning state (all mutations blocked) until `/endplan` restores your prior Safe/YOLO posture. A "Plan" badge shows in the composer while active.
+- **Plan mode** — `/plan` enters a sticky, read-only planning state (all mutations blocked). The model proposes a structured plan shown as an inline review card: approve (choosing manual or auto-apply) to implement, send feedback to revise, or leave plan mode via the Plan badge (confirmed) or `/config` to restore your prior Safe/YOLO posture. A "Plan" badge shows in the composer while active.
 - **Ignore list** — gitignore-style globs (e.g. `Private/`, `*.secret.md`, `**/diary/**`) name notes the agent can never touch. Enforced at the tool layer: matching files are invisible to *every* tool — they report as "not found", so the agent can't read, list, search, or edit them.
 - **Conversation history** — every chat is stored as JSONL under the plugin folder and resumed on reload. Browse, search/filter, reopen, rename, delete, export, or clear past conversations; sessions are auto-titled from the first prompt. Works on mobile (no SQLite, no Node `fs`).
 - **Token, cost & context management** — per-message and per-conversation token/USD usage (`/usage`, `/status`), a pre-send "next ~$x" estimate, a one-time **cost alert**, a hard **spend cap** that blocks/aborts at a limit, and a context-window progress bar. Long sessions **auto-compact** older turns into a summary before they overflow the model's window, and `/compact [instructions]` can summarize older turns on demand.
@@ -218,7 +218,7 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/config` (`/mode`) | Switch permission mode (Safe / YOLO). |
 | `/add-dir [folder]` | Grant a working directory (auto-run inside, ask outside); no arg = folder picker. |
 | `/dirs` | List / revoke granted working directories. |
-| `/plan` … `/endplan` | Enter / leave sticky read-only plan mode. |
+| `/plan` | Enter sticky read-only plan mode (review the inline plan card to implement). |
 | `/compact [instructions]` | Summarize older turns now; optional instructions guide the summary. |
 | `/init [instructions]` | Curate standing instructions; optional text guides the update. |
 | `/style [name]` | Switch output style (default / brainstorm / learning). |

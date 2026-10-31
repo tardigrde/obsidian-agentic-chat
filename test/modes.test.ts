@@ -26,6 +26,13 @@ describe("MODES", () => {
     expect(MODES.yolo.promptOverlay).toBe("");
     expect(MODES.plan.promptOverlay).not.toBe("");
   });
+
+  it("plan overlay permits read-only tools and forbids edits", () => {
+    expect(MODES.plan.promptOverlay).toMatch(/read-only tools/i);
+    expect(MODES.plan.promptOverlay).toMatch(/do not edit/i);
+    expect(MODES.plan.promptOverlay).not.toMatch(/no tool calls are allowed/i);
+    expect(MODES.plan.description).not.toMatch(/PLAN_COMPLETE/);
+  });
 });
 
 describe("resolveModePolicy", () => {
