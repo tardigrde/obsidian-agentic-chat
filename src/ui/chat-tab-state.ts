@@ -1,6 +1,7 @@
 import { ActiveNoteContextCache } from "./active-note";
 import type { ContextAttachment } from "./context-attachments";
 import { PromptContextCache } from "./context-builder";
+import type { ImageContent } from "@earendil-works/pi-ai";
 
 /**
  * Per-conversation working state. While a tab is active these values live on
@@ -21,6 +22,7 @@ export interface ChatTabWorkingState {
   lastCompactionCount: number;
   lastSentPrompt: string | null;
   lastSentDisplay: string | null;
+  lastSentImages: ImageContent[];
 }
 
 /** A clean per-tab working state for a fresh conversation. */
@@ -39,5 +41,6 @@ export function freshChatTabState(): ChatTabWorkingState {
     lastCompactionCount: 0,
     lastSentPrompt: null,
     lastSentDisplay: null,
+    lastSentImages: [],
   };
 }

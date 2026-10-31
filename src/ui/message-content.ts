@@ -79,6 +79,25 @@ export function toolResultText(result: unknown): string {
     .join("\n");
 }
 
+/** A persisted image block on a user message (vision attachment, base64 data). */
+export interface MessageImageLite {
+  data: string;
+  mimeType: string;
+}
+
+/** Image blocks contained in a message (user vision attachments). */
+export function messageImages(message: AgentMessage): MessageImageLite[] {
+  const images: MessageImageLite[] = [];
+  for (const block of contentBlocks(message)) {
+    if (block.type !== "image") continue;
+    const data = block.data;
+    if (typeof data !== "string" || !data) continue;
+    const mimeType = typeof block.mimeType === "string" && block.mimeType ? block.mimeType : "image/png";
+    images.push({ data, mimeType });
+  }
+  return images;
+}
+
 function stringFromPrimitive(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return value.toString();
