@@ -64,7 +64,7 @@ is visible.
 
 For a UI claim, produce:
 
-- `session.mp4` or a committed e2e assertion
+- `session.mp4` (default; GIF only when you pass `--gif`) or a committed e2e assertion
 - keyframes at each mark (`shots/`)
 - `metrics.json`: viewport, overflow, element rects, console errors
 - `timeline.json`: one entry per `record.mark(label)`

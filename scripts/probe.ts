@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -294,6 +294,63 @@ async function extractFrames(
   return files;
 }
 
+/**
+ * Obsidian takes several seconds to paint, so a full-display recording starts
+ * with a black screen. Trim to just before the first mark and keep the raw file
+ * for debugging. The timeline is rewritten so keyframes stay aligned.
+ */
+async function trimLeadIn(
+  binary: string,
+  mp4: string,
+  outDir: string,
+  timeline: TimelineEntry[],
+): Promise<{ timeline: TimelineEntry[]; trimMs: number }> {
+  if (timeline.length === 0) return { timeline, trimMs: 0 };
+  // Keep a quarter second of context before the first mark; anything earlier is
+  // the black screen while Obsidian paints.
+  const trim = Math.max(0, timeline[0].t - 0.25);
+  if (trim < 0.1) return { timeline, trimMs: 0 };
+
+  const trimmed = mp4.replace(/\.mp4$/, "-trimmed.mp4");
+  await run(
+    binary,
+    [
+      "-y",
+      "-loglevel",
+      "error",
+      "-ss",
+      String(trim),
+      "-i",
+      mp4,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "23",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      trimmed,
+    ],
+    { allowFailure: true, quiet: true },
+  );
+
+  if (!existsSync(trimmed)) return { timeline, trimMs: 0 };
+
+  const raw = mp4.replace(/\.mp4$/, "-raw.mp4");
+  await rename(mp4, raw);
+  await rename(trimmed, mp4);
+
+  const adjusted = timeline.map((entry) => ({
+    ...entry,
+    t: Math.max(0, Number((entry.t - trim).toFixed(3))),
+  }));
+  await writeFile(path.join(outDir, "timeline.json"), `${JSON.stringify(adjusted, null, 2)}\n`);
+  return { timeline: adjusted, trimMs: Math.round(trim * 1000) };
+}
+
 async function makeGif(binary: string, mp4: string, outDir: string, range: string): Promise<string | undefined> {
   const [startRaw, endRaw] = range.split("-");
   const start = parseTime(startRaw || "0");
@@ -346,6 +403,7 @@ async function writeReport(input: {
   timeline: TimelineEntry[];
   frames: string[];
   gif?: string;
+  trimMs?: number;
 }): Promise<void> {
   const result = input.code === 0 ? "PASS" : "FAIL";
   const rows =
@@ -384,6 +442,7 @@ async function writeReport(input: {
 - result: \`${result}\` (exit ${input.code})
 - display: \`${input.display}\` ${input.width}x${input.height} @ ${input.fps}fps
 - duration: ${formatDuration(input.finishedAt - input.startedAt)}
+- lead-in trimmed: ${input.trimMs ? formatDuration(input.trimMs) : "none"}
 - started: ${new Date(input.startedAt).toISOString()}${failure}
 
 ## Timeline
@@ -539,7 +598,12 @@ async function runProbe(options: Options, ffmpegPath: string, xvfbPath: string |
 
 async function finalize(options: Options, result: ProbeRun, ffmpegPath: string): Promise<void> {
   const finishedAt = Date.now();
-  const timeline = await readTimeline(options.outDir);
+  const rawTimeline = await readTimeline(options.outDir);
+  const trimmed = await trimLeadIn(ffmpegPath, result.mp4, options.outDir, rawTimeline).catch(() => ({
+    timeline: rawTimeline,
+    trimMs: 0,
+  }));
+  const timeline = trimmed.timeline;
   const frames = await extractFrames(ffmpegPath, result.mp4, options.outDir, timeline).catch(() => []);
   const gif =
     options.gif !== undefined
@@ -557,11 +621,12 @@ async function finalize(options: Options, result: ProbeRun, ffmpegPath: string):
       fps: options.fps,
       code: result.code,
       failure: result.failure,
-      startedAt: result.recordingStartedAt ?? result.startedAt,
+      startedAt: (result.recordingStartedAt ?? result.startedAt) + trimmed.trimMs,
       finishedAt,
       timeline,
       frames,
       gif,
+      trimMs: trimmed.trimMs,
     });
 
     if (!options.noBuild && !options.live) {

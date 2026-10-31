@@ -43,8 +43,8 @@ npm run probe -- --scenario <name> --gif 00:08-00:16
 
 ```text
 logs/probes/<timestamp>-<scenario>/
-  session.mp4     whole display, isolated Xvfb, settings popouts in frame
-  key.gif         optional excerpt
+  session.mp4     whole display, trimmed to just before the first mark
+  key.gif         only when --gif is passed
   timeline.json   every mark with its timestamp
   metrics.json    viewport, overflow, rects, counts
   shots/*.png     one keyframe per mark

@@ -97,7 +97,8 @@ Obsidian popouts and settings are in frame), drives a throwaway vault, and write
 ```text
 logs/probes/<timestamp>-<scenario>/
   session.mp4
-  key.gif
+  session-raw.mp4 (only when the black lead-in was trimmed)
+  key.gif (only with --gif)
   timeline.json
   metrics.json
   shots/*.png
