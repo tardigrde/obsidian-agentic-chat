@@ -42,6 +42,15 @@ npm run docs:build
 npm run docs:preview
 ```
 
+## Verification
+
+Use [Verification](./verification.md) for the lane reference, evidence rules, the
+fake-green list, and probe workflows. The merge gate is:
+
+```bash
+npm run verify -- fast
+```
+
 ## Live dogfood
 
 Use [Live dogfood harness](./live-dogfood.md) for exploratory WebDriver/manual
