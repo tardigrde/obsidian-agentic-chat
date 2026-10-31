@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -7,7 +7,30 @@ import process from "node:process";
 
 type TimelineEntry = { t: number; label: string };
 
+type Options = {
+  scenario: string;
+  live: boolean;
+  noBuild: boolean;
+  keepDisplay: boolean;
+  size: { width: number; height: number };
+  fps: number;
+  displayOverride?: string;
+  gif?: string;
+  outDir: string;
+};
+
+type ProbeRun = {
+  code: number;
+  failure?: string;
+  startedAt: number;
+  recordingStartedAt?: number;
+  display: string;
+  mp4: string;
+  xvfb?: ChildProcess;
+};
+
 const SCENARIO_DIR = path.resolve("test/e2e/probe/scenarios");
+const BINARY_DIRS = ["/usr/bin", "/usr/local/bin", "/bin"];
 
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -46,28 +69,50 @@ function parseTime(value: string): number {
   return parts.reduce((total, part) => total * 60 + part, 0);
 }
 
-function which(binary: string): boolean {
-  return spawnSync("which", [binary], { stdio: "ignore" }).status === 0;
+/**
+ * Resolve a binary from fixed, unwriteable directories instead of trusting PATH.
+ * Set FFMPEG_PATH or XVFB_PATH to override.
+ */
+function resolveBinary(name: string, override: string | undefined): string | undefined {
+  const explicit = override?.trim();
+  if (explicit) return explicit;
+  for (const dir of BINARY_DIRS) {
+    const candidate = path.join(dir, name);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+function requireBinary(name: string, resolved: string | undefined, hint: string): string {
+  if (!resolved) fail(`${name} is not installed. ${hint}`);
+  return resolved;
 }
 
 /** Load .env without importing ESM from a CJS-emitted script. Existing env wins. */
 function applyEnvFile(file: string): void {
   for (const rawLine of readFileSync(file, "utf8").split(/\r?\n/)) {
-    const line = rawLine.trim();
+    let line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
-    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
-    if (!match) continue;
-    const [, key, rawValue] = match;
+    if (line.startsWith("export ")) line = line.slice(7).trimStart();
+
+    const equals = line.indexOf("=");
+    if (equals <= 0) continue;
+    const key = line.slice(0, equals).trim();
+    if (!/^\w+$/.test(key)) continue;
     if (process.env[key] !== undefined) continue;
-    let value = rawValue.trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    process.env[key] = value;
+    process.env[key] = unwrapEnvValue(line.slice(equals + 1));
   }
+}
+
+function unwrapEnvValue(raw: string): string {
+  const value = raw.trim();
+  if (
+    value.length >= 2 &&
+    ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
 }
 
 function run(
@@ -132,9 +177,14 @@ async function listScenarios(): Promise<string[]> {
   return entries.filter((entry) => entry.endsWith(".e2e.ts")).map((entry) => entry.replace(/\.e2e\.ts$/, ""));
 }
 
-async function startXvfb(display: string, width: number, height: number): Promise<ChildProcess> {
+async function startXvfb(
+  binary: string,
+  display: string,
+  width: number,
+  height: number,
+): Promise<ChildProcess> {
   const child = spawn(
-    "Xvfb",
+    binary,
     [display, "-screen", "0", `${width}x${height}x24`, "-nolisten", "tcp", "-ac"],
     { stdio: ["ignore", "ignore", "pipe"] },
   );
@@ -153,9 +203,16 @@ async function startXvfb(display: string, width: number, height: number): Promis
   return child;
 }
 
-async function startFfmpeg(display: string, width: number, height: number, fps: number, file: string): Promise<ChildProcess> {
+async function startFfmpeg(
+  binary: string,
+  display: string,
+  width: number,
+  height: number,
+  fps: number,
+  file: string,
+): Promise<ChildProcess> {
   const child = spawn(
-    "ffmpeg",
+    binary,
     [
       "-y",
       "-loglevel",
@@ -198,7 +255,7 @@ async function startFfmpeg(display: string, width: number, height: number, fps: 
 }
 
 async function stopProcess(child: ChildProcess | undefined, signal: NodeJS.Signals): Promise<void> {
-  if (!child || child.exitCode !== null) return;
+  if (child?.exitCode !== null) return;
   child.kill(signal);
   if (await waitForExit(child, 8_000)) return;
   child.kill("SIGKILL");
@@ -213,7 +270,12 @@ async function readTimeline(outDir: string): Promise<TimelineEntry[]> {
   }
 }
 
-async function extractFrames(mp4: string, outDir: string, timeline: TimelineEntry[]): Promise<string[]> {
+async function extractFrames(
+  binary: string,
+  mp4: string,
+  outDir: string,
+  timeline: TimelineEntry[],
+): Promise<string[]> {
   if (timeline.length === 0) return [];
   const shotsDir = path.join(outDir, "shots");
   await mkdir(shotsDir, { recursive: true });
@@ -222,8 +284,9 @@ async function extractFrames(mp4: string, outDir: string, timeline: TimelineEntr
   for (const [index, entry] of timeline.entries()) {
     const name = `${String(index + 1).padStart(2, "0")}-${slug(entry.label)}.png`;
     const target = path.join(shotsDir, name);
+    // NOSONAR:S9382 -- run ffmpeg one frame at a time; parallel seeks contend for CPU.
     await run(
-      "ffmpeg",
+      binary,
       ["-y", "-loglevel", "error", "-i", mp4, "-ss", String(entry.t), "-frames:v", "1", "-q:v", "2", target],
       { allowFailure: true, quiet: true },
     );
@@ -232,7 +295,7 @@ async function extractFrames(mp4: string, outDir: string, timeline: TimelineEntr
   return files;
 }
 
-async function makeGif(mp4: string, outDir: string, range: string): Promise<string | undefined> {
+async function makeGif(binary: string, mp4: string, outDir: string, range: string): Promise<string | undefined> {
   const [startRaw, endRaw] = range.split("-");
   const start = parseTime(startRaw || "0");
   const end = endRaw ? parseTime(endRaw) : start + 8;
@@ -240,7 +303,7 @@ async function makeGif(mp4: string, outDir: string, range: string): Promise<stri
   const target = path.join(outDir, "key.gif");
 
   await run(
-    "ffmpeg",
+    binary,
     [
       "-y",
       "-loglevel",
@@ -354,32 +417,19 @@ Open questions:
   await writeFile(path.join(input.outDir, "report.md"), report);
 }
 
-async function main(): Promise<void> {
-  if (has("--list")) {
-    for (const scenario of await listScenarios()) process.stdout.write(`${scenario}\n`);
-    return;
-  }
-
+function parseOptions(): Options {
   const scenarioArg = arg("--scenario");
-  if (!scenarioArg) fail(`--scenario is required. Run: npm run probe -- --list`);
+  if (!scenarioArg) fail("--scenario is required. Run: npm run probe -- --list");
 
   const scenario = scenarioArg.includes("/") || scenarioArg.endsWith(".ts")
     ? path.resolve(scenarioArg)
     : path.join(SCENARIO_DIR, `${scenarioArg}.e2e.ts`);
   if (!existsSync(scenario)) fail(`scenario not found: ${scenario}`);
 
-  const live = has("--live");
-  const noBuild = has("--no-build");
-  const keepDisplay = has("--keep-display");
-  const size = parseSize(arg("--size") ?? "1440x1000");
   const fps = Number(arg("--fps") ?? "15");
-  const displayOverride = arg("--display");
-
   if (!Number.isFinite(fps) || fps <= 0) fail(`--fps must be a positive number, got ${arg("--fps")}`);
 
-  const envFile = path.resolve(".env");
-  if (existsSync(envFile)) applyEnvFile(envFile);
-
+  const live = has("--live");
   if (live) {
     const key = process.env.AGENTIC_CHAT_API_KEY?.trim();
     const keyFile = process.env.AGENTIC_CHAT_API_KEY_FILE?.trim();
@@ -391,60 +441,88 @@ async function main(): Promise<void> {
     }
   }
 
-  if (!which("ffmpeg")) fail("ffmpeg is not installed. Install it: sudo apt install ffmpeg");
-  if (!displayOverride && process.platform !== "linux") {
+  return {
+    scenario,
+    live,
+    noBuild: has("--no-build"),
+    keepDisplay: has("--keep-display"),
+    size: parseSize(arg("--size") ?? "1440x1000"),
+    fps,
+    displayOverride: arg("--display"),
+    gif: arg("--gif"),
+    outDir: path.resolve(
+      arg("--out") ?? path.join("logs", "probes", `${stamp()}-${path.basename(scenario, ".e2e.ts")}`),
+    ),
+  };
+}
+
+function resolveBinaries(options: Options): { ffmpeg: string; xvfb?: string } {
+  const ffmpeg = requireBinary(
+    "ffmpeg",
+    resolveBinary("ffmpeg", process.env.FFMPEG_PATH),
+    "Install it: sudo apt install ffmpeg",
+  );
+
+  if (options.displayOverride) return { ffmpeg };
+  if (process.platform !== "linux") {
     fail("probes need Xvfb on Linux. Pass --display to record an existing display.");
   }
-  if (!displayOverride && !which("Xvfb")) {
-    fail("Xvfb is not installed. Install it: sudo apt install xvfb. Or pass --display :0 to record your desktop.");
-  }
 
-  const outDir = path.resolve(arg("--out") ?? path.join("logs", "probes", `${stamp()}-${path.basename(scenario, ".e2e.ts")}`));
-  await mkdir(outDir, { recursive: true });
+  return {
+    ffmpeg,
+    xvfb: requireBinary(
+      "Xvfb",
+      resolveBinary("Xvfb", process.env.XVFB_PATH),
+      "Install it: sudo apt install xvfb. Or pass --display :0 to record your desktop.",
+    ),
+  };
+}
 
-  const display = displayOverride || `:${pickDisplay()}`;
-  const mp4 = path.join(outDir, "session.mp4");
+async function runProbe(options: Options, ffmpegPath: string, xvfbPath: string | undefined): Promise<ProbeRun> {
+  const mp4 = path.join(options.outDir, "session.mp4");
+  const display = options.displayOverride || `:${pickDisplay()}`;
+  const startedAt = Date.now();
   let xvfb: ChildProcess | undefined;
   let ffmpeg: ChildProcess | undefined;
+  let recordingStartedAt: number | undefined;
   let code = 1;
   let failure: string | undefined;
-  let recordingStartedAt: number | undefined;
-  const startedAt = Date.now();
-
-  process.stdout.write(`[probe] ${path.basename(scenario)}\n`);
-  process.stdout.write(`[probe] mode: ${live ? "live" : "scripted"}\n`);
-  process.stdout.write(`[probe] display: ${display} ${size.width}x${size.height}\n`);
-  process.stdout.write(`[probe] output: ${outDir}\n`);
 
   try {
-    if (!noBuild) {
-      process.stdout.write(`[probe] building ${live ? "production" : "e2e"} bundle\n`);
-      if (live) await run(process.execPath, ["esbuild.config.mjs", "production"]);
+    if (!options.noBuild) {
+      process.stdout.write(`[probe] building ${options.live ? "production" : "e2e"} bundle\n`);
+      if (options.live) await run(process.execPath, ["esbuild.config.mjs", "production"]);
       else await run(process.execPath, ["scripts/build-e2e.mjs"]);
     }
 
-    if (!displayOverride) {
-      xvfb = await startXvfb(display, size.width, size.height);
-    } else {
+    if (options.displayOverride) {
       process.stderr.write("[probe] recording an existing display; every window on it will be in frame.\n");
+    } else {
+      xvfb = await startXvfb(xvfbPath as string, display, options.size.width, options.size.height);
     }
 
-    const recordingStart = Date.now();
-    recordingStartedAt = recordingStart;
-    ffmpeg = await startFfmpeg(display, size.width, size.height, fps, mp4);
+    recordingStartedAt = Date.now();
+    ffmpeg = await startFfmpeg(
+      ffmpegPath,
+      display,
+      options.size.width,
+      options.size.height,
+      options.fps,
+      mp4,
+    );
 
     code = await run(
       process.execPath,
-      ["--import", "tsx", "scripts/run-e2e.ts", "--spec", scenario],
+      ["--import", "tsx", "scripts/run-e2e.ts", "--spec", options.scenario],
       {
         allowFailure: true,
         env: {
           DISPLAY: display,
           AGENTIC_CHAT_PROBE: "1",
-          AGENTIC_CHAT_PROBE_OUT: outDir,
-          AGENTIC_CHAT_PROBE_LIVE: live ? "1" : "0",
-          AGENTIC_CHAT_PROBE_STARTED_AT: String(recordingStart),
-          AGENTIC_CHAT_E2E_WINDOW_SIZE: `${size.width}x${size.height}`,
+          AGENTIC_CHAT_PROBE_OUT: options.outDir,
+          AGENTIC_CHAT_PROBE_LIVE: options.live ? "1" : "0",
+          AGENTIC_CHAT_PROBE_STARTED_AT: String(recordingStartedAt),
+          AGENTIC_CHAT_E2E_WINDOW_SIZE: `${options.size.width}x${options.size.height}`,
           AGENTIC_CHAT_E2E_HEADLESS: "0",
           AGENTIC_CHAT_E2E_MOBILE_VIEWPORT: "0",
           WDIO_MAX_INSTANCES: "1",
@@ -457,43 +535,70 @@ async function main(): Promise<void> {
     await stopProcess(ffmpeg, "SIGINT");
   }
 
+  return { code, failure, startedAt, recordingStartedAt, display, mp4, xvfb };
+}
+
+async function finalize(options: Options, result: ProbeRun, ffmpegPath: string): Promise<void> {
   const finishedAt = Date.now();
-  const timeline = await readTimeline(outDir);
-  const frames = await extractFrames(mp4, outDir, timeline).catch(() => []);
-  const gifArg = arg("--gif");
+  const timeline = await readTimeline(options.outDir);
+  const frames = await extractFrames(ffmpegPath, result.mp4, options.outDir, timeline).catch(() => []);
   const gif =
-    gifArg !== undefined ? await makeGif(mp4, outDir, gifArg || "0-8").catch(() => undefined) : undefined;
+    options.gif !== undefined
+      ? await makeGif(ffmpegPath, result.mp4, options.outDir, options.gif || "0-8").catch(() => undefined)
+      : undefined;
 
   try {
     await writeReport({
-      outDir,
-      scenario,
-      mode: live ? "live" : "scripted",
-      display,
-      width: size.width,
-      height: size.height,
-      fps,
-      code,
-      failure,
-      startedAt: recordingStartedAt ?? startedAt,
+      outDir: options.outDir,
+      scenario: options.scenario,
+      mode: options.live ? "live" : "scripted",
+      display: result.display,
+      width: options.size.width,
+      height: options.size.height,
+      fps: options.fps,
+      code: result.code,
+      failure: result.failure,
+      startedAt: result.recordingStartedAt ?? result.startedAt,
       finishedAt,
       timeline,
       frames,
       gif,
     });
 
-    if (!noBuild && !live) {
+    if (!options.noBuild && !options.live) {
       process.stdout.write("[probe] restoring the production bundle\n");
       await run(process.execPath, ["esbuild.config.mjs", "production"]).catch(() => undefined);
     }
   } finally {
-    if (xvfb && !keepDisplay) await stopProcess(xvfb, "SIGTERM");
+    if (result.xvfb && !options.keepDisplay) await stopProcess(result.xvfb, "SIGTERM");
+  }
+}
+
+async function main(): Promise<void> {
+  if (has("--list")) {
+    for (const scenario of await listScenarios()) process.stdout.write(`${scenario}\n`);
+    return;
   }
 
-  if (failure) console.error(`[probe] ${failure}`);
-  process.stdout.write(`[probe] report: ${path.join(outDir, "report.md")}\n`);
-  if (existsSync(mp4)) process.stdout.write(`[probe] video: ${mp4}\n`);
-  process.exitCode = code;
+  const envFile = path.resolve(".env");
+  if (existsSync(envFile)) applyEnvFile(envFile);
+
+  const options = parseOptions();
+  const binaries = resolveBinaries(options);
+  await mkdir(options.outDir, { recursive: true });
+
+  process.stdout.write(`[probe] ${path.basename(options.scenario)}\n`);
+  process.stdout.write(`[probe] mode: ${options.live ? "live" : "scripted"}\n`);
+  process.stdout.write(`[probe] display: ${options.displayOverride ?? "auto"} ${options.size.width}x${options.size.height}\n`);
+  process.stdout.write(`[probe] output: ${options.outDir}\n`);
+
+  const result = await runProbe(options, binaries.ffmpeg, binaries.xvfb);
+  await finalize(options, result, binaries.ffmpeg);
+
+  if (result.failure) console.error(`[probe] ${result.failure}`);
+  process.stdout.write(`[probe] report: ${path.join(options.outDir, "report.md")}\n`);
+  if (existsSync(result.mp4)) process.stdout.write(`[probe] video: ${result.mp4}\n`);
+  process.exitCode = result.code;
 }
 
 main().catch((error: unknown) => {

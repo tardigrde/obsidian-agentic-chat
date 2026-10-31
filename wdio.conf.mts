@@ -24,6 +24,12 @@ function parseWindowSize(value: string | undefined): { width: number; height: nu
   return { width: Number(match[1]), height: Number(match[2]) };
 }
 
+const defaultSpecs = mobileViewport
+  ? ["./test/e2e/specs/mobile-viewport.e2e.ts"]
+  : ["./test/e2e/specs/**/*.e2e.ts"];
+const configSpecs = probeMode ? ["./test/e2e/probe/**/*.e2e.ts"] : defaultSpecs;
+const configExclude = probeMode || mobileViewport ? [] : ["./test/e2e/specs/mobile-viewport.e2e.ts"];
+
 if (externalChromedriverPort !== undefined && !Number.isInteger(externalChromedriverPort)) {
   throw new Error(`WDIO_EXTERNAL_CHROMEDRIVER_PORT must be an integer, got ${env.WDIO_EXTERNAL_CHROMEDRIVER_PORT}`);
 }
@@ -110,12 +116,8 @@ export const config: WebdriverIO.Config = {
       }
     : {}),
 
-  specs: probeMode
-    ? ["./test/e2e/probe/**/*.e2e.ts"]
-    : mobileViewport
-      ? ["./test/e2e/specs/mobile-viewport.e2e.ts"]
-      : ["./test/e2e/specs/**/*.e2e.ts"],
-  exclude: probeMode ? [] : mobileViewport ? [] : ["./test/e2e/specs/mobile-viewport.e2e.ts"],
+  specs: configSpecs,
+  exclude: configExclude,
 
   // One Obsidian instance at a time keeps a local run simple and quiet.
   maxInstances: Number(env.WDIO_MAX_INSTANCES || 1),

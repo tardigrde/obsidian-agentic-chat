@@ -188,41 +188,72 @@ function runStep(s) {
   });
 }
 
-export function parseCounts(output) {
-  const vitestLine = /^\s*Tests\s+(.+?)\s+\((\d+)\)\s*$/m.exec(output);
-  if (vitestLine) {
-    const [, parts, total] = vitestLine;
+function firstCountOnLine(output, word) {
+  for (const line of output.split("\n")) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 2 && parts[1] === word && /^\d+$/.test(parts[0])) return Number(parts[0]);
+  }
+  return undefined;
+}
+
+function countFor(text, word) {
+  const tokens = text.split(/\s+/).filter(Boolean);
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    if (tokens[index + 1] === word && /^\d+$/.test(tokens[index])) return Number(tokens[index]);
+  }
+  return undefined;
+}
+
+function parseVitest(output) {
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("Tests")) continue;
+    const open = trimmed.indexOf("(");
+    const close = trimmed.lastIndexOf(")");
+    if (open <= 0 || close <= open) continue;
+    const total = Number(trimmed.slice(open + 1, close));
+    if (!Number.isFinite(total)) continue;
+    const parts = trimmed.slice(0, open);
     return {
-      passed: Number(/(\d+)\s+passed/.exec(parts)?.[1] ?? 0),
-      failed: Number(/(\d+)\s+failed/.exec(parts)?.[1] ?? 0),
-      skipped: Number(/(\d+)\s+skipped/.exec(parts)?.[1] ?? 0),
-      total: Number(total),
+      passed: countFor(parts, "passed") ?? 0,
+      failed: countFor(parts, "failed") ?? 0,
+      skipped: countFor(parts, "skipped") ?? 0,
+      total,
       kind: "vitest",
     };
   }
+  return null;
+}
 
-  const mochaPassing = /(\d+)\s+passing/m.exec(output);
-  if (mochaPassing) {
-    const pending = /(\d+)\s+pending/m.exec(output);
-    const failing = /(\d+)\s+failing/m.exec(output);
-    const passed = Number(mochaPassing[1]);
-    const skipped = Number(pending?.[1] ?? 0);
-    const failed = Number(failing?.[1] ?? 0);
-    return { passed, failed, skipped, total: passed + failed + skipped, kind: "mocha" };
-  }
+function parseMocha(output) {
+  const passed = firstCountOnLine(output, "passing");
+  if (passed === undefined) return null;
+  const failed = firstCountOnLine(output, "failing") ?? 0;
+  const skipped = firstCountOnLine(output, "pending") ?? 0;
+  return { passed, failed, skipped, total: passed + failed + skipped, kind: "mocha" };
+}
 
-  const wdio = /Spec Files:\s+(\d+)\s+passed,\s+(\d+)\s+total/m.exec(output);
-  if (wdio) {
+function parseWdioSpecs(output) {
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("Spec Files:")) continue;
+    const passed = /(\d+)\s+passed/.exec(trimmed)?.[1];
+    const total = /(\d+)\s+total/.exec(trimmed)?.[1];
+    if (passed === undefined || total === undefined) continue;
+    const totalNumber = Number(total);
     return {
-      passed: Number(wdio[1]),
-      failed: Number(wdio[2]) - Number(wdio[1]),
+      passed: Number(passed),
+      failed: totalNumber - Number(passed),
       skipped: 0,
-      total: Number(wdio[2]),
+      total: totalNumber,
       kind: "wdio-specs",
     };
   }
-
   return null;
+}
+
+export function parseCounts(output) {
+  return parseVitest(output) ?? parseMocha(output) ?? parseWdioSpecs(output);
 }
 
 function stepStatus(result) {
@@ -319,22 +350,23 @@ async function writeSummary(results, lane, startedAt, finishedAt, verdict) {
   const dir = path.resolve("logs", "verify", stamp);
   await mkdir(dir, { recursive: true });
 
-  const steps = [];
-  for (const [index, result] of results.entries()) {
-    const status = stepStatus(result);
-    const counts = parseCounts(result.output);
-    const logName = `${String(index + 1).padStart(2, "0")}-${slug(result.label)}.log`;
-    await writeFile(path.join(dir, logName), result.output);
-    steps.push({
-      label: result.label,
-      status,
-      code: result.code,
-      durationMs: result.durationMs,
-      counts,
-      log: logName,
-      command: [result.command, ...result.args].join(" "),
-    });
-  }
+  const steps = await Promise.all(
+    results.map(async (result, index) => {
+      const status = stepStatus(result);
+      const counts = parseCounts(result.output);
+      const logName = `${String(index + 1).padStart(2, "0")}-${slug(result.label)}.log`;
+      await writeFile(path.join(dir, logName), result.output);
+      return {
+        label: result.label,
+        status,
+        code: result.code,
+        durationMs: result.durationMs,
+        counts,
+        log: logName,
+        command: [result.command, ...result.args].join(" "),
+      };
+    }),
+  );
 
   const summary = {
     lane,
