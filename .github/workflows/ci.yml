@@ -23,17 +23,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Lint (Obsidian plugin rules)
-        run: npm run lint:obsidian
-
-      - name: Unit tests with coverage
-        run: npm run test:coverage
+      - name: Verify (typecheck, lint, unit with coverage, production build)
+        run: npm run verify -- ci # NOSONAR:S6505 -- runs the project verify script, not a package install.
 
       - name: Upload coverage report
         if: always()
@@ -96,7 +87,7 @@ jobs:
             e2e-obsidian-${{ runner.os }}-
 
       - name: Smoke e2e (xvfb)
-        run: xvfb-run -a npm run test:e2e -- --spec test/e2e/specs/smoke.e2e.ts
+        run: xvfb-run -a npm run verify -- smoke
 
       - name: Upload e2e failure artifacts
         if: failure()

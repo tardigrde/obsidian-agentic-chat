@@ -19,6 +19,8 @@ async function focusSettingsWindow(): Promise<void> {
   if (settingsWindowId) await browser.switchToWindow(settingsWindowId);
 }
 
+export { focusMainWindow, focusSettingsWindow };
+
 /** Run an app-level (Obsidian API) callback from the main window. */
 async function fromMainWindow<T>(fn: () => Promise<T>): Promise<T> {
   await focusMainWindow();
@@ -63,6 +65,26 @@ export async function openAgenticChatSettings(): Promise<void> {
 }
 
 export async function closeAgenticChatSettings(): Promise<void> {
+  if (!settingsWindowId) {
+    await focusMainWindow();
+    return;
+  }
+
+  if (settingsWindowId !== mainWindowId) {
+    // Obsidian 1.13+ opens settings in its own BrowserWindow. Closing the window
+    // is the only reliable way to get it out of the recording; clicking modal
+    // chrome is a no-op there.
+    await focusSettingsWindow();
+    try {
+      await browser.closeWindow();
+    } catch {
+      await browser.execute(() => window.close());
+    }
+    settingsWindowId = undefined;
+    await focusMainWindow();
+    return;
+  }
+
   await focusSettingsWindow();
   await browser.execute(() => {
     for (const close of Array.from(document.querySelectorAll<HTMLElement>(".modal-close-button"))) close.click();

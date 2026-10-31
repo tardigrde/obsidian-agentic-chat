@@ -11,6 +11,24 @@ const externalChromedriverPort = env.WDIO_EXTERNAL_CHROMEDRIVER_PORT
 const mobileViewport = env.AGENTIC_CHAT_E2E_MOBILE_VIEWPORT === "1";
 const mobileViewportWidth = Number(env.AGENTIC_CHAT_E2E_VIEWPORT_WIDTH || 390);
 const mobileViewportHeight = Number(env.AGENTIC_CHAT_E2E_VIEWPORT_HEIGHT || 844);
+const probeMode = env.AGENTIC_CHAT_PROBE === "1";
+const windowSize = parseWindowSize(env.AGENTIC_CHAT_E2E_WINDOW_SIZE);
+// A recorded probe needs a real display; headless has no drawable surface.
+const headless = !probeMode && env.AGENTIC_CHAT_E2E_HEADLESS === "1";
+
+function parseWindowSize(value: string | undefined): { width: number; height: number } | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const match = /^(\d+)x(\d+)$/.exec(trimmed);
+  if (!match) throw new Error(`AGENTIC_CHAT_E2E_WINDOW_SIZE must look like 1440x1000, got ${trimmed}`);
+  return { width: Number(match[1]), height: Number(match[2]) };
+}
+
+const defaultSpecs = mobileViewport
+  ? ["./test/e2e/specs/mobile-viewport.e2e.ts"]
+  : ["./test/e2e/specs/**/*.e2e.ts"];
+const configSpecs = probeMode ? ["./test/e2e/probe/**/*.e2e.ts"] : defaultSpecs;
+const configExclude = probeMode || mobileViewport ? [] : ["./test/e2e/specs/mobile-viewport.e2e.ts"];
 
 if (externalChromedriverPort !== undefined && !Number.isInteger(externalChromedriverPort)) {
   throw new Error(`WDIO_EXTERNAL_CHROMEDRIVER_PORT must be an integer, got ${env.WDIO_EXTERNAL_CHROMEDRIVER_PORT}`);
@@ -98,10 +116,8 @@ export const config: WebdriverIO.Config = {
       }
     : {}),
 
-  specs: mobileViewport
-    ? ["./test/e2e/specs/mobile-viewport.e2e.ts"]
-    : ["./test/e2e/specs/**/*.e2e.ts"],
-  exclude: mobileViewport ? [] : ["./test/e2e/specs/mobile-viewport.e2e.ts"],
+  specs: configSpecs,
+  exclude: configExclude,
 
   // One Obsidian instance at a time keeps a local run simple and quiet.
   maxInstances: Number(env.WDIO_MAX_INSTANCES || 1),
@@ -138,7 +154,7 @@ export const config: WebdriverIO.Config = {
         // offscreen. Note: WebDriver getText() reads the accessibility tree,
         // which headless ozone does not build — assert via executeObsidian /
         // DOM textContent in headless mode, and run the full suite on a display.
-        ...(process.env.AGENTIC_CHAT_E2E_HEADLESS === "1"
+        ...(headless
           ? [
               "--ozone-platform=headless",
               "--disable-gpu",
@@ -147,6 +163,9 @@ export const config: WebdriverIO.Config = {
           : []),
         ...obsidianProxyArgs(),
         ...viewportArgs(),
+        ...(!mobileViewport && windowSize
+          ? [`--window-size=${windowSize.width},${windowSize.height}`, "--force-device-scale-factor=1"]
+          : []),
       ],
     },
     "wdio:chromedriverOptions": chromedriverOptions(),
