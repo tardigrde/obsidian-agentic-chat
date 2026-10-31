@@ -24,7 +24,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Verify (typecheck, lint, unit with coverage, production build)
-        run: npm run verify -- ci
+        run: npm run verify -- ci # NOSONAR:S6505 -- runs the project verify script, not a package install.
 
       - name: Upload coverage report
         if: always()
