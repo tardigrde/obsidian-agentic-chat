@@ -127,7 +127,7 @@ function run(
     });
     child.on("error", reject);
     child.on("close", (code) => {
-      const exit = code ?? 1;
+      const exit = code ?? 1; // NOSONAR:S7760 -- close passes null on signal termination; a default parameter only catches undefined.
       if (exit !== 0 && !options.allowFailure) {
         reject(new Error(`${command} ${args.join(" ")} exited ${exit}`));
         return;
@@ -284,8 +284,7 @@ async function extractFrames(
   for (const [index, entry] of timeline.entries()) {
     const name = `${String(index + 1).padStart(2, "0")}-${slug(entry.label)}.png`;
     const target = path.join(shotsDir, name);
-    // NOSONAR:S9382 -- run ffmpeg one frame at a time; parallel seeks contend for CPU.
-    await run(
+    await run( // NOSONAR:S9382 -- run ffmpeg one frame at a time; parallel seeks contend for CPU.
       binary,
       ["-y", "-loglevel", "error", "-i", mp4, "-ss", String(entry.t), "-frames:v", "1", "-q:v", "2", target],
       { allowFailure: true, quiet: true },

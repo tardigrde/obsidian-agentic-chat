@@ -237,19 +237,26 @@ function parseWdioSpecs(output) {
   for (const line of output.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("Spec Files:")) continue;
-    const passed = /(\d+)\s+passed/.exec(trimmed)?.[1];
-    const total = /(\d+)\s+total/.exec(trimmed)?.[1];
+    const tokens = trimmed.split(/\s+/);
+    const passed = countBeforeToken(tokens, "passed");
+    const total = countBeforeToken(tokens, "total");
     if (passed === undefined || total === undefined) continue;
-    const totalNumber = Number(total);
     return {
-      passed: Number(passed),
-      failed: totalNumber - Number(passed),
+      passed,
+      failed: total - passed,
       skipped: 0,
-      total: totalNumber,
+      total,
       kind: "wdio-specs",
     };
   }
   return null;
+}
+
+function countBeforeToken(tokens, suffix) {
+  const index = tokens.findIndex((token) => token.startsWith(suffix));
+  if (index <= 0) return undefined;
+  const value = Number(tokens[index - 1].replace(",", ""));
+  return Number.isFinite(value) ? value : undefined;
 }
 
 export function parseCounts(output) {
