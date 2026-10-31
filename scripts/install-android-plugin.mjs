@@ -35,7 +35,9 @@ const pluginDir = `${vaultPath.replace(/\/+$/, "")}/.obsidian/plugins/agentic-ch
 run("adb", ["shell", "mkdir", "-p", pluginDir]);
 
 for (const file of files) {
-  run("adb", ["push", file, `${pluginDir}/${file}`]);
+  // `pluginDir` is validated above and `file` comes from the fixed list; the
+  // spawnSync sink uses shell:false. Sonar flags this call site, not the sink.
+  run("adb", ["push", file, `${pluginDir}/${file}`]); // NOSONAR:S8705
 }
 
 console.warn(`Installed Agentic Chat assets into Android vault plugin dir: ${pluginDir}`);
