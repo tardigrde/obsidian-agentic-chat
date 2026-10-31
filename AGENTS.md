@@ -2,13 +2,27 @@
 
 ## Process
 
-Three skills carry the process. Load one before starting the matching work:
+Three skills carry the process. They live in `.agents/skills/`, so OpenCode,
+Codex, and other agents that read that convention get the same workflow.
 
 | skill | use for |
 |---|---|
-| `@ship-change` | any code change: bug, feature, refactor, dependency upgrade |
-| `@verify-obsidian-chat` | driving the real Obsidian app; feature map and evidence rules |
-| `@probe-feature` | exploratory work where "correct" is not known yet |
+| `@ship-change` | behavior changes, bugs, multi-file work, dependency upgrades |
+| `@verify-obsidian-chat` | UI claims, settings, or proof in the real Obsidian app |
+| `@probe-feature` | behavior you cannot predict yet, or when the user asks for a recording |
+
+Match the weight of the process to the change:
+
+- One-line fix, typo, or a check you can run directly: skip the ceremony and run
+  the targeted lane.
+- A behavior change that can break something non-obvious, or one that touches
+  several files: load `@ship-change`.
+- A claim about the UI, settings, or a real user journey: also load
+  `@verify-obsidian-chat`.
+- "I do not know what correct looks like yet": load `@probe-feature` instead of
+  guessing.
+
+Do not load all three at once. Each skill names the next one when it needs it.
 
 Put each rule in the lowest layer that can enforce it: `AGENTS.md` routes,
 skills hold procedure, `scripts/` and CI hold gates.

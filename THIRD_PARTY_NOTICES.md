@@ -20,6 +20,6 @@ implementation were adapted from
 [pi-obsidian](https://github.com/lhr0909/pi-obsidian) by Simon Liang under the
 MIT and 0BSD licenses, as identified in the relevant source files.
 
-The verification and probe workflows in `.opencode/skills/` are adapted from
+The verification and probe workflows in `.agents/skills/` are adapted from
 pstack by Lauren Tan (poteto), MIT. They are maintained copies, not synced
 upstream files; see `docs/development/verification.md` for the local process.

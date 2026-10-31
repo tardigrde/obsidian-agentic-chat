@@ -32,7 +32,7 @@ Own the change end to end. Plan, implement, verify, and report evidence.
 ## Feature loop
 
 1. Read the matching file in
-   `.opencode/skills/verify-obsidian-chat/features/`.
+   `.agents/skills/verify-obsidian-chat/features/`.
 2. List every user entry point the change touches. Slash command, palette
    command, settings tab, composer control, drag and drop, agent tool, subagent.
 3. Name the witness: the smallest assertion that would fail today.
