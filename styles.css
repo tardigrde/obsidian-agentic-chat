@@ -2048,6 +2048,35 @@
   align-items: center;
 }
 
+/* MCP server header (name, summary, toggle, Test connection, Remove...): the
+   controls never shrink, so on a phone the name column collapsed to one
+   character. Give the text a minimum width and let the controls wrap below. */
+.agentic-chat-mcp-server-header {
+  flex-wrap: wrap;
+  row-gap: var(--size-2-2);
+}
+.agentic-chat-mcp-server-header .setting-item-info {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.agentic-chat-mcp-server-header .setting-item-name,
+.agentic-chat-mcp-server-header .setting-item-description {
+  overflow-wrap: anywhere;
+}
+.agentic-chat-mcp-server-header .setting-item-control {
+  flex: 0 0 auto;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--size-2-2);
+  margin-left: auto;
+}
+/* Obsidian phone CSS stretches setting buttons to the full control width
+   (.is-phone .modal .setting-item-control button); keep toggle and buttons in one row here. */
+.is-phone .modal .agentic-chat-mcp-server-header .setting-item-control button:not(.clickable-icon) {
+  width: auto;
+}
+
 /* Add MCP server heading — rendered as a plain div instead of a Setting heading
    so 1.13.7's setting-group CSS cannot hide it. */
 .agentic-chat-mcp-heading {
