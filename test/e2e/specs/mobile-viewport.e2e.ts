@@ -277,6 +277,7 @@ type HeadingRowMetrics = {
   bodyOverflow: boolean;
 };
 
+/** Measure the rendered geometry of a named settings heading row. */
 async function measureHeadingRow(name: string): Promise<HeadingRowMetrics> {
   return await browser.execute((rowName) => {
     const rows = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-settings-tabbody .setting-item"));
@@ -331,6 +332,7 @@ async function measureHeadingRow(name: string): Promise<HeadingRowMetrics> {
   }, name);
 }
 
+/** Assert a heading row keeps its text readable and its controls aligned and contained. */
 function assertHeadingRowReadable(metrics: HeadingRowMetrics, label: string): void {
   if (metrics.missing) throw new Error(`${label} did not render`);
   expect(metrics.isPhone).toBe(true);
