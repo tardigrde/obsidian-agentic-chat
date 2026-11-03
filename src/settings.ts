@@ -798,6 +798,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           "touching anything outside (in Safe mode). Empty keeps the vault-wide behavior above. " +
           "Ignored globs still win inside a granted folder.",
       )
+      .setClass("agentic-chat-setting-heading-wrap")
       .setHeading()
       .addButton((button) =>
         button.setButtonText("Add folder").onClick(() => {
@@ -1230,6 +1231,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     const header = new Setting(containerEl)
       .setName(server.name || server.id)
       .setDesc(formatMcpServerSummary(server, endpointProblem) + (pluginManaged ? ` (managed by ${server.pluginRoot})` : ""))
+      .setClass("agentic-chat-mcp-server-header")
+      .setClass("agentic-chat-setting-heading-wrap")
       .setHeading()
       .addToggle((toggle) =>
         toggle.setValue(server.enabled).onChange(async (value) => {
@@ -1258,8 +1261,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             syncTestButton();
           });
       });
-    // Name + summary need room; on narrow panes the toggle and buttons wrap below (styles.css).
-    header.settingEl.addClass("agentic-chat-mcp-server-header");
 
     // Show banner when server advertised OAuth via 401 but authType is still none/bearer/header
     if (server.pendingOAuthChallenge && server.pendingOAuthResourceUrl) {
@@ -1446,6 +1447,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Tool approvals")
       .setDesc("Per-tool overrides for the last discovered tools. Default follows this server's approval policy.")
+      .setClass("agentic-chat-setting-heading-wrap")
       .setHeading()
       .addButton((button) =>
         button.setButtonText("Refresh tools").onClick(async () => {

@@ -2048,32 +2048,32 @@
   align-items: center;
 }
 
-/* MCP server header (name, summary, toggle, Test connection, Remove...): the
-   controls never shrink, so on a phone the name column collapsed to one
-   character. Give the text a minimum width and let the controls wrap below. */
-.agentic-chat-mcp-server-header {
+/* Settings heading rows with actions (MCP server header, working directories,
+   tool approvals): the controls never shrink, so on a narrow pane the name and
+   summary collapse to one character per line. Let the row wrap, give the text
+   a flex basis wide enough to read, and keep the actions together. */
+.agentic-chat-setting-heading-wrap {
   flex-wrap: wrap;
-  row-gap: var(--size-2-2);
 }
-.agentic-chat-mcp-server-header .setting-item-info {
+.agentic-chat-setting-heading-wrap .setting-item-info {
   flex: 1 1 14rem;
-  min-width: 0;
 }
-.agentic-chat-mcp-server-header .setting-item-name,
-.agentic-chat-mcp-server-header .setting-item-description {
+.agentic-chat-setting-heading-wrap .setting-item-name,
+.agentic-chat-setting-heading-wrap .setting-item-description {
   overflow-wrap: anywhere;
 }
-.agentic-chat-mcp-server-header .setting-item-control {
+.agentic-chat-setting-heading-wrap .setting-item-control {
   flex: 0 0 auto;
   max-width: 100%;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--size-2-2);
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 /* Obsidian phone CSS stretches setting buttons to the full control width
-   (.is-phone .modal .setting-item-control button); keep toggle and buttons in one row here. */
-.is-phone .modal .agentic-chat-mcp-server-header .setting-item-control button:not(.clickable-icon) {
+   (.is-phone .modal .setting-item-control button); keep toggle and actions
+   side by side here. */
+.is-phone .modal .agentic-chat-setting-heading-wrap .setting-item-control button:not(.clickable-icon) {
   width: auto;
 }
 

@@ -117,7 +117,47 @@ async function seedMobileState(): Promise<void> {
     settings.mode = "safe";
     settings.approval = { mutating: "ask", perTool: {}, workingDirs: [] };
     settings.web.enabled = false;
-    settings.mcp = { enabled: false, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] };
+    settings.mcp = {
+      enabled: true,
+      proxyUrl: "",
+      noProxy: "localhost,127.0.0.1,::1",
+      servers: [{
+        id: "mobile-demo",
+        name: "Mobile MCP Demo",
+        url: "https://mcp.example.com/mcp",
+        // Disabled so later scripted chat turns never contact the endpoint;
+        // the settings header still renders.
+        enabled: false,
+        authType: "none",
+        authHeaderName: "",
+        authHeaderValueSecretId: "",
+        authHeaderValue: "",
+        oauth: {
+          clientId: "",
+          clientSecretSecretId: "",
+          clientSecret: "",
+          dynamicClientRegistration: false,
+          registeredRedirectUri: "",
+          authorizationServer: "",
+          authorizationEndpoint: "",
+          tokenEndpoint: "",
+          registrationEndpoint: "",
+          resourceMetadataUrl: "",
+          accessTokenSecretId: "",
+          accessToken: "",
+          refreshTokenSecretId: "",
+          refreshToken: "",
+          expiresAt: 0,
+          scope: "",
+        },
+        approval: "ask",
+        knownTools: [],
+        headers: {},
+        source: "user",
+        enabledTools: [],
+        disabledTools: [],
+      }],
+    };
     settings.network = { proxyUrl: "", noProxy: "localhost,127.0.0.1,::1" };
     app.secretStorage?.setSecret?.("agentic-chat-openrouter-api-key", "e2e-mobile-scripted-key");
     await plugin.saveSettings?.();
@@ -221,6 +261,100 @@ async function assertFits(rootSelector: string, label: string): Promise<void> {
   if (result.offenders.length > 0) throw new Error(`${label} has horizontal overflow: ${result.offenders.join("; ")}`);
 }
 
+type HeadingRowMetrics = {
+  missing: boolean;
+  isPhone: boolean;
+  hasClass: boolean;
+  headerWidth: number;
+  headerRight: number;
+  infoWidth: number;
+  nameWidth: number;
+  nameHeight: number;
+  controlWidth: number;
+  controlRight: number;
+  controlCenters: number[];
+  buttonWidths: number[];
+  bodyOverflow: boolean;
+};
+
+async function measureHeadingRow(name: string): Promise<HeadingRowMetrics> {
+  return await browser.execute((rowName) => {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-settings-tabbody .setting-item"));
+    const header = rows.find(
+      (row) => row.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === rowName,
+    );
+    const body = document.querySelector<HTMLElement>(".agentic-chat-settings-tabbody");
+    if (!header) {
+      return {
+        missing: true,
+        isPhone: document.body.classList.contains("is-phone"),
+        hasClass: false,
+        headerWidth: 0,
+        headerRight: 0,
+        infoWidth: 0,
+        nameWidth: 0,
+        nameHeight: 0,
+        controlWidth: 0,
+        controlRight: 0,
+        controlCenters: [],
+        buttonWidths: [],
+        bodyOverflow: false,
+      };
+    }
+
+    const box = (element: Element | null): DOMRect | null => element?.getBoundingClientRect() ?? null;
+    const info = box(header.querySelector(".setting-item-info"));
+    const nameEl = box(header.querySelector(".setting-item-name"));
+    const control = header.querySelector<HTMLElement>(".setting-item-control");
+    const controlBox = box(control);
+    const headerBox = box(header);
+    return {
+      missing: false,
+      isPhone: document.body.classList.contains("is-phone"),
+      hasClass: header.classList.contains("agentic-chat-setting-heading-wrap"),
+      headerWidth: Math.round(headerBox?.width ?? 0),
+      headerRight: Math.round(headerBox?.right ?? 0),
+      infoWidth: Math.round(info?.width ?? 0),
+      nameWidth: Math.round(nameEl?.width ?? 0),
+      nameHeight: Math.round(nameEl?.height ?? 0),
+      controlWidth: Math.round(controlBox?.width ?? 0),
+      controlRight: Math.round(controlBox?.right ?? 0),
+      controlCenters: Array.from(control?.children ?? []).map((child) => {
+        const rect = child.getBoundingClientRect();
+        return Math.round(rect.top + rect.height / 2);
+      }),
+      buttonWidths: Array.from(control?.querySelectorAll<HTMLButtonElement>("button") ?? []).map((button) =>
+        Math.round(button.getBoundingClientRect().width),
+      ),
+      bodyOverflow: body ? body.scrollWidth > body.clientWidth + 2 : false,
+    };
+  }, name);
+}
+
+function assertHeadingRowReadable(metrics: HeadingRowMetrics, label: string): void {
+  if (metrics.missing) throw new Error(`${label} did not render`);
+  expect(metrics.isPhone).toBe(true);
+  expect(metrics.hasClass).toBe(true);
+  expect(metrics.headerWidth).toBeGreaterThan(250);
+  // Before the wrap fix the info column collapsed to a few pixels and the name
+  // wrapped one character per line.
+  expect(metrics.infoWidth).toBeGreaterThanOrEqual(Math.round(metrics.headerWidth * 0.5));
+  expect(metrics.nameWidth).toBeGreaterThanOrEqual(Math.round(metrics.headerWidth * 0.35));
+  expect(metrics.nameHeight).toBeLessThan(48);
+  expect(metrics.controlRight).toBeLessThanOrEqual(metrics.headerRight + 1);
+  expect(metrics.bodyOverflow).toBe(false);
+  // The phone override must keep buttons at their natural width instead of
+  // stretching each one to the full control width.
+  expect(metrics.buttonWidths.length).toBeGreaterThanOrEqual(1);
+  for (const width of metrics.buttonWidths) {
+    expect(width).toBeLessThanOrEqual(Math.round(metrics.headerWidth * 0.6));
+  }
+  // Toggle and buttons share one row when they fit.
+  if (metrics.controlCenters.length > 1) {
+    expect(Math.max(...metrics.controlCenters) - Math.min(...metrics.controlCenters)).toBeLessThanOrEqual(2);
+  }
+}
+
 async function allowApproval(): Promise<void> {
   const modal = await $(".agentic-chat-approval");
   await modal.waitForExist({ timeout: 10_000 });
@@ -271,6 +405,14 @@ describe("agentic-chat mobile viewport", function () {
     await waitForSetting("Model provider");
     await selectSettingsTab("MCP");
     await waitForSetting("Enable MCP");
+    await waitForSetting("Mobile MCP Demo");
+    assertHeadingRowReadable(await measureHeadingRow("Mobile MCP Demo"), "MCP server header");
+    await waitForSetting("Tool approvals");
+    assertHeadingRowReadable(await measureHeadingRow("Tool approvals"), "Tool approvals heading");
+    await assertFits(".agentic-chat-settings-tabbody", "MCP settings body");
+    await selectSettingsTab("Approval");
+    await waitForSetting("Working directories");
+    assertHeadingRowReadable(await measureHeadingRow("Working directories"), "Working directories heading");
     await selectSettingsTab("Resources");
     await waitForSetting("Plugins folder");
     // The seeded agent plugin must render an installed-plugin row so the
