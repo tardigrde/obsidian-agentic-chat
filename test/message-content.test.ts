@@ -4,6 +4,7 @@ import {
   assistantUsage,
   collectToolResults,
   lastUserText,
+  messageImages,
   messageText,
   thinkingText,
   toolCalls,
@@ -104,6 +105,45 @@ describe("assistantUsage", () => {
     expect(assistantUsage(msg({ usage: { totalTokens: 0 } }))).toBeUndefined();
     expect(assistantUsage(msg({ usage: { totalTokens: 5 } }))).toEqual({ totalTokens: 5 });
     expect(assistantUsage(msg({}))).toBeUndefined();
+  });
+});
+
+describe("messageImages", () => {
+  it("extracts image blocks with data and mime type", () => {
+    const message = msg({
+      role: "user",
+      content: [
+        { type: "text", text: "look" },
+        { type: "image", data: "aGk=", mimeType: "image/png" },
+        { type: "image", data: "xyz", mimeType: "image/jpeg" },
+      ],
+    });
+    expect(messageImages(message)).toEqual([
+      { data: "aGk=", mimeType: "image/png" },
+      { data: "xyz", mimeType: "image/jpeg" },
+    ]);
+  });
+  it("defaults a missing mime type to PNG and skips empty data", () => {
+    const message = msg({
+      role: "user",
+      content: [{ type: "image", data: "aGk=" }, { type: "image", data: "" }, { type: "text", text: "x" }],
+    });
+    expect(messageImages(message)).toEqual([{ data: "aGk=", mimeType: "image/png" }]);
+  });
+  it("skips malformed image blocks", () => {
+    const message = msg({
+      role: "user",
+      content: [
+        { type: "image", data: 42, mimeType: "image/png" },
+        { type: "image", data: "aGk=", mimeType: 7 },
+        { type: "image" },
+      ],
+    });
+    expect(messageImages(message)).toEqual([{ data: "aGk=", mimeType: "image/png" }]);
+  });
+  it("returns [] for string content or no images", () => {
+    expect(messageImages(msg({ role: "user", content: "hello" }))).toEqual([]);
+    expect(messageImages(msg({ role: "user", content: [{ type: "text", text: "hi" }] }))).toEqual([]);
   });
 });
 
