@@ -41,7 +41,11 @@ export interface Skill {
  * Windows-style path, so both separators and trailing slashes are handled.
  */
 function skillDirName(filePath: string): string {
-  const normalized = filePath.replace(/[\\/]+$/, "");
+  // Strip trailing separators with a linear scan; `/[\\/]+$/` backtracks
+  // super-linearly on paths with many trailing slashes.
+  let end = filePath.length;
+  while (end > 0 && (filePath[end - 1] === "/" || filePath[end - 1] === "\\")) end -= 1;
+  const normalized = filePath.slice(0, end);
   const separatorIndex = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
   // Keep the `C:` drive root intact instead of returning `C`.
   if (separatorIndex === 2 && normalized[1] === ":") return normalized.slice(0, 3);
