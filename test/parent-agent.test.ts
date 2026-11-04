@@ -49,7 +49,24 @@ describe("createParentAgent", () => {
     expect(agent.state.model.id).toBe("openai/gpt-4o-mini");
     expect(agent.state.thinkingLevel).toBe("low");
     expect(agent.state.tools.map((tool) => tool.name)).toEqual(["noop"]);
-    expect(agent.state.messages).toEqual(messages);
+    // pi 1.0.0 seeds a leading system message from `initialState.systemPrompt`
+    // and folds the tool declarations into it, so the transcript is the
+    // supplied messages plus that system message.
+    expect(agent.state.messages).toEqual([
+      {
+        role: "system",
+        content: "system",
+        timestamp: 0,
+        toolsAdded: [
+          {
+            name: "noop",
+            description: "No operation.",
+            parameters: { type: "object", properties: {} },
+          },
+        ],
+      },
+      ...messages,
+    ]);
     expect(agent.sessionId).toBe("session-1");
     expect(agent.toolExecution).toBe("parallel");
     unsubscribe();

@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream,
-  type Context,
+  getCurrentSystemPrompt,
   type Model,
   type SimpleStreamOptions,
+  type TranscriptContext,
   type Usage,
 } from "@earendil-works/pi-ai";
 import { AgentCompactionRuntime, type SummarizeFn } from "../src/agent/compaction-runtime";
@@ -245,9 +246,9 @@ describe("AgentCompactionRuntime", () => {
   });
 
   it("summarizes model chunks through the configured stream function", async () => {
-    let seenContext: Context | undefined;
+    let seenContext: TranscriptContext | undefined;
     let seenOptions: SimpleStreamOptions | undefined;
-    const streamFn = ((model: Model<"openai-completions">, context: Context, options?: SimpleStreamOptions) => {
+    const streamFn = ((model: Model<"openai-completions">, context: TranscriptContext, options?: SimpleStreamOptions) => {
       seenContext = context;
       seenOptions = options;
       const stream = createAssistantMessageEventStream();
@@ -286,8 +287,11 @@ describe("AgentCompactionRuntime", () => {
         "X-Title": "Obsidian Agentic Chat",
       }),
     });
-    expect(seenContext?.systemPrompt).toContain("context summarization assistant");
-    expect(JSON.stringify(seenContext?.messages)).toContain("Additional instructions: preserve the roadmap decisions");
+    // pi 1.0.0 hands stream functions a `TranscriptContext`, so the prompt is
+    // replayed out of the transcript's system messages.
+    expect(seenContext).toBeDefined();
+    expect(getCurrentSystemPrompt(seenContext!.messages)).toContain("context summarization assistant");
+    expect(JSON.stringify(seenContext!.messages)).toContain("Additional instructions: preserve the roadmap decisions");
   });
 
   it("summarizes oversized compaction inputs in ordered chunks", async () => {

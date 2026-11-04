@@ -1,9 +1,5 @@
-import {
-  convertToLlm,
-  type AgentMessage,
-  type StreamFn,
-} from "@earendil-works/pi-agent-core";
-import { contentText, type Model, type Usage } from "@earendil-works/pi-ai";
+import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
+import { contentText, normalizeContext, type Model, type Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelConfig, apiKeyForProvider } from "../settings";
 import { buildModel } from "../llm/models";
@@ -322,7 +318,7 @@ function truncateForSummary(text: string, maxChars: number): string {
 
 /** Serialize LLM messages to plain text for summarization prompts.
  * Copied from pi-agent-core with a higher tool-result truncation budget. */
-function serializeConversation(messages: AgentMessage[]): string {
+function serializeConversation(messages: readonly AgentMessage[]): string {
   const parts: string[] = [];
   for (const msg of messages) {
     const part = serializeMessage(msg);
@@ -412,8 +408,12 @@ async function generateSummaryWithStream(
   if (customInstructions) {
     basePrompt = `${basePrompt}\n\nAdditional instructions: ${customInstructions}`;
   }
-  const llmMessages = convertToLlm(currentMessages);
-  const conversationText = serializeConversation(llmMessages);
+  // Summarization only wants the dialogue: the transcript also carries pi's
+  // system message, which holds the full system prompt and every tool schema
+  // and would duplicate the `SUMMARIZATION_SYSTEM_PROMPT` sent alongside it.
+  // `serializeMessage` returns undefined for that role, so the filter is
+  // belt-and-braces rather than load-bearing.
+  const conversationText = serializeConversation(currentMessages);
   let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
   if (previousSummary) {
     promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
@@ -430,7 +430,9 @@ async function generateSummaryWithStream(
 
   const responseStream = await streamFn(
     model,
-    { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+    // `StreamFn` takes a `TranscriptContext`, which carries the prompt as a
+    // leading system message rather than a `systemPrompt` field.
+    normalizeContext({ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages }),
     model.reasoning && thinkingLevel && thinkingLevel !== "off"
       ? { maxTokens, signal, apiKey, headers, reasoning: thinkingLevel }
       : { maxTokens, signal, apiKey, headers },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Skill } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../src/skills/skill-prompt";
 import {
   type AgentCommandPlan,
   resolveAgentCommand,

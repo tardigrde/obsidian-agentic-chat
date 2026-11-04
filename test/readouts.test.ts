@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { buildSummaryMessage } from "../src/agent/compaction";
+import { buildSummaryMessage, estimateContextUsage } from "../src/agent/compaction";
 import { compactionCount, contextFraction, estimateNextCostReadout } from "../src/agent/readouts";
 
 function assistant(inputTokens: number, text = "ok"): AgentMessage {
@@ -59,8 +59,10 @@ describe("agent readouts", () => {
       assistant(1, "y".repeat(4_000)),
     ];
 
+    const estimated = estimateContextUsage(messages);
+    expect(estimated).toBeGreaterThan(1_000);
     expect(contextFraction(messages, 1_000)).toBe(1);
-    expect(contextFraction(messages, 4_000)).toBe(0.5);
+    expect(contextFraction(messages, estimated * 2)).toBe(0.5);
     expect(contextFraction(messages, 0)).toBeUndefined();
   });
 

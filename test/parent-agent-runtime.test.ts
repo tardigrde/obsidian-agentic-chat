@@ -60,7 +60,19 @@ describe("ParentAgentRuntime", () => {
     expect(agent?.state.model.id).toBe("openai/gpt-4o-mini");
     expect(agent?.state.thinkingLevel).toBe("low");
     expect(agent?.state.tools.map((item) => item.name)).toEqual(["read"]);
-    expect(agent?.state.messages).toEqual(messages);
+    // pi 1.0.0 seeds a leading system message carrying the prompt and the tool
+    // declarations, ahead of the supplied conversation messages.
+    expect(agent?.state.messages).toEqual([
+      {
+        role: "system",
+        content: "system",
+        timestamp: 0,
+        toolsAdded: [
+          { name: "read", description: "read tool", parameters: { type: "object", properties: {} } },
+        ],
+      },
+      ...messages,
+    ]);
     expect(agent?.sessionId).toBe("session-1");
   });
 
@@ -83,6 +95,16 @@ describe("ParentAgentRuntime", () => {
     expect(agent?.state.model.id).toBe("anthropic/claude-3.5-sonnet");
     expect(agent?.state.thinkingLevel).toBe("high");
     expect(agent?.state.tools.map((item) => item.name)).toEqual(["write"]);
+    // The prompt is refreshed by rewriting the leading system message rather
+    // than appending one, so a second refresh must replace it again instead of
+    // accumulating prompt fragments.
+    expect(agent?.state.messages[0]).toMatchObject({ role: "system", content: "updated system" });
+    expect(agent?.state.messages.filter((message) => message.role === "system")).toHaveLength(1);
+
+    current = configuration({ systemPrompt: "third system" });
+    runtime.refreshConfiguration();
+    expect(agent?.state.systemPrompt).toBe("third system");
+    expect(agent?.state.messages.filter((message) => message.role === "system")).toHaveLength(1);
   });
 
   it("detaches and disposes through the lifecycle guard", () => {

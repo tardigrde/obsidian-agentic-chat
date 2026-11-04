@@ -1,4 +1,4 @@
-import type { ShouldStopAfterTurnContext } from "@earendil-works/pi-agent-core";
+import type { AgentTurnContext, AgentTurnDecision } from "@earendil-works/pi-agent-core";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 
 /** Default streak of consecutive identical tool batches that triggers the guard. */
@@ -102,9 +102,13 @@ export interface LoopGuardOptions {
  * degeneration, e.g. deepseek-v4-flash), not polling — any arg or result
  * change breaks the streak.
  *
- * Wired into the parent agent's `shouldStopAfterTurn` hook so a fire ends the
- * run gracefully before another LLM call. User-scoped: reset() runs on every
+ * Wired into the parent agent's `finishTurn` hook so a fire ends the run
+ * gracefully before another LLM call. User-scoped: reset() runs on every
  * fresh prompt, so only uninterrupted streaks inside one run count.
+ *
+ * pi 0.87.0 replaced `shouldStopAfterTurn` with `finishTurn`, which also runs
+ * for error and aborted responses. Those remain hard exits in the loop, so
+ * this guard returns `undefined` for them rather than counting them.
  */
 export class AgentLoopGuard {
   private lastBatchKey: string | null = null;
@@ -135,7 +139,18 @@ export class AgentLoopGuard {
     this.firedText = null;
   }
 
-  shouldStopAfterTurn(context: ShouldStopAfterTurnContext): boolean {
+  /**
+   * `finishTurn` hook. Returns `{ action: "end" }` to stop the run once the
+   * streak is long enough, `undefined` to keep the normal scheduling.
+   *
+   * pi runs this hook for error and aborted responses too, but those are hard
+   * exits where the decision is ignored. Skip them so a failed turn never
+   * mutates the streak and never runs the predicate's side effects.
+   */
+  finishTurn(turn: AgentTurnContext): AgentTurnDecision | undefined {
+    const stopReason = turn.message.stopReason;
+    if (stopReason === "error" || stopReason === "aborted") return undefined;
+    const context = { message: turn.message, toolResults: turn.toolResults };
     try {
       // Hook contract (pi-agent-core): must not throw — a throw interrupts the
       // agent loop without a normal event sequence. Any unexpected message
@@ -144,7 +159,7 @@ export class AgentLoopGuard {
       if (batchKey === null) {
         // Tool-free turn — the model answered. A loop can't continue past it.
         this.reset();
-        return false;
+        return undefined;
       }
       const resultKey = toolResultKey(context.toolResults);
       if (batchKey === this.lastBatchKey && resultKey === this.lastResultKey) {
@@ -157,11 +172,11 @@ export class AgentLoopGuard {
           context.toolResults.length > 0 && context.toolResults.every((result) => result.isError === true);
         this.identicalRuns = 1;
       }
-      if (this.identicalRuns < this.maxIdenticalBatches) return false;
+      if (this.identicalRuns < this.maxIdenticalBatches) return undefined;
       this.firedText = buildLoopGuardNotice(this.lastToolNames, this.maxIdenticalBatches, this.lastAllError);
-      return true;
+      return { action: "end" };
     } catch {
-      return false;
+      return undefined;
     }
   }
 }

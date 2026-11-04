@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Model } from "@earendil-works/pi-ai";
+import { normalizeContext, type Context, type Model } from "@earendil-works/pi-ai";
 import {
   createReplayStreamController,
   replayErrorTurn,
@@ -32,11 +32,16 @@ describe("createReplayStreamController", () => {
       },
     ], { now: () => 123 });
 
-    const stream = replay.streamFn(model(), {
-      systemPrompt: "parent prompt",
-      messages: [{ role: "user", content: "read it", timestamp: 1 }],
-      tools: [{ name: "read", description: "Read", parameters: { type: "object" } }],
-    });
+    // pi 1.0.0 hands stream functions a `TranscriptContext`, built from a
+    // `Context` by folding the prompt and tools into a leading system message.
+    const stream = replay.streamFn(
+      model(),
+      normalizeContext({
+        systemPrompt: "parent prompt",
+        messages: [{ role: "user", content: "read it", timestamp: 1 }],
+        tools: [{ name: "read", description: "Read", parameters: { type: "object" } }],
+      } as Context),
+    );
 
     const events = [];
     for await (const event of await stream) events.push(event);
@@ -57,7 +62,8 @@ describe("createReplayStreamController", () => {
         provider: "openrouter",
         api: "openai-completions",
         systemPrompt: "parent prompt",
-        messageCount: 1,
+        // 2 = the leading system message (prompt + tools) plus the user turn.
+        messageCount: 2,
         toolNames: ["read"],
       },
     ]);
@@ -65,7 +71,7 @@ describe("createReplayStreamController", () => {
 
   it("encodes scripted errors and missing turns as final assistant error messages", async () => {
     const replay = createReplayStreamController([replayErrorTurn("scripted failure", { timestamp: 10 })]);
-    const first = replay.streamFn(model(), { messages: [] });
+    const first = replay.streamFn(model(), normalizeContext({ messages: [] }));
     const firstEvents = [];
     for await (const event of await first) firstEvents.push(event);
     expect(firstEvents.at(-1)).toMatchObject({
@@ -74,7 +80,7 @@ describe("createReplayStreamController", () => {
       error: { errorMessage: "scripted failure", timestamp: 10 },
     });
 
-    const missing = replay.streamFn(model(), { messages: [] });
+    const missing = replay.streamFn(model(), normalizeContext({ messages: [] }));
     const missingEvents = [];
     for await (const event of await missing) missingEvents.push(event);
     expect(missingEvents.at(-1)).toMatchObject({
@@ -87,8 +93,8 @@ describe("createReplayStreamController", () => {
   it("can preserve old terse test behavior by repeating the last turn", async () => {
     const replay = createReplayStreamController([replayTextTurn("same")], { missingTurn: "repeat-last" });
 
-    const first = await (await replay.streamFn(model(), { messages: [] })).result();
-    const second = await (await replay.streamFn(model(), { messages: [] })).result();
+    const first = await (await replay.streamFn(model(), normalizeContext({ messages: [] }))).result();
+    const second = await (await replay.streamFn(model(), normalizeContext({ messages: [] }))).result();
 
     expect(first.content).toEqual([{ type: "text", text: "same" }]);
     expect(second.content).toEqual([{ type: "text", text: "same" }]);
@@ -100,7 +106,7 @@ describe("createReplayStreamController", () => {
       { initialTurnIndex: 1 },
     );
 
-    const result = await (await replay.streamFn(model(), { messages: [] })).result();
+    const result = await (await replay.streamFn(model(), normalizeContext({ messages: [] }))).result();
 
     expect(result.content).toEqual([{ type: "text", text: "second" }]);
     expect(replay.calls.map((call) => call.index)).toEqual([1]);

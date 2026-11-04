@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { TFile, TFolder, type App } from "obsidian";
-import type { AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Model, TranscriptContext } from "@earendil-works/pi-ai";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
 import type { UserApprovalChoice } from "../src/agent/tool-call-controller";
 import type { AskUserHandler, AskUserRequest } from "../src/tools/ask-user-tool";
@@ -10,7 +10,7 @@ import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
-import { parseSessionEntries } from "../src/session/jsonl";
+import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 import { fakeMemoryJsonl } from "./helpers/memory-fixtures";
 import { FakeVault } from "./helpers/fake-vault";
@@ -111,13 +111,13 @@ function scriptedCostStreamFn(
 }
 
 interface ControlledStreamRun {
-  context: Context;
+  context: TranscriptContext;
   finish: () => void;
 }
 
 function controlledStreamFn(responses: string[]): { streamFn: StreamFn; runs: ControlledStreamRun[] } {
   const runs: ControlledStreamRun[] = [];
-  const streamFn = ((model: Model<"openai-completions">, context: Context, options?: { signal?: AbortSignal }) => {
+  const streamFn = ((model: Model<"openai-completions">, context: TranscriptContext, options?: { signal?: AbortSignal }) => {
     const stream = createAssistantMessageEventStream();
     const responseText = responses[Math.min(runs.length, responses.length - 1)] ?? "";
     const message = assistantMessage(model, responseText, "stop");
@@ -384,8 +384,11 @@ describe("AgentService", () => {
   it("refreshes resources and tool registration before each prompt", async () => {
     const seenTools: string[][] = [];
     const base = cannedStreamFn("ok");
-    const streamFn: StreamFn = ((model: Model<"openai-completions">, context: Context, options: unknown) => {
-      seenTools.push((context.tools ?? []).map((tool) => tool.name).sort());
+    // pi 1.0.0 hands stream functions a `TranscriptContext`: the tool set is
+    // replayed out of the transcript's system messages rather than read from
+    // a `context.tools` field.
+    const streamFn: StreamFn = ((model: Model<"openai-completions">, context: TranscriptContext, options: unknown) => {
+      seenTools.push(getCurrentTools(context.messages).map((tool) => tool.name).sort());
       return (base as (...args: unknown[]) => unknown)(model, context, options);
     }) as unknown as StreamFn;
     const { service, settings } = makeService(streamFn);
@@ -405,8 +408,8 @@ describe("AgentService", () => {
     const memoryAdapter = new MemoryAdapter();
     await memoryAdapter.write(MEMORY_PATH, fakeMemoryJsonl());
     const base = cannedStreamFn("ok");
-    let seenContext: Context | undefined;
-    const streamFn: StreamFn = ((model: Model<"openai-completions">, context: Context, options: unknown) => {
+    let seenContext: TranscriptContext | undefined;
+    const streamFn: StreamFn = ((model: Model<"openai-completions">, context: TranscriptContext, options: unknown) => {
       seenContext = context;
       return (base as (...args: unknown[]) => unknown)(model, context, options);
     }) as unknown as StreamFn;
@@ -423,10 +426,13 @@ describe("AgentService", () => {
 
     await service.sendPrompt("Use the normal prompt context");
 
-    expect(seenContext?.tools?.map((tool) => tool.name)).toContain("search_memory");
+    expect(seenContext).toBeDefined();
+    expect(getCurrentTools(seenContext!.messages).map((tool) => tool.name)).toContain("search_memory");
+    // pi 1.0.0 carries the prompt as a transcript system message, so serialize
+    // the replayed prompt rather than a `systemPrompt` field.
     const serializedContext = JSON.stringify({
-      systemPrompt: seenContext?.systemPrompt,
-      messages: seenContext?.messages,
+      systemPrompt: getCurrentSystemPrompt(seenContext!.messages),
+      messages: seenContext!.messages,
     });
     expect(serializedContext).not.toContain("The user prefers concise answers");
     expect(serializedContext).not.toContain("Large vault embedding generation");
@@ -479,6 +485,79 @@ describe("AgentService", () => {
     await service.newSession();
     expect(service.canUndo()).toBe(false);
     expect(await service.undoLastChange()).toBe("Nothing to undo.");
+  });
+
+  // pi 1.0.0 makes the system prompt a transcript message. The plugin keeps that
+  // out of session JSONL: it embeds the whole prompt plus every tool schema, and
+  // `Agent` only seeds a fresh system message when the transcript does not
+  // already start with one, so persisting it would pin a stale prompt for the
+  // rest of the session.
+  it("never persists pi's system-context message into the session file", async () => {
+    const { adapter, service } = makeService(scriptedStreamFn([
+      { content: [{ type: "text", text: "Reply." }], stopReason: "stop" },
+    ]));
+
+    await service.sendPrompt("hello");
+
+    expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(await persistedMessageRoles(adapter, service)).toEqual(["user", "assistant"]);
+  });
+
+  // A session file written by an older build, hand-edited, or synced between
+  // installs can carry a system message. Loading it must not let the stale
+  // prompt win: pi only seeds a system message when the transcript does not
+  // already start with one.
+  it("loads a session file containing a system message without pinning its prompt", async () => {
+    const base = scriptedStreamFn([
+      { content: [{ type: "text", text: "Reply." }], stopReason: "stop" },
+      { content: [{ type: "text", text: "Reply again." }], stopReason: "stop" },
+    ]);
+    const seenPrompts: string[] = [];
+    const streamFn: StreamFn = ((model: Model<"openai-completions">, context: TranscriptContext, options: unknown) => {
+      seenPrompts.push(getCurrentSystemPrompt(context.messages));
+      return (base as (...args: unknown[]) => unknown)(model, context, options);
+    }) as unknown as StreamFn;
+    const { adapter, service } = makeService(streamFn);
+
+    await service.sendPrompt("first turn");
+    const path = service.getSessionInfo()?.path as string;
+
+    // Simulate a session file that carries a stale system message.
+    const entries = parseSessionEntries(adapter.files.get(path) as string);
+    const header = entries[0];
+    const stale = {
+      type: "message" as const,
+      id: "zz-stale",
+      parentId: header.id,
+      timestamp: new Date().toISOString(),
+      message: { role: "system" as const, content: "STALE PROMPT FROM AN OLD BUILD", timestamp: 0 },
+    };
+    adapter.files.set(path, serializeSessionEntries([header, stale, ...entries.slice(1)]));
+
+    await service.loadSession(path);
+
+    // The conversation survives; the stale prompt never becomes authoritative.
+    expect(service.getMessages().some((message) => message.role === "system")).toBe(false);
+    expect(service.getMessages().some((message) => JSON.stringify(message).includes("first turn"))).toBe(true);
+
+    await service.sendPrompt("second turn");
+
+    // The prompt that reaches the provider is the freshly composed one. Note
+    // this holds two ways over: `replace()` strips the persisted system message
+    // on load, and `refreshConfiguration` rewrites the leading system message
+    // before every prompt anyway. The assertion below pins the outcome, not
+    // which of the two defences is doing the work; `test/conversation-messages`
+    // pins the state-level property directly.
+    const last = seenPrompts.at(-1) ?? "";
+    expect(last).not.toContain("STALE PROMPT");
+    expect(last).toContain("Obsidian");
+
+    // The plugin never appends a system entry of its own: the only one in the
+    // file is the stale entry this test injected, so the next reload is clean.
+    const after = parseSessionEntries(adapter.files.get(path) as string)
+      .filter((entry) => entry.type === "message")
+      .map((entry) => entry.message.role);
+    expect(after.filter((role) => role === "system")).toEqual(["system"]);
   });
 
   it("clears session-local state when loading another session", async () => {

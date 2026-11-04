@@ -1,5 +1,5 @@
 import { type App, TFolder, TFile } from "obsidian";
-import type { Skill } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../skills/skill-prompt";
 import {
   applyMcpServerState,
   createMcpServerSettings,

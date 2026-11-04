@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ShouldStopAfterTurnContext } from "@earendil-works/pi-agent-core";
-import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AgentTurnContext } from "@earendil-works/pi-agent-core";
+import type { StopReason, ToolResultMessage } from "@earendil-works/pi-ai";
 import {
   AgentLoopGuard,
   buildLoopGuardNotice,
@@ -33,11 +33,17 @@ function toolResult(toolCallId: string, toolName: string, text: string): ToolRes
 function context(
   messageContent: { type: string; id?: string; name?: string; arguments?: unknown; text?: string }[],
   results: ReturnType<typeof toolResult>[],
-): ShouldStopAfterTurnContext {
+  stopReason: StopReason = "toolUse",
+): AgentTurnContext {
   return {
-    message: { content: messageContent },
+    message: { content: messageContent, stopReason },
     toolResults: results,
-  } as unknown as ShouldStopAfterTurnContext;
+  } as unknown as AgentTurnContext;
+}
+
+/** `finishTurn` decides "stop" with `{ action: "end" }`; keep assertions readable. */
+function stops(guard: AgentLoopGuard, turn: AgentTurnContext): boolean {
+  return guard.finishTurn(turn)?.action === "end";
 }
 
 describe("stableStringify", () => {
@@ -100,36 +106,36 @@ describe("AgentLoopGuard", () => {
       [{ type: "toolCall", id: "c1", name: "read" } as unknown as { type: string; id?: string; name?: string; arguments?: unknown; text?: string }],
       [toolResult("c1", "read", "content A")],
     );
-    expect(guard.shouldStopAfterTurn(malformed)).toBe(false);
-    expect(guard.shouldStopAfterTurn(malformed)).toBe(true); // identical malformed repeats still detected
+    expect(stops(guard, malformed)).toBe(false);
+    expect(stops(guard, malformed)).toBe(true); // identical malformed repeats still detected
     expect(guard.noticeText).not.toBeNull();
   });
 
   it("defaults to 4 identical batches before firing", () => {
     const guard = new AgentLoopGuard();
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
-    expect(guard.shouldStopAfterTurn(batch)).toBe(true);
+    expect(stops(guard, batch)).toBe(false);
+    expect(stops(guard, batch)).toBe(false);
+    expect(stops(guard, batch)).toBe(false);
+    expect(stops(guard, batch)).toBe(true);
     expect(guard.noticeText).toMatch(/Loop guard/);
-    expect(guard.shouldStopAfterTurn(batch)).toBe(true); // stays fired
+    expect(stops(guard, batch)).toBe(true); // stays fired
   });
 
   it("honors a custom threshold (fire on 2nd)", () => {
     const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
-    expect(guard.shouldStopAfterTurn(batch)).toBe(true);
+    expect(stops(guard, batch)).toBe(false);
+    expect(stops(guard, batch)).toBe(true);
   });
 
   it("does not fire when arguments change", () => {
     const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+    expect(stops(guard, batch)).toBe(false);
     const different = context(
       [toolCallBlock("read", { path: "B" }), toolCallBlock("search", { query: "#tag" })],
       [toolResult("c1", "read", "content B"), toolResult("c2", "search", "results 1")],
     );
-    expect(guard.shouldStopAfterTurn(different)).toBe(false);
-    expect(guard.shouldStopAfterTurn(different)).toBe(true);
+    expect(stops(guard, different)).toBe(false);
+    expect(stops(guard, different)).toBe(true);
     expect(guard.noticeText).not.toBeNull();
   });
 
@@ -139,29 +145,29 @@ describe("AgentLoopGuard", () => {
       [toolCallBlock("read", { path: "A" })],
       [toolResult("c1", "read", "content changed")],
     );
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
-    expect(guard.shouldStopAfterTurn(changedResult)).toBe(false); // result changed — streak broken
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false); // batch changed back — new streak
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
-    expect(guard.shouldStopAfterTurn(batch)).toBe(true);
+    expect(stops(guard, batch)).toBe(false);
+    expect(stops(guard, changedResult)).toBe(false); // result changed — streak broken
+    expect(stops(guard, batch)).toBe(false); // batch changed back — new streak
+    expect(stops(guard, batch)).toBe(false);
+    expect(stops(guard, batch)).toBe(true);
   });
 
   it("resets on a tool-free turn (model answered)", () => {
     const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
-    expect(guard.shouldStopAfterTurn(context([textBlock("final answer")], []))).toBe(false);
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false); // streak restarted
-    expect(guard.shouldStopAfterTurn(batch)).toBe(true);
+    expect(stops(guard, batch)).toBe(false);
+    expect(stops(guard, context([textBlock("final answer")], []))).toBe(false);
+    expect(stops(guard, batch)).toBe(false); // streak restarted
+    expect(stops(guard, batch)).toBe(true);
   });
 
   it("reset() clears the streak and the notice", () => {
     const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
-    guard.shouldStopAfterTurn(batch);
-    guard.shouldStopAfterTurn(batch);
+    guard.finishTurn(batch);
+    guard.finishTurn(batch);
     expect(guard.noticeText).not.toBeNull();
     guard.reset();
     expect(guard.noticeText).toBeNull();
-    expect(guard.shouldStopAfterTurn(batch)).toBe(false);
+    expect(stops(guard, batch)).toBe(false);
   });
 
   it("exact-match only: same args with different result restarts the counter", () => {
@@ -170,16 +176,16 @@ describe("AgentLoopGuard", () => {
       [toolCallBlock("read", { path: "A" })],
       [toolResult("c1", "read", "different content")],
     );
-    guard.shouldStopAfterTurn(context([toolCallBlock("read", { path: "A" })], [toolResult("c1", "read", "same")]));
-    guard.shouldStopAfterTurn(otherResult);
-    guard.shouldStopAfterTurn(otherResult);
+    guard.finishTurn(context([toolCallBlock("read", { path: "A" })], [toolResult("c1", "read", "same")]));
+    guard.finishTurn(otherResult);
+    guard.finishTurn(otherResult);
     expect(guard.noticeText).not.toBeNull(); // two identical (args+result) turns still fire
   });
 
   it("names the repeated tools in the notice", () => {
     const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
-    guard.shouldStopAfterTurn(batch);
-    guard.shouldStopAfterTurn(batch);
+    guard.finishTurn(batch);
+    guard.finishTurn(batch);
     expect(guard.noticeText).toMatch(/Loop guard.*read.*search/);
   });
 
@@ -189,8 +195,8 @@ describe("AgentLoopGuard", () => {
       [{ ...toolResult("c1", "write", "denied"), isError: true }],
     );
     const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
-    guard.shouldStopAfterTurn(denied);
-    guard.shouldStopAfterTurn(denied);
+    guard.finishTurn(denied);
+    guard.finishTurn(denied);
     expect(guard.noticeText).toMatch(/denied|approv/i);
   });
 
@@ -201,9 +207,9 @@ describe("AgentLoopGuard", () => {
       [toolCallBlock("read", { path: "A" })],
       [{ ...toolResult("c1", "read", "same"), isError: true }],
     );
-    expect(guard.shouldStopAfterTurn(ok)).toBe(false);
-    expect(guard.shouldStopAfterTurn(err)).toBe(false); // error flip restarts streak
-    expect(guard.shouldStopAfterTurn(err)).toBe(true);
+    expect(stops(guard, ok)).toBe(false);
+    expect(stops(guard, err)).toBe(false); // error flip restarts streak
+    expect(stops(guard, err)).toBe(true);
   });
 
   it("toolBatchNames lists tools in call order", () => {
@@ -218,5 +224,23 @@ describe("AgentLoopGuard", () => {
     const text = buildLoopGuardNotice(["write"], 4, false);
     expect(text).toMatch(/Loop guard/);
     expect(text.length).toBeLessThan(300);
+  });
+
+  // pi 0.87.0 replaced `shouldStopAfterTurn` with `finishTurn`, which also runs
+  // for error and aborted responses. Those are hard exits, so they must be
+  // skipped: counting them would let a failing turn trip the streak, and the
+  // predicate must stay side-effect free on hard exits.
+  it.each(["error", "aborted"] as const)("ignores %s turns without touching the streak", (stopReason) => {
+    const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
+    const failed = context(
+      [toolCallBlock("read", { path: "A" })],
+      [toolResult("c1", "read", "content A")],
+      stopReason,
+    );
+    expect(guard.finishTurn(failed)).toBeUndefined();
+    expect(guard.noticeText).toBeNull();
+    // The failed turns must not have counted towards the threshold either.
+    expect(stops(guard, batch)).toBe(false);
+    expect(stops(guard, batch)).toBe(true);
   });
 });

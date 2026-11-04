@@ -1,4 +1,5 @@
-import { estimateContextTokens, type AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { estimateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
 import type { Model } from "@earendil-works/pi-ai";
 
 /** Per-million-token pricing as carried on a pi-ai model. */
