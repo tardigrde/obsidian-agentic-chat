@@ -53,6 +53,20 @@ describe("AgentSessionEventRecorder", () => {
     expect(messages.filter((entry) => JSON.stringify(entry.message).includes("summarize the report"))).toHaveLength(1);
   });
 
+  it("never persists pi's system-context messages on either path", async () => {
+    const { adapter, recorder, path } = await setup();
+    const systemMessage = {
+      role: "system",
+      content: "runtime context",
+      timestamp: 0,
+    } as AgentMessage;
+
+    await recorder.recordMessageEnd(systemMessage);
+    await recorder.recordAgentEnd([systemMessage, userMessage("hello"), assistantMessage("ok")]);
+
+    expect(messageEntries(adapter, path).map((entry) => entry.message.role)).toEqual(["user", "assistant"]);
+  });
+
   it("marks loaded or rewritten messages as already persisted", async () => {
     const { adapter, manager, recorder, path } = await setup();
     const loaded = userMessage("loaded prompt");

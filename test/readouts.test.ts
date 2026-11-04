@@ -60,7 +60,8 @@ describe("agent readouts", () => {
     ];
 
     const estimated = estimateContextUsage(messages);
-    expect(estimated).toBeGreaterThan(1_000);
+    // 4,000 chars + 4,000 chars at pi-ai 1.5.0's 3.5 chars/token ratio.
+    expect(estimated).toBe(2_286);
     expect(contextFraction(messages, 1_000)).toBe(1);
     expect(contextFraction(messages, estimated * 2)).toBe(0.5);
     expect(contextFraction(messages, 0)).toBeUndefined();

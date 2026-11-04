@@ -1,7 +1,6 @@
 import { parseYaml } from "obsidian";
 import { normalizeVaultPath } from "../vault/path";
-import type { Skill } from "./skill-prompt";
-import { formatSkillInvocation } from "./skill-prompt";
+import { formatSkillInvocation, type Skill } from "./skill-prompt";
 import { parseCommandArgs, substituteArgs } from "./command-args";
 
 // pi 1.0.0 removed the experimental harness that used to own the spec-compatible
@@ -9,10 +8,8 @@ import { parseCommandArgs, substituteArgs } from "./command-args";
 // exports them. The plugin owns them in ./skill-prompt and ./command-args; this
 // module keeps handling only vault-side loading.
 export { formatSkillsForSystemPrompt, formatSkillInvocation } from "./skill-prompt";
-export { parseCommandArgs, substituteArgs } from "./command-args";
-export type { Skill } from "./skill-prompt";
 
-// $1–$9 / $@ / $ARGUMENTS / ${@:N} — the placeholders pi's substituteArgs understands.
+// $1–$9 / $@ / $ARGUMENTS / ${@:N} — the placeholders the plugin's substituteArgs understands.
 // The positional case requires the digit not be followed by another digit, a period, or
 // a comma, so currency in a skill body ($10, $1.50, $1,000, "costs $1.") isn't misread as
 // a template. When detection is ambiguous we prefer NOT substituting: a literal `$1.` left

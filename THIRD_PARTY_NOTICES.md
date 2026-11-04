@@ -8,10 +8,10 @@ available in the linked projects and their npm packages.
 |---|---|
 | [pi-agent-core](https://www.npmjs.com/package/@earendil-works/pi-agent-core) | MIT |
 | [pi-ai](https://www.npmjs.com/package/@earendil-works/pi-ai) | MIT |
+| [pi-schema](https://www.npmjs.com/package/@earendil-works/pi-schema) | MIT |
+| [pi-telemetry](https://www.npmjs.com/package/@earendil-works/pi-telemetry) | MIT |
 | [OpenAI JavaScript](https://github.com/openai/openai-node) | Apache-2.0 |
 | [TypeBox](https://github.com/sinclairzx81/typebox) | MIT |
-| [yaml](https://github.com/eemeli/yaml) | ISC |
-| [ignore](https://github.com/kaelzhang/node-ignore) | MIT |
 | [partial-json](https://github.com/promplate/partial-json-parser-js) | MIT |
 | [pstack](https://github.com/cursor/plugins/tree/main/pstack) | MIT |
 

@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { estimateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
+import { estimateContextTokens, estimateTextTokens } from "@earendil-works/pi-ai/utils/estimate";
 import type { Model } from "@earendil-works/pi-ai";
 
 /** Per-million-token pricing as carried on a pi-ai model. */
@@ -51,7 +51,7 @@ export function estimateNextRequestCost(
   const context = estimateContextTokens(messages);
   let inputTokens = context.tokens;
   if (context.lastUsageIndex === null && systemPromptText) {
-    inputTokens += Math.ceil(systemPromptText.length / 4);
+    inputTokens += estimateTextTokens(systemPromptText);
   }
   return estimateRequestCost({ inputTokens, outputTokens: expectedOutputTokens, cost });
 }

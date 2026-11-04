@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  escapeXml,
   formatSkillInvocation,
   formatSkillsForSystemPrompt,
   type Skill,
@@ -26,14 +25,24 @@ function skill(overrides: Partial<Skill> = {}): Skill {
 }
 
 describe("formatSkillsForSystemPrompt", () => {
-  it("renders an agentskills.io-compatible listing block", () => {
+  it("renders the exact agentskills.io listing block", () => {
     const out = formatSkillsForSystemPrompt([skill()]);
 
-    expect(out).toContain("<available_skills>");
-    expect(out).toContain("<name>summarize</name>");
-    expect(out).toContain("<description>Summarize a note.</description>");
-    expect(out).toContain("<location>skills/summarize/SKILL.md</location>");
-    expect(out.endsWith("</available_skills>")).toBe(true);
+    expect(out).toBe(
+      [
+        "The following skills provide specialized instructions for specific tasks.",
+        "Read the full skill file when the task matches its description.",
+        "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
+        "",
+        "<available_skills>",
+        "  <skill>",
+        "    <name>summarize</name>",
+        "    <description>Summarize a note.</description>",
+        "    <location>skills/summarize/SKILL.md</location>",
+        "  </skill>",
+        "</available_skills>",
+      ].join("\n"),
+    );
   });
 
   it("returns an empty string when there is nothing model-visible", () => {
@@ -62,20 +71,19 @@ describe("formatSkillsForSystemPrompt", () => {
   });
 });
 
-describe("escapeXml", () => {
-  it("escapes the five predefined entities, ampersand first", () => {
-    expect(escapeXml(`&<>"'`)).toBe("&amp;&lt;&gt;&quot;&apos;");
-  });
-});
-
 describe("formatSkillInvocation", () => {
-  it("wraps the skill body and states the reference base directory", () => {
+  it("wraps the skill body exactly and states the reference base directory", () => {
     const out = formatSkillInvocation(skill({ content: "STEP 1" }));
 
-    expect(out).toContain('<skill name="summarize" location="skills/summarize/SKILL.md">');
-    expect(out).toContain("References are relative to skills/summarize.");
-    expect(out).toContain("STEP 1");
-    expect(out.endsWith("</skill>")).toBe(true);
+    expect(out).toBe(
+      [
+        '<skill name="summarize" location="skills/summarize/SKILL.md">',
+        "References are relative to skills/summarize.",
+        "",
+        "STEP 1",
+        "</skill>",
+      ].join("\n"),
+    );
   });
 
   it("appends additional instructions after the skill block", () => {

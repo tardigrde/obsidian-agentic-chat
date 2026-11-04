@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { Agent } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { conversationMessages } from "../src/agent/conversation-messages";
 import { ParentAgentRuntime, type ParentAgentRuntimeConfiguration } from "../src/agent/parent-agent-runtime";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 
 function user(text: string): AgentMessage {
   return { role: "user", content: [{ type: "text", text }], timestamp: 1 } as AgentMessage;
@@ -83,30 +81,6 @@ describe("conversationMessages", () => {
   });
 });
 
-describe("system prompt ownership (pi 1.0.0)", () => {
-  it("seeds a system message from initialState.systemPrompt", () => {
-    const agent = new Agent({
-      streamFn: () => createAssistantMessageEventStream(),
-      initialState: { systemPrompt: "original prompt" },
-    });
-
-    expect(agent.state.systemPrompt).toBe("original prompt");
-    expect(agent.state.messages[0]).toMatchObject({ role: "system", content: "original prompt" });
-  });
-
-  // Guards the reason the plugin filters system messages out: when a persisted
-  // system message leads the transcript, `Agent` does NOT re-seed one, so the
-  // stale prompt would stay in force for the whole session.
-  it("does not re-seed the prompt when the transcript already starts with a system message", () => {
-    const agent = new Agent({
-      streamFn: () => createAssistantMessageEventStream(),
-      initialState: { systemPrompt: "fresh prompt", messages: [system("stale prompt"), user("hi")] },
-    });
-
-    expect(agent.state.systemPrompt).toBe("stale prompt");
-  });
-});
-
 describe("ParentAgentRuntime system-prompt handling", () => {
   it("keeps the freshly composed prompt when rehydrating a session that persisted one", () => {
     // A session file written by an older build, or hand-edited, can carry a
@@ -149,29 +123,4 @@ describe("ParentAgentRuntime system-prompt handling", () => {
     expect((agent?.state.messages[0] as { toolsAdded?: unknown[] }).toolsAdded).toHaveLength(1);
   });
 
-  // pi's createInitialSystemMessage returns nothing when the initial prompt AND
-  // the initial tool set are both empty, so such an agent has no system message
-  // to rewrite. The refresh must seed one instead of silently leaving the
-  // prompt pinned at its empty seed value.
-  it("seeds a system message on refresh when the agent was built with no prompt and no tools", () => {
-    let current = configuration({ systemPrompt: "", tools: [] });
-    const runtime = new ParentAgentRuntime(() => current);
-    const agent = runtime.replace([]);
-    expect(agent?.state.messages.some((message) => message.role === "system")).toBe(false);
-
-    current = configuration({ systemPrompt: "now configured", tools: [tool("read")] });
-    runtime.refreshConfiguration();
-
-    expect(agent?.state.systemPrompt).toBe("now configured");
-    expect(agent?.state.messages[0]).toMatchObject({ role: "system", content: "now configured" });
-  });
-
-  it("leaves an empty prompt alone when there is still no system message", () => {
-    const runtime = new ParentAgentRuntime(() => configuration({ systemPrompt: "", tools: [] }));
-    const agent = runtime.replace([]);
-
-    runtime.refreshConfiguration();
-
-    expect(agent?.state.messages.some((message) => message.role === "system")).toBe(false);
-  });
 });

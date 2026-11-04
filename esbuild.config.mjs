@@ -54,16 +54,14 @@ const piAiMobileEntry = {
         export { mergeClientIdentity, PI_ATTRIBUTION } from ${JSON.stringify(path.join(piAiDistDir, "utils/identity.js"))};
         export { validateToolArguments } from ${JSON.stringify(path.join(piAiDistDir, "utils/validation.js"))};
         export { uuidv7 } from ${JSON.stringify(path.join(piAiDistDir, "utils/uuid.js"))};
-        export { contentText, getSystemMessageText } from ${JSON.stringify(path.join(piAiDistDir, "utils/text.js"))};
+        export { contentText } from ${JSON.stringify(path.join(piAiDistDir, "utils/text.js"))};
         export {
-          collapseSystemMessages,
           createInitialSystemMessage,
           getCurrentSystemMessage,
           getCurrentSystemPrompt,
           getCurrentTools,
           getToolStateChanges,
           normalizeContext,
-          resolveTranscript,
           toToolDeclaration
         } from ${JSON.stringify(path.join(piAiDistDir, "utils/transcript.js"))};
         export { retryAssistantCall } from ${JSON.stringify(path.join(piAiDistDir, "utils/retry.js"))};

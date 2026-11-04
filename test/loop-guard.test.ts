@@ -232,11 +232,7 @@ describe("AgentLoopGuard", () => {
   // predicate must stay side-effect free on hard exits.
   it.each(["error", "aborted"] as const)("ignores %s turns without touching the streak", (stopReason) => {
     const guard = new AgentLoopGuard({ maxIdenticalBatches: 2 });
-    const failed = context(
-      [toolCallBlock("read", { path: "A" })],
-      [toolResult("c1", "read", "content A")],
-      stopReason,
-    );
+    const failed: AgentTurnContext = { ...batch, message: { ...batch.message, stopReason } };
     expect(guard.finishTurn(failed)).toBeUndefined();
     expect(guard.noticeText).toBeNull();
     // The failed turns must not have counted towards the threshold either.

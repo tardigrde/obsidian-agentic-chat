@@ -7,7 +7,6 @@ import {
   type AssistantMessage,
   type AssistantMessageEventStream,
   type JsonObject,
-  type JsonValue,
   type Model,
   type ProviderStreams,
   type SimpleStreamOptions,
@@ -322,7 +321,7 @@ function buildPayload(
 function hasToolHistory(context: TranscriptContext): boolean {
   for (const message of context.messages) {
     if (message.role === "toolResult") return true;
-    if (message.role === "assistant" && message.content.some((block: { type: string }) => block.type === "toolCall")) {
+    if (message.role === "assistant" && message.content.some((block) => block.type === "toolCall")) {
       return true;
     }
   }
@@ -414,59 +413,14 @@ function parseToolCalls(rawToolCalls: unknown): ToolCall[] {
 /**
  * Tool arguments as a `JsonObject`.
  *
- * pi 1.0.0 narrowed `ToolCall.arguments` from `Record<string, unknown>` to
- * `JsonObject`, so this must drop any non-JSON value rather than just
- * asserting the shape. Provider payloads are not fully trusted here: a gateway
- * can return arrays, `null`, or function-ish placeholders inside the arguments
- * object. Rejecting those is safe because pi validates the arguments against
- * the target tool's schema before executing it.
+ * pi 1.0.0 narrowed `ToolCall.arguments` to `JsonObject`; the payload itself is
+ * already JSON-decoded, and pi validates it against the tool schema before
+ * execution. Keep the existing shape and only assert the type.
  */
 function parseToolArguments(rawArguments: unknown): JsonObject {
-  return toJsonObject(recordValue(rawArguments) ?? (typeof rawArguments === "string" ? parseStreamingJson(rawArguments) : undefined));
-}
-
-/** Keep only entries whose values are JSON-representable, recursively. */
-function toJsonObject(value: Record<string, unknown> | undefined): JsonObject {
-  if (!value) return {};
-  const result: JsonObject = {};
-  for (const [key, entry] of Object.entries(value)) {
-    const json = toJsonValue(entry);
-    // Assign through `defineProperty`: a plain assignment to a `__proto__` key
-    // would hit the inherited setter and mutate this object's prototype instead
-    // of recording the argument, silently dropping it.
-    if (json === undefined) continue;
-    Object.defineProperty(result, key, { value: json, enumerable: true, writable: true, configurable: true });
-  }
-  return result;
-}
-
-/** A `JsonValue`, or undefined when the input cannot be represented as JSON. */
-function toJsonValue(value: unknown): JsonValue | undefined {
-  if (value === null) return null;
-  switch (typeof value) {
-    case "string":
-    case "boolean":
-      return value;
-    case "number":
-      // NaN/Infinity serialize to null rather than round-tripping.
-      return Number.isFinite(value) ? value : null;
-    case "object":
-      break;
-    default:
-      // undefined, bigint, symbol, function.
-      return undefined;
-  }
-  if (Array.isArray(value)) {
-    // `JsonValue` arrays are readonly, hence the collect-then-freeze shape.
-    const items: JsonValue[] = [];
-    for (const entry of value) {
-      const json = toJsonValue(entry);
-      // JSON.stringify turns holes and undefined array entries into null.
-      items.push(json === undefined ? null : json);
-    }
-    return items;
-  }
-  return toJsonObject(value as Record<string, unknown>);
+  if (recordValue(rawArguments)) return rawArguments as JsonObject;
+  if (typeof rawArguments !== "string") return {};
+  return parseStreamingJson<JsonObject>(rawArguments);
 }
 
 function textFromContent(content: unknown): string {

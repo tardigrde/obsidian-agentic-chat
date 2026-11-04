@@ -33,9 +33,9 @@ export class AgentSessionEventRecorder {
   }
 
   async recordAgentEnd(messages: AgentMessage[]): Promise<void> {
-    // Skip pi's system-context message: it embeds the whole system prompt and
-    // every tool schema, and persisting it would make a rehydrated session
-    // replay a stale prompt instead of the freshly composed one.
+    // The seeded prompt is never emitted, but pi's tool-change announcements
+    // are system messages; persisting them would bloat the JSONL and replay
+    // stale tool declarations on reload.
     for (const message of conversationMessages(messages)) await this.persistMessage(message);
     await this.autoNameSession();
   }

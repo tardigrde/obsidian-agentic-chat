@@ -226,6 +226,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
       streamOpenAICompatibleViaRequestUrl(
         model(),
         normalizeContext({
+          systemPrompt: "You are a vault assistant.",
           messages: [{ role: "user", content: "read Welcome.md", timestamp: 1 }],
           tools: [
             {
@@ -254,11 +255,16 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
         },
       },
     ]);
+    const messages = payload?.messages as Array<{ role: string; content: unknown }>;
+    const systemMessages = messages.filter((message) => message.role === "system");
+    expect(systemMessages).toHaveLength(1);
+    expect(systemMessages[0]?.content).toContain("You are a vault assistant.");
   });
 
-  // pi 1.0.0 narrowed `ToolCall.arguments` to `JsonObject`, so the request
-  // path now has to coerce untrusted gateway payloads instead of casting them.
-  it("coerces non-JSON tool-call argument values into a JsonObject", async () => {
+  it.each([
+    ["[1,2]", [1, 2]],
+    ['"x"', "x"],
+  ])("preserves non-object tool arguments instead of coercing them: %s", async (rawArguments, expected) => {
     const requester: OpenAICompatibleRequester = async () => ({
       status: 200,
       text: "",
@@ -267,25 +273,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
           {
             message: {
               role: "assistant",
-              tool_calls: [
-                {
-                  id: "call_1",
-                  function: {
-                    name: "read",
-                    arguments: {
-                      path: "Welcome.md",
-                      // Non-JSON values a gateway could plausibly emit.
-                      fn: () => "nope",
-                      sym: Symbol("nope"),
-                      big: 10n,
-                      nothing: undefined,
-                      nan: Number.NaN,
-                      nested: { keep: 1, drop: () => 1 },
-                      list: [1, "two", { three: 3 }, () => 4],
-                    },
-                  },
-                },
-              ],
+              tool_calls: [{ id: "call_1", function: { name: "read", arguments: rawArguments } }],
             },
             finish_reason: "tool_calls",
           },
@@ -297,52 +285,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
       streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [] }), { apiKey: "k" }, requester),
     );
 
-    const call = result.content[0] as { arguments: Record<string, unknown> };
-    // JSON-representable values survive, including nested objects and arrays.
-    expect(call.arguments).toEqual({
-      path: "Welcome.md",
-      nan: null,
-      nested: { keep: 1 },
-      list: [1, "two", { three: 3 }, null],
-    });
-  });
-
-  it("keeps a __proto__ tool argument as data instead of touching the prototype", async () => {
-    const requester: OpenAICompatibleRequester = async () => ({
-      status: 200,
-      text: "",
-      json: {
-        choices: [
-          {
-            message: {
-              role: "assistant",
-              tool_calls: [
-                {
-                  id: "call_1",
-                  function: {
-                    name: "read",
-                    arguments: '{"__proto__":{"polluted":true},"path":"Welcome.md"}',
-                  },
-                },
-              ],
-            },
-            finish_reason: "tool_calls",
-          },
-        ],
-      },
-    });
-
-    const { result } = await collect(
-      streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [] }), { apiKey: "k" }, requester),
-    );
-
-    const call = result.content[0] as { arguments: Record<string, unknown> };
-    // A plain `result[key] = …` would hit the inherited __proto__ setter and
-    // drop the argument while mutating the object's prototype.
-    expect(Object.keys(call.arguments).sort()).toEqual(["__proto__", "path"]);
-    expect(Object.getPrototypeOf(call.arguments)).toBe(Object.prototype);
-    expect((call.arguments as { polluted?: unknown }).polluted).toBeUndefined();
-    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+    expect((result.content[0] as { arguments: unknown }).arguments).toEqual(expected);
   });
 
   it("parses a JSON string of tool-call arguments", async () => {

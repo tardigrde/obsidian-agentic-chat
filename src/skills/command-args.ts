@@ -2,8 +2,9 @@
  * Slash-command argument parsing for skill templates.
  *
  * These helpers used to live in `pi-agent-core`'s experimental harness, which
- * pi 1.0.0 removed; no other pi package ships them. The plugin owns them so
- * skill templates keep supporting the same placeholder syntax.
+ * pi 1.0.0 removed; the browser-safe pi packages no longer export them. The
+ * plugin owns them so skill templates keep supporting the same placeholder
+ * syntax.
  */
 
 /**

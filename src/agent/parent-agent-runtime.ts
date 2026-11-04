@@ -68,22 +68,12 @@ export class ParentAgentRuntime {
  * tool changes are declared separately by assigning `state.tools`, which the
  * agent loop diffs and announces itself.
  *
- * When no leading system message exists, seed one instead of giving up. pi's
- * `createInitialSystemMessage` returns nothing when both the initial prompt and
- * the initial tool set were empty, so an agent built that way has no system
- * message at all; bailing here would leave `systemPrompt` pinned at its empty
- * seed value for the rest of the session and silently never send the newly
- * composed prompt. The seeded message carries no `toolsAdded`; the agent loop
- * reconciles the real tool set on the next request via `declareToolChanges`.
+ * The parent always gets a non-empty prompt (`buildSystemPrompt` falls back to
+ * `DEFAULT_SYSTEM_PROMPT`), so pi always seeds a leading system message.
  */
 function replaceSystemPrompt(agent: Agent, systemPrompt: string): void {
   const messages = agent.state.messages;
   const first = messages[0];
-  if (!first || first.role !== "system") {
-    if (systemPrompt.length === 0) return;
-    agent.state.messages = [{ role: "system", content: systemPrompt, timestamp: 0 }, ...messages];
-    return;
-  }
-  if (first.content === systemPrompt) return;
+  if (!first || first.role !== "system" || first.content === systemPrompt) return;
   agent.state.messages = [{ ...first, content: systemPrompt }, ...messages.slice(1)];
 }

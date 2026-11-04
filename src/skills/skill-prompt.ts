@@ -3,10 +3,11 @@
  *
  * These helpers used to live in `pi-agent-core`'s experimental harness. Pi
  * 1.0.0 removed the harness from that package (durable sessions moved to
- * `@earendil-works/pi-durable`), and no other pi package exposes a skill
- * type or a spec-compatible renderer. The plugin owns them here so the
- * Agent Skills surface (https://agentskills.io/specification) stays stable
- * across pi upgrades.
+ * `@earendil-works/pi-durable`), and the browser-safe pi packages no longer
+ * expose a skill type or a spec-compatible renderer. The plugin owns them
+ * here so the Agent Skills surface (https://agentskills.io/specification)
+ * stays stable across pi upgrades. (`pi-coding-agent` has a different,
+ * Node-only variant that is not usable in this bundle.)
  */
 
 /**
@@ -48,7 +49,7 @@ function skillDirName(filePath: string): string {
 }
 
 /** Escape text for safe interpolation into the skill XML blocks. */
-export function escapeXml(value: string): string {
+function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

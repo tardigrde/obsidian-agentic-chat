@@ -9,7 +9,7 @@ import {
 
 const CONFIG: CompactionConfig = { enabled: true, thresholdFraction: 0.8, keepFraction: 0.3 };
 
-/** A user message with `chars` characters of text (≈ chars/4 estimated tokens). */
+/** A user message with `chars` characters of text (≈ chars/3.5 estimated tokens). */
 function user(chars: number): AgentMessage {
   return { role: "user", content: [{ type: "text", text: "x".repeat(chars) }], timestamp: 0 } as AgentMessage;
 }
@@ -35,7 +35,7 @@ describe("planCompaction", () => {
   });
 
   it("returns null when still under the threshold", () => {
-    // ~20 tokens against an 800-token threshold.
+    // ~46 tokens against an 800-token threshold.
     const messages = [user(40), assistant(40), user(40), assistant(40)];
     expect(planCompaction(messages, 1000, CONFIG)).toBeNull();
   });
@@ -47,7 +47,7 @@ describe("planCompaction", () => {
   });
 
   it("splits at a user boundary, keeping recent turns within the keep budget", () => {
-    // 10 messages × 100 tokens = 1000 tokens > 800 threshold; keep budget = 300.
+    // 10 messages × ~115 tokens ≈ 1150 > 800 threshold; keep budget = 300.
     const messages = [
       user(400), assistant(400), // turn 1
       user(400), assistant(400), // turn 2

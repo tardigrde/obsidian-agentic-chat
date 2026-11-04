@@ -62,6 +62,7 @@ describe("agent service readouts", () => {
   it("reports current transcript context fraction from the active model window", () => {
     const message = assistant(250, 0, "x".repeat(1_000));
     const estimated = estimateContextUsage([message]);
+    expect(estimated).toBe(286);
     expect(agentContextFraction({ messages: [message], model: model({ contextWindow: estimated }) })).toBe(1);
     expect(agentContextFraction({ messages: [message], model: model({ contextWindow: estimated * 2 }) })).toBe(0.5);
     expect(agentContextFraction({ messages: [message], model: undefined })).toBeUndefined();

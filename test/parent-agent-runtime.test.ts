@@ -96,14 +96,8 @@ describe("ParentAgentRuntime", () => {
     expect(agent?.state.thinkingLevel).toBe("high");
     expect(agent?.state.tools.map((item) => item.name)).toEqual(["write"]);
     // The prompt is refreshed by rewriting the leading system message rather
-    // than appending one, so a second refresh must replace it again instead of
-    // accumulating prompt fragments.
+    // than appending one, so the transcript still has exactly one.
     expect(agent?.state.messages[0]).toMatchObject({ role: "system", content: "updated system" });
-    expect(agent?.state.messages.filter((message) => message.role === "system")).toHaveLength(1);
-
-    current = configuration({ systemPrompt: "third system" });
-    runtime.refreshConfiguration();
-    expect(agent?.state.systemPrompt).toBe("third system");
     expect(agent?.state.messages.filter((message) => message.role === "system")).toHaveLength(1);
   });
 

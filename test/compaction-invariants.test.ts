@@ -147,7 +147,7 @@ describe("compaction plan shape", () => {
   });
 
   it("retains as much recent history as fits the budget, never less than the final turn", () => {
-    // Each turn (user+assistant) ≈ 100 tokens; budget 300 → up to 3 turns fit.
+    // Each turn (user+assistant) ≈ 116 tokens; budget 300 → 2 turns fit.
     const messages = Array.from({ length: 10 }, () => [user(200), assistant(200)]).flat();
     const plan = planCompaction(messages, WINDOW, CONFIG);
     expect(plan).not.toBeNull();
