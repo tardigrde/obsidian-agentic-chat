@@ -209,8 +209,6 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     ]);
   });
 
-  // pi 1.0.0 narrowed `ToolCall.arguments` to `JsonObject`, so the request
-  // path now has to coerce untrusted gateway payloads instead of casting them.
   // pi 1.0.0 moved the tool set into the transcript's system messages, so the
   // custom provider has to replay it rather than read `context.tools`.
   it("sends tool schemas from the transcript's system message", async () => {
@@ -258,6 +256,8 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     ]);
   });
 
+  // pi 1.0.0 narrowed `ToolCall.arguments` to `JsonObject`, so the request
+  // path now has to coerce untrusted gateway payloads instead of casting them.
   it("coerces non-JSON tool-call argument values into a JsonObject", async () => {
     const requester: OpenAICompatibleRequester = async () => ({
       status: 200,

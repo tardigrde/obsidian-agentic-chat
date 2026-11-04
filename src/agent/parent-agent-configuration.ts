@@ -53,8 +53,8 @@ export class AgentParentConfigurationRuntime {
       beforeToolCall: (context) => this.options.toolCalls.beforeToolCall(context),
       afterToolCall: (context) => this.options.toolCalls.afterToolCall(context),
       // `finishTurn` also receives the run's abort signal; the loop guard does not
-// need it, so it is intentionally left unbound.
-finishTurn: (turn) => this.options.loopGuard.finishTurn(turn),
+      // need it, so it is intentionally left unbound.
+      finishTurn: (turn) => this.options.loopGuard.finishTurn(turn),
       sessionId: this.options.sessions.info?.id,
       onEvent: (event) => this.options.onEvent(event),
     };
