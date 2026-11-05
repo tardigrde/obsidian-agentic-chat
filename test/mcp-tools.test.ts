@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validateToolArguments, type JsonObject, type ToolCall } from "@earendil-works/pi-ai";
 import {
   createMcpTools,
   localMcpToolName,
@@ -94,6 +95,80 @@ describe("MCP tools", () => {
     expect(tools[0].description).toContain("Remote MCP tool");
     expect(localMcpToolName("Docs Server", "query-docs")).toBe("mcp__docs_server__query_docs");
     expect(mcpServerIdFromToolName("mcp__docs__resolve_library_id")).toBe("docs");
+  });
+
+  // MCP schemas are runtime input, not static TypeBox declarations. pi 1.5.0
+  // validates them through pi-schema, so pin a representative remote schema:
+  // local $defs/$ref, oneOf, format, coercion, and strict objects.
+  it("validates a discovered MCP schema through pi-schema", async () => {
+    const tools = await createMcpTools(
+      mcpSettings(),
+      queuedFetcher([
+        rpc(1, { protocolVersion: "2025-11-25" }),
+        { status: 202, text: "", headers: {} },
+        rpc(2, {
+          tools: [
+            {
+              name: "lookup-library",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  library: { $ref: "#/$defs/Library" },
+                  limit: { type: "integer", minimum: 1 },
+                  requestId: { type: "string", format: "uuid" },
+                },
+                required: ["library"],
+                additionalProperties: false,
+                $defs: {
+                  Library: {
+                    oneOf: [
+                      { type: "string" },
+                      {
+                        type: "object",
+                        properties: { id: { type: "string" } },
+                        required: ["id"],
+                        additionalProperties: false,
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+        }),
+      ]),
+    );
+
+    const tool = tools[0];
+    if (!tool) throw new Error("expected a discovered MCP tool");
+    const call = (args: JsonObject): ToolCall =>
+      ({ type: "toolCall", id: "call-1", name: tool.name, arguments: args });
+
+    expect(
+      validateToolArguments(tool, call({
+        library: { id: "docs" },
+        limit: "3",
+        requestId: "123e4567-e89b-12d3-a456-426614174000",
+      })),
+    ).toEqual({
+      library: { id: "docs" },
+      limit: 3,
+      requestId: "123e4567-e89b-12d3-a456-426614174000",
+    });
+
+    expect(() =>
+      validateToolArguments(tool, call({
+        library: { id: "docs" },
+        requestId: "not-a-uuid",
+      })),
+    ).toThrow(/expected format uuid/);
+
+    expect(() =>
+      validateToolArguments(tool, call({
+        library: { id: "docs" },
+        extra: true,
+      })),
+    ).toThrow(/unknown field/);
   });
 
   it("filters discovered tools by enabled/disabled globs before registration", async () => {

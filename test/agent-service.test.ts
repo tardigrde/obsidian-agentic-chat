@@ -495,12 +495,28 @@ describe("AgentService", () => {
       { content: [{ type: "text", text: "Reply." }], stopReason: "stop" },
       { content: [{ type: "text", text: "Reply again." }], stopReason: "stop" },
     ]));
+    // Pin the premise: toggling web tools must actually emit pi's tool-change
+    // system message. Without this assertion the persistence checks below pass
+    // vacuously if pi stops emitting the delta.
+    const systemMessages: AgentMessage[] = [];
+    const offEvent = service.onEvent((event) => {
+      if (event.type === "message_end" && event.message.role === "system") {
+        systemMessages.push(event.message);
+      }
+    });
 
     settings.web = { ...settings.web, enabled: false };
     await service.sendPrompt("without web");
     settings.web = { ...settings.web, enabled: true };
     await service.sendPrompt("with web");
+    offEvent();
 
+    expect(systemMessages.length).toBeGreaterThan(0);
+    expect(
+      systemMessages.some(
+        (message) => message.role === "system" && (message.toolsAdded?.length ?? 0) > 0,
+      ),
+    ).toBe(true);
     expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant", "user", "assistant"]);
     expect(await persistedMessageRoles(adapter, service)).toEqual(["user", "assistant", "user", "assistant"]);
   });
