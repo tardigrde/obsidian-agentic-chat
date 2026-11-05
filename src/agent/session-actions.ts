@@ -7,6 +7,7 @@ import { AgentSessionSwapQueue, type AgentSessionSwapState } from "./session-swa
 
 export interface AgentSessionActionsRuntime {
   readonly activePath: string | null;
+  readonly generation: number;
   continueRecent(): Promise<ActiveSessionSnapshot>;
   create(): Promise<ActiveSessionSnapshot>;
   load(path: string): Promise<ActiveSessionSnapshot>;
@@ -40,15 +41,18 @@ export class AgentSessionActions {
     return this.sessionSwaps.state;
   }
 
+  /** Path + generation of the session a turn started against. */
+  getSessionToken(): string {
+    return `${this.options.sessions.activePath ?? ""}:${this.options.sessions.generation}`;
+  }
+
   /**
-   * Wait for any in-flight swap. A failure before detach leaves the old agent
-   * live, so sends can continue; only reject when no agent survived.
+   * Wait for any in-flight swap. A failed swap is not sticky: when no agent
+   * survived, the caller falls through to {@link ensureSessionAgent}, which
+   * retries the recent session on the next send or session action.
    */
   async waitForLive(): Promise<void> {
-    const state = await this.sessionSwaps.waitForSettled();
-    if (state === "failed" && !this.options.activation.currentAgent) {
-      throw new Error("The last session swap failed. Load or create a session to recover.");
-    }
+    await this.sessionSwaps.waitForSettled();
   }
 
   /** Startup path: continue the recent session only when no agent is live. */

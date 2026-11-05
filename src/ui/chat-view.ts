@@ -1762,9 +1762,9 @@ export class ChatView extends ItemView {
     return new SessionWorkflowController({
       listSessions: () => this.service.listSessions(),
       activeSessionPath: () => this.service.getSessionInfo()?.path ?? null,
-      clearSessions: () => this.service.clearSessions(),
+      clearSessions: () => this.clearAllSessions(),
       loadSession: (path) => void this.loadSession(path),
-      deleteSession: (path) => this.service.deleteSession(path),
+      deleteSession: (path) => this.deleteSessionFromList(path),
       renameSession: (path, name) => this.service.renameSession(path, name),
       openList: (sessions, activePath, callbacks) => new SessionListModal(this.app, sessions, activePath, callbacks).open(),
       afterClear: () => this.createSessionActivationCoordinator().afterSessionsCleared(),
@@ -2314,6 +2314,8 @@ export class ChatView extends ItemView {
     const coordinator = this.createSessionActivationCoordinator();
     try {
       await coordinator.startNewConversation(() => this.service.newSession());
+    } catch (error) {
+      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       // A new conversation starts in the default (normal) output style.
       if (this.plugin.settings.outputStyle !== DEFAULT_OUTPUT_STYLE) {
@@ -2347,6 +2349,18 @@ export class ChatView extends ItemView {
     this.notifiedToolBudgetKey = toolBudgetNotificationKey(this.service.getRuntimeDiagnostics().toolBudget);
   }
 
+  /** Delete from the history list; only the active session swaps under us. */
+  private async deleteSessionFromList(path: string): Promise<void> {
+    if (this.service.getSessionInfo()?.path === path) this.clearQueuedPrompt();
+    await this.service.deleteSession(path);
+  }
+
+  /** Clear all conversations; the active session is replaced afterwards. */
+  private async clearAllSessions(): Promise<number> {
+    this.clearQueuedPrompt();
+    return this.service.clearSessions();
+  }
+
   private async loadSession(path: string): Promise<void> {
     // A session must not be open in two tabs at once (both would write the same
     // file). If another tab already has it, just switch there.
@@ -2357,7 +2371,11 @@ export class ChatView extends ItemView {
       await this.switchToTab(openIn);
       return;
     }
-    await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
+    try {
+      await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
+    } catch (error) {
+      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   private async switchModel(): Promise<void> {

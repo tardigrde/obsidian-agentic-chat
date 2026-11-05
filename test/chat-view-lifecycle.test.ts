@@ -91,6 +91,53 @@ describe("ChatView async lifecycle", () => {
     expect(view.queuedPromptArmed).toBe(false);
   });
 
+  it("clears a queued prompt before deleting the active session", async () => {
+    const deleteSession = vi.fn(async () => {});
+    const view = Object.assign(Object.create(ChatView.prototype), {
+      queuedPromptArmed: true,
+      statusEl: { setText: vi.fn() },
+      renderChips: vi.fn(),
+      syncChrome: vi.fn(),
+      tabs: [
+        {
+          service: {
+            getSessionInfo: () => ({ path: "sessions/active.jsonl" }),
+            deleteSession,
+          },
+        },
+      ],
+      activeTabIndex: 0,
+    }) as ChatViewHarness & {
+      queuedPromptArmed: boolean;
+      deleteSessionFromList: (path: string) => Promise<void>;
+    };
+
+    await view.deleteSessionFromList("sessions/active.jsonl");
+
+    expect(view.queuedPromptArmed).toBe(false);
+    expect(deleteSession).toHaveBeenCalledWith("sessions/active.jsonl");
+  });
+
+  it("clears a queued prompt before clearing all sessions", async () => {
+    const clearSessions = vi.fn(async () => 1);
+    const view = Object.assign(Object.create(ChatView.prototype), {
+      queuedPromptArmed: true,
+      statusEl: { setText: vi.fn() },
+      renderChips: vi.fn(),
+      syncChrome: vi.fn(),
+      tabs: [{ service: { clearSessions } }],
+      activeTabIndex: 0,
+    }) as ChatViewHarness & {
+      queuedPromptArmed: boolean;
+      clearAllSessions: () => Promise<number>;
+    };
+
+    await view.clearAllSessions();
+
+    expect(view.queuedPromptArmed).toBe(false);
+    expect(clearSessions).toHaveBeenCalledTimes(1);
+  });
+
   it("does not touch active tab service after the view closes during send", async () => {
     const view = Object.assign(Object.create(ChatView.prototype), {
       app: {},

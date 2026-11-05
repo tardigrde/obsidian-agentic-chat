@@ -88,16 +88,22 @@ export class SessionActivationCoordinator {
     // flush the old draft into the new session.
     this.options.resetUiState({ queuedPrompt: true });
     this.options.setMuteNotifications(true);
+    let started = false;
     try {
       await startSession();
       this.options.resetUsageNotifications(false);
+      started = true;
     } finally {
       this.options.setMuteNotifications(false);
-      this.options.resetUiState(CLEAN_CONVERSATION_RESET);
-      this.options.syncActiveNote();
-      this.options.renderTranscript([]);
-      this.options.syncChrome();
-      this.options.syncTabStrip();
+      // A failed start keeps the old transcript on screen for the caller to
+      // report; only a successful swap clears it.
+      if (started) {
+        this.options.resetUiState(CLEAN_CONVERSATION_RESET);
+        this.options.syncActiveNote();
+        this.options.renderTranscript([]);
+        this.options.syncChrome();
+        this.options.syncTabStrip();
+      }
     }
   }
 

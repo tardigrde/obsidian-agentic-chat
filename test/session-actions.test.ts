@@ -33,6 +33,11 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
   rewrites: AgentMessage[][] = [];
   continued = 0;
   events: string[] = [];
+  private revision = 0;
+
+  get generation(): number {
+    return this.revision;
+  }
 
   private readonly messagesByPath = new Map<string, AgentMessage[]>();
 
@@ -50,6 +55,7 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
     this.created += 1;
     const path = `sessions/new-${this.created}.jsonl`;
     this.events.push("create");
+    this.revision += 1;
     this.activePath = path;
     this.seed(path, []);
     return this.snapshot(path);
@@ -57,6 +63,7 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
 
   async load(path: string): Promise<ActiveSessionSnapshot> {
     this.events.push("load");
+    this.revision += 1;
     this.activePath = path;
     return this.snapshot(path);
   }
@@ -69,7 +76,10 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
     this.events.push("delete");
     this.deleted.push(path);
     this.messagesByPath.delete(path);
-    if (this.activePath === path) this.activePath = null;
+    if (this.activePath === path) {
+      this.revision += 1;
+      this.activePath = null;
+    }
   }
 
   async rename(path: string, name: string): Promise<void> {
@@ -219,6 +229,28 @@ describe("AgentSessionActions", () => {
     expect(activation.currentAgent).toBe(oldAgent);
     expect(sessions.continued).toBe(0);
     expect(actions.getSwapState()).toBe("live");
+  });
+
+  it("recovers the live session when a load fails after detach", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/old.jsonl", [userMessage("old")]);
+    await sessions.load("sessions/old.jsonl");
+    const { actions, activation } = makeActions({ sessions, agent: agentWith([userMessage("old")]) });
+    const originalLoad = sessions.load.bind(sessions);
+    sessions.load = async () => {
+      throw new Error("load failed after detach");
+    };
+
+    await expect(actions.loadSession("sessions/old.jsonl")).rejects.toThrow("load failed after detach");
+    expect(activation.currentAgent).toBeNull();
+    expect(actions.getSwapState()).toBe("failed");
+
+    await expect(actions.waitForLive()).resolves.toBeUndefined();
+    await actions.ensureSessionAgent();
+
+    expect(activation.currentAgent).not.toBeNull();
+    expect(actions.getSwapState()).toBe("live");
+    sessions.load = originalLoad;
   });
 
   it("recovers a failed swap when the next session operation succeeds", async () => {

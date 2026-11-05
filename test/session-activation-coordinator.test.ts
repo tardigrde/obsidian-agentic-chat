@@ -63,7 +63,7 @@ describe("SessionActivationCoordinator", () => {
     expect(ctx.resets).toEqual([{ editing: true, bubble: true }]);
   });
 
-  it("starts a clean new conversation even when the service operation throws", async () => {
+  it("keeps the old transcript when the new conversation fails", async () => {
     const ctx = makeCoordinator();
 
     await expect(
@@ -72,29 +72,9 @@ describe("SessionActivationCoordinator", () => {
       }),
     ).rejects.toThrow("swap failed");
 
-    expect(ctx.events).toEqual([
-      "reset",
-      "mute:true",
-      "mute:false",
-      "reset",
-      "active-note",
-      "render:0",
-      "chrome",
-      "tabs",
-    ]);
-    // Disarm before the swap starts, then the clean post-swap reset.
-    expect(ctx.resets[0]).toEqual({ queuedPrompt: true });
-    expect(ctx.resets[1]).toMatchObject({
-      attachments: true,
-      activeNoteSuppression: true,
-      lastSent: true,
-      activeNoteCache: true,
-      contextCache: true,
-      history: true,
-      editing: true,
-      bubble: true,
-      queuedPrompt: true,
-    });
+    expect(ctx.events).toEqual(["reset", "mute:true", "mute:false"]);
+    // Disarm before the swap starts; a failed start keeps the old transcript.
+    expect(ctx.resets).toEqual([{ queuedPrompt: true }]);
   });
 
   it("loads existing conversations with muted existing-usage thresholds", async () => {

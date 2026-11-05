@@ -1027,6 +1027,78 @@ describe("AgentService", () => {
     );
   });
 
+  it("blocks a prompt when the session changes during turn preparation", async () => {
+    let streamCalls = 0;
+    const bigUsageStream: StreamFn = ((model: Model<"openai-completions">) => {
+      streamCalls += 1;
+      const stream = createAssistantMessageEventStream();
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "ok" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 110_000,
+          output: 100,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 110_100,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    }) as unknown as StreamFn;
+
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const settings: AgenticChatSettings = {
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "test-key",
+      openrouterModel: "test/compaction-model",
+    };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: bigUsageStream,
+      summarize: async () => {
+        started();
+        await gate;
+        return "Late summary.";
+      },
+    });
+
+    await service.sendPrompt(`first ${"word ".repeat(50_000)}`);
+    await service.sendPrompt(`second ${"word ".repeat(50_000)}`);
+    expect(streamCalls).toBe(2);
+
+    const run = service.sendPrompt("third that must not run");
+    await startedPromise;
+    await service.newSession();
+    release();
+    await run;
+
+    expect(streamCalls).toBe(2);
+    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
+  });
+
   it("keeps the recovery error and skips the prompt when the live replace fails", async () => {
     let streamCalls = 0;
     const bigUsageStream: StreamFn = ((model: Model<"openai-completions">) => {

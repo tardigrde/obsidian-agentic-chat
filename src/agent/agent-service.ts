@@ -262,6 +262,7 @@ export class AgentService {
       refreshConfiguration: () => this.parentConfiguration.refresh(this.parentAgent),
       maybeCompact: () => this.maybeCompact(),
       afterCompaction: () => this.compactionRecoveryError,
+      sessionToken: () => this.sessionActions.getSessionToken(),
       clearError: () => this.sessionState.clearError(),
       setError: (error) => this.sessionState.setError(error),
       setErrorMessage: (message) => this.sessionState.setErrorMessage(message),
