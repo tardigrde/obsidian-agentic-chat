@@ -4,25 +4,25 @@ layout: home
 hero:
   name: Agentic Chat
   text: Agent-led AI chat for Obsidian
-  tagline: A privacy-first sidebar assistant that can read, search, write, edit, rename, and organize your vault through visible, approval-gated tool calls.
+  tagline: A sidebar assistant that reads, searches, and edits your vault through visible, approval-gated tool calls. OpenRouter zero-retention routing is on by default. Web, MCP, and observability are off, and the plugin sends no telemetry.
   actions:
     - theme: brand
       text: Install
       link: /guide/install
     - theme: alt
-      text: Configure a provider
-      link: /guide/setup
+      text: First chat in 5 minutes
+      link: /guide/setup#first-chat
     - theme: alt
       text: View commands
       link: /reference/slash-commands
 
 features:
   - title: Vault-native tools
-    details: The agent works through Obsidian APIs for notes, links, frontmatter, sessions, and trash-safe deletes.
-  - title: Privacy-first defaults
-    details: OpenRouter routing starts with zero-data-retention constraints, Ollama keeps everything local, and telemetry is off by default.
+    details: Read, search, write, edit, rename, and delete through Obsidian APIs. Deletes use trash, renames preserve backlinks, and the ignore list stays invisible.
+  - title: Privacy defaults
+    details: OpenRouter routing requires zero-retention endpoints and denies training and logging. Ollama keeps prompts local. The plugin sends no telemetry.
   - title: Visible control
-    details: Tool calls render inline, mutating actions can require approval with diffs, and plan mode blocks writes while you reason.
-  - title: Extensible workflows
-    details: Add skills, subagents, web research, remote MCP tools, and optional observability only when you need them.
+    details: Every tool call renders inline with arguments and timing. Mutating calls show diffs for approval. Plan mode blocks writes, and /undo reverts the last change.
+  - title: Opt-in power only
+    details: Web research, remote MCP tools, semantic indexing, and observability export stay off until you enable them in Settings.
 ---

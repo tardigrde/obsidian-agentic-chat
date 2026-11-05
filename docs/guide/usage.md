@@ -1,4 +1,4 @@
-# Daily Usage
+# Daily usage
 
 Open Agentic Chat from the ribbon icon or the **Agentic Chat: Open chat** command.
 
@@ -19,19 +19,17 @@ The active note is attached automatically unless it is ignored, is a root standi
 
 Tool calls render inline in the transcript. You can expand them to inspect arguments, results, and timing.
 
-Mutating calls are controlled by the approval policy. When a call is set to **ask**, the plugin shows the pending arguments and a line-level diff before anything changes.
-
-Diff previews color removed lines red and added lines green.
+Mutating calls follow the approval policy. When a call is set to **ask**, the plugin shows the pending arguments and a line-level diff (red removed, green added) before anything changes.
 
 ## Safe, YOLO, and plan modes
 
-**Safe** honors your configured approval settings.
+**Safe** follows your configured approval settings.
 
-**YOLO** auto-approves mutating tools for the current session, except for tools explicitly set to deny.
+**YOLO** auto-approves most mutating tools until you switch back. Recursive folder deletes still ask, and a per-tool deny still wins.
 
-`/plan` enters read-only planning mode. It blocks mutations until `/endplan` restores the previous posture.
+`/plan` enters sticky read-only planning mode. It blocks mutations until you leave. To leave, click the **Plan** badge in chat or run `/config` to switch back to Safe or YOLO.
 
-Run `/compact [instructions]` to summarize older turns on demand. The optional instructions are passed to the compaction request so important details survive the summary.
+Run `/compact [instructions]` to summarize older turns on demand. The optional instructions are passed to the compaction request, so important details survive the summary.
 
 ## Memory
 
@@ -39,27 +37,27 @@ Add long-term memories with `/memory add [kind] [scope] <text>`. Kinds are `pref
 
 Review stored memories with `/memory review`. Export them with `/memory export`. Clear everything with `/memory clear --confirm`.
 
-The agent retrieves memories explicitly via the `search_memory` tool; they are never injected automatically.
+The agent retrieves memories explicitly through the `search_memory` tool. The plugin never injects them automatically.
 
 ## Semantic indexing
 
-Run `/semantic-index start` to build a vector index over your current scope (vault, folder, tag, or the active note's folder). Check status with `/semantic-index status` and estimate cost with `/semantic-index estimate`.
+Run `/semantic-index start` to build a vector index over your current scope (vault, folder, tag, or the active note's folder). A full-vault build requires `/semantic-index start vault --confirm-vault`. Check status with `/semantic-index status` and estimate cost with `/semantic-index estimate`.
 
 Cancel an in-progress build with `/semantic-index cancel`.
 
 ## Todo tracking
 
-Use `/todo add <milestone>` to add a milestone. Update status with `/todo set <id> <pending|active|done|blocked>`. Track tests with `/todo test <id> <not-run|running|passed|failed|skipped>`. Attach checkpoint commits with `/todo commit <id> <commit>`.
+Use `/todo add <milestone>` to add a milestone. Update status with `/todo set <id> <pending|active|done|blocked>`. Track tests with `/todo test <id> <not-run|running|passed|failed|skipped>`. Attach checkpoint commits with `/todo commit <id> <commit>`, notes with `/todo note <id> <note>`, and retitle the plan with `/todo title <name>`.
 
 The plan tracker panel shows live progress.
 
 ## Real-time controls
 
-While the agent is streaming a response, you can:
+While the agent streams a response, you can:
 
-- `/steer [text]` — steer the current turn mid-stream.
-- `/follow-up [text]` — queue a follow-up message behind the active turn.
-- `/redirect [text]` — stop the active turn and answer the new text instead.
+- `/steer [text]` steers the current turn mid-stream.
+- `/follow-up [text]` queues a follow-up message behind the active turn.
+- `/redirect [text]` stops the active turn and answers the new text instead.
 
 ## Export conversations
 
@@ -67,7 +65,7 @@ Run `/export` to save the current conversation as a Markdown note in the vault.
 
 ## Reasoning effort
 
-Set your reasoning effort with `/effort [level]` (e.g., `/effort high`). The choice persists across messages until you change it — via `/effort` again or the effort knob in the composer.
+Set your reasoning effort with `/effort [level]` (for example, `/effort high`). The choice persists across messages. Change it with `/effort` again or with the effort knob in the composer.
 
 ## Undo and retry
 
