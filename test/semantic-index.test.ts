@@ -54,6 +54,56 @@ describe("semantic index bootstrap", () => {
     expect(result.file.snapshot).toBeUndefined();
   });
 
+  it("repairs a stale running state on load", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/index.json";
+    await adapter.write(
+      path,
+      JSON.stringify({
+        version: 1,
+        updatedAt: 1_000,
+        state: {
+          scope,
+          status: { state: "running", scope, processedDocuments: 2, totalDocuments: 9 },
+          indexedDocumentIds: [],
+        },
+      }),
+    );
+
+    const stored = await readSemanticIndexFile(adapter.asDataAdapter(), path);
+
+    expect(stored?.state.status).toMatchObject({
+      state: "failed",
+      processedDocuments: 2,
+      totalDocuments: 9,
+    });
+    if (stored?.state.status.state === "failed") {
+      expect(stored.state.status.error).toMatch(/interrupted/i);
+    }
+    const persisted = JSON.parse(await adapter.read(path)) as {
+      state: { status: { state: string } };
+    };
+    expect(persisted.state.status.state).toBe("failed");
+  });
+
+  it("leases one index path and recovers an expired lease", async () => {
+    const { SemanticIndexLeaseRegistry } = await import("../src/retrieval/semantic-index");
+    let now = 1_000;
+    const leases = new SemanticIndexLeaseRegistry(() => now, 60_000);
+    const first = leases.acquire("index.json");
+    expect(first).not.toBeNull();
+    expect(leases.acquire("index.json")).toBeNull();
+
+    now += 61_000;
+    const recovered = leases.acquire("index.json");
+    expect(recovered).not.toBeNull();
+    recovered?.release();
+
+    // The stale owner's release must not free the recovered lease.
+    first?.release();
+    expect(leases.acquire("index.json")).not.toBeNull();
+  });
+
   it("persists a cancellable partial index instead of throwing", async () => {
     const adapter = new MemoryAdapter();
     const controller = new AbortController();

@@ -165,6 +165,26 @@ describe("SemanticIndexWorkflowController", () => {
     });
   });
 
+  it("runs only one controller for the same index path", async () => {
+    const adapter = new MemoryAdapter();
+    const embedder = new GatedEmbedder();
+    const first = makeController({ adapter, embedder, documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 1) });
+    const second = makeController({ adapter, embedder, documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 1) });
+
+    const firstRun = first.controller.run("start folder Projects");
+    await embedder.started;
+    await second.controller.run("start folder Projects");
+
+    expect(second.calls).toContainEqual({
+      type: "error",
+      message: "Semantic indexing is already running in another tab for this index. Use /semantic-index cancel there first.",
+    });
+    expect(embedder.calls).toBe(1);
+
+    embedder.release();
+    await firstRun;
+  });
+
   it("formats estimate and index rows as stable UI tuples", async () => {
     const ctx = makeController();
     await ctx.controller.run("start folder Projects");
@@ -187,6 +207,42 @@ describe("SemanticIndexWorkflowController", () => {
     );
   });
 });
+
+class GatedEmbedder implements RetrievalEmbedder {
+  readonly profile = FAKE_EMBEDDING_PROFILE;
+  readonly started: Promise<void>;
+  calls = 0;
+  private readonly base = new DeterministicFakeEmbedder();
+  private markStarted!: () => void;
+  private releaseGate!: () => void;
+  private readonly gate: Promise<void>;
+
+  constructor() {
+    this.started = new Promise((resolve) => {
+      this.markStarted = resolve;
+    });
+    this.gate = new Promise((resolve) => {
+      this.releaseGate = resolve;
+    });
+  }
+
+  release(): void {
+    this.releaseGate();
+  }
+
+  async embed(input: EmbeddingInput, options?: EmbeddingRequestOptions): Promise<EmbeddingResult> {
+    return (await this.embedBatch([input], options))[0];
+  }
+
+  async embedBatch(inputs: readonly EmbeddingInput[], options?: EmbeddingRequestOptions): Promise<EmbeddingResult[]> {
+    this.calls += 1;
+    if (this.calls === 1) {
+      this.markStarted();
+      await this.gate;
+    }
+    return this.base.embedBatch(inputs, options);
+  }
+}
 
 class BlockingEmbedder implements RetrievalEmbedder {
   readonly profile = FAKE_EMBEDDING_PROFILE;

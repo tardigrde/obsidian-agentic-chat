@@ -2,6 +2,7 @@ import type { DataAdapter } from "obsidian";
 import {
   bootstrapSemanticIndex,
   readSemanticIndexFile,
+  semanticIndexLeases,
   type SemanticIndexFile,
 } from "../retrieval/semantic-index";
 import {
@@ -132,23 +133,33 @@ export class SemanticIndexWorkflowController {
       this.options.renderer.error("Set an embedding model in Settings -> Resources before starting semantic indexing.");
       return;
     }
+    const path = this.options.indexPath();
+    const lease = semanticIndexLeases.acquire(path);
+    if (!lease) {
+      this.options.renderer.error(
+        "Semantic indexing is already running in another tab for this index. Use /semantic-index cancel there first.",
+      );
+      return;
+    }
     this.options.renderer.info("Semantic index", [["Start", `Indexing ${documents.length} notes for ${scope.kind} "${scope.label}".`]]);
     const controller = new AbortController();
     this.abort = controller;
     try {
       const result = await bootstrapSemanticIndex({
         adapter: this.options.adapter,
-        path: this.options.indexPath(),
+        path,
         scope,
         documents,
         estimate,
         embedder: this.options.createEmbedder(),
         batchSize: this.options.batchSize(),
         signal: controller.signal,
+        onProgress: () => lease.touch(),
       });
       this.options.renderer.info("Semantic index", semanticIndexRows(result.file));
     } finally {
       this.abort = null;
+      lease.release();
     }
   }
 }
