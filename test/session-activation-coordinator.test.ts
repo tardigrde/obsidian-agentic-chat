@@ -90,6 +90,7 @@ describe("SessionActivationCoordinator", () => {
       history: true,
       editing: true,
       bubble: true,
+      queuedPrompt: true,
     });
   });
 
@@ -110,7 +111,9 @@ describe("SessionActivationCoordinator", () => {
       "chrome",
       "tabs",
     ]);
-    expect(ctx.resets).toEqual([{ lastSent: true, activeNoteCache: true, contextCache: true, editing: true, bubble: true }]);
+    expect(ctx.resets).toEqual([
+      { lastSent: true, activeNoteCache: true, contextCache: true, editing: true, bubble: true, queuedPrompt: true },
+    ]);
   });
 
   it("resets clean UI state after clearing sessions", () => {
@@ -128,6 +131,7 @@ describe("SessionActivationCoordinator", () => {
       history: true,
       editing: true,
       bubble: true,
+      queuedPrompt: true,
     });
   });
 

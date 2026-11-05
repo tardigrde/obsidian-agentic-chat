@@ -1796,6 +1796,7 @@ export class ChatView extends ItemView {
     if (options.history) this.resetHistoryNav();
     if (options.editing) this.endEditing(false);
     if (options.bubble) this.bubble = null;
+    if (options.queuedPrompt) this.clearQueuedPrompt();
   }
 
   private async runSteeringCommand(raw: string): Promise<void> {
@@ -2502,11 +2503,17 @@ export class ChatView extends ItemView {
   /** Un-arm a queued prompt, keeping the draft in the composer for editing. */
   private cancelQueuedPrompt(): void {
     if (!this.queuedPromptArmed) return;
+    this.clearQueuedPrompt();
+    this.inputEl.focus();
+  }
+
+  /** Drop the queued state without moving focus (session changes keep the draft). */
+  private clearQueuedPrompt(): void {
+    if (!this.queuedPromptArmed) return;
     this.queuedPromptArmed = false;
     this.statusEl.setText("");
     this.renderChips();
     this.syncChrome();
-    this.inputEl.focus();
   }
 
   // --- working directories (C1: + Folder / /add-dir scope) ---

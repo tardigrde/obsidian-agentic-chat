@@ -4,6 +4,31 @@ import { ActiveNoteContextCache } from "../src/ui/active-note";
 import { PromptContextCache } from "../src/ui/context-builder";
 
 describe("ChatView async lifecycle", () => {
+  it("clears an armed queued prompt when the session changes", async () => {
+    const sendPrompt = vi.fn(async () => {});
+    const view = Object.assign(Object.create(ChatView.prototype), {
+      queuedPromptArmed: true,
+      flushingQueuedPrompt: false,
+      inputEl: { value: "stale queued draft" },
+      tabs: [{ service: { isStreaming: () => false, sendPrompt } }],
+      activeTabIndex: 0,
+      statusEl: { setText: vi.fn() },
+      renderChips: vi.fn(),
+      syncChrome: vi.fn(),
+    }) as ChatViewHarness & {
+      queuedPromptArmed: boolean;
+      statusEl: { setText: ReturnType<typeof vi.fn> };
+      renderChips: ReturnType<typeof vi.fn>;
+      syncChrome: ReturnType<typeof vi.fn>;
+    };
+
+    view.resetSessionUiState({ queuedPrompt: true });
+    expect(view.queuedPromptArmed).toBe(false);
+
+    await view.flushQueuedPromptIfReady();
+    expect(sendPrompt).not.toHaveBeenCalled();
+  });
+
   it("does not touch active tab service after the view closes during send", async () => {
     const view = Object.assign(Object.create(ChatView.prototype), {
       app: {},
@@ -47,4 +72,6 @@ interface ChatViewHarness {
   closed: boolean;
   sendPrompt: (text: string) => Promise<void>;
   showServiceError: ReturnType<typeof vi.fn>;
+  resetSessionUiState: (options: { queuedPrompt?: boolean }) => void;
+  flushQueuedPromptIfReady: () => Promise<void>;
 }
