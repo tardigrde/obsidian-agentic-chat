@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream,
@@ -310,5 +310,31 @@ describe("AgentCompactionRuntime", () => {
     expect(calls[0].previousSummary).toBeUndefined();
     expect(calls[1].previousSummary).toBe("summary-1");
     expect(JSON.stringify(compacted![0])).toContain("summary-");
+  });
+
+  it("coalesces concurrent compactions into one summarize and one rewrite", async () => {
+    let summarizeCalls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { manager, runtime } = await setup({
+      summarize: async () => {
+        summarizeCalls += 1;
+        await gate;
+        return "Single summary.";
+      },
+    });
+    const rewrite = vi.spyOn(manager, "rewriteMessages");
+
+    const first = runtime.compactWithResult(largeTranscript(), 100_000, { force: true });
+    const second = runtime.compactWithResult(largeTranscript(), 100_000, { force: true });
+    release();
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(summarizeCalls).toBe(1);
+    expect(rewrite).toHaveBeenCalledTimes(1);
+    expect(firstResult.status).toBe("compacted");
+    expect(secondResult).toEqual(firstResult);
   });
 });

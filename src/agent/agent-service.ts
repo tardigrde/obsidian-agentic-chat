@@ -600,8 +600,19 @@ export class AgentService {
       });
       return { compacted: false, message: result.message };
     }
-    this.sessionEvents.markPersistedMessages(result.messages);
-    this.parentAgent.replace(result.messages);
+    // The saved session is already rewritten at this point. If the live agent
+    // cannot be replaced, report it instead of pretending compaction succeeded.
+    try {
+      this.sessionEvents.markPersistedMessages(result.messages);
+      this.parentAgent.replace(result.messages);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      const message =
+        `Compaction rewrote the saved session, but the live conversation could not be replaced: ${detail}. ` +
+        "Reload the session to continue from the compacted transcript.";
+      this.setError(message);
+      return { compacted: false, message };
+    }
     this.sessions.refreshInfoIfActive();
     this.notifyChange();
     // A successful compaction rewrites the session file, which drops audit

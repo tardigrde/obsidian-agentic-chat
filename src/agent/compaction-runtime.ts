@@ -151,6 +151,8 @@ export class AgentCompactionRuntime {
   private readonly sessionManager: ObsidianSessionManager;
   private readonly buildStreamFn: () => StreamFn;
   private readonly injectedSummarize?: SummarizeFn;
+  /** Single-flight: auto-compaction and manual `/compact` share one run. */
+  private inFlight: Promise<AgentCompactionRunResult> | null = null;
 
   constructor(options: AgentCompactionRuntimeOptions) {
     this.getSettings = options.getSettings;
@@ -174,6 +176,23 @@ export class AgentCompactionRuntime {
     messages: AgentMessage[],
     contextWindow: number,
     options: AgentCompactionRuntimeOptionsForRun = {},
+  ): Promise<AgentCompactionRunResult> {
+    // A second caller (manual /compact racing auto-compaction, or a double
+    // click) joins the running pass instead of summarizing and rewriting twice.
+    if (this.inFlight) return this.inFlight;
+    const run = this.performCompaction(messages, contextWindow, options);
+    this.inFlight = run;
+    try {
+      return await run;
+    } finally {
+      if (this.inFlight === run) this.inFlight = null;
+    }
+  }
+
+  private async performCompaction(
+    messages: AgentMessage[],
+    contextWindow: number,
+    options: AgentCompactionRuntimeOptionsForRun,
   ): Promise<AgentCompactionRunResult> {
     const config = options.force
       ? { ...compactionConfig(this.getSettings()), enabled: true, thresholdFraction: 0 }
