@@ -1,0 +1,6 @@
+# Local-only paths to symlink from the main worktree into a new worktree.
+# Names only. Never put secret values here.
+node_modules
+.obsidian-cache
+.env
+.env.local
