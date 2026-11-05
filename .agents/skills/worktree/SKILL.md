@@ -35,9 +35,9 @@ variables, and never prints values. `--env-file <path>` selects another file.
 
 - Default cleanup is a dry run.
 - `--apply` removes only `safe` worktrees: clean and merged into the base, or a
-  closed/merged PR.
+  merged PR.
 - `hold-wip`, `hold-scratch`, `hold-open-pr`, `recent`, and `review` need a human
-  decision.
+  decision. A closed but unmerged PR is `review`, not `safe`.
 - `--force` is a human-only override. It prints every path before removal.
 - Branch refs survive cleanup. Committed work is not lost.
 - Before removal: unlink manifest symlinks, `git worktree remove`, `rm -rf`

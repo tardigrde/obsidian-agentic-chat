@@ -64,8 +64,8 @@ Cleanup classifies each non-main worktree:
 | `hold-scratch` | untracked non-ignored files |
 | `hold-open-pr` | open or draft PR |
 | `recent` | newest file mtime within 3 days |
-| `safe` | clean and merged into base, or PR closed/merged |
-| `review` | clean, not merged, no PR |
+| `safe` | clean and merged into base, or a merged PR |
+| `review` | clean, not merged, no PR, or a closed but unmerged PR |
 
 `--apply` removes only `safe` worktrees. `hold-wip`, `hold-scratch`,
 `hold-open-pr`, `recent`, and `review` need a human decision. `--force` is a

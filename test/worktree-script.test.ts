@@ -38,7 +38,7 @@ describe("worktree helper", () => {
     expect(classifyWorktree({ prState: "OPEN" })).toBe("hold-open-pr");
     expect(classifyWorktree({ merged: true, recent: true })).toBe("safe");
     expect(classifyWorktree({ prState: "MERGED", recent: true })).toBe("safe");
-    expect(classifyWorktree({ prState: "CLOSED" })).toBe("safe");
+    expect(classifyWorktree({ prState: "CLOSED" })).toBe("review");
     expect(classifyWorktree({ recent: true })).toBe("recent");
     expect(classifyWorktree({})).toBe("review");
   });

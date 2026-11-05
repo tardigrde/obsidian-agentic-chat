@@ -112,8 +112,7 @@ export function classifyWorktree({
   if (trackedChanges > 0) return "hold-wip";
   if (untrackedChanges > 0) return "hold-scratch";
   if (prState === "OPEN") return "hold-open-pr";
-  if (prState === "MERGED" || prState === "CLOSED") return "safe";
-  if (merged) return "safe";
+  if (prState === "MERGED" || merged) return "safe";
   if (recent) return "recent";
   return "review";
 }
