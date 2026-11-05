@@ -606,12 +606,14 @@ export class AgentService {
       this.sessionEvents.markPersistedMessages(result.messages);
       this.parentAgent.replace(result.messages);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      const message =
-        `Compaction rewrote the saved session, but the live conversation could not be replaced: ${detail}. ` +
-        "Reload the session to continue from the compacted transcript.";
-      this.setError(message);
-      return { compacted: false, message };
+      if (!(await this.recoverCompactedSession())) {
+        const detail = error instanceof Error ? error.message : String(error);
+        const message =
+          `Compaction rewrote the saved session, but the live conversation could not be replaced: ${detail}. ` +
+          "Reload the session to continue from the compacted transcript.";
+        this.setError(message);
+        return { compacted: false, message };
+      }
     }
     this.sessions.refreshInfoIfActive();
     this.notifyChange();
@@ -852,7 +854,35 @@ export class AgentService {
       replaceAgent: (messages) => this.parentAgent.replace(messages),
       refreshActiveSessionInfo: () => this.sessions.refreshInfoIfActive(),
       notifyChange: () => this.notifyChange(),
+      recoverAfterReplaceFailure: () => this.recoverCompactedSession(),
+      onCompactionFailure: (_error, persisted) => {
+        if (!persisted) return;
+        this.setError(
+          "Compaction rewrote the saved session, but the live conversation could not be replaced. " +
+            "Reload the session to continue from the compacted transcript.",
+        );
+      },
     });
+  }
+
+  /**
+   * Re-read the active session after a successful compaction rewrite whose live
+   * replacement failed, so the next turn continues from the persisted summary
+   * instead of a stale in-memory transcript.
+   */
+  private async recoverCompactedSession(): Promise<boolean> {
+    const path = this.sessions.activePath;
+    if (!path) return false;
+    try {
+      const snapshot = await this.sessions.load(path);
+      this.sessionEvents.markPersistedMessages(snapshot.messages);
+      this.parentAgent.replace(snapshot.messages);
+      this.sessions.refreshInfoIfActive();
+      this.notifyChange();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private recordRecentEvent(event: AgentEvent): void {

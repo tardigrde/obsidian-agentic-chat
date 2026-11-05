@@ -879,6 +879,88 @@ describe("AgentService", () => {
     expect(reloaded.getSessionUsage().totalTokens).toBe(330_300);
   });
 
+  it("reloads the persisted transcript when compaction cannot replace the live agent", async () => {
+    const firstPrompt = `first ${"word ".repeat(50_000)}`;
+    const secondPrompt = `second ${"word ".repeat(50_000)}`;
+    const bigUsageStream: StreamFn = ((model: Model<"openai-completions">) => {
+      const stream = createAssistantMessageEventStream();
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "ok" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 110_000,
+          output: 100,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 110_100,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    }) as unknown as StreamFn;
+
+    const settings: AgenticChatSettings = {
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "test-key",
+      openrouterModel: "test/compaction-model",
+    };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    let summarizeCalls = 0;
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: bigUsageStream,
+      summarize: async () => {
+        summarizeCalls += 1;
+        return "Summary written before the replace failed.";
+      },
+    });
+
+    await service.sendPrompt(firstPrompt);
+    await service.sendPrompt(secondPrompt);
+
+    // Simulate the agent replacement failing after the JSONL rewrite succeeds.
+    const parentAgent = (service as unknown as {
+      parentAgent: { replace: (messages: AgentMessage[]) => unknown };
+    }).parentAgent;
+    const replace = parentAgent.replace.bind(parentAgent);
+    let failedOnce = false;
+    parentAgent.replace = (messages) => {
+      if (!failedOnce) {
+        failedOnce = true;
+        throw new Error("simulated replace failure");
+      }
+      return replace(messages);
+    };
+
+    await service.sendPrompt("third");
+    expect(failedOnce).toBe(true);
+    expect(summarizeCalls).toBe(1);
+    expect(service.getMessages()[0] && isSummaryMessage(service.getMessages()[0])).toBe(true);
+
+    // The next turn must continue from the persisted, compacted session rather
+    // than the stale in-memory transcript or a second summary.
+    await service.sendPrompt("fourth");
+    expect(service.getCompactionCount()).toBe(1);
+    expect(service.getMessages().some((message) => JSON.stringify(message).includes("first"))).toBe(false);
+    const path = service.getSessionInfo()?.path as string;
+    const persisted = parseSessionEntries(await adapter.read(path));
+    expect(persisted.filter((entry) => entry.type === "message" && isSummaryMessage(entry.message))).toHaveLength(1);
+  });
+
   it("records skipped manual compaction attempts in the session audit log", async () => {
     const { service, adapter } = makeService(cannedStreamFn("unused"));
 
