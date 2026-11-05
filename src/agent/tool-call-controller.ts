@@ -11,11 +11,11 @@ import { type ApprovalPolicy, getPerToolApproval } from "./approval";
 import { isMcpToolName, mcpServerIdFromToolName } from "../mcp/tools";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import {
-  pendingSubagentErrorDetails,
   persistedSnapshot,
   SUBAGENT_TOOL_NAME,
   normalizeTasks,
   type SubagentChildStatus,
+  type SubagentRegistry,
 } from "../tools/subagent-tool";
 import type { AgentRole } from "./subagents";
 import { findAgentRole } from "./subagents";
@@ -70,6 +70,8 @@ interface ToolCallControllerOptions {
   recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
   recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
+  /** Same per-service registry the subagent runtime writes to. */
+  subagentRegistry: SubagentRegistry;
 }
 
 /**
@@ -86,6 +88,7 @@ export class AgentToolCallController {
   private readonly recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   private readonly recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
   private readonly recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
+  private readonly subagentRegistry: SubagentRegistry;
 
   /** Reversible records of mutating tool calls, newest last (for undo-last-change). */
   private undoStack: FileCheckpoint[] = [];
@@ -102,6 +105,7 @@ export class AgentToolCallController {
     this.recordApproval = options.recordApproval;
     this.recordCheckpoint = options.recordCheckpoint;
     this.recordFileCheckpoint = options.recordFileCheckpoint;
+    this.subagentRegistry = options.subagentRegistry;
   }
 
   canUndo(): boolean {
@@ -128,7 +132,7 @@ export class AgentToolCallController {
   clearSessionState(): void {
     this.undoStack = [];
     this.pendingUndo.clear();
-    pendingSubagentErrorDetails.clear();
+    this.subagentRegistry.clearPendingErrorDetails();
   }
 
   async beforeToolCall(context: BeforeToolCallContext): Promise<ToolGateDecision> {
@@ -168,9 +172,8 @@ export class AgentToolCallController {
     // would otherwise have empty `details` — inject the persisted dispatch card
     // so reload can rehydrate it. The live path already rendered via `onUpdate`.
     if (context.isError) {
-      const pending = pendingSubagentErrorDetails.get(context.toolCall.id);
+      const pending = this.subagentRegistry.takePendingErrorDetails(context.toolCall.id);
       if (pending) {
-        pendingSubagentErrorDetails.delete(context.toolCall.id);
         return { details: pending };
       }
     }

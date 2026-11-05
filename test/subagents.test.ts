@@ -12,9 +12,9 @@ import {
 } from "../src/agent/subagents";
 import { unwrapToolOutput } from "../src/tools/tool-output-wrapper";
 import {
-  abortSubagentChild,
   createSubagentTool,
   normalizeTasks,
+  SubagentRegistry,
   type SubagentDetails,
 } from "../src/tools/subagent-tool";
 import { buildModel } from "../src/llm/models";
@@ -362,12 +362,14 @@ describe("createSubagentTool", () => {
 
   it("lets a caller abort one dispatch without stopping its siblings", async () => {
     let created = 0;
+    const registry = new SubagentRegistry();
     const tool = createSubagentTool({
       getProfiles: () => [RESEARCHER],
       createChildAgent: () => {
         const isFirst = created++ === 0;
         return makeChild(isFirst ? abortErrorStreamFn() : childStreamFn("ok"));
       },
+      registry,
     });
     const controller = new AbortController();
     const first = tool.execute("call-a", { agent: "researcher", task: "A" }, controller.signal);
@@ -375,7 +377,7 @@ describe("createSubagentTool", () => {
     await new Promise((resolve) => setTimeout(resolve, 25));
 
     // Abort just the first dispatch by its stopId (== its tool call id).
-    abortSubagentChild("call-a");
+    registry.abort("call-a");
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
     // A stopped child settles as a normal (non-error) result marked "aborted" —
@@ -449,14 +451,16 @@ describe("createSubagentTool", () => {
   });
 
   it("reports an explicit user stop over a timeout firing at the same moment", async () => {
+    const registry = new SubagentRegistry();
     const tool = createSubagentTool({
       getProfiles: () => [RESEARCHER],
       createChildAgent: () => makeChild(hangingStreamFn()),
       maxRuntimeSeconds: () => 0.05,
+      registry,
     });
     const pending = tool.execute("call-race", { agent: "researcher", task: "hang" }, undefined);
     await new Promise((resolve) => setTimeout(resolve, 25));
-    abortSubagentChild("call-race");
+    registry.abort("call-race");
     const result = await pending;
     // The user asked for the stop; report that, not the timeout.
     expect(result.details.children[0].status).toBe("aborted");
@@ -504,12 +508,14 @@ describe("createSubagentTool", () => {
 
   it("caps concurrent dispatches at 10 and queues the rest, promoting on stop", async () => {
     let created = 0;
+    const registry = new SubagentRegistry();
     const tool = createSubagentTool({
       getProfiles: () => [RESEARCHER],
       createChildAgent: () => {
         created += 1;
         return makeChild(hangingStreamFn());
       },
+      registry,
     });
     const controller = new AbortController();
     const calls = Array.from({ length: 12 }, (_, i) =>
@@ -520,7 +526,7 @@ describe("createSubagentTool", () => {
     expect(created).toBe(10);
 
     // Stopping one running child frees a slot and promotes a queued dispatch.
-    abortSubagentChild("call-0");
+    registry.abort("call-0");
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(created).toBe(11);
 

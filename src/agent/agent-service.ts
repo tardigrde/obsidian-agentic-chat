@@ -198,6 +198,20 @@ export class AgentService {
       artifactStore: options.artifactStore,
       skillScaffolder: options.skillScaffolder,
     });
+    this.subagents = new AgentSubagentRuntime({
+      app: this.app,
+      getSettings: this.getSettings,
+      getResources: () => this.runtimeResources.current,
+      buildStreamFn: () => this.streams.buildStreamFn(),
+      recordUsage: (usage) => this.sessionState.recordSubagentUsage(usage),
+      webFetch: this.webFetch,
+      artifactStore: options.artifactStore,
+      // Deferred: the controller is constructed next and shares this runtime's registry.
+      toolCalls: {
+        beforeToolCall: (context) => this.toolCalls.beforeToolCall(context),
+        afterToolCall: (context) => this.toolCalls.afterToolCall(context),
+      },
+    });
     this.toolCalls = new AgentToolCallController({
       app: this.app,
       getSettings: this.getSettings,
@@ -211,16 +225,7 @@ export class AgentService {
       },
       recordCheckpoint: (input) => this.actionAudit.recordCheckpoint(input),
       recordFileCheckpoint: (checkpoint) => this.fileCheckpoints.record(checkpoint),
-    });
-    this.subagents = new AgentSubagentRuntime({
-      app: this.app,
-      getSettings: this.getSettings,
-      getResources: () => this.runtimeResources.current,
-      buildStreamFn: () => this.streams.buildStreamFn(),
-      recordUsage: (usage) => this.sessionState.recordSubagentUsage(usage),
-      webFetch: this.webFetch,
-      artifactStore: options.artifactStore,
-      toolCalls: this.toolCalls,
+      subagentRegistry: this.subagents.registry,
     });
     this.parentConfiguration = new AgentParentConfigurationRuntime({
       getSettings: this.getSettings,
@@ -299,6 +304,11 @@ export class AgentService {
 
   isStreaming(): boolean {
     return this.agent?.state.isStreaming ?? false;
+  }
+
+  /** Stop one subagent dispatched by this service; other services are untouched. */
+  abortSubagentChild(id: string): void {
+    this.subagents.abortChild(id);
   }
 
   getError(): string | undefined {

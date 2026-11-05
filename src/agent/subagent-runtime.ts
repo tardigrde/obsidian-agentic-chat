@@ -8,7 +8,7 @@ import { buildModel, type ModelConfig } from "../llm/models";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import { createReadSkillFileTool, createReadSkillTool } from "../tools/read-skill-tool";
 import { createVaultTools } from "../tools/vault-tools";
-import { createSubagentTool } from "../tools/subagent-tool";
+import { createSubagentTool, SubagentRegistry } from "../tools/subagent-tool";
 import { createWebTools } from "../tools/web-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
@@ -44,6 +44,8 @@ export class AgentSubagentRuntime {
   private readonly artifactStore: ToolArtifactStoreLike | undefined;
   private readonly toolCalls: Pick<AgentToolCallController, "beforeToolCall" | "afterToolCall">;
   private childNamespaceCounter = 0;
+  /** Per-runtime stop/error state, shared with this runtime's tool-call controller. */
+  readonly registry = new SubagentRegistry();
 
   constructor(options: SubagentRuntimeOptions) {
     this.app = options.app;
@@ -62,7 +64,13 @@ export class AgentSubagentRuntime {
       createChildAgent: (profile) => this.createChildAgent(profile),
       recordUsage: this.recordUsage,
       maxRuntimeSeconds: () => this.getSettings().subagentTimeoutSeconds,
+      registry: this.registry,
     });
+  }
+
+  /** Stop one child dispatched by this runtime; other runtimes are untouched. */
+  abortChild(id: string): void {
+    this.registry.abort(id);
   }
 
   createChildAgent(profile: AgentRole): Agent {
