@@ -1081,6 +1081,50 @@ describe("AgentService", () => {
     await expect(persistedMessageRoles(adapter, service)).resolves.toEqual(["user", "assistant", "user", "assistant"]);
   });
 
+  it("delivers a redirect exactly once when the next turn compacts the transcript", async () => {
+    const controlled = controlledStreamFn(["first answer", "will be redirected", "redirected answer"]);
+    const settings: AgenticChatSettings = {
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "test-key",
+      openrouterModel: "test/compaction-model",
+    };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    let summarizeCalls = 0;
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: controlled.streamFn,
+      summarize: async () => {
+        summarizeCalls += 1;
+        return "Summary before the redirect.";
+      },
+    });
+
+    const large = (text: string) => `${text} ${"word ".repeat(50_000)}`;
+    const first = service.sendPrompt(large("first request"));
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
+    controlled.runs[0].finish();
+    await first;
+    const second = service.sendPrompt(large("second request"));
+    await waitFor(() => controlled.runs.length === 2 && service.isStreaming(), "second active stream");
+
+    const redirect = service.redirectPrompt("narrower redirected question");
+    await waitFor(() => controlled.runs.length === 3, "redirected continuation");
+    controlled.runs[2].finish();
+    await Promise.all([second, redirect]);
+
+    expect(summarizeCalls).toBe(1);
+    expect(isSummaryMessage(service.getMessages()[0])).toBe(true);
+    const redirectTexts = userTexts(service.getMessages()).filter((text) => text === "narrower redirected question");
+    expect(redirectTexts).toHaveLength(1);
+    expect(
+      userTexts(controlled.runs[2].context.messages).filter((text) => text === "narrower redirected question"),
+    ).toHaveLength(1);
+  });
+
   it("clears queued steering when the user stops the active run", async () => {
     const controlled = controlledStreamFn(["will abort", "fresh answer"]);
     const { service } = makeService(controlled.streamFn);

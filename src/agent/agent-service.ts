@@ -726,21 +726,21 @@ export class AgentService {
     this.sessionState.clearError();
     // Steering is user input too: user-provided info ends any running streak.
     this.loopGuard.reset();
+    if (mode === "redirect") {
+      // A redirect stops the current run and starts a new prompt. Do not queue
+      // it on the old agent: runPrompt may compact and replace that agent, and
+      // the replacement would never see the queued message.
+      this.stopAgent(agent);
+      await agent.waitForIdle();
+      // waitForIdle can resolve before the aborted turn's finally clears the
+      // synchronous guard. Let that turn finish before starting the continuation.
+      await this.promptTurns.waitForIdle();
+      await this.runPrompt((currentAgent) => currentAgent.prompt(message));
+      return;
+    }
     if (mode === "follow-up") agent.followUp(message);
     else agent.steer(message);
     this.notifyChange();
-
-    if (mode !== "redirect") return;
-    agent.abort();
-    await agent.waitForIdle();
-    // waitForIdle can resolve before the aborted turn's finally clears the
-    // synchronous guard. Let that turn finish before starting the continuation.
-    await this.promptTurns.waitForIdle();
-    if (agent.hasQueuedMessages()) {
-      await this.runPrompt((currentAgent) => currentAgent.continue());
-    } else {
-      this.notifyChange();
-    }
   }
 
   private async initializeAgent(): Promise<void> {
