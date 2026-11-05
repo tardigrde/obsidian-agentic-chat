@@ -194,6 +194,9 @@ export class AgentCompactionRuntime {
     contextWindow: number,
     options: AgentCompactionRuntimeOptionsForRun,
   ): Promise<AgentCompactionRunResult> {
+    // Summarization can take seconds and the user can switch sessions meanwhile.
+    const expectedPath = this.sessionManager.getActiveSessionPath();
+    const expectedGeneration = this.sessionManager.getActiveSessionGeneration();
     const config = options.force
       ? { ...compactionConfig(this.getSettings()), enabled: true, thresholdFraction: 0 }
       : compactionConfig(this.getSettings());
@@ -221,7 +224,9 @@ export class AgentCompactionRuntime {
     const manifest = collectCompactionManifest(plan.summarize);
     const newMessages = [buildSummaryMessage(summary.summary, Date.now(), dropped, manifest), ...plan.keep];
     // Persist the rewrite first; only mutate in-memory state once disk succeeds.
-    await this.sessionManager.rewriteMessages(newMessages);
+    // The captured path/generation stop a swap during summarization from
+    // writing this transcript into a different session.
+    await this.sessionManager.rewriteMessages(newMessages, { expectedPath, expectedGeneration });
     return { status: "compacted", messages: newMessages };
   }
 

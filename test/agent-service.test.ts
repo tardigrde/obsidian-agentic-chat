@@ -1027,6 +1027,51 @@ describe("AgentService", () => {
     );
   });
 
+  it("returns a normal result when the session changes during manual compaction", async () => {
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: cannedStreamFn("ok"),
+      summarize: async () => {
+        started();
+        await gate;
+        return "Late manual summary.";
+      },
+    });
+
+    await service.sendPrompt("first request");
+    await service.sendPrompt("second request");
+    const firstPath = service.getSessionInfo()?.path as string;
+    await service.newSession();
+    const secondPath = service.getSessionInfo()?.path as string;
+    await service.loadSession(firstPath);
+    const secondBefore = await adapter.read(secondPath);
+
+    const compaction = service.compactNow();
+    await startedPromise;
+    await service.loadSession(secondPath);
+    release();
+
+    await expect(compaction).resolves.toMatchObject({
+      compacted: false,
+      message: expect.stringMatching(/session changed/i),
+    });
+    expect(await adapter.read(secondPath)).toBe(secondBefore);
+  });
+
   it("queues steering into an active run and persists transcript order", async () => {
     const controlled = controlledStreamFn(["first answer", "steered answer"]);
     const { service, adapter } = makeService(controlled.streamFn);

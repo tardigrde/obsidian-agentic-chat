@@ -49,6 +49,13 @@ interface SessionFileInfo extends SessionInfo {
   modifiedTime: number;
 }
 
+export interface RewriteMessagesOptions {
+  /** Session file the caller read before its long-running work started. */
+  expectedPath?: string | null;
+  /** Generation captured with {@link ObsidianSessionManager.getActiveSessionGeneration}. */
+  expectedGeneration?: number;
+}
+
 /**
  * Append-only JSONL conversation store under the plugin folder. Uses the vault
  * `DataAdapter` so it works on desktop and mobile without Node fs.
@@ -262,9 +269,21 @@ export class ObsidianSessionManager {
    * Replace the active session's transcript with `messages`, rewriting the file
    * to a fresh linear chain (preserving the header + active model/thinking level).
    * Used by prompt editing to rewind a conversation to an earlier turn.
+   *
+   * `options` binds the rewrite to the session that was active when a longer
+   * operation, such as summarization, started. A swap before or during the
+   * write makes the rewrite fail instead of corrupting the new session.
    */
-  async rewriteMessages(messages: AgentMessage[]): Promise<void> {
-    if (!this.sessionFile) throw new Error("No active session.");
+  async rewriteMessages(messages: AgentMessage[], options: RewriteMessagesOptions = {}): Promise<void> {
+    const sessionFile = this.sessionFile;
+    if (!sessionFile) throw new Error("No active session.");
+    const generation = this.sessionGeneration;
+    if (options.expectedPath !== undefined && options.expectedPath !== sessionFile) {
+      throw new Error("Session changed before the transcript rewrite could start.");
+    }
+    if (options.expectedGeneration !== undefined && options.expectedGeneration !== generation) {
+      throw new Error("Session changed before the transcript rewrite could start.");
+    }
     const header = this.entries[0];
     if (!header || header.type !== "session") throw new Error("Session file is missing a session header.");
     const sessionName = getSessionName(this.entries);
@@ -324,7 +343,10 @@ export class ObsidianSessionManager {
         state: planTracker,
       });
     }
-    await this.adapter.write(this.sessionFile, serializeSessionEntries(rebuilt));
+    await this.adapter.write(sessionFile, serializeSessionEntries(rebuilt));
+    if (this.sessionFile !== sessionFile || this.sessionGeneration !== generation) {
+      throw new Error("Session changed while rewriting the transcript.");
+    }
     this.entries = rebuilt;
     this.leafId = parentId;
   }
@@ -348,6 +370,11 @@ export class ObsidianSessionManager {
 
   getActiveSessionPath(): string | null {
     return this.sessionFile;
+  }
+
+  /** Bumped on every create/load/delete of the active session. */
+  getActiveSessionGeneration(): number {
+    return this.sessionGeneration;
   }
 
   /** Append model/thinking-level changes when the active config drifts from the session. */

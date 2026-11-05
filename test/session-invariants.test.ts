@@ -126,6 +126,46 @@ describe("session/event-log invariants", () => {
     expect(manager.buildSessionContext().messages.map(messageText)).toEqual(["second session message"]);
   });
 
+  it("rejects a rewrite bound to a session that changed during the write", async () => {
+    const { manager, adapter } = makeManager();
+    const first = await manager.createSession(DEFAULTS);
+    await manager.appendMessage(userMessage("first session message"));
+    const second = await manager.createSession(DEFAULTS);
+    await manager.appendMessage(userMessage("second session message"));
+    await manager.loadSession(first.path);
+    const generation = (
+      manager as unknown as { getActiveSessionGeneration(): number }
+    ).getActiveSessionGeneration();
+    const secondBefore = adapter.files.get(second.path);
+
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalWrite = adapter.write.bind(adapter);
+    adapter.write = async (path, data) => {
+      started();
+      await gate;
+      return originalWrite(path, data);
+    };
+
+    const pending = manager.rewriteMessages([userMessage("compacted")], {
+      expectedPath: first.path,
+      expectedGeneration: generation,
+    });
+    await startedPromise;
+    await manager.loadSession(second.path);
+    release();
+
+    await expect(pending).rejects.toThrow(/session changed/i);
+    expect(adapter.files.get(second.path)).toBe(secondBefore);
+    expect(manager.buildSessionContext().messages.map(messageText)).toEqual(["second session message"]);
+  });
+
   it("reports artifact ids referenced by saved session messages", async () => {
     const { manager } = makeManager();
     await manager.createSession(DEFAULTS);

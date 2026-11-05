@@ -41,7 +41,7 @@ import { AgentFileCheckpointRecorder } from "./file-checkpoints";
 import { AgentSessionActivation } from "./session-activation";
 import { AgentSessionActions } from "./session-actions";
 import { AgentCommandInvocationRuntime } from "./command-invocation";
-import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
+import { AgentCompactionRuntime, type AgentCompactionRunResult, type SummarizeFn } from "./compaction-runtime";
 import { maybeCompactAgentTranscript } from "./compaction-orchestrator";
 import { estimateContextUsage } from "./compaction";
 import { conversationMessages } from "./conversation-messages";
@@ -587,10 +587,21 @@ export class AgentService {
       ...stats,
     };
     await this.actionAudit.record(startEvent);
-    const result = await this.compaction.compactWithResult(messages, contextWindow, {
-      force: true,
-      customInstructions: customInstructions?.trim() || undefined,
-    });
+    let result: AgentCompactionRunResult;
+    try {
+      result = await this.compaction.compactWithResult(messages, contextWindow, {
+        force: true,
+        customInstructions: customInstructions?.trim() || undefined,
+      });
+    } catch (error) {
+      // A session change during summarization cancels the rewrite. Report it as
+      // a normal manual-compaction result so `/compact` does not throw.
+      const message =
+        `Nothing compacted. The active session changed while compacting: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+      return { compacted: false, message };
+    }
     if (result.status === "skipped") {
       await this.actionAudit.record({
         category: "compaction",
