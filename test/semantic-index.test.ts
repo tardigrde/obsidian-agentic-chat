@@ -4,6 +4,7 @@ import { DeterministicFakeEmbedder, MULTILINGUAL_RETRIEVAL_FIXTURE } from "./hel
 import {
   bootstrapSemanticIndex,
   readSemanticIndexFile,
+  semanticIndexLeases,
   semanticIndexPath,
 } from "../src/retrieval/semantic-index";
 
@@ -84,6 +85,75 @@ describe("semantic index bootstrap", () => {
       state: { status: { state: string } };
     };
     expect(persisted.state.status.state).toBe("failed");
+  });
+
+  it("does not repair a running index while a writer holds the lease", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/leased/index.json";
+    const running = JSON.stringify({
+      version: 1,
+      updatedAt: 1_000,
+      state: {
+        scope,
+        status: { state: "running", scope, processedDocuments: 1, totalDocuments: 4 },
+        indexedDocumentIds: [],
+      },
+    });
+    const lease = semanticIndexLeases.acquire(path);
+    expect(lease).not.toBeNull();
+    try {
+      await adapter.write(path, running);
+
+      const during = await readSemanticIndexFile(adapter.asDataAdapter(), path);
+      expect(during?.state.status.state).toBe("running");
+      expect(adapter.files.get(path)).toBe(running);
+    } finally {
+      lease?.release();
+    }
+
+    const after = await readSemanticIndexFile(adapter.asDataAdapter(), path);
+    expect(after?.state.status.state).toBe("failed");
+    const persisted = JSON.parse(adapter.files.get(path) ?? "{}") as {
+      state: { status: { state: string } };
+    };
+    expect(persisted.state.status.state).toBe("failed");
+  });
+
+  it("returns a newer index instead of overwriting it with a stale repair", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/stale-read/index.json";
+    const running = JSON.stringify({
+      version: 1,
+      updatedAt: 1_000,
+      state: {
+        scope,
+        status: { state: "running", scope, processedDocuments: 1, totalDocuments: 4 },
+        indexedDocumentIds: [],
+      },
+    });
+    const complete = JSON.stringify({
+      version: 1,
+      updatedAt: 2_000,
+      state: {
+        scope,
+        status: { state: "complete", scope, totalDocuments: 4 },
+        indexedDocumentIds: [],
+      },
+    });
+    await adapter.write(path, complete);
+    const originalRead = adapter.read.bind(adapter);
+    let reads = 0;
+    adapter.read = async (target) => {
+      reads += 1;
+      if (target === path) return reads === 1 ? running : complete;
+      return originalRead(target);
+    };
+
+    const stored = await readSemanticIndexFile(adapter.asDataAdapter(), path);
+
+    expect(stored?.state.status.state).toBe("complete");
+    expect(stored?.updatedAt).toBe(2_000);
+    expect(adapter.files.get(path)).toBe(complete);
   });
 
   it("leases one index path and recovers an expired lease", async () => {

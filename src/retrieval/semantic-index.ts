@@ -218,11 +218,26 @@ async function repairInterruptedIndex(
   file: SemanticIndexFile,
 ): Promise<SemanticIndexFile> {
   if (file.state.status.state !== "running") return file;
-  const status = file.state.status;
+  // A live controller owns this file. Repairing it now would corrupt its run.
+  if (semanticIndexLeases.isLeased(path)) return file;
+
+  // Re-read before writing: a status read can race a completed run, and the
+  // newer snapshot must win over this stale repair.
+  let latest = file;
+  try {
+    const candidate = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
+    if (candidate?.version === SEMANTIC_INDEX_VERSION && candidate.state?.status) latest = candidate;
+  } catch {
+    return file;
+  }
+  if (latest.updatedAt !== file.updatedAt) return latest;
+  if (latest.state.status.state !== "running") return latest;
+
+  const status = latest.state.status;
   const repaired: SemanticIndexFile = {
-    ...file,
+    ...latest,
     state: {
-      ...file.state,
+      ...latest.state,
       status: {
         state: "failed",
         scope: status.scope,
