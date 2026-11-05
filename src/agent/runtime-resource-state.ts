@@ -15,7 +15,7 @@ import {
   loadAgentRuntimeResources,
   type AgentRuntimeResources,
 } from "./runtime-resources";
-import { clearLoadedSkills } from "../skills/skill-load-state";
+import { SkillLoadRegistry } from "../skills/skill-load-state";
 import {
   createToolBudgetState,
   DEFAULT_TOOL_BUDGET_SETTINGS,
@@ -42,6 +42,7 @@ export class AgentRuntimeResourceState {
   private resources: AgentRuntimeResources = EMPTY_AGENT_RUNTIME_RESOURCES;
   private reloadedAt: string | null = null;
   private readonly toolBudgetState = createToolBudgetState();
+  private readonly skillLoads = new SkillLoadRegistry();
   private toolBudgetSnapshot: ToolBudgetSnapshot = {
     enabled: DEFAULT_TOOL_BUDGET_SETTINGS.enabled,
     active: false,
@@ -66,6 +67,10 @@ export class AgentRuntimeResourceState {
     return this.resources.skills;
   }
 
+  get skillLoadRegistry(): SkillLoadRegistry {
+    return this.skillLoads;
+  }
+
   getProfiles(): AgentRole[] {
     return this.resources.profiles;
   }
@@ -79,7 +84,7 @@ export class AgentRuntimeResourceState {
   }
 
   clearSessionState(): void {
-    clearLoadedSkills();
+    this.skillLoads.clear();
     resetToolBudgetState(this.toolBudgetState);
     const settings = this.options.getSettings();
     this.toolBudgetSnapshot = {
@@ -102,14 +107,13 @@ export class AgentRuntimeResourceState {
       this.options.artifactStore,
     );
     // Prune any loaded skill that disappeared (plugin disabled/removed)
-    const { pruneLoadedSkills } = await import("../skills/skill-load-state");
-    pruneLoadedSkills(new Set(this.resources.skills.map((s) => s.name)));
+    this.skillLoads.prune(new Set(this.resources.skills.map((s) => s.name)));
     this.reloadedAt = new Date().toISOString();
     return this.resources;
   }
 
   composeSystemPrompt(settings: AgenticChatSettings, activeModelId: string): string {
-    return composeAgentSystemPrompt(settings, this.resources, this.selfAwarenessOverlay(activeModelId));
+    return composeAgentSystemPrompt(settings, this.resources, this.selfAwarenessOverlay(activeModelId), this.skillLoads);
   }
 
   buildParentTools(
@@ -129,6 +133,7 @@ export class AgentRuntimeResourceState {
       contextWindow: buildOptions.contextWindow,
       toolBudgetState: this.toolBudgetState,
       skillScaffolder: this.options.skillScaffolder,
+      skillLoadRegistry: this.skillLoads,
     });
     this.toolBudgetSnapshot = result.toolBudget;
     return result.tools;

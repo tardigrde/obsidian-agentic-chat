@@ -4,6 +4,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ApprovalAuditInput, CheckpointAuditInput } from "../src/agent/action-audit-log";
 import type { FileCheckpoint } from "../src/agent/file-checkpoints";
 import { AgentToolCallController, type ToolApprovalRequest, type UserApprovalChoice } from "../src/agent/tool-call-controller";
+import { SubagentRegistry } from "../src/tools/subagent-tool";
 import type { AgentRole } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { createMcpServerSettings } from "../src/mcp/settings";
@@ -44,6 +45,7 @@ function makeController(
     recordApproval: options.recordApproval,
     recordCheckpoint: options.recordCheckpoint,
     recordFileCheckpoint: options.recordFileCheckpoint,
+    subagentRegistry: new SubagentRegistry(),
   });
   return { controller, requests, undoNotifications };
 }

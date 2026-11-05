@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it } from "vitest";
-import { persistedSnapshot, pendingSubagentErrorDetails, clearPendingSubagentErrorDetails, type SubagentChildStatus } from "../src/tools/subagent-tool";
+import { persistedSnapshot, SubagentRegistry, type SubagentChildStatus } from "../src/tools/subagent-tool";
 import { AgentToolCallController } from "../src/agent/tool-call-controller";
 import type { App } from "obsidian";
 
@@ -58,6 +58,7 @@ describe("AgentToolCallController.afterToolCall subagent stripping", () => {
       getTools: () => [],
       getProfiles: () => [],
       onUndoApplied: () => {},
+      subagentRegistry: new SubagentRegistry(),
     });
     const details = {
       kind: "subagent",
@@ -77,6 +78,7 @@ describe("AgentToolCallController.afterToolCall subagent stripping", () => {
   });
 
   it("injects pending error details", async () => {
+    const registry = new SubagentRegistry();
     const controller = new AgentToolCallController({
       app: fakeApp(),
       getSettings: () => ({ mode: "safe", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, mcp: { servers: [] } } as any),
@@ -84,19 +86,21 @@ describe("AgentToolCallController.afterToolCall subagent stripping", () => {
       getTools: () => [],
       getProfiles: () => [],
       onUndoApplied: () => {},
+      subagentRegistry: registry,
     });
     const persisted = { kind: "subagent", children: [{ agent: "explorer", task: "bad", status: "error", summary: "disk full" }] };
-    pendingSubagentErrorDetails.set("call-err", persisted as any);
+    registry.setPendingErrorDetails("call-err", persisted as any);
     const result = await controller.afterToolCall({
       toolCall: { id: "call-err", name: "subagent" },
       isError: true,
       result: { details: {} } as any,
     });
     expect(result?.details).toEqual(persisted);
-    expect(pendingSubagentErrorDetails.has("call-err")).toBe(false);
+    expect(registry.pendingErrorCount).toBe(0);
   });
 
   it("clears pending on clearSessionState", async () => {
+    const registry = new SubagentRegistry();
     const controller = new AgentToolCallController({
       app: fakeApp(),
       getSettings: () => ({ mode: "safe", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, mcp: { servers: [] } } as any),
@@ -104,11 +108,11 @@ describe("AgentToolCallController.afterToolCall subagent stripping", () => {
       getTools: () => [],
       getProfiles: () => [],
       onUndoApplied: () => {},
+      subagentRegistry: registry,
     });
-    pendingSubagentErrorDetails.set("leak", { kind: "subagent", children: [] } as any);
+    registry.setPendingErrorDetails("leak", { kind: "subagent", children: [] } as any);
     controller.clearSessionState();
-    expect(pendingSubagentErrorDetails.has("leak")).toBe(false);
-    clearPendingSubagentErrorDetails();
+    expect(registry.pendingErrorCount).toBe(0);
   });
 
   it("passes through non-subagent", async () => {
@@ -119,6 +123,7 @@ describe("AgentToolCallController.afterToolCall subagent stripping", () => {
       getTools: () => [],
       getProfiles: () => [],
       onUndoApplied: () => {},
+      subagentRegistry: new SubagentRegistry(),
     });
     const result = await controller.afterToolCall({
       toolCall: { id: "other", name: "read" },

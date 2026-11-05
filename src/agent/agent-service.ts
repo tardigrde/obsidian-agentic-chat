@@ -198,6 +198,20 @@ export class AgentService {
       artifactStore: options.artifactStore,
       skillScaffolder: options.skillScaffolder,
     });
+    this.subagents = new AgentSubagentRuntime({
+      app: this.app,
+      getSettings: this.getSettings,
+      getResources: () => this.runtimeResources.current,
+      buildStreamFn: () => this.streams.buildStreamFn(),
+      recordUsage: (usage) => this.sessionState.recordSubagentUsage(usage),
+      webFetch: this.webFetch,
+      artifactStore: options.artifactStore,
+      // Deferred: the controller is constructed next and shares this runtime's registry.
+      toolCalls: {
+        beforeToolCall: (context) => this.toolCalls.beforeToolCall(context),
+        afterToolCall: (context) => this.toolCalls.afterToolCall(context),
+      },
+    });
     this.toolCalls = new AgentToolCallController({
       app: this.app,
       getSettings: this.getSettings,
@@ -211,16 +225,7 @@ export class AgentService {
       },
       recordCheckpoint: (input) => this.actionAudit.recordCheckpoint(input),
       recordFileCheckpoint: (checkpoint) => this.fileCheckpoints.record(checkpoint),
-    });
-    this.subagents = new AgentSubagentRuntime({
-      app: this.app,
-      getSettings: this.getSettings,
-      getResources: () => this.runtimeResources.current,
-      buildStreamFn: () => this.streams.buildStreamFn(),
-      recordUsage: (usage) => this.sessionState.recordSubagentUsage(usage),
-      webFetch: this.webFetch,
-      artifactStore: options.artifactStore,
-      toolCalls: this.toolCalls,
+      subagentRegistry: this.subagents.registry,
     });
     this.parentConfiguration = new AgentParentConfigurationRuntime({
       getSettings: this.getSettings,
@@ -299,6 +304,16 @@ export class AgentService {
 
   isStreaming(): boolean {
     return this.agent?.state.isStreaming ?? false;
+  }
+
+  /** Whether a prompt turn is starting or running, including the pre-stream window. */
+  isTurnInFlight(): boolean {
+    return this.promptTurns.isInFlight() || this.isStreaming();
+  }
+
+  /** Stop one subagent dispatched by this service; other services are untouched. */
+  abortSubagentChild(id: string): void {
+    this.subagents.abortChild(id);
   }
 
   getError(): string | undefined {
@@ -585,8 +600,19 @@ export class AgentService {
       });
       return { compacted: false, message: result.message };
     }
-    this.sessionEvents.markPersistedMessages(result.messages);
-    this.parentAgent.replace(result.messages);
+    // The saved session is already rewritten at this point. If the live agent
+    // cannot be replaced, report it instead of pretending compaction succeeded.
+    try {
+      this.sessionEvents.markPersistedMessages(result.messages);
+      this.parentAgent.replace(result.messages);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      const message =
+        `Compaction rewrote the saved session, but the live conversation could not be replaced: ${detail}. ` +
+        "Reload the session to continue from the compacted transcript.";
+      this.setError(message);
+      return { compacted: false, message };
+    }
     this.sessions.refreshInfoIfActive();
     this.notifyChange();
     // A successful compaction rewrites the session file, which drops audit
@@ -696,6 +722,9 @@ export class AgentService {
     if (mode !== "redirect") return;
     agent.abort();
     await agent.waitForIdle();
+    // waitForIdle can resolve before the aborted turn's finally clears the
+    // synchronous guard. Let that turn finish before starting the continuation.
+    await this.promptTurns.waitForIdle();
     if (agent.hasQueuedMessages()) {
       await this.runPrompt((currentAgent) => currentAgent.continue());
     } else {

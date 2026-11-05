@@ -1,7 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../skills/skill-prompt";
 import { Type } from "typebox";
-import { getLoadedSkillNames, isSkillLoaded, loadSkill, unloadSkill } from "../skills/skill-load-state";
+import { SkillLoadRegistry } from "../skills/skill-load-state";
 
 const LoadSkillParameters = Type.Object({
   name: Type.String({ description: "skill name to load", pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }),
@@ -32,7 +32,10 @@ function requireSkill(skills: Skill[], rawName: string): Skill {
  * Reuses F10's skill registry; no path confinement needed (skill root already
  * validated). Idempotent.
  */
-export function createLoadSkillTool(skills: Skill[]): AgentTool<typeof LoadSkillParameters, unknown> {
+export function createLoadSkillTool(
+  skills: Skill[],
+  registry: SkillLoadRegistry,
+): AgentTool<typeof LoadSkillParameters, unknown> {
   return {
     name: "load_skill",
     label: "Load skill",
@@ -40,13 +43,13 @@ export function createLoadSkillTool(skills: Skill[]): AgentTool<typeof LoadSkill
     parameters: LoadSkillParameters,
     execute: async (_id, params) => {
       const skill = requireSkill(skills, params.name);
-      if (isSkillLoaded(skill.name)) {
+      if (registry.isLoaded(skill.name)) {
         return {
           content: [{ type: "text", text: `Skill "${skill.name}" already loaded.` }],
-          details: { name: skill.name, loaded: true, alreadyLoaded: true, loadedSkills: getLoadedSkillNames() },
+          details: { name: skill.name, loaded: true, alreadyLoaded: true, loadedSkills: registry.names() },
         };
       }
-      loadSkill(skill.name);
+      registry.load(skill.name);
       const estTokens = Math.ceil(skill.content.length / 4);
       return {
         content: [
@@ -55,7 +58,7 @@ export function createLoadSkillTool(skills: Skill[]): AgentTool<typeof LoadSkill
             text: `Loaded skill "${skill.name}" (~${estTokens} tok) — body now in system prompt for subsequent turns.`,
           },
         ],
-        details: { name: skill.name, loaded: true, loadedSkills: getLoadedSkillNames() },
+        details: { name: skill.name, loaded: true, loadedSkills: registry.names() },
       };
     },
   };
@@ -65,7 +68,10 @@ export function createLoadSkillTool(skills: Skill[]): AgentTool<typeof LoadSkill
  * Create `unload_skill` harness tool: removes a previously loaded skill from
  * the prompt overlay, freeing context. No-op if not loaded.
  */
-export function createUnloadSkillTool(skills: Skill[]): AgentTool<typeof UnloadSkillParameters, unknown> {
+export function createUnloadSkillTool(
+  skills: Skill[],
+  registry: SkillLoadRegistry,
+): AgentTool<typeof UnloadSkillParameters, unknown> {
   return {
     name: "unload_skill",
     label: "Unload skill",
@@ -73,17 +79,17 @@ export function createUnloadSkillTool(skills: Skill[]): AgentTool<typeof UnloadS
     parameters: UnloadSkillParameters,
     execute: async (_id, params) => {
       const skill = requireSkill(skills, params.name);
-      const wasLoaded = unloadSkill(skill.name);
+      const wasLoaded = registry.unload(skill.name);
       return {
         content: [{ type: "text", text: wasLoaded ? `Unloaded skill "${skill.name}".` : `Skill "${skill.name}" was not loaded.` }],
-        details: { name: skill.name, unloaded: wasLoaded, loadedSkills: getLoadedSkillNames() },
+        details: { name: skill.name, unloaded: wasLoaded, loadedSkills: registry.names() },
       };
     },
   };
 }
 
-export function createSkillLoadTools(skills: Skill[]): AgentTool[] {
-  return [createLoadSkillTool(skills), createUnloadSkillTool(skills)];
+export function createSkillLoadTools(skills: Skill[], registry = new SkillLoadRegistry()): AgentTool[] {
+  return [createLoadSkillTool(skills, registry), createUnloadSkillTool(skills, registry)];
 }
 
 const CreateSkillParameters = Type.Object({

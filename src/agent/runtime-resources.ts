@@ -16,7 +16,7 @@ import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
 import { createReadSkillTool, createReadSkillFileTool } from "../tools/read-skill-tool";
 import { createSkillLoadTools, createCreateSkillTool, type SkillScaffolder } from "../tools/skill-tools";
-import { getLoadedSkillNames, pruneLoadedSkills } from "../skills/skill-load-state";
+import { SkillLoadRegistry } from "../skills/skill-load-state";
 import { formatSkillInvocation } from "../skills/skills";
 import { wrapToolOutput } from "../tools/tool-output-wrapper";
 import { truncateToolOutput } from "../vault/truncate";
@@ -118,6 +118,7 @@ export function composeAgentSystemPrompt(
   settings: AgenticChatSettings,
   resources: AgentRuntimeResources,
   selfAwarenessOverlay: string,
+  skillLoads?: SkillLoadRegistry,
 ): string {
   const overlays = [
     selfAwarenessOverlay,
@@ -126,21 +127,21 @@ export function composeAgentSystemPrompt(
     OUTPUT_STYLES[settings.outputStyle].promptOverlay,
     formatAgentRolesForSystemPrompt(resources.profiles),
     pluginSkillTrustBoundary(resources.plugins, settings.plugins.folder),
-    formatLoadedSkillsOverlay(resources.skills),
+    formatLoadedSkillsOverlay(resources.skills, skillLoads),
   ];
   return buildSystemPrompt(settings.systemPrompt, resources.skills, overlays);
 }
 
 const MAX_LOADED_SKILLS_CHARS = 16_000;
 
-function formatLoadedSkillsOverlay(skills: Skill[]): string {
-  const loadedNames = getLoadedSkillNames();
+function formatLoadedSkillsOverlay(skills: Skill[], skillLoads?: SkillLoadRegistry): string {
+  const loadedNames = skillLoads?.names() ?? [];
   if (loadedNames.length === 0) return "";
   const byName = new Map(skills.map((s) => [s.name, s] as const));
   const loaded = loadedNames.map((name) => byName.get(name)).filter((s): s is Skill => Boolean(s));
   // Prune stale names that no longer exist (plugin disabled/removed)
   if (loaded.length !== loadedNames.length) {
-    pruneLoadedSkills(new Set(skills.map((s) => s.name)));
+    skillLoads?.prune(new Set(skills.map((s) => s.name)));
   }
   if (loaded.length === 0) return "";
   const blocks = loaded.map((skill) => {
@@ -203,6 +204,8 @@ export function buildAgentParentTools(options: {
   toolBudgetState?: ToolBudgetState;
   /** When present, the agent gets a `create_skill` tool backed by the New skill wizard writer. */
   skillScaffolder?: SkillScaffolder;
+  /** Shared loaded-skill state for `load_skill` / `unload_skill` and the prompt overlay. */
+  skillLoadRegistry?: SkillLoadRegistry;
 }): { tools: AgentTool[]; toolBudget: ToolBudgetSnapshot } {
   const tools = [
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
@@ -214,7 +217,7 @@ export function buildAgentParentTools(options: {
     ...options.resources.mcpTools,
     createReadSkillTool(options.resources.skills),
     createReadSkillFileTool(options.app, options.resources.skills),
-    ...createSkillLoadTools(options.resources.skills),
+    ...createSkillLoadTools(options.resources.skills, options.skillLoadRegistry),
     ...(options.skillScaffolder ? [createCreateSkillTool(options.skillScaffolder)] : []),
     ...(options.subagentTool ? [options.subagentTool] : []),
   ];

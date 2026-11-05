@@ -36,16 +36,63 @@ export interface SubagentChildStatus {
   usage?: { input: number; output: number; totalTokens: number; costUsd: number };
 }
 
-const activeStops = new Map<string, () => void>();
-export function abortSubagentChild(id: string): void {
-  activeStops.get(id)?.();
-  activeStops.delete(id);
-}
-
 /** Structured details payload for the subagent tool result, consumed by the UI. */
 export interface SubagentDetails {
   kind: "subagent";
   children: SubagentChildStatus[];
+}
+
+/**
+ * Per-service subagent state: live stop hooks and error details awaiting the
+ * tool-call controller. Each `AgentSubagentRuntime` (and therefore each chat
+ * service) owns one, so equal tool-call ids in different services never collide.
+ */
+export class SubagentRegistry {
+  private readonly activeStops = new Map<string, () => void>();
+  private readonly pendingErrorDetails = new Map<string, SubagentDetails>();
+
+  setActiveStop(id: string, stop: () => void): void {
+    this.activeStops.set(id, stop);
+  }
+
+  deleteActiveStop(id: string): void {
+    this.activeStops.delete(id);
+  }
+
+  /** Stop one child by id. Other services with the same id are untouched. */
+  abort(id: string): void {
+    this.activeStops.get(id)?.();
+    this.activeStops.delete(id);
+  }
+
+  setPendingErrorDetails(id: string, details: SubagentDetails): void {
+    this.pendingErrorDetails.set(id, details);
+  }
+
+  takePendingErrorDetails(id: string): SubagentDetails | undefined {
+    const details = this.pendingErrorDetails.get(id);
+    if (details) this.pendingErrorDetails.delete(id);
+    return details;
+  }
+
+  clearPendingErrorDetails(id?: string): void {
+    if (id) this.pendingErrorDetails.delete(id);
+    else this.pendingErrorDetails.clear();
+  }
+
+  /** Drop all state. Used when a session is cleared or replaced. */
+  clear(): void {
+    this.activeStops.clear();
+    this.pendingErrorDetails.clear();
+  }
+
+  get pendingErrorCount(): number {
+    return this.pendingErrorDetails.size;
+  }
+
+  get activeStopCount(): number {
+    return this.activeStops.size;
+  }
 }
 
 /**
@@ -71,19 +118,7 @@ export function persistedSnapshot(statuses: SubagentChildStatus[]): SubagentDeta
   return { kind: "subagent", children: statuses.map(toPersistedChild) };
 }
 
-/** Pending error details for a toolCallId that threw — injected via `afterToolCall` so the error toolResult still carries the dispatch card. */
-export const pendingSubagentErrorDetails = new Map<string, SubagentDetails>();
-
-export function clearPendingSubagentErrorDetails(id?: string): void {
-  if (id) pendingSubagentErrorDetails.delete(id);
-  else pendingSubagentErrorDetails.clear();
-}
-
-export interface SubagentTask {
-  agent: string;
-  task: string;
-}
-
+/** Pending error details for a toolCallId that threw are stored in this registry. */
 export interface SubagentToolDeps {
   /** The subagent roles available to dispatch right now. */
   getProfiles: () => AgentRole[];
@@ -93,6 +128,13 @@ export interface SubagentToolDeps {
   recordUsage?: (usage: Usage) => void;
   /** Auto-abort a child that runs longer than this many seconds. 0 disables. */
   maxRuntimeSeconds?: () => number;
+  /** Per-service registry. Omit only for standalone tools that need no external stop. */
+  registry?: SubagentRegistry;
+}
+
+export interface SubagentTask {
+  agent: string;
+  task: string;
 }
 
 const SubagentParameters = Type.Object({
@@ -114,6 +156,7 @@ export function createSubagentTool(
   // One slot pool per tool instance (and createTool() builds a fresh instance
   // per parent turn), so the cap is per-run, not global.
   const slots = createSlotPool(MAX_CONCURRENCY);
+  const registry = deps.registry ?? new SubagentRegistry();
   return {
     name: SUBAGENT_TOOL_NAME,
     label: "Dispatch subagent",
@@ -176,7 +219,7 @@ export function createSubagentTool(
       status.status = "running";
       emit();
       try {
-        await runSingleChild(deps, status, profile, task, toolCallId, signal, scheduleEmit);
+        await runSingleChild(deps, registry, status, profile, task, toolCallId, signal, scheduleEmit);
       } catch (error) {
         if (signal?.aborted) {
           status.status = "aborted";
@@ -198,7 +241,7 @@ export function createSubagentTool(
       // parent must not feel pressure to re-dispatch a task the user just
       // stopped — the step still renders as stopped via its child statuses.
       if (status.status === "error") {
-        pendingSubagentErrorDetails.set(toolCallId, persistedSnapshot([status]));
+        registry.setPendingErrorDetails(toolCallId, persistedSnapshot([status]));
         throw new Error(
           wrapToolOutputTruncated(
             truncateToolOutput(`Subagent "${agent}" failed: ${status.summary ?? "unknown error"}`, PER_CHILD_SUMMARY_CHARS),
@@ -283,6 +326,7 @@ function releaseSlot(pool: SlotPool): void {
 
 async function runSingleChild(
   deps: SubagentToolDeps,
+  registry: SubagentRegistry,
   status: SubagentChildStatus,
   profile: AgentRole,
   task: string,
@@ -298,7 +342,7 @@ async function runSingleChild(
   status.stopId = stopId;
   status.transcript = [];
   let stoppedLocally = false;
-  activeStops.set(stopId, () => {
+  registry.setActiveStop(stopId, () => {
     stoppedLocally = true;
     child.abort();
   });
@@ -340,7 +384,7 @@ async function runSingleChild(
     // The child finished its work: drop the stop hook immediately so a Stop
     // click landing after completion can't flag this child as stopped and
     // discard an answer it actually produced.
-    activeStops.delete(stopId);
+    registry.deleteActiveStop(stopId);
   } catch (error) {
     // An abort-shaped failure is classified below from the settle flags; only a
     // genuine child error propagates to the caller's error classification.
@@ -349,7 +393,7 @@ async function runSingleChild(
     if (timeoutTimer) window.clearTimeout(timeoutTimer);
     unsub();
     signal?.removeEventListener("abort", onAbort);
-    activeStops.delete(stopId);
+    registry.deleteActiveStop(stopId);
     status.durationMs = Date.now() - startedAt;
     const usage = sumAssistantUsage(child.state.messages);
     if (usage) {

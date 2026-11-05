@@ -12,7 +12,6 @@ import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
 import type { AskUserRequest } from "../tools/ask-user-tool";
 import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
-import { abortSubagentChild } from "../tools/subagent-tool";
 import { applyRememberedApprovalChoice } from "../agent/approval-memory";
 import { ApprovalModal } from "./approval-modal";
 import { isImagePath } from "./image-attachments";
@@ -1302,6 +1301,12 @@ export class ChatView extends ItemView {
         return;
       }
       this.queueComposerPrompt();
+      return;
+    }
+
+    // The guard closes the window between "not streaming" and "prompt started".
+    if (this.service.isTurnInFlight()) {
+      this.statusEl.setText("A turn is already starting — wait for it to finish, then send again.");
       return;
     }
 
@@ -2744,7 +2749,7 @@ export class ChatView extends ItemView {
       onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
       onOpenNote: (path) => void this.app.workspace.openLinkText(path, "", false),
       onContentChange: () => this.scrollToBottom(),
-      onStopSubagentChild: (id) => abortSubagentChild(id),
+      onStopSubagentChild: (id) => this.service.abortSubagentChild(id),
     });
   }
 
