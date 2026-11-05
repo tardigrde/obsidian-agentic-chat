@@ -165,6 +165,40 @@ describe("semantic index bootstrap", () => {
     next?.release();
   });
 
+  it("holds the lease across the repair re-read and write", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/repair-lease/index.json";
+    const running = JSON.stringify({
+      version: 1,
+      updatedAt: 1_000,
+      state: {
+        scope,
+        status: { state: "running", scope, processedDocuments: 1, totalDocuments: 4 },
+        indexedDocumentIds: [],
+      },
+    });
+    await adapter.write(path, running);
+    const originalRead = adapter.read.bind(adapter);
+    let reads = 0;
+    let competingLease: ReturnType<typeof semanticIndexLeases.acquire> | undefined;
+    adapter.read = async (target) => {
+      const content = await originalRead(target);
+      if (target === path) {
+        reads += 1;
+        if (reads === 2) competingLease = semanticIndexLeases.acquire(path);
+      }
+      return content;
+    };
+
+    const stored = await readSemanticIndexFile(adapter.asDataAdapter(), path);
+
+    expect(stored?.state.status.state).toBe("failed");
+    expect(competingLease).toBeNull();
+    const after = semanticIndexLeases.acquire(path);
+    expect(after).not.toBeNull();
+    after?.release();
+  });
+
   it("leases one index path and recovers an expired lease", async () => {
     const { SemanticIndexLeaseRegistry } = await import("../src/retrieval/semantic-index");
     let now = 1_000;
