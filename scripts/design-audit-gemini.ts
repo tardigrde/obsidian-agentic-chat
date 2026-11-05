@@ -124,7 +124,12 @@ interface AuditResult {
   priorities?: { rank: number; issue: string; fix: string; effort: string; impact: string }[];
 }
 
-function listImages(): string[] {
+interface AuditImage {
+  dir: string;
+  file: string;
+}
+
+function listImages(): AuditImage[] {
   if (!existsSync(AUDIT_DIR)) {
     console.error(`audit dir not found: ${AUDIT_DIR}`);
     process.exit(2);
@@ -133,7 +138,7 @@ function listImages(): string[] {
     .filter((entry) => entry.isDirectory())
     .map((entry) => path.join(AUDIT_DIR, entry.name))
     .sort();
-  const dir = dirs.findLast((candidate) => readdirSync(candidate).some((file) => file.endsWith(".png")));
+  const dir = [...dirs].reverse().find((candidate) => readdirSync(candidate).some((file) => file.endsWith(".png")));
   if (!dir) {
     console.error(`no dated capture dirs under ${AUDIT_DIR} — run the design-audit e2e spec first`);
     process.exit(2);
@@ -308,7 +313,7 @@ function mdSummary(key: string, result: AuditResult): string {
 }
 
 async function main(): Promise<void> {
-  const images = listImages() as { dir: string; file: string }[];
+  const images = listImages();
   console.log(`audit: ${images.length} images from ${images[0].dir}`);
   const outRoot = path.join("logs", "eval-runs");
   mkdirSync(outRoot, { recursive: true });
