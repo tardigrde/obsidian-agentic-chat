@@ -57,12 +57,12 @@ await $(".agentic-chat-session-list").waitForExist();
 | Clear all conversations | `src/ui/session-workflow-controller.ts:20` | `test/session-workflow-controller.test.ts:121` (unit only) | `partial` |
 | `/export` | `src/ui/chat-view.ts:2228` | `test/session-export.test.ts:31` (renderer only) | `partial` |
 | Reload a persisted session | `src/ui/chat-view.ts:2336` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
-| Send waits for an in-flight session swap | `src/agent/session-actions.ts:52` | `test/agent-service.test.ts:1133` | `covered` |
-| Failed resource reload keeps the old session usable | `src/agent/session-activation.ts:58` | `test/session-activation.test.ts:64` | `covered` |
-| A queued prompt is dropped on session change | `src/ui/session-activation-coordinator.ts:86` | `test/chat-view-lifecycle.test.ts:32`; `test/session-activation-coordinator.test.ts:66` | `covered` |
-| A queued prompt flushes once the swap is live | `src/ui/chat-view.ts:1345` | `test/chat-view-lifecycle.test.ts:63` | `covered` |
-| Compaction rewrite rejects a changed session | `src/agent/compaction-runtime.ts:192` | `test/compaction-runtime.test.ts:315`; `test/session-invariants.test.ts:129` | `covered` |
-| A slow append stays in its original session file | `src/session/session-manager.ts:364` | `test/session-invariants.test.ts:91` | `covered` |
+| Send waits for an in-flight session swap | `src/agent/session-actions.ts:52` | `test/agent-service.test.ts:1133` | `partial` |
+| Failed resource reload keeps the old session usable | `src/agent/session-activation.ts:58` | `test/session-activation.test.ts:64` | `partial` |
+| A queued prompt is dropped on session change | `src/ui/session-activation-coordinator.ts:86` | `test/chat-view-lifecycle.test.ts:32`; `test/session-activation-coordinator.test.ts:66` | `partial` |
+| A queued prompt flushes once the swap is live | `src/ui/chat-view.ts:1345` | `test/chat-view-lifecycle.test.ts:63` | `partial` |
+| Compaction rewrite rejects a changed session | `src/agent/compaction-runtime.ts:192` | `test/compaction-runtime.test.ts:315`; `test/session-invariants.test.ts:129` | `partial` |
+| A slow append stays in its original session file | `src/session/session-manager.ts:364` | `test/session-invariants.test.ts:91` | `partial` |
 | Do not open one session in two tabs | `src/ui/chat-view.ts:2336` | no committed check | `NONE` |
 | History modal at phone width | `src/ui/session-list-modal.ts:43` | `test/e2e/specs/mobile-viewport.e2e.ts:444` | `covered` |
 
