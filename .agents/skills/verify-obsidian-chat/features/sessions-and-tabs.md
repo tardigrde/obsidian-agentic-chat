@@ -1,0 +1,75 @@
+# Sessions and tabs
+
+## Sub-features
+
+- Up to three independent tabs, each with its own session and agent service.
+- Tab add, switch, close, busy dot, and needs-approval badge.
+- Header **New chat** and **Conversation history** buttons.
+- Conversation history modal: search, load, rename, delete.
+- `/new`, `/sessions`, `/sessions clear --confirm`, and `/export`.
+- Session persistence and reload from JSONL.
+- Mobile layout for the history modal.
+
+## How to get to it (user POV)
+
+- Tab strip above the composer: click a tab to switch, `+` to add, `x` to close.
+- Header buttons at the right of the tab strip: **New chat** (square-pen) and
+  **Conversation history** (history).
+- Commands: `/new`, `/sessions`, `/export`.
+- Command palette: `Agentic Chat: New conversation`.
+
+## Driving it with the probe harness
+
+```ts
+await browser.execute(() => document.querySelector<HTMLElement>(".agentic-chat-tab-add")?.click());
+await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.click());
+await $(".agentic-chat-session-list").waitForExist();
+```
+
+- Use `.agentic-chat-tab` for pills, `.agentic-chat-tab.is-active` for the active
+  one, `.agentic-chat-tab-add` for `+`, `.agentic-chat-tab-close` for `x`.
+- Open history through `/sessions` in a deterministic spec. The header history
+  button has no direct helper.
+- Session rows: `.agentic-chat-session-row`, `.agentic-chat-session-main`,
+  `.agentic-chat-session-rename`, `.agentic-chat-session-delete`,
+  `.agentic-chat-session-search`.
+- Export writes a note under `Agentic Chat Sessions/`. Assert with
+  `browser.executeObsidian`, not only with an info block.
+
+## Proof
+
+| entry point | source | proof | status |
+|---|---|---|---|
+| Tab strip renders | `src/ui/chat-view.ts:660` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
+| `+` adds a tab | `src/ui/chat-view.ts:417` | `test/e2e/specs/multi-tab-approval.e2e.ts:102` | `covered` |
+| Switch between tabs | `src/ui/chat-view.ts:405` | `test/e2e/specs/multi-tab-approval.e2e.ts:102` | `covered` |
+| Busy dot on a streaming tab | `src/ui/chat-view.ts:489` | no committed check | `NONE` |
+| Needs-approval tab badge | `src/ui/chat-view.ts:490` | `test/e2e/specs/multi-tab-approval.e2e.ts:102` | `covered` |
+| `x` closes a tab | `src/ui/chat-view.ts:496` | `test/e2e/specs/multi-tab-approval.e2e.ts:167` (calls `closeTab`, does not click `x`) | `partial` |
+| Closing the last tab starts a new conversation | `src/ui/chat-view.ts:436` | no committed check | `NONE` |
+| Header New chat button | `src/ui/chat-view.ts:663` | no committed check | `NONE` |
+| Header history button | `src/ui/chat-view.ts:669` | no committed check | `NONE` |
+| `/new` | `src/ui/chat-view.ts:1616` | `test/session-actions.test.ts:153` (unit only) | `partial` |
+| `/sessions` opens history | `src/ui/chat-view.ts:1625` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
+| Search conversations | `src/ui/session-list-modal.ts:49` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
+| Rename a conversation | `src/ui/session-list-modal.ts:143` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
+| Delete a conversation | `src/ui/session-list-modal.ts:112` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
+| Clear all conversations | `src/ui/session-workflow-controller.ts:20` | `test/session-workflow-controller.test.ts:121` (unit only) | `partial` |
+| `/export` | `src/ui/chat-view.ts:2228` | `test/session-export.test.ts:31` (renderer only) | `partial` |
+| Reload a persisted session | `src/ui/chat-view.ts:2336` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
+| Do not open one session in two tabs | `src/ui/chat-view.ts:2336` | no committed check | `NONE` |
+| History modal at phone width | `src/ui/session-list-modal.ts:43` | `test/e2e/specs/mobile-viewport.e2e.ts:444` | `covered` |
+
+## Gotchas
+
+- `MAX_TABS` is 3. The `+` control disappears at the cap.
+- The `x` control exists only when more than one tab is open. Closing the last
+  tab resets it to a fresh conversation instead.
+- A session that is already open in another tab is not loaded twice. The view
+  switches to the existing tab.
+- Rename commits on Enter or blur; Escape cancels.
+- Delete removes the row before the file operation finishes. A failure restores
+  the row.
+- Export needs at least one user/assistant turn and writes a Markdown note.
+- The header buttons and the tab `x` have no direct e2e helper. A proof that
+  calls `closeTab()` is not proof of the click target.

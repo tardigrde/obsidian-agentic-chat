@@ -101,9 +101,16 @@ cleans both up.
 
 Start here, then update it when entry points change:
 
+- [Index and proof rules](./features/README.md)
+- [Open and compose](./features/open-and-compose.md)
 - [Chat turn](./features/chat-turn.md)
-- [Slash commands](./features/slash-commands.md)
+- [Approval and permissions](./features/approval-and-permissions.md)
+- [Sessions and tabs](./features/sessions-and-tabs.md)
+- [Commands and skills](./features/commands-and-skills.md)
 - [Settings](./features/settings.md)
+- [MCP and OAuth](./features/mcp-and-oauth.md)
+- [Subagents and context](./features/subagents-and-context.md)
 
 Each entry names every way a user reaches the feature and how to prove it. A proof
 that drives one convenient entry point is incomplete when the map lists others.
+The status values and proof rules are in the index.
