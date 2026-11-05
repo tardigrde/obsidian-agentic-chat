@@ -58,6 +58,26 @@ Zero tests, or every test skipped, is a failure. `verify` fails a lane that expe
 tests when it can prove nothing ran. If a lane cannot execute because credentials
 are missing, say so and run a lane that can.
 
+## Witness verification
+
+A witness claim is checkable, not just asserted. `npm run verify:witness` takes the
+source diff against a base ref, applies it in reverse, runs the test, restores the
+diff, and runs the test again. A real witness is red then green.
+
+```bash
+npm run verify:witness -- \
+  --base origin/main \
+  --test-file test/loop-guard.test.ts \
+  --src src/agent/loop-guard.ts
+```
+
+The command writes `logs/witness/<timestamp>/summary.json`, `report.md`, and the
+patch. It exits non-zero when the test passes without the fix. Self-test the tool
+with `npm run verify:witness -- --self-test`.
+
+The independent verifier protocol, review tiers, and AFK merge loop live in
+[trust.md](trust.md).
+
 ## Fake green
 
 Check the observation method before trusting the result:

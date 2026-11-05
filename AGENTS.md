@@ -10,6 +10,7 @@ Codex, and other agents that read that convention get the same workflow.
 | `@ship-change` | behavior changes, bugs, multi-file work, dependency upgrades |
 | `@verify-obsidian-chat` | UI claims, settings, or proof in the real Obsidian app |
 | `@probe-feature` | behavior you cannot predict yet, or when the user asks for a recording |
+| `@verify-pr` | independent verdict on a PR you did not write; red/green witness proof |
 
 Match the weight of the process to the change:
 
@@ -47,10 +48,13 @@ npm run verify -- ci          # what CI runs
 npm run verify -- e2e <spec>  # real Obsidian, one spec
 npm run verify -- dogfood     # generated-vault agent flows
 npm run verify -- eval        # prompt/tool/context A/B
+npm run verify:witness -- --base origin/main --test-file <test> --src <src...>
 ```
 
 `npm run verify:fast` is an alias. Full lane reference, evidence rules, and the
 fake-green list: [docs/development/verification.md](docs/development/verification.md).
+The trust contract, independent verifier, and AFK merge protocol:
+[docs/development/trust.md](docs/development/trust.md).
 
 Use single tests for tight loops:
 

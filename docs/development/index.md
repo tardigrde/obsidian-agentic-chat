@@ -51,6 +51,9 @@ fake-green list, and probe workflows. The merge gate is:
 npm run verify -- fast
 ```
 
+For the witness tool, independent verifier, review tiers, and AFK merge protocol,
+use [Trust the change](./trust.md).
+
 ## Live dogfood
 
 Use [Live dogfood harness](./live-dogfood.md) for exploratory WebDriver/manual
