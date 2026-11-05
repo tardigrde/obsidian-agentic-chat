@@ -167,8 +167,10 @@ export class McpHttpClient {
         if (typeof result.protocolVersion === "string" && result.protocolVersion.trim()) {
           this.protocolVersion = result.protocolVersion.trim();
         }
-        this.initialized = true;
         await this.notify("notifications/initialized", undefined, signal);
+        // Only a completed handshake makes the client ready. A failed notify
+        // leaves it uninitialized so the next request retries the handshake.
+        this.initialized = true;
         return result;
       } catch (error) {
         if (!isProtocolVersionRejection(error)) throw error;
