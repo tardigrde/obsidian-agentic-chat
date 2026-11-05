@@ -250,7 +250,60 @@ export async function discoverMcpOAuthMetadata(
   };
 }
 
-export async function refreshMcpOAuthToken(
+interface McpOAuthRefreshFlight {
+  scope: string;
+  promise: Promise<boolean>;
+}
+
+/**
+ * One refresh per server. Two 401/403 responses can race with the same refresh
+ * token; the loser would receive invalid_grant and wipe the winner's tokens.
+ */
+const refreshFlights = new WeakMap<McpServerSettings, McpOAuthRefreshFlight>();
+
+export function refreshMcpOAuthToken(
+  server: McpServerSettings,
+  fetcher: WebFetcher,
+  signal?: AbortSignal,
+  now: () => number = Date.now,
+  requestTimeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
+  requestedScope?: string,
+): Promise<boolean> {
+  const scope = requestedScope?.trim() ?? "";
+  const existing = refreshFlights.get(server);
+  if (existing?.scope === scope) return existing.promise;
+  if (existing) {
+    // A different scope must wait for the current refresh to rotate the token,
+    // then refresh again with the wider scope.
+    const promise = existing.promise.then(
+      () => performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
+      () => performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
+    );
+    return trackMcpOAuthRefresh(server, scope, promise);
+  }
+  return trackMcpOAuthRefresh(
+    server,
+    scope,
+    performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
+  );
+}
+
+function trackMcpOAuthRefresh(
+  server: McpServerSettings,
+  scope: string,
+  promise: Promise<boolean>,
+): Promise<boolean> {
+  const flight: McpOAuthRefreshFlight = { scope, promise };
+  refreshFlights.set(server, flight);
+  void promise
+    .finally(() => {
+      if (refreshFlights.get(server) === flight) refreshFlights.delete(server);
+    })
+    .catch(() => undefined);
+  return promise;
+}
+
+async function performMcpOAuthRefresh(
   server: McpServerSettings,
   fetcher: WebFetcher,
   signal?: AbortSignal,

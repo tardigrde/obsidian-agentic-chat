@@ -590,6 +590,43 @@ describe("MCP OAuth", () => {
     expect(server.knownTools).toEqual([{ name: "search", title: "Search", readOnlyHint: false }]);
   });
 
+  it("runs one refresh for concurrent callers and keeps the rotated tokens", async () => {
+    const server = createOAuthMcpServer();
+    server.oauth = {
+      ...server.oauth,
+      clientId: "client-1",
+      accessToken: "old-access",
+      refreshToken: "refresh-1",
+      tokenEndpoint: "https://auth.example.com/token",
+      expiresAt: 1_000,
+    };
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetcher: WebFetcher = async () => {
+      calls += 1;
+      if (calls === 1) {
+        await gate;
+        return json(200, { access_token: "new-access", refresh_token: "refresh-2", expires_in: 3600 });
+      }
+      return json(400, { error: "invalid_grant" });
+    };
+
+    const first = refreshMcpOAuthToken(server, fetcher, undefined, () => 5_000);
+    const second = refreshMcpOAuthToken(server, fetcher, undefined, () => 5_000);
+    release();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+    expect(calls).toBe(1);
+    expect(server.oauth).toMatchObject({
+      accessToken: "new-access",
+      refreshToken: "refresh-2",
+      expiresAt: 3_605_000,
+    });
+  });
+
   it("forgets stale OAuth tokens when refresh returns invalid_grant", async () => {
     const server = createOAuthMcpServer();
     server.oauth = {
