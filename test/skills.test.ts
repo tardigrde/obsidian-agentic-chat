@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Skill } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../src/skills/skill-prompt";
 import { buildSkillInvocation } from "../src/skills/skills";
 import { parseSkillMarkdown, skillNameProblem } from "../src/skills/skill-format";
 

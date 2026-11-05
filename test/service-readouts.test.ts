@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import { DEFAULT_SETTINGS } from "../src/settings";
-import { buildSummaryMessage } from "../src/agent/compaction";
+import { buildSummaryMessage, estimateContextUsage } from "../src/agent/compaction";
 import {
   agentCompactionCount,
   agentContextFraction,
@@ -60,8 +60,12 @@ function model(overrides: Partial<Model<Api>> = {}): Model<Api> {
 
 describe("agent service readouts", () => {
   it("reports current transcript context fraction from the active model window", () => {
-    expect(agentContextFraction({ messages: [assistant(250, 0, "x".repeat(1_000))], model: model({ contextWindow: 1_000 }) })).toBe(0.25);
-    expect(agentContextFraction({ messages: [assistant(250)], model: undefined })).toBeUndefined();
+    const message = assistant(250, 0, "x".repeat(1_000));
+    const estimated = estimateContextUsage([message]);
+    expect(estimated).toBe(286);
+    expect(agentContextFraction({ messages: [message], model: model({ contextWindow: estimated }) })).toBe(1);
+    expect(agentContextFraction({ messages: [message], model: model({ contextWindow: estimated * 2 }) })).toBe(0.5);
+    expect(agentContextFraction({ messages: [message], model: undefined })).toBeUndefined();
   });
 
   it("sums visible transcript and subagent usage", () => {

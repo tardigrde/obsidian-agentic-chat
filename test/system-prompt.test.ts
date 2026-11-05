@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Skill } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../src/skills/skill-prompt";
 import { buildSystemPrompt, DEFAULT_SYSTEM_PROMPT } from "../src/agent/system-prompt";
 import { MODES } from "../src/agent/modes";
 import { OUTPUT_STYLES } from "../src/agent/output-styles";

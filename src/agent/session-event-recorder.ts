@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { deriveAutoName, type ObsidianSessionManager } from "../session/session-manager";
+import { conversationMessages } from "./conversation-messages";
 
 /**
  * Persists agent transcript events into the active JSONL session. The pi Agent
@@ -21,15 +22,21 @@ export class AgentSessionEventRecorder {
    */
   markPersistedMessages(messages: AgentMessage[]): void {
     this.persisted = new WeakSet<object>();
-    for (const message of messages) this.persisted.add(message as object);
+    for (const message of messages) this.persisted.add(message);
   }
 
   async recordMessageEnd(message: AgentMessage): Promise<void> {
+    // pi 1.0.0 announces mid-run tool changes by emitting a system message;
+    // that is runtime context, not conversation, so it is never persisted.
+    if (message.role === "system") return;
     await this.persistMessage(message);
   }
 
   async recordAgentEnd(messages: AgentMessage[]): Promise<void> {
-    for (const message of messages) await this.persistMessage(message);
+    // The seeded prompt is never emitted, but pi's tool-change announcements
+    // are system messages; persisting them would bloat the JSONL and replay
+    // stale tool declarations on reload.
+    for (const message of conversationMessages(messages)) await this.persistMessage(message);
     await this.autoNameSession();
   }
 

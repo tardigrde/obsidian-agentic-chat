@@ -4,10 +4,10 @@ import {
   type Api,
   type AssistantMessage,
   type AssistantMessageEventStream,
-  type Context,
   type Model,
   type SimpleStreamOptions,
   type StopReason,
+  type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import {
@@ -82,7 +82,7 @@ function resultErrorMessage(result: AssistantMessage, previous: string | undefin
 
 export type StreamSimpleFn = (
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
   options?: SimpleStreamOptions,
 ) => AssistantMessageEventStream;
 type OpenAICompatibleStreamFn = typeof streamOpenAICompatibleViaRequestUrl;
@@ -150,7 +150,7 @@ export class AgentStreamRuntime {
 
   private wrapStreamSimpleWithRetry(
     model: Model<Api>,
-    context: Context,
+    context: TranscriptContext,
     streamOptions: SimpleStreamOptions,
     signal?: AbortSignal,
   ): AssistantMessageEventStream {
@@ -163,7 +163,7 @@ export class AgentStreamRuntime {
 
   private async runStreamWithRetries(
     model: Model<Api>,
-    context: Context,
+    context: TranscriptContext,
     streamOptions: SimpleStreamOptions,
     signal: AbortSignal | undefined,
     maxRetries: number,
@@ -184,7 +184,7 @@ export class AgentStreamRuntime {
 
   private async attemptStream(
     model: Model<Api>,
-    context: Context,
+    context: TranscriptContext,
     streamOptions: SimpleStreamOptions,
     signal?: AbortSignal,
   ): Promise<StreamAttemptOutcome> {

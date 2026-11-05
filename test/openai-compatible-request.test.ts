@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Context } from "@earendil-works/pi-ai";
+import { normalizeContext, type Context } from "@earendil-works/pi-ai";
 import { buildModel } from "../src/llm/models";
 import {
   createOpenAICompatibleRequester,
@@ -98,7 +98,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
 
     const stream = streamOpenAICompatibleViaRequestUrl(
       model(),
-      { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+      normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }),
       { apiKey: "test-key", temperature: 0.2, maxTokens: 32 },
       requester,
     );
@@ -133,7 +133,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     await collect(
       streamOpenAICompatibleViaRequestUrl(
         rootModel(),
-        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }),
         { apiKey: "test-key" },
         requester,
       ),
@@ -185,7 +185,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     };
 
     const { events, result } = await collect(
-      streamOpenAICompatibleViaRequestUrl(model(), context, { apiKey: "test-key" }, requester),
+      streamOpenAICompatibleViaRequestUrl(model(), normalizeContext(context), { apiKey: "test-key" }, requester),
     );
 
     expect(payload.tools).toEqual([
@@ -209,6 +209,109 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     ]);
   });
 
+  // pi 1.0.0 moved the tool set into the transcript's system messages, so the
+  // custom provider has to replay it rather than read `context.tools`.
+  it("sends tool schemas from the transcript's system message", async () => {
+    let payload: Record<string, unknown> | undefined;
+    const requester: OpenAICompatibleRequester = async (request) => {
+      payload = JSON.parse(request.body ?? "{}");
+      return {
+        status: 200,
+        text: "",
+        json: { choices: [{ message: { role: "assistant", content: "ok" }, finish_reason: "stop" }] },
+      };
+    };
+
+    await collect(
+      streamOpenAICompatibleViaRequestUrl(
+        model(),
+        normalizeContext({
+          systemPrompt: "You are a vault assistant.",
+          messages: [{ role: "user", content: "read Welcome.md", timestamp: 1 }],
+          tools: [
+            {
+              name: "read",
+              description: "Read a vault file.",
+              parameters: {
+                type: "object",
+                properties: { path: { type: "string" } },
+                required: ["path"],
+              },
+            } as unknown as NonNullable<Context["tools"]>[number],
+          ],
+        } as Context),
+        { apiKey: "test-key" },
+        requester,
+      ),
+    );
+
+    expect(payload?.tools).toEqual([
+      {
+        type: "function",
+        function: {
+          name: "read",
+          description: "Read a vault file.",
+          parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+        },
+      },
+    ]);
+    const messages = payload?.messages as Array<{ role: string; content: unknown }>;
+    const systemMessages = messages.filter((message) => message.role === "system");
+    expect(systemMessages).toHaveLength(1);
+    expect(systemMessages[0]?.content).toContain("You are a vault assistant.");
+  });
+
+  it.each([
+    ["[1,2]", [1, 2]],
+    ['"x"', "x"],
+  ])("preserves non-object tool arguments instead of coercing them: %s", async (rawArguments, expected) => {
+    const requester: OpenAICompatibleRequester = async () => ({
+      status: 200,
+      text: "",
+      json: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              tool_calls: [{ id: "call_1", function: { name: "read", arguments: rawArguments } }],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      },
+    });
+
+    const { result } = await collect(
+      streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [] }), { apiKey: "k" }, requester),
+    );
+
+    expect((result.content[0] as { arguments: unknown }).arguments).toEqual(expected);
+  });
+
+  it("parses a JSON string of tool-call arguments", async () => {
+    const requester: OpenAICompatibleRequester = async () => ({
+      status: 200,
+      text: "",
+      json: {
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              tool_calls: [{ id: "call_1", function: { name: "read", arguments: '{"path":"Welcome.md"}' } }],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      },
+    });
+
+    const { result } = await collect(
+      streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [] }), { apiKey: "k" }, requester),
+    );
+
+    expect((result.content[0] as { arguments: unknown }).arguments).toEqual({ path: "Welcome.md" });
+  });
+
   it("suppresses provider-returned reasoning content when reasoning is off", async () => {
     const requester: OpenAICompatibleRequester = async () => ({
       status: 200,
@@ -230,7 +333,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     const { events, result } = await collect(
       streamOpenAICompatibleViaRequestUrl(
         model(),
-        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }),
         { apiKey: "test-key" },
         requester,
       ),
@@ -261,7 +364,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     const { events, result } = await collect(
       streamOpenAICompatibleViaRequestUrl(
         model(),
-        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }),
         { apiKey: "test-key", reasoning: "low" },
         requester,
       ),
@@ -299,7 +402,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     await collect(
       streamOpenAICompatibleViaRequestUrl(
         model(),
-        {
+        normalizeContext({
           messages: [
             { role: "user", content: "read Welcome.md", timestamp: 1 },
             {
@@ -335,7 +438,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
               timestamp: 3,
             },
           ],
-        },
+        } as Context),
         { apiKey: "test-key" },
         requester,
       ),
@@ -360,7 +463,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     await collect(
       streamOpenAICompatibleViaRequestUrl(
         openRouterModel(),
-        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }),
         { apiKey: "test-key" },
         requester,
       ),
@@ -383,7 +486,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     const { events, result } = await collect(
       streamOpenAICompatibleViaRequestUrl(
         model(),
-        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }),
         { apiKey: "bad-key" },
         requester,
       ),
@@ -418,7 +521,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     const { events, result } = await collect(
       streamOpenAICompatibleViaRequestUrl(
         model(),
-        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }),
         { apiKey: "test-key", maxRetries: 1 },
         requester,
       ),
@@ -443,7 +546,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
       };
     };
     const { result } = await collect(
-      streamOpenAICompatibleViaRequestUrl(model(), { messages: [{ role: "user", content: "ping", timestamp: 1 }] }, { apiKey: "test-key", maxRetries: 2 }, requester),
+      streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }), { apiKey: "test-key", maxRetries: 2 }, requester),
     );
     expect(attempts).toBe(3);
     expect(result.content).toEqual([{ type: "text", text: "ok" }]);
@@ -460,7 +563,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     };
     const start = Date.now();
     const { result } = await collect(
-      streamOpenAICompatibleViaRequestUrl(model(), { messages: [{ role: "user", content: "ping", timestamp: 1 }] }, { apiKey: "test-key", maxRetries: 1 }, requester),
+      streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }), { apiKey: "test-key", maxRetries: 1 }, requester),
     );
     const elapsed = Date.now() - start;
     expect(attempts).toBe(2);
@@ -475,7 +578,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
       return { status: 401, text: '{"error":{"message":"Unauthorized"}}', headers: {}, json: { error: { message: "Unauthorized" } } };
     };
     const { events, result } = await collect(
-      streamOpenAICompatibleViaRequestUrl(model(), { messages: [{ role: "user", content: "ping", timestamp: 1 }] }, { apiKey: "bad-key", maxRetries: 2 }, requester),
+      streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }), { apiKey: "bad-key", maxRetries: 2 }, requester),
     );
     expect(attempts).toBe(1);
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "error" })]));
@@ -492,7 +595,7 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     const pending = collect(
       streamOpenAICompatibleViaRequestUrl(
         model(),
-        { messages: [{ role: "user", content: "ping", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }),
         { apiKey: "test-key", signal: controller.signal },
         requester,
       ),

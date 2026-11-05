@@ -1,7 +1,10 @@
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream,
+  getCurrentSystemPrompt,
+  getCurrentTools,
   type AssistantMessage,
+  type JsonObject,
   type StopReason,
   type ToolCall,
   type Usage,
@@ -78,9 +81,12 @@ export function createReplayStreamController(
       model: model.id,
       provider: model.provider,
       api: model.api,
-      systemPrompt: context.systemPrompt ?? "",
+      // pi 1.0.0 hands stream functions a `TranscriptContext` that only has
+      // `messages`: the prompt and tool set are replayed out of the system
+      // messages rather than read off dedicated fields.
+      systemPrompt: getCurrentSystemPrompt(context.messages),
       messageCount: context.messages.length,
-      toolNames: (context.tools ?? []).map((tool) => tool.name),
+      toolNames: getCurrentTools(context.messages).map((tool) => tool.name),
     };
     calls.push(call);
     options.onCall?.(call);
@@ -113,7 +119,7 @@ export function replayTextTurn(text: string, options: Omit<ReplayTurn, "content"
 export function replayToolCallTurn(
   id: string,
   name: string,
-  args: Record<string, unknown>,
+  args: JsonObject,
   options: Omit<ReplayTurn, "content"> = {},
 ): ReplayTurn {
   return {
@@ -272,7 +278,7 @@ function cloneToolCall(block: ToolCall): ToolCall {
   };
 }
 
-function cloneJsonObject(value: Record<string, unknown>): Record<string, unknown> {
+function cloneJsonObject(value: JsonObject): JsonObject {
   return structuredClone(value);
 }
 

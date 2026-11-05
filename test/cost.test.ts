@@ -40,12 +40,12 @@ describe("estimateNextRequestCost", () => {
 
   it("folds in the system prompt only when there's no prior provider usage", () => {
     const userMsg = { role: "user", content: [{ type: "text", text: "hi" }], timestamp: 0 } as AgentMessage;
-    const systemPrompt = "s".repeat(4000); // ≈ 1000 tokens
+    const systemPrompt = "s".repeat(4000); // 4,000 / 3.5 ≈ 1,143 tokens
 
     // No prior usage → fall back to the heuristic, which should include the prompt.
     const withSys = estimateNextRequestCost([userMsg], PRICED, 0, systemPrompt);
     const withoutSys = estimateNextRequestCost([userMsg], PRICED, 0);
-    expect(withSys.inputTokens).toBe(withoutSys.inputTokens + 1000);
+    expect(withSys.inputTokens).toBe(withoutSys.inputTokens + 1_143);
 
     // Prior assistant usage already counts the system prompt; don't double-count.
     const assistantMsg = {
@@ -57,5 +57,22 @@ describe("estimateNextRequestCost", () => {
     const withUsage = estimateNextRequestCost([userMsg, assistantMsg], PRICED, 0, systemPrompt);
     const withUsageNoSys = estimateNextRequestCost([userMsg, assistantMsg], PRICED, 0);
     expect(withUsage.inputTokens).toBe(withUsageNoSys.inputTokens);
+  });
+
+  it("does not anchor on usage that predates a newer transcript message", () => {
+    const summary = {
+      role: "user",
+      content: [{ type: "text", text: "summary" }],
+      timestamp: 20,
+    } as AgentMessage;
+    const olderAssistant = {
+      role: "assistant",
+      content: [{ type: "text", text: "ok" }],
+      usage: { input: 100, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 100, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      timestamp: 15,
+    } as unknown as AgentMessage;
+
+    // pi-ai 1.5.0 discards the older usage anchor after a newer prefix message.
+    expect(estimateNextRequestCost([summary, olderAssistant], PRICED, 0).inputTokens).toBe(3);
   });
 });

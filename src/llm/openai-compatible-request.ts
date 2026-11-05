@@ -1,17 +1,19 @@
 import { requestUrl } from "obsidian";
 import {
   createAssistantMessageEventStream,
+  getCurrentTools,
   parseStreamingJson,
   type Api,
   type AssistantMessage,
   type AssistantMessageEventStream,
-  type Context,
+  type JsonObject,
   type Model,
   type ProviderStreams,
   type SimpleStreamOptions,
   type StopReason,
   type Tool,
   type ToolCall,
+  type TranscriptContext,
   type Usage,
 } from "@earendil-works/pi-ai";
 import { convertMessages } from "@earendil-works/pi-ai/api/openai-completions";
@@ -106,7 +108,7 @@ const MESSAGE_COMPAT: MessageCompat = {
  */
 export function streamOpenAICompatibleViaRequestUrl(
   model: Model<"openai-completions">,
-  context: Context,
+  context: TranscriptContext,
   options: SimpleStreamOptions | undefined,
   requester: OpenAICompatibleRequester = defaultOpenAICompatibleRequester,
 ): AssistantMessageEventStream {
@@ -194,7 +196,7 @@ export function obsidianOpenAICompletionsApi(): ProviderStreams {
     stream: () => {
       throw new Error("Raw streaming is not supported by the Obsidian requestUrl fallback; use streamSimple.");
     },
-    streamSimple: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
+    streamSimple: (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) =>
       streamOpenAICompatibleViaRequestUrl(model as Model<"openai-completions">, context, options),
   };
 }
@@ -287,7 +289,7 @@ export function isRetryableResponse(response: OpenAICompatibleResponse): boolean
 
 function buildPayload(
   model: Model<"openai-completions">,
-  context: Context,
+  context: TranscriptContext,
   options: SimpleStreamOptions | undefined,
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {
@@ -301,8 +303,11 @@ function buildPayload(
   }
   if (options?.temperature !== undefined) payload.temperature = options.temperature;
   if (options?.maxTokens && options.maxTokens > 0) payload.max_tokens = options.maxTokens;
-  if (context.tools && context.tools.length > 0) {
-    payload.tools = convertTools(context.tools, MESSAGE_COMPAT);
+  // pi 1.0.0 moved the tool set into the transcript's system messages, so it
+  // is resolved by replay rather than read off `context.tools`.
+  const tools = getCurrentTools(context.messages);
+  if (tools.length > 0) {
+    payload.tools = convertTools(tools, MESSAGE_COMPAT);
     const toolChoice = (options as { toolChoice?: unknown } | undefined)?.toolChoice;
     if (toolChoice !== undefined) payload.tool_choice = toolChoice;
   } else if (hasToolHistory(context)) {
@@ -313,10 +318,12 @@ function buildPayload(
   return payload;
 }
 
-function hasToolHistory(context: Context): boolean {
+function hasToolHistory(context: TranscriptContext): boolean {
   for (const message of context.messages) {
     if (message.role === "toolResult") return true;
-    if (message.role === "assistant" && message.content.some((block) => block.type === "toolCall")) return true;
+    if (message.role === "assistant" && message.content.some((block) => block.type === "toolCall")) {
+      return true;
+    }
   }
   return false;
 }
@@ -403,10 +410,17 @@ function parseToolCalls(rawToolCalls: unknown): ToolCall[] {
   });
 }
 
-function parseToolArguments(rawArguments: unknown): Record<string, unknown> {
-  if (recordValue(rawArguments)) return rawArguments as Record<string, unknown>;
+/**
+ * Tool arguments as a `JsonObject`.
+ *
+ * pi 1.0.0 narrowed `ToolCall.arguments` to `JsonObject`; the payload itself is
+ * already JSON-decoded, and pi validates it against the tool schema before
+ * execution. Keep the existing shape and only assert the type.
+ */
+function parseToolArguments(rawArguments: unknown): JsonObject {
+  if (recordValue(rawArguments)) return rawArguments as JsonObject;
   if (typeof rawArguments !== "string") return {};
-  return parseStreamingJson<Record<string, unknown>>(rawArguments);
+  return parseStreamingJson<JsonObject>(rawArguments);
 }
 
 function textFromContent(content: unknown): string {

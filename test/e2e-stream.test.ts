@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Model } from "@earendil-works/pi-ai";
+import { normalizeContext, type Model } from "@earendil-works/pi-ai";
 import {
   createWindowE2EStreamFn,
   type E2EStreamTarget,
@@ -40,7 +40,7 @@ describe("createWindowE2EStreamFn", () => {
     const streamFn = createWindowE2EStreamFn({ enabled: true, target });
     expect(streamFn).toBeTypeOf("function");
 
-    const result = await (await streamFn!(model(), { messages: [] })).result();
+    const result = await (await streamFn!(model(), normalizeContext({ messages: [] }))).result();
 
     expect(result.content).toEqual([{ type: "text", text: "scripted response" }]);
     expect(target.__AGENTIC_CHAT_E2E_CALLS__).toBe(1);
@@ -64,12 +64,12 @@ describe("createWindowE2EStreamFn", () => {
     };
 
     const firstStreamFn = createWindowE2EStreamFn({ enabled: true, target });
-    expect((await (await firstStreamFn!(model(), { messages: [] })).result()).content).toEqual([
+    expect((await (await firstStreamFn!(model(), normalizeContext({ messages: [] }))).result()).content).toEqual([
       { type: "text", text: "first" },
     ]);
 
     const rebuiltStreamFn = createWindowE2EStreamFn({ enabled: true, target });
-    expect((await (await rebuiltStreamFn!(model(), { messages: [] })).result()).content).toEqual([
+    expect((await (await rebuiltStreamFn!(model(), normalizeContext({ messages: [] }))).result()).content).toEqual([
       { type: "text", text: "second" },
     ]);
 

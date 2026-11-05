@@ -1,4 +1,5 @@
-import { type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { Skill } from "../skills/skill-prompt";
 import { Type } from "typebox";
 import { getLoadedSkillNames, isSkillLoaded, loadSkill, unloadSkill } from "../skills/skill-load-state";
 

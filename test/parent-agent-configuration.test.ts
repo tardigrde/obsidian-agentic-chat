@@ -52,7 +52,7 @@ describe("AgentParentConfigurationRuntime", () => {
         beforeToolCall: async () => undefined,
         afterToolCall: async () => undefined,
       },
-      loopGuard: { shouldStopAfterTurn: () => false },
+      loopGuard: { finishTurn: () => undefined },
       sessions: {
         info: session,
         ensureConfiguration: async () => session,
@@ -97,7 +97,7 @@ describe("AgentParentConfigurationRuntime", () => {
         beforeToolCall: async () => undefined,
         afterToolCall: async () => undefined,
       },
-      loopGuard: { shouldStopAfterTurn: () => false },
+      loopGuard: { finishTurn: () => undefined },
       sessions: {
         info: session,
         ensureConfiguration: async () => {
