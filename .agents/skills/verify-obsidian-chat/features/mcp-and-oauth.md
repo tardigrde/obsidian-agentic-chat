@@ -3,7 +3,7 @@
 ## Sub-features
 
 - MCP master toggle and MCP-only proxy override.
-- Add an HTTPS MCP server; the plugin writes a real Agent Plugins package.
+- Add an HTTPS MCP server. The plugin writes an Agent Plugins package.
 - Server row: enable, approval policy, test/refresh, OAuth sign-in.
 - Auth modes: none, bearer token, static header, OAuth.
 - OAuth discovery, dynamic client registration, PKCE, desktop loopback callback,
@@ -13,14 +13,15 @@
 - Install plugin from archive URL, vault folder, or marketplace list.
 - Runtime tool discovery and calls with `mcp__<server>__<tool>` names.
 
-## How to get to it (user POV)
+## How to get to it (user view)
 
-- Settings → Agentic Chat → **MCP**.
-- Turn on **Enable MCP**, then fill **Server name** and **HTTPS endpoint**, then
-  click **Add MCP server**.
+- Open Settings and select Agentic Chat, then open **MCP**.
+- Turn on **Enable MCP**, fill **Server name** and **HTTPS endpoint**, then click
+  **Add MCP server**.
 - Use **Test connection**, **Refresh tools**, or **Authenticate & test** on the
   server row.
-- Settings → **Resources** → **Install plugin…** for a package with `mcp.json`.
+- Open Settings, select **Resources**, then click **Install plugin…** for a
+  package with `mcp.json`.
 - Mobile OAuth returns through `obsidian://agentic-chat-mcp-oauth`.
 
 ## Driving it with the probe harness
@@ -37,11 +38,11 @@ await clickMcpAddButton("Add MCP server");
 
 - Server rows expose `.agentic-chat-mcp-server-header`,
   `.agentic-chat-oauth-banner`, and the **Authenticate & test** button.
-- The OAuth browser flow is not scripted in a committed e2e. Unit tests drive
+- The OAuth browser flow is not scripted in a committed e2e. Unit tests cover
   discovery, registration, PKCE, callback delivery, and refresh.
-- For a real remote call, use `test/e2e/specs/mcp-live.e2e.ts`; it needs
+- For a real remote call, use `test/e2e/specs/mcp-live.e2e.ts`. It needs
   `AGENTIC_CHAT_E2E_MCP_URL` and skips without it.
-- Assert imported servers through `plugins.mcpState`; they start disabled.
+- Assert imported servers through `plugins.mcpState`. They start disabled.
 
 ## Proof
 
@@ -70,16 +71,16 @@ await clickMcpAddButton("Add MCP server");
 
 ## Gotchas
 
-- Only HTTPS Streamable HTTP is supported. stdio and subprocess servers are out
-  of scope.
-- Adding a server writes a plugin package. The package owns the endpoint after
-  creation; editing `settings.mcp.servers` directly is a legacy path.
-- The **Install plugin…** modal is mapped in [Settings](./settings.md).
+- The plugin supports only HTTPS Streamable HTTP. stdio and subprocess servers
+  are out of scope.
+- Adding a server writes a plugin package. The package defines the endpoint
+  after creation. Editing `settings.mcp.servers` directly is a legacy path.
+- See [Settings](./settings.md) for the **Install plugin…** modal.
 - Imported MCP servers start disabled. Enable them after install.
-- Settings live in a popout. Query the settings window handle.
+- The settings window is a popout. Query its window handle.
 - OAuth needs Obsidian desktop for the localhost callback. Mobile uses the
   Obsidian protocol redirect.
-- The callback state must match. A stale or foreign callback is rejected.
-- OAuth tokens and MCP header values live in Obsidian secret storage.
+- The callback state must match. The plugin rejects a stale or foreign callback.
+- Obsidian secret storage holds OAuth tokens and MCP header values.
 - A 401 with `resource_metadata` shows the banner but does not auto-redirect.
 - A live MCP spec skips without its URL. Read the counts; skip is not a pass.

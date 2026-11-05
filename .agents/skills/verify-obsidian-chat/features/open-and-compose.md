@@ -2,8 +2,8 @@
 
 ## Sub-features
 
-- Entry surfaces: ribbon icon, command palette, editor selection menu, file and
-  files context menus.
+- Entry points: ribbon icon, command palette, editor selection menu, single-file
+  and multi-file context menus.
 - Composer card: tab strip, textarea, context chip row, send and stop controls.
 - Keyboard: Enter sends, Shift+Enter inserts a newline, ArrowUp/ArrowDown recall
   sent messages, Escape cancels a prompt edit.
@@ -13,7 +13,7 @@
 - Empty-state suggestion chips.
 - Quick Ask inline edit.
 
-## How to get to it (user POV)
+## How to get to it (user view)
 
 - Click the ribbon icon (`messages-square`, "Open agentic chat").
 - Command palette: `Agentic Chat: Open chat`, `Agentic Chat: New conversation`,
@@ -33,15 +33,16 @@ await $(".agentic-chat-input").setValue("hello");
 await $(".agentic-chat-send").click();
 ```
 
-- Submit through the send button, not synthesized Enter. It exercises the same
-  `submit()` route and avoids key-synthesis differences.
+- Submit through the send button, not a synthesized Enter key. The send button
+  uses the same `submit()` route and avoids key-synthesis differences.
 - Active note: open a Markdown note with `browser.executeObsidian`, then wait for
   `.agentic-chat-chip.is-active-note`.
 - Quick Ask: select editor text, run `agentic-chat:quick-ask-inline-edit`, fill
   `.agentic-chat-quick-ask-instruction`, then click
   `.agentic-chat-quick-ask-accept`.
 - There is no helper for real drag-and-drop, the ribbon, or the context menus.
-  Drive those through Obsidian UI if a check is added; do not fake the handler.
+  Drive those through the Obsidian UI if you add a check. Do not fake the
+  handler.
 
 ## Proof
 
@@ -78,12 +79,12 @@ await $(".agentic-chat-send").click();
 - `setValue` alone does not submit. Click `.agentic-chat-send`.
 - `event.isComposing` blocks Enter during IME composition. Do not assert a send
   in the middle of a composition event.
-- Autocomplete is debounced by 120 ms in `src/ui/chat-view.ts:938`. Wait for
-  `.agentic-chat-autocomplete`, not for a fixed delay.
-- The active note chip is suppressed for ignored notes, non-Markdown files, and
-  standing-instruction files such as `AGENTS.md`.
-- A real drag uses Obsidian's internal drag manager. The parser unit test proves
-  path handling only; it does not prove the drop gesture.
+- The chat view debounces autocomplete by 120 ms in `src/ui/chat-view.ts:938`.
+  Wait for `.agentic-chat-autocomplete`, not for a fixed delay.
+- The plugin suppresses the active note chip for ignored notes, non-Markdown
+  files, and standing-instruction files such as `AGENTS.md`.
+- A real drag uses Obsidian's internal drag manager. The parser unit test covers
+  path handling only. It does not prove the drop gesture.
 - Quick Ask applies a deterministic text transform. It is not a model call.
 - The folder attachment picker is reachable only from the unused folder menu.
-  Do not claim it as a working user path.
+  Do not claim that users can reach it.

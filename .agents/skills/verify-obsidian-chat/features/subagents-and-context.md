@@ -2,23 +2,24 @@
 
 ## Sub-features
 
-- `subagent` tool: one call, one child agent, isolated context, summary returned.
-- Built-in Explorer role: read-only vault recon.
-- Parallel dispatches, capped at ten in flight; the rest queue.
+- The `subagent` tool starts one child agent per call, keeps its context
+  isolated, and returns a summary.
+- The built-in Explorer role does read-only vault inspection.
+- The subagent pool caps parallel dispatches at ten in flight. The rest queue.
 - Live child status tree, per-child Stop, and a settled summary with time, tokens,
   and cost.
 - `/agent` picker and `/agent <name> <task>`.
-- Subagent timeout setting.
+- The subagent timeout setting.
 - Replay of done, stopped, and failed dispatches from persisted details.
 - Context handling: serialization, attachment budgets, ignore-list withholding,
-  context chips, context-window bar, and source chips. Attachment entry points
-  are mapped in [Open and compose](./open-and-compose.md).
+  context chips, context-window bar, and source chips. See
+  [Open and compose](./open-and-compose.md) for the attachment entry points.
 
-## How to get to it (user POV)
+## How to get to it (user view)
 
 - Type `/agent` to see the role picker, or `/agent explorer <task>`.
 - Let the model call the `subagent` tool.
-- Settings → **Resources** → **Subagent timeout**.
+- Open Settings, select **Resources**, then find **Subagent timeout**.
 - For active-note, `@` mention, context-menu, drag-and-drop, folder, and image
   attachments, see [Open and compose](./open-and-compose.md).
 
@@ -36,7 +37,7 @@ await $(".agentic-chat-action-list").waitForExist();
 - Live child progress uses `tool_execution_update` with `details.children`.
 - Per-child Stop: `.agentic-chat-subagent-stop` inside the running child row.
 - Assert attachment content through `buildPromptContext` unit tests or the
-  outgoing prompt, not only the chip label.
+  outgoing prompt. Do not assert only the chip label.
 
 ## Proof
 
@@ -64,18 +65,19 @@ await $(".agentic-chat-action-list").waitForExist();
 
 ## Gotchas
 
-- Explorer is read-only recon. It inherits the parent approval policy, and the
-  parent strips tools it may not use.
+- Explorer does read-only inspection. It inherits the parent approval policy,
+  and the parent strips tools it may not use.
 - One `subagent` call is one child. To run several, emit several calls in one
-  message; the pool runs ten and queues the rest.
+  message. The pool runs ten and queues the rest.
 - Stop is per child, not per dispatch. A stopped child returns a normal result so
   the parent does not re-dispatch it.
 - Replay strips `stopId` and `transcript`. A replayed card must not show Stop and
   must not re-run the child.
 - The timeout settles a child as stopped, not failed.
-- Attachment bodies are inlined only up to the budget. Larger notes become a
-  path reference for `read`.
-- Ignore-listed paths are never inlined, even when explicitly attached.
+- The plugin inlines attachment bodies only up to the budget. Larger notes
+  become a path reference for `read`.
+- The plugin never inlines ignore-listed paths, even when the user attaches them
+  explicitly.
 - The folder attachment picker is reachable only from the unused folder menu.
-  Do not claim it as a working user path.
-- Source chips are deduped and capped at eight.
+  Do not claim that users can reach it.
+- The assistant bubble dedupes source chips and caps them at eight.

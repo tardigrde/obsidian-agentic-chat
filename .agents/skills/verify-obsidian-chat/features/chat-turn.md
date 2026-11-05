@@ -3,19 +3,19 @@
 ## Sub-features
 
 - Submit a prompt and stream assistant text into the transcript.
-- Reasoning section, markdown rendering, and a settled status pill.
+- A reasoning section, markdown rendering, and a settled status pill.
 - Inline tool-call step cards, edit diffs, and result rows.
 - Stop the active turn.
 - Queue a plain message while the agent runs.
 - Live turn control: `/steer`, `/follow-up`, `/redirect`.
 - Inline `ask_user` question with choices and a free-text answer.
 - Per-turn actions: Copy response, Ask again, Implement this plan.
-- Error banner with Retry.
-- Tool-step vault path link.
+- An error banner with Retry.
+- A vault path link on a tool step.
 - Click a sent user turn to edit and resend it.
-- Context-window bar, usage readout, and background-tab completion notice.
+- A context-window bar, a usage readout, and a background-tab completion notice.
 
-## How to get to it (user POV)
+## How to get to it (user view)
 
 - Type a prompt in the composer and press Enter, or click **Send**.
 - While the agent responds, the send button changes to **Queue**, and **Stop**
@@ -79,9 +79,9 @@ await browser.waitUntil(async () =>
 - A denied tool call still needs its follow-up scripted turn.
 - The transcript grows across tests. Scope to the latest assistant turn or reset.
 - `ask_user` requires a non-empty answer. The card detaches after it settles.
-- "Ask again" re-runs the last user prompt. "Retry" appears only for text-less
-  failures; a text plus error turn uses the action row instead.
+- "Ask again" re-runs the last user prompt. "Retry" appears only for failures
+  with no text. A turn with text and an error uses the action row instead.
 - "Implement this plan" appears only in plan mode and only when the reply ends
   with the `PLAN_COMPLETE` marker.
-- The per-turn usage footer is retired. Usage lives in the bottom bar and
-  `/usage`.
+- The plugin no longer shows a per-turn usage footer. Usage is in the bottom bar
+  and `/usage`.

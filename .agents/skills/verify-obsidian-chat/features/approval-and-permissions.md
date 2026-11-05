@@ -2,23 +2,23 @@
 
 ## Sub-features
 
-- Approval modal for a mutating tool call: Allow, Deny, optional reason,
+- Approval modal for a mutating tool call: Allow, Deny, an optional reason, and
   "Don't ask again for this tool".
 - Diff, rename, delete, and skill-body previews.
 - Global mutating policy: ask, allow, deny.
 - Per-tool overrides.
 - Working directories: auto-run inside, ask outside.
-- Modes: Safe, YOLO, and sticky Plan.
+- Modes: Safe, YOLO, and Plan, which persists until you leave it.
 - In-chat mode toggle, Plan badge, `/config`, `/plan`, `/dirs`, `/add-dir`.
 - Background-tab approval with a tab badge and a session label.
-- Persistent skill tools (`create_skill`, `load_skill`, `unload_skill`) cannot
-  be remembered.
+- The approval modal cannot remember the persistent skill tools
+  (`create_skill`, `load_skill`, `unload_skill`).
 
-## How to get to it (user POV)
+## How to get to it (user view)
 
 - A tool that needs approval opens the modal automatically.
-- Settings → Agentic Chat → **Approval** for gates, per-tool overrides, and
-  working directories.
+- Open Settings and select Agentic Chat, then open the **Approval** tab for
+  gates, per-tool overrides, and working directories.
 - Composer toolbar: click the Safe/YOLO toggle. Click the Plan badge to leave
   plan mode.
 - Type `/config`, `/plan`, `/dirs`, or `/add-dir` in the composer.
@@ -70,14 +70,15 @@ await (await modal.$("button=Allow")).click();
 
 ## Gotchas
 
-- Deny needs two clicks: the first arms the reason field, the second confirms.
-- `deny` wins over `allow` at every layer. A per-tool deny beats the global
+- Deny needs two clicks: the first enables the reason field, the second
+  confirms.
+- `deny` overrides `allow` at every layer. A per-tool deny overrides the global
   policy, and a remembered choice writes into the same `perTool` map.
 - "Don't ask again" is hidden for `create_skill`, `load_skill`, and
   `unload_skill`.
-- Plan mode is sticky. Pair `/plan` with the Plan badge or an implement action
-  in the same scenario, or later cases inherit read-only mode.
-- Mode changes are refused while any tab streams.
-- A background approval does not steal focus. The tab shows a badge and the
-  modal title carries the tab label.
+- Plan mode persists. Pair `/plan` with the Plan badge or an implement action in
+  the same scenario, or later cases start in read-only mode.
+- The plugin refuses mode changes while any tab streams.
+- A background approval does not take focus. The tab shows a badge and the modal
+  title includes the tab label.
 - Closing the tab closes its pending approval modal.

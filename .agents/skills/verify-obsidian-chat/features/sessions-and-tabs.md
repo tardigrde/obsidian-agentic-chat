@@ -10,7 +10,7 @@
 - Session persistence and reload from JSONL.
 - Mobile layout for the history modal.
 
-## How to get to it (user POV)
+## How to get to it (user view)
 
 - Tab strip above the composer: click a tab to switch, `+` to add, `x` to close.
 - Header buttons at the right of the tab strip: **New chat** (square-pen) and
@@ -26,7 +26,7 @@ await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-cha
 await $(".agentic-chat-session-list").waitForExist();
 ```
 
-- Use `.agentic-chat-tab` for pills, `.agentic-chat-tab.is-active` for the active
+- Use `.agentic-chat-tab` for tabs, `.agentic-chat-tab.is-active` for the active
   one, `.agentic-chat-tab-add` for `+`, `.agentic-chat-tab-close` for `x`.
 - Open history through `/sessions` in a deterministic spec. The header history
   button has no direct helper.
@@ -34,7 +34,7 @@ await $(".agentic-chat-session-list").waitForExist();
   `.agentic-chat-session-rename`, `.agentic-chat-session-delete`,
   `.agentic-chat-session-search`.
 - Export writes a note under `Agentic Chat Sessions/`. Assert with
-  `browser.executeObsidian`, not only with an info block.
+  `browser.executeObsidian`. Do not rely on the info block alone.
 
 ## Proof
 
@@ -64,10 +64,10 @@ await $(".agentic-chat-session-list").waitForExist();
 
 - `MAX_TABS` is 3. The `+` control disappears at the cap.
 - The `x` control exists only when more than one tab is open. Closing the last
-  tab resets it to a fresh conversation instead.
-- A session that is already open in another tab is not loaded twice. The view
-  switches to the existing tab.
-- Rename commits on Enter or blur; Escape cancels.
+  tab resets the view to a fresh conversation instead.
+- The view does not load a session twice when another tab already has it open.
+  It switches to the existing tab.
+- Rename commits on Enter or blur. Escape cancels.
 - Delete removes the row before the file operation finishes. A failure restores
   the row.
 - Export needs at least one user/assistant turn and writes a Markdown note.

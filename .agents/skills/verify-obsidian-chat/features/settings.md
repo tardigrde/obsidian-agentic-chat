@@ -17,15 +17,15 @@
 - Notifications: background toasts, cost alert, hard spend cap.
 - Resources: install plugin, New skill, Repair built-ins, plugins folder, plugin
   rows, subagent timeout, embeddings, ignore list.
-- Secrets are stored in Obsidian secret storage, not `data.json`.
+- The plugin stores secrets in Obsidian secret storage, not in `data.json`.
 
-## How to get to it (user POV)
+## How to get to it (user view)
 
-- Obsidian Settings → **Agentic Chat** in the left nav.
+- In Obsidian, open Settings and select **Agentic Chat** in the left navigation.
 - Programmatically: `app.setting.open(); app.setting.openTabById("agentic-chat")`.
 - The plugin does not add its own "open settings" command. Obsidian's Settings
-  command opens the settings window; then pick the Agentic Chat tab.
-- On Obsidian 1.13+ the tab opens in a popout window.
+  command opens the settings window. Then select the Agentic Chat tab.
+- On Obsidian 1.13 and later, the tab opens in a popout window.
 
 ## Driving it with the probe harness
 
@@ -74,16 +74,18 @@ await closeAgenticChatSettings();
 
 ## Gotchas
 
-- Popout, not a modal. Every DOM query must run in the settings window handle.
+- The settings window is a popout, not a modal. Use the settings window handle
+  for every DOM query.
 - Redraws rebuild the tab body. Re-query elements after a redraw.
 - Saves are async. Poll the plugin setting, do not sleep.
-- Many rows are conditional: Ollama fields appear only for `ollama`; privacy
-  toggles only for OpenRouter; Web rows appear after the enable toggle; MCP and
-  Observability rows appear after their enable toggles.
-- Secret inputs write to Obsidian secret storage. `data.json` keeps only secret
-  IDs.
+- Many rows are conditional. Ollama fields appear only for `ollama`, privacy
+  toggles appear only for OpenRouter, and Web rows appear after the enable
+  toggle. MCP and Observability rows appear after their enable toggles.
+- The plugin stores secret input values in Obsidian secret storage. `data.json`
+  keeps only secret IDs.
 - `getSettingDefinitions()` is a stub that returns `[]`. It is not a working
   declarative-settings path.
-- The plugin rows live in a dot-folder. Use **Open folder** to reveal them.
-- The **New skill…** button is mapped in [Commands and skills](./commands-and-skills.md).
-- A per-tool deny wins over the global allow policy.
+- The plugin rows are in a dot-folder. Use **Open folder** to reveal them.
+- See [Commands and skills](./commands-and-skills.md) for the **New skill…**
+  button.
+- A per-tool deny overrides the global allow policy.

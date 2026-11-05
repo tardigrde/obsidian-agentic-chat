@@ -6,21 +6,21 @@
 - Autocomplete menu for commands, skills, and `/skill` arguments.
 - Local commands that never call the model.
 - Model-facing commands that inject a prompt or control the active turn.
-- Hidden or retired commands: `/project`.
+- Hidden command: `/project`.
 - Skills: built-in, plugin-provided, and bare `/skill-name` invocation.
 - Skill tools: `read_skill`, `read_skill_file`, `load_skill`, `unload_skill`,
   `create_skill`.
-- New skill wizard in Settings → Resources.
-- Repair built-ins action.
+- The New skill wizard on the Resources settings tab.
+- The Repair built-ins action.
 
-## How to get to it (user POV)
+## How to get to it (user view)
 
 - Type `/` in the composer. The autocomplete menu opens.
 - Type a full command and press Enter or click **Send**.
 - Type `/skill <name> [args]`, or a bare `/<skill-name> [args]`.
-- Settings → Agentic Chat → **Resources** → **New skill…** or **Repair
-  built-ins**.
-- The model calls skill tools on its own; they appear as tool steps.
+- Open Settings and select Agentic Chat, then open **Resources** and click
+  **New skill…** or **Repair built-ins**.
+- The model calls skill tools on its own. They appear as tool steps.
 
 ## Driving it with the probe harness
 
@@ -38,12 +38,14 @@ await $(".agentic-chat-info").waitForExist();
 ```
 
 - Use the send button. It takes the same `submit()` route as Enter.
-- Assert the new info block text, not only `.agentic-chat-info` existence.
+- Assert the new info block text. Do not assert only that `.agentic-chat-info`
+  exists.
 - Skill chip: send `/skill self-knowledge probe`, then wait for a **Skill**
   summary in `.agentic-chat-info`.
 - New skill: `openAgenticChatSettings()`, `selectSettingsTab("Resources")`,
   `clickSettingButton("Import", "New skill…")`.
-- `/template` has no routing. It only appears in autocomplete detection.
+- `/template` has no command handler. The autocomplete detector still recognizes
+  it.
 
 ## Proof
 
@@ -96,15 +98,16 @@ await $(".agentic-chat-info").waitForExist();
 
 - A built-in command wins over a skill with the same name. Use `/skill <name>`
   to reach the shadowed skill.
-- Local commands must not hit the network. Assert the absence of a model call,
-  not only the info block.
+- Local commands must not hit the network. Assert both the info block and the
+  absence of a model call.
 - `/init` keeps the full command text in the transcript and clears the composer.
-- `/compact` accepts tail instructions; the tail guides the summary.
-- `/plan` is sticky. Pair it with an exit action in the same scenario.
+- `/compact` accepts tail instructions. The tail guides the summary.
+- `/plan` persists until you leave plan mode. Pair it with an exit action in the
+  same scenario.
 - `/project` is hidden but still routable. It renders a removal notice.
-- `/template` is dead as a command. It only triggers skill-argument
+- `/template` has no command handler. It only triggers skill-argument
   autocomplete.
-- `load_skill`, `unload_skill`, and create/load/unload approvals cannot be
-  remembered.
+- The approval modal cannot remember approvals for `create_skill`, `load_skill`,
+  or `unload_skill`.
 - The `.agentic-chat-info` element may exist from an earlier command. Assert the
   new text.

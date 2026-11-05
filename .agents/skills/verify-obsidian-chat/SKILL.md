@@ -99,7 +99,7 @@ cleans both up.
 
 ## Feature map
 
-Start here, then update it when entry points change:
+Start with the index, then update the map when entry points change:
 
 - [Index and proof rules](./features/README.md)
 - [Open and compose](./features/open-and-compose.md)
@@ -111,6 +111,6 @@ Start here, then update it when entry points change:
 - [MCP and OAuth](./features/mcp-and-oauth.md)
 - [Subagents and context](./features/subagents-and-context.md)
 
-Each entry names every way a user reaches the feature and how to prove it. A proof
-that drives one convenient entry point is incomplete when the map lists others.
-The status values and proof rules are in the index.
+Each entry names every way a user reaches the feature and how to prove it. A
+proof that tests one entry point is incomplete when the map lists others. The
+status values and proof rules are in the index.
