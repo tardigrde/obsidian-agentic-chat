@@ -3,7 +3,7 @@ import type { SessionInfo } from "../session/session-manager";
 import type { ActiveSessionSnapshot } from "./active-session-runtime";
 import type { ActivateSessionOptions } from "./session-activation";
 import { conversationMessages } from "./conversation-messages";
-import { AgentSessionSwapQueue } from "./session-swap-queue";
+import { AgentSessionSwapQueue, type AgentSessionSwapState } from "./session-swap-queue";
 
 export interface AgentSessionActionsRuntime {
   readonly activePath: string | null;
@@ -19,6 +19,7 @@ export interface AgentSessionActionsRuntime {
 
 export interface AgentSessionActivationRuntime {
   readonly currentAgent: Agent | null;
+  prepareResources(): Promise<void>;
   detachAgent(): void;
   activate(messages: AgentMessage[], options?: ActivateSessionOptions): Promise<void>;
 }
@@ -35,15 +36,39 @@ export class AgentSessionActions {
 
   constructor(private readonly options: AgentSessionActionsOptions) {}
 
+  getSwapState(): AgentSessionSwapState {
+    return this.sessionSwaps.state;
+  }
+
+  /** Wait for any in-flight swap; reject when the last swap failed. */
+  async waitForLive(): Promise<void> {
+    const state = await this.sessionSwaps.waitForSettled();
+    if (state === "failed") {
+      throw new Error("The last session swap failed. Load or create a session to recover.");
+    }
+  }
+
+  /** Startup path: continue the recent session only when no agent is live. */
+  async ensureSessionAgent(): Promise<void> {
+    return this.sessionSwaps.enqueue(async (setPhase) => {
+      if (this.options.activation.currentAgent) return;
+      await this.loadIntoNewAgent(setPhase, () => this.options.sessions.continueRecent());
+    });
+  }
+
   async continueRecentSession(): Promise<void> {
-    const { messages } = await this.options.sessions.continueRecent();
-    await this.activateSession(messages);
+    return this.sessionSwaps.enqueue(async (setPhase) => {
+      await this.loadIntoNewAgent(setPhase, () => this.options.sessions.continueRecent());
+    });
   }
 
   async newSession(): Promise<void> {
-    return this.sessionSwaps.enqueue(async () => {
-      this.options.activation.detachAgent();
+    return this.sessionSwaps.enqueue(async (setPhase) => {
+      await this.options.activation.prepareResources();
+      setPhase("loading");
       const { messages } = await this.options.sessions.create();
+      setPhase("activating");
+      this.options.activation.detachAgent();
       await this.activateSession(messages);
     });
   }
@@ -53,9 +78,14 @@ export class AgentSessionActions {
   }
 
   async loadSession(path: string): Promise<void> {
-    return this.sessionSwaps.enqueue(async () => {
-      this.options.activation.detachAgent();
+    return this.sessionSwaps.enqueue(async (setPhase) => {
+      // Reload before detaching: a failed reload must leave the previous agent
+      // and its session-local state intact.
+      await this.options.activation.prepareResources();
+      setPhase("loading");
       const { messages } = await this.options.sessions.load(path);
+      setPhase("activating");
+      this.options.activation.detachAgent();
       await this.activateSession(messages);
     });
   }
@@ -69,16 +99,19 @@ export class AgentSessionActions {
   }
 
   async clearSessions(): Promise<number> {
-    return this.sessionSwaps.enqueue(async () => {
+    return this.sessionSwaps.enqueue(async (setPhase) => {
       const sessions = await this.options.sessions.list();
       if (sessions.length === 0) {
         this.options.notifyChange();
         return 0;
       }
-      this.options.activation.detachAgent();
+      await this.options.activation.prepareResources();
+      setPhase("loading");
       for (const session of sessions) await this.options.sessions.delete(session.path);
       await this.options.afterDelete?.();
       const { messages } = await this.options.sessions.create();
+      setPhase("activating");
+      this.options.activation.detachAgent();
       await this.activateSession(messages);
       return sessions.length;
     });
@@ -103,8 +136,21 @@ export class AgentSessionActions {
     this.options.notifyChange();
   }
 
+  private async loadIntoNewAgent(
+    setPhase: (phase: "loading" | "activating") => void,
+    load: () => Promise<ActiveSessionSnapshot>,
+  ): Promise<void> {
+    await this.options.activation.prepareResources();
+    setPhase("loading");
+    const { messages } = await load();
+    setPhase("activating");
+    this.options.activation.detachAgent();
+    await this.activateSession(messages);
+  }
+
   private async activateSession(messages: AgentMessage[]): Promise<void> {
-    await this.options.activation.activate(messages);
+    // Resources were reloaded before detaching on the swap path.
+    await this.options.activation.activate(messages, { reloadResources: false });
     this.options.notifyChange();
   }
 }

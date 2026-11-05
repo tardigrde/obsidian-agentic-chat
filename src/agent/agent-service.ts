@@ -473,9 +473,13 @@ export class AgentService {
   }
 
   async initialize(): Promise<void> {
+    // Join the swap queue before checking the agent: a send that arrives while
+    // another session is loading must wait for that swap, not start on the old
+    // agent. A failed swap rejects until a later swap recovers it.
+    await this.sessionActions.waitForLive();
     if (this.agent) return;
     if (this.initialization) return this.initialization;
-    this.initialization = this.initializeAgent();
+    this.initialization = this.sessionActions.ensureSessionAgent();
     try {
       await this.initialization;
     } finally {
@@ -673,6 +677,11 @@ export class AgentService {
     return this.sessionActions.loadSession(path);
   }
 
+  /** Inspectable session-swap state for diagnostics and tests. */
+  getSessionSwapState(): ReturnType<AgentSessionActions["getSwapState"]> {
+    return this.sessionActions.getSwapState();
+  }
+
   async deleteSession(path: string): Promise<void> {
     return this.sessionActions.deleteSession(path);
   }
@@ -741,10 +750,6 @@ export class AgentService {
     if (mode === "follow-up") agent.followUp(message);
     else agent.steer(message);
     this.notifyChange();
-  }
-
-  private async initializeAgent(): Promise<void> {
-    await this.sessionActions.continueRecentSession();
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {

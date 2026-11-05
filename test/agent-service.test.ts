@@ -10,7 +10,7 @@ import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
-import { parseSessionEntries } from "../src/session/jsonl";
+import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 import { fakeMemoryJsonl } from "./helpers/memory-fixtures";
 import { FakeVault } from "./helpers/fake-vault";
@@ -210,7 +210,12 @@ function makeService(
   app: App = minimalApp(),
   askUser?: AskUserHandler,
   observabilityFetch?: WebFetcher,
-): { service: AgentService; adapter: MemoryAdapter; settings: AgenticChatSettings } {
+): {
+  service: AgentService;
+  adapter: MemoryAdapter;
+  settings: AgenticChatSettings;
+  sessionManager: ObsidianSessionManager;
+} {
   const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
   const adapter = new MemoryAdapter();
   const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
@@ -223,7 +228,7 @@ function makeService(
     streamFn,
     observabilityFetch,
   });
-  return { service, adapter, settings };
+  return { service, adapter, settings, sessionManager };
 }
 
 function minimalApp(): App {
@@ -1123,6 +1128,62 @@ describe("AgentService", () => {
     expect(
       userTexts(controlled.runs[2].context.messages).filter((text) => text === "narrower redirected question"),
     ).toHaveLength(1);
+  });
+
+  it("waits for an in-flight session swap before sending", async () => {
+    const controlled = controlledStreamFn(["first answer", "during swap answer"]);
+    const { service, adapter, sessionManager } = makeService(controlled.streamFn);
+
+    const first = service.sendPrompt("first request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
+    controlled.runs[0].finish();
+    await first;
+    const firstPath = service.getSessionInfo()?.path as string;
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await service.newSession();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await service.newSession();
+    const currentPath = service.getSessionInfo()?.path as string;
+    expect(currentPath).not.toBe(firstPath);
+    // Make the current session unambiguously the most recent so a send that
+    // bypasses the swap queue cannot accidentally land in the target session.
+    const currentEntries = parseSessionEntries(await adapter.read(currentPath));
+    const future = Date.now() + 60_000;
+    for (const entry of currentEntries) {
+      if (entry.type === "message") entry.message.timestamp = future;
+      else if ("timestamp" in entry) entry.timestamp = new Date(future).toISOString();
+    }
+    await adapter.write(currentPath, serializeSessionEntries(currentEntries));
+
+    const originalLoad = sessionManager.loadSession.bind(sessionManager);
+    let releaseLoad!: () => void;
+    let markStarted!: () => void;
+    const loadGate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    const loadStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    sessionManager.loadSession = async (path: string) => {
+      markStarted();
+      await loadGate;
+      return originalLoad(path);
+    };
+
+    const swap = service.loadSession(firstPath);
+    await loadStarted;
+    const send = service.sendPrompt("during swap");
+    releaseLoad();
+    await swap;
+    await waitFor(() => controlled.runs.length === 2, "prompt after swap");
+    controlled.runs[1].finish();
+    await send;
+
+    expect(service.getSessionInfo()?.path).toBe(firstPath);
+    expect(userTexts(service.getMessages())).toEqual(["first request", "during swap"]);
+    await expect(adapter.read(firstPath)).resolves.toContain("during swap");
+    await expect(adapter.read(currentPath)).resolves.not.toContain("during swap");
   });
 
   it("clears queued steering when the user stops the active run", async () => {
