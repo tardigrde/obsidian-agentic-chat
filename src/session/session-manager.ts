@@ -60,6 +60,8 @@ export class ObsidianSessionManager {
   private sessionFile: string | null = null;
   private entries: SessionEntry[] = [];
   private leafId: string | null = null;
+  /** Bumped whenever the active session changes; guards awaits against swaps. */
+  private sessionGeneration = 0;
   /** Paths whose first full-body checkpoint has already been written this
    * session. Subsequent checkpoints for the same path are slimmed to
    * `beforeSummary` to keep the JSONL bounded for long editing sessions. */
@@ -85,6 +87,7 @@ export class ObsidianSessionManager {
     const timestamp = new Date().toISOString();
     const fileTimestamp = timestamp.replace(/[:.]/g, "-");
     this.sessionFile = `${this.sessionDir}/${fileTimestamp}_${sessionId}.jsonl`;
+    this.sessionGeneration += 1;
     this.entries = [createSessionHeader(sessionId, this.cwd, timestamp)];
     this.leafId = null;
     this.fullCheckpointPaths = new Set();
@@ -111,6 +114,7 @@ export class ObsidianSessionManager {
       throw new Error("Session file is missing a session header.");
     }
     this.sessionFile = sessionPath;
+    this.sessionGeneration += 1;
     this.entries = entries;
     this.leafId = getLastLeafId(entries);
     this.fullCheckpointPaths = new Set();
@@ -135,6 +139,7 @@ export class ObsidianSessionManager {
     }
     if (this.sessionFile === sessionPath) {
       this.sessionFile = null;
+      this.sessionGeneration += 1;
       this.entries = [];
       this.leafId = null;
     }
@@ -357,10 +362,16 @@ export class ObsidianSessionManager {
   }
 
   private async appendEntry<TEntry extends Exclude<SessionEntry, { type: "session" }>>(entry: TEntry): Promise<string> {
-    if (!this.sessionFile) throw new Error("No active session.");
+    const sessionFile = this.sessionFile;
+    if (!sessionFile) throw new Error("No active session.");
+    const generation = this.sessionGeneration;
     // Write to disk first: if the append fails, the in-memory entries/leafId stay
     // consistent with what's actually persisted instead of drifting ahead of it.
-    await this.adapter.append(this.sessionFile, `${JSON.stringify(entry)}\n`);
+    await this.adapter.append(sessionFile, `${JSON.stringify(entry)}\n`);
+    // A session swap can land while the append is in flight. The entry belongs
+    // to the file we captured above; never splice it into the new session's
+    // in-memory chain or leaf pointer.
+    if (generation !== this.sessionGeneration || this.sessionFile !== sessionFile) return entry.id;
     this.entries.push(entry);
     this.leafId = entry.id;
     return entry.id;

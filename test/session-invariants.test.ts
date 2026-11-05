@@ -88,6 +88,44 @@ describe("session/event-log invariants", () => {
     assertSessionFile(adapter.files.get(first.path) ?? "", ["keep me"]);
   });
 
+  it("does not append a slow entry to the new session after a swap", async () => {
+    const { manager, adapter } = makeManager();
+    const first = await manager.createSession(DEFAULTS);
+    await manager.appendMessage(userMessage("first session message"));
+    const second = await manager.createSession(DEFAULTS);
+    await manager.loadSession(first.path);
+
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalAppend = adapter.append.bind(adapter);
+    adapter.append = async (path, data) => {
+      started();
+      await gate;
+      return originalAppend(path, data);
+    };
+
+    const pending = manager.appendMessage(userMessage("slow entry"));
+    await startedPromise;
+    await manager.loadSession(second.path);
+    release();
+    await pending;
+
+    expect(adapter.files.get(first.path)).toContain("slow entry");
+    expect(adapter.files.get(second.path)).not.toContain("slow entry");
+    expect(manager.buildSessionContext().messages).toEqual([]);
+
+    await manager.appendMessage(userMessage("second session message"));
+    expect(adapter.files.get(second.path)).toContain("second session message");
+    expect(adapter.files.get(second.path)).not.toContain("slow entry");
+    expect(manager.buildSessionContext().messages.map(messageText)).toEqual(["second session message"]);
+  });
+
   it("reports artifact ids referenced by saved session messages", async () => {
     const { manager } = makeManager();
     await manager.createSession(DEFAULTS);
