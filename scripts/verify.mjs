@@ -251,7 +251,7 @@ function parseMocha(output) {
     } else if (parts[1] === "failing") {
       failed += count;
       sawSummary = true;
-    } else if (parts[1] === "pending") {
+    } else if (parts[1] === "pending" || parts[1] === "skipped") {
       skipped += count;
       sawSummary = true;
     }
