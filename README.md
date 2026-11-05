@@ -256,7 +256,7 @@ npm run docs:build # VitePress production docs build
 
 The unit suite runs without Obsidian: the `obsidian` package is replaced by a minimal mock via a vitest alias, the model stream by an injected `streamFn`, and the session store by an in-memory adapter. See `AGENTS.md` for architecture notes and `ROADMAP.md` for planned work.
 
-### End-to-end tests (local only)
+### End-to-end tests (real Obsidian)
 
 A base end-to-end suite drives the plugin inside a **real Obsidian** instance via
 [`wdio-obsidian-service`](https://github.com/jesse-r-s-hines/wdio-obsidian-service) — it
@@ -274,8 +274,9 @@ npm run test:e2e:matrix -- --spec test/e2e/specs/smoke.e2e.ts
 npm run verify:mobile
 ```
 
-It is **not** part of CI yet (it launches Electron, so it needs a display + cached Obsidian
-downloads). `npm run test:e2e` intentionally runs one Obsidian version at a time; set
+CI runs the full deterministic suite under `xvfb-run` with a cached Obsidian runtime, then
+runs the scripted dogfood eval. Locally it still launches Electron, so it needs a display and
+cached Obsidian downloads. `npm run test:e2e` intentionally runs one Obsidian version at a time; set
 `OBSIDIAN_VERSIONS=earliest/earliest` or another single pair for a targeted run. Use
 `npm run test:e2e:matrix` for supported-version coverage; it runs sequentially across
 `OBSIDIAN_VERSION_MATRIX` or, by default, `earliest/earliest,latest/latest`. Unit tests (vitest)
