@@ -34,7 +34,7 @@ human-only override that also prints every path it removes.
 `;
 
 function git(args, options = {}) {
-  const result = spawnSync("git", args, {
+  const result = spawnSync("git", args, { // NOSONAR:S4036 — git is a fixed developer binary resolved from the user's PATH; this helper is not a privileged service.
     cwd: options.cwd ?? process.cwd(),
     encoding: "utf8",
     env: process.env,
@@ -102,6 +102,17 @@ function slugify(name) {
   return slug;
 }
 
+/**
+ * Classify a worktree for cleanup.
+ * @param {{
+ *   trackedChanges?: number,
+ *   untrackedChanges?: number,
+ *   prState?: "OPEN"|"MERGED"|"CLOSED"|null,
+ *   merged?: boolean,
+ *   recent?: boolean,
+ * }} [input]
+ * @returns {"hold-wip"|"hold-scratch"|"hold-open-pr"|"safe"|"recent"|"review"}
+ */
 export function classifyWorktree({
   trackedChanges = 0,
   untrackedChanges = 0,
@@ -274,13 +285,13 @@ function isMerged(worktreePath, base) {
 }
 
 function hasGh() {
-  const result = spawnSync("gh", ["--version"], { encoding: "utf8" });
+  const result = spawnSync("gh", ["--version"], { encoding: "utf8" }); // NOSONAR:S4036 — gh is a fixed developer binary resolved from the user's PATH; this helper is not a privileged service.
   return !result.error && result.status === 0;
 }
 
 function lookupPr(worktreePath, branch, ghAvailable) {
   if (!ghAvailable || !branch || branch.startsWith("(")) return { pr: null, skipped: false };
-  const result = spawnSync(
+  const result = spawnSync( // NOSONAR:S4036 — gh is a fixed developer binary resolved from the user's PATH; this helper is not a privileged service.
     "gh",
     ["pr", "list", "--head", branch, "--state", "all", "--json", "number,state,isDraft", "--limit", "1"],
     { cwd: worktreePath, encoding: "utf8" },
