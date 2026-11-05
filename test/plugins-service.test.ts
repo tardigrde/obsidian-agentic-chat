@@ -105,6 +105,26 @@ describe("PluginService.auditText", () => {
   });
 });
 
+describe("PluginService.install recovery", () => {
+  it("restores a backup when the target is missing before sweeping", async () => {
+    const app = await seed();
+    const manifest = JSON.stringify({
+      $schema: AGENT_PLUGINS_SCHEMA_ID,
+      name: "docs",
+      version: "1.0.0",
+      description: "Docs tools",
+    });
+    await app.vault.createFolder(".agentic-plugins/.importing-backup-docs");
+    await app.vault.create(".agentic-plugins/.importing-backup-docs/plugin.json", manifest);
+
+    const plugins = await serviceFor(app, settings()).reload();
+
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/docs/plugin.json")).not.toBeNull();
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/.importing-backup-docs")).toBeNull();
+    expect(plugins.map((plugin) => plugin.name)).toContain("docs");
+  });
+});
+
 describe("PluginService cache invalidation", () => {
   it("invalidateFor drops the cache only for paths inside the plugins folder", async () => {
     const app = await seed();

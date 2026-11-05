@@ -547,14 +547,28 @@ export class PluginService {
     return true;
   }
 
-  /** Remove leftover `.importing-*` stage folders a crashed install may have left. */
+  /**
+   * Remove leftover `.importing-*` stage folders a crashed install may have
+   * left. A `.importing-backup-<name>` folder means the crash happened after
+   * moving the old package aside but before the staged package landed. Restore
+   * it when the target is missing so the sweep cannot delete the only copy.
+   */
   async sweepImportStages(): Promise<void> {
     const root = this.app.vault.getAbstractFileByPath(this.pluginsFolder());
     if (!(root instanceof TFolder)) return;
+    const writer = this.vaultWriter();
+    const backupPrefix = ".importing-backup-";
     for (const child of root.children) {
-      if (child instanceof TFolder && child.name.startsWith(".importing-")) {
-        await this.vaultWriter().removeFolder(child.path);
+      if (!(child instanceof TFolder) || !child.name.startsWith(".importing-")) continue;
+      if (child.name.startsWith(backupPrefix)) {
+        const name = child.name.slice(backupPrefix.length);
+        const target = `${this.pluginsFolder()}/${name}`;
+        if (name && !(await writer.folderExists(target))) {
+          await writer.renameFolder(child.path, target);
+          continue;
+        }
       }
+      await writer.removeFolder(child.path);
     }
   }
 
