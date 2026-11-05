@@ -218,41 +218,46 @@ async function repairInterruptedIndex(
   file: SemanticIndexFile,
 ): Promise<SemanticIndexFile> {
   if (file.state.status.state !== "running") return file;
-  // A live controller owns this file. Repairing it now would corrupt its run.
-  if (semanticIndexLeases.isLeased(path)) return file;
-
-  // Re-read before writing: a status read can race a completed run, and the
-  // newer snapshot must win over this stale repair.
-  let latest = file;
+  // Hold the same lease a writer uses. Without it, a writer can acquire the
+  // index between the check and the write and lose its file to our repair.
+  const lease = semanticIndexLeases.acquire(path);
+  if (!lease) return file;
   try {
-    const candidate = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
-    if (candidate?.version === SEMANTIC_INDEX_VERSION && candidate.state?.status) latest = candidate;
-  } catch {
-    return file;
-  }
-  if (latest.updatedAt !== file.updatedAt) return latest;
-  if (latest.state.status.state !== "running") return latest;
+    // Re-read before writing: a status read can race a completed run, and the
+    // newer snapshot must win over this stale repair.
+    let latest = file;
+    try {
+      const candidate = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
+      if (candidate?.version === SEMANTIC_INDEX_VERSION && candidate.state?.status) latest = candidate;
+    } catch {
+      return file;
+    }
+    if (latest.updatedAt !== file.updatedAt) return latest;
+    if (latest.state.status.state !== "running") return latest;
 
-  const status = latest.state.status;
-  const repaired: SemanticIndexFile = {
-    ...latest,
-    state: {
-      ...latest.state,
-      status: {
-        state: "failed",
-        scope: status.scope,
-        processedDocuments: status.processedDocuments,
-        totalDocuments: status.totalDocuments,
-        error: "Semantic indexing was interrupted before it finished. Run it again to complete the index.",
+    const status = latest.state.status;
+    const repaired: SemanticIndexFile = {
+      ...latest,
+      state: {
+        ...latest.state,
+        status: {
+          state: "failed",
+          scope: status.scope,
+          processedDocuments: status.processedDocuments,
+          totalDocuments: status.totalDocuments,
+          error: "Semantic indexing was interrupted before it finished. Run it again to complete the index.",
+        },
       },
-    },
-  };
-  try {
-    await writeSemanticIndexFile(adapter, path, repaired);
-  } catch {
-    // A read-only adapter still gets the repaired view; persistence is best effort.
+    };
+    try {
+      await writeSemanticIndexFile(adapter, path, repaired);
+    } catch {
+      // A read-only adapter still gets the repaired view; persistence is best effort.
+    }
+    return repaired;
+  } finally {
+    lease.release();
   }
-  return repaired;
 }
 
 export async function writeSemanticIndexFile(

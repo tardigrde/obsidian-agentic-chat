@@ -117,6 +117,11 @@ describe("semantic index bootstrap", () => {
       state: { status: { state: string } };
     };
     expect(persisted.state.status.state).toBe("failed");
+
+    // Repair must release its critical-section lease.
+    const next = semanticIndexLeases.acquire(path);
+    expect(next).not.toBeNull();
+    next?.release();
   });
 
   it("returns a newer index instead of overwriting it with a stale repair", async () => {
@@ -154,6 +159,10 @@ describe("semantic index bootstrap", () => {
     expect(stored?.state.status.state).toBe("complete");
     expect(stored?.updatedAt).toBe(2_000);
     expect(adapter.files.get(path)).toBe(complete);
+
+    const next = semanticIndexLeases.acquire(path);
+    expect(next).not.toBeNull();
+    next?.release();
   });
 
   it("leases one index path and recovers an expired lease", async () => {
