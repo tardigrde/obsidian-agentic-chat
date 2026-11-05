@@ -291,8 +291,8 @@ function hasGh() {
 
 function lookupPr(worktreePath, branch, ghAvailable) {
   if (!ghAvailable || !branch || branch.startsWith("(")) return { pr: null, skipped: false };
-  const result = spawnSync( // NOSONAR:S4036 — gh is a fixed developer binary resolved from the user's PATH; this helper is not a privileged service.
-    "gh",
+  const result = spawnSync(
+    "gh", // NOSONAR:S4036 — gh is a fixed developer binary resolved from the user's PATH; this helper is not a privileged service.
     ["pr", "list", "--head", branch, "--state", "all", "--json", "number,state,isDraft", "--limit", "1"],
     { cwd: worktreePath, encoding: "utf8" },
   );
