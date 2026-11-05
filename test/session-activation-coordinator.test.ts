@@ -73,6 +73,7 @@ describe("SessionActivationCoordinator", () => {
     ).rejects.toThrow("swap failed");
 
     expect(ctx.events).toEqual([
+      "reset",
       "mute:true",
       "mute:false",
       "reset",
@@ -81,7 +82,9 @@ describe("SessionActivationCoordinator", () => {
       "chrome",
       "tabs",
     ]);
-    expect(ctx.resets[0]).toMatchObject({
+    // Disarm before the swap starts, then the clean post-swap reset.
+    expect(ctx.resets[0]).toEqual({ queuedPrompt: true });
+    expect(ctx.resets[1]).toMatchObject({
       attachments: true,
       activeNoteSuppression: true,
       lastSent: true,
@@ -102,6 +105,7 @@ describe("SessionActivationCoordinator", () => {
     });
 
     expect(ctx.events).toEqual([
+      "reset",
       "mute:true",
       "load",
       "usage:true",
@@ -112,6 +116,7 @@ describe("SessionActivationCoordinator", () => {
       "tabs",
     ]);
     expect(ctx.resets).toEqual([
+      { queuedPrompt: true },
       { lastSent: true, activeNoteCache: true, contextCache: true, editing: true, bubble: true, queuedPrompt: true },
     ]);
   });

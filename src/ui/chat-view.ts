@@ -1343,6 +1343,10 @@ export class ChatView extends ItemView {
   }
 
   private async flushQueuedPromptIfReady(): Promise<void> {
+    // A swap may notify listeners while it is still activating. Flushing then
+    // would send the old draft into the session that is being installed.
+    const swapState = this.service.getSessionSwapState();
+    if (swapState !== "idle" && swapState !== "live") return;
     if (!this.queuedPromptArmed || this.flushingQueuedPrompt || this.service.isStreaming()) return;
     const text = this.inputEl.value.trim();
     this.queuedPromptArmed = false;

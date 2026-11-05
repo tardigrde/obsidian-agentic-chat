@@ -10,7 +10,7 @@ describe("ChatView async lifecycle", () => {
       queuedPromptArmed: true,
       flushingQueuedPrompt: false,
       inputEl: { value: "stale queued draft" },
-      tabs: [{ service: { isStreaming: () => false, sendPrompt } }],
+      tabs: [{ service: { isStreaming: () => false, getSessionSwapState: () => "live", sendPrompt } }],
       activeTabIndex: 0,
       statusEl: { setText: vi.fn() },
       renderChips: vi.fn(),
@@ -27,6 +27,68 @@ describe("ChatView async lifecycle", () => {
 
     await view.flushQueuedPromptIfReady();
     expect(sendPrompt).not.toHaveBeenCalled();
+  });
+
+  it("does not flush a queued prompt while the session swap is not live", async () => {
+    const sendPrompt = vi.fn(async () => {});
+    const view = Object.assign(Object.create(ChatView.prototype), {
+      queuedPromptArmed: true,
+      flushingQueuedPrompt: false,
+      inputEl: { value: "stale queued draft" },
+      tabs: [
+        {
+          service: {
+            isStreaming: () => false,
+            getSessionSwapState: () => "activating",
+          },
+        },
+      ],
+      activeTabIndex: 0,
+      statusEl: { setText: vi.fn() },
+      renderChips: vi.fn(),
+      syncChrome: vi.fn(),
+      composerHistory: { record: vi.fn() },
+      sendPrompt,
+    }) as ChatViewHarness & {
+      queuedPromptArmed: boolean;
+      flushQueuedPromptIfReady: () => Promise<void>;
+    };
+
+    await view.flushQueuedPromptIfReady();
+
+    expect(sendPrompt).not.toHaveBeenCalled();
+    expect(view.queuedPromptArmed).toBe(true);
+  });
+
+  it("flushes the queued prompt once the session swap is live", async () => {
+    const sendPrompt = vi.fn(async () => {});
+    const view = Object.assign(Object.create(ChatView.prototype), {
+      queuedPromptArmed: true,
+      flushingQueuedPrompt: false,
+      inputEl: { value: "queued draft" },
+      tabs: [
+        {
+          service: {
+            isStreaming: () => false,
+            getSessionSwapState: () => "live",
+          },
+        },
+      ],
+      activeTabIndex: 0,
+      statusEl: { setText: vi.fn() },
+      renderChips: vi.fn(),
+      syncChrome: vi.fn(),
+      composerHistory: { record: vi.fn() },
+      sendPrompt,
+    }) as ChatViewHarness & {
+      queuedPromptArmed: boolean;
+      flushQueuedPromptIfReady: () => Promise<void>;
+    };
+
+    await view.flushQueuedPromptIfReady();
+
+    expect(sendPrompt).toHaveBeenCalledWith("queued draft");
+    expect(view.queuedPromptArmed).toBe(false);
   });
 
   it("does not touch active tab service after the view closes during send", async () => {
@@ -64,6 +126,7 @@ interface FakeService {
   getMessages: () => unknown[];
   isPathIgnored: (path: string) => boolean;
   supportsImages: () => boolean;
+  getSessionSwapState?: () => string;
   sendPrompt: (prompt: string, images: unknown[]) => Promise<void>;
 }
 

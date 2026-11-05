@@ -84,6 +84,9 @@ export class SessionActivationCoordinator {
   }
 
   async startNewConversation(startSession: () => Promise<void>): Promise<void> {
+    // Disarm before the swap starts so a swap-time change notification cannot
+    // flush the old draft into the new session.
+    this.options.resetUiState({ queuedPrompt: true });
     this.options.setMuteNotifications(true);
     try {
       await startSession();
@@ -99,6 +102,7 @@ export class SessionActivationCoordinator {
   }
 
   async loadConversation(loadSession: () => Promise<void>): Promise<void> {
+    this.options.resetUiState({ queuedPrompt: true });
     await this.runMuted(loadSession, true);
     this.options.resetUiState({
       lastSent: true,
