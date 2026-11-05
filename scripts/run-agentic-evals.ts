@@ -49,6 +49,7 @@ interface CliArgs {
   "run-judge"?: boolean;
   "judge-cache-dir"?: string;
   strict?: boolean;
+  "fail-on-skip"?: boolean;
 }
 
 interface EvalRunSummary {
@@ -118,6 +119,12 @@ async function main(): Promise<void> {
   process.stdout.write(formatConsoleSummary(summary, summaryMdPath, summaryJsonPath));
   if (args["expect-problems"] && summary.totals.errors + summary.totals.warnings === 0) {
     process.stderr.write("Expected at least one eval finding, but none were reported.\n");
+    process.exit(1);
+  }
+  if (args["fail-on-skip"] && summary.totals.skipped > 0) {
+    process.stderr.write(
+      `Eval run skipped ${summary.totals.skipped} case(s); --fail-on-skip treats a skip as a failure.\n`,
+    );
     process.exit(1);
   }
   if (!args["allow-problems"]) {
@@ -529,9 +536,19 @@ function formatConsoleSummary(summary: EvalRunSummary, summaryMdPath: string, su
 
 function parseArgs(argv: string[]): CliArgs {
   const parsed: Record<string, string | boolean> = {};
-  const booleanFlags = new Set(["run-scripted", "run-judge", "allow-problems", "expect-problems", "strict"]);
+  const booleanFlags = new Set([
+    "run-scripted",
+    "run-judge",
+    "allow-problems",
+    "expect-problems",
+    "strict",
+    "fail-on-skip",
+  ]);
   for (let index = 0; index < argv.length; index += 1) {
     const raw = argv[index];
+    // npm and `verify --` both forward a bare `--`. It separates arguments; it
+    // is not an argument itself.
+    if (raw === "--") continue;
     if (!raw.startsWith("--")) throw new Error(`Unexpected argument: ${raw}`);
     const key = raw.slice(2);
     if (booleanFlags.has(key)) {
