@@ -115,12 +115,15 @@ interface ControlledStreamRun {
   finish: () => void;
 }
 
-function controlledStreamFn(responses: string[]): { streamFn: StreamFn; runs: ControlledStreamRun[] } {
+function controlledStreamFn(
+  responses: string[],
+  costTotal = 0,
+): { streamFn: StreamFn; runs: ControlledStreamRun[] } {
   const runs: ControlledStreamRun[] = [];
   const streamFn = ((model: Model<"openai-completions">, context: TranscriptContext, options?: { signal?: AbortSignal }) => {
     const stream = createAssistantMessageEventStream();
     const responseText = responses[Math.min(runs.length, responses.length - 1)] ?? "";
-    const message = assistantMessage(model, responseText, "stop");
+    const message = assistantMessage(model, responseText, "stop", costTotal);
     let settled = false;
     const finish = () => {
       if (settled) return;
@@ -153,6 +156,7 @@ function assistantMessage(
   model: Model<"openai-completions">,
   text: string,
   stopReason: AssistantMessage["stopReason"],
+  costTotal = 0,
 ): AssistantMessage {
   return {
     role: "assistant",
@@ -160,7 +164,7 @@ function assistantMessage(
     api: model.api,
     provider: model.provider,
     model: model.id,
-    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: costTotal } },
     stopReason,
     timestamp: Date.now(),
   };
@@ -1009,6 +1013,31 @@ describe("AgentService", () => {
     expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(userTexts(service.getMessages())).toEqual(["initial request"]);
 
+    const next = service.sendPrompt("fresh request");
+    await waitFor(() => controlled.runs.length === 2, "fresh run");
+    expect(userTexts(controlled.runs[1].context.messages)).toEqual(["initial request", "fresh request"]);
+    controlled.runs[1].finish();
+    await next;
+  });
+
+  it("clears queued steering and follow-ups when the spend cap stops a run", async () => {
+    const controlled = controlledStreamFn(["first answer", "must not run"], 0.02);
+    const { service, settings } = makeService(controlled.streamFn);
+    settings.notifications.costCapUsd = 0.01;
+
+    const run = service.sendPrompt("initial request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
+    await service.steerPrompt("stale steering");
+    await service.followUpPrompt("stale follow-up");
+
+    controlled.runs[0].finish();
+    await run;
+    await waitFor(() => !service.isStreaming(), "spend-capped run to settle");
+    expect(service.getError()).toMatch(/stopped this turn/i);
+
+    // Raise the cap and send again. Any queued stop-time messages would be
+    // drained into this run's context; a stop must leave both queues empty.
+    settings.notifications.costCapUsd = 1;
     const next = service.sendPrompt("fresh request");
     await waitFor(() => controlled.runs.length === 2, "fresh run");
     expect(userTexts(controlled.runs[1].context.messages)).toEqual(["initial request", "fresh request"]);

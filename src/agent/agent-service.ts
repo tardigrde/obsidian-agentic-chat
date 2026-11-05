@@ -639,9 +639,18 @@ export class AgentService {
   abort(): void {
     const agent = this.agent;
     if (!agent) return;
+    this.stopAgent(agent);
+    void agent.waitForIdle().then(() => this.notifyChange());
+  }
+
+  /**
+   * One stop policy for every path that ends a turn early: clear steering and
+   * follow-up queues first, then abort. Clearing first guarantees a queued
+   * message cannot be drained into the next run after the stop.
+   */
+  private stopAgent(agent: Agent): void {
     agent.clearAllQueues();
     agent.abort();
-    void agent.waitForIdle().then(() => this.notifyChange());
   }
 
   async newSession(): Promise<void> {
@@ -775,7 +784,7 @@ export class AgentService {
     });
     if (!reason) return;
     this.sessionState.setErrorMessage(reason);
-    agent?.abort();
+    if (agent) this.stopAgent(agent);
   }
 
   /**
