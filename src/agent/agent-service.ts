@@ -76,7 +76,7 @@ export interface AgentServiceOptions {
   getSettings: () => AgenticChatSettings;
   sessionManager: ObsidianSessionManager;
   /** Resolve an "ask" approval gate; returns the user's decision. */
-  confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
+  confirmToolCall: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
   /** Injected for tests; production streams through the pi-ai Models runtime. */
   streamFn?: StreamFn;
   /**
@@ -208,7 +208,7 @@ export class AgentService {
       artifactStore: options.artifactStore,
       // Deferred: the controller is constructed next and shares this runtime's registry.
       toolCalls: {
-        beforeToolCall: (context) => this.toolCalls.beforeToolCall(context),
+        beforeToolCall: (context, signal) => this.toolCalls.beforeToolCall(context, signal),
         afterToolCall: (context) => this.toolCalls.afterToolCall(context),
       },
     });

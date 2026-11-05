@@ -50,7 +50,7 @@ export class AgentParentConfigurationRuntime {
         contextWindow: model.contextWindow,
       }),
       getApiKey: (provider) => apiKeyForProvider(this.options.getSettings(), provider),
-      beforeToolCall: (context) => this.options.toolCalls.beforeToolCall(context),
+      beforeToolCall: (context, signal) => this.options.toolCalls.beforeToolCall(context, signal),
       afterToolCall: (context) => this.options.toolCalls.afterToolCall(context),
       // `finishTurn` also receives the run's abort signal; the loop guard does not
       // need it, so it is intentionally left unbound.

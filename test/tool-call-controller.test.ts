@@ -13,7 +13,7 @@ import { FakeVault } from "./helpers/fake-vault";
 function makeController(
   options: {
     settings?: Partial<AgenticChatSettings>;
-    confirmToolCall?: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
+    confirmToolCall?: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
     tools?: AgentTool[];
     profiles?: AgentRole[];
     app?: App;
@@ -33,9 +33,9 @@ function makeController(
   const controller = new AgentToolCallController({
     app: options.app ?? fakeApp().app,
     getSettings: () => settings,
-    confirmToolCall: async (request) => {
+    confirmToolCall: async (request, signal) => {
       requests.push(request);
-      return options.confirmToolCall ? options.confirmToolCall(request) : { approved: true, remember: false };
+      return options.confirmToolCall ? options.confirmToolCall(request, signal) : { approved: true, remember: false };
     },
     getTools: () => options.tools ?? [{ name: "write", label: "Write file" } as AgentTool],
     getProfiles: () => options.profiles ?? [],
@@ -70,6 +70,28 @@ function fakeApp(): { app: App; vault: FakeVault } {
 }
 
 describe("AgentToolCallController", () => {
+  it("passes the turn abort signal to the approval prompt", async () => {
+    const abort = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      confirmToolCall: async (_request, signal) => {
+        receivedSignal = signal;
+        return { approved: false, remember: false };
+      },
+    });
+
+    await controller.beforeToolCall(
+      {
+        toolCall: { id: "call-1", name: "write" },
+        args: { path: "Notes/a.md", content: "hi" },
+      },
+      abort.signal,
+    );
+
+    expect(receivedSignal).toBe(abort.signal);
+  });
+
   it("prompts ask-policy tool calls with the registered tool label", async () => {
     const { controller, requests } = makeController({
       settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },

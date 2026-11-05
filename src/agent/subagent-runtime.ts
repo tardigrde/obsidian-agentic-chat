@@ -100,7 +100,8 @@ export class AgentSubagentRuntime {
         messages: [],
       },
       getApiKey: (provider) => apiKeyForProvider(this.getSettings(), provider),
-      beforeToolCall: (context) => this.toolCalls.beforeToolCall(namespaceBeforeToolCall(context, childNamespace)),
+      beforeToolCall: (context, signal) =>
+        this.toolCalls.beforeToolCall(namespaceBeforeToolCall(context, childNamespace), signal),
       afterToolCall: (context) => this.toolCalls.afterToolCall(namespaceAfterToolCall(context, childNamespace)),
       toolExecution: "sequential",
     });

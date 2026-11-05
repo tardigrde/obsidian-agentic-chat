@@ -120,13 +120,16 @@ export default class AgenticChatPlugin extends Plugin {
    * Build a fresh agent service backed by its own session manager. The chat view
    * creates one per tab so multiple conversations can run independently in a leaf.
    */
-  createAgentService(options: { askUser?: AskUserHandler; confirmToolCall?: (request: ToolApprovalRequest) => Promise<UserApprovalChoice> } = {}): AgentService {
+  createAgentService(options: {
+    askUser?: AskUserHandler;
+    confirmToolCall?: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
+  } = {}): AgentService {
     const sessionManager = ObsidianSessionManager.forPlugin(this.app, this);
     return new AgentService({
       app: this.app,
       getSettings: () => this.settings,
       sessionManager,
-      confirmToolCall: options.confirmToolCall ?? ((request) => this.confirmToolCall(request)),
+      confirmToolCall: options.confirmToolCall ?? ((request, signal) => this.confirmToolCall(request, signal)),
       askUser: options.askUser,
       streamFn: createWindowE2EStreamFn({ enabled: __AGENTIC_CHAT_ENABLE_E2E_STREAM__ }),
       loopGuardDisabled: __AGENTIC_CHAT_ENABLE_E2E_STREAM__,
@@ -211,8 +214,8 @@ export default class AgenticChatPlugin extends Plugin {
   }
 
   /** Show the approval dialog and persist a remembered allow/deny choice after the user decides. */
-  private async confirmToolCall(request: ToolApprovalRequest): Promise<UserApprovalChoice> {
-    const choice = await new ApprovalModal(this.app, request).ask();
+  private async confirmToolCall(request: ToolApprovalRequest, signal?: AbortSignal): Promise<UserApprovalChoice> {
+    const choice = await new ApprovalModal(this.app, request).ask(signal);
     if (applyRememberedApprovalChoice(this.settings, request.toolName, choice)) {
       await this.saveSettings();
     }

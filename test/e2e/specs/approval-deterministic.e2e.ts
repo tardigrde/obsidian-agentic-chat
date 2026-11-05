@@ -14,6 +14,7 @@ const INSTRUCTIONS_BODY = "# Agent instructions\n- Prefer concise vault updates.
 const REMEMBER_DENY_PATH = "E2E-Remember-Deny.md";
 const REMEMBER_DENY_SECOND_PATH = "E2E-Remember-Deny-Second.md";
 const EMPTY_FOLDER_PATH = "E2E-Empty-Folder";
+const STOP_APPROVAL_NOTE_PATH = "E2E-Stop-Approval.md";
 
 type ScriptedTurn = {
   label?: string;
@@ -109,6 +110,7 @@ async function cleanupNotes(): Promise<void> {
     REMEMBER_DENY_PATH,
     REMEMBER_DENY_SECOND_PATH,
     EMPTY_FOLDER_PATH,
+    STOP_APPROVAL_NOTE_PATH,
   ]);
 }
 
@@ -251,6 +253,11 @@ describe("agentic-chat deterministic approvals", function () {
       textTurn("steering final", "Steered answer used the added constraint."),
       toolTurn("empty folder delete call", "e2e-delete-empty-folder", "delete", { path: EMPTY_FOLDER_PATH }),
       textTurn("empty folder delete final", "Deleted the empty folder."),
+      toolTurn("stop approval call", "e2e-stop-approval", "write", {
+        path: STOP_APPROVAL_NOTE_PATH,
+        content: "should not be written after stop",
+      }),
+      textTurn("stop approval final", "This turn should not run."),
     ]);
 
     const configured = await configurePlugin();
@@ -517,6 +524,29 @@ describe("agentic-chat deterministic approvals", function () {
       "empty folder delete call",
       "empty folder delete final",
     ]);
+  });
+
+  it("closes the approval modal when the user stops the turn", async function () {
+    await setApproval("ask", []);
+    await sendPrompt("scripted write that will be stopped");
+
+    const modal = await $(".agentic-chat-approval");
+    await modal.waitForExist({ timeout: 10_000 });
+    const stop = await $(".agentic-chat-stop");
+    await stop.waitForDisplayed({ timeout: 5_000 });
+    // The modal backdrop covers the toolbar, so dispatch the Stop click on the
+    // same button handler instead of a coordinate click.
+    await browser.execute(() => {
+      document.querySelector<HTMLElement>(".agentic-chat-stop")?.click();
+    });
+
+    await modal.waitForExist({ reverse: true, timeout: 5_000 });
+    await browser.waitUntil(async () => !(await noteExists(STOP_APPROVAL_NOTE_PATH)), {
+      timeout: 5_000,
+      timeoutMsg: "a stopped approval still wrote its target note",
+    });
+    const labels = await scriptedCallLabels();
+    expect(labels).toContain("stop approval call");
   });
 
   after(async function () {

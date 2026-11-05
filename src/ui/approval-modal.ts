@@ -16,6 +16,9 @@ export class ApprovalModal extends Modal {
   private decided = false;
   private denyArmed = false;
   private resolve: ((choice: UserApprovalChoice) => void) | null = null;
+  private abortSignal?: AbortSignal;
+  private abortListener?: () => void;
+  private opened = false;
 
   constructor(
     app: App,
@@ -24,9 +27,18 @@ export class ApprovalModal extends Modal {
     super(app);
   }
 
-  ask(): Promise<UserApprovalChoice> {
+  ask(signal?: AbortSignal): Promise<UserApprovalChoice> {
     return new Promise((resolve) => {
       this.resolve = resolve;
+      this.abortSignal = signal;
+      if (signal?.aborted) {
+        this.settle({ approved: false, remember: false, reason: "The turn was stopped before approval." });
+        return;
+      }
+      this.abortListener = () =>
+        this.settle({ approved: false, remember: false, reason: "The turn was stopped before approval." });
+      signal?.addEventListener("abort", this.abortListener, { once: true });
+      this.opened = true;
       this.open();
     });
   }
@@ -161,7 +173,26 @@ export class ApprovalModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+    this.cleanupAbortListener();
     if (!this.decided) this.resolve?.({ approved: false, remember: false });
+  }
+
+  private settle(choice: UserApprovalChoice): void {
+    if (this.decided) return;
+    this.decided = true;
+    this.cleanupAbortListener();
+    const resolve = this.resolve;
+    this.resolve = null;
+    resolve?.(choice);
+    if (this.opened) this.close();
+  }
+
+  private cleanupAbortListener(): void {
+    if (this.abortSignal && this.abortListener) {
+      this.abortSignal.removeEventListener("abort", this.abortListener);
+    }
+    this.abortSignal = undefined;
+    this.abortListener = undefined;
   }
 
   /** Read the target file and render a structured preview of the pending change. */
@@ -350,9 +381,7 @@ export class ApprovalModal extends Modal {
   }
 
   private decide(choice: UserApprovalChoice): void {
-    this.decided = true;
-    this.resolve?.(choice);
-    this.close();
+    this.settle(choice);
   }
 }
 

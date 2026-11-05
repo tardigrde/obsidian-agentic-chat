@@ -335,9 +335,9 @@ export class ChatView extends ItemView {
         if (!tabRef.current) throw new Error("The chat tab is not ready to ask the user.");
         return this.askUserForTab(tabRef.current, request, signal);
       },
-      confirmToolCall: (request) => {
+      confirmToolCall: (request, signal) => {
         if (!tabRef.current) throw new Error("The chat tab is not ready for approval.");
-        return this.confirmToolCallForTab(tabRef.current, request);
+        return this.confirmToolCallForTab(tabRef.current, request, signal);
       },
     });
     const tab: ChatTab = { service, unsubscribe: () => {}, state: freshChatTabState() };
@@ -538,7 +538,11 @@ export class ChatView extends ItemView {
   }
 
   /** Notify + label for background tool approvals (no auto-switch). */
-  private async confirmToolCallForTab(tab: ChatTab, request: ToolApprovalRequest): Promise<UserApprovalChoice> {
+  private async confirmToolCallForTab(
+    tab: ChatTab,
+    request: ToolApprovalRequest,
+    signal?: AbortSignal,
+  ): Promise<UserApprovalChoice> {
     const index = this.tabs.indexOf(tab);
     if (index === -1) throw new Error("The chat tab that requested approval is no longer open.");
     const isBackground = tab !== this.activeTab;
@@ -552,7 +556,7 @@ export class ChatView extends ItemView {
     const modal = new ApprovalModal(this.app, labeledRequest);
     tab.pendingApprovalModal = modal;
     try {
-      const choice = await modal.ask();
+      const choice = await modal.ask(signal);
       if (applyRememberedApprovalChoice(this.plugin.settings, request.toolName, choice)) {
         await this.plugin.saveSettings();
       }

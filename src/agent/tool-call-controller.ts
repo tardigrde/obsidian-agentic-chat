@@ -63,7 +63,7 @@ export interface AfterToolCallContext {
 interface ToolCallControllerOptions {
   app: App;
   getSettings: () => AgenticChatSettings;
-  confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
+  confirmToolCall: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
   getTools: () => AgentTool[];
   getProfiles: () => AgentRole[];
   onUndoApplied: () => void;
@@ -81,7 +81,7 @@ interface ToolCallControllerOptions {
 export class AgentToolCallController {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
-  private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
+  private readonly confirmToolCall: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
   private readonly getTools: () => AgentTool[];
   private readonly getProfiles: () => AgentRole[];
   private readonly onUndoApplied: () => void;
@@ -135,8 +135,8 @@ export class AgentToolCallController {
     this.subagentRegistry.clearPendingErrorDetails();
   }
 
-  async beforeToolCall(context: BeforeToolCallContext): Promise<ToolGateDecision> {
-    const decision = await this.gateToolCall(context.toolCall.id, context.toolCall.name, context.args);
+  async beforeToolCall(context: BeforeToolCallContext, signal?: AbortSignal): Promise<ToolGateDecision> {
+    const decision = await this.gateToolCall(context.toolCall.id, context.toolCall.name, context.args, signal);
     // Capture the inverse only for allowed mutating calls; a blocked call never
     // runs, so it has nothing to undo.
     if (!decision && UNDOABLE_TOOLS.has(context.toolCall.name)) {
@@ -198,7 +198,12 @@ export class AgentToolCallController {
     return undefined;
   }
 
-  private async gateToolCall(toolCallId: string, toolName: string, args: unknown): Promise<ToolGateDecision> {
+  private async gateToolCall(
+    toolCallId: string,
+    toolName: string,
+    args: unknown,
+    signal?: AbortSignal,
+  ): Promise<ToolGateDecision> {
     const settings = this.getSettings();
     const modeDecision = resolveModePolicy(settings.mode, settings.approval, toolName);
     if (modeDecision.policy === "deny" && modeDecision.reason) {
@@ -206,7 +211,7 @@ export class AgentToolCallController {
       return { block: true, reason: modeDecision.reason };
     }
     if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, toolCallId, args);
-    if (isMcpToolName(toolName)) return this.gateMcpToolCall(settings, toolCallId, toolName, args);
+    if (isMcpToolName(toolName)) return this.gateMcpToolCall(settings, toolCallId, toolName, args, signal);
     const decision = modeDecision;
     const { reason } = decision;
     // Skill resources are vault-hosted plugin content — reads stay exempt from
@@ -252,6 +257,7 @@ export class AgentToolCallController {
       { toolName, label, args },
       toolCallId,
       "The user declined this action.",
+      signal,
     );
     return choice.approved
       ? undefined
@@ -263,6 +269,7 @@ export class AgentToolCallController {
     toolCallId: string,
     toolName: string,
     args: unknown,
+    signal?: AbortSignal,
   ): Promise<ToolGateDecision> {
     // S1: MCP now respects the same mode overlay as vault tools (plan deny, yolo allow)
     // and the same working-dir refinement for vault-path args. Previously this bypassed both,
@@ -297,6 +304,7 @@ export class AgentToolCallController {
       { toolName, label, args },
       toolCallId,
       "The user declined this MCP tool call.",
+      signal,
     );
     return choice.approved
       ? undefined
@@ -361,6 +369,7 @@ export class AgentToolCallController {
     request: ToolApprovalRequest,
     toolCallId: string,
     deniedReason: string,
+    signal?: AbortSignal,
   ): Promise<UserApprovalChoice> {
     await this.auditApproval({
       decision: "requested",
@@ -369,7 +378,7 @@ export class AgentToolCallController {
       label: request.label,
       args: request.args,
     });
-    const choice = await this.confirmToolCall(request);
+    const choice = await this.confirmToolCall(request, signal);
     await this.auditApproval({
       decision: choice.approved ? "approved" : "denied",
       toolCallId,
