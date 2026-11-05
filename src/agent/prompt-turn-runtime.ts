@@ -23,7 +23,21 @@ export interface AgentPromptTurnRuntimeOptions {
  * public API; this class owns the sequence around a turn.
  */
 export class AgentPromptTurnRuntime {
+  private inFlight = false;
+  private readonly idleWaiters: Array<() => void> = [];
+
   constructor(private readonly options: AgentPromptTurnRuntimeOptions) {}
+
+  /** True from the moment a turn is accepted until its run settles. */
+  isInFlight(): boolean {
+    return this.inFlight;
+  }
+
+  /** Resolve once no turn is starting or running. Used by internal continuations. */
+  async waitForIdle(): Promise<void> {
+    if (!this.inFlight) return;
+    await new Promise<void>((resolve) => this.idleWaiters.push(resolve));
+  }
 
   async run(run: PromptTurnRun): Promise<void> {
     const blockReason = this.blockReason();
@@ -33,18 +47,32 @@ export class AgentPromptTurnRuntime {
       return;
     }
 
-    await this.options.refreshConfiguration();
-    await this.options.maybeCompact();
+    // Synchronous guard: `isStreaming` only flips once prompt() starts, so two
+    // sends could both pass the pre-flight check and race into `agent.prompt()`.
+    if (this.inFlight) {
+      const message = "A turn is already starting. Wait for it to finish before sending another message.";
+      this.options.setErrorMessage(message);
+      this.options.notifyChange();
+      throw new Error(message);
+    }
+    this.inFlight = true;
     try {
-      this.options.clearError();
-      this.options.notifyChange();
-      await run(this.options.requireAgent());
-    } catch (error) {
-      this.options.setError(error);
+      await this.options.refreshConfiguration();
+      await this.options.maybeCompact();
+      try {
+        this.options.clearError();
+        this.options.notifyChange();
+        await run(this.options.requireAgent());
+      } catch (error) {
+        this.options.setError(error);
+      } finally {
+        // One-shot model/thinking overrides are consumed by the attempted turn.
+        this.options.consumeOverrides();
+        this.options.notifyChange();
+      }
     } finally {
-      // One-shot model/thinking overrides are consumed by the attempted turn.
-      this.options.consumeOverrides();
-      this.options.notifyChange();
+      this.inFlight = false;
+      for (const resolve of this.idleWaiters.splice(0)) resolve();
     }
   }
 

@@ -1304,6 +1304,12 @@ export class ChatView extends ItemView {
       return;
     }
 
+    // The guard closes the window between "not streaming" and "prompt started".
+    if (this.service.isTurnInFlight()) {
+      this.statusEl.setText("A turn is already starting — wait for it to finish, then send again.");
+      return;
+    }
+
     this.pushHistory(text);
     if (text.startsWith("#")) {
       this.inputEl.value = "";

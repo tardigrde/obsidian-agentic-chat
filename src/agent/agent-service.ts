@@ -306,6 +306,11 @@ export class AgentService {
     return this.agent?.state.isStreaming ?? false;
   }
 
+  /** Whether a prompt turn is starting or running, including the pre-stream window. */
+  isTurnInFlight(): boolean {
+    return this.promptTurns.isInFlight() || this.isStreaming();
+  }
+
   /** Stop one subagent dispatched by this service; other services are untouched. */
   abortSubagentChild(id: string): void {
     this.subagents.abortChild(id);
@@ -706,6 +711,9 @@ export class AgentService {
     if (mode !== "redirect") return;
     agent.abort();
     await agent.waitForIdle();
+    // waitForIdle can resolve before the aborted turn's finally clears the
+    // synchronous guard. Let that turn finish before starting the continuation.
+    await this.promptTurns.waitForIdle();
     if (agent.hasQueuedMessages()) {
       await this.runPrompt((currentAgent) => currentAgent.continue());
     } else {

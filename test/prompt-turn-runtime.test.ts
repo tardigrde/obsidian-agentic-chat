@@ -14,6 +14,7 @@ function harness(overrides: {
   hasApiKey?: boolean;
   isStreaming?: boolean;
   sessionCostUsd?: number;
+  refreshConfiguration?: () => Promise<void>;
 } = {}): Harness {
   const settings: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
@@ -31,6 +32,10 @@ function harness(overrides: {
     hasApiKey: () => overrides.hasApiKey ?? true,
     getSessionCostUsd: () => overrides.sessionCostUsd ?? 0,
     refreshConfiguration: async () => {
+      if (overrides.refreshConfiguration) {
+        await overrides.refreshConfiguration();
+        return;
+      }
       events.push("refresh");
     },
     maybeCompact: async () => {
@@ -105,5 +110,36 @@ describe("AgentPromptTurnRuntime", () => {
       "consume-overrides",
       "notify",
     ]);
+  });
+
+  it("rejects a second run while the first is still before its first await", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { runtime, events } = harness({
+      refreshConfiguration: async () => {
+        events.push("refresh");
+        await gate;
+      },
+    });
+
+    let runs = 0;
+    const first = runtime.run(async () => {
+      runs += 1;
+    });
+    const second = runtime.run(async () => {
+      runs += 1;
+    });
+    release();
+
+    const secondOutcome = await second.then(
+      () => "resolved",
+      () => "rejected",
+    );
+    await first;
+    expect(secondOutcome).toBe("rejected");
+    expect(runs).toBe(1);
+    expect(runtime.isInFlight()).toBe(false);
   });
 });
