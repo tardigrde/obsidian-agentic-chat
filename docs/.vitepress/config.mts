@@ -55,7 +55,7 @@ export default defineConfig({
         text: "Development",
         items: [
           { text: "Development guide", link: "/development/" },
-          { text: "Testing", link: "/development/testing" },
+          { text: "Verification", link: "/development/verification" },
           { text: "Publishing docs", link: "/reference/publishing-docs" },
         ],
       },

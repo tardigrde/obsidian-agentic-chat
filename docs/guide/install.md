@@ -1,11 +1,11 @@
 # Install
 
-Agentic Chat runs on Obsidian desktop and mobile. It is not desktop-only.
+Agentic Chat runs on Obsidian desktop and mobile.
 
 Two things get installed at different times:
 
-- **The plugin itself** (this guide, up to "Manual install").
-- **Agent plugins** — skill/MCP packages you bring into the vault (below).
+- **The plugin itself.** This guide covers it up to "Manual install".
+- **Agent plugins.** These are skill and MCP packages you bring into the vault (see below).
 
 ## From Obsidian community plugins
 
@@ -33,18 +33,18 @@ Use [BRAT](https://github.com/TfTHacker/obsidian42-brat) when you want pre-relea
 
 ## Installing agent plugins
 
-Agent plugins are packages (a `plugin.json`, optional `skills/`, optional `mcp.json`) that live inside your vault as plain files — no Node runtime, no build step. See [Agent Plugins](../features/agent-plugins.md).
+Agent plugins are packages (a `plugin.json`, optional `skills/`, optional `mcp.json`) that live inside your vault as plain files. They need no Node runtime and no build step. See [Agent plugins](../features/agent-plugins.md).
 
-Open **Settings → Resources** and use **Install plugin…**. You can import from any of:
+Open **Settings > Agentic Chat > Resources** and use **Install plugin…**. You can import from any of:
 
-- a **GitHub URL** — repo shorthand (`owner/repo`), `github.com/owner/repo` tree, blob, or raw URLs, or a direct `.zip` / `.tar.gz` / `.tgz` archive URL (for example a release asset or `codeload` tarball);
-- a **.zip / .tar.gz** archive file from disk;
-- a **vault folder** (desktop only) containing an agent plugin package, a Claude Code / Codex / Copilot plugin, or a marketplace catalog.
+- a **GitHub URL**: repo shorthand (`owner/repo`), `github.com/owner/repo` tree, blob, or raw URLs, or a direct `.zip`, `.tar.gz`, or `.tgz` archive URL (for example a release asset or `codeload` tarball);
+- a **.zip, .tar.gz, or .tgz** archive file from disk;
+- a **vault folder** (desktop only) that contains an agent plugin package, a Claude Code, Codex, or Copilot plugin, or a marketplace catalog.
 
-Claude (`plugin.json` + `.claude-plugin/`), Copilot (`.codex-plugin/`), and VS Code (`.plugin/`) packages are converted automatically to the Agent Plugins 1.0 format: skills are copied whole, `mcpServers` become an `mcp.json`, and unsupported fields (stdio transports, `headersHelper`, `displayName`, …) are dropped with warnings you can see in the install summary. Imported MCP servers are **disabled by default** — enable them on the MCP tab after checking their endpoints.
+The importer converts Claude (`.claude-plugin/`), Codex (`.codex-plugin/`), and Copilot or VS Code (`plugin.json` and `.plugin/`) packages to the Agent Plugins 1.0 format. It copies skills whole, converts `mcpServers` to `mcp.json`, and drops unsupported fields (stdio transports, `headersHelper`, `displayName`, and others) with warnings in the install summary. Imported MCP servers are **disabled by default**. Enable them on the MCP tab after you check their endpoints.
 
-Installing over an existing plugin with the same name replaces it in place (your edits to its `mcp.json` are preserved by MCP server id).
+Installing over an existing plugin with the same name replaces it in place. Your edits to its `mcp.json` are preserved by MCP server id.
 
-Use **New skill…** on the same tab to scaffold a single-skill package, **Remove** on a plugin row to delete a package and its MCP servers, and **Repair built-ins** to recreate the bundled `builtins` package if it was deleted.
+Use **New skill…** on the same tab to create a single-skill package. Use **Remove** on a plugin row to delete a package and its MCP servers. Use **Repair built-ins** to recreate the bundled `builtins` package if it was deleted.
 
-See also the `install-plugin` skill — run `/skill install-plugin` (or `/install-plugin`) in chat and Agentic Chat will walk you through fetching and authoring a package.
+See also the `install-plugin` skill. Run `/skill install-plugin` (or `/install-plugin`) in chat, and Agentic Chat will walk you through fetching and authoring a package.

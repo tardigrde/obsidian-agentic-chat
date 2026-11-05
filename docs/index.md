@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Agentic Chat
   text: Agent-led AI chat for Obsidian
-  tagline: A sidebar assistant that reads, searches, and edits your vault through visible, approval-gated tool calls. Telemetry off, web/MCP/observability off, OpenRouter zero-retention routing on — all by default.
+  tagline: A sidebar assistant that reads, searches, and edits your vault through visible, approval-gated tool calls. OpenRouter zero-retention routing is on by default. Web, MCP, and observability are off, and the plugin sends no telemetry.
   actions:
     - theme: brand
       text: Install
@@ -18,11 +18,11 @@ hero:
 
 features:
   - title: Vault-native tools
-    details: Read, search, write, edit, rename, and trash-safe delete through Obsidian APIs, with backlink preservation and an ignore list that stays invisible.
-  - title: Privacy defaults you can verify
-    details: OpenRouter routing requires zero-data-retention endpoints and denies training/logging; Ollama keeps everything local; telemetry is off.
+    details: Read, search, write, edit, rename, and delete through Obsidian APIs. Deletes use trash, renames preserve backlinks, and the ignore list stays invisible.
+  - title: Privacy defaults
+    details: OpenRouter routing requires zero-retention endpoints and denies training and logging. Ollama keeps prompts local. The plugin sends no telemetry.
   - title: Visible control
-    details: Every tool call renders inline with args and timing; mutating calls show diffs for approval; plan mode blocks writes; /undo reverts the last change.
+    details: Every tool call renders inline with arguments and timing. Mutating calls show diffs for approval. Plan mode blocks writes, and /undo reverts the last change.
   - title: Opt-in power only
-    details: Skills, subagents, web research, remote MCP tools, and observability export are disabled until you enable them in Settings.
+    details: Web research, remote MCP tools, semantic indexing, and observability export stay off until you enable them in Settings.
 ---

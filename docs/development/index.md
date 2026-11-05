@@ -1,4 +1,4 @@
-# Development Guide
+# Development guide
 
 Install dependencies and run the local build loop:
 
@@ -44,8 +44,7 @@ npm run docs:preview
 
 ## Verification
 
-Use [Verification](./verification.md) for the lane reference, evidence rules, the
-fake-green list, and probe workflows. The merge gate is:
+Use [Verification](./verification.md) for the lane reference, evidence rules, the fake-green list, and probe workflows. The merge gate is:
 
 ```bash
 npm run verify -- fast
@@ -53,6 +52,4 @@ npm run verify -- fast
 
 ## Live dogfood
 
-Exploratory WebDriver/manual bug sweeps against a real vault run from
-[`docs/development/live-dogfood.md`](https://github.com/tardigrde/obsidian-agentic-chat/blob/main/docs/development/live-dogfood.md)
-in the repo (kept out of the public site because it is a maintainer runbook, not user docs).
+Exploratory WebDriver and manual bug sweeps against a real vault use [`docs/development/live-dogfood.md`](https://github.com/tardigrde/obsidian-agentic-chat/blob/main/docs/development/live-dogfood.md). The file stays in the repo but out of the public site because it is a maintainer runbook, not user documentation.

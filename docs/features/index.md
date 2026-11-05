@@ -1,6 +1,6 @@
-# Feature Map
+# Feature map
 
-Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline tool-call step cards, session tabs, and approval-gated vault edits — not a plain chatbot.
+Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline tool-call step cards, session tabs, and approval-gated vault edits.
 
 ## Core chat
 
@@ -19,7 +19,7 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 - Traverse local note graph context.
 - Read and update YAML frontmatter through Obsidian APIs.
 - Rename notes with backlink preservation.
-- Trash-safe deletes: files and folders go to system trash (`recursive:true` for non-empty folders, always asks).
+- Trash-safe deletes. Files and folders go to trash. A non-empty folder needs `recursive:true`, which asks even in YOLO unless deletes are explicitly allowed per tool.
 
 ## Agent workflows
 
@@ -32,7 +32,7 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 - Long-session compaction before context overflow, plus `/compact [instructions]` for manual compaction.
 - Token, cost, next-request estimate, cost alert, and spend-cap readouts.
 - Real-time turn steering with `/steer`, queued follow-ups with `/follow-up`, and hard redirects with `/redirect`.
-- Reasoning effort control via `/effort`.
+- Reasoning effort control through `/effort`.
 
 ## Memory
 
@@ -57,12 +57,12 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 
 ## Extensibility
 
-- [Agent plugins](agent-plugins.md) — packages in the vault (`.agentic-plugins/`) that follow the Agent Plugins 1.0.0 spec and contribute skills and MCP servers.
-- Skills loaded from plugin `SKILL.md` files, alongside built-in skills; plugin skills load first and win name collisions.
+- [Agent plugins](agent-plugins.md): packages in the vault (`.agentic-plugins/`) that follow the Agent Plugins 1.0.0 spec and contribute skills and MCP servers.
+- Skills loaded from plugin `SKILL.md` files, alongside built-in skills. Plugin skills load first and win name collisions.
 - Built-in self-knowledge skill with tool inventory, loop guards, and error patterns.
 - Read-only Explorer subagent for recon delegation (single built-in role, one level deep).
 - Optional web search and URL fetch.
-- Optional HTTPS Streamable HTTP MCP tools, generated into plugin packages from the settings UI.
+- Optional Streamable HTTP MCP tools over HTTPS, or loopback HTTP for local servers. Generated into plugin packages from the settings UI.
 - `/doctor` audit of agent plugin spec compliance.
 - Optional OTLP or Langfuse observability export.
 - Artifact system for large tool outputs.
@@ -71,4 +71,4 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 ## Todo tracking
 
 - `/todo` commands to track milestones, tests, and checkpoint commits.
-- Integrates with the plan tracker panel for visual progress.
+- The plan tracker panel shows live progress.
