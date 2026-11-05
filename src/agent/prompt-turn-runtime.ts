@@ -53,7 +53,7 @@ export class AgentPromptTurnRuntime {
       const message = "A turn is already starting. Wait for it to finish before sending another message.";
       this.options.setErrorMessage(message);
       this.options.notifyChange();
-      throw new Error(message);
+      return;
     }
     this.inFlight = true;
     try {

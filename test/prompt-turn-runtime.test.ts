@@ -138,8 +138,8 @@ describe("AgentPromptTurnRuntime", () => {
       () => "rejected",
     );
     await first;
-    expect(secondOutcome).toBe("rejected");
+    expect(secondOutcome).toBe("resolved");
     expect(runs).toBe(1);
-    expect(runtime.isInFlight()).toBe(false);
+    expect(events.some((event) => event.startsWith("set-error-message:A turn is already starting."))).toBe(true);
   });
 });
