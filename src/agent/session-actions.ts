@@ -40,10 +40,13 @@ export class AgentSessionActions {
     return this.sessionSwaps.state;
   }
 
-  /** Wait for any in-flight swap; reject when the last swap failed. */
+  /**
+   * Wait for any in-flight swap. A failure before detach leaves the old agent
+   * live, so sends can continue; only reject when no agent survived.
+   */
   async waitForLive(): Promise<void> {
     const state = await this.sessionSwaps.waitForSettled();
-    if (state === "failed") {
+    if (state === "failed" && !this.options.activation.currentAgent) {
       throw new Error("The last session swap failed. Load or create a session to recover.");
     }
   }
@@ -65,10 +68,12 @@ export class AgentSessionActions {
   async newSession(): Promise<void> {
     return this.sessionSwaps.enqueue(async (setPhase) => {
       await this.options.activation.prepareResources();
+      // Stop the old agent before the session pointer moves, so a late
+      // message_end/agent_end cannot land in the new file.
+      this.options.activation.detachAgent();
       setPhase("loading");
       const { messages } = await this.options.sessions.create();
       setPhase("activating");
-      this.options.activation.detachAgent();
       await this.activateSession(messages);
     });
   }
@@ -82,20 +87,32 @@ export class AgentSessionActions {
       // Reload before detaching: a failed reload must leave the previous agent
       // and its session-local state intact.
       await this.options.activation.prepareResources();
+      this.options.activation.detachAgent();
       setPhase("loading");
       const { messages } = await this.options.sessions.load(path);
       setPhase("activating");
-      this.options.activation.detachAgent();
       await this.activateSession(messages);
     });
   }
 
   async deleteSession(path: string): Promise<void> {
-    const active = this.options.sessions.activePath;
-    await this.options.sessions.delete(path);
-    await this.options.afterDelete?.();
-    if (active === path) await this.newSession();
-    else this.options.notifyChange();
+    return this.sessionSwaps.enqueue(async (setPhase) => {
+      const active = this.options.sessions.activePath;
+      if (active !== path) {
+        await this.options.sessions.delete(path);
+        await this.options.afterDelete?.();
+        this.options.notifyChange();
+        return;
+      }
+      await this.options.activation.prepareResources();
+      this.options.activation.detachAgent();
+      setPhase("loading");
+      await this.options.sessions.delete(path);
+      await this.options.afterDelete?.();
+      const { messages } = await this.options.sessions.create();
+      setPhase("activating");
+      await this.activateSession(messages);
+    });
   }
 
   async clearSessions(): Promise<number> {
@@ -106,12 +123,12 @@ export class AgentSessionActions {
         return 0;
       }
       await this.options.activation.prepareResources();
+      this.options.activation.detachAgent();
       setPhase("loading");
       for (const session of sessions) await this.options.sessions.delete(session.path);
       await this.options.afterDelete?.();
       const { messages } = await this.options.sessions.create();
       setPhase("activating");
-      this.options.activation.detachAgent();
       await this.activateSession(messages);
       return sessions.length;
     });
@@ -124,16 +141,22 @@ export class AgentSessionActions {
   }
 
   async truncateMessages(index: number): Promise<void> {
-    const agent = this.options.activation.currentAgent;
-    if (!agent || agent.state.isStreaming) return;
-    // `index` addresses the conversation transcript the UI renders, which excludes
-    // pi's system-context message. Rewind the persisted conversation to that
-    // index; the replacement agent re-seeds its own system message from the
-    // current system prompt.
-    const conversation = conversationMessages(agent.state.messages).slice(0, Math.max(0, index));
-    const snapshot = await this.options.sessions.rewriteMessages(conversation);
-    await this.options.activation.activate(snapshot.messages, { reloadResources: false });
-    this.options.notifyChange();
+    return this.sessionSwaps.enqueue(async (setPhase) => {
+      const agent = this.options.activation.currentAgent;
+      if (!agent || agent.state.isStreaming) return;
+      // `index` addresses the conversation transcript the UI renders, which excludes
+      // pi's system-context message. Rewind the persisted conversation to that
+      // index; the replacement agent re-seeds its own system message from the
+      // current system prompt.
+      const conversation = conversationMessages(agent.state.messages).slice(0, Math.max(0, index));
+      await this.options.activation.prepareResources();
+      setPhase("loading");
+      const snapshot = await this.options.sessions.rewriteMessages(conversation);
+      setPhase("activating");
+      this.options.activation.detachAgent();
+      await this.options.activation.activate(snapshot.messages, { reloadResources: false });
+      this.options.notifyChange();
+    });
   }
 
   private async loadIntoNewAgent(
@@ -141,10 +164,10 @@ export class AgentSessionActions {
     load: () => Promise<ActiveSessionSnapshot>,
   ): Promise<void> {
     await this.options.activation.prepareResources();
+    this.options.activation.detachAgent();
     setPhase("loading");
     const { messages } = await load();
     setPhase("activating");
-    this.options.activation.detachAgent();
     await this.activateSession(messages);
   }
 
