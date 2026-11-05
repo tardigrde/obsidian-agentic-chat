@@ -11,6 +11,8 @@ export interface AgentPromptTurnRuntimeOptions {
   getSessionCostUsd: () => number;
   refreshConfiguration: () => Promise<void>;
   maybeCompact: () => Promise<void>;
+  /** Return a message when compaction left the transcript unusable. */
+  afterCompaction?: () => string | undefined;
   clearError: () => void;
   setError: (error: unknown) => void;
   setErrorMessage: (message: string) => void;
@@ -59,6 +61,12 @@ export class AgentPromptTurnRuntime {
     try {
       await this.options.refreshConfiguration();
       await this.options.maybeCompact();
+      const compactionError = this.options.afterCompaction?.();
+      if (compactionError) {
+        this.options.setErrorMessage(compactionError);
+        this.options.notifyChange();
+        return;
+      }
       try {
         this.options.clearError();
         this.options.notifyChange();

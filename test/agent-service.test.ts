@@ -1027,6 +1027,74 @@ describe("AgentService", () => {
     );
   });
 
+  it("keeps the recovery error and skips the prompt when the live replace fails", async () => {
+    let streamCalls = 0;
+    const bigUsageStream: StreamFn = ((model: Model<"openai-completions">) => {
+      streamCalls += 1;
+      const stream = createAssistantMessageEventStream();
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "ok" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 110_000,
+          output: 100,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 110_100,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    }) as unknown as StreamFn;
+
+    const settings: AgenticChatSettings = {
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "test-key",
+      openrouterModel: "test/compaction-model",
+    };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: bigUsageStream,
+      summarize: async () => "Summary that cannot be installed.",
+    });
+
+    await service.sendPrompt(`first ${"word ".repeat(50_000)}`);
+    await service.sendPrompt(`second ${"word ".repeat(50_000)}`);
+    expect(streamCalls).toBe(2);
+
+    const parentAgent = (service as unknown as {
+      parentAgent: { replace: (messages: AgentMessage[]) => unknown };
+    }).parentAgent;
+    parentAgent.replace = () => {
+      throw new Error("simulated replace failure");
+    };
+    const originalLoad = sessionManager.loadSession.bind(sessionManager);
+    sessionManager.loadSession = async () => {
+      throw new Error("simulated recovery load failure");
+    };
+
+    await service.sendPrompt("third");
+
+    expect(streamCalls).toBe(2);
+    expect(service.getError()).toMatch(/Compaction rewrote the saved session/);
+    sessionManager.loadSession = originalLoad;
+  });
+
   it("returns a normal result when the session changes during manual compaction", async () => {
     let started!: () => void;
     let release!: () => void;
@@ -1173,6 +1241,33 @@ describe("AgentService", () => {
     expect(
       userTexts(controlled.runs[2].context.messages).filter((text) => text === "narrower redirected question"),
     ).toHaveLength(1);
+  });
+
+  it("detaches a streaming agent before creating the next session file", async () => {
+    const controlled = controlledStreamFn(["old answer"]);
+    const { service, adapter, sessionManager } = makeService(controlled.streamFn);
+
+    const run = service.sendPrompt("old request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "old active stream");
+
+    const originalCreate = sessionManager.createSession.bind(sessionManager);
+    let streamingAtCreate: boolean | undefined;
+    sessionManager.createSession = async (defaults) => {
+      streamingAtCreate = service.isStreaming();
+      return originalCreate(defaults);
+    };
+
+    const swap = service.newSession();
+    await waitFor(() => streamingAtCreate !== undefined, "new session create");
+    expect(streamingAtCreate).toBe(false);
+
+    controlled.runs[0].finish();
+    await Promise.all([run, swap]);
+
+    const newPath = service.getSessionInfo()?.path as string;
+    const persisted = await adapter.read(newPath);
+    expect(persisted).not.toContain("old request");
+    expect(persisted).not.toContain("old answer");
   });
 
   it("waits for an in-flight session swap before sending", async () => {

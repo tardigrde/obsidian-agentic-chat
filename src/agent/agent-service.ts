@@ -142,6 +142,8 @@ export class AgentService {
   private readonly commandInvocations: AgentCommandInvocationRuntime;
 
   private initialization: Promise<void> | null = null;
+  /** Set when a compaction rewrite landed but the live transcript is stale. */
+  private compactionRecoveryError: string | undefined;
 
   /** Vault `modify` listener that drops memoized reads when a file changes externally. */
   private vaultModifyRef?: EventRef;
@@ -259,6 +261,7 @@ export class AgentService {
       getSessionCostUsd: () => this.getSessionUsage().cost?.total ?? 0,
       refreshConfiguration: () => this.parentConfiguration.refresh(this.parentAgent),
       maybeCompact: () => this.maybeCompact(),
+      afterCompaction: () => this.compactionRecoveryError,
       clearError: () => this.sessionState.clearError(),
       setError: (error) => this.sessionState.setError(error),
       setErrorMessage: (message) => this.sessionState.setErrorMessage(message),
@@ -724,6 +727,7 @@ export class AgentService {
   }
 
   private async runPrompt(run: PromptTurnRun): Promise<void> {
+    this.compactionRecoveryError = undefined;
     await this.initialize();
     // A fresh prompt starts a new epoch: any identical-batch streak from a
     // previous user turn must not carry into this one (loop guard).
@@ -873,10 +877,10 @@ export class AgentService {
       recoverAfterReplaceFailure: () => this.recoverCompactedSession(),
       onCompactionFailure: (_error, persisted) => {
         if (!persisted) return;
-        this.setError(
+        this.compactionRecoveryError =
           "Compaction rewrote the saved session, but the live conversation could not be replaced. " +
-            "Reload the session to continue from the compacted transcript.",
-        );
+          "Reload the session to continue from the compacted transcript.";
+        this.setError(this.compactionRecoveryError);
       },
     });
   }
