@@ -57,11 +57,13 @@ await browser.waitUntil(async () =>
 | Markdown rendering | `src/ui/chat-view.ts:2723` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
 | Tool step cards and diffs | `src/ui/chat-view.ts:2681` | `test/e2e/specs/approval-deterministic.e2e.ts:279` | `covered` |
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:397` | no committed check | `NONE` |
-| Stop the active turn | `src/ui/chat-view.ts:827` | `test/e2e/specs/skill-chip.e2e.ts:48` (clicks, does not assert abort) | `partial` |
+| Stop the active turn | `src/ui/chat-view.ts:827` | `test/e2e/specs/approval-deterministic.e2e.ts:529` | `covered` |
+| Stop clears queued steering and follow-ups | `src/agent/agent-service.ts:657` | `test/agent-service.test.ts:1210` | `covered` |
 | Queue a plain message | `src/ui/chat-view.ts:1329` | `test/e2e/specs/approval-deterministic.e2e.ts:406` | `covered` |
 | `/steer` | `src/ui/chat-view.ts:1792` | `test/e2e/specs/approval-deterministic.e2e.ts:436` | `covered` |
 | `/follow-up` | `src/ui/chat-view.ts:1659` | `test/turn-control.test.ts:98` (label and parser only) | `partial` |
 | `/redirect` | `src/ui/chat-view.ts:1660` | `test/turn-control.test.ts:98` (label and parser only) | `partial` |
+| Redirect survives a compacting turn | `src/agent/agent-service.ts:723` | `test/agent-service.test.ts:1089` | `covered` |
 | Inline `ask_user` card | `src/ui/chat-view.ts:570` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
 | Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:629` | no committed check | `NONE` |
 | Copy response | `src/ui/assistant-bubble.ts:827` | no committed check | `NONE` |

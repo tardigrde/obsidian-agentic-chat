@@ -57,6 +57,10 @@ await $(".agentic-chat-session-list").waitForExist();
 | Clear all conversations | `src/ui/session-workflow-controller.ts:20` | `test/session-workflow-controller.test.ts:121` (unit only) | `partial` |
 | `/export` | `src/ui/chat-view.ts:2228` | `test/session-export.test.ts:31` (renderer only) | `partial` |
 | Reload a persisted session | `src/ui/chat-view.ts:2336` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
+| Send waits for an in-flight session swap | `src/agent/session-actions.ts:52` | `test/agent-service.test.ts:1133` | `covered` |
+| Failed resource reload keeps the old session usable | `src/agent/session-activation.ts:58` | `test/session-activation.test.ts:64` | `covered` |
+| A queued prompt is dropped on session change | `src/ui/chat-view.ts:1787` | `test/chat-view-lifecycle.test.ts:7` | `covered` |
+| A slow append stays in its original session file | `src/session/session-manager.ts:364` | `test/session-invariants.test.ts:91` | `covered` |
 | Do not open one session in two tabs | `src/ui/chat-view.ts:2336` | no committed check | `NONE` |
 | History modal at phone width | `src/ui/session-list-modal.ts:43` | `test/e2e/specs/mobile-viewport.e2e.ts:444` | `covered` |
 

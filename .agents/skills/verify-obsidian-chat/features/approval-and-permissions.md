@@ -46,6 +46,7 @@ await (await modal.$("button=Allow")).click();
 | entry point | source | proof | status |
 |---|---|---|---|
 | Approval modal opens before a write | `src/ui/approval-modal.ts:27` | `test/e2e/specs/approval-deterministic.e2e.ts:261` | `covered` |
+| Stop closes a pending approval | `src/ui/approval-modal.ts:27` | `test/e2e/specs/approval-deterministic.e2e.ts:529` | `covered` |
 | Allow applies the change | `src/ui/approval-modal.ts:127` | `test/e2e/specs/approval-deterministic.e2e.ts:261` | `covered` |
 | Deny is two-step and blocks the change | `src/ui/approval-modal.ts:114` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
 | Diff preview before an edit | `src/ui/approval-modal.ts:52` | `test/e2e/specs/approval-deterministic.e2e.ts:279` | `covered` |
