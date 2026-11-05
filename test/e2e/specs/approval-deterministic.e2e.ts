@@ -532,21 +532,22 @@ describe("agentic-chat deterministic approvals", function () {
 
     const modal = await $(".agentic-chat-approval");
     await modal.waitForExist({ timeout: 10_000 });
-    const stop = await $(".agentic-chat-stop");
-    await stop.waitForDisplayed({ timeout: 5_000 });
-    // The modal backdrop covers the toolbar, so dispatch the Stop click on the
-    // same button handler instead of a coordinate click.
-    await browser.execute(() => {
-      document.querySelector<HTMLElement>(".agentic-chat-stop")?.click();
-    });
+    const stopTurn = await modal.$("button=Stop turn");
+    await stopTurn.waitForDisplayed({ timeout: 5_000 });
+    await stopTurn.click();
 
     await modal.waitForExist({ reverse: true, timeout: 5_000 });
+    await browser.waitUntil(
+      async () => !(await $(".agentic-chat-stop").isDisplayed()),
+      { timeout: 5_000, timeoutMsg: "the stopped turn never settled" },
+    );
     await browser.waitUntil(async () => !(await noteExists(STOP_APPROVAL_NOTE_PATH)), {
       timeout: 5_000,
       timeoutMsg: "a stopped approval still wrote its target note",
     });
     const labels = await scriptedCallLabels();
     expect(labels).toContain("stop approval call");
+    expect(labels).not.toContain("stop approval final");
   });
 
   after(async function () {

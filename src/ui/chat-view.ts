@@ -553,7 +553,7 @@ export class ChatView extends ItemView {
       this.syncTabStrip();
       this.notifier.notify("approval", `${sessionLabel} needs approval: ${request.label}`);
     }
-    const modal = new ApprovalModal(this.app, labeledRequest);
+    const modal = new ApprovalModal(this.app, labeledRequest, () => tab.service.abort());
     tab.pendingApprovalModal = modal;
     try {
       const choice = await modal.ask(signal);

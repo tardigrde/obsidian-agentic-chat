@@ -32,7 +32,10 @@ export interface ToolApprovalRequest {
   sessionLabel?: string;
 }
 
-export type ToolGateDecision = { block: true; reason: string } | undefined;
+export type ToolGateDecision = { block: true; reason: string; terminate?: boolean } | undefined;
+
+/** Reason used when the user stops a turn that is waiting for approval. */
+export const STOPPED_APPROVAL_REASON = "The turn was stopped before approval.";
 
 /** A user's decision on an approval prompt, with an optional deny reason. */
 export interface UserApprovalChoice {
@@ -259,9 +262,7 @@ export class AgentToolCallController {
       "The user declined this action.",
       signal,
     );
-    return choice.approved
-      ? undefined
-      : { block: true, reason: choice.reason ?? "The user declined this action." };
+    return deniedDecision(choice, "The user declined this action.");
   }
 
   private async gateMcpToolCall(
@@ -306,9 +307,7 @@ export class AgentToolCallController {
       "The user declined this MCP tool call.",
       signal,
     );
-    return choice.approved
-      ? undefined
-      : { block: true, reason: choice.reason ?? "The user declined this MCP tool call." };
+    return deniedDecision(choice, "The user declined this MCP tool call.");
   }
 
   private resolveMcpPolicy(settings: AgenticChatSettings, toolName: string): ApprovalPolicy {
@@ -416,6 +415,12 @@ export class AgentToolCallController {
       });
     });
   }
+}
+
+function deniedDecision(choice: UserApprovalChoice, fallback: string): ToolGateDecision {
+  if (choice.approved) return undefined;
+  const reason = choice.reason ?? fallback;
+  return reason === STOPPED_APPROVAL_REASON ? { block: true, reason, terminate: true } : { block: true, reason };
 }
 
 /** True when the args request a recursive folder delete (bulk destruction). */
