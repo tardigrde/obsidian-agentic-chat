@@ -558,12 +558,14 @@ export class PluginService {
     if (!(root instanceof TFolder)) return;
     const writer = this.vaultWriter();
     const backupPrefix = ".importing-backup-";
-    for (const child of root.children) {
+    // Snapshot the children: rename/remove updates the live vault tree.
+    for (const child of [...root.children]) {
       if (!(child instanceof TFolder) || !child.name.startsWith(".importing-")) continue;
       if (child.name.startsWith(backupPrefix)) {
         const name = child.name.slice(backupPrefix.length);
         const target = `${this.pluginsFolder()}/${name}`;
-        if (name && !(await writer.folderExists(target))) {
+        const safeName = name !== "" && name !== "." && name !== ".." && !/[/\\]/.test(name);
+        if (safeName && this.isWithinPluginsFolder(target) && !(await writer.folderExists(target))) {
           await writer.renameFolder(child.path, target);
           continue;
         }
