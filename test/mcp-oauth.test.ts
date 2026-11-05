@@ -118,6 +118,23 @@ describe("MCP OAuth", () => {
     await second.close();
   });
 
+  it("does not let a fresh receiver consume another flow's callback", async () => {
+    const bridge = new McpOAuthObsidianCallbackBridge();
+    const first = bridge.createReceiver();
+    const second = bridge.createReceiver();
+
+    const secondPending = second.waitForCallback("state-2", 500);
+    expect(bridge.handleProtocolCallback({ code: "second-code", state: "state-2" })).toBe(true);
+    await expect(secondPending).resolves.toMatchObject({ code: "second-code", state: "state-2" });
+
+    const firstPending = first.waitForCallback("state-1", 1_000);
+    expect(bridge.handleProtocolCallback({ code: "first-code", state: "state-1" })).toBe(true);
+    await expect(firstPending).resolves.toMatchObject({ code: "first-code", state: "state-1" });
+
+    await first.close();
+    await second.close();
+  });
+
   it("falls back to an ephemeral callback port when the stable port is busy for dynamic clients", async () => {
     const listens: number[] = [];
     const fakeHttp = {
