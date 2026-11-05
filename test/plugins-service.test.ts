@@ -143,6 +143,24 @@ describe("PluginService.install recovery", () => {
     expect(app.vault.getAbstractFileByPath(".agentic-plugins")).not.toBeNull();
   });
 
+  it("keeps a backup when a regular file occupies the target", async () => {
+    const app = await seed();
+    const manifest = JSON.stringify({
+      $schema: AGENT_PLUGINS_SCHEMA_ID,
+      name: "docs",
+      version: "1.0.0",
+      description: "Docs tools",
+    });
+    await app.vault.create(".agentic-plugins/docs", "not a folder");
+    await app.vault.createFolder(".agentic-plugins/.importing-backup-docs");
+    await app.vault.create(".agentic-plugins/.importing-backup-docs/plugin.json", manifest);
+
+    await serviceFor(app, settings()).reload();
+
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/docs")).not.toBeNull();
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/.importing-backup-docs")).not.toBeNull();
+  });
+
   it("restores every backup after the first restore mutates the folder list", async () => {
     const root = new TFolder();
     root.path = ".agentic-plugins";

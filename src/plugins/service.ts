@@ -1,4 +1,4 @@
-import { type App, TFolder } from "obsidian";
+import { type App, type DataAdapter, TFolder } from "obsidian";
 import { type AgenticChatSettings } from "../settings";
 import { createMcpServerState, normalizeMcpServerId } from "../mcp/settings";
 import { clearMcpPerToolApprovals } from "../agent/approval";
@@ -565,13 +565,26 @@ export class PluginService {
         const name = child.name.slice(backupPrefix.length);
         const target = `${this.pluginsFolder()}/${name}`;
         const safeName = name !== "" && name !== "." && name !== ".." && !/[/\\]/.test(name);
-        if (safeName && this.isWithinPluginsFolder(target) && !(await writer.folderExists(target))) {
-          await writer.renameFolder(child.path, target);
-          continue;
+        if (safeName && this.isWithinPluginsFolder(target)) {
+          if (await writer.folderExists(target)) {
+            // A folder already owns the target; the backup is replaceable.
+          } else if (await this.pathExists(target)) {
+            // A regular file owns the target. Never delete the only package
+            // copy; leave the backup for manual recovery.
+            continue;
+          } else {
+            await writer.renameFolder(child.path, target);
+            continue;
+          }
         }
       }
       await writer.removeFolder(child.path);
     }
+  }
+
+  private async pathExists(path: string): Promise<boolean> {
+    if (this.app.vault.getAbstractFileByPath(path)) return true;
+    return this.app.vault.adapter.exists(path).catch(() => false);
   }
 
   private recordSource(name: string, label: string): void {
@@ -646,8 +659,18 @@ export class PluginService {
         return true;
       },
       folderExists: async (path) => {
-        if (app.vault.getAbstractFileByPath(path) instanceof TFolder) return true;
-        return app.vault.adapter.exists(path).catch(() => false);
+        const entry = app.vault.getAbstractFileByPath(path);
+        if (entry) return entry instanceof TFolder;
+        const adapter = app.vault.adapter as DataAdapter & {
+          stat?: (target: string) => Promise<{ type: "file" | "folder" } | null>;
+        };
+        if (typeof adapter.stat !== "function") return false;
+        try {
+          const stat = await adapter.stat(path);
+          return stat?.type === "folder";
+        } catch {
+          return false;
+        }
       },
       renameFolder: async (from, to) => {
         await app.vault.adapter.rename(from, to);
