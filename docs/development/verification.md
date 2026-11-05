@@ -26,7 +26,7 @@ npm run verify -- all                  # everything above
 | L0 | `npm run verify -- change test/foo.test.ts` | pure logic, one module | seconds |
 | L0 | `npm run verify -- change "test name"` | one behavior by name | seconds |
 | L1 | `npm run verify -- change test/a.test.ts` (repeat) | a few affected modules | seconds |
-| L2 | `npm run verify -- ci` | types, lint, unit, bundle | ~1 min |
+| L2 | `npm run verify -- ci` | app/e2e/scripts types, lint, unit + coverage report, bundle | ~1 min |
 | L3 | `npm run verify -- fast` | merge gate, includes smoke e2e | ~2 min |
 | L4 | `npm run verify -- e2e <spec>` | UI wiring, view lifecycle, settings migration | ~1 min |
 | L5 | `npm run verify -- dogfood` | multi-tool agent flows in a generated vault | minutes |
@@ -35,15 +35,19 @@ npm run verify -- all                  # everything above
 For agent-quality changes, compare two eval runs instead of reading one:
 
 ```bash
-npm run verify -- eval -- --run-id baseline --dogfood-run-id <run-id>
+npm run verify -- eval --run-id baseline --dogfood-run-id <run-id>
 # apply the change
-npm run verify -- eval -- --run-id candidate --dogfood-run-id <same-or-new-run-id>
+npm run verify -- eval --run-id candidate --dogfood-run-id <same-or-new-run-id>
 npm run eval:agentic:compare -- \
   logs/eval-runs/baseline/summary.json \
   logs/eval-runs/candidate/summary.json \
   --out logs/eval-runs/candidate/ab-comparison.md \
   --fail-on-regression
 ```
+
+The `eval` lane adds `--fail-on-skip`, so a skipped case fails the run. Pass
+`--run-scripted` to generate the dogfood artifact instead of skipping it; that
+path needs Obsidian. A leading bare `--` is tolerated, but it is not needed.
 
 ## What a pass has to show
 
@@ -55,8 +59,28 @@ npm run eval:agentic:compare -- \
 - The artifact path when the lane writes one.
 
 Zero tests, or every test skipped, is a failure. `verify` fails a lane that expects
-tests when it can prove nothing ran. If a lane cannot execute because credentials
-are missing, say so and run a lane that can.
+tests when it can prove nothing ran, and the eval lane passes `--fail-on-skip` by
+default. If a lane cannot execute because credentials are missing, say so and run
+a lane that can.
+
+## Witness
+
+`npm run verify:witness` reverts the source diff, runs the test, restores the
+fix, and runs the test again. The verdict is `PASS` only when the red run
+failed on an assertion and the green run passed:
+
+```bash
+npm run verify:witness -- \
+  --base origin/main \
+  --test-file test/session-activation.test.ts \
+  --src src/agent/session-activation.ts
+```
+
+A non-zero exit alone is not proof. The verifier rejects loader, parser, and
+compiler output (`SyntaxError`, `Cannot find module`, `error TS####`, and
+similar) with "red run did not reach an assertion", and it requires a parsed
+failed-test count such as `Tests 1 failed` or `1 failing`. Run
+`npm run verify:witness -- --self-test` to prove the verifier itself.
 
 ## Fake green
 
@@ -142,6 +166,19 @@ note context, duplicate tool calls, approval denials, and tool errors.
 
 ## CI
 
-`ci` runs `npm run verify -- ci`. The smoke job runs
-`xvfb-run -a npm run verify -- smoke`. There is no scheduled lane; dogfood, audits,
-and evals run locally or on demand.
+`ci` runs `npm run verify -- ci` on Node 24: app, e2e, and scripts typechecks;
+both linters; unit tests plus a coverage report; and the production bundle. The
+coverage report is an uploaded artifact, not a threshold, so a low percentage
+does not fail the job.
+
+The `e2e` job runs the full deterministic suite in a real Obsidian under
+`xvfb-run` with a cached Obsidian runtime:
+
+```bash
+xvfb-run -a npm run verify -- e2e
+xvfb-run -a npm run verify -- eval --run-scripted
+```
+
+The no-key smoke spec is part of the full suite. Live specs skip without
+credentials, and the eval step fails on any skip. There is no scheduled lane;
+dogfood, audits, and evals run locally or on demand.

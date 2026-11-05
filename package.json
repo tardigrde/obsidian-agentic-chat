@@ -39,6 +39,7 @@
     "analyze:session": "node scripts/analyze-session-trace.mjs",
     "verify": "node scripts/verify.mjs",
     "verify:fast": "node scripts/verify.mjs fast",
+    "verify:witness": "node scripts/verify-witness.mjs",
     "probe": "tsx scripts/probe.ts",
     "pretest:e2e": "npm run build:e2e",
     "test:e2e": "node --import tsx scripts/run-e2e.ts",

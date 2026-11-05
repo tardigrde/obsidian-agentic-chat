@@ -75,6 +75,46 @@ describe("agentic eval comparison", () => {
     expect(formatEvalComparisonMarkdown(comparison)).toContain("Agentic Eval Comparison");
   });
 
+  it("treats a case that turns from pass into skipped as a regression", () => {
+    const comparison = compareEvalSummaries(
+      {
+        runId: "baseline",
+        suite: { name: "agentic-chat" },
+        results: [
+          {
+            id: "static.default-context",
+            type: "static-context",
+            status: "pass",
+            findings: [],
+          },
+        ],
+      },
+      {
+        runId: "candidate",
+        suite: { name: "agentic-chat" },
+        results: [
+          {
+            id: "static.default-context",
+            type: "static-context",
+            status: "skipped",
+            findings: [],
+          },
+        ],
+      },
+      () => new Date("2026-07-01T00:00:00.000Z"),
+    );
+
+    expect(comparison.regressions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          caseId: "static.default-context",
+          area: "status",
+          message: "Case changed from pass to skipped.",
+        }),
+      ]),
+    );
+  });
+
   it("reports prompt and dogfood improvements", () => {
     const comparison = compareEvalSummaries(
       {

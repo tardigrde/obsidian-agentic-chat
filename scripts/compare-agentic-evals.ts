@@ -305,6 +305,14 @@ function caseSignals(entry: EvalCaseComparison): EvalComparisonSignal[] {
       message: "Case changed from pass to problem.",
     });
   }
+  if (entry.baselineStatus === "pass" && entry.candidateStatus === "skipped") {
+    signals.push({
+      severity: "regression",
+      caseId: entry.id,
+      area: "status",
+      message: "Case changed from pass to skipped.",
+    });
+  }
   if (entry.baselineStatus === "problem" && entry.candidateStatus === "pass") {
     signals.push({
       severity: "improvement",

@@ -6,7 +6,7 @@ import { before, describe, it } from "mocha";
  * loads this plugin, and exercises the integration seams unit tests can't reach — view
  * registration, the composer card (C4), in-pane slash routing, the working-dir command
  * (C1), and active-note attachment. It deliberately avoids the model: every assertion
- * is on UI/wiring that runs without an API key. Local-only; not part of CI.
+ * is on UI/wiring that runs without an API key. Part of the full CI e2e suite.
  */
 
 /** Open the chat view and wait for it to mount. */

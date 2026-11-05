@@ -38,9 +38,11 @@ const lanes = {
 
   ci: () => [
     step("typecheck", NODE, [TSC7, "-noEmit"]),
+    step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
+    step("scripts typecheck", NODE, [TSC7, "-p", "tsconfig.eslint.json", "--noEmit"]),
     step("lint", bin("eslint"), ["."]),
     step("lint:obsidian", bin("eslint"), ["-c", "eslint.config.obsidian.mjs", "src"]),
-    step("unit tests with coverage", bin("vitest"), ["run", "--coverage"], { expectTests: true }),
+    step("unit tests + coverage report", bin("vitest"), ["run", "--coverage"], { expectTests: true }),
     step("production bundle", NODE, ["esbuild.config.mjs", "production"]),
   ],
 
@@ -79,9 +81,20 @@ const lanes = {
     }),
   ],
 
-  eval: (args) => [
-    step("agentic evals", NODE, ["--import", "tsx", "scripts/run-agentic-evals.ts", ...args]),
-  ],
+  eval: (args) => {
+    // Skips hide unexecuted coverage. The lane fails on any skip unless the
+    // child script grows an explicit opt-out.
+    const forwarded = args.filter((arg) => arg !== "--fail-on-skip");
+    return [
+      step("agentic evals", NODE, [
+        "--import",
+        "tsx",
+        "scripts/run-agentic-evals.ts",
+        "--fail-on-skip",
+        ...forwarded,
+      ]),
+    ];
+  },
 
   audit: (args) => {
     const mode = args[0] ?? "sidebar";
@@ -105,7 +118,7 @@ const lanes = {
     step("dogfood e2e", NODE, ["--import", "tsx", "scripts/run-dogfood-e2e.ts"], {
       timeoutMs: 60 * 60 * 1000,
     }),
-    step("agentic evals", NODE, ["--import", "tsx", "scripts/run-agentic-evals.ts"]),
+    ...lanes.eval([]),
   ],
 };
 
@@ -116,7 +129,7 @@ function usage() {
 Lanes: ${names}
 
   fast              Merge gate: typecheck, lints, unit, production build, smoke e2e
-  ci                What CI runs: typecheck, lints, unit with coverage, production build
+  ci                What CI runs: typecheck (app, e2e, scripts), lints, unit + coverage report, production build
   smoke             Production build plus the no-key smoke e2e
   change <target>   One unit file, or a -t pattern
   e2e [spec]        E2E bundle plus one spec (defaults to the whole suite)
@@ -192,14 +205,6 @@ function runStep(s) {
   });
 }
 
-function firstCountOnLine(output, word) {
-  for (const line of output.split("\n")) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length >= 2 && parts[1] === word && /^\d+$/.test(parts[0])) return Number(parts[0]);
-  }
-  return undefined;
-}
-
 function countFor(text, word) {
   const tokens = text.split(/\s+/).filter(Boolean);
   for (let index = 0; index < tokens.length - 1; index += 1) {
@@ -230,11 +235,28 @@ function parseVitest(output) {
 }
 
 function parseMocha(output) {
-  const passed = firstCountOnLine(output, "passing");
-  if (passed === undefined) return null;
-  const failed = firstCountOnLine(output, "failing") ?? 0;
-  const skipped = firstCountOnLine(output, "pending") ?? 0;
-  return { passed, failed, skipped, total: passed + failed + skipped, kind: "mocha" };
+  // WDIO prints one summary per spec file. Sum every summary so the lane
+  // reports the whole suite, not just the first spec.
+  let passed = 0;
+  let failed = 0;
+  let skipped = 0;
+  let sawSummary = false;
+  for (const line of output.split("\n")) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 2 || !/^\d+$/.test(parts[0])) continue;
+    const count = Number(parts[0]);
+    if (parts[1] === "passing") {
+      passed += count;
+      sawSummary = true;
+    } else if (parts[1] === "failing") {
+      failed += count;
+      sawSummary = true;
+    } else if (parts[1] === "pending" || parts[1] === "skipped") {
+      skipped += count;
+      sawSummary = true;
+    }
+  }
+  return sawSummary ? { passed, failed, skipped, total: passed + failed + skipped, kind: "mocha" } : null;
 }
 
 function parseWdioSpecs(output) {
