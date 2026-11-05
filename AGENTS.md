@@ -2,7 +2,7 @@
 
 ## Process
 
-Three skills carry the process. They live in `.agents/skills/`, so OpenCode,
+Four skills carry the process. They live in `.agents/skills/`, so OpenCode,
 Codex, and other agents that read that convention get the same workflow.
 
 | skill | use for |
@@ -10,6 +10,7 @@ Codex, and other agents that read that convention get the same workflow.
 | `@ship-change` | behavior changes, bugs, multi-file work, dependency upgrades |
 | `@verify-obsidian-chat` | UI claims, settings, or proof in the real Obsidian app |
 | `@probe-feature` | behavior you cannot predict yet, or when the user asks for a recording |
+| `@worktree` | one task per worktree, env-linked commands, safe cleanup |
 
 Match the weight of the process to the change:
 
@@ -22,7 +23,7 @@ Match the weight of the process to the change:
 - "I do not know what correct looks like yet": load `@probe-feature` instead of
   guessing.
 
-Do not load all three at once. Each skill names the next one when it needs it.
+Do not load all four at once. Each skill names the next one when it needs it.
 
 Put each rule in the lowest layer that can enforce it: `AGENTS.md` routes,
 skills hold procedure, `scripts/` and CI hold gates.
@@ -82,6 +83,21 @@ await app.plugins.enablePlugin("agentic-chat");
 `dogfood` enables the local plugin, starts the watcher, opens the vault when
 possible, and tails session JSONL plus e2e artifacts. Use
 `--once --no-open --no-tail` for a non-interactive build/install check.
+
+## Worktrees
+
+One task, one branch, one worktree. `worktree-links` names the local-only files
+to symlink, so `.env` is never copied.
+
+```bash
+npm run worktree:new -- <name>
+npm run worktree:env -- <command>
+npm run worktree:list
+npm run worktree:cleanup -- --dry-run
+```
+
+`--apply` removes only safe worktrees. Read
+[docs/development/worktrees.md](docs/development/worktrees.md) and `@worktree`.
 
 ## Probes
 
