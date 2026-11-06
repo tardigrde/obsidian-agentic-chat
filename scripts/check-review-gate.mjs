@@ -35,11 +35,24 @@ export function isGeneratedFile(file) {
 
 export function parseVerdict(body) {
   const text = String(body ?? "");
-  const verdict = /^\**Verdict:\s*(PASS(?:\+NOTES)?|FAIL)\**\s*$/m.exec(text)?.[1] ?? null;
-  const head = /^\**Head:\s*`?([0-9a-f]{7,40})`?\**\s*$/m.exec(text)?.[1] ?? null;
-  const reviewer = /^\**Reviewer:\s*(.+?)\s*\**\s*$/m.exec(text)?.[1]?.trim() ?? null;
-  const hasFastLane = /^\**Fast lane:/m.test(text);
-  if (!verdict || !head || !reviewer || !hasFastLane) return null;
+  const field = (name) => {
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim().replace(/^\*+|\*+$/g, "").trim();
+      if (!line.toLowerCase().startsWith(`${name.toLowerCase()}:`)) continue;
+      return line.slice(name.length + 1).trim();
+    }
+    return null;
+  };
+  const verdict = field("Verdict");
+  const head = field("Head")?.replaceAll("`", "").trim() ?? null;
+  const reviewer =
+    field("Reviewer")
+      ?.replace(/[^\w .@:/-]/g, "")
+      .slice(0, 80) || null;
+  const hasFastLane = field("Fast lane") !== null;
+  if (!/^(?:PASS(?:\+NOTES)?|FAIL)$/.test(verdict ?? "")) return null;
+  if (!/^[0-9a-f]{7,40}$/.test(head ?? "")) return null;
+  if (!reviewer || !hasFastLane) return null;
   return { verdict, head, reviewer };
 }
 
@@ -164,9 +177,19 @@ async function main() {
   }
 
   const pull = await api(`/repos/${repository}/pulls/${number}`, token);
-  const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const fullSha = /^[0-9a-f]{40}$/;
+  if (!fullSha.test(pull.head.sha) || !fullSha.test(pull.base.sha)) {
+    console.error("review gate: GitHub returned an invalid commit SHA");
+    process.exitCode = 1;
+    return;
+  }
+  const head = execFileSync(
+    "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
+    ["rev-parse", "HEAD"],
+    { encoding: "utf8" },
+  ).trim();
   if (head !== pull.head.sha) {
-    console.error(`review gate: checked out ${head.slice(0, 7)}, API head is ${pull.head.sha.slice(0, 7)}`);
+    console.error("review gate: checked out head does not match the API head");
     process.exitCode = 1;
     return;
   }
@@ -176,10 +199,11 @@ async function main() {
     apiAll(`/repos/${repository}/pulls/${number}/reviews`, token),
   ]);
   const comments = [...issueComments, ...reviews].map(normalizeComment);
-  const diff = execFileSync("git", ["diff", "--numstat", `${pull.base.sha}...${head}`], {
-    encoding: "utf8",
-    maxBuffer: 20 * 1024 * 1024,
-  });
+  const diff = execFileSync(
+    "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
+    ["diff", "--numstat", `${pull.base.sha}...${head}`],
+    { encoding: "utf8", maxBuffer: 20 * 1024 * 1024 },
+  );
   const size = parseNumstat(diff);
   const result = reviewGate({
     comments,
@@ -202,8 +226,10 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => {
-    console.error(`review gate: ${error.message}`);
+  try {
+    await main();
+  } catch (error) {
+    console.error(`review gate: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
-  });
+  }
 }
