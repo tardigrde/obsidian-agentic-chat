@@ -47,6 +47,8 @@ export class PluginService {
   private cache: LoadedPlugin[] | null = null;
   /** Single-flight: concurrent reloads must not run import recovery twice. */
   private reloadInFlight: Promise<LoadedPlugin[]> | null = null;
+  /** Serializes install transactions with the recovery sweep. */
+  private maintenance: Promise<void> = Promise.resolve();
   private retainedImportBackup = false;
 
   constructor(
@@ -71,6 +73,20 @@ export class PluginService {
     } finally {
       if (this.reloadInFlight === run) this.reloadInFlight = null;
     }
+  }
+
+  /**
+   * Serialize the install transaction and the recovery sweep. A sweep must not
+   * delete a stage an install is using, and two installs must not move the same
+   * backup. A rejected operation does not block the next one.
+   */
+  private runExclusive<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.maintenance.then(op, op);
+    this.maintenance = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   private async performReload(): Promise<LoadedPlugin[]> {
@@ -303,12 +319,14 @@ export class PluginService {
     // before they are written: a bad manifest must fail the import, not land
     // in the vault and only be rejected by the loader on the next scan.
     const { nativeManifest, nativeMcpJson } = readNativePackageFiles(tree, candidate, converted.native);
-    const result = await installPackage(this.vaultWriter(), {
-      converted,
-      pluginsFolder: this.pluginsFolder(),
-      ...(nativeManifest ? { nativeManifest } : {}),
-      ...(nativeMcpJson ? { nativeMcpJson } : {}),
-    });
+    const result = await this.runExclusive(() =>
+      installPackage(this.vaultWriter(), {
+        converted,
+        pluginsFolder: this.pluginsFolder(),
+        ...(nativeManifest ? { nativeManifest } : {}),
+        ...(nativeMcpJson ? { nativeMcpJson } : {}),
+      }),
+    );
     this.recordSource(result.name, label);
     await this.recordPluginMcp(result.name, converted);
     if (converted.mcpEntries.length === 0) await this.saveSettings?.();
@@ -350,9 +368,8 @@ export class PluginService {
         `A plugin named "${name}" already exists. Pick another name, or confirm the replacement first.`,
       );
     }
-    const result = await installPackage(
-      this.vaultWriter(),
-      {
+    const result = await this.runExclusive(() =>
+      installPackage(this.vaultWriter(), {
         converted: {
           name,
           description: input.description || `${name} skill.`,
@@ -378,7 +395,7 @@ export class PluginService {
           warnings: [],
         },
         pluginsFolder: this.pluginsFolder(),
-      },
+      }),
     );
     this.recordSource(result.name, options.source ?? "New skill wizard");
     this.invalidate();
@@ -578,6 +595,10 @@ export class PluginService {
    * One bad child must not hide every other package from the reload.
    */
   async sweepImportStages(): Promise<void> {
+    return this.runExclusive(() => this.performSweepImportStages());
+  }
+
+  private async performSweepImportStages(): Promise<void> {
     const writer = this.vaultWriter();
     const backupPrefix = ".importing-backup-";
     for (const childPath of await this.importStagePaths()) {

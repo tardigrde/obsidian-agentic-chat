@@ -233,13 +233,15 @@ Fixed by #232: `PluginService.reload` is single-flight, so concurrent reloads
 share one import sweep and one load. A rejected reload clears the in-flight
 promise for the next call.
 
-Gaps:
+Fixed by #236: install transactions and the recovery sweep share one maintenance
+lock. A sweep waits for an in-flight install, and two installs cannot move the
+same backup. A rejected operation clears the chain for the next one.
 
-- A sweep and an install can race on the same stage or backup name.
+Gap:
+
 - Settings prune runs after the sweep and depends on the retained-backup flag.
 
-Next: one install transaction owner, with a defined order between sweep, install,
-and settings prune.
+Next: define the order between sweep, install, and settings prune.
 
 ## Unowned today
 
