@@ -2,7 +2,7 @@
 
 ## Process
 
-Four skills carry the process. They live in `.agents/skills/`, so OpenCode,
+Five skills carry the process. They live in `.agents/skills/`, so OpenCode,
 Codex, and other agents that read that convention get the same workflow.
 
 | skill | use for |
@@ -10,6 +10,7 @@ Codex, and other agents that read that convention get the same workflow.
 | `@ship-change` | behavior changes, bugs, multi-file work, dependency upgrades |
 | `@verify-obsidian-chat` | UI claims, settings, or proof in the real Obsidian app |
 | `@probe-feature` | behavior you cannot predict yet, or when the user asks for a recording |
+| `@verify-pr` | independent verdict on a PR you did not write; red/green witness proof |
 | `@worktree` | one task per worktree, env-linked commands, safe cleanup |
 
 Match the weight of the process to the change:
@@ -23,7 +24,7 @@ Match the weight of the process to the change:
 - "I do not know what correct looks like yet": load `@probe-feature` instead of
   guessing.
 
-Do not load all four at once. Each skill names the next one when it needs it.
+Do not load all five at once. Each skill names the next one when it needs it.
 
 Put each rule in the lowest layer that can enforce it: `AGENTS.md` routes,
 skills hold procedure, `scripts/` and CI hold gates.
@@ -39,7 +40,9 @@ skills hold procedure, `scripts/` and CI hold gates.
 4. UI claims need a committed e2e assertion or a probe recording plus DOM/state
    metrics. A screenshot alone is not a verdict.
 5. Never commit secrets, vault plugin data, or generated sessions.
-6. Never merge a PR unless the user explicitly says "merge". Green checks are not
+6. A merge-ready PR has an independent verdict from an agent that did not write
+   it. A green check is not a verdict.
+7. Never merge a PR unless the user explicitly says "merge". Green checks are not
    permission.
 
 ## Verification
@@ -50,10 +53,13 @@ npm run verify -- ci          # what CI runs
 npm run verify -- e2e <spec>  # real Obsidian, one spec
 npm run verify -- dogfood     # generated-vault agent flows
 npm run verify -- eval        # prompt/tool/context A/B
+npm run verify:witness -- --base origin/main --test-file <test> --src <src...>
 ```
 
 `npm run verify:fast` is an alias. Full lane reference, evidence rules, and the
 fake-green list: [docs/development/verification.md](docs/development/verification.md).
+The trust contract, independent verifier, and CI witness gate:
+[docs/development/trust.md](docs/development/trust.md).
 
 Use single tests for tight loops:
 

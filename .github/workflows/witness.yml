@@ -1,0 +1,42 @@
+name: Witness
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
+
+concurrency:
+  group: witness-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  witness:
+    # Run for forks too. The job only needs a read-only token, and a skipped
+    # required check would report success without proving anything.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts # NOSONAR:S6505 -- project install, not a global package install.
+
+      - name: Prove the witness verifier
+        run: npm run verify:witness -- --self-test
+
+      - name: Run the declared witness
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/witness-from-pr.mjs

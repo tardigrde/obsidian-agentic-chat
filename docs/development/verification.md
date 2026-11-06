@@ -82,6 +82,21 @@ similar) with "red run did not reach an assertion", and it requires a parsed
 failed-test count such as `Tests 1 failed` or `1 failing`. Run
 `npm run verify:witness -- --self-test` to prove the verifier itself.
 
+The `Witness` workflow always runs that self-test. It also runs the block in the
+PR body when the PR changes `src/` or has the `behavior` or `witness` label. A
+pure refactor can use the `no-behavior-change` label instead. CI supplies the
+base commit; the PR supplies one test file and one or more source paths.
+
+```markdown
+<!-- witness
+test: test/session-activation.test.ts
+src: src/agent/session-activation.ts
+-->
+```
+
+The independent verifier protocol and the explicit-merge rule live in
+[trust.md](trust.md).
+
 ## Fake green
 
 Check the observation method before trusting the result:
@@ -182,3 +197,8 @@ xvfb-run -a npm run verify -- eval --run-scripted
 The no-key smoke spec is part of the full suite. Live specs skip without
 credentials, and the eval step fails on any skip. There is no scheduled lane;
 dogfood, audits, and evals run locally or on demand.
+
+The `Witness` workflow runs the verifier self-test on every pull request, then
+runs the witness declared in the PR body. A PR that changes `src/` without a
+witness block fails, unless it has the `no-behavior-change` label. See
+[trust.md](trust.md).

@@ -1,0 +1,5 @@
+# The witness gate is part of the merge contract. Changes to the workflow or the
+# verifier need the repository owner's review before they can weaken the gate.
+/.github/workflows/ @tardigrde
+/scripts/verify-witness.mjs @tardigrde
+/scripts/witness-from-pr.mjs @tardigrde
