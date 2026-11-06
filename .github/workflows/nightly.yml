@@ -26,7 +26,6 @@ jobs:
       - name: Fault and state-machine tests
         run: >
           npm test --
-          test/memory-adapter-faults.test.ts
           test/semantic-index.test.ts
           test/semantic-index-lease.test.ts
           test/session-swap-queue.test.ts

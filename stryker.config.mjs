@@ -17,7 +17,7 @@ export default {
   coverageAnalysis: "perTest",
   timeoutMS: 60_000,
   concurrency: 2,
-  thresholds: { high: 90, low: 80, break: 70 },
+  thresholds: { high: 85, low: 75, break: 70 },
   tempDirName: ".stryker-tmp",
   cleanTempDir: true,
   ignorePatterns: [

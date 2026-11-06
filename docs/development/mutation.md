@@ -41,7 +41,9 @@ Keep the matrix small; a wide matrix turns the nightly lane into noise.
 The break threshold fails the run. The first matrix run scored 72.96% overall:
 `loop-guard.ts` 73.65% and `session-swap-queue.ts` 68.97%. The swap-queue tests
 were added after the first run and raised it from 55.17%. Review the survivors
-before raising `break`; many are redundant state writes, not behavior gaps.
+before raising `break`. Many are redundant state writes. One survivor is the
+`pending > 0` return-to-queued state; it is observable only in a narrow microtask
+window, and the direct queue test does not pin it.
 
 ## Reading a survivor
 
