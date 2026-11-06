@@ -4,6 +4,10 @@ import { promptRunBlockReason } from "./turn-control";
 
 export type PromptTurnRun = (agent: Agent) => Promise<void>;
 
+/** Shared UX text for every stale-session guard on the prompt path. */
+export const SESSION_CHANGED_MESSAGE =
+  "The session changed while preparing this turn. Send the message again.";
+
 export interface AgentPromptTurnRuntimeOptions {
   requireAgent: () => Agent;
   getSettings: () => AgenticChatSettings;
@@ -45,7 +49,7 @@ export class AgentPromptTurnRuntime {
     await new Promise<void>((resolve) => this.idleWaiters.push(resolve));
   }
 
-  async run(run: PromptTurnRun): Promise<void> {
+  async run(run: PromptTurnRun, expectedSessionToken?: string): Promise<void> {
     const blockReason = this.blockReason();
     if (blockReason) {
       this.options.setErrorMessage(blockReason);
@@ -63,15 +67,20 @@ export class AgentPromptTurnRuntime {
     }
     this.inFlight = true;
     this.options.onTurnStart?.();
-    const sessionToken = this.options.sessionToken?.();
+    const sessionToken = expectedSessionToken ?? this.options.sessionToken?.();
     try {
+      if (
+        expectedSessionToken !== undefined &&
+        this.options.sessionToken !== undefined &&
+        this.options.sessionToken() !== expectedSessionToken
+      ) {
+        this.sessionChanged();
+        return;
+      }
       await this.options.refreshConfiguration();
       await this.options.maybeCompact();
       if (sessionToken !== undefined && this.options.sessionToken?.() !== sessionToken) {
-        this.options.setErrorMessage(
-          "The session changed while preparing this turn. Send the message again.",
-        );
-        this.options.notifyChange();
+        this.sessionChanged();
         return;
       }
       const compactionError = this.options.afterCompaction?.();
@@ -95,6 +104,11 @@ export class AgentPromptTurnRuntime {
       this.inFlight = false;
       for (const resolve of this.idleWaiters.splice(0)) resolve();
     }
+  }
+
+  private sessionChanged(): void {
+    this.options.setErrorMessage(SESSION_CHANGED_MESSAGE);
+    this.options.notifyChange();
   }
 
   private blockReason(): string | undefined {

@@ -70,6 +70,8 @@ interface ToolCallControllerOptions {
   getTools: () => AgentTool[];
   getProfiles: () => AgentRole[];
   onUndoApplied: () => void;
+  /** Abort the live turn after a Stop decision, before sibling calls execute. */
+  onStopRequested?: () => void;
   recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
   recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
@@ -88,6 +90,7 @@ export class AgentToolCallController {
   private readonly getTools: () => AgentTool[];
   private readonly getProfiles: () => AgentRole[];
   private readonly onUndoApplied: () => void;
+  private readonly onStopRequested?: () => void;
   private readonly recordApproval?: (input: ApprovalAuditInput) => Promise<void> | void;
   private readonly recordCheckpoint?: (input: CheckpointAuditInput) => Promise<void> | void;
   private readonly recordFileCheckpoint?: (checkpoint: FileCheckpoint) => Promise<void> | void;
@@ -107,6 +110,7 @@ export class AgentToolCallController {
     this.getTools = options.getTools;
     this.getProfiles = options.getProfiles;
     this.onUndoApplied = options.onUndoApplied;
+    this.onStopRequested = options.onStopRequested;
     this.recordApproval = options.recordApproval;
     this.recordCheckpoint = options.recordCheckpoint;
     this.recordFileCheckpoint = options.recordFileCheckpoint;
@@ -152,6 +156,11 @@ export class AgentToolCallController {
   }
 
   async beforeToolCall(context: BeforeToolCallContext, signal?: AbortSignal): Promise<ToolGateDecision> {
+    // A stop latched by a sibling call in this batch must terminate every
+    // remaining call before approval or execution.
+    if (this.stopRequested) {
+      return { block: true, reason: STOPPED_APPROVAL_REASON, terminate: true };
+    }
     const decision = await this.gateToolCall(context.toolCall.id, context.toolCall.name, context.args, signal);
     // Capture the inverse only for allowed mutating calls; a blocked call never
     // runs, so it has nothing to undo.
@@ -391,14 +400,25 @@ export class AgentToolCallController {
       args: request.args,
     });
     const choice = await this.confirmToolCall(request, signal);
-    await this.auditApproval({
-      decision: choice.approved ? "approved" : "denied",
-      toolCallId,
-      toolName: request.toolName,
-      label: request.label,
-      args: request.args,
-      reason: choice.approved ? undefined : (choice.reason ?? deniedReason),
-    });
+    const stopped = !choice.approved && (choice.reason ?? deniedReason) === STOPPED_APPROVAL_REASON;
+    if (stopped) {
+      // Latch and abort before the audit: a slow or failing audit must not let a
+      // sibling prepared call execute or start another turn.
+      this.stopRequested = true;
+      this.onStopRequested?.();
+    }
+    try {
+      await this.auditApproval({
+        decision: choice.approved ? "approved" : "denied",
+        toolCallId,
+        toolName: request.toolName,
+        label: request.label,
+        args: request.args,
+        reason: choice.approved ? undefined : (choice.reason ?? deniedReason),
+      });
+    } catch (error) {
+      if (!stopped) throw error;
+    }
     return choice;
   }
 

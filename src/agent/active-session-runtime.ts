@@ -39,8 +39,11 @@ export class AgentActiveSessionRuntime {
     return this.snapshot(await this.sessionManager.loadSession(path));
   }
 
-  async rewriteMessages(messages: AgentMessage[]): Promise<ActiveSessionSnapshot> {
-    await this.sessionManager.rewriteMessages(messages);
+  async rewriteMessages(
+    messages: AgentMessage[],
+    options: { expectedPath?: string | null; expectedGeneration?: number } = {},
+  ): Promise<ActiveSessionSnapshot> {
+    await this.sessionManager.rewriteMessages(messages, options);
     return this.snapshot(this.sessionManager.getActiveSessionInfo());
   }
 

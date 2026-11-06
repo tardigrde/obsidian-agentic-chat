@@ -52,8 +52,9 @@ describe("ApprovalModal", () => {
       remember: false,
       reason: "The turn was stopped before approval.",
     });
+    // Abort synchronously after settling; a timer would let sibling calls run.
+    expect(onStop).toHaveBeenCalledTimes(1);
     stopTurn();
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onStop).toHaveBeenCalledTimes(1);
     expect(harness.close).toHaveBeenCalledTimes(1);
   });

@@ -55,7 +55,7 @@ import { AgentLoopGuard } from "./loop-guard";
 import { AgentRuntimeResourceState } from "./runtime-resource-state";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import { AgentSubagentRuntime } from "./subagent-runtime";
-import { AgentPromptTurnRuntime, type PromptTurnRun } from "./prompt-turn-runtime";
+import { AgentPromptTurnRuntime, SESSION_CHANGED_MESSAGE, type PromptTurnRun } from "./prompt-turn-runtime";
 import {
   buildRuntimeDiagnostics,
   MAX_RECENT_DIAGNOSTIC_EVENTS,
@@ -139,6 +139,13 @@ export class AgentService {
   private readonly loopGuard = new AgentLoopGuard();
   private readonly recentEvents: string[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
+  /** Redirect messages waiting for delivery, and the single drain worker. */
+  private readonly pendingRedirects: Array<{
+    text: string;
+    images?: ImageContent[];
+    resolve: () => void;
+  }> = [];
+  private redirectWorker: Promise<void> | null = null;
   private readonly commandInvocations: AgentCommandInvocationRuntime;
 
   private initialization: Promise<void> | null = null;
@@ -221,6 +228,7 @@ export class AgentService {
       getTools: () => this.agent?.state.tools ?? [],
       getProfiles: () => this.runtimeResources.current.profiles,
       onUndoApplied: () => this.notifyChange(),
+      onStopRequested: () => this.abort(),
       recordApproval: (input) => {
         this.observability.recordApproval(input);
         return this.actionAudit.recordApproval(input);
@@ -492,11 +500,21 @@ export class AgentService {
     }
   }
 
-  async sendPrompt(prompt: string, images?: ImageContent[]): Promise<void> {
+  async sendPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
     const trimmed = prompt.trim();
     if (!trimmed) return;
     const attached = images && images.length > 0 ? images : undefined;
-    await this.runPrompt((agent) => agent.prompt(trimmed, attached));
+    await this.runPrompt((agent) => agent.prompt(trimmed, attached), expectedSessionToken);
+  }
+
+  /** Session path + explicit operation epoch, for stale-send guards. */
+  getSessionToken(): string {
+    return this.sessionActions.getSessionToken();
+  }
+
+  /** Surface the shared stale-session message without starting a turn. */
+  reportSessionChanged(): void {
+    this.setError(SESSION_CHANGED_MESSAGE);
   }
 
   async steerPrompt(prompt: string, images?: ImageContent[]): Promise<void> {
@@ -576,6 +594,9 @@ export class AgentService {
     // Compact the conversation only. pi's system message stays as agent state,
     // and the replacement agent re-seeds it from the current system prompt.
     const messages = conversationMessages(agent.state.messages);
+    const sessionToken = this.sessionActions.getSessionToken();
+    const expectedPath = this.sessions.activePath;
+    const expectedGeneration = this.sessions.generation;
     const contextWindow = agent.state.model?.contextWindow ?? 0;
     const stats = {
       messageCount: messages.length,
@@ -592,11 +613,19 @@ export class AgentService {
       ...stats,
     };
     await this.actionAudit.record(startEvent);
+    if (this.sessionActions.getSessionToken() !== sessionToken) {
+      return {
+        compacted: false,
+        message: "Nothing compacted. The active session changed before compaction started.",
+      };
+    }
     let result: AgentCompactionRunResult;
     try {
       result = await this.compaction.compactWithResult(messages, contextWindow, {
         force: true,
         customInstructions: customInstructions?.trim() || undefined,
+        expectedPath,
+        expectedGeneration,
       });
     } catch (error) {
       // A session change during summarization cancels the rewrite. Report it as
@@ -619,6 +648,14 @@ export class AgentService {
         ...stats,
       });
       return { compacted: false, message: result.message };
+    }
+    // The audit await above (and summarization) can outlive the session. Never
+    // install a transcript from A into the agent that now holds B.
+    if (this.sessionActions.getSessionToken() !== sessionToken) {
+      return {
+        compacted: false,
+        message: "Nothing compacted. The active session changed while compacting.",
+      };
     }
     // The saved session is already rewritten at this point. If the live agent
     // cannot be replaced, report it instead of pretending compaction succeeded.
@@ -728,21 +765,25 @@ export class AgentService {
     this.listeners.clear();
   }
 
-  private async runPrompt(run: PromptTurnRun): Promise<void> {
+  private async runPrompt(run: PromptTurnRun, expectedSessionToken?: string): Promise<void> {
     this.compactionRecoveryError = undefined;
     await this.initialize();
     // A fresh prompt starts a new epoch: any identical-batch streak from a
     // previous user turn must not carry into this one (loop guard).
     this.loopGuard.reset();
-    await this.promptTurns.run(run);
+    await this.promptTurns.run(run, expectedSessionToken);
   }
 
   private async queueSteeringPrompt(mode: TurnSteeringMode, prompt: string, images?: ImageContent[]): Promise<void> {
     const text = normalizeSteeringText(prompt);
     if (!text) return;
     await this.initialize();
-    const agent = this.requireAgent();
     const attached = images && images.length > 0 ? images : undefined;
+    if (mode === "redirect") {
+      await this.queueRedirect(text, attached);
+      return;
+    }
+    const agent = this.requireAgent();
     if (!agent.state.isStreaming) {
       await this.sendPrompt(text, attached);
       return;
@@ -752,21 +793,58 @@ export class AgentService {
     this.sessionState.clearError();
     // Steering is user input too: user-provided info ends any running streak.
     this.loopGuard.reset();
-    if (mode === "redirect") {
-      // A redirect stops the current run and starts a new prompt. Do not queue
-      // it on the old agent: runPrompt may compact and replace that agent, and
-      // the replacement would never see the queued message.
-      this.stopAgent(agent);
-      await agent.waitForIdle();
-      // waitForIdle can resolve before the aborted turn's finally clears the
-      // synchronous guard. Let that turn finish before starting the continuation.
-      await this.promptTurns.waitForIdle();
-      await this.runPrompt((currentAgent) => currentAgent.prompt(message));
-      return;
-    }
     if (mode === "follow-up") agent.followUp(message);
     else agent.steer(message);
     this.notifyChange();
+  }
+
+  /**
+   * Redirects stop the current run and start a new prompt. A quick second
+   * redirect must not hit the in-flight turn guard and disappear, so deliveries
+   * are queued and drained in order. Each new redirect still aborts the run that
+   * is live when it arrives.
+   */
+  private async queueRedirect(text: string, images?: ImageContent[]): Promise<void> {
+    const delivery = new Promise<void>((resolve) => {
+      this.pendingRedirects.push({ text, images, resolve });
+    });
+    const agent = this.requireAgent();
+    if (agent.state.isStreaming) this.stopAgent(agent);
+    this.startRedirectWorker();
+    await delivery;
+  }
+
+  private startRedirectWorker(): void {
+    if (this.redirectWorker) return;
+    const worker = this.drainRedirects();
+    this.redirectWorker = worker;
+    void worker.finally(() => {
+      if (this.redirectWorker === worker) this.redirectWorker = null;
+      if (this.pendingRedirects.length > 0) this.startRedirectWorker();
+    });
+  }
+
+  private async drainRedirects(): Promise<void> {
+    while (this.pendingRedirects.length > 0) {
+      const entry = this.pendingRedirects.shift()!;
+      try {
+        const agent = this.requireAgent();
+        if (agent.state.isStreaming) {
+          this.stopAgent(agent);
+          await agent.waitForIdle();
+        }
+        await this.promptTurns.waitForIdle();
+        this.sessionState.clearError();
+        this.loopGuard.reset();
+        // Never route a redirect through sendPrompt: that path can compact and
+        // replace the agent, which would drop the redirected message.
+        await this.runPrompt((currentAgent) => currentAgent.prompt(createUserMessage(entry.text, entry.images)));
+      } catch (error) {
+        this.sessionState.setError(error);
+      } finally {
+        entry.resolve();
+      }
+    }
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {

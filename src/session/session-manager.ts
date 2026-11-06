@@ -349,6 +349,9 @@ export class ObsidianSessionManager {
     }
     this.entries = rebuilt;
     this.leafId = parentId;
+    // A successful rewrite is a new transcript revision. A compaction that read
+    // the old revision must not treat its stale snapshot as current.
+    this.sessionGeneration += 1;
   }
 
   buildSessionContext(): SessionContext {

@@ -162,6 +162,50 @@ describe("ChatView async lifecycle", () => {
     expect(clearSessions).toHaveBeenCalledTimes(1);
   });
 
+  it("does not send a prompt prepared for a different session", async () => {
+    let sessionToken = "session-a";
+    let releaseBuild!: () => void;
+    const buildGate = new Promise<void>((resolve) => {
+      releaseBuild = resolve;
+    });
+    const sendPrompt = vi.fn(async () => {});
+    const reportSessionChanged = vi.fn();
+    const view = Object.assign(Object.create(ChatView.prototype), {
+      app: {},
+      attachments: [],
+      activeNotePath: null,
+      activeNoteSuppressed: false,
+      activeNoteCache: new ActiveNoteContextCache(),
+      contextCache: new PromptContextCache(),
+      closed: false,
+      activeTabIndex: 0,
+      clearEmptyState: vi.fn(),
+      renderOutgoingUserMessage: vi.fn(),
+      showServiceError: vi.fn(),
+      buildContextFor: async () => {
+        await buildGate;
+        sessionToken = "session-b";
+        return "";
+      },
+    }) as ChatViewHarness;
+    const service: FakeService = {
+      getMessages: vi.fn(() => []),
+      isPathIgnored: vi.fn(() => false),
+      supportsImages: vi.fn(() => false),
+      getSessionToken: () => sessionToken,
+      reportSessionChanged,
+      sendPrompt,
+    };
+    view.tabs = [{ service }];
+
+    const send = view.sendPrompt("stale prompt");
+    releaseBuild();
+    await send;
+
+    expect(sendPrompt).not.toHaveBeenCalled();
+    expect(reportSessionChanged).toHaveBeenCalledTimes(1);
+  });
+
   it("does not touch active tab service after the view closes during send", async () => {
     const view = Object.assign(Object.create(ChatView.prototype), {
       app: {},
@@ -181,6 +225,8 @@ describe("ChatView async lifecycle", () => {
       getMessages: vi.fn(() => []),
       isPathIgnored: vi.fn(() => false),
       supportsImages: vi.fn(() => false),
+      getSessionToken: () => "session-a",
+      reportSessionChanged: vi.fn(),
       sendPrompt: vi.fn(async () => {
         view.closed = true;
         view.tabs = [];
@@ -198,7 +244,9 @@ interface FakeService {
   isPathIgnored: (path: string) => boolean;
   supportsImages: () => boolean;
   getSessionSwapState?: () => string;
-  sendPrompt: (prompt: string, images: unknown[]) => Promise<void>;
+  getSessionToken?: () => string;
+  reportSessionChanged?: () => void;
+  sendPrompt: (prompt: string, images: unknown[], expectedSessionToken?: string) => Promise<void>;
 }
 
 interface ChatViewHarness {

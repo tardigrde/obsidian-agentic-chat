@@ -1470,6 +1470,10 @@ export class ChatView extends ItemView {
     const activeNoteCache = this.activeNoteCache;
     const contextCache = this.contextCache;
     const explicitAttachments = [...this.attachments];
+    // Context building and image encoding can take seconds. Bind the send to the
+    // session that was active when the user pressed Enter so a swap during those
+    // awaits cannot route the prompt into a different session.
+    const sessionToken = service.getSessionToken();
     this.clearEmptyState();
     // Show the auto-attached active note alongside explicit attachments in the user bubble.
     const autoPath = this.effectiveActiveNote();
@@ -1482,6 +1486,13 @@ export class ChatView extends ItemView {
         contextCache.discard();
         return;
       }
+      if (service.getSessionToken() !== sessionToken) {
+        activeNoteCache.discardPending();
+        contextCache.discard();
+        service.reportSessionChanged();
+        this.showServiceError();
+        return;
+      }
       const prompt = assemblePrompt(context, text);
       // Image attachments ride as multimodal content parts, not text context.
       const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
@@ -1490,10 +1501,17 @@ export class ChatView extends ItemView {
         contextCache.discard();
         return;
       }
+      if (service.getSessionToken() !== sessionToken) {
+        activeNoteCache.discardPending();
+        contextCache.discard();
+        service.reportSessionChanged();
+        this.showServiceError();
+        return;
+      }
       this.lastSentPrompt = prompt;
       this.lastSentDisplay = text;
       this.renderOutgoingUserMessage(text, attachments);
-      await service.sendPrompt(prompt, images);
+      await service.sendPrompt(prompt, images, sessionToken);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
         contextCache.discard();
