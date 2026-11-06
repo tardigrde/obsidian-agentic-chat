@@ -192,6 +192,23 @@ describe("PluginService.installFromTree", () => {
     expect(manifest.version).toBe("3.0.0");
   });
 
+  it("runs a later install after a rejected install", async () => {
+    const { app } = await seed();
+    const service = serviceFor(app, settings());
+    const badTree = new Map([
+      [
+        ".claude-plugin/plugin.json",
+        ENCODER.encode(JSON.stringify({ name: "builtins", version: "1.0.0" })),
+      ],
+      ["skills/x/SKILL.md", ENCODER.encode("---\nname: x\ndescription: D\n---\nBody")],
+    ]);
+
+    await expect(service.installFromTree(badTree, "bad")).rejects.toThrow(/first-party/i);
+    await expect(service.installFromTree(claudePluginTree(), "good")).resolves.toMatchObject({
+      name: "docs-helper",
+    });
+  });
+
   it("keeps helper files when installing a bare root SKILL.md package", async () => {
     const { app, vault } = await seed();
     const service = serviceFor(app, settings());
