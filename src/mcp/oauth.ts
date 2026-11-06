@@ -345,7 +345,7 @@ function waitForMcpOAuthRefresh(promise: Promise<boolean>, signal?: AbortSignal)
       },
       (error) => {
         cleanup();
-        reject(error);
+        reject(error instanceof Error ? error : new Error(String(error)));
       },
     );
     if (signal.aborted) {
