@@ -1470,16 +1470,25 @@ export class ChatView extends ItemView {
     const activeNoteCache = this.activeNoteCache;
     const contextCache = this.contextCache;
     const explicitAttachments = [...this.attachments];
-    // Context building and image encoding can take seconds. Bind the send to the
-    // session that was active when the user pressed Enter so a swap during those
-    // awaits cannot route the prompt into a different session.
-    const sessionToken = service.getSessionToken();
     this.clearEmptyState();
     // Show the auto-attached active note alongside explicit attachments in the user bubble.
     const autoPath = this.effectiveActiveNote();
     const attachments = [...(autoPath ? [autoPath] : []), ...explicitAttachments];
-    const messageCountBefore = service.getMessages().length;
     try {
+      // A fresh tab has no session yet. Create/continue it before sampling the
+      // token, otherwise the token changes during this same send and the guard
+      // falsely rejects a valid first prompt.
+      await service.initialize();
+      if (!this.isLiveTab(tab)) {
+        activeNoteCache.discardPending();
+        contextCache.discard();
+        return;
+      }
+      // Context building and image encoding can take seconds. Bind the send to
+      // the session that is active now so a swap during those awaits cannot
+      // route the prompt into a different session.
+      const sessionToken = service.getSessionToken();
+      const messageCountBefore = service.getMessages().length;
       const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache, contextCache);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
@@ -1541,12 +1550,26 @@ export class ChatView extends ItemView {
       return;
     }
     this.clearEmptyState();
-    const messageCountBefore = service.getMessages().length;
     try {
+      await service.initialize();
+      if (!this.isLiveTab(tab)) {
+        activeNoteCache.discardPending();
+        contextCache.discard();
+        return;
+      }
+      const sessionToken = service.getSessionToken();
+      const messageCountBefore = service.getMessages().length;
       const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache, contextCache);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
         contextCache.discard();
+        return;
+      }
+      if (service.getSessionToken() !== sessionToken) {
+        activeNoteCache.discardPending();
+        contextCache.discard();
+        service.reportSessionChanged();
+        this.showServiceError();
         return;
       }
       const prompt = assemblePrompt(context, steering.text);
@@ -1556,12 +1579,19 @@ export class ChatView extends ItemView {
         contextCache.discard();
         return;
       }
+      if (service.getSessionToken() !== sessionToken) {
+        activeNoteCache.discardPending();
+        contextCache.discard();
+        service.reportSessionChanged();
+        this.showServiceError();
+        return;
+      }
       this.lastSentPrompt = prompt;
       this.lastSentDisplay = steering.text;
       this.statusEl.setText(steeringStatus(steering.mode));
-      if (steering.mode === "redirect") await service.redirectPrompt(prompt, images);
-      else if (steering.mode === "follow-up") await service.followUpPrompt(prompt, images);
-      else await service.steerPrompt(prompt, images);
+      if (steering.mode === "redirect") await service.redirectPrompt(prompt, images, sessionToken);
+      else if (steering.mode === "follow-up") await service.followUpPrompt(prompt, images, sessionToken);
+      else await service.steerPrompt(prompt, images, sessionToken);
       if (!this.isLiveTab(tab)) {
         activeNoteCache.discardPending();
         contextCache.discard();

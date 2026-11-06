@@ -1377,6 +1377,34 @@ describe("AgentService", () => {
     expect(isSummaryMessage(persisted[0])).toBe(false);
   });
 
+  it("refuses steering prepared for a different session token", async () => {
+    const controlled = controlledStreamFn(["answer"]);
+    const { service } = makeService(controlled.streamFn);
+
+    await service.initialize();
+    const sessionToken = service.getSessionToken();
+    await service.newSession();
+    await service.steerPrompt("stale steering", undefined, sessionToken);
+
+    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
+    expect(controlled.runs).toHaveLength(0);
+    expect(userTexts(service.getMessages())).toEqual([]);
+  });
+
+  it("refuses a redirect prepared for a different session token", async () => {
+    const controlled = controlledStreamFn(["answer"]);
+    const { service } = makeService(controlled.streamFn);
+
+    await service.initialize();
+    const sessionToken = service.getSessionToken();
+    await service.newSession();
+    await service.redirectPrompt("stale redirect", undefined, sessionToken);
+
+    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
+    expect(controlled.runs).toHaveLength(0);
+    expect(userTexts(service.getMessages())).toEqual([]);
+  });
+
   it("queues steering into an active run and persists transcript order", async () => {
     const controlled = controlledStreamFn(["first answer", "steered answer"]);
     const { service, adapter } = makeService(controlled.streamFn);

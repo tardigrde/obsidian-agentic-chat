@@ -143,6 +143,7 @@ export class AgentService {
   private readonly pendingRedirects: Array<{
     text: string;
     images?: ImageContent[];
+    expectedSessionToken?: string;
     resolve: () => void;
   }> = [];
   private redirectWorker: Promise<void> | null = null;
@@ -517,16 +518,16 @@ export class AgentService {
     this.setError(SESSION_CHANGED_MESSAGE);
   }
 
-  async steerPrompt(prompt: string, images?: ImageContent[]): Promise<void> {
-    await this.queueSteeringPrompt("steer", prompt, images);
+  async steerPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
+    await this.queueSteeringPrompt("steer", prompt, images, expectedSessionToken);
   }
 
-  async followUpPrompt(prompt: string, images?: ImageContent[]): Promise<void> {
-    await this.queueSteeringPrompt("follow-up", prompt, images);
+  async followUpPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
+    await this.queueSteeringPrompt("follow-up", prompt, images, expectedSessionToken);
   }
 
-  async redirectPrompt(prompt: string, images?: ImageContent[]): Promise<void> {
-    await this.queueSteeringPrompt("redirect", prompt, images);
+  async redirectPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
+    await this.queueSteeringPrompt("redirect", prompt, images, expectedSessionToken);
   }
 
   /** Whether the model the next turn will use accepts image input (vision). */
@@ -774,18 +775,27 @@ export class AgentService {
     await this.promptTurns.run(run, expectedSessionToken);
   }
 
-  private async queueSteeringPrompt(mode: TurnSteeringMode, prompt: string, images?: ImageContent[]): Promise<void> {
+  private async queueSteeringPrompt(
+    mode: TurnSteeringMode,
+    prompt: string,
+    images?: ImageContent[],
+    expectedSessionToken?: string,
+  ): Promise<void> {
     const text = normalizeSteeringText(prompt);
     if (!text) return;
     await this.initialize();
+    if (expectedSessionToken !== undefined && this.getSessionToken() !== expectedSessionToken) {
+      this.reportSessionChanged();
+      return;
+    }
     const attached = images && images.length > 0 ? images : undefined;
     if (mode === "redirect") {
-      await this.queueRedirect(text, attached);
+      await this.queueRedirect(text, attached, expectedSessionToken);
       return;
     }
     const agent = this.requireAgent();
     if (!agent.state.isStreaming) {
-      await this.sendPrompt(text, attached);
+      await this.sendPrompt(text, attached, expectedSessionToken);
       return;
     }
 
@@ -804,9 +814,13 @@ export class AgentService {
    * are queued and drained in order. Each new redirect still aborts the run that
    * is live when it arrives.
    */
-  private async queueRedirect(text: string, images?: ImageContent[]): Promise<void> {
+  private async queueRedirect(text: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
+    if (expectedSessionToken !== undefined && this.getSessionToken() !== expectedSessionToken) {
+      this.reportSessionChanged();
+      return;
+    }
     const delivery = new Promise<void>((resolve) => {
-      this.pendingRedirects.push({ text, images, resolve });
+      this.pendingRedirects.push({ text, images, expectedSessionToken, resolve });
     });
     const agent = this.requireAgent();
     if (agent.state.isStreaming) this.stopAgent(agent);
@@ -828,6 +842,15 @@ export class AgentService {
     while (this.pendingRedirects.length > 0) {
       const entry = this.pendingRedirects.shift()!;
       try {
+        if (
+          entry.expectedSessionToken !== undefined &&
+          this.getSessionToken() !== entry.expectedSessionToken
+        ) {
+          // The redirect was prepared in A but the worker is now in B. Drop it
+          // rather than aborting B or injecting A's text into it.
+          this.reportSessionChanged();
+          continue;
+        }
         const agent = this.requireAgent();
         if (agent.state.isStreaming) {
           this.stopAgent(agent);
