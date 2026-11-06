@@ -58,6 +58,7 @@ await browser.waitUntil(async () =>
 | Tool step cards and diffs | `src/ui/chat-view.ts:2681` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:397` | no committed check | `NONE` |
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts:827` | `test/e2e/specs/skill-chip.e2e.ts:48` (click only) | `partial` |
+| Stop one tab without aborting the other | `src/ui/chat-view.ts:834` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
 | Stop clears queued steering and follow-ups | `src/agent/agent-service.ts:711` | `test/agent-service.test.ts:1671` | `partial` |
 | `/compact` skips when the session changed | `src/agent/agent-service.ts:562` | `test/agent-service.test.ts:1030` | `partial` |
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |

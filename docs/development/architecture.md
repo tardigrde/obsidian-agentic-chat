@@ -91,6 +91,9 @@ Invariants:
 - Starting a session swap disarms the composer's queued prompt before the swap
   begins.
 
+Fixed by #239: an e2e starts a turn in two tabs, stops one, and proves the other
+still finishes.
+
 Gaps:
 
 - Stop policy is spread across `AgentService.abort`, `stopAgent`, the redirect
@@ -98,7 +101,6 @@ Gaps:
 - `stopRequested` in `AgentToolCallController` is a service-global boolean, not
   tied to a turn id.
 - `compactionRecoveryError` is a service field, not tied to a session.
-- Two-tab Stop has no e2e that proves only the active tab aborts.
 
 Next: one runtime owns stop, redirect, steer, follow-up, and turn recovery.
 
@@ -262,7 +264,6 @@ writer.
 | Compaction audit start after swap | Audit entries land in the wrong session | Unowned follow-up |
 | Compaction recovery outside swap queue | Recovery can overwrite a newer session | Unowned follow-up |
 | Plugin sweep vs install race | A sweep and an install move the same stage | Unowned follow-up |
-| Two-tab Stop e2e | Only unit proof exists for per-tab stop | Unowned follow-up |
 
 ## Order and reason
 

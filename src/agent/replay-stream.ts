@@ -73,7 +73,7 @@ export function createReplayStreamController(
   const calls: ReplayStreamCall[] = [];
   const now = options.now ?? (() => Date.now());
 
-  const streamFn: StreamFn = ((model, context) => {
+  const streamFn: StreamFn = ((model, context, streamOptions) => {
     const stream = createAssistantMessageEventStream();
     const callIndex = nextTurn;
     const scripted = selectTurn(turns, callIndex, options.missingTurn ?? "error");
@@ -100,7 +100,7 @@ export function createReplayStreamController(
       : createMissingReplayTurnMessage(model, callIndex, now);
 
     queueMicrotask(() => {
-      void emitReplayTurn(stream, message, scripted, options.waitForRelease);
+      void emitReplayTurn(stream, message, scripted, options.waitForRelease, streamOptions?.signal);
     });
     return stream;
   });
@@ -190,14 +190,28 @@ async function emitReplayTurn(
   message: AssistantMessage,
   turn: ReplayTurn | undefined,
   waitForRelease?: () => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<void> {
   const partial: AssistantMessage = { ...message, content: [] };
   stream.push({ type: "start", partial });
-  if (turn?.emitUpdates) {
-    await emitContentUpdates(stream, partial, message.content, turn.updateDelayMs ?? 0);
+  try {
+    if (turn?.emitUpdates) {
+      await emitContentUpdates(stream, partial, message.content, turn.updateDelayMs ?? 0, signal);
+    }
+    if (turn?.hold) await waitForRelease?.();
+    await wait(turn?.delayMs ?? 0, signal);
+  } catch {
+    const aborted: AssistantMessage = { ...message, content: [], stopReason: "aborted" };
+    stream.push({ type: "error", reason: "aborted", error: aborted });
+    stream.end(aborted);
+    return;
   }
-  if (turn?.hold) await waitForRelease?.();
-  await wait(turn?.delayMs ?? 0);
+  if (signal?.aborted) {
+    const aborted: AssistantMessage = { ...message, content: [], stopReason: "aborted" };
+    stream.push({ type: "error", reason: "aborted", error: aborted });
+    stream.end(aborted);
+    return;
+  }
   if (message.stopReason === "error" || message.stopReason === "aborted") {
     stream.push({ type: "error", reason: message.stopReason, error: message });
   } else {
@@ -217,6 +231,7 @@ async function emitContentUpdates(
   partial: AssistantMessage,
   content: AssistantMessage["content"],
   updateDelayMs: number,
+  signal?: AbortSignal,
 ): Promise<void> {
   for (const block of content) {
     if (block.type === "text") {
@@ -224,12 +239,12 @@ async function emitContentUpdates(
       const partialBlock = { type: "text" as const, text: "" };
       partial.content.push(partialBlock);
       stream.push({ type: "text_start", contentIndex, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs);
+      await wait(updateDelayMs, signal);
       partialBlock.text = block.text;
       stream.push({ type: "text_delta", contentIndex, delta: block.text, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs);
+      await wait(updateDelayMs, signal);
       stream.push({ type: "text_end", contentIndex, content: block.text, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs);
+      await wait(updateDelayMs, signal);
       continue;
     }
     if (block.type === "thinking") {
@@ -237,12 +252,12 @@ async function emitContentUpdates(
       const partialBlock = { type: "thinking" as const, thinking: "" };
       partial.content.push(partialBlock);
       stream.push({ type: "thinking_start", contentIndex, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs);
+      await wait(updateDelayMs, signal);
       partialBlock.thinking = block.thinking;
       stream.push({ type: "thinking_delta", contentIndex, delta: block.thinking, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs);
+      await wait(updateDelayMs, signal);
       stream.push({ type: "thinking_end", contentIndex, content: block.thinking, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs);
+      await wait(updateDelayMs, signal);
       continue;
     }
     const contentIndex = partial.content.length;
@@ -254,13 +269,13 @@ async function emitContentUpdates(
     };
     partial.content.push(partialBlock);
     stream.push({ type: "toolcall_start", contentIndex, partial: cloneAssistant(partial) });
-    await wait(updateDelayMs);
+    await wait(updateDelayMs, signal);
     const delta = JSON.stringify(block.arguments ?? {});
     partialBlock.arguments = cloneJsonObject(block.arguments);
     stream.push({ type: "toolcall_delta", contentIndex, delta, partial: cloneAssistant(partial) });
-    await wait(updateDelayMs);
+    await wait(updateDelayMs, signal);
     stream.push({ type: "toolcall_end", contentIndex, toolCall: cloneToolCall(partialBlock), partial: cloneAssistant(partial) });
-    await wait(updateDelayMs);
+    await wait(updateDelayMs, signal);
   }
 }
 
@@ -305,6 +320,22 @@ function replayUsage(usage: ReplayUsage = {}): Usage {
   };
 }
 
-function wait(ms: number): Promise<void> {
-  return ms > 0 ? new Promise((resolve) => window.setTimeout(resolve, ms)) : Promise.resolve();
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new Error("aborted"));
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      cleanup();
+      reject(new Error("aborted"));
+    };
+    const cleanup = () => {
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
