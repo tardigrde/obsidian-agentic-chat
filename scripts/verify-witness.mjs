@@ -59,6 +59,13 @@ const FAILED_TEST_COUNT_PATTERNS = [
   /\b(\d+)\s+failing\b/,
 ];
 
+const ANSI_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
+
+/** CI reporters color the count, so the digits may follow an escape code. */
+function stripAnsi(text) {
+  return String(text ?? "").replace(ANSI_PATTERN, "");
+}
+
 function usage() {
   return `verify-witness — prove a test fails without the fix
 
@@ -220,16 +227,17 @@ function verdictFor(reverted, restored) {
       reason: "the test failed with the fix restored, so the head is not green",
     };
   }
-  const marker = nonAssertionRedMarker(reverted.combined);
+  const red = stripAnsi(reverted.combined);
+  const marker = nonAssertionRedMarker(red);
   if (marker) {
     return {
       verdict: "FAIL",
       reason: "red run did not reach an assertion.",
       detail: `Matched non-assertion marker: ${marker}`,
-      failedTests: failedTestCount(reverted.combined),
+      failedTests: failedTestCount(red),
     };
   }
-  const failedTests = failedTestCount(reverted.combined);
+  const failedTests = failedTestCount(red);
   if (failedTests === undefined) {
     return {
       verdict: "FAIL",
@@ -451,9 +459,9 @@ function selfTest() {
         ...body,
         "try {",
         "  check();",
-        '  console.log("Tests 1 passed (1)");',
+        '  console.log("\\u001b[2mTests\\u001b[22m \\u001b[31m1 passed\\u001b[39m (1)");',
         "} catch (error) {",
-        '  console.log("Tests 1 failed (1)");',
+        '  console.log("\\u001b[2mTests\\u001b[22m \\u001b[31m1 failed\\u001b[39m (1)");',
         "  console.error(error instanceof Error ? error.message : String(error));",
         "  process.exitCode = 1;",
         "}",
@@ -637,6 +645,10 @@ function main() {
 
   if (result.verdict !== "DRY-RUN") writeReport(result.reportDir, result);
   printResult(result);
+  if (result.verdict === "FAIL") {
+    console.error("verify-witness: red output");
+    console.error(tail(result.reverted.combined));
+  }
   process.exit(result.verdict === "PASS" || result.verdict === "DRY-RUN" ? 0 : 1);
 }
 

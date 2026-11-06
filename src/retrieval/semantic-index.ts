@@ -203,14 +203,63 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
 }
 
 export async function readSemanticIndexFile(adapter: DataAdapter, path: string): Promise<SemanticIndexFile | null> {
+  const primary = await readValidSemanticIndexFile(adapter, path);
+  if (primary) {
+    if (primary.state.status.state === "running") {
+      return await repairInterruptedIndex(adapter, path, primary);
+    }
+    return primary;
+  }
+  // A missing or corrupt target must not hide the last complete index. The
+  // backup is written from a complete target before any replacement.
+  return await readValidSemanticIndexFile(adapter, semanticIndexBackupPath(path));
+}
+
+async function readValidSemanticIndexFile(
+  adapter: DataAdapter,
+  path: string,
+): Promise<SemanticIndexFile | null> {
   if (!(await adapter.exists(path))) return null;
   try {
     const parsed = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
     if (parsed?.version !== SEMANTIC_INDEX_VERSION || !parsed.state?.status) return null;
-    return await repairInterruptedIndex(adapter, path, parsed);
+    return parsed;
   } catch {
     return null;
   }
+}
+
+type CurrentSemanticIndex =
+  | { kind: "missing" }
+  | { kind: "unreadable" }
+  | { kind: "valid"; file: SemanticIndexFile };
+
+/**
+ * A read error is not the same as an absent file. The writer must know the
+ * difference before it removes a target it cannot validate.
+ */
+async function readCurrentSemanticIndex(
+  adapter: DataAdapter,
+  path: string,
+): Promise<CurrentSemanticIndex> {
+  if (!(await adapter.exists(path))) return { kind: "missing" };
+  try {
+    const parsed = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
+    if (parsed?.version !== SEMANTIC_INDEX_VERSION || !parsed.state?.status) {
+      return { kind: "unreadable" };
+    }
+    return { kind: "valid", file: parsed };
+  } catch {
+    return { kind: "unreadable" };
+  }
+}
+
+async function hasCompleteSemanticIndexBackup(
+  adapter: DataAdapter,
+  path: string,
+): Promise<boolean> {
+  const backup = await readValidSemanticIndexFile(adapter, semanticIndexBackupPath(path));
+  return backup?.state.status.state === "complete";
 }
 
 /**
@@ -271,7 +320,70 @@ export async function writeSemanticIndexFile(
   file: SemanticIndexFile,
 ): Promise<void> {
   await ensureParentDirs(adapter, path);
-  await adapter.write(path, JSON.stringify(file, null, 2));
+  const serialized = JSON.stringify(file, null, 2);
+  const tempPath = semanticIndexTempPath(path);
+
+  // Never truncate the live index in place. The new bytes land in a temp file
+  // first; only a complete rename makes them the target.
+  await adapter.write(tempPath, serialized);
+
+  // Preserve the current complete index before any replacement, including the
+  // first `running` write of a rebuild. A running or failed target is not a
+  // complete index, so it never overwrites the backup.
+  const current = await readCurrentSemanticIndex(adapter, path);
+  if (current.kind === "valid" && current.file.state.status.state === "complete") {
+    await writeSemanticIndexBackup(adapter, semanticIndexBackupPath(path), current.file);
+  } else if (current.kind === "unreadable" && !(await hasCompleteSemanticIndexBackup(adapter, path))) {
+    throw new Error(
+      "Refusing to replace an unreadable semantic index without a complete backup.",
+    );
+  }
+
+  // A target that is complete, or unreadable and protected by a backup, may be
+  // removed only when a complete backup is still present.
+  const requireBackup =
+    current.kind === "unreadable" ||
+    (current.kind === "valid" && current.file.state.status.state === "complete");
+  await replaceSemanticIndexFile(adapter, tempPath, path, requireBackup ? path : undefined);
+}
+
+async function writeSemanticIndexBackup(
+  adapter: DataAdapter,
+  backupPath: string,
+  file: SemanticIndexFile,
+): Promise<void> {
+  const tempPath = semanticIndexTempPath(backupPath);
+  await adapter.write(tempPath, JSON.stringify(file, null, 2));
+  await replaceSemanticIndexFile(adapter, tempPath, backupPath);
+}
+
+async function replaceSemanticIndexFile(
+  adapter: DataAdapter,
+  from: string,
+  to: string,
+  requireBackupFor?: string,
+): Promise<void> {
+  try {
+    await adapter.rename(from, to);
+    return;
+  } catch (error) {
+    // Some adapters refuse to rename over an existing file. Remove the target
+    // only when both files exist and the complete index is protected.
+    if (!(await adapter.exists(to)) || !(await adapter.exists(from))) throw error;
+    if (requireBackupFor && !(await hasCompleteSemanticIndexBackup(adapter, requireBackupFor))) {
+      throw error;
+    }
+  }
+  await adapter.remove(to);
+  await adapter.rename(from, to);
+}
+
+function semanticIndexTempPath(path: string): string {
+  return `${path}.tmp`;
+}
+
+function semanticIndexBackupPath(path: string): string {
+  return `${path}.bak`;
 }
 
 export function semanticIndexFile(input: {

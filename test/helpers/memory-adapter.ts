@@ -86,6 +86,13 @@ export class MemoryAdapter {
     this.files.delete(path);
   }
 
+  async rename(oldPath: string, newPath: string): Promise<void> {
+    const content = this.files.get(oldPath);
+    if (content === undefined) throw new Error(`Not found: ${oldPath}`);
+    this.files.set(newPath, content);
+    this.files.delete(oldPath);
+  }
+
   async list(path: string): Promise<{ files: string[]; folders: string[] }> {
     const prefix = path ? `${path}/` : "";
     const files = [...this.files.keys()].filter((file) => file.startsWith(prefix));
