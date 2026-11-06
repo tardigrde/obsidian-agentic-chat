@@ -166,6 +166,50 @@ describe("session/event-log invariants", () => {
     expect(manager.buildSessionContext().messages.map(messageText)).toEqual(["second session message"]);
   });
 
+  it("rejects a load bound to a session that changed during the read", async () => {
+    const { manager, adapter } = makeManager();
+    const first = await manager.createSession(DEFAULTS);
+    await manager.appendMessage(userMessage("first session message"));
+    const second = await manager.createSession(DEFAULTS);
+    await manager.appendMessage(userMessage("second session message"));
+    await manager.loadSession(first.path);
+    const expectedGeneration = manager.getActiveSessionGeneration();
+
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalRead = adapter.read.bind(adapter);
+    adapter.read = async (path) => {
+      if (path === first.path) {
+        started();
+        await gate;
+      }
+      return originalRead(path);
+    };
+
+    // Parent has no options on loadSession; cast so the test still runs there.
+    const loadBound = manager.loadSession.bind(manager) as (
+      path: string,
+      options: { expectedPath: string; expectedGeneration: number },
+    ) => Promise<unknown>;
+    const pending = loadBound(first.path, {
+      expectedPath: first.path,
+      expectedGeneration,
+    });
+    await startedPromise;
+    await manager.loadSession(second.path);
+    release();
+
+    await expect(pending).rejects.toThrow(/session changed/i);
+    expect(manager.getActiveSessionPath()).toBe(second.path);
+    expect(manager.buildSessionContext().messages.map(messageText)).toEqual(["second session message"]);
+  });
+
   it("reports artifact ids referenced by saved session messages", async () => {
     const { manager } = makeManager();
     await manager.createSession(DEFAULTS);

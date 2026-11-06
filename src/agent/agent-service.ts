@@ -999,9 +999,15 @@ export class AgentService {
    */
   private async recoverCompactedSession(): Promise<boolean> {
     const path = this.sessions.activePath;
+    const expectedGeneration = this.sessions.generation;
     if (!path) return false;
     try {
-      const snapshot = await this.sessions.load(path);
+      // Bind the reload to the session that failed to replace. A user switch
+      // during the read must win instead of being overwritten by recovery.
+      const snapshot = await this.sessions.load(path, {
+        expectedPath: path,
+        expectedGeneration,
+      });
       this.sessionEvents.markPersistedMessages(snapshot.messages);
       this.parentAgent.replace(snapshot.messages);
       this.sessions.refreshInfoIfActive();

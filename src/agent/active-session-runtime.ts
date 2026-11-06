@@ -1,5 +1,10 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { type ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
+import {
+  type LoadSessionOptions,
+  type ObsidianSessionManager,
+  type SessionDefaults,
+  type SessionInfo,
+} from "../session/session-manager";
 import type { PlanTrackerState } from "./plan-tracker";
 
 export interface ActiveSessionSnapshot {
@@ -35,8 +40,8 @@ export class AgentActiveSessionRuntime {
     return this.snapshot(await this.sessionManager.createSession(this.getDefaults()));
   }
 
-  async load(path: string): Promise<ActiveSessionSnapshot> {
-    return this.snapshot(await this.sessionManager.loadSession(path));
+  async load(path: string, options?: LoadSessionOptions): Promise<ActiveSessionSnapshot> {
+    return this.snapshot(await this.sessionManager.loadSession(path, options));
   }
 
   async rewriteMessages(
