@@ -239,35 +239,28 @@ describe("AgentSessionActions", () => {
     expect(actions.getSwapState()).toBe("live");
   });
 
-  it("keeps the session token when a swap fails before it commits", async () => {
-    const operations: Array<{
-      name: string;
-      run: (actions: AgentSessionActions) => Promise<unknown>;
-    }> = [
-      { name: "new session", run: (actions) => actions.newSession() },
-      { name: "load", run: (actions) => actions.loadSession("sessions/old.jsonl") },
-      { name: "delete active", run: (actions) => actions.deleteSession("sessions/old.jsonl") },
-      { name: "clear", run: (actions) => actions.clearSessions() },
-      { name: "rewind", run: (actions) => actions.truncateMessages(1) },
-    ];
+  it.each([
+    { name: "new session", run: (actions: AgentSessionActions) => actions.newSession() },
+    { name: "load", run: (actions: AgentSessionActions) => actions.loadSession("sessions/old.jsonl") },
+    { name: "delete active", run: (actions: AgentSessionActions) => actions.deleteSession("sessions/old.jsonl") },
+    { name: "clear", run: (actions: AgentSessionActions) => actions.clearSessions() },
+    { name: "rewind", run: (actions: AgentSessionActions) => actions.truncateMessages(1) },
+  ])("keeps the session token when $name fails before it commits", async ({ run }) => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/old.jsonl", [userMessage("old")]);
+    await sessions.load("sessions/old.jsonl");
+    const { actions, activation } = makeActions({
+      sessions,
+      agent: agentWith([userMessage("old")]),
+    });
+    activation.failPrepare = true;
+    const before = actions.getSessionToken();
 
-    for (const operation of operations) {
-      const sessions = new FakeSessionRuntime();
-      sessions.seed("sessions/old.jsonl", [userMessage("old")]);
-      await sessions.load("sessions/old.jsonl");
-      const { actions, activation } = makeActions({
-        sessions,
-        agent: agentWith([userMessage("old")]),
-      });
-      activation.failPrepare = true;
-      const before = actions.getSessionToken();
+    await expect(run(actions)).rejects.toThrow("resource reload failed");
 
-      await expect(operation.run(actions)).rejects.toThrow("resource reload failed");
-
-      expect(actions.getSessionToken(), operation.name).toBe(before);
-      expect(activation.currentAgent, operation.name).not.toBeNull();
-      expect(sessions.activePath, operation.name).toBe("sessions/old.jsonl");
-    }
+    expect(actions.getSessionToken()).toBe(before);
+    expect(activation.currentAgent).not.toBeNull();
+    expect(sessions.activePath).toBe("sessions/old.jsonl");
   });
 
   it("restores the previous session when the targeted load fails after detach", async () => {
