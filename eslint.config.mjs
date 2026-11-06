@@ -17,6 +17,8 @@ export default tseslint.config(
       "docs/.vitepress/dist/**",
       "logs/**",
       ".obsidian-cache/**",
+      ".stryker-tmp/**",
+      "reports/**",
       "src/vendor/**",
     ],
   },

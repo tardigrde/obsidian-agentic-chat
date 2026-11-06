@@ -195,8 +195,13 @@ xvfb-run -a npm run verify -- eval --run-scripted
 ```
 
 The no-key smoke spec is part of the full suite. Live specs skip without
-credentials, and the eval step fails on any skip. There is no scheduled lane;
-dogfood, audits, and evals run locally or on demand.
+credentials, and the eval step fails on any skip.
+
+Mutation testing is on demand: `npm run mutation`; see
+[mutation.md](mutation.md) and [escaped-defects.md](escaped-defects.md).
+
+The `Review gate` workflow requires a verdict comment at the current head. See
+[trust.md](trust.md) and [review-ledger.md](review-ledger.md).
 
 The `Witness` workflow runs the verifier self-test on every pull request, then
 runs the witness declared in the PR body. A PR that changes `src/` without a
