@@ -10,15 +10,15 @@ Status values: `open`, `fixed`, `deferred`, `rejected`.
 
 | Area | Finding | Status | Resolution or target |
 |---|---|---|---|
-| Semantic | In-place `index.json` write can truncate the last complete index | `deferred` | Structural semantic ownership PR |
-| Semantic | Cross-window lease is in-memory; separate windows are not covered | `deferred` | Structural semantic ownership PR |
-| Semantic | Closing the view orphans a running index | `deferred` | Structural semantic ownership PR |
-| Compaction | Manual `/compact` audit `start` can land in a new session during a swap | `deferred` | Structural turn/compaction ownership PR |
-| Compaction | `/compact` instructions are ignored when it joins an auto run | `deferred` | Structural turn/compaction ownership PR |
-| Compaction | Recovery loads outside the swap queue | `deferred` | Structural turn/compaction ownership PR |
-| Approval | A deny reason equal to `STOPPED_APPROVAL_REASON` triggers the stop path | `deferred` | Structural turn/compaction ownership PR |
-| Plugins | Concurrent install sweeps are not single-flight | `deferred` | Structural semantic/plugin ownership PR |
-| Tests | Two-tab Stop aborting only the active tab has no e2e | `deferred` | Fault harness follow-up |
+| Semantic | In-place `index.json` write can truncate the last complete index | `fixed` | #227 writes through `.tmp`, keeps `.bak`, and serves the backup on read |
+| Semantic | Cross-window lease is in-memory; separate windows are not covered | `deferred` | PR 12, semantic and plugin ownership |
+| Semantic | Closing the view orphans a running index | `deferred` | PR 12, semantic and plugin ownership |
+| Compaction | Manual `/compact` audit `start` can land in a new session during a swap | `deferred` | PR 10, turn and compaction ownership |
+| Compaction | `/compact` instructions are ignored when it joins an auto run | `deferred` | PR 10, turn and compaction ownership |
+| Compaction | Recovery loads outside the swap queue | `deferred` | PR 10, turn and compaction ownership |
+| Approval | A deny reason equal to `STOPPED_APPROVAL_REASON` triggers the stop path | `deferred` | PR 10, turn and compaction ownership |
+| Plugins | Concurrent install sweeps are not single-flight | `deferred` | PR 12, semantic and plugin ownership |
+| Tests | Two-tab Stop aborting only the active tab has no e2e | `deferred` | PR 9, session ownership |
 | Tests | Approval e2e could leave `.agentic-chat-approval` open and cascade ten click failures | `fixed` | #224 dismisses it in `afterEach`; `beforeEach` asserts closed |
 | Release | semantic-release could not push its version bump to protected `main` | `fixed` | Ruleset plus repo-scoped deploy key; #223 wires the workflow |
 | Feature map | Unit-only tests were marked `covered` | `fixed` | #221 requires e2e, probe, or replay proof |
