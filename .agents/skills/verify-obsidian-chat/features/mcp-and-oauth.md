@@ -56,7 +56,7 @@ await clickMcpAddButton("Add MCP server");
 | Bearer token auth | `src/settings.ts:1519` | no committed check | `NONE` |
 | OAuth settings panel | `src/settings.ts:1576` | no committed check | `NONE` |
 | OAuth required banner | `src/settings.ts:1266` | `test/e2e/specs/composio-install.e2e.ts:181` (banner and button only) | `partial` |
-| Authenticate & test / PKCE sign-in | `src/settings.ts:1702` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
+| Authenticate & test / PKCE sign-in | `src/settings.ts:1712` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Desktop loopback callback | `src/mcp/oauth.ts:791` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Mobile Obsidian protocol callback | `src/mcp/oauth.ts:848` | `test/mcp-oauth.test.ts:58` (unit only) | `partial` |
 | OAuth token refresh | `src/mcp/oauth.ts:272` | `test/mcp-oauth.test.ts:513` (unit only) | `partial` |
