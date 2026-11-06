@@ -1,6 +1,7 @@
 {
   "branches": ["main"],
   "tagFormat": "${version}",
+  "repositoryUrl": "git@github.com:tardigrde/obsidian-agentic-chat.git",
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",

@@ -47,12 +47,20 @@ jobs:
             styles.css
 
       - name: Release
-        run: >
-          npx --yes
-          --ignore-scripts
-          --package semantic-release@25.0.5
-          --package @semantic-release/exec@7.1.0
-          --package @semantic-release/git@10.0.1
-          semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
+          GIT_SSH_COMMAND: "ssh -i ~/.ssh/release_deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+        run: |
+          # main is protected by a ruleset. The release deploy key is the only
+          # bypass actor, so the version-bump commit can be pushed from CI.
+          mkdir -p ~/.ssh
+          printf '%s\n' "$RELEASE_DEPLOY_KEY" > ~/.ssh/release_deploy_key
+          chmod 600 ~/.ssh/release_deploy_key
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
+          npx --yes \
+            --ignore-scripts \
+            --package semantic-release@25.0.5 \
+            --package @semantic-release/exec@7.1.0 \
+            --package @semantic-release/git@10.0.1 \
+            semantic-release
