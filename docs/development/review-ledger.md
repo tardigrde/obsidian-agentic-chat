@@ -16,7 +16,8 @@ Status values: `open`, `fixed`, `deferred`, `rejected`.
 | Compaction | Manual `/compact` audit `start` can land in a new session during a swap | `deferred` | Unowned follow-up |
 | Compaction | `/compact` instructions are ignored when it joins an auto run | `fixed` | #230 returns `busy` instead of joining with different instructions |
 | Compaction | Recovery loads outside the swap queue | `deferred` | Unowned follow-up |
-| Approval | A deny reason equal to `STOPPED_APPROVAL_REASON` triggers the stop path | `deferred` | Unowned follow-up |
+| Approval | A deny reason equal to `STOPPED_APPROVAL_REASON` triggers the stop path | `fixed` | #235 uses an explicit `stopped` flag |
+| Approval | `stopRequested` and the approval request are not tied to a turn or session token | `deferred` | Unowned follow-up |
 | Plugins | Concurrent install sweeps are not single-flight | `fixed` | #232 shares one in-flight reload |
 | Tests | Two-tab Stop aborting only the active tab has no e2e | `deferred` | Unowned follow-up |
 | Session | A failed resource reload invalidated the token while the old session stayed live | `fixed` | #229 commits the token change only after the reload |

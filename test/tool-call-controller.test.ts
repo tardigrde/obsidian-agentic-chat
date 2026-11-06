@@ -100,7 +100,12 @@ describe("AgentToolCallController", () => {
   it("latches a stopped approval once for the turn", async () => {
     const { controller } = makeController({
       settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
-      confirmToolCall: async () => ({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON }),
+      confirmToolCall: async () => ({
+        approved: false,
+        remember: false,
+        reason: STOPPED_APPROVAL_REASON,
+        stopped: true,
+      }),
     });
 
     const decision = await controller.beforeToolCall({
@@ -110,6 +115,25 @@ describe("AgentToolCallController", () => {
 
     expect(decision).toMatchObject({ block: true, terminate: true });
     expect(controller.consumeStopRequested()).toBe(true);
+    expect(controller.consumeStopRequested()).toBe(false);
+  });
+
+  it("does not stop the turn when a deny reuses the stop text as its reason", async () => {
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      confirmToolCall: async () => ({
+        approved: false,
+        remember: false,
+        reason: STOPPED_APPROVAL_REASON,
+      }),
+    });
+
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-deny", name: "write" },
+      args: { path: "Notes/a.md", content: "hi" },
+    });
+
+    expect(decision).toEqual({ block: true, reason: STOPPED_APPROVAL_REASON });
     expect(controller.consumeStopRequested()).toBe(false);
   });
 
