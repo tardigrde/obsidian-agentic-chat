@@ -104,6 +104,12 @@ export class SemanticIndexWorkflowController {
     this.options.renderer.info("Semantic index", [["Cancel", "Cancellation requested. The current batch will stop before the next request."]]);
   }
 
+  /** Abort a running index without a user-facing message. The owning view is gone. */
+  dispose(): void {
+    this.abort?.abort();
+    this.abort = null;
+  }
+
   private async prepare(scope: RetrievalIndexScope): Promise<{
     documents: RetrievalDocument[];
     estimate: EmbeddingIndexCostEstimate;

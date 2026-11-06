@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TFolder, type App } from "obsidian";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { PluginService } from "../src/plugins/service";
@@ -223,5 +223,16 @@ describe("PluginService cache invalidation", () => {
     await service.load();
     expect(service.invalidateFor(".agentic-plugins")).toBe(true);
     expect(service.hasCache()).toBe(false);
+  });
+
+  it("runs one import sweep for concurrent reloads", async () => {
+    const app = await seed();
+    const service = serviceFor(app, settings());
+    const sweep = vi.spyOn(service, "sweepImportStages");
+
+    const [first, second] = await Promise.all([service.reload(), service.reload()]);
+
+    expect(sweep).toHaveBeenCalledTimes(1);
+    expect(first).toBe(second);
   });
 });

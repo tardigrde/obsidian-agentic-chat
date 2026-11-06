@@ -45,6 +45,8 @@ export interface GenerateMcpPackageResult {
  */
 export class PluginService {
   private cache: LoadedPlugin[] | null = null;
+  /** Single-flight: concurrent reloads must not run import recovery twice. */
+  private reloadInFlight: Promise<LoadedPlugin[]> | null = null;
   private retainedImportBackup = false;
 
   constructor(
@@ -61,6 +63,17 @@ export class PluginService {
 
   /** Recompute the plugin packages from the vault, dropping the cache. */
   async reload(): Promise<LoadedPlugin[]> {
+    if (this.reloadInFlight) return this.reloadInFlight;
+    const run = this.performReload();
+    this.reloadInFlight = run;
+    try {
+      return await run;
+    } finally {
+      if (this.reloadInFlight === run) this.reloadInFlight = null;
+    }
+  }
+
+  private async performReload(): Promise<LoadedPlugin[]> {
     const settings = this.getSettings();
     await this.sweepImportStages();
     this.cache = await loadPlugins(this.app, {
