@@ -144,6 +144,54 @@ describe("PluginService.installFromTree", () => {
     expect(manifest.version).toBe("3.0.0");
   });
 
+  it("does not sweep the stage of an in-flight install", async () => {
+    const { app, vault } = await seed();
+    const service = serviceFor(app, settings());
+    await service.installFromTree(claudePluginTree(), "first");
+    const secondTree = claudePluginTree();
+    secondTree.set(
+      ".claude-plugin/plugin.json",
+      ENCODER.encode(JSON.stringify({ name: "docs-helper", version: "3.0.0" })),
+    );
+
+    const adapter = (
+      app.vault as unknown as {
+        adapter: { rename: (from: string, to: string) => Promise<void> };
+      }
+    ).adapter;
+    const originalRename = adapter.rename.bind(adapter);
+    let renameStarted!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      renameStarted = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let blocked = false;
+    adapter.rename = async (from, to) => {
+      if (!blocked && from === ".agentic-plugins/docs-helper" && to.includes(".importing-backup-docs-helper")) {
+        blocked = true;
+        renameStarted();
+        await gate;
+      }
+      return originalRename(from, to);
+    };
+
+    const install = service.installFromTree(secondTree, "second");
+    await startedPromise;
+    const sweep = service.sweepImportStages();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+
+    await expect(install).resolves.toMatchObject({ updated: true });
+    await expect(sweep).resolves.toBeUndefined();
+    const manifestText = vault.contentOf(".agentic-plugins/docs-helper/plugin.json");
+    expect(manifestText).toBeDefined();
+    const manifest = JSON.parse(manifestText as string);
+    expect(manifest.version).toBe("3.0.0");
+  });
+
   it("keeps helper files when installing a bare root SKILL.md package", async () => {
     const { app, vault } = await seed();
     const service = serviceFor(app, settings());
