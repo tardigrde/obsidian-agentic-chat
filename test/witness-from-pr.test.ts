@@ -154,6 +154,22 @@ describe("witness-from-pr", () => {
     expect(
       witnessDecision({
         body: "none",
+        labels: [],
+        root,
+        changedFiles: ["src/vendor/fflate.js"],
+      }),
+    ).toMatchObject({ action: "fail" });
+    expect(
+      witnessDecision({
+        body: "none",
+        labels: [],
+        root,
+        changedFiles: ["src/café.ts"],
+      }),
+    ).toMatchObject({ action: "fail" });
+    expect(
+      witnessDecision({
+        body: "none",
         labels: ["no-behavior-change"],
         root,
         changedFiles: ["src/a.ts"],
@@ -162,6 +178,17 @@ describe("witness-from-pr", () => {
     expect(
       witnessDecision({ body: "none", labels: [], root, changedFiles: ["docs/a.md"] }),
     ).toMatchObject({ action: "skip" });
+  });
+
+  it("accepts a non-TypeScript source under src/", () => {
+    writeFileSync(path.join(root, "src", "vendor.js"), "export const a = 1;\n");
+    expect(
+      witnessDecision({
+        body: "<!-- witness\ntest: test/a.test.ts\nsrc: src/vendor.js\n-->",
+        labels: [],
+        root,
+      }),
+    ).toMatchObject({ action: "run" });
   });
 
   it("exits non-zero for invalid evidence and a missing base", () => {
@@ -214,6 +241,47 @@ describe("witness-from-pr", () => {
       });
       expect(result.status, result.stderr).toBe(1);
       expect(result.stderr).toContain("changes src/a.ts");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("detects a non-ASCII JavaScript source and a move out of src/", () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), "witness-cli-"));
+    try {
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+      git("init");
+      git("config", "user.email", "witness@example.test");
+      git("config", "user.name", "Witness Test");
+      mkdirSync(path.join(repo, "src"), { recursive: true });
+      writeFileSync(path.join(repo, "src", "café.js"), "export const a = 1;\n");
+      writeFileSync(path.join(repo, "src", "move.ts"), "export const b = 1;\n");
+      git("add", ".");
+      git("commit", "-m", "base");
+      const base = git("rev-parse", "HEAD").toString().trim();
+
+      writeFileSync(path.join(repo, "src", "café.js"), "export const a = 2;\n");
+      git("add", ".");
+      git("commit", "-m", "change non-ascii");
+      const nonAscii = spawnSync(process.execPath, [CLI], {
+        cwd: repo,
+        env: { ...process.env, PR_BODY: "none", PR_LABELS: "", BASE_SHA: base },
+        encoding: "utf8",
+      });
+      expect(nonAscii.status, nonAscii.stderr).toBe(1);
+      expect(nonAscii.stderr).toContain("changes src/café.js");
+
+      const moveBase = git("rev-parse", "HEAD").toString().trim();
+      mkdirSync(path.join(repo, "docs"), { recursive: true });
+      git("mv", "src/move.ts", "docs/move.ts");
+      git("commit", "-m", "move out of src");
+      const moved = spawnSync(process.execPath, [CLI], {
+        cwd: repo,
+        env: { ...process.env, PR_BODY: "none", PR_LABELS: "", BASE_SHA: moveBase },
+        encoding: "utf8",
+      });
+      expect(moved.status, moved.stderr).toBe(1);
+      expect(moved.stderr).toContain("changes src/move.ts");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

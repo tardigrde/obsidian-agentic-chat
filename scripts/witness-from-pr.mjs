@@ -92,13 +92,11 @@ export function validateWitnessSpec(spec, root = process.cwd()) {
     errors.push(`test file must be TypeScript: ${spec.testFile}`);
   }
   if (spec.sources.length === 0) {
-    errors.push("add at least one `src: src/...ts` line");
+    errors.push("add at least one `src: src/...` line");
   }
   for (const source of spec.sources) {
     if (!isRepoFile(root, source, "src")) {
       errors.push(`source file is missing or outside src/: ${source}`);
-    } else if (!source.endsWith(".ts")) {
-      errors.push(`source file must be TypeScript: ${source}`);
     }
   }
   return [...new Set(errors)];
@@ -111,7 +109,8 @@ function filledSpecs(body) {
 }
 
 function specSignature(spec) {
-  return JSON.stringify({ testFile: spec.testFile, sources: [...spec.sources].sort() });
+  const sources = [...spec.sources].sort((a, b) => a.localeCompare(b));
+  return JSON.stringify({ testFile: spec.testFile, sources });
 }
 
 export function witnessDecision({ body, labels = [], root = process.cwd(), changedFiles = [] }) {
@@ -120,7 +119,7 @@ export function witnessDecision({ body, labels = [], root = process.cwd(), chang
   const optedOut = normalizedLabels.includes(OPT_OUT_LABEL);
   const changedSources = changedFiles
     .map((file) => String(file).replaceAll("\\", "/"))
-    .filter((file) => file.startsWith("src/") && file.endsWith(".ts"));
+    .filter((file) => file.startsWith("src/"));
 
   const specs = filledSpecs(body);
   const distinct = new Set(specs.map(specSignature));
@@ -161,14 +160,16 @@ export function witnessDecision({ body, labels = [], root = process.cwd(), chang
 }
 
 function changedFiles(base, cwd) {
-  const result = spawnSync("git", ["diff", "--name-only", `${base}...HEAD`], {
+  // -z and --no-renames keep non-ASCII names unquoted and show a move out of
+  // src/ as a deletion plus an addition.
+  const result = spawnSync("git", ["diff", "--name-only", "-z", "--no-renames", `${base}...HEAD`], {
     cwd,
-    encoding: "utf8",
-  });
+    encoding: "buffer",
+  }); // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
   if (result.status !== 0) return null;
   return result.stdout
-    .split("\n")
-    .map((file) => file.trim())
+    .toString("utf8")
+    .split("\0")
     .filter(Boolean);
 }
 
