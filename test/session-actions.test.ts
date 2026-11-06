@@ -31,6 +31,14 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
   renamed: Array<{ path: string; name: string }> = [];
   refreshed = 0;
   rewrites: AgentMessage[][] = [];
+  continued = 0;
+  recentPath: string | null = null;
+  events: string[] = [];
+  private revision = 0;
+
+  get generation(): number {
+    return this.revision;
+  }
 
   private readonly messagesByPath = new Map<string, AgentMessage[]>();
 
@@ -39,19 +47,29 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
   }
 
   async continueRecent(): Promise<ActiveSessionSnapshot> {
-    if (this.activePath) return this.snapshot(this.activePath);
+    this.continued += 1;
+    // Mirrors the real helper: most recently modified, not the active pointer.
+    if (this.recentPath) {
+      this.revision += 1;
+      this.activePath = this.recentPath;
+      return this.snapshot(this.recentPath);
+    }
     return this.create();
   }
 
   async create(): Promise<ActiveSessionSnapshot> {
     this.created += 1;
     const path = `sessions/new-${this.created}.jsonl`;
+    this.events.push("create");
+    this.revision += 1;
     this.activePath = path;
     this.seed(path, []);
     return this.snapshot(path);
   }
 
   async load(path: string): Promise<ActiveSessionSnapshot> {
+    this.events.push("load");
+    this.revision += 1;
     this.activePath = path;
     return this.snapshot(path);
   }
@@ -61,9 +79,13 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
   }
 
   async delete(path: string): Promise<void> {
+    this.events.push("delete");
     this.deleted.push(path);
     this.messagesByPath.delete(path);
-    if (this.activePath === path) this.activePath = null;
+    if (this.activePath === path) {
+      this.revision += 1;
+      this.activePath = null;
+    }
   }
 
   async rename(path: string, name: string): Promise<void> {
@@ -72,6 +94,7 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
 
   async rewriteMessages(messages: AgentMessage[]): Promise<ActiveSessionSnapshot> {
     const path = this.activePath ?? "sessions/current.jsonl";
+    this.events.push("rewrite");
     this.activePath = path;
     this.rewrites.push(messages);
     this.seed(path, messages);
@@ -98,12 +121,20 @@ function agentWith(messages: AgentMessage[], isStreaming = false): Agent {
 
 class FakeActivationRuntime implements AgentSessionActivationRuntime {
   currentAgent: Agent | null;
+  failPrepare = false;
+  prepareCalls = 0;
 
   constructor(
     private readonly events: string[],
     agent: Agent | null = null,
   ) {
     this.currentAgent = agent;
+  }
+
+  async prepareResources(): Promise<void> {
+    this.prepareCalls += 1;
+    this.events.push("prepare");
+    if (this.failPrepare) throw new Error("resource reload failed");
   }
 
   detachAgent(): void {
@@ -124,10 +155,12 @@ function makeActions(options: {
 } = {}): {
   actions: AgentSessionActions;
   sessions: FakeSessionRuntime;
+  activation: FakeActivationRuntime;
   events: string[];
 } {
   const sessions = options.sessions ?? new FakeSessionRuntime();
   const events: string[] = [];
+  sessions.events = events;
   const activation = new FakeActivationRuntime(events, options.agent ?? null);
   const actions = new AgentSessionActions({
     sessions,
@@ -135,19 +168,20 @@ function makeActions(options: {
     notifyChange: () => events.push("notify"),
     afterDelete: options.afterDelete,
   });
-  return { actions, sessions, events };
+  return { actions, sessions, activation, events };
 }
 
 describe("AgentSessionActions", () => {
   it("continues the recent session by activating its persisted messages", async () => {
     const sessions = new FakeSessionRuntime();
     sessions.seed("sessions/recent.jsonl", [userMessage("recent")]);
+    sessions.recentPath = "sessions/recent.jsonl";
     await sessions.load("sessions/recent.jsonl");
     const { actions, events } = makeActions({ sessions });
 
     await actions.continueRecentSession();
 
-    expect(events).toEqual(["activate:1:reload", "notify"]);
+    expect(events).toEqual(["prepare", "detach", "activate:1:no-reload", "notify"]);
   });
 
   it("starts a fresh session by detaching before activation", async () => {
@@ -156,7 +190,7 @@ describe("AgentSessionActions", () => {
     await actions.newSession();
 
     expect(sessions.created).toBe(1);
-    expect(events).toEqual(["detach", "activate:0:reload", "notify"]);
+    expect(events).toEqual(["prepare", "detach", "create", "activate:0:no-reload", "notify"]);
   });
 
   it("loads a session by detaching before activation", async () => {
@@ -167,7 +201,156 @@ describe("AgentSessionActions", () => {
     await actions.loadSession("sessions/old.jsonl");
 
     expect(sessions.activePath).toBe("sessions/old.jsonl");
-    expect(events).toEqual(["detach", "activate:1:reload", "notify"]);
+    expect(events).toEqual(["prepare", "detach", "load", "activate:1:no-reload", "notify"]);
+  });
+
+  it("reloads resources before detaching and keeps the old agent when the reload fails", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/old.jsonl", [userMessage("persisted")]);
+    await sessions.load("sessions/old.jsonl");
+    const oldAgent = agentWith([userMessage("old")]);
+    const { actions, activation, events } = makeActions({ sessions, agent: oldAgent });
+    activation.failPrepare = true;
+
+    await expect(actions.loadSession("sessions/old.jsonl")).rejects.toThrow("resource reload failed");
+
+    expect(events).toEqual(["prepare"]);
+    expect(activation.currentAgent).toBe(oldAgent);
+    expect(actions.getSwapState()).toBe("failed");
+  });
+
+  it("keeps sends open when a failed reload leaves the old agent alive", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/old.jsonl", [userMessage("persisted")]);
+    await sessions.load("sessions/old.jsonl");
+    const oldAgent = agentWith([userMessage("old")]);
+    const { actions, activation } = makeActions({ sessions, agent: oldAgent });
+    activation.failPrepare = true;
+
+    await expect(actions.loadSession("sessions/old.jsonl")).rejects.toThrow("resource reload failed");
+    expect(actions.getSwapState()).toBe("failed");
+
+    await expect(actions.waitForLive()).resolves.toBeUndefined();
+    await actions.ensureSessionAgent();
+
+    expect(activation.currentAgent).toBe(oldAgent);
+    expect(sessions.continued).toBe(0);
+    expect(actions.getSwapState()).toBe("live");
+  });
+
+  it("restores the previous session when the targeted load fails after detach", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/previous.jsonl", [userMessage("previous")]);
+    sessions.seed("sessions/target.jsonl", [userMessage("target")]);
+    sessions.seed("sessions/recent.jsonl", [userMessage("recent")]);
+    sessions.recentPath = "sessions/recent.jsonl";
+    await sessions.load("sessions/previous.jsonl");
+    const { actions, activation } = makeActions({ sessions, agent: agentWith([userMessage("previous")]) });
+    const originalLoad = sessions.load.bind(sessions);
+    sessions.load = async (path: string) => {
+      if (path === "sessions/target.jsonl") throw new Error("target load failed");
+      return originalLoad(path);
+    };
+
+    await expect(actions.loadSession("sessions/target.jsonl")).rejects.toThrow(
+      "Could not load sessions/target.jsonl; the previous session is still open.",
+    );
+
+    expect(sessions.activePath).toBe("sessions/previous.jsonl");
+    expect(activation.currentAgent?.state.messages).toEqual([userMessage("previous")]);
+    expect(sessions.continued).toBe(0);
+    expect(actions.getSwapState()).toBe("failed");
+    sessions.load = originalLoad;
+  });
+
+  it("falls back to the most recent session when the previous reload also fails", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/old.jsonl", [userMessage("old")]);
+    sessions.seed("sessions/recent.jsonl", [userMessage("recent")]);
+    sessions.recentPath = "sessions/recent.jsonl";
+    await sessions.load("sessions/old.jsonl");
+    const { actions, activation } = makeActions({ sessions, agent: agentWith([userMessage("old")]) });
+    const originalLoad = sessions.load.bind(sessions);
+    sessions.load = async () => {
+      throw new Error("load failed after detach");
+    };
+
+    await expect(actions.loadSession("sessions/old.jsonl")).rejects.toThrow("load failed after detach");
+    expect(activation.currentAgent).toBeNull();
+    expect(actions.getSwapState()).toBe("failed");
+
+    await expect(actions.waitForLive()).resolves.toBeUndefined();
+    await actions.ensureSessionAgent();
+
+    expect(sessions.continued).toBe(1);
+    expect(activation.currentAgent?.state.messages).toEqual([userMessage("recent")]);
+    expect(actions.getSwapState()).toBe("live");
+    sessions.load = originalLoad;
+  });
+
+  it("recovers a failed swap when the next session operation succeeds", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/old.jsonl", [userMessage("persisted")]);
+    await sessions.load("sessions/old.jsonl");
+    const { actions, activation, events } = makeActions({ sessions });
+    activation.failPrepare = true;
+    await expect(actions.loadSession("sessions/old.jsonl")).rejects.toThrow();
+    expect(actions.getSwapState()).toBe("failed");
+
+    activation.failPrepare = false;
+    await actions.newSession();
+
+    expect(actions.getSwapState()).toBe("live");
+    expect(events).toContain("activate:0:no-reload");
+  });
+
+  it("serializes initialize behind a queued swap instead of loading twice", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/recent.jsonl", [userMessage("recent")]);
+    await sessions.load("sessions/recent.jsonl");
+    const { actions, sessions: runtime } = makeActions({ sessions });
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalLoad = runtime.load.bind(runtime);
+    runtime.load = async (path: string) => {
+      await gate;
+      return originalLoad(path);
+    };
+
+    const swap = actions.loadSession("sessions/recent.jsonl");
+    const initialize = actions.ensureSessionAgent();
+    release();
+    await Promise.all([swap, initialize]);
+
+    expect(actions.getSwapState()).toBe("live");
+    expect(runtime.continued).toBe(0);
+  });
+
+  it("exposes loading and live states while a swap runs", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/old.jsonl", [userMessage("persisted")]);
+    await sessions.load("sessions/old.jsonl");
+    const { actions } = makeActions({ sessions });
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalLoad = sessions.load.bind(sessions);
+    sessions.load = async (path: string) => {
+      await gate;
+      return originalLoad(path);
+    };
+
+    const swap = actions.loadSession("sessions/old.jsonl");
+    await Promise.resolve();
+    expect(actions.getSwapState()).toBe("loading");
+    release();
+    await swap;
+    expect(actions.getSwapState()).toBe("live");
   });
 
   it("deleting the active session creates and activates a replacement session", async () => {
@@ -180,7 +363,7 @@ describe("AgentSessionActions", () => {
 
     expect(sessions.deleted).toEqual(["sessions/active.jsonl"]);
     expect(sessions.created).toBe(1);
-    expect(events).toEqual(["detach", "activate:0:reload", "notify"]);
+    expect(events).toEqual(["prepare", "detach", "delete", "create", "activate:0:no-reload", "notify"]);
   });
 
   it("deleting an inactive session only notifies listeners", async () => {
@@ -194,7 +377,7 @@ describe("AgentSessionActions", () => {
 
     expect(sessions.deleted).toEqual(["sessions/old.jsonl"]);
     expect(sessions.created).toBe(0);
-    expect(events).toEqual(["notify"]);
+    expect(events).toEqual(["delete", "notify"]);
   });
 
   it("runs post-delete cleanup after sessions are removed", async () => {
@@ -230,7 +413,7 @@ describe("AgentSessionActions", () => {
 
     expect(sessions.deleted).toEqual(["sessions/active.jsonl", "sessions/old.jsonl"]);
     expect(sessions.created).toBe(1);
-    expect(events).toEqual(["detach", "activate:0:reload", "notify"]);
+    expect(events).toEqual(["prepare", "detach", "delete", "delete", "create", "activate:0:no-reload", "notify"]);
   });
 
   it("notifies without creating a replacement when there are no sessions to clear", async () => {
@@ -264,7 +447,7 @@ describe("AgentSessionActions", () => {
     await actions.truncateMessages(2);
 
     expect(sessions.rewrites).toEqual([[messages[0], messages[1]]]);
-    expect(events).toEqual(["activate:2:no-reload", "notify"]);
+    expect(events).toEqual(["prepare", "rewrite", "detach", "activate:2:no-reload", "notify"]);
   });
 
   // pi 1.0.0 keeps the system prompt as a leading transcript message, but the
@@ -282,7 +465,7 @@ describe("AgentSessionActions", () => {
     await actions.truncateMessages(2);
 
     expect(sessions.rewrites).toEqual([[one, two]]);
-    expect(events).toEqual(["activate:2:no-reload", "notify"]);
+    expect(events).toEqual(["prepare", "rewrite", "detach", "activate:2:no-reload", "notify"]);
   });
 
   it("does not rewind while the live agent is streaming", async () => {

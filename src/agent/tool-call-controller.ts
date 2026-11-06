@@ -32,7 +32,10 @@ export interface ToolApprovalRequest {
   sessionLabel?: string;
 }
 
-export type ToolGateDecision = { block: true; reason: string } | undefined;
+export type ToolGateDecision = { block: true; reason: string; terminate?: boolean } | undefined;
+
+/** Reason used when the user stops a turn that is waiting for approval. */
+export const STOPPED_APPROVAL_REASON = "The turn was stopped before approval.";
 
 /** A user's decision on an approval prompt, with an optional deny reason. */
 export interface UserApprovalChoice {
@@ -63,7 +66,7 @@ export interface AfterToolCallContext {
 interface ToolCallControllerOptions {
   app: App;
   getSettings: () => AgenticChatSettings;
-  confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
+  confirmToolCall: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
   getTools: () => AgentTool[];
   getProfiles: () => AgentRole[];
   onUndoApplied: () => void;
@@ -81,7 +84,7 @@ interface ToolCallControllerOptions {
 export class AgentToolCallController {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
-  private readonly confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
+  private readonly confirmToolCall: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
   private readonly getTools: () => AgentTool[];
   private readonly getProfiles: () => AgentRole[];
   private readonly onUndoApplied: () => void;
@@ -94,6 +97,8 @@ export class AgentToolCallController {
   private undoStack: FileCheckpoint[] = [];
   /** Undo records captured pre-execution, keyed by tool call id, pending success. */
   private pendingUndo = new Map<string, FileCheckpoint>();
+  /** Set when a user stop must end the current turn even if pi aborts first. */
+  private stopRequested = false;
 
   constructor(options: ToolCallControllerOptions) {
     this.app = options.app;
@@ -110,6 +115,17 @@ export class AgentToolCallController {
 
   canUndo(): boolean {
     return this.undoStack.length > 0;
+  }
+
+  /** True once after a stopped approval; `finishTurn` uses it to end the turn. */
+  consumeStopRequested(): boolean {
+    const requested = this.stopRequested;
+    this.stopRequested = false;
+    return requested;
+  }
+
+  clearStopRequested(): void {
+    this.stopRequested = false;
   }
 
   /**
@@ -135,8 +151,8 @@ export class AgentToolCallController {
     this.subagentRegistry.clearPendingErrorDetails();
   }
 
-  async beforeToolCall(context: BeforeToolCallContext): Promise<ToolGateDecision> {
-    const decision = await this.gateToolCall(context.toolCall.id, context.toolCall.name, context.args);
+  async beforeToolCall(context: BeforeToolCallContext, signal?: AbortSignal): Promise<ToolGateDecision> {
+    const decision = await this.gateToolCall(context.toolCall.id, context.toolCall.name, context.args, signal);
     // Capture the inverse only for allowed mutating calls; a blocked call never
     // runs, so it has nothing to undo.
     if (!decision && UNDOABLE_TOOLS.has(context.toolCall.name)) {
@@ -198,7 +214,12 @@ export class AgentToolCallController {
     return undefined;
   }
 
-  private async gateToolCall(toolCallId: string, toolName: string, args: unknown): Promise<ToolGateDecision> {
+  private async gateToolCall(
+    toolCallId: string,
+    toolName: string,
+    args: unknown,
+    signal?: AbortSignal,
+  ): Promise<ToolGateDecision> {
     const settings = this.getSettings();
     const modeDecision = resolveModePolicy(settings.mode, settings.approval, toolName);
     if (modeDecision.policy === "deny" && modeDecision.reason) {
@@ -206,7 +227,7 @@ export class AgentToolCallController {
       return { block: true, reason: modeDecision.reason };
     }
     if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, toolCallId, args);
-    if (isMcpToolName(toolName)) return this.gateMcpToolCall(settings, toolCallId, toolName, args);
+    if (isMcpToolName(toolName)) return this.gateMcpToolCall(settings, toolCallId, toolName, args, signal);
     const decision = modeDecision;
     const { reason } = decision;
     // Skill resources are vault-hosted plugin content — reads stay exempt from
@@ -252,10 +273,9 @@ export class AgentToolCallController {
       { toolName, label, args },
       toolCallId,
       "The user declined this action.",
+      signal,
     );
-    return choice.approved
-      ? undefined
-      : { block: true, reason: choice.reason ?? "The user declined this action." };
+    return this.decisionForChoice(choice, "The user declined this action.");
   }
 
   private async gateMcpToolCall(
@@ -263,6 +283,7 @@ export class AgentToolCallController {
     toolCallId: string,
     toolName: string,
     args: unknown,
+    signal?: AbortSignal,
   ): Promise<ToolGateDecision> {
     // S1: MCP now respects the same mode overlay as vault tools (plan deny, yolo allow)
     // and the same working-dir refinement for vault-path args. Previously this bypassed both,
@@ -297,10 +318,9 @@ export class AgentToolCallController {
       { toolName, label, args },
       toolCallId,
       "The user declined this MCP tool call.",
+      signal,
     );
-    return choice.approved
-      ? undefined
-      : { block: true, reason: choice.reason ?? "The user declined this MCP tool call." };
+    return this.decisionForChoice(choice, "The user declined this MCP tool call.");
   }
 
   private resolveMcpPolicy(settings: AgenticChatSettings, toolName: string): ApprovalPolicy {
@@ -361,6 +381,7 @@ export class AgentToolCallController {
     request: ToolApprovalRequest,
     toolCallId: string,
     deniedReason: string,
+    signal?: AbortSignal,
   ): Promise<UserApprovalChoice> {
     await this.auditApproval({
       decision: "requested",
@@ -369,7 +390,7 @@ export class AgentToolCallController {
       label: request.label,
       args: request.args,
     });
-    const choice = await this.confirmToolCall(request);
+    const choice = await this.confirmToolCall(request, signal);
     await this.auditApproval({
       decision: choice.approved ? "approved" : "denied",
       toolCallId,
@@ -379,6 +400,12 @@ export class AgentToolCallController {
       reason: choice.approved ? undefined : (choice.reason ?? deniedReason),
     });
     return choice;
+  }
+
+  private decisionForChoice(choice: UserApprovalChoice, fallback: string): ToolGateDecision {
+    const decision = deniedDecision(choice, fallback);
+    if (decision?.terminate) this.stopRequested = true;
+    return decision;
   }
 
   private async auditApproval(input: ApprovalAuditInput): Promise<void> {
@@ -407,6 +434,12 @@ export class AgentToolCallController {
       });
     });
   }
+}
+
+function deniedDecision(choice: UserApprovalChoice, fallback: string): ToolGateDecision {
+  if (choice.approved) return undefined;
+  const reason = choice.reason ?? fallback;
+  return reason === STOPPED_APPROVAL_REASON ? { block: true, reason, terminate: true } : { block: true, reason };
 }
 
 /** True when the args request a recursive folder delete (bulk destruction). */

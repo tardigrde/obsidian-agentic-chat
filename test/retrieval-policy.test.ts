@@ -200,7 +200,7 @@ describe("scoped indexing status", () => {
     expect(formatRetrievalIndexStatus(state.status)).toBe('Indexing has not started for folder "Projects".');
   });
 
-  it("formats skipped, paused, and cancelled states clearly", () => {
+  it("formats skipped and cancelled states clearly", () => {
     expect(
       formatRetrievalIndexStatus({
         state: "skipped",
@@ -208,16 +208,6 @@ describe("scoped indexing status", () => {
         reason: "too-expensive",
       }),
     ).toBe('Indexing skipped for folder "Projects": estimated cost is too high.');
-
-    expect(
-      formatRetrievalIndexStatus({
-        state: "paused",
-        scope: folderScope,
-        processedDocuments: 5,
-        totalDocuments: 20,
-        reason: "battery saver is active",
-      }),
-    ).toBe('Indexing paused for folder "Projects" at 5/20 documents (25%): battery saver is active.');
 
     expect(
       formatRetrievalIndexStatus({

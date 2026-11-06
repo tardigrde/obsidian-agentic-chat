@@ -49,6 +49,13 @@ interface SessionFileInfo extends SessionInfo {
   modifiedTime: number;
 }
 
+export interface RewriteMessagesOptions {
+  /** Session file the caller read before its long-running work started. */
+  expectedPath?: string | null;
+  /** Generation captured with {@link ObsidianSessionManager.getActiveSessionGeneration}. */
+  expectedGeneration?: number;
+}
+
 /**
  * Append-only JSONL conversation store under the plugin folder. Uses the vault
  * `DataAdapter` so it works on desktop and mobile without Node fs.
@@ -60,6 +67,8 @@ export class ObsidianSessionManager {
   private sessionFile: string | null = null;
   private entries: SessionEntry[] = [];
   private leafId: string | null = null;
+  /** Bumped whenever the active session changes; guards awaits against swaps. */
+  private sessionGeneration = 0;
   /** Paths whose first full-body checkpoint has already been written this
    * session. Subsequent checkpoints for the same path are slimmed to
    * `beforeSummary` to keep the JSONL bounded for long editing sessions. */
@@ -85,6 +94,7 @@ export class ObsidianSessionManager {
     const timestamp = new Date().toISOString();
     const fileTimestamp = timestamp.replace(/[:.]/g, "-");
     this.sessionFile = `${this.sessionDir}/${fileTimestamp}_${sessionId}.jsonl`;
+    this.sessionGeneration += 1;
     this.entries = [createSessionHeader(sessionId, this.cwd, timestamp)];
     this.leafId = null;
     this.fullCheckpointPaths = new Set();
@@ -111,6 +121,7 @@ export class ObsidianSessionManager {
       throw new Error("Session file is missing a session header.");
     }
     this.sessionFile = sessionPath;
+    this.sessionGeneration += 1;
     this.entries = entries;
     this.leafId = getLastLeafId(entries);
     this.fullCheckpointPaths = new Set();
@@ -135,6 +146,7 @@ export class ObsidianSessionManager {
     }
     if (this.sessionFile === sessionPath) {
       this.sessionFile = null;
+      this.sessionGeneration += 1;
       this.entries = [];
       this.leafId = null;
     }
@@ -257,9 +269,21 @@ export class ObsidianSessionManager {
    * Replace the active session's transcript with `messages`, rewriting the file
    * to a fresh linear chain (preserving the header + active model/thinking level).
    * Used by prompt editing to rewind a conversation to an earlier turn.
+   *
+   * `options` binds the rewrite to the session that was active when a longer
+   * operation, such as summarization, started. A swap before or during the
+   * write makes the rewrite fail instead of corrupting the new session.
    */
-  async rewriteMessages(messages: AgentMessage[]): Promise<void> {
-    if (!this.sessionFile) throw new Error("No active session.");
+  async rewriteMessages(messages: AgentMessage[], options: RewriteMessagesOptions = {}): Promise<void> {
+    const sessionFile = this.sessionFile;
+    if (!sessionFile) throw new Error("No active session.");
+    const generation = this.sessionGeneration;
+    if (options.expectedPath !== undefined && options.expectedPath !== sessionFile) {
+      throw new Error("Session changed before the transcript rewrite could start.");
+    }
+    if (options.expectedGeneration !== undefined && options.expectedGeneration !== generation) {
+      throw new Error("Session changed before the transcript rewrite could start.");
+    }
     const header = this.entries[0];
     if (!header || header.type !== "session") throw new Error("Session file is missing a session header.");
     const sessionName = getSessionName(this.entries);
@@ -319,7 +343,10 @@ export class ObsidianSessionManager {
         state: planTracker,
       });
     }
-    await this.adapter.write(this.sessionFile, serializeSessionEntries(rebuilt));
+    await this.adapter.write(sessionFile, serializeSessionEntries(rebuilt));
+    if (this.sessionFile !== sessionFile || this.sessionGeneration !== generation) {
+      throw new Error("Session changed while rewriting the transcript.");
+    }
     this.entries = rebuilt;
     this.leafId = parentId;
   }
@@ -345,6 +372,11 @@ export class ObsidianSessionManager {
     return this.sessionFile;
   }
 
+  /** Bumped on every create/load/delete of the active session. */
+  getActiveSessionGeneration(): number {
+    return this.sessionGeneration;
+  }
+
   /** Append model/thinking-level changes when the active config drifts from the session. */
   async ensureConfiguration(defaults: SessionDefaults): Promise<void> {
     const context = this.buildSessionContext();
@@ -357,10 +389,16 @@ export class ObsidianSessionManager {
   }
 
   private async appendEntry<TEntry extends Exclude<SessionEntry, { type: "session" }>>(entry: TEntry): Promise<string> {
-    if (!this.sessionFile) throw new Error("No active session.");
+    const sessionFile = this.sessionFile;
+    if (!sessionFile) throw new Error("No active session.");
+    const generation = this.sessionGeneration;
     // Write to disk first: if the append fails, the in-memory entries/leafId stay
     // consistent with what's actually persisted instead of drifting ahead of it.
-    await this.adapter.append(this.sessionFile, `${JSON.stringify(entry)}\n`);
+    await this.adapter.append(sessionFile, `${JSON.stringify(entry)}\n`);
+    // A session swap can land while the append is in flight. The entry belongs
+    // to the file we captured above; never splice it into the new session's
+    // in-memory chain or leaf pointer.
+    if (generation !== this.sessionGeneration || this.sessionFile !== sessionFile) return entry.id;
     this.entries.push(entry);
     this.leafId = entry.id;
     return entry.id;

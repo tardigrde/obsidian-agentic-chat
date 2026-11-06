@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { App } from "obsidian";
+import { TFolder, type App } from "obsidian";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import { PluginService } from "../src/plugins/service";
 import { pluginMcpServerId } from "../src/plugins/loader";
@@ -102,6 +102,100 @@ describe("PluginService.auditText", () => {
     expect(manifest).not.toBeNull();
     const raw = await app.vault.cachedRead(manifest as never);
     expect(JSON.parse(raw)).toMatchObject({ $schema: AGENT_PLUGINS_SCHEMA_ID, name: "docs" });
+  });
+});
+
+describe("PluginService.install recovery", () => {
+  it("restores a backup when the target is missing before sweeping", async () => {
+    const app = await seed();
+    const manifest = JSON.stringify({
+      $schema: AGENT_PLUGINS_SCHEMA_ID,
+      name: "docs",
+      version: "1.0.0",
+      description: "Docs tools",
+    });
+    await app.vault.createFolder(".agentic-plugins/.importing-backup-docs");
+    await app.vault.create(".agentic-plugins/.importing-backup-docs/plugin.json", manifest);
+
+    const plugins = await serviceFor(app, settings()).reload();
+
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/docs/plugin.json")).not.toBeNull();
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/.importing-backup-docs")).toBeNull();
+    expect(plugins.map((plugin) => plugin.name)).toContain("docs");
+  });
+
+  it("removes a traversal backup name without renaming outside the plugins folder", async () => {
+    const app = await seed();
+    await app.vault.createFolder(".agentic-plugins/.importing-backup-..");
+    await app.vault.create(".agentic-plugins/.importing-backup-../plugin.json", "{}");
+    const renames: Array<[string, string]> = [];
+    const adapter = app.vault.adapter;
+    const originalRename = adapter.rename.bind(adapter);
+    adapter.rename = async (from, to) => {
+      renames.push([from, to]);
+      return originalRename(from, to);
+    };
+
+    await serviceFor(app, settings()).reload();
+
+    expect(renames).toEqual([]);
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/.importing-backup-..")).toBeNull();
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins")).not.toBeNull();
+  });
+
+  it("keeps a backup when a regular file occupies the target", async () => {
+    const app = await seed();
+    const manifest = JSON.stringify({
+      $schema: AGENT_PLUGINS_SCHEMA_ID,
+      name: "docs",
+      version: "1.0.0",
+      description: "Docs tools",
+    });
+    await app.vault.create(".agentic-plugins/docs", "not a folder");
+    await app.vault.createFolder(".agentic-plugins/.importing-backup-docs");
+    await app.vault.create(".agentic-plugins/.importing-backup-docs/plugin.json", manifest);
+
+    await serviceFor(app, settings()).reload();
+
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/docs")).not.toBeNull();
+    expect(app.vault.getAbstractFileByPath(".agentic-plugins/.importing-backup-docs")).not.toBeNull();
+  });
+
+  it("restores every backup after the first restore mutates the folder list", async () => {
+    const root = new TFolder();
+    root.path = ".agentic-plugins";
+    root.name = ".agentic-plugins";
+    const backup = (name: string): TFolder => {
+      const folder = new TFolder();
+      folder.path = `.agentic-plugins/.importing-backup-${name}`;
+      folder.name = `.importing-backup-${name}`;
+      return folder;
+    };
+    const alpha = backup("alpha");
+    const beta = backup("beta");
+    root.children = [alpha, beta];
+    const renames: Array<[string, string]> = [];
+    const app = {
+      vault: {
+        getAbstractFileByPath: (path: string) => (path === root.path ? root : undefined),
+        adapter: {
+          exists: async () => false,
+          rename: async (from: string, to: string) => {
+            renames.push([from, to]);
+            // Real vault trees drop the renamed child from the live array.
+            const index = root.children.findIndex((child) => child.path === from);
+            if (index >= 0) root.children.splice(index, 1);
+          },
+        },
+      },
+    } as unknown as App;
+
+    await serviceFor(app, settings()).sweepImportStages();
+
+    expect(renames).toEqual([
+      [alpha.path, ".agentic-plugins/alpha"],
+      [beta.path, ".agentic-plugins/beta"],
+    ]);
   });
 });
 

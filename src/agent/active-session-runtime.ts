@@ -23,6 +23,10 @@ export class AgentActiveSessionRuntime {
     return this.sessionManager.getActiveSessionPath();
   }
 
+  get generation(): number {
+    return this.sessionManager.getActiveSessionGeneration();
+  }
+
   async continueRecent(): Promise<ActiveSessionSnapshot> {
     return this.snapshot(await this.sessionManager.continueRecentSession(this.getDefaults()));
   }

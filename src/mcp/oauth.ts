@@ -74,6 +74,11 @@ export interface McpOAuthCallback {
 
 export interface McpOAuthCallbackReceiver {
   redirectUri: string;
+  /**
+   * Bind this receiver to one OAuth state before the browser opens. Receivers
+   * that support it refuse callbacks for another concurrent flow.
+   */
+  setExpectedState?(state: string): void;
   waitForCallback(expectedState: string, timeoutMs: number): Promise<McpOAuthCallback>;
   close(): void | Promise<void>;
 }
@@ -148,6 +153,9 @@ export async function authenticateMcpServer(
     const client = await ensureOAuthClient(server, fetcher, discovery.authServer, receiver.redirectUri, requestTimeoutMs);
     const pkce = await createPkce(options.randomBytes);
     const state = base64UrlEncode((options.randomBytes ?? defaultRandomBytes)(16));
+    // Bind the receiver before opening the browser so a concurrent flow's
+    // callback cannot be swallowed by this still-fresh receiver.
+    receiver.setExpectedState?.(state);
     const authorizationUrl = buildAuthorizationUrl({
       authorizationEndpoint: stringValue(discovery.authServer.authorization_endpoint),
       clientId: client.clientId,
@@ -250,7 +258,60 @@ export async function discoverMcpOAuthMetadata(
   };
 }
 
-export async function refreshMcpOAuthToken(
+interface McpOAuthRefreshFlight {
+  scope: string;
+  promise: Promise<boolean>;
+}
+
+/**
+ * One refresh per server. Two 401/403 responses can race with the same refresh
+ * token; the loser would receive invalid_grant and wipe the winner's tokens.
+ */
+const refreshFlights = new WeakMap<McpServerSettings, McpOAuthRefreshFlight>();
+
+export function refreshMcpOAuthToken(
+  server: McpServerSettings,
+  fetcher: WebFetcher,
+  signal?: AbortSignal,
+  now: () => number = Date.now,
+  requestTimeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
+  requestedScope?: string,
+): Promise<boolean> {
+  const scope = requestedScope?.trim() ?? "";
+  const existing = refreshFlights.get(server);
+  if (existing?.scope === scope) return existing.promise;
+  if (existing) {
+    // A different scope must wait for the current refresh to rotate the token,
+    // then refresh again with the wider scope.
+    const promise = existing.promise.then(
+      () => performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
+      () => performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
+    );
+    return trackMcpOAuthRefresh(server, scope, promise);
+  }
+  return trackMcpOAuthRefresh(
+    server,
+    scope,
+    performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
+  );
+}
+
+function trackMcpOAuthRefresh(
+  server: McpServerSettings,
+  scope: string,
+  promise: Promise<boolean>,
+): Promise<boolean> {
+  const flight: McpOAuthRefreshFlight = { scope, promise };
+  refreshFlights.set(server, flight);
+  void promise
+    .finally(() => {
+      if (refreshFlights.get(server) === flight) refreshFlights.delete(server);
+    })
+    .catch(() => undefined);
+  return promise;
+}
+
+async function performMcpOAuthRefresh(
   server: McpServerSettings,
   fetcher: WebFetcher,
   signal?: AbortSignal,
@@ -848,10 +909,10 @@ export async function createLoopbackOAuthCallbackReceiver(
 export class McpOAuthObsidianCallbackBridge {
   private readonly receivers = new Set<ObsidianProtocolOAuthCallbackReceiver>();
 
-  createReceiver(): McpOAuthCallbackReceiver {
+  createReceiver(expectedState?: string): McpOAuthCallbackReceiver {
     const receiver = new ObsidianProtocolOAuthCallbackReceiver(() => {
       this.receivers.delete(receiver);
-    });
+    }, expectedState);
     this.receivers.add(receiver);
     return receiver;
   }
@@ -865,35 +926,57 @@ export class McpOAuthObsidianCallbackBridge {
   }
 }
 
+type ObsidianProtocolReceiverPhase = "fresh" | "waiting" | "received" | "delivered" | "timed-out" | "closed";
+
 class ObsidianProtocolOAuthCallbackReceiver implements McpOAuthCallbackReceiver {
   readonly redirectUri = MCP_OAUTH_OBSIDIAN_REDIRECT_URI;
   private callback: McpOAuthCallback | null = null;
   private expectedState = "";
   private waiter: ((callback: McpOAuthCallback) => void) | null = null;
-  private closed = false;
+  private phase: ObsidianProtocolReceiverPhase = "fresh";
 
-  constructor(private readonly onClose: () => void) {}
+  constructor(
+    private readonly onClose: () => void,
+    expectedState?: string,
+  ) {
+    if (expectedState) this.setExpectedState(expectedState);
+  }
+
+  setExpectedState(expectedState: string): void {
+    if (this.phase === "closed" || this.phase === "delivered") return;
+    if (this.expectedState && this.expectedState !== expectedState) {
+      throw new Error("MCP OAuth callback receiver is already bound to another state.");
+    }
+    this.expectedState = expectedState;
+    if (this.phase === "fresh") this.phase = "waiting";
+  }
 
   receive(callback: McpOAuthCallback): boolean {
-    if (this.closed) return false;
-    if (this.expectedState && callback.state !== this.expectedState) return false;
+    if (this.phase === "closed" || this.phase === "delivered") return false;
+    // A receiver with no expected state must never consume a callback: with
+    // concurrent flows it would swallow the other receiver's callback.
+    if (!this.expectedState || callback.state !== this.expectedState) return false;
     this.callback = callback;
-    this.waiter?.(callback);
+    if (this.waiter) {
+      this.deliver(callback);
+    } else {
+      this.phase = "received";
+    }
     return true;
   }
 
   async waitForCallback(expectedState: string, timeoutMs: number): Promise<McpOAuthCallback> {
-    this.expectedState = expectedState;
+    this.setExpectedState(expectedState);
     let timeoutId: number | undefined;
     const callback = await new Promise<McpOAuthCallback>((resolve, reject) => {
-      const deliver = (value: McpOAuthCallback): void => {
+      this.waiter = (value) => {
         if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-        this.waiter = null;
         resolve(value);
       };
-      this.waiter = deliver;
+      this.phase = this.callback ? "received" : "waiting";
       timeoutId = window.setTimeout(() => {
         this.waiter = null;
+        this.phase = "timed-out";
         reject(
           new Error(
             "Timed out waiting for MCP OAuth callback. If the browser did not return to Obsidian, " +
@@ -901,17 +984,24 @@ class ObsidianProtocolOAuthCallbackReceiver implements McpOAuthCallbackReceiver 
           ),
         );
       }, timeoutMs);
-      if (this.callback) deliver(this.callback);
+      if (this.callback) this.deliver(this.callback);
     });
     if (callback.state !== expectedState) throw new Error("MCP OAuth callback state did not match.");
     return callback;
   }
 
   close(): void {
-    this.closed = true;
+    this.phase = "closed";
     this.expectedState = "";
     this.waiter = null;
     this.onClose();
+  }
+
+  private deliver(callback: McpOAuthCallback): void {
+    const waiter = this.waiter;
+    this.waiter = null;
+    this.phase = "delivered";
+    waiter?.(callback);
   }
 }
 

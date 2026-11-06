@@ -1,4 +1,4 @@
-import { type App, TFolder } from "obsidian";
+import { type App, type DataAdapter, TFolder } from "obsidian";
 import { type AgenticChatSettings } from "../settings";
 import { createMcpServerState, normalizeMcpServerId } from "../mcp/settings";
 import { clearMcpPerToolApprovals } from "../agent/approval";
@@ -547,15 +547,44 @@ export class PluginService {
     return true;
   }
 
-  /** Remove leftover `.importing-*` stage folders a crashed install may have left. */
+  /**
+   * Remove leftover `.importing-*` stage folders a crashed install may have
+   * left. A `.importing-backup-<name>` folder means the crash happened after
+   * moving the old package aside but before the staged package landed. Restore
+   * it when the target is missing so the sweep cannot delete the only copy.
+   */
   async sweepImportStages(): Promise<void> {
     const root = this.app.vault.getAbstractFileByPath(this.pluginsFolder());
     if (!(root instanceof TFolder)) return;
-    for (const child of root.children) {
-      if (child instanceof TFolder && child.name.startsWith(".importing-")) {
-        await this.vaultWriter().removeFolder(child.path);
+    const writer = this.vaultWriter();
+    const backupPrefix = ".importing-backup-";
+    // Snapshot the children: rename/remove updates the live vault tree.
+    for (const child of [...root.children]) {
+      if (!(child instanceof TFolder) || !child.name.startsWith(".importing-")) continue;
+      if (child.name.startsWith(backupPrefix)) {
+        const name = child.name.slice(backupPrefix.length);
+        const target = `${this.pluginsFolder()}/${name}`;
+        const safeName = name !== "" && name !== "." && name !== ".." && !/[/\\]/.test(name);
+        if (safeName && this.isWithinPluginsFolder(target)) {
+          if (await writer.folderExists(target)) {
+            // A folder already owns the target; the backup is replaceable.
+          } else if (await this.pathExists(target)) {
+            // A regular file owns the target. Never delete the only package
+            // copy; leave the backup for manual recovery.
+            continue;
+          } else {
+            await writer.renameFolder(child.path, target);
+            continue;
+          }
+        }
       }
+      await writer.removeFolder(child.path);
     }
+  }
+
+  private async pathExists(path: string): Promise<boolean> {
+    if (this.app.vault.getAbstractFileByPath(path)) return true;
+    return this.app.vault.adapter.exists(path).catch(() => false);
   }
 
   private recordSource(name: string, label: string): void {
@@ -630,8 +659,18 @@ export class PluginService {
         return true;
       },
       folderExists: async (path) => {
-        if (app.vault.getAbstractFileByPath(path) instanceof TFolder) return true;
-        return app.vault.adapter.exists(path).catch(() => false);
+        const entry = app.vault.getAbstractFileByPath(path);
+        if (entry) return entry instanceof TFolder;
+        const adapter = app.vault.adapter as DataAdapter & {
+          stat?: (target: string) => Promise<{ type: "file" | "folder" } | null>;
+        };
+        if (typeof adapter.stat !== "function") return false;
+        try {
+          const stat = await adapter.stat(path);
+          return stat?.type === "folder";
+        } catch {
+          return false;
+        }
       },
       renameFolder: async (from, to) => {
         await app.vault.adapter.rename(from, to);

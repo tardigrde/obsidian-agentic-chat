@@ -1,6 +1,6 @@
 import { App, ButtonComponent, Modal, Setting, TFile } from "obsidian";
 import type { ToolApprovalRequest } from "../agent/agent-service";
-import type { UserApprovalChoice } from "../agent/tool-call-controller";
+import { STOPPED_APPROVAL_REASON, type UserApprovalChoice } from "../agent/tool-call-controller";
 import { buildEditPreview, buildExactEditPreviewWindow, type EditPreview } from "../agent/edit-preview";
 import { slugifyPluginName } from "../plugins/manifest";
 import { approvalPreviewNeedsContent, toolApprovalDescription } from "../tools/tool-contracts";
@@ -16,17 +16,30 @@ export class ApprovalModal extends Modal {
   private decided = false;
   private denyArmed = false;
   private resolve: ((choice: UserApprovalChoice) => void) | null = null;
+  private abortSignal?: AbortSignal;
+  private abortListener?: () => void;
+  private opened = false;
 
   constructor(
     app: App,
     private readonly request: ToolApprovalRequest,
+    private readonly onStop?: () => void,
   ) {
     super(app);
   }
 
-  ask(): Promise<UserApprovalChoice> {
+  ask(signal?: AbortSignal): Promise<UserApprovalChoice> {
     return new Promise((resolve) => {
       this.resolve = resolve;
+      this.abortSignal = signal;
+      if (signal?.aborted) {
+        this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON });
+        return;
+      }
+      this.abortListener = () =>
+        this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON });
+      signal?.addEventListener("abort", this.abortListener, { once: true });
+      this.opened = true;
       this.open();
     });
   }
@@ -83,6 +96,15 @@ export class ApprovalModal extends Modal {
       for (const eventName of ["click", "mousedown", "mouseup", "keydown"]) {
         rememberSetting.settingEl.addEventListener(eventName, (event) => event.stopPropagation());
       }
+    }
+
+    if (this.onStop) {
+      new Setting(contentEl).addButton((button) =>
+        button
+          .setButtonText("Stop turn")
+          .setClass("agentic-chat-approval-stop")
+          .onClick(() => this.stopTurn()),
+      );
     }
 
     // Two-step deny: the first click arms the flow and reveals an optional
@@ -161,7 +183,35 @@ export class ApprovalModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+    this.cleanupAbortListener();
     if (!this.decided) this.resolve?.({ approved: false, remember: false });
+  }
+
+  private stopTurn(): void {
+    if (this.decided) return;
+    // Settle first so pi records a terminating denial, then abort on the next
+    // task. Aborting earlier lets pi replace the denial with its non-terminating
+    // "Operation aborted" result and still run another turn.
+    this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON });
+    if (this.onStop) window.setTimeout(() => this.onStop?.(), 0);
+  }
+
+  private settle(choice: UserApprovalChoice): void {
+    if (this.decided) return;
+    this.decided = true;
+    this.cleanupAbortListener();
+    const resolve = this.resolve;
+    this.resolve = null;
+    resolve?.(choice);
+    if (this.opened) this.close();
+  }
+
+  private cleanupAbortListener(): void {
+    if (this.abortSignal && this.abortListener) {
+      this.abortSignal.removeEventListener("abort", this.abortListener);
+    }
+    this.abortSignal = undefined;
+    this.abortListener = undefined;
   }
 
   /** Read the target file and render a structured preview of the pending change. */
@@ -350,9 +400,7 @@ export class ApprovalModal extends Modal {
   }
 
   private decide(choice: UserApprovalChoice): void {
-    this.decided = true;
-    this.resolve?.(choice);
-    this.close();
+    this.settle(choice);
   }
 }
 

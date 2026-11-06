@@ -335,9 +335,9 @@ export class ChatView extends ItemView {
         if (!tabRef.current) throw new Error("The chat tab is not ready to ask the user.");
         return this.askUserForTab(tabRef.current, request, signal);
       },
-      confirmToolCall: (request) => {
+      confirmToolCall: (request, signal) => {
         if (!tabRef.current) throw new Error("The chat tab is not ready for approval.");
-        return this.confirmToolCallForTab(tabRef.current, request);
+        return this.confirmToolCallForTab(tabRef.current, request, signal);
       },
     });
     const tab: ChatTab = { service, unsubscribe: () => {}, state: freshChatTabState() };
@@ -538,7 +538,11 @@ export class ChatView extends ItemView {
   }
 
   /** Notify + label for background tool approvals (no auto-switch). */
-  private async confirmToolCallForTab(tab: ChatTab, request: ToolApprovalRequest): Promise<UserApprovalChoice> {
+  private async confirmToolCallForTab(
+    tab: ChatTab,
+    request: ToolApprovalRequest,
+    signal?: AbortSignal,
+  ): Promise<UserApprovalChoice> {
     const index = this.tabs.indexOf(tab);
     if (index === -1) throw new Error("The chat tab that requested approval is no longer open.");
     const isBackground = tab !== this.activeTab;
@@ -549,10 +553,10 @@ export class ChatView extends ItemView {
       this.syncTabStrip();
       this.notifier.notify("approval", `${sessionLabel} needs approval: ${request.label}`);
     }
-    const modal = new ApprovalModal(this.app, labeledRequest);
+    const modal = new ApprovalModal(this.app, labeledRequest, () => tab.service.abort());
     tab.pendingApprovalModal = modal;
     try {
-      const choice = await modal.ask();
+      const choice = await modal.ask(signal);
       if (applyRememberedApprovalChoice(this.plugin.settings, request.toolName, choice)) {
         await this.plugin.saveSettings();
       }
@@ -1339,6 +1343,10 @@ export class ChatView extends ItemView {
   }
 
   private async flushQueuedPromptIfReady(): Promise<void> {
+    // A swap may notify listeners while it is still activating. Flushing then
+    // would send the old draft into the session that is being installed.
+    const swapState = this.service.getSessionSwapState();
+    if (swapState !== "idle" && swapState !== "live") return;
     if (!this.queuedPromptArmed || this.flushingQueuedPrompt || this.service.isStreaming()) return;
     const text = this.inputEl.value.trim();
     this.queuedPromptArmed = false;
@@ -1754,9 +1762,9 @@ export class ChatView extends ItemView {
     return new SessionWorkflowController({
       listSessions: () => this.service.listSessions(),
       activeSessionPath: () => this.service.getSessionInfo()?.path ?? null,
-      clearSessions: () => this.service.clearSessions(),
+      clearSessions: () => this.clearAllSessions(),
       loadSession: (path) => void this.loadSession(path),
-      deleteSession: (path) => this.service.deleteSession(path),
+      deleteSession: (path) => this.deleteSessionFromList(path),
       renameSession: (path, name) => this.service.renameSession(path, name),
       openList: (sessions, activePath, callbacks) => new SessionListModal(this.app, sessions, activePath, callbacks).open(),
       afterClear: () => this.createSessionActivationCoordinator().afterSessionsCleared(),
@@ -1792,6 +1800,7 @@ export class ChatView extends ItemView {
     if (options.history) this.resetHistoryNav();
     if (options.editing) this.endEditing(false);
     if (options.bubble) this.bubble = null;
+    if (options.queuedPrompt) this.clearQueuedPrompt();
   }
 
   private async runSteeringCommand(raw: string): Promise<void> {
@@ -2305,6 +2314,8 @@ export class ChatView extends ItemView {
     const coordinator = this.createSessionActivationCoordinator();
     try {
       await coordinator.startNewConversation(() => this.service.newSession());
+    } catch (error) {
+      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       // A new conversation starts in the default (normal) output style.
       if (this.plugin.settings.outputStyle !== DEFAULT_OUTPUT_STYLE) {
@@ -2338,6 +2349,29 @@ export class ChatView extends ItemView {
     this.notifiedToolBudgetKey = toolBudgetNotificationKey(this.service.getRuntimeDiagnostics().toolBudget);
   }
 
+  /** Delete from the history list; only the active session swaps under us. */
+  private async deleteSessionFromList(path: string): Promise<void> {
+    if (this.service.getSessionInfo()?.path === path) this.clearQueuedPrompt();
+    // Let the history modal restore its optimistically removed row and show
+    // the delete failure. Swallowing the rejection would leave the row gone.
+    await this.service.deleteSession(path);
+  }
+
+  /**
+   * Clear all conversations; the active session is replaced afterwards.
+   * Returns -1 on failure so the caller does not report success or reset the
+   * transcript after a failed clear.
+   */
+  private async clearAllSessions(): Promise<number> {
+    this.clearQueuedPrompt();
+    try {
+      return await this.service.clearSessions();
+    } catch (error) {
+      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      return -1;
+    }
+  }
+
   private async loadSession(path: string): Promise<void> {
     // A session must not be open in two tabs at once (both would write the same
     // file). If another tab already has it, just switch there.
@@ -2348,7 +2382,11 @@ export class ChatView extends ItemView {
       await this.switchToTab(openIn);
       return;
     }
-    await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
+    try {
+      await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
+    } catch (error) {
+      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   private async switchModel(): Promise<void> {
@@ -2498,11 +2536,17 @@ export class ChatView extends ItemView {
   /** Un-arm a queued prompt, keeping the draft in the composer for editing. */
   private cancelQueuedPrompt(): void {
     if (!this.queuedPromptArmed) return;
+    this.clearQueuedPrompt();
+    this.inputEl.focus();
+  }
+
+  /** Drop the queued state without moving focus (session changes keep the draft). */
+  private clearQueuedPrompt(): void {
+    if (!this.queuedPromptArmed) return;
     this.queuedPromptArmed = false;
     this.statusEl.setText("");
     this.renderChips();
     this.syncChrome();
-    this.inputEl.focus();
   }
 
   // --- working directories (C1: + Folder / /add-dir scope) ---

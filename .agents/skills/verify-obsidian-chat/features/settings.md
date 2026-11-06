@@ -64,6 +64,7 @@ await closeAgenticChatSettings();
 | Observability: generic OTLP auth header | `src/settings.ts:1190` | `test/e2e/specs/settings-migration.e2e.ts:199` (migration only) | `partial` |
 | Notifications tab | `src/settings.ts:1997` | no committed check | `NONE` |
 | Resources: Install plugin | `src/settings.ts:2051` | `test/e2e/specs/settings-ui.e2e.ts:311` | `covered` |
+| Recover an interrupted plugin install | `src/plugins/service.ts:556` | `test/plugins-service.test.ts:109` | `partial` |
 | Resources: Repair built-ins | `src/settings.ts:2069` | no committed check | `NONE` |
 | Resources: plugins folder and ignore list | `src/settings.ts:2082` | `test/e2e/specs/settings-ui.e2e.ts:435` | `covered` |
 | Resources: plugin row toggle/open/remove | `src/settings.ts:2271` | `test/e2e/specs/mobile-viewport.e2e.ts:404` (row renders only) | `partial` |

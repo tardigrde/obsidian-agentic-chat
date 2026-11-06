@@ -63,7 +63,7 @@ describe("SessionActivationCoordinator", () => {
     expect(ctx.resets).toEqual([{ editing: true, bubble: true }]);
   });
 
-  it("starts a clean new conversation even when the service operation throws", async () => {
+  it("keeps the old transcript when the new conversation fails", async () => {
     const ctx = makeCoordinator();
 
     await expect(
@@ -72,25 +72,9 @@ describe("SessionActivationCoordinator", () => {
       }),
     ).rejects.toThrow("swap failed");
 
-    expect(ctx.events).toEqual([
-      "mute:true",
-      "mute:false",
-      "reset",
-      "active-note",
-      "render:0",
-      "chrome",
-      "tabs",
-    ]);
-    expect(ctx.resets[0]).toMatchObject({
-      attachments: true,
-      activeNoteSuppression: true,
-      lastSent: true,
-      activeNoteCache: true,
-      contextCache: true,
-      history: true,
-      editing: true,
-      bubble: true,
-    });
+    expect(ctx.events).toEqual(["reset", "mute:true", "mute:false"]);
+    // Disarm before the swap starts; a failed start keeps the old transcript.
+    expect(ctx.resets).toEqual([{ queuedPrompt: true }]);
   });
 
   it("loads existing conversations with muted existing-usage thresholds", async () => {
@@ -101,6 +85,7 @@ describe("SessionActivationCoordinator", () => {
     });
 
     expect(ctx.events).toEqual([
+      "reset",
       "mute:true",
       "load",
       "usage:true",
@@ -110,7 +95,10 @@ describe("SessionActivationCoordinator", () => {
       "chrome",
       "tabs",
     ]);
-    expect(ctx.resets).toEqual([{ lastSent: true, activeNoteCache: true, contextCache: true, editing: true, bubble: true }]);
+    expect(ctx.resets).toEqual([
+      { queuedPrompt: true },
+      { lastSent: true, activeNoteCache: true, contextCache: true, editing: true, bubble: true, queuedPrompt: true },
+    ]);
   });
 
   it("resets clean UI state after clearing sessions", () => {
@@ -128,6 +116,7 @@ describe("SessionActivationCoordinator", () => {
       history: true,
       editing: true,
       bubble: true,
+      queuedPrompt: true,
     });
   });
 

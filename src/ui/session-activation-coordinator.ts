@@ -9,6 +9,8 @@ export interface SessionUiResetOptions {
   history?: boolean;
   editing?: boolean;
   bubble?: boolean;
+  /** Disarm a queued prompt so it cannot fire into the new session. */
+  queuedPrompt?: boolean;
 }
 
 export interface SessionActivationCoordinatorOptions {
@@ -32,6 +34,7 @@ const CLEAN_CONVERSATION_RESET: SessionUiResetOptions = {
   history: true,
   editing: true,
   bubble: true,
+  queuedPrompt: true,
 };
 
 export class SessionActivationCoordinator {
@@ -81,23 +84,40 @@ export class SessionActivationCoordinator {
   }
 
   async startNewConversation(startSession: () => Promise<void>): Promise<void> {
+    // Disarm before the swap starts so a swap-time change notification cannot
+    // flush the old draft into the new session.
+    this.options.resetUiState({ queuedPrompt: true });
     this.options.setMuteNotifications(true);
+    let started = false;
     try {
       await startSession();
       this.options.resetUsageNotifications(false);
+      started = true;
     } finally {
       this.options.setMuteNotifications(false);
-      this.options.resetUiState(CLEAN_CONVERSATION_RESET);
-      this.options.syncActiveNote();
-      this.options.renderTranscript([]);
-      this.options.syncChrome();
-      this.options.syncTabStrip();
+      // A failed start keeps the old transcript on screen for the caller to
+      // report; only a successful swap clears it.
+      if (started) {
+        this.options.resetUiState(CLEAN_CONVERSATION_RESET);
+        this.options.syncActiveNote();
+        this.options.renderTranscript([]);
+        this.options.syncChrome();
+        this.options.syncTabStrip();
+      }
     }
   }
 
   async loadConversation(loadSession: () => Promise<void>): Promise<void> {
+    this.options.resetUiState({ queuedPrompt: true });
     await this.runMuted(loadSession, true);
-    this.options.resetUiState({ lastSent: true, activeNoteCache: true, contextCache: true, editing: true, bubble: true });
+    this.options.resetUiState({
+      lastSent: true,
+      activeNoteCache: true,
+      contextCache: true,
+      editing: true,
+      bubble: true,
+      queuedPrompt: true,
+    });
     this.options.renderTranscript(this.options.messages());
     this.options.syncChrome();
     this.options.syncTabStrip();

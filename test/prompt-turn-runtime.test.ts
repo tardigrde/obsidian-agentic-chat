@@ -15,6 +15,7 @@ function harness(overrides: {
   isStreaming?: boolean;
   sessionCostUsd?: number;
   refreshConfiguration?: () => Promise<void>;
+  onTurnStart?: () => void;
 } = {}): Harness {
   const settings: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
@@ -41,6 +42,7 @@ function harness(overrides: {
     maybeCompact: async () => {
       events.push("compact");
     },
+    onTurnStart: overrides.onTurnStart,
     clearError: () => {
       events.push("clear-error");
     },
@@ -114,6 +116,7 @@ describe("AgentPromptTurnRuntime", () => {
 
   it("rejects a second run while the first is still before its first await", async () => {
     let release!: () => void;
+    let starts = 0;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -121,6 +124,9 @@ describe("AgentPromptTurnRuntime", () => {
       refreshConfiguration: async () => {
         events.push("refresh");
         await gate;
+      },
+      onTurnStart: () => {
+        starts += 1;
       },
     });
 
@@ -140,6 +146,7 @@ describe("AgentPromptTurnRuntime", () => {
     await first;
     expect(secondOutcome).toBe("resolved");
     expect(runs).toBe(1);
+    expect(starts).toBe(1);
     expect(events.some((event) => event.startsWith("set-error-message:A turn is already starting."))).toBe(true);
   });
 });

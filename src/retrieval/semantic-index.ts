@@ -34,6 +34,8 @@ export interface SemanticIndexBootstrapInput {
   estimate?: EmbeddingIndexCostEstimate;
   now?: () => number;
   signal?: AbortSignal;
+  /** Called after each persisted batch so a cross-view lease can stay fresh. */
+  onProgress?: () => void;
 }
 
 export interface SemanticIndexBootstrapResult {
@@ -43,6 +45,51 @@ export interface SemanticIndexBootstrapResult {
 }
 
 export const SEMANTIC_INDEX_VERSION = 1;
+
+/** A stalled run loses its lease after this long without a persisted batch. */
+export const DEFAULT_SEMANTIC_INDEX_LEASE_TTL_MS = 30 * 60 * 1000;
+
+export interface SemanticIndexLease {
+  /** Refresh the lease after progress so a long but healthy run keeps it. */
+  touch(): void;
+  release(): void;
+}
+
+/**
+ * One writer per index path across every ChatView. The lease is timestamped so
+ * a crashed or stalled owner can be recovered instead of blocking indexing
+ * forever.
+ */
+export class SemanticIndexLeaseRegistry {
+  private readonly leases = new Map<string, { touchedAt: number }>();
+
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly ttlMs: number = DEFAULT_SEMANTIC_INDEX_LEASE_TTL_MS,
+  ) {}
+
+  acquire(path: string): SemanticIndexLease | null {
+    const existing = this.leases.get(path);
+    if (existing && this.now() - existing.touchedAt < this.ttlMs) return null;
+    const entry = { touchedAt: this.now() };
+    this.leases.set(path, entry);
+    return {
+      touch: () => {
+        if (this.leases.get(path) === entry) entry.touchedAt = this.now();
+      },
+      release: () => {
+        if (this.leases.get(path) === entry) this.leases.delete(path);
+      },
+    };
+  }
+
+  isLeased(path: string): boolean {
+    const existing = this.leases.get(path);
+    return Boolean(existing && this.now() - existing.touchedAt < this.ttlMs);
+  }
+}
+
+export const semanticIndexLeases = new SemanticIndexLeaseRegistry();
 
 export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput): Promise<SemanticIndexBootstrapResult> {
   const now = input.now ?? Date.now;
@@ -83,6 +130,7 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
       updatedAt: now(),
     }),
   );
+  input.onProgress?.();
 
   try {
     for (let index = 0; index < input.documents.length; index += batchSize) {
@@ -107,6 +155,7 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
           updatedAt: now(),
         }),
       );
+      input.onProgress?.();
     }
     const file = semanticIndexFile({
       scope: input.scope,
@@ -152,9 +201,62 @@ export async function readSemanticIndexFile(adapter: DataAdapter, path: string):
   if (!(await adapter.exists(path))) return null;
   try {
     const parsed = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
-    return parsed?.version === SEMANTIC_INDEX_VERSION && parsed.state?.status ? parsed : null;
+    if (parsed?.version !== SEMANTIC_INDEX_VERSION || !parsed.state?.status) return null;
+    return await repairInterruptedIndex(adapter, path, parsed);
   } catch {
     return null;
+  }
+}
+
+/**
+ * A `running` status on disk can only mean the previous writer stopped before
+ * it could record a terminal state. Repair it on read so the status never lies.
+ */
+async function repairInterruptedIndex(
+  adapter: DataAdapter,
+  path: string,
+  file: SemanticIndexFile,
+): Promise<SemanticIndexFile> {
+  if (file.state.status.state !== "running") return file;
+  // Hold the same lease a writer uses. Without it, a writer can acquire the
+  // index between the check and the write and lose its file to our repair.
+  const lease = semanticIndexLeases.acquire(path);
+  if (!lease) return file;
+  try {
+    // Re-read before writing: a status read can race a completed run, and the
+    // newer snapshot must win over this stale repair.
+    let latest = file;
+    try {
+      const candidate = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
+      if (candidate?.version === SEMANTIC_INDEX_VERSION && candidate.state?.status) latest = candidate;
+    } catch {
+      return file;
+    }
+    if (latest.updatedAt !== file.updatedAt) return latest;
+    if (latest.state.status.state !== "running") return latest;
+
+    const status = latest.state.status;
+    const repaired: SemanticIndexFile = {
+      ...latest,
+      state: {
+        ...latest.state,
+        status: {
+          state: "failed",
+          scope: status.scope,
+          processedDocuments: status.processedDocuments,
+          totalDocuments: status.totalDocuments,
+          error: "Semantic indexing was interrupted before it finished. Run it again to complete the index.",
+        },
+      },
+    };
+    try {
+      await writeSemanticIndexFile(adapter, path, repaired);
+    } catch {
+      // A read-only adapter still gets the repaired view; persistence is best effort.
+    }
+    return repaired;
+  } finally {
+    lease.release();
   }
 }
 

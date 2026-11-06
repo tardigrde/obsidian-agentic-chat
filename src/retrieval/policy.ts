@@ -220,7 +220,6 @@ export type RetrievalIndexSkipReason =
 export type RetrievalIndexingStatus =
   | { state: "not-started"; scope: RetrievalIndexScope }
   | { state: "running"; scope: RetrievalIndexScope; processedDocuments: number; totalDocuments: number }
-  | { state: "paused"; scope: RetrievalIndexScope; processedDocuments: number; totalDocuments: number; reason: string }
   | { state: "cancelled"; scope: RetrievalIndexScope; processedDocuments: number; totalDocuments: number; reason: string }
   | { state: "skipped"; scope: RetrievalIndexScope; reason: RetrievalIndexSkipReason; message?: string }
   | { state: "complete"; scope: RetrievalIndexScope; totalDocuments: number }
@@ -377,8 +376,6 @@ export function formatRetrievalIndexStatus(status: RetrievalIndexingStatus): str
       return `Indexing has not started for ${scope}.`;
     case "running":
       return `Indexing ${scope}: ${formatProgress(status.processedDocuments, status.totalDocuments)}.`;
-    case "paused":
-      return `Indexing paused for ${scope} at ${formatProgress(status.processedDocuments, status.totalDocuments)}: ${status.reason}.`;
     case "cancelled":
       return `Indexing cancelled for ${scope} after ${formatProgress(status.processedDocuments, status.totalDocuments)}: ${status.reason}.`;
     case "skipped":

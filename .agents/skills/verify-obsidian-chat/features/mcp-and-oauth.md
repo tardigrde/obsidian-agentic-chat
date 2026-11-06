@@ -59,7 +59,10 @@ await clickMcpAddButton("Add MCP server");
 | Authenticate & test / PKCE sign-in | `src/settings.ts:1702` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Desktop loopback callback | `src/mcp/oauth.ts:791` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Mobile Obsidian protocol callback | `src/mcp/oauth.ts:848` | `test/mcp-oauth.test.ts:58` (unit only) | `partial` |
-| OAuth token refresh | `src/mcp/oauth.ts:253` | `test/mcp-oauth.test.ts:513` (unit only) | `partial` |
+| OAuth token refresh | `src/mcp/oauth.ts:272` | `test/mcp-oauth.test.ts:513` (unit only) | `partial` |
+| Concurrent OAuth refresh shares one request | `src/mcp/oauth.ts:272` | `test/mcp-oauth.test.ts:610` | `partial` |
+| Concurrent mobile OAuth callbacks route by state | `src/mcp/oauth.ts:931` | `test/mcp-oauth.test.ts:121` | `partial` |
+| MCP handshake retries after a failed initialized notification | `src/mcp/client.ts:149` | `test/mcp-client.test.ts:112` | `partial` |
 | Test connection / refresh tools | `src/settings.ts:1259` | `test/mcp-tools.test.ts:229` (probe helper only) | `partial` |
 | Tool allowlist/denylist | `src/settings.ts:1395` | `test/mcp-tools.test.ts:174` (unit only) | `partial` |
 | Per-tool MCP approvals | `src/settings.ts:1448` | no committed check | `NONE` |

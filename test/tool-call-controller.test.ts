@@ -3,7 +3,12 @@ import { TFile, TFolder, type App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ApprovalAuditInput, CheckpointAuditInput } from "../src/agent/action-audit-log";
 import type { FileCheckpoint } from "../src/agent/file-checkpoints";
-import { AgentToolCallController, type ToolApprovalRequest, type UserApprovalChoice } from "../src/agent/tool-call-controller";
+import {
+  AgentToolCallController,
+  STOPPED_APPROVAL_REASON,
+  type ToolApprovalRequest,
+  type UserApprovalChoice,
+} from "../src/agent/tool-call-controller";
 import { SubagentRegistry } from "../src/tools/subagent-tool";
 import type { AgentRole } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
@@ -13,7 +18,7 @@ import { FakeVault } from "./helpers/fake-vault";
 function makeController(
   options: {
     settings?: Partial<AgenticChatSettings>;
-    confirmToolCall?: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
+    confirmToolCall?: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
     tools?: AgentTool[];
     profiles?: AgentRole[];
     app?: App;
@@ -33,9 +38,9 @@ function makeController(
   const controller = new AgentToolCallController({
     app: options.app ?? fakeApp().app,
     getSettings: () => settings,
-    confirmToolCall: async (request) => {
+    confirmToolCall: async (request, signal) => {
       requests.push(request);
-      return options.confirmToolCall ? options.confirmToolCall(request) : { approved: true, remember: false };
+      return options.confirmToolCall ? options.confirmToolCall(request, signal) : { approved: true, remember: false };
     },
     getTools: () => options.tools ?? [{ name: "write", label: "Write file" } as AgentTool],
     getProfiles: () => options.profiles ?? [],
@@ -70,6 +75,44 @@ function fakeApp(): { app: App; vault: FakeVault } {
 }
 
 describe("AgentToolCallController", () => {
+  it("passes the turn abort signal to the approval prompt", async () => {
+    const abort = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      confirmToolCall: async (_request, signal) => {
+        receivedSignal = signal;
+        return { approved: false, remember: false };
+      },
+    });
+
+    await controller.beforeToolCall(
+      {
+        toolCall: { id: "call-1", name: "write" },
+        args: { path: "Notes/a.md", content: "hi" },
+      },
+      abort.signal,
+    );
+
+    expect(receivedSignal).toBe(abort.signal);
+  });
+
+  it("latches a stopped approval once for the turn", async () => {
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      confirmToolCall: async () => ({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON }),
+    });
+
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-stop", name: "write" },
+      args: { path: "Notes/a.md", content: "hi" },
+    });
+
+    expect(decision).toMatchObject({ block: true, terminate: true });
+    expect(controller.consumeStopRequested()).toBe(true);
+    expect(controller.consumeStopRequested()).toBe(false);
+  });
+
   it("prompts ask-policy tool calls with the registered tool label", async () => {
     const { controller, requests } = makeController({
       settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },

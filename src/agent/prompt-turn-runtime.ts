@@ -11,6 +11,12 @@ export interface AgentPromptTurnRuntimeOptions {
   getSessionCostUsd: () => number;
   refreshConfiguration: () => Promise<void>;
   maybeCompact: () => Promise<void>;
+  /** Return a message when compaction left the transcript unusable. */
+  afterCompaction?: () => string | undefined;
+  /** Active session path + generation, sampled before turn preparation. */
+  sessionToken?: () => string;
+  /** Called once an accepted turn starts, after the synchronous in-flight guard. */
+  onTurnStart?: () => void;
   clearError: () => void;
   setError: (error: unknown) => void;
   setErrorMessage: (message: string) => void;
@@ -56,9 +62,24 @@ export class AgentPromptTurnRuntime {
       return;
     }
     this.inFlight = true;
+    this.options.onTurnStart?.();
+    const sessionToken = this.options.sessionToken?.();
     try {
       await this.options.refreshConfiguration();
       await this.options.maybeCompact();
+      if (sessionToken !== undefined && this.options.sessionToken?.() !== sessionToken) {
+        this.options.setErrorMessage(
+          "The session changed while preparing this turn. Send the message again.",
+        );
+        this.options.notifyChange();
+        return;
+      }
+      const compactionError = this.options.afterCompaction?.();
+      if (compactionError) {
+        this.options.setErrorMessage(compactionError);
+        this.options.notifyChange();
+        return;
+      }
       try {
         this.options.clearError();
         this.options.notifyChange();

@@ -10,7 +10,7 @@ import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
-import { parseSessionEntries } from "../src/session/jsonl";
+import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 import { fakeMemoryJsonl } from "./helpers/memory-fixtures";
 import { FakeVault } from "./helpers/fake-vault";
@@ -115,12 +115,15 @@ interface ControlledStreamRun {
   finish: () => void;
 }
 
-function controlledStreamFn(responses: string[]): { streamFn: StreamFn; runs: ControlledStreamRun[] } {
+function controlledStreamFn(
+  responses: string[],
+  costTotal = 0,
+): { streamFn: StreamFn; runs: ControlledStreamRun[] } {
   const runs: ControlledStreamRun[] = [];
   const streamFn = ((model: Model<"openai-completions">, context: TranscriptContext, options?: { signal?: AbortSignal }) => {
     const stream = createAssistantMessageEventStream();
     const responseText = responses[Math.min(runs.length, responses.length - 1)] ?? "";
-    const message = assistantMessage(model, responseText, "stop");
+    const message = assistantMessage(model, responseText, "stop", costTotal);
     let settled = false;
     const finish = () => {
       if (settled) return;
@@ -153,6 +156,7 @@ function assistantMessage(
   model: Model<"openai-completions">,
   text: string,
   stopReason: AssistantMessage["stopReason"],
+  costTotal = 0,
 ): AssistantMessage {
   return {
     role: "assistant",
@@ -160,7 +164,7 @@ function assistantMessage(
     api: model.api,
     provider: model.provider,
     model: model.id,
-    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: costTotal } },
     stopReason,
     timestamp: Date.now(),
   };
@@ -206,7 +210,12 @@ function makeService(
   app: App = minimalApp(),
   askUser?: AskUserHandler,
   observabilityFetch?: WebFetcher,
-): { service: AgentService; adapter: MemoryAdapter; settings: AgenticChatSettings } {
+): {
+  service: AgentService;
+  adapter: MemoryAdapter;
+  settings: AgenticChatSettings;
+  sessionManager: ObsidianSessionManager;
+} {
   const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
   const adapter = new MemoryAdapter();
   const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
@@ -219,7 +228,7 @@ function makeService(
     streamFn,
     observabilityFetch,
   });
-  return { service, adapter, settings };
+  return { service, adapter, settings, sessionManager };
 }
 
 function minimalApp(): App {
@@ -875,6 +884,93 @@ describe("AgentService", () => {
     expect(reloaded.getSessionUsage().totalTokens).toBe(330_300);
   });
 
+  it("reloads the persisted transcript when compaction cannot replace the live agent", async () => {
+    const firstPrompt = `first ${"word ".repeat(50_000)}`;
+    const secondPrompt = `second ${"word ".repeat(50_000)}`;
+    let streamCalls = 0;
+    const bigUsageStream: StreamFn = ((model: Model<"openai-completions">) => {
+      streamCalls += 1;
+      const stream = createAssistantMessageEventStream();
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "ok" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 110_000,
+          output: 100,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 110_100,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    }) as unknown as StreamFn;
+
+    const settings: AgenticChatSettings = {
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "test-key",
+      openrouterModel: "test/compaction-model",
+    };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    let summarizeCalls = 0;
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: bigUsageStream,
+      summarize: async () => {
+        summarizeCalls += 1;
+        return "Summary written before the replace failed.";
+      },
+    });
+
+    await service.sendPrompt(firstPrompt);
+    await service.sendPrompt(secondPrompt);
+    expect(streamCalls).toBe(2);
+
+    // Simulate the agent replacement failing after the JSONL rewrite succeeds.
+    const parentAgent = (service as unknown as {
+      parentAgent: { replace: (messages: AgentMessage[]) => unknown };
+    }).parentAgent;
+    const replace = parentAgent.replace.bind(parentAgent);
+    let failedOnce = false;
+    parentAgent.replace = (messages) => {
+      if (!failedOnce) {
+        failedOnce = true;
+        throw new Error("simulated replace failure");
+      }
+      return replace(messages);
+    };
+
+    await service.sendPrompt("third");
+    expect(failedOnce).toBe(true);
+    expect(streamCalls).toBe(3);
+    expect(summarizeCalls).toBe(1);
+    expect(service.getMessages()[0] && isSummaryMessage(service.getMessages()[0])).toBe(true);
+
+    // The next turn must continue from the persisted, compacted session rather
+    // than the stale in-memory transcript or a second summary.
+    await service.sendPrompt("fourth");
+    expect(streamCalls).toBe(4);
+    expect(service.getCompactionCount()).toBe(1);
+    expect(service.getMessages().some((message) => JSON.stringify(message).includes("first"))).toBe(false);
+    const path = service.getSessionInfo()?.path as string;
+    const persisted = parseSessionEntries(await adapter.read(path));
+    expect(persisted.filter((entry) => entry.type === "message" && isSummaryMessage(entry.message))).toHaveLength(1);
+  });
+
   it("records skipped manual compaction attempts in the session audit log", async () => {
     const { service, adapter } = makeService(cannedStreamFn("unused"));
 
@@ -936,6 +1032,191 @@ describe("AgentService", () => {
     );
   });
 
+  it("blocks a prompt when the session changes during turn preparation", async () => {
+    let streamCalls = 0;
+    const bigUsageStream: StreamFn = ((model: Model<"openai-completions">) => {
+      streamCalls += 1;
+      const stream = createAssistantMessageEventStream();
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "ok" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 110_000,
+          output: 100,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 110_100,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    }) as unknown as StreamFn;
+
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const settings: AgenticChatSettings = {
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "test-key",
+      openrouterModel: "test/compaction-model",
+    };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: bigUsageStream,
+      summarize: async () => {
+        started();
+        await gate;
+        return "Late summary.";
+      },
+    });
+
+    await service.sendPrompt(`first ${"word ".repeat(50_000)}`);
+    await service.sendPrompt(`second ${"word ".repeat(50_000)}`);
+    expect(streamCalls).toBe(2);
+
+    const run = service.sendPrompt("third that must not run");
+    await startedPromise;
+    await service.newSession();
+    release();
+    await run;
+
+    expect(streamCalls).toBe(2);
+    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
+  });
+
+  it("keeps the recovery error and skips the prompt when the live replace fails", async () => {
+    let streamCalls = 0;
+    const bigUsageStream: StreamFn = ((model: Model<"openai-completions">) => {
+      streamCalls += 1;
+      const stream = createAssistantMessageEventStream();
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "ok" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 110_000,
+          output: 100,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 110_100,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    }) as unknown as StreamFn;
+
+    const settings: AgenticChatSettings = {
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "test-key",
+      openrouterModel: "test/compaction-model",
+    };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: bigUsageStream,
+      summarize: async () => "Summary that cannot be installed.",
+    });
+
+    await service.sendPrompt(`first ${"word ".repeat(50_000)}`);
+    await service.sendPrompt(`second ${"word ".repeat(50_000)}`);
+    expect(streamCalls).toBe(2);
+
+    const parentAgent = (service as unknown as {
+      parentAgent: { replace: (messages: AgentMessage[]) => unknown };
+    }).parentAgent;
+    parentAgent.replace = () => {
+      throw new Error("simulated replace failure");
+    };
+    const originalLoad = sessionManager.loadSession.bind(sessionManager);
+    sessionManager.loadSession = async () => {
+      throw new Error("simulated recovery load failure");
+    };
+
+    await service.sendPrompt("third");
+
+    expect(streamCalls).toBe(2);
+    expect(service.getError()).toMatch(/Compaction rewrote the saved session/);
+    sessionManager.loadSession = originalLoad;
+  });
+
+  it("returns a normal result when the session changes during manual compaction", async () => {
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: cannedStreamFn("ok"),
+      summarize: async () => {
+        started();
+        await gate;
+        return "Late manual summary.";
+      },
+    });
+
+    await service.sendPrompt("first request");
+    await service.sendPrompt("second request");
+    const firstPath = service.getSessionInfo()?.path as string;
+    await service.newSession();
+    const secondPath = service.getSessionInfo()?.path as string;
+    await service.loadSession(firstPath);
+    const secondBefore = await adapter.read(secondPath);
+
+    const compaction = service.compactNow();
+    await startedPromise;
+    await service.loadSession(secondPath);
+    release();
+
+    await expect(compaction).resolves.toMatchObject({
+      compacted: false,
+      message: expect.stringMatching(/session changed/i),
+    });
+    expect(await adapter.read(secondPath)).toBe(secondBefore);
+  });
+
   it("queues steering into an active run and persists transcript order", async () => {
     const controlled = controlledStreamFn(["first answer", "steered answer"]);
     const { service, adapter } = makeService(controlled.streamFn);
@@ -995,6 +1276,133 @@ describe("AgentService", () => {
     await expect(persistedMessageRoles(adapter, service)).resolves.toEqual(["user", "assistant", "user", "assistant"]);
   });
 
+  it("delivers a redirect exactly once when the next turn compacts the transcript", async () => {
+    const controlled = controlledStreamFn(["first answer", "will be redirected", "redirected answer"]);
+    const settings: AgenticChatSettings = {
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "test-key",
+      openrouterModel: "test/compaction-model",
+    };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    let summarizeCalls = 0;
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: controlled.streamFn,
+      summarize: async () => {
+        summarizeCalls += 1;
+        return "Summary before the redirect.";
+      },
+    });
+
+    const large = (text: string) => `${text} ${"word ".repeat(50_000)}`;
+    const first = service.sendPrompt(large("first request"));
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
+    controlled.runs[0].finish();
+    await first;
+    const second = service.sendPrompt(large("second request"));
+    await waitFor(() => controlled.runs.length === 2 && service.isStreaming(), "second active stream");
+
+    const redirect = service.redirectPrompt("narrower redirected question");
+    await waitFor(() => controlled.runs.length === 3, "redirected continuation");
+    controlled.runs[2].finish();
+    await Promise.all([second, redirect]);
+
+    expect(summarizeCalls).toBe(1);
+    expect(isSummaryMessage(service.getMessages()[0])).toBe(true);
+    const redirectTexts = userTexts(service.getMessages()).filter((text) => text === "narrower redirected question");
+    expect(redirectTexts).toHaveLength(1);
+    expect(
+      userTexts(controlled.runs[2].context.messages).filter((text) => text === "narrower redirected question"),
+    ).toHaveLength(1);
+  });
+
+  it("detaches a streaming agent before creating the next session file", async () => {
+    const controlled = controlledStreamFn(["old answer"]);
+    const { service, adapter, sessionManager } = makeService(controlled.streamFn);
+
+    const run = service.sendPrompt("old request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "old active stream");
+
+    const originalCreate = sessionManager.createSession.bind(sessionManager);
+    let streamingAtCreate: boolean | undefined;
+    sessionManager.createSession = async (defaults) => {
+      streamingAtCreate = service.isStreaming();
+      return originalCreate(defaults);
+    };
+
+    const swap = service.newSession();
+    await waitFor(() => streamingAtCreate !== undefined, "new session create");
+    expect(streamingAtCreate).toBe(false);
+
+    controlled.runs[0].finish();
+    await Promise.all([run, swap]);
+
+    const newPath = service.getSessionInfo()?.path as string;
+    const persisted = await adapter.read(newPath);
+    expect(persisted).not.toContain("old request");
+    expect(persisted).not.toContain("old answer");
+  });
+
+  it("waits for an in-flight session swap before sending", async () => {
+    const controlled = controlledStreamFn(["first answer", "during swap answer"]);
+    const { service, adapter, sessionManager } = makeService(controlled.streamFn);
+
+    const first = service.sendPrompt("first request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
+    controlled.runs[0].finish();
+    await first;
+    const firstPath = service.getSessionInfo()?.path as string;
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await service.newSession();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await service.newSession();
+    const currentPath = service.getSessionInfo()?.path as string;
+    expect(currentPath).not.toBe(firstPath);
+    // Make the current session unambiguously the most recent so a send that
+    // bypasses the swap queue cannot accidentally land in the target session.
+    const currentEntries = parseSessionEntries(await adapter.read(currentPath));
+    const future = Date.now() + 60_000;
+    for (const entry of currentEntries) {
+      if (entry.type === "message") entry.message.timestamp = future;
+      else if ("timestamp" in entry) entry.timestamp = new Date(future).toISOString();
+    }
+    await adapter.write(currentPath, serializeSessionEntries(currentEntries));
+
+    const originalLoad = sessionManager.loadSession.bind(sessionManager);
+    let releaseLoad!: () => void;
+    let markStarted!: () => void;
+    const loadGate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    const loadStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    sessionManager.loadSession = async (path: string) => {
+      markStarted();
+      await loadGate;
+      return originalLoad(path);
+    };
+
+    const swap = service.loadSession(firstPath);
+    await loadStarted;
+    const send = service.sendPrompt("during swap");
+    releaseLoad();
+    await swap;
+    await waitFor(() => controlled.runs.length === 2, "prompt after swap");
+    controlled.runs[1].finish();
+    await send;
+
+    expect(service.getSessionInfo()?.path).toBe(firstPath);
+    expect(userTexts(service.getMessages())).toEqual(["first request", "during swap"]);
+    await expect(adapter.read(firstPath)).resolves.toContain("during swap");
+    await expect(adapter.read(currentPath)).resolves.not.toContain("during swap");
+  });
+
   it("clears queued steering when the user stops the active run", async () => {
     const controlled = controlledStreamFn(["will abort", "fresh answer"]);
     const { service } = makeService(controlled.streamFn);
@@ -1009,6 +1417,31 @@ describe("AgentService", () => {
     expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(userTexts(service.getMessages())).toEqual(["initial request"]);
 
+    const next = service.sendPrompt("fresh request");
+    await waitFor(() => controlled.runs.length === 2, "fresh run");
+    expect(userTexts(controlled.runs[1].context.messages)).toEqual(["initial request", "fresh request"]);
+    controlled.runs[1].finish();
+    await next;
+  });
+
+  it("clears queued steering and follow-ups when the spend cap stops a run", async () => {
+    const controlled = controlledStreamFn(["first answer", "must not run"], 0.02);
+    const { service, settings } = makeService(controlled.streamFn);
+    settings.notifications.costCapUsd = 0.01;
+
+    const run = service.sendPrompt("initial request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
+    await service.steerPrompt("stale steering");
+    await service.followUpPrompt("stale follow-up");
+
+    controlled.runs[0].finish();
+    await run;
+    await waitFor(() => !service.isStreaming(), "spend-capped run to settle");
+    expect(service.getError()).toMatch(/stopped this turn/i);
+
+    // Raise the cap and send again. Any queued stop-time messages would be
+    // drained into this run's context; a stop must leave both queues empty.
+    settings.notifications.costCapUsd = 1;
     const next = service.sendPrompt("fresh request");
     await waitFor(() => controlled.runs.length === 2, "fresh run");
     expect(userTexts(controlled.runs[1].context.messages)).toEqual(["initial request", "fresh request"]);

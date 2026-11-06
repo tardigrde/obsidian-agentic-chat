@@ -109,6 +109,30 @@ describe("McpHttpClient", () => {
     expect(JSON.parse(requests[2].body ?? "{}")).toMatchObject({ id: 2, method: "tools/list" });
   });
 
+  it("does not mark the client initialized when the initialized notification fails", async () => {
+    const requests: WebHttpRequest[] = [];
+    let notifyAttempts = 0;
+    const fetcher: WebFetcher = async (request) => {
+      requests.push(request);
+      const body = JSON.parse(request.body ?? "{}") as { id?: number; method?: string };
+      if (body.method === "initialize") return jsonRpc(body.id ?? 0, { protocolVersion: "2025-11-25" });
+      if (body.method === "notifications/initialized") {
+        notifyAttempts += 1;
+        if (notifyAttempts === 1) throw new Error("initialized notification failed");
+        return { status: 202, text: "", headers: {} };
+      }
+      if (body.method === "tools/list") return jsonRpc(body.id ?? 0, { tools: [] });
+      throw new Error(`unexpected method ${body.method}`);
+    };
+
+    const client = new McpHttpClient({ server: server(), fetcher });
+
+    await expect(client.listTools()).rejects.toThrow("initialized notification failed");
+    await expect(client.listTools()).resolves.toEqual([]);
+    expect(notifyAttempts).toBe(2);
+    expect(requests.filter((request) => JSON.parse(request.body ?? "{}").method === "initialize")).toHaveLength(2);
+  });
+
   it("calls a remote tool through tools/call", async () => {
     const requests: WebHttpRequest[] = [];
     const fetcher = queuedFetcher(

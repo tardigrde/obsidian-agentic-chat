@@ -18,7 +18,10 @@ export interface AgentParentConfigurationOptions {
     "buildParentTools" | "composeSystemPrompt" | "getProfiles" | "reload"
   >;
   subagents: Pick<AgentSubagentRuntime, "createTool">;
-  toolCalls: Pick<AgentToolCallController, "afterToolCall" | "beforeToolCall">;
+  toolCalls: Pick<
+    AgentToolCallController,
+    "afterToolCall" | "beforeToolCall" | "consumeStopRequested"
+  >;
   loopGuard: Pick<AgentLoopGuard, "finishTurn">;
   sessions: Pick<AgentActiveSessionRuntime, "ensureConfiguration" | "info">;
   onEvent: (event: AgentEvent) => Promise<void> | void;
@@ -50,11 +53,15 @@ export class AgentParentConfigurationRuntime {
         contextWindow: model.contextWindow,
       }),
       getApiKey: (provider) => apiKeyForProvider(this.options.getSettings(), provider),
-      beforeToolCall: (context) => this.options.toolCalls.beforeToolCall(context),
+      beforeToolCall: (context, signal) => this.options.toolCalls.beforeToolCall(context, signal),
       afterToolCall: (context) => this.options.toolCalls.afterToolCall(context),
       // `finishTurn` also receives the run's abort signal; the loop guard does not
-      // need it, so it is intentionally left unbound.
-      finishTurn: (turn) => this.options.loopGuard.finishTurn(turn),
+      // need it, so it is intentionally left unbound. A stopped approval always
+      // ends the turn, even when pi replaced the denial with an abort result.
+      finishTurn: (turn) =>
+        this.options.toolCalls.consumeStopRequested()
+          ? { action: "end" as const }
+          : this.options.loopGuard.finishTurn(turn),
       sessionId: this.options.sessions.info?.id,
       onEvent: (event) => this.options.onEvent(event),
     };

@@ -41,7 +41,7 @@ import { AgentFileCheckpointRecorder } from "./file-checkpoints";
 import { AgentSessionActivation } from "./session-activation";
 import { AgentSessionActions } from "./session-actions";
 import { AgentCommandInvocationRuntime } from "./command-invocation";
-import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
+import { AgentCompactionRuntime, type AgentCompactionRunResult, type SummarizeFn } from "./compaction-runtime";
 import { maybeCompactAgentTranscript } from "./compaction-orchestrator";
 import { estimateContextUsage } from "./compaction";
 import { conversationMessages } from "./conversation-messages";
@@ -76,7 +76,7 @@ export interface AgentServiceOptions {
   getSettings: () => AgenticChatSettings;
   sessionManager: ObsidianSessionManager;
   /** Resolve an "ask" approval gate; returns the user's decision. */
-  confirmToolCall: (request: ToolApprovalRequest) => Promise<UserApprovalChoice>;
+  confirmToolCall: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
   /** Injected for tests; production streams through the pi-ai Models runtime. */
   streamFn?: StreamFn;
   /**
@@ -142,6 +142,8 @@ export class AgentService {
   private readonly commandInvocations: AgentCommandInvocationRuntime;
 
   private initialization: Promise<void> | null = null;
+  /** Set when a compaction rewrite landed but the live transcript is stale. */
+  private compactionRecoveryError: string | undefined;
 
   /** Vault `modify` listener that drops memoized reads when a file changes externally. */
   private vaultModifyRef?: EventRef;
@@ -208,7 +210,7 @@ export class AgentService {
       artifactStore: options.artifactStore,
       // Deferred: the controller is constructed next and shares this runtime's registry.
       toolCalls: {
-        beforeToolCall: (context) => this.toolCalls.beforeToolCall(context),
+        beforeToolCall: (context, signal) => this.toolCalls.beforeToolCall(context, signal),
         afterToolCall: (context) => this.toolCalls.afterToolCall(context),
       },
     });
@@ -259,6 +261,9 @@ export class AgentService {
       getSessionCostUsd: () => this.getSessionUsage().cost?.total ?? 0,
       refreshConfiguration: () => this.parentConfiguration.refresh(this.parentAgent),
       maybeCompact: () => this.maybeCompact(),
+      afterCompaction: () => this.compactionRecoveryError,
+      sessionToken: () => this.sessionActions.getSessionToken(),
+      onTurnStart: () => this.toolCalls.clearStopRequested(),
       clearError: () => this.sessionState.clearError(),
       setError: (error) => this.sessionState.setError(error),
       setErrorMessage: (message) => this.sessionState.setErrorMessage(message),
@@ -473,9 +478,13 @@ export class AgentService {
   }
 
   async initialize(): Promise<void> {
+    // Join the swap queue before checking the agent: a send that arrives while
+    // another session is loading must wait for that swap, not start on the old
+    // agent. A failed swap rejects until a later swap recovers it.
+    await this.sessionActions.waitForLive();
     if (this.agent) return;
     if (this.initialization) return this.initialization;
-    this.initialization = this.initializeAgent();
+    this.initialization = this.sessionActions.ensureSessionAgent();
     try {
       await this.initialization;
     } finally {
@@ -583,10 +592,21 @@ export class AgentService {
       ...stats,
     };
     await this.actionAudit.record(startEvent);
-    const result = await this.compaction.compactWithResult(messages, contextWindow, {
-      force: true,
-      customInstructions: customInstructions?.trim() || undefined,
-    });
+    let result: AgentCompactionRunResult;
+    try {
+      result = await this.compaction.compactWithResult(messages, contextWindow, {
+        force: true,
+        customInstructions: customInstructions?.trim() || undefined,
+      });
+    } catch (error) {
+      // A session change during summarization cancels the rewrite. Report it as
+      // a normal manual-compaction result so `/compact` does not throw.
+      const message =
+        `Nothing compacted. The active session changed while compacting: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+      return { compacted: false, message };
+    }
     if (result.status === "skipped") {
       await this.actionAudit.record({
         category: "compaction",
@@ -606,12 +626,14 @@ export class AgentService {
       this.sessionEvents.markPersistedMessages(result.messages);
       this.parentAgent.replace(result.messages);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      const message =
-        `Compaction rewrote the saved session, but the live conversation could not be replaced: ${detail}. ` +
-        "Reload the session to continue from the compacted transcript.";
-      this.setError(message);
-      return { compacted: false, message };
+      if (!(await this.recoverCompactedSession())) {
+        const detail = error instanceof Error ? error.message : String(error);
+        const message =
+          `Compaction rewrote the saved session, but the live conversation could not be replaced: ${detail}. ` +
+          "Reload the session to continue from the compacted transcript.";
+        this.setError(message);
+        return { compacted: false, message };
+      }
     }
     this.sessions.refreshInfoIfActive();
     this.notifyChange();
@@ -639,9 +661,18 @@ export class AgentService {
   abort(): void {
     const agent = this.agent;
     if (!agent) return;
+    this.stopAgent(agent);
+    void agent.waitForIdle().then(() => this.notifyChange());
+  }
+
+  /**
+   * One stop policy for every path that ends a turn early: clear steering and
+   * follow-up queues first, then abort. Clearing first guarantees a queued
+   * message cannot be drained into the next run after the stop.
+   */
+  private stopAgent(agent: Agent): void {
     agent.clearAllQueues();
     agent.abort();
-    void agent.waitForIdle().then(() => this.notifyChange());
   }
 
   async newSession(): Promise<void> {
@@ -660,6 +691,11 @@ export class AgentService {
   async loadSession(path: string): Promise<void> {
     this.loopGuard.reset();
     return this.sessionActions.loadSession(path);
+  }
+
+  /** Inspectable session-swap state for diagnostics and tests. */
+  getSessionSwapState(): ReturnType<AgentSessionActions["getSwapState"]> {
+    return this.sessionActions.getSwapState();
   }
 
   async deleteSession(path: string): Promise<void> {
@@ -693,6 +729,7 @@ export class AgentService {
   }
 
   private async runPrompt(run: PromptTurnRun): Promise<void> {
+    this.compactionRecoveryError = undefined;
     await this.initialize();
     // A fresh prompt starts a new epoch: any identical-batch streak from a
     // previous user turn must not carry into this one (loop guard).
@@ -715,25 +752,21 @@ export class AgentService {
     this.sessionState.clearError();
     // Steering is user input too: user-provided info ends any running streak.
     this.loopGuard.reset();
+    if (mode === "redirect") {
+      // A redirect stops the current run and starts a new prompt. Do not queue
+      // it on the old agent: runPrompt may compact and replace that agent, and
+      // the replacement would never see the queued message.
+      this.stopAgent(agent);
+      await agent.waitForIdle();
+      // waitForIdle can resolve before the aborted turn's finally clears the
+      // synchronous guard. Let that turn finish before starting the continuation.
+      await this.promptTurns.waitForIdle();
+      await this.runPrompt((currentAgent) => currentAgent.prompt(message));
+      return;
+    }
     if (mode === "follow-up") agent.followUp(message);
     else agent.steer(message);
     this.notifyChange();
-
-    if (mode !== "redirect") return;
-    agent.abort();
-    await agent.waitForIdle();
-    // waitForIdle can resolve before the aborted turn's finally clears the
-    // synchronous guard. Let that turn finish before starting the continuation.
-    await this.promptTurns.waitForIdle();
-    if (agent.hasQueuedMessages()) {
-      await this.runPrompt((currentAgent) => currentAgent.continue());
-    } else {
-      this.notifyChange();
-    }
-  }
-
-  private async initializeAgent(): Promise<void> {
-    await this.sessionActions.continueRecentSession();
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
@@ -775,7 +808,7 @@ export class AgentService {
     });
     if (!reason) return;
     this.sessionState.setErrorMessage(reason);
-    agent?.abort();
+    if (agent) this.stopAgent(agent);
   }
 
   /**
@@ -843,7 +876,35 @@ export class AgentService {
       replaceAgent: (messages) => this.parentAgent.replace(messages),
       refreshActiveSessionInfo: () => this.sessions.refreshInfoIfActive(),
       notifyChange: () => this.notifyChange(),
+      recoverAfterReplaceFailure: () => this.recoverCompactedSession(),
+      onCompactionFailure: (_error, persisted) => {
+        if (!persisted) return;
+        this.compactionRecoveryError =
+          "Compaction rewrote the saved session, but the live conversation could not be replaced. " +
+          "Reload the session to continue from the compacted transcript.";
+        this.setError(this.compactionRecoveryError);
+      },
     });
+  }
+
+  /**
+   * Re-read the active session after a successful compaction rewrite whose live
+   * replacement failed, so the next turn continues from the persisted summary
+   * instead of a stale in-memory transcript.
+   */
+  private async recoverCompactedSession(): Promise<boolean> {
+    const path = this.sessions.activePath;
+    if (!path) return false;
+    try {
+      const snapshot = await this.sessions.load(path);
+      this.sessionEvents.markPersistedMessages(snapshot.messages);
+      this.parentAgent.replace(snapshot.messages);
+      this.sessions.refreshInfoIfActive();
+      this.notifyChange();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private recordRecentEvent(event: AgentEvent): void {

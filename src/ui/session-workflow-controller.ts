@@ -33,6 +33,9 @@ export class SessionWorkflowController {
       return;
     }
     const deleted = await this.options.clearSessions();
+    // -1 means the clear failed and the caller already reported it. Do not run
+    // afterClear (which resets the transcript) or print a success line.
+    if (deleted < 0) return;
     this.options.afterClear();
     this.options.renderer.info("Conversations", [["Deleted", `${deleted} conversation${deleted === 1 ? "" : "s"}.`]]);
   }

@@ -46,9 +46,18 @@ export class AgentSessionActivation {
     this.options.parentAgent.detach();
   }
 
+  /**
+   * Reload vault-backed resources without touching the live agent or any
+   * session-local state. A failed reload therefore leaves the previous session
+   * fully usable instead of half-reset.
+   */
+  async prepareResources(): Promise<void> {
+    await this.options.runtimeResources.reload();
+  }
+
   async activate(messages: AgentMessage[], options: ActivateSessionOptions = {}): Promise<void> {
+    if (options.reloadResources !== false) await this.prepareResources();
     this.resetSessionLocalState(messages);
-    if (options.reloadResources !== false) await this.options.runtimeResources.reload();
     this.options.parentAgent.replace(messages);
   }
 

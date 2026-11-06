@@ -312,6 +312,35 @@ describe("AgentCompactionRuntime", () => {
     expect(JSON.stringify(compacted![0])).toContain("summary-");
   });
 
+  it("rejects compaction when the active session changes during summarization", async () => {
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { adapter, manager, runtime, path } = await setup({
+      summarize: async () => {
+        started();
+        await gate;
+        return "Late summary.";
+      },
+    });
+    const second = await manager.createSession(DEFAULTS);
+    await manager.loadSession(path);
+    const secondBefore = adapter.files.get(second.path);
+
+    const compaction = runtime.compactWithResult(largeTranscript(), 100_000, { force: true });
+    await startedPromise;
+    await manager.loadSession(second.path);
+    release();
+
+    await expect(compaction).rejects.toThrow(/session changed/i);
+    expect(adapter.files.get(second.path)).toBe(secondBefore);
+  });
+
   it("coalesces concurrent compactions into one summarize and one rewrite", async () => {
     let summarizeCalls = 0;
     let release!: () => void;
