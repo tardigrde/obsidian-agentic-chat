@@ -142,17 +142,17 @@ Invariants:
 - Remembered choices change settings only through `setPerToolApproval`.
 - An approval that belongs to session A cannot apply to session B.
 
+Fixed by #235: Stop is an explicit `stopped` flag on `UserApprovalChoice`. A deny
+reason that matches the stop text no longer takes the stop path.
+
 Gaps:
 
-- Stop is inferred from the deny reason string: a deny reason equal to
-  `STOPPED_APPROVAL_REASON` takes the stop path.
 - `stopRequested` is service-global and cleared at the next turn start. It is not
   tied to the request or turn that set it.
 - `ToolApprovalRequest` carries a display label, not a session token. A modal can
   outlive the session it belongs to.
 
-Next: approval returns an explicit outcome (`allow`, `deny`, `stop`) and carries
-the turn and session token.
+Next: tie the stop latch and the approval request to the turn and session token.
 
 ## MCP connection and auth
 

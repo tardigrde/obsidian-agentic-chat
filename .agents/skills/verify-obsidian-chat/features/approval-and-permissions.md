@@ -55,7 +55,7 @@ await (await modal.$("button=Allow")).click();
 | Global mutating gate persists | `src/settings.ts:752` | `test/e2e/specs/settings-ui.e2e.ts:221` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
 | Per-tool override through settings | `src/settings.ts:784` | `test/e2e/specs/settings-ui.e2e.ts:221` | `covered` |
 | Per-tool deny flips to allow in a recorded run | `src/settings.ts:784` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
-| Working dir auto-runs inside and asks outside | `src/agent/tool-call-controller.ts:228` | `test/e2e/specs/approval-deterministic.e2e.ts:395` | `covered` |
+| Working dir auto-runs inside and asks outside | `src/agent/tool-call-controller.ts:266` | `test/e2e/specs/approval-deterministic.e2e.ts:395` | `covered` |
 | Working directories settings row | `src/settings.ts:795` | no committed check | `NONE` |
 | Safe/YOLO toggle | `src/ui/chat-view.ts:806` | no committed check | `NONE` |
 | `/config` mode picker | `src/ui/chat-view.ts:2178` | no committed check | `NONE` |
