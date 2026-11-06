@@ -1,0 +1,44 @@
+name: Witness
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
+
+concurrency:
+  group: witness-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  witness:
+    # Run only branches in this repository. A fork PR gets a read-only token,
+    # but there is no reason to execute its declared test before a maintainer
+    # imports the branch.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts # NOSONAR:S6505 -- project install, not a global package install.
+
+      - name: Prove the witness verifier
+        run: npm run verify:witness -- --self-test
+
+      - name: Run the declared witness
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/witness-from-pr.mjs

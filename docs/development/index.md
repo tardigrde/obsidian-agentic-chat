@@ -50,6 +50,9 @@ Use [Verification](./verification.md) for the lane reference, evidence rules, th
 npm run verify -- fast
 ```
 
+For the witness tool, the CI witness gate, the independent verifier, and the
+merge protocol, use [Trust the change](./trust.md).
+
 ## Live dogfood
 
 Exploratory WebDriver and manual bug sweeps against a real vault use [`docs/development/live-dogfood.md`](https://github.com/tardigrde/obsidian-agentic-chat/blob/main/docs/development/live-dogfood.md). The file stays in the repo but out of the public site because it is a maintainer runbook, not user documentation.
