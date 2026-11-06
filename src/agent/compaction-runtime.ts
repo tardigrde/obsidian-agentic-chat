@@ -203,7 +203,7 @@ export class AgentCompactionRuntime {
     let expectedPath = options.expectedPath;
     if (expectedPath === undefined) expectedPath = this.sessionManager.getActiveSessionPath();
     let expectedGeneration = options.expectedGeneration;
-    if (expectedGeneration === undefined) expectedGeneration = this.sessionManager.getActiveSessionGeneration();
+    expectedGeneration ??= this.sessionManager.getActiveSessionGeneration();
     const config = options.force
       ? { ...compactionConfig(this.getSettings()), enabled: true, thresholdFraction: 0 }
       : compactionConfig(this.getSettings());
