@@ -1,5 +1,5 @@
 import { browser, expect, $ } from "@wdio/globals";
-import { after, before, describe, it } from "mocha";
+import { after, afterEach, before, beforeEach, describe, it } from "mocha";
 
 const WRITE_NOTE_PATH = "E2E-Deterministic-Write.md";
 const WRITE_NOTE_BODY = "deterministic write ok";
@@ -70,6 +70,13 @@ async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
     target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
     target.__AGENTIC_CHAT_E2E_RELEASE__ = false;
   }, turns);
+}
+
+async function setE2ERelease(release: boolean): Promise<void> {
+  await browser.execute((value) => {
+    const target = window as typeof window & { __AGENTIC_CHAT_E2E_RELEASE__?: boolean };
+    target.__AGENTIC_CHAT_E2E_RELEASE__ = value;
+  }, release);
 }
 
 async function configurePlugin(): Promise<boolean> {
@@ -266,6 +273,18 @@ describe("agentic-chat deterministic approvals", function () {
     const configured = await configurePlugin();
     if (!configured) throw new Error("agentic-chat plugin not found in the test vault");
     await openChat();
+  });
+
+  beforeEach(async function () {
+    await setE2ERelease(false);
+  });
+
+  afterEach(async function () {
+    // Unblock a held turn even when the test fails before its edit step.
+    await setE2ERelease(true);
+    await browser
+      .waitUntil(async () => !(await $(".agentic-chat-stop").isDisplayed()), { timeout: 5_000 })
+      .catch(() => {});
   });
 
   it("asks before a scripted write and undo removes the created note", async function () {
@@ -559,6 +578,7 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   after(async function () {
+    await setE2ERelease(true);
     await cleanupNotes();
     await browser.execute(() => {
       const target = window as typeof window & {
