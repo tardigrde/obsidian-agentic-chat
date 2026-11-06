@@ -59,7 +59,9 @@ npm run verify:witness -- --base origin/main --test-file <test> --src <src...>
 `npm run verify:fast` is an alias. Full lane reference, evidence rules, and the
 fake-green list: [docs/development/verification.md](docs/development/verification.md).
 The trust contract, independent verifier, and CI witness gate:
-[docs/development/trust.md](docs/development/trust.md).
+[docs/development/trust.md](docs/development/trust.md). The `review` check needs a
+verdict comment at the current head; see the findings ledger at
+[docs/development/review-ledger.md](docs/development/review-ledger.md).
 
 Use single tests for tight loops:
 
