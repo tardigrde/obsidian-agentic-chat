@@ -33,11 +33,11 @@ export class ApprovalModal extends Modal {
       this.resolve = resolve;
       this.abortSignal = signal;
       if (signal?.aborted) {
-        this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON });
+        this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON, stopped: true });
         return;
       }
       this.abortListener = () =>
-        this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON });
+        this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON, stopped: true });
       signal?.addEventListener("abort", this.abortListener, { once: true });
       this.opened = true;
       this.open();
@@ -192,7 +192,7 @@ export class ApprovalModal extends Modal {
     // Settle first so pi records a terminating denial. Abort synchronously after
     // settling: a 0ms timer leaves a window where sibling tool calls prepared in
     // the same batch can still execute before the turn signal is aborted.
-    this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON });
+    this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON, stopped: true });
     this.onStop?.();
   }
 

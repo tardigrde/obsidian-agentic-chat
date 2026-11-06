@@ -44,6 +44,11 @@ export interface UserApprovalChoice {
   remember: boolean;
   /** Optional reason the user typed when denying; echoed back to the agent. */
   reason?: string;
+  /**
+   * True when the user pressed Stop on the approval prompt. A deny with an
+   * arbitrary reason is not a stop, even when the text matches the stop reason.
+   */
+  stopped?: boolean;
 }
 
 export interface BeforeToolCallContext {
@@ -400,7 +405,7 @@ export class AgentToolCallController {
       args: request.args,
     });
     const choice = await this.confirmToolCall(request, signal);
-    const stopped = !choice.approved && (choice.reason ?? deniedReason) === STOPPED_APPROVAL_REASON;
+    const stopped = !choice.approved && choice.stopped === true;
     if (stopped) {
       // Latch and abort before the audit: a slow or failing audit must not let a
       // sibling prepared call execute or start another turn.
@@ -459,7 +464,7 @@ export class AgentToolCallController {
 function deniedDecision(choice: UserApprovalChoice, fallback: string): ToolGateDecision {
   if (choice.approved) return undefined;
   const reason = choice.reason ?? fallback;
-  return reason === STOPPED_APPROVAL_REASON ? { block: true, reason, terminate: true } : { block: true, reason };
+  return choice.stopped === true ? { block: true, reason, terminate: true } : { block: true, reason };
 }
 
 /** True when the args request a recursive folder delete (bulk destruction). */

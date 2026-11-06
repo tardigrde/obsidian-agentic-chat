@@ -633,7 +633,7 @@ describe("AgentService", () => {
       async () => {
         confirmCalls += 1;
         if (confirmCalls === 1) return { approved: true, remember: false };
-        return { approved: false, remember: false, reason: STOPPED_APPROVAL_REASON };
+        return { approved: false, remember: false, reason: STOPPED_APPROVAL_REASON, stopped: true };
       },
       app,
     );

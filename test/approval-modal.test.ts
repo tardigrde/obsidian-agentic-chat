@@ -35,6 +35,7 @@ describe("ApprovalModal", () => {
       approved: false,
       remember: false,
       reason: "The turn was stopped before approval.",
+      stopped: true,
     });
     expect(harness.close).toHaveBeenCalledTimes(1);
   });
@@ -51,6 +52,7 @@ describe("ApprovalModal", () => {
       approved: false,
       remember: false,
       reason: "The turn was stopped before approval.",
+      stopped: true,
     });
     // Abort synchronously after settling; a timer would let sibling calls run.
     expect(onStop).toHaveBeenCalledTimes(1);
