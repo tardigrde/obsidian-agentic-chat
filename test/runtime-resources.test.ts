@@ -13,7 +13,7 @@ import {
 } from "../src/agent/runtime-resources";
 import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import type { WebFetcher } from "../src/tools/web-fetch";
-import { createMcpServerSettings } from "../src/mcp/settings";
+import { createMcpServerSettings, createMcpServerState } from "../src/mcp/settings";
 import { pluginMcpServerId } from "../src/plugins/loader";
 import { FakeApp } from "./helpers/fake-vault";
 
@@ -260,6 +260,54 @@ describe("agent runtime resources", () => {
     });
 
     expect(tools.map((tool) => tool.name)).toContain(`mcp__${enabledPluginServer().id}__resolve_library_id`);
+  });
+
+  it("persists a plugin server's OAuth challenge to its state map", async () => {
+    const app = await seededApp();
+    await app.vault.createFolder(".agentic-plugins/mcp-server");
+    await app.vault.create(
+      ".agentic-plugins/mcp-server/plugin.json",
+      JSON.stringify({
+        $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        name: "mcp-server",
+      }),
+    );
+    await app.vault.create(
+      ".agentic-plugins/mcp-server/mcp.json",
+      JSON.stringify({
+        $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+        mcpServers: { docs: { type: "streamable-http", url: "https://mcp.example.com/mcp" } },
+      }),
+    );
+    const serverId = pluginMcpServerId("mcp-server", "docs");
+    const loaded = settings({
+      mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] },
+      plugins: {
+        ...DEFAULT_SETTINGS.plugins,
+        mcpState: {
+          [serverId]: createMcpServerState(serverId, { enabled: true, authType: "none" }),
+        },
+      },
+    });
+    let saves = 0;
+    const authFetcher: WebFetcher = async () => ({
+      status: 401,
+      text: "unauthorized",
+      headers: {
+        "www-authenticate":
+          'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"',
+      },
+    });
+
+    await loadAgentRuntimeResources(app, loaded, authFetcher, async () => {
+      saves += 1;
+    });
+
+    expect(loaded.plugins.mcpState[serverId]).toMatchObject({
+      pendingOAuthChallenge: expect.stringContaining("resource_metadata"),
+      pendingOAuthResourceUrl: "https://mcp.example.com/.well-known/oauth-protected-resource",
+    });
+    expect(saves).toBeGreaterThan(0);
   });
 
   it("keeps MCP discovery failures from plugin servers in runtime diagnostics", async () => {

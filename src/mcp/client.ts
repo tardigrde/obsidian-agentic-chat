@@ -85,7 +85,7 @@ interface JsonRpcRequest {
 export interface McpHttpClientOptions {
   server: McpServerSettings;
   fetcher: WebFetcher;
-  onServerChanged?: () => void | Promise<void>;
+  onServerChanged?: (server: McpServerSettings) => void | Promise<void>;
   requestTimeoutMs?: number;
 }
 
@@ -132,7 +132,7 @@ class McpSseResponseIncompleteError extends Error {
 export class McpHttpClient {
   private readonly server: McpServerSettings;
   private readonly fetcher: WebFetcher;
-  private readonly onServerChanged?: () => void | Promise<void>;
+  private readonly onServerChanged?: (server: McpServerSettings) => void | Promise<void>;
   private readonly requestTimeoutMs: number;
   private nextId = 1;
   private protocolVersion = MCP_PROTOCOL_VERSION;
@@ -483,7 +483,7 @@ export class McpHttpClient {
     this.server.pendingOAuthResourceUrl = resourceUrl;
     // Persist pending for plugin servers so banner survives redraw (ephemeral copy would be lost)
     try {
-      await this.onServerChanged?.();
+      await this.onServerChanged?.(this.server);
     } catch {
       // ignore persist errors, still throw OAuth required
     }
@@ -551,7 +551,7 @@ export class McpHttpClient {
           Date.now,
           this.requestTimeoutMs,
         );
-        if (refreshed || before !== oauthTokenStateKey(this.server)) await this.onServerChanged?.();
+        if (refreshed || before !== oauthTokenStateKey(this.server)) await this.onServerChanged?.(this.server);
       }
       if (this.server.oauth.accessToken) {
         headers.Authorization = assertValidHttpHeaderValue(`Bearer ${this.server.oauth.accessToken}`);
@@ -571,7 +571,7 @@ export class McpHttpClient {
     if (!refreshed) return false;
     this.sessionId = undefined;
     this.initialized = false;
-    await this.onServerChanged?.();
+    await this.onServerChanged?.(this.server);
     return true;
   }
 
@@ -591,7 +591,7 @@ export class McpHttpClient {
     if (!refreshed) return false;
     this.sessionId = undefined;
     this.initialized = false;
-    await this.onServerChanged?.();
+    await this.onServerChanged?.(this.server);
     return true;
   }
 

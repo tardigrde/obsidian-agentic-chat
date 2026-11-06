@@ -322,6 +322,8 @@ export function mcpServerStateFromServer(server: McpServerSettings): McpServerSt
     lastUrl: server.url,
     enabledTools: [...(server.enabledTools ?? [])],
     disabledTools: [...(server.disabledTools ?? [])],
+    pendingOAuthChallenge: server.pendingOAuthChallenge,
+    pendingOAuthResourceUrl: server.pendingOAuthResourceUrl,
   };
 }
 
@@ -336,6 +338,8 @@ export function applyMcpServerState(server: McpServerSettings, state: McpServerS
   server.knownTools = [...state.knownTools];
   server.enabledTools = [...(state.enabledTools ?? [])];
   server.disabledTools = [...(state.disabledTools ?? [])];
+  server.pendingOAuthChallenge = state.pendingOAuthChallenge;
+  server.pendingOAuthResourceUrl = state.pendingOAuthResourceUrl;
   server.authHeaderValueSecretId ||= mcpSecretId(server.id, "auth-header-value");
   ensureMcpOAuthSecretRefs(server.id, server.oauth);
   // lastUrl is tracked in state, not in server shape

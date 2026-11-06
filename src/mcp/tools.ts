@@ -26,7 +26,7 @@ export interface McpToolDetails {
 }
 
 export interface McpToolCreationOptions {
-  onServerChanged?: () => void | Promise<void>;
+  onServerChanged?: (server: McpServerSettings) => void | Promise<void>;
   artifactStore?: ToolArtifactStoreLike;
   artifactThresholdChars?: number;
 }

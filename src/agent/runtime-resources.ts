@@ -22,6 +22,7 @@ import { wrapToolOutput } from "../tools/tool-output-wrapper";
 import { truncateToolOutput } from "../vault/truncate";
 import { createMcpFetcher } from "../mcp/fetcher";
 import { createMcpToolsWithDiagnostics, type McpServerDiagnostic } from "../mcp/tools";
+import { mcpServerStateFromServer, type McpServerSettings } from "../mcp/settings";
 import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { type IgnoreMatcher } from "../vault/ignore";
@@ -93,12 +94,25 @@ export async function loadAgentRuntimeResources(
   // keyed by stable id. No merge with settings.mcp.servers — the two cannot diverge.
   const pluginServers = plugins.filter((plugin) => plugin.enabled).flatMap((plugin) => plugin.mcpServers);
   const mcpServers = resolveMcpServers(settings, pluginServers);
+  // Plugin servers are runtime copies: their shape comes from mcp.json and their
+  // auth state comes from settings.plugins.mcpState. A refresh or challenge
+  // mutates the copy, so write the client-owned state back to the map before
+  // saving; otherwise a reload rebuilds the old tokens and loses the challenge.
+  const persistMcpServerChange = async (server: McpServerSettings): Promise<void> => {
+    if (server.source === "plugin") {
+      const next = mcpServerStateFromServer(server);
+      const current = settings.plugins.mcpState[server.id];
+      if (current) Object.assign(current, next);
+      else settings.plugins.mcpState[server.id] = next;
+    }
+    await onSettingsChanged?.();
+  };
   const mcp = webFetch
     ? await createMcpToolsWithDiagnostics(
         { ...settings.mcp, servers: mcpServers },
         createMcpFetcher(mcpProxySettings, webFetch),
         {
-          onServerChanged: onSettingsChanged,
+          onServerChanged: persistMcpServerChange,
           artifactStore,
         },
       )

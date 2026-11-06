@@ -353,6 +353,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     state.knownTools = next.knownTools;
     state.enabledTools = [...next.enabledTools];
     state.disabledTools = [...next.disabledTools];
+    state.pendingOAuthChallenge = next.pendingOAuthChallenge;
+    state.pendingOAuthResourceUrl = next.pendingOAuthResourceUrl;
     if (next.lastUrl) state.lastUrl = next.lastUrl;
     else delete state.lastUrl;
   }
