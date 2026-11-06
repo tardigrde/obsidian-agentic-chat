@@ -229,6 +229,39 @@ async function readValidSemanticIndexFile(
   }
 }
 
+type CurrentSemanticIndex =
+  | { kind: "missing" }
+  | { kind: "unreadable" }
+  | { kind: "valid"; file: SemanticIndexFile };
+
+/**
+ * A read error is not the same as an absent file. The writer must know the
+ * difference before it removes a target it cannot validate.
+ */
+async function readCurrentSemanticIndex(
+  adapter: DataAdapter,
+  path: string,
+): Promise<CurrentSemanticIndex> {
+  if (!(await adapter.exists(path))) return { kind: "missing" };
+  try {
+    const parsed = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
+    if (parsed?.version !== SEMANTIC_INDEX_VERSION || !parsed.state?.status) {
+      return { kind: "unreadable" };
+    }
+    return { kind: "valid", file: parsed };
+  } catch {
+    return { kind: "unreadable" };
+  }
+}
+
+async function hasCompleteSemanticIndexBackup(
+  adapter: DataAdapter,
+  path: string,
+): Promise<boolean> {
+  const backup = await readValidSemanticIndexFile(adapter, semanticIndexBackupPath(path));
+  return backup?.state.status.state === "complete";
+}
+
 /**
  * A `running` status on disk can only mean the previous writer stopped before
  * it could record a terminal state. Repair it on read so the status never lies.
@@ -297,12 +330,21 @@ export async function writeSemanticIndexFile(
   // Preserve the current complete index before any replacement, including the
   // first `running` write of a rebuild. A running or failed target is not a
   // complete index, so it never overwrites the backup.
-  const current = await readValidSemanticIndexFile(adapter, path);
-  if (current?.state.status.state === "complete") {
-    await writeSemanticIndexBackup(adapter, semanticIndexBackupPath(path), current);
+  const current = await readCurrentSemanticIndex(adapter, path);
+  if (current.kind === "valid" && current.file.state.status.state === "complete") {
+    await writeSemanticIndexBackup(adapter, semanticIndexBackupPath(path), current.file);
+  } else if (current.kind === "unreadable" && !(await hasCompleteSemanticIndexBackup(adapter, path))) {
+    throw new Error(
+      "Refusing to replace an unreadable semantic index without a complete backup.",
+    );
   }
 
-  await replaceSemanticIndexFile(adapter, tempPath, path);
+  // A target that is complete, or unreadable and protected by a backup, may be
+  // removed only when a complete backup is still present.
+  const requireBackup =
+    current.kind === "unreadable" ||
+    (current.kind === "valid" && current.file.state.status.state === "complete");
+  await replaceSemanticIndexFile(adapter, tempPath, path, requireBackup ? path : undefined);
 }
 
 async function writeSemanticIndexBackup(
@@ -319,14 +361,18 @@ async function replaceSemanticIndexFile(
   adapter: DataAdapter,
   from: string,
   to: string,
+  requireBackupFor?: string,
 ): Promise<void> {
   try {
     await adapter.rename(from, to);
     return;
   } catch (error) {
     // Some adapters refuse to rename over an existing file. Remove the target
-    // only when both files exist; the backup protects a complete target.
+    // only when both files exist and the complete index is protected.
     if (!(await adapter.exists(to)) || !(await adapter.exists(from))) throw error;
+    if (requireBackupFor && !(await hasCompleteSemanticIndexBackup(adapter, requireBackupFor))) {
+      throw error;
+    }
   }
   await adapter.remove(to);
   await adapter.rename(from, to);

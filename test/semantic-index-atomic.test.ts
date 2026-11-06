@@ -140,6 +140,49 @@ describe("semantic index atomic writes", () => {
     expect(stored?.state.status.state).toBe("cancelled");
   });
 
+  it("refuses to replace an unreadable target without a complete backup", async () => {
+    const adapter = new MemoryAdapter();
+    await seed(adapter, 2, 1_000);
+    const old = adapter.files.get(path);
+    const originalRead = adapter.read.bind(adapter);
+    let failRead = true;
+    adapter.read = async (file) => {
+      if (file === path && failRead) {
+        failRead = false;
+        throw new Error("transient read");
+      }
+      return originalRead(file);
+    };
+    const originalRename = adapter.rename.bind(adapter);
+    adapter.rename = async (from, to) => {
+      if (to === path) throw new Error("rename failed");
+      return originalRename(from, to);
+    };
+
+    await expect(seed(adapter, 1, 2_000)).rejects.toThrow(/unreadable/i);
+    expect(adapter.files.get(path)).toBe(old);
+    expect(adapter.files.has(backupPath)).toBe(false);
+  });
+
+  it("replaces an unreadable target when a complete backup exists", async () => {
+    const adapter = new MemoryAdapter();
+    await seed(adapter, 2, 1_000);
+    await seed(adapter, 1, 2_000);
+    const originalRead = adapter.read.bind(adapter);
+    let failRead = true;
+    adapter.read = async (file) => {
+      if (file === path && failRead) {
+        failRead = false;
+        throw new Error("transient read");
+      }
+      return originalRead(file);
+    };
+
+    const result = await seed(adapter, 1, 3_000);
+    expect(result.completed).toBe(true);
+    expect(parse(adapter, path).updatedAt).toBe(3_000);
+  });
+
   it("falls back to the backup when the target is corrupt or missing", async () => {
     const adapter = new MemoryAdapter();
     await seed(adapter, 2, 1_000);
