@@ -25,7 +25,7 @@ jobs:
 
       - name: Fault and state-machine tests
         run: >
-          npx vitest run
+          npm test --
           test/memory-adapter-faults.test.ts
           test/semantic-index.test.ts
           test/semantic-index-lease.test.ts
