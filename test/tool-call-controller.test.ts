@@ -3,7 +3,12 @@ import { TFile, TFolder, type App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ApprovalAuditInput, CheckpointAuditInput } from "../src/agent/action-audit-log";
 import type { FileCheckpoint } from "../src/agent/file-checkpoints";
-import { AgentToolCallController, type ToolApprovalRequest, type UserApprovalChoice } from "../src/agent/tool-call-controller";
+import {
+  AgentToolCallController,
+  STOPPED_APPROVAL_REASON,
+  type ToolApprovalRequest,
+  type UserApprovalChoice,
+} from "../src/agent/tool-call-controller";
 import { SubagentRegistry } from "../src/tools/subagent-tool";
 import type { AgentRole } from "../src/agent/subagents";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
@@ -90,6 +95,22 @@ describe("AgentToolCallController", () => {
     );
 
     expect(receivedSignal).toBe(abort.signal);
+  });
+
+  it("latches a stopped approval once for the turn", async () => {
+    const { controller } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      confirmToolCall: async () => ({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON }),
+    });
+
+    const decision = await controller.beforeToolCall({
+      toolCall: { id: "call-stop", name: "write" },
+      args: { path: "Notes/a.md", content: "hi" },
+    });
+
+    expect(decision).toMatchObject({ block: true, terminate: true });
+    expect(controller.consumeStopRequested()).toBe(true);
+    expect(controller.consumeStopRequested()).toBe(false);
   });
 
   it("prompts ask-policy tool calls with the registered tool label", async () => {

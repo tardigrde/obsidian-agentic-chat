@@ -15,6 +15,8 @@ export interface AgentPromptTurnRuntimeOptions {
   afterCompaction?: () => string | undefined;
   /** Active session path + generation, sampled before turn preparation. */
   sessionToken?: () => string;
+  /** Called once an accepted turn starts, after the synchronous in-flight guard. */
+  onTurnStart?: () => void;
   clearError: () => void;
   setError: (error: unknown) => void;
   setErrorMessage: (message: string) => void;
@@ -60,6 +62,7 @@ export class AgentPromptTurnRuntime {
       return;
     }
     this.inFlight = true;
+    this.options.onTurnStart?.();
     const sessionToken = this.options.sessionToken?.();
     try {
       await this.options.refreshConfiguration();

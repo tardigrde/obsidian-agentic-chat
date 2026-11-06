@@ -73,6 +73,48 @@ describe("AgentParentConfigurationRuntime", () => {
     expect(configuration.getApiKey("openrouter")).toBe("key");
   });
 
+  it("ends the turn when a stopped approval left a stop request", () => {
+    let loopCalls = 0;
+    const session = { id: "session-1" } as SessionInfo;
+    const runtime = new AgentParentConfigurationRuntime({
+      getSettings: () => DEFAULT_SETTINGS,
+      streams: { buildStreamFn: () => (() => undefined) as unknown as StreamFn },
+      turns: {
+        getActiveModelId: () => "model-a",
+        buildModelForTurn: () => ({}) as Model<"openai-completions">,
+        thinkingLevelForTurn: () => "off",
+      },
+      runtimeResources: {
+        getProfiles: () => [],
+        composeSystemPrompt: () => "",
+        buildParentTools: () => [],
+        reload: async () => EMPTY_AGENT_RUNTIME_RESOURCES,
+      },
+      subagents: { createTool: () => ({ name: "subagent" }) as AgentTool },
+      toolCalls: {
+        beforeToolCall: async () => undefined,
+        afterToolCall: async () => undefined,
+        consumeStopRequested: () => true,
+      },
+      loopGuard: {
+        finishTurn: () => {
+          loopCalls += 1;
+          return undefined;
+        },
+      },
+      sessions: {
+        info: session,
+        ensureConfiguration: async () => session,
+      },
+      onEvent: () => undefined,
+    });
+
+    const decision = runtime.build().finishTurn?.({} as never);
+
+    expect(decision).toEqual({ action: "end" });
+    expect(loopCalls).toBe(0);
+  });
+
   it("reloads resources before refreshing the live parent agent and session config", async () => {
     const events: string[] = [];
     const session = { id: "session-1" } as SessionInfo;

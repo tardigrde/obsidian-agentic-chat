@@ -263,6 +263,7 @@ export class AgentService {
       maybeCompact: () => this.maybeCompact(),
       afterCompaction: () => this.compactionRecoveryError,
       sessionToken: () => this.sessionActions.getSessionToken(),
+      onTurnStart: () => this.toolCalls.clearStopRequested(),
       clearError: () => this.sessionState.clearError(),
       setError: (error) => this.sessionState.setError(error),
       setErrorMessage: (message) => this.sessionState.setErrorMessage(message),
@@ -729,7 +730,6 @@ export class AgentService {
 
   private async runPrompt(run: PromptTurnRun): Promise<void> {
     this.compactionRecoveryError = undefined;
-    this.toolCalls.clearStopRequested();
     await this.initialize();
     // A fresh prompt starts a new epoch: any identical-batch streak from a
     // previous user turn must not carry into this one (loop guard).
