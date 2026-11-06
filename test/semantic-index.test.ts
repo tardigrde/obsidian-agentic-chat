@@ -270,7 +270,9 @@ describe("semantic index write faults", () => {
     const before = adapter.files.get(path);
     expect(before).toBeDefined();
 
-    adapter.failNextWrite(path, new Error("disk full"));
+    // The atomic writer lands the new bytes in `<path>.tmp` first; failing the
+    // in-place target write would no longer exercise this path.
+    adapter.failNextWrite(`${path}.tmp`, new Error("disk full"));
     await expect(
       bootstrapSemanticIndex({
         adapter: adapter.asDataAdapter(),
