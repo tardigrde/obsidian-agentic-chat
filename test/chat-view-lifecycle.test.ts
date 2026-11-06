@@ -29,6 +29,30 @@ describe("ChatView async lifecycle", () => {
     expect(sendPrompt).not.toHaveBeenCalled();
   });
 
+  it("propagates a failed delete so the history list can restore the row", async () => {
+    const failure = new Error("delete failed");
+    const view = Object.assign(Object.create(ChatView.prototype), {
+      tabs: [
+        {
+          service: {
+            getSessionInfo: () => ({ path: "sessions/a.jsonl" }),
+            deleteSession: async () => {
+              throw failure;
+            },
+          },
+        },
+      ],
+      activeTabIndex: 0,
+      queuedPromptArmed: true,
+      inputEl: { value: "" },
+      statusEl: { setText: vi.fn() },
+      renderChips: vi.fn(),
+      syncChrome: vi.fn(),
+    }) as { deleteSessionFromList: (path: string) => Promise<void> };
+
+    await expect(view.deleteSessionFromList("sessions/a.jsonl")).rejects.toBe(failure);
+  });
+
   it("does not flush a queued prompt while the session swap is not live", async () => {
     const sendPrompt = vi.fn(async () => {});
     const view = Object.assign(Object.create(ChatView.prototype), {

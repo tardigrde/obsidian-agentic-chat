@@ -118,6 +118,16 @@ describe("SessionWorkflowController", () => {
     expect(ctx.afterClear).toEqual([]);
   });
 
+  it("does not report success or reset the transcript when clearing fails", async () => {
+    const ctx = makeController({ clearCount: -1 });
+
+    await ctx.controller.run("clear --confirm");
+
+    expect(ctx.clearCalls).toEqual(["clear"]);
+    expect(ctx.afterClear).toEqual([]);
+    expect(ctx.calls.some((call) => call.type === "info")).toBe(false);
+  });
+
   it("requires confirmation before clearing conversations", async () => {
     const ctx = makeController({ clearCount: 2 });
 

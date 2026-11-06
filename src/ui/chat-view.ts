@@ -2352,21 +2352,23 @@ export class ChatView extends ItemView {
   /** Delete from the history list; only the active session swaps under us. */
   private async deleteSessionFromList(path: string): Promise<void> {
     if (this.service.getSessionInfo()?.path === path) this.clearQueuedPrompt();
-    try {
-      await this.service.deleteSession(path);
-    } catch (error) {
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
-    }
+    // Let the history modal restore its optimistically removed row and show
+    // the delete failure. Swallowing the rejection would leave the row gone.
+    await this.service.deleteSession(path);
   }
 
-  /** Clear all conversations; the active session is replaced afterwards. */
+  /**
+   * Clear all conversations; the active session is replaced afterwards.
+   * Returns -1 on failure so the caller does not report success or reset the
+   * transcript after a failed clear.
+   */
   private async clearAllSessions(): Promise<number> {
     this.clearQueuedPrompt();
     try {
       return await this.service.clearSessions();
     } catch (error) {
       this.renderErrorMessage(error instanceof Error ? error.message : String(error));
-      return 0;
+      return -1;
     }
   }
 
