@@ -637,6 +637,10 @@ function main() {
 
   if (result.verdict !== "DRY-RUN") writeReport(result.reportDir, result);
   printResult(result);
+  if (result.verdict === "FAIL") {
+    console.error("verify-witness: red output");
+    console.error(tail(result.reverted.combined));
+  }
   process.exit(result.verdict === "PASS" || result.verdict === "DRY-RUN" ? 0 : 1);
 }
 
