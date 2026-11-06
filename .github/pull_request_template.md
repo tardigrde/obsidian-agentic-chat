@@ -51,7 +51,11 @@ npm run verify -- fast
 
 - Verifier:
 - Result: `PASS` | `PASS+NOTES` | `FAIL`
+- Head:
 - Notes:
+
+Post the verdict as a PR comment with `Verdict`, `Head`, `Reviewer`, and
+`Fast lane`. The `review` check reads that comment.
 
 ## Attention
 

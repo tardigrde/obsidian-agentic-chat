@@ -1,0 +1,41 @@
+name: Review gate
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+  issue_comment:
+    types: [created, edited, deleted]
+
+concurrency:
+  group: review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event_name == 'pull_request' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number || github.event.issue.number }}/head
+          fetch-depth: 0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: Verdict and size gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # This repository has one GitHub account. Independence is the separate
+          # reviewer agent, recorded in the Reviewer field; the gate cannot read
+          # a second login. Set to 0 when a reviewer account exists.
+          REVIEW_GATE_SINGLE_ACCOUNT: "1"
+        run: node scripts/check-review-gate.mjs

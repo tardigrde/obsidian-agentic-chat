@@ -107,11 +107,38 @@ The verifier:
 3. runs `npm run verify:witness` and reads the report;
 4. runs `npm run verify -- fast`;
 5. checks for new module-level mutable state;
-6. posts `PASS`, `PASS+NOTES`, or `FAIL` with the commands and counts.
+6. posts a PR comment with `PASS`, `PASS+NOTES`, or `FAIL` and the full output
+   template, including `Head`, `Reviewer`, and `Fast lane`.
 
 The human reads the verdict and the `Attention` list, not the whole diff. A
 verdict is evidence, not permission. The merge rule still applies: do not merge
 without an explicit "merge" from the repository owner.
+
+## The review gate
+
+The `Review gate` workflow runs on pull request updates and on new or edited PR
+comments. It reads the verdict comment at the current head and fails when:
+
+- no comment has all four fields: `Verdict`, `Head`, `Reviewer`, `Fast lane`;
+- the verdict is `FAIL`;
+- the `Head` value does not match the checked-out PR head;
+- the PR changes more than 400 lines or 10 files, unless it has the `large-pr`
+  label.
+
+The size count ignores lockfiles, minified assets, coverage, and logs. Split a
+large change; use `large-pr` only for one mechanical unit.
+
+This repository has one GitHub account, so the workflow sets
+`REVIEW_GATE_SINGLE_ACCOUNT=1`. The gate cannot compare two logins. Independence
+comes from a separate reviewer agent, recorded in `Reviewer`. When a reviewer
+account exists, set the flag to `0` and the gate also rejects the author's own
+comment.
+
+The committed findings ledger is [review-ledger.md](review-ledger.md). Add a row
+for every blocking finding and for every deferred one.
+
+After the workflow is on `main`, add `review` to the required checks in the
+ruleset.
 
 ## Review tiers
 

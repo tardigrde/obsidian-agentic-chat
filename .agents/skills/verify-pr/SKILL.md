@@ -78,7 +78,8 @@ the existing tests still pass. A behavior change with that label is `FAIL`.
 
 ```text
 Verdict: PASS | PASS+NOTES | FAIL
-Head: <sha>
+Head: <full or 7+ char sha>
+Reviewer: <agent/session, not the author>
 Witness: <command>
   before fix: FAIL (assertion, counts)
   after fix:  PASS (counts)
@@ -87,6 +88,9 @@ Fast lane: PASS (X passed, Y files)
 New global state: none | <file:line + isolation test>
 Notes: none | <max 5 bullets>
 ```
+
+Post the output as a PR comment. The `Review gate` workflow reads it. The `Head`
+must be the current PR head; a push invalidates the verdict.
 
 Do not apply fixes. Report the failure and the command that proves it. The author
 owns the change. The repository owner alone decides to merge.
