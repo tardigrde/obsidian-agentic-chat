@@ -1,0 +1,32 @@
+const configured = process.env.STRYKER_MUTATE
+  ?.split(",")
+  .map((file) => file.trim())
+  .filter(Boolean);
+
+/**
+ * Mutation gate for the state-machine core. The nightly workflow runs this
+ * matrix; a local run can narrow it with STRYKER_MUTATE.
+ */
+export default {
+  testRunner: "vitest",
+  mutate: configured?.length
+    ? configured
+    : ["src/agent/loop-guard.ts", "src/agent/session-swap-queue.ts"],
+  reporters: ["clear-text", "json"],
+  jsonReporter: { fileName: "reports/mutation/mutation.json" },
+  coverageAnalysis: "perTest",
+  timeoutMS: 60_000,
+  concurrency: 2,
+  thresholds: { high: 90, low: 80, break: 70 },
+  tempDirName: ".stryker-tmp",
+  cleanTempDir: true,
+  ignorePatterns: [
+    "coverage/**",
+    "logs/**",
+    "reports/**",
+    "dist/**",
+    ".obsidian-cache/**",
+    "node_modules/**",
+    ".stryker-tmp/**",
+  ],
+};
