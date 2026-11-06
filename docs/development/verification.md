@@ -197,8 +197,7 @@ xvfb-run -a npm run verify -- eval --run-scripted
 The no-key smoke spec is part of the full suite. Live specs skip without
 credentials, and the eval step fails on any skip.
 
-The `Nightly` workflow runs the fault/state-machine tests and the mutation matrix
-at 03:00 UTC and on demand. It uploads the mutation report. See
+Mutation testing is on demand: `npm run mutation`; see
 [mutation.md](mutation.md) and [escaped-defects.md](escaped-defects.md).
 
 The `Review gate` workflow requires a verdict comment at the current head. See

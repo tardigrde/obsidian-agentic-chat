@@ -54,7 +54,7 @@ npm run verify -- e2e <spec>  # real Obsidian, one spec
 npm run verify -- dogfood     # generated-vault agent flows
 npm run verify -- eval        # prompt/tool/context A/B
 npm run verify:witness -- --base origin/main --test-file <test> --src <src...>
-npm run mutation              # nightly mutation matrix
+npm run mutation              # on-demand mutation matrix
 ```
 
 `npm run verify:fast` is an alias. Full lane reference, evidence rules, and the

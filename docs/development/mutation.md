@@ -17,8 +17,8 @@ Narrow the matrix locally:
 STRYKER_MUTATE=src/agent/session-swap-queue.ts npm run mutation
 ```
 
-The nightly `Nightly` workflow runs the full matrix at 03:00 UTC and on demand.
-It uploads `reports/mutation/mutation.json` as an artifact.
+Run the full matrix on demand with `npm run mutation`. The matrix is not a
+scheduled job.
 
 ## Matrix
 
@@ -28,7 +28,7 @@ The default matrix is the state-machine core:
 - `src/agent/session-swap-queue.ts`
 
 Add a module only when its test file runs fast and asserts observable behavior.
-Keep the matrix small; a wide matrix turns the nightly lane into noise.
+Keep the matrix small; a wide matrix turns the run into noise.
 
 ## Thresholds
 
@@ -63,8 +63,16 @@ Use [escaped-defects.md](escaped-defects.md) when a defect reaches a release.
 Record the missing test and the mutation that would have caught it, then add the
 regression test.
 
-## Nightly fault lane
+## Fault tests
 
-The same workflow runs the fault and state-machine tests without mutation. That
-lane is the home for slow fault cases: failed writes, delayed reads, `ENOENT`,
-aborts at awaits, stale trees, and two-tab races.
+Run the focused fault and state-machine set on demand:
+
+```bash
+npm test -- test/semantic-index.test.ts test/semantic-index-lease.test.ts \
+  test/session-swap-queue.test.ts test/session-manager.test.ts \
+  test/session-invariants.test.ts test/session-actions.test.ts \
+  test/agent-service.test.ts
+```
+
+That lane is the home for slow fault cases: failed writes, delayed reads,
+`ENOENT`, aborts at awaits, stale trees, and two-tab races.

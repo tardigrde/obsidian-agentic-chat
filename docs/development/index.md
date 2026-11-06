@@ -51,8 +51,8 @@ npm run verify -- fast
 ```
 
 For the witness tool, the CI witness gate, the independent verifier, and the
-merge protocol, use [Trust the change](./trust.md). For the nightly mutation and
-fault lanes, use [Mutation testing](./mutation.md).
+merge protocol, use [Trust the change](./trust.md). For the on-demand mutation
+matrix, use [Mutation testing](./mutation.md).
 
 ## Live dogfood
 
