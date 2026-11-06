@@ -19,6 +19,7 @@ Status values: `open`, `fixed`, `deferred`, `rejected`.
 | Approval | A deny reason equal to `STOPPED_APPROVAL_REASON` triggers the stop path | `fixed` | #235 uses an explicit `stopped` flag |
 | Approval | `stopRequested` and the approval request are not tied to a turn or session token | `deferred` | Unowned follow-up |
 | Plugins | Concurrent install sweeps are not single-flight | `fixed` | #232 shares one in-flight reload |
+| Plugins | A sweep and an install can race on the same stage or backup | `fixed` | #236 serializes both with one maintenance lock |
 | Tests | Two-tab Stop aborting only the active tab has no e2e | `deferred` | Unowned follow-up |
 | Session | A failed resource reload invalidated the token while the old session stayed live | `fixed` | #229 commits the token change only after the reload |
 | MCP | A plugin clone's refreshed tokens and challenge never reached `mcpState` | `fixed` | #231 writes the clone back before save |
