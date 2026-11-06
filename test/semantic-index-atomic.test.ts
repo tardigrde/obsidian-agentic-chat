@@ -128,13 +128,17 @@ describe("semantic index atomic writes", () => {
     });
 
     await startedPromise;
-    expect(parse(adapter, path).state.status.state).toBe("running");
-    expect(parse(adapter, backupPath).state.status.state).toBe("complete");
-
-    controller.abort();
-    release();
-    const result = await run;
-    expect(result.cancelled).toBe(true);
+    let result: SemanticIndexBootstrapResult | undefined;
+    try {
+      expect(parse(adapter, path).state.status.state).toBe("running");
+      expect(adapter.files.has(backupPath)).toBe(true);
+      expect(parse(adapter, backupPath).state.status.state).toBe("complete");
+    } finally {
+      controller.abort();
+      release();
+      result = await run.catch(() => undefined);
+    }
+    expect(result?.cancelled).toBe(true);
     expect(adapter.files.get(backupPath)).toBe(completeBefore);
     const stored = await readSemanticIndexFile(adapter.asDataAdapter(), path);
     expect(stored?.state.status.state).toBe("cancelled");
