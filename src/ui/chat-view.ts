@@ -1464,6 +1464,26 @@ export class ChatView extends ItemView {
     await this.sendPrompt(text);
   }
 
+  /** Drop staged context without changing the transcript. */
+  private discardPendingSend(
+    activeNoteCache: ActiveNoteContextCache,
+    contextCache: PromptContextCache,
+  ): void {
+    activeNoteCache.discardPending();
+    contextCache.discard();
+  }
+
+  /** Drop the prepared send and show the session-changed error. */
+  private abandonSend(
+    service: AgentService,
+    activeNoteCache: ActiveNoteContextCache,
+    contextCache: PromptContextCache,
+  ): void {
+    this.discardPendingSend(activeNoteCache, contextCache);
+    service.reportSessionChanged();
+    this.showServiceError();
+  }
+
   private async sendPrompt(text: string): Promise<void> {
     const tab = this.activeTab;
     const service = tab.service;
@@ -1480,8 +1500,7 @@ export class ChatView extends ItemView {
       // falsely rejects a valid first prompt.
       await service.initialize();
       if (!this.isLiveTab(tab)) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
+        this.discardPendingSend(activeNoteCache, contextCache);
         return;
       }
       // Context building and image encoding can take seconds. Bind the send to
@@ -1491,30 +1510,22 @@ export class ChatView extends ItemView {
       const messageCountBefore = service.getMessages().length;
       const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache, contextCache);
       if (!this.isLiveTab(tab)) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
+        this.discardPendingSend(activeNoteCache, contextCache);
         return;
       }
       if (service.getSessionToken() !== sessionToken) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
-        service.reportSessionChanged();
-        this.showServiceError();
+        this.abandonSend(service, activeNoteCache, contextCache);
         return;
       }
       const prompt = assemblePrompt(context, text);
       // Image attachments ride as multimodal content parts, not text context.
       const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
       if (!this.isLiveTab(tab)) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
+        this.discardPendingSend(activeNoteCache, contextCache);
         return;
       }
       if (service.getSessionToken() !== sessionToken) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
-        service.reportSessionChanged();
-        this.showServiceError();
+        this.abandonSend(service, activeNoteCache, contextCache);
         return;
       }
       this.lastSentPrompt = prompt;
@@ -1522,15 +1533,13 @@ export class ChatView extends ItemView {
       this.renderOutgoingUserMessage(text, attachments);
       await service.sendPrompt(prompt, images, sessionToken);
       if (!this.isLiveTab(tab)) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
+        this.discardPendingSend(activeNoteCache, contextCache);
         return;
       }
       this.resolveActiveNoteCacheAfterSend(service, activeNoteCache, messageCountBefore);
       this.resolveContextCacheAfterSend(service, contextCache, messageCountBefore);
     } catch (error) {
-      activeNoteCache.discardPending();
-      contextCache.discard();
+      this.discardPendingSend(activeNoteCache, contextCache);
       if (!this.isLiveTab(tab)) return;
       throw error;
     }
@@ -1553,37 +1562,28 @@ export class ChatView extends ItemView {
     try {
       await service.initialize();
       if (!this.isLiveTab(tab)) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
+        this.discardPendingSend(activeNoteCache, contextCache);
         return;
       }
       const sessionToken = service.getSessionToken();
       const messageCountBefore = service.getMessages().length;
       const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache, contextCache);
       if (!this.isLiveTab(tab)) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
+        this.discardPendingSend(activeNoteCache, contextCache);
         return;
       }
       if (service.getSessionToken() !== sessionToken) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
-        service.reportSessionChanged();
-        this.showServiceError();
+        this.abandonSend(service, activeNoteCache, contextCache);
         return;
       }
       const prompt = assemblePrompt(context, steering.text);
       const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
       if (!this.isLiveTab(tab)) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
+        this.discardPendingSend(activeNoteCache, contextCache);
         return;
       }
       if (service.getSessionToken() !== sessionToken) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
-        service.reportSessionChanged();
-        this.showServiceError();
+        this.abandonSend(service, activeNoteCache, contextCache);
         return;
       }
       this.lastSentPrompt = prompt;
@@ -1593,15 +1593,13 @@ export class ChatView extends ItemView {
       else if (steering.mode === "follow-up") await service.followUpPrompt(prompt, images, sessionToken);
       else await service.steerPrompt(prompt, images, sessionToken);
       if (!this.isLiveTab(tab)) {
-        activeNoteCache.discardPending();
-        contextCache.discard();
+        this.discardPendingSend(activeNoteCache, contextCache);
         return;
       }
       this.resolveActiveNoteCacheAfterSend(service, activeNoteCache, messageCountBefore);
       this.resolveContextCacheAfterSend(service, contextCache, messageCountBefore);
     } catch (error) {
-      activeNoteCache.discardPending();
-      contextCache.discard();
+      this.discardPendingSend(activeNoteCache, contextCache);
       if (!this.isLiveTab(tab)) return;
       throw error;
     }
