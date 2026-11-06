@@ -55,4 +55,4 @@ The plugin keeps the following tools for backward compatibility but does not sen
 | `local_graph` | Compatibility | `vault_inspect` with `action=local_graph` |
 | `get_properties` | Compatibility | `vault_inspect` with `action=properties` |
 
-If you enable a compatibility tool in settings, it behaves as before. New setups use `vault_inspect`.
+Compatibility tools are available only to callers that request the compatibility surface. There is no settings toggle. New setups use `vault_inspect`.

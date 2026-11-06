@@ -1,15 +1,14 @@
 # Agentic Chat for Obsidian
 
-> **Experimental — under heavy development.** APIs, settings, and behavior change frequently. Pin a version if you need stability.
+> **Experimental.** APIs, settings, and behavior change often. Pin a version if you need stability.
 
-A **privacy-first, agent-led AI chat** in Obsidian's right sidebar. Instead of a plain chatbot, you get an agent that *acts on your vault*: it reads, searches, writes, edits, renames, traverses links, and reads/writes frontmatter through typed tools — and every tool call is rendered inline in the chat, so you always see exactly what the agent is doing.
+Agentic Chat is an AI chat panel in the Obsidian right sidebar. The agent reads, searches, writes, edits, renames, and moves notes, follows links, and reads or writes frontmatter through typed tools. Each tool call appears inline in the chat, so you can see what the agent does.
 
-It runs entirely inside Obsidian on **desktop and mobile**, built on the [pi](https://pi.dev) agent packages. Use it with hosted models through [OpenRouter](https://openrouter.ai) — locked to **zero-data-retention** providers by default — or with a fully local [Ollama](https://ollama.com) server where nothing ever leaves your machine.
+It runs in Obsidian on desktop and mobile and uses the [pi](https://pi.dev) agent packages. You can use hosted models through [OpenRouter](https://openrouter.ai), with zero-data-retention routing on by default, or a local [Ollama](https://ollama.com) server that keeps requests on your machine.
 
 ## Documentation
 
-The full user and maintainer docs are published with VitePress at
-[tardigrde.github.io/obsidian-agentic-chat](https://tardigrde.github.io/obsidian-agentic-chat/).
+User and maintainer docs: [tardigrde.github.io/obsidian-agentic-chat](https://tardigrde.github.io/obsidian-agentic-chat/).
 
 Local docs commands:
 
@@ -19,160 +18,159 @@ npm run docs:build
 npm run docs:preview
 ```
 
-## Privacy first
+## Privacy
 
-Your notes are yours. This plugin is built so that using AI on them does not mean handing them to a model trainer.
+Privacy controls are on by default.
 
-- **Zero data retention by default.** Out of the box, OpenRouter requests are routed only to endpoints that retain nothing (`zdr: true`) *and* don't log or train on prompts (`data_collection: "deny"`). Provider fallbacks are allowed but must satisfy the **same** constraints — a fallback is never a privacy downgrade.
-- **Or go fully local.** Switch the provider to Ollama and every prompt, note, and tool result stays on your device. No API key, no network, no cost.
-- **No telemetry by default.** The plugin phones home to nothing and ships no analytics endpoint. The only default network traffic is the model request you trigger, to the provider you chose. If you explicitly enable **Observability**, traces go only to the OTLP/Langfuse endpoint you configure.
-- **You see everything the agent does.** Every read, search, write, edit, rename, and delete is a visible tool call in the timeline. Mutating actions are gated by an approval policy (default: **ask**), the approval dialog shows a **diff** of the pending change, and deletes go to trash.
-- **Your secrets stay local.** Provider API keys, web-search keys, MCP auth headers, and OAuth tokens are stored with Obsidian secret storage. The plugin's vault `data.json` keeps only secret IDs and non-secret settings.
+- **OpenRouter routing.** By default, requests go only to endpoints with zero data retention (`zdr: true`) and a no-logging, no-training policy (`data_collection: "deny"`). Fallbacks must meet both rules. See [How privacy routing works](#how-privacy-routing-works).
+- **Local models.** A local Ollama server keeps prompts, notes, and tool results on your machine.
+- **No telemetry.** The plugin has no analytics endpoint and sends no telemetry. It fetches OpenRouter's public model catalog to update local pricing data when the cache is missing or older than three days. That request contains no vault content. Apart from that request and the model calls you make, network traffic comes from features you enable.
+- **Visible tool calls.** Every tool call appears in the timeline. Mutating tools use the approval policy (default: ask). The dialog shows a diff, and deletes go to trash when available.
+- **Secrets.** Provider keys, web-search keys, MCP auth headers, and OAuth tokens are stored in Obsidian secret storage. The vault `data.json` stores only secret IDs and non-secret settings.
 
-> With the strict zero-data-retention default, some models may have no compliant provider on OpenRouter. If a request can't be routed, pick a different model in settings, relax the privacy toggles deliberately, or use Ollama.
+> With strict zero-data-retention routing, some models may have no compliant provider on OpenRouter. Choose another model, relax the privacy settings on purpose, or use Ollama.
 
 ## Features
 
-- **Native sidebar chat** — an Obsidian `ItemView` styled with theme variables (light and dark just work). Tool calls appear as live step cards with elapsed-time timing; reasoning tokens stream into a collapsible section; answers render with Obsidian-style Markdown, including callouts and Mermaid diagrams; an animated indicator shows while the agent is working.
-- **Inline clarification prompts** — when the agent needs a missing detail, it can call `ask_user`; the turn pauses on an inline question with optional answer buttons, then continues from your answer.
-- **Vault tools** — the agent reads and acts on your vault through typed, path-safe tools (see [Vault tools](#vault-tools) for the full list): read/write/edit notes, line-bounded reads, list/search, traverse backlinks and the local graph, read/write frontmatter as structured data, rename (backlinks preserved), and delete files or folders to trash.
-- **Approval gates with diff preview** — read-only tools run freely; mutating tools are gated **allow / ask / deny**, globally or per tool. "Ask" shows a confirm dialog with the exact arguments **and a red/green line-level diff** of what would change, plus an optional "don't ask again for this tool" that remembers the final Allow or Deny choice.
-- **Undo** — `/undo` reverts the agent's most recent vault change (write/edit/delete/rename/frontmatter).
-- **Safe ↔ YOLO toggle** — a single composer switch over the approval gate. **Safe** honors your settings approval policy; **YOLO** is a session master switch that auto-approves all mutating tools (a per-tool *deny* still wins).
-- **Working directories** — grant folders as a working set (composer folder button, `/add-dir`, or settings). In Safe mode the agent then **auto-runs reads/writes inside** them and **asks before touching anything outside** — even reads. Granted folders show as removable "scope" chips; `/dirs` lists/revokes them. Empty = approval applies vault-wide. (The ignore list still wins inside a granted folder.)
-- **Plan mode** — `/plan` enters a sticky, read-only planning state (all mutations blocked) until `/endplan` restores your prior Safe/YOLO posture. A "Plan" badge shows in the composer while active.
-- **Ignore list** — gitignore-style globs (e.g. `Private/`, `*.secret.md`, `**/diary/**`) name notes the agent can never touch. Enforced at the tool layer: matching files are invisible to *every* tool — they report as "not found", so the agent can't read, list, search, or edit them.
-- **Conversation history** — every chat is stored as JSONL under the plugin folder and resumed on reload. Browse, search/filter, reopen, rename, delete, export, or clear past conversations; sessions are auto-titled from the first prompt. Works on mobile (no SQLite, no Node `fs`).
-- **Token, cost & context management** — per-message and per-conversation token/USD usage (`/usage`, `/status`), a pre-send "next ~$x" estimate, a one-time **cost alert**, a hard **spend cap** that blocks/aborts at a limit, and a context-window progress bar. Long sessions **auto-compact** older turns into a summary before they overflow the model's window, and `/compact [instructions]` can summarize older turns on demand.
-- **Observability export (opt-in)** — send mobile-safe OTLP/HTTP traces to your own Langfuse or generic OTLP endpoint. Metadata-only is the default: turn/model/tool/approval timing, token/cost totals, and errors without prompts, note bodies, tool args, or tool results. See [Observability](#observability).
-- **Local data lifecycle** — `/export` saves the active conversation as Markdown, `/sessions clear --confirm` clears conversation history for the current scope, and `/memory add`, `/memory review`, `/memory manage`, `/memory export`, and `/memory clear --confirm` give stored long-term memories an explicit local lifecycle.
-- **Subagents (delegation)** — the agent can fan out focused child agents, each with its own context window, model, and tool subset, then merge their summaries. Subagents are roles that inherit the parent's approval/mode controls (isolated context is the value, not a switchable persona); the single built-in **Explorer** role covers read-only recon. Custom roles are not supported — extend the roster in code. Invoke with `/agent <name> <task>`. See [Subagents](#subagents).
-- **Skills** — Agent Plugins packages in the vault's `.agentic-plugins/` folder contribute `SKILL.md` skills (name + description only, body loaded on demand), invokable with `/skill <name>` or directly as `/<name>`. Skills with `$ARGUMENTS` / `$1` absorb the old "prompt template" concept. See [Skills](#skills).
-- **Output styles** — switch *how* the assistant talks (default / brainstorm / learning) with `/style`.
-- **Standing instructions (AGENTS.md)** — the agent loads `AGENTS.md` from your vault root (or `CLAUDE.md` / `GEMINI.md` if absent) as standing context on every turn, so the same facts and conventions persist across every conversation. Edit the file yourself, or run `/init [instructions]` to have the agent curate it surgically (each edit shown as a diff). Standing instruction files are implicit context and do not appear as active-note attachments. See [Standing instructions](#standing-instructions-agentsmd).
-- **Web access (opt-in)** — off by default. Turn on *Web access* in settings to give the agent `web_search` (Tavily / Brave / SearXNG backend) and `fetch_url`, plus a built-in `/deep-research` skill. Egress-gated: while it's off the tools aren't registered, so nothing leaves your device for the web. See [Web access & research](#web-access--research).
-- **MCP tools (opt-in)** — add your own HTTPS Streamable HTTP MCP servers in settings, with no bundled presets. Bearer-token, static-header, and OAuth auth are supported. Discovered remote tools are exposed as `mcp__server__tool`, flow through the approval gate, and return capped text into the model context. No stdio/subprocess transport. See [MCP tools](#mcp-tools).
-- **Composer power tools** — a single unified input card holds the context chips, the textarea, and the bottom toolbar (model · effort · context · folders · Safe↔YOLO), with the session tabs and history/new-chat actions as a nav row above it. Plus inline autocomplete (`/` commands & skills, `@` note mentions, including `@note#heading` / `@note^block` slices), the active note auto-attached as a removable chip (ignored notes are skipped), drag-and-drop or right-click a note/folder/selection to attach it, copy/retry buttons on every answer, prompt editing (click a sent message to rewind), shell-style up/down command history, a model pill with a per-request model override, and a settings page split into virtual tabs.
+- **Sidebar chat.** An Obsidian `ItemView` that uses theme variables. It streams answers, shows tool calls as live step cards with elapsed time, puts reasoning tokens in a collapsible section, and renders Markdown with callouts and Mermaid diagrams.
+- **Inline questions.** The `ask_user` tool pauses a turn on an inline question with optional answer buttons. The turn continues with your answer.
+- **Vault tools.** Typed, path-safe tools read, write, edit, list, search, follow links, read and write frontmatter, rename with backlink updates, and delete to trash. See [Vault tools](#vault-tools).
+- **Approval gates.** Read-only tools run without approval. Mutating tools use allow / ask / deny, set globally or per tool. Ask shows the arguments and a line-level diff. You can remember the choice for that tool.
+- **Undo.** `/undo` reverts the last vault change: write, edit, rename, frontmatter update, single-file delete, or empty-folder delete. A recursive delete of a non-empty folder cannot be reverted.
+- **Safe and YOLO modes.** The composer switch sets the approval posture. Safe uses your policy. YOLO auto-approves mutating tools for the session, except recursive folder deletes; a per-tool deny still wins.
+- **Working directories.** Grant folders with the composer folder button, `/add-dir`, or settings. In Safe mode, calls inside the set run without approval. Calls outside it ask first, including reads. Calls with no path also ask because they can span the vault. `/dirs` lists and revokes grants. An empty set applies the policy vault-wide. The ignore list still wins.
+- **Plan mode.** `/plan` enters a sticky read-only state and blocks mutations. Leave with the Plan badge or `/config`; the previous Safe or YOLO mode returns.
+- **Ignore list.** Gitignore-style globs such as `Private/`, `*.secret.md`, and `**/diary/**` hide notes from the agent. Matching files report as not found to every tool, so the agent cannot read, list, search, or edit them.
+- **Sessions.** Each chat is stored as JSONL in the plugin folder and resumes on reload. Browse, search, reopen, rename, delete, export, or clear sessions. Titles come from the first prompt. Sessions work on mobile without SQLite or Node `fs`.
+- **Token and cost control.** Per-message and per-session token and USD usage (`/usage`, `/status`), a next-request cost estimate, a cost alert, a spend cap that blocks or aborts at the limit, and a context-window bar. Long sessions compact older turns into a summary before overflow; `/compact [instructions]` runs compaction on demand.
+- **Memory.** Long-term memories (`preference`, `fact`, `instruction`, `summary`) at global or vault scope. Add, review, export, or clear them with `/memory`. The agent retrieves them only through `search_memory`.
+- **Semantic search (opt-in).** A scoped vector index over notes, with OpenRouter, Ollama, or OpenAI-compatible embeddings. `/semantic-index` estimates, starts, cancels, or reports the index. A full-vault build requires `/semantic-index start vault --confirm-vault`.
+- **Document import.** `import_pdf` and `import_document` extract text from PDF, EPUB, DOCX, PPTX, and XLSX files into source artifacts with citation anchors. `read_artifact` and `search_artifact` inspect the chunks.
+- **Turn control.** `/steer` guides the active turn, `/follow-up` queues a message, `/redirect` stops and replaces the turn, and `/effort` sets reasoning effort.
+- **Observability (opt-in).** Send OTLP/HTTP traces to Langfuse or a generic OTLP endpoint. Metadata mode is the default and excludes prompts, note bodies, tool args, and tool results. See [Observability](#observability).
+- **Subagents.** The agent can delegate a focused task to a child with its own context window, model, and tool subset. The only built-in role is Explorer (read-only recon). Custom roles need a code change. Run `/agent <name> <task>`. See [Subagents](#subagents).
+- **Skills.** Agent plugin packages in `.agentic-plugins/` provide `SKILL.md` skills, next to built-in skills. The model sees only name and description until a skill is invoked. Run `/skill <name>` or `/<name>`. A body can use `$ARGUMENTS` or `$1`. `/doctor` audits plugin packages. See [Skills](#skills).
+- **Output styles.** `/style` switches the assistant style: default, brainstorm, or learning.
+- **Standing instructions.** The agent loads `AGENTS.md` from the vault root on every turn, or `CLAUDE.md` / `GEMINI.md` if absent. Use `/init [instructions]` to curate the file. See [Standing instructions](#standing-instructions-agentsmd).
+- **Web access (opt-in).** Off by default. When enabled, it adds `web_search` (Tavily, Brave, or SearXNG), `fetch_url`, and `/deep-research`. While it is off, the tools are not registered and no web-access request is made. The plugin still refreshes its OpenRouter pricing cache when that cache is missing or older than three days. See [Web access & research](#web-access--research).
+- **MCP tools (opt-in).** Add HTTPS Streamable HTTP MCP servers, plus plain HTTP for loopback servers. Bearer, static-header, and OAuth auth are supported. Tools appear as `mcp__server__tool` and pass through the approval gate. No stdio transport. See [MCP tools](#mcp-tools).
+- **Composer.** One input card holds context chips, the textarea, and the toolbar (model, effort, context, folders, Safe/YOLO). Session tabs and history/new-chat actions sit above it. Inline autocomplete handles `/` commands and skills plus `@` note mentions, including `@note#heading` and `@note^block`. The active note is attached as a removable chip. Drag and drop or right-click a note, folder, or selection to attach it. Answers have copy and retry buttons. Click a sent message to edit and rewind. Up/Down cycles command history. The model pill allows a per-request override.
 
 ## Vault tools
 
-All paths are vault-relative; absolute paths and `..` escapes are rejected, and any path matched by your [ignore list](#features) reports as "not found".
+All paths are vault-relative. The plugin rejects absolute paths and `..` escapes. Ignored paths report as not found.
 
-**Read-only (always run, no approval):**
+**Read-only (no approval):**
 
 | Tool | What it does |
 |---|---|
-| `read` | Read a note's contents, optionally bounded with `startLine`/`endLine` or byte `offset`/`limit`. |
-| `ls` | List a folder. |
-| `search` | Search note paths and note contents (with result caps and optional folder scope). |
-| `get_active_note` | Read the note currently open in the editor. |
-| `local_graph` | A note's immediate neighborhood — inbound (backlinks) and outbound notes. |
-| `get_properties` | Read a note's YAML frontmatter as structured data. |
+| `read` | Read a note. Use `startLine`/`endLine` or byte `offset`/`limit` for a bounded read. |
+| `vault_inspect` | Read-only meta-tool. `action=list` lists a folder, `search` searches names and contents, `active_note` reads the open note, `local_graph` shows inbound and outbound links, and `properties` reads YAML frontmatter. |
 
-**Mutating (gated by the approval policy):**
+**Mutating (approval gate):**
 
 | Tool | What it does |
 |---|---|
 | `write` | Create or overwrite a note. |
-| `edit` | Exact-string replacements within a note. |
-| `set_properties` | Write YAML frontmatter via Obsidian's API (won't corrupt the body). |
-| `rename` | Rename or move a note — **inbound wikilinks and backlinks are updated automatically**. |
-| `delete` | Move a note or folder to trash (`recursive:true` for non-empty folders, always asks). |
+| `edit` | Replace exact strings in a note. |
+| `set_properties` | Write YAML frontmatter through Obsidian's API. |
+| `rename` | Rename or move a note and update inbound wikilinks. |
+| `delete` | Move a note or folder to trash. A non-empty folder needs `recursive:true`, which asks even in YOLO unless `delete` is set to allow. |
 
-The `search` meta-tool keeps path and content search behind one model-facing decision surface; the older `find` and `grep` tools remain compatibility implementations for tests/internal surfaces. The graph (`local_graph`), frontmatter (`get_properties` / `set_properties`), and link-aware `rename` tools are Obsidian-native: they let the agent traverse the `[[wikilink]]` graph and edit structured metadata reliably instead of brute-grepping or hand-editing raw YAML. `get_backlinks` and `get_links` also remain compatibility implementations, but the default model-facing surface uses `local_graph` to avoid three overlapping graph tools.
+`vault_inspect` is the default model-facing tool for list, search, active note, graph, and frontmatter reads. The older `ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, and `get_properties` tools are compatibility-only and are not sent to the model by default. There is no settings toggle for them.
 
 ## Standing instructions (AGENTS.md)
 
-The agent loads a single standing-instructions file from the vault root on **every** turn and injects it into the system prompt — a place for the vault's purpose, key folders, conventions, and your preferences. It's the standard `AGENTS.md` convention: portable, transparent, and synced with the vault.
+The agent loads one standing-instructions file from the vault root on every turn and adds it to the system prompt. Use it for the vault's purpose, key folders, conventions, and your preferences.
 
-- **Which file.** `AGENTS.md` is read first; if absent, `CLAUDE.md`, then `GEMINI.md`. Symlink one to another so several agents (Claude Code, Gemini CLI, this plugin) share one source of truth.
-- **Author it yourself.** Create `AGENTS.md` at the vault root and write what the agent should always know. Keep it concise — it's part of every request.
-- **Or let the agent curate it.** `/init [instructions]` asks the agent to read the vault structure and the current file, then make **surgical** edits to refine it (each shown as a diff for you to accept/reject; `write` is used only when creating the file). Anything after `/init` is passed to the agent as additional instructions for that curation run. Edits go through the normal approval gate and are undoable with `/undo`.
-- **Implicit context, not an attachment.** The standing-instructions file is always included when present, so opening `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` at the vault root does not show it as a removable active-note chip.
-- **Living instructions.** Because it's a regular vault file, the agent (or you) can keep editing it mid-session with the standard `edit`/`write` tools — the next turn picks up the change.
+- **Which file.** `AGENTS.md` is read first, then `CLAUDE.md`, then `GEMINI.md`. Symlink them if several agents should share one file.
+- **Author it yourself.** Keep it short because it goes into every request.
+- **Or let the agent curate it.** `/init [instructions]` asks the agent to read the vault and the current file, then make small edits. Each edit shows a diff. `write` is used only to create the file. Edits use the normal approval gate and `/undo`.
+- **Implicit context.** The file is always included when present. Opening it at the vault root does not add an active-note chip.
+- **Editable file.** It is a normal vault file, so you or the agent can edit it during a session. The next turn uses the new content.
 
 ## Subagents
 
-For multi-part work, the agent can **delegate** to focused child agents instead of doing everything in one context:
+The agent can delegate a focused task to a child agent with its own context window, the role's model (or the parent's), and only the tools in its allowlist. Each child has an isolated context. It is not a different persona.
 
-- **Roles.** A subagent is a role — `{ name, description, systemPrompt, model?, toolAllowlist }`. The single built-in **Explorer** role (read-only recon, inherits parent approval/mode) is the whole roster; custom roles are not supported — extend the roster in code.
-- **Dispatch.** The agent calls the `subagent` tool strictly one call per child (`{ agent, task }`); to delegate several tasks it makes several `subagent` calls in one message, which run concurrently (capped in flight). Each child runs with its own context window, the role's model (falling back to the parent's), and **only** the tools in its advisory allowlist (parent approval/mode still governs) — the value is isolated context, not a switchable persona.
-- **Approval.** Dispatch starts the child work, but every child tool call still flows through the parent approval and working-directory gate. In read-only/plan mode children are forced read-only; outside plan mode, allow/ask/deny and folder boundaries are enforced at the actual child call. Children never receive the `subagent` tool, so delegation depth is capped at one (no grandchildren).
-- **UI & cost.** Each dispatch renders as a step card listing every child with live status (running / done / failed); click a row to expand that child's summary. Child token/USD usage is summed into the conversation total.
+- **Roles.** The only built-in role is Explorer, which does read-only recon. Custom roles are not supported; add them in code.
+- **Dispatch.** The agent calls `subagent` once per child (`{ agent, task }`). Several calls in one message run concurrently, with a cap. Children never get the `subagent` tool, so depth is one level.
+- **Approval.** Each child tool call still passes through the parent approval and working-directory gate. In plan or read-only mode, children are forced read-only.
+- **UI and cost.** A dispatch shows a step card with each child's live status. Click a row to expand the summary. Child token and USD usage is added to the conversation total.
 
-Invoke directly with `/agent <name> <task>`, or `/agent` with no argument to pick from a list. The model can also fan out on its own when a task benefits from parallel, isolated subtasks.
+Run `/agent <name> <task>`, or `/agent` to choose from a list. The model can also dispatch children on its own.
 
-> **Note:** child steps are live-only. While a dispatch runs you can expand the per-child tree; what persists when you reopen the session is the summary text, not replayable child steps — the honest cost of context isolation.
+Child steps are live only. After you reopen a session, the summary text remains but the child steps cannot be replayed.
 
 ## Skills
 
-Skills are reusable instruction/capability units in the [agentskills.io](https://agentskills.io) `SKILL.md` format:
+Skills use the [agentskills.io](https://agentskills.io) `SKILL.md` format.
 
-- **Where they come from.** Plugins in the vault's `.agentic-plugins/` folder (Agent Plugins 1.0.0 packages) contribute `skills/<name>/SKILL.md` files, alongside the built-in skills. Plugin skills load first; a plugin skill wins a name collision. They're listed to the model with **only** their name + description (progressive disclosure); the full body is loaded only when a skill is invoked.
-- **How to run them.** `/skill <name> [args]`, or directly as `/<name>` (built-in commands win a name collision; the skill stays reachable via `/skill <name>`). Auto-loaded skills appear in the `/` autocomplete popup.
-- **Arguments.** A skill body can use `$ARGUMENTS` (all args) or `$1`, `$2`, … (positional). This absorbs the old "prompt template" concept — a template is just a skill that takes arguments.
-- **Audit.** `/doctor` checks every plugin package against the Agent Plugins 1.0.0 spec and reports skills, MCP servers, and violations.
+- **Source.** Agent Plugins 1.0.0 packages in `.agentic-plugins/` provide `skills/<name>/SKILL.md`, next to built-in skills. Plugin skills load first and win a name collision. The model sees only the name and description until a skill is invoked.
+- **Run.** `/skill <name> [args]`, or `/<name>` when no built-in command has that name.
+- **Arguments.** A body can use `$ARGUMENTS` or `$1`, `$2`, and so on.
+- **Audit.** `/doctor` checks each package against the Agent Plugins 1.0.0 spec and reports skills, MCP servers, and violations.
 
 ## Web access & research
 
-Off by default. Enable *Web access* in settings (it carries an egress warning) to register two read-only tools and a research skill:
+Off by default. Enable Web access in settings to register two read-only tools and the `/deep-research` skill. The setting shows an egress warning.
 
-- **`web_search`** — queries your configured backend (Tavily / Brave / SearXNG; keyed in settings) and returns ranked title/URL/snippet results (wrapped as untrusted data).
-- **`fetch_url`** — fetches an http(s) page and returns readable text (scripts/markup stripped, entities decoded). Long pages can be paged with `offset` / `nextOffset`. A best-effort SSRF guard blocks non-http(s) schemes and localhost/private/link-local hosts; when a **Fetch allowlist** is configured in settings (`Web → Fetch allowlist`, `settings.web.allowedHosts`), only matching hosts (label-boundary-aware, `*.example.com` / `example.com` / `*`) are reachable (deny wins over SSRF, checked on every redirect hop). Outputs are wrapped with `[BEGIN_UNTRUSTED_TOOL_OUTPUT ...]` / `[END_UNTRUSTED_TOOL_OUTPUT]` so the model treats fetched content as DATA, never as instructions.
-- **`/deep-research`** — a built-in skill (advertised only while web access is on) that supervises parallel **Explorer** subagents, runs an adversarial review pass, then synthesizes and saves a sourced note with source artifacts/URLs and a `## Sources` list.
+- **`web_search`** queries Tavily, Brave, or SearXNG and returns ranked title, URL, and snippet results. Results are wrapped as untrusted data.
+- **`fetch_url`** fetches an HTTP(S) page and returns readable text. Scripts and markup are stripped and entities decoded. Long pages can be paged with `offset` and `nextOffset`. A best-effort SSRF guard blocks non-HTTP(S) schemes and localhost, private, and link-local hosts. A Fetch allowlist restricts destinations to matching hosts (`*.example.com`, `example.com`, or `*`), checked on every redirect hop. Output is wrapped in `[BEGIN_UNTRUSTED_TOOL_OUTPUT ...]` markers.
+- **`/deep-research`** is a built-in skill that runs parallel Explorer subagents, adds an adversarial review, then writes a sourced note with a `## Sources` list.
 
-Egress is gated by a single off-by-default setting: while it's off, the web tools aren't registered at all, so nothing can leave your device for the web. When on, search queries and fetched URLs go to your chosen search provider and the fetched sites — **outside** the model-provider privacy boundary. The allowlist provides positive egress control when you want to restrict destinations.
+While Web access is off, the tools are not registered. When it is on, search queries and fetched URLs leave the model-provider boundary and go to your search provider and the fetched sites. The allowlist limits which hosts the tool can reach.
 
 ## MCP tools
 
-Off by default. Enable *MCP* in settings to discover tools from remote MCP servers over HTTPS Streamable HTTP.
+Off by default. Enable MCP in settings to discover tools from remote MCP servers.
 
-- **Transport.** HTTPS only. `stdio`, subprocesses, and insecure `http://` endpoints are intentionally unsupported, so the feature stays mobile-safe and cannot spawn local processes.
-- **Setup.** In the MCP tab, **Add MCP server** writes a real agent plugin package (`plugin.json` + `mcp.json`) for the endpoint you enter — packages, not settings, own endpoints after creation. Then choose auth and **Test connection** or **Authenticate & test** to discover tools. New installs include no servers or presets.
-- **Authentication.** Generic servers can use no auth, a bearer token, a custom static header, or MCP OAuth. Bearer/static-header secrets and OAuth tokens are stored with Obsidian secret storage.
-- **Tool naming.** Remote tools are exposed as `mcp__<server-id>__<tool-name>` so model tool names are stable and collision-free.
-- **Approval.** Every MCP server has its own allow / ask / deny policy, defaulting to **ask**. Remote tool annotations are not trusted as a safety boundary.
-- **OAuth.** MCP OAuth servers use protected-resource discovery, authorization-server discovery, PKCE, dynamic client registration when available, bearer tokens, refresh tokens, and a re-auth/forget-token flow. OAuth sign-in uses a localhost callback on desktop and an `obsidian://agentic-chat-mcp-oauth` callback on mobile when the provider supports app redirects. Providers that require localhost redirects still require Obsidian desktop sign-in or bearer/static-header auth. After sign-in, settings immediately probes tool discovery so a successful login also confirms the server is usable.
+- **Transport.** HTTPS Streamable HTTP for remote servers; plain HTTP only for loopback servers. There is no stdio or subprocess transport, so the plugin cannot spawn local processes and stays mobile-safe.
+- **Setup.** On the MCP tab, **Add MCP server** writes an agent plugin package (`plugin.json` + `mcp.json`) for the endpoint. Packages own endpoints after creation. Choose auth, then **Test connection** or **Authenticate & test**. New installs have no servers or presets.
+- **Auth.** Servers can use no auth, a bearer token, a static header, or MCP OAuth. Bearer/static-header secrets and OAuth tokens are stored in Obsidian secret storage.
+- **Names.** Remote tools appear as `mcp__<server-id>__<tool-name>`.
+- **Approval.** Each server has its own allow / ask / deny policy, defaulting to ask. Remote tool annotations are not treated as a safety boundary.
+- **OAuth.** The client uses protected-resource discovery, authorization-server discovery, PKCE, dynamic client registration when available, bearer and refresh tokens, and a re-auth/forget-token flow. OAuth sign-in uses a localhost callback on desktop and an `obsidian://agentic-chat-mcp-oauth` callback on mobile when the provider supports app redirects. Providers that require localhost redirects still require Obsidian desktop sign-in or bearer/static-header auth. After sign-in, settings probes tool discovery.
 - **Proxy support.** Plugin-owned HTTP proxy settings use Obsidian desktop's Node networking path when configured. On mobile, leave the plugin proxy fields empty and use the device/VPN/network-level routing instead.
-- **Auth storage.** Bearer tokens, static auth header values, and OAuth tokens are stored with Obsidian secret storage. The vault `data.json` stores only secret IDs plus non-secret MCP metadata.
-- **Failure behavior.** MCP discovery, sign-in, token refresh, and tool calls have bounded timeouts, retry OAuth refresh once on rejected tokens, retry refresh with server-advertised scopes on `insufficient_scope`, downgrade the MCP protocol version when initialization rejects the newest advertised version, reopen a Streamable HTTP session once if the server reports that the session expired, and make bounded `Last-Event-ID` resume attempts when SSE delivery ends before the matching JSON-RPC result. If a request is accepted asynchronously (`202`), the client opens the server's SSE stream and waits for the matching result. Each configured server also has a **Test connection** action in settings that lists tools through the same MCP client path used at runtime; runtime diagnostics include per-server URL/auth/token state and categorized discovery errors.
-- **Context control.** MCP text results above the inline budget are stored once as plugin-managed artifacts and the model receives a short preview plus an artifact id. The read-only `read_artifact` and `search_artifact` tools let the model inspect large results in chunks without re-running the remote MCP call. Artifacts are automatically pruned by age, count, and total byte budget, while artifacts still cited by saved sessions are retained. Image/resource payloads are summarized or omitted instead of being dumped raw.
+- **Storage.** Bearer tokens, static auth header values, and OAuth tokens are stored in Obsidian secret storage. The vault `data.json` stores only secret IDs and non-secret MCP metadata.
+- **Failures.** Discovery, sign-in, token refresh, and tool calls have bounded timeouts. The client retries an OAuth refresh once, retries with server-advertised scopes on `insufficient_scope`, falls back to older protocol versions, reopens an expired Streamable HTTP session once, and makes bounded `Last-Event-ID` resume attempts. A `202` response opens the SSE stream and waits for the result. **Test connection** lists tools through the runtime client; diagnostics show per-server URL, auth state, and discovery errors.
+- **Context control.** Large MCP text results become plugin-managed artifacts. The model gets a short preview and an artifact ID, then uses `read_artifact` and `search_artifact` to inspect the result without another remote call. Artifacts are pruned by age, count, and total bytes; artifacts cited by saved sessions are kept. Image and resource payloads are summarized or omitted.
 
-Current limits: tool calls only; MCP resources/prompts/roots/sampling, long-lived background MCP event consumers, and rich binary/resource rendering are future work tracked in the roadmap.
+MCP support covers tool calls only. Resources, prompts, roots, sampling, long-lived event consumers, and rich binary rendering are not supported.
 
 ## Observability
 
-Off by default. Enable *Observability* in settings only when you want agent traces exported to an endpoint you control.
+Off by default. Enable Observability only when you want traces at an endpoint you control.
 
-- **Backends.** Choose Langfuse or generic OTLP. Langfuse mode takes your corporate/self-hosted Langfuse base URL and posts OTLP/HTTP JSON to `/api/public/otel/v1/traces`; generic OTLP takes a full `/v1/traces` endpoint.
-- **No bundled endpoint.** New installs ship with observability disabled and an empty endpoint. Nothing is sent until you configure a URL and enable the feature.
-- **Secrets.** Langfuse public/secret keys and generic OTLP auth header values are stored with Obsidian secret storage. `data.json` keeps only secret IDs and non-secret configuration.
-- **Payload detail.** The default `metadata` mode exports turn/generation/tool/approval spans, model/provider ids, token usage, cost, stop reason, and error class. It does not export prompts, answer text, note contents, tool args, tool results, or vault paths. `Redacted text previews` adds short prompt/answer previews with obvious secret tokens masked. `Full prompt/output content` sends prompt and answer text to the configured backend and should only be used deliberately.
-- **Proxy support.** Observability can use its own HTTP proxy override, or inherit the global Models proxy when its override is empty. On mobile, leave plugin proxy fields empty and use the device/VPN/network-level route.
+- **Backends.** Langfuse or generic OTLP. Langfuse takes a base URL and posts OTLP/HTTP JSON to `/api/public/otel/v1/traces`; generic OTLP takes a full `/v1/traces` endpoint.
+- **No default endpoint.** New installs have observability off and an empty endpoint.
+- **Secrets.** Langfuse keys and OTLP auth header values use Obsidian secret storage. `data.json` keeps only secret IDs and non-secret settings.
+- **Payload.** `metadata` (default) sends turn, generation, tool, and approval spans; model and provider IDs; token usage; cost; stop reason; and error class. It does not send prompts, answers, note contents, tool args, tool results, or vault paths. `Redacted text previews` adds short masked prompt and answer previews. `Full prompt/output content` sends prompt and answer text.
+- **Proxy.** Observability can use its own proxy or inherit the Models proxy. On mobile, leave plugin proxy fields empty and use the device/VPN/network route.
 
 ## Disclosures
 
-In the interest of transparency (and the [Obsidian Developer Policies](https://docs.obsidian.md/Developer+policies)):
+In line with the [Obsidian Developer Policies](https://docs.obsidian.md/Developer+policies):
 
-- **Network use.** When the provider is OpenRouter, your prompt — including any note content you attach or the agent reads, plus tool results — is sent to OpenRouter and the model provider it routes to, subject to the privacy constraints above. With Ollama, requests go only to your configured local server. **Web access** is a separate, off-by-default opt-in: when enabled, search queries and the URLs the agent opens are sent to your chosen search provider (Tavily/Brave/SearXNG) and the fetched sites — outside the model-provider privacy boundary. **MCP** is also opt-in: when enabled, MCP tool arguments are sent to the HTTPS MCP servers you configure. **Observability** is opt-in: when enabled, trace metadata and any payload detail mode you choose are sent to your configured OTLP/Langfuse endpoint.
-- **Account & payment.** OpenRouter requires your own account and API key, and hosted models are billed by OpenRouter to that account. The plugin itself is free and takes no payment. Ollama needs no account and is free.
-- **File access.** The agent reads and modifies files in your vault through Obsidian's vault API, only when you prompt it. Mutating actions are gated by the approval policy; deletes move files to trash. Files matched by your ignore list are never exposed to the agent.
-- **Telemetry.** None by default. No analytics, no tracking, no background network calls unless you explicitly enable Observability and provide your own endpoint.
+- **Network use.** With OpenRouter, prompts, attached or read note content, and tool results go to OpenRouter and the provider it routes to, subject to the privacy settings. With Ollama, requests go to the server you configure. Web access, MCP, and Observability are opt-in and send data only when enabled. The pricing-cache request described under [Privacy](#privacy) contains no vault content.
+- **Account and payment.** OpenRouter needs your account and API key, and OpenRouter bills hosted models to that account. The plugin is free and takes no payment. Ollama needs no account and is free.
+- **File access.** The agent reads and changes vault files through Obsidian's vault API, only from your prompts. Mutating tools pass the approval gate. Deletes go to trash when Obsidian or the OS can trash them; if both trash paths fail, the plugin removes the file permanently. Ignored files are never exposed.
+- **Telemetry.** None by default. No analytics or tracking. Observability sends data only after you enable it and set an endpoint.
 - **Source.** Fully open source under the MIT license.
 
 ## Install
 
 ### From Obsidian community plugins (recommended)
 
-The plugin is listed in the official community directory. Open *Settings → Community plugins* (disable **Restricted mode** if prompted) → **Browse**, search for **Agentic Chat**, and install + enable it. This is the simplest path and keeps you on official releases with automatic updates.
+The plugin is listed in the official community directory. Open *Settings → Community plugins* (disable **Restricted mode** if prompted) → **Browse**, search for **Agentic Chat**, and install and enable it. Obsidian handles updates through the community directory.
 
 ### Via BRAT
 
-For pre-release builds not yet in the community directory, install [BRAT](https://github.com/TfTHacker/obsidian42-brat), then add `tardigrde/obsidian-agentic-chat` as a beta plugin. BRAT installs and updates from GitHub releases.
+Use [BRAT](https://github.com/TfTHacker/obsidian42-brat) for pre-release builds before they reach the community directory. Install BRAT, then add `tardigrde/obsidian-agentic-chat` as a beta plugin. BRAT installs and updates from GitHub releases.
 
 ### Manual
 
-1. Download `main.js`, `manifest.json`, and `styles.css` from the latest [release](https://github.com/tardigrde/obsidian-agentic-chat/releases) (or build them — see [Development](#development)).
+1. Download `main.js`, `manifest.json`, and `styles.css` from the latest [release](https://github.com/tardigrde/obsidian-agentic-chat/releases) (or build them; see [Development](#development)).
 2. Copy them into `<your vault>/.obsidian/plugins/agentic-chat/`.
 3. Reload Obsidian and enable **Agentic Chat** in *Settings → Community plugins*.
 
@@ -181,89 +179,96 @@ For pre-release builds not yet in the community directory, install [BRAT](https:
 **OpenRouter (default, zero data retention):**
 
 1. Create an API key at [openrouter.ai/keys](https://openrouter.ai/keys).
-2. Open *Settings → Agentic Chat*, paste the key, and pick a model. **Browse** lists tool-capable models — and while zero data retention is on, only models that have a ZDR-compliant endpoint, so you can't pick one the privacy routing would reject. The default is `moonshotai/kimi-k2.6`.
-3. The strict privacy defaults are on. To use a model with no ZDR provider, relax the routing toggles deliberately — Browse then shows the full catalog.
+2. Open *Settings → Agentic Chat*, paste the key, and pick a model. **Browse** lists tool-capable models. While zero data retention is on, it shows only models with a ZDR-compliant endpoint. The default is `moonshotai/kimi-k2.6`.
+3. The strict privacy defaults are on. To use a model with no ZDR provider, relax the routing settings on purpose. Browse then shows the full catalog.
 
-**Ollama (fully local):**
+**Ollama (local):**
 
 1. Run a local Ollama server and pull a tool-capable model.
-2. Set the provider to **Ollama (local)**, then the server URL (default `http://localhost:11434`) and model tag.
+2. Set the provider to **Ollama (local)**, then set the server URL (default `http://localhost:11434`) and model tag.
 
-For any OpenAI-compatible gateway, set the provider to **OpenAI-compatible**. The **Gateway preset** shortcut fills common base URLs for OpenWebUI, LM Studio, vLLM, llama.cpp, Chutes, and Venice.ai; the transport stays generic, so custom gateways still work by editing the Base URL and Model fields directly.
+For any OpenAI-compatible gateway, set the provider to **OpenAI-compatible**. The **Gateway preset** shortcut fills common base URLs for OpenWebUI, LM Studio, vLLM, llama.cpp, Chutes, and Venice.ai. The transport stays generic, so other gateways work when you edit the Base URL and Model fields.
 
-The settings page is organized into virtual tabs (Models / Agent / Approval / Web / MCP / Observability / Notifications / Resources) so it isn't one long scroll.
+The settings page uses virtual tabs: Models, Agent, Approval, Web, MCP, Observability, Notifications, and Resources.
 
-Behind a corporate proxy on desktop, set **Models → Network proxy → HTTP proxy** to an HTTP proxy URL such as `http://host:port`. Plugin-owned OpenRouter/OpenAI-compatible chat requests, model browsing, web tools, MCP, and observability inherit it. The MCP and Observability tabs have their own optional overrides; leave them empty unless a server needs different routing. On mobile, keep the plugin proxy fields empty and use the device/VPN/network-level proxy path instead.
+On desktop behind a corporate proxy, set **Models → Network proxy → HTTP proxy** to a URL such as `http://host:port`. Plugin-owned OpenRouter/OpenAI-compatible chat requests, model browsing, web tools, MCP, and observability use it. The MCP and Observability tabs have optional overrides; leave them empty unless a server needs different routing. On mobile, keep the plugin proxy fields empty and use the device/VPN/network-level proxy path.
 
 Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 
 ## Usage
 
-- **Send a message.** Type and press Enter (Shift+Enter for a newline). Type `/` for commands and skills or `@` to attach a note — both show an inline autocomplete dropdown.
-- **Context attachments.** The note you're viewing is **auto-attached** as a removable chip (dismiss it to suppress for the session; `/new` resets it). Ignore-listed notes and root standing-instruction files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) are not auto-attached. Add more with `@<note>`, `@<note>#<heading>`, `@<note>^<block-id>`, **+ Folder** (attaches a folder listing), by **dragging** a note/folder from the file explorer onto the composer, or from Obsidian context menus: right-click a note/folder or selected editor text and send it to Agentic Chat.
-- **Watch the agent work.** Each tool call is a step card you can expand to see arguments and results, with elapsed timing. Streaming output stays pinned only while you're already at the bottom; scroll up and it will stop yanking the transcript until you return.
-- **Approve changes.** When a mutating tool is gated by "ask", a dialog shows the exact arguments **and a diff** of the change — **Allow** (Enter) or **Deny** (Escape), with an optional "don't ask again for this tool" that remembers the final choice. Flip the composer to **YOLO** to auto-approve for the session, or use `/plan` to lock to read-only.
+- **Send a message.** Type and press Enter (Shift+Enter for a newline). Type `/` for commands and skills or `@` to attach a note. Both show an inline autocomplete list.
+- **Context attachments.** The note you are viewing is attached as a removable chip. Dismiss it to suppress it for the session; `/new` resets it. Ignore-listed notes and root standing-instruction files are not attached. Add more with `@<note>`, `@<note>#<heading>`, `@<note>^<block-id>`, **+ Folder** (a folder listing), by dragging a note or folder from the file explorer onto the composer, or from Obsidian context menus: right-click a note, folder, or selected editor text and send it to Agentic Chat.
+- **Watch the agent work.** Each tool call is a step card you can expand to see arguments, results, and elapsed time. Streaming output stays pinned only while you are at the bottom. Scroll up and the transcript stops following new output until you return to the bottom.
+- **Approve changes.** When a mutating tool is set to ask, a dialog shows the arguments and a diff of the change. **Allow** (Enter) or **Deny** (Escape). You can choose "don't ask again for this tool"; the plugin remembers the final choice. Switch the composer to **YOLO** to auto-approve for the session, or use `/plan` to lock to read-only.
 - **Undo.** `/undo` reverts the agent's last vault change.
-- **Edit & retry.** Click a sent message to load it back into the composer; sending rewinds the conversation to that point and regenerates. Every answer has copy and retry buttons. Up/Down arrows cycle your sent-message history.
-- **Switch models.** Click the model pill, or `/model`. Shift-click / Shift-Enter in the picker applies a model for the **next prompt only** (shown with a "next only" badge), then auto-reverts.
-- **Slash commands** run locally and are **not** sent to the model. Informational ones (`/help`, `/status`, `/usage`) render as a collapsible in-pane block.
+- **Edit and retry.** Click a sent message to load it back into the composer. Sending rewinds the conversation to that point and regenerates. Every answer has copy and retry buttons. Up/Down cycles your sent-message history.
+- **Switch models.** Click the model pill, or use `/model`. Shift-click or Shift-Enter in the picker applies a model for the next prompt only (shown with a "next only" badge), then reverts.
+- **Slash commands.** Commands run locally and are not sent to the model. Informational commands (`/help`, `/status`, `/usage`) render as a collapsible in-pane block.
 
 ### Slash commands
 
 | Command | What it does |
 |---|---|
 | `/new` | Start a new conversation. |
-| `/sessions` (`/history`) | Browse, search, reopen, rename, or delete past conversations. |
-| `/model` | Switch model (Shift = next-prompt-only override). |
-| `/config` (`/mode`) | Switch permission mode (Safe / YOLO). |
-| `/add-dir [folder]` | Grant a working directory (auto-run inside, ask outside); no arg = folder picker. |
-| `/dirs` | List / revoke granted working directories. |
-| `/plan` … `/endplan` | Enter / leave sticky read-only plan mode. |
-| `/compact [instructions]` | Summarize older turns now; optional instructions guide the summary. |
-| `/init [instructions]` | Curate standing instructions; optional text guides the update. |
-| `/style [name]` | Switch output style (default / brainstorm / learning). |
-| `/skill [name] [args]` | Run a vault skill (also `/<skill-name>` directly). |
-| `/agent [name] [task]` | Delegate a task to a subagent (no arg = picker). |
+| `/sessions` (`/history`) | Browse, search, reopen, rename, or delete past conversations. `clear --confirm` clears all sessions in the current scope. |
+| `/model` | Switch model. Shift applies a next-prompt-only override. |
+| `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists. Alias: `/thinking`. |
+| `/config` (`/mode`) | Switch permission mode: Safe, YOLO, or Plan. |
+| `/add-dir [folder]` | Grant a working directory. Without an argument, opens a vault folder picker. |
+| `/dirs` | List or revoke granted working directories. |
+| `/plan` | Enter sticky read-only plan mode. Leave with the Plan badge or `/config`. |
+| `/compact [instructions]` | Summarize older turns now. Optional text guides the summary. |
+| `/init [instructions]` | Curate the vault standing-instructions file. Optional text guides the update. |
+| `/style [name]` | Switch output style. |
+| `/skill [name] [args]` | Run a vault skill. |
+| `/<skill-name>` | Run a skill directly when no built-in command has that name. |
+| `/agent [name] [task]` | Delegate a task to a subagent. Without arguments, opens a picker. |
 | `/undo` | Undo the last vault change the agent made. |
-| `/status` | Show provider, model, mode, output style, session, MCP servers/tools. |
-| `/usage` | Show token & cost totals. |
+| `/status` | Show provider, model, mode, output style, session, MCP servers, and tools. |
+| `/usage` | Show token and cost totals. |
+| `/memory [add\|review\|manage\|export\|clear]` | Add, review, export, or clear stored long-term memories. |
+| `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. Alias: `/semindex`. |
+| `/todo [add\|set\|test\|commit\|note\|title\|clear]` | Track milestones, tests, checkpoint commits, notes, and the plan title. Alias: `/todos`. |
+| `/steer [text]` | Steer the active turn while the agent responds. |
+| `/follow-up [text]` | Queue a follow-up behind the active turn. Alias: `/followup`. |
+| `/redirect [text]` | Stop the active turn and answer this instead. |
+| `/export` | Save this conversation as a Markdown note. |
+| `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List commands. |
+
+`/plan` is sticky. Leave plan mode with the **Plan** badge or `/config`. `/endplan` does not exist.
 
 ## How privacy routing works
 
-Privacy settings are applied to **every** OpenRouter request via the provider routing options:
+Privacy settings are applied to every OpenRouter request through the provider routing options:
 
 | Setting | Effect | Default |
 |---|---|---|
-| Require zero data retention | `zdr: true` — only endpoints that retain nothing | **on** |
+| Require zero data retention | `zdr: true`: only endpoints that retain nothing | **on** |
 | Deny prompt logging and training | `data_collection: "deny"` | **on** |
-| Allow provider fallbacks | `allow_fallbacks: true` — fallbacks still obey the two rules above | on |
+| Allow provider fallbacks | `allow_fallbacks: true`: fallbacks must obey the first two rules | **on** |
 
-Tightening these can leave a model with no compliant provider; that's the intended trade-off of privacy over convenience. Ollama bypasses all of this by never leaving your machine.
+If no compliant provider exists for a model, choose another model, relax a setting on purpose, or use Ollama. Ollama requests go only to the server you configure.
 
 ## Development
 
 ```bash
 npm install
-npm run dev        # esbuild watch mode
-npm run docs:dev   # VitePress docs dev server
-npm test           # vitest (path safety, exact edits, search, routing, approval, working dirs, sessions, skills, agent service, …)
-npm run typecheck  # tsc — the lint gate
-npm run lint       # eslint
-npm run build      # typecheck + production bundle
-npm run docs:build # VitePress production docs build
+npm run dev         # esbuild watch mode
+npm run docs:dev    # VitePress docs dev server
+npm test            # vitest
+npm run typecheck   # TypeScript check
+npm run lint        # eslint
+npm run build       # typecheck, production bundle, release and mobile checks
+npm run docs:build  # VitePress production docs build
 ```
 
-The unit suite runs without Obsidian: the `obsidian` package is replaced by a minimal mock via a vitest alias, the model stream by an injected `streamFn`, and the session store by an in-memory adapter. See `AGENTS.md` for architecture notes and `ROADMAP.md` for planned work.
+The unit suite does not need Obsidian. The `obsidian` package is replaced by a minimal mock through a vitest alias, the model stream by an injected `streamFn`, and the session store by an in-memory adapter. `AGENTS.md` has architecture notes and `ROADMAP.md` lists planned work.
 
 ### End-to-end tests (real Obsidian)
 
-A base end-to-end suite drives the plugin inside a **real Obsidian** instance via
-[`wdio-obsidian-service`](https://github.com/jesse-r-s-hines/wdio-obsidian-service) — it
-auto-downloads Obsidian, copies `test/e2e/vault` into a throwaway sandbox, loads this plugin, and
-runs the specs in `test/e2e/specs/`. The no-token specs cover Obsidian boot, chat UI wiring,
-session persistence, deterministic approval/write/edit/undo flows, settings UI persistence, and
-existing `data.json` migration.
+A base end-to-end suite drives the plugin in a real Obsidian instance through [`wdio-obsidian-service`](https://github.com/jesse-r-s-hines/wdio-obsidian-service). It downloads Obsidian, copies `test/e2e/vault` into a throwaway sandbox, loads the plugin, and runs the specs in `test/e2e/specs/`. The no-token specs cover Obsidian boot, chat UI wiring, session persistence, deterministic approval/write/edit/undo flows, settings UI persistence, and `data.json` migration.
 
 ```bash
 npm run test:e2e   # builds the plugin, then boots Obsidian and runs the local e2e suite
@@ -274,45 +279,15 @@ npm run test:e2e:matrix -- --spec test/e2e/specs/smoke.e2e.ts
 npm run verify:mobile
 ```
 
-CI runs the full deterministic suite under `xvfb-run` with a cached Obsidian runtime, then
-runs the scripted dogfood eval. Locally it still launches Electron, so it needs a display and
-cached Obsidian downloads. `npm run test:e2e` intentionally runs one Obsidian version at a time; set
-`OBSIDIAN_VERSIONS=earliest/earliest` or another single pair for a targeted run. Use
-`npm run test:e2e:matrix` for supported-version coverage; it runs sequentially across
-`OBSIDIAN_VERSION_MATRIX` or, by default, `earliest/earliest,latest/latest`. Unit tests (vitest)
-stay the fast inner loop; the e2e suite catches integration seams — view registration, settings
-tabs, persistence/migration, composer wiring, slash-command routing, and approval gates — that the
-mocked unit tests can't.
+CI runs the deterministic suite under `xvfb-run` with a cached Obsidian runtime, then the scripted dogfood eval. Locally the suite launches Electron, so it needs a display and cached Obsidian downloads. `npm run test:e2e` runs one Obsidian version at a time; set `OBSIDIAN_VERSIONS=earliest/earliest` or another single pair for a targeted run. `npm run test:e2e:matrix` covers supported versions sequentially across `OBSIDIAN_VERSION_MATRIX`, or by default `earliest/earliest,latest/latest`. Unit tests are the fast loop. E2e catches integration seams such as view registration, settings tabs, persistence and migration, composer wiring, slash-command routing, and approval gates.
 
-`npm run test:e2e:dogfood` is the expensive high-coverage dogfood target. It
-generates a fresh adversarial vault under
-`logs/dogfood-runs/<run-id>/`, installs the current plugin into that vault,
-drives real Obsidian through WDIO, and fails if the dogfood invariant oracle or
-the generated run report finds a product regression. It uses a deterministic
-scripted model path by default, so it is suitable for open-source contributors
-without live model credentials.
+`npm run test:e2e:dogfood` generates a fresh adversarial vault under `logs/dogfood-runs/<run-id>/`, installs the current plugin, drives real Obsidian through WDIO, and fails if the dogfood invariant oracle or the generated report finds a regression. It uses a deterministic scripted model by default, so it needs no live model credentials.
 
-`npm run verify:mobile` is part of `npm run build` and blocks direct Node/Electron
-API usage outside documented desktop-only fallbacks. `npm run test:e2e:mobile`
-builds the e2e bundle, enables `wdio-obsidian-service` mobile emulation, applies
-Chrome phone-sized device metrics, and runs a WDIO smoke to catch mobile layout
-regressions. Real Obsidian Mobile still needs the Android/iOS checklist in
-[MOBILE_TESTING.md](MOBILE_TESTING.md).
+`npm run verify:mobile` is part of `npm run build`. It blocks direct Node/Electron API use outside documented desktop fallbacks. `npm run test:e2e:mobile` builds the e2e bundle, enables mobile emulation, applies phone-sized device metrics, and runs a WDIO smoke test for layout regressions. Real Obsidian Mobile needs the Android/iOS checklist in [MOBILE_TESTING.md](MOBILE_TESTING.md).
 
-Live model-backed e2e specs are opt-in and skip unless their keys are present.
-Set `AGENTIC_CHAT_API_KEY`, `AGENTIC_CHAT_BASE_URL`, and `AGENTIC_CHAT_MODEL`
-for any OpenAI-compatible gateway (OpenRouter, OpenWebUI, local proxy, etc.). When running behind a
-corporate proxy, keep `NO_PROXY=localhost,127.0.0.1,::1`; the WDIO config keeps
-chromedriver local and passes a normalized proxy setting to Obsidian/Electron.
-When provider transport, model settings, proxy handling, or request formatting
-changes, run `npm run verify:provider-live`; unlike the default e2e command, it
-requires live credentials and fails instead of accepting skipped provider specs.
-That gate also runs `npm run eval:provider-cache-live`, which sends repeated
-large stable prompts through the OpenAI-compatible gateway and fails unless a
-warm request reports provider cache-read tokens. The cache probe accepts generic
-`OPENAI_COMPATIBLE_*` env vars, or the same `OPENWEBUI_*` vars used by the e2e
-spec. To load a local dotenv file without shell-sourcing secrets, pass
-`npm run eval:provider-cache-live -- --env-file .env`.
+Live model e2e specs are opt-in and skip without keys. Set `AGENTIC_CHAT_API_KEY`, `AGENTIC_CHAT_BASE_URL`, and `AGENTIC_CHAT_MODEL` for an OpenAI-compatible gateway (OpenRouter, OpenWebUI, or a local proxy). Behind a corporate proxy, keep `NO_PROXY=localhost,127.0.0.1,::1`; the WDIO config keeps chromedriver local and passes a normalized proxy to Obsidian/Electron.
+
+When provider transport, model settings, proxy handling, or request formatting changes, run `npm run verify:provider-live`. Unlike the default e2e command, it requires live credentials and fails instead of accepting skipped provider specs. That gate also runs `npm run eval:provider-cache-live`, which sends repeated large stable prompts through the OpenAI-compatible gateway and fails unless a warm request reports provider cache-read tokens. The cache probe accepts `OPENAI_COMPATIBLE_*` variables or the `OPENWEBUI_*` variables used by the e2e spec. To load a local dotenv file without shell-sourcing secrets, pass `npm run eval:provider-cache-live -- --env-file .env`.
 
 Live MCP e2e is also opt-in and refuses insecure endpoints:
 
@@ -323,8 +298,7 @@ AGENTIC_CHAT_E2E_MCP_ARGS_JSON='{"input":"value"}' \
 npm run test:e2e -- --spec test/e2e/specs/mcp-live.e2e.ts
 ```
 
-For static-header servers, also set `AGENTIC_CHAT_E2E_MCP_HEADER_NAME` and
-`AGENTIC_CHAT_E2E_MCP_HEADER_VALUE`.
+For static-header servers, also set `AGENTIC_CHAT_E2E_MCP_HEADER_NAME` and `AGENTIC_CHAT_E2E_MCP_HEADER_VALUE`.
 
 ## Acknowledgements
 
@@ -333,5 +307,4 @@ For static-header servers, also set `AGENTIC_CHAT_E2E_MCP_HEADER_NAME` and
 
 ## License
 
-[MIT](LICENSE). See also the [third-party notices](THIRD_PARTY_NOTICES.md) for
-bundled dependencies and adapted code.
+[MIT](LICENSE). See the [third-party notices](THIRD_PARTY_NOTICES.md) for bundled dependencies and adapted code.
