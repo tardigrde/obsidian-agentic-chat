@@ -30,6 +30,8 @@ export interface ReplayTurn {
   delayMs?: number;
   /** Delay between update events when emitUpdates is enabled. */
   updateDelayMs?: number;
+  /** Hold the terminal event until the harness releases it. */
+  hold?: boolean;
 }
 
 export interface ReplayStreamCall {
@@ -53,6 +55,8 @@ export interface ReplayStreamOptions {
   initialTurnIndex?: number;
   now?: () => number;
   onCall?: (call: ReplayStreamCall) => void;
+  /** Resolve when a `hold` turn may finish. */
+  waitForRelease?: () => Promise<void>;
 }
 
 export interface ReplayStreamController {
@@ -96,7 +100,7 @@ export function createReplayStreamController(
       : createMissingReplayTurnMessage(model, callIndex, now);
 
     queueMicrotask(() => {
-      void emitReplayTurn(stream, message, scripted);
+      void emitReplayTurn(stream, message, scripted, options.waitForRelease);
     });
     return stream;
   });
@@ -185,12 +189,14 @@ async function emitReplayTurn(
   stream: ReturnType<typeof createAssistantMessageEventStream>,
   message: AssistantMessage,
   turn: ReplayTurn | undefined,
+  waitForRelease?: () => Promise<void>,
 ): Promise<void> {
   const partial: AssistantMessage = { ...message, content: [] };
   stream.push({ type: "start", partial });
   if (turn?.emitUpdates) {
     await emitContentUpdates(stream, partial, message.content, turn.updateDelayMs ?? 0);
   }
+  if (turn?.hold) await waitForRelease?.();
   await wait(turn?.delayMs ?? 0);
   if (message.stopReason === "error" || message.stopReason === "aborted") {
     stream.push({ type: "error", reason: message.stopReason, error: message });
