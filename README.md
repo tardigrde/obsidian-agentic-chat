@@ -52,7 +52,7 @@ Privacy controls are on by default.
 - **Skills.** Agent plugin packages in `.agentic-plugins/` provide `SKILL.md` skills, next to built-in skills. The model sees only name and description until a skill is invoked. Run `/skill <name>` or `/<name>`. A body can use `$ARGUMENTS` or `$1`. `/doctor` audits plugin packages. See [Skills](#skills).
 - **Output styles.** `/style` switches the assistant style: default, brainstorm, or learning.
 - **Standing instructions.** The agent loads `AGENTS.md` from the vault root on every turn, or `CLAUDE.md` / `GEMINI.md` if absent. Use `/init [instructions]` to curate the file. See [Standing instructions](#standing-instructions-agentsmd).
-- **Web access (opt-in).** Off by default. When enabled, it adds `web_search` (Tavily, Brave, or SearXNG), `fetch_url`, and `/deep-research`. While it is off, the tools are not registered and no web request is made. See [Web access & research](#web-access--research).
+- **Web access (opt-in).** Off by default. When enabled, it adds `web_search` (Tavily, Brave, or SearXNG), `fetch_url`, and `/deep-research`. While it is off, the tools are not registered and no web-access request is made. The plugin still refreshes its OpenRouter pricing cache when that cache is missing or older than three days. See [Web access & research](#web-access--research).
 - **MCP tools (opt-in).** Add HTTPS Streamable HTTP MCP servers, plus plain HTTP for loopback servers. Bearer, static-header, and OAuth auth are supported. Tools appear as `mcp__server__tool` and pass through the approval gate. No stdio transport. See [MCP tools](#mcp-tools).
 - **Composer.** One input card holds context chips, the textarea, and the toolbar (model, effort, context, folders, Safe/YOLO). Session tabs and history/new-chat actions sit above it. Inline autocomplete handles `/` commands and skills plus `@` note mentions, including `@note#heading` and `@note^block`. The active note is attached as a removable chip. Drag and drop or right-click a note, folder, or selection to attach it. Answers have copy and retry buttons. Click a sent message to edit and rewind. Up/Down cycles command history. The model pill allows a per-request override.
 
@@ -77,7 +77,7 @@ All paths are vault-relative. The plugin rejects absolute paths and `..` escapes
 | `rename` | Rename or move a note and update inbound wikilinks. |
 | `delete` | Move a note or folder to trash. A non-empty folder needs `recursive:true`, which asks even in YOLO unless `delete` is set to allow. |
 
-`vault_inspect` is the default model-facing tool for list, search, active note, graph, and frontmatter reads. The older `ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, and `get_properties` tools remain for compatibility and are not sent to the model by default. If you enable one in settings, it behaves as before.
+`vault_inspect` is the default model-facing tool for list, search, active note, graph, and frontmatter reads. The older `ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, and `get_properties` tools are compatibility-only and are not sent to the model by default. There is no settings toggle for them.
 
 ## Standing instructions (AGENTS.md)
 
