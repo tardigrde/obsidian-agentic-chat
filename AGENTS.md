@@ -39,6 +39,8 @@ skills hold procedure, `scripts/` and CI hold gates.
 4. UI claims need a committed e2e assertion or a probe recording plus DOM/state
    metrics. A screenshot alone is not a verdict.
 5. Never commit secrets, vault plugin data, or generated sessions.
+6. Never merge a PR unless the user explicitly says "merge". Green checks are not
+   permission.
 
 ## Verification
 
