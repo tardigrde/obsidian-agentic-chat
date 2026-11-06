@@ -56,6 +56,13 @@ export interface RewriteMessagesOptions {
   expectedGeneration?: number;
 }
 
+export interface LoadSessionOptions {
+  /** Session file the caller expects to still be active when the read lands. */
+  expectedPath?: string | null;
+  /** Generation captured with {@link ObsidianSessionManager.getActiveSessionGeneration}. */
+  expectedGeneration?: number;
+}
+
 /**
  * Append-only JSONL conversation store under the plugin folder. Uses the vault
  * `DataAdapter` so it works on desktop and mobile without Node fs.
@@ -113,12 +120,18 @@ export class ObsidianSessionManager {
     return this.createSession(defaults);
   }
 
-  async loadSession(path: string): Promise<SessionInfo> {
+  async loadSession(path: string, options: LoadSessionOptions = {}): Promise<SessionInfo> {
     const sessionPath = normalizeFolderPath(path, { allowPluginInternals: true });
     const content = await this.adapter.read(sessionPath);
     const entries = parseSessionEntries(content);
     if (entries[0]?.type !== "session") {
       throw new Error("Session file is missing a session header.");
+    }
+    if (
+      (options.expectedPath !== undefined && this.sessionFile !== options.expectedPath) ||
+      (options.expectedGeneration !== undefined && this.sessionGeneration !== options.expectedGeneration)
+    ) {
+      throw new Error("Session changed before it could be loaded.");
     }
     this.sessionFile = sessionPath;
     this.sessionGeneration += 1;
