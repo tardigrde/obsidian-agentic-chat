@@ -152,7 +152,13 @@ export class SemanticIndexWorkflowController {
       return;
     }
     const path = this.options.indexPath();
-    const lease = semanticIndexLeases.acquire(path);
+    let lease;
+    try {
+      lease = await semanticIndexLeases.acquireDurable(path);
+    } catch (error) {
+      this.options.renderer.error(error instanceof Error ? error.message : String(error));
+      return;
+    }
     if (!lease) {
       this.options.renderer.error(
         "Semantic indexing is already running in another tab for this index. Use /semantic-index cancel there first.",
@@ -176,7 +182,7 @@ export class SemanticIndexWorkflowController {
       this.options.renderer.info("Semantic index", semanticIndexRows(result.file));
     } finally {
       if (this.abort === controller) this.abort = null;
-      lease.release();
+      await lease.release();
     }
   }
 }

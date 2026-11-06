@@ -34,6 +34,8 @@ export interface EmbeddingSettings {
   languageCoverage: EmbeddingLanguageCoverage;
   batchSize: number;
   maxDocumentChars: number;
+  /** Stable per-vault id for the cross-window semantic index lease. */
+  leaseId: string;
 }
 
 export interface EmbeddingProviderConfig {
@@ -87,6 +89,7 @@ export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
   languageCoverage: "multilingual",
   batchSize: DEFAULT_EMBEDDING_BATCH_SIZE,
   maxDocumentChars: DEFAULT_EMBEDDING_MAX_DOCUMENT_CHARS,
+  leaseId: "",
 };
 
 export class EmbeddingProviderError extends Error {
@@ -119,6 +122,7 @@ export function healEmbeddingSettings(stored: Partial<EmbeddingSettings> | null 
       500,
       200_000,
     ),
+    leaseId: typeof stored?.leaseId === "string" ? stored.leaseId : "",
   };
 }
 

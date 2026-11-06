@@ -11,7 +11,7 @@ Status values: `open`, `fixed`, `deferred`, `rejected`.
 | Area | Finding | Status | Resolution or target |
 |---|---|---|---|
 | Semantic | In-place `index.json` write can truncate the last complete index | `fixed` | #227 writes through `.tmp`, keeps `.bak`, and serves the backup on read |
-| Semantic | Cross-window lease is in-memory; separate windows are not covered | `deferred` | Needs a lease design; unowned |
+| Semantic | Cross-window lease is in-memory; separate windows are not covered | `fixed` | #237 adds a vault-scoped IndexedDB lease; a store failure fails closed |
 | Semantic | Closing the view orphans a running index | `fixed` | #232 disposes the controller in `ChatView.onClose` |
 | Compaction | Manual `/compact` audit `start` can land in a new session during a swap | `deferred` | Unowned follow-up |
 | Compaction | `/compact` instructions are ignored when it joins an auto run | `fixed` | #230 returns `busy` instead of joining with different instructions |

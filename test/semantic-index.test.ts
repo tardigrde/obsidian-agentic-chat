@@ -108,7 +108,7 @@ describe("semantic index bootstrap", () => {
       expect(during?.state.status.state).toBe("running");
       expect(adapter.files.get(path)).toBe(running);
     } finally {
-      lease?.release();
+      void lease?.release();
     }
 
     const after = await readSemanticIndexFile(adapter.asDataAdapter(), path);
@@ -121,7 +121,7 @@ describe("semantic index bootstrap", () => {
     // Repair must release its critical-section lease.
     const next = semanticIndexLeases.acquire(path);
     expect(next).not.toBeNull();
-    next?.release();
+    void next?.release();
   });
 
   it("returns a newer index instead of overwriting it with a stale repair", async () => {
@@ -162,7 +162,7 @@ describe("semantic index bootstrap", () => {
 
     const next = semanticIndexLeases.acquire(path);
     expect(next).not.toBeNull();
-    next?.release();
+    void next?.release();
   });
 
   it("holds the lease across the repair re-read and write", async () => {
@@ -196,7 +196,7 @@ describe("semantic index bootstrap", () => {
     expect(competingLease).toBeNull();
     const after = semanticIndexLeases.acquire(path);
     expect(after).not.toBeNull();
-    after?.release();
+    void after?.release();
   });
 
   it("leases one index path and recovers an expired lease", async () => {
@@ -210,10 +210,10 @@ describe("semantic index bootstrap", () => {
     now += 61_000;
     const recovered = leases.acquire("index.json");
     expect(recovered).not.toBeNull();
-    recovered?.release();
+    void recovered?.release();
 
     // The stale owner's release must not free the recovered lease.
-    first?.release();
+    void first?.release();
     expect(leases.acquire("index.json")).not.toBeNull();
   });
 

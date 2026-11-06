@@ -189,9 +189,11 @@ token refresh and callback lifecycle.
 ## Semantic index writer
 
 Owner: `SemanticIndexWorkflowController` owns the run and its abort controller.
-`SemanticIndexLeaseRegistry` owns the per-path lease. `bootstrapSemanticIndex`
-writes through `.tmp` and keeps `.bak`. `readSemanticIndexFile` serves the backup
-and repairs a stale `running` status on read.
+`SemanticIndexLeaseRegistry` owns the per-path lease; its
+`IndexedDbSemanticLeaseStore` is the cross-window arbiter.
+`bootstrapSemanticIndex` writes through `.tmp` and keeps `.bak`.
+`readSemanticIndexFile` serves the backup and repairs a stale `running` status
+on read.
 
 Invariants:
 
@@ -204,15 +206,20 @@ Invariants:
 
 Fixed by #232: closing the view aborts its index run.
 
+Fixed by #237: a shared IndexedDB lease serializes one path across windows. Keys
+use the vault base path on desktop (identical in every window) and a stable
+generated vault id on mobile, so two same-named vaults do not block each other. A crashed owner is recoverable after the TTL, and a lost renewal
+flips `isOwned` to false before the next persisted batch. If the shared store is
+unavailable, indexing fails closed instead of falling back to a single-window
+writer.
+
 Gaps:
 
-- The lease registry is in memory and per window. Two Obsidian windows do not
-  share it.
 - The lease is acquired by the UI controller, not by the writer itself.
 - The plugin folder can hold `index.json`, `index.json.bak`, and
   `index.json.tmp` at the same time.
 
-Next: durable writer ownership and a cross-window lease.
+Next: move lease acquisition into the writer.
 
 ## Plugin install
 
@@ -250,7 +257,6 @@ writer.
 
 | Item | Risk | Target |
 |---|---|---|
-| Cross-window semantic lease | Two windows write the same index | Needs a lease design |
 | Semantic lease acquired by the UI | A writer can start without the lease owner | Move into the writer |
 | Approval stop reason | A deny with the stop text stops the turn | Unowned follow-up |
 | Compaction audit start after swap | Audit entries land in the wrong session | Unowned follow-up |

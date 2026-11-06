@@ -37,6 +37,7 @@ import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from 
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
 import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
+import { setSemanticLeaseNamespace } from "./retrieval/semantic-index";
 
 declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
 
@@ -56,6 +57,20 @@ export default class AgenticChatPlugin extends Plugin {
   async onload(): Promise<void> {
     this.secretStore = new ObsidianSecretStore(this.app);
     await this.loadSettings();
+    // Scope the cross-window lease to this vault. Desktop uses the absolute
+    // base path, which is identical in every window and avoids a first-load id
+    // race. Mobile has one window; the generated id keeps same-named vaults
+    // apart.
+    if (!this.settings.embeddings.leaseId) {
+      this.settings.embeddings.leaseId =
+        typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `vault-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      await this.saveSettings();
+    }
+    const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+    const basePath = adapter.getBasePath?.() ?? "";
+    setSemanticLeaseNamespace(basePath || this.settings.embeddings.leaseId);
     // Recover an interrupted package install before any turn can load plugins:
     // a retained backup must own the settings readers use.
     try {
