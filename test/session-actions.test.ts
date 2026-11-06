@@ -69,6 +69,7 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
 
   async load(path: string): Promise<ActiveSessionSnapshot> {
     this.events.push("load");
+    if (!this.messagesByPath.has(path)) throw new Error(`Session ${path} does not exist.`);
     this.revision += 1;
     this.activePath = path;
     return this.snapshot(path);
@@ -216,7 +217,7 @@ describe("AgentSessionActions", () => {
 
     expect(events).toEqual(["prepare"]);
     expect(activation.currentAgent).toBe(oldAgent);
-    expect(actions.getSwapState()).toBe("failed");
+    expect(actions.getSwapState()).toBe("live");
   });
 
   it("keeps sends open when a failed reload leaves the old agent alive", async () => {
@@ -228,7 +229,7 @@ describe("AgentSessionActions", () => {
     activation.failPrepare = true;
 
     await expect(actions.loadSession("sessions/old.jsonl")).rejects.toThrow("resource reload failed");
-    expect(actions.getSwapState()).toBe("failed");
+    expect(actions.getSwapState()).toBe("live");
 
     await expect(actions.waitForLive()).resolves.toBeUndefined();
     await actions.ensureSessionAgent();
@@ -259,7 +260,7 @@ describe("AgentSessionActions", () => {
     expect(sessions.activePath).toBe("sessions/previous.jsonl");
     expect(activation.currentAgent?.state.messages).toEqual([userMessage("previous")]);
     expect(sessions.continued).toBe(0);
-    expect(actions.getSwapState()).toBe("failed");
+    expect(actions.getSwapState()).toBe("live");
     sessions.load = originalLoad;
   });
 
@@ -364,6 +365,85 @@ describe("AgentSessionActions", () => {
     expect(sessions.deleted).toEqual(["sessions/active.jsonl"]);
     expect(sessions.created).toBe(1);
     expect(events).toEqual(["prepare", "detach", "delete", "create", "activate:0:no-reload", "notify"]);
+  });
+
+  it("restores the previous session when deleting the active session fails after detach", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/active.jsonl", [userMessage("active")]);
+    await sessions.load("sessions/active.jsonl");
+    const { actions, activation } = makeActions({ sessions, agent: agentWith([userMessage("active")]) });
+    sessions.delete = async () => {
+      throw new Error("delete failed");
+    };
+
+    await expect(actions.deleteSession("sessions/active.jsonl")).rejects.toThrow(
+      "Could not delete sessions/active.jsonl; a session is still open.",
+    );
+
+    expect(sessions.activePath).toBe("sessions/active.jsonl");
+    expect(activation.currentAgent?.state.messages).toEqual([userMessage("active")]);
+  });
+
+  it("recovers the next recent session when replacement creation fails after an active delete", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/active.jsonl", [userMessage("active")]);
+    sessions.seed("sessions/recent.jsonl", [userMessage("recent")]);
+    sessions.recentPath = "sessions/recent.jsonl";
+    await sessions.load("sessions/active.jsonl");
+    const { actions, activation } = makeActions({ sessions, agent: agentWith([userMessage("active")]) });
+    sessions.create = async () => {
+      throw new Error("create failed");
+    };
+
+    await expect(actions.deleteSession("sessions/active.jsonl")).rejects.toThrow(
+      "Could not delete sessions/active.jsonl; a session is still open.",
+    );
+
+    expect(sessions.continued).toBe(1);
+    expect(sessions.activePath).toBe("sessions/recent.jsonl");
+    expect(activation.currentAgent?.state.messages).toEqual([userMessage("recent")]);
+  });
+
+  it("recovers a live session when clearing sessions fails after detach", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/active.jsonl", [userMessage("active")]);
+    sessions.seed("sessions/old.jsonl", [userMessage("old")]);
+    sessions.seed("sessions/recent.jsonl", [userMessage("recent")]);
+    sessions.recentPath = "sessions/recent.jsonl";
+    await sessions.load("sessions/active.jsonl");
+    const { actions, activation } = makeActions({ sessions, agent: agentWith([userMessage("active")]) });
+    const originalDelete = sessions.delete.bind(sessions);
+    let deleteCalls = 0;
+    sessions.delete = async (path: string) => {
+      deleteCalls += 1;
+      if (deleteCalls === 2) throw new Error("clear delete failed");
+      return originalDelete(path);
+    };
+
+    await expect(actions.clearSessions()).rejects.toThrow(
+      "Could not clear sessions; a session is still open.",
+    );
+
+    expect(activation.currentAgent).not.toBeNull();
+    expect(sessions.activePath).toBe("sessions/recent.jsonl");
+    expect(actions.getSwapState()).toBe("live");
+  });
+
+  it("does not block a queued-prompt flush after a failed non-active delete", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/active.jsonl", [userMessage("active")]);
+    sessions.seed("sessions/old.jsonl", [userMessage("old")]);
+    await sessions.load("sessions/active.jsonl");
+    const { actions, activation } = makeActions({ sessions, agent: agentWith([userMessage("active")]) });
+    sessions.delete = async () => {
+      throw new Error("delete failed");
+    };
+
+    await expect(actions.deleteSession("sessions/old.jsonl")).rejects.toThrow("delete failed");
+
+    // The live agent survived the failed swap, so the UI may flush its queue.
+    expect(activation.currentAgent).not.toBeNull();
+    expect(actions.getSwapState()).toBe("live");
   });
 
   it("deleting an inactive session only notifies listeners", async () => {

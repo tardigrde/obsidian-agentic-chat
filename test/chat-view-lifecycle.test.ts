@@ -162,6 +162,164 @@ describe("ChatView async lifecycle", () => {
     expect(clearSessions).toHaveBeenCalledTimes(1);
   });
 
+  it("does not send a prompt prepared for a different session", async () => {
+    let sessionToken = "session-a";
+    let releaseBuild!: () => void;
+    const buildGate = new Promise<void>((resolve) => {
+      releaseBuild = resolve;
+    });
+    const sendPrompt = vi.fn(async () => {});
+    const reportSessionChanged = vi.fn();
+    const view = Object.assign(Object.create(ChatView.prototype), {
+      app: {},
+      attachments: [],
+      activeNotePath: null,
+      activeNoteSuppressed: false,
+      activeNoteCache: new ActiveNoteContextCache(),
+      contextCache: new PromptContextCache(),
+      closed: false,
+      activeTabIndex: 0,
+      clearEmptyState: vi.fn(),
+      renderOutgoingUserMessage: vi.fn(),
+      showServiceError: vi.fn(),
+      buildContextFor: async () => {
+        await buildGate;
+        sessionToken = "session-b";
+        return "";
+      },
+    }) as ChatViewHarness;
+    const service: FakeService = {
+      getMessages: vi.fn(() => []),
+      isPathIgnored: vi.fn(() => false),
+      supportsImages: vi.fn(() => false),
+      getSessionToken: () => sessionToken,
+      reportSessionChanged,
+      initialize: vi.fn(async () => {}),
+      sendPrompt,
+    };
+    view.tabs = [{ service }];
+
+    const send = view.sendPrompt("stale prompt");
+    releaseBuild();
+    await send;
+
+    expect(sendPrompt).not.toHaveBeenCalled();
+    expect(reportSessionChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the first prompt when a fresh service creates its session during initialization", async () => {
+    let sessionToken = ":0";
+    let initialized = false;
+    let releaseInit!: () => void;
+    const initGate = new Promise<void>((resolve) => {
+      releaseInit = resolve;
+    });
+    const delivered: string[] = [];
+    const reportSessionChanged = vi.fn();
+    const initialize = vi.fn(async () => {
+      if (initialized) return;
+      await initGate;
+      initialized = true;
+      sessionToken = "sessions/new:1";
+    });
+    const sendPrompt = vi.fn(async (prompt: string, _images: unknown[], expectedSessionToken?: string) => {
+      // Mirrors AgentService.sendPrompt: the service initializes before the
+      // prompt turn compares the expected token.
+      if (!initialized) await initialize();
+      if (expectedSessionToken !== undefined && expectedSessionToken !== sessionToken) {
+        reportSessionChanged();
+        return;
+      }
+      delivered.push(prompt);
+    });
+    const view = Object.assign(Object.create(ChatView.prototype), {
+      app: {},
+      attachments: [],
+      activeNotePath: null,
+      activeNoteSuppressed: false,
+      activeNoteCache: new ActiveNoteContextCache(),
+      contextCache: new PromptContextCache(),
+      closed: false,
+      activeTabIndex: 0,
+      clearEmptyState: vi.fn(),
+      renderOutgoingUserMessage: vi.fn(),
+      showServiceError: vi.fn(),
+    }) as ChatViewHarness;
+    const service: FakeService = {
+      getMessages: vi.fn(() => []),
+      isPathIgnored: vi.fn(() => false),
+      supportsImages: vi.fn(() => false),
+      getSessionToken: () => sessionToken,
+      reportSessionChanged,
+      initialize,
+      sendPrompt,
+    };
+    view.tabs = [{ service }];
+
+    const send = view.sendPrompt("first prompt");
+    releaseInit();
+    await send;
+
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toContain("first prompt");
+    expect(reportSessionChanged).not.toHaveBeenCalled();
+  });
+
+  it("does not deliver steering prepared for a different session", async () => {
+    let sessionToken = "session-a";
+    let releaseBuild!: () => void;
+    const buildGate = new Promise<void>((resolve) => {
+      releaseBuild = resolve;
+    });
+    const redirectPrompt = vi.fn(async () => {});
+    const steerPrompt = vi.fn(async () => {});
+    const followUpPrompt = vi.fn(async () => {});
+    const reportSessionChanged = vi.fn();
+    const view = Object.assign(Object.create(ChatView.prototype), {
+      app: {},
+      attachments: [],
+      activeNotePath: null,
+      activeNoteSuppressed: false,
+      activeNoteCache: new ActiveNoteContextCache(),
+      contextCache: new PromptContextCache(),
+      closed: false,
+      activeTabIndex: 0,
+      clearEmptyState: vi.fn(),
+      showServiceError: vi.fn(),
+      statusEl: { setText: vi.fn() },
+      buildContextFor: async () => {
+        await buildGate;
+        sessionToken = "session-b";
+        return "";
+      },
+    }) as ChatViewHarness & {
+      sendSteeringPrompt: (text: string) => Promise<void>;
+      statusEl: { setText: ReturnType<typeof vi.fn> };
+    };
+    const service: FakeService = {
+      getMessages: vi.fn(() => []),
+      isPathIgnored: vi.fn(() => false),
+      supportsImages: vi.fn(() => false),
+      getSessionToken: () => sessionToken,
+      reportSessionChanged,
+      initialize: vi.fn(async () => {}),
+      steerPrompt,
+      followUpPrompt,
+      redirectPrompt,
+      sendPrompt: vi.fn(async () => {}),
+    };
+    view.tabs = [{ service }];
+
+    const send = view.sendSteeringPrompt("/redirect stale redirect");
+    releaseBuild();
+    await send;
+
+    expect(redirectPrompt).not.toHaveBeenCalled();
+    expect(steerPrompt).not.toHaveBeenCalled();
+    expect(followUpPrompt).not.toHaveBeenCalled();
+    expect(reportSessionChanged).toHaveBeenCalledTimes(1);
+  });
+
   it("does not touch active tab service after the view closes during send", async () => {
     const view = Object.assign(Object.create(ChatView.prototype), {
       app: {},
@@ -181,6 +339,9 @@ describe("ChatView async lifecycle", () => {
       getMessages: vi.fn(() => []),
       isPathIgnored: vi.fn(() => false),
       supportsImages: vi.fn(() => false),
+      getSessionToken: () => "session-a",
+      reportSessionChanged: vi.fn(),
+      initialize: vi.fn(async () => {}),
       sendPrompt: vi.fn(async () => {
         view.closed = true;
         view.tabs = [];
@@ -198,7 +359,13 @@ interface FakeService {
   isPathIgnored: (path: string) => boolean;
   supportsImages: () => boolean;
   getSessionSwapState?: () => string;
-  sendPrompt: (prompt: string, images: unknown[]) => Promise<void>;
+  getSessionToken?: () => string;
+  reportSessionChanged?: () => void;
+  initialize?: () => Promise<void>;
+  steerPrompt?: (prompt: string, images: unknown[], expectedSessionToken?: string) => Promise<void>;
+  followUpPrompt?: (prompt: string, images: unknown[], expectedSessionToken?: string) => Promise<void>;
+  redirectPrompt?: (prompt: string, images: unknown[], expectedSessionToken?: string) => Promise<void>;
+  sendPrompt: (prompt: string, images: unknown[], expectedSessionToken?: string) => Promise<void>;
 }
 
 interface ChatViewHarness {

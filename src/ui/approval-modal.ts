@@ -189,11 +189,11 @@ export class ApprovalModal extends Modal {
 
   private stopTurn(): void {
     if (this.decided) return;
-    // Settle first so pi records a terminating denial, then abort on the next
-    // task. Aborting earlier lets pi replace the denial with its non-terminating
-    // "Operation aborted" result and still run another turn.
+    // Settle first so pi records a terminating denial. Abort synchronously after
+    // settling: a 0ms timer leaves a window where sibling tool calls prepared in
+    // the same batch can still execute before the turn signal is aborted.
     this.settle({ approved: false, remember: false, reason: STOPPED_APPROVAL_REASON });
-    if (this.onStop) window.setTimeout(() => this.onStop?.(), 0);
+    this.onStop?.();
   }
 
   private settle(choice: UserApprovalChoice): void {

@@ -118,6 +118,9 @@ export interface AgentCompactionRuntimeOptionsForRun {
   force?: boolean;
   /** Optional user instructions to append to the summarization prompt. */
   customInstructions?: string;
+  /** Session captured with the messages; defaults to the session at run start. */
+  expectedPath?: string | null;
+  expectedGeneration?: number;
 }
 
 export type AgentCompactionSkipReason =
@@ -195,8 +198,12 @@ export class AgentCompactionRuntime {
     options: AgentCompactionRuntimeOptionsForRun,
   ): Promise<AgentCompactionRunResult> {
     // Summarization can take seconds and the user can switch sessions meanwhile.
-    const expectedPath = this.sessionManager.getActiveSessionPath();
-    const expectedGeneration = this.sessionManager.getActiveSessionGeneration();
+    // Callers that captured a session with their messages pass it in so a swap
+    // during their own pre-work cannot retarget this rewrite.
+    let expectedPath = options.expectedPath;
+    if (expectedPath === undefined) expectedPath = this.sessionManager.getActiveSessionPath();
+    let expectedGeneration = options.expectedGeneration;
+    expectedGeneration ??= this.sessionManager.getActiveSessionGeneration();
     const config = options.force
       ? { ...compactionConfig(this.getSettings()), enabled: true, thresholdFraction: 0 }
       : compactionConfig(this.getSettings());

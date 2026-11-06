@@ -4,7 +4,7 @@ import type { AssistantMessage, Model, TranscriptContext } from "@earendil-works
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
-import type { UserApprovalChoice } from "../src/agent/tool-call-controller";
+import { STOPPED_APPROVAL_REASON, type UserApprovalChoice } from "../src/agent/tool-call-controller";
 import type { AskUserHandler, AskUserRequest } from "../src/tools/ask-user-tool";
 import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
@@ -390,6 +390,20 @@ describe("AgentService", () => {
     expect(second.getMessages().some((message) => JSON.stringify(message).includes("first persisted prompt"))).toBe(true);
   });
 
+  it("does not send a prompt prepared against a different session token", async () => {
+    const controlled = controlledStreamFn(["late answer"]);
+    const { service } = makeService(controlled.streamFn);
+
+    await service.initialize();
+    const sessionToken = service.getSessionToken();
+    await service.newSession();
+    await service.sendPrompt("stale prompt", undefined, sessionToken);
+
+    expect(controlled.runs).toHaveLength(0);
+    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
+    expect(service.getMessages()).toEqual([]);
+  });
+
   it("refreshes resources and tool registration before each prompt", async () => {
     const seenTools: string[][] = [];
     const base = cannedStreamFn("ok");
@@ -595,6 +609,50 @@ describe("AgentService", () => {
     expect(resultText).toMatch(/declined/i);
     // The model received the denial and produced a follow-up turn.
     expect(messages.filter((message) => message.role === "assistant")).toHaveLength(2);
+  });
+
+  it("does not execute prepared sibling tool calls after the user stops a batch", async () => {
+    const streamFn = scriptedStreamFn([
+      {
+        content: [
+          { type: "toolCall", id: "call-1", name: "read", arguments: { path: "Other/first.md" } },
+          { type: "toolCall", id: "call-2", name: "read", arguments: { path: "Other/second.md" } },
+        ],
+        stopReason: "toolUse",
+      },
+      { content: [{ type: "text", text: "follow-up turn must not run" }], stopReason: "stop" },
+    ]);
+    const { app, vault } = vaultBackedApp();
+    await vault.createFolder("Other");
+    await vault.create("Other/first.md", "first file body");
+    await vault.create("Other/second.md", "second file body");
+    let confirmCalls = 0;
+    const { service, settings } = makeService(
+      streamFn,
+      async () => {
+        confirmCalls += 1;
+        if (confirmCalls === 1) return { approved: true, remember: false };
+        return { approved: false, remember: false, reason: STOPPED_APPROVAL_REASON };
+      },
+      app,
+    );
+    // Reads outside the granted working set are ask-gated and run in parallel.
+    settings.mode = "safe";
+    settings.approval = { mutating: "ask", perTool: {}, workingDirs: ["Notes"] };
+
+    await service.sendPrompt("read two files");
+
+    expect(confirmCalls).toBe(2);
+    const toolResults = service.getMessages().filter((message) => message.role === "toolResult");
+    // pi records aborted results for prepared calls instead of dropping them;
+    // neither sibling may carry a successful read payload.
+    expect(toolResults).toHaveLength(2);
+    for (const result of toolResults) {
+      expect(result).toMatchObject({ isError: true });
+      expect(JSON.stringify(result)).toContain("Operation aborted");
+      expect(JSON.stringify(result)).not.toContain("first file body");
+    }
+    expect(service.getMessages().filter((message) => message.role === "assistant")).toHaveLength(1);
   });
 
   it("blocks mutating tools in plan mode and feeds the read-only denial back to the model", async () => {
@@ -1217,6 +1275,136 @@ describe("AgentService", () => {
     expect(await adapter.read(secondPath)).toBe(secondBefore);
   });
 
+  it("does not write A into B when the session changes during the manual compaction audit", async () => {
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: cannedStreamFn("ok"),
+      summarize: async () => "Late manual summary.",
+    });
+
+    await service.sendPrompt("first request");
+    await service.sendPrompt("second request");
+    const firstPath = service.getSessionInfo()?.path as string;
+    await service.newSession();
+    const secondPath = service.getSessionInfo()?.path as string;
+    await service.loadSession(firstPath);
+    const secondBefore = parseSessionEntries(await adapter.read(secondPath)).filter(
+      (entry) => entry.type === "message",
+    );
+
+    const originalAppend = sessionManager.appendActionAuditEvent.bind(sessionManager);
+    let gated = false;
+    sessionManager.appendActionAuditEvent = async (event) => {
+      if (!gated && event.category === "compaction" && event.action === "start") {
+        gated = true;
+        started();
+        await gate;
+      }
+      return originalAppend(event);
+    };
+
+    const compaction = service.compactNow();
+    await startedPromise;
+    await service.loadSession(secondPath);
+    release();
+
+    await expect(compaction).resolves.toMatchObject({
+      compacted: false,
+      message: expect.stringMatching(/session changed/i),
+    });
+    expect(await adapter.read(secondPath)).not.toContain("Late manual summary");
+    expect(
+      parseSessionEntries(await adapter.read(secondPath)).filter((entry) => entry.type === "message"),
+    ).toEqual(secondBefore);
+    sessionManager.appendActionAuditEvent = originalAppend;
+  });
+
+  it("does not let manual compaction overwrite a transcript truncation", async () => {
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: cannedStreamFn("ok"),
+      summarize: async () => {
+        started();
+        await gate;
+        return "Summary that must not replace the truncation.";
+      },
+    });
+
+    await service.sendPrompt("first request");
+    await service.sendPrompt("second request");
+    const sessionPath = service.getSessionInfo()?.path as string;
+
+    const compaction = service.compactNow();
+    await startedPromise;
+    await service.truncateMessages(1);
+    release();
+
+    await expect(compaction).resolves.toMatchObject({
+      compacted: false,
+      message: expect.stringMatching(/session changed/i),
+    });
+    const entries = parseSessionEntries(await adapter.read(sessionPath));
+    const persisted = entries.filter((entry) => entry.type === "message").map((entry) => entry.message);
+    expect(persisted).toHaveLength(1);
+    expect(isSummaryMessage(persisted[0])).toBe(false);
+  });
+
+  it("refuses steering prepared for a different session token", async () => {
+    const controlled = controlledStreamFn(["answer"]);
+    const { service } = makeService(controlled.streamFn);
+
+    await service.initialize();
+    const sessionToken = service.getSessionToken();
+    await service.newSession();
+    await service.steerPrompt("stale steering", undefined, sessionToken);
+
+    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
+    expect(controlled.runs).toHaveLength(0);
+    expect(userTexts(service.getMessages())).toEqual([]);
+  });
+
+  it("refuses a redirect prepared for a different session token", async () => {
+    const controlled = controlledStreamFn(["answer"]);
+    const { service } = makeService(controlled.streamFn);
+
+    await service.initialize();
+    const sessionToken = service.getSessionToken();
+    await service.newSession();
+    await service.redirectPrompt("stale redirect", undefined, sessionToken);
+
+    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
+    expect(controlled.runs).toHaveLength(0);
+    expect(userTexts(service.getMessages())).toEqual([]);
+  });
+
   it("queues steering into an active run and persists transcript order", async () => {
     const controlled = controlledStreamFn(["first answer", "steered answer"]);
     const { service, adapter } = makeService(controlled.streamFn);
@@ -1274,6 +1462,83 @@ describe("AgentService", () => {
       "ignore that and answer the narrower question",
     ]);
     await expect(persistedMessageRoles(adapter, service)).resolves.toEqual(["user", "assistant", "user", "assistant"]);
+  });
+
+  it("delivers two immediate redirects in order without dropping the second", async () => {
+    const controlled = controlledStreamFn(["initial answer", "first redirect answer", "second redirect answer"]);
+    const { service } = makeService(controlled.streamFn);
+
+    const run = service.sendPrompt("initial request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "initial stream");
+
+    const firstRedirect = service.redirectPrompt("first redirected question");
+    const secondRedirect = service.redirectPrompt("second redirected question");
+
+    await waitFor(() => controlled.runs.length === 2, "first redirect continuation");
+    controlled.runs[1].finish();
+    await waitFor(() => controlled.runs.length === 3, "second redirect continuation");
+    controlled.runs[2].finish();
+    await Promise.all([run, firstRedirect, secondRedirect]);
+
+    expect(userTexts(service.getMessages())).toEqual([
+      "initial request",
+      "first redirected question",
+      "second redirected question",
+    ]);
+    expect(
+      userTexts(controlled.runs[1].context.messages).filter((text) => text === "first redirected question"),
+    ).toHaveLength(1);
+    expect(
+      userTexts(controlled.runs[2].context.messages).filter((text) => text === "second redirected question"),
+    ).toHaveLength(1);
+    expect(service.getError()).toBeUndefined();
+  });
+
+  it("drops a queued redirect when the session changes during its idle wait", async () => {
+    const controlled = controlledStreamFn(["initial answer"]);
+    // Any unexpected second run (the base bug) completes immediately so the
+    // assertion fails fast instead of timing out on a hanging stream.
+    const streamFn: StreamFn = ((model, context, options) => {
+      const stream = controlled.streamFn(model, context, options);
+      if (controlled.runs.length > 1) controlled.runs[controlled.runs.length - 1].finish();
+      return stream;
+    }) as StreamFn;
+    const { service } = makeService(streamFn);
+
+    const run = service.sendPrompt("initial request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "initial stream");
+    const sessionToken = service.getSessionToken();
+
+    const promptTurns = (
+      service as unknown as { promptTurns: { waitForIdle: () => Promise<void> } }
+    ).promptTurns;
+    const originalWaitForIdle = promptTurns.waitForIdle.bind(promptTurns);
+    let releaseWait!: () => void;
+    let markEntered!: () => void;
+    const enteredWait = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const waitGate = new Promise<void>((resolve) => {
+      releaseWait = resolve;
+    });
+    promptTurns.waitForIdle = async () => {
+      markEntered();
+      await waitGate;
+    };
+
+    const redirect = service.redirectPrompt("redirect from the old session", undefined, sessionToken);
+    controlled.runs[0].finish();
+    await enteredWait;
+    // Swap sessions while the redirect worker is parked before start.
+    await service.newSession();
+    releaseWait();
+
+    await Promise.all([run, redirect]);
+
+    expect(controlled.runs).toHaveLength(1);
+    expect(userTexts(service.getMessages())).toEqual([]);
+    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
+    promptTurns.waitForIdle = originalWaitForIdle;
   });
 
   it("delivers a redirect exactly once when the next turn compacts the transcript", async () => {
