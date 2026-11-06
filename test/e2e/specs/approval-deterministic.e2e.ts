@@ -1,5 +1,5 @@
 import { browser, expect, $ } from "@wdio/globals";
-import { after, before, describe, it } from "mocha";
+import { after, afterEach, before, beforeEach, describe, it } from "mocha";
 
 const WRITE_NOTE_PATH = "E2E-Deterministic-Write.md";
 const WRITE_NOTE_BODY = "deterministic write ok";
@@ -21,6 +21,7 @@ type ScriptedTurn = {
   content: Array<Record<string, unknown>>;
   stopReason?: "stop" | "length" | "toolUse";
   delayMs?: number;
+  hold?: boolean;
 };
 
 async function openChat(): Promise<void> {
@@ -62,11 +63,20 @@ async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
       __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
       __AGENTIC_CHAT_E2E_CALLS__?: number;
       __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
+      __AGENTIC_CHAT_E2E_RELEASE__?: boolean;
     };
     target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
     target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
     target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
+    target.__AGENTIC_CHAT_E2E_RELEASE__ = false;
   }, turns);
+}
+
+async function setE2ERelease(release: boolean): Promise<void> {
+  await browser.execute((value) => {
+    const target = window as typeof window & { __AGENTIC_CHAT_E2E_RELEASE__?: boolean };
+    target.__AGENTIC_CHAT_E2E_RELEASE__ = value;
+  }, release);
 }
 
 async function configurePlugin(): Promise<boolean> {
@@ -247,7 +257,7 @@ describe("agentic-chat deterministic approvals", function () {
         content: "should not be written either",
       }),
       textTurn("remember deny second final", "Still denied without asking."),
-      textTurn("queue first delayed", "Initial queued answer.", { delayMs: 1_500 }),
+      textTurn("queue first delayed", "Initial queued answer.", { hold: true }),
       textTurn("queue final", "Queued answer used the edited draft."),
       textTurn("steering first delayed", "Initial steering answer.", { delayMs: 1_500 }),
       textTurn("steering final", "Steered answer used the added constraint."),
@@ -263,6 +273,18 @@ describe("agentic-chat deterministic approvals", function () {
     const configured = await configurePlugin();
     if (!configured) throw new Error("agentic-chat plugin not found in the test vault");
     await openChat();
+  });
+
+  beforeEach(async function () {
+    await setE2ERelease(false);
+  });
+
+  afterEach(async function () {
+    // Unblock a held turn even when the test fails before its edit step.
+    await setE2ERelease(true);
+    await browser
+      .waitUntil(async () => !(await $(".agentic-chat-stop").isDisplayed()), { timeout: 5_000 })
+      .catch(() => {});
   });
 
   it("asks before a scripted write and undo removes the created note", async function () {
@@ -424,6 +446,11 @@ describe("agentic-chat deterministic approvals", function () {
     );
     const input = await $(".agentic-chat-input");
     await input.setValue("queued draft after edit");
+    expect(await input.getValue()).toBe("queued draft after edit");
+    await browser.execute(() => {
+      const target = window as typeof window & { __AGENTIC_CHAT_E2E_RELEASE__?: boolean };
+      target.__AGENTIC_CHAT_E2E_RELEASE__ = true;
+    });
 
     await browser.waitUntil(
       async () => (await $(".agentic-chat-messages").getText()).includes("Queued answer used the edited draft."),
@@ -551,16 +578,19 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   after(async function () {
+    await setE2ERelease(true);
     await cleanupNotes();
     await browser.execute(() => {
       const target = window as typeof window & {
         __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
         __AGENTIC_CHAT_E2E_CALLS__?: number;
         __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
+        __AGENTIC_CHAT_E2E_RELEASE__?: boolean;
       };
       delete target.__AGENTIC_CHAT_E2E_TURNS__;
       delete target.__AGENTIC_CHAT_E2E_CALLS__;
       delete target.__AGENTIC_CHAT_E2E_CALL_LOG__;
+      delete target.__AGENTIC_CHAT_E2E_RELEASE__;
     });
   });
 });

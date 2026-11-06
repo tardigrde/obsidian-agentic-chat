@@ -11,6 +11,8 @@ export interface E2EStreamTarget {
   __AGENTIC_CHAT_E2E_TURNS__?: E2EStreamTurn[];
   __AGENTIC_CHAT_E2E_CALLS__?: number;
   __AGENTIC_CHAT_E2E_CALL_LOG__?: ReplayStreamCall[];
+  /** Set true to finish a scripted `hold` turn. */
+  __AGENTIC_CHAT_E2E_RELEASE__?: boolean;
 }
 
 export interface E2EStreamOptions {
@@ -46,6 +48,11 @@ export function createWindowE2EStreamFn(options: E2EStreamOptions): StreamFn | u
     onCall: (call) => {
       target.__AGENTIC_CHAT_E2E_CALLS__ = call.index + 1;
       target.__AGENTIC_CHAT_E2E_CALL_LOG__?.push(call);
+    },
+    waitForRelease: async () => {
+      while (!target.__AGENTIC_CHAT_E2E_RELEASE__) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+      }
     },
   });
   return controller.streamFn;
