@@ -61,7 +61,7 @@ await $(".agentic-chat-session-list").waitForExist();
 | Failed swap restores the previous session or recovers on next send | `src/agent/session-actions.ts:273` | `test/session-actions.test.ts:242`; `test/session-actions.test.ts:267` | `partial` |
 | A queued prompt is dropped on session change | `src/ui/session-activation-coordinator.ts:86`; `src/ui/chat-view.ts:1860` | `test/chat-view-lifecycle.test.ts:7`; `test/chat-view-lifecycle.test.ts:118` | `partial` |
 | A queued prompt flushes once the swap is live | `src/ui/chat-view.ts:1345` | `test/chat-view-lifecycle.test.ts:63` | `partial` |
-| Compaction rewrite rejects a changed session | `src/agent/compaction-runtime.ts:192` | `test/compaction-runtime.test.ts:315`; `test/session-invariants.test.ts:129` | `partial` |
+| Compaction rewrite rejects a changed session | `src/agent/compaction-runtime.ts:249` | `test/compaction-runtime.test.ts:354`; `test/session-invariants.test.ts:129` | `partial` |
 | A slow append stays in its original session file | `src/session/session-manager.ts:265` | `test/session-invariants.test.ts:91` | `partial` |
 | Do not open one session in two tabs | `src/ui/chat-view.ts:2336` | no committed check | `NONE` |
 | History modal at phone width | `src/ui/session-list-modal.ts:43` | `test/e2e/specs/mobile-viewport.e2e.ts:444` | `covered` |
