@@ -48,7 +48,7 @@ await closeAgenticChatSettings();
 |---|---|---|---|
 | Settings tab opens | `src/main.ts:107` | `test/e2e/specs/settings-ui.e2e.ts:180` (opened by the helper via `app.setting`, not the nav) | `partial` |
 | Tabs render and switch | `src/settings.ts:223` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |
-| Models: provider, API key, base URL, model | `src/settings.ts:379` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |
+| Models: provider, API key, base URL, model | `src/settings.ts:384` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |
 | Secrets stay out of `data.json` | `src/settings.ts:1992` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |
 | OpenRouter privacy toggles | `src/settings.ts:471` | no committed check | `NONE` |
 | Ollama server URL and model | `src/settings.ts:503` | no committed check | `NONE` |

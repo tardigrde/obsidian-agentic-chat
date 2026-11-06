@@ -52,12 +52,12 @@ await (await modal.$("button=Allow")).click();
 | Diff preview before an edit | `src/ui/approval-modal.ts:52` | `test/e2e/specs/approval-deterministic.e2e.ts:279` | `covered` |
 | Remember a deny for this tool | `src/ui/approval-modal.ts:79` | `test/e2e/specs/approval-deterministic.e2e.ts:387` | `covered` |
 | Skill tools cannot be remembered | `src/ui/approval-modal.ts:68` | `test/approval-memory.test.ts:35` (policy only) | `partial` |
-| Global mutating gate persists | `src/settings.ts:748` | `test/e2e/specs/settings-ui.e2e.ts:221` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
-| Per-tool override through settings | `src/settings.ts:766` | `test/e2e/specs/settings-ui.e2e.ts:221` | `covered` |
-| Per-tool deny flips to allow in a recorded run | `src/settings.ts:766` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
+| Global mutating gate persists | `src/settings.ts:752` | `test/e2e/specs/settings-ui.e2e.ts:221` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
+| Per-tool override through settings | `src/settings.ts:784` | `test/e2e/specs/settings-ui.e2e.ts:221` | `covered` |
+| Per-tool deny flips to allow in a recorded run | `src/settings.ts:784` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
 | Working dir auto-runs inside and asks outside | `src/agent/tool-call-controller.ts:228` | `test/e2e/specs/approval-deterministic.e2e.ts:345` | `covered` |
 | Working directories settings row | `src/settings.ts:795` | no committed check | `NONE` |
-| Safe/YOLO toggle | `src/ui/chat-view.ts:787` | no committed check | `NONE` |
+| Safe/YOLO toggle | `src/ui/chat-view.ts:806` | no committed check | `NONE` |
 | `/config` mode picker | `src/ui/chat-view.ts:2178` | no committed check | `NONE` |
 | `/plan` enters sticky plan mode | `src/ui/chat-view.ts:1038` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
 | Plan badge exits plan mode | `src/ui/chat-view.ts:812` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |

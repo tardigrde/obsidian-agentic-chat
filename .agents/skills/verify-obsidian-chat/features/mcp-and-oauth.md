@@ -52,7 +52,7 @@ await clickMcpAddButton("Add MCP server");
 | MCP-only proxy override | `src/settings.ts:983` | no committed check | `NONE` |
 | Server enable toggle | `src/settings.ts:1237` | no committed check | `NONE` |
 | Server approval policy | `src/settings.ts:1373` | `test/e2e/specs/settings-ui.e2e.ts:268` | `covered` |
-| Static header auth | `src/settings.ts:1542` | `test/e2e/specs/settings-ui.e2e.ts:268` | `covered` |
+| Static header auth | `src/settings.ts:1504` | `test/e2e/specs/settings-ui.e2e.ts:268` | `covered` |
 | Bearer token auth | `src/settings.ts:1519` | no committed check | `NONE` |
 | OAuth settings panel | `src/settings.ts:1576` | no committed check | `NONE` |
 | OAuth required banner | `src/settings.ts:1266` | `test/e2e/specs/composio-install.e2e.ts:181` (banner and button only) | `partial` |

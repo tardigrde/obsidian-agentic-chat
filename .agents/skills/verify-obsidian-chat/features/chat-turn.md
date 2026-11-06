@@ -51,14 +51,14 @@ await browser.waitUntil(async () =>
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Send a prompt and render a reply | `src/ui/chat-view.ts:1280` | `test/e2e/specs/approval-deterministic.e2e.ts:261` | `covered` |
+| Send a prompt and render a reply | `src/ui/chat-view.ts:1533` | `test/e2e/specs/approval-deterministic.e2e.ts:261` | `covered` |
 | Stream text deltas | `src/ui/chat-view.ts:2708` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
 | Reasoning section | `src/ui/chat-view.ts:2712` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
 | Markdown rendering | `src/ui/chat-view.ts:2723` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
 | Tool step cards and diffs | `src/ui/chat-view.ts:2681` | `test/e2e/specs/approval-deterministic.e2e.ts:279` | `covered` |
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:397` | no committed check | `NONE` |
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts:827` | `test/e2e/specs/skill-chip.e2e.ts:48` (click only) | `partial` |
-| Stop clears queued steering and follow-ups | `src/agent/agent-service.ts:657` | `test/agent-service.test.ts:1210` | `partial` |
+| Stop clears queued steering and follow-ups | `src/agent/agent-service.ts:711` | `test/agent-service.test.ts:1671` | `partial` |
 | `/compact` skips when the session changed | `src/agent/agent-service.ts:562` | `test/agent-service.test.ts:1030` | `partial` |
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
 | Queue a plain message | `src/ui/chat-view.ts:1329` | `test/e2e/specs/approval-deterministic.e2e.ts:406` | `covered` |
