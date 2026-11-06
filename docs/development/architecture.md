@@ -1,6 +1,7 @@
 # Architecture: one owner per state
 
-Status: design input for PRs 9-12. Update this file when ownership moves.
+Status: plan items 9-12 are merged as GitHub PRs #229-#232. Update this file
+when ownership moves; the remaining gaps are listed below.
 
 This file names the single owner for each mutable state, the invariant that owner
 must keep, and the failure mode that exists while the state is split. A green
@@ -66,9 +67,12 @@ Gaps:
 - The composer's queued-prompt reset lives in `SessionActivationCoordinator`, not
   in the session runtime that owns the swap.
 
-Target: PR 9. One runtime owns path, generation, agent, swap queue, and the
-queued-prompt reset. Duplicate path and epoch checks are removed only after the
-owner covers every caller.
+Fixed by #229: a failed resource reload no longer invalidates the token before
+the swap commits.
+
+Next: one runtime owns path, generation, agent, swap queue, and the queued-prompt
+reset. Duplicate path and epoch checks are removed only after the owner covers
+every caller.
 
 ## Turn
 
@@ -96,8 +100,7 @@ Gaps:
 - `compactionRecoveryError` is a service field, not tied to a session.
 - Two-tab Stop has no e2e that proves only the active tab aborts.
 
-Target: PR 10. One runtime owns stop, redirect, steer, follow-up, and turn
-recovery.
+Next: one runtime owns stop, redirect, steer, follow-up, and turn recovery.
 
 ## Compaction
 
@@ -113,17 +116,17 @@ Invariants:
 - A failed compaction never loses the pending prompt.
 - One compaction pass runs at a time.
 
+Fixed by #230: a forced/manual caller no longer joins an automatic pass. It
+returns `busy` instead of silently dropping its instructions.
+
 Gaps:
 
-- A second caller joins `inFlight` and its custom instructions are ignored. A
-  manual `/compact <instructions>` can silently run the auto-compaction pass.
 - `compactNow` records the audit `start` before it checks the session token. A
   swap during that write can put the start event in a different session.
 - `recoverCompactedSession` replaces the agent outside the swap queue.
-- The joined caller cannot tell which transcript the in-flight pass compacted.
 
-Target: PR 10. Compaction becomes a phase of the turn runtime, with one owner
-for the pass, the audit pair, and recovery.
+Next: compaction becomes a phase of the turn runtime, with one owner for the
+pass, the audit pair, and recovery.
 
 ## Approval
 
@@ -148,8 +151,8 @@ Gaps:
 - `ToolApprovalRequest` carries a display label, not a session token. A modal can
   outlive the session it belongs to.
 
-Target: PR 10. Approval returns an explicit outcome (`allow`, `deny`, `stop`)
-and carries the turn and session token.
+Next: approval returns an explicit outcome (`allow`, `deny`, `stop`) and carries
+the turn and session token.
 
 ## MCP connection and auth
 
@@ -171,13 +174,17 @@ Invariants:
 - No dedupe by object identity. Plugin MCP servers are cloned on each runtime
   load.
 
-Gaps:
+Fixed by #231: plugin server clones write refreshed tokens, known tools, and the
+pending OAuth challenge back to `settings.plugins.mcpState`. A moved `mcp.json`
+URL clears the old auth before the next load, and the settings probe callbacks
+sync the changed server before saving.
 
-- Auth state is mutable on settings objects that can be cloned per runtime load.
+Gap:
+
 - The OAuth callback receiver lifecycle is separate from the settings owner.
 
-Target: PR 11. Keep the per-request client. Make the stable server id the single
-owner for token refresh and callback lifecycle. Add a witness for clone races.
+Next: keep the per-request client. Make the stable server id the single owner for
+token refresh and callback lifecycle.
 
 ## Semantic index writer
 
@@ -195,17 +202,17 @@ Invariants:
 - A read serves the last complete index when the target is missing or corrupt.
 - A stale `running` status is reported as failed, not as a live run.
 
+Fixed by #232: closing the view aborts its index run.
+
 Gaps:
 
 - The lease registry is in memory and per window. Two Obsidian windows do not
   share it.
-- Closing the view does not abort the run; the controller belongs to the view.
 - The lease is acquired by the UI controller, not by the writer itself.
 - The plugin folder can hold `index.json`, `index.json.bak`, and
   `index.json.tmp` at the same time.
 
-Target: PR 12. Durable writer ownership, a cross-window lease, and close-view
-cancellation.
+Next: durable writer ownership and a cross-window lease.
 
 ## Plugin install
 
@@ -222,15 +229,17 @@ Invariants:
 - A target with a readable manifest owns its name; the backup is then removable.
 - A failed rename restores the backup.
 
+Fixed by #232: `PluginService.reload` is single-flight, so concurrent reloads
+share one import sweep and one load. A rejected reload clears the in-flight
+promise for the next call.
+
 Gaps:
 
-- `PluginService.reload` can run more than once at a time, so
-  `sweepImportStages` is not single-flight.
 - A sweep and an install can race on the same stage or backup name.
 - Settings prune runs after the sweep and depends on the retained-backup flag.
 
-Target: PR 12. One install transaction owner, with a single-flight sweep and a
-defined order between sweep, install, and settings prune.
+Next: one install transaction owner, with a defined order between sweep, install,
+and settings prune.
 
 ## Unowned today
 
@@ -239,27 +248,26 @@ writer.
 
 | Item | Risk | Target |
 |---|---|---|
-| Cross-window semantic lease | Two windows write the same index | PR 12 |
-| Close-view cancellation | An index run outlives its view | PR 12 |
-| Approval stop reason | A deny with the stop text stops the turn | PR 10 |
-| Compaction join instructions | A manual `/compact` silently loses its instructions | PR 10 |
-| Compaction audit start after swap | Audit entries land in the wrong session | PR 10 |
-| Compaction recovery outside swap queue | Recovery can overwrite a newer session | PR 10 |
-| Concurrent plugin sweeps | Two sweeps move the same backup | PR 12 |
-| Two-tab Stop e2e | Only unit proof exists for per-tab stop | PR 9 |
+| Cross-window semantic lease | Two windows write the same index | Needs a lease design |
+| Semantic lease acquired by the UI | A writer can start without the lease owner | Move into the writer |
+| Approval stop reason | A deny with the stop text stops the turn | Unowned follow-up |
+| Compaction audit start after swap | Audit entries land in the wrong session | Unowned follow-up |
+| Compaction recovery outside swap queue | Recovery can overwrite a newer session | Unowned follow-up |
+| Plugin sweep vs install race | A sweep and an install move the same stage | Unowned follow-up |
+| Two-tab Stop e2e | Only unit proof exists for per-tab stop | Unowned follow-up |
 
 ## Order and reason
 
-| PR | Scope | Depends on |
-|---|---|---|
-| 9 | Session ownership | none |
-| 10 | Turn and compaction ownership | PR 9 (session token) |
-| 11 | MCP ownership | none |
-| 12 | Semantic and plugin ownership | none |
+| Plan | GitHub PR | Scope | Status |
+|---|---|---|---|
+| 9 | #229 | Session token stability | merged |
+| 10 | #230 | Manual compaction reports busy | merged |
+| 11 | #231 | Plugin MCP auth persistence | merged |
+| 12 | #232 | Close-view cancellation and single-flight reload | merged |
 
-PR 9 comes first because the session token is the base for turn, compaction, and
-approval ownership. PR 10 depends on a single token. PR 11 and PR 12 are
-independent, but they follow the same rule: move the writer into the owner.
+The plan order put the session token first because turn, compaction, and approval
+ownership depend on it. The remaining gaps above do not have a scheduled PR. Do
+not add a new checker for them; move the writer into the owner first.
 
 ## Rules for the structural PRs
 

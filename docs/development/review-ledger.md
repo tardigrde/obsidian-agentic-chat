@@ -11,14 +11,18 @@ Status values: `open`, `fixed`, `deferred`, `rejected`.
 | Area | Finding | Status | Resolution or target |
 |---|---|---|---|
 | Semantic | In-place `index.json` write can truncate the last complete index | `fixed` | #227 writes through `.tmp`, keeps `.bak`, and serves the backup on read |
-| Semantic | Cross-window lease is in-memory; separate windows are not covered | `deferred` | PR 12, semantic and plugin ownership |
-| Semantic | Closing the view orphans a running index | `deferred` | PR 12, semantic and plugin ownership |
-| Compaction | Manual `/compact` audit `start` can land in a new session during a swap | `deferred` | PR 10, turn and compaction ownership |
-| Compaction | `/compact` instructions are ignored when it joins an auto run | `deferred` | PR 10, turn and compaction ownership |
-| Compaction | Recovery loads outside the swap queue | `deferred` | PR 10, turn and compaction ownership |
-| Approval | A deny reason equal to `STOPPED_APPROVAL_REASON` triggers the stop path | `deferred` | PR 10, turn and compaction ownership |
-| Plugins | Concurrent install sweeps are not single-flight | `deferred` | PR 12, semantic and plugin ownership |
-| Tests | Two-tab Stop aborting only the active tab has no e2e | `deferred` | PR 9, session ownership |
+| Semantic | Cross-window lease is in-memory; separate windows are not covered | `deferred` | Needs a lease design; unowned |
+| Semantic | Closing the view orphans a running index | `fixed` | #232 disposes the controller in `ChatView.onClose` |
+| Compaction | Manual `/compact` audit `start` can land in a new session during a swap | `deferred` | Unowned follow-up |
+| Compaction | `/compact` instructions are ignored when it joins an auto run | `fixed` | #230 returns `busy` instead of joining with different instructions |
+| Compaction | Recovery loads outside the swap queue | `deferred` | Unowned follow-up |
+| Approval | A deny reason equal to `STOPPED_APPROVAL_REASON` triggers the stop path | `deferred` | Unowned follow-up |
+| Plugins | Concurrent install sweeps are not single-flight | `fixed` | #232 shares one in-flight reload |
+| Tests | Two-tab Stop aborting only the active tab has no e2e | `deferred` | Unowned follow-up |
+| Session | A failed resource reload invalidated the token while the old session stayed live | `fixed` | #229 commits the token change only after the reload |
+| MCP | A plugin clone's refreshed tokens and challenge never reached `mcpState` | `fixed` | #231 writes the clone back before save |
+| MCP | A moved `mcp.json` URL replayed tokens and a challenge minted for the old host | `fixed` | #231 clears them in `resolveMcpServers` and reconcile |
+| MCP | A "Test connection" challenge was lost for plugin servers | `fixed` | #231 syncs the changed server before save |
 | Tests | Approval e2e could leave `.agentic-chat-approval` open and cascade ten click failures | `fixed` | #224 dismisses it in `afterEach`; `beforeEach` asserts closed |
 | Release | semantic-release could not push its version bump to protected `main` | `fixed` | Ruleset plus repo-scoped deploy key; #223 wires the workflow |
 | Feature map | Unit-only tests were marked `covered` | `fixed` | #221 requires e2e, probe, or replay proof |
