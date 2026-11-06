@@ -162,10 +162,11 @@ export function witnessDecision({ body, labels = [], root = process.cwd(), chang
 function changedFiles(base, cwd) {
   // -z and --no-renames keep non-ASCII names unquoted and show a move out of
   // src/ as a deletion plus an addition.
-  const result = spawnSync("git", ["diff", "--name-only", "-z", "--no-renames", `${base}...HEAD`], {
-    cwd,
-    encoding: "buffer",
-  }); // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
+  const result = spawnSync( // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
+    "git",
+    ["diff", "--name-only", "-z", "--no-renames", `${base}...HEAD`],
+    { cwd, encoding: "buffer" },
+  );
   if (result.status !== 0) return null;
   return result.stdout
     .toString("utf8")
