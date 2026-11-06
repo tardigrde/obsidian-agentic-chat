@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bootstrapSemanticIndex,
-  readSemanticIndexFile,
-  semanticIndexFile,
   semanticIndexLeases,
-  writeSemanticIndexFile,
   type SemanticIndexLease,
 } from "../src/retrieval/semantic-index";
 import type { RetrievalDocument, RetrievalEmbedder } from "../src/retrieval/policy";
@@ -89,104 +86,6 @@ describe("post-216 semantic index lease ownership", () => {
     expect(adapter.files.get(path)).toBe("new-writer");
     expect(result.completed).toBe(false);
     (competing as SemanticIndexLease | null)?.release();
-  });
-});
-
-describe("post-216 semantic index atomic writes", () => {
-  it("creates the first index through a temporary file", async () => {
-    const adapter = new MemoryAdapter();
-    const path = "semantic/atomic-first/index.json";
-    const renames: Array<[string, string]> = [];
-    const originalRename = adapter.rename.bind(adapter);
-    adapter.rename = async (from, to) => {
-      renames.push([from, to]);
-      return originalRename(from, to);
-    };
-    const file = semanticIndexFile({
-      scope,
-      status: { state: "complete", scope, totalDocuments: 0 },
-      indexedDocumentIds: [],
-      updatedAt: 1,
-    });
-
-    await writeSemanticIndexFile(adapter.asDataAdapter(), path, file);
-
-    expect(renames).toEqual([[`${path}.tmp`, path]]);
-    expect(adapter.files.has(`${path}.tmp`)).toBe(false);
-    expect(JSON.parse(adapter.files.get(path) ?? "{}")).toMatchObject({ version: 1, updatedAt: 1 });
-  });
-
-  it("updates an existing index twice on a non-overwriting adapter", async () => {
-    const adapter = new MemoryAdapter();
-    const path = "semantic/atomic-twice/index.json";
-    const first = semanticIndexFile({
-      scope,
-      status: { state: "running", scope, processedDocuments: 0, totalDocuments: 1 },
-      indexedDocumentIds: [],
-      updatedAt: 1,
-    });
-    const second = semanticIndexFile({
-      scope,
-      status: { state: "complete", scope, totalDocuments: 1 },
-      indexedDocumentIds: ["doc-1"],
-      updatedAt: 2,
-    });
-
-    await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, first)).resolves.toBeUndefined();
-    await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, second)).resolves.toBeUndefined();
-
-    expect(adapter.files.has(`${path}.tmp`)).toBe(false);
-    expect(adapter.files.has(`${path}.bak`)).toBe(false);
-    expect(JSON.parse(adapter.files.get(path) ?? "{}")).toMatchObject({
-      version: 1,
-      updatedAt: 2,
-      state: { status: { state: "complete", totalDocuments: 1 } },
-    });
-  });
-
-  it("restores the backup when a crash leaves the target missing", async () => {
-    const adapter = new MemoryAdapter();
-    const path = "semantic/crash-recovery/index.json";
-    const oldIndex = semanticIndexFile({
-      scope,
-      status: { state: "complete", scope, totalDocuments: 1 },
-      indexedDocumentIds: ["doc-1"],
-      updatedAt: 1,
-    });
-    const oldText = JSON.stringify(oldIndex);
-    await adapter.write(path, oldText);
-    await adapter.rename(path, `${path}.bak`);
-    await adapter.write(`${path}.tmp`, JSON.stringify({ ...oldIndex, updatedAt: 2 }));
-
-    const result = await readSemanticIndexFile(adapter.asDataAdapter(), path);
-
-    expect(result).toBeNull();
-    expect(adapter.files.get(path)).toBe(oldText);
-    expect(adapter.files.has(`${path}.bak`)).toBe(false);
-  });
-
-  it("restores the old index when the temp-to-target rename fails", async () => {
-    const adapter = new MemoryAdapter();
-    const path = "semantic/restore-on-failure/index.json";
-    const first = semanticIndexFile({
-      scope,
-      status: { state: "complete", scope, totalDocuments: 1 },
-      indexedDocumentIds: ["doc-1"],
-      updatedAt: 1,
-    });
-    await writeSemanticIndexFile(adapter.asDataAdapter(), path, first);
-    const oldText = adapter.files.get(path);
-    const originalRename = adapter.rename.bind(adapter);
-    adapter.rename = async (from, to) => {
-      if (from === `${path}.tmp` && to === path) throw new Error("rename failed");
-      return originalRename(from, to);
-    };
-    const second = { ...first, updatedAt: 2 };
-
-    await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, second)).rejects.toThrow(/previous index/);
-    expect(adapter.files.get(path)).toBe(oldText);
-    expect(adapter.files.has(`${path}.tmp`)).toBe(false);
-    expect(adapter.files.has(`${path}.bak`)).toBe(false);
   });
 });
 

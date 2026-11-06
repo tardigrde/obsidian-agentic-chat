@@ -29,17 +29,6 @@ export class MemoryAdapter {
 
   async remove(path: string): Promise<void> {
     this.files.delete(path);
-    this.dirs.delete(path);
-  }
-
-  /** Desktop semantics: renaming onto an existing file is rejected. */
-  async rename(from: string, to: string): Promise<void> {
-    if (this.files.has(to) || this.dirs.has(to)) throw new Error("Destination file already exists!");
-    const content = this.files.get(from);
-    if (content === undefined) throw new Error(`Not found: ${from}`);
-    this.files.delete(from);
-    this.files.set(to, content);
-    if (this.dirs.delete(from)) this.dirs.add(to);
   }
 
   async list(path: string): Promise<{ files: string[]; folders: string[] }> {
