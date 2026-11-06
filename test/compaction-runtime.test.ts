@@ -245,6 +245,45 @@ describe("AgentCompactionRuntime", () => {
     expect(received).toBe("preserve the roadmap decisions");
   });
 
+  it("returns busy instead of silently dropping manual instructions", async () => {
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    const { runtime } = await setup({
+      summarize: async (_messages, _signal, customInstructions) => {
+        calls += 1;
+        started();
+        await gate;
+        return customInstructions ? "Manual summary." : "Auto summary.";
+      },
+    });
+
+    const auto = runtime.compactWithResult(largeTranscript(), 1_000);
+    await startedPromise;
+    const manual = runtime.compactWithResult(largeTranscript(), 1_000, {
+      force: true,
+      customInstructions: "preserve the roadmap decisions",
+    });
+    // Release before awaiting the manual call. On the parent it joins the auto
+    // run, so awaiting first would deadlock instead of failing the assertion.
+    release();
+    const manualResult = await manual;
+
+    expect(manualResult).toMatchObject({
+      status: "skipped",
+      reason: "busy",
+      message: expect.stringContaining("already running"),
+    });
+    expect(calls).toBe(1);
+    await expect(auto).resolves.toMatchObject({ status: "compacted" });
+  });
+
   it("summarizes model chunks through the configured stream function", async () => {
     let seenContext: TranscriptContext | undefined;
     let seenOptions: SimpleStreamOptions | undefined;
@@ -341,7 +380,7 @@ describe("AgentCompactionRuntime", () => {
     expect(adapter.files.get(second.path)).toBe(secondBefore);
   });
 
-  it("coalesces concurrent compactions into one summarize and one rewrite", async () => {
+  it("coalesces concurrent automatic compactions into one rewrite", async () => {
     let summarizeCalls = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -356,12 +395,14 @@ describe("AgentCompactionRuntime", () => {
     });
     const rewrite = vi.spyOn(manager, "rewriteMessages");
 
-    const first = runtime.compactWithResult(largeTranscript(), 100_000, { force: true });
-    const second = runtime.compactWithResult(largeTranscript(), 100_000, { force: true });
+    const first = runtime.compactWithResult(largeTranscript(), 1_000);
+    const second = runtime.compactWithResult(largeTranscript(), 1_000);
     release();
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
-    expect(summarizeCalls).toBe(1);
+    // One pass can make several chunked summarize calls; one rewrite proves
+    // the second caller joined instead of starting a second pass.
+    expect(summarizeCalls).toBeGreaterThan(0);
     expect(rewrite).toHaveBeenCalledTimes(1);
     expect(firstResult.status).toBe("compacted");
     expect(secondResult).toEqual(firstResult);
