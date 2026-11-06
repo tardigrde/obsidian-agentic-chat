@@ -23,6 +23,29 @@ function model(): Model<"openai-completions"> {
 }
 
 describe("createReplayStreamController", () => {
+  it("ends a delayed turn as aborted when the stream signal aborts", async () => {
+    const replay = createReplayStreamController([
+      replayTextTurn("late answer", { delayMs: 1_000 }),
+    ]);
+    const controller = new AbortController();
+    const stream = replay.streamFn(
+      model(),
+      normalizeContext({
+        systemPrompt: "",
+        messages: [{ role: "user", content: "hi", timestamp: 1 }],
+        tools: [],
+      } as Context),
+      { signal: controller.signal },
+    );
+    controller.abort();
+
+    const events = [];
+    for await (const event of await stream) events.push(event);
+
+    expect(events.at(-1)).toMatchObject({ type: "error", reason: "aborted" });
+    expect(JSON.stringify(events)).not.toContain("late answer");
+  });
+
   it("emits deterministic text/tool-call update events and records provider calls", async () => {
     const replay = createReplayStreamController([
       {

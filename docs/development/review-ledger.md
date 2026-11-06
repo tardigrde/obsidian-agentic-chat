@@ -20,7 +20,7 @@ Status values: `open`, `fixed`, `deferred`, `rejected`.
 | Approval | `stopRequested` and the approval request are not tied to a turn or session token | `deferred` | Unowned follow-up |
 | Plugins | Concurrent install sweeps are not single-flight | `fixed` | #232 shares one in-flight reload |
 | Plugins | A sweep and an install can race on the same stage or backup | `fixed` | #236 serializes both with one maintenance lock |
-| Tests | Two-tab Stop aborting only the active tab has no e2e | `deferred` | Unowned follow-up |
+| Tests | Two-tab Stop aborting only the active tab has no e2e | `fixed` | #239 adds a two-tab Stop e2e |
 | Session | A failed resource reload invalidated the token while the old session stayed live | `fixed` | #229 commits the token change only after the reload |
 | MCP | A plugin clone's refreshed tokens and challenge never reached `mcpState` | `fixed` | #231 writes the clone back before save |
 | MCP | A moved `mcp.json` URL replayed tokens and a challenge minted for the old host | `fixed` | #231 clears them in `resolveMcpServers` and reconcile |
