@@ -860,8 +860,12 @@ export class AgentService {
         this.sessionState.clearError();
         this.loopGuard.reset();
         // Never route a redirect through sendPrompt: that path can compact and
-        // replace the agent, which would drop the redirected message.
-        await this.runPrompt((currentAgent) => currentAgent.prompt(createUserMessage(entry.text, entry.images)));
+        // replace the agent, which would drop the redirected message. The entry
+        // token is passed again because either idle wait above can outlive a swap.
+        await this.runPrompt(
+          (currentAgent) => currentAgent.prompt(createUserMessage(entry.text, entry.images)),
+          entry.expectedSessionToken,
+        );
       } catch (error) {
         this.sessionState.setError(error);
       } finally {

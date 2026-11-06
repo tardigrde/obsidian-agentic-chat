@@ -1494,6 +1494,53 @@ describe("AgentService", () => {
     expect(service.getError()).toBeUndefined();
   });
 
+  it("drops a queued redirect when the session changes during its idle wait", async () => {
+    const controlled = controlledStreamFn(["initial answer"]);
+    // Any unexpected second run (the base bug) completes immediately so the
+    // assertion fails fast instead of timing out on a hanging stream.
+    const streamFn: StreamFn = ((model, context, options) => {
+      const stream = controlled.streamFn(model, context, options);
+      if (controlled.runs.length > 1) controlled.runs[controlled.runs.length - 1].finish();
+      return stream;
+    }) as StreamFn;
+    const { service } = makeService(streamFn);
+
+    const run = service.sendPrompt("initial request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "initial stream");
+    const sessionToken = service.getSessionToken();
+
+    const promptTurns = (
+      service as unknown as { promptTurns: { waitForIdle: () => Promise<void> } }
+    ).promptTurns;
+    const originalWaitForIdle = promptTurns.waitForIdle.bind(promptTurns);
+    let releaseWait!: () => void;
+    let markEntered!: () => void;
+    const enteredWait = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const waitGate = new Promise<void>((resolve) => {
+      releaseWait = resolve;
+    });
+    promptTurns.waitForIdle = async () => {
+      markEntered();
+      await waitGate;
+    };
+
+    const redirect = service.redirectPrompt("redirect from the old session", undefined, sessionToken);
+    controlled.runs[0].finish();
+    await enteredWait;
+    // Swap sessions while the redirect worker is parked before start.
+    await service.newSession();
+    releaseWait();
+
+    await Promise.all([run, redirect]);
+
+    expect(controlled.runs).toHaveLength(1);
+    expect(userTexts(service.getMessages())).toEqual([]);
+    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
+    promptTurns.waitForIdle = originalWaitForIdle;
+  });
+
   it("delivers a redirect exactly once when the next turn compacts the transcript", async () => {
     const controlled = controlledStreamFn(["first answer", "will be redirected", "redirected answer"]);
     const settings: AgenticChatSettings = {
