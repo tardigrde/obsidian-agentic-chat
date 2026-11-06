@@ -59,7 +59,7 @@ await (await modal.$("button=Allow")).click();
 | Working directories settings row | `src/settings.ts:795` | no committed check | `NONE` |
 | Safe/YOLO toggle | `src/ui/chat-view.ts:806` | no committed check | `NONE` |
 | `/config` mode picker | `src/ui/chat-view.ts:2178` | no committed check | `NONE` |
-| `/plan` enters sticky plan mode | `src/ui/chat-view.ts:1038` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
+| `/plan` enters sticky plan mode | `src/ui/chat-view.ts:1041` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
 | Plan badge exits plan mode | `src/ui/chat-view.ts:812` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
 | Invalid mode transition is blocked | `src/ui/chat-view.ts:1008` | `test/modes.test.ts:100` (unit only) | `partial` |
 | Implement this plan | `src/ui/chat-view.ts:2752` | no committed check | `NONE` |
