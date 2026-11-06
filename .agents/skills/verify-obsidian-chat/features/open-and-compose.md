@@ -48,13 +48,13 @@ await $(".agentic-chat-send").click();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Ribbon icon | `src/main.ts:86` | no committed check | `NONE` |
-| Command palette: Open chat | `src/main.ts:88` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
-| Command palette: New conversation | `src/main.ts:95` | `test/session-actions.test.ts:153` (unit only) | `partial` |
-| Command palette: Quick Ask inline edit | `src/main.ts:101` | `test/e2e/specs/smoke.e2e.ts:237` | `covered` |
+| Ribbon icon | `src/main.ts:93` | no committed check | `NONE` |
+| Command palette: Open chat | `src/main.ts:95` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
+| Command palette: New conversation | `src/main.ts:101` | `test/session-actions.test.ts:153` (unit only) | `partial` |
+| Command palette: Quick Ask inline edit | `src/main.ts:107` | `test/e2e/specs/smoke.e2e.ts:237` | `covered` |
 | Editor selection context menu | `src/main.ts:164` | no committed check | `NONE` |
-| File context menu | `src/main.ts:159` | no committed check | `NONE` |
-| Files context menu (multi-select) | `src/main.ts:164` | no committed check | `NONE` |
+| File context menu | `src/main.ts:169` | no committed check | `NONE` |
+| Files context menu (multi-select) | `src/main.ts:174` | no committed check | `NONE` |
 | Composer card mounts | `src/ui/chat-view.ts:659` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
 | Empty-state suggestion chips | `src/ui/chat-view.ts:909` | no committed check | `NONE` |
 | Enter sends | `src/ui/chat-view.ts:713` | `test/e2e/specs/smoke.e2e.ts:45` (send button path only) | `partial` |
@@ -68,7 +68,7 @@ await $(".agentic-chat-send").click();
 | Drag-and-drop attach | `src/ui/chat-view.ts:847` | `test/drag-drop.test.ts:4` (parser only) | `partial` |
 | Active note auto-chip | `src/ui/chat-view.ts:2427` | `test/e2e/specs/smoke.e2e.ts:98` | `covered` |
 | Ignored active note stays out | `src/ui/active-note.ts:54` | `test/e2e/specs/runtime-behavior.e2e.ts:194` | `covered` |
-| Remove an attachment chip | `src/ui/chat-view.ts:2475` | `test/context-chip-renderer.test.ts:121` | `covered` |
+| Remove an attachment chip | `src/ui/chat-view.ts:2475` | `test/context-chip-renderer.test.ts:121` (unit only) | `partial` |
 | Image attachment guard | `src/ui/chat-view.ts:2402` | `test/image-attachments.test.ts:4` (encoding only) | `partial` |
 | Folder attachment menu | `src/ui/chat-view.ts:2519` | only `showFolderMenu()` calls it, and no production code calls that method | `unreachable` |
 | Quick Ask accept | `src/ui/quick-ask-modal.ts:53` | `test/e2e/specs/smoke.e2e.ts:237` | `covered` |

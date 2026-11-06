@@ -6,7 +6,12 @@ import { checkFeatureMap } from "../scripts/check-feature-map.mjs";
 
 const FEATURES = path.join(".agents", "skills", "verify-obsidian-chat", "features");
 
-function row(source = "src/a.ts:1", proof = "`test/a.test.ts:1`", status = "covered", entry = "Do a thing") {
+function row(
+  source = "src/a.ts:1",
+  proof = "`test/e2e/sample.e2e.ts:1`",
+  status = "covered",
+  entry = "Do a thing",
+) {
   return `| ${entry} | \`${source}\` | ${proof} | \`${status}\` |`;
 }
 
@@ -47,9 +52,10 @@ describe("check-feature-map", () => {
     const features = path.join(root, FEATURES);
     mkdirSync(features, { recursive: true });
     mkdirSync(path.join(root, "src"), { recursive: true });
-    mkdirSync(path.join(root, "test"), { recursive: true });
+    mkdirSync(path.join(root, "test", "e2e"), { recursive: true });
     writeFileSync(path.join(root, "src", "a.ts"), "export const a = 1;\n");
     writeFileSync(path.join(root, "test", "a.test.ts"), "export {};\n");
+    writeFileSync(path.join(root, "test", "e2e", "sample.e2e.ts"), "export {};\n");
     writeFileSync(
       path.join(features, "README.md"),
       "# Feature map\n\n| Journey | Covers |\n|---|---|\n| [Sample](./sample.md) | one |\n",
@@ -97,9 +103,39 @@ describe("check-feature-map", () => {
     expect(checkFeatureMap(root).errors.join("\n")).toContain("covered needs a committed test reference");
     writeFileSync(
       path.join(features, "sample.md"),
-      journey(row("src/a.ts:1", "`test/a.test.ts:1` (unit only)")),
+      journey(row("src/a.ts:1", "`test/e2e/sample.e2e.ts:1` (unit only)")),
     );
     expect(checkFeatureMap(root).errors.join("\n")).toContain('covered proof says "unit only"');
+  });
+
+  it("rejects unit-only proof for covered but accepts replay proof", () => {
+    const features = path.join(root, FEATURES);
+    writeFileSync(path.join(features, "sample.md"), journey(row("src/a.ts:1", "`test/a.test.ts:1`")));
+    expect(checkFeatureMap(root).errors.join("\n")).toContain(
+      "covered needs an e2e, probe, dogfood, or replay reference",
+    );
+
+    writeFileSync(
+      path.join(root, "test", "replay.test.ts"),
+      'import { runAgentReplay } from "./helpers/agent-replay";\n',
+    );
+    writeFileSync(
+      path.join(features, "sample.md"),
+      journey(row("src/a.ts:1", "`test/replay.test.ts:1`")),
+    );
+    expect(checkFeatureMap(root)).toMatchObject({ ok: true, errors: [] });
+  });
+
+  it("rejects a non-test file as covered proof", () => {
+    const features = path.join(root, FEATURES);
+    writeFileSync(path.join(root, "test", "data.json"), "{}\n");
+    writeFileSync(
+      path.join(features, "sample.md"),
+      journey(row("src/a.ts:1", "`test/data.json:1`")),
+    );
+    expect(checkFeatureMap(root).errors.join("\n")).toContain(
+      "covered needs an e2e, probe, dogfood, or replay reference",
+    );
   });
 
   it("rejects an unknown status and NONE with a proof reference", () => {

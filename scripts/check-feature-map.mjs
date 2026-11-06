@@ -64,6 +64,21 @@ function refsIn(cell) {
   return refs;
 }
 
+/**
+ * A `covered` row needs a check that drives the user action, not only a unit
+ * test. E2E, probe, dogfood, and replay harness tests qualify. A plain vitest
+ * file that imports the subject directly is `partial`.
+ */
+function isUserActionProof(root, ref) {
+  const file = ref.path.replaceAll("\\", "/");
+  if (!/\.(?:test|e2e|dogfood)\.ts$/.test(file)) return false;
+  if (file.startsWith("test/e2e/")) return true;
+  if (file.startsWith("test/live/")) return false;
+  const absolute = path.join(root, file);
+  if (!isFile(absolute)) return false;
+  return /\b(?:runAgentReplay|helpers\/agent-replay)\b/.test(readFileSync(absolute, "utf8"));
+}
+
 function stripRefs(cell) {
   return cell.replace(REF_PATTERN, " ").replace(/[;,\s]+/g, " ").trim();
 }
@@ -125,6 +140,11 @@ function checkRow(root, row) {
   if (status === "covered") {
     if (proofRefs.length === 0) {
       errors.push(`${where}: covered needs a committed test reference`);
+    }
+    if (!proofRefs.some((ref) => isUserActionProof(root, ref))) {
+      errors.push(
+        `${where}: covered needs an e2e, probe, dogfood, or replay reference, not a unit-only test`,
+      );
     }
     for (const lie of COVERED_LIES) {
       if (proofText.includes(lie)) {

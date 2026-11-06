@@ -70,7 +70,7 @@ await clickMcpAddButton("Add MCP server");
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts:49` | `test/e2e/specs/composio-install.e2e.ts:27` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts:322` | `test/e2e/specs/settings-ui.e2e.ts:311` | `covered` |
 | Discover and call a remote MCP tool | `src/mcp/tools.ts:71` | `test/e2e/specs/mcp-live.e2e.ts:227` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
-| Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts:647` | `test/mcp-client.test.ts:360` | `covered` |
+| Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts:647` | `test/mcp-client.test.ts:360` (unit only) | `partial` |
 
 ## Gotchas
 
