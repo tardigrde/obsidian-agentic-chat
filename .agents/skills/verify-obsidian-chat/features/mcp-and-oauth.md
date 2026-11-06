@@ -66,7 +66,7 @@ await clickMcpAddButton("Add MCP server");
 | Test connection / refresh tools | `src/settings.ts:1259` | `test/mcp-tools.test.ts:229` (probe helper only) | `partial` |
 | Tool allowlist/denylist | `src/settings.ts:1395` | `test/mcp-tools.test.ts:174` (unit only) | `partial` |
 | Per-tool MCP approvals | `src/settings.ts:1448` | no committed check | `NONE` |
-| Setup guide / Copy config | `src/settings.ts:1939` | `test/e2e/specs/settings-ui.e2e.ts:268` (button existence only) | `partial` |
+| Setup guide / Copy config | `src/settings.ts:1940` | `test/e2e/specs/settings-ui.e2e.ts:268` (button existence only) | `partial` |
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts:49` | `test/e2e/specs/composio-install.e2e.ts:27` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts:322` | `test/e2e/specs/settings-ui.e2e.ts:311` | `covered` |
 | Discover and call a remote MCP tool | `src/mcp/tools.ts:71` | `test/e2e/specs/mcp-live.e2e.ts:227` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
