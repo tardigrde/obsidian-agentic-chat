@@ -51,6 +51,7 @@ describe("AgentParentConfigurationRuntime", () => {
       toolCalls: {
         beforeToolCall: async () => undefined,
         afterToolCall: async () => undefined,
+        consumeStopRequested: () => false,
       },
       loopGuard: { finishTurn: () => undefined },
       sessions: {
@@ -96,6 +97,7 @@ describe("AgentParentConfigurationRuntime", () => {
       toolCalls: {
         beforeToolCall: async () => undefined,
         afterToolCall: async () => undefined,
+        consumeStopRequested: () => false,
       },
       loopGuard: { finishTurn: () => undefined },
       sessions: {

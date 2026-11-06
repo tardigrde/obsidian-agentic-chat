@@ -97,6 +97,8 @@ export class AgentToolCallController {
   private undoStack: FileCheckpoint[] = [];
   /** Undo records captured pre-execution, keyed by tool call id, pending success. */
   private pendingUndo = new Map<string, FileCheckpoint>();
+  /** Set when a user stop must end the current turn even if pi aborts first. */
+  private stopRequested = false;
 
   constructor(options: ToolCallControllerOptions) {
     this.app = options.app;
@@ -113,6 +115,17 @@ export class AgentToolCallController {
 
   canUndo(): boolean {
     return this.undoStack.length > 0;
+  }
+
+  /** True once after a stopped approval; `finishTurn` uses it to end the turn. */
+  consumeStopRequested(): boolean {
+    const requested = this.stopRequested;
+    this.stopRequested = false;
+    return requested;
+  }
+
+  clearStopRequested(): void {
+    this.stopRequested = false;
   }
 
   /**
@@ -262,7 +275,7 @@ export class AgentToolCallController {
       "The user declined this action.",
       signal,
     );
-    return deniedDecision(choice, "The user declined this action.");
+    return this.decisionForChoice(choice, "The user declined this action.");
   }
 
   private async gateMcpToolCall(
@@ -307,7 +320,7 @@ export class AgentToolCallController {
       "The user declined this MCP tool call.",
       signal,
     );
-    return deniedDecision(choice, "The user declined this MCP tool call.");
+    return this.decisionForChoice(choice, "The user declined this MCP tool call.");
   }
 
   private resolveMcpPolicy(settings: AgenticChatSettings, toolName: string): ApprovalPolicy {
@@ -387,6 +400,12 @@ export class AgentToolCallController {
       reason: choice.approved ? undefined : (choice.reason ?? deniedReason),
     });
     return choice;
+  }
+
+  private decisionForChoice(choice: UserApprovalChoice, fallback: string): ToolGateDecision {
+    const decision = deniedDecision(choice, fallback);
+    if (decision?.terminate) this.stopRequested = true;
+    return decision;
   }
 
   private async auditApproval(input: ApprovalAuditInput): Promise<void> {

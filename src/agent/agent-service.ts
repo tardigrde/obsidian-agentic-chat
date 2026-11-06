@@ -729,6 +729,7 @@ export class AgentService {
 
   private async runPrompt(run: PromptTurnRun): Promise<void> {
     this.compactionRecoveryError = undefined;
+    this.toolCalls.clearStopRequested();
     await this.initialize();
     // A fresh prompt starts a new epoch: any identical-batch streak from a
     // previous user turn must not carry into this one (loop guard).
