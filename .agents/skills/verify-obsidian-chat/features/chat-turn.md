@@ -65,8 +65,8 @@ await browser.waitUntil(async () =>
 | `/steer` | `src/ui/chat-view.ts:1792` | `test/e2e/specs/approval-deterministic.e2e.ts:491` | `covered` |
 | `/follow-up` | `src/ui/chat-view.ts:1659` | `test/turn-control.test.ts:98` (label and parser only) | `partial` |
 | `/redirect` | `src/ui/chat-view.ts:1660` | `test/turn-control.test.ts:98` (label and parser only) | `partial` |
-| Redirect survives a compacting turn | `src/agent/agent-service.ts:723` | `test/agent-service.test.ts:1089` | `partial` |
-| Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1035` | `partial` |
+| Redirect survives a compacting turn | `src/agent/agent-service.ts:865` | `test/agent-service.test.ts:1606` | `partial` |
+| Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |
 | Inline `ask_user` card | `src/ui/chat-view.ts:570` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
 | Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:629` | no committed check | `NONE` |
 | Copy response | `src/ui/assistant-bubble.ts:827` | no committed check | `NONE` |
