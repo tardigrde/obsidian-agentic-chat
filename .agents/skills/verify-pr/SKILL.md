@@ -14,8 +14,10 @@ did not write the code; your job is to prove the author's witness or reject it.
 - The witness block from the PR body.
 - The source paths the fix changed.
 
-If the PR body does not name a witness for a behavior change, stop and return
-`FAIL` with `missing witness`.
+If the PR body does not name a witness for a source change, stop and return
+`FAIL` with `missing witness`. The only exception is the `no-behavior-change`
+label: confirm against the diff that the change is a pure refactor, then verify
+the existing tests still pass. A behavior change with that label is `FAIL`.
 
 ## Protocol
 
@@ -59,7 +61,10 @@ If the PR body does not name a witness for a behavior change, stop and return
 7. Check that the PR body evidence matches the runs: the command, the counts,
    and the report path. Stale evidence is a `FAIL`.
 
-8. Report the verdict. Do not merge.
+8. Check the `no-behavior-change` claim against the diff. A new branch, a changed
+   output, or a changed error path is behavior. Return `FAIL`.
+
+9. Report the verdict. Do not merge.
 
 ## Verdicts
 

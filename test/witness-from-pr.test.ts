@@ -1,3 +1,4 @@
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +9,8 @@ import {
   validateWitnessSpec,
   witnessDecision,
 } from "../scripts/witness-from-pr.mjs";
+
+const CLI = path.resolve("scripts/witness-from-pr.mjs");
 
 describe("witness-from-pr", () => {
   let root: string;
@@ -109,5 +112,110 @@ describe("witness-from-pr", () => {
     expect(validateWitnessSpec(parseWitnessBlock("nope: value"), root)).toContain(
       'unknown key "nope"',
     );
+  });
+
+  it("uses a filled block after the empty template block", () => {
+    const body = [
+      "<!-- witness",
+      "# test: test/example.test.ts",
+      "# src: src/example.ts",
+      "-->",
+      "",
+      "<!-- witness",
+      "test: test/a.test.ts",
+      "src: src/a.ts",
+      "-->",
+    ].join("\n");
+    expect(witnessDecision({ body, labels: [], root, changedFiles: ["src/a.ts"] })).toMatchObject({
+      action: "run",
+    });
+  });
+
+  it("rejects several different filled blocks", () => {
+    const body = [
+      "<!-- witness",
+      "test: test/a.test.ts",
+      "src: src/a.ts",
+      "-->",
+      "<!-- witness",
+      "test: test/a.test.ts",
+      "src: src/b.ts",
+      "-->",
+    ].join("\n");
+    expect(witnessDecision({ body, labels: [], root, changedFiles: ["src/a.ts"] })).toMatchObject({
+      action: "fail",
+    });
+  });
+
+  it("requires a witness for a source change unless the PR opts out", () => {
+    expect(
+      witnessDecision({ body: "none", labels: [], root, changedFiles: ["src/a.ts"] }),
+    ).toMatchObject({ action: "fail" });
+    expect(
+      witnessDecision({
+        body: "none",
+        labels: ["no-behavior-change"],
+        root,
+        changedFiles: ["src/a.ts"],
+      }),
+    ).toMatchObject({ action: "skip" });
+    expect(
+      witnessDecision({ body: "none", labels: [], root, changedFiles: ["docs/a.md"] }),
+    ).toMatchObject({ action: "skip" });
+  });
+
+  it("exits non-zero for invalid evidence and a missing base", () => {
+    const env = { ...process.env, PR_BODY: "no block", PR_LABELS: "", BASE_SHA: "HEAD" };
+    const skipped = spawnSync(process.execPath, [CLI], { cwd: process.cwd(), env, encoding: "utf8" });
+    expect(skipped.status, skipped.stderr).toBe(0);
+    expect(skipped.stdout).toContain("skipped");
+
+    const invalid = spawnSync(process.execPath, [CLI], {
+      cwd: process.cwd(),
+      env: {
+        ...env,
+        PR_BODY:
+          "<!-- witness\ntest: npm run verify -- ci\nsrc: src/agent/agent-service.ts\n-->",
+      },
+      encoding: "utf8",
+    });
+    expect(invalid.status).toBe(1);
+    expect(invalid.stderr).toContain("outside test/");
+
+    const missingBase = spawnSync(process.execPath, [CLI], {
+      cwd: process.cwd(),
+      env: { ...env, BASE_SHA: "" },
+      encoding: "utf8",
+    });
+    expect(missingBase.status).toBe(1);
+    expect(missingBase.stderr).toContain("BASE_SHA");
+  });
+
+  it("exits non-zero when a source change has no witness", () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), "witness-cli-"));
+    try {
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+      git("init");
+      git("config", "user.email", "witness@example.test");
+      git("config", "user.name", "Witness Test");
+      mkdirSync(path.join(repo, "src"), { recursive: true });
+      writeFileSync(path.join(repo, "src", "a.ts"), "export const a = 1;\n");
+      git("add", ".");
+      git("commit", "-m", "base");
+      const base = git("rev-parse", "HEAD").toString().trim();
+      writeFileSync(path.join(repo, "src", "a.ts"), "export const a = 2;\n");
+      git("add", ".");
+      git("commit", "-m", "change");
+
+      const result = spawnSync(process.execPath, [CLI], {
+        cwd: repo,
+        env: { ...process.env, PR_BODY: "none", PR_LABELS: "", BASE_SHA: base },
+        encoding: "utf8",
+      });
+      expect(result.status, result.stderr).toBe(1);
+      expect(result.stderr).toContain("changes src/a.ts");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

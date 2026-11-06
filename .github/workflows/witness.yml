@@ -13,10 +13,8 @@ concurrency:
 
 jobs:
   witness:
-    # Run only branches in this repository. A fork PR gets a read-only token,
-    # but there is no reason to execute its declared test before a maintainer
-    # imports the branch.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Run for forks too. The job only needs a read-only token, and a skipped
+    # required check would report success without proving anything.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

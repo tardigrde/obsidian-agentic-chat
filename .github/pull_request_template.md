@@ -16,9 +16,10 @@
 
 <!--
 The witness is the smallest check that fails before the fix and passes after it.
-CI runs the block below when the PR has the `behavior` or `witness` label.
+CI runs the block below when this PR changes `src/`.
 Use one `test:` line and one `src:` line per changed source path.
-Keep the block empty when this PR has no behavior change.
+A pure refactor uses the `no-behavior-change` label instead of this block.
+Keep the block empty when this PR has no source change.
 -->
 
 <!-- witness

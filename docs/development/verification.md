@@ -83,8 +83,9 @@ failed-test count such as `Tests 1 failed` or `1 failing`. Run
 `npm run verify:witness -- --self-test` to prove the verifier itself.
 
 The `Witness` workflow always runs that self-test. It also runs the block in the
-PR body when the PR has the `behavior` or `witness` label. CI supplies the base
-commit; the PR supplies one test file and one or more source paths.
+PR body when the PR changes `src/` or has the `behavior` or `witness` label. A
+pure refactor can use the `no-behavior-change` label instead. CI supplies the
+base commit; the PR supplies one test file and one or more source paths.
 
 ```markdown
 <!-- witness
@@ -198,5 +199,6 @@ credentials, and the eval step fails on any skip. There is no scheduled lane;
 dogfood, audits, and evals run locally or on demand.
 
 The `Witness` workflow runs the verifier self-test on every pull request, then
-runs the witness declared in the PR body. A behavior PR without a witness block
-fails. See [trust.md](trust.md).
+runs the witness declared in the PR body. A PR that changes `src/` without a
+witness block fails, unless it has the `no-behavior-change` label. See
+[trust.md](trust.md).

@@ -66,7 +66,8 @@ Rules:
 
 ## The CI gate
 
-The `Witness` workflow runs on every pull request from this repository.
+The `Witness` workflow runs on every pull request, including forks with a
+read-only token.
 
 1. It always runs `npm run verify:witness -- --self-test`.
 2. It reads a witness block from the PR body.
@@ -82,12 +83,17 @@ src: src/agent/session-activation.ts
 -->
 ```
 
-A PR with the `behavior` or `witness` label must have a non-empty block. A PR
-with no block and neither label skips the witness run. Add a second `src:` line
-for each changed source path.
+A PR that changes a file under `src/` must have a non-empty block. A pure
+refactor can use the `no-behavior-change` label instead, and the independent
+verifier must confirm that claim against the diff. The empty block in the PR
+template does not count. A PR that changes only tests, docs, or tooling skips the
+witness run.
 
-Fork PRs skip this job. Import the branch, run the witness, and add the verdict
-before you review the code.
+Add a second `src:` line for each changed source path. If the body has more than
+one filled block, the run fails; keep one block.
+
+Fork PRs run the same job. They get a read-only token, so the witness cannot read
+secrets or write to the repository.
 
 ## Independent verdict
 
