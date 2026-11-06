@@ -235,4 +235,14 @@ describe("PluginService cache invalidation", () => {
     expect(sweep).toHaveBeenCalledTimes(1);
     expect(first).toBe(second);
   });
+
+  it("retries after a failed reload instead of leaving it in flight", async () => {
+    const app = await seed();
+    const service = serviceFor(app, settings());
+    const sweep = vi.spyOn(service, "sweepImportStages").mockRejectedValueOnce(new Error("sweep failed"));
+
+    await expect(service.reload()).rejects.toThrow("sweep failed");
+    await expect(service.reload()).resolves.toEqual([]);
+    expect(sweep).toHaveBeenCalledTimes(2);
+  });
 });
