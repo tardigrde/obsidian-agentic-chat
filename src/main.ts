@@ -56,6 +56,13 @@ export default class AgenticChatPlugin extends Plugin {
   async onload(): Promise<void> {
     this.secretStore = new ObsidianSecretStore(this.app);
     await this.loadSettings();
+    // Recover an interrupted package install before any turn can load plugins:
+    // a retained backup must own the settings readers use.
+    try {
+      await this.pluginService.sweepImportStages();
+    } catch (error: unknown) {
+      console.warn("Agentic chat: could not sweep interrupted plugin imports", error);
+    }
     initPricingCache(this.app, this);
 
     // Materialize the plugin's own skills and the user's empty skill collection

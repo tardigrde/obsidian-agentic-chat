@@ -304,13 +304,17 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         mutated = true;
       }
     }
-    for (const id of Object.keys(this.plugin.settings.plugins.mcpState)) {
-      if (!derivedIds.has(id)) {
-        const isLegacyUser = this.plugin.settings.mcp.servers.some((entry) => entry.id === id && entry.source !== "plugin");
-        if (!isLegacyUser) {
-          delete this.plugin.settings.plugins.mcpState[id];
-          clearMcpPerToolApprovals(this.plugin.settings.approval, id);
-          mutated = true;
+    // A retained import backup still owns the state keys of its package. Keep
+    // them until the backup is restored or removed, then prune on a later pass.
+    if (!this.plugin.pluginService.hasRetainedImportBackup()) {
+      for (const id of Object.keys(this.plugin.settings.plugins.mcpState)) {
+        if (!derivedIds.has(id)) {
+          const isLegacyUser = this.plugin.settings.mcp.servers.some((entry) => entry.id === id && entry.source !== "plugin");
+          if (!isLegacyUser) {
+            delete this.plugin.settings.plugins.mcpState[id];
+            clearMcpPerToolApprovals(this.plugin.settings.approval, id);
+            mutated = true;
+          }
         }
       }
     }

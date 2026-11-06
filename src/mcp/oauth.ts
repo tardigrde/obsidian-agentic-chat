@@ -260,14 +260,24 @@ export async function discoverMcpOAuthMetadata(
 
 interface McpOAuthRefreshFlight {
   scope: string;
+  leader: McpServerSettings;
   promise: Promise<boolean>;
 }
 
 /**
- * One refresh per server. Two 401/403 responses can race with the same refresh
- * token; the loser would receive invalid_grant and wipe the winner's tokens.
+ * One refresh per stable server id. Plugin MCP servers are cloned on each
+ * runtime load, so object identity cannot dedupe concurrent refreshes; the
+ * stable id can. Two 401/403 responses can race with the same refresh token;
+ * the loser would receive invalid_grant and wipe the winner's tokens.
+ *
+ * The flight owns no caller's abort signal: stopping one caller must not stop
+ * the shared fetch or another live caller. Each caller races its own signal.
  */
-const refreshFlights = new WeakMap<McpServerSettings, McpOAuthRefreshFlight>();
+const refreshFlights = new Map<string, McpOAuthRefreshFlight>();
+
+function refreshFlightKey(server: McpServerSettings): string {
+  return server.id || server.url;
+}
 
 export function refreshMcpOAuthToken(
   server: McpServerSettings,
@@ -277,35 +287,86 @@ export function refreshMcpOAuthToken(
   requestTimeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
   requestedScope?: string,
 ): Promise<boolean> {
+  const key = refreshFlightKey(server);
   const scope = requestedScope?.trim() ?? "";
-  const existing = refreshFlights.get(server);
-  if (existing?.scope === scope) return existing.promise;
+  const existing = refreshFlights.get(key);
+  if (existing?.scope === scope) {
+    return waitForMcpOAuthRefresh(followMcpOAuthRefresh(existing, server), signal);
+  }
   if (existing) {
     // A different scope must wait for the current refresh to rotate the token,
-    // then refresh again with the wider scope.
+    // then refresh again with the wider scope. Copy the rotated state first so
+    // this clone does not send the already-used refresh token.
     const promise = existing.promise.then(
-      () => performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
-      () => performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
+      (refreshed) => {
+        if (refreshed) copyMcpOAuthState(existing.leader, server);
+        return performMcpOAuthRefresh(server, fetcher, now, requestTimeoutMs, requestedScope);
+      },
+      () => performMcpOAuthRefresh(server, fetcher, now, requestTimeoutMs, requestedScope),
     );
-    return trackMcpOAuthRefresh(server, scope, promise);
+    return waitForMcpOAuthRefresh(trackMcpOAuthRefresh(key, scope, server, promise), signal);
   }
-  return trackMcpOAuthRefresh(
-    server,
-    scope,
-    performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
-  );
+  const promise = performMcpOAuthRefresh(server, fetcher, now, requestTimeoutMs, requestedScope);
+  return waitForMcpOAuthRefresh(trackMcpOAuthRefresh(key, scope, server, promise), signal);
+}
+
+function followMcpOAuthRefresh(
+  flight: McpOAuthRefreshFlight,
+  follower: McpServerSettings,
+): Promise<boolean> {
+  return flight.promise.then((refreshed) => {
+    if (refreshed) copyMcpOAuthState(flight.leader, follower);
+    return refreshed;
+  });
+}
+
+/** Copy the fields a follower needs to use the leader's refreshed tokens. */
+function copyMcpOAuthState(from: McpServerSettings, to: McpServerSettings): void {
+  if (from === to) return;
+  to.authType = from.authType;
+  to.oauth = { ...from.oauth };
+}
+
+/** A caller's abort rejects only that caller; the shared flight continues. */
+function waitForMcpOAuthRefresh(promise: Promise<boolean>, signal?: AbortSignal): Promise<boolean> {
+  if (!signal) return promise;
+  return new Promise<boolean>((resolve, reject) => {
+    const onAbort = () => {
+      cleanup();
+      reject(new Error("Aborted."));
+    };
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    // Attach the handler before the early abort return: an already-aborted
+    // caller must still observe a later shared rejection.
+    promise.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error) => {
+        cleanup();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function trackMcpOAuthRefresh(
-  server: McpServerSettings,
+  key: string,
   scope: string,
+  leader: McpServerSettings,
   promise: Promise<boolean>,
 ): Promise<boolean> {
-  const flight: McpOAuthRefreshFlight = { scope, promise };
-  refreshFlights.set(server, flight);
+  const flight: McpOAuthRefreshFlight = { scope, leader, promise };
+  refreshFlights.set(key, flight);
   void promise
     .finally(() => {
-      if (refreshFlights.get(server) === flight) refreshFlights.delete(server);
+      if (refreshFlights.get(key) === flight) refreshFlights.delete(key);
     })
     .catch(() => undefined);
   return promise;
@@ -314,16 +375,16 @@ function trackMcpOAuthRefresh(
 async function performMcpOAuthRefresh(
   server: McpServerSettings,
   fetcher: WebFetcher,
-  signal?: AbortSignal,
   now: () => number = Date.now,
   requestTimeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
   requestedScope?: string,
 ): Promise<boolean> {
   if (server.authType !== "oauth") return false;
   if (!server.oauth.refreshToken || !server.oauth.tokenEndpoint || !server.oauth.clientId) return false;
+  const refreshTokenUsed = server.oauth.refreshToken;
   const body = new URLSearchParams();
   body.set("grant_type", "refresh_token");
-  body.set("refresh_token", server.oauth.refreshToken);
+  body.set("refresh_token", refreshTokenUsed);
   body.set("client_id", server.oauth.clientId);
   body.set("resource", mcpResourceUri(server.url));
   if (requestedScope?.trim()) body.set("scope", requestedScope.trim());
@@ -340,11 +401,14 @@ async function performMcpOAuthRefresh(
       body: body.toString(),
     },
     `${server.name} OAuth token refresh`,
-    signal,
+    undefined,
     requestTimeoutMs,
   );
   if (response.status < 200 || response.status >= 300) {
-    if (isInvalidRefreshTokenResponse(response)) forgetMcpOAuthTokens(server);
+    // A stale failure must not wipe tokens a newer refresh already installed.
+    if (isInvalidRefreshTokenResponse(response) && server.oauth.refreshToken === refreshTokenUsed) {
+      forgetMcpOAuthTokens(server);
+    }
     return false;
   }
   const token = parseJsonObject<OAuthTokenResponse>(response.text, "OAuth token refresh response");
