@@ -203,7 +203,12 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
 }
 
 export async function readSemanticIndexFile(adapter: DataAdapter, path: string): Promise<SemanticIndexFile | null> {
-  if (!(await adapter.exists(path))) return null;
+  if (!(await adapter.exists(path))) {
+    // A crash between the two renames leaves only the backup. Restore it so the
+    // next read sees the last complete index instead of starting over.
+    await restoreSemanticIndexBackup(adapter, path);
+    return null;
+  }
   try {
     const parsed = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
     if (parsed?.version !== SEMANTIC_INDEX_VERSION || !parsed.state?.status) return null;
@@ -272,23 +277,56 @@ export async function writeSemanticIndexFile(
 ): Promise<void> {
   await ensureParentDirs(adapter, path);
   const text = JSON.stringify(file, null, 2);
-  // Desktop rename rejects when the destination exists, so update through the
-  // atomic process helper. The first write has no destination and uses rename.
-  if (await adapter.exists(path)) {
-    await adapter.process(path, () => text);
+  const temporaryPath = `${path}.tmp`;
+  const backupPath = `${path}.bak`;
+  try {
+    await adapter.write(temporaryPath, text);
+  } catch (error) {
+    await removeFileIfSupported(adapter, temporaryPath);
+    throw error;
+  }
+  // Desktop rename rejects an existing destination, so the first write can
+  // rename the temp file into place directly.
+  if (!(await adapter.exists(path))) {
+    try {
+      await adapter.rename(temporaryPath, path);
+    } catch (error) {
+      await removeFileIfSupported(adapter, temporaryPath);
+      throw new Error(`Could not create ${path}.`, { cause: error });
+    }
     return;
   }
-  const temporaryPath = `${path}.tmp`;
-  await adapter.write(temporaryPath, text);
+  // A stale backup would block the swap; drop it before moving the target.
+  await removeFileIfSupported(adapter, backupPath);
+  try {
+    await adapter.rename(path, backupPath);
+  } catch (error) {
+    // The target is still in place; only the temp copy needs cleanup.
+    await removeFileIfSupported(adapter, temporaryPath);
+    throw new Error(`Could not move ${path} aside to update it.`, { cause: error });
+  }
   try {
     await adapter.rename(temporaryPath, path);
   } catch (error) {
-    // Never fall back to a direct write: a failed non-atomic write can truncate
-    // the only good index. Keep the old file and surface the failure.
+    // Put the last complete index back before reporting the failed update.
+    await restoreSemanticIndexBackup(adapter, path);
     await removeFileIfSupported(adapter, temporaryPath);
-    throw new Error(`Could not atomically replace ${path}; the previous index was left unchanged.`, {
+    throw new Error(`Could not replace ${path}; the previous index was restored if possible.`, {
       cause: error,
     });
+  }
+  await removeFileIfSupported(adapter, backupPath);
+}
+
+/** Restore `${path}.bak` when the target is missing; best effort, never destructive. */
+async function restoreSemanticIndexBackup(adapter: DataAdapter, path: string): Promise<void> {
+  const backupPath = `${path}.bak`;
+  try {
+    if (!(await adapter.exists(backupPath))) return;
+    if (await adapter.exists(path)) return;
+    await adapter.rename(backupPath, path);
+  } catch {
+    // Keep the backup for the next attempt or manual recovery.
   }
 }
 

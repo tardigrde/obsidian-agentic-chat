@@ -42,14 +42,6 @@ export class MemoryAdapter {
     if (this.dirs.delete(from)) this.dirs.add(to);
   }
 
-  async process(path: string, fn: (data: string) => string): Promise<string> {
-    const content = this.files.get(path);
-    if (content === undefined) throw new Error(`Not found: ${path}`);
-    const next = fn(content);
-    this.files.set(path, next);
-    return next;
-  }
-
   async list(path: string): Promise<{ files: string[]; folders: string[] }> {
     const prefix = path ? `${path}/` : "";
     const files = [...this.files.keys()].filter((file) => file.startsWith(prefix));

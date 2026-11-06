@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bootstrapSemanticIndex,
+  readSemanticIndexFile,
   semanticIndexFile,
   semanticIndexLeases,
   writeSemanticIndexFile,
@@ -135,11 +136,57 @@ describe("post-216 semantic index atomic writes", () => {
     await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, second)).resolves.toBeUndefined();
 
     expect(adapter.files.has(`${path}.tmp`)).toBe(false);
+    expect(adapter.files.has(`${path}.bak`)).toBe(false);
     expect(JSON.parse(adapter.files.get(path) ?? "{}")).toMatchObject({
       version: 1,
       updatedAt: 2,
       state: { status: { state: "complete", totalDocuments: 1 } },
     });
+  });
+
+  it("restores the backup when a crash leaves the target missing", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/crash-recovery/index.json";
+    const oldIndex = semanticIndexFile({
+      scope,
+      status: { state: "complete", scope, totalDocuments: 1 },
+      indexedDocumentIds: ["doc-1"],
+      updatedAt: 1,
+    });
+    const oldText = JSON.stringify(oldIndex);
+    await adapter.write(path, oldText);
+    await adapter.rename(path, `${path}.bak`);
+    await adapter.write(`${path}.tmp`, JSON.stringify({ ...oldIndex, updatedAt: 2 }));
+
+    const result = await readSemanticIndexFile(adapter.asDataAdapter(), path);
+
+    expect(result).toBeNull();
+    expect(adapter.files.get(path)).toBe(oldText);
+    expect(adapter.files.has(`${path}.bak`)).toBe(false);
+  });
+
+  it("restores the old index when the temp-to-target rename fails", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/restore-on-failure/index.json";
+    const first = semanticIndexFile({
+      scope,
+      status: { state: "complete", scope, totalDocuments: 1 },
+      indexedDocumentIds: ["doc-1"],
+      updatedAt: 1,
+    });
+    await writeSemanticIndexFile(adapter.asDataAdapter(), path, first);
+    const oldText = adapter.files.get(path);
+    const originalRename = adapter.rename.bind(adapter);
+    adapter.rename = async (from, to) => {
+      if (from === `${path}.tmp` && to === path) throw new Error("rename failed");
+      return originalRename(from, to);
+    };
+    const second = { ...first, updatedAt: 2 };
+
+    await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, second)).rejects.toThrow(/previous index/);
+    expect(adapter.files.get(path)).toBe(oldText);
+    expect(adapter.files.has(`${path}.tmp`)).toBe(false);
+    expect(adapter.files.has(`${path}.bak`)).toBe(false);
   });
 });
 
