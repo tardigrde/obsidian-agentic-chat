@@ -83,7 +83,7 @@ Invariants:
   must not drain into the next run.
 - Redirects are delivered in order. Each redirect re-checks the session token
   after every wait.
-- A stale token never starts a turn and never appends to a transcript.
+- A stale token never starts a turn and never appends to the new transcript.
 - Starting a session swap disarms the composer's queued prompt before the swap
   begins.
 
