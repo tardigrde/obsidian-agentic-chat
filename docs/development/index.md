@@ -42,6 +42,12 @@ npm run docs:build
 npm run docs:preview
 ```
 
+## Architecture
+
+Use [Architecture](./architecture.md) for the single owner of each mutable state,
+its invariants, and the current ownership gaps. The file is the design input for
+the structural ownership PRs.
+
 ## Verification
 
 Use [Verification](./verification.md) for the lane reference, evidence rules, the fake-green list, and probe workflows. The merge gate is:
