@@ -447,8 +447,22 @@ export function resolveMcpServers(
   const pluginServers = derivedPluginServers.map((server) => {
     const state = settings.plugins.mcpState[server.id];
     if (state) {
+      // mcp.json moved the URL: never replay tokens, tools, or a challenge minted
+      // for the old host, even before the settings reconcile persists the clear.
+      const effective =
+        state.lastUrl && state.lastUrl !== server.url
+          ? {
+              ...state,
+              authHeaderValue: "",
+              oauth: { ...state.oauth, accessToken: "", refreshToken: "", expiresAt: 0 },
+              knownTools: [],
+              lastUrl: server.url,
+              pendingOAuthChallenge: undefined,
+              pendingOAuthResourceUrl: undefined,
+            }
+          : state;
       const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
-      applyMcpServerState(copy, state);
+      applyMcpServerState(copy, effective);
       return copy;
     }
     const legacy = legacyPluginById.get(server.id);

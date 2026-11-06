@@ -299,6 +299,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         if (existing.lastUrl && existing.lastUrl !== server.url) {
           existing.authHeaderValue = "";
           existing.oauth = { ...existing.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
+          existing.knownTools = [];
+          existing.pendingOAuthChallenge = undefined;
+          existing.pendingOAuthResourceUrl = undefined;
         }
         existing.lastUrl = server.url;
         mutated = true;
@@ -353,6 +356,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     state.knownTools = next.knownTools;
     state.enabledTools = [...next.enabledTools];
     state.disabledTools = [...next.disabledTools];
+    state.pendingOAuthChallenge = next.pendingOAuthChallenge;
+    state.pendingOAuthResourceUrl = next.pendingOAuthResourceUrl;
     if (next.lastUrl) state.lastUrl = next.lastUrl;
     else delete state.lastUrl;
   }
@@ -1683,7 +1688,10 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     const endpointProblem = mcpEndpointProblem(server.url);
     if (endpointProblem) throw new Error(endpointProblem);
     const result = await probeMcpServer(server, createMcpFetcher(this.effectiveMcpProxySettings()), {
-      onServerChanged: () => this.save(),
+      onServerChanged: async (changed) => {
+        this.syncMcpServerToState(changed);
+        await this.save();
+      },
     });
     server.knownTools = result.tools;
     server.enabled = true;
@@ -1709,7 +1717,10 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     });
     this.syncMcpServerToState(server);
     const result = await probeMcpServer(server, fetcher, {
-      onServerChanged: () => this.save(),
+      onServerChanged: async (changed) => {
+        this.syncMcpServerToState(changed);
+        await this.save();
+      },
     });
     server.knownTools = result.tools;
     this.syncMcpServerToState(server);

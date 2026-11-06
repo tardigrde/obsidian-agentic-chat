@@ -62,7 +62,7 @@ export interface McpServerSettings {
   enabledTools: string[];
   /** Deny globs for remote tools — deny wins over allow. */
   disabledTools: string[];
-  /** Transient: last WWW-Authenticate challenge with resource_metadata when authType is none (not persisted). */
+  /** Last WWW-Authenticate challenge; kept so a redraw or reload can show the banner until authentication succeeds. */
   pendingOAuthChallenge?: string;
   pendingOAuthResourceUrl?: string;
 }
@@ -87,7 +87,7 @@ export interface McpServerState {
   enabledTools: string[];
   /** Deny globs for remote tools — deny wins. */
   disabledTools: string[];
-  /** Transient: last OAuth challenge when server advertised resource_metadata but authType was none (not persisted long-term). */
+  /** Last OAuth challenge; kept in the state map so a redraw or reload can show the banner until authentication succeeds. */
   pendingOAuthChallenge?: string;
   pendingOAuthResourceUrl?: string;
 }
@@ -322,6 +322,8 @@ export function mcpServerStateFromServer(server: McpServerSettings): McpServerSt
     lastUrl: server.url,
     enabledTools: [...(server.enabledTools ?? [])],
     disabledTools: [...(server.disabledTools ?? [])],
+    pendingOAuthChallenge: server.pendingOAuthChallenge,
+    pendingOAuthResourceUrl: server.pendingOAuthResourceUrl,
   };
 }
 
@@ -336,6 +338,8 @@ export function applyMcpServerState(server: McpServerSettings, state: McpServerS
   server.knownTools = [...state.knownTools];
   server.enabledTools = [...(state.enabledTools ?? [])];
   server.disabledTools = [...(state.disabledTools ?? [])];
+  server.pendingOAuthChallenge = state.pendingOAuthChallenge;
+  server.pendingOAuthResourceUrl = state.pendingOAuthResourceUrl;
   server.authHeaderValueSecretId ||= mcpSecretId(server.id, "auth-header-value");
   ensureMcpOAuthSecretRefs(server.id, server.oauth);
   // lastUrl is tracked in state, not in server shape

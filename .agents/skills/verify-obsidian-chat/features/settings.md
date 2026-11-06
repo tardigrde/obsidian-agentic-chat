@@ -48,7 +48,7 @@ await closeAgenticChatSettings();
 |---|---|---|---|
 | Settings tab opens | `src/main.ts:107` | `test/e2e/specs/settings-ui.e2e.ts:180` (opened by the helper via `app.setting`, not the nav) | `partial` |
 | Tabs render and switch | `src/settings.ts:223` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |
-| Models: provider, API key, base URL, model | `src/settings.ts:384` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |
+| Models: provider, API key, base URL, model | `src/settings.ts:386` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |
 | Secrets stay out of `data.json` | `src/settings.ts:1992` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |
 | OpenRouter privacy toggles | `src/settings.ts:471` | no committed check | `NONE` |
 | Ollama server URL and model | `src/settings.ts:503` | no committed check | `NONE` |
@@ -60,7 +60,7 @@ await closeAgenticChatSettings();
 | Web: enable, provider, key, results, fetch limit | `src/settings.ts:842` | `test/e2e/specs/settings-ui.e2e.ts:232` | `covered` |
 | Web: allowed hosts | `src/settings.ts:941` | no committed check | `NONE` |
 | MCP tab | `src/settings.ts:960` | `test/e2e/specs/settings-ui.e2e.ts:268` | `covered` |
-| Observability with Langfuse | `src/settings.ts:1063` | `test/e2e/specs/settings-ui.e2e.ts:394` | `covered` |
+| Observability with Langfuse | `src/settings.ts:1069` | `test/e2e/specs/settings-ui.e2e.ts:394` | `covered` |
 | Observability: generic OTLP auth header | `src/settings.ts:1190` | `test/e2e/specs/settings-migration.e2e.ts:199` (migration only) | `partial` |
 | Notifications tab | `src/settings.ts:1997` | no committed check | `NONE` |
 | Resources: Install plugin | `src/settings.ts:2051` | `test/e2e/specs/settings-ui.e2e.ts:311` | `covered` |
