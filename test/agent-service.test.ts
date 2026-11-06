@@ -1689,6 +1689,27 @@ describe("AgentService", () => {
     await next;
   });
 
+  it("clears queued follow-ups when the user stops the active run", async () => {
+    const controlled = controlledStreamFn(["will abort", "must not run"]);
+    const { service } = makeService(controlled.streamFn);
+
+    const run = service.sendPrompt("initial request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
+
+    await service.followUpPrompt("do not run this after stop");
+    service.abort();
+    await run;
+
+    expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(userTexts(service.getMessages())).toEqual(["initial request"]);
+
+    const next = service.sendPrompt("fresh request");
+    await waitFor(() => controlled.runs.length === 2, "fresh run");
+    expect(userTexts(controlled.runs[1].context.messages)).toEqual(["initial request", "fresh request"]);
+    controlled.runs[1].finish();
+    await next;
+  });
+
   it("clears queued steering and follow-ups when the spend cap stops a run", async () => {
     const controlled = controlledStreamFn(["first answer", "must not run"], 0.02);
     const { service, settings } = makeService(controlled.streamFn);

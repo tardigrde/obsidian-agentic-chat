@@ -316,7 +316,9 @@ describe("AgentSessionActions", () => {
       release = resolve;
     });
     const originalLoad = runtime.load.bind(runtime);
+    let loadCalls = 0;
     runtime.load = async (path: string) => {
+      loadCalls += 1;
       await gate;
       return originalLoad(path);
     };
@@ -328,6 +330,7 @@ describe("AgentSessionActions", () => {
 
     expect(actions.getSwapState()).toBe("live");
     expect(runtime.continued).toBe(0);
+    expect(loadCalls).toBe(1);
   });
 
   it("exposes loading and live states while a swap runs", async () => {

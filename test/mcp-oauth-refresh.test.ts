@@ -155,6 +155,32 @@ describe("post-216 MCP OAuth refresh flights", () => {
     expect(unhandled).toEqual([]);
   });
 
+  it("starts a new flight after a rejected or failed refresh", async () => {
+    const server = oauthServer();
+    let calls = 0;
+    const fetcher: WebFetcher = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("network down");
+      if (calls === 2) return json(500, { error: "server_error" });
+      return json(200, { access_token: "retry-access", refresh_token: "retry-refresh", expires_in: 3600 });
+    };
+
+    await expect(refreshMcpOAuthToken(server, fetcher, undefined, () => 5_000)).rejects.toThrow(
+      "network down",
+    );
+    expect(server.oauth).toMatchObject({ accessToken: "old-access", refreshToken: "refresh-1" });
+
+    await expect(refreshMcpOAuthToken(server, fetcher, undefined, () => 5_000)).resolves.toBe(false);
+    expect(server.oauth).toMatchObject({ accessToken: "old-access", refreshToken: "refresh-1" });
+
+    await expect(refreshMcpOAuthToken(server, fetcher, undefined, () => 5_000)).resolves.toBe(true);
+    expect(calls).toBe(3);
+    expect(server.oauth).toMatchObject({
+      accessToken: "retry-access",
+      refreshToken: "retry-refresh",
+    });
+  });
+
   it("does not wipe newer tokens when a stale refresh returns invalid_grant", async () => {
     const server = oauthServer();
     let markStarted!: () => void;
