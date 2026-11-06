@@ -19,7 +19,7 @@ Use these terms:
 
 | State | Owner | Stored in |
 |---|---|---|
-| Active session pointer, transcript, generation | `ObsidianSessionManager` | session JSONL |
+| Active session pointer, transcript, generation | `ObsidianSessionManager` | session JSONL; generation in memory |
 | Session swap sequence | `AgentSessionSwapQueue` in `AgentSessionActions` | memory |
 | Session-local service state | `AgentSessionLocalState` | memory |
 | One prompt turn | `AgentPromptTurnRuntime` plus pi `Agent` | memory |
@@ -42,9 +42,10 @@ Invariants:
 
 - Only `AgentSessionActions` moves the active pointer, and only inside the swap
   queue.
-- Every write to a chosen session carries `expectedPath` and
-  `expectedGeneration`. A stale write fails; it never writes into another
-  session.
+- Every guarded rewrite carries `expectedPath` and `expectedGeneration`. A
+  stale rewrite fails; it never writes into another session.
+- An append captures the active file before it writes. After a swap, the append
+  lands in that old file and never in the new one. It does not throw.
 - The service prepares resources before it detaches the agent, and detaches
   before the pointer moves. A late event from the old agent must not land in the
   new file.
@@ -56,6 +57,9 @@ Gaps:
 
 - Two staleness guards exist: `sessionEpoch` in `AgentSessionActions` and
   `sessionGeneration` in `ObsidianSessionManager`.
+- An append writes to the captured old file without an error. Only a rewrite
+  rejects a stale target, so a caller cannot tell that an append missed the new
+  session.
 - `AgentService.recoverCompactedSession` loads a session outside the swap queue.
 - `AgentService.compactNow` and `maybeCompact` guard with tokens but do not queue
   behind a swap.
@@ -151,8 +155,9 @@ and carries the turn and session token.
 
 Owner: `McpHttpClient` owns `nextId`, `sessionId`, `initialized`, and the
 protocol version. Each discovery, probe, and tool call creates a new client, so
-connection state is per request. `src/mcp/oauth.ts` owns the refresh flights,
-keyed by the stable `id || url`, not by object identity. Token state lives on
+connection state is per request. That is intentional: no stale connection state
+is shared across sessions. `src/mcp/oauth.ts` owns the refresh flights, keyed by
+the stable `id || url`, not by object identity. Token state lives on
 `McpServerSettings.oauth`; the settings owner persists it.
 
 Invariants:
@@ -168,13 +173,11 @@ Invariants:
 
 Gaps:
 
-- Connection state is not shared across requests, so every call initializes
-  again and no session id is reused.
 - Auth state is mutable on settings objects that can be cloned per runtime load.
 - The OAuth callback receiver lifecycle is separate from the settings owner.
 
-Target: PR 11. Keep the per-request client, make the stable server id the only
-auth owner key, and remove the remaining object-identity assumptions.
+Target: PR 11. Keep the per-request client. Make the stable server id the single
+owner for token refresh and callback lifecycle. Add a witness for clone races.
 
 ## Semantic index writer
 
