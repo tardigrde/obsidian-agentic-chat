@@ -62,7 +62,7 @@ export interface McpServerSettings {
   enabledTools: string[];
   /** Deny globs for remote tools — deny wins over allow. */
   disabledTools: string[];
-  /** Transient: last WWW-Authenticate challenge with resource_metadata when authType is none (not persisted). */
+  /** Last WWW-Authenticate challenge; kept so a redraw or reload can show the banner until authentication succeeds. */
   pendingOAuthChallenge?: string;
   pendingOAuthResourceUrl?: string;
 }
@@ -87,7 +87,7 @@ export interface McpServerState {
   enabledTools: string[];
   /** Deny globs for remote tools — deny wins. */
   disabledTools: string[];
-  /** Transient: last OAuth challenge when server advertised resource_metadata but authType was none (not persisted long-term). */
+  /** Last OAuth challenge; kept in the state map so a redraw or reload can show the banner until authentication succeeds. */
   pendingOAuthChallenge?: string;
   pendingOAuthResourceUrl?: string;
 }

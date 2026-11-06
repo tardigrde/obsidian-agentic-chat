@@ -4,12 +4,13 @@ import {
   loadPlugins,
   mergePluginMcpServers,
   pluginMcpServerId,
+  resolveMcpServers,
   syncMcpServers,
   type LoadedPlugin,
 } from "../src/plugins/loader";
 import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID } from "../src/plugins/manifest";
 import { FakeApp } from "./helpers/fake-vault";
-import { createMcpServerSettings } from "../src/mcp/settings";
+import { createMcpServerSettings, createMcpServerState } from "../src/mcp/settings";
 
 function manifest(name: string): string {
   return JSON.stringify({ $schema: AGENT_PLUGINS_SCHEMA_ID, name, version: "1.0.0", description: `${name} tools` });
@@ -441,5 +442,44 @@ describe("mergePluginMcpServers / syncMcpServers", () => {
     const long = "x".repeat(30);
     expect(pluginMcpServerId(long, "a")).not.toBe(pluginMcpServerId(long, "b"));
     expect(pluginMcpServerId("docs", "docs")).toBe("plugin_docs_docs_889dfa93cd1a");
+  });
+
+  it("clears auth, tools, and pending OAuth state when a plugin URL changes", () => {
+    const id = pluginMcpServerId("corp", "api");
+    const persisted = createMcpServerState(id, {
+      enabled: true,
+      authType: "oauth",
+      lastUrl: "https://old.example/mcp",
+      oauth: {
+        ...createMcpServerSettings().oauth,
+        accessToken: "old-access",
+        refreshToken: "old-refresh",
+        expiresAt: 1234,
+      },
+      knownTools: [{ name: "old_tool", title: "Old tool", readOnlyHint: false }],
+      pendingOAuthChallenge: 'Bearer resource_metadata="https://old.example/.well-known/resource"',
+      pendingOAuthResourceUrl: "https://old.example/.well-known/resource",
+    });
+    const derived = [
+      {
+        ...createMcpServerSettings({ id, name: "corp: api", url: "https://new.example/mcp" }),
+        source: "plugin" as const,
+        headers: {},
+      },
+    ];
+
+    const [server] = resolveMcpServers(
+      { mcp: { servers: [] }, plugins: { mcpState: { [id]: persisted } } },
+      derived,
+    );
+
+    expect(server).toMatchObject({
+      url: "https://new.example/mcp",
+      authType: "oauth",
+      oauth: expect.objectContaining({ accessToken: "", refreshToken: "", expiresAt: 0 }),
+      knownTools: [],
+      pendingOAuthChallenge: undefined,
+      pendingOAuthResourceUrl: undefined,
+    });
   });
 });
