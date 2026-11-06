@@ -252,3 +252,39 @@ describe("semantic index bootstrap", () => {
     expect(result.file.snapshot?.records).toHaveLength(1);
   });
 });
+
+describe("semantic index write faults", () => {
+  it("keeps the previous complete index when a rebuild cannot start", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/fault/index.json";
+    const first = await bootstrapSemanticIndex({
+      adapter: adapter.asDataAdapter(),
+      path,
+      scope,
+      documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 2),
+      embedder: new DeterministicFakeEmbedder(),
+      batchSize: 1,
+      now: () => 1_000,
+    });
+    expect(first.completed).toBe(true);
+    const before = adapter.files.get(path);
+    expect(before).toBeDefined();
+
+    adapter.failNextWrite(path, new Error("disk full"));
+    await expect(
+      bootstrapSemanticIndex({
+        adapter: adapter.asDataAdapter(),
+        path,
+        scope,
+        documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 1),
+        embedder: new DeterministicFakeEmbedder(),
+        batchSize: 1,
+        now: () => 2_000,
+      }),
+    ).rejects.toThrow("disk full");
+
+    expect(adapter.files.get(path)).toBe(before);
+    const stored = await readSemanticIndexFile(adapter.asDataAdapter(), path);
+    expect(stored?.state.status.state).toBe("complete");
+  });
+});

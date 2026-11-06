@@ -59,8 +59,8 @@ await $(".agentic-chat-info").waitForExist();
 | `/todo` | `src/ui/commands.ts:40` | `test/e2e/specs/smoke.e2e.ts:208` | `covered` |
 | `/status` | `src/ui/commands.ts:32` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
 | `/plan` | `src/ui/commands.ts:39` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
-| `/undo` | `src/ui/commands.ts:49` | `test/e2e/specs/approval-deterministic.e2e.ts:261` | `covered` |
-| `/steer` | `src/ui/commands.ts:41` | `test/e2e/specs/approval-deterministic.e2e.ts:436` | `covered` |
+| `/undo` | `src/ui/commands.ts:49` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
+| `/steer` | `src/ui/commands.ts:41` | `test/e2e/specs/approval-deterministic.e2e.ts:491` | `covered` |
 | `/sessions` | `src/ui/commands.ts:30` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
 | `/new` | `src/ui/commands.ts:29` | `test/session-actions.test.ts:153` (unit only) | `partial` |
 | `/model` | `src/ui/commands.ts:31` | no committed check | `NONE` |

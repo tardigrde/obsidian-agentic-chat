@@ -1710,6 +1710,27 @@ describe("AgentService", () => {
     await next;
   });
 
+  it("stops only the active tab when two services share settings", async () => {
+    const first = controlledStreamFn(["first answer"]);
+    const second = controlledStreamFn(["second answer"]);
+    const a = makeService(first.streamFn);
+    const b = makeService(second.streamFn);
+
+    const runA = a.service.sendPrompt("a request");
+    const runB = b.service.sendPrompt("b request");
+    await waitFor(() => first.runs.length === 1 && second.runs.length === 1, "both active streams");
+
+    a.service.abort();
+    await runA;
+    expect(b.service.isStreaming()).toBe(true);
+
+    second.runs[0].finish();
+    await runB;
+    expect(userTexts(b.service.getMessages())).toEqual(["b request"]);
+    expect(b.service.getMessages().map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(userTexts(a.service.getMessages())).toEqual(["a request"]);
+  });
+
   it("clears queued steering and follow-ups when the spend cap stops a run", async () => {
     const controlled = controlledStreamFn(["first answer", "must not run"], 0.02);
     const { service, settings } = makeService(controlled.streamFn);

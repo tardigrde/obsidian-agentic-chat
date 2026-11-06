@@ -131,6 +131,40 @@ describe("ObsidianSessionManager plan tracker", () => {
   });
 });
 
+describe("session fault recovery", () => {
+  it("keeps the active session when a load hits ENOENT", async () => {
+    const { sm, adapter } = manager();
+    const first = await sm.createSession(DEFAULTS);
+    await sm.appendMessage(userMessage("keep me"));
+    const second = await sm.createSession(DEFAULTS);
+    await sm.loadSession(first.path);
+
+    const enoent = Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" });
+    adapter.failNextRead(second.path, enoent);
+
+    await expect(sm.loadSession(second.path)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(sm.getActiveSessionInfo()?.path).toBe(first.path);
+    expect(sm.getActiveSessionInfo()?.messageCount).toBe(1);
+  });
+
+  it("reports a failed append without changing the transcript", async () => {
+    const { sm, adapter } = manager();
+    const info = await sm.createSession(DEFAULTS);
+    await sm.appendMessage(userMessage("before"));
+
+    adapter.failNextAppend(info.path, new Error("disk full"));
+    await expect(sm.appendMessage(userMessage("lost"))).rejects.toThrow("disk full");
+
+    expect(adapter.files.get(info.path)).toContain("before");
+    expect(adapter.files.get(info.path)).not.toContain("lost");
+    expect(sm.getActiveSessionInfo()?.messageCount).toBe(1);
+
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    await reloaded.loadSession(info.path);
+    expect(reloaded.getActiveSessionInfo()?.messageCount).toBe(1);
+  });
+});
+
 describe("deriveAutoName", () => {
   it("titles a short prompt", () => {
     expect(deriveAutoName("hi")).toBe("Hi");

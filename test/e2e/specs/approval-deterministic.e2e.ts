@@ -216,6 +216,23 @@ async function scriptedCallLabels(): Promise<string[]> {
   });
 }
 
+async function dismissOpenApproval(): Promise<void> {
+  const modal = await $(".agentic-chat-approval");
+  if (!(await modal.isExisting())) return;
+  const deny = await modal.$("button=Deny");
+  if (await deny.isExisting()) {
+    await deny.click();
+    const confirm = await modal.$("button=Confirm Deny");
+    if (await confirm.isExisting()) await confirm.click();
+  }
+  await modal.waitForExist({ reverse: true, timeout: 5_000 }).catch(() => {});
+  if (await modal.isExisting()) {
+    const stop = await modal.$("button=Stop turn");
+    if (await stop.isExisting()) await stop.click();
+  }
+  await modal.waitForExist({ reverse: true, timeout: 5_000 }).catch(() => {});
+}
+
 describe("agentic-chat deterministic approvals", function () {
   before(async function () {
     await cleanupNotes();
@@ -276,12 +293,16 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   beforeEach(async function () {
+    expect(await $(".agentic-chat-approval").isExisting()).toBe(false);
     await setE2ERelease(false);
   });
 
   afterEach(async function () {
     // Unblock a held turn even when the test fails before its edit step.
     await setE2ERelease(true);
+    // A failed test can leave the approval modal open. Close it here so the
+    // next test fails on its own assertion, not on an intercepted click.
+    await dismissOpenApproval();
     await browser
       .waitUntil(async () => !(await $(".agentic-chat-stop").isDisplayed()), { timeout: 5_000 })
       .catch(() => {});
