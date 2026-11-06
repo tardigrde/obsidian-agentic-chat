@@ -2352,13 +2352,22 @@ export class ChatView extends ItemView {
   /** Delete from the history list; only the active session swaps under us. */
   private async deleteSessionFromList(path: string): Promise<void> {
     if (this.service.getSessionInfo()?.path === path) this.clearQueuedPrompt();
-    await this.service.deleteSession(path);
+    try {
+      await this.service.deleteSession(path);
+    } catch (error) {
+      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   /** Clear all conversations; the active session is replaced afterwards. */
   private async clearAllSessions(): Promise<number> {
     this.clearQueuedPrompt();
-    return this.service.clearSessions();
+    try {
+      return await this.service.clearSessions();
+    } catch (error) {
+      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      return 0;
+    }
   }
 
   private async loadSession(path: string): Promise<void> {

@@ -887,7 +887,9 @@ describe("AgentService", () => {
   it("reloads the persisted transcript when compaction cannot replace the live agent", async () => {
     const firstPrompt = `first ${"word ".repeat(50_000)}`;
     const secondPrompt = `second ${"word ".repeat(50_000)}`;
+    let streamCalls = 0;
     const bigUsageStream: StreamFn = ((model: Model<"openai-completions">) => {
+      streamCalls += 1;
       const stream = createAssistantMessageEventStream();
       const message = {
         role: "assistant" as const,
@@ -936,6 +938,7 @@ describe("AgentService", () => {
 
     await service.sendPrompt(firstPrompt);
     await service.sendPrompt(secondPrompt);
+    expect(streamCalls).toBe(2);
 
     // Simulate the agent replacement failing after the JSONL rewrite succeeds.
     const parentAgent = (service as unknown as {
@@ -953,12 +956,14 @@ describe("AgentService", () => {
 
     await service.sendPrompt("third");
     expect(failedOnce).toBe(true);
+    expect(streamCalls).toBe(3);
     expect(summarizeCalls).toBe(1);
     expect(service.getMessages()[0] && isSummaryMessage(service.getMessages()[0])).toBe(true);
 
     // The next turn must continue from the persisted, compacted session rather
     // than the stale in-memory transcript or a second summary.
     await service.sendPrompt("fourth");
+    expect(streamCalls).toBe(4);
     expect(service.getCompactionCount()).toBe(1);
     expect(service.getMessages().some((message) => JSON.stringify(message).includes("first"))).toBe(false);
     const path = service.getSessionInfo()?.path as string;

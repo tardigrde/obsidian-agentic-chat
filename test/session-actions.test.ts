@@ -32,6 +32,7 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
   refreshed = 0;
   rewrites: AgentMessage[][] = [];
   continued = 0;
+  recentPath: string | null = null;
   events: string[] = [];
   private revision = 0;
 
@@ -47,7 +48,12 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
 
   async continueRecent(): Promise<ActiveSessionSnapshot> {
     this.continued += 1;
-    if (this.activePath) return this.snapshot(this.activePath);
+    // Mirrors the real helper: most recently modified, not the active pointer.
+    if (this.recentPath) {
+      this.revision += 1;
+      this.activePath = this.recentPath;
+      return this.snapshot(this.recentPath);
+    }
     return this.create();
   }
 
@@ -169,6 +175,7 @@ describe("AgentSessionActions", () => {
   it("continues the recent session by activating its persisted messages", async () => {
     const sessions = new FakeSessionRuntime();
     sessions.seed("sessions/recent.jsonl", [userMessage("recent")]);
+    sessions.recentPath = "sessions/recent.jsonl";
     await sessions.load("sessions/recent.jsonl");
     const { actions, events } = makeActions({ sessions });
 
@@ -231,9 +238,36 @@ describe("AgentSessionActions", () => {
     expect(actions.getSwapState()).toBe("live");
   });
 
-  it("recovers the live session when a load fails after detach", async () => {
+  it("restores the previous session when the targeted load fails after detach", async () => {
+    const sessions = new FakeSessionRuntime();
+    sessions.seed("sessions/previous.jsonl", [userMessage("previous")]);
+    sessions.seed("sessions/target.jsonl", [userMessage("target")]);
+    sessions.seed("sessions/recent.jsonl", [userMessage("recent")]);
+    sessions.recentPath = "sessions/recent.jsonl";
+    await sessions.load("sessions/previous.jsonl");
+    const { actions, activation } = makeActions({ sessions, agent: agentWith([userMessage("previous")]) });
+    const originalLoad = sessions.load.bind(sessions);
+    sessions.load = async (path: string) => {
+      if (path === "sessions/target.jsonl") throw new Error("target load failed");
+      return originalLoad(path);
+    };
+
+    await expect(actions.loadSession("sessions/target.jsonl")).rejects.toThrow(
+      "Could not load sessions/target.jsonl; the previous session is still open.",
+    );
+
+    expect(sessions.activePath).toBe("sessions/previous.jsonl");
+    expect(activation.currentAgent?.state.messages).toEqual([userMessage("previous")]);
+    expect(sessions.continued).toBe(0);
+    expect(actions.getSwapState()).toBe("failed");
+    sessions.load = originalLoad;
+  });
+
+  it("falls back to the most recent session when the previous reload also fails", async () => {
     const sessions = new FakeSessionRuntime();
     sessions.seed("sessions/old.jsonl", [userMessage("old")]);
+    sessions.seed("sessions/recent.jsonl", [userMessage("recent")]);
+    sessions.recentPath = "sessions/recent.jsonl";
     await sessions.load("sessions/old.jsonl");
     const { actions, activation } = makeActions({ sessions, agent: agentWith([userMessage("old")]) });
     const originalLoad = sessions.load.bind(sessions);
@@ -248,7 +282,8 @@ describe("AgentSessionActions", () => {
     await expect(actions.waitForLive()).resolves.toBeUndefined();
     await actions.ensureSessionAgent();
 
-    expect(activation.currentAgent).not.toBeNull();
+    expect(sessions.continued).toBe(1);
+    expect(activation.currentAgent?.state.messages).toEqual([userMessage("recent")]);
     expect(actions.getSwapState()).toBe("live");
     sessions.load = originalLoad;
   });

@@ -34,6 +34,8 @@ export interface AgentSessionActionsOptions {
 
 export class AgentSessionActions {
   private readonly sessionSwaps = new AgentSessionSwapQueue();
+  /** Increments only for explicit session-changing operations, not reloads. */
+  private sessionEpoch = 0;
 
   constructor(private readonly options: AgentSessionActionsOptions) {}
 
@@ -41,9 +43,9 @@ export class AgentSessionActions {
     return this.sessionSwaps.state;
   }
 
-  /** Path + generation of the session a turn started against. */
+  /** Path + explicit epoch of the session a turn started against. */
   getSessionToken(): string {
-    return `${this.options.sessions.activePath ?? ""}:${this.options.sessions.generation}`;
+    return `${this.options.sessions.activePath ?? ""}:${this.sessionEpoch}`;
   }
 
   /**
@@ -71,12 +73,22 @@ export class AgentSessionActions {
 
   async newSession(): Promise<void> {
     return this.sessionSwaps.enqueue(async (setPhase) => {
+      this.sessionEpoch += 1;
+      const previousPath = this.options.sessions.activePath;
       await this.options.activation.prepareResources();
       // Stop the old agent before the session pointer moves, so a late
       // message_end/agent_end cannot land in the new file.
       this.options.activation.detachAgent();
       setPhase("loading");
-      const { messages } = await this.options.sessions.create();
+      let messages: AgentMessage[];
+      try {
+        ({ messages } = await this.options.sessions.create());
+      } catch (error) {
+        if (await this.restorePreviousSession(previousPath, setPhase)) {
+          throw new Error("Could not create a new session; the previous session is still open.", { cause: error });
+        }
+        throw error;
+      }
       setPhase("activating");
       await this.activateSession(messages);
     });
@@ -88,12 +100,22 @@ export class AgentSessionActions {
 
   async loadSession(path: string): Promise<void> {
     return this.sessionSwaps.enqueue(async (setPhase) => {
+      this.sessionEpoch += 1;
+      const previousPath = this.options.sessions.activePath;
       // Reload before detaching: a failed reload must leave the previous agent
       // and its session-local state intact.
       await this.options.activation.prepareResources();
       this.options.activation.detachAgent();
       setPhase("loading");
-      const { messages } = await this.options.sessions.load(path);
+      let messages: AgentMessage[];
+      try {
+        ({ messages } = await this.options.sessions.load(path));
+      } catch (error) {
+        if (await this.restorePreviousSession(previousPath, setPhase)) {
+          throw new Error(`Could not load ${path}; the previous session is still open.`, { cause: error });
+        }
+        throw error;
+      }
       setPhase("activating");
       await this.activateSession(messages);
     });
@@ -108,6 +130,7 @@ export class AgentSessionActions {
         this.options.notifyChange();
         return;
       }
+      this.sessionEpoch += 1;
       await this.options.activation.prepareResources();
       this.options.activation.detachAgent();
       setPhase("loading");
@@ -126,6 +149,7 @@ export class AgentSessionActions {
         this.options.notifyChange();
         return 0;
       }
+      this.sessionEpoch += 1;
       await this.options.activation.prepareResources();
       this.options.activation.detachAgent();
       setPhase("loading");
@@ -148,6 +172,7 @@ export class AgentSessionActions {
     return this.sessionSwaps.enqueue(async (setPhase) => {
       const agent = this.options.activation.currentAgent;
       if (!agent || agent.state.isStreaming) return;
+      this.sessionEpoch += 1;
       // `index` addresses the conversation transcript the UI renders, which excludes
       // pi's system-context message. Rewind the persisted conversation to that
       // index; the replacement agent re-seeds its own system message from the
@@ -161,6 +186,26 @@ export class AgentSessionActions {
       await this.options.activation.activate(snapshot.messages, { reloadResources: false });
       this.options.notifyChange();
     });
+  }
+
+  /**
+   * Reload the session that was active before a failed swap. Returns false
+   * when there was no previous session or reloading it also fails; the caller
+   * then leaves recovery to {@link ensureSessionAgent}.
+   */
+  private async restorePreviousSession(
+    previousPath: string | null,
+    setPhase: (phase: "loading" | "activating") => void,
+  ): Promise<boolean> {
+    if (!previousPath) return false;
+    try {
+      const { messages } = await this.options.sessions.load(previousPath);
+      setPhase("activating");
+      await this.activateSession(messages);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async loadIntoNewAgent(
