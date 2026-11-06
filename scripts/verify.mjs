@@ -62,7 +62,9 @@ const lanes = {
     }
     const target = args[0];
     const isPath = target.includes("/") || target.endsWith(".test.ts");
-    const vitestArgs = isPath ? ["run", target] : ["run", "-t", target];
+    const vitestArgs = isPath
+      ? ["run", "--reporter=default", target]
+      : ["run", "--reporter=default", "-t", target];
     return [step("unit tests", bin("vitest"), vitestArgs, { expectTests: true })];
   },
 
