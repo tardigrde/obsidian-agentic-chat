@@ -36,6 +36,8 @@ export interface SemanticIndexBootstrapInput {
   signal?: AbortSignal;
   /** Called after each persisted batch so a cross-view lease can stay fresh. */
   onProgress?: () => void;
+  /** Returns false when another writer owns the index; persistence then stops. */
+  isLeaseOwned?: () => boolean;
 }
 
 export interface SemanticIndexBootstrapResult {
@@ -53,6 +55,8 @@ export interface SemanticIndexLease {
   /** Refresh the lease after progress so a long but healthy run keeps it. */
   touch(): void;
   release(): void;
+  /** True while this lease still owns the path (not expired, not replaced). */
+  isOwned(): boolean;
 }
 
 /**
@@ -80,6 +84,7 @@ export class SemanticIndexLeaseRegistry {
       release: () => {
         if (this.leases.get(path) === entry) this.leases.delete(path);
       },
+      isOwned: () => this.leases.get(path) === entry && this.now() - entry.touchedAt < this.ttlMs,
     };
   }
 
@@ -103,6 +108,12 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
       characterCount: input.documents.reduce((sum, document) => sum + document.content.length, 0),
       indexingBatchSize: batchSize,
     });
+  const ownsLease = input.isLeaseOwned ?? (() => true);
+  const persist = async (file: SemanticIndexFile): Promise<boolean> => {
+    if (!ownsLease()) return false;
+    await writeSemanticIndexFile(input.adapter, input.path, file);
+    return true;
+  };
 
   if (input.documents.length === 0) {
     const file = semanticIndexFile({
@@ -112,24 +123,21 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
       indexedDocumentIds: [],
       updatedAt: now(),
     });
-    await writeSemanticIndexFile(input.adapter, input.path, file);
+    await persist(file);
     return { file, completed: false, cancelled: false };
   }
 
   let snapshot = createEmbeddingIndexSnapshot({ scope: input.scope, model: input.embedder.profile, now: now() });
   let processedDocuments = 0;
-  await writeSemanticIndexFile(
-    input.adapter,
-    input.path,
-    semanticIndexFile({
-      scope: input.scope,
-      status: { state: "running", scope: input.scope, processedDocuments, totalDocuments: input.documents.length },
-      estimate,
-      indexedDocumentIds: [],
-      snapshot,
-      updatedAt: now(),
-    }),
-  );
+  const runningFile = semanticIndexFile({
+    scope: input.scope,
+    status: { state: "running", scope: input.scope, processedDocuments, totalDocuments: input.documents.length },
+    estimate,
+    indexedDocumentIds: [],
+    snapshot,
+    updatedAt: now(),
+  });
+  if (!(await persist(runningFile))) return { file: runningFile, completed: false, cancelled: false };
   input.onProgress?.();
 
   try {
@@ -143,18 +151,15 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
       const records = await createEmbeddingIndexRecords(documents, embeddings, { now: now() });
       snapshot = upsertEmbeddingIndexRecords(snapshot, records, { now: now() });
       processedDocuments += documents.length;
-      await writeSemanticIndexFile(
-        input.adapter,
-        input.path,
-        semanticIndexFile({
-          scope: input.scope,
-          status: { state: "running", scope: input.scope, processedDocuments, totalDocuments: input.documents.length },
-          estimate,
-          indexedDocumentIds: snapshot.records.map((record) => record.documentId),
-          snapshot,
-          updatedAt: now(),
-        }),
-      );
+      const batchFile = semanticIndexFile({
+        scope: input.scope,
+        status: { state: "running", scope: input.scope, processedDocuments, totalDocuments: input.documents.length },
+        estimate,
+        indexedDocumentIds: snapshot.records.map((record) => record.documentId),
+        snapshot,
+        updatedAt: now(),
+      });
+      if (!(await persist(batchFile))) return { file: batchFile, completed: false, cancelled: false };
       input.onProgress?.();
     }
     const file = semanticIndexFile({
@@ -165,7 +170,7 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
       snapshot,
       updatedAt: now(),
     });
-    await writeSemanticIndexFile(input.adapter, input.path, file);
+    if (!(await persist(file))) return { file, completed: false, cancelled: false };
     return { file, completed: true, cancelled: false };
   } catch (error) {
     const cancelled = input.signal?.aborted === true || /cancelled|aborted/i.test(errorMessage(error));
@@ -192,7 +197,7 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
       snapshot,
       updatedAt: now(),
     });
-    await writeSemanticIndexFile(input.adapter, input.path, file);
+    await persist(file);
     return { file, completed: false, cancelled };
   }
 }
@@ -266,7 +271,29 @@ export async function writeSemanticIndexFile(
   file: SemanticIndexFile,
 ): Promise<void> {
   await ensureParentDirs(adapter, path);
-  await adapter.write(path, JSON.stringify(file, null, 2));
+  const text = JSON.stringify(file, null, 2);
+  const temporaryPath = `${path}.tmp`;
+  // Write beside the target, then rename over it: a partial temp write leaves
+  // the previous index untouched and readable.
+  await adapter.write(temporaryPath, text);
+  try {
+    await adapter.rename(temporaryPath, path);
+  } catch {
+    // Adapters without a usable atomic rename still get the write; the old
+    // file stayed intact until this fallback runs.
+    await adapter.write(path, text);
+    await removeFileIfSupported(adapter, temporaryPath);
+  }
+}
+
+async function removeFileIfSupported(adapter: DataAdapter, path: string): Promise<void> {
+  const candidate = adapter as DataAdapter & { remove?: (target: string) => Promise<void> };
+  if (typeof candidate.remove !== "function") return;
+  try {
+    await candidate.remove(path);
+  } catch {
+    // Best effort: a leftover temp file is harmless.
+  }
 }
 
 export function semanticIndexFile(input: {

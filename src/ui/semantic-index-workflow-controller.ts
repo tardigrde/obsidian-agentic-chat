@@ -63,13 +63,27 @@ export class SemanticIndexWorkflowController {
       this.options.renderer.error("Full-vault semantic indexing is never implicit. Re-run with /semantic-index start vault --confirm-vault.");
       return;
     }
-
-    const { documents, estimate } = await this.prepare(parsed.scope);
-    if (action === "estimate") {
-      this.options.renderer.info("Semantic index estimate", semanticEstimateRows(parsed.scope, documents, estimate));
+    if (action === "start" && this.abort) {
+      this.options.renderer.error("Semantic indexing is already running. Use /semantic-index cancel first.");
       return;
     }
-    await this.start(parsed.scope, documents, estimate);
+
+    // Expose cancel before document preparation: loading a vault scope can take
+    // long enough that the user must be able to stop it.
+    const controller = action === "start" ? new AbortController() : null;
+    if (controller) this.abort = controller;
+    try {
+      const { documents, estimate } = await this.prepare(parsed.scope);
+      if (controller?.signal.aborted) return;
+      if (action === "estimate") {
+        this.options.renderer.info("Semantic index estimate", semanticEstimateRows(parsed.scope, documents, estimate));
+        return;
+      }
+      if (!controller) return;
+      await this.start(parsed.scope, documents, estimate, controller);
+    } finally {
+      if (controller && this.abort === controller) this.abort = null;
+    }
   }
 
   async showStatus(): Promise<void> {
@@ -120,11 +134,9 @@ export class SemanticIndexWorkflowController {
     scope: RetrievalIndexScope,
     documents: RetrievalDocument[],
     estimate: EmbeddingIndexCostEstimate,
+    controller: AbortController,
   ): Promise<void> {
-    if (this.abort) {
-      this.options.renderer.error("Semantic indexing is already running. Use /semantic-index cancel first.");
-      return;
-    }
+    if (controller.signal.aborted) return;
     if (!this.options.embeddingsEnabled()) {
       this.options.renderer.error("Enable embeddings in Settings -> Resources before starting semantic indexing.");
       return;
@@ -141,10 +153,8 @@ export class SemanticIndexWorkflowController {
       );
       return;
     }
-    this.options.renderer.info("Semantic index", [["Start", `Indexing ${documents.length} notes for ${scope.kind} "${scope.label}".`]]);
-    const controller = new AbortController();
-    this.abort = controller;
     try {
+      this.options.renderer.info("Semantic index", [["Start", `Indexing ${documents.length} notes for ${scope.kind} "${scope.label}".`]]);
       const result = await bootstrapSemanticIndex({
         adapter: this.options.adapter,
         path,
@@ -154,11 +164,12 @@ export class SemanticIndexWorkflowController {
         embedder: this.options.createEmbedder(),
         batchSize: this.options.batchSize(),
         signal: controller.signal,
+        isLeaseOwned: () => lease.isOwned(),
         onProgress: () => lease.touch(),
       });
       this.options.renderer.info("Semantic index", semanticIndexRows(result.file));
     } finally {
-      this.abort = null;
+      if (this.abort === controller) this.abort = null;
       lease.release();
     }
   }
