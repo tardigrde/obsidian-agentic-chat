@@ -72,7 +72,7 @@ function refsIn(cell) {
  * file do not.
  */
 const REPLAY_IMPORT =
-  /import\s+(?:type\s+)?\{[^}]*\brunAgentReplay\b[^}]*\}\s+from\s+["'][^"']*helpers\/agent-replay["']/;
+  /^import\s+(?!type\b)\{[^}]*\brunAgentReplay\b[^}]*\}\s+from\s+["'][^"']*helpers\/agent-replay["']/m;
 
 function isUserActionProof(root, ref) {
   const file = ref.path.replaceAll("\\", "/");
@@ -86,7 +86,10 @@ function isUserActionProof(root, ref) {
   if (file.startsWith("test/live/")) return false;
   const absolute = path.join(root, file);
   if (!isFile(absolute)) return false;
-  return REPLAY_IMPORT.test(readFileSync(absolute, "utf8"));
+  const text = readFileSync(absolute, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  return REPLAY_IMPORT.test(text);
 }
 
 function stripRefs(cell) {

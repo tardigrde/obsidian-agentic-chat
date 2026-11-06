@@ -159,7 +159,22 @@ describe("check-feature-map", () => {
       "covered needs a deterministic e2e, probe, or replay reference",
     );
 
-    writeFileSync(path.join(root, "test", "fake-replay.test.ts"), "// see helpers/agent-replay\n");
+    writeFileSync(
+      path.join(root, "test", "fake-replay.test.ts"),
+      '// import { runAgentReplay } from "./helpers/agent-replay";\n',
+    );
+    writeFileSync(
+      path.join(features, "sample.md"),
+      journey(row("src/a.ts:1", "`test/fake-replay.test.ts:1`")),
+    );
+    expect(checkFeatureMap(root).errors.join("\n")).toContain(
+      "covered needs a deterministic e2e, probe, or replay reference",
+    );
+
+    writeFileSync(
+      path.join(root, "test", "fake-replay.test.ts"),
+      'import type { runAgentReplay } from "./helpers/agent-replay";\n',
+    );
     writeFileSync(
       path.join(features, "sample.md"),
       journey(row("src/a.ts:1", "`test/fake-replay.test.ts:1`")),
