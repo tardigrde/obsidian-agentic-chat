@@ -264,10 +264,16 @@ interface McpOAuthRefreshFlight {
 }
 
 /**
- * One refresh per server. Two 401/403 responses can race with the same refresh
- * token; the loser would receive invalid_grant and wipe the winner's tokens.
+ * One refresh per stable server id. Plugin MCP servers are cloned on each
+ * runtime load, so object identity cannot dedupe concurrent refreshes; the
+ * stable id can. Two 401/403 responses can race with the same refresh token;
+ * the loser would receive invalid_grant and wipe the winner's tokens.
  */
-const refreshFlights = new WeakMap<McpServerSettings, McpOAuthRefreshFlight>();
+const refreshFlights = new Map<string, McpOAuthRefreshFlight>();
+
+function refreshFlightKey(server: McpServerSettings): string {
+  return server.id || server.url;
+}
 
 export function refreshMcpOAuthToken(
   server: McpServerSettings,
@@ -277,8 +283,9 @@ export function refreshMcpOAuthToken(
   requestTimeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
   requestedScope?: string,
 ): Promise<boolean> {
+  const key = refreshFlightKey(server);
   const scope = requestedScope?.trim() ?? "";
-  const existing = refreshFlights.get(server);
+  const existing = refreshFlights.get(key);
   if (existing?.scope === scope) return existing.promise;
   if (existing) {
     // A different scope must wait for the current refresh to rotate the token,
@@ -287,25 +294,25 @@ export function refreshMcpOAuthToken(
       () => performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
       () => performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
     );
-    return trackMcpOAuthRefresh(server, scope, promise);
+    return trackMcpOAuthRefresh(key, scope, promise);
   }
   return trackMcpOAuthRefresh(
-    server,
+    key,
     scope,
     performMcpOAuthRefresh(server, fetcher, signal, now, requestTimeoutMs, requestedScope),
   );
 }
 
 function trackMcpOAuthRefresh(
-  server: McpServerSettings,
+  key: string,
   scope: string,
   promise: Promise<boolean>,
 ): Promise<boolean> {
   const flight: McpOAuthRefreshFlight = { scope, promise };
-  refreshFlights.set(server, flight);
+  refreshFlights.set(key, flight);
   void promise
     .finally(() => {
-      if (refreshFlights.get(server) === flight) refreshFlights.delete(server);
+      if (refreshFlights.get(key) === flight) refreshFlights.delete(key);
     })
     .catch(() => undefined);
   return promise;
@@ -321,9 +328,10 @@ async function performMcpOAuthRefresh(
 ): Promise<boolean> {
   if (server.authType !== "oauth") return false;
   if (!server.oauth.refreshToken || !server.oauth.tokenEndpoint || !server.oauth.clientId) return false;
+  const refreshTokenUsed = server.oauth.refreshToken;
   const body = new URLSearchParams();
   body.set("grant_type", "refresh_token");
-  body.set("refresh_token", server.oauth.refreshToken);
+  body.set("refresh_token", refreshTokenUsed);
   body.set("client_id", server.oauth.clientId);
   body.set("resource", mcpResourceUri(server.url));
   if (requestedScope?.trim()) body.set("scope", requestedScope.trim());
@@ -344,7 +352,10 @@ async function performMcpOAuthRefresh(
     requestTimeoutMs,
   );
   if (response.status < 200 || response.status >= 300) {
-    if (isInvalidRefreshTokenResponse(response)) forgetMcpOAuthTokens(server);
+    // A stale failure must not wipe tokens a newer refresh already installed.
+    if (isInvalidRefreshTokenResponse(response) && server.oauth.refreshToken === refreshTokenUsed) {
+      forgetMcpOAuthTokens(server);
+    }
     return false;
   }
   const token = parseJsonObject<OAuthTokenResponse>(response.text, "OAuth token refresh response");

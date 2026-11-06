@@ -173,10 +173,13 @@ export class McpHttpClient {
         this.initialized = true;
         return result;
       } catch (error) {
-        if (!isProtocolVersionRejection(error)) throw error;
-        lastProtocolError = error;
+        // Any failed handshake leaves the client unready. Clear the
+        // server-issued session too: the next attempt must not replay a dead
+        // session id after the notification failed.
         this.sessionId = undefined;
         this.initialized = false;
+        if (!isProtocolVersionRejection(error)) throw error;
+        lastProtocolError = error;
       }
     }
     throw lastProtocolError instanceof Error ? lastProtocolError : new Error("MCP initialize failed.");
