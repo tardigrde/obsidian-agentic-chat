@@ -854,15 +854,15 @@ export class AgentService {
         const agent = this.requireAgent();
         if (agent.state.isStreaming) {
           this.stopAgent(agent);
-          await agent.waitForIdle();
+          await agent.waitForIdle(); // NOSONAR:S9382 -- redirects are delivered in order; this wait is sequential by design.
         }
-        await this.promptTurns.waitForIdle();
+        await this.promptTurns.waitForIdle(); // NOSONAR:S9382 -- redirects are delivered in order; this wait is sequential by design.
         this.sessionState.clearError();
         this.loopGuard.reset();
         // Never route a redirect through sendPrompt: that path can compact and
         // replace the agent, which would drop the redirected message. The entry
         // token is passed again because either idle wait above can outlive a swap.
-        await this.runPrompt(
+        await this.runPrompt( // NOSONAR:S9382 -- redirects are delivered in order; this wait is sequential by design.
           (currentAgent) => currentAgent.prompt(createUserMessage(entry.text, entry.images)),
           entry.expectedSessionToken,
         );

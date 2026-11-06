@@ -200,12 +200,10 @@ export class AgentCompactionRuntime {
     // Summarization can take seconds and the user can switch sessions meanwhile.
     // Callers that captured a session with their messages pass it in so a swap
     // during their own pre-work cannot retarget this rewrite.
-    const expectedPath =
-      options.expectedPath !== undefined ? options.expectedPath : this.sessionManager.getActiveSessionPath();
-    const expectedGeneration =
-      options.expectedGeneration !== undefined
-        ? options.expectedGeneration
-        : this.sessionManager.getActiveSessionGeneration();
+    let expectedPath = options.expectedPath;
+    if (expectedPath === undefined) expectedPath = this.sessionManager.getActiveSessionPath();
+    let expectedGeneration = options.expectedGeneration;
+    if (expectedGeneration === undefined) expectedGeneration = this.sessionManager.getActiveSessionGeneration();
     const config = options.force
       ? { ...compactionConfig(this.getSettings()), enabled: true, thresholdFraction: 0 }
       : compactionConfig(this.getSettings());
