@@ -29,6 +29,15 @@ export class MemoryAdapter {
 
   async remove(path: string): Promise<void> {
     this.files.delete(path);
+    this.dirs.delete(path);
+  }
+
+  async rename(from: string, to: string): Promise<void> {
+    const content = this.files.get(from);
+    if (content === undefined) throw new Error(`Not found: ${from}`);
+    this.files.delete(from);
+    this.files.set(to, content);
+    if (this.dirs.delete(from)) this.dirs.add(to);
   }
 
   async list(path: string): Promise<{ files: string[]; folders: string[] }> {

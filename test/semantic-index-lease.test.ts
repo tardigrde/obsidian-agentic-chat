@@ -111,6 +111,25 @@ describe("post-216 semantic index atomic writes", () => {
     await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, file)).rejects.toThrow("disk full");
     expect(adapter.files.get(path)).toBe("old-index");
   });
+
+  it("leaves the old index intact and throws when the atomic rename fails", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/rename-fail/index.json";
+    await adapter.write(path, "old-index");
+    (adapter as unknown as { rename: (from: string, to: string) => Promise<void> }).rename = async () => {
+      throw new Error("rename failed");
+    };
+    const file = semanticIndexFile({
+      scope,
+      status: { state: "complete", scope, totalDocuments: 0 },
+      indexedDocumentIds: [],
+      updatedAt: 1,
+    });
+
+    await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, file)).rejects.toThrow(/atomically replace/i);
+    expect(adapter.files.get(path)).toBe("old-index");
+    expect(adapter.files.has(`${path}.tmp`)).toBe(false);
+  });
 });
 
 describe("post-216 semantic index workflow", () => {

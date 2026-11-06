@@ -49,6 +49,77 @@ describe("post-216 MCP OAuth refresh flights", () => {
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
     expect(calls).toBe(1);
+    expect(original.oauth).toMatchObject({
+      accessToken: "new-access",
+      refreshToken: "refresh-2",
+      expiresAt: 3_605_000,
+    });
+    expect(clone.oauth).toMatchObject({
+      accessToken: "new-access",
+      refreshToken: "refresh-2",
+      expiresAt: 3_605_000,
+    });
+  });
+
+  it("gives a wider-scope follower the rotated refresh token", async () => {
+    const original = oauthServer();
+    const clone: McpServerSettings = { ...original, oauth: { ...original.oauth } };
+    let calls = 0;
+    const bodies: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetcher: WebFetcher = async (request) => {
+      calls += 1;
+      bodies.push(request.body ?? "");
+      if (calls === 1) {
+        await gate;
+        return json(200, { access_token: "new-access", refresh_token: "refresh-2", expires_in: 3600 });
+      }
+      return json(200, { access_token: "scoped-access", refresh_token: "refresh-3", expires_in: 3600 });
+    };
+
+    const first = refreshMcpOAuthToken(original, fetcher, undefined, () => 5_000);
+    const second = refreshMcpOAuthToken(clone, fetcher, undefined, () => 5_000, undefined, "openid");
+    release();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+    expect(calls).toBe(2);
+    expect(new URLSearchParams(bodies[1]).get("refresh_token")).toBe("refresh-2");
+    expect(clone.oauth).toMatchObject({
+      accessToken: "scoped-access",
+      refreshToken: "refresh-3",
+    });
+  });
+
+  it("keeps the shared refresh alive when one caller aborts", async () => {
+    const leader = oauthServer();
+    const follower: McpServerSettings = { ...leader, oauth: { ...leader.oauth } };
+    const controller = new AbortController();
+    let calls = 0;
+    let release!: () => void;
+    const fetcher: WebFetcher = (_request, signal) => {
+      calls += 1;
+      return new Promise<WebHttpResponse>((resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new Error("Aborted.")), { once: true });
+        release = () => resolve(json(200, { access_token: "new-access", refresh_token: "refresh-2", expires_in: 3600 }));
+      });
+    };
+
+    const aborted = refreshMcpOAuthToken(leader, fetcher, controller.signal, () => 5_000);
+    const followerResult = refreshMcpOAuthToken(follower, fetcher, undefined, () => 5_000);
+    const abortedResult = expect(aborted).rejects.toThrow("Aborted.");
+    controller.abort();
+    release();
+
+    await abortedResult;
+    await expect(followerResult).resolves.toBe(true);
+    expect(calls).toBe(1);
+    expect(follower.oauth).toMatchObject({
+      accessToken: "new-access",
+      refreshToken: "refresh-2",
+    });
   });
 
   it("does not wipe newer tokens when a stale refresh returns invalid_grant", async () => {

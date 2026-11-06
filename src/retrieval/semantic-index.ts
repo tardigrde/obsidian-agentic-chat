@@ -278,11 +278,13 @@ export async function writeSemanticIndexFile(
   await adapter.write(temporaryPath, text);
   try {
     await adapter.rename(temporaryPath, path);
-  } catch {
-    // Adapters without a usable atomic rename still get the write; the old
-    // file stayed intact until this fallback runs.
-    await adapter.write(path, text);
+  } catch (error) {
+    // Never fall back to a direct write: a failed non-atomic write can truncate
+    // the only good index. Keep the old file and surface the failure.
     await removeFileIfSupported(adapter, temporaryPath);
+    throw new Error(`Could not atomically replace ${path}; the previous index was left unchanged.`, {
+      cause: error,
+    });
   }
 }
 
