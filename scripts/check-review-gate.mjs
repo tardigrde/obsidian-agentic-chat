@@ -37,7 +37,11 @@ export function parseVerdict(body) {
   const text = String(body ?? "");
   const field = (name) => {
     for (const rawLine of text.split(/\r?\n/)) {
-      const line = rawLine.trim().replace(/^\*+|\*+$/g, "").trim();
+      const line = rawLine
+        .trim()
+        .replace(/^\*+/, "")
+        .replace(/\*+$/, "")
+        .trim();
       if (!line.toLowerCase().startsWith(`${name.toLowerCase()}:`)) continue;
       return line.slice(name.length + 1).trim();
     }
@@ -199,9 +203,10 @@ async function main() {
     apiAll(`/repos/${repository}/pulls/${number}/reviews`, token),
   ]);
   const comments = [...issueComments, ...reviews].map(normalizeComment);
-  const diff = execFileSync(
+  const base = pull.base.sha;
+  const diff = execFileSync( // NOSONAR:S6350 -- base and head SHAs are validated above.
     "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
-    ["diff", "--numstat", `${pull.base.sha}...${head}`],
+    ["diff", "--numstat", `${base}...${head}`],
     { encoding: "utf8", maxBuffer: 20 * 1024 * 1024 },
   );
   const size = parseNumstat(diff);
