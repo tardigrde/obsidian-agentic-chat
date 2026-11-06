@@ -46,7 +46,7 @@ await closeAgenticChatSettings();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Settings tab opens | `src/main.ts:107` | `test/e2e/specs/settings-ui.e2e.ts:180` (opened by the helper via `app.setting`, not the nav) | `partial` |
+| Settings tab opens | `src/main.ts:129` | `test/e2e/specs/settings-ui.e2e.ts:180` (opened by the helper via `app.setting`, not the nav) | `partial` |
 | Tabs render and switch | `src/settings.ts:223` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |
 | Models: provider, API key, base URL, model | `src/settings.ts:386` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |
 | Secrets stay out of `data.json` | `src/settings.ts:1992` | `test/e2e/specs/settings-ui.e2e.ts:180` | `covered` |

@@ -16,6 +16,7 @@ import {
   DEFAULT_EMBEDDING_SETTINGS,
   activeEmbeddingModel,
   embeddingConfigFromSettings,
+  healEmbeddingSettings,
 } from "../src/retrieval/embeddings";
 import {
   DEFAULT_MCP_SETTINGS,
@@ -848,5 +849,12 @@ describe("mergeSettings — MCP", () => {
 
     if (previousNavigator) Object.defineProperty(globalThis, "navigator", previousNavigator);
     else delete (globalThis as { navigator?: Navigator }).navigator;
+  });
+});
+
+describe("embedding settings — lease id", () => {
+  it("heals a missing lease id and preserves a stored one", () => {
+    expect(healEmbeddingSettings(undefined).leaseId).toBe("");
+    expect(healEmbeddingSettings({ leaseId: "vault-1" }).leaseId).toBe("vault-1");
   });
 });

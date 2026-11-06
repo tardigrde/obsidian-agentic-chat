@@ -16,6 +16,7 @@ import {
   type RetrievalIndexingStatus,
   type ScopedRetrievalIndexState,
 } from "./policy";
+import { createDefaultSemanticLeaseStore, type SemanticLeaseStore } from "./semantic-index-lease-store";
 
 export interface SemanticIndexFile {
   version: 1;
@@ -51,10 +52,22 @@ export const SEMANTIC_INDEX_VERSION = 1;
 /** A stalled run loses its lease after this long without a persisted batch. */
 export const DEFAULT_SEMANTIC_INDEX_LEASE_TTL_MS = 30 * 60 * 1000;
 
+let semanticLeaseNamespace = "vault";
+
+/** Namespace store keys by vault so two vaults do not block each other. */
+export function setSemanticLeaseNamespace(namespace: string): void {
+  const trimmed = namespace.trim();
+  if (trimmed) semanticLeaseNamespace = trimmed;
+}
+
+function semanticLeaseKey(path: string): string {
+  return `${semanticLeaseNamespace}:${path}`;
+}
+
 export interface SemanticIndexLease {
   /** Refresh the lease after progress so a long but healthy run keeps it. */
   touch(): void;
-  release(): void;
+  release(): void | Promise<void>;
   /** True while this lease still owns the path (not expired, not replaced). */
   isOwned(): boolean;
 }
@@ -64,32 +77,94 @@ export interface SemanticIndexLease {
  * a crashed or stalled owner can be recovered instead of blocking indexing
  * forever.
  */
+let leaseOwnerSequence = 0;
+
+function nextLeaseOwnerId(): string {
+  leaseOwnerSequence += 1;
+  return `w${Date.now().toString(36)}-${leaseOwnerSequence.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export class SemanticIndexLeaseRegistry {
   private readonly leases = new Map<string, { touchedAt: number }>();
+  private readonly ownerId = nextLeaseOwnerId();
 
   constructor(
     private readonly now: () => number = Date.now,
     private readonly ttlMs: number = DEFAULT_SEMANTIC_INDEX_LEASE_TTL_MS,
+    private readonly store: SemanticLeaseStore | null = createDefaultSemanticLeaseStore(),
   ) {}
 
-  acquire(path: string): SemanticIndexLease | null {
-    const existing = this.leases.get(path);
-    if (existing && this.now() - existing.touchedAt < this.ttlMs) return null;
-    const entry = { touchedAt: this.now() };
-    this.leases.set(path, entry);
+  /**
+   * Claim the path in the shared store after taking the same-window lease.
+   * Returns the local lease only when IndexedDB is unavailable (Node tests).
+   * A store failure fails closed: the caller must not write without the shared
+   * lease. A lost renewal sets `isOwned` false before the next persisted batch.
+   */
+  async acquireDurable(path: string): Promise<SemanticIndexLease | null> {
+    const key = semanticLeaseKey(path);
+    const local = this.acquire(path);
+    if (!local || !this.store) return local;
+    const store = this.store;
+    try {
+      const acquired = await store.tryAcquire(key, this.ownerId, this.now(), this.ttlMs);
+      if (!acquired) {
+        void local.release();
+        return null;
+      }
+    } catch (error) {
+      void local.release();
+      throw new Error("Could not acquire the shared semantic index lease. Close other Obsidian windows and retry.", {
+        cause: error,
+      });
+    }
+    let owned = true;
+    let touchedAt = this.now();
     return {
       touch: () => {
-        if (this.leases.get(path) === entry) entry.touchedAt = this.now();
+        if (!owned) return;
+        local.touch();
+        touchedAt = this.now();
+        void store
+          .tryAcquire(key, this.ownerId, touchedAt, this.ttlMs)
+          .then((renewed) => {
+            if (!renewed) owned = false;
+          })
+          .catch(() => {
+            // A failed renewal cannot prove ownership; stop before the next write.
+            owned = false;
+          });
       },
       release: () => {
-        if (this.leases.get(path) === entry) this.leases.delete(path);
+        owned = false;
+        void local.release();
+        return store.release(key, this.ownerId).catch((error) => {
+          console.warn("Agentic Chat: could not release the semantic index lease", error);
+        });
       },
-      isOwned: () => this.leases.get(path) === entry && this.now() - entry.touchedAt < this.ttlMs,
+      isOwned: () => owned && this.now() - touchedAt < this.ttlMs && local.isOwned(),
+    };
+  }
+
+  acquire(path: string): SemanticIndexLease | null {
+    const key = semanticLeaseKey(path);
+    const existing = this.leases.get(key);
+    if (existing && this.now() - existing.touchedAt < this.ttlMs) return null;
+    const entry = { touchedAt: this.now() };
+    this.leases.set(key, entry);
+    return {
+      touch: () => {
+        if (this.leases.get(key) === entry) entry.touchedAt = this.now();
+      },
+      release: () => {
+        if (this.leases.get(key) === entry) this.leases.delete(key);
+      },
+      isOwned: () => this.leases.get(key) === entry && this.now() - entry.touchedAt < this.ttlMs,
     };
   }
 
   isLeased(path: string): boolean {
-    const existing = this.leases.get(path);
+    const key = semanticLeaseKey(path);
+    const existing = this.leases.get(key);
     return Boolean(existing && this.now() - existing.touchedAt < this.ttlMs);
   }
 }
@@ -274,7 +349,13 @@ async function repairInterruptedIndex(
   if (file.state.status.state !== "running") return file;
   // Hold the same lease a writer uses. Without it, a writer can acquire the
   // index between the check and the write and lose its file to our repair.
-  const lease = semanticIndexLeases.acquire(path);
+  let lease: SemanticIndexLease | null;
+  try {
+    lease = await semanticIndexLeases.acquireDurable(path);
+  } catch {
+    // A status read must still work when the shared lease store is unavailable.
+    return file;
+  }
   if (!lease) return file;
   try {
     // Re-read before writing: a status read can race a completed run, and the
@@ -310,7 +391,7 @@ async function repairInterruptedIndex(
     }
     return repaired;
   } finally {
-    lease.release();
+    await lease.release();
   }
 }
 
