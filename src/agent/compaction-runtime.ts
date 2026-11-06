@@ -126,6 +126,7 @@ export interface AgentCompactionRuntimeOptionsForRun {
 export type AgentCompactionSkipReason =
   | "missing_api_key"
   | "no_plan"
+  | "busy"
   | "summary_empty"
   | "summary_failed";
 
@@ -135,7 +136,7 @@ export type AgentCompactionRunResult =
 
 type SummaryResult =
   | { ok: true; summary: string }
-  | { ok: false; reason: Exclude<AgentCompactionSkipReason, "no_plan">; message: string };
+  | { ok: false; reason: Exclude<AgentCompactionSkipReason, "no_plan" | "busy">; message: string };
 
 export interface AgentCompactionRuntimeOptions {
   getSettings: () => AgenticChatSettings;
@@ -154,7 +155,7 @@ export class AgentCompactionRuntime {
   private readonly sessionManager: ObsidianSessionManager;
   private readonly buildStreamFn: () => StreamFn;
   private readonly injectedSummarize?: SummarizeFn;
-  /** Single-flight: auto-compaction and manual `/compact` share one run. */
+  /** Single-flight: equivalent callers share one run; forced/manual callers never do. */
   private inFlight: Promise<AgentCompactionRunResult> | null = null;
 
   constructor(options: AgentCompactionRuntimeOptions) {
@@ -180,9 +181,20 @@ export class AgentCompactionRuntime {
     contextWindow: number,
     options: AgentCompactionRuntimeOptionsForRun = {},
   ): Promise<AgentCompactionRunResult> {
-    // A second caller (manual /compact racing auto-compaction, or a double
-    // click) joins the running pass instead of summarizing and rewriting twice.
-    if (this.inFlight) return this.inFlight;
+    // An automatic caller joins the running pass: both want the same automatic
+    // summary. A manual `/compact` must not join: its instructions and force
+    // flag belong to a different request, and the joined pass would silently
+    // ignore them. Returning busy is honest; the user can retry when it ends.
+    if (this.inFlight) {
+      if (options.force || options.customInstructions?.trim()) {
+        return {
+          status: "skipped",
+          reason: "busy",
+          message: "A compaction is already running. Wait for it to finish, then run /compact again.",
+        };
+      }
+      return this.inFlight;
+    }
     const run = this.performCompaction(messages, contextWindow, options);
     this.inFlight = run;
     try {

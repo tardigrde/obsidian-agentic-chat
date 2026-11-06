@@ -4,6 +4,7 @@ import type { AssistantMessage, Model, TranscriptContext } from "@earendil-works
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
+import type { AgentCompactionRuntime } from "../src/agent/compaction-runtime";
 import { STOPPED_APPROVAL_REASON, type UserApprovalChoice } from "../src/agent/tool-call-controller";
 import type { AskUserHandler, AskUserRequest } from "../src/tools/ask-user-tool";
 import { isSummaryMessage } from "../src/agent/compaction";
@@ -1088,6 +1089,67 @@ describe("AgentService", () => {
         }),
       ]),
     );
+  });
+
+  it("reports busy when a manual compaction races another pass", async () => {
+    let started!: () => void;
+    let release!: () => void;
+    let secondEntered!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const secondEnteredPromise = new Promise<void>((resolve) => {
+      secondEntered = resolve;
+    });
+    const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
+    const adapter = new MemoryAdapter();
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const service = new AgentService({
+      app: minimalApp(),
+      getSettings: () => settings,
+      sessionManager,
+      confirmToolCall: async () => ({ approved: true, remember: false }),
+      streamFn: cannedStreamFn("ok"),
+      summarize: async () => {
+        started();
+        await gate;
+        return "Manual summary.";
+      },
+    });
+
+    await service.sendPrompt("first request");
+    await service.sendPrompt("second request");
+
+    // Hold the runtime pass directly so compactNow reaches the busy guard with
+    // a deterministic in-flight run. Track the second runtime entry: the manual
+    // path awaits its audit write first, so releasing before that entry lets the
+    // first pass finish and hides the race.
+    const compaction = (service as unknown as { compaction: AgentCompactionRuntime }).compaction;
+    const originalCompact = compaction.compactWithResult.bind(compaction);
+    let runtimeCalls = 0;
+    compaction.compactWithResult = async (messages, contextWindow, options) => {
+      runtimeCalls += 1;
+      if (runtimeCalls === 2) secondEntered();
+      return originalCompact(messages, contextWindow, options);
+    };
+
+    const first = compaction.compactWithResult(service.getMessages(), 1_000, { force: true });
+    await startedPromise;
+    const secondPromise = service.compactNow("keep the budget");
+    await secondEnteredPromise;
+    // Release after the manual call is inside the runtime. On the parent it
+    // joins the first pass; on the fix it has already returned busy.
+    release();
+    const second = await secondPromise;
+
+    expect(second).toMatchObject({
+      compacted: false,
+      message: expect.stringContaining("already running"),
+    });
+    await expect(first).resolves.toMatchObject({ status: "compacted" });
   });
 
   it("blocks a prompt when the session changes during turn preparation", async () => {
