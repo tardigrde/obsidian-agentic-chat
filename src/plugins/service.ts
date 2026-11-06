@@ -45,6 +45,7 @@ export interface GenerateMcpPackageResult {
  */
 export class PluginService {
   private cache: LoadedPlugin[] | null = null;
+  private retainedImportBackup = false;
 
   constructor(
     private readonly app: App,
@@ -66,9 +67,16 @@ export class PluginService {
       folder: settings.plugins.folder,
       enabledPlugins: settings.plugins.enabled,
     });
-    const mutated = this.pruneOrphanPluginSettings(settings);
+    // A retained backup still owns the state keys of its package. Pruning now
+    // would drop plugin/OAuth state before the backup can be restored.
+    const mutated = this.retainedImportBackup ? false : this.pruneOrphanPluginSettings(settings);
     if (mutated) await this.saveSettings?.();
     return this.cache;
+  }
+
+  /** True when the last sweep kept an import backup for manual recovery. */
+  hasRetainedImportBackup(): boolean {
+    return this.retainedImportBackup;
   }
 
   private pruneOrphanPluginSettings(settings: AgenticChatSettings): boolean {
@@ -551,40 +559,135 @@ export class PluginService {
    * Remove leftover `.importing-*` stage folders a crashed install may have
    * left. A `.importing-backup-<name>` folder means the crash happened after
    * moving the old package aside but before the staged package landed. Restore
-   * it when the target is missing so the sweep cannot delete the only copy.
+   * it when the target is missing or when an empty target can be safely
+   * replaced; never delete the only package copy.
+   *
+   * One bad child must not hide every other package from the reload.
    */
   async sweepImportStages(): Promise<void> {
-    const root = this.app.vault.getAbstractFileByPath(this.pluginsFolder());
-    if (!(root instanceof TFolder)) return;
     const writer = this.vaultWriter();
     const backupPrefix = ".importing-backup-";
-    // Snapshot the children: rename/remove updates the live vault tree.
-    for (const child of [...root.children]) {
-      if (!(child instanceof TFolder) || !child.name.startsWith(".importing-")) continue;
-      if (child.name.startsWith(backupPrefix)) {
-        const name = child.name.slice(backupPrefix.length);
-        const target = `${this.pluginsFolder()}/${name}`;
-        const safeName = name !== "" && name !== "." && name !== ".." && !/[/\\]/.test(name);
-        if (safeName && this.isWithinPluginsFolder(target)) {
-          if (await writer.folderExists(target)) {
-            // A folder already owns the target; the backup is replaceable.
-          } else if (await this.pathExists(target)) {
-            // A regular file owns the target. Never delete the only package
-            // copy; leave the backup for manual recovery.
-            continue;
-          } else {
-            await writer.renameFolder(child.path, target);
-            continue;
-          }
-        }
+    for (const childPath of await this.importStagePaths()) {
+      try {
+        await this.sweepImportStage(childPath, backupPrefix, writer);
+      } catch (error) {
+        console.warn(`Agentic chat: could not clean import stage ${childPath}`, error);
       }
-      await writer.removeFolder(child.path);
+    }
+    // Startup sweeps before the settings tab exists, so remember the outcome
+    // here rather than only in reload().
+    this.retainedImportBackup = await this.detectRetainedImportBackup();
+  }
+
+  private async sweepImportStage(childPath: string, backupPrefix: string, writer: PackageWriter): Promise<void> {
+    const childName = childPath.split("/").pop() ?? "";
+    if (!childName.startsWith(backupPrefix)) {
+      await writer.removeFolder(childPath);
+      return;
+    }
+    const name = childName.slice(backupPrefix.length);
+    const target = `${this.pluginsFolder()}/${name}`;
+    const safeName = name !== "" && name !== "." && name !== ".." && !/[/\\]/.test(name);
+    if (!safeName || !this.isWithinPluginsFolder(target)) {
+      await writer.removeFolder(childPath);
+      return;
+    }
+    const kind = await this.targetKind(target);
+    if (kind === "missing") {
+      await writer.renameFolder(childPath, target);
+      return;
+    }
+    if (kind === "file") return;
+    if (await this.hasReadablePluginManifest(target)) {
+      // A real package owns the target; the backup is replaceable.
+      await writer.removeFolder(childPath);
+      return;
+    }
+    // A folder without a readable manifest is not a package owner. Only an
+    // empty folder is safe to replace; anything else may be partial user data.
+    if (!(await this.isFolderEmptyOnDisk(target))) return;
+    await writer.removeFolder(target);
+    await writer.renameFolder(childPath, target);
+  }
+
+  /** Stage/backup folders from the tree and the adapter (tree can be stale). */
+  private async importStagePaths(): Promise<string[]> {
+    const paths = new Set<string>();
+    const root = this.app.vault.getAbstractFileByPath(this.pluginsFolder());
+    if (root instanceof TFolder) {
+      for (const child of root.children ?? []) {
+        if (child instanceof TFolder && child.name.startsWith(".importing-")) paths.add(child.path);
+      }
+    }
+    try {
+      const listing = await this.app.vault.adapter.list(this.pluginsFolder());
+      for (const folderPath of listing?.folders ?? []) {
+        const normalized = folderPath.replace(/\/+$/, "");
+        const name = normalized.split("/").pop() ?? "";
+        if (name.startsWith(".importing-")) paths.add(normalized);
+      }
+    } catch {
+      // Adapter listing unavailable; tree entries (if any) still stand.
+    }
+    return [...paths];
+  }
+
+  private async detectRetainedImportBackup(): Promise<boolean> {
+    const backupPrefix = ".importing-backup-";
+    for (const path of await this.importStagePaths()) {
+      const name = path.split("/").pop() ?? "";
+      if (name.startsWith(backupPrefix)) return true;
+    }
+    return false;
+  }
+
+  /** On-disk kind at `path`: the tree may be stale, so stat decides existence. */
+  private async targetKind(path: string): Promise<"folder" | "file" | "missing"> {
+    const adapter = this.app.vault.adapter as DataAdapter & {
+      stat?: (target: string) => Promise<{ type: "file" | "folder" } | null>;
+    };
+    if (typeof adapter.stat === "function") {
+      try {
+        const stat = await adapter.stat(path);
+        if (!stat) return "missing";
+        return stat.type === "folder" ? "folder" : "file";
+      } catch {
+        // stat failure is not proof of absence; fall through to exists.
+      }
+    }
+    try {
+      if (!(await adapter.exists(path))) return "missing";
+    } catch {
+      // Unknown state: keep the backup instead of renaming over something.
+      return "file";
+    }
+    const entry = this.app.vault.getAbstractFileByPath(path);
+    if (entry instanceof TFolder) return "folder";
+    if (entry) return "file";
+    try {
+      await adapter.list(path);
+      return "folder";
+    } catch {
+      return "file";
     }
   }
 
-  private async pathExists(path: string): Promise<boolean> {
-    if (this.app.vault.getAbstractFileByPath(path)) return true;
-    return this.app.vault.adapter.exists(path).catch(() => false);
+  private async hasReadablePluginManifest(target: string): Promise<boolean> {
+    try {
+      const raw = await this.app.vault.adapter.read(`${target}/plugin.json`);
+      return raw.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private async isFolderEmptyOnDisk(path: string): Promise<boolean> {
+    try {
+      const listing = await this.app.vault.adapter.list(path);
+      return (listing?.folders?.length ?? 0) === 0 && (listing?.files?.length ?? 0) === 0;
+    } catch {
+      return false;
+    }
   }
 
   private recordSource(name: string, label: string): void {
