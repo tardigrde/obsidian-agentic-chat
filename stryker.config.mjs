@@ -4,8 +4,8 @@ const configured = process.env.STRYKER_MUTATE
   .filter(Boolean);
 
 /**
- * Mutation gate for the state-machine core. The nightly workflow runs this
- * matrix; a local run can narrow it with STRYKER_MUTATE.
+ * Mutation gate for the state-machine core. Run it on demand with
+ * `npm run mutation`; a local run can narrow it with STRYKER_MUTATE.
  */
 export default {
   testRunner: "vitest",
