@@ -59,7 +59,7 @@ await $(".agentic-chat-send").click();
 | Empty-state suggestion chips | `src/ui/chat-view.ts:909` | no committed check | `NONE` |
 | Enter sends | `src/ui/chat-view.ts:713` | `test/e2e/specs/smoke.e2e.ts:45` (send button path only) | `partial` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts:713` | no committed check | `NONE` |
-| Send button | `src/ui/chat-view.ts:828` | `test/e2e/specs/approval-deterministic.e2e.ts:261` | `covered` |
+| Send button | `src/ui/chat-view.ts:828` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
 | ArrowUp/ArrowDown recall | `src/ui/chat-view.ts:705` | `test/composer-history.test.ts:16` (unit only) | `partial` |
 | Escape cancels edit | `src/ui/chat-view.ts:700` | `test/prompt-edit-state.test.ts:5` (unit only) | `partial` |
 | Autocomplete menu opens | `src/ui/chat-view.ts:953` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |

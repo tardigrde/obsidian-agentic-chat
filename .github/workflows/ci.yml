@@ -90,6 +90,9 @@ jobs:
       - name: Full e2e suite (xvfb)
         run: xvfb-run -a npm run verify -- e2e
 
+      - name: Mobile two-tab lane (xvfb)
+        run: xvfb-run -a npm run test:e2e:mobile -- --spec test/e2e/specs/multi-tab-approval.e2e.ts
+
       - name: Scripted dogfood eval (xvfb)
         run: xvfb-run -a npm run verify -- eval --run-scripted
 
