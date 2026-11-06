@@ -82,16 +82,16 @@ await $(".agentic-chat-info").waitForExist();
 | Bare `/<skill-name>` | `src/ui/chat-view.ts:1604` | `test/commands.test.ts:81` (parse only) | `partial` |
 | Hidden `/project` redirect | `src/ui/commands.ts:55` | no committed check | `NONE` |
 | `/template` as a command | `src/ui/chat-view.ts:1601` | no handler; the word falls through to the model | `unreachable` |
-| `/template <partial>` skill autocomplete | `src/ui/autocomplete.ts:77` | `test/autocomplete.test.ts:42` | `covered` |
+| `/template <partial>` skill autocomplete | `src/ui/autocomplete.ts:77` | `test/autocomplete.test.ts:42` (unit only) | `partial` |
 | Autocomplete menu for commands | `src/ui/chat-view.ts:953` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
 | Autocomplete keyboard keys | `src/ui/autocomplete-menu.ts:108` | no committed check | `NONE` |
 | Built-in skills are available | `src/skills/builtin-skills.ts:202` | `test/builtin-skills.test.ts:4` (catalog only) | `partial` |
 | Plugin skills load with built-ins | `src/agent/runtime-resources.ts:81` | `test/runtime-resources.test.ts:126` (unit only) | `partial` |
-| `read_skill` | `src/tools/read-skill-tool.ts:37` | `test/read-skill-tool.test.ts:5` | `covered` |
+| `read_skill` | `src/tools/read-skill-tool.ts:37` | `test/read-skill-tool.test.ts:5` (unit only) | `partial` |
 | `read_skill_file` | `src/tools/read-skill-tool.ts:71` | no committed check | `NONE` |
 | `load_skill` | `src/tools/skill-tools.ts:35` | no committed check | `NONE` |
 | `unload_skill` | `src/tools/skill-tools.ts:68` | no committed check | `NONE` |
-| `create_skill` | `src/tools/skill-tools.ts:124` | `test/skill-create-tool.test.ts:21` | `covered` |
+| `create_skill` | `src/tools/skill-tools.ts:124` | `test/skill-create-tool.test.ts:21` (unit only) | `partial` |
 | New skill modal | `src/ui/new-skill-modal.ts:34` | no committed check | `NONE` |
 | Repair built-ins | `src/settings.ts:2069` | no committed check | `NONE` |
 | Unregistered compat tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/vault-tools.ts:68` | no production caller passes `surface: "compat"`; the default surface filters these out at `src/tools/tool-contracts.ts:305` | `unreachable` |

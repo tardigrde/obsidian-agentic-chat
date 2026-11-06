@@ -55,9 +55,9 @@ await $(".agentic-chat-action-list").waitForExist();
 | Replay a failed dispatch | `src/ui/assistant-bubble.ts:622` | `test/e2e/specs/subagent-replay.e2e.ts:146` | `covered` |
 | Subagent timeout behavior | `src/agent/subagent-runtime.ts:64` | `test/subagents.test.ts:428` (unit only) | `partial` |
 | Subagent timeout setting row | `src/settings.ts:2098` | no committed check | `NONE` |
-| Attachment budget: inline or path reference | `src/ui/attachments.ts:42` | `test/attachments.test.ts:17` | `covered` |
-| Ignore-list withholding | `src/ui/attachments.ts:39` | `test/attachments.test.ts:37` | `covered` |
-| Context chips order and removal | `src/ui/chat-view.ts:2460` | `test/context-chip-renderer.test.ts:85` | `covered` |
+| Attachment budget: inline or path reference | `src/ui/attachments.ts:42` | `test/attachments.test.ts:17` (unit only) | `partial` |
+| Ignore-list withholding | `src/ui/attachments.ts:39` | `test/attachments.test.ts:37` (unit only) | `partial` |
+| Context chips order and removal | `src/ui/chat-view.ts:2460` | `test/context-chip-renderer.test.ts:85` (unit only) | `partial` |
 | Source chips and note open | `src/ui/assistant-bubble.ts:743` | `test/e2e/specs/beautifului-polish.e2e.ts:198` | `covered` |
 | `showFolderMenu()` | `src/ui/working-directory-workflow-controller.ts:21` | only a unit test calls it; no production caller | `unreachable` |
 | `attachFolderMenuItems()` | `src/ui/working-directory-workflow-controller.ts:48` | no caller in `src/` or `test/` | `unreachable` |

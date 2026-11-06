@@ -52,7 +52,7 @@ await clickMcpAddButton("Add MCP server");
 | MCP-only proxy override | `src/settings.ts:983` | no committed check | `NONE` |
 | Server enable toggle | `src/settings.ts:1237` | no committed check | `NONE` |
 | Server approval policy | `src/settings.ts:1373` | `test/e2e/specs/settings-ui.e2e.ts:268` | `covered` |
-| Static header auth | `src/settings.ts:1542` | `test/e2e/specs/settings-ui.e2e.ts:268` | `covered` |
+| Static header auth | `src/settings.ts:1504` | `test/e2e/specs/settings-ui.e2e.ts:268` | `covered` |
 | Bearer token auth | `src/settings.ts:1519` | no committed check | `NONE` |
 | OAuth settings panel | `src/settings.ts:1576` | no committed check | `NONE` |
 | OAuth required banner | `src/settings.ts:1266` | `test/e2e/specs/composio-install.e2e.ts:181` (banner and button only) | `partial` |
@@ -70,7 +70,7 @@ await clickMcpAddButton("Add MCP server");
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts:49` | `test/e2e/specs/composio-install.e2e.ts:27` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts:322` | `test/e2e/specs/settings-ui.e2e.ts:311` | `covered` |
 | Discover and call a remote MCP tool | `src/mcp/tools.ts:71` | `test/e2e/specs/mcp-live.e2e.ts:227` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
-| Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts:647` | `test/mcp-client.test.ts:360` | `covered` |
+| Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts:647` | `test/mcp-client.test.ts:360` (unit only) | `partial` |
 
 ## Gotchas
 
