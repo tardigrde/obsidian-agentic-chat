@@ -92,14 +92,14 @@ describe("post-216 semantic index lease ownership", () => {
 });
 
 describe("post-216 semantic index atomic writes", () => {
-  it("keeps the previous index readable when the temporary write fails", async () => {
+  it("creates the first index through a temporary file", async () => {
     const adapter = new MemoryAdapter();
-    const path = "semantic/atomic/index.json";
-    await adapter.write(path, "old-index");
-    const originalWrite = adapter.write.bind(adapter);
-    adapter.write = async (target, data) => {
-      if (target !== path) throw new Error("disk full");
-      return originalWrite(target, data);
+    const path = "semantic/atomic-first/index.json";
+    const renames: Array<[string, string]> = [];
+    const originalRename = adapter.rename.bind(adapter);
+    adapter.rename = async (from, to) => {
+      renames.push([from, to]);
+      return originalRename(from, to);
     };
     const file = semanticIndexFile({
       scope,
@@ -108,27 +108,38 @@ describe("post-216 semantic index atomic writes", () => {
       updatedAt: 1,
     });
 
-    await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, file)).rejects.toThrow("disk full");
-    expect(adapter.files.get(path)).toBe("old-index");
+    await writeSemanticIndexFile(adapter.asDataAdapter(), path, file);
+
+    expect(renames).toEqual([[`${path}.tmp`, path]]);
+    expect(adapter.files.has(`${path}.tmp`)).toBe(false);
+    expect(JSON.parse(adapter.files.get(path) ?? "{}")).toMatchObject({ version: 1, updatedAt: 1 });
   });
 
-  it("leaves the old index intact and throws when the atomic rename fails", async () => {
+  it("updates an existing index twice on a non-overwriting adapter", async () => {
     const adapter = new MemoryAdapter();
-    const path = "semantic/rename-fail/index.json";
-    await adapter.write(path, "old-index");
-    (adapter as unknown as { rename: (from: string, to: string) => Promise<void> }).rename = async () => {
-      throw new Error("rename failed");
-    };
-    const file = semanticIndexFile({
+    const path = "semantic/atomic-twice/index.json";
+    const first = semanticIndexFile({
       scope,
-      status: { state: "complete", scope, totalDocuments: 0 },
+      status: { state: "running", scope, processedDocuments: 0, totalDocuments: 1 },
       indexedDocumentIds: [],
       updatedAt: 1,
     });
+    const second = semanticIndexFile({
+      scope,
+      status: { state: "complete", scope, totalDocuments: 1 },
+      indexedDocumentIds: ["doc-1"],
+      updatedAt: 2,
+    });
 
-    await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, file)).rejects.toThrow(/atomically replace/i);
-    expect(adapter.files.get(path)).toBe("old-index");
+    await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, first)).resolves.toBeUndefined();
+    await expect(writeSemanticIndexFile(adapter.asDataAdapter(), path, second)).resolves.toBeUndefined();
+
     expect(adapter.files.has(`${path}.tmp`)).toBe(false);
+    expect(JSON.parse(adapter.files.get(path) ?? "{}")).toMatchObject({
+      version: 1,
+      updatedAt: 2,
+      state: { status: { state: "complete", totalDocuments: 1 } },
+    });
   });
 });
 

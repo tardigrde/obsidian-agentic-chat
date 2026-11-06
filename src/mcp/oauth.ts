@@ -330,14 +330,14 @@ function copyMcpOAuthState(from: McpServerSettings, to: McpServerSettings): void
 /** A caller's abort rejects only that caller; the shared flight continues. */
 function waitForMcpOAuthRefresh(promise: Promise<boolean>, signal?: AbortSignal): Promise<boolean> {
   if (!signal) return promise;
-  if (signal.aborted) return Promise.reject(new Error("Aborted."));
   return new Promise<boolean>((resolve, reject) => {
     const onAbort = () => {
       cleanup();
       reject(new Error("Aborted."));
     };
     const cleanup = () => signal.removeEventListener("abort", onAbort);
-    signal.addEventListener("abort", onAbort, { once: true });
+    // Attach the handler before the early abort return: an already-aborted
+    // caller must still observe a later shared rejection.
     promise.then(
       (value) => {
         cleanup();
@@ -348,6 +348,11 @@ function waitForMcpOAuthRefresh(promise: Promise<boolean>, signal?: AbortSignal)
         reject(error);
       },
     );
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 

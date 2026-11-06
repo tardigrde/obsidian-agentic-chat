@@ -272,9 +272,13 @@ export async function writeSemanticIndexFile(
 ): Promise<void> {
   await ensureParentDirs(adapter, path);
   const text = JSON.stringify(file, null, 2);
+  // Desktop rename rejects when the destination exists, so update through the
+  // atomic process helper. The first write has no destination and uses rename.
+  if (await adapter.exists(path)) {
+    await adapter.process(path, () => text);
+    return;
+  }
   const temporaryPath = `${path}.tmp`;
-  // Write beside the target, then rename over it: a partial temp write leaves
-  // the previous index untouched and readable.
   await adapter.write(temporaryPath, text);
   try {
     await adapter.rename(temporaryPath, path);

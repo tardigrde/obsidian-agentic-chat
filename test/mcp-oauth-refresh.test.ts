@@ -122,6 +122,39 @@ describe("post-216 MCP OAuth refresh flights", () => {
     });
   });
 
+  it("observes the shared rejection when the follower is already aborted", async () => {
+    const leader = oauthServer();
+    const follower: McpServerSettings = { ...leader, oauth: { ...leader.oauth } };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetcher: WebFetcher = async () => {
+      await gate;
+      throw new Error("network down");
+    };
+    const leaderResult = refreshMcpOAuthToken(leader, fetcher, undefined, () => 5_000);
+    const controller = new AbortController();
+    controller.abort();
+    const followerResult = refreshMcpOAuthToken(follower, fetcher, controller.signal, () => 5_000);
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const leaderRejected = expect(leaderResult).rejects.toThrow("network down");
+      release();
+      await leaderRejected;
+      await expect(followerResult).rejects.toThrow("Aborted.");
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+
+    expect(unhandled).toEqual([]);
+  });
+
   it("does not wipe newer tokens when a stale refresh returns invalid_grant", async () => {
     const server = oauthServer();
     let markStarted!: () => void;
