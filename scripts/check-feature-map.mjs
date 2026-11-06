@@ -66,17 +66,27 @@ function refsIn(cell) {
 
 /**
  * A `covered` row needs a check that drives the user action, not only a unit
- * test. E2E, probe, dogfood, and replay harness tests qualify. A plain vitest
- * file that imports the subject directly is `partial`.
+ * test. A deterministic e2e or probe scenario qualifies, and so does a replay
+ * that imports the replay harness. A live spec (which skips without keys), a
+ * dogfood spec (which needs a generated vault), a helper, and a plain vitest
+ * file do not.
  */
+const REPLAY_IMPORT =
+  /import\s+(?:type\s+)?\{[^}]*\brunAgentReplay\b[^}]*\}\s+from\s+["'][^"']*helpers\/agent-replay["']/;
+
 function isUserActionProof(root, ref) {
   const file = ref.path.replaceAll("\\", "/");
   if (!/\.(?:test|e2e|dogfood)\.ts$/.test(file)) return false;
-  if (file.startsWith("test/e2e/")) return true;
+  if (file.startsWith("test/e2e/")) {
+    const base = file.split("/").pop() ?? "";
+    if (file.startsWith("test/e2e/dogfood/")) return false;
+    if (base.includes("-live.") || base.startsWith("live-")) return false;
+    return true;
+  }
   if (file.startsWith("test/live/")) return false;
   const absolute = path.join(root, file);
   if (!isFile(absolute)) return false;
-  return /\b(?:runAgentReplay|helpers\/agent-replay)\b/.test(readFileSync(absolute, "utf8"));
+  return REPLAY_IMPORT.test(readFileSync(absolute, "utf8"));
 }
 
 function stripRefs(cell) {
@@ -143,7 +153,7 @@ function checkRow(root, row) {
     }
     if (!proofRefs.some((ref) => isUserActionProof(root, ref))) {
       errors.push(
-        `${where}: covered needs an e2e, probe, dogfood, or replay reference, not a unit-only test`,
+        `${where}: covered needs a deterministic e2e, probe, or replay reference, not a unit-only test`,
       );
     }
     for (const lie of COVERED_LIES) {

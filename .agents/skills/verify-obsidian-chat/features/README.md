@@ -44,7 +44,8 @@ Each one keeps the same five sections, in this order:
 
 - `covered`: a committed e2e, replay, probe, or real user-action check drives the
   named entry point and asserts the user-visible outcome or the vault side
-  effect. A unit test alone is `partial`.
+  effect. A unit test alone is `partial`. A live spec that skips without keys, a
+  dogfood spec, and a helper are not `covered` either.
 - `partial`: the check covers a component of the path, one variant, or only a
   gated path. A unit-only or policy-only check belongs here. The table says what
   is missing.

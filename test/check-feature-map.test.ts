@@ -112,7 +112,7 @@ describe("check-feature-map", () => {
     const features = path.join(root, FEATURES);
     writeFileSync(path.join(features, "sample.md"), journey(row("src/a.ts:1", "`test/a.test.ts:1`")));
     expect(checkFeatureMap(root).errors.join("\n")).toContain(
-      "covered needs an e2e, probe, dogfood, or replay reference",
+      "covered needs a deterministic e2e, probe, or replay reference",
     );
 
     writeFileSync(
@@ -134,7 +134,38 @@ describe("check-feature-map", () => {
       journey(row("src/a.ts:1", "`test/data.json:1`")),
     );
     expect(checkFeatureMap(root).errors.join("\n")).toContain(
-      "covered needs an e2e, probe, dogfood, or replay reference",
+      "covered needs a deterministic e2e, probe, or replay reference",
+    );
+  });
+
+  it("rejects live specs, dogfood specs, and comment-only replay mentions", () => {
+    const features = path.join(root, FEATURES);
+    writeFileSync(path.join(root, "test", "e2e", "mcp-live.e2e.ts"), "export {};\n");
+    writeFileSync(
+      path.join(features, "sample.md"),
+      journey(row("src/a.ts:1", "`test/e2e/mcp-live.e2e.ts:1`")),
+    );
+    expect(checkFeatureMap(root).errors.join("\n")).toContain(
+      "covered needs a deterministic e2e, probe, or replay reference",
+    );
+
+    mkdirSync(path.join(root, "test", "e2e", "dogfood"), { recursive: true });
+    writeFileSync(path.join(root, "test", "e2e", "dogfood", "flow.dogfood.ts"), "export {};\n");
+    writeFileSync(
+      path.join(features, "sample.md"),
+      journey(row("src/a.ts:1", "`test/e2e/dogfood/flow.dogfood.ts:1`")),
+    );
+    expect(checkFeatureMap(root).errors.join("\n")).toContain(
+      "covered needs a deterministic e2e, probe, or replay reference",
+    );
+
+    writeFileSync(path.join(root, "test", "fake-replay.test.ts"), "// see helpers/agent-replay\n");
+    writeFileSync(
+      path.join(features, "sample.md"),
+      journey(row("src/a.ts:1", "`test/fake-replay.test.ts:1`")),
+    );
+    expect(checkFeatureMap(root).errors.join("\n")).toContain(
+      "covered needs a deterministic e2e, probe, or replay reference",
     );
   });
 
