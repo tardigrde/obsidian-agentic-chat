@@ -190,8 +190,7 @@ export class AgentCompactionRuntime {
         return {
           status: "skipped",
           reason: "busy",
-          message:
-            "A compaction is already running. Wait for it to finish, then run /compact again with your instructions.",
+          message: "A compaction is already running. Wait for it to finish, then run /compact again.",
         };
       }
       return this.inFlight;
