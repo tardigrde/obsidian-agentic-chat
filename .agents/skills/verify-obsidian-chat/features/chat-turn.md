@@ -63,7 +63,7 @@ await browser.waitUntil(async () =>
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
 | Queue a plain message | `src/ui/chat-view.ts:1329` | `test/e2e/specs/approval-deterministic.e2e.ts:456` | `covered` |
 | `/steer` | `src/ui/chat-view.ts:1792` | `test/e2e/specs/approval-deterministic.e2e.ts:491` | `covered` |
-| `/follow-up` | `src/ui/chat-view.ts:1659` | `test/turn-control.test.ts:98` (label and parser only) | `partial` |
+| `/follow-up` | `src/ui/chat-view.ts:1733` | `test/turn-control.test.ts:98` (label and parser only) | `partial` |
 | `/redirect` | `src/ui/chat-view.ts:1660` | `test/turn-control.test.ts:98` (label and parser only) | `partial` |
 | Redirect survives a compacting turn | `src/agent/agent-service.ts:865` | `test/agent-service.test.ts:1606` | `partial` |
 | Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |

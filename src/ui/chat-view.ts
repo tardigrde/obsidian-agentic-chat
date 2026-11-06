@@ -294,6 +294,10 @@ export class ChatView extends ItemView {
     this.menu?.detach();
     this.bubble?.dispose();
     this.bubble = null;
+    // The view owns the semantic index run; abort it so a closed view cannot
+    // keep writing the index in the background.
+    this.semanticIndexWorkflow?.dispose();
+    this.semanticIndexWorkflow = null;
     if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
     this.userScrollIntentTimer = null;
     // The view owns its tab services; dispose them so no detached agent keeps running.

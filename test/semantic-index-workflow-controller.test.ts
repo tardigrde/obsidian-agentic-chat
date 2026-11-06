@@ -165,6 +165,23 @@ describe("SemanticIndexWorkflowController", () => {
     });
   });
 
+  it("dispose aborts the active run without a cancel message", async () => {
+    const embedder = new BlockingEmbedder();
+    const ctx = makeController({ embedder, documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 2) });
+
+    const running = ctx.controller.run("start vault --confirm-vault");
+    await embedder.started;
+    ctx.controller.dispose();
+    expect(embedder.signal?.aborted).toBe(true);
+    await running;
+
+    expect(
+      ctx.calls.some(
+        (call) => call.type === "info" && call.title === "Semantic index" && call.entries[0]?.[0] === "Cancel",
+      ),
+    ).toBe(false);
+  });
+
   it("runs only one controller for the same index path", async () => {
     const adapter = new MemoryAdapter();
     const embedder = new GatedEmbedder();
@@ -247,6 +264,7 @@ class GatedEmbedder implements RetrievalEmbedder {
 class BlockingEmbedder implements RetrievalEmbedder {
   readonly profile = FAKE_EMBEDDING_PROFILE;
   readonly started: Promise<void>;
+  signal?: AbortSignal;
   private markStarted!: () => void;
 
   constructor() {
@@ -260,6 +278,7 @@ class BlockingEmbedder implements RetrievalEmbedder {
   }
 
   async embedBatch(_inputs: readonly EmbeddingInput[], options?: EmbeddingRequestOptions): Promise<EmbeddingResult[]> {
+    this.signal = options?.signal;
     this.markStarted();
     return await new Promise<EmbeddingResult[]>((resolve, reject) => {
       options?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
