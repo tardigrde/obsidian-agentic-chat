@@ -56,6 +56,15 @@ export class AgentSessionActions {
   }
 
   /**
+   * Advance the token only when a swap is committed to changing the session.
+   * A failure before this point leaves the old session live, so a prompt
+   * prepared against it must still be accepted.
+   */
+  private commitSessionChange(): void {
+    this.sessionEpoch += 1;
+  }
+
+  /**
    * Wait for any in-flight swap. A failed swap is not sticky: when no agent
    * survived, the caller falls through to {@link ensureSessionAgent}, which
    * retries the recent session on the next send or session action.
@@ -80,9 +89,11 @@ export class AgentSessionActions {
 
   async newSession(): Promise<void> {
     return this.sessionSwaps.enqueue(async (setPhase) => {
-      this.sessionEpoch += 1;
       const previousPath = this.options.sessions.activePath;
       await this.options.activation.prepareResources();
+      // Commit only after the resource reload succeeds. A failed reload leaves
+      // the old session live, so its token must stay valid for queued prompts.
+      this.commitSessionChange();
       // Stop the old agent before the session pointer moves, so a late
       // message_end/agent_end cannot land in the new file.
       this.options.activation.detachAgent();
@@ -107,11 +118,11 @@ export class AgentSessionActions {
 
   async loadSession(path: string): Promise<void> {
     return this.sessionSwaps.enqueue(async (setPhase) => {
-      this.sessionEpoch += 1;
       const previousPath = this.options.sessions.activePath;
       // Reload before detaching: a failed reload must leave the previous agent
       // and its session-local state intact.
       await this.options.activation.prepareResources();
+      this.commitSessionChange();
       this.options.activation.detachAgent();
       setPhase("loading");
       let messages: AgentMessage[];
@@ -137,8 +148,8 @@ export class AgentSessionActions {
         this.options.notifyChange();
         return;
       }
-      this.sessionEpoch += 1;
       await this.options.activation.prepareResources();
+      this.commitSessionChange();
       this.options.activation.detachAgent();
       setPhase("loading");
       try {
@@ -164,8 +175,8 @@ export class AgentSessionActions {
         return 0;
       }
       const previousPath = this.options.sessions.activePath;
-      this.sessionEpoch += 1;
       await this.options.activation.prepareResources();
+      this.commitSessionChange();
       this.options.activation.detachAgent();
       setPhase("loading");
       try {
@@ -202,7 +213,6 @@ export class AgentSessionActions {
       }
       const agent = this.options.activation.currentAgent;
       if (!agent || agent.state.isStreaming) return;
-      this.sessionEpoch += 1;
       // `index` addresses the conversation transcript the UI renders, which excludes
       // pi's system-context message. Rewind the persisted conversation to that
       // index; the replacement agent re-seeds its own system message from the
@@ -215,6 +225,7 @@ export class AgentSessionActions {
       ) {
         throw new Error("The session changed before the transcript could be rewound.");
       }
+      this.commitSessionChange();
       setPhase("loading");
       const snapshot = await this.options.sessions.rewriteMessages(conversation, {
         expectedPath,
