@@ -284,7 +284,9 @@ async function writeReport(input: {
   actions: Array<Record<string, unknown>>;
 }): Promise<void> {
   const { options, outDir, result, driver, actions } = input;
-  const verdict = result.failure ? "INCONCLUSIVE" : (driver?.verdict ?? "INCONCLUSIVE");
+  // A non-zero child exit means the harness did not complete cleanly, even if a
+  // stale driver result claims PASS.
+  const verdict = result.failure || result.code !== 0 ? "INCONCLUSIVE" : (driver?.verdict ?? "INCONCLUSIVE");
   const steps = driver?.steps ?? [];
   const findings = driver?.findings ?? [];
   const notes = driver?.runnerNotes ?? [];

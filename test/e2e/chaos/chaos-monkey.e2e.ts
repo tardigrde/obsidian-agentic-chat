@@ -476,7 +476,7 @@ describe("chaos monkey live driver", function () {
 
     if (outDir) {
       await mkdir(outDir, { recursive: true });
-      await writeFile(path.join(outDir, "driver-result.json"), `${JSON.stringify(result, null, 2)}\n`);
+      await writeFile(path.join(outDir, "driver-result.json"), `${JSON.stringify(redactedResult(result), null, 2)}\n`);
       await writeMetrics({
         mode: plan.mode,
         target: plan.target,
@@ -516,6 +516,25 @@ describe("chaos monkey live driver", function () {
     expect(result.steps.length).toBeGreaterThan(0);
   });
 });
+
+/** Keep the machine-readable result free of key material, like the report. */
+function redactedResult(value: DriverResult): DriverResult {
+  return {
+    ...value,
+    steps: value.steps.map((step) => ({
+      ...step,
+      detail: step.detail ? redactSecrets(step.detail, [apiKey]) : undefined,
+    })),
+    findings: value.findings.map((finding) => ({
+      ...finding,
+      message: redactSecrets(finding.message, [apiKey]),
+    })),
+    notes: value.notes.map((note) => ({
+      ...note,
+      content: note.content ? redactSecrets(note.content, [apiKey]) : undefined,
+    })),
+  };
+}
 
 async function copySessions(target: string): Promise<void> {
   const sessionDir = await browser.executeObsidian(async ({ app }, pluginId) => {
