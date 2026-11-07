@@ -115,6 +115,8 @@ Invariants:
 
 - Persist first; replace the live agent second.
 - The rewrite carries the path and generation captured before summarization.
+- A rewrite stages a same-folder temp file and renames it over the session, so a
+  crash leaves the old transcript or the new one, never a truncated file.
 - A failed compaction never loses the pending prompt.
 - One compaction pass runs at a time.
 
