@@ -119,9 +119,9 @@ describe("AgentService turn cap", () => {
 
     const result = await runAgentReplay({
       prompt: "keep working",
-      // Plan mode denies every write, so the scripted tool turns are cheap and
-      // their per-turn arguments differ enough not to trip the loop guard.
-      settings: { mode: "plan" },
+      // A per-tool write deny keeps the scripted tool turns cheap, and their
+      // per-turn arguments differ enough not to trip the loop guard.
+      settings: { mode: "safe", approval: { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] } },
       turns,
     });
 

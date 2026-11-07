@@ -15,7 +15,6 @@ export interface AgentRole {
   model?: string;
   /**
    * Tool names the child may call. Empty means "all read-only vault tools".
-   * Mutating tools are stripped anyway when the parent is in a read-only mode.
    * Advisory – parent approval gates still apply.
    */
   toolAllowlist: string[];
@@ -96,7 +95,7 @@ export function formatAgentRolesForSystemPrompt(roles: AgentRole[]): string {
       "One call runs one subagent ({agent, task}); make several `subagent` calls in one message " +
       "to run several in parallel (up to 10 at once). " +
       "Delegate work that is self-contained (research, review) to keep your own context clean. " +
-      "Subagents inherit your approval/mode controls; the built-in Explorer role is read-only recon.",
+      "Subagents inherit your approval controls; the built-in Explorer role is read-only recon.",
     "",
     ...lines,
   ].join("\n");

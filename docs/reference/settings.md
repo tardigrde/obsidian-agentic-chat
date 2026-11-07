@@ -26,7 +26,7 @@ Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Permission mode | Safe | Safe follows the approval gates. YOLO auto-approves most mutating tools until you switch back; recursive folder deletes and `create_skill` still ask. Plan is read-only and is also available in this dropdown or through `/plan`. |
+| Permission mode | Safe | Safe follows the approval gates. YOLO auto-approves most mutating tools until you switch back; recursive folder deletes and `create_skill` still ask. |
 | Thinking level | `off` | `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Only models that support reasoning effort are affected. |
 | System prompt | built-in | Sent at the start of every conversation. |
 | Standing instructions | vault root | `AGENTS.md`, with `CLAUDE.md` and `GEMINI.md` as fallbacks. Loaded every turn and truncated after 16,000 characters with a notice. |

@@ -151,13 +151,13 @@ describe("agent runtime resources", () => {
       settings(),
     );
 
-    const prompt = composeAgentSystemPrompt(settings({ mode: "plan" }), resources, "Identity: test agent.");
+    const prompt = composeAgentSystemPrompt(settings({ outputStyle: "learning" }), resources, "Identity: test agent.");
 
     expect(prompt).toContain("Identity: test agent.");
     expect(prompt).toContain("## Project instructions");
     expect(prompt).toContain("## Subagents");
     expect(prompt).toContain("deep-research");
-    expect(prompt).toContain("read-only");
+    expect(prompt).toContain("Adopt a **learning** style");
   });
 
   it("marks plugin-contributed skill bodies as untrusted in the system prompt", async () => {

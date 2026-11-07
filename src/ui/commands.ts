@@ -31,7 +31,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "doctor", description: "audit runtime health, agent plugins, and MCP configs" },
   { name: "add-dir", args: "[folder]", description: "grant a working directory (auto-run inside, ask outside)" },
   { name: "dirs", description: "list/revoke granted working directories" },
-  { name: "plan", description: "enter read-only plan mode (sticky)" },
   { name: "style", args: "[name]", description: "switch output style" },
   { name: "effort", args: "[level]", description: "set reasoning effort for your messages (persisted)" },
   { name: "usage", description: "show token & cost totals" },

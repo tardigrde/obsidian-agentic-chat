@@ -79,7 +79,7 @@ export interface AgenticChatSettings {
   systemPrompt: string;
   /**
    * Session permission posture: `safe` honors the approval policy, `yolo` auto-approves
-   * mutating tools. `plan` (read-only) is reached via the `/plan` command, not this default.
+   * mutating tools.
    */
   mode: AgentMode;
   /** How the assistant talks: a built-in system-prompt overlay. */
@@ -222,7 +222,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
   return {
     ...DEFAULT_SETTINGS,
     ...remaining,
-    // Heal enum-like fields so an unknown (or retired ask/plan/agent) value can't break the gate or prompt.
+    // Heal enum-like fields so an unknown (or retired ask/plan/agent) value can't break the gate.
     provider: healProvider(stored?.provider),
     openrouterApiKeySecretId: stringSetting(stored?.openrouterApiKeySecretId, OPENROUTER_API_KEY_SECRET_ID),
     // Deprecated runtime-only plaintext: coerce so a corrupt non-string value

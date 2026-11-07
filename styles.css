@@ -1465,7 +1465,7 @@
   );
 }
 
-/* --- Permission mode (YOLO toggle + sticky plan badge) --- */
+/* --- Permission mode (YOLO toggle) --- */
 
 .agentic-chat-mode-toggle {
   display: inline-flex;
@@ -1478,7 +1478,6 @@
   cursor: pointer;
 }
 
-.agentic-chat-mode-toggle.is-planning,
 .agentic-chat-mode-toggle.is-disabled {
   opacity: 0.5;
   pointer-events: none;
@@ -1509,23 +1508,6 @@
 .agentic-chat-mode-toggle.is-active .agentic-chat-mode-seg:nth-child(2) {
   background-color: var(--interactive-accent);
   color: var(--text-on-accent);
-}
-
-.agentic-chat-plan-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--size-2-1);
-  font-size: var(--font-ui-smaller);
-  padding: var(--size-2-1) var(--size-2-3);
-  border-radius: var(--radius-m);
-  background-color: var(--background-modifier-hover);
-  color: var(--text-accent);
-  cursor: pointer;
-}
-
-.agentic-chat-plan-badge-icon svg {
-  width: 12px;
-  height: 12px;
 }
 
 .agentic-chat-status {

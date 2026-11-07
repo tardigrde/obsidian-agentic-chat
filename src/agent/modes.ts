@@ -1,26 +1,21 @@
 import { type ApprovalPolicy, type ApprovalSettings, resolvePolicy } from "./approval";
 
 /**
- * What the agent is *allowed to do* this turn — a preset over the approval system
- * plus a system-prompt framing. Distinct from output styles (how it talks) and
- * from skills (reusable capabilities).
+ * What the agent is *allowed to do* this turn — a preset over the approval system.
+ * Distinct from output styles (how it talks) and from skills (reusable capabilities).
  *
- * Collapsed to a single Safe ↔ YOLO posture plus a sticky read-only **plan** state:
  * - `safe`  — honor the configured approval policy (per-tool overrides + `approval.mutating`).
  * - `yolo`  — session master auto-approve: force `mutating: "allow"`, but an explicit
  *             per-tool `"deny"` still wins.
- * - `plan`  — read-only (deny every tool except a small allowlist) plus the plan-framing overlay.
- *             Entered with `/plan`. The model signals completion by ending a message
- *             with `PLAN_COMPLETE`; the user then clicks "Implement this plan" to exit.
  *
- * Precedence: plan > slider (yolo) > per-tool override > settings default.
+ * Precedence: slider (yolo) > per-tool override > settings default.
  */
-export type AgentMode = "safe" | "yolo" | "plan";
+export type AgentMode = "safe" | "yolo";
 
 export const DEFAULT_MODE: AgentMode = "safe";
 
-/** Display order for menus and pickers (default first; plan last — it's command-driven). */
-export const MODE_ORDER: AgentMode[] = ["safe", "yolo", "plan"];
+/** Display order for menus and pickers (default first). */
+export const MODE_ORDER: AgentMode[] = ["safe", "yolo"];
 
 /** The two postures exposed as the composer toggle (Safe ↔ YOLO). Kept as toggle contract; dropdown uses MODE_ORDER. */
 export const TOGGLE_MODES: AgentMode[] = ["safe", "yolo"];
@@ -31,8 +26,6 @@ export interface ModeDefinition {
   /** Lucide icon name for pickers. */
   icon: string;
   description: string;
-  /** Appended to the system prompt to frame the mode for the model. Empty for the default. */
-  promptOverlay: string;
 }
 
 export const MODES: Record<AgentMode, ModeDefinition> = {
@@ -41,25 +34,12 @@ export const MODES: Record<AgentMode, ModeDefinition> = {
     label: "Safe",
     icon: "shield-check",
     description: "Honor your approval settings — mutating tools follow the configured gate.",
-    promptOverlay: "",
   },
   yolo: {
     id: "yolo",
     label: "YOLO",
     icon: "zap",
     description: "Auto-approve every mutating tool for this session (an explicit per-tool deny still wins).",
-    promptOverlay: "",
-  },
-  plan: {
-    id: "plan",
-    label: "Plan",
-    icon: "clipboard-list",
-    description: "Read-only: investigate, then propose a step-by-step plan before any writes. The model signals completion with PLAN_COMPLETE; click Implement to execute.",
-    promptOverlay:
-      "You are in **plan mode**: read-only. No tool calls are allowed — gather context from the " +
-      "conversation history only. When your plan is final and ready for implementation, end your " +
-      "message with the exact line `PLAN_COMPLETE`. Do not include this marker until the plan is " +
-      "truly complete and you have gathered all necessary context.",
   },
 };
 
@@ -70,139 +50,57 @@ export interface ModeDecision {
 }
 
 /**
- * Resolve how a tool call is gated under a mode. In **plan** mode every tool
- * that is not in the read-only allowlist is denied with a read-only note.
- * **YOLO** forces the mutating default to `allow` (per-tool overrides still
- * apply, so a per-tool `deny` wins). **Safe** defers entirely to the configured
- * approval policy.
+ * Resolve how a tool call is gated under a mode. **YOLO** forces the mutating
+ * default to `allow` (per-tool overrides still apply, so a per-tool `deny` wins).
+ * **Safe** defers entirely to the configured approval policy.
  */
 export function resolveModePolicy(
   mode: AgentMode,
   approval: ApprovalSettings,
   toolName: string,
 ): ModeDecision {
-  if (mode === "plan" && !READONLY_TOOLS.has(toolName)) {
-    return { policy: "deny", reason: planDenyReason(toolName) };
-  }
   // YOLO is a session master switch: force the mutating default to allow, but let an
   // explicit per-tool override (e.g. a deliberate "deny") still take precedence.
   const effective: ApprovalSettings = mode === "yolo" ? { ...approval, mutating: "allow" } : approval;
   return { policy: resolvePolicy(effective, toolName) };
 }
 
-/** Tools permitted in plan mode (everything else is blocked). */
-const READONLY_TOOLS: ReadonlySet<string> = new Set([
-  "read",
-  "vault_inspect",
-  "ls",
-  "search",
-  "find",
-  "grep",
-  "get_active_note",
-  "get_backlinks",
-  "get_links",
-  "local_graph",
-  "get_properties",
-  "search_memory",
-  "web_search",
-  "fetch_url",
-  "read_skill",
-  "read_skill_file",
-]);
-
-function planDenyReason(toolName: string): string {
-  return (
-    `Plan mode is read-only, so the "${toolName}" tool is blocked. ` +
-    "Finish gathering context and present a step-by-step plan; signal completion with PLAN_COMPLETE."
-  );
-}
-
-/**
- * Enter the sticky plan state, remembering the posture to restore later. Returns
- * null when already in plan mode (nothing to do). Pure so the UI transition is testable.
- */
-export function enterPlan(current: AgentMode): { mode: "plan"; previous: AgentMode } | null {
-  return current === "plan" ? null : { mode: "plan", previous: current };
-}
-
-/** Leave plan mode, restoring the remembered posture (or the default when unknown). */
-export function exitPlan(previous: AgentMode | null): AgentMode {
-  return previous && previous !== "plan" ? previous : DEFAULT_MODE;
-}
-
 /** Heal a persisted/legacy mode value, mapping the retired ask/plan/agent set onto the new one. */
 export function healMode(stored: string | undefined): AgentMode {
   // hasOwnProperty (not `in`) so a prototype key like "constructor"/"toString" isn't treated as a mode.
   if (stored && Object.prototype.hasOwnProperty.call(MODES, stored)) return stored as AgentMode;
-  // Legacy modes: agent (full approval) → safe; ask (read-only) → plan; anything else → default.
-  if (stored === "agent") return "safe";
-  if (stored === "ask") return "plan";
+  // Legacy modes: agent (full approval) → safe; ask (read-only) and plan → safe;
+  // anything else → default.
+  if (stored === "agent" || stored === "ask" || stored === "plan") return "safe";
   return DEFAULT_MODE;
 }
 
 /**
- * S4: single validation gate for every mode surface (settings dropdown,
- * composer Safe↔YOLO toggle, `/plan` sticky). Codex
- * applies `ThreadSettingsOverrides{approval_policy, sandbox_policy,
- * permission_profile}` atomically — single source, all UIs reflect it.
- * This is the Obsidian analogue: one pure check, all UIs delegate to it.
- * Returns an error message when the transition is blocked, otherwise `null`.
- *
- * Asymmetry: plan→safe is allowed as an explicit abort (user bails on plan);
- * plan→yolo is blocked unless it restores the remembered posture (yolo→plan→yolo round-trip).
- * Direct plan→yolo would escalate without an explicit exit.
+ * Single validation gate for every mode surface (settings dropdown,
+ * composer Safe↔YOLO toggle). Returns an error message when the transition is
+ * blocked, otherwise `null`.
  */
-export function validateModeTransition(
-  current: AgentMode,
-  target: AgentMode,
-  isStreaming: boolean,
-  previousBeforePlan: AgentMode | null = null,
-): string | null {
+export function validateModeTransition(isStreaming: boolean): string | null {
   if (isStreaming) return "Can't switch mode while the agent is responding.";
-  if (current === target) return null;
-  // Plan is sticky read-only: yolo would widen the write boundary without
-  // an explicit plan exit. Reuse the harness gap wording so every surface
-  // shows the same guidance. Allow restore when previous was yolo.
-  if (current === "plan" && target === "yolo" && previousBeforePlan !== "yolo")
-    return "Can't switch to YOLO while in plan mode.";
   return null;
 }
 
 /**
- * Atomic mode update descriptor — mirrors Codex's
- * `ThreadSettingsOverrides` applied atomically. Callers mutate
- * `settings.mode` and `modeBeforePlan` only after validation passes,
- * then persist once.
+ * Atomic mode update descriptor. Callers mutate `settings.mode` only after
+ * validation passes, then persist once.
  */
 export interface ModeTransition {
   nextMode: AgentMode;
-  nextPrevious: AgentMode | null;
 }
 
 /**
- * Compute the atomic `settings.mode` + `modeBeforePlan` update for a
- * validated transition. Pure, so every UI (settings tab, composer toggle,
- * `/plan`) produces the same state.
+ * Compute the atomic `settings.mode` update for a validated transition. Pure,
+ * so every UI (settings tab, composer toggle) produces the same state.
  */
 export function resolveModeTransition(
   current: AgentMode,
   target: AgentMode,
-  previousBeforePlan: AgentMode | null,
 ): ModeTransition | null {
   if (current === target) return null;
-  // Defense-in-depth: callers should have validated; still reject illegal plan→yolo escalation.
-  if (current === "plan" && target === "yolo" && previousBeforePlan !== "yolo") return null;
-  if (target === "plan") {
-    const entered = enterPlan(current);
-    if (!entered) return null;
-    return { nextMode: "plan", nextPrevious: entered.previous };
-  }
-  if (current === "plan") {
-    // Leaving plan via an explicit safe/yolo pick: restore is handled by
-    // the caller choosing `target`; just clear the remembered posture.
-    return { nextMode: target, nextPrevious: null };
-  }
-  // Safe↔YOLO toggles must not carry stale plan memory.
-  if (previousBeforePlan !== null && previousBeforePlan === "plan") previousBeforePlan = null;
-  return { nextMode: target, nextPrevious: previousBeforePlan };
+  return { nextMode: target };
 }

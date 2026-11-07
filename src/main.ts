@@ -43,8 +43,6 @@ declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
 
 export default class AgenticChatPlugin extends Plugin {
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
-  /** S4: single-source memory for plan restore — one value for all leaves, not per-view (Codex atomic override). */
-  modeBeforePlan: AgentMode | null = null;
   private lastSyncedMode: AgentMode | null = null;
   private secretStore!: ObsidianSecretStore;
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
@@ -265,7 +263,7 @@ export default class AgenticChatPlugin extends Plugin {
     const legacySkillFolders = legacySkillFolderPaths(stored);
     this.settings = mergeSettings(stored);
     hydrateSettingsSecrets(this.settings, this.secretStore);
-    // S4: remember mode for broadcast guard; heals plan restore on restart
+    // S4: remember mode for the broadcast guard.
     this.lastSyncedMode = this.settings.mode;
     if (legacySkillFolders.length > 0) {
       // Run the migration before persisting the new schema: if it fails we
@@ -318,33 +316,27 @@ export default class AgenticChatPlugin extends Plugin {
     return false;
   }
 
-  /** S4: settings tab delegates to the active chat view so modeBeforePlan is handled atomically; falls back to direct mutate when no view is open. */
+  /** S4: settings tab delegates to the active chat view; falls back to direct mutate when no view is open. */
   async requestModeChange(target: AgentMode): Promise<boolean> {
     const activeView = this.app.workspace.getActiveViewOfType(ChatView);
     if (activeView) {
       const ok = await activeView.requestModeChange(target);
       if (!ok) {
-        const blocked = validateModeTransition(
-          this.settings.mode,
-          target,
-          this.isAnyViewStreaming(),
-          this.modeBeforePlan,
-        );
+        const blocked = validateModeTransition(this.isAnyViewStreaming());
         if (blocked) new Notice(blocked);
       }
       return ok;
     }
     // No active view — mutate directly with the same validation as ChatView.
-    const blocked = validateModeTransition(this.settings.mode, target, this.isAnyViewStreaming(), this.modeBeforePlan);
+    const blocked = validateModeTransition(this.isAnyViewStreaming());
     if (blocked) {
       new Notice(blocked);
       return false;
     }
     if (this.settings.mode === target) return false;
-    const transition = resolveModeTransition(this.settings.mode, target, this.modeBeforePlan);
+    const transition = resolveModeTransition(this.settings.mode, target);
     if (!transition) return false;
     this.settings.mode = transition.nextMode;
-    this.modeBeforePlan = transition.nextPrevious;
     await this.saveSettings();
     return true;
   }

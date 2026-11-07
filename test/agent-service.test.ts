@@ -656,25 +656,6 @@ describe("AgentService", () => {
     expect(service.getMessages().filter((message) => message.role === "assistant")).toHaveLength(1);
   });
 
-  it("blocks mutating tools in plan mode and feeds the read-only denial back to the model", async () => {
-    const streamFn = scriptedStreamFn([
-      { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "note.md", content: "hi" } }], stopReason: "toolUse" },
-      { content: [{ type: "text", text: "Read-only — here's what I would write." }], stopReason: "stop" },
-    ]);
-    // Approval allows mutating and the user would confirm — plan mode must still block.
-    const { service, settings } = makeService(streamFn, async () => ({ approved: true, remember: false }));
-    settings.mode = "plan";
-    settings.approval = { mutating: "allow", perTool: {}, workingDirs: [] };
-    await service.sendPrompt("Create note.md");
-
-    const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
-      | { role: "toolResult"; isError: boolean; content: Array<{ type: string; text?: string }> }
-      | undefined;
-    expect(toolResult?.isError).toBe(true);
-    const resultText = (toolResult?.content ?? []).map((block) => block.text ?? "").join("");
-    expect(resultText).toMatch(/read-only/i);
-  });
-
   it("loop guard soft-stops after 4 identical scripted tool batches and appends a plain-text message", async () => {
     const toolTurn: { content: AssistantMessage["content"]; stopReason: "stop" | "toolUse" } = {
       content: [{ type: "toolCall", id: "call-loop", name: "write", arguments: { path: "loop.md", content: "x" } }],

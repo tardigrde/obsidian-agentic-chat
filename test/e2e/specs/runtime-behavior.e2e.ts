@@ -217,17 +217,14 @@ describe("agentic-chat runtime behavior", function () {
     expect(prompt).not.toContain(PRIVATE_NOTE_BODY);
   });
 
-  it("shows model/provider status, local plan/undo state, and web tools when enabled", async function () {
+  it("shows model/provider status, local undo state, and web tools when enabled", async function () {
     await runSlashCommand("/status");
     const status = await latestInfoText();
     expect(status).toContain("Provider");
     expect(status).toContain("openrouter");
     expect(status).toContain("Model");
 
-    await runSlashCommand("/plan");
-    await expect($(".agentic-chat-plan-badge")).toBeDisplayed();
-    await $(".agentic-chat-plan-badge").click();
-    await expect($(".agentic-chat-plan-badge")).not.toBeDisplayed();
+    await expect($(".agentic-chat-plan-badge")).not.toExist();
 
     await runSlashCommand("/undo");
     expect(await latestInfoText()).toContain("Nothing to undo.");

@@ -7,7 +7,7 @@ import {
   visibleCommands,
 } from "../src/ui/commands";
 
-const REMOVED_COMMANDS = ["config", "project", "steer", "follow-up", "redirect", "todo"] as const;
+const REMOVED_COMMANDS = ["config", "project", "steer", "follow-up", "redirect", "todo", "plan"] as const;
 const REMOVED_ALIASES = [
   "mode",
   "projects",
@@ -18,6 +18,8 @@ const REMOVED_ALIASES = [
   "todos",
   "followup",
   "thinking",
+  "planning",
+  "endplan",
 ] as const;
 const SUPPORTED_COMMANDS = [
   "usage",
@@ -25,7 +27,6 @@ const SUPPORTED_COMMANDS = [
   "style",
   "add-dir",
   "dirs",
-  "plan",
   "sessions",
   "semantic-index",
   "effort",

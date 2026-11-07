@@ -246,19 +246,15 @@ describe("filterChildTools", () => {
   const names = (subset: ReturnType<typeof createVaultTools>): string[] => subset.map((tool) => tool.name).sort();
 
   it("restricts to the named allowlist", () => {
-    expect(names(filterChildTools(tools, ["read", "vault_inspect"], false))).toEqual(["read", "vault_inspect"]);
+    expect(names(filterChildTools(tools, ["read", "vault_inspect"]))).toEqual(["read", "vault_inspect"]);
   });
 
   it("defaults an empty allowlist to the read-only tools", () => {
-    const result = names(filterChildTools(tools, [], false));
+    const result = names(filterChildTools(tools, []));
     expect(result).toContain("read");
     expect(result).toContain("vault_inspect");
     expect(result).not.toContain("write");
     expect(result).not.toContain("delete");
-  });
-
-  it("strips mutating tools in read-only mode even when allowlisted", () => {
-    expect(names(filterChildTools(tools, ["read", "write", "delete"], true))).toEqual(["read"]);
   });
 });
 

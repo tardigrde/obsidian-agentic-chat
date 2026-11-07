@@ -103,7 +103,7 @@ export function removeWorkingDir(workingDirs: string[], rawPath: string): boolea
  * through `ask`. That deliberately includes **pathless** calls (search without a
  * path, get_active_note, ls of the root): they can traverse the whole vault, so under an
  * allow-list working set they must not silently read outside it. An empty config is
- * returned unchanged, and a `deny` (per-tool override / plan mode) always wins.
+ * returned unchanged, and a `deny` (per-tool override) always wins.
  */
 export function resolveWorkingDirPolicy(
   workingDirs: string[],

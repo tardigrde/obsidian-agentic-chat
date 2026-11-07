@@ -260,8 +260,8 @@ export class AgentToolCallController {
     const isPersistentSkillTool = toolName === "load_skill" || toolName === "unload_skill" || toolName === "create_skill";
     const basePolicy = isPersistentSkillTool ? (getPerToolApproval(settings.approval, toolName) ?? "ask") : decision.policy;
     // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
-    // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, and plan
-    // already forces read-only, so the boundary only refines Safe.
+    // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, so the
+    // boundary only refines Safe.
     const policy = scoped
       ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, basePolicy)
       : basePolicy;
@@ -299,7 +299,7 @@ export class AgentToolCallController {
     args: unknown,
     signal?: AbortSignal,
   ): Promise<ToolGateDecision> {
-    // S1: MCP now respects the same mode overlay as vault tools (plan deny, yolo allow)
+    // S1: MCP now respects the same mode overlay as vault tools (yolo allow)
     // and the same working-dir refinement for vault-path args. Previously this bypassed both,
     // allowing MCP to escape the safety boundary. Working-dir refinement is only applied
     // when args actually target vault paths (path/newPath) — pathless MCP calls don't span the vault.

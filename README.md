@@ -39,7 +39,6 @@ Privacy controls are on by default.
 - **Undo.** `/undo` reverts the last vault change: write, edit, rename, frontmatter update, single-file delete, or empty-folder delete. A recursive delete of a non-empty folder cannot be reverted.
 - **Safe and YOLO modes.** The composer switch sets the approval posture. Safe uses your policy. YOLO auto-approves mutating tools for the session, except recursive folder deletes; a per-tool deny still wins.
 - **Working directories.** Grant folders with the composer folder button, `/add-dir`, or settings. In Safe mode, calls inside the set run without approval. Calls outside it ask first, including reads. Calls with no path also ask because they can span the vault. `/dirs` lists and revokes grants. An empty set applies the policy vault-wide. The ignore list still wins.
-- **Plan mode.** `/plan` enters a sticky read-only state and blocks mutations. Leave with the Plan badge; the previous Safe or YOLO mode returns.
 - **Ignore list.** Gitignore-style globs such as `Private/`, `*.secret.md`, and `**/diary/**` hide notes from the agent. Matching files report as not found to every tool, so the agent cannot read, list, search, or edit them.
 - **Sessions.** Each chat is stored as JSONL in the plugin folder and resumes on reload. Browse, search, reopen, rename, delete, export, or clear sessions. Titles come from the first prompt. Sessions work on mobile without SQLite or Node `fs`.
 - **Token and cost control.** Per-message and per-session token and USD usage (`/usage`, `/status`), a next-request cost estimate, a cost alert, a spend cap that blocks or aborts at the limit, and a context-window bar. Long sessions compact older turns into a summary before overflow; `/compact [instructions]` runs compaction on demand.
@@ -95,7 +94,7 @@ The agent can delegate a focused task to a child agent with its own context wind
 
 - **Roles.** The only built-in role is Explorer, which does read-only recon. Custom roles are not supported; add them in code.
 - **Dispatch.** The agent calls `subagent` once per child (`{ agent, task }`). Several calls in one message run concurrently, with a cap. Children never get the `subagent` tool, so depth is one level.
-- **Approval.** Each child tool call still passes through the parent approval and working-directory gate. In plan or read-only mode, children are forced read-only.
+- **Approval.** Each child tool call still passes through the parent approval and working-directory gate.
 - **UI and cost.** A dispatch shows a step card with each child's live status. Click a row to expand the summary. Child token and USD usage is added to the conversation total.
 
 Run `/agent <name> <task>`, or `/agent` to choose from a list. The model can also dispatch children on its own.
@@ -200,7 +199,7 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 - **Send a message.** Type and press Enter (Shift+Enter for a newline). Type `/` for commands and skills or `@` to attach a note. Both show an inline autocomplete list.
 - **Context attachments.** The note you are viewing is attached as a removable chip. Dismiss it to suppress it for the session; `/new` resets it. Ignore-listed notes and root standing-instruction files are not attached. Add more with `@<note>`, `@<note>#<heading>`, `@<note>^<block-id>`, **+ Folder** (a folder listing), by dragging a note or folder from the file explorer onto the composer, or from Obsidian context menus: right-click a note, folder, or selected editor text and send it to Agentic Chat.
 - **Watch the agent work.** Each tool call is a step card you can expand to see arguments, results, and elapsed time. Streaming output stays pinned only while you are at the bottom. Scroll up and the transcript stops following new output until you return to the bottom.
-- **Approve changes.** When a mutating tool is set to ask, a dialog shows the arguments and a diff of the change. **Allow** (Enter) or **Deny** (Escape). You can choose "don't ask again for this tool"; the plugin remembers the final choice. Switch the composer to **YOLO** to auto-approve for the session, or use `/plan` to lock to read-only.
+- **Approve changes.** When a mutating tool is set to ask, a dialog shows the arguments and a diff of the change. **Allow** (Enter) or **Deny** (Escape). You can choose "don't ask again for this tool"; the plugin remembers the final choice. Switch the composer to **YOLO** to auto-approve for the session.
 - **Undo.** `/undo` reverts the agent's last vault change.
 - **Edit and retry.** Click a sent message to load it back into the composer. Sending rewinds the conversation to that point and regenerates. Every answer has copy and retry buttons. Up/Down cycles your sent-message history.
 - **Switch models.** Click the model pill, or use `/model`. Shift-click or Shift-Enter in the picker applies a model for the next prompt only (shown with a "next only" badge), then reverts.
@@ -216,7 +215,6 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists. |
 | `/add-dir [folder]` | Grant a working directory. Without an argument, opens a vault folder picker. |
 | `/dirs` | List or revoke granted working directories. |
-| `/plan` | Enter sticky read-only plan mode. Leave with the Plan badge. |
 | `/compact [instructions]` | Summarize older turns now. Optional text guides the summary. |
 | `/init [instructions]` | Curate the vault standing-instructions file. Optional text guides the update. |
 | `/style [name]` | Switch output style. |
@@ -231,8 +229,6 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/export` | Save this conversation as a Markdown note. |
 | `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List commands. |
-
-`/plan` is sticky. Leave plan mode with the **Plan** badge. `/endplan` does not exist.
 
 Composer delivery is not a slash command. Enter sends while idle. While the agent responds, Enter steers after the next successful tool call, Shift+Enter inserts a newline, **Queue** holds the draft until the turn ends, and **Stop** then send replaces the turn.
 
