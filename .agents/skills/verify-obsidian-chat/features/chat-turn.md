@@ -9,7 +9,7 @@
 - One composer delivery path: Enter sends or steers, Shift+Enter adds a newline,
   Queue holds a draft, and Stop then send replaces the turn.
 - Inline `ask_user` question with choices and a free-text answer.
-- Per-turn actions: Copy response, Ask again, Implement this plan.
+- Per-turn actions: Copy response, Ask again.
 - An error banner with Retry.
 - A vault path link on a tool step.
 - Click a sent user turn to edit and resend it.
@@ -57,9 +57,9 @@ await browser.waitUntil(async () =>
 | Stream text deltas | `src/ui/chat-view.ts:2642` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
 | Reasoning section | `src/ui/chat-view.ts:2686` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
 | Markdown rendering | `src/ui/chat-view.ts:2693` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
-| Tool step cards and diffs | `src/ui/chat-view.ts:2651` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
+| Tool step cards and diffs | `src/ui/chat-view.ts:2526` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:397` | no committed check | `NONE` |
-| Stop the active turn (toolbar) | `src/ui/chat-view.ts:1338` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
+| Stop the active turn (toolbar) | `src/ui/chat-view.ts:1251` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
 | Stop one tab without aborting the other | `src/ui/chat-view.ts:823` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
 | Stop clears queued steering | `src/agent/agent-service.ts:725` | `test/agent-service.test.ts:1559` (unit only) | `partial` |
 | `/compact` skips when the session changed | `src/agent/agent-service.ts:562` | `test/agent-service.test.ts:1030` | `partial` |
@@ -67,17 +67,16 @@ await browser.waitUntil(async () =>
 | Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
 | Enter steers after a successful tool call | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:166` | `covered` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts:713` | `test/e2e/specs/composer-paths.e2e.ts:267` | `covered` |
-| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1345` | `test/e2e/specs/composer-paths.e2e.ts:200` | `covered` |
-| Stop then send replaces the turn | `src/ui/chat-view.ts:1338` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
+| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1258` | `test/e2e/specs/composer-paths.e2e.ts:200` | `covered` |
+| Stop then send replaces the turn | `src/ui/chat-view.ts:1251` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
 | Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |
-| Inline `ask_user` card | `src/ui/chat-view.ts:565` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
+| Inline `ask_user` card | `src/ui/chat-view.ts:566` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
 | Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:624` | no committed check | `NONE` |
 | Copy response | `src/ui/assistant-bubble.ts:827` | no committed check | `NONE` |
 | Ask again | `src/ui/assistant-bubble.ts:813` | no committed check | `NONE` |
-| Implement this plan | `src/ui/chat-view.ts:2722` | no committed check | `NONE` |
 | Error banner Retry | `src/ui/assistant-bubble.ts:783` | no committed check | `NONE` |
 | Edit and resend a user turn | `src/ui/chat-view.ts:2611` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
-| Context-window bar | `src/ui/chat-view.ts:764` | `test/e2e/specs/smoke.e2e.ts:180` (existence only) | `partial` |
+| Context-window bar | `src/ui/chat-view.ts:765` | `test/e2e/specs/smoke.e2e.ts:180` (existence only) | `partial` |
 | Usage readout | `src/ui/chat-view.ts:2182` | no committed check | `NONE` |
 | Background-tab completion notice | `src/ui/chat-view.ts:1253` | no committed check | `NONE` |
 
@@ -89,7 +88,5 @@ await browser.waitUntil(async () =>
 - `ask_user` requires a non-empty answer. The card detaches after it settles.
 - "Ask again" re-runs the last user prompt. "Retry" appears only for failures
   with no text. A turn with text and an error uses the action row instead.
-- "Implement this plan" appears only in plan mode and only when the reply ends
-  with the `PLAN_COMPLETE` marker.
 - The plugin no longer shows a per-turn usage footer. Usage is in the bottom bar
   and `/usage`.

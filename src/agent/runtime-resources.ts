@@ -35,7 +35,6 @@ import {
   loadAgentRoles,
 } from "./subagents";
 import { buildSystemPrompt } from "./system-prompt";
-import { MODES } from "./modes";
 import { OUTPUT_STYLES } from "./output-styles";
 import {
   applyToolBudget,
@@ -137,7 +136,6 @@ export function composeAgentSystemPrompt(
   const overlays = [
     selfAwarenessOverlay,
     resources.instructionsOverlay,
-    MODES[settings.mode].promptOverlay,
     OUTPUT_STYLES[settings.outputStyle].promptOverlay,
     formatAgentRolesForSystemPrompt(resources.profiles),
     pluginSkillTrustBoundary(resources.plugins, settings.plugins.folder),

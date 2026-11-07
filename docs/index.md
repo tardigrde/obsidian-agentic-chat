@@ -22,7 +22,7 @@ features:
   - title: Privacy defaults
     details: OpenRouter routing requires zero-retention endpoints and denies training and logging. Ollama keeps prompts local. The plugin sends no telemetry.
   - title: Visible control
-    details: Every tool call renders inline with arguments and timing. Mutating calls show diffs for approval. Plan mode blocks writes, and /undo reverts the last change.
+    details: Every tool call renders inline with arguments and timing. Mutating calls show diffs for approval, and /undo reverts the last change.
   - title: Opt-in power only
     details: Web research, remote MCP tools, semantic indexing, and observability export stay off until you enable them in Settings.
 ---

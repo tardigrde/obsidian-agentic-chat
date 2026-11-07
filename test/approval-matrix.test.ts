@@ -17,12 +17,12 @@ import { MemoryAdapter } from "./helpers/memory-adapter";
  * resolveModePolicy × resolveWorkingDirPolicy × perTool overrides × MUTATING_TOOLS.
  *
  * The contract (AGENTS.md "Approval gate — non-obvious contract"):
- *   precedence  : plan > slider (yolo) > per-tool override > settings default
+ *   precedence  : slider (yolo) > per-tool override > settings default
  *   composition : the working-dir boundary refines the mode policy **only in Safe
- *                 mode**; YOLO (session-wide allow) and plan (read-only) skip the
- *                 boundary by design. A deny always survives; a granted-dir target
- *                 auto-runs; anything else (even a read, even a pathless call) is
- *                 forced to ask.
+ *                 mode**; YOLO (session-wide allow) skips the boundary by design.
+ *                 A deny always survives; a granted-dir target auto-runs;
+ *                 anything else (even a read, even a pathless call) is forced
+ *                 to ask.
  *
  * `composePolicy` below encodes exactly that documented composition; the matrix
  * asserts every interaction cell, and two end-to-end AgentService runs cross-check
@@ -81,12 +81,6 @@ const CELLS: Cell[] = [
   { name: "yolo perTool deny still wins", mode: "yolo", mutating: "allow", perTool: { write: "deny" }, tool: WRITE, args: IN_SCOPE, expected: "deny" },
   { name: "yolo perTool deny wins even under a working set", mode: "yolo", mutating: "allow", perTool: { write: "deny" }, dirs: ["Notes"], tool: WRITE, args: IN_SCOPE, expected: "deny" },
   { name: "yolo out-of-scope read → allow (boundary skipped)", mode: "yolo", mutating: "ask", dirs: ["Notes"], tool: READ, args: OUT_SCOPE, expected: "allow" },
-
-  // --- Plan mode: read-only; the boundary is skipped (plan already denies writes). ---
-  { name: "plan mutating → deny", mode: "plan", mutating: "allow", tool: WRITE, args: IN_SCOPE, expected: "deny" },
-  { name: "plan mutating in-scope → deny (boundary skipped, plan wins)", mode: "plan", mutating: "allow", dirs: ["Notes"], tool: WRITE, args: IN_SCOPE, expected: "deny" },
-  { name: "plan beats a perTool allow", mode: "plan", mutating: "allow", perTool: { write: "allow" }, dirs: ["Notes"], tool: WRITE, args: IN_SCOPE, expected: "deny" },
-  { name: "plan out-of-scope read → allow (read-only; boundary skipped)", mode: "plan", mutating: "ask", dirs: ["Notes"], tool: READ, args: OUT_SCOPE, expected: "allow" },
 ];
 
 describe("approval × working-dir matrix", () => {
@@ -263,18 +257,6 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     expect(confirmCalls.count).toBe(0);
     expect(toolResult(service)?.isError).toBe(false);
     expect(toolResult(service)?.text).toContain("explorer reply");
-  });
-
-  it("plan: any subagent dispatch is blocked because plan mode is read-only", async () => {
-    const streamFn = scriptedStreamFn([dispatch("explorer"), childReply("explorer read-only reply"), parentFollowup("done")]);
-    const { service, confirmCalls } = makeService(streamFn, {
-      mode: "plan",
-      approval: { mutating: "allow", perTool: {}, workingDirs: [] },
-    });
-    await service.sendPrompt("edit with a subagent in plan");
-    expect(confirmCalls.count).toBe(0);
-    expect(toolResult(service)?.isError).toBe(true);
-    expect(toolResult(service)?.text).toMatch(/read-only/i);
   });
 
   it("safe + working set: a read-only dispatch runs without an up-front prompt", async () => {

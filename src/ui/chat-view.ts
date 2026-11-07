@@ -84,8 +84,6 @@ import { formatCompactionSummary, isSummaryMessage } from "../agent/compaction";
 import { isInstructionFilePath } from "../agent/instructions";
 import {
   type AgentMode,
-  enterPlan,
-  exitPlan,
   MODES,
   resolveModeTransition,
   validateModeTransition,
@@ -159,19 +157,12 @@ export class ChatView extends ItemView {
   private activeTabIndex = 0;
   private tabsEl!: HTMLElement;
   private attachments: ContextAttachment[] = [];
-  // Active-note-attached-by-default state: the current active note's path, whether
-  // the user dismissed the auto chip (suppressed for the session), and — when in
-  // plan mode — the posture to restore on abort or implement.
+  // Active-note-attached-by-default state: the current active note's path and
+  // whether the user dismissed the auto chip (suppressed for the session).
   private activeNotePath: string | null = null;
   private activeNoteCache = new ActiveNoteContextCache();
   private contextCache = new PromptContextCache();
   private activeNoteSuppressed = false;
-  private get modeBeforePlan(): AgentMode | null {
-    return this.plugin.modeBeforePlan;
-  }
-  private set modeBeforePlan(value: AgentMode | null) {
-    this.plugin.modeBeforePlan = value;
-  }
   private bubble: AssistantBubble | null = null;
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
   private notifiedContext = new Set<number>();
@@ -212,7 +203,6 @@ export class ChatView extends ItemView {
   private fieldEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
   private modeToggleEl!: HTMLElement;
-  private planBadgeEl!: HTMLElement;
   private menu!: AutocompleteMenu;
   // Shell-style command history: every submitted message, newest last. The
   // helper owns navigation/draft state so ChatView only applies returned values.
@@ -745,7 +735,7 @@ export class ChatView extends ItemView {
     });
 
     // Bottom toolbar (in-card): model+effort pill · context on the left; the
-    // Safe ↔ YOLO segmented toggle (+ sticky plan badge) on the right — design ref.
+    // Safe ↔ YOLO segmented toggle on the right — design ref.
     const toolbar = field.createDiv({ cls: "agentic-chat-toolbar" });
     const toolbarLeft = toolbar.createDiv({ cls: "agentic-chat-toolbar-left" });
 
@@ -795,8 +785,8 @@ export class ChatView extends ItemView {
       "Safe: ask before every edit and action. YOLO: run without asking (for trusted vaults).",
     );
     const toggleMode = () => {
-      // setMode is the single gate: it refuses while streaming and enforces the
-      // plan→yolo check. The toggle itself must not silently swallow clicks.
+      // setMode is the single gate: it refuses while streaming. The toggle
+      // itself must not silently swallow clicks.
       const target = this.plugin.settings.mode === "yolo" ? "safe" : "yolo";
       void this.setMode(target);
     };
@@ -807,17 +797,6 @@ export class ChatView extends ItemView {
         toggleMode();
       }
     });
-
-    // Plan is sticky (/plan); show a clear indicator while it's active. Click aborts.
-    this.planBadgeEl = toolbarRight.createDiv({
-      cls: "agentic-chat-plan-badge",
-      attr: { "aria-label": "Plan mode active — read-only. Click to abort." },
-    });
-    const planIcon = this.planBadgeEl.createSpan({ cls: "agentic-chat-plan-badge-icon" });
-    setIcon(planIcon, MODES.plan.icon);
-    this.planBadgeEl.createSpan({ text: "Plan" });
-    this.planBadgeEl.addEventListener("click", () => void this.exitPlanMode());
-    this.planBadgeEl.hide();
 
     this.workingEl = toolbarRight.createDiv({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
     this.workingEl.hide();
@@ -1000,28 +979,22 @@ export class ChatView extends ItemView {
     return candidates;
   }
 
-  // --- composer controls (Safe ↔ YOLO toggle + sticky plan) ---
-  // S4: all mode mutations (toggle, /plan, settings tab) funnel through
-  // validateModeTransition + resolveModeTransition so the three surfaces stay
+  // --- composer controls (Safe ↔ YOLO toggle) ---
+  // S4: all mode mutations (toggle, settings tab) funnel through
+  // validateModeTransition + resolveModeTransition so the two surfaces stay
   // atomically in sync (Codex ThreadSettingsOverrides pattern).
 
   private async setMode(mode: AgentMode): Promise<boolean> {
     const current = this.plugin.settings.mode;
-    const blocked = validateModeTransition(
-      current,
-      mode,
-      this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming(),
-      this.modeBeforePlan,
-    );
+    const blocked = validateModeTransition(this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming());
     if (blocked) {
       if (current !== mode) this.renderErrorMessage(blocked);
       return false;
     }
     if (current === mode) return false;
-    const transition = resolveModeTransition(current, mode, this.modeBeforePlan);
+    const transition = resolveModeTransition(current, mode);
     if (!transition) return false;
     this.plugin.settings.mode = transition.nextMode;
-    this.modeBeforePlan = transition.nextPrevious;
     await this.plugin.saveSettings();
     // Repaint the whole chrome so the Safe↔YOLO segment + aria-checked flip
     // instantly after the mode lands on disk (syncChrome calls syncControls).
@@ -1029,57 +1002,9 @@ export class ChatView extends ItemView {
     return true;
   }
 
-  /** S4: external callers (settings tab) route through the active view so modeBeforePlan stays coherent. */
+  /** S4: external callers (settings tab) route through the active view. */
   async requestModeChange(mode: AgentMode): Promise<boolean> {
     return this.setMode(mode);
-  }
-
-  /** `/plan`: enter sticky read-only plan mode, remembering the posture to restore. */
-  private async enterPlanMode(): Promise<void> {
-    const blocked = validateModeTransition(
-      this.plugin.settings.mode,
-      "plan",
-      this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming(),
-      this.modeBeforePlan,
-    );
-    if (blocked) {
-      this.renderErrorMessage(blocked);
-      return;
-    }
-    const transition = enterPlan(this.plugin.settings.mode);
-    if (!transition) {
-      this.renderInfoMessage("Plan", [["Plan", "Already in plan mode. Click the Plan badge to abort."]]);
-      return;
-    }
-    this.clearEmptyState();
-    // Let setMode own the atomic modeBeforePlan mutation to avoid a racy half-write if streaming starts between validates.
-    if (await this.setMode("plan")) {
-      this.renderInfoMessage("Plan", [[MODES.plan.label, MODES.plan.description]]);
-    }
-  }
-
-  /** Leave plan mode, restoring the Safe/YOLO posture in effect before /plan. */
-  private async exitPlanMode(): Promise<void> {
-    if (this.plugin.settings.mode !== "plan") {
-      this.renderInfoMessage("Plan", [["Plan", "Not in plan mode."]]);
-      return;
-    }
-    const target = exitPlan(this.modeBeforePlan);
-    const blocked = validateModeTransition(
-      "plan",
-      target,
-      this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming(),
-      this.modeBeforePlan,
-    );
-    if (blocked) {
-      this.renderErrorMessage(blocked);
-      return;
-    }
-    this.clearEmptyState();
-    // Do not clear modeBeforePlan before setMode — resolveModeTransition owns it atomically.
-    if (await this.setMode(target)) {
-      this.renderInfoMessage("Mode", [[MODES[target].label, MODES[target].description]]);
-    }
   }
 
   /** Whether the current tab's agent is streaming — exposed for the plugin's S4 broadcast. */
@@ -1097,15 +1022,6 @@ export class ChatView extends ItemView {
 
   /** S4: called by the plugin after any persisted mode change (e.g. settings tab) so every leaf reflects the single source atomically. */
   refreshModeFromSettings(): void {
-    // Keep the sticky-plan memory coherent: leaving plan via another surface must clear it,
-    // entering plan via another surface must seed it when we have no history.
-    if (this.plugin.settings.mode !== "plan" && this.modeBeforePlan !== null) {
-      this.modeBeforePlan = null;
-    }
-    if (this.plugin.settings.mode === "plan" && this.modeBeforePlan === null) {
-      // Entered via settings tab which has no per-view memory — default restore is safe.
-      this.modeBeforePlan = "safe";
-    }
     this.syncChrome();
   }
 
@@ -1118,20 +1034,17 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Reflect settings (e.g. changed via /plan or the settings tab) back into
-   * the composer toggle, and disable it while the agent is streaming or in plan mode so
-   * the posture can't drift from the prompt/policy the in-flight turn started under.
+   * Reflect settings (e.g. changed via the settings tab) back into the composer
+   * toggle, and disable it while the agent is streaming so the posture can't
+   * drift from the prompt/policy the in-flight turn started under.
    */
   private syncControls(): void {
     if (!this.modeToggleEl) return;
     const { settings } = this.plugin;
     const streaming = this.plugin.isAnyViewStreaming() || this.isAnyTabStreaming();
-    const planning = settings.mode === "plan";
     this.modeToggleEl.toggleClass("is-active", settings.mode === "yolo");
-    this.modeToggleEl.toggleClass("is-planning", planning);
-    this.modeToggleEl.toggleClass("is-disabled", streaming || planning);
+    this.modeToggleEl.toggleClass("is-disabled", streaming);
     this.modeToggleEl.setAttr("aria-checked", String(settings.mode === "yolo"));
-    this.planBadgeEl.toggle(planning);
     // Effort can't change mid-turn (it would disagree with the in-flight request).
     this.effortKnobEl?.toggleClass("is-disabled", streaming);
   }
@@ -1711,9 +1624,6 @@ export class ChatView extends ItemView {
         return true;
       case "dirs":
         this.createWorkingDirectoryWorkflow().showWorkingDirs();
-        return true;
-      case "plan":
-        await this.enterPlanMode();
         return true;
       case "usage":
         this.showUsage();
@@ -2621,12 +2531,9 @@ export class ChatView extends ItemView {
       if (result) bubble.endStep(call.id, result.text, result.isError, { details: result.details });
     }
     const text = messageText(message);
-    const planning = this.plugin.settings.mode === "plan";
-    const hasPlanComplete = !!(text?.trim().endsWith("PLAN_COMPLETE"));
-    const displayText = hasPlanComplete ? text.trim().replace(/\n?PLAN_COMPLETE\s*$/, "") : text;
-    if (displayText) {
-      void bubble.finalizeText(displayText, this.app, this);
-      bubble.showActions({ canRetry: isLast, canImplement: planning && isLast && hasPlanComplete });
+    if (text) {
+      void bubble.finalizeText(text, this.app, this);
+      bubble.showActions({ canRetry: isLast });
     } else {
       bubble.finalizeWithoutText();
     }
@@ -2746,12 +2653,9 @@ export class ChatView extends ItemView {
     const bubble = this.bubble;
     if (!bubble) return;
     const text = messageText(message);
-    const planning = this.plugin.settings.mode === "plan";
-    const hasPlanComplete = !!(text?.trim().endsWith("PLAN_COMPLETE"));
-    const displayText = hasPlanComplete ? text.trim().replace(/\n?PLAN_COMPLETE\s*$/, "") : text;
-    if (displayText) {
-      void bubble.finalizeText(displayText, this.app, this);
-      bubble.showActions({ canRetry: true, canImplement: planning && hasPlanComplete });
+    if (text) {
+      void bubble.finalizeText(text, this.app, this);
+      bubble.showActions({ canRetry: true });
     } else {
       bubble.finalizeWithoutText();
     }
@@ -2770,18 +2674,11 @@ export class ChatView extends ItemView {
   private newBubble(): AssistantBubble {
     return new AssistantBubble(this.messagesEl, {
       onRetry: () => void this.retryLast(),
-      onImplementPlan: () => void this.implementPlan(),
       onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
       onOpenNote: (path) => void this.app.workspace.openLinkText(path, "", false),
       onContentChange: () => this.scrollToBottom(),
       onStopSubagentChild: (id) => this.service.abortSubagentChild(id),
     });
-  }
-
-  /** Exit plan mode and send the implement prompt. */
-  private async implementPlan(): Promise<void> {
-    await this.exitPlanMode();
-    await this.sendPrompt("Implement the proposed plan above.");
   }
 
   private async openRenderedExternalLink(target: string): Promise<void> {

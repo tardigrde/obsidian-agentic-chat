@@ -10,7 +10,6 @@ Slash commands run locally and are not sent to the model.
 | `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists across messages. |
 | `/add-dir [folder]` | Grant a vault working directory. Without an argument, opens a vault folder picker. |
 | `/dirs` | List or revoke granted working directories. |
-| `/plan` | Enter sticky read-only planning mode. Leave by clicking the **Plan** badge in chat. |
 | `/compact [instructions]` | Summarize older turns now. Optional instructions are passed to the compaction request. |
 | `/init [instructions]` | Create or update the vault standing-instructions file (`AGENTS.md`, falling back to `CLAUDE.md` or `GEMINI.md` at the vault root). Optional text guides the update. |
 | `/style [name]` | Switch output style. |
@@ -25,8 +24,6 @@ Slash commands run locally and are not sent to the model.
 | `/export` | Save this conversation as a Markdown note in the vault. |
 | `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List available commands. |
-
-`/endplan` does not exist. Leave plan mode with the **Plan** badge in chat.
 
 ## Composer paths
 

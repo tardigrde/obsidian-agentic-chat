@@ -8,8 +8,8 @@
 - Global mutating policy: ask, allow, deny.
 - Per-tool overrides.
 - Working directories: auto-run inside, ask outside.
-- Modes: Safe, YOLO, and Plan, which persists until you leave it.
-- In-chat mode toggle, Plan badge, `/plan`, `/dirs`, `/add-dir`.
+- Modes: Safe and YOLO.
+- In-chat mode toggle, `/dirs`, `/add-dir`.
 - Background-tab approval with a tab badge and a session label.
 - The approval modal cannot remember the persistent skill tools
   (`create_skill`, `load_skill`, `unload_skill`).
@@ -19,9 +19,8 @@
 - A tool that needs approval opens the modal automatically.
 - Open Settings and select Agentic Chat, then open the **Agent** tab and find **Approval gates** for
   gates, per-tool overrides, and working directories.
-- Composer toolbar: click the Safe/YOLO toggle. Click the Plan badge to leave
-  plan mode.
-- Type `/plan`, `/dirs`, or `/add-dir` in the composer.
+- Composer toolbar: click the Safe/YOLO toggle.
+- Type `/dirs` or `/add-dir` in the composer.
 
 ## Driving it with the probe harness
 
@@ -57,11 +56,9 @@ await (await modal.$("button=Allow")).click();
 | Per-tool deny flips to allow in a recorded run | `src/settings.ts:807` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
 | Working dir auto-runs inside and asks outside | `src/agent/tool-call-controller.ts:266` | `test/e2e/specs/approval-deterministic.e2e.ts:393` | `covered` |
 | Working directories settings row | `src/settings.ts:820` | no committed check | `NONE` |
-| Safe/YOLO toggle | `src/ui/chat-view.ts:783` | no committed check | `NONE` |
-| `/plan` enters sticky plan mode | `src/ui/chat-view.ts:1034` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
-| Plan badge exits plan mode | `src/ui/chat-view.ts:808` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
-| Invalid mode transition is blocked | `src/ui/chat-view.ts:1004` | `test/modes.test.ts:100` (unit only) | `partial` |
-| Implement this plan | `src/ui/chat-view.ts:2796` | no committed check | `NONE` |
+| Safe/YOLO toggle | `src/ui/chat-view.ts:777` | `test/e2e/specs/plan-removal.e2e.ts:93` (existence only) | `partial` |
+| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts:777` | `test/e2e/specs/plan-removal.e2e.ts:93` | `covered` |
+| Invalid mode transition is blocked | `src/ui/chat-view.ts:987` | `test/modes.test.ts:63` (unit only) | `partial` |
 | `/dirs` lists working directories | `src/ui/chat-view.ts:1708` | `test/e2e/specs/smoke.e2e.ts:92` | `covered` |
 | `/add-dir` grants a directory | `src/ui/working-directory-workflow-controller.ts:86` | `test/working-directory-workflow-controller.test.ts:69` (unit only) | `partial` |
 | Background-tab approval badge and label | `src/ui/chat-view.ts:537` | `test/e2e/specs/multi-tab-approval.e2e.ts:102` | `covered` |
@@ -76,8 +73,6 @@ await (await modal.$("button=Allow")).click();
   policy, and a remembered choice writes into the same `perTool` map.
 - "Don't ask again" is hidden for `create_skill`, `load_skill`, and
   `unload_skill`.
-- Plan mode persists. Pair `/plan` with the Plan badge or an implement action in
-  the same scenario, or later cases start in read-only mode.
 - The plugin refuses mode changes while any tab streams.
 - A background approval does not take focus. The tab shows a badge and the modal
   title includes the tab label.

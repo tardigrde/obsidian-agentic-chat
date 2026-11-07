@@ -33,10 +33,6 @@ Read-only vault tools run without approval. Mutating tools can be configured glo
 
 YOLO auto-approves most mutating tools until you switch back. Recursive folder deletes still ask, and per-tool deny still wins.
 
-## Plan mode
-
-`/plan` is sticky and read-only. It blocks writes, edits, renames, deletes, frontmatter changes, and subagent writes until you click the **Plan** badge.
-
 ## Compaction
 
 Long sessions compact automatically before they overflow the configured context window. Run `/compact [instructions]` to summarize older turns immediately. Anything after the command is passed as guidance for what the summary should preserve.

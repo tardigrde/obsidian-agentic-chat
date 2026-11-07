@@ -86,7 +86,6 @@ export class AgentSubagentRuntime {
 
   createChildAgent(profile: AgentRole): Agent {
     const settings = this.getSettings();
-    const readOnly = settings.mode === "plan";
     const childNamespace = this.nextChildNamespace();
     // Strip tools the user explicitly denied before the child is created.
     // Allowed child calls still flow through the parent tool-call controller.
@@ -100,7 +99,7 @@ export class AgentSubagentRuntime {
     ].filter(
       (tool) => resolveModePolicy(settings.mode, settings.approval, tool.name).policy !== "deny",
     );
-    const tools = filterChildTools(childTools, profile.toolAllowlist ?? [], readOnly);
+    const tools = filterChildTools(childTools, profile.toolAllowlist ?? []);
     const turnCap = this.createTurnCap?.();
     const child = new Agent({
       streamFn: this.buildStreamFn(),
@@ -144,11 +143,10 @@ export function childModelConfig(settings: AgenticChatSettings, modelOverride?: 
 
 /**
  * Restrict a child's tools to its role allowlist. An empty allowlist defaults
- * to the read-only vault tools; when the parent mode forbids writes, mutating
- * tools are stripped regardless of the allowlist. The allowlist is advisory –
- * parent approval gates still govern execution.
+ * to the read-only vault tools. The allowlist is advisory – parent approval
+ * gates still govern execution.
  */
-export function filterChildTools(tools: AgentTool[], allowlist: string[], readOnly: boolean): AgentTool[] {
+export function filterChildTools(tools: AgentTool[], allowlist: string[]): AgentTool[] {
   // Allowlist entries come from vault frontmatter — normalize case/whitespace
   // so "Read, search" does not silently lobotomise the child to zero tools.
   const normalized = allowlist.map((name) => name.trim().toLowerCase()).filter(Boolean);
@@ -162,7 +160,6 @@ export function filterChildTools(tools: AgentTool[], allowlist: string[], readOn
     );
     allowed = tools.filter((tool) => !MUTATING_TOOLS.has(tool.name));
   }
-  if (readOnly) allowed = allowed.filter((tool) => !MUTATING_TOOLS.has(tool.name));
   return allowed;
 }
 

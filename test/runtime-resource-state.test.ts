@@ -106,7 +106,7 @@ describe("AgentRuntimeResourceState", () => {
   });
 
   it("composes the system prompt with the current model identity and loaded resources", async () => {
-    const currentSettings = settings({ mode: "plan" });
+    const currentSettings = settings({ outputStyle: "learning" });
     const { state } = makeState(
       await seededApp(),
       currentSettings,
@@ -120,7 +120,7 @@ describe("AgentRuntimeResourceState", () => {
     expect(prompt).toContain("## Project instructions");
     expect(prompt).toContain("## Subagents");
     expect(prompt).toContain("deep-research");
-    expect(prompt).toContain("read-only");
+    expect(prompt).toContain("Adopt a **learning** style");
   });
 
   it("builds parent tools from the current resource snapshot", async () => {

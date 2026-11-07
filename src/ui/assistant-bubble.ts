@@ -61,8 +61,6 @@ interface StepEntry {
 export interface BubbleActions {
   /** Re-run the conversation's last user turn. */
   onRetry?: () => void;
-  /** Exit plan mode and send the implement prompt. */
-  onImplementPlan?: () => void;
   /** Open an external rendered link such as https://. */
   onOpenExternalLink?: (target: string) => void;
   /** Open a vault-relative note path shown in a tool-call section (e.g. read/write/edit target). */
@@ -802,14 +800,11 @@ export class AssistantBubble {
     // no-op — usage is shown in the view's single bottom bar
   }
 
-  /** Render the inline action row (copy, retry, implement). Safe to call once. */
-  showActions(opts: { canRetry: boolean; canImplement?: boolean }): void {
+  /** Render the inline action row (copy, retry). Safe to call once. */
+  showActions(opts: { canRetry: boolean }): void {
     if (this.actionsEl.childElementCount > 0) return;
     if (!this.markdown.trim()) return;
     this.actionButton("copy", "Copy response", () => void this.copy());
-    if (opts.canImplement && this.actions.onImplementPlan) {
-      this.actionButton("play", "Implement this plan", this.actions.onImplementPlan);
-    }
     if (opts.canRetry && this.actions.onRetry) {
       this.actionButton("refresh-cw", "Ask again", this.actions.onRetry);
     }

@@ -543,16 +543,6 @@ describe("AgentToolCallController", () => {
     expect(requests).toHaveLength(0);
   });
 
-  it("denies create_skill in plan mode", async () => {    const { controller } = makeController({
-      settings: { mode: "plan", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
-    });
-    const decision = await controller.beforeToolCall({
-      toolCall: { id: "call-1", name: "create_skill" },
-      args: { name: "my-skill", description: "D", body: "B" },
-    });
-    expect(decision).toEqual({ block: true, reason: expect.stringContaining("Plan mode") });
-  });
-
   it("routes create_skill through ask under a scoped working-dirs config", async () => {
     const { controller, requests } = makeController({
       settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes"] } },

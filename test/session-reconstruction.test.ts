@@ -204,7 +204,12 @@ describe("exact-once persistence (WeakSet de-dupe)", () => {
   }
 
   function makeService(streamFn: StreamFn): { service: AgentService; adapter: MemoryAdapter } {
-    const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key", mode: "plan" };
+    const settings: AgenticChatSettings = {
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "test-key",
+      mode: "safe",
+      approval: { ...DEFAULT_SETTINGS.approval, mutating: "allow", perTool: { write: "deny" } },
+    };
     const adapter = new MemoryAdapter();
     const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
     const service = new AgentService({
@@ -218,12 +223,13 @@ describe("exact-once persistence (WeakSet de-dupe)", () => {
   }
 
   it("persists a tool-call turn exactly once, including the tool-result message", async () => {
-    // Plan mode blocks the mutating `write` call, so pi synthesizes an isError
-    // tool-result and feeds it back. That tool-result must be persisted (exactly
-    // once), alongside the user, assistant(toolCall), and follow-up assistant.
+    // A per-tool deny blocks the mutating `write` call, so pi synthesizes an
+    // isError tool-result and feeds it back. That tool-result must be persisted
+    // (exactly once), alongside the user, assistant(toolCall), and follow-up
+    // assistant.
     const streamFn = scriptedStreamFn([
       { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "note.md", content: "hi" } }], stopReason: "toolUse" },
-      { content: [{ type: "text", text: "Read-only, so I held off." }], stopReason: "stop" },
+      { content: [{ type: "text", text: "Write is disabled, so I held off." }], stopReason: "stop" },
     ]);
     const { service, adapter } = makeService(streamFn);
     await service.sendPrompt("Create note.md");

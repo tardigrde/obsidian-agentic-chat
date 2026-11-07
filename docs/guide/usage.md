@@ -21,13 +21,11 @@ Tool calls render inline in the transcript. You can expand them to inspect argum
 
 Mutating calls follow the approval policy. When a call is set to **ask**, the plugin shows the pending arguments and a line-level diff (red removed, green added) before anything changes.
 
-## Safe, YOLO, and plan modes
+## Safe and YOLO modes
 
 **Safe** follows your configured approval settings.
 
 **YOLO** auto-approves most mutating tools until you switch back. Recursive folder deletes still ask, and a per-tool deny still wins.
-
-`/plan` enters sticky read-only planning mode. It blocks mutations until you leave. To leave, click the **Plan** badge in chat.
 
 Run `/compact [instructions]` to summarize older turns on demand. The optional instructions are passed to the compaction request, so important details survive the summary.
 

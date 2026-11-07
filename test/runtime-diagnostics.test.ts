@@ -35,7 +35,7 @@ describe("runtime diagnostics", () => {
     const result = await runAgentReplay({
       prompt: "Create a private note",
       settings: {
-        mode: "plan",
+        mode: "safe",
         approval: {
           mutating: "ask",
           perTool: { delete: "deny" },
@@ -57,7 +57,7 @@ describe("runtime diagnostics", () => {
     expect(diagnostics.session.path).toMatch(/\.jsonl$/);
     expect(diagnostics.provider).toBe("openrouter");
     expect(diagnostics.model).toBe(result.settings.openrouterModel);
-    expect(diagnostics.mode).toBe("plan");
+    expect(diagnostics.mode).toBe("safe");
     expect(diagnostics.approval).toMatchObject({
       mutating: "ask",
       perToolOverrides: 1,

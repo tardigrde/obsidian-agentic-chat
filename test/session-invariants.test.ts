@@ -237,10 +237,10 @@ describe("session/event-log invariants", () => {
   it("persists replayed tool-result turns exactly once and preserves assistant usage on reload", async () => {
     const replay = await runAgentReplay({
       prompt: "Create note.md",
-      settings: { mode: "plan" },
+      settings: { mode: "safe", approval: { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] } },
       turns: [
         replayToolCallTurn("call-1", "write", { path: "note.md", content: "hi" }, { usage: { totalTokens: 5 } }),
-        replayTextTurn("I could not write in plan mode.", { usage: { input: 2, output: 4, totalTokens: 6 } }),
+        replayTextTurn("I could not write because it is disabled.", { usage: { input: 2, output: 4, totalTokens: 6 } }),
       ],
     });
     const sessionPath = [...replay.adapter.files.keys()].find((path) => path.endsWith(".jsonl"));
@@ -249,8 +249,8 @@ describe("session/event-log invariants", () => {
     const entries = assertSessionFile(replay.adapter.files.get(sessionPath) ?? "", [
       "Create note.md",
       "",
-      /Plan mode is read-only/,
-      "I could not write in plan mode.",
+      /disabled by your approval settings/,
+      "I could not write because it is disabled.",
     ]);
     const messages = entries.filter((entry): entry is MessageSessionEntry => entry.type === "message");
     expect(messages.map((entry) => entry.message.role)).toEqual(["user", "assistant", "toolResult", "assistant"]);
