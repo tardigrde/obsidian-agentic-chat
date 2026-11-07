@@ -4,7 +4,7 @@ Agent plugins are packages in the vault that follow the [Agent Plugins 1.0.0 spe
 
 ## Layout
 
-Plugins live in `.agentic-plugins/` at the vault root. You can change the folder in **Settings > Agentic Chat > Resources > Plugins folder**:
+Plugins live in `.agentic-plugins/` at the vault root. You can change the folder in **Settings > Agentic Chat > Advanced > Agent plugins > Plugins folder**:
 
 ```text
 .agentic-plugins/
@@ -46,7 +46,7 @@ One limitation remains. Generic file tools (`read`, `ls`) fall back to disk when
 
 ## Built-in skill package
 
-On first load, Agentic Chat creates a `builtins` package in the plugins folder. It holds the self-knowledge, deep-research (web mode), and install-plugin skills, so built-ins behave like plugin skills and a plugin skill with the same name can shadow them. The plugin only creates the package when missing and never overwrites edits. If you delete it, use **Resources > Repair built-ins**.
+On first load, Agentic Chat creates a `builtins` package in the plugins folder. It holds the self-knowledge, deep-research (web mode), and install-plugin skills, so built-ins behave like plugin skills and a plugin skill with the same name can shadow them. The plugin only creates the package when missing and never overwrites edits. If you delete it, use **Advanced > Agent plugins > Repair built-ins**.
 
 ## Managing plugins
 

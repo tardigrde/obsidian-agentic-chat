@@ -422,7 +422,7 @@ describe("agentic-chat settings UI", function () {
             const text = root.textContent ?? "";
             return text.includes("my-tool") && text.includes("Source:");
           }),
-        { timeout: 5_000, timeoutMsg: "Installed package row did not render in Resources" },
+        { timeout: 5_000, timeoutMsg: "Installed package row did not render in Advanced" },
       );
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -5,7 +5,7 @@ import type { SettingsTabDefinition } from "../src/settings-tabs";
 
 function tabDefinitions(): readonly SettingsTabDefinition[] {
   const tab = new AgenticChatSettingTab({} as App, {} as never);
-  return tab.visibleTabs();
+  return tab.tabs;
 }
 
 describe("settings runtime tabs", () => {

@@ -35,7 +35,7 @@ Use [BRAT](https://github.com/TfTHacker/obsidian42-brat) when you want pre-relea
 
 Agent plugins are packages (a `plugin.json`, optional `skills/`, optional `mcp.json`) that live inside your vault as plain files. They need no Node runtime and no build step. See [Agent plugins](../features/agent-plugins.md).
 
-Open **Settings > Agentic Chat > Resources** and use **Install plugin…**. You can import from any of:
+Open **Settings > Agentic Chat > Advanced** (Agent plugins) and use **Install plugin…**. You can import from any of:
 
 - a **GitHub URL**: repo shorthand (`owner/repo`), `github.com/owner/repo` tree, blob, or raw URLs, or a direct `.zip`, `.tar.gz`, or `.tgz` archive URL (for example a release asset or `codeload` tarball);
 - a **.zip, .tar.gz, or .tgz** archive file from disk;

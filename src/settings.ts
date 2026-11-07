@@ -80,7 +80,7 @@ import {
   type AgenticChatSettings,
   type NetworkSettings,
 } from "./settings-schema";
-import { SETTINGS_TABS, type SettingsSectionId, type SettingsTabDefinition } from "./settings-tabs";
+import { SETTINGS_TABS, type SettingsSectionId } from "./settings-tabs";
 export {
   DEFAULT_SETTINGS,
   PROVIDERS,
@@ -216,11 +216,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     return [];
   }
 
-  /** Read-only view of the visible tab map; kept on the class so tests and the UI share one source. */
-  visibleTabs(): readonly SettingsTabDefinition[] {
-    return this.tabs;
-  }
-
   /**
    * One renderer per section. The pure tab map in settings-tabs.ts decides which
    * sections are visible and in which tab, so adding a section cannot silently
@@ -242,7 +237,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     retrieval: (el, settings) => this.renderRetrieval(el, settings),
     "ignored-files": (el, settings) => this.renderIgnoredFiles(el, settings),
   };
-  private readonly tabs = SETTINGS_TABS;
+  readonly tabs = SETTINGS_TABS;
   private activeTab = 0;
   private pluginsLoadedOnce = false;
   private pendingMcpServerName = "";

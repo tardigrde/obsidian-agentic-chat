@@ -200,7 +200,7 @@ async function seedMobileState(): Promise<void> {
       session("mobile-beta", "Mobile Beta", "beta prompt", "beta answer", "2026-06-25T00:01:00.000Z"),
     );
 
-    // Seed one agent plugin package so the Resources tab renders a real
+    // Seed one agent plugin package so the Advanced tab renders a real
     // installed-plugin row and the narrow-viewport row layout is exercised.
     const pluginRoot = ".agentic-plugins/mobile-demo";
     const ensureDirs = async (rel: string[]) => {
@@ -424,7 +424,7 @@ describe("agentic-chat mobile viewport", function () {
         await browser.execute(() =>
           document.querySelector(".agentic-chat-settings-tabbody")?.textContent?.includes("mobile-demo") ?? false,
         ),
-      { timeout: 10_000, timeoutMsg: "seeded agent plugin row did not render in Resources at phone width" },
+      { timeout: 10_000, timeoutMsg: "seeded agent plugin row did not render in Advanced at phone width" },
     );
     await assertFits(".agentic-chat-settings-tabs", "settings tabs");
     await assertFits(".agentic-chat-settings-tabbody", "settings body");
