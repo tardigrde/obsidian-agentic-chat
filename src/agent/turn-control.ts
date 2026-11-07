@@ -1,8 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { clampThinkingLevel, type ModelConfig, type ProviderId } from "../llm/models";
 
-export type TurnSteeringMode = "steer" | "follow-up" | "redirect";
-
 export interface PromptRunPreflight {
   isStreaming: boolean;
   hasApiKey: boolean;
@@ -38,17 +36,6 @@ export function spendCapAbortReason(input: SpendCapEnforcementInput): string | u
 
 export function normalizeSteeringText(text: string): string | null {
   return text.trim() || null;
-}
-
-export function steeringStatus(mode: TurnSteeringMode): string {
-  switch (mode) {
-    case "follow-up":
-      return "Queued as a follow-up.";
-    case "redirect":
-      return "Redirecting the active turn.";
-    case "steer":
-      return "Queued for the active turn.";
-  }
 }
 
 export function normalizeModelOverride(modelId: string | null): string | null {

@@ -53,11 +53,16 @@ The plan tracker panel shows live progress.
 
 ## Real-time controls
 
-While the agent streams a response, you can:
+The composer has one delivery path:
 
-- `/steer [text]` steers the current turn mid-stream.
-- `/follow-up [text]` queues a follow-up message behind the active turn.
-- `/redirect [text]` stops the active turn and answers the new text instead.
+- Enter while the agent is idle sends the text as a new turn.
+- Enter while the agent responds steers the active turn. The text arrives after
+  the next successful tool call.
+- Shift+Enter inserts a newline in the draft.
+- **Queue** holds the draft until the active turn ends. You can keep editing the
+  draft while it waits.
+- **Stop** ends the turn. Send the draft after Stop to replace the turn with a
+  new prompt.
 
 ## Export conversations
 

@@ -599,7 +599,8 @@ Force feature crossovers that users naturally create:
   model and verify recovery
 - attach files, active notes, folder listings, and memory in the
   same run, then check which context actually reached the model
-- run `/plan`, the **Plan** badge, `/todo`, `/steer`, `/follow-up`, `/new`,
+- run `/plan`, the **Plan** badge, `/todo`, the composition paths (Enter to
+  steer, **Queue**, **Stop** then send), `/new`,
   `/sessions`, `/memory`, `/export`, `/undo`, and `/doctor`
   around real tool calls instead of as isolated command smoke tests
 - start long workflows that create notes, refine them, delete unused ones, check

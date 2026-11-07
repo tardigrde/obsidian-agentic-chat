@@ -276,8 +276,6 @@ describe("agentic-chat deterministic approvals", function () {
       textTurn("remember deny second final", "Still denied without asking."),
       textTurn("queue first delayed", "Initial queued answer.", { hold: true }),
       textTurn("queue final", "Queued answer used the edited draft."),
-      textTurn("steering first delayed", "Initial steering answer.", { delayMs: 1_500 }),
-      textTurn("steering final", "Steered answer used the added constraint."),
       toolTurn("empty folder delete call", "e2e-delete-empty-folder", "delete", { path: EMPTY_FOLDER_PATH }),
       textTurn("empty folder delete final", "Deleted the empty folder."),
       toolTurn("stop approval call", "e2e-stop-approval", "write", {
@@ -488,52 +486,6 @@ describe("agentic-chat deterministic approvals", function () {
     }
   });
 
-  it("steers the active turn only through the explicit /steer command", async function () {
-    await sendPrompt("scripted steering initial");
-    await browser.waitUntil(
-      async () => (await $(".agentic-chat-send").getText()).trim() === "Queue",
-      { timeout: 5_000, timeoutMsg: "send button did not switch to queue mode" },
-    );
-
-    await sendPrompt("/steer keep the answer concise");
-
-    await browser.waitUntil(
-      async () => (await $(".agentic-chat-messages").getText()).includes("Steered answer used the added constraint."),
-      { timeout: 8_000, timeoutMsg: "steered scripted answer did not render" },
-    );
-    const transcript = await $(".agentic-chat-messages").getText();
-    const firstPrompt = transcript.indexOf("scripted steering initial");
-    const firstAnswer = transcript.indexOf("Initial steering answer.");
-    const steeringPrompt = transcript.indexOf("keep the answer concise");
-    const steeredAnswer = transcript.indexOf("Steered answer used the added constraint.");
-    if (!(firstPrompt < firstAnswer && firstAnswer < steeringPrompt && steeringPrompt < steeredAnswer)) {
-      throw new Error(`steering transcript order was wrong:\n${transcript}`);
-    }
-
-    expect(await scriptedCallLabels()).toEqual([
-      "write tool call",
-      "write final",
-      "edit tool call",
-      "edit final",
-      "denied write call",
-      "denied write final",
-      "working-dir inside call",
-      "working-dir inside final",
-      "working-dir outside call",
-      "working-dir outside final",
-      "instruction write call",
-      "instruction write final",
-      "remember deny write call",
-      "remember deny final",
-      "remember deny second call",
-      "remember deny second final",
-      "queue first delayed",
-      "queue final",
-      "steering first delayed",
-      "steering final",
-    ]);
-  });
-
   it("can approve deleting an empty folder", async function () {
     await setApproval("ask", []);
     await browser.executeObsidian(async ({ app }, path) => {
@@ -567,8 +519,6 @@ describe("agentic-chat deterministic approvals", function () {
       "remember deny second final",
       "queue first delayed",
       "queue final",
-      "steering first delayed",
-      "steering final",
       "empty folder delete call",
       "empty folder delete final",
     ]);

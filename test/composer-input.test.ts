@@ -1,21 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { parseInlineInstruction, parseStreamingSteering, stripContextPreamble } from "../src/ui/composer-input";
+import {
+  parseInlineInstruction,
+  resolveComposerAction,
+  stripContextPreamble,
+} from "../src/ui/composer-input";
 
 describe("composer input helpers", () => {
-  it("parses streaming steering commands and trims their payload", () => {
-    expect(parseStreamingSteering("/steer  focus on tests ")).toEqual({ mode: "steer", text: "focus on tests" });
-    expect(parseStreamingSteering("/redirect use the smaller design")).toEqual({
-      mode: "redirect",
-      text: "use the smaller design",
-    });
-    expect(parseStreamingSteering("/follow-up continue")).toEqual({ mode: "follow-up", text: "continue" });
-  });
-
-  it("rejects empty or unrelated steering input", () => {
-    expect(parseStreamingSteering("/steer   ")).toBeNull();
-    expect(parseStreamingSteering("/status")).toBeNull();
-    expect(parseStreamingSteering("/followup continue")).toBeNull();
-    expect(parseStreamingSteering("plain prompt")).toBeNull();
+  it("chooses one action for Enter and the toolbar button", () => {
+    expect(resolveComposerAction("enter", false)).toBe("send");
+    expect(resolveComposerAction("button", false)).toBe("send");
+    expect(resolveComposerAction("enter", true)).toBe("steer");
+    expect(resolveComposerAction("button", true)).toBe("queue");
   });
 
   it("parses inline standing instructions only from hash-prefixed input", () => {

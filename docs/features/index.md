@@ -31,7 +31,7 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 - `/undo` for the most recent vault mutation.
 - Long-session compaction before context overflow, plus `/compact [instructions]` for manual compaction.
 - Token, cost, next-request estimate, cost alert, and spend-cap readouts.
-- Real-time turn steering with `/steer`, queued follow-ups with `/follow-up`, and hard redirects with `/redirect`.
+- Real-time composer control: Enter steers the active turn, **Queue** holds a draft until the turn ends, and **Stop** then send replaces the turn.
 - Reasoning effort control through `/effort`.
 
 ## Memory

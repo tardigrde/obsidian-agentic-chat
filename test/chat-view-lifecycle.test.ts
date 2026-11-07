@@ -271,9 +271,7 @@ describe("ChatView async lifecycle", () => {
     const buildGate = new Promise<void>((resolve) => {
       releaseBuild = resolve;
     });
-    const redirectPrompt = vi.fn(async () => {});
     const steerPrompt = vi.fn(async () => {});
-    const followUpPrompt = vi.fn(async () => {});
     const reportSessionChanged = vi.fn();
     const view = Object.assign(Object.create(ChatView.prototype), {
       app: {},
@@ -293,7 +291,7 @@ describe("ChatView async lifecycle", () => {
         return "";
       },
     }) as ChatViewHarness & {
-      sendSteeringPrompt: (text: string) => Promise<void>;
+      steerActiveTurn: (text: string) => Promise<void>;
       statusEl: { setText: ReturnType<typeof vi.fn> };
     };
     const service: FakeService = {
@@ -304,19 +302,15 @@ describe("ChatView async lifecycle", () => {
       reportSessionChanged,
       initialize: vi.fn(async () => {}),
       steerPrompt,
-      followUpPrompt,
-      redirectPrompt,
       sendPrompt: vi.fn(async () => {}),
     };
     view.tabs = [{ service }];
 
-    const send = view.sendSteeringPrompt("/redirect stale redirect");
+    const send = view.steerActiveTurn("stale steering");
     releaseBuild();
     await send;
 
-    expect(redirectPrompt).not.toHaveBeenCalled();
     expect(steerPrompt).not.toHaveBeenCalled();
-    expect(followUpPrompt).not.toHaveBeenCalled();
     expect(reportSessionChanged).toHaveBeenCalledTimes(1);
   });
 
@@ -391,8 +385,6 @@ interface FakeService {
   reportSessionChanged?: () => void;
   initialize?: () => Promise<void>;
   steerPrompt?: (prompt: string, images: unknown[], expectedSessionToken?: string) => Promise<void>;
-  followUpPrompt?: (prompt: string, images: unknown[], expectedSessionToken?: string) => Promise<void>;
-  redirectPrompt?: (prompt: string, images: unknown[], expectedSessionToken?: string) => Promise<void>;
   sendPrompt: (prompt: string, images: unknown[], expectedSessionToken?: string) => Promise<void>;
 }
 

@@ -9,7 +9,6 @@ The detailed pre-2026-11-07 backlog is in
 **Simplify the interaction surface.** Cut duplicate controls before adding new
 surfaces.
 
-- Replace `/steer`, `/follow-up`, and `/redirect` with one composer path.
 - Remove the todo tracker.
 - Remove plan mode.
 - Remove `/config`, `/mode`, the `/project` tombstone, and all aliases.

@@ -46,7 +46,7 @@ Privacy controls are on by default.
 - **Memory.** Long-term memories (`preference`, `fact`, `instruction`, `summary`) at global or vault scope. Add, review, export, or clear them with `/memory`. The agent retrieves them only through `search_memory`.
 - **Semantic search (opt-in).** A scoped vector index over notes, with OpenRouter, Ollama, or OpenAI-compatible embeddings. `/semantic-index` estimates, starts, cancels, or reports the index. A full-vault build requires `/semantic-index start vault --confirm-vault`.
 - **Document import.** `import_pdf` and `import_document` extract text from PDF, EPUB, DOCX, PPTX, and XLSX files into source artifacts with citation anchors. `read_artifact` and `search_artifact` inspect the chunks.
-- **Turn control.** `/steer` guides the active turn, `/follow-up` queues a message, `/redirect` stops and replaces the turn, and `/effort` sets reasoning effort.
+- **Composer paths.** While the agent is idle, Enter sends. While it responds, Enter steers after the next successful tool call, Shift+Enter inserts a newline, **Queue** holds the draft until the turn ends, and **Stop** then send replaces the turn. `/effort` sets reasoning effort.
 - **Observability (opt-in).** Send OTLP/HTTP traces to Langfuse or a generic OTLP endpoint. Metadata mode is the default and excludes prompts, note bodies, tool args, and tool results. See [Observability](#observability).
 - **Subagents.** The agent can delegate a focused task to a child with its own context window, model, and tool subset. The only built-in role is Explorer (read-only recon). Custom roles need a code change. Run `/agent <name> <task>`. See [Subagents](#subagents).
 - **Skills.** Agent plugin packages in `.agentic-plugins/` provide `SKILL.md` skills, next to built-in skills. The model sees only name and description until a skill is invoked. Run `/skill <name>` or `/<name>`. A body can use `$ARGUMENTS` or `$1`. `/doctor` audits plugin packages. See [Skills](#skills).
@@ -229,14 +229,13 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/memory [add\|review\|manage\|export\|clear]` | Add, review, export, or clear stored long-term memories. |
 | `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. |
 | `/todo [add\|set\|test\|commit\|note\|title\|clear]` | Track milestones, tests, checkpoint commits, notes, and the plan title. |
-| `/steer [text]` | Steer the active turn while the agent responds. |
-| `/follow-up [text]` | Queue a follow-up behind the active turn. |
-| `/redirect [text]` | Stop the active turn and answer this instead. |
 | `/export` | Save this conversation as a Markdown note. |
 | `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List commands. |
 
 `/plan` is sticky. Leave plan mode with the **Plan** badge. `/endplan` does not exist.
+
+Composer delivery is not a slash command. Enter sends while idle. While the agent responds, Enter steers after the next successful tool call, Shift+Enter inserts a newline, **Queue** holds the draft until the turn ends, and **Stop** then send replaces the turn.
 
 ## How privacy routing works
 

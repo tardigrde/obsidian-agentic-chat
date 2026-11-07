@@ -23,11 +23,20 @@ Slash commands run locally and are not sent to the model.
 | `/memory [add\|review\|manage\|export\|clear]` | Add, review, export, or clear stored long-term memories. |
 | `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. |
 | `/todo [add\|set\|test\|commit\|note\|title\|clear]` | Track milestones, tests, checkpoint commits, notes (`/todo note <id> <note>`), and the plan title (`/todo title <name>`). `clear` resets the tracker. |
-| `/steer [text]` | Steer the active turn while the agent is responding. |
-| `/follow-up [text]` | Queue a follow-up behind the active turn. |
-| `/redirect [text]` | Stop the active turn and answer this instead. |
 | `/export` | Save this conversation as a Markdown note in the vault. |
 | `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List available commands. |
 
 `/endplan` does not exist. Leave plan mode with the **Plan** badge in chat.
+
+## Composer paths
+
+These controls are not slash commands:
+
+| Control | What it does |
+| --- | --- |
+| Enter while idle | Send the text as a new turn. |
+| Enter while the agent responds | Steer the active turn. The text arrives after the next successful tool call. |
+| Shift+Enter | Insert a newline in the draft. |
+| **Queue** | Hold the draft until the active turn ends. The draft stays editable. |
+| **Stop**, then send | Replace the turn with the draft. |

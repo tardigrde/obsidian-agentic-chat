@@ -15,7 +15,7 @@ Each one keeps the same five sections, in this order:
 | Journey | Covers |
 |---|---|
 | [Open and compose](./open-and-compose.md) | Ribbon, commands, context menus, composer keys, autocomplete entry, attachments, Quick Ask. |
-| [Chat turn](./chat-turn.md) | Streaming output, reasoning, tool steps, stop, queue, steering, ask-user, copy/retry/implement, prompt edit. |
+| [Chat turn](./chat-turn.md) | Streaming output, reasoning, tool steps, stop, queue, composer steering, ask-user, copy/retry/implement, prompt edit. |
 | [Approval and permissions](./approval-and-permissions.md) | Approval modal, allow/deny/remember, approval policies, working directories, Safe/YOLO/Plan. |
 | [Sessions and tabs](./sessions-and-tabs.md) | Tabs, new chat, history, rename, delete, export, persistence. |
 | [Commands and skills](./commands-and-skills.md) | Slash command catalog, autocomplete behavior, skill loading, skill tools, New skill modal. |

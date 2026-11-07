@@ -6,8 +6,8 @@
 - A reasoning section, markdown rendering, and a settled status pill.
 - Inline tool-call step cards, edit diffs, and result rows.
 - Stop the active turn.
-- Queue a plain message while the agent runs.
-- Live turn control: `/steer`, `/follow-up`, `/redirect`.
+- One composer delivery path: Enter sends or steers, Shift+Enter adds a newline,
+  Queue holds a draft, and Stop then send replaces the turn.
 - Inline `ask_user` question with choices and a free-text answer.
 - Per-turn actions: Copy response, Ask again, Implement this plan.
 - An error banner with Retry.
@@ -17,9 +17,11 @@
 
 ## How to get to it (user view)
 
-- Type a prompt in the composer and press Enter, or click **Send**.
-- While the agent responds, the send button changes to **Queue**, and **Stop**
-  appears next to it.
+- Type a prompt in the composer and press Enter, or click **Send**, while the
+  agent is idle.
+- While the agent responds, Enter steers the active turn and the send button
+  changes to **Queue**. **Queue** holds the draft until the turn ends. **Stop**
+  appears next to it; stop, then send, replaces the turn.
 - Assistant turns show their actions under the text.
 - `ask_user` renders a question card in the transcript.
 - Click a sent user message to load it back into the composer. Enter resends;
@@ -51,22 +53,22 @@ await browser.waitUntil(async () =>
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Send a prompt and render a reply | `src/ui/chat-view.ts:1532` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
+| Send a prompt and render a reply | `src/ui/chat-view.ts:1290` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
 | Stream text deltas | `src/ui/chat-view.ts:2672` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
 | Reasoning section | `src/ui/chat-view.ts:2716` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
 | Markdown rendering | `src/ui/chat-view.ts:2723` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
 | Tool step cards and diffs | `src/ui/chat-view.ts:2681` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:397` | no committed check | `NONE` |
-| Stop the active turn (toolbar) | `src/ui/chat-view.ts:826` | `test/e2e/specs/skill-chip.e2e.ts:48` (click only) | `partial` |
+| Stop the active turn (toolbar) | `src/ui/chat-view.ts:1349` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
 | Stop one tab without aborting the other | `src/ui/chat-view.ts:833` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
-| Stop clears queued steering and follow-ups | `src/agent/agent-service.ts:711` | `test/agent-service.test.ts:1671` | `partial` |
+| Stop clears queued steering | `src/agent/agent-service.ts:725` | `test/agent-service.test.ts:1559` (unit only) | `partial` |
 | `/compact` skips when the session changed | `src/agent/agent-service.ts:562` | `test/agent-service.test.ts:1030` | `partial` |
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
-| Queue a plain message | `src/ui/chat-view.ts:1328` | `test/e2e/specs/approval-deterministic.e2e.ts:456` | `covered` |
-| `/steer` | `src/ui/chat-view.ts:1783` | `test/e2e/specs/approval-deterministic.e2e.ts:491` | `covered` |
-| `/follow-up` | `src/ui/chat-view.ts:1729` | `test/turn-control.test.ts:98` (label and parser only) | `partial` |
-| `/redirect` | `src/ui/chat-view.ts:1659` | `test/turn-control.test.ts:98` (label and parser only) | `partial` |
-| Redirect survives a compacting turn | `src/agent/agent-service.ts:865` | `test/agent-service.test.ts:1606` | `partial` |
+| Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
+| Enter steers after a successful tool call | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:166` | `covered` |
+| Shift+Enter inserts a newline | `src/ui/chat-view.ts:723` | `test/e2e/specs/composer-paths.e2e.ts:267` | `covered` |
+| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1356` | `test/e2e/specs/composer-paths.e2e.ts:200` | `covered` |
+| Stop then send replaces the turn | `src/ui/chat-view.ts:1349` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
 | Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |
 | Inline `ask_user` card | `src/ui/chat-view.ts:569` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
 | Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:628` | no committed check | `NONE` |
@@ -77,7 +79,7 @@ await browser.waitUntil(async () =>
 | Edit and resend a user turn | `src/ui/chat-view.ts:2641` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
 | Context-window bar | `src/ui/chat-view.ts:774` | `test/e2e/specs/smoke.e2e.ts:180` (existence only) | `partial` |
 | Usage readout | `src/ui/chat-view.ts:2207` | no committed check | `NONE` |
-| Background-tab completion notice | `src/ui/chat-view.ts:1253` | no committed check | `NONE` |
+| Background-tab completion notice | `src/ui/chat-view.ts:1264` | no committed check | `NONE` |
 
 ## Gotchas
 

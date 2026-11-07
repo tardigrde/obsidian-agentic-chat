@@ -28,7 +28,7 @@ import {
   agentSessionUsage,
   agentSupportsImages,
 } from "./service-readouts";
-import { normalizeSteeringText, spendCapAbortReason, type TurnSteeringMode } from "./turn-control";
+import { normalizeSteeringText, spendCapAbortReason } from "./turn-control";
 import { AgentTurnConfiguration } from "./turn-configuration";
 import { AgentActiveSessionRuntime } from "./active-session-runtime";
 import { ParentAgentRuntime } from "./parent-agent-runtime";
@@ -142,14 +142,6 @@ export class AgentService {
   private readonly turnCap = new AgentTurnCap({ maxTurns: PARENT_TURN_CAP });
   private readonly recentEvents: string[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
-  /** Redirect messages waiting for delivery, and the single drain worker. */
-  private readonly pendingRedirects: Array<{
-    text: string;
-    images?: ImageContent[];
-    expectedSessionToken?: string;
-    resolve: () => void;
-  }> = [];
-  private redirectWorker: Promise<void> | null = null;
   private readonly commandInvocations: AgentCommandInvocationRuntime;
 
   private initialization: Promise<void> | null = null;
@@ -523,16 +515,33 @@ export class AgentService {
     this.setError(SESSION_CHANGED_MESSAGE);
   }
 
+  /**
+   * Deliver text into the active turn. pi drains its steering queue after the
+   * next completed tool batch, so the text arrives inside the same run. When the
+   * agent is idle, the same call sends the text as a normal prompt instead.
+   */
   async steerPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
-    await this.queueSteeringPrompt("steer", prompt, images, expectedSessionToken);
-  }
+    const text = normalizeSteeringText(prompt);
+    if (!text) return;
+    await this.initialize();
+    if (expectedSessionToken !== undefined && this.getSessionToken() !== expectedSessionToken) {
+      this.reportSessionChanged();
+      return;
+    }
+    const attached = images && images.length > 0 ? images : undefined;
+    const agent = this.requireAgent();
+    if (!agent.state.isStreaming) {
+      await this.sendPrompt(text, attached, expectedSessionToken);
+      return;
+    }
 
-  async followUpPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
-    await this.queueSteeringPrompt("follow-up", prompt, images, expectedSessionToken);
-  }
-
-  async redirectPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
-    await this.queueSteeringPrompt("redirect", prompt, images, expectedSessionToken);
+    const message = createUserMessage(text, attached);
+    this.sessionState.clearError();
+    // Steering is user input too: user-provided info ends any running streak.
+    this.loopGuard.reset();
+    this.turnCap.reset();
+    agent.steer(message);
+    this.notifyChange();
   }
 
   /** Whether the model the next turn will use accepts image input (vision). */
@@ -709,9 +718,9 @@ export class AgentService {
   }
 
   /**
-   * One stop policy for every path that ends a turn early: clear steering and
-   * follow-up queues first, then abort. Clearing first guarantees a queued
-   * message cannot be drained into the next run after the stop.
+   * One stop policy for every path that ends a turn early: clear the steering
+   * queue first, then abort. Clearing first guarantees a queued message cannot
+   * be drained into the next run after the stop.
    */
   private stopAgent(agent: Agent): void {
     agent.clearAllQueues();
@@ -782,107 +791,6 @@ export class AgentService {
     this.loopGuard.reset();
     this.turnCap.reset();
     await this.promptTurns.run(run, expectedSessionToken);
-  }
-
-  private async queueSteeringPrompt(
-    mode: TurnSteeringMode,
-    prompt: string,
-    images?: ImageContent[],
-    expectedSessionToken?: string,
-  ): Promise<void> {
-    const text = normalizeSteeringText(prompt);
-    if (!text) return;
-    await this.initialize();
-    if (expectedSessionToken !== undefined && this.getSessionToken() !== expectedSessionToken) {
-      this.reportSessionChanged();
-      return;
-    }
-    const attached = images && images.length > 0 ? images : undefined;
-    if (mode === "redirect") {
-      await this.queueRedirect(text, attached, expectedSessionToken);
-      return;
-    }
-    const agent = this.requireAgent();
-    if (!agent.state.isStreaming) {
-      await this.sendPrompt(text, attached, expectedSessionToken);
-      return;
-    }
-
-    const message = createUserMessage(text, attached);
-    this.sessionState.clearError();
-    // Steering is user input too: user-provided info ends any running streak.
-    this.loopGuard.reset();
-    this.turnCap.reset();
-    if (mode === "follow-up") agent.followUp(message);
-    else agent.steer(message);
-    this.notifyChange();
-  }
-
-  /**
-   * Redirects stop the current run and start a new prompt. A quick second
-   * redirect must not hit the in-flight turn guard and disappear, so deliveries
-   * are queued and drained in order. Each new redirect still aborts the run that
-   * is live when it arrives.
-   */
-  private async queueRedirect(text: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
-    if (expectedSessionToken !== undefined && this.getSessionToken() !== expectedSessionToken) {
-      this.reportSessionChanged();
-      return;
-    }
-    const delivery = new Promise<void>((resolve) => {
-      this.pendingRedirects.push({ text, images, expectedSessionToken, resolve });
-    });
-    const agent = this.requireAgent();
-    if (agent.state.isStreaming) this.stopAgent(agent);
-    this.startRedirectWorker();
-    await delivery;
-  }
-
-  private startRedirectWorker(): void {
-    if (this.redirectWorker) return;
-    const worker = this.drainRedirects();
-    this.redirectWorker = worker;
-    void worker.finally(() => {
-      if (this.redirectWorker === worker) this.redirectWorker = null;
-      if (this.pendingRedirects.length > 0) this.startRedirectWorker();
-    });
-  }
-
-  private async drainRedirects(): Promise<void> {
-    while (this.pendingRedirects.length > 0) {
-      const entry = this.pendingRedirects.shift()!;
-      try {
-        if (
-          entry.expectedSessionToken !== undefined &&
-          this.getSessionToken() !== entry.expectedSessionToken
-        ) {
-          // The redirect was prepared in A but the worker is now in B. Drop it
-          // rather than aborting B or injecting A's text into it.
-          this.reportSessionChanged();
-          continue;
-        }
-        const agent = this.requireAgent();
-        if (agent.state.isStreaming) {
-          this.stopAgent(agent);
-          await agent.waitForIdle(); // NOSONAR:S9382 -- redirects are delivered in order; this wait is sequential by design.
-        }
-        await this.promptTurns.waitForIdle(); // NOSONAR:S9382 -- redirects are delivered in order; this wait is sequential by design.
-        this.sessionState.clearError();
-        this.loopGuard.reset();
-        this.turnCap.reset();
-        // Never route a redirect through sendPrompt: that path can compact and
-        // replace the agent, which would drop the redirected message. The entry
-        // token is passed again because either idle wait above can outlive a swap.
-        await this.runPrompt( // NOSONAR:S9382 -- redirects are delivered in order; this wait is sequential by design.
-          (currentAgent) => currentAgent.prompt(createUserMessage(entry.text, entry.images)),
-          entry.expectedSessionToken,
-        );
-      } catch (error) {
-        this.sessionState.setError(error);
-      } finally {
-        entry.resolve();
-      }
-    }
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
