@@ -149,7 +149,7 @@ The helper writes `audit.json` with these surfaces:
 - docs (`README.md`, `docs/`, changelog, mobile notes)
 - slash-command table (`.agents/skills/verify-obsidian-chat/features/commands-and-skills.md`)
 - feature map (`.agents/skills/verify-obsidian-chat/features/`)
-- imports and routes (`src/`, `src/main.ts`, `src/plugin.ts`, `manifest.json`)
+- imports and routes (`src/`, `src/main.ts`, `manifest.json`)
 - tests and scripts
 
 `ABSENT` means no hit. `PRESENT` is not automatically a failure: a removal note

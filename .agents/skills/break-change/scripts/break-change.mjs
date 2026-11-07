@@ -708,7 +708,7 @@ function categoriesFor(hit) {
     categories.add("ui");
   }
   if (rel === "src/settings.ts") categories.add("ui");
-  if (rel === "src/main.ts" || rel === "src/plugin.ts") categories.add("routes");
+  if (rel === "src/main.ts") categories.add("routes");
   if (rel === "manifest.json") categories.add("manifest");
   if (
     rel.startsWith("docs/") ||
