@@ -126,7 +126,7 @@ While Web access is off, the tools are not registered. When it is on, search que
 Off by default. Enable MCP in settings to discover tools from remote MCP servers.
 
 - **Transport.** HTTPS Streamable HTTP for remote servers; plain HTTP only for loopback servers. There is no stdio or subprocess transport, so the plugin cannot spawn local processes and stays mobile-safe.
-- **Setup.** On the MCP tab, **Add MCP server** writes an agent plugin package (`plugin.json` + `mcp.json`) for the endpoint. Packages own endpoints after creation. Choose auth, then **Test connection** or **Authenticate & test**. New installs have no servers or presets.
+- **Setup.** On the Advanced tab under MCP tools, **Add MCP server** writes an agent plugin package (`plugin.json` + `mcp.json`) for the endpoint. Packages own endpoints after creation. Choose auth, then **Test connection** or **Authenticate & test**. New installs have no servers or presets.
 - **Auth.** Servers can use no auth, a bearer token, a static header, or MCP OAuth. Bearer/static-header secrets and OAuth tokens are stored in Obsidian secret storage.
 - **Names.** Remote tools appear as `mcp__<server-id>__<tool-name>`.
 - **Approval.** Each server has its own allow / ask / deny policy, defaulting to ask. Remote tool annotations are not treated as a safety boundary.
@@ -189,9 +189,9 @@ Use [BRAT](https://github.com/TfTHacker/obsidian42-brat) for pre-release builds 
 
 For any OpenAI-compatible gateway, set the provider to **OpenAI-compatible**. The **Gateway preset** shortcut fills common base URLs for OpenWebUI, LM Studio, vLLM, llama.cpp, Chutes, and Venice.ai. The transport stays generic, so other gateways work when you edit the Base URL and Model fields.
 
-The settings page uses virtual tabs: Models, Agent, Approval, Web, MCP, Observability, Notifications, and Resources.
+The settings page has three tabs: Models, Agent, and Advanced. Advanced holds web access, MCP, observability, notifications, plugins, subagents, semantic retrieval, and the ignore list.
 
-On desktop behind a corporate proxy, set **Models → Network proxy → HTTP proxy** to a URL such as `http://host:port`. Plugin-owned OpenRouter/OpenAI-compatible chat requests, model browsing, web tools, MCP, and observability use it. The MCP and Observability tabs have optional overrides; leave them empty unless a server needs different routing. On mobile, keep the plugin proxy fields empty and use the device/VPN/network-level proxy path.
+On desktop behind a corporate proxy, set **Models → Network proxy → HTTP proxy** to a URL such as `http://host:port`. Plugin-owned OpenRouter/OpenAI-compatible chat requests, model browsing, web tools, MCP, and observability use it. The MCP and observability sections on the Advanced tab have optional overrides; leave them empty unless a server needs different routing. On mobile, keep the plugin proxy fields empty and use the device/VPN/network-level proxy path.
 
 Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 

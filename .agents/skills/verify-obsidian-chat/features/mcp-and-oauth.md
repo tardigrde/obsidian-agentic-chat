@@ -48,27 +48,27 @@ await clickMcpAddButton("Add MCP server");
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| MCP tab: enable and add a server | `src/settings.ts:960` | `test/e2e/specs/settings-ui.e2e.ts:268` | `covered` |
-| MCP-only proxy override | `src/settings.ts:983` | no committed check | `NONE` |
-| Server enable toggle | `src/settings.ts:1237` | no committed check | `NONE` |
-| Server approval policy | `src/settings.ts:1373` | `test/e2e/specs/settings-ui.e2e.ts:268` | `covered` |
-| Static header auth | `src/settings.ts:1504` | `test/e2e/specs/settings-ui.e2e.ts:268` | `covered` |
-| Bearer token auth | `src/settings.ts:1519` | no committed check | `NONE` |
-| OAuth settings panel | `src/settings.ts:1576` | no committed check | `NONE` |
-| OAuth required banner | `src/settings.ts:1266` | `test/e2e/specs/composio-install.e2e.ts:181` (banner and button only) | `partial` |
-| Authenticate & test / PKCE sign-in | `src/settings.ts:1712` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
+| Advanced tab > MCP tools: enable and add a server | `src/settings.ts:984` | `test/e2e/specs/settings-ui.e2e.ts:306` | `covered` |
+| MCP-only proxy override | `src/settings.ts:1008` | no committed check | `NONE` |
+| Server enable toggle | `src/settings.ts:1261` | no committed check | `NONE` |
+| Server approval policy | `src/settings.ts:1398` | `test/e2e/specs/settings-ui.e2e.ts:306` | `covered` |
+| Static header auth | `src/settings.ts:1567` | `test/e2e/specs/settings-ui.e2e.ts:306` | `covered` |
+| Bearer token auth | `src/settings.ts:1544` | no committed check | `NONE` |
+| OAuth settings panel | `src/settings.ts:1601` | no committed check | `NONE` |
+| OAuth required banner | `src/settings.ts:1291` | `test/e2e/specs/composio-install.e2e.ts:241` (banner and button only) | `partial` |
+| Authenticate & test / PKCE sign-in | `src/settings.ts:1728` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Desktop loopback callback | `src/mcp/oauth.ts:791` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Mobile Obsidian protocol callback | `src/mcp/oauth.ts:848` | `test/mcp-oauth.test.ts:58` (unit only) | `partial` |
 | OAuth token refresh | `src/mcp/oauth.ts:272` | `test/mcp-oauth.test.ts:513` (unit only) | `partial` |
 | Concurrent OAuth refresh shares one request | `src/mcp/oauth.ts:272` | `test/mcp-oauth.test.ts:610` | `partial` |
 | Concurrent mobile OAuth callbacks route by state | `src/mcp/oauth.ts:931` | `test/mcp-oauth.test.ts:121` | `partial` |
 | MCP handshake retries after a failed initialized notification | `src/mcp/client.ts:149` | `test/mcp-client.test.ts:112` | `partial` |
-| Test connection / refresh tools | `src/settings.ts:1259` | `test/mcp-tools.test.ts:229` (probe helper only) | `partial` |
-| Tool allowlist/denylist | `src/settings.ts:1395` | `test/mcp-tools.test.ts:174` (unit only) | `partial` |
-| Per-tool MCP approvals | `src/settings.ts:1448` | no committed check | `NONE` |
-| Setup guide / Copy config | `src/settings.ts:1940` | `test/e2e/specs/settings-ui.e2e.ts:268` (button existence only) | `partial` |
+| Test connection / refresh tools | `src/settings.ts:1719` | `test/mcp-tools.test.ts:229` (probe helper only) | `partial` |
+| Tool allowlist/denylist | `src/settings.ts:1420` | `test/mcp-tools.test.ts:174` (unit only) | `partial` |
+| Per-tool MCP approvals | `src/settings.ts:1473` | no committed check | `NONE` |
+| Setup guide / Copy config | `src/settings.ts:1970` | `test/e2e/specs/settings-ui.e2e.ts:306` (button existence only) | `partial` |
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts:49` | `test/e2e/specs/composio-install.e2e.ts:27` | `covered` |
-| Imported MCP servers start disabled | `src/plugins/loader.ts:322` | `test/e2e/specs/settings-ui.e2e.ts:311` | `covered` |
+| Imported MCP servers start disabled | `src/plugins/loader.ts:322` | `test/e2e/specs/settings-ui.e2e.ts:349` | `covered` |
 | Discover and call a remote MCP tool | `src/mcp/tools.ts:71` | `test/e2e/specs/mcp-live.e2e.ts:227` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
 | Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts:647` | `test/mcp-client.test.ts:360` (unit only) | `partial` |
 

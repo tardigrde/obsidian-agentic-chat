@@ -19,7 +19,7 @@ Each one keeps the same five sections, in this order:
 | [Approval and permissions](./approval-and-permissions.md) | Approval modal, allow/deny/remember, approval policies, working directories, Safe/YOLO/Plan. |
 | [Sessions and tabs](./sessions-and-tabs.md) | Tabs, new chat, history, rename, delete, export, persistence. |
 | [Commands and skills](./commands-and-skills.md) | Slash command catalog, autocomplete behavior, skill loading, skill tools, New skill modal. |
-| [Settings](./settings.md) | All eight settings tabs, secrets, conditional fields, plugin rows. |
+| [Settings](./settings.md) | Three settings tabs (Models, Agent, Advanced), secrets, conditional fields, plugin rows. |
 | [MCP and OAuth](./mcp-and-oauth.md) | MCP servers, auth modes, OAuth sign-in, tool discovery, plugin-provided MCP. |
 | [Subagents and context](./subagents-and-context.md) | `/agent`, the `subagent` tool, child status and stop, context serialization and budgets. |
 

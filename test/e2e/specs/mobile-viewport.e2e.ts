@@ -405,17 +405,17 @@ describe("agentic-chat mobile viewport", function () {
     await openAgenticChatSettings();
     await selectSettingsTab("Models");
     await waitForSetting("Model provider");
-    await selectSettingsTab("MCP");
+    await selectSettingsTab("Advanced");
     await waitForSetting("Enable MCP");
     await waitForSetting("Mobile MCP Demo");
     assertHeadingRowReadable(await measureHeadingRow("Mobile MCP Demo"), "MCP server header");
     await waitForSetting("Tool approvals");
     assertHeadingRowReadable(await measureHeadingRow("Tool approvals"), "Tool approvals heading");
     await assertFits(".agentic-chat-settings-tabbody", "MCP settings body");
-    await selectSettingsTab("Approval");
+    await selectSettingsTab("Agent");
     await waitForSetting("Working directories");
     assertHeadingRowReadable(await measureHeadingRow("Working directories"), "Working directories heading");
-    await selectSettingsTab("Resources");
+    await selectSettingsTab("Advanced");
     await waitForSetting("Plugins folder");
     // The seeded agent plugin must render an installed-plugin row so the
     // narrow-viewport row layout (title + controls) is actually exercised.

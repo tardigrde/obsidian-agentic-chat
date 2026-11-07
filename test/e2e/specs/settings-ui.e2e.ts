@@ -5,9 +5,12 @@ import { zipSync } from "../../../src/vendor/fflate";
 import {
   clickMcpAddButton,
   clickSettingButton,
+  closeAgenticChatSettings,
   openAgenticChatSettings,
   readAgenticChatSettings,
   readSecret,
+  readSettingText,
+  readSettingsTabLabels,
   readStoredData,
   selectSettingsTab,
   setSettingRange,
@@ -177,6 +180,41 @@ describe("agentic-chat settings UI", function () {
     await openAgenticChatSettings();
   });
 
+  it("shows exactly three tabs and groups the advanced sections", async function () {
+    this.timeout(15_000);
+    await selectSettingsTab("Models");
+    expect(await readSettingsTabLabels()).toEqual(["Models", "Agent", "Advanced"]);
+
+    await selectSettingsTab("Advanced");
+    const sections = await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-settings-section")).map(
+        (section) => section.dataset.settingsSection,
+      ),
+    );
+    expect(sections).toEqual([
+      "web",
+      "mcp",
+      "observability",
+      "notifications",
+      "plugins",
+      "subagents",
+      "retrieval",
+      "ignored-files",
+    ]);
+    for (const heading of [
+      "Web access",
+      "MCP tools",
+      "Observability export",
+      "Notifications",
+      "Agent plugins",
+      "Subagents",
+      "Semantic retrieval",
+      "Ignored files",
+    ]) {
+      await waitForSetting(heading);
+    }
+  });
+
   it("persists provider, API key, base URL, and model through the Models tab", async function () {
     await selectSettingsTab("Models");
     await setSettingSelect("Model provider", "openrouter");
@@ -218,8 +256,8 @@ describe("agentic-chat settings UI", function () {
     }
   });
 
-  it("persists approval gates and per-tool overrides through the Approval tab", async function () {
-    await selectSettingsTab("Approval");
+  it("persists approval gates and per-tool overrides through the Agent tab", async function () {
+    await selectSettingsTab("Agent");
     await setSettingSelect("Before mutating tools", "deny");
     await setSettingSelect("Write file", "ask");
 
@@ -229,8 +267,8 @@ describe("agentic-chat settings UI", function () {
     }, "Approval settings were not persisted from the settings UI");
   });
 
-  it("persists web access settings through the Web tab", async function () {
-    await selectSettingsTab("Web");
+  it("persists web access settings through the Advanced tab", async function () {
+    await selectSettingsTab("Advanced");
     await setSettingToggle("Enable web search & fetch", true);
     await waitForSetting("Search provider");
     await setSettingText("Search API key", WEB_SEARCH_KEY);
@@ -265,8 +303,8 @@ describe("agentic-chat settings UI", function () {
     }, "Web settings were not persisted from the settings UI");
   });
 
-  it("generates a plugin package and persists its MCP server through the MCP tab", async function () {
-    await selectSettingsTab("MCP");
+  it("generates a plugin package and persists its MCP server through the Advanced tab", async function () {
+    await selectSettingsTab("Advanced");
     await setSettingToggle("Enable MCP", true);
     await waitForMcpAddRow();
     await setSettingTextByPlaceholder("Server name", "docs");
@@ -337,7 +375,7 @@ describe("agentic-chat settings UI", function () {
     if (!address || typeof address === "string") throw new Error("archive server did not bind");
     const archiveUrl = `http://127.0.0.1:${address.port}/my-tool.zip`;
     try {
-      await selectSettingsTab("Resources");
+      await selectSettingsTab("Advanced");
       await clickSettingButton("Import", "Install plugin…");
       await browser.waitUntil(
         async () => (await $(".agentic-chat-install-url").isExisting()),
@@ -391,8 +429,8 @@ describe("agentic-chat settings UI", function () {
     }
   });
 
-  it("persists observability settings through the Observability tab", async function () {
-    await selectSettingsTab("Observability");
+  it("persists observability settings through the Advanced tab", async function () {
+    await selectSettingsTab("Advanced");
     await setSettingToggle("Enable observability", true);
     await waitForSetting("Backend");
     await setSettingSelect("Backend", "langfuse");
@@ -400,8 +438,8 @@ describe("agentic-chat settings UI", function () {
     await setSettingText("Langfuse base URL", "https://langfuse.corp.example");
     await setSettingSelect("Payload detail", "redacted-previews");
     await setSettingRange("Sample rate", 25);
-    await setSettingText("HTTP proxy", "http://192.0.2.10:3128");
-    await setSettingText("No proxy", "localhost,*.corp.example");
+    await setSettingText("HTTP proxy", "http://192.0.2.10:3128", "observability");
+    await setSettingText("No proxy", "localhost,*.corp.example", "observability");
     await setSettingText("Langfuse public key", "pk-lf-e2e");
     await setSettingText("Langfuse secret key", "sk-lf-e2e");
 
@@ -432,13 +470,31 @@ describe("agentic-chat settings UI", function () {
     expect("authHeaderValue" in storedObservability).toBe(false);
   });
 
-  it("persists plugin folder and ignored globs through the Resources tab", async function () {
-    await selectSettingsTab("Resources");
+  it("persists plugin folder and ignored globs through the Advanced tab", async function () {
+    await selectSettingsTab("Advanced");
     await setSettingText("Plugins folder", ".agentic-plugins-e2e");
     await setSettingText("Ignore list", "Private/\n*.secret.md");
 
     const settings = await readAgenticChatSettings<SettingsSnapshot>();
     expect(settings.plugins.folder).toBe(".agentic-plugins-e2e");
     expect(settings.ignoredGlobs).toBe("Private/\n*.secret.md");
+  });
+
+  it("keeps a moved Advanced setting after close and reopen", async function () {
+    await selectSettingsTab("Advanced");
+    await setSettingText("Cost alert (USD)", "3.5");
+    await browser.waitUntil(
+      async () => {
+        const stored = await readStoredData();
+        const notifications = stored.notifications as { costAlertUsd?: number } | undefined;
+        return notifications?.costAlertUsd === 3.5;
+      },
+      { timeout: 5_000, timeoutMsg: "Cost alert was not saved to data.json" },
+    );
+
+    await closeAgenticChatSettings();
+    await openAgenticChatSettings();
+    await selectSettingsTab("Advanced");
+    expect(await readSettingText("Cost alert (USD)")).toBe("3.5");
   });
 });

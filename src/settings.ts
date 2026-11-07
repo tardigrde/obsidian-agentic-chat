@@ -80,6 +80,7 @@ import {
   type AgenticChatSettings,
   type NetworkSettings,
 } from "./settings-schema";
+import { SETTINGS_TABS, type SettingsSectionId } from "./settings-tabs";
 export {
   DEFAULT_SETTINGS,
   PROVIDERS,
@@ -215,20 +216,28 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     return [];
   }
 
-  /** Settings grouped into virtual tabs so the page isn't one long scroll. */
-  private readonly tabs: Array<{
-    label: string;
-    render: (containerEl: HTMLElement, settings: AgenticChatSettings) => void;
-  }> = [
-    { label: "Models", render: (el, settings) => this.renderModels(el, settings) },
-    { label: "Agent", render: (el, settings) => this.renderAgent(el, settings) },
-    { label: "Approval", render: (el, settings) => this.renderApproval(el, settings) },
-    { label: "Web", render: (el, settings) => this.renderWebAccess(el, settings) },
-    { label: "MCP", render: (el, settings) => this.renderMcp(el, settings) },
-    { label: "Observability", render: (el, settings) => this.renderObservability(el, settings) },
-    { label: "Notifications", render: (el, settings) => this.renderNotifications(el, settings) },
-    { label: "Resources", render: (el, settings) => this.renderResources(el, settings) },
-  ];
+  /**
+   * One renderer per section. The pure tab map in settings-tabs.ts decides which
+   * sections are visible and in which tab, so adding a section cannot silently
+   * drop a setting.
+   */
+  private readonly sectionRenderers: Record<
+    SettingsSectionId,
+    (containerEl: HTMLElement, settings: AgenticChatSettings) => void
+  > = {
+    models: (el, settings) => this.renderModels(el, settings),
+    agent: (el, settings) => this.renderAgent(el, settings),
+    approval: (el, settings) => this.renderApproval(el, settings),
+    web: (el, settings) => this.renderWebAccess(el, settings),
+    mcp: (el, settings) => this.renderMcp(el, settings),
+    observability: (el, settings) => this.renderObservability(el, settings),
+    notifications: (el, settings) => this.renderNotifications(el, settings),
+    plugins: (el, settings) => this.renderPlugins(el, settings),
+    subagents: (el, settings) => this.renderSubagents(el, settings),
+    retrieval: (el, settings) => this.renderRetrieval(el, settings),
+    "ignored-files": (el, settings) => this.renderIgnoredFiles(el, settings),
+  };
+  private readonly tabs = SETTINGS_TABS;
   private activeTab = 0;
   private pluginsLoadedOnce = false;
   private pendingMcpServerName = "";
@@ -373,13 +382,20 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     const body = containerEl.createDiv({ cls: "agentic-chat-settings-tabbody" });
     this.tabs.forEach((tab, index) => {
       const button = nav.createEl("button", { cls: "agentic-chat-settings-tab", text: tab.label });
+      button.dataset.settingsTab = tab.id;
       if (index === this.activeTab) button.addClass("is-active");
       button.addEventListener("click", () => {
         this.activeTab = index;
         this.redraw();
       });
     });
-    this.tabs[this.activeTab].render(body, settings);
+    const activeTab = this.tabs[this.activeTab];
+    body.dataset.settingsTab = activeTab.id;
+    for (const section of activeTab.sections) {
+      const sectionEl = body.createDiv({ cls: "agentic-chat-settings-section" });
+      sectionEl.dataset.settingsSection = section;
+      this.sectionRenderers[section](sectionEl, settings);
+    }
   }
 
   private renderModels(containerEl: HTMLElement, settings: AgenticChatSettings): void {
@@ -2051,7 +2067,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       });
   }
 
-  private renderResources(containerEl: HTMLElement, settings: AgenticChatSettings): void {
+  private renderPlugins(containerEl: HTMLElement, settings: AgenticChatSettings): void {
     new Setting(containerEl).setName("Agent plugins").setHeading();
 
     const desc = containerEl.createDiv({ cls: "setting-item-description" });
@@ -2109,7 +2125,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     );
 
     this.renderPluginsList(containerEl, settings);
+  }
 
+  private renderSubagents(containerEl: HTMLElement, settings: AgenticChatSettings): void {
     new Setting(containerEl).setName("Subagents").setHeading();
     new Setting(containerEl)
       .setName("Subagent timeout")
@@ -2127,7 +2145,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             await this.save();
           }),
       );
+  }
 
+  private renderRetrieval(containerEl: HTMLElement, settings: AgenticChatSettings): void {
     new Setting(containerEl).setName("Semantic retrieval").setHeading();
     new Setting(containerEl)
       .setName("Embeddings")
@@ -2227,7 +2247,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           await this.save();
         });
       });
+  }
 
+  private renderIgnoredFiles(containerEl: HTMLElement, settings: AgenticChatSettings): void {
     new Setting(containerEl).setName("Ignored files").setHeading();
     new Setting(containerEl)
       .setName("Ignore list")

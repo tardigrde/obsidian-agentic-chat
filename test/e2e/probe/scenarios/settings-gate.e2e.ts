@@ -86,7 +86,7 @@ describe("probe: settings gate", function () {
     await browser.pause(1_200);
 
     await openAgenticChatSettings();
-    await selectSettingsTab("Approval");
+    await selectSettingsTab("Agent");
     await waitForSetting("Write file");
     await mark("approval settings open");
     await browser.pause(1_400);
