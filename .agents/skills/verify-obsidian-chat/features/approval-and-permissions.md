@@ -57,15 +57,15 @@ await (await modal.$("button=Allow")).click();
 | Per-tool deny flips to allow in a recorded run | `src/settings.ts:807` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
 | Working dir auto-runs inside and asks outside | `src/agent/tool-call-controller.ts:266` | `test/e2e/specs/approval-deterministic.e2e.ts:393` | `covered` |
 | Working directories settings row | `src/settings.ts:820` | no committed check | `NONE` |
-| Safe/YOLO toggle | `src/ui/chat-view.ts:793` | no committed check | `NONE` |
-| `/plan` enters sticky plan mode | `src/ui/chat-view.ts:1044` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
-| Plan badge exits plan mode | `src/ui/chat-view.ts:818` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
-| Invalid mode transition is blocked | `src/ui/chat-view.ts:1014` | `test/modes.test.ts:100` (unit only) | `partial` |
-| Implement this plan | `src/ui/chat-view.ts:2826` | no committed check | `NONE` |
-| `/dirs` lists working directories | `src/ui/chat-view.ts:1719` | `test/e2e/specs/smoke.e2e.ts:92` | `covered` |
+| Safe/YOLO toggle | `src/ui/chat-view.ts:783` | no committed check | `NONE` |
+| `/plan` enters sticky plan mode | `src/ui/chat-view.ts:1034` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
+| Plan badge exits plan mode | `src/ui/chat-view.ts:808` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
+| Invalid mode transition is blocked | `src/ui/chat-view.ts:1004` | `test/modes.test.ts:100` (unit only) | `partial` |
+| Implement this plan | `src/ui/chat-view.ts:2796` | no committed check | `NONE` |
+| `/dirs` lists working directories | `src/ui/chat-view.ts:1708` | `test/e2e/specs/smoke.e2e.ts:92` | `covered` |
 | `/add-dir` grants a directory | `src/ui/working-directory-workflow-controller.ts:86` | `test/working-directory-workflow-controller.test.ts:69` (unit only) | `partial` |
-| Background-tab approval badge and label | `src/ui/chat-view.ts:541` | `test/e2e/specs/multi-tab-approval.e2e.ts:102` | `covered` |
-| Closing a tab clears its pending approval | `src/ui/chat-view.ts:443` | `test/e2e/specs/multi-tab-approval.e2e.ts:167` | `covered` |
+| Background-tab approval badge and label | `src/ui/chat-view.ts:537` | `test/e2e/specs/multi-tab-approval.e2e.ts:102` | `covered` |
+| Closing a tab clears its pending approval | `src/ui/chat-view.ts:439` | `test/e2e/specs/multi-tab-approval.e2e.ts:167` | `covered` |
 | Approval modal at phone width | `src/ui/approval-modal.ts:34` | `test/e2e/specs/mobile-viewport.e2e.ts:435` | `covered` |
 
 ## Gotchas

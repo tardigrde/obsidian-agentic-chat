@@ -228,7 +228,6 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/usage` | Show token and cost totals. |
 | `/memory [add\|review\|manage\|export\|clear]` | Add, review, export, or clear stored long-term memories. |
 | `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. |
-| `/todo [add\|set\|test\|commit\|note\|title\|clear]` | Track milestones, tests, checkpoint commits, notes, and the plan title. |
 | `/export` | Save this conversation as a Markdown note. |
 | `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List commands. |

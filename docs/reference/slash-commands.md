@@ -22,7 +22,6 @@ Slash commands run locally and are not sent to the model.
 | `/usage` | Show token and cost totals. |
 | `/memory [add\|review\|manage\|export\|clear]` | Add, review, export, or clear stored long-term memories. |
 | `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. |
-| `/todo [add\|set\|test\|commit\|note\|title\|clear]` | Track milestones, tests, checkpoint commits, notes (`/todo note <id> <note>`), and the plan title (`/todo title <name>`). `clear` resets the tracker. |
 | `/export` | Save this conversation as a Markdown note in the vault. |
 | `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List available commands. |

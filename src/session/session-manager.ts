@@ -6,7 +6,6 @@ import { collectArtifactIdsFromMessages } from "../artifacts/artifact-references
 import type { ActionAuditEvent } from "../agent/action-audit-log";
 import type { FileCheckpoint } from "../agent/file-checkpoints";
 import type { UndoEntry } from "../agent/undo";
-import type { PlanTrackerState } from "../agent/plan-tracker";
 import { normalizeFolderPath } from "../vault/path";
 import {
   type ActionAuditSessionEntry,
@@ -16,12 +15,10 @@ import {
   createSessionHeader,
   createSessionId,
   getLastLeafId,
-  getLatestPlanTrackerState,
   parseSessionEntries,
   serializeSessionEntries,
   type MessageSessionEntry,
   type ModelChangeSessionEntry,
-  type PlanTrackerSessionEntry,
   type SessionContext,
   type SessionEntry,
   type SessionHeaderEntry,
@@ -253,16 +250,6 @@ export class ObsidianSessionManager {
     });
   }
 
-  async appendPlanTracker(state: PlanTrackerState | null): Promise<string> {
-    return this.appendEntry<PlanTrackerSessionEntry>({
-      type: "plan_tracker",
-      id: createEntryId(this.entries),
-      parentId: this.leafId,
-      timestamp: new Date().toISOString(),
-      state,
-    });
-  }
-
   /**
    * Rename any session by path — the active one in memory, or another on disk by
    * appending a `session_info` entry to its file.
@@ -309,7 +296,6 @@ export class ObsidianSessionManager {
     const header = this.entries[0];
     if (!header || header.type !== "session") throw new Error("Session file is missing a session header.");
     const sessionName = getSessionName(this.entries);
-    const planTracker = this.getActivePlanTracker();
     const context = this.buildSessionContext();
     const rebuilt: SessionEntry[] = [header];
     let parentId: string | null = null;
@@ -356,15 +342,6 @@ export class ObsidianSessionManager {
         name: sessionName,
       });
     }
-    if (planTracker) {
-      push({
-        type: "plan_tracker",
-        id: createEntryId(rebuilt),
-        parentId,
-        timestamp: new Date().toISOString(),
-        state: planTracker,
-      });
-    }
     await this.writeSessionFile(sessionFile, serializeSessionEntries(rebuilt));
     if (this.sessionFile !== sessionFile || this.sessionGeneration !== generation) {
       throw new Error("Session changed while rewriting the transcript.");
@@ -378,10 +355,6 @@ export class ObsidianSessionManager {
 
   buildSessionContext(): SessionContext {
     return buildSessionContext(this.entries, this.leafId);
-  }
-
-  getActivePlanTracker(): PlanTrackerState | null {
-    return getLatestPlanTrackerState(this.entries, this.leafId);
   }
 
   hasActiveSession(): boolean {

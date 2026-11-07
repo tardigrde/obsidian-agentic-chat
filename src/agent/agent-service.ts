@@ -64,11 +64,6 @@ import {
   summarizeAgentEvent,
   type AgentRuntimeDiagnostics,
 } from "./diagnostics";
-import {
-  runPlanTrackerCommand,
-  type PlanTrackerCommandResult,
-  type PlanTrackerState,
-} from "./plan-tracker";
 export type { ToolApprovalRequest } from "./tool-call-controller";
 
 export type { SummarizeFn } from "./compaction-runtime";
@@ -333,20 +328,6 @@ export class AgentService {
 
   getSessionInfo(): SessionInfo | undefined {
     return this.sessions.info;
-  }
-
-  getPlanTracker(): PlanTrackerState | null {
-    return this.sessions.getPlanTracker();
-  }
-
-  async runPlanTrackerCommand(input: string): Promise<PlanTrackerCommandResult> {
-    await this.initialize();
-    const result = runPlanTrackerCommand(this.sessions.getPlanTracker(), input);
-    if (result.changed) {
-      await this.sessions.savePlanTracker(result.state);
-      this.notifyChange();
-    }
-    return result;
   }
 
   getSkills(): Skill[] {

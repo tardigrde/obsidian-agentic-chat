@@ -55,13 +55,12 @@ await $(".agentic-chat-info").waitForExist();
 | `/compact` | `src/ui/commands.ts:39` | `test/e2e/specs/smoke.e2e.ts:73` | `covered` |
 | `/dirs` | `src/ui/commands.ts:33` | `test/e2e/specs/smoke.e2e.ts:92` | `covered` |
 | `/memory` | `src/ui/commands.ts:29` | `test/e2e/specs/smoke.e2e.ts:133` | `covered` |
-| `/todo` | `src/ui/commands.ts:35` | `test/e2e/specs/smoke.e2e.ts:209` | `covered` |
 | `/status` | `src/ui/commands.ts:28` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
 | `/plan` | `src/ui/commands.ts:34` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
 | `/undo` | `src/ui/commands.ts:41` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
 | `/sessions` | `src/ui/commands.ts:26` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
 | `/new` | `src/ui/commands.ts:25` | `test/session-actions.test.ts:153` (unit only) | `partial` |
-| Alias-free command lookup | `src/ui/commands.ts:54` | `test/commands.test.ts:62` (unit only) | `partial` |
+| Alias-free command lookup | `src/ui/commands.ts:54` | `test/commands.test.ts:61` (unit only) | `partial` |
 | `/model` | `src/ui/commands.ts:27` | no committed check | `NONE` |
 | `/style` | `src/ui/commands.ts:36` | no committed check | `NONE` |
 | `/effort` | `src/ui/commands.ts:37` | no committed check | `NONE` |
@@ -74,11 +73,11 @@ await $(".agentic-chat-info").waitForExist();
 | `/add-dir` | `src/ui/commands.ts:32` | `test/working-directory-workflow-controller.test.ts:69` (unit only) | `partial` |
 | `/agent` | `src/ui/commands.ts:43` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
 | `/skill <name>` | `src/ui/commands.ts:42` | `test/e2e/specs/skill-chip.e2e.ts:22` | `covered` |
-| `/skill` with no name (picker) | `src/ui/chat-view.ts:1870` | no committed check | `NONE` |
-| Bare `/<skill-name>` | `src/ui/chat-view.ts:1684` | `test/commands.test.ts:95` (parse only) | `partial` |
-| `/template` as a command | `src/ui/chat-view.ts:1684` | no handler; the word falls through to the model | `unreachable` |
+| `/skill` with no name (picker) | `src/ui/chat-view.ts:1845` | no committed check | `NONE` |
+| Bare `/<skill-name>` | `src/ui/chat-view.ts:1673` | `test/commands.test.ts:94` (parse only) | `partial` |
+| `/template` as a command | `src/ui/chat-view.ts:1673` | no handler; the word falls through to the model | `unreachable` |
 | `/template <partial>` skill autocomplete | `src/ui/autocomplete.ts:77` | `test/autocomplete.test.ts:42` (unit only) | `partial` |
-| Autocomplete menu for commands | `src/ui/chat-view.ts:975` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
+| Autocomplete menu for commands | `src/ui/chat-view.ts:965` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
 | Autocomplete keyboard keys | `src/ui/autocomplete-menu.ts:108` | no committed check | `NONE` |
 | Built-in skills are available | `src/skills/builtin-skills.ts:202` | `test/builtin-skills.test.ts:4` (catalog only) | `partial` |
 | Plugin skills load with built-ins | `src/agent/runtime-resources.ts:81` | `test/runtime-resources.test.ts:126` (unit only) | `partial` |

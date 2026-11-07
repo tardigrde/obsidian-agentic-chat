@@ -67,8 +67,3 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 - Optional OTLP or Langfuse observability export.
 - Artifact system for large tool outputs.
 - `read_skill` tool to load full skill content on demand.
-
-## Todo tracking
-
-- `/todo` commands to track milestones, tests, and checkpoint commits.
-- The plan tracker panel shows live progress.

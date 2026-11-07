@@ -3,7 +3,6 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
   buildSessionContext,
   createSessionHeader,
-  getLatestPlanTrackerState,
   getLastLeafId,
   parseSessionEntries,
   serializeSessionEntries,
@@ -102,7 +101,10 @@ describe("session jsonl", () => {
     expect(context.model).toEqual({ provider: "openrouter", modelId: "x/y" });
   });
 
-  it("keeps plan tracker entries out of replayed messages while exposing latest state", () => {
+  it("ignores legacy plan_tracker entries when replaying an old session", () => {
+    // Older session files still contain plan_tracker entries from the removed
+    // tracker. They must stay out of the replayed transcript, and the rest of
+    // the session must load unchanged.
     const entries: SessionEntry[] = [
       createSessionHeader("sid", "vault"),
       { type: "message", id: "m1", parentId: null, timestamp: "t", message: userMessage("first") },
@@ -131,10 +133,7 @@ describe("session jsonl", () => {
     ];
 
     expect(buildSessionContext(entries).messages.map((message) => messageText(message))).toEqual(["first", "second"]);
-    expect(getLatestPlanTrackerState(entries)).toMatchObject({
-      title: "Goal",
-      items: [{ id: "1", title: "Checkpoint", status: "done", testStatus: "passed" }],
-    });
+    expect(getLastLeafId(entries)).toBe("m2");
   });
 
   it("returns an empty branch for a null leaf", () => {
