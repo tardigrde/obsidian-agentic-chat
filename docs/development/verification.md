@@ -63,6 +63,18 @@ tests when it can prove nothing ran, and the eval lane passes `--fail-on-skip` b
 default. If a lane cannot execute because credentials are missing, say so and run
 a lane that can.
 
+## Live MCP
+
+The live MCP spec defaults to Context7's `resolve-library-id` tool and makes a
+real HTTPS call:
+
+```bash
+AGENTIC_CHAT_E2E_MCP_URL=https://mcp.context7.com/mcp npm run verify -- e2e test/e2e/specs/mcp-live.e2e.ts
+```
+
+The spec skips when `AGENTIC_CHAT_E2E_MCP_URL` is unset, so a zero-test exit is
+not a pass. Read the passing count.
+
 ## Witness
 
 `npm run verify:witness` reverts the source diff, runs the test, restores the
