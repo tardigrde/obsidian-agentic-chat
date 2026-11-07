@@ -78,3 +78,13 @@ paths must exist in the repository.
   `fast`.
 - The checker cannot judge whether a test asserts the user action. A reviewer
   owns that judgment; a wrong `covered` is still a review finding.
+
+## Break-change
+
+Before a product-cut PR, run `@break-change`. Targeted mode attacks the changed
+entrypoints. Removal mode proves a deleted command or UI entrypoint is absent
+from `/help`, the registry, the UI, docs, this map, imports, and routes. General
+mode lists `partial` and `NONE` rows and targets a small high-risk subset.
+
+A break-change report is a lead, not a proof. It does not upgrade a row. Promote a
+confirmed finding into a committed user-action check, then update the table.

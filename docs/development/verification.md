@@ -164,6 +164,41 @@ logs/probes/<timestamp>-<scenario>/
 The recording is evidence for a human. The assertions extracted from a probe are
 what enter `verify`. See `@probe-feature` for the protocol.
 
+## Break-change
+
+Use `@break-change` before a product-cut PR, when a command or UI entrypoint is
+deleted, or when you need a small adversarial sweep of the feature map. It is not
+a verify lane and not a gate. It reads the work item, picks 5-10 risky scenarios,
+drives the real Obsidian e2e harness on a throwaway vault, and writes:
+
+```text
+logs/break-change/<timestamp>/
+  report.md       PASS | FINDINGS | INCONCLUSIVE, with severity and repro
+  events.jsonl    one event per scenario and audit step
+  run.log         exact e2e output and counts
+  audit.json      removal-audit surface matrix
+  scan.json       feature-map partial/NONE candidates
+  clips/          optional desktop and mobile UI recordings
+```
+
+```bash
+node .agents/skills/break-change/scripts/break-change.mjs init \
+  --work-item "PR #123: remove /endplan" --mode removal --pr 123
+node .agents/skills/break-change/scripts/break-change.mjs run \
+  --run logs/break-change/<timestamp>
+node .agents/skills/break-change/scripts/break-change.mjs report \
+  --run logs/break-change/<timestamp>
+```
+
+Removal mode proves the entrypoint is absent from `/help`, the command registry,
+the UI, docs, the slash-command table, the feature map, imports, and routes. It
+also proves adjacent surviving behavior still works. General mode scans the
+feature map for `partial` and `NONE` rows and targets a small high-risk subset.
+
+A break-change report is exploratory evidence. It does not replace `/doctor`,
+e2e, or the witness. Promote a confirmed finding into a deterministic test or
+replay before you treat it as covered.
+
 ## Promotion
 
 Every verification gap that caused a real problem becomes structure, not prose:

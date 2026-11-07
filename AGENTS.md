@@ -2,7 +2,7 @@
 
 ## Process
 
-Five skills carry the process. They live in `.agents/skills/`, so OpenCode,
+Six skills carry the process. They live in `.agents/skills/`, so OpenCode,
 Codex, and other agents that read that convention get the same workflow.
 
 | skill | use for |
@@ -10,6 +10,7 @@ Codex, and other agents that read that convention get the same workflow.
 | `@ship-change` | behavior changes, bugs, multi-file work, dependency upgrades |
 | `@verify-obsidian-chat` | UI claims, settings, or proof in the real Obsidian app |
 | `@probe-feature` | behavior you cannot predict yet, or when the user asks for a recording |
+| `@break-change` | adversarial exploratory QA, removal audits, feature-map gaps |
 | `@verify-pr` | independent verdict on a PR you did not write; red/green witness proof |
 | `@worktree` | one task per worktree, env-linked commands, safe cleanup |
 
@@ -23,8 +24,10 @@ Match the weight of the process to the change:
   `@verify-obsidian-chat`.
 - "I do not know what correct looks like yet": load `@probe-feature` instead of
   guessing.
+- Before a product-cut PR, or when a command or UI entrypoint is deleted: load
+  `@break-change`. It is exploratory, not a lane.
 
-Do not load all five at once. Each skill names the next one when it needs it.
+Do not load all six at once. Each skill names the next one when it needs it.
 
 Put each rule in the lowest layer that can enforce it: `AGENTS.md` routes,
 skills hold procedure, `scripts/` and CI hold gates.
