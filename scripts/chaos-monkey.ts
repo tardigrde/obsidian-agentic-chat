@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -19,6 +19,23 @@ import {
   selectMode,
   type ChaosPlan,
 } from "./chaos/monkey-core";
+import {
+  applyEnvFile,
+  extractFrames,
+  hasFlag,
+  parseSize,
+  pickDisplay,
+  readArg,
+  readTimeline,
+  requireBinary,
+  resolveBinary,
+  run,
+  startFfmpeg,
+  startXvfb,
+  stamp,
+  stopProcess,
+  trimLeadIn,
+} from "./live-support";
 
 /**
  * Chaos-monkey runner.
@@ -62,69 +79,35 @@ type RunResult = {
   canceled: boolean;
 };
 
+type ReportDriver = {
+  verdict?: string;
+  stopReason?: string;
+  steps?: Array<{ id: string; surface: string; status: string; detail?: string }>;
+  findings?: Array<{ severity: string; step: string; message: string }>;
+  runnerNotes?: string[];
+  calls?: number;
+  tokens?: number;
+  assistantChars?: number;
+  mcp?: { rendered: boolean; added: boolean };
+  notes?: Array<{ path: string; exists: boolean }>;
+  clock?: { startedAt: number; finishedAt: number };
+};
+
 const CHAOS_SPEC = "test/e2e/chaos/chaos-monkey.e2e.ts";
 const SESSION_DIR = "logs/chaos";
-const BINARY_DIRS = ["/usr/bin", "/usr/local/bin", "/bin"];
 const BOOT_ALLOWANCE_MS = 120_000;
 const DEFAULT_MODEL = "openrouter/auto";
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
-
-function arg(name: string): string | undefined {
-  const index = process.argv.indexOf(name);
-  if (index === -1) return undefined;
-  const next = process.argv[index + 1];
-  return next && !next.startsWith("--") ? next : "";
-}
-
-function has(name: string): boolean {
-  return process.argv.includes(name);
-}
 
 function fail(message: string): never {
   console.error(`\n[chaos] ${message}`);
   process.exit(1);
 }
 
-function stamp(): string {
-  return new Date().toISOString().replace(/[:.]/g, "-").replace(/Z$/, "");
-}
-
-function parseSize(value: string | undefined): { width: number; height: number } {
-  const match = /^(\d+)x(\d+)$/.exec(value ?? "");
-  if (!match) fail(`--size must look like 1440x1000, got ${value ?? "(missing)"}`);
-  return { width: Number(match[1]), height: Number(match[2]) };
-}
-
 function parseFps(value: string | undefined): number {
   const fps = Number(value ?? "15");
   if (!Number.isFinite(fps) || fps <= 0) fail(`--fps must be a positive number, got ${value}`);
   return fps;
-}
-
-/** Load .env without overriding an existing environment. */
-function applyEnvFile(file: string): void {
-  for (const rawLine of readFileSync(file, "utf8").split(/\r?\n/)) {
-    let line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    if (line.startsWith("export ")) line = line.slice(7).trimStart();
-    const equals = line.indexOf("=");
-    if (equals <= 0) continue;
-    const key = line.slice(0, equals).trim();
-    if (!/^\w+$/.test(key)) continue;
-    if (process.env[key] !== undefined) continue;
-    process.env[key] = unwrapEnvValue(line.slice(equals + 1));
-  }
-}
-
-function unwrapEnvValue(raw: string): string {
-  const value = raw.trim();
-  if (
-    value.length >= 2 &&
-    ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
 }
 
 function readApiKey(): string | undefined {
@@ -140,8 +123,8 @@ function readApiKey(): string | undefined {
 }
 
 function parseOptions(): Options {
-  const selection = selectMode(arg("--mode"), arg("--target"));
-  const live = has("--live");
+  const selection = selectMode(readArg("--mode"), readArg("--target"));
+  const live = hasFlag("--live");
   const apiKey = readApiKey();
 
   if (live && !apiKey) {
@@ -151,15 +134,14 @@ function parseOptions(): Options {
     );
   }
 
-  const dryRun = !live;
   const caps = parseCaps(
     {
-      maxSteps: arg("--max-steps"),
-      maxSeconds: arg("--max-seconds"),
-      maxCalls: arg("--max-calls"),
-      maxTokens: arg("--max-tokens"),
+      maxSteps: readArg("--max-steps"),
+      maxSeconds: readArg("--max-seconds"),
+      maxCalls: readArg("--max-calls"),
+      maxTokens: readArg("--max-tokens"),
     },
-    dryRun ? DEFAULT_DRY_RUN_CAPS : DEFAULT_CAPS,
+    live ? DEFAULT_CAPS : DEFAULT_DRY_RUN_CAPS,
   );
 
   if (live && caps.maxTokens <= 0) fail("--live needs a positive --max-tokens budget");
@@ -168,166 +150,18 @@ function parseOptions(): Options {
     ...selection,
     caps,
     live,
-    noBuild: has("--no-build"),
-    keep: has("--keep"),
-    keepDisplay: has("--keep-display"),
-    size: parseSize(arg("--size") ?? "1440x1000"),
-    fps: parseFps(arg("--fps")),
-    outDir: path.resolve(arg("--out") ?? path.join(SESSION_DIR, stamp())),
-    displayOverride: arg("--display"),
+    noBuild: hasFlag("--no-build"),
+    keep: hasFlag("--keep"),
+    keepDisplay: hasFlag("--keep-display"),
+    size: parseSize(readArg("--size") ?? "1440x1000", fail),
+    fps: parseFps(readArg("--fps")),
+    outDir: path.resolve(readArg("--out") ?? path.join(SESSION_DIR, stamp())),
+    displayOverride: readArg("--display"),
     model: process.env.AGENTIC_CHAT_MODEL?.trim() || DEFAULT_MODEL,
     baseUrl: process.env.AGENTIC_CHAT_BASE_URL?.trim() || DEFAULT_BASE_URL,
     mcpUrl: process.env.AGENTIC_CHAT_CHAOS_MCP_URL?.trim() || process.env.AGENTIC_CHAT_E2E_MCP_URL?.trim(),
     apiKey,
   };
-}
-
-function resolveBinary(name: string, override: string | undefined): string | undefined {
-  const explicit = override?.trim();
-  if (explicit) return explicit;
-  for (const dir of BINARY_DIRS) {
-    const candidate = path.join(dir, name);
-    if (existsSync(candidate)) return candidate;
-  }
-  return undefined;
-}
-
-function requireBinary(name: string, resolved: string | undefined, hint: string): string {
-  if (!resolved) fail(`${name} is not installed. ${hint}`);
-  return resolved;
-}
-
-function run(
-  command: string,
-  args: string[],
-  options: { env?: NodeJS.ProcessEnv; allowFailure?: boolean; quiet?: boolean } = {},
-): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      env: { ...process.env, ...options.env },
-      stdio: options.quiet ? ["ignore", "ignore", "ignore"] : "inherit",
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      const exit = code ?? 1;
-      if (exit !== 0 && !options.allowFailure) {
-        reject(new Error(`${command} ${args.join(" ")} exited ${exit}`));
-        return;
-      }
-      resolve(exit);
-    });
-  });
-}
-
-function waitFor(predicate: () => boolean, timeoutMs: number, message: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const started = Date.now();
-    const timer = setInterval(() => {
-      if (predicate()) {
-        clearInterval(timer);
-        resolve();
-        return;
-      }
-      if (Date.now() - started > timeoutMs) {
-        clearInterval(timer);
-        reject(new Error(message));
-      }
-    }, 100);
-  });
-}
-
-function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
-  if (child.exitCode !== null) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), timeoutMs);
-    child.once("exit", () => {
-      clearTimeout(timer);
-      resolve(true);
-    });
-  });
-}
-
-function pickDisplay(): number {
-  for (let candidate = 99; candidate <= 120; candidate += 1) {
-    if (!existsSync(`/tmp/.X11-unix/X${candidate}`)) return candidate;
-  }
-  fail("no free X display between :99 and :120");
-}
-
-async function stopProcess(child: ChildProcess | undefined, signal: NodeJS.Signals): Promise<void> {
-  if (!child || child.exitCode !== null) return;
-  child.kill(signal);
-  if (await waitForExit(child, 8_000)) return;
-  child.kill("SIGKILL");
-  await waitForExit(child, 2_000);
-}
-
-async function startXvfb(
-  binary: string,
-  display: string,
-  width: number,
-  height: number,
-): Promise<ChildProcess> {
-  const child = spawn(binary, [display, "-screen", "0", `${width}x${height}x24`, "-nolisten", "tcp", "-ac"], {
-    stdio: ["ignore", "ignore", "pipe"],
-  });
-  let stderr = "";
-  child.stderr?.on("data", (chunk: Buffer) => {
-    stderr += chunk.toString();
-  });
-  await waitFor(
-    () => existsSync(`/tmp/.X11-unix/X${display.replace(":", "")}`),
-    8_000,
-    `Xvfb did not start on ${display}. ${stderr.trim()}`,
-  );
-  return child;
-}
-
-async function startFfmpeg(
-  binary: string,
-  display: string,
-  width: number,
-  height: number,
-  fps: number,
-  file: string,
-): Promise<ChildProcess> {
-  const child = spawn(
-    binary,
-    [
-      "-y",
-      "-loglevel",
-      "warning",
-      "-f",
-      "x11grab",
-      "-framerate",
-      String(fps),
-      "-video_size",
-      `${width}x${height}`,
-      "-i",
-      display,
-      "-draw_mouse",
-      "1",
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-crf",
-      "23",
-      "-pix_fmt",
-      "yuv420p",
-      "-movflags",
-      "+faststart",
-      file,
-    ],
-    { stdio: ["ignore", "ignore", "pipe"] },
-  );
-  let stderr = "";
-  child.stderr?.on("data", (chunk: Buffer) => {
-    stderr += chunk.toString();
-  });
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  if (child.exitCode !== null) throw new Error(`ffmpeg exited before recording started. ${stderr.trim()}`);
-  return child;
 }
 
 /**
@@ -336,8 +170,8 @@ async function startFfmpeg(
  */
 async function createSeededVault(): Promise<{ seedRoot: string; vault: string }> {
   const seedRoot = await mkdtemp(path.join(os.tmpdir(), TEMP_PREFIX));
-  const vault = assertSafeVaultPath(path.join(seedRoot, "vault"));
-  assertSafeVaultPath(seedRoot);
+  const vault = assertSafeVaultPath(path.join(seedRoot, "vault"), os.tmpdir());
+  assertSafeVaultPath(seedRoot, os.tmpdir());
 
   mkdirSync(path.join(vault, ".obsidian"), { recursive: true });
   mkdirSync(path.join(vault, ".obsidian", "plugins", "agentic-chat"), { recursive: true });
@@ -368,14 +202,20 @@ async function createSeededVault(): Promise<{ seedRoot: string; vault: string }>
 
 async function installPlugin(vault: string): Promise<void> {
   const pluginDir = path.join(vault, ".obsidian", "plugins", "agentic-chat");
-  for (const file of ["main.js", "manifest.json", "styles.css"]) {
-    const source = path.resolve(file);
-    if (!existsSync(source)) throw new Error(`${file} is missing. Build first.`);
-    await copyFile(source, path.join(pluginDir, file));
-  }
+  await Promise.all(
+    ["main.js", "manifest.json", "styles.css"].map(async (file) => {
+      const source = path.resolve(file);
+      if (!existsSync(source)) throw new Error(`${file} is missing. Build first.`);
+      await copyFile(source, path.join(pluginDir, file));
+    }),
+  );
 }
 
-async function writePlan(options: Options, vaultInfo: { seedRoot: string; vault: string }, outDir: string): Promise<string> {
+async function writePlan(
+  options: Options,
+  vaultInfo: { seedRoot: string; vault: string },
+  outDir: string,
+): Promise<string> {
   const plan: ChaosPlan = {
     version: PLAN_VERSION,
     mode: options.mode,
@@ -432,29 +272,19 @@ async function readActionLog(outDir: string): Promise<Array<Record<string, unkno
   }
 }
 
+function stringField(value: unknown): string {
+  return typeof value === "string" || typeof value === "number" ? String(value) : "-";
+}
+
 async function writeReport(input: {
   options: Options;
   outDir: string;
   result: RunResult;
-  driver?: {
-    verdict?: string;
-    stopReason?: string;
-    steps?: Array<{ id: string; surface: string; status: string; detail?: string }>;
-    findings?: Array<{ severity: string; step: string; message: string }>;
-    runnerNotes?: string[];
-    calls?: number;
-    tokens?: number;
-    assistantChars?: number;
-    mcp?: { rendered: boolean; added: boolean };
-    notes?: Array<{ path: string; exists: boolean }>;
-    clock?: { startedAt: number; finishedAt: number };
-  };
+  driver?: ReportDriver;
   actions: Array<Record<string, unknown>>;
 }): Promise<void> {
   const { options, outDir, result, driver, actions } = input;
-  const verdict = result.failure
-    ? "INCONCLUSIVE"
-    : driver?.verdict ?? "INCONCLUSIVE";
+  const verdict = result.failure ? "INCONCLUSIVE" : (driver?.verdict ?? "INCONCLUSIVE");
   const steps = driver?.steps ?? [];
   const findings = driver?.findings ?? [];
   const notes = driver?.runnerNotes ?? [];
@@ -483,7 +313,7 @@ async function writeReport(input: {
           .slice(-40)
           .map(
             (action) =>
-              `| ${String(action.t ?? "-")}s | ${String(action.step ?? "-")} | ${String(action.status ?? "-")} | ${redactSecrets(String(action.detail ?? ""), [options.apiKey]) || "-"} |`,
+              `| ${stringField(action.t)}s | ${stringField(action.step)} | ${stringField(action.status)} | ${redactSecrets(stringField(action.detail), [options.apiKey])} |`,
           )
           .join("\n")
       : "| - | - | - | no actions |";
@@ -554,61 +384,20 @@ ${logRows}
   await writeFile(path.join(outDir, "report.md"), text);
 }
 
-async function trimLeadIn(binary: string, mp4: string, outDir: string): Promise<void> {
-  if (!existsSync(mp4)) return;
-  let timeline: Array<{ t: number; label: string }>;
-  try {
-    timeline = JSON.parse(await readFile(path.join(outDir, "timeline.json"), "utf8"));
-  } catch {
-    return;
-  }
-  if (timeline.length === 0) return;
-  const trim = Math.max(0, timeline[0].t - 0.25);
-  if (trim < 0.1) return;
-
-  const trimmed = mp4.replace(/\.mp4$/, "-trimmed.mp4");
-  await run(
-    binary,
-    ["-y", "-loglevel", "error", "-ss", String(trim), "-i", mp4, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart", trimmed],
-    { allowFailure: true, quiet: true },
-  );
-  if (!existsSync(trimmed)) return;
-  const raw = mp4.replace(/\.mp4$/, "-raw.mp4");
-  await rename(mp4, raw);
-  await rename(trimmed, mp4);
-  const adjusted = timeline.map((entry) => ({ ...entry, t: Math.max(0, Number((entry.t - trim).toFixed(3))) }));
-  await writeFile(path.join(outDir, "timeline.json"), `${JSON.stringify(adjusted, null, 2)}\n`);
-}
-
-async function extractFrames(binary: string, mp4: string, outDir: string): Promise<void> {
-  let timeline: Array<{ t: number; label: string }>;
-  try {
-    timeline = JSON.parse(await readFile(path.join(outDir, "timeline.json"), "utf8"));
-  } catch {
-    return;
-  }
-  if (timeline.length === 0 || !existsSync(mp4)) return;
-  const shotsDir = path.join(outDir, "shots");
-  await mkdir(shotsDir, { recursive: true });
-  for (const [index, entry] of timeline.entries()) {
-    const name = `${String(index + 1).padStart(2, "0")}-${entry.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`;
-    await run(
-      binary,
-      ["-y", "-loglevel", "error", "-i", mp4, "-ss", String(entry.t), "-frames:v", "1", "-q:v", "2", path.join(shotsDir, name)],
-      { allowFailure: true, quiet: true },
-    );
-  }
-}
-
 async function main(): Promise<void> {
   const envFile = path.resolve(".env");
   if (existsSync(envFile)) applyEnvFile(envFile);
 
   const options = parseOptions();
-  const ffmpegPath = requireBinary("ffmpeg", resolveBinary("ffmpeg", process.env.FFMPEG_PATH), "Install it: sudo apt install ffmpeg");
+  const ffmpegPath = requireBinary(
+    "ffmpeg",
+    resolveBinary("ffmpeg", process.env.FFMPEG_PATH),
+    "Install it: sudo apt install ffmpeg",
+    fail,
+  );
   const needsXvfb = !options.displayOverride && process.platform === "linux";
   const xvfbPath = needsXvfb
-    ? requireBinary("Xvfb", resolveBinary("Xvfb", process.env.XVFB_PATH), "Install it: sudo apt install xvfb")
+    ? requireBinary("Xvfb", resolveBinary("Xvfb", process.env.XVFB_PATH), "Install it: sudo apt install xvfb", fail)
     : undefined;
 
   await mkdir(options.outDir, { recursive: true });
@@ -653,7 +442,7 @@ async function main(): Promise<void> {
       const planPath = await writePlan(options, { seedRoot, vault }, options.outDir);
 
       const mp4 = path.join(options.outDir, "session.mp4");
-      const display = options.displayOverride || `:${pickDisplay()}`;
+      const display = options.displayOverride || `:${pickDisplay(fail)}`;
       const startedAt = Date.now();
       let xvfb: ChildProcess | undefined;
       let ffmpeg: ChildProcess | undefined;
@@ -740,10 +529,12 @@ async function main(): Promise<void> {
       process.stdout.write(`[chaos] display left running: ${result.display}\n`);
     }
 
-    await trimLeadIn(ffmpegPath, result.mp4, options.outDir).catch(() => undefined);
-    await extractFrames(ffmpegPath, result.mp4, options.outDir).catch(() => undefined);
+    const timeline = await readTimeline(options.outDir);
+    await trimLeadIn(ffmpegPath, result.mp4, options.outDir, timeline).catch(() => undefined);
+    const adjusted = await readTimeline(options.outDir);
+    await extractFrames(ffmpegPath, result.mp4, options.outDir, adjusted).catch(() => undefined);
 
-    const driver = await readJson<Parameters<typeof writeReport>[0]["driver"]>(path.join(options.outDir, "driver-result.json"));
+    const driver = await readJson<ReportDriver>(path.join(options.outDir, "driver-result.json"));
     const actions = await readActionLog(options.outDir);
     await writeReport({ options, outDir: options.outDir, result, driver, actions });
 
