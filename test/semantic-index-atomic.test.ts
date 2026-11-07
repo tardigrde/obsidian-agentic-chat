@@ -50,10 +50,10 @@ describe("semantic index atomic writes", () => {
     expect(adapter.files.has(backupPath)).toBe(true);
     expect(parse(adapter, backupPath).state.status.state).toBe("complete");
     expect(parse(adapter, backupPath).state.indexedDocumentIds).toEqual(
-      first.file.state.indexedDocumentIds,
+      first.file!.state.indexedDocumentIds,
     );
     expect(parse(adapter, path).state.indexedDocumentIds).toEqual(
-      second.file.state.indexedDocumentIds,
+      second.file!.state.indexedDocumentIds,
     );
   });
 

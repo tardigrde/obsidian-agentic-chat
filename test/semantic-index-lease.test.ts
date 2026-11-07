@@ -19,6 +19,27 @@ import {
 
 const scope = { kind: "folder" as const, label: "Projects", paths: ["Projects"] };
 
+function bootstrapFor(
+  adapter: MemoryAdapter,
+  path: string,
+  options: {
+    leases?: SemanticIndexLeaseRegistry;
+    embedder?: RetrievalEmbedder;
+    documents?: readonly RetrievalDocument[];
+    batchSize?: number;
+  } = {},
+) {
+  return bootstrapSemanticIndex({
+    adapter: adapter.asDataAdapter(),
+    path,
+    scope,
+    documents: options.documents ?? MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 1),
+    embedder: options.embedder ?? new DeterministicFakeEmbedder(),
+    batchSize: options.batchSize ?? 1,
+    leases: options.leases,
+  });
+}
+
 function controllerFor(options: {
   adapter?: MemoryAdapter;
   indexPath?: string;
@@ -56,37 +77,137 @@ function noopRenderer(): WorkflowRenderer {
   };
 }
 
-describe("post-216 semantic index lease ownership", () => {
-  it("stops writing when another writer takes the lease during a stalled batch", async () => {
+describe("writer-owned semantic index lease", () => {
+  it("blocks a direct bootstrap call while another registry owns the path", async () => {
     const adapter = new MemoryAdapter();
-    const data = adapter.asDataAdapter();
-    const path = "semantic/lease-takeover/index.json";
-    const first: SemanticIndexLease = semanticIndexLeases.acquire(path)!;
+    const path = "semantic/direct-lease/index.json";
+    const owner = new SemanticIndexLeaseRegistry();
+    const lease = await owner.acquireDurable(path);
+    expect(lease).not.toBeNull();
+
+    try {
+      const blocked = await bootstrapFor(adapter, path, { leases: owner });
+      expect(blocked.leaseFailure).toEqual({ reason: "held" });
+      expect(blocked.file).toBeNull();
+      expect(blocked.completed).toBe(false);
+      expect(adapter.files.has(path)).toBe(false);
+    } finally {
+      await lease!.release();
+    }
+
+    const completed = await bootstrapFor(adapter, path, { leases: owner });
+    expect(completed.leaseFailure).toBeUndefined();
+    expect(completed.completed).toBe(true);
+    expect(completed.file?.state.status.state).toBe("complete");
+    expect(adapter.files.has(path)).toBe(true);
+  });
+
+  it("renews the lease after each persisted batch", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/renewed/index.json";
+    let now = 1_000;
+    const leases = new SemanticIndexLeaseRegistry(() => now, 10_000);
+    const embedder = new DeterministicFakeEmbedder();
+    const original = embedder.embedBatch.bind(embedder);
+    embedder.embedBatch = async (inputs, options) => {
+      now += 8_000;
+      return await original(inputs, options);
+    };
+
+    const result = await bootstrapFor(adapter, path, {
+      leases,
+      embedder,
+      documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 3),
+    });
+
+    expect(result.completed).toBe(true);
+    expect(result.file?.state.status.state).toBe("complete");
+  });
+
+  it("stops writing when a stalled run loses the lease", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/stalled/index.json";
+    let now = 1_000;
+    const leases = new SemanticIndexLeaseRegistry(() => now, 60_000);
     const embedder = new DeterministicFakeEmbedder();
     const original = embedder.embedBatch.bind(embedder);
     let competing: SemanticIndexLease | null = null;
     embedder.embedBatch = async (inputs, options) => {
       const result = await original(inputs, options);
-      void first.release();
-      competing = semanticIndexLeases.acquire(path);
-      await data.write(path, "new-writer");
+      now += 61_000;
+      competing = leases.acquire(path);
+      await adapter.write(path, "new-writer");
       return result;
     };
 
-    const result = await bootstrapSemanticIndex({
-      adapter: data,
-      path,
-      scope,
-      documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 1),
+    const result = await bootstrapFor(adapter, path, { leases, embedder });
+    try {
+      expect(competing).not.toBeNull();
+      expect(result.completed).toBe(false);
+      // The stalled writer must not overwrite the new owner's file.
+      expect(adapter.files.get(path)).toBe("new-writer");
+    } finally {
+      void (competing as SemanticIndexLease | null)?.release();
+    }
+  });
+
+  it("stops writing when a lease renewal loses the shared store", async () => {
+    let renewed = true;
+    const store = {
+      async tryAcquire() {
+        return renewed;
+      },
+      async release() {
+        // no-op
+      },
+    };
+    const leases = new SemanticIndexLeaseRegistry(() => 1_000, 60_000, store);
+    const adapter = new MemoryAdapter();
+    const path = "semantic/renewal-store/index.json";
+    const embedder = new DeterministicFakeEmbedder();
+    const original = embedder.embedBatch.bind(embedder);
+    embedder.embedBatch = async (inputs, options) => {
+      renewed = false;
+      return await original(inputs, options);
+    };
+
+    const result = await bootstrapFor(adapter, path, {
+      leases,
       embedder,
-      batchSize: 1,
-      isLeaseOwned: () => first.isOwned(),
+      documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 2),
     });
 
-    expect(competing).not.toBeNull();
-    expect(adapter.files.get(path)).toBe("new-writer");
     expect(result.completed).toBe(false);
-    void (competing as SemanticIndexLease | null)?.release();
+    const persisted = JSON.parse(adapter.files.get(path) ?? "{}") as {
+      state: { status: { state: string } };
+    };
+    expect(persisted.state.status.state).not.toBe("complete");
+  });
+
+  it("fails closed when the shared lease store is unavailable", async () => {
+    const adapter = new MemoryAdapter();
+    const path = "semantic/store-down/index.json";
+    const leases = new SemanticIndexLeaseRegistry(() => 1_000, 60_000, {
+      async tryAcquire() {
+        throw new Error("store down");
+      },
+      async release() {
+        // no-op
+      },
+    });
+
+    const result = await bootstrapFor(adapter, path, { leases });
+
+    expect(result.leaseFailure).toMatchObject({ reason: "store-error" });
+    if (result.leaseFailure?.reason !== "store-error") throw new Error("expected a store error");
+    expect(result.leaseFailure.message).toMatch(/shared semantic index lease/i);
+    expect(result.file).toBeNull();
+    expect(adapter.files.has(path)).toBe(false);
+
+    // The failed attempt must free the local lease for the next writer.
+    const retry = leases.acquire(path);
+    expect(retry).not.toBeNull();
+    void retry?.release();
   });
 });
 
@@ -159,20 +280,6 @@ describe("cross-window semantic index lease", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(lease!.isOwned()).toBe(false);
-
-    // The next indexing pass must not persist anything under a lost lease.
-    const adapter = new MemoryAdapter();
-    const result = await bootstrapSemanticIndex({
-      adapter: adapter.asDataAdapter(),
-      path: "shared/renew/index.json",
-      scope,
-      documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 1),
-      embedder: new DeterministicFakeEmbedder(),
-      batchSize: 1,
-      isLeaseOwned: () => lease!.isOwned(),
-    });
-    expect(result.completed).toBe(false);
-    expect(adapter.files.has("shared/renew/index.json")).toBe(false);
     void lease!.release();
   });
 
