@@ -2,6 +2,10 @@
 
 > **Experimental.** APIs, settings, and behavior change often. Pin a version if you need stability.
 
+**Compatibility:** Agentic Chat requires Obsidian 1.13.0 or later on desktop and
+mobile. The minimum rises with the Obsidian APIs the plugin uses; older app
+versions are not supported.
+
 Agentic Chat is an AI chat panel in the Obsidian right sidebar. The agent reads, searches, writes, edits, renames, and moves notes, follows links, and reads or writes frontmatter through typed tools. Each tool call appears inline in the chat, so you can see what the agent does.
 
 It runs in Obsidian on desktop and mobile and uses the [pi](https://pi.dev) agent packages. You can use hosted models through [OpenRouter](https://openrouter.ai), with zero-data-retention routing on by default, or a local [Ollama](https://ollama.com) server that keeps requests on your machine.

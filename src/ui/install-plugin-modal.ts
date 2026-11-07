@@ -92,7 +92,7 @@ export class InstallPluginModal extends Modal {
 
   /** Desktop-only: webkitdirectory folder picker read into a tree, then sniff + install. */
   private pickFolder(): void {
-    const input = document.createEl("input", { type: "file" });
+    const input = activeDocument.createEl("input", { type: "file" });
     input.type = "file";
     input.multiple = true;
     input.setAttribute("webkitdirectory", "");
@@ -118,7 +118,7 @@ export class InstallPluginModal extends Modal {
 
   /** Archive file picker: extract in-memory, then sniff + install. */
   private pickArchive(): void {
-    const input = document.createEl("input", { type: "file" });
+    const input = activeDocument.createEl("input", { type: "file" });
     input.type = "file";
     input.accept = ".zip,.tar.gz,.tgz";
     input.onchange = async () => {

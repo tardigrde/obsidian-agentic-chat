@@ -2,6 +2,7 @@ import { App, Modal, Notice, Setting } from "obsidian";
 import type { PluginService } from "../plugins/service";
 import type { InstallResult } from "../plugins/import/install";
 import { slugifyPluginName } from "../plugins/manifest";
+import { confirmWithModal } from "./confirm-modal";
 
 const SKILL_TEMPLATE = `# {{name}}
 
@@ -85,7 +86,15 @@ export class NewSkillModal extends Modal {
         const body = (bodyInput?.value ?? SKILL_TEMPLATE).trim();
         try {
           const existing = await this.pluginService.packageExists(slugifyPluginName(name));
-          if (existing && !confirm(`A plugin named "${slugifyPluginName(name)}" already exists. Replace it with this new skill package?`)) {
+          if (
+            existing &&
+            !(await confirmWithModal(this.app, {
+              title: "Replace existing skill package?",
+              message: `A plugin named "${slugifyPluginName(name)}" already exists. Replace it with this new skill package?`,
+              confirmText: "Replace",
+              destructive: true,
+            }))
+          ) {
             return;
           }
           // The user confirmed via the dialog above, so opt into overwrite explicitly.

@@ -21,15 +21,15 @@ export interface ObservabilitySettings extends ProxySettings {
   /** Secret id in Obsidian secretStorage. */
   langfusePublicKeySecretId: string;
   /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link langfusePublicKeySecretId}.
+   * Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage
+   * through {@link langfusePublicKeySecretId}. Never persisted.
    */
   langfusePublicKey: string;
   /** Secret id in Obsidian secretStorage. */
   langfuseSecretKeySecretId: string;
   /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link langfuseSecretKeySecretId}.
+   * Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage
+   * through {@link langfuseSecretKeySecretId}. Never persisted.
    */
   langfuseSecretKey: string;
   /** Optional generic OTLP auth header name, e.g. Authorization. */
@@ -37,8 +37,8 @@ export interface ObservabilitySettings extends ProxySettings {
   /** Secret id in Obsidian secretStorage. */
   authHeaderValueSecretId: string;
   /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link authHeaderValueSecretId}.
+   * Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage
+   * through {@link authHeaderValueSecretId}. Never persisted.
    */
   authHeaderValue: string;
 }
@@ -78,18 +78,18 @@ export function healObservabilitySettings(
       stored?.langfusePublicKeySecretId,
       OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
     ),
-    langfusePublicKey: stringSetting(stored?.langfusePublicKey, ""),
+    langfusePublicKey: "",
     langfuseSecretKeySecretId: stringSetting(
       stored?.langfuseSecretKeySecretId,
       OBSERVABILITY_LANGFUSE_SECRET_KEY_SECRET_ID,
     ),
-    langfuseSecretKey: stringSetting(stored?.langfuseSecretKey, ""),
+    langfuseSecretKey: "",
     authHeaderName: stringSetting(stored?.authHeaderName, ""),
     authHeaderValueSecretId: stringSetting(
       stored?.authHeaderValueSecretId,
       OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID,
     ),
-    authHeaderValue: stringSetting(stored?.authHeaderValue, ""),
+    authHeaderValue: "",
   };
 }
 

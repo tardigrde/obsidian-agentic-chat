@@ -408,10 +408,10 @@ type EditPreviewEdit = NonNullable<Extract<EditPreview, { kind: "diff" }>["edits
 
 function isInteractiveElement(element: Element | null): boolean {
   return (
-    element instanceof HTMLButtonElement ||
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement ||
-    element instanceof HTMLSelectElement ||
+    element?.instanceOf(HTMLButtonElement) ||
+    element?.instanceOf(HTMLInputElement) ||
+    element?.instanceOf(HTMLTextAreaElement) ||
+    element?.instanceOf(HTMLSelectElement) ||
     element?.getAttribute("role") === "button" ||
     element?.getAttribute("role") === "checkbox" ||
     element?.getAttribute("contenteditable") === "true"

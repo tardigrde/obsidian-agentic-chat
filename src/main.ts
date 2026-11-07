@@ -34,6 +34,7 @@ import { ChatView } from "./ui/chat-view";
 import { buildQuickAskTarget } from "./ui/quick-ask";
 import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
+import { migrateLegacyPlaintextSecrets } from "./secrets/legacy-plaintext";
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
 import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
@@ -261,6 +262,11 @@ export default class AgenticChatPlugin extends Plugin {
     // rewrites data.json in the new schema (mergeSettings drops those keys),
     // so the one-time migration below can preserve the user's skills.
     const legacySkillFolders = legacySkillFolderPaths(stored);
+    // Move any pre-secretStorage plaintext credentials into the secret store
+    // once, before mergeSettings reads the persisted shape. The legacy keys are
+    // deleted from the stored object, so no plaintext fallback reaches runtime
+    // settings and the next save cannot write them back to data.json.
+    migrateLegacyPlaintextSecrets(stored, this.secretStore);
     this.settings = mergeSettings(stored);
     hydrateSettingsSecrets(this.settings, this.secretStore);
     // S4: remember mode for the broadcast guard.

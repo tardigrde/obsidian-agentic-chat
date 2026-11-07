@@ -32,10 +32,7 @@ export interface McpServerSettings {
   authHeaderName: string;
   /** Optional bearer token or custom auth header value. */
   authHeaderValueSecretId: string;
-  /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link authHeaderValueSecretId}.
-   */
+  /** Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage through {@link authHeaderValueSecretId}. Never persisted. */
   authHeaderValue: string;
   /** OAuth state and tokens for remote MCP servers that use MCP authorization. */
   oauth: McpOAuthSettings;
@@ -74,10 +71,7 @@ export interface McpServerState {
   authType: McpAuthType;
   authHeaderName: string;
   authHeaderValueSecretId: string;
-  /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link authHeaderValueSecretId}.
-   */
+  /** Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage through {@link authHeaderValueSecretId}. Never persisted. */
   authHeaderValue: string;
   oauth: McpOAuthSettings;
   knownTools: McpKnownToolSettings[];
@@ -138,10 +132,7 @@ export interface McpSetupStep {
 export interface McpOAuthSettings {
   clientId: string;
   clientSecretSecretId: string;
-  /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link clientSecretSecretId}.
-   */
+  /** Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage through {@link clientSecretSecretId}. Never persisted. */
   clientSecret: string;
   /** True when clientId was obtained through dynamic client registration. */
   dynamicClientRegistration: boolean;
@@ -153,16 +144,10 @@ export interface McpOAuthSettings {
   registrationEndpoint: string;
   resourceMetadataUrl: string;
   accessTokenSecretId: string;
-  /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link accessTokenSecretId}.
-   */
+  /** Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage through {@link accessTokenSecretId}. Never persisted. */
   accessToken: string;
   refreshTokenSecretId: string;
-  /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link refreshTokenSecretId}.
-   */
+  /** Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage through {@link refreshTokenSecretId}. Never persisted. */
   refreshToken: string;
   /** Unix epoch milliseconds. 0 means unknown/non-expiring. */
   expiresAt: number;
@@ -222,8 +207,8 @@ function healMcpServer(server: Partial<McpServerSettings> | null | undefined): M
     authType: healAuthType(server.authType, legacyPreset, server.authHeaderName),
     authHeaderName: typeof server.authHeaderName === "string" ? server.authHeaderName.trim() : "",
     authHeaderValueSecretId: stringValue(server.authHeaderValueSecretId) || mcpSecretId(id, "auth-header-value"),
-    authHeaderValue: typeof server.authHeaderValue === "string" ? server.authHeaderValue.trim() : "",
-    oauth: healOAuthSettings(server.oauth, id),
+    authHeaderValue: "",
+    oauth: healOAuthSettings(server.oauth, id, false),
     approval: healApproval(server.approval),
     knownTools: healMcpKnownTools(server.knownTools),
     headers: healHeaderMap(server.headers),
@@ -268,8 +253,8 @@ export function healMcpServerState(
     authType: healAuthType(stored?.authType, undefined, stored?.authHeaderName),
     authHeaderName: typeof stored?.authHeaderName === "string" ? stored.authHeaderName.trim() : "",
     authHeaderValueSecretId: stringValue(stored?.authHeaderValueSecretId) || mcpSecretId(healedId, "auth-header-value"),
-    authHeaderValue: typeof stored?.authHeaderValue === "string" ? stored.authHeaderValue.trim() : "",
-    oauth: healOAuthSettings(stored?.oauth, healedId),
+    authHeaderValue: "",
+    oauth: healOAuthSettings(stored?.oauth, healedId, false),
     knownTools: healMcpKnownTools(stored?.knownTools),
     ...(typeof record?.lastUrl === "string" && record.lastUrl.trim()
       ? { lastUrl: record.lastUrl.trim() }
@@ -295,7 +280,7 @@ export function createMcpServerState(id: string, overrides: Partial<McpServerSta
     authHeaderName: stringValue(overrides.authHeaderName),
     authHeaderValueSecretId: stringValue(overrides.authHeaderValueSecretId) || mcpSecretId(healedId, "auth-header-value"),
     authHeaderValue: stringValue(overrides.authHeaderValue),
-    oauth: healOAuthSettings(overrides.oauth, healedId),
+    oauth: healOAuthSettings(overrides.oauth, healedId, true),
     knownTools: healMcpKnownTools(overrides.knownTools),
     ...(typeof overrides.lastUrl === "string" && overrides.lastUrl.trim() ? { lastUrl: overrides.lastUrl.trim() } : {}),
     ...(typeof overrides.pendingOAuthChallenge === "string" && overrides.pendingOAuthChallenge.trim()
@@ -374,7 +359,7 @@ export function createMcpServerSettings(
     authHeaderName: stringValue(overrides.authHeaderName),
     authHeaderValueSecretId: stringValue(overrides.authHeaderValueSecretId) || mcpSecretId(id, "auth-header-value"),
     authHeaderValue: stringValue(overrides.authHeaderValue),
-    oauth: healOAuthSettings(overrides.oauth, id),
+    oauth: healOAuthSettings(overrides.oauth, id, true),
     approval: healApproval(overrides.approval),
     knownTools: healMcpKnownTools(overrides.knownTools),
     headers: healHeaderMap(overrides.headers),
@@ -401,11 +386,16 @@ function healAuthType(
   return typeof headerName === "string" && headerName.trim() ? "header" : "none";
 }
 
-function healOAuthSettings(stored: Partial<McpOAuthSettings> | null | undefined, serverId: string): McpOAuthSettings {
+function healOAuthSettings(
+  stored: Partial<McpOAuthSettings> | null | undefined,
+  serverId: string,
+  /** Read plaintext from a caller-built override; persisted data is migrated first and passes false. */
+  includePlaintext: boolean,
+): McpOAuthSettings {
   const healed = {
     clientId: stringValue(stored?.clientId),
     clientSecretSecretId: stringValue(stored?.clientSecretSecretId),
-    clientSecret: stringValue(stored?.clientSecret),
+    clientSecret: includePlaintext ? stringValue(stored?.clientSecret) : "",
     dynamicClientRegistration: stored?.dynamicClientRegistration === true,
     registeredRedirectUri: stringValue(stored?.registeredRedirectUri),
     authorizationServer: stringValue(stored?.authorizationServer),
@@ -414,9 +404,9 @@ function healOAuthSettings(stored: Partial<McpOAuthSettings> | null | undefined,
     registrationEndpoint: stringValue(stored?.registrationEndpoint),
     resourceMetadataUrl: stringValue(stored?.resourceMetadataUrl),
     accessTokenSecretId: stringValue(stored?.accessTokenSecretId),
-    accessToken: stringValue(stored?.accessToken),
+    accessToken: includePlaintext ? stringValue(stored?.accessToken) : "",
     refreshTokenSecretId: stringValue(stored?.refreshTokenSecretId),
-    refreshToken: stringValue(stored?.refreshToken),
+    refreshToken: includePlaintext ? stringValue(stored?.refreshToken) : "",
     expiresAt: typeof stored?.expiresAt === "number" && Number.isFinite(stored.expiresAt) ? stored.expiresAt : 0,
     scope: stringValue(stored?.scope),
   };
@@ -659,9 +649,3 @@ function legacyString(value: unknown): string {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string").join(",");
   return "";
 }
-
-/** @deprecated Use normalizeProxyUrl from src/network/proxy.ts — kept for backwards compat. */
-export const normalizeMcpProxyUrl = normalizeProxyUrl;
-
-/** @deprecated Use normalizeNoProxy from src/network/proxy.ts — kept for backwards compat. */
-export const normalizeMcpNoProxy = normalizeNoProxy;
