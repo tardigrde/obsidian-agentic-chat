@@ -136,7 +136,8 @@ export const config: WebdriverIO.Config = {
       // Load this repo's built plugin (needs `npm run build` first — `pretest:e2e` does it).
       plugins: ["."],
       // The service copies this into a throwaway sandbox per run — a fresh tmp vault.
-      vault: "test/e2e/vault",
+      // The chaos runner seeds its own temp vault and passes it through this env.
+      vault: env.AGENTIC_CHAT_E2E_VAULT?.trim() || "test/e2e/vault",
     },
     "goog:chromeOptions": {
       ...(mobileViewport

@@ -27,9 +27,9 @@ proof, and not a replacement for `/doctor`, e2e, or the witness.
 | `removal` | A command, setting, modal, route, or UI entrypoint was deleted. Prove it is gone and the neighbors still work. |
 | `general` | No specific change. Scan the feature map for `partial` and `NONE` rows and target 1-3 high-risk gaps. |
 
-General live exploration (a live chaos monkey over a seeded vault) is a separate
-effort tracked in issue #253. This skill stays focused on a small, bounded,
-scripted-first run.
+General live exploration (a live chaos monkey over a seeded vault) is
+`@chaos-monkey`. This skill stays focused on a small, bounded, scripted-first
+run.
 
 ## Hard rules
 

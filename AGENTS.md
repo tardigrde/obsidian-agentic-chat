@@ -11,6 +11,7 @@ Codex, and other agents that read that convention get the same workflow.
 | `@verify-obsidian-chat` | UI claims, settings, or proof in the real Obsidian app |
 | `@probe-feature` | behavior you cannot predict yet, or when the user asks for a recording |
 | `@break-change` | adversarial exploratory QA, removal audits, feature-map gaps |
+| `@chaos-monkey` | live exploratory run against a seeded throwaway vault after several PRs ship |
 | `@verify-pr` | independent verdict on a PR you did not write; red/green witness proof |
 | `@worktree` | one task per worktree, env-linked commands, safe cleanup |
 
@@ -128,6 +129,19 @@ npm run probe -- --scenario layout-smoke
 The runner needs `Xvfb` and `ffmpeg`. It records the whole isolated display, so
 Obsidian settings popouts are in frame, and writes `session.mp4`, keyframes,
 metrics, and a report under `logs/probes/`. See `@probe-feature`.
+
+## Chaos monkey
+
+```bash
+npm run chaos -- --mode focused --target settings   # capped dry run
+npm run chaos -- --mode generic --max-steps 6       # dry exploration
+npm run chaos -- --mode focused --target composer --live \
+  --max-steps 2 --max-seconds 180 --max-calls 2 --max-tokens 4000
+```
+
+A seeded throwaway vault, an isolated display, real UI actions, and live model
+calls when `--live` is set. Hard caps and a cancel file bound every run. See
+`@chaos-monkey`.
 
 ## Real Obsidian e2e
 

@@ -199,6 +199,44 @@ A break-change report is exploratory evidence. It does not replace `/doctor`,
 e2e, or the witness. Promote a confirmed finding into a deterministic test or
 replay before you treat it as covered.
 
+## Chaos monkey
+
+Use `@chaos-monkey` after several PRs ship, when you want exploratory breadth
+instead of a focused change gate. It creates a seeded throwaway vault, installs
+the built plugin, launches real Obsidian on an isolated display, and drives the
+committed in-app driver through real UI actions and, with `--live`, real model
+calls.
+
+```bash
+npm run chaos -- --mode focused --target settings          # capped dry run
+npm run chaos -- --mode generic --max-steps 6              # dry exploration
+npm run chaos -- --mode focused --target composer --live \
+  --max-steps 2 --max-seconds 180 --max-calls 2 --max-tokens 4000
+```
+
+Focused targets are `composer`, `settings`, `notes`, and `mcp`. Generic mode
+chooses from the same actions with a seeded choice stream. Without `--live` and
+an API key the runner stays in a capped dry run that cannot spend tokens.
+
+It writes:
+
+```text
+logs/chaos/<timestamp>/
+  report.md          verdict, caps, steps, findings, safety, artifacts
+  session.mp4        whole-display recording
+  shots/             screenshots and keyframes
+  action-log.jsonl   one line per action
+  driver-result.json machine-readable result
+  plan.json          mode, target, caps, model (no secrets)
+  sessions/          copied session JSONL when available
+```
+
+The vault is always a fresh `<temp>/chaos-monkey-*` directory with a seed
+marker. The runner does not accept a vault path. Hard caps cover steps, wall
+time, model calls, and estimated tokens; `touch logs/chaos/<timestamp>/CANCEL`
+is the kill switch. A chaos report is exploratory evidence and never replaces
+the witness, `fast`, or a committed e2e assertion.
+
 ## Promotion
 
 Every verification gap that caused a real problem becomes structure, not prose:

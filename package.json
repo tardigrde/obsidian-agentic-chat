@@ -42,6 +42,7 @@
     "verify:witness": "node scripts/verify-witness.mjs",
     "check:feature-map": "node scripts/check-feature-map.mjs",
     "probe": "tsx scripts/probe.ts",
+    "chaos": "tsx scripts/chaos-monkey.ts",
     "pretest:e2e": "npm run build:e2e",
     "test:e2e": "node --import tsx scripts/run-e2e.ts",
     "pretest:e2e:mobile": "npm run build:e2e",
