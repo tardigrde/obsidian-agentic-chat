@@ -80,7 +80,7 @@ import {
   type AgenticChatSettings,
   type NetworkSettings,
 } from "./settings-schema";
-import { SETTINGS_TABS, type SettingsSectionId } from "./settings-tabs";
+import { SETTINGS_TABS, type SettingsSectionId, type SettingsTabDefinition } from "./settings-tabs";
 export {
   DEFAULT_SETTINGS,
   PROVIDERS,
@@ -214,6 +214,11 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
   getSettingDefinitions(): SettingDefinitionItem[] {
     return [];
+  }
+
+  /** Read-only view of the visible tab map; kept on the class so tests and the UI share one source. */
+  visibleTabs(): readonly SettingsTabDefinition[] {
+    return this.tabs;
   }
 
   /**

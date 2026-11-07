@@ -45,32 +45,32 @@ await closeAgenticChatSettings();
 | entry point | source | proof | status |
 |---|---|---|---|
 | Settings tab opens | `src/main.ts:129` | `test/e2e/specs/settings-ui.e2e.ts:183` (opened by the helper via `app.setting`, not the nav) | `partial` |
-| Three tabs render and switch | `src/settings.ts:374` | `test/e2e/specs/settings-ui.e2e.ts:183` | `covered` |
-| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts:381` | `test/e2e/specs/settings-ui.e2e.ts:183` | `covered` |
-| A moved Advanced setting saves and survives close/reopen | `src/settings.ts:2028` | `test/e2e/specs/settings-ui.e2e.ts:483` | `covered` |
-| Models: provider, API key, base URL, model | `src/settings.ts:401` | `test/e2e/specs/settings-ui.e2e.ts:218` | `covered` |
-| Secrets stay out of `data.json` | `src/settings.ts:1980` | `test/e2e/specs/settings-ui.e2e.ts:218` | `covered` |
-| OpenRouter privacy toggles | `src/settings.ts:496` | no committed check | `NONE` |
-| Ollama server URL and model | `src/settings.ts:526` | no committed check | `NONE` |
-| Global network proxy | `src/settings.ts:420` | no committed check | `NONE` |
-| Agent: permission mode dropdown | `src/settings.ts:636` | no committed check | `NONE` |
-| Agent: sampling, timeout, retries, prompt, compaction, budget | `src/settings.ts:632` | no committed check | `NONE` |
-| Approval gates and per-tool overrides | `src/settings.ts:770` | `test/e2e/specs/settings-ui.e2e.ts:259` | `covered` |
-| Approval: working directories row | `src/settings.ts:820` | no committed check | `NONE` |
-| Web: enable, provider, key, results, fetch limit | `src/settings.ts:866` | `test/e2e/specs/settings-ui.e2e.ts:270` | `covered` |
-| Web: allowed hosts | `src/settings.ts:966` | no committed check | `NONE` |
-| MCP tools: enable and add a server | `src/settings.ts:984` | `test/e2e/specs/settings-ui.e2e.ts:306` | `covered` |
-| Observability with Langfuse | `src/settings.ts:1088` | `test/e2e/specs/settings-ui.e2e.ts:432` | `covered` |
-| Observability: generic OTLP auth header | `src/settings.ts:1215` | `test/e2e/specs/settings-migration.e2e.ts:199` (migration only) | `partial` |
-| Notifications section | `src/settings.ts:2028` | `test/e2e/specs/settings-ui.e2e.ts:483` | `covered` |
-| Agent plugins: Install plugin | `src/settings.ts:2083` | `test/e2e/specs/settings-ui.e2e.ts:349` | `covered` |
+| Three tabs render and switch | `src/settings.ts:379` | `test/e2e/specs/settings-ui.e2e.ts:183` | `covered` |
+| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts:386` | `test/e2e/specs/settings-ui.e2e.ts:183` | `covered` |
+| A moved Advanced setting saves and survives close/reopen | `src/settings.ts:2033` | `test/e2e/specs/settings-ui.e2e.ts:483` | `covered` |
+| Models: provider, API key, base URL, model | `src/settings.ts:406` | `test/e2e/specs/settings-ui.e2e.ts:218` | `covered` |
+| Secrets stay out of `data.json` | `src/settings.ts:1985` | `test/e2e/specs/settings-ui.e2e.ts:218` | `covered` |
+| OpenRouter privacy toggles | `src/settings.ts:501` | no committed check | `NONE` |
+| Ollama server URL and model | `src/settings.ts:531` | no committed check | `NONE` |
+| Global network proxy | `src/settings.ts:425` | no committed check | `NONE` |
+| Agent: permission mode dropdown | `src/settings.ts:641` | no committed check | `NONE` |
+| Agent: sampling, timeout, retries, prompt, compaction, budget | `src/settings.ts:637` | no committed check | `NONE` |
+| Approval gates and per-tool overrides | `src/settings.ts:775` | `test/e2e/specs/settings-ui.e2e.ts:259` | `covered` |
+| Approval: working directories row | `src/settings.ts:825` | no committed check | `NONE` |
+| Web: enable, provider, key, results, fetch limit | `src/settings.ts:871` | `test/e2e/specs/settings-ui.e2e.ts:270` | `covered` |
+| Web: allowed hosts | `src/settings.ts:971` | no committed check | `NONE` |
+| MCP tools: enable and add a server | `src/settings.ts:989` | `test/e2e/specs/settings-ui.e2e.ts:306` | `covered` |
+| Observability with Langfuse | `src/settings.ts:1093` | `test/e2e/specs/settings-ui.e2e.ts:432` | `covered` |
+| Observability: generic OTLP auth header | `src/settings.ts:1220` | `test/e2e/specs/settings-migration.e2e.ts:199` (migration only) | `partial` |
+| Notifications section | `src/settings.ts:2033` | `test/e2e/specs/settings-ui.e2e.ts:483` | `covered` |
+| Agent plugins: Install plugin | `src/settings.ts:2088` | `test/e2e/specs/settings-ui.e2e.ts:349` | `covered` |
 | Recover an interrupted plugin install | `src/plugins/service.ts:597` | `test/plugins-service.test.ts:109` | `partial` |
-| Agent plugins: Repair built-ins | `src/settings.ts:2102` | no committed check | `NONE` |
-| Agent plugins: folder, ignored files | `src/settings.ts:2113` | `test/e2e/specs/settings-ui.e2e.ts:473` | `covered` |
-| Agent plugins: plugin row toggle/open/remove | `src/settings.ts:2308` | `test/e2e/specs/mobile-viewport.e2e.ts:404` (row renders only) | `partial` |
-| Subagents: timeout | `src/settings.ts:2133` | no committed check | `NONE` |
-| Semantic retrieval: embedding controls | `src/settings.ts:2153` | no committed check | `NONE` |
-| Settings at phone width | `src/settings.ts:381` | `test/e2e/specs/mobile-viewport.e2e.ts:404` | `covered` |
+| Agent plugins: Repair built-ins | `src/settings.ts:2107` | no committed check | `NONE` |
+| Agent plugins: folder, ignored files | `src/settings.ts:2118` | `test/e2e/specs/settings-ui.e2e.ts:473` | `covered` |
+| Agent plugins: plugin row toggle/open/remove | `src/settings.ts:2313` | `test/e2e/specs/mobile-viewport.e2e.ts:404` (row renders only) | `partial` |
+| Subagents: timeout | `src/settings.ts:2138` | no committed check | `NONE` |
+| Semantic retrieval: embedding controls | `src/settings.ts:2158` | no committed check | `NONE` |
+| Settings at phone width | `src/settings.ts:386` | `test/e2e/specs/mobile-viewport.e2e.ts:404` | `covered` |
 | `getSettingDefinitions()` | `src/settings.ts:215` | returns `[]`; rendering goes through `display()` | `unreachable` |
 
 ## Gotchas

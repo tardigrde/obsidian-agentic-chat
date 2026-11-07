@@ -1,16 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
 import { AgenticChatSettingTab } from "../src/settings";
+import type { SettingsTabDefinition } from "../src/settings-tabs";
 
-interface TabDefinition {
-  id: string;
-  label: string;
-  sections: string[];
-}
-
-function tabDefinitions(): TabDefinition[] {
+function tabDefinitions(): readonly SettingsTabDefinition[] {
   const tab = new AgenticChatSettingTab({} as App, {} as never);
-  return (tab as unknown as { tabs: TabDefinition[] }).tabs;
+  return tab.visibleTabs();
 }
 
 describe("settings runtime tabs", () => {
