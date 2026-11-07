@@ -1453,20 +1453,6 @@ describe("AgentService", () => {
     expect(userTexts(service.getMessages())).toEqual([]);
   });
 
-  it("refuses a redirect prepared for a different session token", async () => {
-    const controlled = controlledStreamFn(["answer"]);
-    const { service } = makeService(controlled.streamFn);
-
-    await service.initialize();
-    const sessionToken = service.getSessionToken();
-    await service.newSession();
-    await service.redirectPrompt("stale redirect", undefined, sessionToken);
-
-    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
-    expect(controlled.runs).toHaveLength(0);
-    expect(userTexts(service.getMessages())).toEqual([]);
-  });
-
   it("queues steering into an active run and persists transcript order", async () => {
     const controlled = controlledStreamFn(["first answer", "steered answer"]);
     const { service, adapter } = makeService(controlled.streamFn);
@@ -1485,166 +1471,6 @@ describe("AgentService", () => {
     expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant", "user", "assistant"]);
     expect(userTexts(service.getMessages())).toEqual(["initial request", "keep citations strict"]);
     await expect(persistedMessageRoles(adapter, service)).resolves.toEqual(["user", "assistant", "user", "assistant"]);
-  });
-
-  it("queues follow-up prompts after the current run would otherwise stop", async () => {
-    const controlled = controlledStreamFn(["first answer", "follow-up answer"]);
-    const { service } = makeService(controlled.streamFn);
-
-    const run = service.sendPrompt("initial request");
-    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
-
-    await service.followUpPrompt("now summarize the decision");
-    controlled.runs[0].finish();
-    await waitFor(() => controlled.runs.length === 2, "follow-up continuation");
-
-    expect(userTexts(controlled.runs[1].context.messages)).toEqual(["initial request", "now summarize the decision"]);
-    controlled.runs[1].finish();
-    await run;
-    expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant", "user", "assistant"]);
-  });
-
-  it("redirects by aborting the active run and continuing from the queued steering message", async () => {
-    const controlled = controlledStreamFn(["will abort", "redirected answer"]);
-    const { service, adapter } = makeService(controlled.streamFn);
-
-    const run = service.sendPrompt("initial request");
-    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
-
-    const redirect = service.redirectPrompt("ignore that and answer the narrower question");
-    await waitFor(() => controlled.runs.length === 2, "redirect continuation");
-
-    controlled.runs[1].finish();
-    await Promise.all([run, redirect]);
-
-    expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant", "user", "assistant"]);
-    expect(service.getMessages()[1]).toMatchObject({ role: "assistant", stopReason: "aborted" });
-    expect(userTexts(service.getMessages())).toEqual([
-      "initial request",
-      "ignore that and answer the narrower question",
-    ]);
-    await expect(persistedMessageRoles(adapter, service)).resolves.toEqual(["user", "assistant", "user", "assistant"]);
-  });
-
-  it("delivers two immediate redirects in order without dropping the second", async () => {
-    const controlled = controlledStreamFn(["initial answer", "first redirect answer", "second redirect answer"]);
-    const { service } = makeService(controlled.streamFn);
-
-    const run = service.sendPrompt("initial request");
-    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "initial stream");
-
-    const firstRedirect = service.redirectPrompt("first redirected question");
-    const secondRedirect = service.redirectPrompt("second redirected question");
-
-    await waitFor(() => controlled.runs.length === 2, "first redirect continuation");
-    controlled.runs[1].finish();
-    await waitFor(() => controlled.runs.length === 3, "second redirect continuation");
-    controlled.runs[2].finish();
-    await Promise.all([run, firstRedirect, secondRedirect]);
-
-    expect(userTexts(service.getMessages())).toEqual([
-      "initial request",
-      "first redirected question",
-      "second redirected question",
-    ]);
-    expect(
-      userTexts(controlled.runs[1].context.messages).filter((text) => text === "first redirected question"),
-    ).toHaveLength(1);
-    expect(
-      userTexts(controlled.runs[2].context.messages).filter((text) => text === "second redirected question"),
-    ).toHaveLength(1);
-    expect(service.getError()).toBeUndefined();
-  });
-
-  it("drops a queued redirect when the session changes during its idle wait", async () => {
-    const controlled = controlledStreamFn(["initial answer"]);
-    // Any unexpected second run (the base bug) completes immediately so the
-    // assertion fails fast instead of timing out on a hanging stream.
-    const streamFn: StreamFn = ((model, context, options) => {
-      const stream = controlled.streamFn(model, context, options);
-      if (controlled.runs.length > 1) controlled.runs[controlled.runs.length - 1].finish();
-      return stream;
-    }) as StreamFn;
-    const { service } = makeService(streamFn);
-
-    const run = service.sendPrompt("initial request");
-    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "initial stream");
-    const sessionToken = service.getSessionToken();
-
-    const promptTurns = (
-      service as unknown as { promptTurns: { waitForIdle: () => Promise<void> } }
-    ).promptTurns;
-    const originalWaitForIdle = promptTurns.waitForIdle.bind(promptTurns);
-    let releaseWait!: () => void;
-    let markEntered!: () => void;
-    const enteredWait = new Promise<void>((resolve) => {
-      markEntered = resolve;
-    });
-    const waitGate = new Promise<void>((resolve) => {
-      releaseWait = resolve;
-    });
-    promptTurns.waitForIdle = async () => {
-      markEntered();
-      await waitGate;
-    };
-
-    const redirect = service.redirectPrompt("redirect from the old session", undefined, sessionToken);
-    controlled.runs[0].finish();
-    await enteredWait;
-    // Swap sessions while the redirect worker is parked before start.
-    await service.newSession();
-    releaseWait();
-
-    await Promise.all([run, redirect]);
-
-    expect(controlled.runs).toHaveLength(1);
-    expect(userTexts(service.getMessages())).toEqual([]);
-    expect(service.getError()).toMatch(/session changed while preparing this turn/i);
-    promptTurns.waitForIdle = originalWaitForIdle;
-  });
-
-  it("delivers a redirect exactly once when the next turn compacts the transcript", async () => {
-    const controlled = controlledStreamFn(["first answer", "will be redirected", "redirected answer"]);
-    const settings: AgenticChatSettings = {
-      ...DEFAULT_SETTINGS,
-      openrouterApiKey: "test-key",
-      openrouterModel: "test/compaction-model",
-    };
-    const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
-    let summarizeCalls = 0;
-    const service = new AgentService({
-      app: minimalApp(),
-      getSettings: () => settings,
-      sessionManager,
-      confirmToolCall: async () => ({ approved: true, remember: false }),
-      streamFn: controlled.streamFn,
-      summarize: async () => {
-        summarizeCalls += 1;
-        return "Summary before the redirect.";
-      },
-    });
-
-    const large = (text: string) => `${text} ${"word ".repeat(50_000)}`;
-    const first = service.sendPrompt(large("first request"));
-    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
-    controlled.runs[0].finish();
-    await first;
-    const second = service.sendPrompt(large("second request"));
-    await waitFor(() => controlled.runs.length === 2 && service.isStreaming(), "second active stream");
-
-    const redirect = service.redirectPrompt("narrower redirected question");
-    await waitFor(() => controlled.runs.length === 3, "redirected continuation");
-    controlled.runs[2].finish();
-    await Promise.all([second, redirect]);
-
-    expect(summarizeCalls).toBe(1);
-    expect(isSummaryMessage(service.getMessages()[0])).toBe(true);
-    const redirectTexts = userTexts(service.getMessages()).filter((text) => text === "narrower redirected question");
-    expect(redirectTexts).toHaveLength(1);
-    expect(
-      userTexts(controlled.runs[2].context.messages).filter((text) => text === "narrower redirected question"),
-    ).toHaveLength(1);
   });
 
   it("detaches a streaming agent before creating the next session file", async () => {
@@ -1751,27 +1577,6 @@ describe("AgentService", () => {
     await next;
   });
 
-  it("clears queued follow-ups when the user stops the active run", async () => {
-    const controlled = controlledStreamFn(["will abort", "must not run"]);
-    const { service } = makeService(controlled.streamFn);
-
-    const run = service.sendPrompt("initial request");
-    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
-
-    await service.followUpPrompt("do not run this after stop");
-    service.abort();
-    await run;
-
-    expect(service.getMessages().map((message) => message.role)).toEqual(["user", "assistant"]);
-    expect(userTexts(service.getMessages())).toEqual(["initial request"]);
-
-    const next = service.sendPrompt("fresh request");
-    await waitFor(() => controlled.runs.length === 2, "fresh run");
-    expect(userTexts(controlled.runs[1].context.messages)).toEqual(["initial request", "fresh request"]);
-    controlled.runs[1].finish();
-    await next;
-  });
-
   it("stops only the active tab when two services share settings", async () => {
     const first = controlledStreamFn(["first answer"]);
     const second = controlledStreamFn(["second answer"]);
@@ -1793,7 +1598,7 @@ describe("AgentService", () => {
     expect(userTexts(a.service.getMessages())).toEqual(["a request"]);
   });
 
-  it("clears queued steering and follow-ups when the spend cap stops a run", async () => {
+  it("clears queued steering when the spend cap stops a run", async () => {
     const controlled = controlledStreamFn(["first answer", "must not run"], 0.02);
     const { service, settings } = makeService(controlled.streamFn);
     settings.notifications.costCapUsd = 0.01;
@@ -1801,7 +1606,6 @@ describe("AgentService", () => {
     const run = service.sendPrompt("initial request");
     await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
     await service.steerPrompt("stale steering");
-    await service.followUpPrompt("stale follow-up");
 
     controlled.runs[0].finish();
     await run;
@@ -1809,7 +1613,7 @@ describe("AgentService", () => {
     expect(service.getError()).toMatch(/stopped this turn/i);
 
     // Raise the cap and send again. Any queued stop-time messages would be
-    // drained into this run's context; a stop must leave both queues empty.
+    // drained into this run's context; a stop must leave the queue empty.
     settings.notifications.costCapUsd = 1;
     const next = service.sendPrompt("fresh request");
     await waitFor(() => controlled.runs.length === 2, "fresh run");

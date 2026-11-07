@@ -1,4 +1,3 @@
-import type { TurnSteeringMode } from "../agent/turn-control";
 import { stripContextPreamble as stripFromBuilder } from "./context-builder";
 
 /** Strip an attachment `<context>...</context>` preamble for display/retry fallback. */
@@ -6,15 +5,23 @@ export function stripContextPreamble(text: string): string {
   return stripFromBuilder(text);
 }
 
-export function parseStreamingSteering(input: string): { mode: TurnSteeringMode; text: string } | null {
-  const match = /^\/(redirect|follow-up|steer)\b\s*([\s\S]*)$/i.exec(input.trim());
-  if (!match) return null;
-  const command = match[1].toLowerCase();
-  const text = match[2].trim();
-  if (!text) return null;
-  if (command === "redirect") return { mode: "redirect", text };
-  if (command === "follow-up") return { mode: "follow-up", text };
-  return { mode: "steer", text };
+/** Who asked the composer to submit: the Enter key or the toolbar button. */
+export type ComposerSubmitSource = "enter" | "button";
+
+/** What a composer submission should do with the current text. */
+export type ComposerAction = "send" | "steer" | "queue";
+
+/**
+ * One decision for the composer send path.
+ *
+ * - An idle submission sends the text as a new turn.
+ * - Enter while the agent runs steers the active turn. The runtime delivers the
+ *   text after the next completed tool batch.
+ * - The toolbar button while the agent runs holds the draft until the turn ends.
+ */
+export function resolveComposerAction(source: ComposerSubmitSource, isStreaming: boolean): ComposerAction {
+  if (!isStreaming) return "send";
+  return source === "button" ? "queue" : "steer";
 }
 
 export function parseInlineInstruction(input: string): string | null {

@@ -46,7 +46,7 @@ await (await modal.$("button=Allow")).click();
 | entry point | source | proof | status |
 |---|---|---|---|
 | Approval modal opens before a write | `src/ui/approval-modal.ts:27` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
-| Stop closes a pending approval | `src/ui/approval-modal.ts:101` | `test/e2e/specs/approval-deterministic.e2e.ts:577` | `covered` |
+| Stop closes a pending approval | `src/ui/approval-modal.ts:101` | `test/e2e/specs/approval-deterministic.e2e.ts:527` | `covered` |
 | Allow applies the change | `src/ui/approval-modal.ts:127` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
 | Deny is two-step and blocks the change | `src/ui/approval-modal.ts:114` | `test/e2e/specs/approval-deterministic.e2e.ts:379` | `covered` |
 | Diff preview before an edit | `src/ui/approval-modal.ts:52` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
@@ -55,7 +55,7 @@ await (await modal.$("button=Allow")).click();
 | Global mutating gate persists | `src/settings.ts:752` | `test/e2e/specs/settings-ui.e2e.ts:221` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
 | Per-tool override through settings | `src/settings.ts:784` | `test/e2e/specs/settings-ui.e2e.ts:221` | `covered` |
 | Per-tool deny flips to allow in a recorded run | `src/settings.ts:784` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
-| Working dir auto-runs inside and asks outside | `src/agent/tool-call-controller.ts:266` | `test/e2e/specs/approval-deterministic.e2e.ts:395` | `covered` |
+| Working dir auto-runs inside and asks outside | `src/agent/tool-call-controller.ts:266` | `test/e2e/specs/approval-deterministic.e2e.ts:393` | `covered` |
 | Working directories settings row | `src/settings.ts:795` | no committed check | `NONE` |
 | Safe/YOLO toggle | `src/ui/chat-view.ts:793` | no committed check | `NONE` |
 | `/plan` enters sticky plan mode | `src/ui/chat-view.ts:1044` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |

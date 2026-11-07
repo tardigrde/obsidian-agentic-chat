@@ -48,7 +48,12 @@ import {
 } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
 import { parseDroppedVaultPath } from "./drag-drop";
-import { parseInlineInstruction, parseStreamingSteering, stripContextPreamble } from "./composer-input";
+import {
+  parseInlineInstruction,
+  resolveComposerAction,
+  stripContextPreamble,
+  type ComposerSubmitSource,
+} from "./composer-input";
 import {
   buildModelPillState,
   buildTurnUsageChromeParts,
@@ -77,7 +82,6 @@ import type { LoadedPlugin } from "../plugins/loader";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { formatCompactionSummary, isSummaryMessage } from "../agent/compaction";
 import { isInstructionFilePath } from "../agent/instructions";
-import { steeringStatus } from "../agent/turn-control";
 import {
   type AgentMode,
   enterPlan,
@@ -718,7 +722,7 @@ export class ChatView extends ItemView {
       }
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
-        void this.submit();
+        void this.submit("enter");
       }
     });
     // Real user typing both refreshes autocomplete and abandons history navigation.
@@ -830,9 +834,9 @@ export class ChatView extends ItemView {
     this.statusEl = toolbarRight.createDiv({ cls: "agentic-chat-status" });
     this.stopButton = toolbarRight.createEl("button", { cls: ["agentic-chat-stop", "mod-warning"], text: "Stop" });
     this.stopButton.hide();
-    this.stopButton.addEventListener("click", () => this.service.abort());
+    this.stopButton.addEventListener("click", () => this.stopActiveTurn());
     this.sendButton = toolbarRight.createEl("button", { cls: ["agentic-chat-send", "mod-cta"], text: "Send" });
-    this.sendButton.addEventListener("click", () => void this.submit());
+    this.sendButton.addEventListener("click", () => void this.submit("button"));
 
     // Token/cost readout on its own muted line; hidden until there's usage.
     this.usageEl = composer.createDiv({ cls: "agentic-chat-usage" });
@@ -922,7 +926,7 @@ export class ChatView extends ItemView {
       const chip = row.createEl("button", { cls: "agentic-chat-empty-suggestion", text: suggestion });
       chip.addEventListener("click", () => {
         this.inputEl.value = suggestion;
-        void this.submit();
+        void this.submit("button");
       });
     }
   }
@@ -1283,33 +1287,36 @@ export class ChatView extends ItemView {
 
   // --- submission + slash commands ---
 
-  private async submit(): Promise<void> {
+  private async submit(source: ComposerSubmitSource): Promise<void> {
     this.cancelAutocomplete();
     this.menu.hide();
     const text = this.inputEl.value.trim();
     if (!text) return;
 
-    const editIndex = this.promptEdit.index;
-    this.endEditing(false);
-
-    if (this.service.isStreaming()) {
-      if (parseStreamingSteering(text)) {
+    // One decision for Enter, the toolbar button, the queue action, and steering.
+    switch (resolveComposerAction(source, this.service.isStreaming())) {
+      case "queue":
+        this.queueComposerPrompt();
+        return;
+      case "steer":
+        if (text.startsWith("#")) {
+          this.renderErrorMessage("Wait for the agent to finish before saving a standing instruction.");
+          return;
+        }
+        if (text.startsWith("/")) {
+          this.renderErrorMessage("Wait for the agent to finish before running a slash command.");
+          return;
+        }
         this.pushHistory(text);
         this.inputEl.value = "";
-        await this.sendSteeringPrompt(text);
+        await this.steerActiveTurn(text);
         return;
-      }
-      if (text.startsWith("#")) {
-        this.renderErrorMessage("Wait for the agent to finish before saving a standing instruction.");
-        return;
-      }
-      if (text.startsWith("/")) {
-        this.renderErrorMessage("Only /steer, /follow-up, and /redirect can run while the agent is responding.");
-        return;
-      }
-      this.queueComposerPrompt();
-      return;
+      case "send":
+        break;
     }
+
+    const editIndex = this.promptEdit.index;
+    this.endEditing(false);
 
     // The guard closes the window between "not streaming" and "prompt started".
     if (this.service.isTurnInFlight()) {
@@ -1336,6 +1343,14 @@ export class ChatView extends ItemView {
       return;
     }
     await this.sendPrompt(text);
+  }
+
+  /** Stop the turn and cancel the composer hold, keeping the draft for a new send. */
+  private stopActiveTurn(): void {
+    // A held draft must not auto-send after a stop. The text stays in the
+    // composer so the next Enter sends it as a replacement turn.
+    this.clearQueuedPrompt();
+    this.service.abort();
   }
 
   private queueComposerPrompt(): void {
@@ -1572,18 +1587,13 @@ export class ChatView extends ItemView {
     this.showServiceError();
   }
 
-  private async sendSteeringPrompt(rawText: string): Promise<void> {
+  private async steerActiveTurn(text: string): Promise<void> {
     const tab = this.activeTab;
     const service = tab.service;
     const activeNoteCache = this.activeNoteCache;
     const contextCache = this.contextCache;
     const explicitAttachments = [...this.attachments];
     const autoPath = this.effectiveActiveNote();
-    const steering = parseStreamingSteering(rawText);
-    if (!steering) {
-      this.renderErrorMessage("Add steering text after the command.");
-      return;
-    }
     this.clearEmptyState();
     try {
       const prepared = await this.preparePromptSend(
@@ -1593,19 +1603,13 @@ export class ChatView extends ItemView {
         contextCache,
         explicitAttachments,
         autoPath,
-        steering.text,
+        text,
       );
       if (!prepared) return;
       this.lastSentPrompt = prepared.prompt;
-      this.lastSentDisplay = steering.text;
-      this.statusEl.setText(steeringStatus(steering.mode));
-      if (steering.mode === "redirect") {
-        await service.redirectPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
-      } else if (steering.mode === "follow-up") {
-        await service.followUpPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
-      } else {
-        await service.steerPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
-      }
+      this.lastSentDisplay = text;
+      this.statusEl.setText("Queued for the active turn.");
+      await service.steerPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
       if (!this.isLiveTab(tab)) {
         this.discardPendingSend(activeNoteCache, contextCache);
         return;
@@ -1724,11 +1728,6 @@ export class ChatView extends ItemView {
         return true;
       case "todo":
         await this.runTodo(argString);
-        return true;
-      case "steer":
-      case "follow-up":
-      case "redirect":
-        await this.runSteeringCommand(raw);
         return true;
       case "usage":
         this.showUsage();
@@ -1853,19 +1852,6 @@ export class ChatView extends ItemView {
     if (options.editing) this.endEditing(false);
     if (options.bubble) this.bubble = null;
     if (options.queuedPrompt) this.clearQueuedPrompt();
-  }
-
-  private async runSteeringCommand(raw: string): Promise<void> {
-    const steering = parseStreamingSteering(raw);
-    if (!steering) {
-      this.renderErrorMessage("Add text after the command.");
-      return;
-    }
-    if (this.service.isStreaming()) {
-      await this.sendSteeringPrompt(raw);
-      return;
-    }
-    await this.sendPrompt(steering.text);
   }
 
   private async captureInlineInstruction(raw: string): Promise<void> {

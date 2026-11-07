@@ -77,32 +77,32 @@ every caller.
 ## Turn
 
 Owner: `AgentPromptTurnRuntime` owns `inFlight` and the idle waiters. The pi
-`Agent` owns `isStreaming` and its steer and follow-up queues. `AgentService`
-owns `pendingRedirects` and the single redirect worker.
+`Agent` owns `isStreaming` and its steering queue.
 
 Invariants:
 
 - One turn can start at a time per service.
-- Stop clears the steer and follow-up queues before it aborts. A queued message
-  must not drain into the next run.
-- Redirects are delivered in order. Each redirect re-checks the session token
-  after every wait.
+- Stop clears the steering queue before it aborts. A queued message must not
+  drain into the next run.
+- Steering re-checks the session token before it enqueues a message.
 - A stale token never starts a turn and never appends to the new transcript.
 - Starting a session swap disarms the composer's queued prompt before the swap
   begins.
+- Replacing a turn is Stop then send: Stop ends the run and clears its queues,
+  then the next send starts a new turn in the same conversation.
 
 Fixed by #239: an e2e starts a turn in two tabs, stops one, and proves the other
 still finishes.
 
 Gaps:
 
-- Stop policy is spread across `AgentService.abort`, `stopAgent`, the redirect
-  worker, the spend cap, and the approval controller's `onStopRequested`.
+- Stop policy is spread across `AgentService.abort`, `stopAgent`, the spend cap,
+  and the approval controller's `onStopRequested`.
 - `stopRequested` in `AgentToolCallController` is a service-global boolean, not
   tied to a turn id.
 - `compactionRecoveryError` is a service field, not tied to a session.
 
-Next: one runtime owns stop, redirect, steer, follow-up, and turn recovery.
+Next: one runtime owns stop, steer, and turn recovery.
 
 ## Compaction
 

@@ -6,7 +6,6 @@ import {
   resolveThinkingLevelForTurn,
   normalizeSteeringText,
   spendCapAbortReason,
-  steeringStatus,
   visibleModelOverride,
 } from "../src/agent/turn-control";
 import type { ModelConfig } from "../src/llm/models";
@@ -95,11 +94,8 @@ describe("turn control", () => {
     expect(resolveThinkingLevelForTurn("low", ["off", "low", "high"])).toBe("low");
   });
 
-  it("normalizes steering text and labels steering modes", () => {
+  it("normalizes steering text", () => {
     expect(normalizeSteeringText("  keep citations strict  ")).toBe("keep citations strict");
     expect(normalizeSteeringText("   ")).toBeNull();
-    expect(steeringStatus("steer")).toBe("Queued for the active turn.");
-    expect(steeringStatus("follow-up")).toBe("Queued as a follow-up.");
-    expect(steeringStatus("redirect")).toBe("Redirecting the active turn.");
   });
 });
