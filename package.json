@@ -97,7 +97,7 @@
     "undici": "^8.12.3",
     "vitepress": "^1.6.4",
     "vitest": "^5.0.3",
-    "wdio-obsidian-reporter": "3.5.0-beta.0",
+    "wdio-obsidian-reporter": "3.5.0",
     "wdio-obsidian-service": "3.5.0-beta.0"
   },
   "dependencies": {
