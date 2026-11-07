@@ -39,7 +39,7 @@ Privacy controls are on by default.
 - **Undo.** `/undo` reverts the last vault change: write, edit, rename, frontmatter update, single-file delete, or empty-folder delete. A recursive delete of a non-empty folder cannot be reverted.
 - **Safe and YOLO modes.** The composer switch sets the approval posture. Safe uses your policy. YOLO auto-approves mutating tools for the session, except recursive folder deletes; a per-tool deny still wins.
 - **Working directories.** Grant folders with the composer folder button, `/add-dir`, or settings. In Safe mode, calls inside the set run without approval. Calls outside it ask first, including reads. Calls with no path also ask because they can span the vault. `/dirs` lists and revokes grants. An empty set applies the policy vault-wide. The ignore list still wins.
-- **Plan mode.** `/plan` enters a sticky read-only state and blocks mutations. Leave with the Plan badge or `/config`; the previous Safe or YOLO mode returns.
+- **Plan mode.** `/plan` enters a sticky read-only state and blocks mutations. Leave with the Plan badge; the previous Safe or YOLO mode returns.
 - **Ignore list.** Gitignore-style globs such as `Private/`, `*.secret.md`, and `**/diary/**` hide notes from the agent. Matching files report as not found to every tool, so the agent cannot read, list, search, or edit them.
 - **Sessions.** Each chat is stored as JSONL in the plugin folder and resumes on reload. Browse, search, reopen, rename, delete, export, or clear sessions. Titles come from the first prompt. Sessions work on mobile without SQLite or Node `fs`.
 - **Token and cost control.** Per-message and per-session token and USD usage (`/usage`, `/status`), a next-request cost estimate, a cost alert, a spend cap that blocks or aborts at the limit, and a context-window bar. Long sessions compact older turns into a summary before overflow; `/compact [instructions]` runs compaction on demand.
@@ -211,13 +211,12 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | Command | What it does |
 |---|---|
 | `/new` | Start a new conversation. |
-| `/sessions` (`/history`) | Browse, search, reopen, rename, or delete past conversations. `clear --confirm` clears all sessions in the current scope. |
+| `/sessions` | Browse, search, reopen, rename, or delete past conversations. `clear --confirm` clears all sessions in the current scope. |
 | `/model` | Switch model. Shift applies a next-prompt-only override. |
-| `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists. Alias: `/thinking`. |
-| `/config` (`/mode`) | Switch permission mode: Safe, YOLO, or Plan. |
+| `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists. |
 | `/add-dir [folder]` | Grant a working directory. Without an argument, opens a vault folder picker. |
 | `/dirs` | List or revoke granted working directories. |
-| `/plan` | Enter sticky read-only plan mode. Leave with the Plan badge or `/config`. |
+| `/plan` | Enter sticky read-only plan mode. Leave with the Plan badge. |
 | `/compact [instructions]` | Summarize older turns now. Optional text guides the summary. |
 | `/init [instructions]` | Curate the vault standing-instructions file. Optional text guides the update. |
 | `/style [name]` | Switch output style. |
@@ -228,16 +227,16 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/status` | Show provider, model, mode, output style, session, MCP servers, and tools. |
 | `/usage` | Show token and cost totals. |
 | `/memory [add\|review\|manage\|export\|clear]` | Add, review, export, or clear stored long-term memories. |
-| `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. Alias: `/semindex`. |
-| `/todo [add\|set\|test\|commit\|note\|title\|clear]` | Track milestones, tests, checkpoint commits, notes, and the plan title. Alias: `/todos`. |
+| `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. |
+| `/todo [add\|set\|test\|commit\|note\|title\|clear]` | Track milestones, tests, checkpoint commits, notes, and the plan title. |
 | `/steer [text]` | Steer the active turn while the agent responds. |
-| `/follow-up [text]` | Queue a follow-up behind the active turn. Alias: `/followup`. |
+| `/follow-up [text]` | Queue a follow-up behind the active turn. |
 | `/redirect [text]` | Stop the active turn and answer this instead. |
 | `/export` | Save this conversation as a Markdown note. |
 | `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List commands. |
 
-`/plan` is sticky. Leave plan mode with the **Plan** badge or `/config`. `/endplan` does not exist.
+`/plan` is sticky. Leave plan mode with the **Plan** badge. `/endplan` does not exist.
 
 ## How privacy routing works
 

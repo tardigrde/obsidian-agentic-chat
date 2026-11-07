@@ -2,11 +2,10 @@
 
 ## Sub-features
 
-- Slash command catalog and aliases in `src/ui/commands.ts`.
+- Slash command catalog in `src/ui/commands.ts`.
 - Autocomplete menu for commands, skills, and `/skill` arguments.
 - Local commands that never call the model.
 - Model-facing commands that inject a prompt or control the active turn.
-- Hidden command: `/project`.
 - Skills: built-in, plugin-provided, and bare `/skill-name` invocation.
 - Skill tools: `read_skill`, `read_skill_file`, `load_skill`, `unload_skill`,
   `create_skill`.
@@ -51,39 +50,38 @@ await $(".agentic-chat-info").waitForExist();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| `/help` | `src/ui/commands.ts:56` | `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
-| `/init` | `src/ui/commands.ts:52` | `test/e2e/specs/smoke.e2e.ts:58` | `covered` |
-| `/compact` | `src/ui/commands.ts:47` | `test/e2e/specs/smoke.e2e.ts:72` | `covered` |
-| `/dirs` | `src/ui/commands.ts:38` | `test/e2e/specs/smoke.e2e.ts:91` | `covered` |
-| `/memory` | `src/ui/commands.ts:33` | `test/e2e/specs/smoke.e2e.ts:132` | `covered` |
-| `/todo` | `src/ui/commands.ts:40` | `test/e2e/specs/smoke.e2e.ts:208` | `covered` |
-| `/status` | `src/ui/commands.ts:32` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
-| `/plan` | `src/ui/commands.ts:39` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
-| `/undo` | `src/ui/commands.ts:49` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
-| `/steer` | `src/ui/commands.ts:41` | `test/e2e/specs/approval-deterministic.e2e.ts:491` | `covered` |
-| `/sessions` | `src/ui/commands.ts:30` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
-| `/new` | `src/ui/commands.ts:29` | `test/session-actions.test.ts:153` (unit only) | `partial` |
-| `/model` | `src/ui/commands.ts:31` | no committed check | `NONE` |
-| `/config` | `src/ui/commands.ts:36` | no committed check | `NONE` |
-| `/style` | `src/ui/commands.ts:44` | no committed check | `NONE` |
-| `/effort` | `src/ui/commands.ts:45` | no committed check | `NONE` |
-| `/usage` | `src/ui/commands.ts:46` | no committed check | `NONE` |
-| `/follow-up` | `src/ui/commands.ts:42` | `test/turn-control.test.ts:98` (parser and label only) | `partial` |
-| `/redirect` | `src/ui/commands.ts:43` | `test/turn-control.test.ts:98` (parser and label only) | `partial` |
-| `/export` | `src/ui/commands.ts:48` | `test/session-export.test.ts:31` (renderer only) | `partial` |
-| `/semantic-index` | `src/ui/commands.ts:34` | `test/semantic-index-workflow-controller.test.ts:85` (workflow unit) | `partial` |
+| `/help` | `src/ui/commands.ts:48` | `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
+| `/init` | `src/ui/commands.ts:47` | `test/e2e/specs/smoke.e2e.ts:59` | `covered` |
+| `/compact` | `src/ui/commands.ts:42` | `test/e2e/specs/smoke.e2e.ts:73` | `covered` |
+| `/dirs` | `src/ui/commands.ts:33` | `test/e2e/specs/smoke.e2e.ts:92` | `covered` |
+| `/memory` | `src/ui/commands.ts:29` | `test/e2e/specs/smoke.e2e.ts:133` | `covered` |
+| `/todo` | `src/ui/commands.ts:35` | `test/e2e/specs/smoke.e2e.ts:209` | `covered` |
+| `/status` | `src/ui/commands.ts:28` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
+| `/plan` | `src/ui/commands.ts:34` | `test/e2e/specs/runtime-behavior.e2e.ts:220` | `covered` |
+| `/undo` | `src/ui/commands.ts:44` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
+| `/steer` | `src/ui/commands.ts:36` | `test/e2e/specs/approval-deterministic.e2e.ts:491` | `covered` |
+| `/sessions` | `src/ui/commands.ts:26` | `test/e2e/specs/runtime-behavior.e2e.ts:163` | `covered` |
+| `/new` | `src/ui/commands.ts:25` | `test/session-actions.test.ts:153` (unit only) | `partial` |
+| Alias-free command lookup | `src/ui/commands.ts:57` | `test/commands.test.ts:62` (unit only) | `partial` |
+| `/model` | `src/ui/commands.ts:27` | no committed check | `NONE` |
+| `/style` | `src/ui/commands.ts:39` | no committed check | `NONE` |
+| `/effort` | `src/ui/commands.ts:40` | no committed check | `NONE` |
+| `/usage` | `src/ui/commands.ts:41` | no committed check | `NONE` |
+| `/follow-up` | `src/ui/commands.ts:37` | `test/turn-control.test.ts:98` (parser and label only) | `partial` |
+| `/redirect` | `src/ui/commands.ts:38` | `test/turn-control.test.ts:98` (parser and label only) | `partial` |
+| `/export` | `src/ui/commands.ts:43` | `test/session-export.test.ts:31` (renderer only) | `partial` |
+| `/semantic-index` | `src/ui/commands.ts:30` | `test/semantic-index-workflow-controller.test.ts:85` (workflow unit) | `partial` |
 | Repair a stale semantic index on read | `src/retrieval/semantic-index.ts:402` | `test/semantic-index.test.ts:90` | `partial` |
 | One semantic index writer across tabs | `src/retrieval/semantic-index.ts:200` | `test/semantic-index-lease.test.ts:81` | `partial` |
-| `/doctor` | `src/ui/commands.ts:35` | `test/runtime-diagnostics.test.ts:13` (diagnostics only) | `partial` |
-| `/add-dir` | `src/ui/commands.ts:37` | `test/working-directory-workflow-controller.test.ts:69` (unit only) | `partial` |
-| `/agent` | `src/ui/commands.ts:51` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
-| `/skill <name>` | `src/ui/commands.ts:50` | `test/e2e/specs/skill-chip.e2e.ts:22` | `covered` |
-| `/skill` with no name (picker) | `src/ui/chat-view.ts:1820` | no committed check | `NONE` |
-| Bare `/<skill-name>` | `src/ui/chat-view.ts:1604` | `test/commands.test.ts:81` (parse only) | `partial` |
-| Hidden `/project` redirect | `src/ui/commands.ts:55` | no committed check | `NONE` |
-| `/template` as a command | `src/ui/chat-view.ts:1601` | no handler; the word falls through to the model | `unreachable` |
+| `/doctor` | `src/ui/commands.ts:31` | `test/runtime-diagnostics.test.ts:13` (diagnostics only) | `partial` |
+| `/add-dir` | `src/ui/commands.ts:32` | `test/working-directory-workflow-controller.test.ts:69` (unit only) | `partial` |
+| `/agent` | `src/ui/commands.ts:46` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
+| `/skill <name>` | `src/ui/commands.ts:45` | `test/e2e/specs/skill-chip.e2e.ts:22` | `covered` |
+| `/skill` with no name (picker) | `src/ui/chat-view.ts:1884` | no committed check | `NONE` |
+| Bare `/<skill-name>` | `src/ui/chat-view.ts:1680` | `test/commands.test.ts:95` (parse only) | `partial` |
+| `/template` as a command | `src/ui/chat-view.ts:1677` | no handler; the word falls through to the model | `unreachable` |
 | `/template <partial>` skill autocomplete | `src/ui/autocomplete.ts:77` | `test/autocomplete.test.ts:42` (unit only) | `partial` |
-| Autocomplete menu for commands | `src/ui/chat-view.ts:953` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
+| Autocomplete menu for commands | `src/ui/chat-view.ts:975` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
 | Autocomplete keyboard keys | `src/ui/autocomplete-menu.ts:108` | no committed check | `NONE` |
 | Built-in skills are available | `src/skills/builtin-skills.ts:202` | `test/builtin-skills.test.ts:4` (catalog only) | `partial` |
 | Plugin skills load with built-ins | `src/agent/runtime-resources.ts:81` | `test/runtime-resources.test.ts:126` (unit only) | `partial` |
@@ -106,7 +104,6 @@ await $(".agentic-chat-info").waitForExist();
 - `/compact` accepts tail instructions. The tail guides the summary.
 - `/plan` persists until you leave plan mode. Pair it with an exit action in the
   same scenario.
-- `/project` is hidden but still routable. It renders a removal notice.
 - `/template` has no command handler. It only triggers skill-argument
   autocomplete.
 - The approval modal cannot remember approvals for `create_skill`, `load_skill`,

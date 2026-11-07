@@ -620,10 +620,10 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       .setName("Permission mode")
       .setDesc(
         "Safe honors your approval gates; YOLO auto-approves every mutating tool for the session " +
-          "(a per-tool deny still wins). Plan is read-only — enter here, via /plan, or via /config. All four surfaces (settings dropdown, composer toggle, /config, /plan) share one setting and stay in sync.",
+          "(a per-tool deny still wins). Plan is read-only — enter here or via /plan. All three surfaces (settings dropdown, composer toggle, /plan) share one setting and stay in sync.",
       )
       .addDropdown((dropdown) => {
-        // S4: single list, same labels as `/config` and MODES — every surface reflects the same source (Codex atomic override).
+        // S4: single list, same labels as MODES — every surface reflects the same source (Codex atomic override).
         for (const id of MODE_ORDER) dropdown.addOption(id, MODES[id].label);
         dropdown.setValue(settings.mode).onChange(async (value) => {
           const target = value as AgentMode;

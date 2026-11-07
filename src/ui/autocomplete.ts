@@ -132,10 +132,9 @@ function suggestCommands(
   skills: Array<{ name: string; description: string }>,
 ): AcItem[] {
   const scoredCommands = commands.map((command): Scored<AcItem> => {
-    const names = [command.name, ...(command.aliases ?? [])];
     const argsPart = command.args ? ` ${command.args}` : "";
     return {
-      score: bestMatchScore(query, names),
+      score: bestMatchScore(query, [command.name]),
       item: {
         kind: "command",
         label: `/${command.name}${argsPart}`,
@@ -149,9 +148,7 @@ function suggestCommands(
   // Skills are first-class slash commands: `/daily` runs the daily-note skill.
   // A skill whose name collides with a built-in command is omitted here (the
   // command wins); it stays reachable via `/skill <name>`.
-  const reserved = new Set(
-    commands.flatMap((command) => [command.name, ...(command.aliases ?? [])].map((word) => word.toLowerCase())),
-  );
+  const reserved = new Set(commands.map((command) => command.name.toLowerCase()));
   const scoredSkills = skills
     .filter((skill) => !reserved.has(skill.name.toLowerCase()))
     .map((skill): Scored<AcItem> => ({

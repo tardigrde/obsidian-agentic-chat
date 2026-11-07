@@ -7,30 +7,46 @@ import {
   visibleCommands,
 } from "../src/ui/commands";
 
+const REMOVED_COMMANDS = ["config", "project"] as const;
+const REMOVED_ALIASES = [
+  "mode",
+  "projects",
+  "history",
+  "semindex",
+  "adddir",
+  "working-dirs",
+  "todos",
+  "followup",
+  "thinking",
+] as const;
+const SUPPORTED_COMMANDS = [
+  "usage",
+  "doctor",
+  "style",
+  "add-dir",
+  "dirs",
+  "todo",
+  "follow-up",
+  "steer",
+  "redirect",
+  "plan",
+  "sessions",
+  "semantic-index",
+  "effort",
+] as const;
+
 describe("SLASH_COMMANDS", () => {
   it("has unique canonical names", () => {
     const names = SLASH_COMMANDS.map((c) => c.name);
     expect(new Set(names).size).toBe(names.length);
   });
-  it("has no alias colliding with a canonical name", () => {
-    const names = new Set(SLASH_COMMANDS.map((c) => c.name));
-    for (const command of SLASH_COMMANDS) {
-      for (const alias of command.aliases ?? []) expect(names.has(alias)).toBe(false);
-    }
-  });
 });
 
 describe("visibleCommands", () => {
-  it("hides deprecated/internal commands", () => {
+  it("lists only the supported commands", () => {
     const names = visibleCommands().map((c) => c.name);
-    expect(names).toContain("skill");
-    expect(names).toContain("doctor");
-    expect(names).not.toContain("diagnostics");
-    expect(names).toContain("steer");
-    expect(names).toContain("follow-up");
-    expect(names).toContain("redirect");
-    expect(names).toContain("compact");
-    expect(names).not.toContain("template");
+    expect(names).toEqual(SLASH_COMMANDS.map((c) => c.name));
+    for (const removed of REMOVED_COMMANDS) expect(names).not.toContain(removed);
   });
 });
 
@@ -38,19 +54,22 @@ describe("resolveCommand", () => {
   it("resolves a canonical name case-insensitively", () => {
     expect(resolveCommand("NEW")?.name).toBe("new");
   });
-  it("resolves an alias to its canonical command", () => {
-    expect(resolveCommand("history")?.name).toBe("sessions");
-    expect(resolveCommand("followup")?.name).toBe("follow-up");
+
+  it("resolves every supported command", () => {
+    for (const name of SUPPORTED_COMMANDS) expect(resolveCommand(name)?.name).toBe(name);
   });
+
+  it.each([...REMOVED_COMMANDS, ...REMOVED_ALIASES])("does not resolve the removed word %s", (word) => {
+    expect(resolveCommand(word)).toBeUndefined();
+    expect(parseSlashInput(`/${word}`).command).toBeUndefined();
+  });
+
   it("drops the retired diagnostics/diag aliases", () => {
     expect(resolveCommand("diag")).toBeUndefined();
     expect(resolveCommand("diagnostics")).toBeUndefined();
     expect(resolveCommand("doctor")?.name).toBe("doctor");
   });
-  it("exposes /style as its own command (not a /config alias)", () => {
-    expect(resolveCommand("style")?.name).toBe("style");
-    expect(resolveCommand("mode")?.name).toBe("config");
-  });
+
   it("returns undefined for an unknown word", () => {
     expect(resolveCommand("nope")).toBeUndefined();
   });
@@ -73,9 +92,9 @@ describe("parseSlashInput", () => {
     expect(input.argString).toBe("preserve\nopen bugs");
   });
 
-  it("resolves aliases through the shared command catalog", () => {
-    expect(parseSlashInput("/history").command?.name).toBe("sessions");
-    expect(parseSlashInput("/followup remind me").command?.name).toBe("follow-up");
+  it("keeps alias-shaped words unresolved", () => {
+    expect(parseSlashInput("/history").command).toBeUndefined();
+    expect(parseSlashInput("/followup remind me").command).toBeUndefined();
   });
 
   it("keeps bare skill names unresolved for ChatView fallback handling", () => {

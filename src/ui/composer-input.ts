@@ -7,13 +7,13 @@ export function stripContextPreamble(text: string): string {
 }
 
 export function parseStreamingSteering(input: string): { mode: TurnSteeringMode; text: string } | null {
-  const match = /^\/(redirect|follow-up|followup|steer)\b\s*([\s\S]*)$/i.exec(input.trim());
+  const match = /^\/(redirect|follow-up|steer)\b\s*([\s\S]*)$/i.exec(input.trim());
   if (!match) return null;
   const command = match[1].toLowerCase();
   const text = match[2].trim();
   if (!text) return null;
   if (command === "redirect") return { mode: "redirect", text };
-  if (command === "follow-up" || command === "followup") return { mode: "follow-up", text };
+  if (command === "follow-up") return { mode: "follow-up", text };
   return { mode: "steer", text };
 }
 

@@ -8,13 +8,13 @@ describe("composer input helpers", () => {
       mode: "redirect",
       text: "use the smaller design",
     });
-    expect(parseStreamingSteering("/followup continue")).toEqual({ mode: "follow-up", text: "continue" });
     expect(parseStreamingSteering("/follow-up continue")).toEqual({ mode: "follow-up", text: "continue" });
   });
 
   it("rejects empty or unrelated steering input", () => {
     expect(parseStreamingSteering("/steer   ")).toBeNull();
     expect(parseStreamingSteering("/status")).toBeNull();
+    expect(parseStreamingSteering("/followup continue")).toBeNull();
     expect(parseStreamingSteering("plain prompt")).toBeNull();
   });
 

@@ -600,7 +600,7 @@ Force feature crossovers that users naturally create:
 - attach files, active notes, folder listings, and memory in the
   same run, then check which context actually reached the model
 - run `/plan`, the **Plan** badge, `/todo`, `/steer`, `/follow-up`, `/new`,
-  `/sessions`, `/memory`, `/export`, `/undo`, `/doctor`, and `/config`
+  `/sessions`, `/memory`, `/export`, `/undo`, and `/doctor`
   around real tool calls instead of as isolated command smoke tests
 - start long workflows that create notes, refine them, delete unused ones, check
   backlinks/local graph, export the transcript, reload the plugin, then continue
