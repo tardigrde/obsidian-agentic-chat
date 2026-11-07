@@ -214,9 +214,12 @@ npm run chaos -- --mode focused --target composer --live \
   --max-steps 2 --max-seconds 180 --max-calls 2 --max-tokens 4000
 ```
 
-Focused targets are `composer`, `settings`, `notes`, and `mcp`. Generic mode
-chooses from the same actions with a seeded choice stream. Without `--live` and
-an API key the runner stays in a capped dry run that cannot spend tokens.
+Focused targets are `composer`, `settings`, `notes`, `mcp`,
+`retired-commands`, `steer`, `queue`, `stop-send`, `max-turns`,
+`settings-persistence`, `approval-paths`, `session-reload`, `large-input`, and
+`mcp-lifecycle`. Generic mode chooses from the same actions with a seeded choice
+stream, one slot per action, so note writes no longer dominate. Without `--live`
+and an API key the runner stays in a capped dry run that cannot spend tokens.
 
 It writes:
 

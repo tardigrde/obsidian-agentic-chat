@@ -71,8 +71,19 @@ Focused targets:
 | `settings` | opens Agentic Chat settings, switches every tab, toggles MCP on and off, closes |
 | `notes` | asks for a note, approves the write when asked, reads the note back |
 | `mcp` | opens Advanced, enables MCP, adds a server, reads the server row |
+| `retired-commands` | sends `/steer`, `/follow-up`, `/redirect`, `/todo`, `/todos`, `/plan`, `/mode`, `/config`, `/project` and checks a clean response and valid session JSONL |
+| `steer` | starts a tool turn, steers it with a second text, checks the steer lands before the answer |
+| `queue` | queues a draft, edits it while the turn runs, checks it flushes at turn end |
+| `stop-send` | stops a running turn, sends the held replacement, checks the old turn is abandoned |
+| `max-turns` | forces more tool iterations than the assistant-turn cap and checks the visible stop message |
+| `settings-persistence` | changes one value per tab, reloads Obsidian and the plugin, checks the values |
+| `approval-paths` | denies one write and allows the next, then checks both notes |
+| `session-reload` | switches sessions, reloads the plugin mid-conversation, checks the transcript and JSONL |
+| `large-input` | sends a very large prompt and checks overflow and composer responsiveness |
+| `mcp-lifecycle` | adds, tests, and removes an MCP server, then checks saved settings |
 
-Generic mode chooses from the same actions with a seeded random stream.
+Generic mode chooses from the same actions with a seeded random stream. Every
+action is one slot in the pool, so note writes no longer dominate a generic run.
 
 ## Read the result
 
@@ -117,6 +128,13 @@ Raise the caps only after the first run is clean.
 - It does not run OAuth or a live MCP tool call. Use
   `test/e2e/specs/mcp-live.e2e.ts` for that. The MCP step proves the settings
   surface and records the limitation in the report.
+- It cannot force a live model to keep looping. A live `max-turns` run depends
+  on the model choosing to make more than the assistant-turn limit; a model that
+  refuses is a limitation, not proof the cap is broken. The dry run proves the
+  cap deterministically.
+- A full Obsidian renderer reload drops the WDIO Obsidian bridge, so
+  `settings-persistence` proves the values through `data.json` (the restart
+  source) and a plugin reload, and records that limitation.
 - It does not prove mobile layout. It records a desktop display at the requested
   size.
 - It does not replace a witness, a deterministic lane, or an independent PR

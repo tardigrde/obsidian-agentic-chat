@@ -10,14 +10,25 @@ import {
   type ChaosCaps,
   type ChaosPlan,
   type ChaosStopState,
-  type ChaosTarget,
 } from "../../../scripts/chaos/monkey-core";
+import {
+  ALLOWED_NOTE,
+  DENIED_NOTE,
+  RETIRED_COMMANDS,
+  focusedSequence,
+  genericSequence,
+  modelCallsFor,
+  scriptedTurnsFor,
+  type ChaosAction,
+} from "../../../scripts/chaos/monkey-actions";
 import {
   clickMcpAddButton,
   closeAgenticChatSettings,
   openAgenticChatSettings,
+  readAgenticChatSettings,
   readSettingsTabLabels,
   selectSettingsTab,
+  setSettingText,
   setSettingTextByPlaceholder,
   setSettingToggle,
   waitForAgenticChatSetting,
@@ -43,16 +54,6 @@ import {
  * every run uses the same actions, and the plan only chooses mode, target, and
  * caps. The driver refuses to run without a plan.
  */
-
-type Surface = ChaosTarget | "slash-commands";
-
-type Action = {
-  id: string;
-  surface: Surface;
-  description: string;
-  prompt?: string;
-  notePath?: string;
-};
 
 type Finding = {
   severity: "S1" | "S2" | "S3" | "S4";
@@ -83,8 +84,12 @@ const planPath = process.env.AGENTIC_CHAT_CHAOS_PLAN?.trim();
 const outDir = process.env.AGENTIC_CHAT_CHAOS_OUT?.trim();
 const apiKey = readApiKey();
 let plan: ChaosPlan;
-const scratchDir = "Chaos";
-const sessionNote = (index: number): string => `${scratchDir}/Chaos ${index}.md`;
+
+const LARGE_INPUT_CHARS = 20_000;
+const STEER_TEXT = "keep the answer concise and end with the word steered";
+const QUEUE_DRAFT = "queued draft before edit";
+const QUEUE_EDITED = "queued draft after edit";
+const STOP_REPLACEMENT = "replacement after stop";
 
 function readApiKey(): string | undefined {
   const inline = process.env.AGENTIC_CHAT_API_KEY?.trim();
@@ -103,123 +108,6 @@ async function loadPlan(): Promise<ChaosPlan> {
   const raw = JSON.parse(await readFile(planPath, "utf8")) as ChaosPlan;
   if (raw.version !== 1) throw new Error(`unsupported chaos plan version: ${String(raw.version)}`);
   return raw;
-}
-
-function rng(seed: number): () => number {
-  let state = seed >>> 0 || 1;
-  return () => {
-    state ^= state << 13;
-    state ^= state >>> 17;
-    state ^= state << 5;
-    return (state >>> 0) / 0xffffffff;
-  };
-}
-
-function actionCatalog(): Action[] {
-  return [
-    {
-      id: "composer-prompt",
-      surface: "composer",
-      description: "send one free-form prompt and read the answer",
-      prompt: "In one short sentence, say what you can do in this Obsidian vault.",
-    },
-    {
-      id: "slash-help",
-      surface: "slash-commands",
-      description: "run /help in the composer",
-      prompt: "/help",
-    },
-    {
-      id: "slash-dirs",
-      surface: "slash-commands",
-      description: "run /dirs in the composer",
-      prompt: "/dirs",
-    },
-    {
-      id: "settings-tabs",
-      surface: "settings",
-      description: "open Agentic Chat settings, switch every tab, and toggle MCP",
-    },
-    {
-      id: "mcp-surface",
-      surface: "mcp",
-      description: "open Advanced, enable MCP, add a server, and read the row",
-    },
-  ];
-}
-
-function noteAction(index: number): Action {
-  return {
-    id: `notes-write-${index}`,
-    surface: "notes",
-    description: "ask the model to create a note, approve the write, and read it back",
-    prompt: `Create the note ${sessionNote(index)} with exactly this content: chaos monkey step ${index}`,
-    notePath: sessionNote(index),
-  };
-}
-
-function focusedSequence(target: ChaosTarget): Action[] {
-  switch (target) {
-    case "composer":
-      return [actionCatalog()[0], actionCatalog()[1], actionCatalog()[2]];
-    case "settings":
-      return [actionCatalog()[3]];
-    case "mcp":
-      return [actionCatalog()[4], actionCatalog()[3]];
-    case "notes":
-      return [noteAction(1), noteAction(2)];
-  }
-}
-
-function genericSequence(caps: ChaosCaps, seed: number): Action[] {
-  const pool = actionCatalog();
-  const random = rng(seed);
-  const sequence: Action[] = [];
-  let notes = 0;
-  for (let index = 0; index < caps.maxSteps; index += 1) {
-    const roll = random();
-    if (roll < 0.4) {
-      notes += 1;
-      sequence.push(noteAction(notes));
-    } else {
-      sequence.push(pool[Math.floor(random() * pool.length)]);
-    }
-  }
-  return sequence;
-}
-
-function scriptedTurnsFor(sequence: Action[]): ScriptedTurn[] {
-  const turns: ScriptedTurn[] = [];
-  for (const action of sequence) {
-    if (!action.prompt || action.prompt.startsWith("/")) continue;
-    if (action.notePath) {
-      const notePath = action.notePath;
-      turns.push({
-        label: `${action.id} write`,
-        stopReason: "toolUse",
-        content: [
-          {
-            type: "toolCall",
-            id: `${action.id}-write`,
-            name: "write",
-            arguments: { path: notePath, content: "chaos monkey was here" },
-          },
-        ],
-      });
-      turns.push({
-        label: `${action.id} final`,
-        stopReason: "stop",
-        content: [{ type: "text", text: `Created ${notePath}.` }],
-      });
-    } else {
-      turns.push({
-        label: `${action.id} reply`,
-        stopReason: "stop",
-        content: [{ type: "text", text: `Chaos reply for ${action.id}.` }],
-      });
-    }
-  }
-  return turns;
 }
 
 let result: DriverResult;
@@ -241,7 +129,7 @@ function checkBudget(): string | undefined {
   return decision.reason;
 }
 
-async function logAction(action: Action, status: "started" | "passed" | "failed", detail?: string): Promise<void> {
+async function logAction(action: ChaosAction, status: "started" | "passed" | "failed", detail?: string): Promise<void> {
   if (!outDir) return;
   const entry = {
     t: Number(((Date.now() - startedAt) / 1000).toFixed(3)),
@@ -265,21 +153,53 @@ async function screenshot(label: string): Promise<void> {
   }
 }
 
-async function approveIfPresent(timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const modal = await $(".agentic-chat-approval");
-    if (await modal.isExisting()) {
-      await modal.waitForDisplayed({ timeout: 5_000 }).catch(() => undefined);
-      const allow = await modal.$("button=Allow");
-      if (await allow.isExisting()) {
-        await allow.click();
-        return true;
-      }
-    }
-    await browser.pause(500);
-  }
-  return false;
+async function transcriptText(): Promise<string> {
+  return await $(".agentic-chat-messages").getText();
+}
+
+async function sendWithButton(text: string): Promise<void> {
+  const input = await $(".agentic-chat-input");
+  await input.click();
+  await input.setValue(text);
+  await $(".agentic-chat-send").click();
+}
+
+async function pressEnter(): Promise<void> {
+  await browser.keys("Enter");
+}
+
+async function setE2ERelease(release: boolean): Promise<void> {
+  await browser.execute((value) => {
+    const target = window as typeof window & { __AGENTIC_CHAT_E2E_RELEASE__?: boolean };
+    target.__AGENTIC_CHAT_E2E_RELEASE__ = value;
+  }, release);
+}
+
+async function scriptedCallLabels(): Promise<string[]> {
+  return await browser.execute(() => {
+    const target = window as typeof window & {
+      __AGENTIC_CHAT_E2E_CALL_LOG__?: Array<{ label?: string }>;
+    };
+    return target.__AGENTIC_CHAT_E2E_CALL_LOG__?.map((call) => call.label ?? "") ?? [];
+  });
+}
+
+async function waitForCall(label: string): Promise<void> {
+  await browser.waitUntil(async () => (await scriptedCallLabels()).includes(label), {
+    timeout: 15_000,
+    timeoutMsg: `scripted call ${label} never started`,
+  });
+}
+
+async function isRunning(): Promise<boolean> {
+  return await browser.execute(() => {
+    const stop = document.querySelector<HTMLElement>(".agentic-chat-stop");
+    return Boolean(stop && stop.offsetParent !== null);
+  });
+}
+
+async function waitForRunning(timeout = 30_000): Promise<void> {
+  await browser.waitUntil(isRunning, { timeout, timeoutMsg: "the turn never started running" });
 }
 
 /**
@@ -306,26 +226,120 @@ async function waitForStableAnswer(previous: string, timeoutMs: number): Promise
   return latest;
 }
 
-async function runPrompt(action: Action): Promise<void> {
-  if (action.prompt?.startsWith("/")) {
-    await sendPrompt(action.prompt);
-    const expected = action.prompt === "/help" ? ".agentic-chat-info" : ".agentic-chat-action-list";
-    await $(expected).waitForExist({ timeout: 15_000 });
-    await browser.pause(300);
-    return;
+async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const modal = await $(".agentic-chat-approval");
+    if (await modal.isExisting()) {
+      await modal.waitForDisplayed({ timeout: 5_000 }).catch(() => undefined);
+      if (allowed) {
+        const allow = await modal.$("button=Allow");
+        if (await allow.isExisting()) {
+          await allow.click();
+          return true;
+        }
+      } else {
+        const clicked = await browser.execute(() => {
+          const modalEl = document.querySelector<HTMLElement>(".agentic-chat-approval");
+          if (!modalEl) return false;
+          const buttons = Array.from(modalEl.querySelectorAll<HTMLButtonElement>("button"));
+          const deny = buttons.find((button) => button.innerText.trim() === "Deny");
+          if (deny) {
+            deny.click();
+            return true;
+          }
+          return false;
+        });
+        if (!clicked) continue;
+        await browser.pause(200);
+        const confirmed = await browser.execute(() => {
+          const modalEl = document.querySelector<HTMLElement>(".agentic-chat-approval");
+          if (!modalEl) return false;
+          const buttons = Array.from(modalEl.querySelectorAll<HTMLButtonElement>("button"));
+          const confirm = buttons.find((button) => button.innerText.trim() === "Confirm Deny");
+          if (confirm) {
+            confirm.click();
+            return true;
+          }
+          return false;
+        });
+        if (!confirmed) {
+          // Some builds deny in one click; treat the disappearing modal as success.
+          await browser.pause(200);
+          const stillOpen = await $(".agentic-chat-approval").isExisting();
+          if (!stillOpen) return true;
+          continue;
+        }
+        return true;
+      }
+    }
+    await browser.pause(500);
   }
+  return false;
+}
 
+async function configureApproval(mutating: string, perTool: Record<string, string> = {}): Promise<void> {
+  await configurePlugin({ mode: "safe", approval: { mutating, perTool, workingDirs: [] } });
+}
+
+async function sessionDirPath(): Promise<string> {
+  return await browser.executeObsidian(async ({ app }, pluginId) => {
+    const basePath = (app.vault.adapter as unknown as { basePath?: string }).basePath;
+    if (!basePath) return "";
+    return `${basePath}/${app.vault.configDir}/plugins/${pluginId}/sessions`;
+  }, "agentic-chat");
+}
+
+/** Parse every session JSONL; throw with the file and line on corruption. */
+async function assertSessionsValid(): Promise<{ files: number; lines: number }> {
+  const dir = await sessionDirPath();
+  if (!dir || !existsSync(dir)) return { files: 0, lines: 0 };
+  const files = (await readdir(dir)).filter((name) => name.endsWith(".jsonl"));
+  let lines = 0;
+  for (const file of files) {
+    const text = await readFile(path.join(dir, file), "utf8");
+    const rows = text.split(/\r?\n/).filter(Boolean);
+    rows.forEach((row, index) => {
+      try {
+        const entry = JSON.parse(row) as { type?: unknown };
+        if (typeof entry.type !== "string") throw new Error("missing type");
+      } catch (error) {
+        throw new Error(
+          `session ${file} line ${index + 1} is not valid JSONL: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
+      lines += 1;
+    });
+  }
+  return { files: files.length, lines };
+}
+
+async function countErrorPanels(): Promise<number> {
+  return await browser.execute(() => document.querySelectorAll(".agentic-chat-info-error").length);
+}
+
+async function waitForNewAnswer(previous: string, timeoutMs: number): Promise<string> {
+  const remainingMs = plan.caps.maxSeconds * 1000 - (Date.now() - startedAt);
+  const timeout = Math.max(15_000, Math.min(timeoutMs, remainingMs));
+  const answer = await waitForStableAnswer(previous, timeout);
+  result.assistantChars += answer.length;
+  result.tokens += estimateTokens(answer);
+  return answer;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function runPrompt(action: ChaosAction): Promise<void> {
   const beforeAnswer = await renderedAssistantText();
-  result.calls += 1;
+  result.calls += modelCallsFor(action);
   result.tokens += estimateTokens(action.prompt ?? "");
 
   await sendPrompt(action.prompt ?? "");
-  if (action.notePath) await approveIfPresent(30_000);
-  const remainingMs = plan.caps.maxSeconds * 1000 - (Date.now() - startedAt);
-  const timeout = Math.max(15_000, Math.min(120_000, remainingMs));
-  const answer = await waitForStableAnswer(beforeAnswer, timeout);
-  result.assistantChars += answer.length;
-  result.tokens += estimateTokens(answer);
+  if (action.notePath) await approveIfPresent(30_000, true);
+  await waitForNewAnswer(beforeAnswer, 120_000);
 
   if (action.notePath) {
     const exists = await noteExists(action.notePath);
@@ -336,6 +350,629 @@ async function runPrompt(action: Action): Promise<void> {
       throw new Error(`note ${action.notePath} was not written as requested`);
     }
   }
+}
+
+async function runSlash(action: ChaosAction): Promise<void> {
+  await sendPrompt(action.prompt ?? "");
+  if (action.prompt === "/help") {
+    await $(".agentic-chat-info").waitForExist({ timeout: 15_000 });
+  } else {
+    await $(".agentic-chat-action-list").waitForExist({ timeout: 15_000 });
+  }
+  await browser.pause(300);
+}
+
+async function runRetiredCommands(action: ChaosAction): Promise<void> {
+  void action;
+  const errorsBefore = await countErrorPanels();
+  const transcriptBefore = await transcriptText();
+  for (const command of RETIRED_COMMANDS) {
+    const previous = await renderedAssistantText();
+    result.calls += 1;
+    result.tokens += estimateTokens(command);
+    await sendPrompt(`${command} explain what you do`);
+    await browser.waitUntil(
+      async () => {
+        const text = await renderedAssistantText();
+        const errors = await countErrorPanels();
+        return text.length > previous.length || errors > errorsBefore;
+      },
+      { timeout: 30_000, timeoutMsg: `${command} produced neither an answer nor an info panel` },
+    );
+    const errorsAfter = await countErrorPanels();
+    if (errorsAfter > errorsBefore) {
+      throw new Error(`${command} rendered an error panel`);
+    }
+    result.tokens += estimateTokens(await renderedAssistantText());
+  }
+  const transcriptAfter = await transcriptText();
+  for (const command of RETIRED_COMMANDS) {
+    if (!transcriptAfter.includes(command)) throw new Error(`${command} is missing from the transcript`);
+  }
+  if (transcriptAfter.length <= transcriptBefore.length) throw new Error("retired commands produced no transcript output");
+  const sessions = await assertSessionsValid();
+  if (sessions.files === 0) result.runnerNotes.push("retired-commands: no session JSONL was written yet");
+}
+
+async function runSteer(action: ChaosAction): Promise<void> {
+  if (!plan.live) await setE2ERelease(false);
+  const beforeAnswer = await renderedAssistantText();
+  result.calls += modelCallsFor(action);
+  result.tokens += estimateTokens(action.prompt ?? "");
+
+  await sendPrompt(action.prompt ?? "");
+  if (plan.live) {
+    await browser.waitUntil(
+      async () => (await browser.$$(".agentic-chat-step")).length > 0 || (await isRunning()),
+      { timeout: 60_000, timeoutMsg: "the live steer prompt never started a tool call" },
+    );
+  } else {
+    await waitForCall(`${action.id} tool`);
+  }
+
+  const input = await $(".agentic-chat-input");
+  await input.click();
+  await input.setValue(STEER_TEXT);
+  await pressEnter();
+
+  await browser.waitUntil(async () => (await input.getValue()) === "", {
+    timeout: 10_000,
+    timeoutMsg: "steering text was not cleared from the composer",
+  });
+  await browser.waitUntil(
+    async () => (await $(".agentic-chat-status").getText()).includes("Queued for the active turn."),
+    { timeout: 10_000, timeoutMsg: "steering status was not reported" },
+  );
+
+  if (!plan.live) await setE2ERelease(true);
+  await waitForNewAnswer(beforeAnswer, 120_000);
+  const transcript = await transcriptText();
+  if (!transcript.includes(STEER_TEXT)) throw new Error("steering text is missing from the transcript");
+  const steerIndex = transcript.indexOf(STEER_TEXT);
+  const answerIndex = transcript.lastIndexOf("steered");
+  if (answerIndex !== -1 && answerIndex < steerIndex) {
+    throw new Error("the steered answer rendered before the steering text");
+  }
+  await assertSessionsValid();
+}
+
+async function runQueue(action: ChaosAction): Promise<void> {
+  if (!plan.live) await setE2ERelease(false);
+  const beforeAnswer = await renderedAssistantText();
+  result.calls += modelCallsFor(action);
+  result.tokens += estimateTokens(action.prompt ?? "");
+
+  await sendPrompt(action.prompt ?? "");
+  if (plan.live) await waitForRunning();
+  else await waitForCall(`${action.id} held`);
+
+  await sendWithButton(QUEUE_DRAFT);
+  await browser.waitUntil(
+    async () => (await $(".agentic-chat-send").getText()).trim() === "Update",
+    { timeout: 10_000, timeoutMsg: "send button did not switch to queue/update mode" },
+  );
+  const input = await $(".agentic-chat-input");
+  await input.setValue(QUEUE_EDITED);
+  if ((await input.getValue()) !== QUEUE_EDITED) throw new Error("queued draft edit did not stick");
+
+  if (!plan.live) await setE2ERelease(true);
+  if (plan.live) {
+    await waitForNewAnswer(beforeAnswer, 120_000);
+  } else {
+    await browser.waitUntil(
+      async () => (await transcriptText()).includes("Queued answer used the edited draft."),
+      { timeout: 60_000, timeoutMsg: "the queued scripted answer never rendered" },
+    );
+  }
+  await browser.waitUntil(
+    async () => (await $(".agentic-chat-send").getText()).trim() === "Send" || (await isRunning()),
+    { timeout: 30_000, timeoutMsg: "the queued draft did not flush at turn end" },
+  );
+  const transcript = await transcriptText();
+  if (!transcript.includes(QUEUE_EDITED)) throw new Error("the edited queued draft is missing from the transcript");
+  if (transcript.includes(QUEUE_DRAFT)) throw new Error("the stale queued draft was sent");
+  if (await isRunning()) {
+    // A live model may answer the queued text with a tool or a question. The
+    // draft was still sent; stop the follow-up turn so the next action is clean.
+    result.runnerNotes.push("queue: the queued draft started a follow-up live turn; the driver stopped it after the assertion");
+    await (await $(".agentic-chat-stop")).click();
+    await browser.waitUntil(async () => !(await isRunning()), {
+      timeout: 15_000,
+      timeoutMsg: "the queued follow-up turn did not stop",
+    });
+  }
+  await assertSessionsValid();
+}
+
+async function runStopSend(action: ChaosAction): Promise<void> {
+  if (!plan.live) await setE2ERelease(false);
+  const beforeAnswer = await renderedAssistantText();
+  result.calls += modelCallsFor(action);
+  result.tokens += estimateTokens(action.prompt ?? "");
+
+  await sendPrompt(action.prompt ?? "");
+  if (plan.live) await waitForRunning();
+  else await waitForCall(`${action.id} held`);
+
+  await sendWithButton(STOP_REPLACEMENT);
+  const stopButton = await $(".agentic-chat-stop");
+  await stopButton.waitForDisplayed({ timeout: 10_000 });
+  await stopButton.click();
+  await browser.waitUntil(async () => !(await $(".agentic-chat-stop").isDisplayed()), {
+    timeout: 15_000,
+    timeoutMsg: "the stopped turn never settled",
+  });
+  const input = await $(".agentic-chat-input");
+  if ((await input.getValue()).trim() !== STOP_REPLACEMENT) {
+    throw new Error("stop did not keep the queued replacement in the composer");
+  }
+  await browser.waitUntil(
+    async () => (await $(".agentic-chat-send").getText()).trim() === "Send",
+    { timeout: 10_000, timeoutMsg: "stop did not disarm the queued draft" },
+  );
+  await $(".agentic-chat-send").click();
+
+  if (!plan.live) await setE2ERelease(true);
+  await waitForNewAnswer(beforeAnswer, 120_000);
+  const transcript = await transcriptText();
+  if (transcript.includes("The stopped answer must not settle.")) {
+    throw new Error("the stopped answer settled after stop");
+  }
+  if (!transcript.includes("Replacement answer after stop.") && !plan.live) {
+    throw new Error("the replacement turn never rendered");
+  }
+  await assertSessionsValid();
+}
+
+async function runMaxTurns(action: ChaosAction): Promise<void> {
+  await configureApproval("allow", { write: "deny" });
+  try {
+    result.calls += modelCallsFor(action);
+    result.tokens += estimateTokens(action.prompt ?? "");
+    await sendPrompt(action.prompt ?? "");
+    const notice = /Turn cap: stopped after \d+ assistant turns/;
+    await browser.waitUntil(async () => notice.test(await transcriptText()), {
+      timeout: plan.live ? 180_000 : 120_000,
+      interval: 1_000,
+      timeoutMsg:
+        "the assistant-turn cap produced no visible stop message (live models may not loop enough inside the chaos caps)",
+    });
+    await browser.waitUntil(async () => !(await isRunning()), {
+      timeout: 30_000,
+      interval: 500,
+      timeoutMsg: "the UI is still running after the turn cap fired",
+    });
+    const responsive = await browser.execute(() => {
+      const input = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
+      if (!input) return false;
+      input.focus();
+      input.value = "responsiveness probe";
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "responsiveness probe" }));
+      return input.value === "responsiveness probe";
+    });
+    if (!responsive) throw new Error("the composer is not responsive after the turn cap fired");
+    await browser.execute(() => {
+      const input = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
+      if (input) {
+        input.value = "";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+    await assertSessionsValid();
+  } finally {
+    await configureApproval("ask");
+  }
+}
+
+const PERSISTED = {
+  noProxy: "localhost,127.0.0.1,chaos.local",
+  requestTimeoutMs: 120_000,
+  costAlertUsd: 2.5,
+};
+
+async function applyPersistedSettings(): Promise<void> {
+  await openAgenticChatSettings();
+  await selectSettingsTab("Models");
+  await setSettingText("No proxy", PERSISTED.noProxy);
+  await waitForAgenticChatSetting(
+    (settings) => (settings.network as { noProxy?: string } | undefined)?.noProxy === PERSISTED.noProxy,
+    "no-proxy setting did not persist",
+  );
+  await selectSettingsTab("Agent");
+  await setSettingText("Request timeout (seconds)", String(PERSISTED.requestTimeoutMs / 1000));
+  await waitForAgenticChatSetting(
+    (settings) => settings.requestTimeoutMs === PERSISTED.requestTimeoutMs,
+    "request timeout setting did not persist",
+  );
+  await selectSettingsTab("Advanced");
+  await setSettingText("Cost alert (USD)", String(PERSISTED.costAlertUsd));
+  await waitForAgenticChatSetting(
+    (settings) => (settings.notifications as { costAlertUsd?: number } | undefined)?.costAlertUsd === PERSISTED.costAlertUsd,
+    "cost alert setting did not persist",
+  );
+  await browser.pause(300);
+  await closeAgenticChatSettings();
+}
+
+async function assertPersistedSettings(stage: string): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const settings = await readAgenticChatSettings<{
+        network?: { noProxy?: string };
+        requestTimeoutMs?: number;
+        notifications?: { costAlertUsd?: number };
+      }>();
+      return (
+        settings.network?.noProxy === PERSISTED.noProxy &&
+        settings.requestTimeoutMs === PERSISTED.requestTimeoutMs &&
+        settings.notifications?.costAlertUsd === PERSISTED.costAlertUsd
+      );
+    },
+    { timeout: 10_000, timeoutMsg: `settings did not survive ${stage}` },
+  );
+  const stored = await browser.executeObsidian(async ({ app }, pluginId) => {
+    const raw = await app.vault.adapter.read(`${app.vault.configDir}/plugins/${pluginId}/data.json`);
+    return JSON.parse(raw) as {
+      network?: { noProxy?: string };
+      requestTimeoutMs?: number;
+      notifications?: { costAlertUsd?: number };
+    };
+  }, "agentic-chat");
+  if (
+    stored.network?.noProxy !== PERSISTED.noProxy ||
+    stored.requestTimeoutMs !== PERSISTED.requestTimeoutMs ||
+    stored.notifications?.costAlertUsd !== PERSISTED.costAlertUsd
+  ) {
+    throw new Error(`data.json did not keep the values after ${stage}`);
+  }
+}
+
+async function restoreSettings(): Promise<void> {
+  await browser.executeObsidian(async ({ app }) => {
+    const plugin = (app as unknown as {
+      plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }> };
+    }).plugins?.plugins?.["agentic-chat"];
+    if (!plugin?.settings) return;
+    const settings = plugin.settings as {
+      network?: { noProxy?: string };
+      requestTimeoutMs?: number;
+      notifications?: { costAlertUsd?: number };
+    };
+    if (settings.network) settings.network.noProxy = "localhost,127.0.0.1,::1";
+    settings.requestTimeoutMs = 90_000;
+    if (settings.notifications) settings.notifications.costAlertUsd = 0;
+    await plugin.saveSettings?.();
+  });
+}
+
+async function reloadPlugin(): Promise<void> {
+  await browser.executeObsidian(async ({ app }) => {
+    const pluginApi = (app as unknown as {
+      plugins?: {
+        disablePluginAndSave?: (id: string) => Promise<void>;
+        enablePluginAndSave?: (id: string) => Promise<void>;
+      };
+    }).plugins;
+    if (!pluginApi?.disablePluginAndSave || !pluginApi?.enablePluginAndSave) {
+      throw new Error("Obsidian plugin API not available");
+    }
+    await pluginApi.disablePluginAndSave("agentic-chat");
+    await pluginApi.enablePluginAndSave("agentic-chat");
+  });
+  await openChat();
+}
+
+/**
+ * A full Obsidian renderer reload drops the WDIO Obsidian bridge, so this
+ * harness cannot drive it. The persisted values are still read from data.json
+ * (the same file a restart reads) and survived a plugin reload.
+ */
+async function runSettingsPersistence(action: ChaosAction): Promise<void> {
+  await applyPersistedSettings();
+  try {
+    await assertPersistedSettings("the save");
+
+    await reloadPlugin();
+    await assertPersistedSettings("the plugin reload");
+  } finally {
+    await restoreSettings();
+  }
+
+  result.runnerNotes.push(
+    "settings-persistence: a full Obsidian reload drops the WDIO Obsidian bridge, so persistence is proven with data.json (the restart source) plus a plugin reload",
+  );
+  void action;
+}
+
+async function runApprovalPaths(action: ChaosAction): Promise<void> {
+  await configureApproval("ask");
+  try {
+    const before = await renderedAssistantText();
+    result.calls += 2;
+    result.tokens += estimateTokens("write the denied note");
+    await sendPrompt(`Create the note ${DENIED_NOTE} with the content denied write.`);
+    const denied = await approveIfPresent(30_000, false);
+    if (!denied) throw new Error("the write approval modal never appeared for the deny path");
+    await waitForNewAnswer(before, 120_000);
+    if (await noteExists(DENIED_NOTE)) throw new Error("the denied note exists");
+
+    const beforeAllowed = await renderedAssistantText();
+    result.calls += 2;
+    result.tokens += estimateTokens("write the allowed note");
+    await sendPrompt(`Create the note ${ALLOWED_NOTE} with the content allowed write.`);
+    const allowed = await approveIfPresent(30_000, true);
+    if (!allowed) throw new Error("the write approval modal never appeared for the allow path");
+    await waitForNewAnswer(beforeAllowed, 120_000);
+    if (!(await noteExists(ALLOWED_NOTE))) throw new Error("the allowed note was not written");
+    if (!(await readNote(ALLOWED_NOTE)).includes("allowed write")) {
+      throw new Error("the allowed note has the wrong content");
+    }
+    result.notes.push({ path: DENIED_NOTE, exists: false });
+    result.notes.push({ path: ALLOWED_NOTE, exists: true });
+    void action;
+  } finally {
+    await configureApproval("ask");
+  }
+}
+
+async function clickFirstInactiveSession(): Promise<boolean> {
+  return await browser.execute(() => {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-session-row"));
+    const row = rows.find((candidate) => !candidate.classList.contains("is-active"));
+    const main = row?.querySelector<HTMLElement>(".agentic-chat-session-main");
+    if (!main) return false;
+    main.click();
+    return true;
+  });
+}
+
+async function runSessionReload(action: ChaosAction): Promise<void> {
+  const firstPrompt = "Session reload first prompt";
+  const secondPrompt = "Session reload second prompt";
+  result.calls += modelCallsFor(action);
+  result.tokens += estimateTokens(firstPrompt) + estimateTokens(secondPrompt);
+
+  const beforeFirst = await renderedAssistantText();
+  await sendPrompt(firstPrompt);
+  await waitForNewAnswer(beforeFirst, 120_000);
+
+  await sendPrompt("/new");
+  await browser.waitUntil(async () => !(await transcriptText()).includes("First session answer before the reload."), {
+    timeout: 15_000,
+    timeoutMsg: "/new did not clear the transcript",
+  });
+
+  const beforeSecond = await renderedAssistantText();
+  await sendPrompt(secondPrompt);
+  await waitForNewAnswer(beforeSecond, 120_000);
+
+  await reloadPlugin();
+  await browser.waitUntil(async () => (await transcriptText()).includes(secondPrompt), {
+    timeout: 30_000,
+    timeoutMsg: "the active transcript did not survive the plugin reload",
+  });
+
+  await sendPrompt("/sessions");
+  await browser.waitUntil(
+    async () => (await browser.$$(".agentic-chat-session-row")).length >= 2,
+    { timeout: 15_000, timeoutMsg: "the session list did not show both conversations" },
+  );
+  const switched = await clickFirstInactiveSession();
+  if (!switched) throw new Error("no inactive session row was found");
+  await browser.waitUntil(async () => (await transcriptText()).includes(firstPrompt), {
+    timeout: 30_000,
+    timeoutMsg: "switching sessions did not restore the first transcript",
+  });
+  const sessions = await assertSessionsValid();
+  if (sessions.files < 1) throw new Error("no session JSONL files were written");
+  void action;
+}
+
+async function runLargeInput(action: ChaosAction): Promise<void> {
+  if (!plan.live) await setE2ERelease(true);
+  const huge = "chaos ".repeat(LARGE_INPUT_CHARS / 6);
+  const before = await renderedAssistantText();
+  result.calls += modelCallsFor(action);
+  result.tokens += estimateTokens(huge);
+
+  await sendPrompt(huge);
+  await waitForNewAnswer(before, 120_000);
+
+  const overflow = await browser.execute(() => {
+    const composer = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
+    const messages = document.querySelector<HTMLElement>(".agentic-chat-messages");
+    return {
+      document: document.documentElement.scrollWidth - window.innerWidth,
+      composer: composer ? composer.scrollWidth - composer.clientWidth : 0,
+      messages: messages ? messages.scrollWidth - messages.clientWidth : 0,
+    };
+  });
+  if (overflow.document > 2 || overflow.composer > 2 || overflow.messages > 2) {
+    throw new Error(`horizontal overflow after large input: ${JSON.stringify(overflow)}`);
+  }
+
+  const beforeProbe = await renderedAssistantText();
+  await sendPrompt("still responsive?");
+  await waitForNewAnswer(beforeProbe, 60_000);
+  void action;
+}
+
+async function readMcpSettingsServers(): Promise<Array<{ id: string; name: string; source?: string }>> {
+  return await browser.executeObsidian(async ({ app }, pluginId) => {
+    const plugin = (app as unknown as {
+      plugins?: { plugins?: Record<string, { settings?: { mcp?: { servers?: Array<{ id: string; name: string; source?: string }> } } }> };
+    }).plugins?.plugins?.[pluginId];
+    return plugin?.settings?.mcp?.servers ?? [];
+  }, "agentic-chat");
+}
+
+async function clickMcpHeaderButton(buttonText: string): Promise<boolean> {
+  return await browser.execute((text) => {
+    const headers = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-mcp-server-header"));
+    for (const header of headers) {
+      const buttons = Array.from(header.querySelectorAll<HTMLButtonElement>("button"));
+      const button = buttons.find((candidate) => candidate.innerText.trim() === text);
+      if (button) {
+        button.click();
+        return true;
+      }
+    }
+    return false;
+  }, buttonText);
+}
+
+async function runMcpLifecycle(action: ChaosAction): Promise<void> {
+  await openAgenticChatSettings();
+  await selectSettingsTab("Advanced");
+  await setSettingToggle("Enable MCP", true);
+  await waitForMcpAddRow();
+  await setSettingTextByPlaceholder("Server name", "chaos-lifecycle");
+  await setSettingTextByPlaceholder("https://mcp.example.com/mcp", "http://127.0.0.1:9/mcp");
+  await clickMcpAddButton("Add MCP server");
+  await browser.waitUntil(
+    async () => (await browser.$$(".agentic-chat-mcp-server-header")).length > 0,
+    { timeout: 15_000, timeoutMsg: "the MCP server row did not render" },
+  );
+  result.mcp.rendered = true;
+  result.mcp.added = true;
+  const rowText = await browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-mcp-server-header"))
+      .map((header) => header.textContent ?? "")
+      .join("\n"),
+  );
+  if (!rowText.includes("chaos-lifecycle")) throw new Error("the added MCP server row is missing its name");
+  const serversAfterAdd = await readMcpSettingsServers();
+  if (serversAfterAdd.some((server) => server.name.includes("chaos-lifecycle") && server.source !== "plugin")) {
+    throw new Error("the plugin-package server leaked into client-owned MCP settings");
+  }
+
+  const tested = await clickMcpHeaderButton("Test connection");
+  if (!tested) throw new Error("the Test connection button was not found");
+  await browser.waitUntil(
+    async () => {
+      const busy = await browser.execute(() =>
+        Array.from(document.querySelectorAll<HTMLButtonElement>(".agentic-chat-mcp-server-header button")).some(
+          (button) => /testing|authenticating/i.test(button.innerText.trim()),
+        ),
+      );
+      return !busy;
+    },
+    { timeout: 30_000, timeoutMsg: "the MCP test action never settled" },
+  );
+  const serversAfterTest = await readMcpSettingsServers();
+  if (JSON.stringify(serversAfterTest) !== JSON.stringify(serversAfterAdd)) {
+    throw new Error(`MCP settings changed after test: ${JSON.stringify(serversAfterTest)}`);
+  }
+  if ((await browser.$$(".agentic-chat-mcp-server-header")).length === 0) {
+    throw new Error("the MCP server row disappeared after test");
+  }
+
+  // Plugin-declared servers own their endpoint, so the row's Remove button is
+  // disabled by design; removing the package is the supported removal path.
+  const removedPackage = await browser.executeObsidian(async ({ app }, pluginId) => {
+    const plugin = (app as unknown as {
+      plugins?: {
+        plugins?: Record<
+          string,
+          {
+            pluginService?: {
+              reload?: () => Promise<Array<{ name: string; rootPath: string }>>;
+              removePackage?: (name: string, rootPath: string) => Promise<boolean>;
+            };
+          }
+        >;
+      };
+    }).plugins?.plugins?.[pluginId];
+    const service = plugin?.pluginService;
+    if (!service?.reload || !service.removePackage) return false;
+    const packages = await service.reload();
+    const entry = packages.find((candidate) => candidate.name.startsWith("chaos-lifecycle"));
+    if (!entry) return false;
+    return await service.removePackage(entry.name, entry.rootPath);
+  }, "agentic-chat");
+  if (!removedPackage) throw new Error("the generated MCP package could not be removed");
+  result.runnerNotes.push(
+    "mcp-lifecycle: plugin-package servers are removed by deleting the package; their row-level Remove button is disabled by design",
+  );
+
+  await closeAgenticChatSettings();
+  await openAgenticChatSettings();
+  await selectSettingsTab("Advanced");
+  await browser.waitUntil(
+    async () => (await browser.$$(".agentic-chat-mcp-server-header")).length === 0,
+    { timeout: 15_000, timeoutMsg: "the MCP server row did not disappear after removal" },
+  );
+  const serversAfterRemove = await readMcpSettingsServers();
+  if (serversAfterRemove.some((server) => server.name.includes("chaos-lifecycle"))) {
+    throw new Error(`removed MCP server is still in settings: ${JSON.stringify(serversAfterRemove)}`);
+  }
+  await setSettingToggle("Enable MCP", false);
+  await browser.pause(300);
+  await closeAgenticChatSettings();
+  void action;
+}
+
+async function runAction(action: ChaosAction): Promise<void> {
+  await mark(`step ${action.id}`);
+  await logAction(action, "started");
+  try {
+    switch (action.kind) {
+      case "settings":
+        await runSettings();
+        break;
+      case "mcp":
+        await runMcp();
+        break;
+      case "slash":
+        await runSlash(action);
+        break;
+      case "retired-commands":
+        await runRetiredCommands(action);
+        break;
+      case "steer":
+        await runSteer(action);
+        break;
+      case "queue":
+        await runQueue(action);
+        break;
+      case "stop-send":
+        await runStopSend(action);
+        break;
+      case "max-turns":
+        await runMaxTurns(action);
+        break;
+      case "settings-persistence":
+        await runSettingsPersistence(action);
+        break;
+      case "approval-paths":
+        await runApprovalPaths(action);
+        break;
+      case "session-reload":
+        await runSessionReload(action);
+        break;
+      case "large-input":
+        await runLargeInput(action);
+        break;
+      case "mcp-lifecycle":
+        await runMcpLifecycle(action);
+        break;
+      default:
+        await runPrompt(action);
+    }
+    result.steps.push({ id: action.id, surface: action.surface, status: "passed" });
+    await logAction(action, "passed");
+    await screenshot(action.id);
+  } catch (error) {
+    const message = errorText(error);
+    result.steps.push({ id: action.id, surface: action.surface, status: "failed", detail: message });
+    result.findings.push({ severity: "S2", step: action.id, message });
+    await logAction(action, "failed", message);
+    await screenshot(`${action.id}-failed`);
+    // Repeated identical failures mean the harness is broken, not the product.
+    const sameCause = result.findings.filter((finding) => finding.message === message).length;
+    if (sameCause >= 2) stopReason = "repeated-failure";
+  }
+  await browser.pause(250);
 }
 
 async function runSettings(): Promise<void> {
@@ -373,9 +1010,7 @@ async function runMcp(): Promise<void> {
   await setSettingTextByPlaceholder("Server name", "chaos");
   await setSettingTextByPlaceholder("https://mcp.example.com/mcp", endpoint);
   await clickMcpAddButton("Add MCP server");
-  const rows = await browser.execute(
-    () => document.querySelectorAll(".agentic-chat-mcp-server-header").length,
-  );
+  const rows = await browser.execute(() => document.querySelectorAll(".agentic-chat-mcp-server-header").length);
   result.mcp.added = rows > 0;
   if (plan.live && plan.mcpUrl) {
     // The live MCP call itself is owned by `mcp-live.e2e.ts`; this driver only
@@ -388,40 +1023,17 @@ async function runMcp(): Promise<void> {
   await closeAgenticChatSettings();
 }
 
-async function runAction(action: Action): Promise<void> {
-  await mark(`step ${action.id}`);
-  await logAction(action, "started");
-  try {
-    if (action.surface === "settings") await runSettings();
-    else if (action.surface === "mcp") await runMcp();
-    else await runPrompt(action);
-    result.steps.push({ id: action.id, surface: action.surface, status: "passed" });
-    await logAction(action, "passed");
-    await screenshot(action.id);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    result.steps.push({ id: action.id, surface: action.surface, status: "failed", detail: message });
-    result.findings.push({ severity: "S2", step: action.id, message });
-    await logAction(action, "failed", message);
-    await screenshot(`${action.id}-failed`);
-    // Repeated identical failures mean the harness is broken, not the product.
-    const sameCause = result.findings.filter((finding) => finding.message === message).length;
-    if (sameCause >= 2) stopReason = "repeated-failure";
-  }
-  await browser.pause(250);
-}
-
 let startedAt = Date.now();
 let stopReason = "completed";
-let sequence: Action[] = [];
+let sequence: ChaosAction[] = [];
 
 describe("chaos monkey live driver", function () {
-  this.timeout(600_000);
+  this.timeout(900_000);
 
   before(async function () {
     plan = await loadPlan();
     if (plan.live && !apiKey) throw new Error("live plan needs AGENTIC_CHAT_API_KEY");
-    this.timeout(Math.max(60_000, plan.caps.maxSeconds * 1000 + 60_000));
+    this.timeout(Math.max(60_000, plan.caps.maxSeconds * 1000 + 120_000));
     startedAt = Date.now();
     result = {
       verdict: "INCONCLUSIVE",
@@ -445,7 +1057,7 @@ describe("chaos monkey live driver", function () {
     sequence = plan.mode === "focused" ? focusedSequence(plan.target ?? "composer") : genericSequence(plan.caps, plan.seed);
     if (sequence.length > plan.caps.maxSteps) sequence = sequence.slice(0, plan.caps.maxSteps);
 
-    if (!plan.live) await installScriptedTurns(scriptedTurnsFor(sequence));
+    if (!plan.live) await installScriptedTurns(scriptedTurnsFor(sequence) as ScriptedTurn[]);
 
     await configurePlugin({
       provider: plan.live ? "openai-compatible" : "openrouter",
@@ -505,6 +1117,13 @@ describe("chaos monkey live driver", function () {
         stopReason = stop;
         break;
       }
+      // A live action makes several model calls before the next cap check.
+      // Reserve its whole budget up front so a multi-call action cannot blow
+      // past --max-calls. Dry runs replay scripted turns and stay free.
+      if (plan.live && result.calls + modelCallsFor(action) > plan.caps.maxCalls) {
+        stopReason = "max-calls";
+        break;
+      }
       await runAction(action);
       if (stopReason.startsWith("repeated")) break;
     }
@@ -537,12 +1156,7 @@ function redactedResult(value: DriverResult): DriverResult {
 }
 
 async function copySessions(target: string): Promise<void> {
-  const sessionDir = await browser.executeObsidian(async ({ app }, pluginId) => {
-    const basePath = (app.vault.adapter as unknown as { basePath?: string }).basePath;
-    if (!basePath) return "";
-    return `${basePath}/${app.vault.configDir}/plugins/${pluginId}/sessions`;
-  }, "agentic-chat");
-
+  const sessionDir = await sessionDirPath();
   if (!sessionDir || !existsSync(sessionDir)) return;
   const files = await readdir(sessionDir);
   const destination = path.join(target, "sessions");
