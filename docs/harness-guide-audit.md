@@ -107,7 +107,7 @@ behavior.
 | 41 | Graceful degradation / fallbacks | `tool-budget.ts` sheds optional tools rather than failing; web/MCP tools are optional; core vault tools are required | compliant | Degradation is by tool dropping, not by per-tool fallback chain |
 | 42 | Human-in-the-loop escalation | Approval gate on every mutating tool; `confirmToolCall` resolves via chat UI | compliant | Guide's `EscalationLevel.CONFIRM` maps to our approval modal |
 | 43 | Checkpoint / resume for long tasks | `AgentFileCheckpointRecorder` captures pre-edit file state; `AgentCompactionRuntime` rewrites the session JSONL; `truncateMessages` rewinds to a prompt boundary | compliant | `file-checkpoints.ts`, `compaction-runtime.ts`, `session-actions.ts` |
-| 44 | Atomic checkpoint writes | Session JSONL append is line-oriented; compaction rewrites via the session manager's replace path | compliant | File-rename style atomicity is in `session-manager.ts` |
+| 44 | Atomic checkpoint writes | Session JSONL append is line-oriented; compaction and rewind rewrite through `writeSessionFile` (same-folder temp file, then rename, with a `.bak` fallback) | compliant | File-rename style atomicity is in `session-manager.ts`; fault proofs in `test/session-rewrite-atomic.test.ts` |
 
 ### Multi-Agent Orchestration
 

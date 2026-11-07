@@ -29,6 +29,9 @@ import {
   type ThinkingLevelChangeSessionEntry,
 } from "./jsonl";
 
+const SESSION_TEMP_MARKER = ".tmp.";
+const SESSION_BACKUP_SUFFIX = ".bak";
+
 export interface SessionDefaults {
   provider: string;
   modelId: string;
@@ -80,6 +83,10 @@ export class ObsidianSessionManager {
    * session. Subsequent checkpoints for the same path are slimmed to
    * `beforeSummary` to keep the JSONL bounded for long editing sessions. */
   private fullCheckpointPaths = new Set<string>();
+  /** Temp files owned by an in-flight rewrite; stale cleanup must skip them. */
+  private readonly pendingSessionTemps = new Set<string>();
+  /** Backups owned by an in-flight replace; stale cleanup must skip them. */
+  private readonly pendingSessionBackups = new Set<string>();
 
   constructor(adapter: DataAdapter, sessionDir: string, cwd: string) {
     this.adapter = adapter;
@@ -122,7 +129,8 @@ export class ObsidianSessionManager {
 
   async loadSession(path: string, options: LoadSessionOptions = {}): Promise<SessionInfo> {
     const sessionPath = normalizeFolderPath(path, { allowPluginInternals: true });
-    const content = await this.adapter.read(sessionPath);
+    await this.cleanupStaleSessionTemps();
+    const content = await this.readSessionContent(sessionPath);
     const entries = parseSessionEntries(content);
     if (entries[0]?.type !== "session") {
       throw new Error("Session file is missing a session header.");
@@ -144,7 +152,7 @@ export class ObsidianSessionManager {
   async listSessions(): Promise<SessionInfo[]> {
     await this.ensureSessionDirectory();
     const listing = await this.adapter.list(this.sessionDir);
-    const sessionFiles = listing.files.filter((path) => path.endsWith(".jsonl"));
+    const sessionFiles = this.listSessionPaths(listing.files);
     const sessions = await Promise.all(sessionFiles.map((path) => this.readSessionInfo(path)));
     return sessions
       .filter((session): session is SessionFileInfo => session !== null)
@@ -157,6 +165,7 @@ export class ObsidianSessionManager {
     if (await this.adapter.exists(sessionPath)) {
       await this.adapter.remove(sessionPath);
     }
+    await this.removeIfExists(`${sessionPath}${SESSION_BACKUP_SUFFIX}`);
     if (this.sessionFile === sessionPath) {
       this.sessionFile = null;
       this.sessionGeneration += 1;
@@ -169,9 +178,9 @@ export class ObsidianSessionManager {
     await this.ensureSessionDirectory();
     const listing = await this.adapter.list(this.sessionDir);
     const ids = new Set<string>();
-    for (const path of listing.files.filter((file) => file.endsWith(".jsonl"))) {
+    for (const path of this.listSessionPaths(listing.files)) {
       try {
-        const entries = parseSessionEntries(await this.adapter.read(path));
+        const entries = parseSessionEntries(await this.readSessionContent(path));
         const messages = entries
           .filter((entry): entry is MessageSessionEntry => entry.type === "message")
           .map((entry) => entry.message);
@@ -356,7 +365,7 @@ export class ObsidianSessionManager {
         state: planTracker,
       });
     }
-    await this.adapter.write(sessionFile, serializeSessionEntries(rebuilt));
+    await this.writeSessionFile(sessionFile, serializeSessionEntries(rebuilt));
     if (this.sessionFile !== sessionFile || this.sessionGeneration !== generation) {
       throw new Error("Session changed while rewriting the transcript.");
     }
@@ -404,6 +413,141 @@ export class ObsidianSessionManager {
     }
   }
 
+  /**
+   * Replace a session file through a temp file in the same folder, then rename.
+   * A same-folder rename replaces the old file atomically on the desktop
+   * filesystem, so a crash leaves either the old transcript or the new one.
+   *
+   * `DataAdapter.rename` does not promise to overwrite an existing file. If the
+   * adapter refuses, keep the old bytes in `.bak` until the new file is in
+   * place, then remove the backup. `readSessionContent` restores from `.bak`
+   * when a crash lands between the remove and the rename.
+   */
+  private async writeSessionFile(sessionFile: string, content: string): Promise<void> {
+    const tempPath = `${sessionFile}${SESSION_TEMP_MARKER}${createSessionId()}`;
+    this.pendingSessionTemps.add(tempPath);
+    try {
+      await this.adapter.write(tempPath, content);
+      await this.replaceSessionFile(tempPath, sessionFile);
+    } catch (error) {
+      await this.removeIfExists(tempPath);
+      throw error;
+    } finally {
+      this.pendingSessionTemps.delete(tempPath);
+    }
+  }
+
+  /** Rename the staged file into place, using a backup when overwrite is refused. */
+  private async replaceSessionFile(tempPath: string, sessionFile: string): Promise<void> {
+    try {
+      await this.adapter.rename(tempPath, sessionFile);
+      return;
+    } catch (error) {
+      // Only a rename that failed with the staged file still present can use
+      // the backup fallback. A missing temp file is a write-side failure.
+      if (!(await this.adapter.exists(tempPath))) throw error;
+    }
+    if (!(await this.adapter.exists(sessionFile))) {
+      throw new Error("Could not replace the session file.");
+    }
+    const backupPath = `${sessionFile}${SESSION_BACKUP_SUFFIX}`;
+    this.pendingSessionBackups.add(backupPath);
+    try {
+      const previous = await this.adapter.read(sessionFile);
+      await this.adapter.write(backupPath, previous);
+      try {
+        await this.adapter.remove(sessionFile);
+        await this.adapter.rename(tempPath, sessionFile);
+      } catch (error) {
+        await this.restoreSessionFile(sessionFile, backupPath);
+        throw error;
+      }
+      await this.removeIfExists(backupPath);
+    } finally {
+      this.pendingSessionBackups.delete(backupPath);
+    }
+  }
+
+  /** Put the old bytes back after a failed fallback replace. */
+  private async restoreSessionFile(sessionFile: string, backupPath: string, force = false): Promise<void> {
+    try {
+      if (!force && (await this.adapter.exists(sessionFile))) {
+        await this.removeIfExists(backupPath);
+        return;
+      }
+      if (await this.adapter.exists(sessionFile)) await this.adapter.remove(sessionFile);
+      await this.adapter.rename(backupPath, sessionFile);
+    } catch {
+      // Keep the backup in place; the next load can try the restore again.
+    }
+  }
+
+  /** Read a session, restoring `.bak` when the main file is missing or torn. */
+  private async readSessionContent(path: string): Promise<string> {
+    const backupPath = `${path}${SESSION_BACKUP_SUFFIX}`;
+    let content: string | null = null;
+    let readError: Error | undefined;
+    try {
+      content = await this.adapter.read(path);
+      if (hasSessionHeader(content)) {
+        if (!this.pendingSessionBackups.has(backupPath)) await this.removeIfExists(backupPath);
+        return content;
+      }
+    } catch (error) {
+      readError = error instanceof Error ? error : new Error(String(error));
+    }
+    if (!(await this.adapter.exists(backupPath))) {
+      if (readError) throw readError;
+      return content ?? "";
+    }
+    const backup = await this.adapter.read(backupPath);
+    if (!hasSessionHeader(backup)) {
+      if (readError) throw readError;
+      return content ?? "";
+    }
+    if (this.pendingSessionBackups.has(backupPath)) {
+      // A replace owns this backup until its rename finishes. Reading it is
+      // safe, but do not restore it over the file the replace is landing.
+      throw new Error("Session file is being replaced.");
+    }
+    await this.restoreSessionFile(path, backupPath, true);
+    return backup;
+  }
+
+  /** Include backup-only sessions so a crash-interrupted replace stays visible. */
+  private listSessionPaths(files: string[]): string[] {
+    const paths = new Set(files.filter(isSessionFilePath));
+    for (const file of files) {
+      if (!isSessionBackupPath(file)) continue;
+      const sessionPath = file.slice(0, -SESSION_BACKUP_SUFFIX.length);
+      if (!paths.has(sessionPath)) paths.add(sessionPath);
+    }
+    return [...paths];
+  }
+
+  /** Remove abandoned temp files left by an earlier crash. */
+  private async cleanupStaleSessionTemps(): Promise<void> {
+    let listing;
+    try {
+      listing = await this.adapter.list(this.sessionDir);
+    } catch {
+      return;
+    }
+    const stale = listing.files.filter(
+      (path) => isSessionTempPath(path) && !this.pendingSessionTemps.has(path),
+    );
+    await Promise.all(stale.map((path) => this.removeIfExists(path)));
+  }
+
+  /** Best-effort removal for cleanup paths that must not fail a read. */
+  private async removeIfExists(path: string): Promise<void> {
+    try {
+      if (await this.adapter.exists(path)) await this.adapter.remove(path);
+    } catch {
+      // Cleanup is best effort; the main session file stays intact.
+    }
+  }
+
   private async appendEntry<TEntry extends Exclude<SessionEntry, { type: "session" }>>(entry: TEntry): Promise<string> {
     const sessionFile = this.sessionFile;
     if (!sessionFile) throw new Error("No active session.");
@@ -428,11 +572,13 @@ export class ObsidianSessionManager {
         await this.adapter.mkdir(current);
       }
     }
+    await this.cleanupStaleSessionTemps();
   }
 
   private async readSessionInfo(path: string): Promise<SessionFileInfo | null> {
     try {
-      const [content, stat] = await Promise.all([this.adapter.read(path), this.adapter.stat(path)]);
+      const content = await this.readSessionContent(path);
+      const stat = await this.adapter.stat(path);
       const entries = parseSessionEntries(content);
       if (entries[0]?.type !== "session") return null;
       const modifiedTime = getSessionModifiedTime(entries, stat?.mtime ?? Date.now());
@@ -446,6 +592,34 @@ export class ObsidianSessionManager {
 export function getPluginSessionDir(app: App, plugin: Plugin): string {
   const pluginDir = plugin.manifest.dir ?? `${app.vault.configDir}/plugins/${plugin.manifest.id}`;
   return `${pluginDir}/sessions`;
+}
+
+function sessionFileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+function isSessionTempPath(path: string): boolean {
+  return sessionFileName(path).includes(`.jsonl${SESSION_TEMP_MARKER}`);
+}
+
+function isSessionBackupPath(path: string): boolean {
+  return sessionFileName(path).endsWith(`.jsonl${SESSION_BACKUP_SUFFIX}`);
+}
+
+function isSessionFilePath(path: string): boolean {
+  return sessionFileName(path).endsWith(".jsonl") && !isSessionTempPath(path);
+}
+
+function hasSessionHeader(content: string): boolean {
+  for (const line of content.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      return (JSON.parse(line) as { type?: unknown }).type === "session";
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 function summarizeSession(path: string, entries: SessionEntry[], modifiedTime: number): SessionInfo {
