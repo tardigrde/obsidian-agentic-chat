@@ -87,7 +87,7 @@ await $(".agentic-chat-info").waitForExist();
 | `unload_skill` | `src/tools/skill-tools.ts:68` | no committed check | `NONE` |
 | `create_skill` | `src/tools/skill-tools.ts:124` | `test/skill-create-tool.test.ts:21` (unit only) | `partial` |
 | New skill modal | `src/ui/new-skill-modal.ts:35` | no committed check | `NONE` |
-| Repair built-ins | `src/settings.ts:2102` | no committed check | `NONE` |
+| Repair built-ins | `src/settings.ts:2190` | no committed check | `NONE` |
 | Unregistered compat tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/vault-tools.ts:68` | no production caller passes `surface: "compat"`; the default surface filters these out at `src/tools/tool-contracts.ts:305` | `unreachable` |
 
 ## Gotchas

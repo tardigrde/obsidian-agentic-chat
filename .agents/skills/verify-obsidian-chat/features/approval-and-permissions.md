@@ -51,11 +51,11 @@ await (await modal.$("button=Allow")).click();
 | Diff preview before an edit | `src/ui/approval-modal.ts:52` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
 | Remember a deny for this tool | `src/ui/approval-modal.ts:79` | `test/e2e/specs/approval-deterministic.e2e.ts:437` | `covered` |
 | Skill tools cannot be remembered | `src/ui/approval-modal.ts:68` | `test/approval-memory.test.ts:35` (policy only) | `partial` |
-| Global mutating gate persists | `src/settings.ts:770` | `test/e2e/specs/settings-ui.e2e.ts:259` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
-| Per-tool override through settings | `src/settings.ts:807` | `test/e2e/specs/settings-ui.e2e.ts:259` | `covered` |
-| Per-tool deny flips to allow in a recorded run | `src/settings.ts:807` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
+| Global mutating gate persists | `src/settings.ts:895` | `test/e2e/specs/settings-ui.e2e.ts:260` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
+| Per-tool override through settings | `src/settings.ts:895` | `test/e2e/specs/settings-ui.e2e.ts:260` | `covered` |
+| Per-tool deny flips to allow in a recorded run | `src/settings.ts:895` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
 | Working dir auto-runs inside and asks outside | `src/agent/tool-call-controller.ts:266` | `test/e2e/specs/approval-deterministic.e2e.ts:393` | `covered` |
-| Working directories settings row | `src/settings.ts:820` | no committed check | `NONE` |
+| Working directories settings row | `src/settings.ts:895` | no committed check | `NONE` |
 | Safe/YOLO toggle | `src/ui/chat-view.ts:777` | `test/e2e/specs/plan-removal.e2e.ts:93` (existence only) | `partial` |
 | `/plan` and the Plan badge are gone | `src/ui/chat-view.ts:777` | `test/e2e/specs/plan-removal.e2e.ts:93` | `covered` |
 | Invalid mode transition is blocked | `src/ui/chat-view.ts:987` | `test/modes.test.ts:63` (unit only) | `partial` |

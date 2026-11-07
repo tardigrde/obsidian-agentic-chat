@@ -9,6 +9,7 @@ import {
   openAgenticChatSettings,
   readAgenticChatSettings,
   readSecret,
+  readSettingSelect,
   readSettingText,
   readSettingsTabLabels,
   readStoredData,
@@ -494,6 +495,20 @@ describe("agentic-chat settings UI", function () {
 
     await closeAgenticChatSettings();
     await openAgenticChatSettings();
+    await selectSettingsTab("Advanced");
+    expect(await readSettingText("Cost alert (USD)")).toBe("3.5");
+  });
+
+  it("keeps one changed setting per tab after close and reopen", async function () {
+    await closeAgenticChatSettings();
+    await openAgenticChatSettings();
+
+    await selectSettingsTab("Models");
+    expect(await readSettingText("Base URL")).toBe("https://llm.example/api");
+
+    await selectSettingsTab("Agent");
+    expect(await readSettingSelect("Before mutating tools")).toBe("deny");
+
     await selectSettingsTab("Advanced");
     expect(await readSettingText("Cost alert (USD)")).toBe("3.5");
   });
