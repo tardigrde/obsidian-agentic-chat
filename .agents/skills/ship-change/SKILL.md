@@ -17,7 +17,12 @@ Own the change end to end. Plan, implement, verify, and report evidence.
 3. **Counts, not exit codes.** Zero tests or all tests skipped is a failure.
 4. **UI claims need more than a screenshot.** Use a committed e2e assertion, or a
    probe recording plus DOM/state metrics.
-5. **No secret or vault data in a commit.**
+5. **UI entry points need clips.** If the change adds, removes, or changes a
+   command, button, modal, settings row, mode, tab, or panel, plan desktop
+   1280x1024 and mobile-width 390x844 clips before code. Each clip needs a "what
+   to watch" list. A waiver must be explicit in the PR. The 390x844 clip is a
+   narrow desktop window, not real Obsidian Mobile.
+6. **No secret or vault data in a commit.**
 
 ## Route
 
@@ -35,6 +40,8 @@ Own the change end to end. Plan, implement, verify, and report evidence.
    `.agents/skills/verify-obsidian-chat/features/`.
 2. List every user entry point the change touches. Slash command, palette
    command, settings tab, composer control, drag and drop, agent tool, subagent.
+   For each changed entry point, decide the desktop and mobile-width clips now,
+   or record the waiver.
 3. Name the witness: the smallest assertion that would fail today.
 4. Implement the smallest change that satisfies it.
 5. Verify:
@@ -70,6 +77,7 @@ Own the change end to end. Plan, implement, verify, and report evidence.
 - Witness exists and was shown failing first.
 - The chosen lane is green with counts recorded.
 - Feature map updated if a user-facing entry point changed.
+- Changed entry points have desktop and mobile-width clips, or an explicit waiver.
 - Evidence is in the response, not just "it works".
 
 ## Promotion

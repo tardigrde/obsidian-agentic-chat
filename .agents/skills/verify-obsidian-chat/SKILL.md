@@ -74,6 +74,22 @@ The video is evidence for a human. The assertion is the regression guard. Do not
 promote a recording into CI as a pixel comparison; timing, model text, and cursor
 position differ every run.
 
+### Entry-point changes
+
+When a change adds, removes, or changes a user-visible entry point, record two
+clips:
+
+- desktop `1280x1024`
+- mobile-width `390x844`
+
+The `390x844` clip is a narrow desktop window, not real Obsidian Mobile. State
+that honestly. Each clip needs a “what to watch” list with labels or timestamps.
+
+A removal also needs absence proof: the command is gone from `/help` and the
+command registry, the UI entry point is gone, and the docs and feature map no
+longer claim it. Use `@break-change` removal mode. If clips are impossible, put a
+waiver in the PR.
+
 State the mode. `mode: live` means a real model answered. `mode: scripted` uses
 the `__AGENTIC_CHAT_E2E_TURNS__` hook. Never present scripted as live.
 
