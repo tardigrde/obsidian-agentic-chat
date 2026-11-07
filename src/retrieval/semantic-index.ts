@@ -193,23 +193,11 @@ async function acquireSemanticIndexWriterLease(
 }
 
 /**
- * The writer owns the lease: it claims the path before any read or write, keeps
- * the claim fresh after every persisted batch, and releases it in `finally`.
- * A direct caller therefore cannot write without the lease.
+ * The writer owns the lease: it claims the path before the first read or write,
+ * keeps the claim fresh after every persisted batch, and releases it in
+ * `finally`. A direct caller therefore cannot write without the lease.
  */
 export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput): Promise<SemanticIndexBootstrapResult> {
-  const now = input.now ?? Date.now;
-  const batchSize = Math.max(1, Math.floor(input.batchSize));
-  const estimate =
-    input.estimate ??
-    estimateEmbeddingIndexCost({
-      scope: input.scope,
-      model: input.embedder.profile,
-      documentCount: input.documents.length,
-      characterCount: input.documents.reduce((sum, document) => sum + document.content.length, 0),
-      indexingBatchSize: batchSize,
-    });
-
   let acquired: SemanticIndexLease | null;
   try {
     acquired = await acquireSemanticIndexWriterLease(input.leases ?? semanticIndexLeases, input.path);
@@ -225,103 +213,125 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
     return { file: null, completed: false, cancelled: false, leaseFailure: { reason: "held" } };
   }
   const lease = acquired;
+  try {
+    input.onLeaseAcquired?.();
+    return await runSemanticIndexBootstrap({
+      ...input,
+      isLeaseOwned: () => lease.isOwned(),
+      onProgress: () => lease.touch(),
+    });
+  } finally {
+    await lease.release();
+  }
+}
 
+interface SemanticIndexBootstrapRunInput extends SemanticIndexBootstrapInput {
+  isLeaseOwned: () => boolean;
+  onProgress: () => void;
+}
+
+async function runSemanticIndexBootstrap(input: SemanticIndexBootstrapRunInput): Promise<SemanticIndexBootstrapResult> {
+  const now = input.now ?? Date.now;
+  const batchSize = Math.max(1, Math.floor(input.batchSize));
+  const estimate =
+    input.estimate ??
+    estimateEmbeddingIndexCost({
+      scope: input.scope,
+      model: input.embedder.profile,
+      documentCount: input.documents.length,
+      characterCount: input.documents.reduce((sum, document) => sum + document.content.length, 0),
+      indexingBatchSize: batchSize,
+    });
   const persist = async (file: SemanticIndexFile): Promise<boolean> => {
-    if (!lease.isOwned()) return false;
+    if (!input.isLeaseOwned()) return false;
     await writeSemanticIndexFile(input.adapter, input.path, file);
-    // A healthy long run renews the TTL after every persisted batch.
-    lease.touch();
     return true;
   };
 
-  try {
-    input.onLeaseAcquired?.();
-
-    if (input.documents.length === 0) {
-      const file = semanticIndexFile({
-        scope: input.scope,
-        status: { state: "skipped", scope: input.scope, reason: "scope-empty" },
-        estimate,
-        indexedDocumentIds: [],
-        updatedAt: now(),
-      });
-      await persist(file);
-      return { file, completed: false, cancelled: false };
-    }
-
-    let snapshot = createEmbeddingIndexSnapshot({ scope: input.scope, model: input.embedder.profile, now: now() });
-    let processedDocuments = 0;
-    const runningFile = semanticIndexFile({
+  if (input.documents.length === 0) {
+    const file = semanticIndexFile({
       scope: input.scope,
-      status: { state: "running", scope: input.scope, processedDocuments, totalDocuments: input.documents.length },
+      status: { state: "skipped", scope: input.scope, reason: "scope-empty" },
       estimate,
       indexedDocumentIds: [],
+      updatedAt: now(),
+    });
+    await persist(file);
+    return { file, completed: false, cancelled: false };
+  }
+
+  let snapshot = createEmbeddingIndexSnapshot({ scope: input.scope, model: input.embedder.profile, now: now() });
+  let processedDocuments = 0;
+  const runningFile = semanticIndexFile({
+    scope: input.scope,
+    status: { state: "running", scope: input.scope, processedDocuments, totalDocuments: input.documents.length },
+    estimate,
+    indexedDocumentIds: [],
+    snapshot,
+    updatedAt: now(),
+  });
+  if (!(await persist(runningFile))) return { file: runningFile, completed: false, cancelled: false };
+  input.onProgress();
+
+  try {
+    for (let index = 0; index < input.documents.length; index += batchSize) {
+      throwIfAborted(input.signal);
+      const documents = input.documents.slice(index, index + batchSize);
+      const embeddings = await input.embedder.embedBatch(buildEmbeddingInputs(documents), {
+        batchSize,
+        signal: input.signal,
+      });
+      const records = await createEmbeddingIndexRecords(documents, embeddings, { now: now() });
+      snapshot = upsertEmbeddingIndexRecords(snapshot, records, { now: now() });
+      processedDocuments += documents.length;
+      const batchFile = semanticIndexFile({
+        scope: input.scope,
+        status: { state: "running", scope: input.scope, processedDocuments, totalDocuments: input.documents.length },
+        estimate,
+        indexedDocumentIds: snapshot.records.map((record) => record.documentId),
+        snapshot,
+        updatedAt: now(),
+      });
+      if (!(await persist(batchFile))) return { file: batchFile, completed: false, cancelled: false };
+      input.onProgress();
+    }
+    const file = semanticIndexFile({
+      scope: input.scope,
+      status: { state: "complete", scope: input.scope, totalDocuments: input.documents.length },
+      estimate,
+      indexedDocumentIds: snapshot.records.map((record) => record.documentId),
       snapshot,
       updatedAt: now(),
     });
-    if (!(await persist(runningFile))) return { file: runningFile, completed: false, cancelled: false };
-
-    try {
-      for (let index = 0; index < input.documents.length; index += batchSize) {
-        throwIfAborted(input.signal);
-        const documents = input.documents.slice(index, index + batchSize);
-        const embeddings = await input.embedder.embedBatch(buildEmbeddingInputs(documents), {
-          batchSize,
-          signal: input.signal,
-        });
-        const records = await createEmbeddingIndexRecords(documents, embeddings, { now: now() });
-        snapshot = upsertEmbeddingIndexRecords(snapshot, records, { now: now() });
-        processedDocuments += documents.length;
-        const batchFile = semanticIndexFile({
+    if (!(await persist(file))) return { file, completed: false, cancelled: false };
+    return { file, completed: true, cancelled: false };
+  } catch (error) {
+    const cancelled = input.signal?.aborted === true || /cancelled|aborted/i.test(errorMessage(error));
+    const status: RetrievalIndexingStatus = cancelled
+      ? {
+          state: "cancelled",
           scope: input.scope,
-          status: { state: "running", scope: input.scope, processedDocuments, totalDocuments: input.documents.length },
-          estimate,
-          indexedDocumentIds: snapshot.records.map((record) => record.documentId),
-          snapshot,
-          updatedAt: now(),
-        });
-        if (!(await persist(batchFile))) return { file: batchFile, completed: false, cancelled: false };
-      }
-      const file = semanticIndexFile({
-        scope: input.scope,
-        status: { state: "complete", scope: input.scope, totalDocuments: input.documents.length },
-        estimate,
-        indexedDocumentIds: snapshot.records.map((record) => record.documentId),
-        snapshot,
-        updatedAt: now(),
-      });
-      if (!(await persist(file))) return { file, completed: false, cancelled: false };
-      return { file, completed: true, cancelled: false };
-    } catch (error) {
-      const cancelled = input.signal?.aborted === true || /cancelled|aborted/i.test(errorMessage(error));
-      const status: RetrievalIndexingStatus = cancelled
-        ? {
-            state: "cancelled",
-            scope: input.scope,
-            processedDocuments,
-            totalDocuments: input.documents.length,
-            reason: "user cancelled",
-          }
-        : {
-            state: "failed",
-            scope: input.scope,
-            processedDocuments,
-            totalDocuments: input.documents.length,
-            error: errorMessage(error),
-          };
-      const file = semanticIndexFile({
-        scope: input.scope,
-        status,
-        estimate,
-        indexedDocumentIds: snapshot.records.map((record) => record.documentId),
-        snapshot,
-        updatedAt: now(),
-      });
-      await persist(file);
-      return { file, completed: false, cancelled };
-    }
-  } finally {
-    await lease.release();
+          processedDocuments,
+          totalDocuments: input.documents.length,
+          reason: "user cancelled",
+        }
+      : {
+          state: "failed",
+          scope: input.scope,
+          processedDocuments,
+          totalDocuments: input.documents.length,
+          error: errorMessage(error),
+        };
+    const file = semanticIndexFile({
+      scope: input.scope,
+      status,
+      estimate,
+      indexedDocumentIds: snapshot.records.map((record) => record.documentId),
+      snapshot,
+      updatedAt: now(),
+    });
+    await persist(file);
+    return { file, completed: false, cancelled };
   }
 }
 
