@@ -82,7 +82,6 @@ import {
   type AgentMode,
   enterPlan,
   exitPlan,
-  MODE_ORDER,
   MODES,
   resolveModeTransition,
   validateModeTransition,
@@ -1008,8 +1007,8 @@ export class ChatView extends ItemView {
   }
 
   // --- composer controls (Safe ↔ YOLO toggle + sticky plan) ---
-  // S4: all mode mutations (toggle, /config, /plan, settings tab) funnel through
-  // validateModeTransition + resolveModeTransition so the four surfaces stay
+  // S4: all mode mutations (toggle, /plan, settings tab) funnel through
+  // validateModeTransition + resolveModeTransition so the three surfaces stay
   // atomically in sync (Codex ThreadSettingsOverrides pattern).
 
   private async setMode(mode: AgentMode): Promise<boolean> {
@@ -1125,7 +1124,7 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Reflect settings (e.g. changed via /config, /plan, or the settings tab) back into
+   * Reflect settings (e.g. changed via /plan or the settings tab) back into
    * the composer toggle, and disable it while the agent is streaming or in plan mode so
    * the posture can't drift from the prompt/policy the in-flight turn started under.
    */
@@ -1714,9 +1713,6 @@ export class ChatView extends ItemView {
       case "doctor":
         await this.runDoctor();
         return true;
-      case "config":
-        this.showConfig();
-        return true;
       case "add-dir":
         await this.createWorkingDirectoryWorkflow().runAddDir(argString);
         return true;
@@ -1754,11 +1750,6 @@ export class ChatView extends ItemView {
         return true;
       case "init":
         await this.runInit(argString);
-        return true;
-      case "project":
-        this.renderInfoMessage("Projects", [
-          ["Removed", "Project workspaces were removed. Use /add-dir for working directories and /style for output styles."],
-        ]);
         return true;
       case "help":
         this.showHelp();
@@ -2247,33 +2238,6 @@ export class ChatView extends ItemView {
       ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
       ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
     ]);
-  }
-
-  /** `/config`: clickable mode picker, applied in-pane. Output style lives under /style. */
-  private showConfig(): void {
-    const { settings } = this.plugin;
-    this.clearEmptyState();
-    this.renderActionList(
-      "Mode",
-      `What the agent may do · current: ${MODES[settings.mode].label}`,
-      MODE_ORDER.map((id) => ({
-        label: MODES[id].label,
-        detail: MODES[id].description,
-        icon: MODES[id].icon,
-        onClick: () => void this.chooseMode(id),
-      })),
-    );
-  }
-
-  private async chooseMode(mode: AgentMode): Promise<void> {
-    // Plan is sticky: route it through enterPlanMode so /endplan can restore the posture.
-    if (mode === "plan") {
-      await this.enterPlanMode();
-      return;
-    }
-    if (await this.setMode(mode)) {
-      this.renderInfoMessage("Mode", [[MODES[mode].label, MODES[mode].description]]);
-    }
   }
 
   private async chooseStyle(style: OutputStyle): Promise<void> {

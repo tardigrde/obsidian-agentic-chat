@@ -35,7 +35,7 @@ YOLO auto-approves most mutating tools until you switch back. Recursive folder d
 
 ## Plan mode
 
-`/plan` is sticky and read-only. It blocks writes, edits, renames, deletes, frontmatter changes, and subagent writes until you click the **Plan** badge or run `/config`.
+`/plan` is sticky and read-only. It blocks writes, edits, renames, deletes, frontmatter changes, and subagent writes until you click the **Plan** badge.
 
 ## Compaction
 

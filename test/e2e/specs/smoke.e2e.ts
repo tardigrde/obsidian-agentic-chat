@@ -53,6 +53,7 @@ describe("agentic-chat smoke", function () {
     const info = await $(".agentic-chat-info");
     await info.waitForExist();
     await expect(info).toHaveText(/Slash commands/);
+    await expect(info).not.toHaveText(/\/(config|mode|project|history|semindex|adddir|working-dirs|todos|followup|thinking)\b/);
   });
 
   it("clears slash commands immediately and preserves /init tail text in the transcript", async function () {

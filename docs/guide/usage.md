@@ -27,7 +27,7 @@ Mutating calls follow the approval policy. When a call is set to **ask**, the pl
 
 **YOLO** auto-approves most mutating tools until you switch back. Recursive folder deletes still ask, and a per-tool deny still wins.
 
-`/plan` enters sticky read-only planning mode. It blocks mutations until you leave. To leave, click the **Plan** badge in chat or run `/config` to switch back to Safe or YOLO.
+`/plan` enters sticky read-only planning mode. It blocks mutations until you leave. To leave, click the **Plan** badge in chat.
 
 Run `/compact [instructions]` to summarize older turns on demand. The optional instructions are passed to the compaction request, so important details survive the summary.
 

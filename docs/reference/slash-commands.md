@@ -6,14 +6,11 @@ Slash commands run locally and are not sent to the model.
 | --- | --- |
 | `/new` | Start a new conversation. |
 | `/sessions [clear --confirm]` | Browse, search, reopen, rename, or delete past conversations. Clear with confirmation deletes all conversations in the current scope. |
-| `/history` | Alias for `/sessions`. |
 | `/model` | Switch model. Shift actions apply a next-prompt-only override where supported. |
-| `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists across messages. Alias: `/thinking`. |
-| `/config` | Switch permission mode: Safe, YOLO, or Plan. |
-| `/mode` | Alias for `/config`. |
-| `/add-dir [folder]` | Grant a vault working directory. Without an argument, opens a vault folder picker. Alias: `/adddir`. |
-| `/dirs` | List or revoke granted working directories. Alias: `/working-dirs`. |
-| `/plan` | Enter sticky read-only planning mode. Leave by clicking the **Plan** badge or running `/config`. |
+| `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists across messages. |
+| `/add-dir [folder]` | Grant a vault working directory. Without an argument, opens a vault folder picker. |
+| `/dirs` | List or revoke granted working directories. |
+| `/plan` | Enter sticky read-only planning mode. Leave by clicking the **Plan** badge in chat. |
 | `/compact [instructions]` | Summarize older turns now. Optional instructions are passed to the compaction request. |
 | `/init [instructions]` | Create or update the vault standing-instructions file (`AGENTS.md`, falling back to `CLAUDE.md` or `GEMINI.md` at the vault root). Optional text guides the update. |
 | `/style [name]` | Switch output style. |
@@ -24,15 +21,13 @@ Slash commands run locally and are not sent to the model.
 | `/status` | Show provider, model, mode, output style, session, MCP servers, and tools. |
 | `/usage` | Show token and cost totals. |
 | `/memory [add\|review\|manage\|export\|clear]` | Add, review, export, or clear stored long-term memories. |
-| `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. Alias: `/semindex`. |
-| `/todo [add\|set\|test\|commit\|note\|title\|clear]` | Track milestones, tests, checkpoint commits, notes (`/todo note <id> <note>`), and the plan title (`/todo title <name>`). `clear` resets the tracker. Alias: `/todos`. |
+| `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. |
+| `/todo [add\|set\|test\|commit\|note\|title\|clear]` | Track milestones, tests, checkpoint commits, notes (`/todo note <id> <note>`), and the plan title (`/todo title <name>`). `clear` resets the tracker. |
 | `/steer [text]` | Steer the active turn while the agent is responding. |
-| `/follow-up [text]` | Queue a follow-up behind the active turn. Alias: `/followup`. |
+| `/follow-up [text]` | Queue a follow-up behind the active turn. |
 | `/redirect [text]` | Stop the active turn and answer this instead. |
 | `/export` | Save this conversation as a Markdown note in the vault. |
 | `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List available commands. |
 
-`/endplan` does not exist. Leave plan mode with the **Plan** badge or `/config`.
-
-`/project` was retired with project workspaces. Typing it shows a hint to use `/add-dir` and `/style` instead.
+`/endplan` does not exist. Leave plan mode with the **Plan** badge in chat.

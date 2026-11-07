@@ -51,27 +51,27 @@ await $(".agentic-chat-send").click();
 | Ribbon icon | `src/main.ts:93` | no committed check | `NONE` |
 | Command palette: Open chat | `src/main.ts:95` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
 | Command palette: New conversation | `src/main.ts:108` | `test/session-actions.test.ts:153` (unit only) | `partial` |
-| Command palette: Quick Ask inline edit | `src/main.ts:114` | `test/e2e/specs/smoke.e2e.ts:237` | `covered` |
+| Command palette: Quick Ask inline edit | `src/main.ts:114` | `test/e2e/specs/smoke.e2e.ts:238` | `covered` |
 | Editor selection context menu | `src/main.ts:164` | no committed check | `NONE` |
 | File context menu | `src/main.ts:177` | no committed check | `NONE` |
 | Files context menu (multi-select) | `src/main.ts:174` | no committed check | `NONE` |
-| Composer card mounts | `src/ui/chat-view.ts:659` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
-| Empty-state suggestion chips | `src/ui/chat-view.ts:909` | no committed check | `NONE` |
-| Enter sends | `src/ui/chat-view.ts:713` | `test/e2e/specs/smoke.e2e.ts:45` (send button path only) | `partial` |
-| Shift+Enter inserts a newline | `src/ui/chat-view.ts:713` | no committed check | `NONE` |
-| Send button | `src/ui/chat-view.ts:835` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
-| ArrowUp/ArrowDown recall | `src/ui/chat-view.ts:705` | `test/composer-history.test.ts:16` (unit only) | `partial` |
-| Escape cancels edit | `src/ui/chat-view.ts:700` | `test/prompt-edit-state.test.ts:5` (unit only) | `partial` |
-| Autocomplete menu opens | `src/ui/chat-view.ts:953` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
+| Composer card mounts | `src/ui/chat-view.ts:658` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
+| Empty-state suggestion chips | `src/ui/chat-view.ts:908` | no committed check | `NONE` |
+| Enter sends | `src/ui/chat-view.ts:712` | `test/e2e/specs/smoke.e2e.ts:45` (send button path only) | `partial` |
+| Shift+Enter inserts a newline | `src/ui/chat-view.ts:712` | no committed check | `NONE` |
+| Send button | `src/ui/chat-view.ts:834` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
+| ArrowUp/ArrowDown recall | `src/ui/chat-view.ts:704` | `test/composer-history.test.ts:16` (unit only) | `partial` |
+| Escape cancels edit | `src/ui/chat-view.ts:699` | `test/prompt-edit-state.test.ts:5` (unit only) | `partial` |
+| Autocomplete menu opens | `src/ui/chat-view.ts:952` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
 | Autocomplete keys | `src/ui/autocomplete-menu.ts:108` | no committed check | `NONE` |
 | `@` mention autocomplete | `src/ui/autocomplete.ts:80` | `test/autocomplete.test.ts:51` (detection only) | `partial` |
-| Drag-and-drop attach | `src/ui/chat-view.ts:847` | `test/drag-drop.test.ts:4` (parser only) | `partial` |
-| Active note auto-chip | `src/ui/chat-view.ts:2427` | `test/e2e/specs/smoke.e2e.ts:98` | `covered` |
+| Drag-and-drop attach | `src/ui/chat-view.ts:846` | `test/drag-drop.test.ts:4` (parser only) | `partial` |
+| Active note auto-chip | `src/ui/chat-view.ts:2391` | `test/e2e/specs/smoke.e2e.ts:99` | `covered` |
 | Ignored active note stays out | `src/ui/active-note.ts:54` | `test/e2e/specs/runtime-behavior.e2e.ts:194` | `covered` |
-| Remove an attachment chip | `src/ui/chat-view.ts:2475` | `test/context-chip-renderer.test.ts:121` (unit only) | `partial` |
-| Image attachment guard | `src/ui/chat-view.ts:2402` | `test/image-attachments.test.ts:4` (encoding only) | `partial` |
-| Folder attachment menu | `src/ui/chat-view.ts:2519` | only `showFolderMenu()` calls it, and no production code calls that method | `unreachable` |
-| Quick Ask accept | `src/ui/quick-ask-modal.ts:53` | `test/e2e/specs/smoke.e2e.ts:237` | `covered` |
+| Remove an attachment chip | `src/ui/chat-view.ts:2448` | `test/context-chip-renderer.test.ts:121` (unit only) | `partial` |
+| Image attachment guard | `src/ui/chat-view.ts:2366` | `test/image-attachments.test.ts:4` (encoding only) | `partial` |
+| Folder attachment menu | `src/ui/chat-view.ts:2544` | only `showFolderMenu()` calls it, and no production code calls that method | `unreachable` |
+| Quick Ask accept | `src/ui/quick-ask-modal.ts:53` | `test/e2e/specs/smoke.e2e.ts:238` | `covered` |
 | Quick Ask Enter accept | `src/ui/quick-ask-modal.ts:58` | no committed check | `NONE` |
 
 ## Gotchas
@@ -79,7 +79,7 @@ await $(".agentic-chat-send").click();
 - `setValue` alone does not submit. Click `.agentic-chat-send`.
 - `event.isComposing` blocks Enter during IME composition. Do not assert a send
   in the middle of a composition event.
-- The chat view debounces autocomplete by 120 ms in `src/ui/chat-view.ts:938`.
+- The chat view debounces autocomplete by 120 ms in `src/ui/chat-view.ts:937`.
   Wait for `.agentic-chat-autocomplete`, not for a fixed delay.
 - The plugin suppresses the active note chip for ignored notes, non-Markdown
   files, and standing-instruction files such as `AGENTS.md`.

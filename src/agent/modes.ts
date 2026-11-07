@@ -142,7 +142,7 @@ export function healMode(stored: string | undefined): AgentMode {
 
 /**
  * S4: single validation gate for every mode surface (settings dropdown,
- * composer Safe↔YOLO toggle, `/config` picker, `/plan` sticky). Codex
+ * composer Safe↔YOLO toggle, `/plan` sticky). Codex
  * applies `ThreadSettingsOverrides{approval_policy, sandbox_policy,
  * permission_profile}` atomically — single source, all UIs reflect it.
  * This is the Obsidian analogue: one pure check, all UIs delegate to it.
@@ -182,7 +182,7 @@ export interface ModeTransition {
 /**
  * Compute the atomic `settings.mode` + `modeBeforePlan` update for a
  * validated transition. Pure, so every UI (settings tab, composer toggle,
- * `/config`, `/plan`) produces the same state.
+ * `/plan`) produces the same state.
  */
 export function resolveModeTransition(
   current: AgentMode,

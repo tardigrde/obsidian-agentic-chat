@@ -86,14 +86,20 @@ describe("suggest — commands", () => {
     expect(items.map((i) => i.value)).toContain("usage");
     expect(items.every((i) => i.value.includes("us") || i.label.includes("us"))).toBe(true);
   });
-  it("matches aliases but reports the canonical name", () => {
-    const items = suggest({ kind: "command", range: [0, 5], query: "hist" }, context());
-    expect(items.map((i) => i.value)).toContain("sessions");
+  it("does not match removed aliases", () => {
+    const items = suggest({ kind: "command", range: [0, 4], query: "hist" }, context());
+    expect(items.map((i) => i.value)).not.toContain("sessions");
+  });
+  it("does not suggest removed commands", () => {
+    const items = suggest({ kind: "command", range: [0, 1], query: "" }, context());
+    const values = items.map((i) => i.value);
+    expect(values).not.toContain("config");
+    expect(values).not.toContain("project");
   });
   it("lists all commands for an empty query in registry order", () => {
     const items = suggest({ kind: "command", range: [0, 1], query: "" }, context());
     expect(items[0].value).toBe("new");
-    expect(items.map((i) => i.value)).not.toContain("template"); // hidden
+    expect(items.map((i) => i.value)).not.toContain("template"); // not a registered command
   });
   it("ranks earlier matches first", () => {
     const items = suggest({ kind: "command", range: [0, 2], query: "s" }, context());
