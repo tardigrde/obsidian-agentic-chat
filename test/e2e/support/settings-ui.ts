@@ -94,6 +94,16 @@ export async function closeAgenticChatSettings(): Promise<void> {
   await focusMainWindow();
 }
 
+/** Visible top-level tab labels, in render order. */
+export async function readSettingsTabLabels(): Promise<string[]> {
+  await focusSettingsWindow();
+  return await browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>(".agentic-chat-settings-tab")).map((tab) =>
+      tab.innerText.trim(),
+    ),
+  );
+}
+
 export async function selectSettingsTab(label: string): Promise<void> {
   await focusSettingsWindow();
   await browser.execute((tabLabel) => {
@@ -113,19 +123,43 @@ export async function selectSettingsTab(label: string): Promise<void> {
   );
 }
 
-export async function waitForSetting(name: string): Promise<void> {
+export async function waitForSetting(name: string, section?: string): Promise<void> {
   await focusSettingsWindow();
   await browser.waitUntil(
     async () =>
-      await browser.execute((settingName) => {
-        const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
-        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
-        return items.some(
-          (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === settingName,
-        );
-      }, name),
+      await browser.execute(
+        ({ settingName, settingSection }) => {
+          const sectionEl = settingSection
+            ? document.querySelector(`.agentic-chat-settings-section[data-settings-section="${settingSection}"]`)
+            : null;
+          const root = sectionEl ?? document.querySelector(".agentic-chat-settings-tabbody") ?? document;
+          const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+          return items.some(
+            (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === settingName,
+          );
+        },
+        { settingName: name, settingSection: section },
+      ),
     { timeout: 5_000, timeoutMsg: `Setting "${name}" did not render` },
   );
+}
+
+/** Read the current text or number value of a named setting. */
+export async function readSettingText(name: string): Promise<string> {
+  await focusSettingsWindow();
+  await waitForSetting(name);
+  return await browser.execute((settingName) => {
+    const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
+    const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+    const setting = items.find(
+      (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === settingName,
+    );
+    const input = setting?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+      "input:not([type='range']), textarea",
+    );
+    if (!input) throw new Error(`Text input for setting "${settingName}" not found`);
+    return input.value;
+  }, name);
 }
 
 export async function setSettingSelect(name: string, value: string): Promise<void> {
@@ -147,13 +181,16 @@ export async function setSettingSelect(name: string, value: string): Promise<voi
   );
 }
 
-export async function setSettingText(name: string, value: string): Promise<void> {
+export async function setSettingText(name: string, value: string, section?: string): Promise<void> {
   await focusSettingsWindow();
-  await waitForSetting(name);
+  await waitForSetting(name, section);
   await browser.execute(
-    ({ settingName, nextValue }) => {
+    ({ settingName, nextValue, settingSection }) => {
       const findSetting = (name: string): HTMLElement | undefined => {
-        const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
+        const sectionEl = settingSection
+          ? document.querySelector(`.agentic-chat-settings-section[data-settings-section="${settingSection}"]`)
+          : null;
+        const root = sectionEl ?? document.querySelector(".agentic-chat-settings-tabbody") ?? document;
         const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
         return items.find((item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === name);
       };
@@ -167,7 +204,7 @@ export async function setSettingText(name: string, value: string): Promise<void>
       input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: nextValue }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
     },
-    { settingName: name, nextValue: value },
+    { settingName: name, nextValue: value, settingSection: section },
   );
 }
 

@@ -35,13 +35,13 @@ Use [BRAT](https://github.com/TfTHacker/obsidian42-brat) when you want pre-relea
 
 Agent plugins are packages (a `plugin.json`, optional `skills/`, optional `mcp.json`) that live inside your vault as plain files. They need no Node runtime and no build step. See [Agent plugins](../features/agent-plugins.md).
 
-Open **Settings > Agentic Chat > Resources** and use **Install plugin…**. You can import from any of:
+Open **Settings > Agentic Chat > Advanced** (Agent plugins) and use **Install plugin…**. You can import from any of:
 
 - a **GitHub URL**: repo shorthand (`owner/repo`), `github.com/owner/repo` tree, blob, or raw URLs, or a direct `.zip`, `.tar.gz`, or `.tgz` archive URL (for example a release asset or `codeload` tarball);
 - a **.zip, .tar.gz, or .tgz** archive file from disk;
 - a **vault folder** (desktop only) that contains an agent plugin package, a Claude Code, Codex, or Copilot plugin, or a marketplace catalog.
 
-The importer converts Claude (`.claude-plugin/`), Codex (`.codex-plugin/`), and Copilot or VS Code (`plugin.json` and `.plugin/`) packages to the Agent Plugins 1.0 format. It copies skills whole, converts `mcpServers` to `mcp.json`, and drops unsupported fields (stdio transports, `headersHelper`, `displayName`, and others) with warnings in the install summary. Imported MCP servers are **disabled by default**. Enable them on the MCP tab after you check their endpoints.
+The importer converts Claude (`.claude-plugin/`), Codex (`.codex-plugin/`), and Copilot or VS Code (`plugin.json` and `.plugin/`) packages to the Agent Plugins 1.0 format. It copies skills whole, converts `mcpServers` to `mcp.json`, and drops unsupported fields (stdio transports, `headersHelper`, `displayName`, and others) with warnings in the install summary. Imported MCP servers are **disabled by default**. Enable them in the Advanced tab under MCP tools after you check their endpoints.
 
 Installing over an existing plugin with the same name replaces it in place. Your edits to its `mcp.json` are preserved by MCP server id.
 

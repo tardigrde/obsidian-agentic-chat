@@ -19,7 +19,7 @@
 
 - Type `/agent` to see the role picker, or `/agent explorer <task>`.
 - Let the model call the `subagent` tool.
-- Open Settings, select **Resources**, then find **Subagent timeout**.
+- Open Settings, select **Advanced**, then find **Subagent timeout** under **Subagents**.
 - For active-note, `@` mention, context-menu, drag-and-drop, folder, and image
   attachments, see [Open and compose](./open-and-compose.md).
 
@@ -54,7 +54,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Replay a stopped dispatch | `src/ui/assistant-bubble.ts:622` | `test/e2e/specs/subagent-replay.e2e.ts:128` | `covered` |
 | Replay a failed dispatch | `src/ui/assistant-bubble.ts:622` | `test/e2e/specs/subagent-replay.e2e.ts:146` | `covered` |
 | Subagent timeout behavior | `src/agent/subagent-runtime.ts:64` | `test/subagents.test.ts:428` (unit only) | `partial` |
-| Subagent timeout setting row | `src/settings.ts:2098` | no committed check | `NONE` |
+| Subagent timeout setting row | `src/settings.ts:2133` | no committed check | `NONE` |
 | Attachment budget: inline or path reference | `src/ui/attachments.ts:42` | `test/attachments.test.ts:17` (unit only) | `partial` |
 | Ignore-list withholding | `src/ui/attachments.ts:39` | `test/attachments.test.ts:37` (unit only) | `partial` |
 | Context chips order and removal | `src/ui/chat-view.ts:2424` | `test/context-chip-renderer.test.ts:85` (unit only) | `partial` |

@@ -1,6 +1,6 @@
 # Settings reference
 
-**Settings > Agentic Chat** uses virtual tabs. The defaults below are the plugin defaults.
+**Settings > Agentic Chat** has three tabs: **Models**, **Agent**, and **Advanced**. The defaults below are the plugin defaults.
 
 ## Models
 
@@ -33,7 +33,7 @@ Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 | Auto-compaction | on at 80% | Triggers at 50% to 95% context fill (configurable). |
 | Tool budget | on | Withholds optional tools (web, MCP, subagent, document import, artifacts) when tool schemas exceed 2% of the context window. An unknown window never drops tools. |
 
-## Approval
+### Approval
 
 | Setting | Default | Notes |
 | --- | --- | --- |
@@ -41,7 +41,9 @@ Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 | Working directories | empty | Folders granted with `/add-dir`. In Safe mode, the approval policy applies inside a granted folder. Outside, the agent asks first, including reads. |
 | Per-tool overrides | default | Per-tool allow, ask, or deny. Deny wins over everything, including YOLO. |
 
-## Web
+## Advanced
+
+### Web
 
 Off by default. The plugin does not register the web tools until you enable them.
 
@@ -52,28 +54,29 @@ Off by default. The plugin does not register the web tools until you enable them
 | Fetch character limit | `10,000` characters per page |
 | Fetch allowlist | empty (all public hosts). Comma-separated suffixes. Deny wins on every redirect hop. |
 
-## MCP
+### MCP
 
 Off by default. Servers live in agent plugin packages (`.agentic-plugins/`). **Add MCP server** writes a package with `plugin.json` and `mcp.json`. Auth modes: none, bearer, custom header, or OAuth. Each server has its own enable toggle and allow, ask, or deny policy. See [Agent plugins](../features/agent-plugins.md).
 
-## Observability
+### Observability
 
 No endpoint is bundled or enabled by default. Backends are Langfuse and generic OTLP HTTP. Payload modes are **Metadata only** (the default), **Redacted text previews**, and **Full prompt/output content**. Metadata includes the turn, model, tool, approval timing, tokens, cost, and errors.
 
-## Notifications
+### Notifications
 
 The master switch controls background toasts. Errors always show. **Cost alert** sends one notice when the conversation cost passes a USD amount. **Cost cap** stops the running turn and blocks new turns at a USD amount. Both default to `0` (disabled).
 
-## Resources
+### Agent plugins
 
 Plugin management and diagnostics. Buttons: **Install plugin…**, **New skill…**, and **Repair built-ins**. The installed plugin list shows enable toggles, spec status, component counts, and open-folder shortcuts. See [Install](../guide/install.md#installing-agent-plugins).
 
+### Subagents
+
 - **Subagent timeout**: `0` (disabled). Auto-abort a child after N seconds, up to 86400.
-- **Ignore list**: one gitignore-style glob per line. Matching notes are invisible to the agent and report as not found.
 
 ### Semantic retrieval
 
-Off by default. Reuses the secrets on the **Models** tab. Lives under **Resources > Semantic retrieval**.
+Off by default. Reuses the secrets on the **Models** tab. Lives under **Advanced > Semantic retrieval**.
 
 | Setting | Default |
 | --- | --- |
@@ -83,3 +86,7 @@ Off by default. Reuses the secrets on the **Models** tab. Lives under **Resource
 | Language coverage | `multilingual` |
 | Batch size | `32` notes per request |
 | Max indexed characters per note | `12,000` |
+
+### Ignored files
+
+- **Ignore list**: one gitignore-style glob per line. Matching notes are invisible to the agent and report as not found.

@@ -9,7 +9,7 @@
 - Skills: built-in, plugin-provided, and bare `/skill-name` invocation.
 - Skill tools: `read_skill`, `read_skill_file`, `load_skill`, `unload_skill`,
   `create_skill`.
-- The New skill wizard on the Resources settings tab.
+- The New skill wizard on the Advanced settings tab (Agent plugins).
 - The Repair built-ins action.
 
 ## How to get to it (user view)
@@ -17,7 +17,7 @@
 - Type `/` in the composer. The autocomplete menu opens.
 - Type a full command and press Enter or click **Send**.
 - Type `/skill <name> [args]`, or a bare `/<skill-name> [args]`.
-- Open Settings and select Agentic Chat, then open **Resources** and click
+- Open Settings and select Agentic Chat, then open **Advanced** and find **Agent plugins**, then click
   **New skill…** or **Repair built-ins**.
 - The model calls skill tools on its own. They appear as tool steps.
 
@@ -41,7 +41,7 @@ await $(".agentic-chat-info").waitForExist();
   exists.
 - Skill chip: send `/skill self-knowledge probe`, then wait for a **Skill**
   summary in `.agentic-chat-info`.
-- New skill: `openAgenticChatSettings()`, `selectSettingsTab("Resources")`,
+- New skill: `openAgenticChatSettings()`, `selectSettingsTab("Advanced")`,
   `clickSettingButton("Import", "New skill…")`.
 - `/template` has no command handler. The autocomplete detector still recognizes
   it.
@@ -88,7 +88,7 @@ await $(".agentic-chat-info").waitForExist();
 | `unload_skill` | `src/tools/skill-tools.ts:68` | no committed check | `NONE` |
 | `create_skill` | `src/tools/skill-tools.ts:124` | `test/skill-create-tool.test.ts:21` (unit only) | `partial` |
 | New skill modal | `src/ui/new-skill-modal.ts:34` | no committed check | `NONE` |
-| Repair built-ins | `src/settings.ts:2069` | no committed check | `NONE` |
+| Repair built-ins | `src/settings.ts:2102` | no committed check | `NONE` |
 | Unregistered compat tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/vault-tools.ts:68` | no production caller passes `surface: "compat"`; the default surface filters these out at `src/tools/tool-contracts.ts:305` | `unreachable` |
 
 ## Gotchas

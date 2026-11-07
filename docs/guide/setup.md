@@ -65,7 +65,7 @@ On mobile, leave the plugin proxy fields empty and use the device, VPN, or netwo
 
 ## Semantic retrieval setup
 
-If you want vector-based note search, enable **Settings > Resources > Semantic retrieval**:
+If you want vector-based note search, enable **Settings > Agentic Chat > Advanced > Semantic retrieval**:
 
 1. Choose an embedding provider (OpenRouter, Ollama, or OpenAI-compatible).
 2. Enter the embedding model id.

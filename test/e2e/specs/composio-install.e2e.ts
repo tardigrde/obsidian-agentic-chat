@@ -21,7 +21,7 @@ interface SettingsSnapshot {
 describe("composio bundle install (Cursor → Agent Plugins)", function () {
   before(async function () {
     await openAgenticChatSettings();
-    await selectSettingsTab("Resources");
+    await selectSettingsTab("Advanced");
   });
 
   it("installs Composio bundle via archive URL and verifies 2 skills + 1 MCP (popout-safe)", async function () {
@@ -61,7 +61,7 @@ describe("composio bundle install (Cursor → Agent Plugins)", function () {
     const url = `http://127.0.0.1:${address.port}/composio-mcp-plugin.zip`;
 
     try {
-      await selectSettingsTab("Resources");
+      await selectSettingsTab("Advanced");
       await clickSettingButton("Import", "Install plugin…");
       await browser.waitUntil(async () => await $(".agentic-chat-install-url").isExisting(), {
         timeout: 5_000,
@@ -120,8 +120,8 @@ describe("composio bundle install (Cursor → Agent Plugins)", function () {
         { timeout: 5_000, timeoutMsg: "Composio row did not render with 2 skills, 1 MCP server" },
       );
 
-      // Verify OAuth is default for composio — check in MCP tab where auth UI lives
-      await selectSettingsTab("MCP");
+      // Verify OAuth is default for composio — check in Advanced where auth UI lives
+      await selectSettingsTab("Advanced");
       // Enable MCP globally first (disabled by default in fresh vault)
       await browser.execute(() => {
         const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
@@ -154,8 +154,8 @@ describe("composio bundle install (Cursor → Agent Plugins)", function () {
           }),
         { timeout: 5_000, timeoutMsg: "Authenticate & test button not found after enabling composio MCP" },
       );
-      // Back to Resources for final checks
-      await selectSettingsTab("Resources");
+      // Back to Advanced for final checks
+      await selectSettingsTab("Advanced");
 
       // UI already verified 2 skills, 1 MCP via row text and mcpState; disk check via adapter is covered by loader
     } finally {
@@ -233,7 +233,7 @@ describe("composio bundle install (Cursor → Agent Plugins)", function () {
     });
     const settingsBare = (await browser.getWindowHandles()).find((h) => h !== mainBare) ?? mainBare;
     await browser.switchToWindow(settingsBare);
-    await selectSettingsTab("MCP");
+    await selectSettingsTab("Advanced");
     await browser.waitUntil(
       async () =>
         await browser.execute(() => {

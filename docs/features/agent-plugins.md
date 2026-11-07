@@ -4,7 +4,7 @@ Agent plugins are packages in the vault that follow the [Agent Plugins 1.0.0 spe
 
 ## Layout
 
-Plugins live in `.agentic-plugins/` at the vault root. You can change the folder in **Settings > Agentic Chat > Resources > Plugins folder**:
+Plugins live in `.agentic-plugins/` at the vault root. You can change the folder in **Settings > Agentic Chat > Advanced > Agent plugins > Plugins folder**:
 
 ```text
 .agentic-plugins/
@@ -24,33 +24,33 @@ A plugin with only `mcp.json` (no skills) is valid. The spec allows MCP-only plu
 
 A plugin with only `plugin.json` is also valid. Per section 6.2, a missing component location is not an error, so the loader reports `ok` with 0 skills and 0 servers. The `my-skills` package is your personal collection (`skills/<name>/SKILL.md`). The plugin creates it when absent, never overwrites it, and restores it on restart if deleted.
 
-> Built-ins can go stale. The `builtins` package is a materialized copy. The plugin creates it when missing and never updates it automatically. After a plugin update, click **Repair built-ins** on the Resources tab to refresh it. Edits in the vault always win over the bundled text.
+> Built-ins can go stale. The `builtins` package is a materialized copy. The plugin creates it when missing and never updates it automatically. After a plugin update, click **Repair built-ins** on the Advanced tab (Agent plugins) to refresh it. Edits in the vault always win over the bundled text.
 
 ## Creating plugins
 
 The settings UI writes real packages:
 
-- **MCP tab > Add MCP server**: enter a server name and an HTTPS (or loopback HTTP) endpoint, then click **Add MCP server**. The plugin creates a package with that server's `plugin.json` and `mcp.json`. Configure authentication, approval, and enable state on the same tab. The package owns the endpoint and literal headers.
-- **Resources tab > New skill…**: create a single-skill package (`skills/<name>/SKILL.md`) with a template. The `create_skill` tool does the same in chat. It defaults to ask, and YOLO never auto-approves it; a per-tool allow can override the default. It replaces a same-named package only after you confirm. `/undo` cannot revert a created package.
+- **Advanced tab > MCP tools > Add MCP server**: enter a server name and an HTTPS (or loopback HTTP) endpoint, then click **Add MCP server**. The plugin creates a package with that server's `plugin.json` and `mcp.json`. Configure authentication, approval, and enable state in the same section. The package owns the endpoint and literal headers.
+- **Advanced tab > Agent plugins > New skill…**: create a single-skill package (`skills/<name>/SKILL.md`) with a template. The `create_skill` tool does the same in chat. It defaults to ask, and YOLO never auto-approves it; a per-tool allow can override the default. It replaces a same-named package only after you confirm. `/undo` cannot revert a created package.
 
 One limitation remains. Generic file tools (`read`, `ls`) fall back to disk when the vault index is stale, for example for dot-folders created outside the session. `edit`, `rename`, and `delete` use the index only. If you edit an installed skill's files, restart Obsidian to re-index first. Skill creation always works through `create_skill` or the wizard.
 
 ## Importing plugins
 
-**Resources tab > Install plugin…** brings packages into the vault from a GitHub URL, an archive, or a vault folder (desktop only). See [Installing agent plugins](../guide/install.md#installing-agent-plugins) for the supported input shapes.
+**Advanced tab > Agent plugins > Install plugin…** brings packages into the vault from a GitHub URL, an archive, or a vault folder (desktop only). See [Installing agent plugins](../guide/install.md#installing-agent-plugins) for the supported input shapes.
 
 - The importer converts Claude, Codex, and Copilot or VS Code packages to Agent Plugins 1.0. It copies skills whole, converts `mcpServers` to `mcp.json`, and drops unsupported fields with warnings.
-- Imported packages show their source (`Source:`, for example `github:user/repo`). **Remove** on the Resources tab deletes the package and any MCP servers it contributed.
+- Imported packages show their source (`Source:`, for example `github:user/repo`). **Remove** on the Advanced tab (Agent plugins) deletes the package and any MCP servers it contributed.
 - Importing over an existing name updates it in place.
 - Marketplace catalogs (`marketplace.json`) appear as a pick list. `./`-relative entries install directly. Git and archive entries list their fetch instructions.
 
 ## Built-in skill package
 
-On first load, Agentic Chat creates a `builtins` package in the plugins folder. It holds the self-knowledge, deep-research (web mode), and install-plugin skills, so built-ins behave like plugin skills and a plugin skill with the same name can shadow them. The plugin only creates the package when missing and never overwrites edits. If you delete it, use **Resources > Repair built-ins**.
+On first load, Agentic Chat creates a `builtins` package in the plugins folder. It holds the self-knowledge, deep-research (web mode), and install-plugin skills, so built-ins behave like plugin skills and a plugin skill with the same name can shadow them. The plugin only creates the package when missing and never overwrites edits. If you delete it, use **Advanced > Agent plugins > Repair built-ins**.
 
 ## Managing plugins
 
-- **Resources tab > Installed plugins**: per-plugin enable toggles, spec status, component counts, and open-folder shortcuts.
+- **Advanced tab > Agent plugins > Installed plugins**: per-plugin enable toggles, spec status, component counts, and open-folder shortcuts.
 - **`/doctor`** in chat: one health panel. It shows aggregate status, then audits every package (manifest validation, skill counts, MCP server counts, skipped transports, spec violations) and adds full runtime diagnostics.
 
 ## Spec compliance

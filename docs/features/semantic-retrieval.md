@@ -21,7 +21,7 @@ A full-vault index requires `/semantic-index start vault --confirm-vault`. The p
 
 ## Setup
 
-Enable and configure embeddings in **Settings > Agentic Chat > Resources > Semantic retrieval**:
+Enable and configure embeddings in **Settings > Agentic Chat > Advanced > Semantic retrieval**:
 
 - Provider: OpenRouter, Ollama, or OpenAI-compatible.
 - Model: the embedding model id (for example, `openai/text-embedding-3-small` for OpenRouter or `nomic-embed-text` for Ollama).
