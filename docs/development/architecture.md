@@ -218,9 +218,9 @@ flips `isOwned` to false before the next persisted batch. If the shared store is
 unavailable, indexing fails closed instead of falling back to a single-window
 writer.
 
-Fixed by the writer-owned lease change: `bootstrapSemanticIndex` acquires the
-lease itself and returns a lease result the UI can render. The UI no longer
-acquires the lease, so a direct caller cannot write without it.
+Fixed by #249: `bootstrapSemanticIndex` acquires the lease itself and returns a
+lease result the UI can render. The UI no longer acquires the lease, so a direct
+caller cannot write without it.
 
 Gaps:
 
