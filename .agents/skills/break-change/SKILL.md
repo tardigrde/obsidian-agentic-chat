@@ -27,6 +27,10 @@ proof, and not a replacement for `/doctor`, e2e, or the witness.
 | `removal` | A command, setting, modal, route, or UI entrypoint was deleted. Prove it is gone and the neighbors still work. |
 | `general` | No specific change. Scan the feature map for `partial` and `NONE` rows and target 1-3 high-risk gaps. |
 
+General live exploration (a live chaos monkey over a seeded vault) is a separate
+effort tracked in issue #253. This skill stays focused on a small, bounded,
+scripted-first run.
+
 ## Hard rules
 
 1. **Throwaway vault only.** The e2e lane copies `test/e2e/vault` into a sandbox
@@ -227,6 +231,15 @@ node .agents/skills/break-change/scripts/break-change.mjs cleanup \
 `report` checks the required sections, the 5-10 scenario count, the verdict, the
 finding rows, and common secret patterns. `cleanup` removes the generated spec
 and any run-local vault. It keeps the report and evidence.
+
+Prove the helper safety path when you change it:
+
+```bash
+node .agents/skills/break-change/scripts/break-change.mjs --self-test
+```
+
+It proves redaction happens before copy and that an aborted or failed redaction
+leaves no artifact behind.
 
 The PR body needs:
 

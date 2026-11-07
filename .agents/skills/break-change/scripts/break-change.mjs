@@ -9,7 +9,8 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createWriteStream, existsSync } from "node:fs";
-import { appendFile, cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -64,6 +65,7 @@ const USAGE = `Usage:
   break-change.mjs event --run <dir> --type <type> [--id <id>] [--verdict <value>] [--detail <text>] [--evidence <path>]
   break-change.mjs report --run <dir>
   break-change.mjs cleanup --run <dir>
+  break-change.mjs --self-test
   break-change.mjs --help
 
 The run directory holds run.json, events.jsonl, report.md, the spec snapshot,
@@ -416,39 +418,75 @@ function createRedactingWriter(onText) {
   };
 }
 
-async function redactArtifacts(root) {
+/**
+ * Redact a directory in place. The caller must copy only after this resolves.
+ * A write goes to a sibling temp file first, then renames, so a killed writer
+ * cannot leave a half-redacted file that looks complete.
+ */
+export async function redactArtifactTree(root, shouldAbort = () => false) {
   const redact = buildSecretRedactor();
   const textExtensions = new Set([".json", ".jsonl", ".txt", ".log", ".md", ".html", ".xml", ".csv"]);
   const visit = async (dir) => {
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
+      if (shouldAbort()) throw new Error("interrupted during artifact redaction");
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         await visit(full);
         continue;
       }
       if (!entry.isFile() || !textExtensions.has(path.extname(entry.name).toLowerCase())) continue;
-      const text = await readFile(full, "utf8").catch(() => null);
-      if (text === null) continue;
+      const text = await readFile(full, "utf8");
       const redacted = redact(text);
-      if (redacted !== text) await writeFile(full, redacted, "utf8");
+      if (redacted === text) continue;
+      const temporary = `${full}.redact-${process.pid}.tmp`;
+      try {
+        await writeFile(temporary, redacted, "utf8");
+        await rename(temporary, full);
+      } finally {
+        await rm(temporary, { force: true }).catch(() => undefined);
+      }
     }
   };
   await visit(root);
 }
 
-async function copyNewArtifacts(runDir, before) {
+async function newArtifactNames(before) {
   const after = await listDirectories(E2E_ARTIFACT_ROOT);
-  const fresh = [...after].filter((name) => !before.has(name));
+  return [...after].filter((name) => !before.has(name)).sort();
+}
+
+/**
+ * Redact source artifacts first, then copy the clean tree to the run directory.
+ * Any abort or redaction failure removes both the source and target trees, so an
+ * unredacted artifact cannot survive as evidence.
+ */
+export async function copyArtifactDirectories({
+  sourceRoot,
+  targetRoot,
+  names,
+  shouldAbort = () => false,
+}) {
   const copied = [];
-  for (const name of fresh) {
-    const source = path.join(E2E_ARTIFACT_ROOT, name);
-    const target = path.join(runDir, "e2e-artifacts", name);
-    await cp(source, target, { recursive: true, force: true });
-    await redactArtifacts(target);
-    copied.push(relativeToRepo(target));
+  try {
+    for (const name of names) {
+      if (shouldAbort()) throw new Error("interrupted during artifact handling");
+      await redactArtifactTree(path.join(sourceRoot, name), shouldAbort);
+    }
+    for (const name of names) {
+      if (shouldAbort()) throw new Error("interrupted during artifact handling");
+      const target = path.join(targetRoot, name);
+      await cp(path.join(sourceRoot, name), target, { recursive: true, force: true });
+      copied.push(target);
+    }
+    return copied;
+  } catch (error) {
+    for (const name of names) {
+      await rm(path.join(sourceRoot, name), { recursive: true, force: true }).catch(() => undefined);
+      await rm(path.join(targetRoot, name), { recursive: true, force: true }).catch(() => undefined);
+    }
+    throw error;
   }
-  return copied;
 }
 
 async function removeGeneratedSpec(run, runDir) {
@@ -503,7 +541,7 @@ async function runSpec(args) {
   let interrupted = null;
   const onSignal = (signal) => {
     interrupted = signal;
-    child.kill("SIGTERM");
+    if (child.exitCode === null) child.kill("SIGTERM");
   };
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
@@ -535,8 +573,6 @@ async function runSpec(args) {
     });
   });
 
-  process.removeListener("SIGINT", onSignal);
-  process.removeListener("SIGTERM", onSignal);
   logWriter.end();
   stdoutWriter.end();
   stderrWriter.end();
@@ -544,13 +580,27 @@ async function runSpec(args) {
 
   const output = await readFile(logPath, "utf8").catch(() => "");
   const counts = parseCounts(output);
-  const copiedArtifacts = await copyNewArtifacts(runDir, beforeArtifacts).catch((error) => {
-    process.stderr.write(`[break-change] warning: could not copy e2e artifacts: ${error.message}\n`);
-    return [];
-  });
+  const freshArtifacts = await newArtifactNames(beforeArtifacts);
+  let copiedArtifacts = [];
+  let artifactError = null;
+  try {
+    copiedArtifacts = (
+      await copyArtifactDirectories({
+        sourceRoot: E2E_ARTIFACT_ROOT,
+        targetRoot: path.join(runDir, "e2e-artifacts"),
+        names: freshArtifacts,
+        shouldAbort: () => interrupted !== null,
+      })
+    ).map(relativeToRepo);
+  } catch (error) {
+    artifactError = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[break-change] artifact safety failure: ${artifactError}\n`);
+  }
+  process.removeListener("SIGINT", onSignal);
+  process.removeListener("SIGTERM", onSignal);
 
-  const exitCode = interrupted ? 130 : result.code;
-  const status = interrupted ? "interrupted" : exitCode === 0 ? "completed" : "failed";
+  const exitCode = interrupted ? 130 : artifactError ? 1 : result.code;
+  const status = interrupted ? "interrupted" : artifactError || exitCode !== 0 ? "failed" : "completed";
   const finishedAt = new Date().toISOString();
   const updated = {
     ...run,
@@ -563,6 +613,7 @@ async function runSpec(args) {
     logPath: relativeToRepo(logPath),
     specSnapshot: relativeToRepo(snapshotPath),
     e2eArtifacts: copiedArtifacts,
+    ...(artifactError ? { artifactError } : {}),
     ...(result.error ? { error: result.error } : {}),
     ...(interrupted ? { interruptedBy: interrupted } : {}),
   };
@@ -578,9 +629,13 @@ async function runSpec(args) {
     durationMs: updated.durationMs,
     artifacts: copiedArtifacts,
     cleanup,
+    ...(artifactError ? { artifactError } : {}),
   });
 
   process.stdout.write(`\n[break-change] status: ${status}\n`);
+  if (artifactError) {
+    process.stdout.write(`[break-change] artifact safety failure: ${artifactError}\n`);
+  }
   process.stdout.write(`[break-change] exit: ${exitCode}\n`);
   if (counts) {
     process.stdout.write(
@@ -967,10 +1022,80 @@ function printTable(headers, rows) {
   process.stdout.write([format(headers), ...rows.map(format)].join("\n") + "\n");
 }
 
+/** Prove that redaction happens before copy and an abort leaves no artifact. */
+async function selfTest() {
+  const root = await mkdtemp(path.join(tmpdir(), "break-change-self-test-"));
+  const sourceRoot = path.join(root, "source");
+  const targetRoot = path.join(root, "target");
+  const secretKey = "BREAK_CHANGE_SELF_TEST_SECRET";
+  const secretValue = "self-test-secret-value";
+  try {
+    process.env[secretKey] = secretValue;
+
+    await mkdir(path.join(sourceRoot, "ok"), { recursive: true });
+    await writeFile(path.join(sourceRoot, "ok", "artifact.txt"), `prefix ${secretValue} suffix\n`, "utf8");
+    const copied = await copyArtifactDirectories({ sourceRoot, targetRoot, names: ["ok"] });
+    const copiedText = await readFile(path.join(copied[0], "artifact.txt"), "utf8");
+    if (copiedText.includes(secretValue)) throw new Error("self-test: copied artifact kept the secret");
+    const sourceText = await readFile(path.join(sourceRoot, "ok", "artifact.txt"), "utf8");
+    if (sourceText.includes(secretValue)) throw new Error("self-test: source artifact kept the secret");
+
+    await mkdir(path.join(sourceRoot, "abort"), { recursive: true });
+    await writeFile(path.join(sourceRoot, "abort", "artifact.txt"), `prefix ${secretValue} suffix\n`, "utf8");
+    let aborted = false;
+    try {
+      await copyArtifactDirectories({
+        sourceRoot,
+        targetRoot,
+        names: ["abort"],
+        shouldAbort: () => true,
+      });
+    } catch {
+      aborted = true;
+    }
+    if (!aborted) throw new Error("self-test: aborted copy did not throw");
+    if (existsSync(path.join(sourceRoot, "abort"))) {
+      throw new Error("self-test: aborted copy left the source artifact");
+    }
+    if (existsSync(path.join(targetRoot, "abort"))) {
+      throw new Error("self-test: aborted copy left the target artifact");
+    }
+
+    if (process.platform !== "win32" && typeof process.getuid === "function" && process.getuid() !== 0) {
+      const failDir = path.join(sourceRoot, "fail");
+      await mkdir(failDir, { recursive: true });
+      await writeFile(path.join(failDir, "artifact.json"), `prefix ${secretValue} suffix\n`, "utf8");
+      await chmod(path.join(failDir, "artifact.json"), 0o000);
+      let failed = false;
+      try {
+        await copyArtifactDirectories({ sourceRoot, targetRoot, names: ["fail"] });
+      } catch {
+        failed = true;
+      }
+      if (!failed) throw new Error("self-test: unreadable artifact did not fail");
+      if (existsSync(path.join(sourceRoot, "fail"))) {
+        throw new Error("self-test: failed redaction left the source artifact");
+      }
+      if (existsSync(path.join(targetRoot, "fail"))) {
+        throw new Error("self-test: failed redaction left the target artifact");
+      }
+    }
+
+    process.stdout.write("SELF-TEST PASS\n");
+  } finally {
+    delete process.env[secretKey];
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
 async function main(argv) {
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h" || command === "help") {
     process.stdout.write(USAGE);
+    return;
+  }
+  if (command === "--self-test") {
+    await selfTest();
     return;
   }
   const args = parseArgs(rest);
