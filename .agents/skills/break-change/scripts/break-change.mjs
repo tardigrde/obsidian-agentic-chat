@@ -9,7 +9,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createWriteStream, existsSync } from "node:fs";
-import { appendFile, chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -478,6 +478,9 @@ export async function copyArtifactDirectories({
       const target = path.join(targetRoot, name);
       await cp(path.join(sourceRoot, name), target, { recursive: true, force: true });
       copied.push(target);
+      // A signal can arrive while the last copy is in flight. Check after it,
+      // not only before it, so the catch below still removes both trees.
+      if (shouldAbort()) throw new Error("interrupted during artifact copy");
     }
     return copied;
   } catch (error) {
@@ -1061,24 +1064,48 @@ async function selfTest() {
       throw new Error("self-test: aborted copy left the target artifact");
     }
 
-    if (process.platform !== "win32" && typeof process.getuid === "function" && process.getuid() !== 0) {
-      const failDir = path.join(sourceRoot, "fail");
-      await mkdir(failDir, { recursive: true });
-      await writeFile(path.join(failDir, "artifact.json"), `prefix ${secretValue} suffix\n`, "utf8");
-      await chmod(path.join(failDir, "artifact.json"), 0o000);
-      let failed = false;
-      try {
-        await copyArtifactDirectories({ sourceRoot, targetRoot, names: ["fail"] });
-      } catch {
-        failed = true;
-      }
-      if (!failed) throw new Error("self-test: unreadable artifact did not fail");
-      if (existsSync(path.join(sourceRoot, "fail"))) {
-        throw new Error("self-test: failed redaction left the source artifact");
-      }
-      if (existsSync(path.join(targetRoot, "fail"))) {
-        throw new Error("self-test: failed redaction left the target artifact");
-      }
+    await mkdir(path.join(sourceRoot, "inflight"), { recursive: true });
+    await writeFile(path.join(sourceRoot, "inflight", "artifact.txt"), `prefix ${secretValue} suffix\n`, "utf8");
+    let inflightAborted = false;
+    try {
+      await copyArtifactDirectories({
+        sourceRoot,
+        targetRoot,
+        names: ["inflight"],
+        shouldAbort: () => existsSync(path.join(targetRoot, "inflight", "artifact.txt")),
+      });
+    } catch {
+      inflightAborted = true;
+    }
+    if (!inflightAborted) throw new Error("self-test: in-flight copy abort did not throw");
+    if (existsSync(path.join(sourceRoot, "inflight"))) {
+      throw new Error("self-test: in-flight abort left the source artifact");
+    }
+    if (existsSync(path.join(targetRoot, "inflight"))) {
+      throw new Error("self-test: in-flight abort left the target artifact");
+    }
+
+    await mkdir(path.join(sourceRoot, "forced"), { recursive: true });
+    await writeFile(path.join(sourceRoot, "forced", "artifact.txt"), `prefix ${secretValue} suffix\n`, "utf8");
+    let forcedFailed = false;
+    try {
+      await copyArtifactDirectories({
+        sourceRoot,
+        targetRoot,
+        names: ["forced"],
+        shouldAbort: () => {
+          throw new Error("forced redaction failure");
+        },
+      });
+    } catch {
+      forcedFailed = true;
+    }
+    if (!forcedFailed) throw new Error("self-test: forced redaction failure did not throw");
+    if (existsSync(path.join(sourceRoot, "forced"))) {
+      throw new Error("self-test: forced failure left the source artifact");
+    }
+    if (existsSync(path.join(targetRoot, "forced"))) {
+      throw new Error("self-test: forced failure left the target artifact");
     }
 
     process.stdout.write("SELF-TEST PASS\n");
