@@ -180,12 +180,13 @@ async function initRun(args) {
   const head = gitOrNull(["rev-parse", "--verify", `${requestedHead}^{commit}`]);
   if (!head) throw new Error(`cannot resolve --head ${requestedHead}`);
 
-  let base = one(args.base) ?? "origin/main";
-  if (!gitOrNull(["rev-parse", "--verify", `${base}^{commit}`])) {
-    const fallback = gitOrNull(["rev-parse", "--verify", "main^{commit}"]) ? "main" : gitOrNull(["rev-parse", "--verify", "HEAD~1^{commit}"]);
-    if (!fallback) throw new Error(`cannot resolve --base ${base} and no fallback is available`);
-    process.stderr.write(`[break-change] base ${base} is not available; using ${fallback}\n`);
-    base = fallback;
+  const baseRef = one(args.base) ?? "origin/main";
+  let base = gitOrNull(["rev-parse", "--verify", `${baseRef}^{commit}`]);
+  if (!base) {
+    const fallback = gitOrNull(["rev-parse", "--verify", "main^{commit}"]) ? "main" : "HEAD~1";
+    base = gitOrNull(["rev-parse", "--verify", `${fallback}^{commit}`]);
+    if (!base) throw new Error(`cannot resolve --base ${baseRef} and no fallback is available`);
+    process.stderr.write(`[break-change] base ${baseRef} is not available; using ${fallback} (${base})\n`);
   }
 
   const runId = stamp();
@@ -202,6 +203,7 @@ async function initRun(args) {
   await writeJson(path.join(runDir, "change.json"), {
     head,
     base,
+    baseRef,
     range,
     files: nameStatus.status === 0 ? nameStatus.stdout.trim().split("\n").filter(Boolean) : [],
     stat: stat.status === 0 ? stat.stdout.trim() : "",
@@ -257,6 +259,7 @@ async function initRun(args) {
     workItem,
     head,
     base,
+    baseRef,
     startedAt,
     status: "running",
     scenarioCount,
@@ -274,6 +277,7 @@ async function initRun(args) {
     workItem,
     head,
     base,
+    baseRef,
     scenarioCount,
   });
 
