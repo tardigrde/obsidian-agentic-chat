@@ -19,7 +19,7 @@
 
 - Type `/agent` to see the role picker, or `/agent explorer <task>`.
 - Let the model call the `subagent` tool.
-- Open Settings, select **Resources**, then find **Subagent timeout**.
+- Open Settings, select **Advanced**, then find **Subagent timeout** under **Subagents**.
 - For active-note, `@` mention, context-menu, drag-and-drop, folder, and image
   attachments, see [Open and compose](./open-and-compose.md).
 

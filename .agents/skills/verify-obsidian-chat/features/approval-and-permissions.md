@@ -17,7 +17,7 @@
 ## How to get to it (user view)
 
 - A tool that needs approval opens the modal automatically.
-- Open Settings and select Agentic Chat, then open the **Approval** tab for
+- Open Settings and select Agentic Chat, then open the **Agent** tab and find **Approval gates** for
   gates, per-tool overrides, and working directories.
 - Composer toolbar: click the Safe/YOLO toggle. Click the Plan badge to leave
   plan mode.
@@ -34,7 +34,7 @@ await (await modal.$("button=Allow")).click();
 
 - Deny is two-step: click `button=Deny`, then `button=Confirm Deny`.
 - Remember: toggle **Don't ask again for this tool**, then choose Allow or Deny.
-- Settings: use `openAgenticChatSettings()`, `selectSettingsTab("Approval")`,
+- Settings: use `openAgenticChatSettings()`, `selectSettingsTab("Agent")`,
   `setSettingSelect("Write file", "ask")`.
 - Working directory: seed `settings.approval.workingDirs` through
   `browser.executeObsidian`, as `approval-deterministic.e2e.ts` does.

@@ -15,12 +15,12 @@
 
 ## How to get to it (user view)
 
-- Open Settings and select Agentic Chat, then open **MCP**.
+- Open Settings and select Agentic Chat, then open **Advanced** and find **MCP tools**.
 - Turn on **Enable MCP**, fill **Server name** and **HTTPS endpoint**, then click
   **Add MCP server**.
 - Use **Test connection**, **Refresh tools**, or **Authenticate & test** on the
   server row.
-- Open Settings, select **Resources**, then click **Install plugin…** for a
+- Open Settings, select **Advanced**, then click **Install plugin…** under **Agent plugins** for a
   package with `mcp.json`.
 - Mobile OAuth returns through `obsidian://agentic-chat-mcp-oauth`.
 
@@ -28,7 +28,7 @@
 
 ```ts
 await openAgenticChatSettings();
-await selectSettingsTab("MCP");
+await selectSettingsTab("Advanced");
 await setSettingToggle("Enable MCP", true);
 await waitForMcpAddRow();
 await setSettingTextByPlaceholder("Server name", "docs");
