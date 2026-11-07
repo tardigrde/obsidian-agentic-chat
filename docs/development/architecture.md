@@ -190,8 +190,9 @@ token refresh and callback lifecycle.
 
 ## Semantic index writer
 
-Owner: `SemanticIndexWorkflowController` owns the run and its abort controller.
-`SemanticIndexLeaseRegistry` owns the per-path lease; its
+Owner: `bootstrapSemanticIndex` owns the write and its lease.
+`SemanticIndexWorkflowController` owns the run and its abort controller.
+`SemanticIndexLeaseRegistry` is the per-path arbiter; its
 `IndexedDbSemanticLeaseStore` is the cross-window arbiter.
 `bootstrapSemanticIndex` writes through `.tmp` and keeps `.bak`.
 `readSemanticIndexFile` serves the backup and repairs a stale `running` status
@@ -200,7 +201,9 @@ on read.
 Invariants:
 
 - One writer per index path.
-- Every persisted batch checks that the lease is still owned.
+- The writer acquires the lease before its first write and releases it in
+  `finally`.
+- Every persisted batch checks that the lease is still owned and renews it.
 - A complete target is backed up before any replacement.
 - An unreadable target is not replaced unless a complete backup exists.
 - A read serves the last complete index when the target is missing or corrupt.
@@ -215,13 +218,16 @@ flips `isOwned` to false before the next persisted batch. If the shared store is
 unavailable, indexing fails closed instead of falling back to a single-window
 writer.
 
+Fixed by #249: `bootstrapSemanticIndex` acquires the lease itself and returns a
+lease result the UI can render. The UI no longer acquires the lease, so a direct
+caller cannot write without it.
+
 Gaps:
 
-- The lease is acquired by the UI controller, not by the writer itself.
 - The plugin folder can hold `index.json`, `index.json.bak`, and
   `index.json.tmp` at the same time.
 
-Next: move lease acquisition into the writer.
+Next: define cleanup for stale `.tmp` and `.bak` files.
 
 ## Plugin install
 
@@ -259,7 +265,6 @@ writer.
 
 | Item | Risk | Target |
 |---|---|---|
-| Semantic lease acquired by the UI | A writer can start without the lease owner | Move into the writer |
 | Approval stop reason | A deny with the stop text stops the turn | Unowned follow-up |
 | Compaction audit start after swap | Audit entries land in the wrong session | Unowned follow-up |
 | Compaction recovery outside swap queue | Recovery can overwrite a newer session | Unowned follow-up |

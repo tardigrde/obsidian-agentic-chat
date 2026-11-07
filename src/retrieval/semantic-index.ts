@@ -35,17 +35,30 @@ export interface SemanticIndexBootstrapInput {
   estimate?: EmbeddingIndexCostEstimate;
   now?: () => number;
   signal?: AbortSignal;
-  /** Called after each persisted batch so a cross-view lease can stay fresh. */
-  onProgress?: () => void;
-  /** Returns false when another writer owns the index; persistence then stops. */
-  isLeaseOwned?: () => boolean;
+  /** Called after the writer owns the path, before the first persisted write. */
+  onLeaseAcquired?: () => void;
+  /** Test seam: the registry that owns the path. Defaults to the shared registry. */
+  leases?: Pick<SemanticIndexLeaseRegistry, "acquireDurable">;
 }
 
-export interface SemanticIndexBootstrapResult {
-  file: SemanticIndexFile;
-  completed: boolean;
-  cancelled: boolean;
-}
+export type SemanticIndexLeaseFailure =
+  | { reason: "held" }
+  | { reason: "store-error"; message: string };
+
+export type SemanticIndexBootstrapResult =
+  | {
+      file: SemanticIndexFile;
+      completed: boolean;
+      cancelled: boolean;
+      leaseFailure?: undefined;
+    }
+  | {
+      /** Null when the writer could not own the path, so it wrote nothing. */
+      file: null;
+      completed: false;
+      cancelled: false;
+      leaseFailure: SemanticIndexLeaseFailure;
+    };
 
 export const SEMANTIC_INDEX_VERSION = 1;
 
@@ -171,7 +184,53 @@ export class SemanticIndexLeaseRegistry {
 
 export const semanticIndexLeases = new SemanticIndexLeaseRegistry();
 
+/** One acquisition path for the writer and for the read-repair critical section. */
+async function acquireSemanticIndexWriterLease(
+  leases: Pick<SemanticIndexLeaseRegistry, "acquireDurable">,
+  path: string,
+): Promise<SemanticIndexLease | null> {
+  return await leases.acquireDurable(path);
+}
+
+/**
+ * The writer owns the lease: it claims the path before the first read or write,
+ * keeps the claim fresh after every persisted batch, and releases it in
+ * `finally`. A direct caller therefore cannot write without the lease.
+ */
 export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput): Promise<SemanticIndexBootstrapResult> {
+  let acquired: SemanticIndexLease | null;
+  try {
+    acquired = await acquireSemanticIndexWriterLease(input.leases ?? semanticIndexLeases, input.path);
+  } catch (error) {
+    return {
+      file: null,
+      completed: false,
+      cancelled: false,
+      leaseFailure: { reason: "store-error", message: errorMessage(error) },
+    };
+  }
+  if (!acquired) {
+    return { file: null, completed: false, cancelled: false, leaseFailure: { reason: "held" } };
+  }
+  const lease = acquired;
+  try {
+    input.onLeaseAcquired?.();
+    return await runSemanticIndexBootstrap({
+      ...input,
+      isLeaseOwned: () => lease.isOwned(),
+      onProgress: () => lease.touch(),
+    });
+  } finally {
+    await lease.release();
+  }
+}
+
+interface SemanticIndexBootstrapRunInput extends SemanticIndexBootstrapInput {
+  isLeaseOwned: () => boolean;
+  onProgress: () => void;
+}
+
+async function runSemanticIndexBootstrap(input: SemanticIndexBootstrapRunInput): Promise<SemanticIndexBootstrapResult> {
   const now = input.now ?? Date.now;
   const batchSize = Math.max(1, Math.floor(input.batchSize));
   const estimate =
@@ -183,9 +242,8 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
       characterCount: input.documents.reduce((sum, document) => sum + document.content.length, 0),
       indexingBatchSize: batchSize,
     });
-  const ownsLease = input.isLeaseOwned ?? (() => true);
   const persist = async (file: SemanticIndexFile): Promise<boolean> => {
-    if (!ownsLease()) return false;
+    if (!input.isLeaseOwned()) return false;
     await writeSemanticIndexFile(input.adapter, input.path, file);
     return true;
   };
@@ -213,7 +271,7 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
     updatedAt: now(),
   });
   if (!(await persist(runningFile))) return { file: runningFile, completed: false, cancelled: false };
-  input.onProgress?.();
+  input.onProgress();
 
   try {
     for (let index = 0; index < input.documents.length; index += batchSize) {
@@ -235,7 +293,7 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
         updatedAt: now(),
       });
       if (!(await persist(batchFile))) return { file: batchFile, completed: false, cancelled: false };
-      input.onProgress?.();
+      input.onProgress();
     }
     const file = semanticIndexFile({
       scope: input.scope,
@@ -351,7 +409,7 @@ async function repairInterruptedIndex(
   // index between the check and the write and lose its file to our repair.
   let lease: SemanticIndexLease | null;
   try {
-    lease = await semanticIndexLeases.acquireDurable(path);
+    lease = await acquireSemanticIndexWriterLease(semanticIndexLeases, path);
   } catch {
     // A status read must still work when the shared lease store is unavailable.
     return file;

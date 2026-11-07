@@ -72,8 +72,8 @@ await $(".agentic-chat-info").waitForExist();
 | `/redirect` | `src/ui/commands.ts:43` | `test/turn-control.test.ts:98` (parser and label only) | `partial` |
 | `/export` | `src/ui/commands.ts:48` | `test/session-export.test.ts:31` (renderer only) | `partial` |
 | `/semantic-index` | `src/ui/commands.ts:34` | `test/semantic-index-workflow-controller.test.ts:85` (workflow unit) | `partial` |
-| Repair a stale semantic index on read | `src/retrieval/semantic-index.ts:200` | `test/semantic-index.test.ts:90` | `partial` |
-| One semantic index writer across tabs | `src/ui/semantic-index-workflow-controller.ts:119` | `test/semantic-index-workflow-controller.test.ts:168` | `partial` |
+| Repair a stale semantic index on read | `src/retrieval/semantic-index.ts:402` | `test/semantic-index.test.ts:90` | `partial` |
+| One semantic index writer across tabs | `src/retrieval/semantic-index.ts:200` | `test/semantic-index-lease.test.ts:81` | `partial` |
 | `/doctor` | `src/ui/commands.ts:35` | `test/runtime-diagnostics.test.ts:13` (diagnostics only) | `partial` |
 | `/add-dir` | `src/ui/commands.ts:37` | `test/working-directory-workflow-controller.test.ts:69` (unit only) | `partial` |
 | `/agent` | `src/ui/commands.ts:51` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |

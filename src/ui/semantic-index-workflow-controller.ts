@@ -2,8 +2,8 @@ import type { DataAdapter } from "obsidian";
 import {
   bootstrapSemanticIndex,
   readSemanticIndexFile,
-  semanticIndexLeases,
   type SemanticIndexFile,
+  type SemanticIndexLeaseFailure,
 } from "../retrieval/semantic-index";
 import {
   estimateEmbeddingIndexCost,
@@ -151,40 +151,32 @@ export class SemanticIndexWorkflowController {
       this.options.renderer.error("Set an embedding model in Settings -> Resources before starting semantic indexing.");
       return;
     }
-    const path = this.options.indexPath();
-    let lease;
-    try {
-      lease = await semanticIndexLeases.acquireDurable(path);
-    } catch (error) {
-      this.options.renderer.error(error instanceof Error ? error.message : String(error));
+    const result = await bootstrapSemanticIndex({
+      adapter: this.options.adapter,
+      path: this.options.indexPath(),
+      scope,
+      documents,
+      estimate,
+      embedder: this.options.createEmbedder(),
+      batchSize: this.options.batchSize(),
+      signal: controller.signal,
+      onLeaseAcquired: () => {
+        this.options.renderer.info("Semantic index", [["Start", `Indexing ${documents.length} notes for ${scope.kind} "${scope.label}".`]]);
+      },
+    });
+    if (result.leaseFailure) {
+      this.options.renderer.error(semanticIndexLeaseFailureMessage(result.leaseFailure));
       return;
     }
-    if (!lease) {
-      this.options.renderer.error(
-        "Semantic indexing is already running in another tab for this index. Use /semantic-index cancel there first.",
-      );
-      return;
-    }
-    try {
-      this.options.renderer.info("Semantic index", [["Start", `Indexing ${documents.length} notes for ${scope.kind} "${scope.label}".`]]);
-      const result = await bootstrapSemanticIndex({
-        adapter: this.options.adapter,
-        path,
-        scope,
-        documents,
-        estimate,
-        embedder: this.options.createEmbedder(),
-        batchSize: this.options.batchSize(),
-        signal: controller.signal,
-        isLeaseOwned: () => lease.isOwned(),
-        onProgress: () => lease.touch(),
-      });
-      this.options.renderer.info("Semantic index", semanticIndexRows(result.file));
-    } finally {
-      if (this.abort === controller) this.abort = null;
-      await lease.release();
-    }
+    this.options.renderer.info("Semantic index", semanticIndexRows(result.file));
   }
+}
+
+export function semanticIndexLeaseFailureMessage(failure: SemanticIndexLeaseFailure): string {
+  if (failure.reason === "held") {
+    return "Semantic indexing is already running in another tab or window for this index. Use /semantic-index cancel there first.";
+  }
+  return failure.message;
 }
 
 export function semanticEstimateRows(

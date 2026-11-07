@@ -51,8 +51,8 @@ describe("semantic index bootstrap", () => {
       now: () => 1,
     });
 
-    expect(result.file.state.status).toMatchObject({ state: "skipped", reason: "scope-empty" });
-    expect(result.file.snapshot).toBeUndefined();
+    expect(result.file!.state.status).toMatchObject({ state: "skipped", reason: "scope-empty" });
+    expect(result.file!.snapshot).toBeUndefined();
   });
 
   it("repairs a stale running state on load", async () => {
@@ -244,12 +244,12 @@ describe("semantic index bootstrap", () => {
     expect(calls).toBe(1);
     expect(result.completed).toBe(false);
     expect(result.cancelled).toBe(true);
-    expect(result.file.state.status).toMatchObject({
+    expect(result.file!.state.status).toMatchObject({
       state: "cancelled",
       processedDocuments: 1,
       totalDocuments: 3,
     });
-    expect(result.file.snapshot?.records).toHaveLength(1);
+    expect(result.file!.snapshot?.records).toHaveLength(1);
   });
 });
 
