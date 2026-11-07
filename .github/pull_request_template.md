@@ -45,6 +45,20 @@ npm run verify -- fast
 - `fast`:
 - CI:
 
+## Break-change
+
+<!-- Run @break-change for behavior changes and removals, or state a waiver. -->
+- Report: `logs/break-change/<timestamp>/report.md` | waiver: <reason>
+- Verdict: `PASS` | `FINDINGS` | `INCONCLUSIVE`
+
+## UI evidence
+
+<!-- Required for user-visible changes. Clips stay local; never commit them. -->
+- Desktop 1280x1024 clip: `logs/break-change/<timestamp>/clips/desktop-1280x1024/session.mp4`
+- Mobile 390x844 clip: `logs/break-change/<timestamp>/clips/mobile-390x844/session.mp4`
+- Watch: <timestamps and mark labels>
+- Waiver: <reason when no clips>
+
 ## Independent verdict
 
 <!-- Filled in by a verifier that did not write the change. See @verify-pr. -->

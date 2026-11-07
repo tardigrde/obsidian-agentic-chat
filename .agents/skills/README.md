@@ -8,6 +8,7 @@ and so do Codex and other harnesses that follow the same convention.
 - `ship-change/`
 - `verify-obsidian-chat/`
 - `probe-feature/`
+- `break-change/`
 
 These are reviewed with the code in this repository. They are not listed in
 `skills-lock.json`, because that file records skills installed from an external
