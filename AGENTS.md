@@ -38,7 +38,11 @@ skills hold procedure, `scripts/` and CI hold gates.
 3. Report test counts, not only exit codes. Zero tests or all tests skipped is a
    failure, not a pass.
 4. UI claims need a committed e2e assertion or a probe recording plus DOM/state
-   metrics. A screenshot alone is not a verdict.
+   metrics. A screenshot alone is not a verdict. When a change touches a
+   user-visible entry point (command, button, modal, settings row, mode, tab, or
+   panel), attach desktop 1280x1024 and mobile-width 390x844 MP4 clips with
+   "what to watch" timestamps, or an explicit waiver in the PR. The 390x844 clip
+   is a narrow desktop window, not real Obsidian Mobile.
 5. Never commit secrets, vault plugin data, or generated sessions.
 6. A merge-ready PR has an independent verdict from an agent that did not write
    it. A green check is not a verdict.

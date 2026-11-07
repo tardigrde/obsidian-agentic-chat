@@ -56,6 +56,11 @@ path needs Obsidian. A leading bare `--` is tolerated, but it is not needed.
   For a bug, run it before the fix and paste both results.
 - For UI claims, either a committed e2e assertion or a probe recording plus DOM or
   state metrics. A screenshot or a video alone is not a verdict.
+- For a changed user-visible entry point, desktop `1280x1024` and mobile-width
+  `390x844` clips, each with a “what to watch” list. The `390x844` clip is a
+  narrow desktop window, not real Obsidian Mobile. A removal also needs absence
+  proof; use `@break-change` removal mode. If clips are impossible, put a waiver
+  in the PR.
 - The artifact path when the lane writes one.
 
 Zero tests, or every test skipped, is a failure. `verify` fails a lane that expects
