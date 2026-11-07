@@ -423,8 +423,7 @@ function createRedactingWriter(onText) {
  * A write goes to a sibling temp file first, then renames, so a killed writer
  * cannot leave a half-redacted file that looks complete.
  */
-export async function redactArtifactTree(root, shouldAbort = () => false) {
-  const redact = buildSecretRedactor();
+export async function redactArtifactTree(root, shouldAbort = () => false, redact = buildSecretRedactor()) {
   const textExtensions = new Set([".json", ".jsonl", ".txt", ".log", ".md", ".html", ".xml", ".csv"]);
   const visit = async (dir) => {
     const entries = await readdir(dir, { withFileTypes: true });
@@ -466,12 +465,13 @@ export async function copyArtifactDirectories({
   targetRoot,
   names,
   shouldAbort = () => false,
+  redact = buildSecretRedactor(),
 }) {
   const copied = [];
   try {
     for (const name of names) {
       if (shouldAbort()) throw new Error("interrupted during artifact handling");
-      await redactArtifactTree(path.join(sourceRoot, name), shouldAbort);
+      await redactArtifactTree(path.join(sourceRoot, name), shouldAbort, redact);
     }
     for (const name of names) {
       if (shouldAbort()) throw new Error("interrupted during artifact handling");
@@ -1025,7 +1025,7 @@ function printTable(headers, rows) {
   process.stdout.write([format(headers), ...rows.map(format)].join("\n") + "\n");
 }
 
-/** Prove that redaction happens before copy and an abort leaves no artifact. */
+/** Prove that redaction happens before copy and an abort or redactor failure leaves no artifact. */
 async function selfTest() {
   const root = await mkdtemp(path.join(tmpdir(), "break-change-self-test-"));
   const sourceRoot = path.join(root, "source");
@@ -1085,27 +1085,50 @@ async function selfTest() {
       throw new Error("self-test: in-flight abort left the target artifact");
     }
 
-    await mkdir(path.join(sourceRoot, "forced"), { recursive: true });
-    await writeFile(path.join(sourceRoot, "forced", "artifact.txt"), `prefix ${secretValue} suffix\n`, "utf8");
-    let forcedFailed = false;
+    await mkdir(path.join(sourceRoot, "redactor-fail"), { recursive: true });
+    await writeFile(path.join(sourceRoot, "redactor-fail", "artifact.txt"), `prefix ${secretValue} suffix\n`, "utf8");
+    let redactorFailed = false;
     try {
       await copyArtifactDirectories({
         sourceRoot,
         targetRoot,
-        names: ["forced"],
-        shouldAbort: () => {
-          throw new Error("forced redaction failure");
+        names: ["redactor-fail"],
+        redact: () => {
+          throw new Error("injected redactor failure");
         },
       });
     } catch {
-      forcedFailed = true;
+      redactorFailed = true;
     }
-    if (!forcedFailed) throw new Error("self-test: forced redaction failure did not throw");
-    if (existsSync(path.join(sourceRoot, "forced"))) {
-      throw new Error("self-test: forced failure left the source artifact");
+    if (!redactorFailed) throw new Error("self-test: injected redactor failure did not throw");
+    if (existsSync(path.join(sourceRoot, "redactor-fail"))) {
+      throw new Error("self-test: redactor failure left the source artifact");
     }
-    if (existsSync(path.join(targetRoot, "forced"))) {
-      throw new Error("self-test: forced failure left the target artifact");
+    if (existsSync(path.join(targetRoot, "redactor-fail"))) {
+      throw new Error("self-test: redactor failure left the target artifact");
+    }
+
+    await mkdir(path.join(sourceRoot, "pre-redaction"), { recursive: true });
+    await writeFile(path.join(sourceRoot, "pre-redaction", "artifact.txt"), `prefix ${secretValue} suffix\n`, "utf8");
+    let preRedactionFailed = false;
+    try {
+      await copyArtifactDirectories({
+        sourceRoot,
+        targetRoot,
+        names: ["pre-redaction"],
+        shouldAbort: () => {
+          throw new Error("injected pre-redaction failure");
+        },
+      });
+    } catch {
+      preRedactionFailed = true;
+    }
+    if (!preRedactionFailed) throw new Error("self-test: pre-redaction failure did not throw");
+    if (existsSync(path.join(sourceRoot, "pre-redaction"))) {
+      throw new Error("self-test: pre-redaction failure left the source artifact");
+    }
+    if (existsSync(path.join(targetRoot, "pre-redaction"))) {
+      throw new Error("self-test: pre-redaction failure left the target artifact");
     }
 
     process.stdout.write("SELF-TEST PASS\n");
