@@ -114,6 +114,10 @@ async function configurePlugin(config: McpE2EConfig): Promise<boolean> {
           authHeaderName: string;
           authHeaderValueSecretId: string;
           authHeaderValue: string;
+          headers: Record<string, string>;
+          source: "user" | "plugin";
+          enabledTools: string[];
+          disabledTools: string[];
           oauth: Record<string, string | number | boolean>;
           approval: string;
           knownTools: Array<{ name: string; title: string; readOnlyHint: boolean }>;
@@ -141,6 +145,12 @@ async function configurePlugin(config: McpE2EConfig): Promise<boolean> {
           authHeaderName: cfg.headerName,
           authHeaderValueSecretId: "agentic-chat-mcp-secure-mcp-auth-header-value",
           authHeaderValue: cfg.headerValue,
+          // The test assigns raw settings and bypasses healing; every field the
+          // client reads must be present. `headers` is read with Object.entries.
+          headers: {},
+          source: "user",
+          enabledTools: [],
+          disabledTools: [],
           oauth: {
             clientId: "",
             clientSecretSecretId: "agentic-chat-mcp-secure-mcp-oauth-client-secret",
