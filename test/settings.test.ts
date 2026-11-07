@@ -342,7 +342,9 @@ describe("mergeSettings — MCP", () => {
           authType: "header",
           authHeaderName: "X-API-Key",
           authHeaderValueSecretId: mcpSecretId("context_7", "auth-header-value"),
-          authHeaderValue: "secret",
+          // Plaintext is moved to secretStorage by the one-time legacy migration,
+          // so mergeSettings itself never reads it.
+          authHeaderValue: "",
           headers: {},
           source: "user",
           oauth: mcpOAuthSettingsForServer("context_7"),

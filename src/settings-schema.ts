@@ -46,8 +46,9 @@ export interface AgenticChatSettings {
   /** Secret id in Obsidian secretStorage. */
   openrouterApiKeySecretId: string;
   /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link openrouterApiKeySecretId}. Kept in-memory for {@link apiKeyForProvider}.
+   * Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage
+   * through {@link openrouterApiKeySecretId}. Never persisted: the save path
+   * writes it to secretStorage and omits the key from data.json.
    */
   openrouterApiKey: string;
   openrouterModel: string;
@@ -57,8 +58,9 @@ export interface AgenticChatSettings {
   /** Secret id in Obsidian secretStorage. */
   openaiCompatibleApiKeySecretId: string;
   /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link openaiCompatibleApiKeySecretId}.
+   * Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage
+   * through {@link openaiCompatibleApiKeySecretId}. Never persisted: the save
+   * path writes it to secretStorage and omits the key from data.json.
    */
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
@@ -131,8 +133,9 @@ export interface WebSettings {
   /** Secret id in Obsidian secretStorage. */
   searchApiKeySecretId: string;
   /**
-   * @deprecated Runtime-only plaintext fallback for legacy data.json; persisted form omits this key entirely.
-   * Secrets live in secretStorage via {@link searchApiKeySecretId}.
+   * Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage
+   * through {@link searchApiKeySecretId}. Never persisted: the save path writes
+   * it to secretStorage and omits the key from data.json.
    */
   searchApiKey: string;
   /** Base URL of a self-hosted SearXNG instance (used only when provider is SearXNG). */
@@ -222,17 +225,18 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
   return {
     ...DEFAULT_SETTINGS,
     ...remaining,
+    // Plaintext secret keys are never read from persisted data once loaded;
+    // migrateLegacyPlaintextSecrets() moves legacy values to secretStorage
+    // before merge, and hydrateSettingsSecrets() fills the runtime cache.
+    openrouterApiKey: "",
+    openaiCompatibleApiKey: "",
     // Heal enum-like fields so an unknown (or retired ask/plan/agent) value can't break the gate.
     provider: healProvider(stored?.provider),
     openrouterApiKeySecretId: stringSetting(stored?.openrouterApiKeySecretId, OPENROUTER_API_KEY_SECRET_ID),
-    // Deprecated runtime-only plaintext: coerce so a corrupt non-string value
-    // can't reach apiKeyForProvider's .trim().
-    openrouterApiKey: typeof stored?.openrouterApiKey === "string" ? stored.openrouterApiKey : "",
     openaiCompatibleApiKeySecretId: stringSetting(
       stored?.openaiCompatibleApiKeySecretId,
       OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
     ),
-    openaiCompatibleApiKey: typeof stored?.openaiCompatibleApiKey === "string" ? stored.openaiCompatibleApiKey : "",
     mode: healMode(stored?.mode),
     openaiCompatibleContextWindow: healContextWindow(stored?.openaiCompatibleContextWindow),
     outputStyle:
@@ -260,6 +264,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       // Heal the provider enum so an unknown persisted value can't break search.
       searchProvider: healSearchProvider(stored?.web?.searchProvider),
       searchApiKeySecretId: stringSetting(stored?.web?.searchApiKeySecretId, WEB_SEARCH_API_KEY_SECRET_ID),
+      searchApiKey: "",
       allowedHosts: normalizeAllowedHosts(stored?.web?.allowedHosts),
     },
     mcp: healedMcp,

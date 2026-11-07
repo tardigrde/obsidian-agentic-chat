@@ -711,8 +711,10 @@ export class ChatView extends ItemView {
       this.resetHistoryNav();
       // Composition (IME) inputs may briefly leave the value empty; don't drop a
       // queued prompt mid-composition — the trailing non-composing input event
-      // reconciles the state.
-      if (this.queuedPromptArmed && !(event instanceof InputEvent && event.isComposing)) {
+      // reconciles the state. The listener type is Event, but an `input` event
+      // is an InputEvent; use Obsidian's cross-window instanceOf() check.
+      const inputEvent = event as UIEvent;
+      if (this.queuedPromptArmed && !(inputEvent.instanceOf(InputEvent) && inputEvent.isComposing)) {
         const text = this.inputEl.value.trim();
         if (!text) {
           this.queuedPromptArmed = false;

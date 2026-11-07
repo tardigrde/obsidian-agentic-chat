@@ -14,10 +14,11 @@ describe("observability settings and OTLP export", () => {
         enabled: true,
         backend: "langfuse",
         endpoint: "https://langfuse.corp.example",
-        langfusePublicKey: "pk-lf-public",
-        langfuseSecretKey: "sk-lf-secret",
       },
     });
+    // Runtime secret cache, normally filled by hydrateSettingsSecrets().
+    settings.observability.langfusePublicKey = "pk-lf-public";
+    settings.observability.langfuseSecretKey = "sk-lf-secret";
 
     expect(observabilityTraceEndpoint(settings.observability)).toBe(
       "https://langfuse.corp.example/api/public/otel/v1/traces",
@@ -53,9 +54,9 @@ describe("observability settings and OTLP export", () => {
         backend: "otlp",
         endpoint: "https://otel.corp.example/v1/traces",
         authHeaderName: "Authorization",
-        authHeaderValue: "Bearer otel-token",
       },
     });
+    settings.observability.authHeaderValue = "Bearer otel-token";
 
     expect(observabilityTraceEndpoint(settings.observability)).toBe("https://otel.corp.example/v1/traces");
     expect(observabilityAuthHeaders(settings.observability)).toEqual({ Authorization: "Bearer otel-token" });
@@ -229,6 +230,13 @@ function runtimeWithRequests(
   let idCounter = 1;
   let now = 1_000;
   const settings = mergeSettings({ ...DEFAULT_SETTINGS, ...overrides });
+  // mergeSettings intentionally drops persisted plaintext; fill the runtime
+  // secret cache with the values normally loaded by hydrateSettingsSecrets().
+  if (overrides.observability) {
+    settings.observability.langfusePublicKey = overrides.observability.langfusePublicKey ?? "";
+    settings.observability.langfuseSecretKey = overrides.observability.langfuseSecretKey ?? "";
+    settings.observability.authHeaderValue = overrides.observability.authHeaderValue ?? "";
+  }
   const fetcher: WebFetcher = options.fetcher ?? (async (request) => {
     requests.push(request);
     return { status: 200, text: "", headers: {} };

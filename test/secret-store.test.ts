@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createMcpServerSettings, createMcpServerState } from "../src/mcp/settings";
-import { DEFAULT_SETTINGS, mergeSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings";
 import {
   SETTINGS_SECRET_SLOTS,
   hydrateSettingsSecrets,
   MemorySecretStore,
   settingsForStorage,
 } from "../src/secrets/secret-store";
+import { migrateLegacyPlaintextSecrets } from "../src/secrets/legacy-plaintext";
 
 describe("secret storage migration", () => {
   it("keeps top-level secret handling in one registry", () => {
@@ -34,27 +35,23 @@ describe("secret storage migration", () => {
     server.oauth.accessToken = "oauth-access-VALUE";
     server.oauth.refreshToken = "oauth-refresh-VALUE";
 
-    const settings = mergeSettings({
-      ...DEFAULT_SETTINGS,
+    const store = new MemorySecretStore();
+    // Legacy plaintext is not read by mergeSettings: it moves through the
+    // explicit one-time migration, then hydration fills the runtime cache.
+    const raw = {
       openrouterApiKey: "openrouter-secret",
       openaiCompatibleApiKey: "openai-secret",
-      web: {
-        ...DEFAULT_SETTINGS.web,
-        searchApiKey: "search-secret",
-      },
+      web: { searchApiKey: "search-secret" },
       observability: {
-        ...DEFAULT_SETTINGS.observability,
         langfusePublicKey: "pk-lf-public",
         langfuseSecretKey: "sk-lf-secret",
         authHeaderValue: "Bearer otel-token",
       },
-      mcp: {
-        ...DEFAULT_SETTINGS.mcp,
-        enabled: true,
-        servers: [server],
-      },
-    });
-    const store = new MemorySecretStore();
+      mcp: { enabled: true, servers: [server] },
+    };
+    migrateLegacyPlaintextSecrets(raw, store);
+    const settings = mergeSettings(raw as unknown as Partial<AgenticChatSettings>);
+    hydrateSettingsSecrets(settings, store);
 
     const stored = settingsForStorage(settings, store);
 
@@ -126,24 +123,22 @@ describe("secret storage migration", () => {
     server.oauth.refreshToken = "oauth-refresh-VALUE";
     const stateEntry = createMcpServerState("plugin_docs_docs", { enabled: true, authType: "header" });
     stateEntry.authHeaderValue = "state-secret";
-    const legacy = mergeSettings({
-      ...DEFAULT_SETTINGS,
+    const raw = {
       openrouterApiKey: "or-roundtrip",
       openaiCompatibleApiKey: "oai-roundtrip",
-      web: { ...DEFAULT_SETTINGS.web, searchApiKey: "search-roundtrip" },
+      web: { searchApiKey: "search-roundtrip" },
       observability: {
-        ...DEFAULT_SETTINGS.observability,
         langfusePublicKey: "pk-roundtrip",
         langfuseSecretKey: "sk-roundtrip",
         authHeaderValue: "Bearer otel-roundtrip",
       },
-      mcp: { ...DEFAULT_SETTINGS.mcp, enabled: true, servers: [server] },
-      plugins: {
-        ...DEFAULT_SETTINGS.plugins,
-        mcpState: { plugin_docs_docs: stateEntry },
-      },
-    });
+      mcp: { enabled: true, servers: [server] },
+      plugins: { mcpState: { plugin_docs_docs: stateEntry } },
+    };
     const store = new MemorySecretStore();
+    migrateLegacyPlaintextSecrets(raw, store);
+    const legacy = mergeSettings(raw as unknown as Partial<AgenticChatSettings>);
+    hydrateSettingsSecrets(legacy, store);
 
     const stored = settingsForStorage(legacy, store);
     const json = JSON.stringify(stored);
@@ -198,6 +193,43 @@ describe("secret storage migration", () => {
     expect(reloaded2.observability.langfuseSecretKey).toBe("sk-roundtrip");
     expect(reloaded2.mcp.servers[0].authHeaderValue).toBe("docs-secret");
     expect(reloaded2.plugins.mcpState["plugin_docs_docs"].authHeaderValue).toBe("state-secret");
+  });
+
+  it("does not read plaintext secrets from mergeSettings without the one-time migration", () => {
+    const merged = mergeSettings({
+      ...DEFAULT_SETTINGS,
+      openrouterApiKey: "plain-or",
+      openaiCompatibleApiKey: "plain-oai",
+      web: { ...DEFAULT_SETTINGS.web, searchApiKey: "plain-search" },
+      observability: {
+        ...DEFAULT_SETTINGS.observability,
+        langfusePublicKey: "plain-pk",
+        langfuseSecretKey: "plain-sk",
+        authHeaderValue: "plain-header",
+      },
+      mcp: {
+        ...DEFAULT_SETTINGS.mcp,
+        servers: [
+          {
+            ...createMcpServerSettings({
+              id: "docs",
+              name: "Docs",
+              url: "https://mcp.example.com/mcp",
+              authType: "bearer",
+            }),
+            authHeaderValue: "plain-mcp",
+          },
+        ],
+      },
+    } as Partial<AgenticChatSettings>);
+    expect(merged.openrouterApiKey).toBe("");
+    expect(merged.openaiCompatibleApiKey).toBe("");
+    expect(merged.web.searchApiKey).toBe("");
+    expect(merged.observability.langfusePublicKey).toBe("");
+    expect(merged.observability.langfuseSecretKey).toBe("");
+    expect(merged.observability.authHeaderValue).toBe("");
+    expect(merged.mcp.servers[0].authHeaderValue).toBe("");
+    expect(merged.mcp.servers[0].oauth.accessToken).toBe("");
   });
 
   it("hydrates old empty-string format and coerces corrupt non-string plaintext", () => {

@@ -693,7 +693,7 @@ export class AssistantBubble {
     // Commit any buffered deltas (so streamed reasoning isn't lost) and cancel the
     // pending frame before replacing the streamed text with rendered markdown.
     if (this.flushHandle !== null) {
-      cancelAnimationFrame(this.flushHandle);
+      window.cancelAnimationFrame(this.flushHandle);
       this.flushHandle = null;
     }
     this.flushBuffers();
