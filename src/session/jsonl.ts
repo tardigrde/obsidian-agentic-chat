@@ -3,7 +3,6 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ActionAuditEvent } from "../agent/action-audit-log";
 import type { FileCheckpoint } from "../agent/file-checkpoints";
-import { healPlanTrackerState, type PlanTrackerState } from "../agent/plan-tracker";
 
 export const CURRENT_SESSION_VERSION = 1;
 
@@ -64,12 +63,16 @@ export interface FileCheckpointSessionEntry {
   checkpoint: FileCheckpoint;
 }
 
-export interface PlanTrackerSessionEntry {
+/**
+ * Legacy entry written by the removed plan tracker. Kept in the union so old
+ * session files still parse and typecheck; the state is ignored on load.
+ */
+export interface LegacyPlanTrackerSessionEntry {
   type: "plan_tracker";
   id: string;
   parentId: string | null;
   timestamp: string;
-  state: PlanTrackerState | null;
+  state?: unknown;
 }
 
 export type SessionEntry =
@@ -80,7 +83,7 @@ export type SessionEntry =
   | SessionInfoEntry
   | ActionAuditSessionEntry
   | FileCheckpointSessionEntry
-  | PlanTrackerSessionEntry;
+  | LegacyPlanTrackerSessionEntry;
 
 export interface SessionContext {
   messages: AgentMessage[];
@@ -140,16 +143,6 @@ export function buildSessionContext(entries: SessionEntry[], leafId?: string | n
     if (entry.type === "thinking_level_change") thinkingLevel = entry.thinkingLevel;
   }
   return { messages, model, thinkingLevel };
-}
-
-export function getLatestPlanTrackerState(entries: SessionEntry[], leafId?: string | null): PlanTrackerState | null {
-  const byId = indexEntries(entries);
-  const path = getEntryPath(entries, byId, leafId);
-  for (let index = path.length - 1; index >= 0; index -= 1) {
-    const entry = path[index];
-    if (entry?.type === "plan_tracker") return healPlanTrackerState(entry.state);
-  }
-  return null;
 }
 
 export function getLastLeafId(entries: SessionEntry[]): string | null {

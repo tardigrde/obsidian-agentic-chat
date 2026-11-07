@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { deriveAutoName, ObsidianSessionManager } from "../src/session/session-manager";
 import { parseSessionEntries } from "../src/session/jsonl";
-import { runPlanTrackerCommand } from "../src/agent/plan-tracker";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 const DEFAULTS = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" as const };
@@ -89,45 +88,43 @@ describe("ObsidianSessionManager.rewriteMessages", () => {
     expect(texts).toEqual(["fresh"]);
   });
 
-  it("preserves the latest plan tracker state across a rewrite", async () => {
-    const { sm, adapter } = manager();
-    const info = await sm.createSession(DEFAULTS);
-    await sm.appendMessage(userMessage("first"));
-    const tracked = runPlanTrackerCommand(null, "add Milestone", "2026-06-26T12:00:00.000Z").state;
-    await sm.appendPlanTracker(tracked);
-    await sm.appendMessage(userMessage("second"));
-
-    await sm.rewriteMessages([userMessage("first")]);
-
-    expect(sm.getActivePlanTracker()).toMatchObject({ items: [{ id: "1", title: "Milestone" }] });
-    const entries = parseSessionEntries(adapter.files.get(info.path) ?? "");
-    expect(entries.at(-1)).toMatchObject({ type: "plan_tracker", state: { items: [{ id: "1", title: "Milestone" }] } });
-  });
 });
 
-describe("ObsidianSessionManager plan tracker", () => {
-  it("persists and reloads the active plan tracker", async () => {
-    const { sm } = manager();
-    const info = await sm.createSession(DEFAULTS);
-    const tracked = runPlanTrackerCommand(null, "add Milestone", "2026-06-26T12:00:00.000Z").state;
-    await sm.appendPlanTracker(tracked);
+describe("legacy session compatibility", () => {
+  it("loads a session that still contains a plan_tracker entry", async () => {
+    const { sm, adapter } = manager();
+    const content = [
+      JSON.stringify({
+        type: "session",
+        version: 1,
+        id: "legacy",
+        timestamp: "2026-06-13T00:00:00.000Z",
+        cwd: "vault:test",
+      }),
+      JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: "t", message: userMessage("hello") }),
+      JSON.stringify({
+        type: "plan_tracker",
+        id: "p1",
+        parentId: "m1",
+        timestamp: "2026-06-26T12:00:00.000Z",
+        state: {
+          version: 1,
+          title: "Goal",
+          updatedAt: "2026-06-26T12:00:00.000Z",
+          items: [{ id: "1", title: "Checkpoint", status: "done", testStatus: "passed", updatedAt: "2026-06-26T12:00:00.000Z" }],
+        },
+      }),
+      JSON.stringify({ type: "message", id: "m2", parentId: "p1", timestamp: "t", message: userMessage("after") }),
+    ].join("\n");
+    adapter.files.set("sessions/legacy-plan.jsonl", `${content}\n`);
 
-    await sm.createSession(DEFAULTS);
-    await sm.loadSession(info.path);
+    const info = await sm.loadSession("sessions/legacy-plan.jsonl");
 
-    expect(sm.getActivePlanTracker()).toMatchObject({
-      title: "Plan tracker",
-      items: [{ id: "1", title: "Milestone", status: "pending", testStatus: "not_run" }],
-    });
-  });
-
-  it("persists a cleared tracker as the latest state", async () => {
-    const { sm } = manager();
-    await sm.createSession(DEFAULTS);
-    await sm.appendPlanTracker(runPlanTrackerCommand(null, "add Milestone", "2026-06-26T12:00:00.000Z").state);
-    await sm.appendPlanTracker(null);
-
-    expect(sm.getActivePlanTracker()).toBeNull();
+    expect(info.messageCount).toBe(2);
+    const texts = sm.buildSessionContext().messages.map(
+      (m) => (m as unknown as { content: [{ text: string }] }).content[0].text,
+    );
+    expect(texts).toEqual(["hello", "after"]);
   });
 });
 

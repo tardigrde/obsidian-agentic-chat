@@ -115,9 +115,6 @@ import {
   type SemanticIndexFile,
 } from "../retrieval/semantic-index";
 import { memoryPathForApp } from "../tools/memory-tools";
-import { planTrackerRows } from "../agent/plan-tracker";
-import { buildPlanTrackerPanelState } from "./plan-tracker-panel";
-import { renderPlanTrackerPanel as renderPlanTrackerPanelDom } from "./plan-tracker-renderer";
 import { MemoryWorkflowController } from "./memory-workflow-controller";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
@@ -211,7 +208,6 @@ export class ChatView extends ItemView {
 
   private messagesEl!: HTMLElement;
   private emptyStateEl: HTMLElement | null = null;
-  private planTrackerEl!: HTMLElement;
   private chipsEl!: HTMLElement;
   private fieldEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
@@ -682,12 +678,6 @@ export class ChatView extends ItemView {
     });
     setIcon(historyButton, "history");
     historyButton.addEventListener("click", () => void this.createSessionWorkflow().run(""));
-
-    this.planTrackerEl = composer.createDiv({
-      cls: "agentic-chat-plan-tracker",
-      attr: { "aria-label": "Plan tracker" },
-    });
-    this.planTrackerEl.hide();
 
     // The single bordered input card: context row (chips) + textarea + bottom toolbar
     // all live *inside* one rectangle, instead of stacked around a bordered textarea.
@@ -1163,7 +1153,6 @@ export class ChatView extends ItemView {
     if (modelPill.isOverride) this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: modelPill.providerLabel });
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: modelPill.shortModel });
     this.syncEffortKnob();
-    this.renderPlanTrackerPanel();
 
     const fraction = this.service.getContextFraction();
     this.renderUsageChrome();
@@ -1726,9 +1715,6 @@ export class ChatView extends ItemView {
       case "plan":
         await this.enterPlanMode();
         return true;
-      case "todo":
-        await this.runTodo(argString);
-        return true;
       case "usage":
         this.showUsage();
         return true;
@@ -1796,17 +1782,6 @@ export class ChatView extends ItemView {
       ["Agent plugins", pluginAudit],
       ...formatRuntimeDiagnosticsRows(diagnostics),
     ]);
-  }
-
-  private async runTodo(arg: string): Promise<void> {
-    this.clearEmptyState();
-    const result = await this.service.runPlanTrackerCommand(arg);
-    this.renderPlanTrackerPanel();
-    if (result.error) {
-      this.renderErrorMessage(result.error);
-      return;
-    }
-    this.renderInfoMessage("Plan tracker", planTrackerRows(result.state, result.message));
   }
 
   private createSessionWorkflow(): SessionWorkflowController {
@@ -2504,11 +2479,6 @@ export class ChatView extends ItemView {
         .map((entry) => entry.sourcePath)
         .filter((path): path is string => Boolean(path)),
     };
-  }
-
-  private renderPlanTrackerPanel(): void {
-    if (!this.planTrackerEl) return;
-    renderPlanTrackerPanelDom(this.planTrackerEl, buildPlanTrackerPanelState(this.service.getPlanTracker()));
   }
 
   private renderChips(): void {

@@ -45,12 +45,6 @@ Run `/semantic-index start` to build a vector index over your current scope (vau
 
 Cancel an in-progress build with `/semantic-index cancel`.
 
-## Todo tracking
-
-Use `/todo add <milestone>` to add a milestone. Update status with `/todo set <id> <pending|active|done|blocked>`. Track tests with `/todo test <id> <not-run|running|passed|failed|skipped>`. Attach checkpoint commits with `/todo commit <id> <commit>`, notes with `/todo note <id> <note>`, and retitle the plan with `/todo title <name>`.
-
-The plan tracker panel shows live progress.
-
 ## Real-time controls
 
 The composer has one delivery path:

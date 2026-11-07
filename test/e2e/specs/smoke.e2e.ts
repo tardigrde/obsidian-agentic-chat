@@ -53,7 +53,7 @@ describe("agentic-chat smoke", function () {
     const info = await $(".agentic-chat-info");
     await info.waitForExist();
     await expect(info).toHaveText(/Slash commands/);
-    await expect(info).not.toHaveText(/\/(config|mode|project|history|semindex|adddir|working-dirs|todos|followup|thinking)\b/);
+    await expect(info).not.toHaveText(/\/(config|mode|project|history|semindex|adddir|working-dirs|todo|todos|followup|thinking)\b/);
   });
 
   it("clears slash commands immediately and preserves /init tail text in the transcript", async function () {
@@ -206,33 +206,13 @@ describe("agentic-chat smoke", function () {
     }
   });
 
-  it("tracks a long-run plan item with tests and a checkpoint commit", async function () {
-    await runSlashCommand("/todo add Milestone 20 plan tracker");
-    const panel = await $(".agentic-chat-plan-tracker");
-    await panel.waitForDisplayed();
-    await expect(panel).toHaveText(/Milestone 20 plan tracker/);
+  it("removed the plan tracker panel and `/todo` command", async function () {
+    await expect($(".agentic-chat-plan-tracker")).not.toExist();
 
-    await runSlashCommand("/todo set 1 active");
-    await runSlashCommand("/todo test 1 passed");
-    await runSlashCommand("/todo commit 1 abc1234");
-
-    await browser.waitUntil(
-      async () => {
-        const text = await panel.getText();
-        return text.includes("in progress") && text.includes("tests passed") && text.includes("commit abc1234");
-      },
-      { timeout: 5_000, timeoutMsg: "plan tracker panel did not show status, tests, and checkpoint commit" },
-    );
-
-    const persisted = await browser.executeObsidian(async ({ app }) => {
-      const sessionDir = `${app.vault.configDir}/plugins/agentic-chat/sessions`;
-      const listing = await app.vault.adapter.list(sessionDir);
-      const latest = listing.files.filter((path) => path.endsWith(".jsonl")).sort().at(-1);
-      if (!latest) throw new Error("No agentic-chat session file found");
-      return await app.vault.adapter.read(latest);
-    });
-    expect(persisted).toContain('"type":"plan_tracker"');
-    expect(persisted).toContain('"checkpointCommit":"abc1234"');
+    await runSlashCommand("/help");
+    const info = await latestInfoText();
+    expect(info).not.toMatch(/\/todo\b/);
+    expect(info).not.toMatch(/plan tracker/i);
   });
 
   it("applies a Quick Ask edit to selected editor text without a model call", async function () {
