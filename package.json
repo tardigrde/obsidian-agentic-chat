@@ -103,7 +103,7 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.5.0",
     "@earendil-works/pi-ai": "1.5.0",
-    "typebox": "1.4.3"
+    "typebox": "1.4.4"
   },
   "overrides": {
     "@electron/get": {
