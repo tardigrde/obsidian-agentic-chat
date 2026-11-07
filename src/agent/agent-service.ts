@@ -7,7 +7,7 @@ import {
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../skills/skill-prompt";
-import { type AssistantMessage, type ImageContent, type Usage, type UserMessage } from "@earendil-works/pi-ai";
+import { type ImageContent, type Usage, type UserMessage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import { activeModelId, apiKeyForProvider } from "../settings";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
@@ -52,6 +52,8 @@ import {
 } from "./service-listeners";
 import { AgentStreamRuntime } from "./stream-runtime";
 import { AgentLoopGuard } from "./loop-guard";
+import { AgentTurnCap, CHILD_TURN_CAP, PARENT_TURN_CAP } from "./turn-cap";
+import { buildStopNoticeMessage, type StopNoticeModel } from "./stop-notice";
 import { AgentRuntimeResourceState } from "./runtime-resource-state";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import { AgentSubagentRuntime } from "./subagent-runtime";
@@ -137,6 +139,7 @@ export class AgentService {
   private readonly sessionState = new AgentSessionLocalState();
   private readonly listeners = new AgentServiceListeners();
   private readonly loopGuard = new AgentLoopGuard();
+  private readonly turnCap = new AgentTurnCap({ maxTurns: PARENT_TURN_CAP });
   private readonly recentEvents: string[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
   /** Redirect messages waiting for delivery, and the single drain worker. */
@@ -221,6 +224,7 @@ export class AgentService {
         beforeToolCall: (context, signal) => this.toolCalls.beforeToolCall(context, signal),
         afterToolCall: (context) => this.toolCalls.afterToolCall(context),
       },
+      createTurnCap: () => new AgentTurnCap({ maxTurns: CHILD_TURN_CAP }),
     });
     this.toolCalls = new AgentToolCallController({
       app: this.app,
@@ -246,6 +250,7 @@ export class AgentService {
       subagents: this.subagents,
       toolCalls: this.toolCalls,
       loopGuard: options.loopGuardDisabled ? DISABLED_LOOP_GUARD : this.loopGuard,
+      turnCap: this.turnCap,
       sessions: this.sessions,
       onEvent: (event) => this.handleAgentEvent(event),
     });
@@ -715,6 +720,7 @@ export class AgentService {
 
   async newSession(): Promise<void> {
     this.loopGuard.reset();
+    this.turnCap.reset();
     return this.sessionActions.newSession();
   }
 
@@ -728,6 +734,7 @@ export class AgentService {
 
   async loadSession(path: string): Promise<void> {
     this.loopGuard.reset();
+    this.turnCap.reset();
     return this.sessionActions.loadSession(path);
   }
 
@@ -755,6 +762,7 @@ export class AgentService {
    */
   async truncateMessages(index: number): Promise<void> {
     this.loopGuard.reset();
+    this.turnCap.reset();
     return this.sessionActions.truncateMessages(index);
   }
 
@@ -769,9 +777,10 @@ export class AgentService {
   private async runPrompt(run: PromptTurnRun, expectedSessionToken?: string): Promise<void> {
     this.compactionRecoveryError = undefined;
     await this.initialize();
-    // A fresh prompt starts a new epoch: any identical-batch streak from a
-    // previous user turn must not carry into this one (loop guard).
+    // A fresh prompt starts a new epoch: neither the identical-batch streak nor
+    // the turn budget from a previous user turn carries into this one.
     this.loopGuard.reset();
+    this.turnCap.reset();
     await this.promptTurns.run(run, expectedSessionToken);
   }
 
@@ -803,6 +812,7 @@ export class AgentService {
     this.sessionState.clearError();
     // Steering is user input too: user-provided info ends any running streak.
     this.loopGuard.reset();
+    this.turnCap.reset();
     if (mode === "follow-up") agent.followUp(message);
     else agent.steer(message);
     this.notifyChange();
@@ -859,6 +869,7 @@ export class AgentService {
         await this.promptTurns.waitForIdle(); // NOSONAR:S9382 -- redirects are delivered in order; this wait is sequential by design.
         this.sessionState.clearError();
         this.loopGuard.reset();
+        this.turnCap.reset();
         // Never route a redirect through sendPrompt: that path can compact and
         // replace the agent, which would drop the redirected message. The entry
         // token is passed again because either idle wait above can outlive a swap.
@@ -884,7 +895,7 @@ export class AgentService {
         // transcript; the guard note is appended after, never injected mid-context.
         await this.sessionEvents.recordAgentEnd(messages);
         try {
-          await this.emitLoopGuardMessage();
+          await this.emitTurnGuardMessage();
         } catch {
           // UI/persist for the synthetic note is best-effort — the run above won.
         }
@@ -917,15 +928,17 @@ export class AgentService {
   }
 
   /**
-   * When the loop guard fired, append the plain-text explanation at the end of
-   * the transcript (live context + JSONL + chat bubble) plus a transient
-   * Notice. Append-only by design: the model sees why the run stopped on retry.
-   * Runs once per fire — the guard clears its notice on the next prompt.
+   * When the loop guard or the turn cap fired, append the plain-text
+   * explanation at the end of the transcript (live context + JSONL + chat
+   * bubble) plus a transient Notice. Append-only by design: the model sees why
+   * the run stopped on retry. The loop-guard notice wins when both fired in the
+   * same turn, so the user never gets two stop notes. Runs once per fire — each
+   * guard clears its notice on the next prompt.
    */
-  private async emitLoopGuardMessage(): Promise<void> {
-    const text = this.loopGuard.noticeText;
+  private async emitTurnGuardMessage(): Promise<void> {
+    const text = this.loopGuard.noticeText ?? this.turnCap.noticeText;
     if (!text) return;
-    const message = this.buildLoopGuardMessage(text);
+    const message = buildStopNoticeMessage(text, this.agent?.state.model as StopNoticeModel | undefined);
     // Append to live agent context first so the next turn sees the stop reason.
     this.agent?.state.messages.push(message);
     await this.sessionEvents.recordMessageEnd(message);
@@ -936,26 +949,6 @@ export class AgentService {
     } catch {
       // Headless tests / no DOM — chat bubble above already carries the note.
     }
-  }
-
-  /**
-   * Synthetic assistant message explaining the loop-guard stop. Same shape as
-   * replay turns, so the chat bubble and JSONL rehydration render it normally.
-   */
-  private buildLoopGuardMessage(text: string): AssistantMessage {
-    const model = this.agent?.state.model as
-      | { api?: AssistantMessage["api"]; provider?: string; id?: string }
-      | undefined;
-    return {
-      role: "assistant",
-      content: [{ type: "text", text }],
-      api: model?.api ?? "openai-completions",
-      provider: model?.provider ?? "openrouter",
-      model: model?.id ?? "unknown",
-      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-      stopReason: "stop",
-      timestamp: Date.now(),
-    };
   }
 
   /**

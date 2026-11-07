@@ -3,8 +3,9 @@ import { rm } from "node:fs/promises";
 import type { App } from "obsidian";
 import type { Model } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { AgentSubagentRuntime } from "../src/agent/subagent-runtime";
+import type { AgentTurnContext, StreamFn } from "@earendil-works/pi-agent-core";
+import { AgentSubagentRuntime, type ChildTurnCap } from "../src/agent/subagent-runtime";
+import { AgentTurnCap } from "../src/agent/turn-cap";
 import type { AgentRuntimeResources } from "../src/agent/runtime-resources";
 import type { AgentRole } from "../src/agent/subagents";
 import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
@@ -131,6 +132,7 @@ function makeRuntime(options: {
   webFetch?: WebFetcher;
   artifactStore?: ToolArtifactStoreLike;
   toolCalls?: Pick<AgentToolCallController, "beforeToolCall" | "afterToolCall">;
+  createTurnCap?: () => ChildTurnCap;
 } = {}): AgentSubagentRuntime {
   return new AgentSubagentRuntime({
     app: { vault: {}, workspace: {} } as unknown as App,
@@ -141,6 +143,7 @@ function makeRuntime(options: {
     webFetch: options.webFetch ?? noopWebFetch,
     artifactStore: options.artifactStore,
     toolCalls: options.toolCalls ?? noopToolCalls,
+    createTurnCap: options.createTurnCap,
   });
 }
 
@@ -243,6 +246,20 @@ describe("AgentSubagentRuntime", () => {
     const child = runtime.createChildAgent(profile);
 
     expect(child.state.tools.map((tool) => tool.name).sort()).toEqual(["read"]);
+  });
+
+  it("caps a child at the child turn budget and leaves a stop note", async () => {
+    const runtime = makeRuntime({ createTurnCap: () => new AgentTurnCap({ maxTurns: 2 }) });
+    const child = runtime.createChildAgent(PROFILE);
+    const turn = {
+      message: { role: "assistant", content: [], stopReason: "toolUse" },
+      toolResults: [],
+    } as unknown as AgentTurnContext;
+
+    expect(child.finishTurn).toBeTypeOf("function");
+    expect(await child.finishTurn?.(turn)).toBeUndefined();
+    expect(await child.finishTurn?.(turn)).toEqual({ action: "end" });
+    expect(JSON.stringify(child.state.messages.at(-1)?.content)).toMatch(/Turn cap/);
   });
 
   it("creates a parent subagent tool wired to child creation and usage accounting", async () => {
