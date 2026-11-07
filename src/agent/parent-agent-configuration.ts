@@ -8,6 +8,7 @@ import type { AgentSubagentRuntime } from "./subagent-runtime";
 import type { AgentToolCallController } from "./tool-call-controller";
 import type { AgentTurnConfiguration } from "./turn-configuration";
 import type { AgentLoopGuard } from "./loop-guard";
+import type { AgentTurnCap } from "./turn-cap";
 
 export interface AgentParentConfigurationOptions {
   getSettings: () => AgenticChatSettings;
@@ -23,6 +24,7 @@ export interface AgentParentConfigurationOptions {
     "afterToolCall" | "beforeToolCall" | "consumeStopRequested"
   >;
   loopGuard: Pick<AgentLoopGuard, "finishTurn">;
+  turnCap: Pick<AgentTurnCap, "shouldStopAfterTurn">;
   sessions: Pick<AgentActiveSessionRuntime, "ensureConfiguration" | "info">;
   onEvent: (event: AgentEvent) => Promise<void> | void;
 }
@@ -55,13 +57,17 @@ export class AgentParentConfigurationRuntime {
       getApiKey: (provider) => apiKeyForProvider(this.options.getSettings(), provider),
       beforeToolCall: (context, signal) => this.options.toolCalls.beforeToolCall(context, signal),
       afterToolCall: (context) => this.options.toolCalls.afterToolCall(context),
-      // `finishTurn` also receives the run's abort signal; the loop guard does not
-      // need it, so it is intentionally left unbound. A stopped approval always
-      // ends the turn, even when pi replaced the denial with an abort result.
-      finishTurn: (turn) =>
-        this.options.toolCalls.consumeStopRequested()
-          ? { action: "end" as const }
-          : this.options.loopGuard.finishTurn(turn),
+      // `finishTurn` also receives the run's abort signal; neither guard needs
+      // it, so it is intentionally left unbound. A stopped approval always ends
+      // the turn, even when pi replaced the denial with an abort result.
+      finishTurn: (turn) => {
+        if (this.options.toolCalls.consumeStopRequested()) return { action: "end" as const };
+        // Keep the loop guard first: its identical-batch decision is more
+        // specific than the turn budget and must not change behavior.
+        const loopGuardDecision = this.options.loopGuard.finishTurn(turn);
+        if (loopGuardDecision) return loopGuardDecision;
+        return this.options.turnCap.shouldStopAfterTurn(turn) ? { action: "end" as const } : undefined;
+      },
       sessionId: this.options.sessions.info?.id,
       onEvent: (event) => this.options.onEvent(event),
     };
