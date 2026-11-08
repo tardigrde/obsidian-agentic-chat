@@ -4,6 +4,7 @@ import {
   assistantUsage,
   collectToolResults,
   lastUserText,
+  lastUserTurn,
   messageText,
   thinkingText,
   toolCalls,
@@ -104,6 +105,33 @@ describe("assistantUsage", () => {
     expect(assistantUsage(msg({ usage: { totalTokens: 0 } }))).toBeUndefined();
     expect(assistantUsage(msg({ usage: { totalTokens: 5 } }))).toEqual({ totalTokens: 5 });
     expect(assistantUsage(msg({}))).toBeUndefined();
+  });
+});
+
+describe("lastUserTurn", () => {
+  it("returns the last user text with copies of its image blocks", () => {
+    const image = { type: "image", data: "aW1hZ2U=", mimeType: "image/png" };
+    const messages = [
+      msg({ role: "user", content: [{ type: "text", text: "first" }, image] }),
+      msg({ role: "assistant", content: [{ type: "text", text: "reply" }] }),
+      msg({ role: "user", content: [{ type: "text", text: "second" }, image] }),
+    ];
+
+    const turn = lastUserTurn(messages);
+
+    expect(turn).toEqual({ text: "second", images: [image] });
+    expect(turn?.images[0]).not.toBe(image);
+  });
+
+  it("returns an empty image list for a text-only turn", () => {
+    expect(lastUserTurn([msg({ role: "user", content: "text only" })])).toEqual({
+      text: "text only",
+      images: [],
+    });
+  });
+
+  it("returns undefined when there is no non-empty user turn", () => {
+    expect(lastUserTurn([msg({ role: "user", content: "   " })])).toBeUndefined();
   });
 });
 

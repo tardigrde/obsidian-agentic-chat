@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Usage } from "@earendil-works/pi-ai";
+import type { ImageContent, Usage } from "@earendil-works/pi-ai";
 
 /** A flattened tool result, keyed elsewhere by its tool-call id. */
 export interface ToolResultLite {
@@ -91,18 +91,40 @@ export function assistantUsage(message: AgentMessage): Usage | undefined {
   return usage && usage.totalTokens > 0 ? usage : undefined;
 }
 
+/** A user turn replayed by "retry": its raw prompt plus any image blocks. */
+export interface LastUserTurn {
+  text: string;
+  images: ImageContent[];
+}
+
 /**
- * Text of the most recent user message, used to power "retry". Returns undefined
- * when no user turn exists. Note this is the raw prompt as sent (it may include an
+ * Most recent non-empty user turn, used to power "retry". Returns undefined when
+ * no user turn exists. Note this is the raw prompt as sent (it may include an
  * attachment `<context>` preamble); callers that re-send get an identical turn.
+ *
+ * Image blocks are copied so a retry cannot mutate the transcript's original
+ * turn when the provider or caller handles the returned array.
  */
-export function lastUserText(messages: AgentMessage[]): string | undefined {
+export function lastUserTurn(messages: AgentMessage[]): LastUserTurn | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message.role === "user") {
-      const text = messageText(message);
-      if (text.trim()) return text;
-    }
+    if (message.role !== "user") continue;
+    const text = messageText(message);
+    if (!text.trim()) continue;
+    const images: ImageContent[] = contentBlocks(message)
+      .filter((block) => block.type === "image")
+      .map((block) => ({
+        type: "image" as const,
+        data: stringFromPrimitive(block.data),
+        mimeType: stringFromPrimitive(block.mimeType),
+      }))
+      .filter((image) => image.data !== "" && image.mimeType !== "");
+    return { text, images };
   }
   return undefined;
+}
+
+/** Text of the most recent user turn. */
+export function lastUserText(messages: AgentMessage[]): string | undefined {
+  return lastUserTurn(messages)?.text;
 }

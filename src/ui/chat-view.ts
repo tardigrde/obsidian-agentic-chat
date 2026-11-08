@@ -30,7 +30,7 @@ import { contextLevel, contextPercent } from "./context-bar";
 import {
   assistantUsage,
   collectToolResults,
-  lastUserText,
+  lastUserTurn,
   messageText,
   thinkingText,
   toolCalls,
@@ -1569,12 +1569,16 @@ export class ChatView extends ItemView {
     const tab = this.activeTab;
     const service = tab.service;
     if (service.isStreaming()) return;
-    const prompt = this.lastSentPrompt ?? lastUserText(service.getMessages());
+    const lastTurn = lastUserTurn(service.getMessages());
+    const prompt = this.lastSentPrompt ?? lastTurn?.text;
     if (!prompt) return;
+    // Pair images with the text they were sent with: a stale lastSentPrompt
+    // from a blocked send must not pick up an older turn's images.
+    const images = lastTurn?.text === prompt ? lastTurn.images : [];
     const display = this.lastSentDisplay ?? stripContextPreamble(prompt);
     this.clearEmptyState();
     this.renderOutgoingUserMessage(display, []);
-    await service.sendPrompt(prompt);
+    await service.sendPrompt(prompt, images);
     if (!this.isLiveTab(tab)) return;
     this.showServiceError();
   }
