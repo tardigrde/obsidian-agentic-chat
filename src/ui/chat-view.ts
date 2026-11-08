@@ -10,6 +10,7 @@ import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi
 import type { ImageContent, Usage } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
+import type { ContextReadout } from "../agent/readouts";
 import type { AskUserRequest } from "../tools/ask-user-tool";
 import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
 import { applyRememberedApprovalChoice } from "../agent/approval-memory";
@@ -26,7 +27,7 @@ import { createFetchFromWebFetcher, createProxiedFetcher } from "../mcp/fetcher"
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
 import { AssistantBubble } from "./assistant-bubble";
 import { formatDetailedUsage, formatUsage, safeJson } from "./format";
-import { contextLevel, contextPercent } from "./context-bar";
+import { contextLevel, contextPercent, formatContextReadoutTitle } from "./context-bar";
 import {
   assistantUsage,
   collectToolResults,
@@ -1069,9 +1070,9 @@ export class ChatView extends ItemView {
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: modelPill.shortModel });
     this.syncEffortKnob();
 
-    const fraction = this.service.getContextFraction();
+    const readout = this.service.getContextReadout();
     this.renderUsageChrome();
-    this.syncContextBar(fraction);
+    this.syncContextBar(readout);
 
     const error = this.service.getError();
     this.setRunning(this.service.isStreaming());
@@ -1105,16 +1106,19 @@ export class ChatView extends ItemView {
   }
 
   /** Glanceable color-coded context-window fill bar; hidden until usage is known. */
-  private syncContextBar(fraction: number | undefined): void {
-    if (fraction === undefined) {
+  private syncContextBar(readout: ContextReadout | undefined): void {
+    if (readout === undefined) {
       this.contextBarEl.hide();
       this.contextPercentEl.hide();
       return;
     }
+    const fraction = readout.fraction;
     const percent = contextPercent(fraction);
+    const title = formatContextReadoutTitle(readout);
     this.contextBarEl.show();
     this.contextPercentEl.show();
     this.contextBarEl.setAttr("aria-label", `Context window ${percent}% used`);
+    this.contextBarEl.setAttr("title", title);
     this.contextBarEl.value = percent;
     // Drive the CSS arc/gauge fill (conic-gradient ring) off the same percent
     // the helpers already compute — no new logic, just expose it to the style.
@@ -1122,6 +1126,7 @@ export class ChatView extends ItemView {
     this.contextBarEl.removeClasses(["is-ok", "is-warn", "is-high"]);
     this.contextBarEl.addClass(`is-${contextLevel(fraction)}`);
     this.contextPercentEl.setText(`${percent}%`);
+    this.contextPercentEl.setAttr("title", title);
     this.contextPercentEl.removeClasses(["is-ok", "is-warn", "is-high"]);
     this.contextPercentEl.addClass(`is-${contextLevel(fraction)}`);
   }

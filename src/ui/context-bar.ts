@@ -1,3 +1,6 @@
+import type { ContextReadout } from "../agent/readouts";
+import { formatTokenInteger } from "./format";
+
 /**
  * Pure logic behind the glanceable context-window progress bar. The fill is
  * color-coded by how full the model's context window is, mirroring the
@@ -16,4 +19,22 @@ export function contextLevel(fraction: number): ContextLevel {
 export function contextPercent(fraction: number): number {
   if (!Number.isFinite(fraction) || fraction <= 0) return 0;
   return Math.min(100, Math.round(fraction * 100));
+}
+
+/**
+ * Tooltip text for the context bar. The fraction now includes fixed per-request
+ * overhead (prompt, skills, tool schemas, response reserve), so show the
+ * breakdown instead of an unexplained, higher percentage.
+ */
+export function formatContextReadoutTitle(readout: ContextReadout): string {
+  const { load, contextWindow } = readout;
+  const percent = contextPercent(readout.fraction);
+  return (
+    `Context window ${percent}% used (${formatTokenInteger(load.totalTokens)} of ` +
+    `${formatTokenInteger(contextWindow)} estimated tokens). ` +
+    `Transcript ${formatTokenInteger(load.transcriptTokens)}, ` +
+    `system prompt and loaded skills ${formatTokenInteger(load.systemPromptTokens)}, ` +
+    `active tool schemas ${formatTokenInteger(load.toolSchemaTokens)}, ` +
+    `response reserve ${formatTokenInteger(load.reserveTokens)}.`
+  );
 }
