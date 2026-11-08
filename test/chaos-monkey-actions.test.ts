@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { PARENT_TURN_CAP } from "../src/agent/turn-cap";
 import { CHAOS_TARGETS } from "../scripts/chaos/monkey-core";
-import {
-  ALLOWED_NOTE,
-  DENIED_NOTE,
-  RETIRED_COMMANDS,
-  chaosActionCatalog,
-  focusedSequence,
-  genericSequence,
-  modelCallsFor,
-  scriptedTurnsFor,
-  scriptedTurnsForAction,
-} from "../scripts/chaos/monkey-actions";
+
+/**
+ * Load the catalog dynamically so the witness runner can revert the module and
+ * still execute these assertions. A static import would turn the red run into a
+ * module-load error with zero tests, which the witness contract treats as a
+ * broken harness, not a failing witness.
+ */
+async function loadActions(): Promise<typeof import("../scripts/chaos/monkey-actions")> {
+  try {
+    return await import("../scripts/chaos/monkey-actions");
+  } catch {
+    // Keep the red run at an assertion instead of a loader marker. The witness
+    // gate treats a missing module as a broken harness, not a failing witness.
+    throw new Error("expected the chaos action catalog module to exist");
+  }
+}
 
 const NEW_TARGETS = [
   "retired-commands",
@@ -29,7 +34,8 @@ const NEW_TARGETS = [
 const caps = { maxSteps: 12, maxSeconds: 60, maxCalls: 6, maxTokens: 0 };
 
 describe("chaos action catalog", () => {
-  it("registers every focused target and every new hostile action", () => {
+  it("registers every focused target and every new hostile action", async () => {
+    const { chaosActionCatalog } = await loadActions();
     const catalogIds = new Set(chaosActionCatalog().map((action) => action.id));
     for (const target of NEW_TARGETS) {
       expect(CHAOS_TARGETS).toContain(target);
@@ -37,7 +43,8 @@ describe("chaos action catalog", () => {
     }
   });
 
-  it("covers every retired command exactly once", () => {
+  it("covers every retired command exactly once", async () => {
+    const { RETIRED_COMMANDS } = await loadActions();
     expect([...RETIRED_COMMANDS]).toEqual([
       "/steer",
       "/follow-up",
@@ -51,7 +58,8 @@ describe("chaos action catalog", () => {
     ]);
   });
 
-  it("gives every focused target a non-empty sequence that starts with its named action", () => {
+  it("gives every focused target a non-empty sequence that starts with its named action", async () => {
+    const { focusedSequence } = await loadActions();
     for (const target of CHAOS_TARGETS) {
       const sequence = focusedSequence(target);
       expect(sequence.length).toBeGreaterThan(0);
@@ -61,7 +69,8 @@ describe("chaos action catalog", () => {
     }
   });
 
-  it("keeps the existing focused surfaces unchanged", () => {
+  it("keeps the existing focused surfaces unchanged", async () => {
+    const { focusedSequence } = await loadActions();
     expect(focusedSequence("composer").map((action) => action.id)).toEqual([
       "composer-prompt",
       "slash-help",
@@ -73,11 +82,13 @@ describe("chaos action catalog", () => {
 });
 
 describe("chaos generic sampling", () => {
-  it("is deterministic for a given seed", () => {
+  it("is deterministic for a given seed", async () => {
+    const { genericSequence } = await loadActions();
     expect(genericSequence(caps, 42)).toEqual(genericSequence(caps, 42));
   });
 
-  it("samples the new hostile actions across seeds instead of a note-write bias", () => {
+  it("samples the new hostile actions across seeds instead of a note-write bias", async () => {
+    const { genericSequence } = await loadActions();
     const seen = new Set<string>();
     let notes = 0;
     let steps = 0;
@@ -98,7 +109,8 @@ describe("chaos generic sampling", () => {
 });
 
 describe("chaos scripted turns", () => {
-  it("covers every new live action with turns", () => {
+  it("covers every new live action with turns", async () => {
+    const { focusedSequence, scriptedTurnsForAction } = await loadActions();
     for (const target of NEW_TARGETS) {
       const action = focusedSequence(target)[0];
       const turns = scriptedTurnsForAction(action);
@@ -110,39 +122,50 @@ describe("chaos scripted turns", () => {
     }
   });
 
-  it("uses the full parent turn budget plus one beyond-cap turn for max-turns", () => {
+  it("uses the full parent turn budget plus one beyond-cap turn for max-turns", async () => {
+    const { focusedSequence, scriptedTurnsForAction } = await loadActions();
     const turns = scriptedTurnsForAction(focusedSequence("max-turns")[0]);
     expect(turns).toHaveLength(PARENT_TURN_CAP + 1);
     expect(turns.at(-1)?.label).toContain("beyond cap");
   });
 
-  it("holds steering and queue turns, and delays the stop turn so abort can win", () => {
+  it("holds steering and queue turns, and delays the stop turn so abort can win", async () => {
+    const { focusedSequence, scriptedTurnsForAction } = await loadActions();
     expect(scriptedTurnsForAction(focusedSequence("steer")[0])[0].hold).toBe(true);
     expect(scriptedTurnsForAction(focusedSequence("queue")[0])[0].hold).toBe(true);
     expect(scriptedTurnsForAction(focusedSequence("stop-send")[0])[0].delayMs).toBeGreaterThanOrEqual(30_000);
   });
 
-  it("scripts both approval paths and both notes", () => {
+  it("scripts both approval paths and both notes", async () => {
+    const { ALLOWED_NOTE, DENIED_NOTE, focusedSequence, scriptedTurnsForAction } = await loadActions();
     const serialized = JSON.stringify(scriptedTurnsForAction(focusedSequence("approval-paths")[0]));
     expect(serialized).toContain(DENIED_NOTE);
     expect(serialized).toContain(ALLOWED_NOTE);
   });
 
-  it("keeps the model-call count in sync with the scripted turns that consume calls", () => {
+  it("keeps the model-call count in sync with the scripted turns that consume calls", async () => {
+    const { focusedSequence, modelCallsFor, scriptedTurnsForAction } = await loadActions();
     for (const target of CHAOS_TARGETS) {
       for (const action of focusedSequence(target)) {
         const turns = scriptedTurnsForAction(action);
         if (action.kind === "max-turns") {
           expect(modelCallsFor(action)).toBe(PARENT_TURN_CAP);
           expect(turns).toHaveLength(PARENT_TURN_CAP + 1);
-        } else if (action.kind !== "settings" && action.kind !== "mcp" && action.kind !== "settings-persistence" && action.kind !== "mcp-lifecycle" && action.kind !== "slash") {
+        } else if (
+          action.kind !== "settings" &&
+          action.kind !== "mcp" &&
+          action.kind !== "settings-persistence" &&
+          action.kind !== "mcp-lifecycle" &&
+          action.kind !== "slash"
+        ) {
           expect(modelCallsFor(action)).toBe(turns.length);
         }
       }
     }
   });
 
-  it("concatenates turns in sequence order", () => {
+  it("concatenates turns in sequence order", async () => {
+    const { RETIRED_COMMANDS, focusedSequence, scriptedTurnsFor } = await loadActions();
     const sequence = focusedSequence("retired-commands");
     const turns = scriptedTurnsFor(sequence);
     expect(turns).toHaveLength(RETIRED_COMMANDS.length);
