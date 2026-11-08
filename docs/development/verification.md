@@ -221,6 +221,13 @@ Focused targets are `composer`, `settings`, `notes`, `mcp`,
 stream, one slot per action, so note writes no longer dominate. Without `--live`
 and an API key the runner stays in a capped dry run that cannot spend tokens.
 
+An action reserves its full model-call estimate before it runs. When the
+estimate does not fit the remaining `--max-calls`, the driver records a
+`skipped` step with the needed and remaining calls and continues with the next
+action. It stops with `max-calls` only when nothing left fits or the cap is
+reached. A focused `max-turns` dry run reserves 25 calls, so pass
+`--max-calls 25` unless a smaller cap should skip it.
+
 It writes:
 
 ```text

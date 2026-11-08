@@ -18,8 +18,10 @@ import {
   focusedSequence,
   genericSequence,
   modelCallsFor,
+  planChaosBudget,
   scriptedTurnsFor,
   type ChaosAction,
+  type ChaosBudgetStep,
 } from "../../../scripts/chaos/monkey-actions";
 import {
   clickMcpAddButton,
@@ -67,10 +69,11 @@ type DriverResult = {
   mode: string;
   target?: string;
   live: boolean;
-  steps: Array<{ id: string; surface: string; status: "passed" | "failed"; detail?: string }>;
+  steps: Array<{ id: string; surface: string; status: "passed" | "failed" | "skipped"; detail?: string }>;
   findings: Finding[];
   calls: number;
   tokens: number;
+  skippedSteps: number;
   assistantChars: number;
   settingsToggled: boolean;
   notes: Array<{ path: string; exists: boolean; content?: string }>;
@@ -115,7 +118,9 @@ let result: DriverResult;
 function state(): ChaosStopState {
   return {
     startedAt: startedAt,
-    steps: result.steps.length,
+    // A skipped action is not a user-visible step, so it does not spend the
+    // --max-steps budget. The sampled sequence is already capped by maxSteps.
+    steps: result.steps.filter((step) => step.status !== "skipped").length,
     calls: result.calls,
     tokens: result.tokens,
     canceled: plan.cancelFile !== "" && existsSync(plan.cancelFile),
@@ -129,7 +134,11 @@ function checkBudget(): string | undefined {
   return decision.reason;
 }
 
-async function logAction(action: ChaosAction, status: "started" | "passed" | "failed", detail?: string): Promise<void> {
+async function logAction(
+  action: ChaosAction,
+  status: "started" | "passed" | "failed" | "skipped",
+  detail?: string,
+): Promise<void> {
   if (!outDir) return;
   const entry = {
     t: Number(((Date.now() - startedAt) / 1000).toFixed(3)),
@@ -990,6 +999,13 @@ async function runAction(action: ChaosAction): Promise<void> {
   await browser.pause(250);
 }
 
+async function recordSkipped(step: Extract<ChaosBudgetStep, { status: "skipped" }>): Promise<void> {
+  const detail = `skipped: ${step.reason}`;
+  result.skippedSteps += 1;
+  result.steps.push({ id: step.action.id, surface: step.action.surface, status: "skipped", detail });
+  await logAction(step.action, "skipped", detail);
+}
+
 async function runSettings(): Promise<void> {
   await openAgenticChatSettings();
   const tabs = await readSettingsTabLabels();
@@ -1040,7 +1056,8 @@ async function runMcp(): Promise<void> {
 
 let startedAt = Date.now();
 let stopReason = "completed";
-let sequence: ChaosAction[] = [];
+let plannedSteps: ChaosBudgetStep[] = [];
+let plannedStopReason: "max-calls" | undefined;
 
 describe("chaos monkey live driver", function () {
   this.timeout(900_000);
@@ -1060,6 +1077,7 @@ describe("chaos monkey live driver", function () {
       findings: [],
       calls: 0,
       tokens: 0,
+      skippedSteps: 0,
       assistantChars: 0,
       settingsToggled: false,
       notes: [],
@@ -1069,10 +1087,20 @@ describe("chaos monkey live driver", function () {
       caps: plan.caps,
     };
 
-    sequence = plan.mode === "focused" ? focusedSequence(plan.target ?? "composer") : genericSequence(plan.caps, plan.seed);
+    let sequence =
+      plan.mode === "focused" ? focusedSequence(plan.target ?? "composer") : genericSequence(plan.caps, plan.seed);
     if (sequence.length > plan.caps.maxSteps) sequence = sequence.slice(0, plan.caps.maxSteps);
 
-    if (!plan.live) await installScriptedTurns(scriptedTurnsFor(sequence) as ScriptedTurn[]);
+    // Reserve each action's full call estimate before the run. Actions that do
+    // not fit are skipped; scripted dry runs install turns only for the actions
+    // that will actually run, so a skip cannot desync the replay stream.
+    const budget = planChaosBudget(sequence, plan.caps.maxCalls);
+    plannedSteps = budget.steps;
+    plannedStopReason = budget.stopReason;
+    if (!plan.live) {
+      const runnable = plannedSteps.filter((step) => step.status === "run").map((step) => step.action);
+      await installScriptedTurns(scriptedTurnsFor(runnable) as ScriptedTurn[]);
+    }
 
     await configurePlugin({
       provider: plan.live ? "openai-compatible" : "openrouter",
@@ -1094,8 +1122,9 @@ describe("chaos monkey live driver", function () {
     if (!result) return;
     result.clock.finishedAt = Date.now();
     result.stopReason = stopReason;
+    const executed = result.steps.filter((step) => step.status !== "skipped");
     result.verdict =
-      result.steps.length === 0
+      executed.length === 0
         ? "INCONCLUSIVE"
         : result.findings.length > 0
           ? "FINDINGS"
@@ -1109,6 +1138,7 @@ describe("chaos monkey live driver", function () {
         target: plan.target,
         live: plan.live,
         steps: result.steps.length,
+        skippedSteps: result.skippedSteps,
         findings: result.findings.length,
         calls: result.calls,
         estimatedTokens: result.tokens,
@@ -1126,23 +1156,24 @@ describe("chaos monkey live driver", function () {
   });
 
   it("drives the planned surfaces under the hard caps", async function () {
-    for (const action of sequence) {
+    for (const step of plannedSteps) {
       const stop = checkBudget();
       if (stop) {
         stopReason = stop;
         break;
       }
-      // A live action makes several model calls before the next cap check.
-      // Reserve its whole budget up front so a multi-call action cannot blow
-      // past --max-calls. Dry runs replay scripted turns and stay free.
-      if (plan.live && result.calls + modelCallsFor(action) > plan.caps.maxCalls) {
-        stopReason = "max-calls";
-        break;
+      if (step.status === "skipped") {
+        await recordSkipped(step);
+        continue;
       }
-      await runAction(action);
+      await runAction(step.action);
       if (stopReason.startsWith("repeated")) break;
     }
 
+    // The plan already reserved every run action. It stops with max-calls only
+    // when nothing left in the sequence fits; a later runtime cap can still
+    // stop the run first.
+    if (plannedStopReason && stopReason === "completed") stopReason = plannedStopReason;
     const finalStop = checkBudget();
     if (finalStop && stopReason === "completed") stopReason = finalStop;
     if (stopReason === "completed") stopReason = "sequence-complete";
