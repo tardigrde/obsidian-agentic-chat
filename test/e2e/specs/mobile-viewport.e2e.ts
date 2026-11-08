@@ -280,7 +280,7 @@ type HeadingRowMetrics = {
 /** Measure the rendered geometry of a named settings heading row. */
 async function measureHeadingRow(name: string): Promise<HeadingRowMetrics> {
   return await browser.execute((rowName) => {
-    const rows = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-settings-tabbody .setting-item"));
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-settings-tabbody .setting-item:not(.agentic-chat-settings-block)"));
     const header = rows.find(
       (row) => row.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === rowName,
     );
@@ -426,7 +426,7 @@ describe("agentic-chat mobile viewport", function () {
         ),
       { timeout: 10_000, timeoutMsg: "seeded agent plugin row did not render in Advanced at phone width" },
     );
-    await assertFits(".agentic-chat-settings-tabs", "settings tabs");
+    await assertFits(".setting-page-content", "settings tabs");
     await assertFits(".agentic-chat-settings-tabbody", "settings body");
     await closeAgenticChatSettings();
     await openChat();

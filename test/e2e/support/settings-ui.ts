@@ -61,7 +61,7 @@ export async function openAgenticChatSettings(): Promise<void> {
   settingsWindowId = handles.find((handle) => handle !== mainWindowId) ?? mainWindowId;
   await focusSettingsWindow();
 
-  await $(".agentic-chat-settings-tabs").waitForExist();
+  await $(".setting-item.mod-navigable").waitForExist();
 }
 
 export async function closeAgenticChatSettings(): Promise<void> {
@@ -98,27 +98,44 @@ export async function closeAgenticChatSettings(): Promise<void> {
 export async function readSettingsTabLabels(): Promise<string[]> {
   await focusSettingsWindow();
   return await browser.execute(() =>
-    Array.from(document.querySelectorAll<HTMLButtonElement>(".agentic-chat-settings-tab")).map((tab) =>
-      tab.innerText.trim(),
-    ),
+    Array.from(document.querySelectorAll<HTMLElement>(".setting-item.mod-navigable"))
+      .filter((row) => !row.closest(".setting-page"))
+      .map((row) => row.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() ?? ""),
   );
 }
 
 export async function selectSettingsTab(label: string): Promise<void> {
   await focusSettingsWindow();
+
+  // Declarative pages replace the old horizontal tab bar: go back to the root
+  // page list before opening another page.
+  if (await $(".setting-page-back-button").isExisting()) {
+    await browser.execute(() => document.querySelector<HTMLElement>(".setting-page-back-button")?.click());
+    await browser.waitUntil(async () => !(await $(".setting-page-back-button").isExisting()), {
+      timeout: 5_000,
+      timeoutMsg: "Settings page did not return to the tab list",
+    });
+  }
+
+  await $(".setting-item.mod-navigable").waitForExist();
   await browser.execute((tabLabel) => {
-    const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".agentic-chat-settings-tab"));
-    const tab = tabs.find((candidate) => candidate.innerText.trim() === tabLabel);
-    if (!tab) throw new Error(`Settings tab "${tabLabel}" not found`);
-    tab.click();
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".setting-item.mod-navigable")).filter(
+      (row) => !row.closest(".setting-page"),
+    );
+    const row = rows.find(
+      (candidate) => candidate.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === tabLabel,
+    );
+    if (!row) throw new Error(`Settings tab "${tabLabel}" not found`);
+    row.click();
   }, label);
 
   await browser.waitUntil(
     async () =>
-      await browser.execute((tabLabel) => {
-        const active = document.querySelector<HTMLElement>(".agentic-chat-settings-tab.is-active");
-        return active?.innerText.trim() === tabLabel;
-      }, label),
+      await browser.execute(
+        (tabLabel) =>
+          document.querySelector<HTMLElement>(".setting-page-title")?.innerText.trim() === tabLabel,
+        label,
+      ),
     { timeout: 5_000, timeoutMsg: `Settings tab "${label}" did not become active` },
   );
 }
@@ -132,8 +149,8 @@ export async function waitForSetting(name: string, section?: string): Promise<vo
           const sectionEl = settingSection
             ? document.querySelector(`.agentic-chat-settings-section[data-settings-section="${settingSection}"]`)
             : null;
-          const root = sectionEl ?? document.querySelector(".agentic-chat-settings-tabbody") ?? document;
-          const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+          const root = sectionEl ?? document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
+          const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"));
           return items.some(
             (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === settingName,
           );
@@ -149,8 +166,8 @@ export async function readSettingText(name: string): Promise<string> {
   await focusSettingsWindow();
   await waitForSetting(name);
   return await browser.execute((settingName) => {
-    const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
-    const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+    const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
+    const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"));
     const setting = items.find(
       (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === settingName,
     );
@@ -162,13 +179,30 @@ export async function readSettingText(name: string): Promise<string> {
   }, name);
 }
 
+/** Read the selected value of a named dropdown setting. */
+export async function readSettingSelect(name: string): Promise<string> {
+  await focusSettingsWindow();
+  await waitForSetting(name);
+  return await browser.execute((settingName) => {
+    const root =
+      document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
+    const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"));
+    const setting = items.find(
+      (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === settingName,
+    );
+    const select = setting?.querySelector<HTMLSelectElement>("select");
+    if (!select) throw new Error(`Select for setting "${settingName}" not found`);
+    return select.value;
+  }, name);
+}
+
 export async function setSettingSelect(name: string, value: string): Promise<void> {
   await waitForSetting(name);
   await browser.execute(
     ({ settingName, nextValue }) => {
       const findSetting = (name: string): HTMLElement | undefined => {
-        const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
-        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+        const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
+        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"));
         return items.find((item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === name);
       };
       const setting = findSetting(settingName);
@@ -190,8 +224,8 @@ export async function setSettingText(name: string, value: string, section?: stri
         const sectionEl = settingSection
           ? document.querySelector(`.agentic-chat-settings-section[data-settings-section="${settingSection}"]`)
           : null;
-        const root = sectionEl ?? document.querySelector(".agentic-chat-settings-tabbody") ?? document;
-        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+        const root = sectionEl ?? document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
+        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"));
         return items.find((item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === name);
       };
       const setting = findSetting(settingName);
@@ -203,6 +237,8 @@ export async function setSettingText(name: string, value: string, section?: stri
       input.value = nextValue;
       input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: nextValue }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
+      // Obsidian's declarative number control commits on blur/Enter, not input.
+      input.blur();
     },
     { settingName: name, nextValue: value, settingSection: section },
   );
@@ -214,8 +250,8 @@ export async function setSettingRange(name: string, value: number): Promise<void
   await browser.execute(
     ({ settingName, nextValue }) => {
       const findSetting = (name: string): HTMLElement | undefined => {
-        const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
-        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+        const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
+        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"));
         return items.find((item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === name);
       };
       const setting = findSetting(settingName);
@@ -235,8 +271,8 @@ export async function setSettingToggle(name: string, checked: boolean): Promise<
   await browser.execute(
     ({ settingName, nextChecked }) => {
       const findSetting = (name: string): HTMLElement | undefined => {
-        const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
-        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+        const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
+        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"));
         return items.find((item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === name);
       };
       const setting = findSetting(settingName);
@@ -270,7 +306,7 @@ export async function setSettingTextByPlaceholder(placeholder: string, value: st
   await focusSettingsWindow();
   await browser.execute(
     ({ inputPlaceholder, nextValue }) => {
-      const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
+      const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
       const input = Array.from(root.querySelectorAll<HTMLInputElement>("input:not([type='range'])"))
         .find((candidate) => candidate.placeholder.trim() === inputPlaceholder);
       if (!input) throw new Error(`Text input with placeholder "${inputPlaceholder}" not found`);
@@ -278,6 +314,7 @@ export async function setSettingTextByPlaceholder(placeholder: string, value: st
       input.value = nextValue;
       input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: nextValue }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.blur();
     },
     { inputPlaceholder: placeholder, nextValue: value },
   );
@@ -288,8 +325,8 @@ export async function clickSettingButton(name: string, buttonText: string): Prom
   await browser.execute(
     ({ settingName, text }) => {
       const findSetting = (name: string): HTMLElement | undefined => {
-        const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
-        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+        const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
+        const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"));
         return items.find((item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === name);
       };
       const setting = findSetting(settingName);
@@ -308,8 +345,8 @@ export async function waitForSettingButton(name: string, buttonText: string): Pr
     async () =>
       await browser.execute(
         ({ settingName, text }) => {
-          const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document;
-          const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item"));
+          const root = document.querySelector(".agentic-chat-settings-tabbody") ?? document.querySelector(".setting-page-content") ?? document;
+          const items = Array.from(root.querySelectorAll<HTMLElement>(".setting-item:not(.agentic-chat-settings-block)"));
           const setting = items.find(
             (item) => item.querySelector<HTMLElement>(".setting-item-name")?.innerText.trim() === settingName,
           );
