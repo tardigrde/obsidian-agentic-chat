@@ -13,7 +13,22 @@ import path from "node:path";
 export const CHAOS_MODES = ["focused", "generic"] as const;
 export type ChaosMode = (typeof CHAOS_MODES)[number];
 
-export const CHAOS_TARGETS = ["composer", "settings", "notes", "mcp"] as const;
+export const CHAOS_TARGETS = [
+  "composer",
+  "settings",
+  "notes",
+  "mcp",
+  "retired-commands",
+  "steer",
+  "queue",
+  "stop-send",
+  "max-turns",
+  "settings-persistence",
+  "approval-paths",
+  "session-reload",
+  "large-input",
+  "mcp-lifecycle",
+] as const;
 export type ChaosTarget = (typeof CHAOS_TARGETS)[number];
 
 export type ChaosCaps = {

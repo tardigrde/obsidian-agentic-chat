@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  CHAOS_TARGETS,
   ChaosGuardError,
   DEFAULT_CAPS,
   DEFAULT_DRY_RUN_CAPS,
@@ -47,7 +48,7 @@ describe("chaos monkey caps", () => {
 
 describe("chaos monkey mode selection", () => {
   it("accepts every focused target", () => {
-    for (const target of ["composer", "settings", "notes", "mcp"] as const) {
+    for (const target of CHAOS_TARGETS) {
       expect(selectMode("focused", target)).toEqual({ mode: "focused", target });
     }
   });
