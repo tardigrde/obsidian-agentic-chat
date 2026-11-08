@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PARENT_TURN_CAP } from "../src/agent/turn-cap";
 import { CHAOS_TARGETS } from "../scripts/chaos/monkey-core";
+import type { ChaosAction } from "../scripts/chaos/monkey-actions";
 
 /**
  * Load the catalog dynamically so the witness runner can revert the module and
@@ -105,6 +106,67 @@ describe("chaos generic sampling", () => {
     // The old stream forced notes on 40% of steps; one slot in the pool must
     // stay well below that across a broad sample.
     expect(notes / steps).toBeLessThan(0.15);
+  });
+});
+
+describe("chaos call budget", () => {
+  const cheap = (id: string): ChaosAction => ({
+    id,
+    surface: "composer",
+    kind: "prompt",
+    description: `cheap action ${id}`,
+    prompt: "cheap prompt",
+  });
+
+  /** Fail on an assertion, not a TypeError, when the budget helper is absent. */
+  async function loadBudget() {
+    const actions = await loadActions();
+    expect(typeof actions.planChaosBudget).toBe("function");
+    return actions;
+  }
+
+  it("skips an action that does not fit and keeps the cheap actions running", async () => {
+    const { focusedSequence, modelCallsFor, planChaosBudget, scriptedTurnsFor } = await loadBudget();
+    const expensive = focusedSequence("max-turns")[0];
+    const plan = planChaosBudget([cheap("cheap-1"), expensive, cheap("cheap-2")], 4);
+
+    expect(plan.stopReason).toBeUndefined();
+    expect(plan.steps.map((step) => [step.action.id, step.status])).toEqual([
+      ["cheap-1", "run"],
+      ["max-turns", "skipped"],
+      ["cheap-2", "run"],
+    ]);
+    const skipped = plan.steps[1];
+    if (skipped.status !== "skipped") throw new Error("expected max-turns to be skipped");
+    expect(skipped.needed).toBe(PARENT_TURN_CAP);
+    expect(skipped.remaining).toBe(3);
+    expect(skipped.reason).toContain(`${PARENT_TURN_CAP} model calls`);
+    expect(skipped.reason).toContain("3 remaining");
+
+    const runnable = plan.steps.filter((step) => step.status === "run").map((step) => step.action);
+    expect(runnable.map((action) => action.id)).toEqual(["cheap-1", "cheap-2"]);
+    expect(scriptedTurnsFor(runnable)).toHaveLength(runnable.reduce((sum, action) => sum + modelCallsFor(action), 0));
+  });
+
+  it("reserves a multi-call action so it cannot overshoot the cap", async () => {
+    const { focusedSequence, planChaosBudget } = await loadBudget();
+    const approval = focusedSequence("approval-paths")[0];
+
+    const exact = planChaosBudget([approval], 4);
+    expect(exact.steps.map((step) => step.status)).toEqual(["run"]);
+
+    const short = planChaosBudget([approval], 3);
+    expect(short.steps.map((step) => step.status)).toEqual(["skipped"]);
+    expect(short.stopReason).toBe("max-calls");
+  });
+
+  it("stops with max-calls only when no remaining action fits", async () => {
+    const { focusedSequence, planChaosBudget } = await loadBudget();
+    const expensive = focusedSequence("max-turns")[0];
+    const plan = planChaosBudget([expensive, expensive], 4);
+
+    expect(plan.steps.map((step) => [step.action.id, step.status])).toEqual([["max-turns", "skipped"]]);
+    expect(plan.stopReason).toBe("max-calls");
   });
 });
 

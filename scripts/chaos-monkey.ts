@@ -87,6 +87,7 @@ type ReportDriver = {
   runnerNotes?: string[];
   calls?: number;
   tokens?: number;
+  skippedSteps?: number;
   assistantChars?: number;
   mcp?: { rendered: boolean; added: boolean };
   notes?: Array<{ path: string; exists: boolean }>;
@@ -326,6 +327,7 @@ async function writeReport(input: {
 - mode: \`${options.mode}\`${options.target ? `, target \`${options.target}\`` : ""}
 - model calls: ${driver?.calls ?? 0}
 - estimated tokens: ${driver?.tokens ?? 0}
+- skipped steps: ${driver?.skippedSteps ?? steps.filter((step) => step.status === "skipped").length}
 - stop reason: \`${driver?.stopReason ?? (result.timedOut ? "max-wall-time" : result.canceled ? "canceled" : "unknown")}\`
 - live: \`${options.live}\`
 - duration: ${(durationMs / 1000).toFixed(1)}s

@@ -363,3 +363,48 @@ export function modelCallsFor(action: ChaosAction): number {
       return 0;
   }
 }
+
+export type ChaosBudgetStep =
+  | { action: ChaosAction; status: "run"; reserved: number; remaining: number }
+  | { action: ChaosAction; status: "skipped"; needed: number; remaining: number; reason: string };
+
+export type ChaosBudgetPlan = {
+  steps: ChaosBudgetStep[];
+  /** Set when the plan stopped because nothing left in the sequence fits. */
+  stopReason?: "max-calls";
+};
+
+/**
+ * Reserve each action's whole `modelCallsFor` estimate against `--max-calls`.
+ *
+ * An action that does not fit becomes a skipped step instead of ending the run.
+ * The plan keeps going while a later action still fits. It stops with
+ * `max-calls` only when no remaining action fits. Dry runs use the same rule:
+ * scripted turns consume the call budget but never spend tokens, and the caller
+ * installs scripted turns only for the planned `run` steps so the replay stays
+ * aligned.
+ */
+export function planChaosBudget(sequence: ChaosAction[], maxCalls: number, calls = 0): ChaosBudgetPlan {
+  const steps: ChaosBudgetStep[] = [];
+  let spent = Math.max(0, calls);
+  for (let index = 0; index < sequence.length; index += 1) {
+    const action = sequence[index];
+    const remaining = Math.max(0, maxCalls - spent);
+    const needed = modelCallsFor(action);
+    if (needed <= remaining) {
+      steps.push({ action, status: "run", reserved: needed, remaining });
+      spent += needed;
+      continue;
+    }
+    const laterFits = sequence.slice(index + 1).some((later) => modelCallsFor(later) <= remaining);
+    steps.push({
+      action,
+      status: "skipped",
+      needed,
+      remaining,
+      reason: `needs ${needed} model calls, ${remaining} remaining`,
+    });
+    if (!laterFits) return { steps, stopReason: "max-calls" };
+  }
+  return { steps };
+}

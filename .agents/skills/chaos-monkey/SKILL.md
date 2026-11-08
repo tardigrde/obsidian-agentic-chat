@@ -85,6 +85,10 @@ Focused targets:
 Generic mode chooses from the same actions with a seeded random stream. Every
 action is one slot in the pool, so note writes no longer dominate a generic run.
 
+`max-turns` reserves the full assistant-turn budget (25 model calls). A focused
+dry run needs `--max-calls 25` or higher. With a smaller cap the action is
+recorded as skipped, like any other action that does not fit.
+
 ## Read the result
 
 ```text
@@ -113,10 +117,14 @@ e2e test, then fix the product. Never leave the only proof in a chaos report.
 
 ## Caps and cost
 
-- `--max-steps` counts user-visible actions, not tool calls.
+- `--max-steps` counts user-visible actions, not tool calls. A skipped action
+  does not spend a step.
 - `--max-seconds` caps driver wall time. The runner adds a fixed boot allowance
   before it kills the child.
-- `--max-calls` caps model calls. Slash-command steps do not count.
+- `--max-calls` caps model calls. Slash-command steps do not count. An action
+  reserves its full estimate before it runs; when the estimate does not fit, the
+  step is skipped with the needed and remaining calls and the run continues. It
+  stops with `max-calls` only when nothing left fits or the cap is reached.
 - `--max-tokens` is an estimate: prompt and answer characters / 4 plus a small
   time term. It is a safety brake, not billing telemetry.
 
