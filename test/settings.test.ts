@@ -36,12 +36,36 @@ import {
   mcpTestButtonState,
 } from "../src/settings-mcp-state";
 
-describe("mergeSettings — working directories", () => {
-  it("defaults to an empty working set", () => {
-    expect(mergeSettings(null).approval.workingDirs).toEqual([]);
-    expect(mergeSettings({}).approval.workingDirs).toEqual([]);
+describe("mergeSettings — retired working directories", () => {
+  it("loads an old data.json with approval.workingDirs and drops the key", () => {
+    const merged = mergeSettings({
+      approval: { mutating: "ask", perTool: { write: "allow" }, workingDirs: ["Notes", "Work"] },
+    } as unknown as Partial<AgenticChatSettings>);
+    expect(merged.approval).toEqual({ mutating: "ask", perTool: { write: "allow" } });
+    expect("workingDirs" in merged.approval).toBe(false);
+    expect(JSON.stringify(merged)).not.toContain("workingDirs");
   });
 
+  it("ignores malformed legacy workingDirs instead of crashing the load", () => {
+    const malformed = ["Notes", null, { path: "Notes" }, 3];
+    for (const workingDirs of malformed) {
+      const merged = mergeSettings({
+        approval: { mutating: "ask", perTool: {}, workingDirs },
+      } as unknown as Partial<AgenticChatSettings>);
+      expect(merged.approval.mutating).toBe("ask");
+      expect("workingDirs" in merged.approval).toBe(false);
+    }
+  });
+
+  it("keeps the approval policy and per-tool map while dropping workingDirs", () => {
+    const merged = mergeSettings({
+      approval: { mutating: "deny", perTool: { write: "ask" } },
+    } as unknown as Partial<AgenticChatSettings>);
+    expect(merged.approval).toEqual({ mutating: "deny", perTool: { write: "ask" } });
+  });
+});
+
+describe("mergeSettings — defaults", () => {
   it("heals the subagent timeout to whole seconds, 0 = disabled", () => {
     expect(mergeSettings(null).subagentTimeoutSeconds).toBe(0);
     expect(mergeSettings({ subagentTimeoutSeconds: 300 }).subagentTimeoutSeconds).toBe(300);
@@ -57,31 +81,11 @@ describe("mergeSettings — working directories", () => {
 
   it("drops a legacy projects key from stored settings", () => {
     const merged = mergeSettings({
-      approval: { mutating: "ask", perTool: {}, workingDirs: [] },
+      approval: { mutating: "ask", perTool: {} },
       projects: { activeProjectId: "alpha", items: [{ id: "alpha", name: "Alpha", folders: ["A"] }] },
     } as unknown as Partial<AgenticChatSettings>);
     expect(JSON.stringify(merged)).not.toContain("projects");
     expect((merged as unknown as Record<string, unknown>).projects).toBeUndefined();
-  });
-
-  it("keeps a stored string[] working set", () => {
-    const merged = mergeSettings({ approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes", "Work"] } });
-    expect(merged.approval.workingDirs).toEqual(["Notes", "Work"]);
-  });
-
-  it("heals a malformed working set down to its string entries", () => {
-    const merged = mergeSettings({
-      // A corrupted persisted value: non-array / mixed types must not reach the gate.
-      approval: { mutating: "ask", perTool: {}, workingDirs: ["ok", 3, null, "two"] as unknown as string[] },
-    });
-    expect(merged.approval.workingDirs).toEqual(["ok", "two"]);
-  });
-
-  it("treats a non-array working set as empty", () => {
-    const merged = mergeSettings({
-      approval: { mutating: "ask", perTool: {}, workingDirs: "Notes" as unknown as string[] },
-    });
-    expect(merged.approval.workingDirs).toEqual([]);
   });
 });
 
@@ -594,7 +598,6 @@ describe("mergeSettings — MCP", () => {
           mcp__docs__resolve_library_id: "allow",
           mcp__docs__resolve_library_id_2: "deny",
         },
-        workingDirs: [],
       },
       mcp: {
         enabled: true,
@@ -660,7 +663,6 @@ describe("mergeSettings — MCP", () => {
           mcp__docs__search: "allow",
           write: "ask",
         },
-        workingDirs: [],
       },
       mcp: {
         enabled: true,
@@ -709,7 +711,6 @@ describe("mergeSettings — MCP", () => {
       approval: {
         mutating: "ask",
         perTool: { mcp__docs__search: "allow" },
-        workingDirs: [],
       },
     });
     const server = settings.mcp.servers[0];

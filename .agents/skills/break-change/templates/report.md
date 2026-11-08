@@ -29,9 +29,9 @@ Verdict: INCONCLUSIVE
 |---|---|---|---|---|---|---|
 | S1 | S2 | A scripted chat turn reaches the transcript | The assistant reply renders | <fill> | `run.log`, `events.jsonl` | <PASS/FAIL> |
 | S2 | S2 | An absent slash command is not in /help and is not handled locally | Absent from /help; falls through to the model | <fill> | `run.log`, `events.jsonl` | <PASS/FAIL> |
-| S3 | S3 | /help still lists adjacent surviving commands | /plan, /status, /dirs render | <fill> | `run.log`, `events.jsonl` | <PASS/FAIL> |
+| S3 | S3 | /help still lists adjacent surviving commands | /status and /doctor render | <fill> | `run.log`, `events.jsonl` | <PASS/FAIL> |
 | S4 | S2 | A hidden removed command is absent from /help and shows a removal notice | /project is hidden and shows Removed | <fill> | `run.log`, `events.jsonl` | <PASS/FAIL> |
-| S5 | S3 | /dirs still opens the adjacent working-directory list | Add working directory renders | <fill> | `run.log`, `events.jsonl` | <PASS/FAIL> |
+| S5 | S3 | /status still opens the adjacent status panel | Provider and model render | <fill> | `run.log`, `events.jsonl` | <PASS/FAIL> |
 
 ## Findings
 

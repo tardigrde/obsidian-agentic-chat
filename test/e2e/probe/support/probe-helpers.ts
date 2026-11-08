@@ -10,7 +10,7 @@ export type ProbeSettings = {
   requestTimeoutMs?: number;
   maxNetworkRetries?: number;
   mode?: string;
-  approval?: { mutating?: string; perTool?: Record<string, string>; workingDirs?: string[] };
+  approval?: { mutating?: string; perTool?: Record<string, string> };
   web?: { enabled?: boolean };
 };
 

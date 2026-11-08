@@ -10,6 +10,7 @@ import {
   readAgenticChatSettings,
   readSecret,
   readSettingSelect,
+  readSettingsBodyText,
   readSettingText,
   readSettingsTabLabels,
   readStoredData,
@@ -31,7 +32,7 @@ interface SettingsSnapshot {
   openaiCompatibleBaseUrl: string;
   openaiCompatibleApiKey: string;
   openaiCompatibleModel: string;
-  approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+  approval: { mutating: string; perTool: Record<string, string> };
   web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
   observability: {
     enabled: boolean;
@@ -101,7 +102,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
       openaiCompatibleBaseUrl: string;
       openaiCompatibleApiKey: string;
       openaiCompatibleModel: string;
-      approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+      approval: { mutating: string; perTool: Record<string, string> };
       web: { enabled: boolean; searchProvider: string; searchApiKeySecretId: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number; allowedHosts: string };
       observability: {
         enabled: boolean;
@@ -133,7 +134,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
     settings.openaiCompatibleBaseUrl = "https://api.openai.com/v1";
     settings.openaiCompatibleApiKey = "";
     settings.openaiCompatibleModel = "";
-    settings.approval = { mutating: "ask", perTool: {}, workingDirs: [] };
+    settings.approval = { mutating: "ask", perTool: {} };
     settings.web = {
       enabled: false,
       searchProvider: "tavily",
@@ -257,8 +258,14 @@ describe("agentic-chat settings UI", function () {
     }
   });
 
-  it("persists approval gates and per-tool overrides through the Agent tab", async function () {
+  it("removes the working-directory section and still saves approval controls", async function () {
     await selectSettingsTab("Agent");
+    await waitForSetting("Before mutating tools");
+
+    const body = await readSettingsBodyText();
+    expect(body).not.toContain("Working directories");
+    expect(body).not.toContain("Add folder");
+
     await setSettingSelect("Before mutating tools", "deny");
     await setSettingSelect("Write file", "ask");
 

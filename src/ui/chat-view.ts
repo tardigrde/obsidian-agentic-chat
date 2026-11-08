@@ -22,7 +22,6 @@ import { activeModelId, apiKeyForProvider } from "../settings";
 import { listOpenAICompatibleModels, listOpenRouterModels } from "../llm/models";
 import { ModelSuggestModal } from "./model-suggest-modal";
 import { SessionListModal } from "./session-list-modal";
-import { FolderSuggestModal } from "./folder-suggest";
 import { createFetchFromWebFetcher, createProxiedFetcher } from "../mcp/fetcher";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
 import { AssistantBubble } from "./assistant-bubble";
@@ -118,7 +117,6 @@ import { MemoryWorkflowController } from "./memory-workflow-controller";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
 import { SessionWorkflowController } from "./session-workflow-controller";
-import { WorkingDirectoryWorkflowController } from "./working-directory-workflow-controller";
 import {
   renderActionPanel,
   renderErrorPanel,
@@ -1630,12 +1628,6 @@ export class ChatView extends ItemView {
       case "doctor":
         await this.runDoctor();
         return true;
-      case "add-dir":
-        await this.createWorkingDirectoryWorkflow().runAddDir(argString);
-        return true;
-      case "dirs":
-        this.createWorkingDirectoryWorkflow().showWorkingDirs();
-        return true;
       case "usage":
         this.showUsage();
         return true;
@@ -2406,12 +2398,10 @@ export class ChatView extends ItemView {
     renderContextChips(
       this.chipsEl,
       {
-        workingDirs: this.plugin.settings.approval.workingDirs,
         activeNotePath: this.effectiveActiveNote(),
         attachments: this.attachments,
       },
       {
-        removeWorkingDir: (dir) => void this.createWorkingDirectoryWorkflow().remove(dir),
         removeActiveNote: () => {
           this.activeNoteSuppressed = true;
           this.activeNotePath = null;
@@ -2449,30 +2439,6 @@ export class ChatView extends ItemView {
     this.statusEl.setText("");
     this.renderChips();
     this.syncChrome();
-  }
-
-  // --- working directories (C1: + Folder / /add-dir scope) ---
-
-  private createWorkingDirectoryWorkflow(): WorkingDirectoryWorkflowController {
-    const controller = new WorkingDirectoryWorkflowController({
-      workingDirs: () => this.plugin.settings.approval.workingDirs,
-      folderExists: (path) => this.app.vault.getAbstractFileByPath(path) instanceof TFolder,
-      activeFolder: () => activeNoteFolder(this.effectiveActiveNote()),
-      vaultBasePath: () => vaultBasePath(this.app.vault.adapter),
-      saveSettings: () => this.plugin.saveSettings(),
-      afterChange: () => {
-        this.renderChips();
-        this.syncChrome();
-      },
-      pickWorkingDir: () => {
-        new FolderSuggestModal(this.app, (folder) => void controller.add(folder.path)).open();
-      },
-      pickFolderAttachment: () => {
-        new FolderSuggestModal(this.app, (folder) => this.addAttachment(`${FOLDER_PREFIX}${folder.path}`)).open();
-      },
-      renderer: this.workflowRenderer(),
-    });
-    return controller;
   }
 
   private async buildContextFor(
@@ -2747,14 +2713,4 @@ function lastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
     if (predicate(items[i])) return i;
   }
   return -1;
-}
-
-function activeNoteFolder(path: string | null): string {
-  if (!path) return "";
-  return path.split("/").slice(0, -1).join("/");
-}
-
-function vaultBasePath(adapter: unknown): string | null {
-  const maybeAdapter = adapter as { getBasePath?: () => string };
-  return typeof maybeAdapter.getBasePath === "function" ? maybeAdapter.getBasePath() : null;
 }

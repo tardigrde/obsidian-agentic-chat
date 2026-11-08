@@ -8,8 +8,6 @@ Slash commands run locally and are not sent to the model.
 | `/sessions [clear --confirm]` | Browse, search, reopen, rename, or delete past conversations. Clear with confirmation deletes all conversations in the current scope. |
 | `/model` | Switch model. Shift actions apply a next-prompt-only override where supported. |
 | `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists across messages. |
-| `/add-dir [folder]` | Grant a vault working directory. Without an argument, opens a vault folder picker. |
-| `/dirs` | List or revoke granted working directories. |
 | `/compact [instructions]` | Summarize older turns now. Optional instructions are passed to the compaction request. |
 | `/init [instructions]` | Create or update the vault standing-instructions file (`AGENTS.md`, falling back to `CLAUDE.md` or `GEMINI.md` at the vault root). Optional text guides the update. |
 | `/style [name]` | Switch output style. |

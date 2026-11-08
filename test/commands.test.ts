@@ -7,7 +7,7 @@ import {
   visibleCommands,
 } from "../src/ui/commands";
 
-const REMOVED_COMMANDS = ["config", "project", "steer", "follow-up", "redirect", "todo", "plan"] as const;
+const REMOVED_COMMANDS = ["config", "project", "steer", "follow-up", "redirect", "todo", "plan", "add-dir", "dirs"] as const;
 const REMOVED_ALIASES = [
   "mode",
   "projects",
@@ -25,8 +25,6 @@ const SUPPORTED_COMMANDS = [
   "usage",
   "doctor",
   "style",
-  "add-dir",
-  "dirs",
   "sessions",
   "semantic-index",
   "effort",
@@ -59,6 +57,13 @@ describe("resolveCommand", () => {
   it.each([...REMOVED_COMMANDS, ...REMOVED_ALIASES])("does not resolve the removed word %s", (word) => {
     expect(resolveCommand(word)).toBeUndefined();
     expect(parseSlashInput(`/${word}`).command).toBeUndefined();
+  });
+
+  it("does not resolve the removed working-directory commands or their aliases", () => {
+    for (const word of ["add-dir", "dirs", "adddir", "working-dirs"]) {
+      expect(resolveCommand(word)).toBeUndefined();
+      expect(parseSlashInput(`/${word}`).command).toBeUndefined();
+    }
   });
 
   it("drops the retired diagnostics/diag aliases", () => {

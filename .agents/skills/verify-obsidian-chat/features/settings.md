@@ -7,7 +7,7 @@
 - Models: provider, global network proxy, OpenRouter privacy toggles, Ollama
   fields, OpenAI-compatible gateway fields, API keys.
 - Agent: permission mode, sampling, timeout, retries, system prompt, compaction,
-  tool budget, approval gates, per-tool overrides, working directories.
+  tool budget, approval gates, per-tool overrides.
 - Advanced: web access, MCP, observability, notifications, agent plugins,
   subagents, semantic retrieval, ignored files.
 - The plugin stores secrets in Obsidian secret storage, not in `data.json`.
@@ -45,25 +45,25 @@ await closeAgenticChatSettings();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Settings tab opens | `src/main.ts:128` | `test/e2e/specs/settings-ui.e2e.ts:184` (opened by the helper via `app.setting`, not the nav) | `partial` |
-| Three tabs render and switch | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:184` | `covered` |
-| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:184` | `covered` |
-| A moved Advanced setting saves and survives close/reopen | `src/settings.ts:2133` | `test/e2e/specs/settings-ui.e2e.ts:484` | `covered` |
-| Models: provider, API key, base URL, model | `src/settings.ts:603` | `test/e2e/specs/settings-ui.e2e.ts:219` | `covered` |
-| Secrets stay out of `data.json` | `src/settings.ts:1929` | `test/e2e/specs/settings-ui.e2e.ts:219` | `covered` |
+| Settings tab opens | `src/main.ts:128` | `test/e2e/specs/settings-ui.e2e.ts:185` (opened by the helper via `app.setting`, not the nav) | `partial` |
+| Three tabs render and switch | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
+| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
+| A moved Advanced setting saves and survives close/reopen | `src/settings.ts:2133` | `test/e2e/specs/settings-ui.e2e.ts:491` | `covered` |
+| Models: provider, API key, base URL, model | `src/settings.ts:603` | `test/e2e/specs/settings-ui.e2e.ts:220` | `covered` |
+| Secrets stay out of `data.json` | `src/settings.ts:1929` | `test/e2e/specs/settings-ui.e2e.ts:220` | `covered` |
 | OpenRouter privacy toggles | `src/settings.ts:638` | no committed check | `NONE` |
 | Ollama server URL and model | `src/settings.ts:715` | no committed check | `NONE` |
 | Global network proxy | `src/settings.ts:603` | no committed check | `NONE` |
 | Agent: permission mode dropdown | `src/settings.ts:807` | no committed check | `NONE` |
 | Agent: sampling, timeout, retries, prompt, compaction, budget | `src/settings.ts:807` | no committed check | `NONE` |
-| Approval gates and per-tool overrides | `src/settings.ts:895` | `test/e2e/specs/settings-ui.e2e.ts:260` | `covered` |
-| Approval: working directories row | `src/settings.ts:895` | no committed check | `NONE` |
-| Web: enable, provider, key, results, fetch limit | `src/settings.ts:995` | `test/e2e/specs/settings-ui.e2e.ts:271` | `covered` |
+| Approval gates and per-tool overrides | `src/settings.ts:895` | `test/e2e/specs/settings-ui.e2e.ts:261` | `covered` |
+| Approval: working directories section removed | `src/settings.ts:895` | `test/e2e/specs/settings-ui.e2e.ts:261` | `covered` |
+| Web: enable, provider, key, results, fetch limit | `src/settings.ts:995` | `test/e2e/specs/settings-ui.e2e.ts:278` | `covered` |
 | Web: allowed hosts | `src/settings.ts:995` | no committed check | `NONE` |
 | MCP tools: enable and add a server | `src/settings.ts:1097` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
 | Observability with Langfuse | `src/settings.ts:1209` | `test/e2e/specs/settings-ui.e2e.ts:433` | `covered` |
 | Observability: generic OTLP auth header | `src/settings.ts:1209` | `test/e2e/specs/settings-migration.e2e.ts:199` (migration only) | `partial` |
-| Notifications section | `src/settings.ts:2133` | `test/e2e/specs/settings-ui.e2e.ts:484` | `covered` |
+| Notifications section | `src/settings.ts:2133` | `test/e2e/specs/settings-ui.e2e.ts:491` | `covered` |
 | Agent plugins: Install plugin | `src/settings.ts:2154` | `test/e2e/specs/settings-ui.e2e.ts:350` | `covered` |
 
 | Recover an interrupted plugin install | `src/plugins/service.ts:597` | `test/plugins-service.test.ts:109` | `partial` |
@@ -73,7 +73,7 @@ await closeAgenticChatSettings();
 | Subagents: timeout | `src/settings.ts:2228` | no committed check | `NONE` |
 | Semantic retrieval: embedding controls | `src/settings.ts:2251` | no committed check | `NONE` |
 | Settings at phone width | `src/settings.ts:255` | `test/e2e/specs/mobile-viewport.e2e.ts:404` | `covered` |
-| `getSettingDefinitions()` | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:184` (three named pages render) | `covered` |
+| `getSettingDefinitions()` | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:185` (three named pages render) | `covered` |
 
 ## Gotchas
 

@@ -11,7 +11,7 @@ Paths that match an ignore glob report as not found. The agent cannot read, list
 | `read` | Read a note's contents, optionally bounded with `startLine` and `endLine`, or with byte `offset` and `limit`. |
 | `vault_inspect` | Read-only meta-tool for vault context. Use `action=list` to list a folder, `action=search` to search file names and contents, `action=active_note` to read the active note, `action=local_graph` for a note's link neighborhood, or `action=properties` to read YAML frontmatter. |
 
-Read-only tools run without approval unless working-directory scoping requires confirmation for an outside folder.
+Read-only tools run without approval. An explicit per-tool ask or deny still applies.
 
 ## Mutating tools
 

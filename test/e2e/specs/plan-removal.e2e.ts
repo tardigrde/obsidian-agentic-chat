@@ -41,14 +41,13 @@ async function configurePlugin(): Promise<boolean> {
       provider: string;
       openrouterApiKey: string;
       mode: string;
-      approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+      approval: { mutating: string; perTool: Record<string, string> };
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-scripted-key";
     settings.mode = "safe";
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};
-    settings.approval.workingDirs = [];
     await plugin.saveSettings?.();
     return true;
   });

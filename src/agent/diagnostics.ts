@@ -30,7 +30,6 @@ export interface AgentRuntimeDiagnostics {
   approval: {
     mutating: string;
     perToolOverrides: number;
-    workingDirs: string[];
   };
   tools: string[];
   toolBudget: ToolBudgetSnapshot;
@@ -101,7 +100,6 @@ export function buildRuntimeDiagnostics(options: BuildRuntimeDiagnosticsOptions)
     approval: {
       mutating: settings.approval.mutating,
       perToolOverrides: Object.keys(settings.approval.perTool).length,
-      workingDirs: [...settings.approval.workingDirs],
     },
     tools: options.tools.map((tool) => tool.name),
     toolBudget: options.toolBudget,
@@ -247,13 +245,9 @@ function formatSession(diagnostics: AgentRuntimeDiagnostics): string {
 }
 
 function formatApproval(diagnostics: AgentRuntimeDiagnostics): string {
-  const dirs = diagnostics.approval.workingDirs.length === 0
-    ? "none"
-    : diagnostics.approval.workingDirs.join(", ");
   return (
     `mutating=${diagnostics.approval.mutating}, ` +
-    `per-tool overrides=${diagnostics.approval.perToolOverrides}, ` +
-    `working dirs=${dirs}`
+    `per-tool overrides=${diagnostics.approval.perToolOverrides}`
   );
 }
 

@@ -57,7 +57,7 @@ describe("probe: settings gate", function () {
       provider: "openrouter",
       openrouterApiKey: "e2e-scripted-key",
       mode: "safe",
-      approval: { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] },
+      approval: { mutating: "allow", perTool: { write: "deny" } },
       web: { enabled: false },
     });
     await openChat();

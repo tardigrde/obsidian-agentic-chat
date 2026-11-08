@@ -78,7 +78,7 @@ async function configureScriptedProvider(): Promise<void> {
     settings.provider = "openrouter";
     settings.openrouterApiKey = "e2e-scripted-key";
     settings.mode = "safe";
-    settings.approval = { ...(settings.approval ?? {}), mutating: "ask", perTool: {}, workingDirs: [] };
+    settings.approval = { ...(settings.approval ?? {}), mutating: "ask", perTool: {} };
     settings.web = { ...(settings.web ?? {}), enabled: false };
     await plugin.saveSettings?.();
     return true;
@@ -210,12 +210,12 @@ const scenarios: Scenario[] = [
     id: "S3",
     title: "/help still lists adjacent surviving commands",
     severity: "S3",
-    expected: "/help lists /plan, /status, and /dirs.",
+    expected: "/help lists /status and /doctor.",
     run: async () => {
       await sendPrompt("/help");
       await $(".agentic-chat-info").waitForExist();
       const help = await latestInfoText();
-      for (const command of ["/plan", "/status", "/dirs"]) expect(help).toContain(command);
+      for (const command of ["/status", "/doctor"]) expect(help).toContain(command);
     },
   },
   {
@@ -238,14 +238,14 @@ const scenarios: Scenario[] = [
   },
   {
     id: "S5",
-    title: "/dirs still opens the adjacent working-directory list",
+    title: "/status still opens the adjacent status panel",
     severity: "S3",
-    expected: "The action list renders and includes Add working directory.",
+    expected: "The status panel renders provider and model details.",
     run: async () => {
-      await sendPrompt("/dirs");
-      const list = await $(".agentic-chat-action-list");
-      await list.waitForExist();
-      await expect(list).toHaveText(/Add working directory/);
+      await sendPrompt("/status");
+      await $(".agentic-chat-info").waitForExist();
+      const status = await latestInfoText();
+      expect(status).toContain("Provider");
     },
   },
 ];

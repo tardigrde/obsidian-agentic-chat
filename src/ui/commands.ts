@@ -29,8 +29,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "memory", args: "[add|review|manage|export|clear]", description: "add, review, export, or clear stored memories" },
   { name: "semantic-index", args: "[status|estimate|start|cancel]", description: "manage scoped semantic indexing" },
   { name: "doctor", description: "audit runtime health, agent plugins, and MCP configs" },
-  { name: "add-dir", args: "[folder]", description: "grant a working directory (auto-run inside, ask outside)" },
-  { name: "dirs", description: "list/revoke granted working directories" },
   { name: "style", args: "[name]", description: "switch output style" },
   { name: "effort", args: "[level]", description: "set reasoning effort for your messages (persisted)" },
   { name: "usage", description: "show token & cost totals" },

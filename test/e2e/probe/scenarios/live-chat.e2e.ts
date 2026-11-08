@@ -52,7 +52,7 @@ describe("probe: live chat", function () {
       requestTimeoutMs: 120_000,
       maxNetworkRetries: 0,
       mode: "safe",
-      approval: { mutating: "ask", perTool: {}, workingDirs: [] },
+      approval: { mutating: "ask", perTool: {} },
     });
     await openChat();
   });

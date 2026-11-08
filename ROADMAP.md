@@ -36,9 +36,7 @@ surfaces.
 - Live MCP e2e with Context7.
 - Honest context readout (#248).
 - Inline-image retry context fix.
-- Working-dirs research (#101).
-- Subsystem review: semantic index, memory, observability, working dirs, output
-  styles.
+- Subsystem review: semantic index, memory, observability, output styles.
 - Product shape discussion after the cut.
 
 ## Not doing

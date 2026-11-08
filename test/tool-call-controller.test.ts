@@ -79,7 +79,7 @@ describe("AgentToolCallController", () => {
     const abort = new AbortController();
     let receivedSignal: AbortSignal | undefined;
     const { controller } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
       confirmToolCall: async (_request, signal) => {
         receivedSignal = signal;
         return { approved: false, remember: false };
@@ -99,7 +99,7 @@ describe("AgentToolCallController", () => {
 
   it("latches a stopped approval once for the turn", async () => {
     const { controller } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
       confirmToolCall: async () => ({
         approved: false,
         remember: false,
@@ -120,7 +120,7 @@ describe("AgentToolCallController", () => {
 
   it("does not stop the turn when a deny reuses the stop text as its reason", async () => {
     const { controller } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
       confirmToolCall: async () => ({
         approved: false,
         remember: false,
@@ -139,7 +139,7 @@ describe("AgentToolCallController", () => {
 
   it("prompts ask-policy tool calls with the registered tool label", async () => {
     const { controller, requests } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
       confirmToolCall: async () => ({ approved: false, remember: false }),
     });
 
@@ -156,7 +156,7 @@ describe("AgentToolCallController", () => {
   it("echoes the user's deny reason back to the agent", async () => {
     const approvals: ApprovalAuditInput[] = [];
     const { controller, requests } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
       confirmToolCall: async () => ({ approved: false, remember: false, reason: "Wrong file — edit Notes/b.md instead" }),
       recordApproval: (input) => {
         approvals.push(input);
@@ -177,7 +177,7 @@ describe("AgentToolCallController", () => {
   it("falls back to the generic denial message when the user gives no reason", async () => {
     const approvals: ApprovalAuditInput[] = [];
     const { controller } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
       confirmToolCall: async () => ({ approved: false, remember: false }),
       recordApproval: (input) => {
         approvals.push(input);
@@ -251,7 +251,7 @@ describe("AgentToolCallController", () => {
     const allowed = makeController({
       settings: {
         mcp: baseMcp,
-        approval: { mutating: "ask", perTool: { [toolName]: "allow" }, workingDirs: [] },
+        approval: { mutating: "ask", perTool: { [toolName]: "allow" } },
       },
     });
     await expect(
@@ -259,9 +259,9 @@ describe("AgentToolCallController", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("auto-approves read-only subagent dispatches when a working set is configured", async () => {
+  it("auto-approves read-only subagent dispatches", async () => {
     const { controller, requests } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes"] } },
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
       profiles: [
         {
           // Arbitrary fixture name, not a built-in role.
@@ -287,7 +287,7 @@ describe("AgentToolCallController", () => {
     // No built-in role can mutate, so the deny branch is only reachable via a
     // custom role with mutating tools — keep it covered with a fixture.
     const { controller, requests } = makeController({
-      settings: { mode: "safe", approval: { mutating: "deny", perTool: {}, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "deny", perTool: {} } },
       profiles: [
         {
           // Arbitrary fixture name, not a built-in role.
@@ -318,7 +318,7 @@ describe("AgentToolCallController", () => {
     const file = await vault.create("Notes/a.md", "before");
     const { controller, undoNotifications } = makeController({
       app,
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] } },
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {} } },
     });
 
     const decision = await controller.beforeToolCall({
@@ -346,7 +346,7 @@ describe("AgentToolCallController", () => {
     const fileCheckpoints: FileCheckpoint[] = [];
     const { controller } = makeController({
       app,
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
       confirmToolCall: async () => ({ approved: true, remember: false }),
       recordApproval: (input) => {
         approvals.push(input);
@@ -393,7 +393,7 @@ describe("AgentToolCallController", () => {
     const fileB = await vault.create("Notes/b.md", "before b");
     const { controller, undoNotifications } = makeController({
       app,
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] } },
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {} } },
     });
 
     await controller.beforeToolCall({
@@ -425,7 +425,7 @@ describe("AgentToolCallController", () => {
     await vault.createFolder("Notes");
     const { controller } = makeController({
       app,
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] } },
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {} } },
     });
 
     await controller.beforeToolCall({
@@ -457,7 +457,7 @@ describe("AgentToolCallController", () => {
     await vault.create("Notes/a.md", "before");
     const { controller } = makeController({
       app,
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] } },
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {} } },
     });
 
     await controller.beforeToolCall({
@@ -472,7 +472,7 @@ describe("AgentToolCallController", () => {
 
   it("asks for create_skill even in yolo mode (persistent-skill injection guard)", async () => {
     const { controller, requests } = makeController({
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] } },
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {} } },
     });
     const decision = await controller.beforeToolCall({
       toolCall: { id: "call-1", name: "create_skill" },
@@ -485,7 +485,7 @@ describe("AgentToolCallController", () => {
 
   it("honors an explicit per-tool allow for create_skill", async () => {
     const { controller, requests } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: { create_skill: "allow" }, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: { create_skill: "allow" } } },
     });
     const decision = await controller.beforeToolCall({
       toolCall: { id: "call-1", name: "create_skill" },
@@ -497,7 +497,7 @@ describe("AgentToolCallController", () => {
 
   it("honors an explicit per-tool deny for create_skill", async () => {
     const { controller } = makeController({
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: { create_skill: "deny" }, workingDirs: [] } },
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: { create_skill: "deny" } } },
     });
     const decision = await controller.beforeToolCall({
       toolCall: { id: "call-1", name: "create_skill" },
@@ -508,7 +508,7 @@ describe("AgentToolCallController", () => {
 
   it("asks for recursive delete even in yolo mode", async () => {
     const { controller, requests } = makeController({
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] } },
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {} } },
     });
     const decision = await controller.beforeToolCall({
       toolCall: { id: "call-1", name: "delete" },
@@ -521,7 +521,7 @@ describe("AgentToolCallController", () => {
 
   it("auto-approves non-recursive delete in yolo mode", async () => {
     const { controller, requests } = makeController({
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {}, workingDirs: [] } },
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: {} } },
     });
     const decision = await controller.beforeToolCall({
       toolCall: { id: "call-1", name: "delete" },
@@ -533,7 +533,7 @@ describe("AgentToolCallController", () => {
 
   it("honors an explicit per-tool allow for recursive delete", async () => {
     const { controller, requests } = makeController({
-      settings: { mode: "yolo", approval: { mutating: "allow", perTool: { delete: "allow" }, workingDirs: [] } },
+      settings: { mode: "yolo", approval: { mutating: "allow", perTool: { delete: "allow" } } },
     });
     const decision = await controller.beforeToolCall({
       toolCall: { id: "call-1", name: "delete" },
@@ -543,9 +543,9 @@ describe("AgentToolCallController", () => {
     expect(requests).toHaveLength(0);
   });
 
-  it("routes create_skill through ask under a scoped working-dirs config", async () => {
+  it("routes create_skill through ask by default", async () => {
     const { controller, requests } = makeController({
-      settings: { mode: "safe", approval: { mutating: "ask", perTool: {}, workingDirs: ["Notes"] } },
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
     });
     const decision = await controller.beforeToolCall({
       toolCall: { id: "call-1", name: "create_skill" },

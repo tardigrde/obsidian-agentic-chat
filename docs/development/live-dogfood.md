@@ -226,7 +226,6 @@ Exercise these workflows deliberately:
 - vault list/read/search
 - approval modal allow, deny, remembered allow, remembered deny
 - long transcript reload
-- `/dirs`
 - `/status` and `/doctor`
 - model switcher and effort control
 - note write/edit with diff approval
@@ -280,11 +279,11 @@ Add focused scenarios that each run in their own conversation/session:
   - "clean this up" without a target
   - "delete the bad notes" without naming files
   - "use the repo" without saying whether the user means the vault or a linked
-    working directory
+    external folder
   - verify the agent asks a clarifying question or behaves conservatively
 - Approval recovery:
   - deny a write and verify the agent does not retry the same mutation
-  - deny a working-directory read and continue with a narrower request
+  - deny a read and continue with a narrower request
   - deny delete and ask for a summary-only cleanup
   - change approval settings mid-session and verify behavior changes
 - Context attachment:
@@ -479,7 +478,7 @@ only from more hand-written happy paths. Build this in layers.
      markers
    - partial plugin state, old session files, memory records, and exported
       transcripts
-   - working directories with nested scopes and vault-relative paths
+   - nested folders and vault-relative paths
 
 3. Run metamorphic prompts.
 
@@ -648,7 +647,7 @@ Use this template for each finding:
 
 Severity: critical | high | medium | low
 Status: new | reproed | fixed | needs-test | deferred
-Area: approvals | working dirs | settings | sessions | rendering | model | docs | other
+Area: approvals | settings | sessions | rendering | model | docs | other
 
 Environment:
 - Vault:

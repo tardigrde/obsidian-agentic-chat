@@ -7,7 +7,7 @@ describe("AgentService replay harness", () => {
   it("replays a blocked tool loop with persisted tool-result evidence", async () => {
     const result = await runAgentReplay({
       prompt: "Create note.md",
-      settings: { mode: "safe", approval: { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "allow", perTool: { write: "deny" } } },
       turns: [
         replayToolCallTurn("call-1", "write", { path: "note.md", content: "hi" }, { label: "parent write" }),
         replayTextTurn("Write is disabled, so I held off.", { label: "parent final" }),

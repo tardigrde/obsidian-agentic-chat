@@ -29,7 +29,6 @@ import {
 } from "./llm/models";
 import { type ApprovalPolicy, clearMcpPerToolApprovals, setPerToolApproval } from "./agent/approval";
 import { type AgentMode, MODE_ORDER, MODES } from "./agent/modes";
-import { addWorkingDir, removeWorkingDir } from "./agent/working-dir";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { MUTATING_TOOLS } from "./tools/tool-contracts";
 import { createVaultTools } from "./tools/vault-tools";
@@ -902,68 +901,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           key: "approval.mutating",
           options: { allow: "Allow automatically", ask: "Ask each time", deny: "Deny (read-only mode)" },
         },
-        "Gate tools that change the vault. Read-only tools always run (unless a working directory is set below). 'Ask' shows a confirm dialog.",
-      ),
-      this.row(
-        "Working directories",
-        (setting) => {
-          setting
-            .setDesc(
-              "Grant folders as a working set: the agent auto-runs reads/writes inside them and asks before " +
-                "touching anything outside (in Safe mode). Empty keeps the vault-wide behavior above. " +
-                "Ignored globs still win inside a granted folder.",
-            )
-            .setClass("agentic-chat-setting-heading-wrap")
-            .setHeading()
-            .addButton((button) =>
-              button.setButtonText("Add folder").onClick(() => {
-                new FolderSuggestModal(this.app, (folder) => {
-                  const result = addWorkingDir(settings.approval.workingDirs, folder.path);
-                  if (result === "added") {
-                    this.refresh();
-                  } else if (result === "invalid") {
-                    new Notice(`Invalid folder path: ${folder.path}`);
-                  }
-                }).open();
-              }),
-            );
-        },
-        { searchable: true },
+        "Gate tools that change the vault. Read-only tools always run. 'Ask' shows a confirm dialog.",
       ),
     ];
-
-    items.push(
-      this.block((setting) => {
-        // Read at render time: /add-dir and /dirs can change the set while the
-        // settings tab is closed.
-        const dirs = settings.approval.workingDirs;
-        if (dirs.length === 0) {
-          setting.settingEl.createDiv({
-            cls: "setting-item-description",
-            text: "No working directories — approval applies vault-wide.",
-          });
-          return;
-        }
-        this.renderItemsInto(
-          setting.settingEl,
-          dirs.map((dir) =>
-            this.row(dir === "" ? "/ (vault root)" : dir, (row) => {
-              row.setDesc("Auto-run inside; ask outside.").addButton((button) =>
-                button
-                  .setButtonText("Remove")
-                  .setClass("mod-warning")
-                  .onClick(async () => {
-                    if (removeWorkingDir(settings.approval.workingDirs, dir)) {
-                      await this.save();
-                      this.redraw();
-                    }
-                  }),
-              );
-            }),
-          ),
-        );
-      }),
-    );
 
     items.push(
       this.row("Per-tool overrides", (setting) => {

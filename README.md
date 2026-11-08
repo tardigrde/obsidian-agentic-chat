@@ -42,7 +42,6 @@ Privacy controls are on by default.
 - **Approval gates.** Read-only tools run without approval. Mutating tools use allow / ask / deny, set globally or per tool. Ask shows the arguments and a line-level diff. You can remember the choice for that tool.
 - **Undo.** `/undo` reverts the last vault change: write, edit, rename, frontmatter update, single-file delete, or empty-folder delete. A recursive delete of a non-empty folder cannot be reverted.
 - **Safe and YOLO modes.** The composer switch sets the approval posture. Safe uses your policy. YOLO auto-approves mutating tools for the session, except recursive folder deletes; a per-tool deny still wins.
-- **Working directories.** Grant folders with the composer folder button, `/add-dir`, or settings. In Safe mode, calls inside the set run without approval. Calls outside it ask first, including reads. Calls with no path also ask because they can span the vault. `/dirs` lists and revokes grants. An empty set applies the policy vault-wide. The ignore list still wins.
 - **Ignore list.** Gitignore-style globs such as `Private/`, `*.secret.md`, and `**/diary/**` hide notes from the agent. Matching files report as not found to every tool, so the agent cannot read, list, search, or edit them.
 - **Sessions.** Each chat is stored as JSONL in the plugin folder and resumes on reload. Browse, search, reopen, rename, delete, export, or clear sessions. Titles come from the first prompt. Sessions work on mobile without SQLite or Node `fs`.
 - **Token and cost control.** Per-message and per-session token and USD usage (`/usage`, `/status`), a next-request cost estimate, a cost alert, a spend cap that blocks or aborts at the limit, and a context-window bar. Long sessions compact older turns into a summary before overflow; `/compact [instructions]` runs compaction on demand.
@@ -98,7 +97,7 @@ The agent can delegate a focused task to a child agent with its own context wind
 
 - **Roles.** The only built-in role is Explorer, which does read-only recon. Custom roles are not supported; add them in code.
 - **Dispatch.** The agent calls `subagent` once per child (`{ agent, task }`). Several calls in one message run concurrently, with a cap. Children never get the `subagent` tool, so depth is one level.
-- **Approval.** Each child tool call still passes through the parent approval and working-directory gate.
+- **Approval.** Each child tool call still passes through the parent approval gate.
 - **UI and cost.** A dispatch shows a step card with each child's live status. Click a row to expand the summary. Child token and USD usage is added to the conversation total.
 
 Run `/agent <name> <task>`, or `/agent` to choose from a list. The model can also dispatch children on its own.
@@ -217,8 +216,6 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/sessions` | Browse, search, reopen, rename, or delete past conversations. `clear --confirm` clears all sessions in the current scope. |
 | `/model` | Switch model. Shift applies a next-prompt-only override. |
 | `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists. |
-| `/add-dir [folder]` | Grant a working directory. Without an argument, opens a vault folder picker. |
-| `/dirs` | List or revoke granted working directories. |
 | `/compact [instructions]` | Summarize older turns now. Optional text guides the summary. |
 | `/init [instructions]` | Curate the vault standing-instructions file. Optional text guides the update. |
 | `/style [name]` | Switch output style. |

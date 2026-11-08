@@ -1,12 +1,10 @@
 // FileSystemSandboxPolicy — S5
-// Codex borrow: `FilesystemDenyReadPattern` + `PROTECTED_METADATA_PATH_NAMES` `permissions.rs:32`
-// + `SandboxPolicy::WorkspaceWrite.writable_roots` `protocol.rs:1224`.
+// Codex borrow: `FilesystemDenyReadPattern` + `PROTECTED_METADATA_PATH_NAMES` `permissions.rs:32`.
 // This module is the vault-side counterpart to `src/mcp/tool-filter.ts`.
-// The three ignore/deny mechanisms now share one glob engine (`src/vault/glob-pattern.ts`):
-//   - `ignoredGlobs`  -> FileSystemDenyReadPattern (deny-globs, invisible)
-//   - `workingDirs`   -> SandboxPolicy::WorkspaceWrite.writable_roots (allow-list)
+// The ignore/deny mechanisms share one glob engine (`src/vault/glob-pattern.ts`):
+//   - `ignoredGlobs` -> FileSystemDenyReadPattern (deny-globs, invisible)
 //   - MCP enabled/disabled_tools -> McpServerConfig.enabled_tools/disabled_tools (ordered allow-then-deny)
-// The names stay (`ignoredGlobs`, `workingDirs`) but each is implemented via its Codex lattice.
+// Each is implemented via its Codex lattice.
 
 import { compileGitignorePatternSource } from "./glob-pattern";
 import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "./ignore";
@@ -54,8 +52,7 @@ export function createFileSystemDenyMatcher(userGlobs: string, configDir?: strin
 /**
  * FileSystemSandboxPolicy — vault deny side.
  * `isDenied(path)` is authoritative: the tool layer must treat denied paths as
- * "not found" (indistinguishable from absent). Writable roots are handled
- * separately via `src/agent/working-dir.ts` `resolveWorkingDirPolicy`.
+ * "not found" (indistinguishable from absent).
  */
 export interface FileSystemSandboxPolicy {
   /** True when the vault path must be hidden from the agent (deny-glob hit or protected). */

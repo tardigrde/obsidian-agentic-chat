@@ -115,7 +115,7 @@ async function configurePlugin(): Promise<boolean> {
       openrouterApiKey: string;
       mode: string;
       ignoredGlobs: string;
-      approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+      approval: { mutating: string; perTool: Record<string, string> };
       toolBudget: { enabled: boolean; thresholdPercent: number };
       web: { enabled: boolean };
       mcp: { enabled: boolean; servers: unknown[]; proxyUrl: string; noProxy: string };
@@ -126,7 +126,6 @@ async function configurePlugin(): Promise<boolean> {
     settings.ignoredGlobs = ["Restricted/**", "*.secret.md"].join("\n");
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};
-    settings.approval.workingDirs = [];
     settings.toolBudget.enabled = false;
     settings.toolBudget.thresholdPercent = 25;
     settings.web.enabled = false;

@@ -146,7 +146,7 @@ const VAULT_TOOL_DESCRIPTIONS: Record<BuiltinToolName, string> = {
   read: "Read a vault file. For large files, use startLine/endLine or offset/limit ranges.",
   vault_inspect:
     "Read-only vault inspection: list folders, search names/content, inspect the active note, map links, read frontmatter. " +
-    "Ignored paths stay hidden; working-directory approval still applies.",
+    "Ignored paths stay hidden.",
   write:
     "Create or overwrite a vault file; parent folders are auto-created. " +
     "For frontmatter-only changes, prefer set_properties.",

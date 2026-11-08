@@ -237,7 +237,7 @@ describe("session/event-log invariants", () => {
   it("persists replayed tool-result turns exactly once and preserves assistant usage on reload", async () => {
     const replay = await runAgentReplay({
       prompt: "Create note.md",
-      settings: { mode: "safe", approval: { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "allow", perTool: { write: "deny" } } },
       turns: [
         replayToolCallTurn("call-1", "write", { path: "note.md", content: "hi" }, { usage: { totalTokens: 5 } }),
         replayTextTurn("I could not write because it is disabled.", { usage: { input: 2, output: 4, totalTokens: 6 } }),

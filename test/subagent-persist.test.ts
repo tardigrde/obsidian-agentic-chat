@@ -53,7 +53,7 @@ describe("AgentToolCallController.afterToolCall subagent stripping", () => {
   it("strips transcript/stopId on success", async () => {
     const controller = new AgentToolCallController({
       app: fakeApp(),
-      getSettings: () => ({ mode: "safe", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, mcp: { servers: [] } } as any),
+      getSettings: () => ({ mode: "safe", approval: { mutating: "allow", perTool: {} }, mcp: { servers: [] } } as any),
       confirmToolCall: async () => ({ approved: true, remember: false }),
       getTools: () => [],
       getProfiles: () => [],
@@ -81,7 +81,7 @@ describe("AgentToolCallController.afterToolCall subagent stripping", () => {
     const registry = new SubagentRegistry();
     const controller = new AgentToolCallController({
       app: fakeApp(),
-      getSettings: () => ({ mode: "safe", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, mcp: { servers: [] } } as any),
+      getSettings: () => ({ mode: "safe", approval: { mutating: "allow", perTool: {} }, mcp: { servers: [] } } as any),
       confirmToolCall: async () => ({ approved: true, remember: false }),
       getTools: () => [],
       getProfiles: () => [],
@@ -103,7 +103,7 @@ describe("AgentToolCallController.afterToolCall subagent stripping", () => {
     const registry = new SubagentRegistry();
     const controller = new AgentToolCallController({
       app: fakeApp(),
-      getSettings: () => ({ mode: "safe", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, mcp: { servers: [] } } as any),
+      getSettings: () => ({ mode: "safe", approval: { mutating: "allow", perTool: {} }, mcp: { servers: [] } } as any),
       confirmToolCall: async () => ({ approved: true, remember: false }),
       getTools: () => [],
       getProfiles: () => [],
@@ -118,7 +118,7 @@ describe("AgentToolCallController.afterToolCall subagent stripping", () => {
   it("passes through non-subagent", async () => {
     const controller = new AgentToolCallController({
       app: fakeApp(),
-      getSettings: () => ({ mode: "safe", approval: { mutating: "allow", perTool: {}, workingDirs: [] }, mcp: { servers: [] } } as any),
+      getSettings: () => ({ mode: "safe", approval: { mutating: "allow", perTool: {} }, mcp: { servers: [] } } as any),
       confirmToolCall: async () => ({ approved: true, remember: false }),
       getTools: () => [],
       getProfiles: () => [],

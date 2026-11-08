@@ -121,7 +121,7 @@ describe("AgentService turn cap", () => {
       prompt: "keep working",
       // A per-tool write deny keeps the scripted tool turns cheap, and their
       // per-turn arguments differ enough not to trip the loop guard.
-      settings: { mode: "safe", approval: { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] } },
+      settings: { mode: "safe", approval: { mutating: "allow", perTool: { write: "deny" } } },
       turns,
     });
 

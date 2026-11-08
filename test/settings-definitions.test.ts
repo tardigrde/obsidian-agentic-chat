@@ -79,7 +79,7 @@ describe("declarative settings definitions", () => {
       expect.arrayContaining(["Permission mode", "Temperature", "System prompt", "Auto-compaction"]),
     );
     expect(names("approval")).toEqual(
-      expect.arrayContaining(["Before mutating tools", "Working directories", "Per-tool overrides"]),
+      expect.arrayContaining(["Before mutating tools", "Per-tool overrides"]),
     );
     expect(names("mcp")).toEqual(
       expect.arrayContaining(["Enable MCP", "HTTP proxy", "No proxy", "Add MCP server"]),

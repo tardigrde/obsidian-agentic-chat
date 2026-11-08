@@ -73,7 +73,7 @@ describe("probe: composer paths", function () {
       provider: "openrouter",
       openrouterApiKey: "probe-scripted-key",
       mode: "safe",
-      approval: { mutating: "allow", perTool: {}, workingDirs: [] },
+      approval: { mutating: "allow", perTool: {} },
       web: { enabled: false },
     });
     await installScriptedTurns([

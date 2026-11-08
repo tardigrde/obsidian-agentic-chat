@@ -122,12 +122,6 @@ export function buildUsageChromeParts(usage: Usage, nextEstimate?: RequestCostEs
   return parts;
 }
 
-export function folderButtonAriaLabel(scopeCount: number): string {
-  if (scopeCount === 0) return "Folders: working directory or attach listing";
-  const noun = scopeCount === 1 ? "directory" : "directories";
-  return `Folders · ${scopeCount} working ${noun} granted`;
-}
-
 export function toolBudgetNotificationKey(toolBudget: ToolBudgetSnapshot): string | null {
   if (!toolBudget.active || toolBudget.droppedTools.length === 0) return null;
   return toolBudget.droppedTools.map((tool) => tool.name).join(",");
