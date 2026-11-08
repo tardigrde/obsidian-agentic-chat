@@ -383,6 +383,21 @@
 
 /* --- Settings tabs --- */
 
+/* Declarative settings: the section marker only stamps test/layout handles. */
+.agentic-chat-settings-section-marker {
+  display: none;
+}
+
+/* Plain blocks (warnings, inline notes) are not real setting rows. */
+.agentic-chat-settings-block {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  min-height: 0;
+}
+
 .agentic-chat-settings-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -1864,7 +1879,8 @@
 
 .agentic-chat-system-prompt {
   width: 100%;
-  min-width: 320px;
+  /* Narrow declarative pages indent the control; never push past the pane. */
+  min-width: min(320px, 100%);
 }
 
 .agentic-chat-folder-input {

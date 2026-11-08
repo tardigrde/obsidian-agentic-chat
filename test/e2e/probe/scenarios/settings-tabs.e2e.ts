@@ -90,7 +90,7 @@ describe("probe: settings tabs", function () {
     }
 
     const metrics = await browser.execute(() => {
-      const tabs = document.querySelector<HTMLElement>(".agentic-chat-settings-tabs");
+      const tabs = document.querySelector<HTMLElement>(".setting-page-content");
       const body = document.querySelector<HTMLElement>(".agentic-chat-settings-tabbody");
       return {
         window: {

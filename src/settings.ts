@@ -1,4 +1,21 @@
-import { App, ButtonComponent, Notice, Platform, PluginSettingTab, Setting, TFile, TFolder, ToggleComponent, type SettingDefinitionItem } from "obsidian";
+import {
+  App,
+  ButtonComponent,
+  Notice,
+  Platform,
+  PluginSettingTab,
+  Setting,
+  TFile,
+  TFolder,
+  ToggleComponent,
+  type SettingControl,
+  type SettingDefinitionControl,
+  type SettingDefinitionGroup,
+  type SettingDefinitionItem,
+  type SettingDefinitionPage,
+  type SettingDefinitionRender,
+  type SettingGroup,
+} from "obsidian";
 import type AgenticChatPlugin from "./main";
 import { DEFAULT_PLUGINS_FOLDER, resolveMcpServers } from "./plugins/loader";
 import type { LoadedPlugin } from "./plugins/loader";
@@ -48,11 +65,7 @@ import {
   mcpSecretIds,
   mcpTestButtonState,
 } from "./settings-mcp-state";
-import {
-  WEB_SEARCH_PROVIDER_LABELS,
-  WEB_SEARCH_PROVIDERS,
-  type WebSearchProvider,
-} from "./tools/web-search";
+import { WEB_SEARCH_PROVIDER_LABELS, WEB_SEARCH_PROVIDERS } from "./tools/web-search";
 import { FolderSuggestModal } from "./ui/folder-suggest";
 import { InstallPluginModal, noticeInstallResult } from "./ui/install-plugin-modal";
 import { NewSkillModal } from "./ui/new-skill-modal";
@@ -62,14 +75,9 @@ import {
   type ObservabilityBackend,
   type ObservabilityPayloadMode,
 } from "./observability/settings";
-import {
-  activeEmbeddingModel,
-  DEFAULT_EMBEDDING_SETTINGS,
-  type EmbeddingProviderId,
-  type EmbeddingSettings,
-} from "./retrieval/embeddings";
+import { activeEmbeddingModel, DEFAULT_EMBEDDING_SETTINGS } from "./retrieval/embeddings";
 
-import { effectiveProxy, DEFAULT_PROXY_SETTINGS, PROXY_URL_EXAMPLE, type ProxySettings } from "./network/proxy";
+import { effectiveProxy, DEFAULT_PROXY_SETTINGS, PROXY_URL_EXAMPLE } from "./network/proxy";
 import { normalizeAllowedHosts } from "./tools/web-allowlist";
 import {
   DEFAULT_SETTINGS,
@@ -80,7 +88,7 @@ import {
   type AgenticChatSettings,
   type NetworkSettings,
 } from "./settings-schema";
-import { SETTINGS_TABS, type SettingsSectionId } from "./settings-tabs";
+import { SETTINGS_TABS, type SettingsSectionId, type SettingsTabId } from "./settings-tabs";
 export {
   DEFAULT_SETTINGS,
   PROVIDERS,
@@ -103,6 +111,38 @@ const OBSERVABILITY_BACKEND_LABELS: Record<ObservabilityBackend, string> = {
   langfuse: "Langfuse",
   otlp: "Generic OTLP",
 };
+
+/** Text controls always arrive as strings; ignore malformed values from a stale caller. */
+function controlText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/** First heading of each section, so the declarative group keeps the old visible order. */
+const SECTION_HEADINGS: Record<SettingsSectionId, string> = {
+  models: "Provider",
+  agent: "Agent",
+  approval: "Approval gates",
+  web: "Web access",
+  mcp: "MCP tools",
+  observability: "Observability export",
+  notifications: "Notifications",
+  plugins: "Agent plugins",
+  subagents: "Subagents",
+  retrieval: "Semantic retrieval",
+  "ignored-files": "Ignored files",
+};
+
+/** Controls whose value changes the set of rows, so the definitions must be rebuilt. */
+const CONTROL_KEYS_THAT_REDRAW = new Set([
+  "provider",
+  "web.enabled",
+  "web.searchProvider",
+  "mcp.enabled",
+  "observability.enabled",
+  "observability.backend",
+  "embeddings.provider",
+  "plugins.folder",
+]);
 
 const OBSERVABILITY_PAYLOAD_LABELS: Record<ObservabilityPayloadMode, string> = {
   metadata: "Metadata only",
@@ -206,39 +246,228 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     void this.save().then(() => this.redraw());
   }
 
+  /** Re-evaluate definitions and repaint the open page. 1.13 replacement for display(). */
   private redraw(): void {
-    // ponytail: Obsidian 1.13.0 deprecated PluginSettingTab.display() in favor of
-    // getSettingDefinitions(). Full migration to declarative settings deferred.
-    (this as unknown as { display: () => void }).display();
+    // The vitest Obsidian mock has no SettingTab.update(); guard keeps unit witnesses quiet.
+    if (typeof this.update === "function") this.update();
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
-    return [];
+    return this.tabs.map((tab) => {
+      const page: SettingDefinitionPage & { id: string } = {
+        type: "page",
+        id: tab.id,
+        name: tab.label,
+        items: tab.sections.map((section) => this.sectionDefinition(tab.id, section)),
+      };
+      return page;
+    });
+  }
+
+  getControlValue(key: string): unknown {
+    let value: unknown = this.plugin.settings;
+    for (const part of key.split(".")) {
+      if (!value || typeof value !== "object") return undefined;
+      value = (value as Record<string, unknown>)[part];
+    }
+    return value;
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    const settings = this.plugin.settings;
+    switch (key) {
+      case "provider":
+        settings.provider = value as ProviderId;
+        break;
+      case "network.proxyUrl":
+        settings.network.proxyUrl = controlText(value).trim();
+        break;
+      case "network.noProxy":
+        settings.network.noProxy = controlText(value).trim();
+        break;
+      case "mcp.proxyUrl":
+        settings.mcp.proxyUrl = controlText(value).trim();
+        break;
+      case "mcp.noProxy":
+        settings.mcp.noProxy = controlText(value).trim();
+        break;
+      case "observability.endpoint":
+        settings.observability.endpoint = controlText(value).trim();
+        break;
+      case "observability.authHeaderName":
+        settings.observability.authHeaderName = controlText(value).trim();
+        break;
+      case "web.searxngUrl":
+        settings.web.searxngUrl = controlText(value).trim();
+        break;
+      case "openaiCompatibleBaseUrl":
+        settings.openaiCompatibleBaseUrl = controlText(value).trim() || DEFAULT_OPENAI_COMPATIBLE_BASE_URL;
+        break;
+      case "ollamaBaseUrl":
+        settings.ollamaBaseUrl = controlText(value).trim() || DEFAULT_OLLAMA_BASE_URL;
+        break;
+      case "openaiCompatibleModel":
+        settings.openaiCompatibleModel = controlText(value).trim();
+        break;
+      case "ollamaModel":
+        settings.ollamaModel = controlText(value).trim();
+        break;
+      case "systemPrompt":
+        settings.systemPrompt = controlText(value).trim() ? String(value) : DEFAULT_SYSTEM_PROMPT;
+        break;
+      case "plugins.folder":
+        settings.plugins.folder = controlText(value).trim();
+        this.plugin.pluginService.invalidate();
+        this.pluginsLoadedOnce = false;
+        break;
+      default:
+        this.writeControlValue(settings, key, value);
+    }
+    await this.save();
+    if (CONTROL_KEYS_THAT_REDRAW.has(key)) this.redraw();
+  }
+
+  private writeControlValue(settings: AgenticChatSettings, key: string, value: unknown): void {
+    const parts = key.split(".");
+    let target = settings as unknown as Record<string, unknown>;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const next = target[parts[index]];
+      if (!next || typeof next !== "object") return;
+      target = next as Record<string, unknown>;
+    }
+    target[parts[parts.length - 1]] = value;
+  }
+
+  private sectionDefinition(tabId: SettingsTabId, section: SettingsSectionId): SettingDefinitionGroup {
+    const items: SettingDefinitionItem[] = [this.sectionMarker(tabId, section)];
+    switch (section) {
+      case "models":
+        items.push(...this.modelsDefinitions());
+        break;
+      case "agent":
+        items.push(...this.agentDefinitions());
+        break;
+      case "approval":
+        items.push(...this.approvalDefinitions());
+        break;
+      case "web":
+        items.push(...this.webDefinitions());
+        break;
+      case "mcp":
+        items.push(...this.mcpDefinitions());
+        break;
+      case "observability":
+        items.push(...this.observabilityDefinitions());
+        break;
+      case "notifications":
+        items.push(...this.notificationDefinitions());
+        break;
+      case "plugins":
+        items.push(...this.pluginDefinitions());
+        break;
+      case "subagents":
+        items.push(...this.subagentDefinitions());
+        break;
+      case "retrieval":
+        items.push(...this.retrievalDefinitions());
+        break;
+      case "ignored-files":
+        items.push(...this.ignoredFileDefinitions());
+        break;
+    }
+    return {
+      type: "group",
+      id: section,
+      heading: SECTION_HEADINGS[section],
+      cls: "agentic-chat-settings-section",
+      items,
+    } as SettingDefinitionGroup & { id: string };
+  }
+
+  /** A declarative row. Use render only when the control needs a side effect a plain control cannot express. */
+  private row(
+    name: string,
+    render: (setting: Setting, group: SettingGroup) => void,
+    extra: Omit<SettingDefinitionRender, "name" | "render"> = {},
+  ): SettingDefinitionRender {
+    return { name, render, ...extra };
+  }
+
+  private heading(name: string): SettingDefinitionRender {
+    return this.row(name, (setting) => {
+      setting.setHeading();
+    });
+  }
+
+  /** An inline text or warning block that is not a normal setting row. */
+  private block(
+    render: (setting: Setting) => void,
+    options: { name?: string; visible?: boolean | (() => boolean) } = {},
+  ): SettingDefinitionRender {
+    return {
+      name: options.name ?? "",
+      searchable: false,
+      visible: options.visible,
+      render: (setting) => {
+        setting.settingEl.empty();
+        // A block is a plain container, not a row: nested dynamic rows must not
+        // inherit the row padding/border of this wrapper.
+        setting.settingEl.removeClass("setting-item");
+        setting.settingEl.addClass("agentic-chat-settings-block");
+        render(setting);
+      },
+    };
+  }
+
+  private controlDef(
+    name: string,
+    control: SettingControl,
+    desc?: string,
+    extra: Omit<SettingDefinitionControl, "name" | "desc" | "control"> = {},
+  ): SettingDefinitionControl {
+    return { name, desc, control, ...extra };
   }
 
   /**
-   * One renderer per section. The pure tab map in settings-tabs.ts decides which
-   * sections are visible and in which tab, so adding a section cannot silently
-   * drop a setting.
+   * Render already-built row definitions into a live container. Used by
+   * dynamic lists (MCP servers) that must read the current settings on every
+   * render instead of freezing the collection at tab-build time.
    */
-  private readonly sectionRenderers: Record<
-    SettingsSectionId,
-    (containerEl: HTMLElement, settings: AgenticChatSettings) => void
-  > = {
-    models: (el, settings) => this.renderModels(el, settings),
-    agent: (el, settings) => this.renderAgent(el, settings),
-    approval: (el, settings) => this.renderApproval(el, settings),
-    web: (el, settings) => this.renderWebAccess(el, settings),
-    mcp: (el, settings) => this.renderMcp(el, settings),
-    observability: (el, settings) => this.renderObservability(el, settings),
-    notifications: (el, settings) => this.renderNotifications(el, settings),
-    plugins: (el, settings) => this.renderPlugins(el, settings),
-    subagents: (el, settings) => this.renderSubagents(el, settings),
-    retrieval: (el, settings) => this.renderRetrieval(el, settings),
-    "ignored-files": (el, settings) => this.renderIgnoredFiles(el, settings),
-  };
+  private renderItemsInto(containerEl: HTMLElement, items: SettingDefinitionItem[]): void {
+    for (const item of items) {
+      if ("type" in item) continue;
+      const def = item as SettingDefinitionRender;
+      const visible = typeof def.visible === "function" ? def.visible() : def.visible;
+      if (visible === false) continue;
+      const setting = new Setting(containerEl);
+      setting.setName(def.name ?? "").setDesc(typeof def.desc === "string" ? def.desc : "");
+      if (def.render) def.render(setting, {} as SettingGroup);
+    }
+  }
+
+  /**
+   * Keeps the section/tab DOM handles the e2e helpers and the narrow-width
+   * assertions use. The declarative renderer owns the wrappers, so stamp them
+   * from the first row of each section instead of rendering a competing tree.
+   */
+  private sectionMarker(tabId: SettingsTabId, section: SettingsSectionId): SettingDefinitionRender {
+    return {
+      name: "",
+      searchable: false,
+      render: (setting) => {
+        setting.settingEl.addClass("agentic-chat-settings-section-marker");
+        const groupEl = setting.settingEl.closest(".setting-group");
+        if (groupEl?.instanceOf(HTMLElement)) groupEl.dataset.settingsSection = section;
+        const pageEl = setting.settingEl.closest(".setting-page-content");
+        if (pageEl?.instanceOf(HTMLElement)) {
+          pageEl.addClass("agentic-chat-settings-tabbody");
+          pageEl.dataset.settingsTab = tabId;
+        }
+      },
+    };
+  }
+
   readonly tabs = SETTINGS_TABS;
-  private activeTab = 0;
   private pluginsLoadedOnce = false;
   private pendingMcpServerName = "";
   private pendingMcpServerUrl = "";
@@ -371,906 +600,788 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     else delete state.lastUrl;
   }
 
-  display(): void {
-    const { containerEl } = this;
-    const { settings } = this.plugin;
-    containerEl.empty();
-
-    if (this.activeTab < 0 || this.activeTab >= this.tabs.length) this.activeTab = 0;
-
-    const nav = containerEl.createDiv({ cls: "agentic-chat-settings-tabs" });
-    const body = containerEl.createDiv({ cls: "agentic-chat-settings-tabbody" });
-    this.tabs.forEach((tab, index) => {
-      const button = nav.createEl("button", { cls: "agentic-chat-settings-tab", text: tab.label });
-      button.dataset.settingsTab = tab.id;
-      if (index === this.activeTab) button.addClass("is-active");
-      button.addEventListener("click", () => {
-        this.activeTab = index;
-        this.redraw();
-      });
-    });
-    const activeTab = this.tabs[this.activeTab];
-    body.dataset.settingsTab = activeTab.id;
-    for (const section of activeTab.sections) {
-      const sectionEl = body.createDiv({ cls: "agentic-chat-settings-section" });
-      sectionEl.dataset.settingsSection = section;
-      this.sectionRenderers[section](sectionEl, settings);
-    }
-  }
-
-  private renderModels(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Provider").setHeading();
-
-    new Setting(containerEl)
-      .setName("Model provider")
-      .setDesc("OpenRouter with privacy routing, local Ollama, or any OpenAI-compatible gateway.")
-      .addDropdown((dropdown) => {
-        for (const provider of PROVIDERS) {
-          dropdown.addOption(provider, PROVIDER_LABELS[provider]);
-        }
-        dropdown.setValue(settings.provider).onChange(async (value) => {
-          settings.provider = value as ProviderId;
-          await this.save();
-          this.redraw();
-        });
-      });
-
-    new Setting(containerEl).setName("Network proxy").setHeading();
-
-    this.renderProxySettingRows(containerEl, settings.network, {
-      proxyDesc:
+  private modelsDefinitions(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    const items: SettingDefinitionItem[] = [
+      this.controlDef(
+        "Model provider",
+        {
+          type: "dropdown",
+          key: "provider",
+          options: Object.fromEntries(PROVIDERS.map((provider) => [provider, PROVIDER_LABELS[provider]])),
+        },
+        "OpenRouter with privacy routing, local Ollama, or any OpenAI-compatible gateway.",
+      ),
+      this.heading("Network proxy"),
+      this.controlDef(
+        "HTTP proxy",
+        { type: "text", key: "network.proxyUrl", placeholder: PROXY_URL_EXAMPLE },
         "Optional HTTP proxy for plugin-owned network calls: OpenRouter/OpenAI-compatible chat, model browsing, web tools, and MCP unless MCP overrides it.",
-      noProxyDesc: "Comma-separated hosts/domains that bypass the plugin proxy.",
-    }, async (update) => {
-      Object.assign(settings.network, update);
-      await this.save();
-    });
+      ),
+      this.controlDef(
+        "No proxy",
+        { type: "text", key: "network.noProxy", placeholder: DEFAULT_PROXY_SETTINGS.noProxy },
+        "Comma-separated hosts/domains that bypass the plugin proxy.",
+      ),
+    ];
 
     if (settings.provider === "openrouter") {
-      this.renderOpenRouter(containerEl, settings);
+      items.push(...this.openRouterDefinitions(settings));
     } else if (settings.provider === "openai-compatible") {
-      this.renderOpenAICompatible(containerEl, settings);
+      items.push(...this.openAICompatibleDefinitions(settings));
     } else {
-      this.renderOllama(containerEl, settings);
+      items.push(...this.ollamaDefinitions());
     }
+    return items;
   }
 
-  private renderOpenRouter(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    this.renderApiKeyWarning(containerEl);
-    this.renderSecretInput(containerEl, {
-      name: "OpenRouter API key",
-      desc: "Create one at openrouter.ai/keys.",
-      placeholder: "sk-or-...",
-      hasValue: Boolean(settings.openrouterApiKey),
-      onSet: async (value) => {
-        settings.openrouterApiKey = value;
-        await this.save();
-      },
-      onForget: async () => {
-        settings.openrouterApiKey = "";
-        await this.save();
-      },
-    });
-
-    new Setting(containerEl)
-      .setName("Model")
-      .setDesc('OpenRouter model id. "Browse" lists models that support tool calling.')
-      .addText((text) =>
-        text
-          .setPlaceholder("moonshotai/kimi-k2.6")
-          .setValue(settings.openrouterModel)
-          .onChange(async (value) => {
-            settings.openrouterModel = value.trim();
-            await this.save();
-          }),
-      )
-      .addButton((button) =>
-        button.setButtonText("Browse").onClick(async () => {
-          if (!settings.openrouterApiKey) {
-            new Notice("Set your OpenRouter API key first.");
-            return;
-          }
-          button.setDisabled(true);
-          try {
-            const models = (
-              await listOpenRouterModels(settings.openrouterApiKey, {
-                zdr: settings.privacy.requireZDR,
-                denyDataCollection: settings.privacy.denyDataCollection,
-                fetchImpl: createFetchFromWebFetcher(createProxiedFetcher(settings.network)),
-              })
-            )
-              .filter((model) => model.supportsTools)
-              .sort((a, b) => a.id.localeCompare(b.id));
-            new ModelSuggestModal(this.app, models, (model) => {
-              settings.openrouterModel = model.id;
-              this.refresh();
-            }).open();
-          } catch (error) {
-            new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
-          } finally {
-            button.setDisabled(false);
-          }
-        }),
-      );
-
-    new Setting(containerEl).setName("Privacy").setHeading();
-    new Setting(containerEl)
-      .setName("Deny prompt logging and training")
-      .setDesc('Only route to providers that do not store or train on prompts (data policy "deny").')
-      .addToggle((toggle) =>
-        toggle.setValue(settings.privacy.denyDataCollection).onChange(async (value) => {
-          settings.privacy.denyDataCollection = value;
-          await this.save();
-        }),
-      );
-    new Setting(containerEl)
-      .setName("Require zero data retention")
-      .setDesc("On by default. Only route to ZDR endpoints; some models may have no compliant provider — pick another model or use Ollama.")
-      .addToggle((toggle) =>
-        toggle.setValue(settings.privacy.requireZDR).onChange(async (value) => {
-          settings.privacy.requireZDR = value;
-          await this.save();
-        }),
-      );
-    new Setting(containerEl)
-      .setName("Allow provider fallbacks")
-      .setDesc("Let OpenRouter fall back to other still-compliant providers when the preferred one is down.")
-      .addToggle((toggle) =>
-        toggle.setValue(settings.privacy.allowFallbacks).onChange(async (value) => {
-          settings.privacy.allowFallbacks = value;
-          await this.save();
-        }),
-      );
-  }
-
-  private renderOllama(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl)
-      .setName("Ollama server URL")
-      .setDesc("Base URL of your local Ollama server. The OpenAI-compatible endpoint is derived as <url>/v1.")
-      .addText((text) =>
-        text
-          .setPlaceholder(DEFAULT_OLLAMA_BASE_URL)
-          .setValue(settings.ollamaBaseUrl)
-          .onChange(async (value) => {
-            settings.ollamaBaseUrl = value.trim() || DEFAULT_OLLAMA_BASE_URL;
-            await this.save();
-          }),
-      );
-    new Setting(containerEl)
-      .setName("Model")
-      .setDesc("An installed Ollama model tag, e.g. llama3.1 or qwen2.5-coder.")
-      .addText((text) =>
-        text
-          .setPlaceholder("llama3.1")
-          .setValue(settings.ollamaModel)
-          .onChange(async (value) => {
-            settings.ollamaModel = value.trim();
-            await this.save();
-          }),
-      );
-  }
-
-  private renderOpenAICompatible(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    this.renderApiKeyWarning(containerEl);
-    const activePreset = openAICompatiblePresetForBaseUrl(settings.openaiCompatibleBaseUrl);
-    new Setting(containerEl)
-      .setName("Gateway preset")
-      .setDesc(
-        activePreset
-          ? activePreset.description
-          : "Optional shortcut for common OpenAI-compatible gateways. Choose one to fill the Base URL; edit fields below for custom gateways.",
-      )
-      .addDropdown((dropdown) => {
-        dropdown.addOption("", "Custom");
-        for (const preset of OPENAI_COMPATIBLE_PRESETS) {
-          dropdown.addOption(preset.id, preset.label);
-        }
-        dropdown.setValue(activePreset?.id ?? "").onChange(async (value) => {
-          if (!value) return;
-          applyOpenAICompatiblePreset(settings, value);
-          await this.save();
-          this.redraw();
-        });
-      });
-    new Setting(containerEl)
-      .setName("Base URL")
-      .setDesc("Base URL for an OpenAI chat-completions compatible gateway. Bare OpenWebUI roots are resolved to /api.")
-      .addText((text) =>
-        text
-          .setPlaceholder(DEFAULT_OPENAI_COMPATIBLE_BASE_URL)
-          .setValue(settings.openaiCompatibleBaseUrl)
-          .onChange(async (value) => {
-            settings.openaiCompatibleBaseUrl = value.trim() || DEFAULT_OPENAI_COMPATIBLE_BASE_URL;
-            await this.save();
-          }),
-      );
-    this.renderSecretInput(containerEl, {
-      name: "API key",
-      desc: "Bearer token for the configured OpenAI-compatible gateway.",
-      placeholder: activePreset?.apiKeyPlaceholder ?? "sk-...",
-      hasValue: Boolean(settings.openaiCompatibleApiKey),
-      onSet: async (value) => {
-        settings.openaiCompatibleApiKey = value;
-        await this.save();
-      },
-      onForget: async () => {
-        settings.openaiCompatibleApiKey = "";
-        await this.save();
-      },
-    });
-    new Setting(containerEl)
-      .setName("Model")
-      .setDesc("Model id exposed by the configured gateway.")
-      .addText((text) =>
-        text
-          .setPlaceholder(activePreset?.modelPlaceholder ?? "qwen2.5-coder")
-          .setValue(settings.openaiCompatibleModel)
-          .onChange(async (value) => {
-            settings.openaiCompatibleModel = value.trim();
-            await this.save();
-          }),
-      );
-    new Setting(containerEl)
-      .setName("Context window (tokens)")
-      .setDesc(
-        "Optional. 0 auto-detects from the OpenRouter catalog for the same model slug (best effort) and keeps every " +
-          "tool when unknown. Set the real value (e.g. 128000) if your gateway exposes a different window than " +
-          "OpenRouter; this drives the tool budget and auto-compaction.",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("0 = auto-detect")
-          .setValue(settings.openaiCompatibleContextWindow > 0 ? String(settings.openaiCompatibleContextWindow) : "")
-          .onChange(async (value) => {
-            const parsed = Number.parseInt(value, 10);
-            settings.openaiCompatibleContextWindow = Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
-            await this.save();
-          }),
-      );
-  }
-
-  private renderAgent(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Agent").setHeading();
-
-    new Setting(containerEl)
-      .setName("Permission mode")
-      .setDesc(
-        "Safe honors your approval gates; YOLO auto-approves every mutating tool for the session " +
-          "(a per-tool deny still wins). The settings dropdown and the composer toggle share one setting and stay in sync.",
-      )
-      .addDropdown((dropdown) => {
-        // S4: single list, same labels as MODES — every surface reflects the same source (Codex atomic override).
-        for (const id of MODE_ORDER) dropdown.addOption(id, MODES[id].label);
-        dropdown.setValue(settings.mode).onChange(async (value) => {
-          const target = value as AgentMode;
-          await this.plugin.requestModeChange(target);
-          // Re-sync the dropdown to the actual persisted value (blocked transitions leave it unchanged; Notice is shown by requestModeChange).
-          dropdown.setValue(this.plugin.settings.mode);
-        });
-      });
-
-    new Setting(containerEl).setName("Temperature").addSlider((slider) =>
-      slider
-        .setLimits(0, 2, 0.1)
-        .setValue(settings.temperature)
-        .onChange(async (value) => {
-          settings.temperature = value;
-          await this.save();
-        }),
-    );
-
-    new Setting(containerEl)
-      .setName("Max response tokens")
-      .setDesc("Per model request. 0 lets the provider decide.")
-      .addText((text) =>
-        text.setValue(String(settings.maxTokens)).onChange(async (value) => {
-          const parsed = Number.parseInt(value, 10);
-          settings.maxTokens = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-          await this.save();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName("Request timeout (seconds)")
-      .setDesc("How long to wait for the provider to start responding.")
-      .addText((text) =>
-        text.setValue(String(Math.round(settings.requestTimeoutMs / 1000))).onChange(async (value) => {
-          const parsed = Number.parseInt(value, 10);
-          settings.requestTimeoutMs =
-            Number.isFinite(parsed) && parsed >= 5 ? parsed * 1000 : DEFAULT_SETTINGS.requestTimeoutMs;
-          await this.save();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName("Network retries")
-      .setDesc("Automatic retries on rate limits and transient server errors.")
-      .addSlider((slider) =>
-        slider
-          .setLimits(0, 5, 1)
-          .setValue(settings.maxNetworkRetries)
-          .onChange(async (value) => {
-            settings.maxNetworkRetries = value;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("System prompt")
-      .setDesc("Sent at the start of every conversation.")
-      .addTextArea((text) => {
-        text.inputEl.rows = 10;
-        text.inputEl.addClass("agentic-chat-system-prompt");
-        text.setValue(settings.systemPrompt).onChange(async (value) => {
-          settings.systemPrompt = value.trim() ? value : DEFAULT_SYSTEM_PROMPT;
-          await this.save();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Standing instructions")
-      .setDesc(
-        "The agent loads AGENTS.md from the vault root every turn as standing context " +
-          "(falls back to CLAUDE.md, then GEMINI.md, if AGENTS.md is absent — symlink them for other agents). " +
-          "Edit the file directly, or run /init to have the agent curate it.",
-      );
-
-    new Setting(containerEl).setName("Context window").setHeading();
-    new Setting(containerEl)
-      .setName("Auto-compaction")
-      .setDesc(
-        "Summarize older turns automatically as the context window fills, so long conversations don't hit the " +
-          "model limit or spike cost. The summary replaces the compacted turns in the transcript.",
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(settings.compaction.enabled).onChange(async (value) => {
-          settings.compaction.enabled = value;
-          await this.save();
-        }),
-      );
-    new Setting(containerEl)
-      .setName("Compact at (% of context window)")
-      .setDesc("Trigger compaction once the conversation fills this share of the model's context window.")
-      .addSlider((slider) =>
-        slider
-          .setLimits(50, 95, 5)
-          .setValue(settings.compaction.thresholdPercent)
-          .onChange(async (value) => {
-            settings.compaction.thresholdPercent = value;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl).setName("Tool budget").setHeading();
-    new Setting(containerEl)
-      .setName("Drop optional tools when schemas are large")
-      .setDesc(
-        "When registered tool schemas alone exceed the threshold, hide optional expansion tools such as web, MCP, artifacts, PDF import, and subagents.",
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(settings.toolBudget.enabled).onChange(async (value) => {
-          settings.toolBudget.enabled = value;
-          await this.save();
-        }),
-      );
-    new Setting(containerEl)
-      .setName("Drop tools when schemas exceed (% of context window)")
-      .setDesc("Low by default so large tool catalogs shed optional tools before tool schemas become expensive.")
-      .addSlider((slider) =>
-        slider
-          .setLimits(1, 50, 1)
-          .setValue(settings.toolBudget.thresholdPercent)
-          .onChange(async (value) => {
-            settings.toolBudget.thresholdPercent = value;
-            await this.save();
-          }),
-      );
-  }
-
-  private renderApproval(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Approval gates").setHeading();
-    new Setting(containerEl)
-      .setName("Before mutating tools")
-      .setDesc("Gate tools that change the vault. Read-only tools always run (unless a working directory is set below). 'Ask' shows a confirm dialog.")
-      .addDropdown((dropdown) => {
-        const options: Record<ApprovalPolicy, string> = {
-          allow: "Allow automatically",
-          ask: "Ask each time",
-          deny: "Deny (read-only mode)",
-        };
-        for (const [value, label] of Object.entries(options)) dropdown.addOption(value, label);
-        dropdown.setValue(settings.approval.mutating).onChange(async (value) => {
-          settings.approval.mutating = value as ApprovalPolicy;
-          await this.save();
-        });
-      });
-
-    this.renderWorkingDirs(containerEl, settings);
-
-    new Setting(containerEl)
-      .setName("Per-tool overrides")
-      .setDesc("Override allow/ask/deny for individual tools. 'Default' follows the rule above (read-only tools always run).")
-      .setHeading();
-    for (const tool of createVaultTools(this.app)) {
-      const mutating = MUTATING_TOOLS.has(tool.name);
-      new Setting(containerEl)
-        .setName(tool.label)
-        .setDesc(`${tool.name} · ${mutating ? "mutating" : "read-only"}`)
-        .addDropdown((dropdown) => {
-          dropdown
-            .addOption("default", "Default")
-            .addOption("allow", "Allow")
-            .addOption("ask", "Ask")
-            .addOption("deny", "Deny")
-            .setValue(settings.approval.perTool[tool.name] ?? "default")
-            .onChange(async (value) => {
-              setPerToolApproval(settings.approval, tool.name, value as ApprovalPolicy | "default");
-              await this.save();
-            });
-        });
-    }
-  }
-
-  /**
-   * Working directories (C1/S2): an allow-list working set. When any are granted, tool
-   * calls inside auto-run and calls outside route through the gate (ask) — even reads.
-   */
-  private renderWorkingDirs(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl)
-      .setName("Working directories")
-      .setDesc(
-        "Grant folders as a working set: the agent auto-runs reads/writes inside them and asks before " +
-          "touching anything outside (in Safe mode). Empty keeps the vault-wide behavior above. " +
-          "Ignored globs still win inside a granted folder.",
-      )
-      .setClass("agentic-chat-setting-heading-wrap")
-      .setHeading()
-      .addButton((button) =>
-        button.setButtonText("Add folder").onClick(() => {
-          new FolderSuggestModal(this.app, (folder) => {
-            const result = addWorkingDir(settings.approval.workingDirs, folder.path);
-            if (result === "added") {
-              this.refresh();
-            } else if (result === "invalid") {
-              new Notice(`Invalid folder path: ${folder.path}`);
-            }
-          }).open();
-        }),
-      );
-
-    if (settings.approval.workingDirs.length === 0) {
-      containerEl.createDiv({
-        cls: "setting-item-description",
-        text: "No working directories — approval applies vault-wide.",
-      });
-      return;
-    }
-    for (const dir of settings.approval.workingDirs) {
-      new Setting(containerEl)
-        .setName(dir === "" ? "/ (vault root)" : dir)
-        .setDesc("Auto-run inside; ask outside.")
-        .addButton((button) =>
-          button
-            .setButtonText("Remove")
-            .setClass("mod-warning")
-            .onClick(async () => {
-              if (removeWorkingDir(settings.approval.workingDirs, dir)) {
-                await this.save();
-                this.redraw();
-              }
-            }),
-        );
-    }
-  }
-
-  private renderWebAccess(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Web access").setHeading();
-
-    const warning = containerEl.createDiv({ cls: "agentic-chat-settings-warning" });
-    warning.createSpan({ cls: "agentic-chat-settings-warning-icon", text: "⚠" });
-    warning.createSpan({
-      text:
-        "Web search and fetch send your query text and the URLs the agent opens to a third-party " +
-        "service, off-device — outside the vault's privacy boundary. Off by default; turn it on only " +
-        "when you want the agent to use the open web.",
-    });
-
-    new Setting(containerEl)
-      .setName("Enable web search & fetch")
-      .setDesc("Give the agent web_search and fetch_url tools. When off, the agent cannot reach the network at all.")
-      .addToggle((toggle) =>
-        toggle.setValue(settings.web.enabled).onChange(async (value) => {
-          settings.web.enabled = value;
-          await this.save();
-          this.redraw();
-        }),
-      );
-
-    if (!settings.web.enabled) return;
-
-    new Setting(containerEl)
-      .setName("Search provider")
-      .setDesc("Backend for web_search. Tavily and Brave need an API key; SearXNG needs a self-hosted instance URL.")
-      .addDropdown((dropdown) => {
-        for (const provider of WEB_SEARCH_PROVIDERS) {
-          dropdown.addOption(provider, WEB_SEARCH_PROVIDER_LABELS[provider]);
-        }
-        dropdown.setValue(settings.web.searchProvider).onChange(async (value) => {
-          settings.web.searchProvider = value as WebSearchProvider;
-          await this.save();
-          this.redraw();
-        });
-      });
-
-    if (settings.web.searchProvider === "searxng") {
-      new Setting(containerEl)
-        .setName("SearXNG instance URL")
-        .setDesc("Base URL of your SearXNG instance, e.g. https://searx.example.com. The JSON API must be enabled.")
-        .addText((text) =>
-          text
-            .setPlaceholder("https://searx.example.com")
-            .setValue(settings.web.searxngUrl)
-            .onChange(async (value) => {
-              settings.web.searxngUrl = value.trim();
-              await this.save();
-            }),
-        );
-    } else {
-      this.renderSecretInput(containerEl, {
-        name: "Search API key",
-        desc:
-          settings.web.searchProvider === "tavily"
-            ? "Tavily API key (tavily.com)."
-            : "Brave Search API key (brave.com/search/api).",
-        placeholder: settings.web.searchProvider === "tavily" ? "tvly-..." : "BSA...",
-        hasValue: Boolean(settings.web.searchApiKey),
+  private openRouterDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
+    return [
+      this.apiKeyWarning(),
+      this.secretInputDef({
+        name: "OpenRouter API key",
+        desc: "Create one at openrouter.ai/keys.",
+        placeholder: "sk-or-...",
+        hasValue: () => Boolean(settings.openrouterApiKey),
         onSet: async (value) => {
-          settings.web.searchApiKey = value;
+          settings.openrouterApiKey = value;
           await this.save();
         },
         onForget: async () => {
-          settings.web.searchApiKey = "";
+          settings.openrouterApiKey = "";
           await this.save();
         },
-      });
-    }
-
-    new Setting(containerEl)
-      .setName("Search results")
-      .setDesc("How many results web_search returns by default.")
-      .addSlider((slider) =>
-        slider
-          .setLimits(1, 10, 1)
-          .setValue(settings.web.maxResults)
-          .onChange(async (value) => {
-            settings.web.maxResults = value;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Fetched page character limit")
-      .setDesc("Maximum characters of a fetched page's text returned to the model.")
-      .addText((text) => {
-        text.inputEl.type = "number";
-        text.inputEl.setAttribute("min", "500");
-        text.setValue(String(settings.web.fetchCharLimit)).onChange(async (value) => {
-          const parsed = Number.parseInt(value, 10);
-          settings.web.fetchCharLimit =
-            Number.isFinite(parsed) && parsed >= 500 ? parsed : DEFAULT_SETTINGS.web.fetchCharLimit;
-          await this.save();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Allowed hosts")
-      .setDesc(
-        "Optional comma-separated host suffixes for fetch_url. Empty allows any public host. " +
-          'Example: example.com, *.wikipedia.org — blocks other hosts with "Blocked by allowlist".',
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("example.com, *.wikipedia.org")
-          .setValue(settings.web.allowedHosts)
-          .onChange(async (value) => {
-            settings.web.allowedHosts = normalizeAllowedHosts(value);
-            await this.save();
-            // Update the field to the canonical (lower-cased, deduped) value so typos like `Example.COM` are visible immediately.
-            text.setValue(settings.web.allowedHosts);
-          }),
-      );
+      }),
+      this.row("Model", (setting) => {
+        setting
+          .setDesc('OpenRouter model id. "Browse" lists models that support tool calling.')
+          .addText((text) =>
+            text
+              .setPlaceholder("moonshotai/kimi-k2.6")
+              .setValue(settings.openrouterModel)
+              .onChange(async (value) => {
+                settings.openrouterModel = value.trim();
+                await this.save();
+              }),
+          )
+          .addButton((button) =>
+            button.setButtonText("Browse").onClick(async () => {
+              if (!settings.openrouterApiKey) {
+                new Notice("Set your OpenRouter API key first.");
+                return;
+              }
+              button.setDisabled(true);
+              try {
+                const models = (
+                  await listOpenRouterModels(settings.openrouterApiKey, {
+                    zdr: settings.privacy.requireZDR,
+                    denyDataCollection: settings.privacy.denyDataCollection,
+                    fetchImpl: createFetchFromWebFetcher(createProxiedFetcher(settings.network)),
+                  })
+                )
+                  .filter((model) => model.supportsTools)
+                  .sort((a, b) => a.id.localeCompare(b.id));
+                new ModelSuggestModal(this.app, models, (model) => {
+                  settings.openrouterModel = model.id;
+                  this.refresh();
+                }).open();
+              } catch (error) {
+                new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
+              } finally {
+                button.setDisabled(false);
+              }
+            }),
+          );
+      }),
+      this.heading("Privacy"),
+      this.controlDef(
+        "Deny prompt logging and training",
+        { type: "toggle", key: "privacy.denyDataCollection" },
+        'Only route to providers that do not store or train on prompts (data policy "deny").',
+      ),
+      this.controlDef(
+        "Require zero data retention",
+        { type: "toggle", key: "privacy.requireZDR" },
+        "On by default. Only route to ZDR endpoints; some models may have no compliant provider — pick another model or use Ollama.",
+      ),
+      this.controlDef(
+        "Allow provider fallbacks",
+        { type: "toggle", key: "privacy.allowFallbacks" },
+        "Let OpenRouter fall back to other still-compliant providers when the preferred one is down.",
+      ),
+    ];
   }
 
-  private renderMcp(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("MCP tools").setHeading();
+  private ollamaDefinitions(): SettingDefinitionItem[] {
+    return [
+      this.controlDef(
+        "Ollama server URL",
+        { type: "text", key: "ollamaBaseUrl", placeholder: DEFAULT_OLLAMA_BASE_URL },
+        "Base URL of your local Ollama server. The OpenAI-compatible endpoint is derived as <url>/v1.",
+      ),
+      this.controlDef(
+        "Model",
+        { type: "text", key: "ollamaModel", placeholder: "llama3.1" },
+        "An installed Ollama model tag, e.g. llama3.1 or qwen2.5-coder.",
+      ),
+    ];
+  }
 
-    const warning = containerEl.createDiv({ cls: "agentic-chat-settings-warning" });
-    warning.createSpan({ cls: "agentic-chat-settings-warning-icon", text: "⚠" });
-    warning.createSpan({
-      text:
-        "MCP tools send tool names and arguments to configured remote MCP servers. Only HTTPS " +
-        "Streamable HTTP endpoints are supported; stdio and subprocess servers are intentionally unsupported.",
-    });
-
-    new Setting(containerEl)
-      .setName("Enable MCP")
-      .setDesc("Discover and register tools from configured HTTPS MCP servers.")
-      .addToggle((toggle) =>
-        toggle.setValue(settings.mcp.enabled).onChange(async (value) => {
-          settings.mcp.enabled = value;
+  private openAICompatibleDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
+    const activePreset = openAICompatiblePresetForBaseUrl(settings.openaiCompatibleBaseUrl);
+    return [
+      this.apiKeyWarning(),
+      this.row("Gateway preset", (setting) => {
+        setting
+          .setDesc(
+            activePreset
+              ? activePreset.description
+              : "Optional shortcut for common OpenAI-compatible gateways. Choose one to fill the Base URL; edit fields below for custom gateways.",
+          )
+          .addDropdown((dropdown) => {
+            dropdown.addOption("", "Custom");
+            for (const preset of OPENAI_COMPATIBLE_PRESETS) {
+              dropdown.addOption(preset.id, preset.label);
+            }
+            dropdown.setValue(activePreset?.id ?? "").onChange(async (value) => {
+              if (!value) return;
+              applyOpenAICompatiblePreset(settings, value);
+              await this.save();
+              this.redraw();
+            });
+          });
+      }),
+      this.controlDef(
+        "Base URL",
+        {
+          type: "text",
+          key: "openaiCompatibleBaseUrl",
+          placeholder: DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+        },
+        "Base URL for an OpenAI chat-completions compatible gateway. Bare OpenWebUI roots are resolved to /api.",
+      ),
+      this.secretInputDef({
+        name: "API key",
+        desc: "Bearer token for the configured OpenAI-compatible gateway.",
+        placeholder: activePreset?.apiKeyPlaceholder ?? "sk-...",
+        hasValue: () => Boolean(settings.openaiCompatibleApiKey),
+        onSet: async (value) => {
+          settings.openaiCompatibleApiKey = value;
           await this.save();
-          this.redraw();
+        },
+        onForget: async () => {
+          settings.openaiCompatibleApiKey = "";
+          await this.save();
+        },
+      }),
+      this.controlDef(
+        "Model",
+        {
+          type: "text",
+          key: "openaiCompatibleModel",
+          placeholder: activePreset?.modelPlaceholder ?? "qwen2.5-coder",
+        },
+        "Model id exposed by the configured gateway.",
+      ),
+      this.row("Context window (tokens)", (setting) => {
+        setting
+          .setDesc(
+            "Optional. 0 auto-detects from the OpenRouter catalog for the same model slug (best effort) and keeps every " +
+              "tool when unknown. Set the real value (e.g. 128000) if your gateway exposes a different window than " +
+              "OpenRouter; this drives the tool budget and auto-compaction.",
+          )
+          .addText((text) =>
+            text
+              .setPlaceholder("0 = auto-detect")
+              .setValue(settings.openaiCompatibleContextWindow > 0 ? String(settings.openaiCompatibleContextWindow) : "")
+              .onChange(async (value) => {
+                const parsed = Number.parseInt(value, 10);
+                settings.openaiCompatibleContextWindow = Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
+                await this.save();
+              }),
+          );
+      }),
+    ];
+  }
+
+  private agentDefinitions(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    return [
+      this.row("Permission mode", (setting) => {
+        setting
+          .setDesc(
+            "Safe honors your approval gates; YOLO auto-approves every mutating tool for the session " +
+              "(a per-tool deny still wins). The settings dropdown and the composer toggle share one setting and stay in sync.",
+          )
+          .addDropdown((dropdown) => {
+            // S4: single list, same labels as MODES — every surface reflects the same source (Codex atomic override).
+            for (const id of MODE_ORDER) dropdown.addOption(id, MODES[id].label);
+            dropdown.setValue(settings.mode).onChange(async (value) => {
+              const target = value as AgentMode;
+              await this.plugin.requestModeChange(target);
+              // Re-sync the dropdown to the actual persisted value (blocked transitions leave it unchanged; Notice is shown by requestModeChange).
+              dropdown.setValue(this.plugin.settings.mode);
+            });
+          });
+      }),
+      this.controlDef("Temperature", { type: "slider", key: "temperature", min: 0, max: 2, step: 0.1 }),
+      this.controlDef(
+        "Max response tokens",
+        { type: "number", key: "maxTokens", min: 0 },
+        "Per model request. 0 lets the provider decide.",
+      ),
+      this.row("Request timeout (seconds)", (setting) => {
+        setting
+          .setDesc("How long to wait for the provider to start responding.")
+          .addText((text) =>
+            text.setValue(String(Math.round(settings.requestTimeoutMs / 1000))).onChange(async (value) => {
+              const parsed = Number.parseInt(value, 10);
+              settings.requestTimeoutMs =
+                Number.isFinite(parsed) && parsed >= 5 ? parsed * 1000 : DEFAULT_SETTINGS.requestTimeoutMs;
+              await this.save();
+            }),
+          );
+      }),
+      this.controlDef(
+        "Network retries",
+        { type: "slider", key: "maxNetworkRetries", min: 0, max: 5, step: 1 },
+        "Automatic retries on rate limits and transient server errors.",
+      ),
+      this.row("System prompt", (setting) => {
+        setting
+          .setDesc("Sent at the start of every conversation.")
+          .addTextArea((text) => {
+            text.inputEl.rows = 10;
+            text.inputEl.addClass("agentic-chat-system-prompt");
+            text.setValue(settings.systemPrompt).onChange(async (value) => {
+              settings.systemPrompt = value.trim() ? value : DEFAULT_SYSTEM_PROMPT;
+              await this.save();
+            });
+          });
+      }),
+      {
+        name: "Standing instructions",
+        desc:
+          "The agent loads AGENTS.md from the vault root every turn as standing context " +
+          "(falls back to CLAUDE.md, then GEMINI.md, if AGENTS.md is absent — symlink them for other agents). " +
+          "Edit the file directly, or run /init to have the agent curate it.",
+      },
+      this.heading("Context window"),
+      this.controlDef(
+        "Auto-compaction",
+        { type: "toggle", key: "compaction.enabled" },
+        "Summarize older turns automatically as the context window fills, so long conversations don't hit the " +
+          "model limit or spike cost. The summary replaces the compacted turns in the transcript.",
+      ),
+      this.controlDef(
+        "Compact at (% of context window)",
+        { type: "slider", key: "compaction.thresholdPercent", min: 50, max: 95, step: 5 },
+        "Trigger compaction once the conversation fills this share of the model's context window.",
+      ),
+      this.heading("Tool budget"),
+      this.controlDef(
+        "Drop optional tools when schemas are large",
+        { type: "toggle", key: "toolBudget.enabled" },
+        "When registered tool schemas alone exceed the threshold, hide optional expansion tools such as web, MCP, artifacts, PDF import, and subagents.",
+      ),
+      this.controlDef(
+        "Drop tools when schemas exceed (% of context window)",
+        { type: "slider", key: "toolBudget.thresholdPercent", min: 1, max: 50, step: 1 },
+        "Low by default so large tool catalogs shed optional tools before tool schemas become expensive.",
+      ),
+    ];
+  }
+
+  private approvalDefinitions(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    const items: SettingDefinitionItem[] = [
+      this.controlDef(
+        "Before mutating tools",
+        {
+          type: "dropdown",
+          key: "approval.mutating",
+          options: { allow: "Allow automatically", ask: "Ask each time", deny: "Deny (read-only mode)" },
+        },
+        "Gate tools that change the vault. Read-only tools always run (unless a working directory is set below). 'Ask' shows a confirm dialog.",
+      ),
+      this.row(
+        "Working directories",
+        (setting) => {
+          setting
+            .setDesc(
+              "Grant folders as a working set: the agent auto-runs reads/writes inside them and asks before " +
+                "touching anything outside (in Safe mode). Empty keeps the vault-wide behavior above. " +
+                "Ignored globs still win inside a granted folder.",
+            )
+            .setClass("agentic-chat-setting-heading-wrap")
+            .setHeading()
+            .addButton((button) =>
+              button.setButtonText("Add folder").onClick(() => {
+                new FolderSuggestModal(this.app, (folder) => {
+                  const result = addWorkingDir(settings.approval.workingDirs, folder.path);
+                  if (result === "added") {
+                    this.refresh();
+                  } else if (result === "invalid") {
+                    new Notice(`Invalid folder path: ${folder.path}`);
+                  }
+                }).open();
+              }),
+            );
+        },
+        { searchable: true },
+      ),
+    ];
+
+    items.push(
+      this.block((setting) => {
+        // Read at render time: /add-dir and /dirs can change the set while the
+        // settings tab is closed.
+        const dirs = settings.approval.workingDirs;
+        if (dirs.length === 0) {
+          setting.settingEl.createDiv({
+            cls: "setting-item-description",
+            text: "No working directories — approval applies vault-wide.",
+          });
+          return;
+        }
+        this.renderItemsInto(
+          setting.settingEl,
+          dirs.map((dir) =>
+            this.row(dir === "" ? "/ (vault root)" : dir, (row) => {
+              row.setDesc("Auto-run inside; ask outside.").addButton((button) =>
+                button
+                  .setButtonText("Remove")
+                  .setClass("mod-warning")
+                  .onClick(async () => {
+                    if (removeWorkingDir(settings.approval.workingDirs, dir)) {
+                      await this.save();
+                      this.redraw();
+                    }
+                  }),
+              );
+            }),
+          ),
+        );
+      }),
+    );
+
+    items.push(
+      this.row("Per-tool overrides", (setting) => {
+        setting
+          .setDesc(
+            "Override allow/ask/deny for individual tools. 'Default' follows the rule above (read-only tools always run).",
+          )
+          .setHeading();
+      }),
+    );
+    for (const tool of createVaultTools(this.app)) {
+      const mutating = MUTATING_TOOLS.has(tool.name);
+      items.push(
+        this.row(tool.label, (setting) => {
+          setting.setDesc(`${tool.name} · ${mutating ? "mutating" : "read-only"}`).addDropdown((dropdown) => {
+            dropdown
+              .addOption("default", "Default")
+              .addOption("allow", "Allow")
+              .addOption("ask", "Ask")
+              .addOption("deny", "Deny")
+              .setValue(settings.approval.perTool[tool.name] ?? "default")
+              .onChange(async (value) => {
+                setPerToolApproval(settings.approval, tool.name, value as ApprovalPolicy | "default");
+                await this.save();
+              });
+          });
         }),
       );
+    }
+    return items;
+  }
 
-    if (!settings.mcp.enabled) return;
+  private webDefinitions(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    const items: SettingDefinitionItem[] = [
+      this.warning(
+        "⚠",
+        "Web search and fetch send your query text and the URLs the agent opens to a third-party " +
+          "service, off-device — outside the vault's privacy boundary. Off by default; turn it on only " +
+          "when you want the agent to use the open web.",
+      ),
+      this.controlDef(
+        "Enable web search & fetch",
+        { type: "toggle", key: "web.enabled" },
+        "Give the agent web_search and fetch_url tools. When off, the agent cannot reach the network at all.",
+      ),
+    ];
 
-    this.renderProxySettingRows(containerEl, settings.mcp, {
-      proxyDesc: "Optional MCP-only override. Leave empty to inherit the global network proxy from the Models tab.",
-      noProxyDesc: "Comma-separated hosts/domains that bypass the MCP proxy.",
-    }, async (update) => {
-      Object.assign(settings.mcp, update);
-      await this.save();
-    });
+    if (!settings.web.enabled) return items;
 
-    this.ensurePluginsLoaded();
+    items.push(
+      this.controlDef(
+        "Search provider",
+        {
+          type: "dropdown",
+          key: "web.searchProvider",
+          options: Object.fromEntries(WEB_SEARCH_PROVIDERS.map((provider) => [provider, WEB_SEARCH_PROVIDER_LABELS[provider]])),
+        },
+        "Backend for web_search. Tavily and Brave need an API key; SearXNG needs a self-hosted instance URL.",
+      ),
+    );
 
-    {
-      const heading = containerEl.createDiv({ cls: "agentic-chat-mcp-heading" });
-      heading.createDiv({ text: "Add MCP server", cls: "agentic-chat-mcp-heading-title" });
-      heading.createDiv({
-        text:
-          "Writes a real agent plugin package (plugin.json + mcp.json) into the plugins folder. " +
-          "Packages, not settings, own server endpoints after creation.",
-        cls: "setting-item-description",
-      });
+    if (settings.web.searchProvider === "searxng") {
+      items.push(
+        this.controlDef(
+          "SearXNG instance URL",
+          { type: "text", key: "web.searxngUrl", placeholder: "https://searx.example.com" },
+          "Base URL of your SearXNG instance, e.g. https://searx.example.com. The JSON API must be enabled.",
+        ),
+      );
+    } else {
+      items.push(
+        this.secretInputDef({
+          name: "Search API key",
+          desc:
+            settings.web.searchProvider === "tavily"
+              ? "Tavily API key (tavily.com)."
+              : "Brave Search API key (brave.com/search/api).",
+          placeholder: settings.web.searchProvider === "tavily" ? "tvly-..." : "BSA...",
+          hasValue: () => Boolean(settings.web.searchApiKey),
+          onSet: async (value) => {
+            settings.web.searchApiKey = value;
+            await this.save();
+          },
+          onForget: async () => {
+            settings.web.searchApiKey = "";
+            await this.save();
+          },
+        }),
+      );
     }
 
-    new Setting(containerEl)
-      .setClass("agentic-chat-mcp-add")
-      .addText((text) =>
-        text
-          .setPlaceholder("Server name")
-          .setValue(this.pendingMcpServerName)
-          .onChange((value) => {
-            this.pendingMcpServerName = value;
-          }),
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("https://mcp.example.com/mcp")
-          .setValue(this.pendingMcpServerUrl)
-          .onChange((value) => {
-            this.pendingMcpServerUrl = value;
-          }),
-      )
-      .addButton((button) =>
-        button.setButtonText("Add MCP server").onClick(async () => {
-          const url = this.pendingMcpServerUrl.trim();
-          const name = this.pendingMcpServerName.trim();
-          if (!name || !url) {
-            new Notice("Agentic Chat MCP: enter a server name and an HTTPS (or loopback HTTP) endpoint.");
+    items.push(
+      this.controlDef(
+        "Search results",
+        { type: "slider", key: "web.maxResults", min: 1, max: 10, step: 1 },
+        "How many results web_search returns by default.",
+      ),
+      this.row("Fetched page character limit", (setting) => {
+        setting
+          .setDesc("Maximum characters of a fetched page's text returned to the model.")
+          .addText((text) => {
+            text.inputEl.type = "number";
+            text.inputEl.setAttribute("min", "500");
+            text.setValue(String(settings.web.fetchCharLimit)).onChange(async (value) => {
+              const parsed = Number.parseInt(value, 10);
+              settings.web.fetchCharLimit =
+                Number.isFinite(parsed) && parsed >= 500 ? parsed : DEFAULT_SETTINGS.web.fetchCharLimit;
+              await this.save();
+            });
+          });
+      }),
+      this.row("Allowed hosts", (setting) => {
+        setting
+          .setDesc(
+            "Optional comma-separated host suffixes for fetch_url. Empty allows any public host. " +
+              'Example: example.com, *.wikipedia.org — blocks other hosts with "Blocked by allowlist".',
+          )
+          .addText((text) =>
+            text
+              .setPlaceholder("example.com, *.wikipedia.org")
+              .setValue(settings.web.allowedHosts)
+              .onChange(async (value) => {
+                settings.web.allowedHosts = normalizeAllowedHosts(value);
+                await this.save();
+                // Update the field to the canonical (lower-cased, deduped) value so typos like `Example.COM` are visible immediately.
+                text.setValue(settings.web.allowedHosts);
+              }),
+          );
+      }),
+    );
+    return items;
+  }
+
+  private mcpDefinitions(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    const enabled = () => settings.mcp.enabled;
+    return [
+      this.warning(
+        "⚠",
+        "MCP tools send tool names and arguments to configured remote MCP servers. Only HTTPS " +
+          "Streamable HTTP endpoints are supported; stdio and subprocess servers are intentionally unsupported.",
+      ),
+      this.controlDef(
+        "Enable MCP",
+        { type: "toggle", key: "mcp.enabled" },
+        "Discover and register tools from configured HTTPS MCP servers.",
+      ),
+      this.controlDef(
+        "HTTP proxy",
+        { type: "text", key: "mcp.proxyUrl", placeholder: PROXY_URL_EXAMPLE },
+        "Optional MCP-only override. Leave empty to inherit the global network proxy from the Models tab.",
+        { visible: enabled },
+      ),
+      this.controlDef(
+        "No proxy",
+        { type: "text", key: "mcp.noProxy", placeholder: DEFAULT_PROXY_SETTINGS.noProxy },
+        "Comma-separated hosts/domains that bypass the MCP proxy.",
+        { visible: enabled },
+      ),
+      this.block(
+        (setting) => {
+          const heading = setting.settingEl.createDiv({ cls: "agentic-chat-mcp-heading" });
+          heading.createDiv({ text: "Add MCP server", cls: "agentic-chat-mcp-heading-title" });
+          heading.createDiv({
+            text:
+              "Writes a real agent plugin package (plugin.json + mcp.json) into the plugins folder. " +
+              "Packages, not settings, own server endpoints after creation.",
+            cls: "setting-item-description",
+          });
+        },
+        { name: "Add MCP server", visible: enabled },
+      ),
+      this.row(
+        "",
+        (setting) => {
+          setting
+            .setClass("agentic-chat-mcp-add")
+            .addText((text) =>
+              text
+                .setPlaceholder("Server name")
+                .setValue(this.pendingMcpServerName)
+                .onChange((value) => {
+                  this.pendingMcpServerName = value;
+                }),
+            )
+            .addText((text) =>
+              text
+                .setPlaceholder("https://mcp.example.com/mcp")
+                .setValue(this.pendingMcpServerUrl)
+                .onChange((value) => {
+                  this.pendingMcpServerUrl = value;
+                }),
+            )
+            .addButton((button) =>
+              button.setButtonText("Add MCP server").onClick(async () => {
+                const url = this.pendingMcpServerUrl.trim();
+                const name = this.pendingMcpServerName.trim();
+                if (!name || !url) {
+                  new Notice("Agentic Chat MCP: enter a server name and an HTTPS (or loopback HTTP) endpoint.");
+                  return;
+                }
+                try {
+                  if (validateMcpUrl(url) !== null) throw new Error("only HTTPS (or loopback HTTP) endpoints are supported");
+                  // Package creation can fail mid-write (stale file tree, an
+                  // externally synced folder of the same name, interrupted writes);
+                  // surface it instead of dropping the rejection on the floor.
+                  const result = await this.plugin.pluginService.generateMcpServerPackage({ serverName: name, url });
+                  this.pendingMcpServerName = "";
+                  this.pendingMcpServerUrl = "";
+                  // The package is new; drop the once-only load guard so the next
+                  // redraw picks it up from the vault.
+                  this.pluginsLoadedOnce = false;
+                  new Notice(`Agentic Chat MCP: created plugin package at ${result.rootPath}.`);
+                  this.redraw();
+                } catch (error) {
+                  new Notice(`Agentic Chat MCP: ${error instanceof Error ? error.message : String(error)}`);
+                }
+              }),
+            );
+        },
+        { visible: enabled },
+      ),
+      this.block(
+        (setting) => {
+          // Read the collection at render time: packages and legacy user rows
+          // can change while the settings modal stays open.
+          this.ensurePluginsLoaded();
+          const displayServers = this.mcpDisplayServers(settings);
+          if (displayServers.length === 0) {
+            setting.settingEl.createDiv({
+              cls: "setting-item-description",
+              text: "No MCP servers. Generate a plugin package above, or add a plugin folder with an mcp.json inside the plugin folder.",
+            });
             return;
           }
-          try {
-            if (validateMcpUrl(url) !== null) throw new Error("only HTTPS (or loopback HTTP) endpoints are supported");
-            // Package creation can fail mid-write (stale file tree, an
-            // externally synced folder of the same name, interrupted writes);
-            // surface it instead of dropping the rejection on the floor.
-            const result = await this.plugin.pluginService.generateMcpServerPackage({ serverName: name, url });
-            this.pendingMcpServerName = "";
-            this.pendingMcpServerUrl = "";
-            // The package is new; drop the once-only load guard so the next
-            // redraw picks it up from the vault.
-            this.pluginsLoadedOnce = false;
-            new Notice(`Agentic Chat MCP: created plugin package at ${result.rootPath}.`);
-            this.redraw();
-          } catch (error) {
-            new Notice(`Agentic Chat MCP: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }),
-      );
-
-    const displayServers = this.mcpDisplayServers(settings);
-    if (displayServers.length === 0) {
-      containerEl.createDiv({
-        cls: "setting-item-description",
-        text: "No MCP servers. Generate a plugin package above, or add a plugin folder with an mcp.json inside the plugin folder.",
-      });
-      return;
-    }
-
-    for (const server of displayServers) {
-      this.renderMcpServer(containerEl, settings, server);
-    }
+          this.renderItemsInto(
+            setting.settingEl,
+            displayServers.flatMap((server) => this.mcpServerDefinitions(settings, server)),
+          );
+        },
+        { name: "MCP servers", visible: enabled },
+      ),
+    ];
   }
 
-  private renderObservability(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Observability export").setHeading();
-
-    const warning = containerEl.createDiv({ cls: "agentic-chat-settings-warning" });
-    warning.createSpan({ cls: "agentic-chat-settings-warning-icon", text: "i" });
-    warning.createSpan({
-      text:
+  private observabilityDefinitions(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    const items: SettingDefinitionItem[] = [
+      this.warning(
+        "i",
         "Observability is opt-in and has no built-in endpoint. When enabled, Agentic Chat exports " +
-        "turn, model, tool, approval, token, and cost metadata to the endpoint you configure. Prompt " +
-        "and answer text is withheld unless you explicitly change payload detail below.",
-    });
+          "turn, model, tool, approval, token, and cost metadata to the endpoint you configure. Prompt " +
+          "and answer text is withheld unless you explicitly change payload detail below.",
+      ),
+      this.controlDef(
+        "Enable observability",
+        { type: "toggle", key: "observability.enabled" },
+        "Export OTLP/HTTP traces for agent turns. Leave off for the default no-telemetry behavior.",
+      ),
+    ];
 
-    new Setting(containerEl)
-      .setName("Enable observability")
-      .setDesc("Export OTLP/HTTP traces for agent turns. Leave off for the default no-telemetry behavior.")
-      .addToggle((toggle) =>
-        toggle.setValue(settings.observability.enabled).onChange(async (value) => {
-          settings.observability.enabled = value;
-          await this.save();
-          this.redraw();
-        }),
-      );
+    if (!settings.observability.enabled) return items;
 
-    if (!settings.observability.enabled) return;
-
-    new Setting(containerEl)
-      .setName("Backend")
-      .setDesc("Langfuse configures OTLP headers for Langfuse ingestion; generic OTLP accepts a direct /v1/traces endpoint.")
-      .addDropdown((dropdown) => {
-        for (const backend of Object.keys(OBSERVABILITY_BACKEND_LABELS) as ObservabilityBackend[]) {
-          dropdown.addOption(backend, OBSERVABILITY_BACKEND_LABELS[backend]);
-        }
-        dropdown.setValue(settings.observability.backend).onChange(async (value) => {
-          settings.observability.backend = value as ObservabilityBackend;
-          await this.save();
-          this.redraw();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName(settings.observability.backend === "langfuse" ? "Langfuse base URL" : "OTLP traces endpoint")
-      .setDesc(
+    items.push(
+      this.controlDef(
+        "Backend",
+        {
+          type: "dropdown",
+          key: "observability.backend",
+          options: Object.fromEntries(
+            (Object.keys(OBSERVABILITY_BACKEND_LABELS) as ObservabilityBackend[]).map((backend) => [
+              backend,
+              OBSERVABILITY_BACKEND_LABELS[backend],
+            ]),
+          ),
+        },
+        "Langfuse configures OTLP headers for Langfuse ingestion; generic OTLP accepts a direct /v1/traces endpoint.",
+      ),
+      this.controlDef(
+        settings.observability.backend === "langfuse" ? "Langfuse base URL" : "OTLP traces endpoint",
+        {
+          type: "text",
+          key: "observability.endpoint",
+          placeholder:
+            settings.observability.backend === "langfuse"
+              ? "https://langfuse.example.com"
+              : "https://otel.example.com/v1/traces",
+        },
         settings.observability.backend === "langfuse"
           ? "Corporate/self-hosted Langfuse base URL. The plugin posts to /api/public/otel/v1/traces."
           : "Full OTLP HTTP/JSON traces endpoint, usually ending in /v1/traces.",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder(settings.observability.backend === "langfuse" ? "https://langfuse.example.com" : "https://otel.example.com/v1/traces")
-          .setValue(settings.observability.endpoint)
-          .onChange(async (value) => {
-            settings.observability.endpoint = value.trim();
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Payload detail")
-      .setDesc(
+      ),
+      this.controlDef(
+        "Payload detail",
+        {
+          type: "dropdown",
+          key: "observability.payloadMode",
+          options: Object.fromEntries(
+            (Object.keys(OBSERVABILITY_PAYLOAD_LABELS) as ObservabilityPayloadMode[]).map((mode) => [
+              mode,
+              OBSERVABILITY_PAYLOAD_LABELS[mode],
+            ]),
+          ),
+        },
         "Metadata only sends timings, model ids, token/cost totals, tool names, approvals, and errors. " +
-        "Text modes send prompt/answer text to the configured backend.",
-      )
-      .addDropdown((dropdown) => {
-        for (const mode of Object.keys(OBSERVABILITY_PAYLOAD_LABELS) as ObservabilityPayloadMode[]) {
-          dropdown.addOption(mode, OBSERVABILITY_PAYLOAD_LABELS[mode]);
-        }
-        dropdown.setValue(settings.observability.payloadMode).onChange(async (value) => {
-          settings.observability.payloadMode = value as ObservabilityPayloadMode;
-          await this.save();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Sample rate")
-      .setDesc("Percentage of agent turns to export.")
-      .addSlider((slider) =>
-        slider
-          .setLimits(0, 100, 1)
-          .setValue(settings.observability.sampleRate)
-          .onChange(async (value) => {
-            settings.observability.sampleRate = value;
-            await this.save();
-          }),
-      );
-
-    this.renderProxySettingRows(containerEl, settings.observability, {
-      proxyDesc:
+          "Text modes send prompt/answer text to the configured backend.",
+      ),
+      this.controlDef(
+        "Sample rate",
+        { type: "slider", key: "observability.sampleRate", min: 0, max: 100, step: 1 },
+        "Percentage of agent turns to export.",
+      ),
+      this.controlDef(
+        "HTTP proxy",
+        { type: "text", key: "observability.proxyUrl", placeholder: PROXY_URL_EXAMPLE },
         "Optional observability-only override. Leave empty to inherit the global network proxy from the Models tab.",
-      noProxyDesc: "Comma-separated hosts/domains that bypass the observability proxy.",
-    }, async (update) => {
-      Object.assign(settings.observability, update);
-      await this.save();
-    });
+      ),
+      this.controlDef(
+        "No proxy",
+        { type: "text", key: "observability.noProxy", placeholder: DEFAULT_PROXY_SETTINGS.noProxy },
+        "Comma-separated hosts/domains that bypass the observability proxy.",
+      ),
+    );
 
     if (settings.observability.backend === "langfuse") {
-      this.renderSecretInput(containerEl, {
-        name: "Langfuse public key",
-        desc: "Public key for the configured Langfuse project.",
-        placeholder: "pk-lf-...",
-        hasValue: Boolean(settings.observability.langfusePublicKey),
-        onSet: async (value) => {
-          settings.observability.langfusePublicKey = value;
-          await this.save();
-        },
-        onForget: async () => {
-          settings.observability.langfusePublicKey = "";
-          await this.save();
-        },
-      });
-      this.renderSecretInput(containerEl, {
-        name: "Langfuse secret key",
-        desc: "Secret key for the configured Langfuse project.",
-        placeholder: "sk-lf-...",
-        hasValue: Boolean(settings.observability.langfuseSecretKey),
-        onSet: async (value) => {
-          settings.observability.langfuseSecretKey = value;
-          await this.save();
-        },
-        onForget: async () => {
-          settings.observability.langfuseSecretKey = "";
-          await this.save();
-        },
-      });
-      return;
+      items.push(
+        this.secretInputDef({
+          name: "Langfuse public key",
+          desc: "Public key for the configured Langfuse project.",
+          placeholder: "pk-lf-...",
+          hasValue: () => Boolean(settings.observability.langfusePublicKey),
+          onSet: async (value) => {
+            settings.observability.langfusePublicKey = value;
+            await this.save();
+          },
+          onForget: async () => {
+            settings.observability.langfusePublicKey = "";
+            await this.save();
+          },
+        }),
+        this.secretInputDef({
+          name: "Langfuse secret key",
+          desc: "Secret key for the configured Langfuse project.",
+          placeholder: "sk-lf-...",
+          hasValue: () => Boolean(settings.observability.langfuseSecretKey),
+          onSet: async (value) => {
+            settings.observability.langfuseSecretKey = value;
+            await this.save();
+          },
+          onForget: async () => {
+            settings.observability.langfuseSecretKey = "";
+            await this.save();
+          },
+        }),
+      );
+      return items;
     }
 
-    new Setting(containerEl)
-      .setName("Auth header name")
-      .setDesc("Optional header name for a generic OTLP backend, e.g. Authorization.")
-      .addText((text) =>
-        text
-          .setPlaceholder("Authorization")
-          .setValue(settings.observability.authHeaderName)
-          .onChange(async (value) => {
-            settings.observability.authHeaderName = value.trim();
-            await this.save();
-          }),
-      );
-
-    this.renderSecretInput(containerEl, {
-      name: "Auth header value",
-      desc: "Optional header value for the generic OTLP backend.",
-      placeholder: "Bearer ...",
-      hasValue: Boolean(settings.observability.authHeaderValue),
-      onSet: async (value) => {
-        settings.observability.authHeaderValue = value;
-        await this.save();
-      },
-      onForget: async () => {
-        settings.observability.authHeaderValue = "";
-        await this.save();
-      },
-    });
+    items.push(
+      this.controlDef(
+        "Auth header name",
+        { type: "text", key: "observability.authHeaderName", placeholder: "Authorization" },
+        "Optional header name for a generic OTLP backend, e.g. Authorization.",
+      ),
+      this.secretInputDef({
+        name: "Auth header value",
+        desc: "Optional header value for the generic OTLP backend.",
+        placeholder: "Bearer ...",
+        hasValue: () => Boolean(settings.observability.authHeaderValue),
+        onSet: async (value) => {
+          settings.observability.authHeaderValue = value;
+          await this.save();
+        },
+        onForget: async () => {
+          settings.observability.authHeaderValue = "";
+          await this.save();
+        },
+      }),
+    );
+    return items;
   }
 
-  private renderMcpServer(
-    containerEl: HTMLElement,
+  private mcpServerDefinitions(
     settings: AgenticChatSettings,
     server: McpServerSettings,
-  ): void {
+  ): SettingDefinitionItem[] {
     const pluginManaged = server.source === "plugin";
-    const endpointProblem = mcpEndpointProblem(server.url);
-    let testButton: ButtonComponent | undefined;
-    const syncTestButton = (): void => {
-      if (!testButton) return;
-      const state = mcpTestButtonState(server);
-      testButton.setButtonText(state.label).setDisabled(Boolean(state.problem));
-    };
-    const header = new Setting(containerEl)
-      .setName(server.name || server.id)
-      .setDesc(formatMcpServerSummary(server, endpointProblem) + (pluginManaged ? ` (managed by ${server.pluginRoot})` : ""))
-      .setClass("agentic-chat-mcp-server-header")
-      .setClass("agentic-chat-setting-heading-wrap")
-      .setHeading()
-      .addToggle((toggle) =>
-        toggle.setValue(server.enabled).onChange(async (value) => {
-          server.enabled = value;
-          this.syncMcpServerToState(server);
-          await this.save();
-        }),
-      )
-      .addButton((button) => {
-        testButton = button;
-        syncTestButton();
-        return button
-          .onClick(async () => {
+    const items: SettingDefinitionItem[] = [];
+
+    items.push(
+      this.row(server.name || server.id, (setting) => {
+        const endpointProblem = mcpEndpointProblem(server.url);
+        setting
+          .setName(server.name || server.id)
+          .setDesc(
+            formatMcpServerSummary(server, endpointProblem) + (pluginManaged ? ` (managed by ${server.pluginRoot})` : ""),
+          )
+          .setClass("agentic-chat-mcp-server-header")
+          .setClass("agentic-chat-setting-heading-wrap")
+          .setHeading();
+        let testButton: ButtonComponent | undefined;
+        const syncTestButton = (): void => {
+          if (!testButton) return;
+          const state = mcpTestButtonState(server);
+          testButton.setButtonText(state.label).setDisabled(Boolean(state.problem));
+        };
+        setting.addToggle((toggle) =>
+          toggle.setValue(server.enabled).onChange(async (value) => {
+            server.enabled = value;
+            this.syncMcpServerToState(server);
+            await this.save();
+          }),
+        );
+        setting.addButton((button) => {
+          testButton = button;
+          syncTestButton();
+          return button.onClick(async () => {
             const state = mcpTestButtonState(server);
             if (state.problem) {
               new Notice(state.problem);
@@ -1281,407 +1392,449 @@ export class AgenticChatSettingTab extends PluginSettingTab {
               button,
               state.label,
               state.busyLabel,
-              () => state.needsOAuthSignIn ? this.authenticateAndProbeMcpServer(server) : this.testMcpServer(server),
+              () => (state.needsOAuthSignIn ? this.authenticateAndProbeMcpServer(server) : this.testMcpServer(server)),
             );
             syncTestButton();
           });
-      });
+        });
+
+        if (server.authType === "oauth") {
+          setting.addButton((button) =>
+            button
+              .setButtonText("Re-authenticate")
+              .setDisabled(Boolean(endpointProblem))
+              .onClick(async () => {
+                if (endpointProblem) {
+                  new Notice(endpointProblem);
+                  return;
+                }
+                await this.runMcpButtonAction(button, "Re-authenticate", "Authenticating...", () =>
+                  this.authenticateAndProbeMcpServer(server),
+                );
+              }),
+          );
+        }
+
+        setting.addButton((button) =>
+          button
+            .setButtonText("Remove")
+            .setClass("mod-warning")
+            .setDisabled(pluginManaged)
+            .onClick(async () => {
+              this.deleteMcpPerToolApprovals(settings, server.id);
+              this.clearMcpSecretSlots(server);
+              settings.mcp.servers = settings.mcp.servers.filter((entry) => entry !== server);
+              await this.save();
+              this.redraw();
+            }),
+        );
+      }),
+    );
 
     // Show banner when server advertised OAuth via 401 but authType is still none/bearer/header
     if (server.pendingOAuthChallenge && server.pendingOAuthResourceUrl) {
-      const banner = containerEl.createDiv({ cls: "setting-item-description agentic-chat-oauth-banner" });
-      const isNone = server.authType === "none";
-      banner.createSpan({
-        text: isNone
-          ? `This server requires OAuth (resource: ${server.pendingOAuthResourceUrl}). Click Authenticate & test to sign in — no need to change the Authentication dropdown manually.`
-          : `This server advertises OAuth (resource: ${server.pendingOAuthResourceUrl}) but is set to ${server.authType}. `,
-      });
-      if (!isNone) {
-        const switchBtn = banner.createEl("button", { text: "Switch to OAuth", cls: "mod-cta" });
-        switchBtn.addEventListener("click", () => {
-          void (async () => {
-            server.authType = "oauth";
-            server.pendingOAuthChallenge = undefined;
-            server.pendingOAuthResourceUrl = undefined;
-            this.syncMcpServerToState(server);
-            await this.save();
-            this.redraw();
-          })();
-        });
-      }
-    }
-
-    if (server.authType === "oauth") {
-      header.addButton((button) =>
-        button
-          .setButtonText("Re-authenticate")
-          .setDisabled(Boolean(endpointProblem))
-          .onClick(async () => {
-            if (endpointProblem) {
-              new Notice(endpointProblem);
-              return;
-            }
-            await this.runMcpButtonAction(button, "Re-authenticate", "Authenticating...", () =>
-              this.authenticateAndProbeMcpServer(server),
-            );
-          }),
+      items.push(
+        this.block((setting) => {
+          const banner = setting.settingEl.createDiv({ cls: "setting-item-description agentic-chat-oauth-banner" });
+          const isNone = server.authType === "none";
+          banner.createSpan({
+            text: isNone
+              ? `This server requires OAuth (resource: ${server.pendingOAuthResourceUrl}). Click Authenticate & test to sign in — no need to change the Authentication dropdown manually.`
+              : `This server advertises OAuth (resource: ${server.pendingOAuthResourceUrl}) but is set to ${server.authType}. `,
+          });
+          if (!isNone) {
+            const switchBtn = banner.createEl("button", { text: "Switch to OAuth", cls: "mod-cta" });
+            switchBtn.addEventListener("click", () => {
+              void (async () => {
+                server.authType = "oauth";
+                server.pendingOAuthChallenge = undefined;
+                server.pendingOAuthResourceUrl = undefined;
+                this.syncMcpServerToState(server);
+                await this.save();
+                this.redraw();
+              })();
+            });
+          }
+        }),
       );
     }
-
-    header.addButton((button) =>
-      button
-        .setButtonText("Remove")
-        .setClass("mod-warning")
-        .setDisabled(pluginManaged)
-        .onClick(async () => {
-          this.deleteMcpPerToolApprovals(settings, server.id);
-          this.clearMcpSecretSlots(server);
-          settings.mcp.servers = settings.mcp.servers.filter((entry) => entry !== server);
-          await this.save();
-          this.redraw();
-        }),
-    );
 
     if (pluginManaged) {
-      containerEl.createDiv({
-        cls: "setting-item-description",
-        text: `This server lives in the "${pluginManaged ? server.pluginRoot : ""}" agent plugin package. ` +
-          "Its endpoint and literal headers come from mcp.json; authentication is configured client-side " +
-          "and stays with this plugin. Remove the package folder to delete the server.",
-      });
-    }
-
-    new Setting(containerEl)
-      .setName("Name")
-      .setDesc("Shown in tool labels and approval prompts.")
-      .addText((text) =>
-        text
-          .setDisabled(pluginManaged)
-          .setValue(server.name)
-          .onChange(async (value) => {
-            server.name = value.trim() || server.id;
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Server id")
-      .setDesc("Advanced. Used in local tool names: mcp__<id>__<tool>.")
-      .addText((text) =>
-        text
-          .setDisabled(pluginManaged)
-          .setValue(server.id)
-          .onChange(async (value) => {
-            const next = normalizeMcpServerId(value);
-            this.renameMcpServer(settings, server, this.nextMcpServerId(settings, next, server));
-            await this.save();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("HTTPS endpoint")
-      .setDesc(endpointProblem || "Streamable HTTP endpoint. Query parameters are preserved. Loopback hosts may use http://.")
-      .addText((text) =>
-        text
-          .setDisabled(pluginManaged)
-          .setPlaceholder("https://mcp.example.com/mcp")
-          .setValue(server.url)
-          .onChange(async (value) => {
-            const result = this.updateMcpServerEndpoint(settings, server, value);
-            await this.save();
-            if (result.clearedCredentials) new Notice(`${server.name}: cleared MCP credentials for the changed endpoint.`);
-            if (result.shouldDisplay) this.redraw();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Approval")
-      .setDesc("Gate every tool call from this server.")
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("ask", "Ask each time")
-          .addOption("allow", "Allow automatically")
-          .addOption("deny", "Deny")
-          .setValue(server.approval)
-          .onChange(async (value) => {
-            server.approval = value as ApprovalPolicy;
-            this.syncMcpServerToState(server);
-            await this.save();
-          }),
-      );
-
-    this.renderMcpSetupGuide(containerEl, server);
-    this.renderMcpAuthentication(containerEl, server, syncTestButton);
-    this.renderMcpToolFilters(containerEl, server);
-    this.renderMcpToolApprovals(containerEl, settings, server);
-  }
-
-  private renderMcpToolFilters(containerEl: HTMLElement, server: McpServerSettings): void {
-    new Setting(containerEl).setName("Tool filtering").setHeading();
-    containerEl.createDiv({
-      cls: "setting-item-description",
-      text:
-        "Ordered allow-then-deny globs for this server's native tool names (the names the MCP server " +
-        "reports, not the local mcp__ names shown below). Same dialect as vault ignore: * / ** / ?. " +
-        "Enabled is an allowlist (empty = allow all); disabled is a denylist (deny wins). " +
-        "Up to 100 patterns, 200 characters each. Examples: * · read_* · *?_danger · tool_*",
-    });
-    new Setting(containerEl)
-      .setName("Enabled tools (allowlist)")
-      .setDesc("One glob per line. When non-empty, only tools matching at least one pattern are exposed. Empty allows all.")
-      .addTextArea((text) => {
-        text.inputEl.rows = 3;
-        text.inputEl.addClass("agentic-chat-system-prompt");
-        text.setPlaceholder("*\nread_*\n*_safe").setValue((server.enabledTools ?? []).join("\n")).onChange(async (value) => {
-          const patterns = healMcpToolGlobs(
-            value
-              .split(/\r?\n/)
-              .map((line) => line.normalize("NFC").trim())
-              .filter((line) => line.length > 0 && !line.startsWith("#")),
-          );
-          server.enabledTools = patterns;
-          this.syncMcpServerToState(server);
-          await this.save();
-        });
-      });
-    new Setting(containerEl)
-      .setName("Disabled tools (denylist)")
-      .setDesc("One glob per line. Any tool matching a disabled pattern is hidden even if it matched the allowlist.")
-      .addTextArea((text) => {
-        text.inputEl.rows = 3;
-        text.inputEl.addClass("agentic-chat-system-prompt");
-        text.setPlaceholder("*_danger\nwrite_*\nsecret_*").setValue((server.disabledTools ?? []).join("\n")).onChange(async (value) => {
-          const patterns = healMcpToolGlobs(
-            value
-              .split(/\r?\n/)
-              .map((line) => line.normalize("NFC").trim())
-              .filter((line) => line.length > 0 && !line.startsWith("#")),
-          );
-          server.disabledTools = patterns;
-          this.syncMcpServerToState(server);
-          await this.save();
-        });
-      });
-  }
-
-  private renderMcpToolApprovals(
-    containerEl: HTMLElement,
-    settings: AgenticChatSettings,
-    server: McpServerSettings,
-  ): void {
-    new Setting(containerEl)
-      .setName("Tool approvals")
-      .setDesc("Per-tool overrides for the last discovered tools. Default follows this server's approval policy.")
-      .setClass("agentic-chat-setting-heading-wrap")
-      .setHeading()
-      .addButton((button) =>
-        button.setButtonText("Refresh tools").onClick(async () => {
-          await this.refreshMcpKnownTools(server, button);
+      items.push(
+        this.block((setting) => {
+          setting.settingEl.createDiv({
+            cls: "setting-item-description",
+            text:
+              `This server lives in the "${server.pluginRoot}" agent plugin package. ` +
+              "Its endpoint and literal headers come from mcp.json; authentication is configured client-side " +
+              "and stays with this plugin. Remove the package folder to delete the server.",
+          });
         }),
       );
+    }
+
+    items.push(
+      this.row("Name", (setting) => {
+        setting.setDesc("Shown in tool labels and approval prompts.").addText((text) =>
+          text
+            .setDisabled(pluginManaged)
+            .setValue(server.name)
+            .onChange(async (value) => {
+              server.name = value.trim() || server.id;
+              await this.save();
+            }),
+        );
+      }),
+      this.row("Server id", (setting) => {
+        setting.setDesc("Advanced. Used in local tool names: mcp__<id>__<tool>.").addText((text) =>
+          text
+            .setDisabled(pluginManaged)
+            .setValue(server.id)
+            .onChange(async (value) => {
+              const next = normalizeMcpServerId(value);
+              this.renameMcpServer(settings, server, this.nextMcpServerId(settings, next, server));
+              await this.save();
+            }),
+        );
+      }),
+      this.row("HTTPS endpoint", (setting) => {
+        const endpointProblem = mcpEndpointProblem(server.url);
+        setting
+          .setDesc(endpointProblem || "Streamable HTTP endpoint. Query parameters are preserved. Loopback hosts may use http://.")
+          .addText((text) =>
+            text
+              .setDisabled(pluginManaged)
+              .setPlaceholder("https://mcp.example.com/mcp")
+              .setValue(server.url)
+              .onChange(async (value) => {
+                const result = this.updateMcpServerEndpoint(settings, server, value);
+                await this.save();
+                if (result.clearedCredentials) new Notice(`${server.name}: cleared MCP credentials for the changed endpoint.`);
+                if (result.shouldDisplay) this.redraw();
+              }),
+          );
+      }),
+      this.row("Approval", (setting) => {
+        setting.setDesc("Gate every tool call from this server.").addDropdown((dropdown) =>
+          dropdown
+            .addOption("ask", "Ask each time")
+            .addOption("allow", "Allow automatically")
+            .addOption("deny", "Deny")
+            .setValue(server.approval)
+            .onChange(async (value) => {
+              server.approval = value as ApprovalPolicy;
+              this.syncMcpServerToState(server);
+              await this.save();
+            }),
+        );
+      }),
+      this.row("Setup guide", (setting) => {
+        const description = mcpServerSetupSteps(server)
+          .map((step) => `${step.label}: ${step.status === "complete" ? "done" : step.status} - ${step.message}`)
+          .join(" ");
+        setting.setDesc(description).addButton((button) =>
+          button.setButtonText("Copy config").onClick(async () => {
+            const copied = await this.copyToClipboard(JSON.stringify(exportMcpServerConfig(server), null, 2));
+            new Notice(copied ? `${server.name}: MCP config copied without secrets.` : `${server.name}: could not copy MCP config.`);
+          }),
+        );
+      }),
+    );
+
+    items.push(...this.mcpAuthenticationDefinitions(server));
+    items.push(...this.mcpToolFilterDefinitions(server));
+    items.push(...this.mcpToolApprovalDefinitions(settings, server));
+    return items;
+  }
+
+  private mcpToolFilterDefinitions(server: McpServerSettings): SettingDefinitionItem[] {
+    return [
+      this.heading("Tool filtering"),
+      this.block((setting) => {
+        setting.settingEl.createDiv({
+          cls: "setting-item-description",
+          text:
+            "Ordered allow-then-deny globs for this server's native tool names (the names the MCP server " +
+            "reports, not the local mcp__ names shown below). Same dialect as vault ignore: * / ** / ?. " +
+            "Enabled is an allowlist (empty = allow all); disabled is a denylist (deny wins). " +
+            "Up to 100 patterns, 200 characters each. Examples: * · read_* · *?_danger · tool_*",
+        });
+      }),
+      this.row("Enabled tools (allowlist)", (setting) => {
+        setting
+          .setDesc("One glob per line. When non-empty, only tools matching at least one pattern are exposed. Empty allows all.")
+          .addTextArea((text) => {
+            text.inputEl.rows = 3;
+            text.inputEl.addClass("agentic-chat-system-prompt");
+            text
+              .setPlaceholder("*\nread_*\n*_safe")
+              .setValue((server.enabledTools ?? []).join("\n"))
+              .onChange(async (value) => {
+                const patterns = healMcpToolGlobs(
+                  value
+                    .split(/\r?\n/)
+                    .map((line) => line.normalize("NFC").trim())
+                    .filter((line) => line.length > 0 && !line.startsWith("#")),
+                );
+                server.enabledTools = patterns;
+                this.syncMcpServerToState(server);
+                await this.save();
+              });
+          });
+      }),
+      this.row("Disabled tools (denylist)", (setting) => {
+        setting
+          .setDesc("One glob per line. Any tool matching a disabled pattern is hidden even if it matched the allowlist.")
+          .addTextArea((text) => {
+            text.inputEl.rows = 3;
+            text.inputEl.addClass("agentic-chat-system-prompt");
+            text
+              .setPlaceholder("*_danger\nwrite_*\nsecret_*")
+              .setValue((server.disabledTools ?? []).join("\n"))
+              .onChange(async (value) => {
+                const patterns = healMcpToolGlobs(
+                  value
+                    .split(/\r?\n/)
+                    .map((line) => line.normalize("NFC").trim())
+                    .filter((line) => line.length > 0 && !line.startsWith("#")),
+                );
+                server.disabledTools = patterns;
+                this.syncMcpServerToState(server);
+                await this.save();
+              });
+          });
+      }),
+    ];
+  }
+
+  private mcpToolApprovalDefinitions(
+    settings: AgenticChatSettings,
+    server: McpServerSettings,
+  ): SettingDefinitionItem[] {
+    const items: SettingDefinitionItem[] = [
+      this.row("Tool approvals", (setting) => {
+        setting
+          .setDesc("Per-tool overrides for the last discovered tools. Default follows this server's approval policy.")
+          .setClass("agentic-chat-setting-heading-wrap")
+          .setHeading()
+          .addButton((button) =>
+            button.setButtonText("Refresh tools").onClick(async () => {
+              await this.refreshMcpKnownTools(server, button);
+            }),
+          );
+      }),
+    ];
 
     if (server.knownTools.length === 0) {
-      containerEl.createDiv({
-        cls: "setting-item-description",
-        text: "No discovered tools cached yet. Use Refresh tools, Test connection, or Authenticate & test.",
-      });
-      return;
+      items.push(
+        this.block((setting) => {
+          setting.settingEl.createDiv({
+            cls: "setting-item-description",
+            text: "No discovered tools cached yet. Use Refresh tools, Test connection, or Authenticate & test.",
+          });
+        }),
+      );
+      return items;
     }
 
     for (const tool of [...server.knownTools].sort((a, b) => a.name.localeCompare(b.name))) {
       const localName = mcpKnownToolLocalName(server, tool);
       const title = tool.title && tool.title !== tool.name ? `${tool.title} (${tool.name})` : tool.name;
-      new Setting(containerEl)
-        .setName(title)
-        .setDesc(formatMcpToolApprovalDescription(localName, tool))
-        .addDropdown((dropdown) =>
-          dropdown
-            .addOption("default", `Default (${server.approval})`)
-            .addOption("allow", "Allow")
-            .addOption("ask", "Ask")
-            .addOption("deny", "Deny")
-            .setValue(settings.approval.perTool[localName] ?? "default")
-            .onChange(async (value) => {
-              setPerToolApproval(settings.approval, localName, value as ApprovalPolicy | "default");
-              await this.save();
-            }),
-        );
+      items.push(
+        this.row(title, (setting) => {
+          setting.setDesc(formatMcpToolApprovalDescription(localName, tool)).addDropdown((dropdown) =>
+            dropdown
+              .addOption("default", `Default (${server.approval})`)
+              .addOption("allow", "Allow")
+              .addOption("ask", "Ask")
+              .addOption("deny", "Deny")
+              .setValue(settings.approval.perTool[localName] ?? "default")
+              .onChange(async (value) => {
+                setPerToolApproval(settings.approval, localName, value as ApprovalPolicy | "default");
+                await this.save();
+              }),
+          );
+        }),
+      );
     }
+    return items;
   }
 
-  private renderMcpAuthentication(
-    containerEl: HTMLElement,
-    server: McpServerSettings,
-    onAuthChanged: () => void,
-  ): void {
+  private mcpAuthenticationDefinitions(server: McpServerSettings): SettingDefinitionItem[] {
     const authProblem = mcpAuthProblem(server);
-    new Setting(containerEl)
-      .setName("Authentication")
-      .setDesc(authProblem || "Choose how this server authenticates. Secrets are stored in Obsidian secret storage.")
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("none", "None")
-          .addOption("bearer", "Bearer token")
-          .addOption("header", "Static header")
-          .addOption("oauth", "OAuth")
-          .setValue(server.authType)
-          .onChange(async (value) => {
-            server.authType = value as McpAuthType;
-            if (server.authType === "bearer") server.authHeaderName = "";
-            this.syncMcpServerToState(server);
-            await this.save();
-            this.redraw();
-          }),
-      );
+    const items: SettingDefinitionItem[] = [
+      this.row("Authentication", (setting) => {
+        setting
+          .setDesc(authProblem || "Choose how this server authenticates. Secrets are stored in Obsidian secret storage.")
+          .addDropdown((dropdown) =>
+            dropdown
+              .addOption("none", "None")
+              .addOption("bearer", "Bearer token")
+              .addOption("header", "Static header")
+              .addOption("oauth", "OAuth")
+              .setValue(server.authType)
+              .onChange(async (value) => {
+                server.authType = value as McpAuthType;
+                if (server.authType === "bearer") server.authHeaderName = "";
+                this.syncMcpServerToState(server);
+                await this.save();
+                this.redraw();
+              }),
+          );
+      }),
+    ];
 
     if (server.authType === "oauth") {
-      this.renderMcpOAuth(containerEl, server);
-      return;
+      items.push(...this.mcpOAuthDefinitions(server));
+      return items;
     }
 
     if (server.authType === "bearer") {
-      this.renderSecretInput(containerEl, {
-        name: "Bearer token",
-        desc: 'Paste the token only. If you include "Bearer", Agentic Chat will not add it twice.',
-        placeholder: "token",
-        hasValue: Boolean(server.authHeaderValue),
+      items.push(
+        this.secretInputDef({
+          name: "Bearer token",
+          desc: 'Paste the token only. If you include "Bearer", Agentic Chat will not add it twice.',
+          placeholder: "token",
+          hasValue: () => Boolean(server.authHeaderValue),
+          onSet: async (value) => {
+            server.authHeaderValue = value;
+            this.syncMcpServerToState(server);
+            await this.save();
+            this.redraw();
+          },
+          onForget: async () => {
+            server.authHeaderValue = "";
+            this.syncMcpServerToState(server);
+            await this.save();
+          },
+        }),
+      );
+      return items;
+    }
+
+    if (server.authType !== "header") return items;
+
+    items.push(
+      this.row("Auth header", (setting) => {
+        setting.setDesc("Header name sent with every MCP request.").addText((text) =>
+          text
+            .setPlaceholder("X-API-Key")
+            .setValue(server.authHeaderName)
+            .onChange(async (value) => {
+              server.authHeaderName = value.trim();
+              this.syncMcpServerToState(server);
+              await this.save();
+              this.redraw();
+            }),
+        );
+      }),
+      this.secretInputDef({
+        name: "Auth value",
+        desc: "Header value sent with every MCP request.",
+        placeholder: "secret header value",
+        hasValue: () => Boolean(server.authHeaderValue),
         onSet: async (value) => {
           server.authHeaderValue = value;
           this.syncMcpServerToState(server);
           await this.save();
-          onAuthChanged();
+          this.redraw();
         },
         onForget: async () => {
           server.authHeaderValue = "";
           this.syncMcpServerToState(server);
           await this.save();
-          onAuthChanged();
         },
-      });
-      return;
-    }
-
-    if (server.authType !== "header") return;
-
-    new Setting(containerEl)
-      .setName("Auth header")
-      .setDesc("Header name sent with every MCP request.")
-      .addText((text) =>
-        text
-          .setPlaceholder("X-API-Key")
-          .setValue(server.authHeaderName)
-          .onChange(async (value) => {
-            server.authHeaderName = value.trim();
-            this.syncMcpServerToState(server);
-            await this.save();
-            onAuthChanged();
-          }),
-      );
-
-    this.renderSecretInput(containerEl, {
-      name: "Auth value",
-      desc: "Header value sent with every MCP request.",
-      placeholder: "secret header value",
-      hasValue: Boolean(server.authHeaderValue),
-      onSet: async (value) => {
-        server.authHeaderValue = value;
-        this.syncMcpServerToState(server);
-        await this.save();
-        onAuthChanged();
-      },
-      onForget: async () => {
-        server.authHeaderValue = "";
-        this.syncMcpServerToState(server);
-        await this.save();
-        onAuthChanged();
-      },
-    });
+      }),
+    );
+    return items;
   }
 
-  private renderMcpOAuth(containerEl: HTMLElement, server: McpServerSettings): void {
+  private mcpOAuthDefinitions(server: McpServerSettings): SettingDefinitionItem[] {
     const authenticated = hasMcpOAuthAccess(server);
     const scopePart = server.oauth.scope ? ` with scopes: ${server.oauth.scope}` : "";
-    new Setting(containerEl)
-      .setName("OAuth status")
-      .setDesc(
-        authenticated
-          ? `Authenticated${scopePart}.`
-          : "Not authenticated. Use the Authenticate & test button in this server's header.",
-      )
-      .addButton((button) =>
-        button
-          .setButtonText("Forget token")
-          .setDisabled(!server.oauth.accessToken && !server.oauth.refreshToken)
-          .onClick(async () => {
-            forgetMcpOAuthTokens(server);
-            server.knownTools = [];
-            this.syncMcpServerToState(server);
-            await this.save();
-            this.redraw();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("OAuth desktop redirect URI")
-      .setDesc("Register this localhost URI with MCP OAuth servers for Obsidian desktop sign-in.")
-      .addText((text) => text.setValue(DEFAULT_MCP_OAUTH_REDIRECT_URI).setDisabled(true))
-      .addButton((button) =>
-        button.setButtonText("Copy").onClick(async () => {
-          if (await this.copyToClipboard(DEFAULT_MCP_OAUTH_REDIRECT_URI)) {
-            new Notice("MCP OAuth redirect URI copied.");
-          } else {
-            new Notice(`MCP OAuth redirect URI: ${DEFAULT_MCP_OAUTH_REDIRECT_URI}`);
-          }
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName("OAuth mobile redirect URI")
-      .setDesc("Register this Obsidian URI as an additional redirect when the provider supports mobile app callbacks.")
-      .addText((text) => text.setValue(MCP_OAUTH_OBSIDIAN_REDIRECT_URI).setDisabled(true))
-      .addButton((button) =>
-        button.setButtonText("Copy").onClick(async () => {
-          if (await this.copyToClipboard(MCP_OAUTH_OBSIDIAN_REDIRECT_URI)) {
-            new Notice("MCP OAuth mobile redirect URI copied.");
-          } else {
-            new Notice(`MCP OAuth mobile redirect URI: ${MCP_OAUTH_OBSIDIAN_REDIRECT_URI}`);
-          }
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName("OAuth client id")
-      .setDesc("Optional. Leave empty to use dynamic client registration when the server supports it.")
-      .addText((text) =>
-        text.setValue(server.oauth.clientId).onChange(async (value) => {
-          server.oauth.clientId = value.trim();
+    return [
+      this.row("OAuth status", (setting) => {
+        setting
+          .setDesc(
+            authenticated
+              ? `Authenticated${scopePart}.`
+              : "Not authenticated. Use the Authenticate & test button in this server's header.",
+          )
+          .addButton((button) =>
+            button
+              .setButtonText("Forget token")
+              .setDisabled(!server.oauth.accessToken && !server.oauth.refreshToken)
+              .onClick(async () => {
+                forgetMcpOAuthTokens(server);
+                server.knownTools = [];
+                this.syncMcpServerToState(server);
+                await this.save();
+                this.redraw();
+              }),
+          );
+      }),
+      this.row("OAuth desktop redirect URI", (setting) => {
+        setting
+          .setDesc("Register this localhost URI with MCP OAuth servers for Obsidian desktop sign-in.")
+          .addText((text) => text.setValue(DEFAULT_MCP_OAUTH_REDIRECT_URI).setDisabled(true))
+          .addButton((button) =>
+            button.setButtonText("Copy").onClick(async () => {
+              if (await this.copyToClipboard(DEFAULT_MCP_OAUTH_REDIRECT_URI)) {
+                new Notice("MCP OAuth redirect URI copied.");
+              } else {
+                new Notice(`MCP OAuth redirect URI: ${DEFAULT_MCP_OAUTH_REDIRECT_URI}`);
+              }
+            }),
+          );
+      }),
+      this.row("OAuth mobile redirect URI", (setting) => {
+        setting
+          .setDesc("Register this Obsidian URI as an additional redirect when the provider supports mobile app callbacks.")
+          .addText((text) => text.setValue(MCP_OAUTH_OBSIDIAN_REDIRECT_URI).setDisabled(true))
+          .addButton((button) =>
+            button.setButtonText("Copy").onClick(async () => {
+              if (await this.copyToClipboard(MCP_OAUTH_OBSIDIAN_REDIRECT_URI)) {
+                new Notice("MCP OAuth mobile redirect URI copied.");
+              } else {
+                new Notice(`MCP OAuth mobile redirect URI: ${MCP_OAUTH_OBSIDIAN_REDIRECT_URI}`);
+              }
+            }),
+          );
+      }),
+      this.row("OAuth client id", (setting) => {
+        setting
+          .setDesc("Optional. Leave empty to use dynamic client registration when the server supports it.")
+          .addText((text) =>
+            text.setValue(server.oauth.clientId).onChange(async (value) => {
+              server.oauth.clientId = value.trim();
+              server.oauth.dynamicClientRegistration = false;
+              server.oauth.registeredRedirectUri = "";
+              this.syncMcpServerToState(server);
+              await this.save();
+            }),
+          );
+      }),
+      this.secretInputDef({
+        name: "OAuth client secret",
+        desc: "Optional. Most MCP OAuth servers use public clients with PKCE and no secret.",
+        placeholder: "client secret",
+        hasValue: () => Boolean(server.oauth.clientSecret),
+        onSet: async (value) => {
+          server.oauth.clientSecret = value;
           server.oauth.dynamicClientRegistration = false;
           server.oauth.registeredRedirectUri = "";
           this.syncMcpServerToState(server);
           await this.save();
-        }),
-      );
-
-    this.renderSecretInput(containerEl, {
-      name: "OAuth client secret",
-      desc: "Optional. Most MCP OAuth servers use public clients with PKCE and no secret.",
-      placeholder: "client secret",
-      hasValue: Boolean(server.oauth.clientSecret),
-      onSet: async (value) => {
-        server.oauth.clientSecret = value;
-        server.oauth.dynamicClientRegistration = false;
-        server.oauth.registeredRedirectUri = "";
-        this.syncMcpServerToState(server);
-        await this.save();
-      },
-      onForget: async () => {
-        server.oauth.clientSecret = "";
-        server.oauth.dynamicClientRegistration = false;
-        server.oauth.registeredRedirectUri = "";
-        this.syncMcpServerToState(server);
-        await this.save();
-      },
-    });
+        },
+        onForget: async () => {
+          server.oauth.clientSecret = "";
+          server.oauth.dynamicClientRegistration = false;
+          server.oauth.registeredRedirectUri = "";
+          this.syncMcpServerToState(server);
+          await this.save();
+        },
+      }),
+    ];
   }
 
   private async refreshMcpKnownTools(server: McpServerSettings, button?: ButtonComponent): Promise<void> {
@@ -1760,35 +1913,54 @@ export class AgenticChatSettingTab extends PluginSettingTab {
    * observability tabs. Only the descriptions differ per tab; persistence is
    * delegated so each tab writes its own settings slice.
    */
-  private renderProxySettingRows(
-    containerEl: HTMLElement,
-    values: ProxySettings,
-    copy: { proxyDesc: string; noProxyDesc: string },
-    onWrite: (update: Partial<ProxySettings>) => Promise<void>,
-  ): void {
-    new Setting(containerEl)
-      .setName("HTTP proxy")
-      .setDesc(copy.proxyDesc)
-      .addText((text) =>
-        text
-          .setPlaceholder(PROXY_URL_EXAMPLE)
-          .setValue(values.proxyUrl)
-          .onChange(async (value) => {
-            await onWrite({ proxyUrl: value.trim() });
-          }),
-      );
+  private warning(icon: string, text: string): SettingDefinitionRender {
+    return this.block((setting) => {
+      const warning = setting.settingEl.createDiv({ cls: "agentic-chat-settings-warning" });
+      warning.createSpan({ cls: "agentic-chat-settings-warning-icon", text: icon });
+      warning.createSpan({ text });
+    });
+  }
 
-    new Setting(containerEl)
-      .setName("No proxy")
-      .setDesc(copy.noProxyDesc)
-      .addText((text) =>
-        text
-          .setPlaceholder(DEFAULT_PROXY_SETTINGS.noProxy)
-          .setValue(values.noProxy)
-          .onChange(async (value) => {
-            await onWrite({ noProxy: value.trim() });
+  /** Explain how secrets are persisted for provider and tool credentials. */
+  private apiKeyWarning(): SettingDefinitionRender {
+    return this.warning(
+      "i",
+      "API keys and OAuth tokens are stored with Obsidian secret storage. The vault data.json stores " +
+        "only secret IDs, not the secret values.",
+    );
+  }
+
+  private secretInputDef(options: {
+    name: string;
+    desc: string;
+    placeholder: string;
+    hasValue: () => boolean;
+    onSet: (value: string) => Promise<void>;
+    onForget: () => Promise<void>;
+  }): SettingDefinitionRender {
+    return this.row(options.name, (setting) => {
+      const status = options.hasValue()
+        ? "A value is stored with Obsidian secret storage. Enter a new value to replace it."
+        : "No value is stored yet.";
+      setting.setDesc(`${options.desc} ${status}`).addText((text) => {
+        text.inputEl.type = "password";
+        text.setPlaceholder(options.placeholder).setValue("").onChange(async (value) => {
+          const trimmed = value.trim();
+          if (!trimmed) return;
+          await options.onSet(trimmed);
+        });
+      });
+      setting.addButton((button) =>
+        button
+          .setButtonText("Forget")
+          .setDisabled(!options.hasValue())
+          .onClick(async () => {
+            button.setDisabled(true);
+            await options.onForget();
+            this.redraw();
           }),
       );
+    });
   }
 
   private handleMcpOAuthProgress(server: McpServerSettings, event: McpOAuthProgressEvent): void {
@@ -1962,428 +2134,381 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     }
   }
 
-  private renderMcpSetupGuide(containerEl: HTMLElement, server: McpServerSettings): void {
-    const description = mcpServerSetupSteps(server)
-      .map((step) => `${step.label}: ${step.status === "complete" ? "done" : step.status} - ${step.message}`)
-      .join(" ");
-    new Setting(containerEl)
-      .setName("Setup guide")
-      .setDesc(description)
-      .addButton((button) =>
-        button.setButtonText("Copy config").onClick(async () => {
-          const copied = await this.copyToClipboard(JSON.stringify(exportMcpServerConfig(server), null, 2));
-          new Notice(copied ? `${server.name}: MCP config copied without secrets.` : `${server.name}: could not copy MCP config.`);
-        }),
-      );
-  }
-
-  private renderSecretInput(
-    containerEl: HTMLElement,
-    options: {
-      name: string;
-      desc: string;
-      placeholder: string;
-      hasValue: boolean;
-      onSet: (value: string) => Promise<void>;
-      onForget: () => Promise<void>;
-    },
-  ): void {
-    const status = options.hasValue
-      ? "A value is stored with Obsidian secret storage. Enter a new value to replace it."
-      : "No value is stored yet.";
-    new Setting(containerEl)
-      .setName(options.name)
-      .setDesc(`${options.desc} ${status}`)
-      .addText((text) => {
-        text.inputEl.type = "password";
-        text.setPlaceholder(options.placeholder).setValue("").onChange(async (value) => {
-          const trimmed = value.trim();
-          if (!trimmed) return;
-          await options.onSet(trimmed);
-        });
-      })
-      .addButton((button) =>
-        button
-          .setButtonText("Forget")
-          .setDisabled(!options.hasValue)
-          .onClick(async () => {
-            button.setDisabled(true);
-            await options.onForget();
-            this.redraw();
-          }),
-      );
-  }
-
-  /** Explain how secrets are persisted for provider and tool credentials. */
-  private renderApiKeyWarning(containerEl: HTMLElement): void {
-    const warning = containerEl.createDiv({ cls: "agentic-chat-settings-warning" });
-    warning.createSpan({ cls: "agentic-chat-settings-warning-icon", text: "i" });
-    warning.createSpan({
-      text:
-        "API keys and OAuth tokens are stored with Obsidian secret storage. The vault data.json stores " +
-        "only secret IDs, not the secret values.",
-    });
-  }
-
-  private renderNotifications(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Notifications").setHeading();
-    new Setting(containerEl)
-      .setName("Background notifications")
-      .setDesc("Show toasts for background signals (agent finished while you're elsewhere, context window filling, cost cap). Errors always show.")
-      .addToggle((toggle) =>
-        toggle.setValue(settings.notifications.enabled).onChange(async (value) => {
-          settings.notifications.enabled = value;
-          await this.save();
-        }),
-      );
-    new Setting(containerEl)
-      .setName("Cost alert (USD)")
-      .setDesc("Notify once when a conversation's cost crosses this amount. 0 disables.")
-      .addText((text) => {
-        text.inputEl.type = "number";
-        text.inputEl.setAttribute("min", "0");
-        text.inputEl.setAttribute("step", "any");
-        text.setValue(String(settings.notifications.costAlertUsd)).onChange(async (value) => {
-          const parsed = Number.parseFloat(value);
-          settings.notifications.costAlertUsd = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-          await this.save();
-        });
-      });
-    new Setting(containerEl)
-      .setName("Hard spend cap (USD)")
-      .setDesc(
+  private notificationDefinitions(): SettingDefinitionItem[] {
+    return [
+      this.controlDef(
+        "Background notifications",
+        { type: "toggle", key: "notifications.enabled" },
+        "Show toasts for background signals (agent finished while you're elsewhere, context window filling, cost cap). Errors always show.",
+      ),
+      this.controlDef(
+        "Cost alert (USD)",
+        { type: "number", key: "notifications.costAlertUsd", min: 0, step: "any" },
+        "Notify once when a conversation's cost crosses this amount. 0 disables.",
+      ),
+      this.controlDef(
+        "Hard spend cap (USD)",
+        { type: "number", key: "notifications.costCapUsd", min: 0, step: "any" },
         "Block new turns — and stop a turn already running — once this conversation's cost reaches this amount. " +
           "0 disables. Applies only to models with known pricing.",
-      )
-      .addText((text) => {
-        text.inputEl.type = "number";
-        text.inputEl.setAttribute("min", "0");
-        text.inputEl.setAttribute("step", "any");
-        text.setValue(String(settings.notifications.costCapUsd)).onChange(async (value) => {
-          const parsed = Number.parseFloat(value);
-          settings.notifications.costCapUsd = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-          await this.save();
+      ),
+    ];
+  }
+
+  private pluginDefinitions(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    const items: SettingDefinitionItem[] = [
+      this.block((setting) => {
+        setting.settingEl.createDiv({ cls: "setting-item-description" }).createSpan({
+          text:
+            "Plugins are packages in the vault that contribute skills and MCP servers. They follow the " +
+            "Agent Plugins 1.0.0 specification and are the single source of truth for skills and MCP. " +
+            "Skill precedence: plugin skills win over built-ins of the same name. " +
+            "The my-skills package is your personal collection space for hand-curated custom skills.",
         });
-      });
+      }),
+      this.row("Import", (setting) => {
+        setting
+          .setClass("agentic-chat-plugins-import")
+          .addButton((button) =>
+            button
+              .setButtonText("Install plugin…")
+              .setCta()
+              .onClick(() => this.openInstallModal()),
+          )
+          .addButton((button) =>
+            button.setButtonText("New skill…").onClick(() => {
+              new NewSkillModal(this.app, this.plugin.pluginService, (result) => {
+                noticeInstallResult(result);
+                this.pluginsLoadedOnce = false;
+                void this.save().then(() => this.redraw());
+              }).open();
+            }),
+          )
+          .addButton((button) =>
+            button
+              .setButtonText("Repair built-ins")
+              .setDisabled(!this.builtinsPackageExists(settings))
+              .onClick(async () => {
+                await this.plugin.pluginService.repairBuiltins();
+                new Notice("Built-in skill package recreated.");
+                this.pluginsLoadedOnce = false;
+                await this.save();
+                this.redraw();
+              }),
+          );
+      }),
+      this.row("Plugins folder", (setting) => {
+        setting
+          .setDesc("Vault folder scanned for agent plugin packages (plugin.json + skills/ + mcp.json).")
+          .addText((text) => {
+            text.setPlaceholder("(none)").setValue(settings.plugins.folder).onChange((next) => {
+              void this.setPluginsFolder(settings, next.trim());
+            });
+            text.inputEl.addClass("agentic-chat-folder-input");
+          })
+          .addButton((button) =>
+            button.setButtonText("Browse").onClick(() => {
+              new FolderSuggestModal(this.app, (folder) => {
+                const path = folder.path === "/" ? "" : folder.path;
+                void this.setPluginsFolder(settings, path);
+              }).open();
+            }),
+          );
+      }),
+    ];
+    items.push(...this.pluginListDefinitions(settings));
+    return items;
   }
 
-  private renderPlugins(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Agent plugins").setHeading();
-
-    const desc = containerEl.createDiv({ cls: "setting-item-description" });
-    desc.createSpan({
-      text:
-        "Plugins are packages in the vault that contribute skills and MCP servers. They follow the " +
-        "Agent Plugins 1.0.0 specification and are the single source of truth for skills and MCP. " +
-        "Skill precedence: plugin skills win over built-ins of the same name. " +
-        "The my-skills package is your personal collection space for hand-curated custom skills.",
-    });
-
-    new Setting(containerEl)
-      .setName("Import")
-      .setClass("agentic-chat-plugins-import")
-      .addButton((button) =>
-        button
-          .setButtonText("Install plugin…")
-          .setCta()
-          .onClick(() => this.openInstallModal()),
-      )
-      .addButton((button) =>
-        button.setButtonText("New skill…").onClick(() => {
-          new NewSkillModal(this.app, this.plugin.pluginService, (result) => {
-            noticeInstallResult(result);
-            this.pluginsLoadedOnce = false;
-            void this.save().then(() => this.redraw());
-          }).open();
-        }),
-      )
-      .addButton((button) =>
-        button
-          .setButtonText("Repair built-ins")
-          .setDisabled(!this.builtinsPackageExists(settings))
-          .onClick(async () => {
-            await this.plugin.pluginService.repairBuiltins();
-            new Notice("Built-in skill package recreated.");
-            this.pluginsLoadedOnce = false;
-            await this.save();
-            this.redraw();
-          }),
-      );
-
-    this.folderSetting(
-      containerEl,
-      "Plugins folder",
-      "Vault folder scanned for agent plugin packages (plugin.json + skills/ + mcp.json).",
-      settings.plugins.folder,
-      async (value) => {
-        settings.plugins.folder = value;
-        this.plugin.pluginService.invalidate();
-        this.pluginsLoadedOnce = false;
-        await this.save();
-        this.redraw();
-      },
-    );
-
-    this.renderPluginsList(containerEl, settings);
+  private async setPluginsFolder(settings: AgenticChatSettings, value: string): Promise<void> {
+    settings.plugins.folder = value;
+    this.plugin.pluginService.invalidate();
+    this.pluginsLoadedOnce = false;
+    await this.save();
+    this.redraw();
   }
 
-  private renderSubagents(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Subagents").setHeading();
-    new Setting(containerEl)
-      .setName("Subagent timeout")
-      .setDesc(
-        "Auto-stop a subagent that runs longer than this many seconds (0 disables, max 86400). " +
-          "The child is aborted and the Dispatch step settles as stopped.",
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("0 = disabled")
-          .setValue(settings.subagentTimeoutSeconds > 0 ? String(settings.subagentTimeoutSeconds) : "")
-          .onChange(async (value) => {
-            // Same heal path as load: whole seconds clamped to [0, 24h].
-            settings.subagentTimeoutSeconds = healSubagentTimeout(Number(value));
-            await this.save();
-          }),
-      );
+  private subagentDefinitions(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    return [
+      this.row("Subagent timeout", (setting) => {
+        setting
+          .setDesc(
+            "Auto-stop a subagent that runs longer than this many seconds (0 disables, max 86400). " +
+              "The child is aborted and the Dispatch step settles as stopped.",
+          )
+          .addText((text) =>
+            text
+              .setPlaceholder("0 = disabled")
+              .setValue(settings.subagentTimeoutSeconds > 0 ? String(settings.subagentTimeoutSeconds) : "")
+              .onChange(async (value) => {
+                // Same heal path as load: whole seconds clamped to [0, 24h].
+                settings.subagentTimeoutSeconds = healSubagentTimeout(Number(value));
+                await this.save();
+              }),
+          );
+      }),
+    ];
   }
 
-  private renderRetrieval(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Semantic retrieval").setHeading();
-    new Setting(containerEl)
-      .setName("Embeddings")
-      .setDesc(
+  private retrievalDefinitions(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    return [
+      this.controlDef(
+        "Embeddings",
+        { type: "toggle", key: "embeddings.enabled" },
         "Opt-in semantic index configuration. Indexing is still scoped and explicit; provider API keys reuse the Models tab.",
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(settings.embeddings.enabled).onChange(async (value) => {
-          settings.embeddings.enabled = value;
-          await this.save();
-        }),
-      );
-    new Setting(containerEl)
-      .setName("Embedding provider")
-      .setDesc("OpenRouter for hosted embeddings, Ollama for local embeddings, or the configured OpenAI-compatible gateway.")
-      .addDropdown((dropdown) => {
-        const options: Record<EmbeddingProviderId, string> = {
-          openrouter: "OpenRouter",
-          ollama: "Ollama (local)",
-          "openai-compatible": "OpenAI-compatible",
-        };
-        for (const [value, label] of Object.entries(options)) dropdown.addOption(value, label);
-        dropdown.setValue(settings.embeddings.provider).onChange(async (value) => {
-          settings.embeddings.provider = value as EmbeddingProviderId;
-          await this.save();
-          this.redraw();
-        });
-      });
-    new Setting(containerEl)
-      .setName("Embedding model")
-      .setDesc(`Active embedding model: ${activeEmbeddingModel(settings.embeddings) || "(none configured)"}.`)
-      .addText((text) =>
-        text
-          .setPlaceholder(embeddingModelPlaceholder(settings.embeddings.provider))
-          .setValue(activeEmbeddingModel(settings.embeddings))
-          .onChange(async (value) => {
-            this.setEmbeddingModel(settings, value);
-            await this.save();
-          }),
-      );
-    new Setting(containerEl)
-      .setName("Vector dimensions")
-      .setDesc("Expected embedding vector size. Provider responses with a different size are rejected before indexing.")
-      .addText((text) => {
-        text.inputEl.type = "number";
-        text.inputEl.setAttribute("min", "16");
-        text.inputEl.setAttribute("max", "16384");
-        text.setValue(String(settings.embeddings.dimensions)).onChange(async (value) => {
-          const parsed = Number.parseInt(value, 10);
-          settings.embeddings.dimensions = Number.isFinite(parsed)
-            ? Math.min(16_384, Math.max(16, parsed))
-            : DEFAULT_EMBEDDING_SETTINGS.dimensions;
-          await this.save();
-        });
-      });
-    new Setting(containerEl)
-      .setName("Language coverage")
-      .setDesc("Controls retrieval diagnostics for cross-language search.")
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("multilingual", "Multilingual")
-          .addOption("monolingual", "Monolingual")
-          .addOption("unknown", "Unknown")
-          .setValue(settings.embeddings.languageCoverage)
-          .onChange(async (value) => {
-            settings.embeddings.languageCoverage = value as EmbeddingSettings["languageCoverage"];
-            await this.save();
-          }),
-      );
-    new Setting(containerEl)
-      .setName("Batch size")
-      .setDesc("Maximum notes per embedding request. Smaller batches are easier to cancel and retry.")
-      .addText((text) => {
-        text.inputEl.type = "number";
-        text.inputEl.setAttribute("min", "1");
-        text.inputEl.setAttribute("max", "256");
-        text.setValue(String(settings.embeddings.batchSize)).onChange(async (value) => {
-          const parsed = Number.parseInt(value, 10);
-          settings.embeddings.batchSize = Number.isFinite(parsed)
-            ? Math.min(256, Math.max(1, parsed))
-            : DEFAULT_EMBEDDING_SETTINGS.batchSize;
-          await this.save();
-        });
-      });
-    new Setting(containerEl)
-      .setName("Max indexed characters per note")
-      .setDesc("Upper bound sent to the embedding provider for one note. Keeps cost and accidental data exposure bounded.")
-      .addText((text) => {
-        text.inputEl.type = "number";
-        text.inputEl.setAttribute("min", "500");
-        text.inputEl.setAttribute("max", "200000");
-        text.setValue(String(settings.embeddings.maxDocumentChars)).onChange(async (value) => {
-          const parsed = Number.parseInt(value, 10);
-          settings.embeddings.maxDocumentChars = Number.isFinite(parsed)
-            ? Math.min(200_000, Math.max(500, parsed))
-            : DEFAULT_EMBEDDING_SETTINGS.maxDocumentChars;
-          await this.save();
-        });
-      });
+      ),
+      this.controlDef(
+        "Embedding provider",
+        {
+          type: "dropdown",
+          key: "embeddings.provider",
+          options: {
+            openrouter: "OpenRouter",
+            ollama: "Ollama (local)",
+            "openai-compatible": "OpenAI-compatible",
+          },
+        },
+        "OpenRouter for hosted embeddings, Ollama for local embeddings, or the configured OpenAI-compatible gateway.",
+      ),
+      this.row("Embedding model", (setting) => {
+        setting
+          .setDesc(`Active embedding model: ${activeEmbeddingModel(settings.embeddings) || "(none configured)"}.`)
+          .addText((text) =>
+            text
+              .setPlaceholder(embeddingModelPlaceholder(settings.embeddings.provider))
+              .setValue(activeEmbeddingModel(settings.embeddings))
+              .onChange(async (value) => {
+                this.setEmbeddingModel(settings, value);
+                await this.save();
+              }),
+          );
+      }),
+      this.row("Vector dimensions", (setting) => {
+        setting
+          .setDesc("Expected embedding vector size. Provider responses with a different size are rejected before indexing.")
+          .addText((text) => {
+            text.inputEl.type = "number";
+            text.inputEl.setAttribute("min", "16");
+            text.inputEl.setAttribute("max", "16384");
+            text.setValue(String(settings.embeddings.dimensions)).onChange(async (value) => {
+              const parsed = Number.parseInt(value, 10);
+              settings.embeddings.dimensions = Number.isFinite(parsed)
+                ? Math.min(16_384, Math.max(16, parsed))
+                : DEFAULT_EMBEDDING_SETTINGS.dimensions;
+              await this.save();
+            });
+          });
+      }),
+      this.controlDef(
+        "Language coverage",
+        {
+          type: "dropdown",
+          key: "embeddings.languageCoverage",
+          options: { multilingual: "Multilingual", monolingual: "Monolingual", unknown: "Unknown" },
+        },
+        "Controls retrieval diagnostics for cross-language search.",
+      ),
+      this.row("Batch size", (setting) => {
+        setting
+          .setDesc("Maximum notes per embedding request. Smaller batches are easier to cancel and retry.")
+          .addText((text) => {
+            text.inputEl.type = "number";
+            text.inputEl.setAttribute("min", "1");
+            text.inputEl.setAttribute("max", "256");
+            text.setValue(String(settings.embeddings.batchSize)).onChange(async (value) => {
+              const parsed = Number.parseInt(value, 10);
+              settings.embeddings.batchSize = Number.isFinite(parsed)
+                ? Math.min(256, Math.max(1, parsed))
+                : DEFAULT_EMBEDDING_SETTINGS.batchSize;
+              await this.save();
+            });
+          });
+      }),
+      this.row("Max indexed characters per note", (setting) => {
+        setting
+          .setDesc("Upper bound sent to the embedding provider for one note. Keeps cost and accidental data exposure bounded.")
+          .addText((text) => {
+            text.inputEl.type = "number";
+            text.inputEl.setAttribute("min", "500");
+            text.inputEl.setAttribute("max", "200000");
+            text.setValue(String(settings.embeddings.maxDocumentChars)).onChange(async (value) => {
+              const parsed = Number.parseInt(value, 10);
+              settings.embeddings.maxDocumentChars = Number.isFinite(parsed)
+                ? Math.min(200_000, Math.max(500, parsed))
+                : DEFAULT_EMBEDDING_SETTINGS.maxDocumentChars;
+              await this.save();
+            });
+          });
+      }),
+    ];
   }
 
-  private renderIgnoredFiles(containerEl: HTMLElement, settings: AgenticChatSettings): void {
-    new Setting(containerEl).setName("Ignored files").setHeading();
-    new Setting(containerEl)
-      .setName("Ignore list")
-      .setDesc(
-        "One gitignore-style glob per line. Matching notes are invisible to the agent — it cannot read, " +
-          "list, search, or edit them. Examples: Private/  ·  *.secret.md  ·  /Inbox/passwords.md  ·  **/diary/**",
-      )
-      .addTextArea((text) => {
-        text.inputEl.rows = 6;
-        text.inputEl.addClass("agentic-chat-system-prompt");
-        text.setPlaceholder("Private/\n*.secret.md").setValue(settings.ignoredGlobs).onChange(async (value) => {
-          settings.ignoredGlobs = value;
-          await this.save();
-        });
-      });
+  private ignoredFileDefinitions(): SettingDefinitionItem[] {
+    const settings = this.plugin.settings;
+    return [
+      this.row("Ignore list", (setting) => {
+        setting
+          .setDesc(
+            "One gitignore-style glob per line. Matching notes are invisible to the agent — it cannot read, " +
+              "list, search, or edit them. Examples: Private/  ·  *.secret.md  ·  /Inbox/passwords.md  ·  **/diary/**",
+          )
+          .addTextArea((text) => {
+            text.inputEl.rows = 6;
+            text.inputEl.addClass("agentic-chat-system-prompt");
+            text.setPlaceholder("Private/\n*.secret.md").setValue(settings.ignoredGlobs).onChange(async (value) => {
+              settings.ignoredGlobs = value;
+              await this.save();
+            });
+          });
+      }),
+    ];
   }
 
-  private renderPluginsList(containerEl: HTMLElement, settings: AgenticChatSettings): void {
+  private pluginListDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     this.ensurePluginsLoaded();
-    const plugins = this.plugin.pluginService.getLoaded();
-    const deleted = this.externallyDeletedPlugins;
-    if (plugins.length === 0 && deleted.length === 0) {
-      containerEl.createDiv({
-        cls: "setting-item-description",
-        text:
-          "No agent plugins found. Use “Install plugin…” to bring one in from GitHub or an archive " +
-          "(Claude/Copilot/VS Code packages are converted automatically), or “New skill…” to scaffold your own.",
-      });
-      return;
-    }
+    return [
+      this.block(
+        (setting) => {
+          // Read the loaded packages at render time so a package installed or
+          // deleted while the settings tab was closed is reflected on open.
+          const plugins = this.plugin.pluginService.getLoaded();
+          const deleted = this.externallyDeletedPlugins;
+          if (plugins.length === 0 && deleted.length === 0) {
+            setting.settingEl.createDiv({
+              cls: "setting-item-description",
+              text:
+                "No agent plugins found. Use “Install plugin…” to bring one in from GitHub or an archive " +
+                "(Claude/Copilot/VS Code packages are converted automatically), or “New skill…” to scaffold your own.",
+            });
+            return;
+          }
 
-    if (plugins.length > 0) {
-      new Setting(containerEl).setName("Installed plugins").setHeading();
-      for (const plugin of plugins) {
-        this.renderPluginRow(containerEl, settings, plugin);
+          const items: SettingDefinitionItem[] = [];
+          if (plugins.length > 0) {
+            items.push(this.heading("Installed plugins"));
+            for (const plugin of plugins) {
+              items.push(this.pluginRowDefinition(settings, plugin));
+            }
+          }
+          if (deleted.length > 0) {
+            items.push(
+              this.heading("Deleted on disk"),
+              this.block((row) => {
+                row.settingEl.createDiv({
+                  cls: "setting-item-description",
+                  text: "These plugins were deleted outside Obsidian. Settings were cleaned; dismiss this notice when ready.",
+                });
+              }),
+            );
+            for (const plugin of deleted) {
+              items.push(this.deletedPluginRowDefinition(settings, plugin));
+            }
+            items.push(
+              this.row("", (row) => {
+                row.addButton((button) =>
+                  button.setButtonText("Dismiss").onClick(() => {
+                    this.externallyDeletedPlugins = [];
+                    this.redraw();
+                  }),
+                );
+              }),
+            );
+          }
+          this.renderItemsInto(setting.settingEl, items);
+        },
+        { name: "Installed plugins", visible: true },
+      ),
+    ];
+  }
+
+  private pluginRowDefinition(settings: AgenticChatSettings, plugin: LoadedPlugin): SettingDefinitionRender {
+    return this.row(plugin.name, (setting) => {
+      setting.settingEl.empty();
+      setting.settingEl.addClass("agentic-chat-plugin-row");
+
+      const main = setting.settingEl.createDiv({ cls: "agentic-chat-plugin-main" });
+      main.createDiv({ cls: "agentic-chat-plugin-name", text: plugin.name });
+
+      const status = plugin.enabled ? plugin.auditStatus : "disabled";
+      const typeCounts =
+        `${plugin.skills.length} skill${plugin.skills.length === 1 ? "" : "s"}, ` +
+        `${plugin.mcpServers.length} MCP server${plugin.mcpServers.length === 1 ? "" : "s"}`;
+      const meta = main.createDiv({ cls: "agentic-chat-plugin-meta" });
+      meta.createSpan({ text: `${plugin.rootPath} — ${status}, ${typeCounts}` });
+      const extra: string[] = [];
+      if (plugin.version) extra.push(`v${plugin.version}`);
+      if (plugin.manifestProblem) extra.push(plugin.manifestProblem);
+      if (plugin.reports.length > 0) extra.push(plugin.reports.map((report) => report.message).join("; "));
+      const source = settings.plugins.sources?.[plugin.name];
+      if (source) extra.push(`Source: ${source}`);
+      if (extra.length > 0) {
+        const tail = meta.createSpan({ cls: "agentic-chat-plugin-meta-extra" });
+        tail.createSpan({ text: ` — ${extra.join(" · ")}` });
       }
-    }
-    if (deleted.length > 0) {
-      new Setting(containerEl).setName("Deleted on disk").setHeading();
-      containerEl.createDiv({
-        cls: "setting-item-description",
-        text: "These plugins were deleted outside Obsidian. Settings were cleaned; dismiss this notice when ready.",
-      });
-      for (const plugin of deleted) {
-        this.renderDeletedPluginRow(containerEl, settings, plugin);
-      }
-      new Setting(containerEl).addButton((button) =>
-        button.setButtonText("Dismiss").onClick(() => {
-          this.externallyDeletedPlugins = [];
+
+      const controls = setting.settingEl.createDiv({ cls: "agentic-chat-plugin-controls" });
+      new ToggleComponent(controls)
+        .setValue(plugin.enabled)
+        .setTooltip(`Enable ${plugin.name}`)
+        .onChange(async (value) => {
+          const enabled = { ...settings.plugins.enabled };
+          if (value) delete enabled[plugin.name];
+          else enabled[plugin.name] = false;
+          settings.plugins.enabled = enabled;
+          this.plugin.pluginService.invalidate();
+          this.pluginsLoadedOnce = false;
+          await this.save();
           this.redraw();
-        }),
-      );
-    }
+        });
+      new ButtonComponent(controls)
+        .setButtonText("Open folder")
+        .onClick(() => this.openInVault(plugin.rootPath));
+      new ButtonComponent(controls)
+        .setButtonText("Remove")
+        .setDestructive()
+        .onClick(async () => {
+          const existed = await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
+          if (existed) new Notice(`Removed agent plugin "${plugin.name}".`);
+          else new Notice(`Agent plugin "${plugin.name}" was already deleted on disk — settings cleaned.`);
+          this.pluginsLoadedOnce = false;
+          await this.save();
+          this.redraw();
+        });
+    });
   }
 
-  private renderPluginRow(containerEl: HTMLElement, settings: AgenticChatSettings, plugin: LoadedPlugin): void {
-    const row = containerEl.createDiv({ cls: "agentic-chat-plugin-row" });
-
-    const main = row.createDiv({ cls: "agentic-chat-plugin-main" });
-    main.createDiv({ cls: "agentic-chat-plugin-name", text: plugin.name });
-
-    const status = plugin.enabled ? plugin.auditStatus : "disabled";
-    const typeCounts =
-      `${plugin.skills.length} skill${plugin.skills.length === 1 ? "" : "s"}, ` +
-      `${plugin.mcpServers.length} MCP server${plugin.mcpServers.length === 1 ? "" : "s"}`;
-    const meta = main.createDiv({ cls: "agentic-chat-plugin-meta" });
-    meta.createSpan({ text: `${plugin.rootPath} — ${status}, ${typeCounts}` });
-    const extra: string[] = [];
-    if (plugin.version) extra.push(`v${plugin.version}`);
-    if (plugin.manifestProblem) extra.push(plugin.manifestProblem);
-    if (plugin.reports.length > 0) extra.push(plugin.reports.map((report) => report.message).join("; "));
-    const source = settings.plugins.sources?.[plugin.name];
-    if (source) extra.push(`Source: ${source}`);
-    if (extra.length > 0) {
-      const tail = meta.createSpan({ cls: "agentic-chat-plugin-meta-extra" });
-      tail.createSpan({ text: ` — ${extra.join(" · ")}` });
-    }
-
-    const controls = row.createDiv({ cls: "agentic-chat-plugin-controls" });
-    new ToggleComponent(controls)
-      .setValue(plugin.enabled)
-      .setTooltip(`Enable ${plugin.name}`)
-      .onChange(async (value) => {
-        const enabled = { ...settings.plugins.enabled };
-        if (value) delete enabled[plugin.name];
-        else enabled[plugin.name] = false;
-        settings.plugins.enabled = enabled;
-        this.plugin.pluginService.invalidate();
-        this.pluginsLoadedOnce = false;
-        await this.save();
-        this.redraw();
-      });
-    new ButtonComponent(controls)
-      .setButtonText("Open folder")
-      .onClick(() => this.openInVault(plugin.rootPath));
-    new ButtonComponent(controls)
-      .setButtonText("Remove")
-      .setDestructive()
-      .onClick(async () => {
-        const existed = await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
-        if (existed) new Notice(`Removed agent plugin "${plugin.name}".`);
-        else new Notice(`Agent plugin "${plugin.name}" was already deleted on disk — settings cleaned.`);
-        this.pluginsLoadedOnce = false;
-        await this.save();
-        this.redraw();
-      });
-  }
-
-  private renderDeletedPluginRow(containerEl: HTMLElement, settings: AgenticChatSettings, plugin: LoadedPlugin): void {
-    const row = containerEl.createDiv({ cls: "agentic-chat-plugin-row agentic-chat-plugin-deleted" });
-    const main = row.createDiv({ cls: "agentic-chat-plugin-main" });
-    main.createDiv({ cls: "agentic-chat-plugin-name", text: plugin.name });
-    const meta = main.createDiv({ cls: "agentic-chat-plugin-meta" });
-    meta.createSpan({ text: `${plugin.rootPath} — deleted on disk` });
-    const source = settings.plugins.sources?.[plugin.name];
-    if (source) {
-      const tail = meta.createSpan({ cls: "agentic-chat-plugin-meta-extra" });
-      tail.createSpan({ text: ` — Source: ${source}` });
-    }
-    const controls = row.createDiv({ cls: "agentic-chat-plugin-controls" });
-    new ButtonComponent(controls)
-      .setButtonText("Dismiss")
-      .onClick(async () => {
-        // Guard the TOCTOU: if the folder was recreated since the transient was shown, don't delete it.
-        let shouldRemove: boolean;
-        try {
-          shouldRemove = !(await this.app.vault.adapter.exists(plugin.rootPath));
-        } catch {
-          shouldRemove = false;
-        }
-        if (shouldRemove) await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
-        this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((entry) => entry.rootPath !== plugin.rootPath);
-        this.redraw();
-      });
+  private deletedPluginRowDefinition(settings: AgenticChatSettings, plugin: LoadedPlugin): SettingDefinitionRender {
+    return this.row(plugin.name, (setting) => {
+      setting.settingEl.empty();
+      setting.settingEl.addClass("agentic-chat-plugin-row", "agentic-chat-plugin-deleted");
+      const main = setting.settingEl.createDiv({ cls: "agentic-chat-plugin-main" });
+      main.createDiv({ cls: "agentic-chat-plugin-name", text: plugin.name });
+      const meta = main.createDiv({ cls: "agentic-chat-plugin-meta" });
+      meta.createSpan({ text: `${plugin.rootPath} — deleted on disk` });
+      const source = settings.plugins.sources?.[plugin.name];
+      if (source) {
+        const tail = meta.createSpan({ cls: "agentic-chat-plugin-meta-extra" });
+        tail.createSpan({ text: ` — Source: ${source}` });
+      }
+      const controls = setting.settingEl.createDiv({ cls: "agentic-chat-plugin-controls" });
+      new ButtonComponent(controls)
+        .setButtonText("Dismiss")
+        .onClick(async () => {
+          // Guard the TOCTOU: if the folder was recreated since the transient was shown, don't delete it.
+          let shouldRemove: boolean;
+          try {
+            shouldRemove = !(await this.app.vault.adapter.exists(plugin.rootPath));
+          } catch {
+            shouldRemove = false;
+          }
+          if (shouldRemove) await this.plugin.pluginService.removePackage(plugin.name, plugin.rootPath);
+          this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((entry) => entry.rootPath !== plugin.rootPath);
+          this.redraw();
+        });
+    });
   }
 
   private openInstallModal(): void {
@@ -2435,33 +2560,4 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     else if (settings.embeddings.provider === "openai-compatible") settings.embeddings.openaiCompatibleModel = model;
     else settings.embeddings.openrouterModel = model;
   }
-
-  private folderSetting(
-    containerEl: HTMLElement,
-    name: string,
-    desc: string,
-    value: string,
-    onChange: (value: string) => Promise<void>,
-  ): void {
-    new Setting(containerEl)
-      .setName(name)
-      .setDesc(desc)
-      .addText((text) => {
-        text.setPlaceholder("(none)").setValue(value).onChange((next) => void onChange(next.trim()));
-        text.inputEl.addClass("agentic-chat-folder-input");
-        this.folderInputs.set(name, text.inputEl);
-      })
-      .addButton((button) =>
-        button.setButtonText("Browse").onClick(() => {
-          new FolderSuggestModal(this.app, (folder) => {
-            const path = folder.path === "/" ? "" : folder.path;
-            void onChange(path);
-            const input = this.folderInputs.get(name);
-            if (input) input.value = path;
-          }).open();
-        }),
-      );
-  }
-
-  private readonly folderInputs = new Map<string, HTMLInputElement>();
 }
