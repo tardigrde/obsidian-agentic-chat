@@ -73,8 +73,9 @@ await browser.waitUntil(async () =>
 | Inline `ask_user` card | `src/ui/chat-view.ts:566` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
 | Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:624` | no committed check | `NONE` |
 | Copy response | `src/ui/assistant-bubble.ts:827` | no committed check | `NONE` |
-| Ask again | `src/ui/assistant-bubble.ts:813` | no committed check | `NONE` |
-| Error banner Retry | `src/ui/assistant-bubble.ts:783` | no committed check | `NONE` |
+| Ask again | `src/ui/assistant-bubble.ts:813` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
+| Retry keeps image attachments | `src/ui/chat-view.ts:1568` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
+| Error banner Retry | `src/ui/assistant-bubble.ts:783` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
 | Edit and resend a user turn | `src/ui/chat-view.ts:2611` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
 | Context-window bar | `src/ui/chat-view.ts:765` | `test/e2e/specs/smoke.e2e.ts:180` (existence only) | `partial` |
 | Usage readout | `src/ui/chat-view.ts:2184` | no committed check | `NONE` |

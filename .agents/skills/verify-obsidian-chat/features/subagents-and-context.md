@@ -57,7 +57,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Subagent timeout setting row | `src/settings.ts:2133` | no committed check | `NONE` |
 | Attachment budget: inline or path reference | `src/ui/attachments.ts:42` | `test/attachments.test.ts:17` (unit only) | `partial` |
 | Ignore-list withholding | `src/ui/attachments.ts:39` | `test/attachments.test.ts:37` (unit only) | `partial` |
-| Context chips order and removal | `src/ui/chat-view.ts:2399` | `test/context-chip-renderer.test.ts:85` (unit only) | `partial` |
+| Context chips order and removal | `src/ui/chat-view.ts:2400` | `test/context-chip-renderer.test.ts:85` (unit only) | `partial` |
 | Source chips and note open | `src/ui/assistant-bubble.ts:743` | `test/e2e/specs/beautifului-polish.e2e.ts:198` | `covered` |
 | `showFolderMenu()` | `src/ui/working-directory-workflow-controller.ts:21` | only a unit test calls it; no production caller | `unreachable` |
 | `attachFolderMenuItems()` | `src/ui/working-directory-workflow-controller.ts:48` | no caller in `src/` or `test/` | `unreachable` |

@@ -67,7 +67,7 @@ await $(".agentic-chat-send").click();
 | Autocomplete keys | `src/ui/autocomplete-menu.ts:108` | no committed check | `NONE` |
 | `@` mention autocomplete | `src/ui/autocomplete.ts:80` | `test/autocomplete.test.ts:51` (detection only) | `partial` |
 | Drag-and-drop attach | `src/ui/chat-view.ts:836` | `test/drag-drop.test.ts:4` (parser only) | `partial` |
-| Active note auto-chip | `src/ui/chat-view.ts:2366` | `test/e2e/specs/smoke.e2e.ts:99` | `covered` |
+| Active note auto-chip | `src/ui/chat-view.ts:2372` | `test/e2e/specs/smoke.e2e.ts:99` | `covered` |
 | Ignored active note stays out | `src/ui/active-note.ts:54` | `test/e2e/specs/runtime-behavior.e2e.ts:194` | `covered` |
 | Remove an attachment chip | `src/ui/chat-view.ts:2423` | `test/context-chip-renderer.test.ts:121` (unit only) | `partial` |
 | Image attachment guard | `src/ui/chat-view.ts:2341` | `test/image-attachments.test.ts:4` (encoding only) | `partial` |
