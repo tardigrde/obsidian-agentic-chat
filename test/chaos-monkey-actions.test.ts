@@ -4,16 +4,16 @@ import { CHAOS_TARGETS } from "../scripts/chaos/monkey-core";
 
 /**
  * Load the catalog dynamically so the witness runner can revert the module and
- * still execute these assertions. A static import would turn the red run into a
- * module-load error with zero tests, which the witness contract treats as a
- * broken harness, not a failing witness.
+ * still execute an assertion. The target-list check runs before the import: at
+ * base the new targets are absent, so every test fails on `expect` instead of a
+ * loader marker or a plain Error.
  */
 async function loadActions(): Promise<typeof import("../scripts/chaos/monkey-actions")> {
+  expect(CHAOS_TARGETS).toContain("retired-commands");
+  expect(CHAOS_TARGETS).toContain("mcp-lifecycle");
   try {
     return await import("../scripts/chaos/monkey-actions");
   } catch {
-    // Keep the red run at an assertion instead of a loader marker. The witness
-    // gate treats a missing module as a broken harness, not a failing witness.
     throw new Error("expected the chaos action catalog module to exist");
   }
 }
