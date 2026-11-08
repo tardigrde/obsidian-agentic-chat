@@ -75,7 +75,7 @@ describe("chaos action catalog", () => {
     expect(focusedSequence("composer").map((action) => action.id)).toEqual([
       "composer-prompt",
       "slash-help",
-      "slash-dirs",
+      "slash-status",
     ]);
     expect(focusedSequence("notes").map((action) => action.id)).toEqual(["notes-write-1", "notes-write-2"]);
     expect(focusedSequence("mcp").map((action) => action.id)).toEqual(["mcp-surface", "settings-tabs"]);

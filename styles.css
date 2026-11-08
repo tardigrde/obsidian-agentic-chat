@@ -1240,12 +1240,6 @@
   border-color: var(--interactive-accent);
 }
 
-/* Working-directory scope: a persistent permission grant, not a per-message attachment. */
-.agentic-chat-chip.is-scope {
-  border-color: var(--interactive-accent);
-  color: var(--text-accent);
-}
-
 .agentic-chat-chip-label {
   flex: 1 1 auto;
   min-width: 0;
@@ -1911,10 +1905,10 @@
   align-items: center;
 }
 
-/* Settings heading rows with actions (MCP server header, working directories,
-   tool approvals): the controls never shrink, so on a narrow pane the name and
-   summary collapse to one character per line. Let the row wrap, give the text
-   a flex basis wide enough to read, and keep the actions together. */
+/* Settings heading rows with actions (MCP server header, tool approvals): the
+   controls never shrink, so on a narrow pane the name and summary collapse to
+   one character per line. Let the row wrap, give the text a flex basis wide
+   enough to read, and keep the actions together. */
 .agentic-chat-setting-heading-wrap {
   flex-wrap: wrap;
 }

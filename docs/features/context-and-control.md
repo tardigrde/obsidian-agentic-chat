@@ -10,17 +10,6 @@ The ignore list always wins. Ignored notes are invisible to the agent and are sk
 
 Root standing-instruction files (`AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`) are also skipped by auto-attachment. They are implicit context whenever present, so they do not need a removable active-note chip.
 
-## Working directories
-
-Working directories limit which folders the agent can use without extra approval. Use `/add-dir <folder>` to grant a vault folder and `/dirs` to list or revoke grants.
-
-In Safe mode:
-
-- reads and writes inside granted folders can run according to the configured approval policy
-- touching anything outside the granted folders asks first, including reads
-- denied tools remain denied
-- ignored paths remain invisible
-
 ## Approval gates
 
 Read-only vault tools run without approval. Mutating tools can be configured globally or per tool as:

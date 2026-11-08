@@ -27,7 +27,7 @@ describe("probe: plan mode removal", function () {
       provider: "openrouter",
       openrouterApiKey: "e2e-scripted-key",
       mode: "safe",
-      approval: { mutating: "ask", perTool: {}, workingDirs: [] },
+      approval: { mutating: "ask", perTool: {} },
       web: { enabled: false },
     });
     await openChat();

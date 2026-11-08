@@ -47,7 +47,7 @@ async function configureProvider(config: { apiKey: string; baseUrl: string; mode
       requestTimeoutMs: number;
       maxNetworkRetries: number;
       mode: string;
-      approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+      approval: { mutating: string; perTool: Record<string, string> };
     };
     settings.provider = "openai-compatible";
     settings.openaiCompatibleApiKey = liveConfig.apiKey;
@@ -58,7 +58,6 @@ async function configureProvider(config: { apiKey: string; baseUrl: string; mode
     settings.mode = "safe";
     settings.approval.mutating = "ask";
     settings.approval.perTool = {};
-    settings.approval.workingDirs = [];
     await plugin.saveSettings?.();
     return true;
   }, config);

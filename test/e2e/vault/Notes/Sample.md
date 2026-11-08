@@ -1,3 +1,3 @@
 # Sample
 
-A note inside a subfolder, handy for exercising the working-directory scope (C1).
+A note inside a subfolder, handy for exercising path-scoped vault tools.

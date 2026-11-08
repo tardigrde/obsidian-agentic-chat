@@ -152,7 +152,7 @@ describe("AgentSubagentRuntime", () => {
     const runtime = makeRuntime({
       settings: settings({
         mode: "safe",
-        approval: { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] },
+        approval: { mutating: "allow", perTool: { write: "deny" } },
       }),
     });
 

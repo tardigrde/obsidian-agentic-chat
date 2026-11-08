@@ -4,9 +4,9 @@ import { before, describe, it } from "mocha";
 /**
  * Base e2e smoke (D1): boots a real Obsidian on a throwaway copy of `test/e2e/vault`,
  * loads this plugin, and exercises the integration seams unit tests can't reach — view
- * registration, the composer card (C4), in-pane slash routing, the working-dir command
- * (C1), and active-note attachment. It deliberately avoids the model: every assertion
- * is on UI/wiring that runs without an API key. Part of the full CI e2e suite.
+ * registration, the composer card (C4), in-pane slash routing, and active-note
+ * attachment. It deliberately avoids the model: every assertion is on UI/wiring that
+ * runs without an API key. Part of the full CI e2e suite.
  */
 
 /** Open the chat view and wait for it to mount. */
@@ -53,7 +53,9 @@ describe("agentic-chat smoke", function () {
     const info = await $(".agentic-chat-info");
     await info.waitForExist();
     await expect(info).toHaveText(/Slash commands/);
-    await expect(info).not.toHaveText(/\/(config|mode|project|history|semindex|adddir|working-dirs|todo|todos|followup|thinking)\b/);
+    await expect(info).not.toHaveText(
+      /\/(config|mode|project|history|semindex|adddir|add-dir|dirs|working-dirs|todo|todos|followup|thinking)\b/,
+    );
   });
 
   it("clears slash commands immediately and preserves /init tail text in the transcript", async function () {
@@ -87,13 +89,6 @@ describe("agentic-chat smoke", function () {
     expect(state.input).toBe("");
     expect(state.transcript).toContain("/compact preserve e2e compact instructions");
     expect(state.lastSentPrompt).not.toBe("/compact preserve e2e compact instructions");
-  });
-
-  it("lists working directories via /dirs (C1)", async function () {
-    await runSlashCommand("/dirs");
-    const list = await $(".agentic-chat-action-list");
-    await list.waitForExist();
-    await expect(list).toHaveText(/Add working directory/);
   });
 
   it("auto-attaches the active note as a context chip", async function () {

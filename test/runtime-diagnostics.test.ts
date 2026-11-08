@@ -39,7 +39,6 @@ describe("runtime diagnostics", () => {
         approval: {
           mutating: "ask",
           perTool: { delete: "deny" },
-          workingDirs: ["Allowed"],
         },
       },
       turns: [
@@ -61,8 +60,8 @@ describe("runtime diagnostics", () => {
     expect(diagnostics.approval).toMatchObject({
       mutating: "ask",
       perToolOverrides: 1,
-      workingDirs: ["Allowed"],
     });
+    expect("workingDirs" in diagnostics.approval).toBe(false);
     expect(diagnostics.tools).toEqual(expect.arrayContaining(["read", "write", "subagent"]));
     expect(diagnostics.resources.lastReloadAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(diagnostics.toolBudget).toMatchObject({ enabled: true, active: false, thresholdPercent: 2 });

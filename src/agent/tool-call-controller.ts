@@ -20,7 +20,6 @@ import {
 import type { AgentRole } from "./subagents";
 import { findAgentRole } from "./subagents";
 import { resolveModePolicy } from "./modes";
-import { resolveWorkingDirPolicy, toolTargetPaths } from "./working-dir";
 import { UNDOABLE_TOOLS, captureUndo } from "./undo";
 
 /** A pending tool call the user must approve. */
@@ -244,27 +243,12 @@ export class AgentToolCallController {
     if (isMcpToolName(toolName)) return this.gateMcpToolCall(settings, toolCallId, toolName, args, signal);
     const decision = modeDecision;
     const { reason } = decision;
-    // Skill resources are vault-hosted plugin content — reads stay exempt from
-    // the working-dir allow-list, but create_skill WRITES a new package and is
-    // not exempt: scoped dirs must still route it through ask.
-    const isSkillReadTool =
-      toolName === "read_skill" ||
-      toolName === "read_skill_file" ||
-      toolName === "load_skill" ||
-      toolName === "unload_skill";
-    const scoped = settings.mode === "safe" && !isSkillReadTool;
     // H8 load/unload mutates prompt overlay (persistent) — default to ask to prevent
     // auto-injection via indirect prompt injection (fetch_url -> load_skill evil).
     // create_skill persists a new vault package — same ask default.
     // Respects perTool override so user can set allow/deny explicitly.
     const isPersistentSkillTool = toolName === "load_skill" || toolName === "unload_skill" || toolName === "create_skill";
-    const basePolicy = isPersistentSkillTool ? (getPerToolApproval(settings.approval, toolName) ?? "ask") : decision.policy;
-    // Working-dir boundary (C1/S2): in Safe mode, granted dirs auto-run inside and route
-    // out-of-scope targets through ask. YOLO is a deliberate session-wide allow, so the
-    // boundary only refines Safe.
-    const policy = scoped
-      ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, basePolicy)
-      : basePolicy;
+    const policy = isPersistentSkillTool ? (getPerToolApproval(settings.approval, toolName) ?? "ask") : decision.policy;
     // Recursive folder delete always asks, even when the mode would
     // auto-approve: bulk destruction needs a plain per-path confirmation.
     // An explicit per-tool "allow" for delete still counts as standing
@@ -299,10 +283,7 @@ export class AgentToolCallController {
     args: unknown,
     signal?: AbortSignal,
   ): Promise<ToolGateDecision> {
-    // S1: MCP now respects the same mode overlay as vault tools (yolo allow)
-    // and the same working-dir refinement for vault-path args. Previously this bypassed both,
-    // allowing MCP to escape the safety boundary. Working-dir refinement is only applied
-    // when args actually target vault paths (path/newPath) — pathless MCP calls don't span the vault.
+    // S1: MCP respects the same Safe/YOLO mode overlay as vault tools.
     const modeCheck = resolveModePolicy(settings.mode, settings.approval, toolName);
     if (modeCheck.policy === "deny" && modeCheck.reason) {
       await this.auditApproval({ decision: "denied", toolCallId, toolName, label: this.labelForTool(toolName), args, reason: modeCheck.reason });
@@ -312,12 +293,7 @@ export class AgentToolCallController {
     const serverApproval = this.resolveMcpServerApproval(settings, toolName);
     const serverBase = serverApproval ?? "ask";
     const yoloServerBase = settings.mode === "yolo" && serverBase !== "deny" ? "allow" : serverBase;
-    const basePolicy = perTool ?? yoloServerBase;
-    // Only refine by working dirs when the call actually targets vault paths;
-    // most MCP tools are pathless and should not be forced through the vault allow-list.
-    const hasVaultTargets = toolTargetPaths(args).length > 0;
-    const scoped = settings.mode === "safe" && hasVaultTargets;
-    const policy = scoped ? resolveWorkingDirPolicy(settings.approval.workingDirs, args, basePolicy) : basePolicy;
+    const policy = perTool ?? yoloServerBase;
     const label = this.labelForTool(toolName);
     if (policy === "allow") {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });
@@ -355,9 +331,8 @@ export class AgentToolCallController {
   /**
    * Gate a subagent dispatch. The dispatch itself is only delegation; child tool
    * calls run through the same per-call controller hooks as parent calls. That
-   * means working-dir boundaries, per-tool denies, approvals, checkpoints, and
-   * undo capture happen at the actual child read/write, not as a blunt up-front
-   * dispatch approval.
+   * means per-tool denies, approvals, checkpoints, and undo capture happen at
+   * the actual child read/write, not as a blunt up-front dispatch approval.
    */
   private async gateSubagentDispatch(
     settings: AgenticChatSettings,

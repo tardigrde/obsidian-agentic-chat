@@ -7,16 +7,13 @@ import {
 } from "./context-attachments";
 import { truncateText } from "./format";
 import { isImagePath } from "./image-attachments";
-import { formatWorkingDirLabel } from "./working-directory-workflow-controller";
 
 export interface ContextChipRenderState {
-  workingDirs: readonly string[];
   activeNotePath: string | null;
   attachments: readonly ContextAttachment[];
 }
 
 export interface ContextChipCallbacks {
-  removeWorkingDir: (dir: string) => void;
   removeActiveNote: () => void;
   removeAttachment: (entry: ContextAttachment) => void;
 }
@@ -27,9 +24,6 @@ export function renderContextChips(
   callbacks: ContextChipCallbacks,
 ): void {
   parent.empty();
-  for (const dir of state.workingDirs) {
-    renderScopeChip(parent, dir, () => callbacks.removeWorkingDir(dir));
-  }
   if (state.activeNotePath) {
     renderAttachmentChip(parent, state.activeNotePath, true, callbacks.removeActiveNote);
   }
@@ -64,21 +58,6 @@ function renderAttachmentChip(
     chip.createSpan({ cls: "agentic-chat-chip-tag", text: "active" });
     chip.setAttr("title", "The active note is attached automatically — remove to stop for this session.");
   }
-  const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
-  setIcon(remove, "x");
-  remove.addEventListener("click", onRemove);
-}
-
-function renderScopeChip(parent: HTMLElement, dir: string, onRemove: () => void): void {
-  const chip = parent.createDiv({ cls: ["agentic-chat-chip", "is-scope"] });
-  const icon = chip.createSpan({ cls: "agentic-chat-chip-icon" });
-  setIcon(icon, "folder-check");
-  chip.createSpan({ cls: "agentic-chat-chip-label", text: formatWorkingDirLabel(dir) });
-  chip.createSpan({ cls: "agentic-chat-chip-tag", text: "scope" });
-  chip.setAttr(
-    "title",
-    "Working directory — the agent auto-runs inside it and asks before touching anything outside. Remove to revoke.",
-  );
   const remove = chip.createSpan({ cls: "agentic-chat-chip-remove" });
   setIcon(remove, "x");
   remove.addEventListener("click", onRemove);

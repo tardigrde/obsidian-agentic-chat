@@ -80,7 +80,7 @@ interface MigrationState {
     openaiCompatibleApiKey: string;
     openaiCompatibleModel: string;
     mode: string;
-    approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+    approval: { mutating: string; perTool: Record<string, string> };
     web: { enabled: boolean; searchProvider: string; searchApiKey: string; searxngUrl: string; maxResults: number; fetchCharLimit: number };
     observability: {
       enabled: boolean;
@@ -210,8 +210,9 @@ describe("agentic-chat settings migration", function () {
     expect(state.settings.approval).toMatchObject({
       mutating: "ask",
       perTool: { write: "allow" },
-      workingDirs: [],
     });
+    // The legacy approval.workingDirs value ("Notes") is dropped, not carried.
+    expect("workingDirs" in state.settings.approval).toBe(false);
     expect(state.settings.web).toMatchObject({
       enabled: true,
       searchProvider: "searxng",
@@ -274,6 +275,9 @@ describe("agentic-chat settings migration", function () {
     expect("openrouterApiKey" in state.stored).toBe(false);
     expect("openaiCompatibleApiKey" in state.stored).toBe(false);
     expect("searchApiKey" in objectAt(state.stored, "web")).toBe(false);
+    const storedApproval = objectAt(state.stored, "approval");
+    expect(storedApproval.workingDirs).toBeUndefined();
+    expect("workingDirs" in storedApproval).toBe(false);
     const storedObs = objectAt(state.stored, "observability");
     expect(storedObs.langfusePublicKey).toBeUndefined();
     expect(storedObs.langfuseSecretKey).toBeUndefined();

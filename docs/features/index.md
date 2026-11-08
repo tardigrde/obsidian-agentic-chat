@@ -25,7 +25,6 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 
 - Inline clarification prompts with `ask_user`.
 - Safe and YOLO approval postures.
-- Working directories for scoped auto-approval.
 - Gitignore-style ignore list.
 - `/undo` for the most recent vault mutation.
 - Long-session compaction before context overflow, plus `/compact [instructions]` for manual compaction.

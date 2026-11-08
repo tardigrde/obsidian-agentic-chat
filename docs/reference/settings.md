@@ -38,7 +38,6 @@ Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Before mutating tools | ask | Global allow, ask, or deny for vault-changing tools. |
-| Working directories | empty | Folders granted with `/add-dir`. In Safe mode, the approval policy applies inside a granted folder. Outside, the agent asks first, including reads. |
 | Per-tool overrides | default | Per-tool allow, ask, or deny. Deny wins over everything, including YOLO. |
 
 ## Advanced

@@ -62,7 +62,7 @@ await browser.waitUntil(async () =>
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts:1258` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
 | Stop one tab without aborting the other | `src/ui/chat-view.ts:824` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
 | Stop clears queued steering | `src/agent/agent-service.ts:743` | `test/agent-service.test.ts:1559` (unit only) | `partial` |
-| `/compact` skips when the session changed | `src/agent/agent-service.ts:580` | `test/agent-service.test.ts:1030` | `partial` |
+| `/compact` skips when the session changed | `src/agent/agent-service.ts:580` | `test/agent-service.test.ts:970` | `partial` |
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
 | Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
 | Enter steers after a successful tool call | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:166` | `covered` |
@@ -78,7 +78,7 @@ await browser.waitUntil(async () =>
 | Error banner Retry | `src/ui/assistant-bubble.ts:783` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
 | Edit and resend a user turn | `src/ui/chat-view.ts:2616` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
 | Context-window bar | `src/ui/chat-view.ts:766` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
-| Usage readout | `src/ui/chat-view.ts:2189` | no committed check | `NONE` |
+| Usage readout | `src/ui/chat-view.ts:2124` | no committed check | `NONE` |
 | Background-tab completion notice | `src/ui/chat-view.ts:1258` | no committed check | `NONE` |
 
 ## Gotchas

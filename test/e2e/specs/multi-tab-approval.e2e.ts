@@ -38,14 +38,13 @@ async function configureSafe(): Promise<void> {
       provider: string;
       openrouterApiKey: string;
       mode: string;
-      approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+      approval: { mutating: string; perTool: Record<string, string> };
     };
     s.provider = "openrouter";
     s.openrouterApiKey = "e2e-scripted-key";
     s.mode = "safe";
     s.approval.mutating = "ask";
     s.approval.perTool = {};
-    s.approval.workingDirs = [];
     await plugin.saveSettings?.();
   });
 }

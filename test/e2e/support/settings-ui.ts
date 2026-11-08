@@ -161,6 +161,14 @@ export async function waitForSetting(name: string, section?: string): Promise<vo
   );
 }
 
+/** Read the visible text of the active settings page body. */
+export async function readSettingsBodyText(): Promise<string> {
+  await focusSettingsWindow();
+  return await browser.execute(
+    () => document.querySelector<HTMLElement>(".agentic-chat-settings-tabbody")?.innerText ?? "",
+  );
+}
+
 /** Read the current text or number value of a named setting. */
 export async function readSettingText(name: string): Promise<string> {
   await focusSettingsWindow();

@@ -65,7 +65,7 @@ async function configurePlugin(): Promise<boolean> {
       provider: string;
       openrouterApiKey: string;
       mode: string;
-      approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+      approval: { mutating: string; perTool: Record<string, string> };
       web: { enabled: boolean };
     };
     settings.provider = "openrouter";
@@ -73,7 +73,6 @@ async function configurePlugin(): Promise<boolean> {
     settings.mode = "safe";
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};
-    settings.approval.workingDirs = [];
     settings.web.enabled = false;
     await plugin.saveSettings?.();
     return true;

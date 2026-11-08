@@ -18,7 +18,7 @@ If something fails, find the symptom below. Run `/doctor` first for configuratio
 | Symptom | Fix |
 | --- | --- |
 | Reads act like the file does not exist | The path is probably on the ignore list. Ignored files report as not found. Check **Advanced > Ignored files**. |
-| Every write asks for approval | Safe mode asks before each write. Approve the call, grant the folder with `/add-dir <folder>`, set a per-tool policy under **Approval**, or switch the mode with the composer Safe/YOLO toggle or the **Permission mode** setting. YOLO auto-approves most mutating tools, but recursive folder deletes still ask and a per-tool deny still wins. |
+| Every write asks for approval | Safe mode asks before each write. Approve the call, set a per-tool policy under **Approval**, or switch the mode with the composer Safe/YOLO toggle or the **Permission mode** setting. YOLO auto-approves most mutating tools, but recursive folder deletes still ask and a per-tool deny still wins. |
 | A denied tool stays blocked | A per-tool **deny** overrides everything, including YOLO. Change it under **Approval > Per-tool overrides**. |
 
 ## Cost and context

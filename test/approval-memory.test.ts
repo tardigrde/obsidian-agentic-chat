@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
 function settings(): AgenticChatSettings {
   return {
     ...DEFAULT_SETTINGS,
-    approval: { ...DEFAULT_SETTINGS.approval, perTool: {}, workingDirs: [] },
+    approval: { ...DEFAULT_SETTINGS.approval, perTool: {} },
   };
 }
 

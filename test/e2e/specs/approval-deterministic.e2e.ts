@@ -7,8 +7,6 @@ const EDIT_NOTE_PATH = "E2E-Deterministic-Edit.md";
 const EDIT_BEFORE = "before edit";
 const EDIT_AFTER = "after edit";
 const DENIED_NOTE_PATH = "E2E-Deterministic-Denied.md";
-const WORKING_DIR_ALLOWED_PATH = "Allowed/E2E-Inside.md";
-const WORKING_DIR_OUTSIDE_PATH = "Outside/E2E-Outside.md";
 const INSTRUCTIONS_PATH = "AGENTS.md";
 const INSTRUCTIONS_BODY = "# Agent instructions\n- Prefer concise vault updates.";
 const REMEMBER_DENY_PATH = "E2E-Remember-Deny.md";
@@ -89,7 +87,7 @@ async function configurePlugin(): Promise<boolean> {
       provider: string;
       openrouterApiKey: string;
       mode: string;
-      approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+      approval: { mutating: string; perTool: Record<string, string> };
       web: { enabled: boolean };
     };
     settings.provider = "openrouter";
@@ -97,7 +95,6 @@ async function configurePlugin(): Promise<boolean> {
     settings.mode = "safe";
     settings.approval.mutating = "ask";
     settings.approval.perTool = {};
-    settings.approval.workingDirs = [];
     settings.web.enabled = false;
     await plugin.saveSettings?.();
     return true;
@@ -114,8 +111,6 @@ async function cleanupNotes(): Promise<void> {
     WRITE_NOTE_PATH,
     EDIT_NOTE_PATH,
     DENIED_NOTE_PATH,
-    WORKING_DIR_ALLOWED_PATH,
-    WORKING_DIR_OUTSIDE_PATH,
     INSTRUCTIONS_PATH,
     REMEMBER_DENY_PATH,
     REMEMBER_DENY_SECOND_PATH,
@@ -124,20 +119,19 @@ async function cleanupNotes(): Promise<void> {
   ]);
 }
 
-async function setApproval(mutating: "allow" | "ask" | "deny", workingDirs: string[]): Promise<void> {
+async function setApproval(mutating: "allow" | "ask" | "deny"): Promise<void> {
   await browser.executeObsidian(async ({ app }, next) => {
     const plugin = (app as unknown as {
       plugins?: { plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }> };
     }).plugins?.plugins?.["agentic-chat"];
     if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
     const settings = plugin.settings as {
-      approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+      approval: { mutating: string; perTool: Record<string, string> };
     };
     settings.approval.mutating = next.mutating;
     settings.approval.perTool = {};
-    settings.approval.workingDirs = next.workingDirs;
     await plugin.saveSettings?.();
-  }, { mutating, workingDirs });
+  }, { mutating });
 }
 
 async function readNote(path: string): Promise<string> {
@@ -249,16 +243,6 @@ describe("agentic-chat deterministic approvals", function () {
         content: "should not be written",
       }),
       textTurn("denied write final", "The denied write was not applied."),
-      toolTurn("working-dir inside call", "e2e-working-inside", "write", {
-        path: WORKING_DIR_ALLOWED_PATH,
-        content: "inside working dir",
-      }),
-      textTurn("working-dir inside final", "Wrote inside the working directory."),
-      toolTurn("working-dir outside call", "e2e-working-outside", "write", {
-        path: WORKING_DIR_OUTSIDE_PATH,
-        content: "outside working dir",
-      }),
-      textTurn("working-dir outside final", "The outside write was blocked."),
       toolTurn("instruction write call", "e2e-instruction-write", "write", {
         path: INSTRUCTIONS_PATH,
         content: INSTRUCTIONS_BODY,
@@ -390,37 +374,6 @@ describe("agentic-chat deterministic approvals", function () {
     ]);
   });
 
-  it("auto-runs inside a working directory and asks outside it", async function () {
-    await setApproval("ask", ["Allowed"]);
-
-    await sendPrompt("scripted working directory write inside");
-    await browser.waitUntil(async () => await noteExists(WORKING_DIR_ALLOWED_PATH), {
-      timeout: 10_000,
-      timeoutMsg: "in-scope working-dir write never appeared in the vault",
-    });
-    expect(await readNote(WORKING_DIR_ALLOWED_PATH)).toContain("inside working dir");
-    expect(await $(".agentic-chat-approval").isExisting()).toBe(false);
-    await expect($(".agentic-chat-messages")).toHaveText(/Wrote inside the working directory/);
-
-    await sendPrompt("scripted working directory write outside");
-    await denyApproval();
-    await expect($(".agentic-chat-messages")).toHaveText(/The outside write was blocked/);
-    expect(await noteExists(WORKING_DIR_OUTSIDE_PATH)).toBe(false);
-
-    expect(await scriptedCallLabels()).toEqual([
-      "write tool call",
-      "write final",
-      "edit tool call",
-      "edit final",
-      "denied write call",
-      "denied write final",
-      "working-dir inside call",
-      "working-dir inside final",
-      "working-dir outside call",
-      "working-dir outside final",
-    ]);
-  });
-
   it("captures # composer text into standing instructions through approval", async function () {
     await sendPrompt("# Prefer concise vault updates.");
     await allowApproval();
@@ -487,7 +440,7 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   it("can approve deleting an empty folder", async function () {
-    await setApproval("ask", []);
+    await setApproval("ask");
     await browser.executeObsidian(async ({ app }, path) => {
       if (!app.vault.getAbstractFileByPath(path)) await app.vault.createFolder(path);
     }, EMPTY_FOLDER_PATH);
@@ -507,10 +460,6 @@ describe("agentic-chat deterministic approvals", function () {
       "edit final",
       "denied write call",
       "denied write final",
-      "working-dir inside call",
-      "working-dir inside final",
-      "working-dir outside call",
-      "working-dir outside final",
       "instruction write call",
       "instruction write final",
       "remember deny write call",
@@ -525,7 +474,7 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   it("closes the approval modal when the user stops the turn", async function () {
-    await setApproval("ask", []);
+    await setApproval("ask");
     await sendPrompt("scripted write that will be stopped");
 
     const modal = await $(".agentic-chat-approval");

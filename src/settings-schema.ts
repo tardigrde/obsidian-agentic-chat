@@ -8,7 +8,6 @@ import {
   type ProviderId,
 } from "./llm/models";
 import { healPerToolMap, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
-import { normalizeWorkingDirs } from "./agent/working-dir";
 import { type AgentMode, DEFAULT_MODE, healMode } from "./agent/modes";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
@@ -242,18 +241,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     outputStyle:
       stored?.outputStyle && stored.outputStyle in OUTPUT_STYLES ? stored.outputStyle : DEFAULT_OUTPUT_STYLE,
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
-    approval: {
-      ...DEFAULT_SETTINGS.approval,
-      ...stored?.approval,
-      perTool: healPerToolMap(stored?.approval?.perTool),
-      // Heal the granted working dirs to a string[] so a malformed persisted value
-      // can't break the gate. Also drop plugin-internal paths that would fail-open the boundary.
-      workingDirs: normalizeWorkingDirs(
-        Array.isArray(stored?.approval?.workingDirs)
-          ? stored.approval.workingDirs.filter((dir): dir is string => typeof dir === "string")
-          : [],
-      ),
-    },
+    approval: healApprovalSettings(stored?.approval),
     notifications: { ...DEFAULT_SETTINGS.notifications, ...stored?.notifications },
     compaction: { ...DEFAULT_SETTINGS.compaction, ...stored?.compaction },
     toolBudget: healToolBudgetSettings(stored?.toolBudget),
@@ -326,6 +314,25 @@ function migrateLegacyPluginServers(healedMcp: McpSettings, healedPlugins: Plugi
 
 /** Retired feature keys removed from persisted data.json on load. */
 const RETIRED_SETTING_KEYS = ["projects", "agentsFolder", "enableBuiltinAgents"] as const;
+
+/**
+ * Merge the stored approval policy over the defaults. Unknown legacy keys such as
+ * `workingDirs` are dropped so a pre-0.52 data.json loads and the removed scope is
+ * never re-saved.
+ */
+function healApprovalSettings(
+  stored: Partial<ApprovalSettings> | null | undefined,
+): ApprovalSettings {
+  const approval = (stored ?? {}) as Partial<ApprovalSettings> & { workingDirs?: unknown };
+  if ("workingDirs" in approval) {
+    console.warn("Agentic chat: dropped retired setting(s): approval.workingDirs.");
+  }
+  return {
+    ...DEFAULT_APPROVAL_SETTINGS,
+    ...(approval.mutating === undefined ? {} : { mutating: approval.mutating }),
+    perTool: healPerToolMap(approval.perTool),
+  };
+}
 
 /** Upper bound for the subagent timeout (24h) — keeps `setTimeout` under its 32-bit delay range. */
 export const MAX_SUBAGENT_TIMEOUT_SECONDS = 86_400;

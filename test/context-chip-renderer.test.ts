@@ -82,7 +82,7 @@ function chipTextParts(chip: FakeElement): string[] {
 }
 
 describe("context chip renderer", () => {
-  it("renders working dirs, active note, and explicit attachments in a stable order", () => {
+  it("renders the active note and explicit attachments in a stable order", () => {
     const parent = root();
     const selection: ContextAttachment = {
       type: "text",
@@ -92,30 +92,23 @@ describe("context chip renderer", () => {
     };
 
     renderContextChips(parent as unknown as HTMLElement, {
-      workingDirs: ["Notes", ""],
       activeNotePath: "Daily.md",
       attachments: [`${FOLDER_PREFIX}Projects`, "Images/photo.png", selection],
     }, {
-      removeWorkingDir: () => {},
       removeActiveNote: () => {},
       removeAttachment: () => {},
     });
 
     const chips = parent.findAllByClass("agentic-chat-chip");
     expect(chips.map(chipTextParts)).toEqual([
-      ["Notes", "scope"],
-      ["/ (vault root)", "scope"],
       ["Daily.md", "active"],
       ["Projects"],
       ["Images/photo.png"],
       ["Selection"],
     ]);
-    expect(chips[0].className).toContain("is-scope");
-    expect(chips[2].className).toContain("is-active-note");
-    expect(chips[2].attr("title")).toBe("The active note is attached automatically — remove to stop for this session.");
-    expect(chips[0].attr("title")).toBe(
-      "Working directory — the agent auto-runs inside it and asks before touching anything outside. Remove to revoke.",
-    );
+    expect(chips[0].className).toContain("is-active-note");
+    expect(chips[0].attr("title")).toBe("The active note is attached automatically — remove to stop for this session.");
+    expect(chips.some((chip) => chip.className.includes("is-scope"))).toBe(false);
   });
 
   it("wires remove callbacks to the matching chip", () => {
@@ -124,18 +117,16 @@ describe("context chip renderer", () => {
     const attachment = `${FOLDER_PREFIX}Projects`;
 
     renderContextChips(parent as unknown as HTMLElement, {
-      workingDirs: ["Notes"],
       activeNotePath: "Daily.md",
       attachments: [attachment],
     }, {
-      removeWorkingDir: (dir) => events.push(`dir:${dir}`),
       removeActiveNote: () => events.push("active"),
       removeAttachment: (entry) => events.push(`attachment:${entry}`),
     });
 
     for (const remove of parent.findAllByClass("agentic-chat-chip-remove")) remove.click();
 
-    expect(events).toEqual(["dir:Notes", "active", `attachment:${attachment}`]);
+    expect(events).toEqual(["active", `attachment:${attachment}`]);
   });
 
   it("renders the queued prompt as a pending chip with a preview", () => {

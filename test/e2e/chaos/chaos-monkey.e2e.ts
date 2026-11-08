@@ -288,7 +288,7 @@ async function approveIfPresent(timeoutMs: number, allowed: boolean): Promise<bo
 }
 
 async function configureApproval(mutating: string, perTool: Record<string, string> = {}): Promise<void> {
-  await configurePlugin({ mode: "safe", approval: { mutating, perTool, workingDirs: [] } });
+  await configurePlugin({ mode: "safe", approval: { mutating, perTool } });
 }
 
 async function sessionDirPath(): Promise<string> {
@@ -1111,7 +1111,7 @@ describe("chaos monkey live driver", function () {
       requestTimeoutMs: 120_000,
       maxNetworkRetries: 0,
       mode: "safe",
-      approval: { mutating: "ask", perTool: {}, workingDirs: [] },
+      approval: { mutating: "ask", perTool: {} },
       web: { enabled: false },
     });
     await openChat();

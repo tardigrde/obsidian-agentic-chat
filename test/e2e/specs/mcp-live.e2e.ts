@@ -99,7 +99,7 @@ async function configurePlugin(config: McpE2EConfig): Promise<boolean> {
       provider: string;
       openrouterApiKey: string;
       mode: string;
-      approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+      approval: { mutating: string; perTool: Record<string, string> };
       web: { enabled: boolean };
       mcp: {
         enabled: boolean;
@@ -129,7 +129,6 @@ async function configurePlugin(config: McpE2EConfig): Promise<boolean> {
     settings.mode = "safe";
     settings.approval.mutating = "ask";
     settings.approval.perTool = {};
-    settings.approval.workingDirs = [];
     settings.web.enabled = false;
     settings.mcp = {
       enabled: true,

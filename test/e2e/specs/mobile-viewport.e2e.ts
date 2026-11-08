@@ -106,7 +106,7 @@ async function seedMobileState(): Promise<void> {
       openrouterApiKey: string;
       openrouterModel: string;
       mode: string;
-      approval: { mutating: string; perTool: Record<string, string>; workingDirs: string[] };
+      approval: { mutating: string; perTool: Record<string, string> };
       web: { enabled: boolean };
       mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: unknown[] };
       network: { proxyUrl: string; noProxy: string };
@@ -115,7 +115,7 @@ async function seedMobileState(): Promise<void> {
     settings.openrouterApiKey = "e2e-mobile-scripted-key";
     settings.openrouterModel = "openai/gpt-4o-mini";
     settings.mode = "safe";
-    settings.approval = { mutating: "ask", perTool: {}, workingDirs: [] };
+    settings.approval = { mutating: "ask", perTool: {} };
     settings.web.enabled = false;
     settings.mcp = {
       enabled: true,
@@ -413,8 +413,8 @@ describe("agentic-chat mobile viewport", function () {
     assertHeadingRowReadable(await measureHeadingRow("Tool approvals"), "Tool approvals heading");
     await assertFits(".agentic-chat-settings-tabbody", "MCP settings body");
     await selectSettingsTab("Agent");
-    await waitForSetting("Working directories");
-    assertHeadingRowReadable(await measureHeadingRow("Working directories"), "Working directories heading");
+    await waitForSetting("Per-tool overrides");
+    await assertFits(".agentic-chat-settings-tabbody", "Agent settings body");
     await selectSettingsTab("Advanced");
     await waitForSetting("Plugins folder");
     // The seeded agent plugin must render an installed-plugin row so the

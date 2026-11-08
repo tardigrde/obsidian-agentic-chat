@@ -6,7 +6,6 @@ import {
   buildTurnUsageChromeParts,
   buildUsageChromeParts,
   cacheHitTone,
-  folderButtonAriaLabel,
   formatChromeUsageText,
   modelProviderLabel,
   toolBudgetNotificationKey,
@@ -120,12 +119,6 @@ describe("chrome state helpers", () => {
       { text: "100 tokens" },
       { text: "0% cache", cls: "agentic-chat-cache is-low" },
     ]);
-  });
-
-  it("builds stable folder button labels", () => {
-    expect(folderButtonAriaLabel(0)).toBe("Folders: working directory or attach listing");
-    expect(folderButtonAriaLabel(1)).toBe("Folders · 1 working directory granted");
-    expect(folderButtonAriaLabel(2)).toBe("Folders · 2 working directories granted");
   });
 
   it("keys tool-budget notifications by dropped tool names only when active", () => {

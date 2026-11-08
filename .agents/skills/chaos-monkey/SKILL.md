@@ -67,7 +67,7 @@ Focused targets:
 
 | target | what the driver does |
 |---|---|
-| `composer` | one real prompt, `/help`, `/dirs` |
+| `composer` | one real prompt, `/help`, `/status` |
 | `settings` | opens Agentic Chat settings, switches every tab, toggles MCP on and off, closes |
 | `notes` | asks for a note, approves the write when asked, reads the note back |
 | `mcp` | opens Advanced, enables MCP, adds a server, reads the server row |

@@ -637,9 +637,9 @@ describe("AgentService", () => {
       },
       app,
     );
-    // Reads outside the granted working set are ask-gated and run in parallel.
+    // An explicit per-tool ask gates both reads, so the prepared siblings run in parallel.
     settings.mode = "safe";
-    settings.approval = { mutating: "ask", perTool: {}, workingDirs: ["Notes"] };
+    settings.approval = { mutating: "ask", perTool: { read: "ask" } };
 
     await service.sendPrompt("read two files");
 
@@ -673,7 +673,7 @@ describe("AgentService", () => {
     const { service, settings, adapter } = makeService(streamFn, async () => ({ approved: true, remember: false }));
     // Per-tool deny blocks every scripted write without a modal; the denial
     // text is identical each time, so the batches hash identically.
-    settings.approval = { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] };
+    settings.approval = { mutating: "allow", perTool: { write: "deny" } };
     await service.sendPrompt("Loop please");
 
     const assistants = service.getMessages().filter((message) => message.role === "assistant");
@@ -704,7 +704,7 @@ describe("AgentService", () => {
     // and never prompt the user even though confirmToolCall would say yes.
     const { service, settings } = makeService(streamFn, async () => ({ approved: true, remember: false }));
     settings.mode = "yolo";
-    settings.approval = { mutating: "allow", perTool: { write: "deny" }, workingDirs: [] };
+    settings.approval = { mutating: "allow", perTool: { write: "deny" } };
     await service.sendPrompt("Create note.md");
 
     const toolResult = service.getMessages().find((message) => message.role === "toolResult") as
@@ -717,7 +717,7 @@ describe("AgentService", () => {
     expect(service.getMessages().filter((message) => message.role === "assistant")).toHaveLength(2);
   });
 
-  it("safe-mode working-dir boundary routes out-of-scope mutations through ask", async () => {
+  it("safe mode asks before a mutating tool call", async () => {
     const streamFn = scriptedStreamFn([
       { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "Other/x.md", content: "hi" } }], stopReason: "toolUse" },
       { content: [{ type: "text", text: "Ok, leaving it." }], stopReason: "stop" },
@@ -728,30 +728,12 @@ describe("AgentService", () => {
       return { approved: false, remember: false };
     });
     settings.mode = "safe";
-    // Even with mutating set to allow, a target outside the working set must prompt.
-    settings.approval = { mutating: "allow", perTool: {}, workingDirs: ["Notes"] };
-    await service.sendPrompt("write outside");
+    settings.approval = { mutating: "ask", perTool: {} };
+    await service.sendPrompt("write a note");
     expect(confirmCalls).toBe(1);
   });
 
-  it("safe-mode working-dir boundary auto-runs mutations inside the granted dir", async () => {
-    const streamFn = scriptedStreamFn([
-      { content: [{ type: "toolCall", id: "call-1", name: "write", arguments: { path: "Notes/x.md", content: "hi" } }], stopReason: "toolUse" },
-      { content: [{ type: "text", text: "Wrote it." }], stopReason: "stop" },
-    ]);
-    let confirmCalls = 0;
-    const { service, settings } = makeService(streamFn, async () => {
-      confirmCalls += 1;
-      return { approved: true, remember: false };
-    });
-    settings.mode = "safe";
-    // Default mutating "ask" is overridden to auto-run because the target is in-scope.
-    settings.approval = { mutating: "ask", perTool: {}, workingDirs: ["Notes"] };
-    await service.sendPrompt("write inside");
-    expect(confirmCalls).toBe(0);
-  });
-
-  it("safe-mode working-dir boundary asks before reading outside the granted dir", async () => {
+  it("safe mode runs read-only tools without approval", async () => {
     const streamFn = scriptedStreamFn([
       { content: [{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "Other/x.md" } }], stopReason: "toolUse" },
       { content: [{ type: "text", text: "Ok." }], stopReason: "stop" },
@@ -762,10 +744,9 @@ describe("AgentService", () => {
       return { approved: false, remember: false };
     });
     settings.mode = "safe";
-    // A read is normally free, but with a working set configured an out-of-scope read asks (S2).
-    settings.approval = { mutating: "ask", perTool: {}, workingDirs: ["Notes"] };
-    await service.sendPrompt("read outside");
-    expect(confirmCalls).toBe(1);
+    settings.approval = { mutating: "ask", perTool: {} };
+    await service.sendPrompt("read a note");
+    expect(confirmCalls).toBe(0);
   });
 
   it("dispatches a subagent, folds child usage into the session, and exposes profiles", async () => {
@@ -789,31 +770,6 @@ describe("AgentService", () => {
     expect(resultText).toContain("Inbox has 3 open threads.");
     // Parent's two assistant turns (2 + 2) plus the child's folded-in usage (2).
     expect(service.getSessionUsage().totalTokens).toBe(6);
-  });
-
-  it("gates child subagent tool calls against the configured working set", async () => {
-    const streamFn = scriptedStreamFn([
-      { content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "explorer", task: "update a note" } }], stopReason: "toolUse" },
-      { content: [{ type: "toolCall", id: "child-call-1", name: "read", arguments: { path: "Other/x.md" } }], stopReason: "toolUse" },
-      { content: [{ type: "text", text: "child saw the denial" }], stopReason: "stop" },
-      { content: [{ type: "text", text: "parent saw child result" }], stopReason: "stop" },
-    ]);
-    let confirmCalls = 0;
-    const { service, settings } = makeService(streamFn, async () => {
-      confirmCalls += 1;
-      return { approved: false, remember: false };
-    });
-    settings.mode = "safe";
-    settings.approval = { mutating: "allow", perTool: {}, workingDirs: ["Notes"] };
-    await service.sendPrompt("edit with a subagent");
-    expect(confirmCalls).toBe(1);
-    const resultText = service
-      .getMessages()
-      .filter((message) => message.role === "toolResult")
-      .flatMap((message) => message.content)
-      .map((block) => (block.type === "text" ? block.text : ""))
-      .join("");
-    expect(resultText).toContain("child saw the denial");
   });
 
   it("exposes the deep-research skill only when web access is enabled", async () => {
