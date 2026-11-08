@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { contextLevel, contextPercent } from "../src/ui/context-bar";
+import type { ContextReadout } from "../src/agent/readouts";
+import { contextLevel, contextPercent, formatContextReadoutTitle } from "../src/ui/context-bar";
 
 describe("contextLevel", () => {
   it("is ok below 75%", () => {
@@ -27,5 +28,27 @@ describe("contextPercent", () => {
     expect(contextPercent(0)).toBe(0);
     expect(contextPercent(1.5)).toBe(100);
     expect(contextPercent(Number.NaN)).toBe(0);
+  });
+});
+
+describe("formatContextReadoutTitle", () => {
+  it("explains the percentage with a section breakdown", () => {
+    const readout: ContextReadout = {
+      fraction: 0.1234,
+      contextWindow: 10_000,
+      load: {
+        transcriptTokens: 100,
+        systemPromptTokens: 100,
+        toolSchemaTokens: 34,
+        reserveTokens: 1_000,
+        inputTokens: 234,
+        totalTokens: 1_234,
+      },
+    };
+
+    expect(formatContextReadoutTitle(readout)).toBe(
+      "Context window 12% used (1,234 of 10,000 estimated tokens). " +
+        "Transcript 100, system prompt and loaded skills 100, active tool schemas 34, response reserve 1,000.",
+    );
   });
 });

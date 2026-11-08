@@ -56,13 +56,13 @@ await (await modal.$("button=Allow")).click();
 | Per-tool deny flips to allow in a recorded run | `src/settings.ts:895` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
 | Working dir auto-runs inside and asks outside | `src/agent/tool-call-controller.ts:266` | `test/e2e/specs/approval-deterministic.e2e.ts:393` | `covered` |
 | Working directories settings row | `src/settings.ts:895` | no committed check | `NONE` |
-| Safe/YOLO toggle | `src/ui/chat-view.ts:777` | `test/e2e/specs/plan-removal.e2e.ts:93` (existence only) | `partial` |
-| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts:777` | `test/e2e/specs/plan-removal.e2e.ts:93` | `covered` |
-| Invalid mode transition is blocked | `src/ui/chat-view.ts:987` | `test/modes.test.ts:63` (unit only) | `partial` |
-| `/dirs` lists working directories | `src/ui/chat-view.ts:1708` | `test/e2e/specs/smoke.e2e.ts:92` | `covered` |
+| Safe/YOLO toggle | `src/ui/chat-view.ts:778` | `test/e2e/specs/plan-removal.e2e.ts:93` (existence only) | `partial` |
+| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts:778` | `test/e2e/specs/plan-removal.e2e.ts:93` | `covered` |
+| Invalid mode transition is blocked | `src/ui/chat-view.ts:988` | `test/modes.test.ts:63` (unit only) | `partial` |
+| `/dirs` lists working directories | `src/ui/chat-view.ts:1713` | `test/e2e/specs/smoke.e2e.ts:92` | `covered` |
 | `/add-dir` grants a directory | `src/ui/working-directory-workflow-controller.ts:86` | `test/working-directory-workflow-controller.test.ts:69` (unit only) | `partial` |
-| Background-tab approval badge and label | `src/ui/chat-view.ts:537` | `test/e2e/specs/multi-tab-approval.e2e.ts:102` | `covered` |
-| Closing a tab clears its pending approval | `src/ui/chat-view.ts:439` | `test/e2e/specs/multi-tab-approval.e2e.ts:167` | `covered` |
+| Background-tab approval badge and label | `src/ui/chat-view.ts:538` | `test/e2e/specs/multi-tab-approval.e2e.ts:102` | `covered` |
+| Closing a tab clears its pending approval | `src/ui/chat-view.ts:440` | `test/e2e/specs/multi-tab-approval.e2e.ts:167` | `covered` |
 | Approval modal at phone width | `src/ui/approval-modal.ts:34` | `test/e2e/specs/mobile-viewport.e2e.ts:435` | `covered` |
 
 ## Gotchas

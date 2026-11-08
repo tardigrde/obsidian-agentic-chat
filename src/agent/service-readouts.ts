@@ -1,24 +1,41 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import type { RequestCostEstimate } from "./cost";
 import { sumSessionUsage } from "./session-usage";
-import { compactionCount, contextFraction, estimateNextCostReadout } from "./readouts";
+import { compactionCount, contextReadout, estimateNextCostReadout, expectedOutputTokens, type ContextReadout } from "./readouts";
 
 export interface AgentServiceReadoutInput {
   messages: AgentMessage[];
   model: Model<Api> | undefined;
   settings: AgenticChatSettings;
   systemPrompt: string;
+  tools: readonly AgentTool[];
   subagentUsage: Usage;
 }
 
-type AgentContextReadoutInput = Pick<AgentServiceReadoutInput, "messages" | "model">;
+type AgentContextReadoutInput = Pick<
+  AgentServiceReadoutInput,
+  "messages" | "model" | "settings" | "systemPrompt" | "tools"
+>;
 type AgentSessionUsageReadoutInput = Pick<AgentServiceReadoutInput, "messages" | "subagentUsage">;
-type AgentNextCostReadoutInput = Pick<AgentServiceReadoutInput, "messages" | "model" | "settings" | "systemPrompt">;
+type AgentNextCostReadoutInput = Pick<
+  AgentServiceReadoutInput,
+  "messages" | "model" | "settings" | "systemPrompt" | "tools"
+>;
+
+export function agentContextReadout(input: AgentContextReadoutInput): ContextReadout | undefined {
+  return contextReadout({
+    messages: input.messages,
+    contextWindow: input.model?.contextWindow ?? 0,
+    systemPrompt: input.systemPrompt,
+    tools: input.tools,
+    reserveTokens: expectedOutputTokens(input.settings),
+  });
+}
 
 export function agentContextFraction(input: AgentContextReadoutInput): number | undefined {
-  return contextFraction(input.messages, input.model?.contextWindow ?? 0);
+  return agentContextReadout(input)?.fraction;
 }
 
 export function agentSessionUsage(input: AgentSessionUsageReadoutInput): Usage {
@@ -35,6 +52,7 @@ export function agentNextCostEstimate(input: AgentNextCostReadoutInput): Request
     model: input.model,
     settings: input.settings,
     systemPrompt: input.systemPrompt,
+    tools: input.tools,
   });
 }
 

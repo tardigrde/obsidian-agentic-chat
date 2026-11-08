@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { buildSummaryMessage, estimateContextUsage } from "../src/agent/compaction";
-import { compactionCount, contextFraction, estimateNextCostReadout } from "../src/agent/readouts";
+import {
+  compactionCount,
+  contextFraction,
+  estimateNextCostReadout,
+} from "../src/agent/readouts";
+import { estimateToolDefinitionTokens } from "../src/agent/tool-budget";
 
 function assistant(inputTokens: number, text = "ok"): AgentMessage {
   return {
@@ -52,6 +57,18 @@ function model(cost: Model<Api>["cost"]): Model<Api> {
   };
 }
 
+/** 34 estimated tokens with the tool-budget JSON/4 heuristic. */
+const READ_TOOL = {
+  name: "read",
+  label: "Read",
+  description: "Read a file",
+  parameters: {
+    type: "object",
+    properties: { path: { type: "string" } },
+    required: ["path"],
+  },
+} as AgentTool;
+
 describe("agent readouts", () => {
   it("reports context fraction from the current transcript estimate and clamps at 1", () => {
     const messages: AgentMessage[] = [
@@ -77,6 +94,81 @@ describe("agent readouts", () => {
     expect(contextFraction(messages, 1_000)).toBe(0.001);
   });
 
+  it("pins the first-turn full load: transcript + system prompt + tool schemas + reserve", () => {
+    const messages: AgentMessage[] = [{ role: "user", content: "x".repeat(350), timestamp: 1 }];
+    const systemPrompt = "s".repeat(350);
+    const contextWindow = 10_000;
+
+    // The old readout counted only the transcript: 100 / 10,000 = 0.01.
+    expect(contextFraction(messages, contextWindow)).toBe(0.01);
+    // 100 transcript + 100 system prompt + 34 tool schemas + 1,000 reserve.
+    expect(
+      contextFraction(messages, contextWindow, {
+        systemPrompt,
+        tools: [READ_TOOL],
+        reserveTokens: 1_000,
+      }),
+    ).toBeCloseTo(0.1234, 10);
+
+    const estimate = estimateNextCostReadout({
+      messages,
+      model: model({ input: 1, output: 10, cacheRead: 0, cacheWrite: 0 }),
+      settings: { ...DEFAULT_SETTINGS, maxTokens: 1_000 },
+      systemPrompt,
+      tools: [READ_TOOL],
+    });
+    // Input excludes the reserve; the old first-turn value was 200 (100 + prompt only).
+    expect(estimate?.inputTokens).toBe(234);
+    expect(estimate?.outputTokens).toBe(1_000);
+  });
+
+  it("counts loaded skill bodies because they are part of the composed system prompt", () => {
+    const messages: AgentMessage[] = [{ role: "user", content: "hello", timestamp: 1 }];
+    const withoutSkill = contextFraction(messages, 10_000, { systemPrompt: "base prompt" });
+    const withSkill = contextFraction(messages, 10_000, {
+      systemPrompt: `base prompt\n\n<skill name="writer">${"x".repeat(3_500)}</skill>`,
+    });
+
+    expect(withSkill).toBeGreaterThan(withoutSkill!);
+  });
+
+  it("counts tool schemas on a later turn, not only the first", () => {
+    const messages: AgentMessage[] = [
+      { role: "user", content: "x".repeat(350), timestamp: 2 },
+      assistant(500, "y".repeat(1_750)),
+    ];
+    const base = {
+      messages,
+      model: model({ input: 1, output: 10, cacheRead: 0, cacheWrite: 0 }),
+      settings: { ...DEFAULT_SETTINGS, maxTokens: 0 },
+      systemPrompt: "s".repeat(350),
+    };
+
+    const withoutTools = estimateNextCostReadout({ ...base, tools: [] });
+    const withTools = estimateNextCostReadout({ ...base, tools: [READ_TOOL] });
+    const toolSchemaTokens = estimateToolDefinitionTokens([READ_TOOL]);
+
+    expect(toolSchemaTokens).toBe(34);
+    // 600 transcript + 100 system prompt + 34 tool schemas; the prior turn's
+    // provider usage no longer hides the tools.
+    expect(withoutTools?.inputTokens).toBe(700);
+    expect(withTools?.inputTokens).toBe(734);
+    expect((withTools?.inputTokens ?? 0) - (withoutTools?.inputTokens ?? 0)).toBe(34);
+  });
+
+  it("counts the response reserve as output tokens for the next request", () => {
+    const estimate = estimateNextCostReadout({
+      messages: [{ role: "user", content: "x".repeat(400), timestamp: 1 }],
+      model: model({ input: 1, output: 10, cacheRead: 0, cacheWrite: 0 }),
+      settings: { ...DEFAULT_SETTINGS, maxTokens: 123 },
+      systemPrompt: "system",
+      tools: [],
+    });
+
+    expect(estimate?.outputTokens).toBe(123);
+    expect(estimate?.usd).toBeGreaterThan(0);
+  });
+
   it("counts automatic compaction summary messages", () => {
     const messages: AgentMessage[] = [
       { role: "user", content: "hello", timestamp: 1 },
@@ -93,6 +185,7 @@ describe("agent readouts", () => {
       model: model({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }),
       settings: DEFAULT_SETTINGS,
       systemPrompt: "system",
+      tools: [READ_TOOL],
     });
     expect(result).toBeDefined();
     expect(result?.usd).toBe(0);
@@ -105,6 +198,7 @@ describe("agent readouts", () => {
       model: model({ input: 1, output: 10, cacheRead: 0, cacheWrite: 0 }),
       settings: { ...DEFAULT_SETTINGS, maxTokens: 123 },
       systemPrompt: "system",
+      tools: [],
     });
 
     expect(estimate?.outputTokens).toBe(123);

@@ -53,33 +53,33 @@ await browser.waitUntil(async () =>
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Send a prompt and render a reply | `src/ui/chat-view.ts:1279` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
-| Stream text deltas | `src/ui/chat-view.ts:2642` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
-| Reasoning section | `src/ui/chat-view.ts:2686` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
-| Markdown rendering | `src/ui/chat-view.ts:2695` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
-| Tool step cards and diffs | `src/ui/chat-view.ts:2526` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
+| Send a prompt and render a reply | `src/ui/chat-view.ts:1284` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
+| Stream text deltas | `src/ui/chat-view.ts:2647` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
+| Reasoning section | `src/ui/chat-view.ts:2691` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
+| Markdown rendering | `src/ui/chat-view.ts:2700` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
+| Tool step cards and diffs | `src/ui/chat-view.ts:2531` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:397` | no committed check | `NONE` |
-| Stop the active turn (toolbar) | `src/ui/chat-view.ts:1253` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
-| Stop one tab without aborting the other | `src/ui/chat-view.ts:823` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
-| Stop clears queued steering | `src/agent/agent-service.ts:725` | `test/agent-service.test.ts:1559` (unit only) | `partial` |
-| `/compact` skips when the session changed | `src/agent/agent-service.ts:562` | `test/agent-service.test.ts:1030` | `partial` |
+| Stop the active turn (toolbar) | `src/ui/chat-view.ts:1258` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
+| Stop one tab without aborting the other | `src/ui/chat-view.ts:824` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
+| Stop clears queued steering | `src/agent/agent-service.ts:743` | `test/agent-service.test.ts:1559` (unit only) | `partial` |
+| `/compact` skips when the session changed | `src/agent/agent-service.ts:580` | `test/agent-service.test.ts:1030` | `partial` |
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
 | Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
 | Enter steers after a successful tool call | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:166` | `covered` |
-| Shift+Enter inserts a newline | `src/ui/chat-view.ts:713` | `test/e2e/specs/composer-paths.e2e.ts:267` | `covered` |
-| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1258` | `test/e2e/specs/composer-paths.e2e.ts:200` | `covered` |
-| Stop then send replaces the turn | `src/ui/chat-view.ts:1253` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
+| Shift+Enter inserts a newline | `src/ui/chat-view.ts:714` | `test/e2e/specs/composer-paths.e2e.ts:267` | `covered` |
+| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1263` | `test/e2e/specs/composer-paths.e2e.ts:200` | `covered` |
+| Stop then send replaces the turn | `src/ui/chat-view.ts:1258` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
 | Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |
-| Inline `ask_user` card | `src/ui/chat-view.ts:566` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
-| Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:624` | no committed check | `NONE` |
+| Inline `ask_user` card | `src/ui/chat-view.ts:567` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
+| Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:625` | no committed check | `NONE` |
 | Copy response | `src/ui/assistant-bubble.ts:827` | no committed check | `NONE` |
 | Ask again | `src/ui/assistant-bubble.ts:813` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
-| Retry keeps image attachments | `src/ui/chat-view.ts:1568` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
+| Retry keeps image attachments | `src/ui/chat-view.ts:1573` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
 | Error banner Retry | `src/ui/assistant-bubble.ts:783` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
-| Edit and resend a user turn | `src/ui/chat-view.ts:2611` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
-| Context-window bar | `src/ui/chat-view.ts:765` | `test/e2e/specs/smoke.e2e.ts:180` (existence only) | `partial` |
-| Usage readout | `src/ui/chat-view.ts:2184` | no committed check | `NONE` |
-| Background-tab completion notice | `src/ui/chat-view.ts:1253` | no committed check | `NONE` |
+| Edit and resend a user turn | `src/ui/chat-view.ts:2616` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
+| Context-window bar | `src/ui/chat-view.ts:766` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
+| Usage readout | `src/ui/chat-view.ts:2189` | no committed check | `NONE` |
+| Background-tab completion notice | `src/ui/chat-view.ts:1258` | no committed check | `NONE` |
 
 ## Gotchas
 

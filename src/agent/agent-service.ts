@@ -23,11 +23,12 @@ import { handleAgentRuntimeEvent } from "./agent-event-handler";
 import type { RequestCostEstimate } from "./cost";
 import {
   agentCompactionCount,
-  agentContextFraction,
+  agentContextReadout,
   agentNextCostEstimate,
   agentSessionUsage,
   agentSupportsImages,
 } from "./service-readouts";
+import type { ContextReadout } from "./readouts";
 import { normalizeSteeringText, spendCapAbortReason } from "./turn-control";
 import { AgentTurnConfiguration } from "./turn-configuration";
 import { AgentActiveSessionRuntime } from "./active-session-runtime";
@@ -384,12 +385,27 @@ export class AgentService {
   }
 
   /**
-   * Fraction (0–1) of the model's context window filled by the most recent turn.
-   * Uses the last assistant turn's input tokens (the prompt pi sent that turn) as
-   * a proxy for how full the next request will be. Undefined if unknown.
+   * Section-by-section estimate of the next request's context load. Includes the
+   * composed system prompt (with loaded skill bodies), active tool schemas, and
+   * the response reserve, so the context bar matches what the model receives.
+   * Undefined when the model or its context window is unknown.
    */
+  getContextReadout(): ContextReadout | undefined {
+    const settings = this.getSettings();
+    const model = this.agent?.state.model;
+    if (!model) return undefined;
+    return agentContextReadout({
+      messages: this.getMessages(),
+      model,
+      settings,
+      systemPrompt: this.runtimeResources.composeSystemPrompt(settings, this.getActiveModelId()),
+      tools: this.agent?.state.tools ?? [],
+    });
+  }
+
+  /** Fraction (0–1) of the model's context window the next request will occupy. */
   getContextFraction(): number | undefined {
-    return agentContextFraction({ messages: this.getMessages(), model: this.agent?.state.model });
+    return this.getContextReadout()?.fraction;
   }
 
   /** Sum token usage and cost across all assistant turns in the active session. */
@@ -438,20 +454,22 @@ export class AgentService {
   }
 
   /**
-   * Estimated size and cost of the next request (current transcript + assumed
-   * output), for a pre-send readout. Undefined when the model has no pricing
-   * (unknown model or local Ollama) so the UI can omit a meaningless "$0".
+   * Estimated size and cost of the next request (transcript + composed system
+   * prompt + active tool schemas + assumed output), for a pre-send readout.
+   * Undefined when the model has no pricing (unknown model or local Ollama) so
+   * the UI can omit a meaningless "$0".
    */
   estimateNextCost(): RequestCostEstimate | undefined {
     const model = this.agent?.state.model;
     const settings = this.getSettings();
-    // Include the system prompt (base + overlays + skills + subagents) so the
-    // first-turn estimate isn't a large underestimate.
+    // Count the full next request, not just the transcript: the first-turn
+    // estimate used to include only the system prompt, and never the tools.
     return agentNextCostEstimate({
       messages: this.getMessages(),
       model,
       settings,
       systemPrompt: this.runtimeResources.composeSystemPrompt(settings, this.getActiveModelId()),
+      tools: this.agent?.state.tools ?? [],
     });
   }
 

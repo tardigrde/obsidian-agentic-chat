@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { buildSummaryMessage, estimateContextUsage } from "../src/agent/compaction";
 import {
   agentCompactionCount,
   agentContextFraction,
+  agentContextReadout,
   agentNextCostEstimate,
   agentSessionUsage,
   agentSupportsImages,
@@ -59,13 +60,74 @@ function model(overrides: Partial<Model<Api>> = {}): Model<Api> {
 }
 
 describe("agent service readouts", () => {
-  it("reports current transcript context fraction from the active model window", () => {
+  it("reports the full context load from the active model window", () => {
     const message = assistant(250, 0, "x".repeat(1_000));
     const estimated = estimateContextUsage([message]);
     expect(estimated).toBe(286);
-    expect(agentContextFraction({ messages: [message], model: model({ contextWindow: estimated }) })).toBe(1);
-    expect(agentContextFraction({ messages: [message], model: model({ contextWindow: estimated * 2 }) })).toBe(0.5);
-    expect(agentContextFraction({ messages: [message], model: undefined })).toBeUndefined();
+    const readout = agentContextReadout({
+      messages: [message],
+      model: model({ contextWindow: estimated + 1_000 }),
+      settings: DEFAULT_SETTINGS,
+      systemPrompt: "",
+      tools: [],
+    });
+    expect(readout?.load).toEqual({
+      transcriptTokens: 286,
+      systemPromptTokens: 0,
+      toolSchemaTokens: 0,
+      reserveTokens: 1_000,
+      inputTokens: 286,
+      totalTokens: 1_286,
+    });
+    expect(readout?.fraction).toBe(1);
+    expect(
+      agentContextFraction({
+        messages: [message],
+        model: model({ contextWindow: (estimated + 1_000) * 2 }),
+        settings: DEFAULT_SETTINGS,
+        systemPrompt: "",
+        tools: [],
+      }),
+    ).toBe(0.5);
+    expect(
+      agentContextFraction({
+        messages: [message],
+        model: undefined,
+        settings: DEFAULT_SETTINGS,
+        systemPrompt: "",
+        tools: [],
+      }),
+    ).toBeUndefined();
+  });
+
+  it("passes the system prompt and active tool schemas into the context load", () => {
+    const message = assistant(250, 0, "x".repeat(1_000));
+    const tool = {
+      name: "read",
+      label: "Read",
+      description: "Read a file",
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string" } },
+        required: ["path"],
+      },
+    } as AgentTool;
+    const readout = agentContextReadout({
+      messages: [message],
+      model: model({ contextWindow: 10_000 }),
+      settings: DEFAULT_SETTINGS,
+      systemPrompt: "s".repeat(350),
+      tools: [tool],
+    });
+
+    expect(readout?.load).toMatchObject({
+      transcriptTokens: 286,
+      systemPromptTokens: 100,
+      toolSchemaTokens: 34,
+      reserveTokens: 1_000,
+      inputTokens: 420,
+      totalTokens: 1_420,
+    });
   });
 
   it("sums visible transcript and subagent usage", () => {
@@ -87,8 +149,11 @@ describe("agent service readouts", () => {
       model: model(),
       settings: { ...DEFAULT_SETTINGS, maxTokens: 123 },
       systemPrompt: "system",
+      tools: [],
     });
 
+    // 115 transcript tokens + 2 system-prompt tokens; the output budget is separate.
+    expect(estimate?.inputTokens).toBe(117);
     expect(estimate?.outputTokens).toBe(123);
     expect(estimate?.usd).toBeGreaterThan(0);
   });
