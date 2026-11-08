@@ -37,4 +37,6 @@ YOLO auto-approves most mutating tools until you switch back. Recursive folder d
 
 Long sessions compact automatically before they overflow the configured context window. Run `/compact [instructions]` to summarize older turns immediately. Anything after the command is passed as guidance for what the summary should preserve.
 
+The toolbar context percentage reports the full next-request load: the transcript, the system prompt and loaded skills, the active tool schemas, and the response reserve. Hover the context bar to see the section breakdown.
+
 Compaction summaries preserve artifact references for large tool outputs, so you can reopen exact source snapshots with `read_artifact` or `search_artifact` after older turns are summarized away.

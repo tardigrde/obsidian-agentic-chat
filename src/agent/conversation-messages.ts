@@ -18,8 +18,8 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
  *
  * This filter is load-bearing on more than persistence: pi-ai's
  * `estimateMessageTokens` prices a `system` message (the 0.85.1 harness priced
- * it at zero), and on a first turn `estimateNextRequestCost` adds the system
- * prompt separately, so a system-bearing transcript would double-count it.
+ * it at zero), and the context readout counts the system prompt and tool schemas
+ * separately, so a system-bearing transcript would double-count them.
  * Every caller that estimates or persists must go through here.
  *
  * Uses `filter` so message object identity survives; the session recorder's
