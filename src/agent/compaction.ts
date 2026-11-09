@@ -69,6 +69,9 @@ export function formatCompactionSummary(stats: {
   return `Compacted. ${before.toLocaleString()} → ${after.toLocaleString()} estimated tokens.`;
 }
 
+/** Share of the window an overhead-triggered compaction must free to be worth a summary. */
+const MIN_OVERHEAD_COMPACTION_GAIN = 0.1;
+
 export type CompactionDueReason = "due" | "disabled" | "no_window" | "below_threshold" | "overhead_bound";
 
 export interface CompactionDueCheck {
@@ -105,7 +108,13 @@ export function checkCompactionDue(
   if (!config.enabled) return { ...base, reason: "disabled" };
   if (contextWindow <= 0) return { ...base, reason: "no_window" };
   if (loadTokens <= thresholdTokens) return { ...base, reason: "below_threshold" };
-  if (transcriptTokens <= thresholdTokens && transcriptTokens <= keepBudgetTokens) {
+  // When only the overhead pushes the load over, compact only if folding the
+  // transcript down to the keep budget frees a meaningful share of the window.
+  // Right after a compaction the transcript is the kept turns plus a summary,
+  // slightly over the keep budget; without this margin a large overhead would
+  // re-summarize on every turn.
+  const reclaimableTokens = transcriptTokens - keepBudgetTokens;
+  if (transcriptTokens <= thresholdTokens && reclaimableTokens < contextWindow * MIN_OVERHEAD_COMPACTION_GAIN) {
     return { ...base, reason: "overhead_bound" };
   }
   return { ...base, reason: "due" };

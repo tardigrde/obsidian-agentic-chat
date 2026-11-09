@@ -137,3 +137,29 @@ describe("context load agreement between the readout and compaction (#281)", () 
     expect(third!.load.toolSchemaTokens).toBeGreaterThan(first!.load.toolSchemaTokens);
   });
 });
+
+describe("checkCompactionDue hysteresis (#281)", () => {
+  const config = { enabled: true, thresholdFraction: 0.8, keepFraction: 0.3 };
+  const words = (tokens: number) => "word ".repeat(tokens);
+
+  it("does not re-trigger right after a compaction when overhead keeps the load high", async () => {
+    const { checkCompactionDue } = await import("../src/agent/compaction");
+    // Right after compaction: kept turns (~keep budget) plus a summary slightly over it.
+    const messages = [user(words(600)), assistant(words(600)), user(words(600)), assistant(words(600))];
+    const transcript = estimateContextUsage(messages);
+    const keep = WINDOW * config.keepFraction;
+    expect(transcript).toBeGreaterThan(keep);
+    expect(transcript - keep).toBeLessThan(WINDOW * 0.1);
+    const overhead = WINDOW * 0.8 - transcript + 1; // load just over the threshold
+    expect(checkCompactionDue(messages, WINDOW, config, overhead).reason).toBe("overhead_bound");
+  });
+
+  it("still compacts on overhead when compaction frees a meaningful share of the window", async () => {
+    const { checkCompactionDue } = await import("../src/agent/compaction");
+    const messages = [user(words(1500)), assistant(words(1500)), user(words(1500)), assistant(words(1500))];
+    const transcript = estimateContextUsage(messages);
+    expect(transcript - WINDOW * config.keepFraction).toBeGreaterThan(WINDOW * 0.1);
+    const overhead = WINDOW * 0.8 - transcript + 1;
+    expect(checkCompactionDue(messages, WINDOW, config, overhead).reason).toBe("due");
+  });
+});
