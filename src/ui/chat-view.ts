@@ -52,7 +52,7 @@ import {
   parseInlineInstruction,
   resolveComposerAction,
   stripContextPreamble,
-  type ComposerSubmitSource,
+  type ComposerSubmitSource, restoreUndeliveredText, UNDELIVERED_STEER_STATUS,
 } from "./composer-input";
 import {
   buildModelPillState,
@@ -77,7 +77,7 @@ import {
   isTextContextAttachment,
   type ContextAttachment,
 } from "./context-attachments";
-import { parseSlashInput, slashInputTailAfterFirst, visibleCommands } from "./commands";
+import { parseSlashInput, retiredCommandHint, slashInputTailAfterFirst, visibleCommands } from "./commands";
 import type { LoadedPlugin } from "../plugins/loader";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { formatCompactionSummary, isSummaryMessage } from "../agent/compaction";
@@ -516,10 +516,10 @@ export class ChatView extends ItemView {
 
   private handleTabChange(tab: ChatTab): void {
     this.syncTabStrip();
-    if (tab === this.activeTab) {
-      this.syncChrome();
-      void this.flushQueuedPromptIfReady();
-    }
+    if (tab === this.activeTab) this.syncChrome();
+    // After syncChrome, so the restored-draft status line is not cleared.
+    this.restoreUndeliveredSteers(tab);
+    if (tab === this.activeTab) void this.flushQueuedPromptIfReady();
   }
 
   private async askUserForTab(tab: ChatTab, request: AskUserRequest, signal?: AbortSignal): Promise<string> {
@@ -1211,7 +1211,7 @@ export class ChatView extends ItemView {
           return;
         }
         if (text.startsWith("/")) {
-          this.renderErrorMessage("Wait for the agent to finish before running a slash command.");
+          this.renderErrorMessage(retiredCommandHint(parseSlashInput(text).word) ?? "Wait for the agent to finish before running a slash command.");
           return;
         }
         this.pushHistory(text);
@@ -1598,7 +1598,7 @@ export class ChatView extends ItemView {
         await this.runSkill(skill.name, argString, `/${word}${argPart}`);
         return true;
       }
-      return false;
+      return this.showRetiredCommandHint(word);
     }
     switch (command.name) {
       case "new":
@@ -2704,6 +2704,33 @@ export class ChatView extends ItemView {
       this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
       this.autoScrollPinned = isPinnedToBottom(this.messagesEl);
     });
+  }
+
+  /** Steered text the run never delivered goes back into that tab's composer draft. */
+  private restoreUndeliveredSteers(tab: ChatTab): void {
+    const texts = tab.service.takeUndeliveredSteers();
+    if (texts.length === 0) return;
+    const isActive = tab === this.activeTab;
+    const value = restoreUndeliveredText(isActive ? this.inputEl.value : tab.state.draft, texts);
+    if (value === null) return;
+    if (!isActive) {
+      tab.state.draft = value;
+      return;
+    }
+    this.setComposerValueQuiet(value);
+    this.statusEl.setText(UNDELIVERED_STEER_STATUS);
+  }
+
+  /**
+   * A removed command (or alias) names its replacement instead of reaching the
+   * model as a literal prompt. Returns false for words that were never commands.
+   */
+  private showRetiredCommandHint(word: string): boolean {
+    const hint = retiredCommandHint(word);
+    if (!hint) return false;
+    this.clearEmptyState();
+    this.renderInfoMessage("Removed command", [[`/${word.toLowerCase()}`, hint]]);
+    return true;
   }
 }
 

@@ -174,7 +174,13 @@ export class SemanticIndexWorkflowController {
 
 export function semanticIndexLeaseFailureMessage(failure: SemanticIndexLeaseFailure): string {
   if (failure.reason === "held") {
-    return "Semantic indexing is already running in another tab or window for this index. Use /semantic-index cancel there first.";
+    const prefix = "Another semantic index run holds this index";
+    if (failure.heldForMs === undefined || failure.retryInMs === undefined) {
+      return `${prefix}. If none is running (for example after a crash or plugin reload), retry in a couple of minutes.`;
+    }
+    const age = Math.round(failure.heldForMs / 1000);
+    const wait = Math.max(1, Math.ceil(failure.retryInMs / 1000));
+    return `${prefix}; it was last active ${age} s ago. If none is running (for example after a crash or plugin reload), retry in about ${wait} s.`;
   }
   return failure.message;
 }

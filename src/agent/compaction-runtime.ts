@@ -9,6 +9,7 @@ import { addUsage, emptyUsage, sumAssistantUsage } from "./usage";
 import {
   DEFAULT_COMPACTION_CONFIG,
   buildSummaryMessage,
+  checkCompactionDue,
   collectCompactionManifest,
   estimateContextUsage,
   getCompactedUsage,
@@ -116,6 +117,12 @@ export type SummarizeFn = (
 export interface AgentCompactionRuntimeOptionsForRun {
   /** Compact even when the transcript is below the automatic threshold. */
   force?: boolean;
+  /**
+   * Non-transcript context load (system prompt, tool schemas, response reserve),
+   * added to the transcript for the threshold check so compaction agrees with
+   * the context bar. The summarizer's own budgets are unaffected.
+   */
+  overheadTokens?: number;
   /** Optional user instructions to append to the summarization prompt. */
   customInstructions?: string;
   /** Session captured with the messages; defaults to the session at run start. */
@@ -219,12 +226,12 @@ export class AgentCompactionRuntime {
     const config = options.force
       ? { ...compactionConfig(this.getSettings()), enabled: true, thresholdFraction: 0 }
       : compactionConfig(this.getSettings());
-    const plan = planCompaction(messages, contextWindow, config);
+    const plan = planCompaction(messages, contextWindow, config, options.overheadTokens);
     if (!plan) {
       return {
         status: "skipped",
         reason: "no_plan",
-        message: compactionNoPlanMessage(messages, contextWindow, config),
+        message: compactionNoPlanMessage(messages, contextWindow, config, options.overheadTokens),
       };
     }
     const summary = await this.summarizeForCompaction(plan.summarize, contextWindow, options.customInstructions);
@@ -525,15 +532,25 @@ function compactionNoPlanMessage(
   messages: AgentMessage[],
   contextWindow: number,
   config: CompactionConfig,
+  overheadTokens = 0,
 ): string {
   if (!config.enabled) return "Nothing compacted. Auto-compaction is disabled in settings.";
   if (contextWindow <= 0) return "Nothing compacted. The active model has no known context window.";
   const userTurns = messages.filter((message) => message.role === "user").length;
   if (userTurns < 2) return `Nothing compacted. Need at least two user turns; this conversation has ${userTurns}.`;
-  const tokens = estimateContextUsage(messages);
-  const threshold = contextWindow * config.thresholdFraction;
-  if (tokens <= threshold) {
-    return `Nothing compacted. The conversation is below the compaction threshold (${tokens}/${Math.round(threshold)} estimated tokens).`;
+  // Same total as the context bar: transcript plus system prompt, tool schemas,
+  // and response reserve.
+  const due = checkCompactionDue(messages, contextWindow, config, overheadTokens);
+  const threshold = Math.round(due.thresholdTokens);
+  if (due.reason === "below_threshold") {
+    return `Nothing compacted. The context load is below the compaction threshold (${due.loadTokens}/${threshold} estimated tokens).`;
+  }
+  if (due.reason === "overhead_bound") {
+    return (
+      `Nothing compacted. The context load is above the compaction threshold (${due.loadTokens}/${threshold} estimated tokens), ` +
+      `but the transcript (${due.transcriptTokens} tokens) already fits the keep budget. The rest is system prompt, ` +
+      "tool schemas, and response reserve, which compaction cannot shrink."
+    );
   }
   return "Nothing compacted. No safe user-turn boundary was found.";
 }

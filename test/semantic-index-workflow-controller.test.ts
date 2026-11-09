@@ -194,7 +194,7 @@ describe("SemanticIndexWorkflowController", () => {
 
     expect(second.calls).toContainEqual({
       type: "error",
-      message: "Semantic indexing is already running in another tab or window for this index. Use /semantic-index cancel there first.",
+      message: expect.stringMatching(/^Another semantic index run holds this index; it was last active \d+ s ago\. .*retry in about \d+ s\.$/),
     });
     expect(embedder.calls).toBe(1);
 

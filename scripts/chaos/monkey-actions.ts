@@ -1,4 +1,5 @@
 import { PARENT_TURN_CAP } from "../../src/agent/turn-cap";
+import { retiredCommandHint } from "../../src/ui/commands";
 import type { ChaosCaps, ChaosTarget } from "./monkey-core";
 
 /**
@@ -21,6 +22,11 @@ export const RETIRED_COMMANDS = [
   "/config",
   "/project",
 ] as const;
+
+/** Retired commands that still reach the model; the rest get a local replacement hint (#284). */
+export const MODEL_RETIRED_COMMANDS: readonly string[] = RETIRED_COMMANDS.filter(
+  (command) => retiredCommandHint(command.slice(1)) === undefined,
+);
 
 export type ChaosActionKind =
   | "prompt"
@@ -271,7 +277,7 @@ export function scriptedTurnsForAction(action: ChaosAction): ChaosScriptedTurn[]
     case "prompt":
       return [textTurn(`${action.id} reply`, `Chaos reply for ${action.id}.`)];
     case "retired-commands":
-      return RETIRED_COMMANDS.map((command) =>
+      return MODEL_RETIRED_COMMANDS.map((command) =>
         textTurn(`${action.id}:${command}`, `Chaos reply for the retired command ${command}.`),
       );
     case "notes-write":
@@ -345,7 +351,7 @@ export function scriptedTurnsForAction(action: ChaosAction): ChaosScriptedTurn[]
 export function modelCallsFor(action: ChaosAction): number {
   switch (action.kind) {
     case "retired-commands":
-      return RETIRED_COMMANDS.length;
+      return MODEL_RETIRED_COMMANDS.length;
     case "notes-write":
     case "steer":
     case "queue":

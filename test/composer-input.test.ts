@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseInlineInstruction,
   resolveComposerAction,
+  restoreUndeliveredText,
   stripContextPreamble,
 } from "../src/ui/composer-input";
 
@@ -23,5 +24,14 @@ describe("composer input helpers", () => {
   it("strips one leading context preamble for retry display", () => {
     expect(stripContextPreamble("<context>\n[[A.md]]\n</context>\n\nAsk me")).toBe("Ask me");
     expect(stripContextPreamble("Ask me")).toBe("Ask me");
+  });
+
+  it("restores undelivered steering text without the preamble and keeps the draft", () => {
+    const steered = "<context>\n[[A.md]]\n</context>\n\nkeep citations strict";
+    expect(restoreUndeliveredText("", [steered])).toBe("keep citations strict");
+    expect(restoreUndeliveredText("half-typed draft\n", [steered, "and be brief"])).toBe(
+      "half-typed draft\n\nkeep citations strict\n\nand be brief",
+    );
+    expect(restoreUndeliveredText("draft", ["  "])).toBeNull();
   });
 });
