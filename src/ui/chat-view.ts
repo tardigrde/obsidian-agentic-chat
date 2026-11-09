@@ -77,7 +77,7 @@ import {
   isTextContextAttachment,
   type ContextAttachment,
 } from "./context-attachments";
-import { parseSlashInput, slashInputTailAfterFirst, visibleCommands } from "./commands";
+import { parseSlashInput, retiredCommandHint, slashInputTailAfterFirst, visibleCommands } from "./commands";
 import type { LoadedPlugin } from "../plugins/loader";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { formatCompactionSummary, isSummaryMessage } from "../agent/compaction";
@@ -1211,7 +1211,7 @@ export class ChatView extends ItemView {
           return;
         }
         if (text.startsWith("/")) {
-          this.renderErrorMessage("Wait for the agent to finish before running a slash command.");
+          this.renderErrorMessage(retiredCommandHint(parseSlashInput(text).word) ?? "Wait for the agent to finish before running a slash command.");
           return;
         }
         this.pushHistory(text);
@@ -1598,7 +1598,7 @@ export class ChatView extends ItemView {
         await this.runSkill(skill.name, argString, `/${word}${argPart}`);
         return true;
       }
-      return false;
+      return this.showRetiredCommandHint(word);
     }
     switch (command.name) {
       case "new":
@@ -2704,6 +2704,18 @@ export class ChatView extends ItemView {
       this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
       this.autoScrollPinned = isPinnedToBottom(this.messagesEl);
     });
+  }
+
+  /**
+   * A removed command (or alias) names its replacement instead of reaching the
+   * model as a literal prompt. Returns false for words that were never commands.
+   */
+  private showRetiredCommandHint(word: string): boolean {
+    const hint = retiredCommandHint(word);
+    if (!hint) return false;
+    this.clearEmptyState();
+    this.renderInfoMessage("Removed command", [[`/${word.toLowerCase()}`, hint]]);
+    return true;
   }
 }
 

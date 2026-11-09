@@ -17,6 +17,7 @@ import {
   DEFAULT_SETTINGS,
   mergeSettings,
 } from "./settings";
+import { retiredSettingsNotices } from "./settings-schema";
 import { AgentService, type ToolApprovalRequest } from "./agent/agent-service";
 import type { UserApprovalChoice } from "./agent/tool-call-controller";
 import type { AskUserHandler } from "./tools/ask-user-tool";
@@ -267,6 +268,9 @@ export default class AgenticChatPlugin extends Plugin {
     // deleted from the stored object, so no plaintext fallback reaches runtime
     // settings and the next save cannot write them back to data.json.
     migrateLegacyPlaintextSecrets(stored, this.secretStore);
+    // Read what THIS data.json still carries before mergeSettings drops it, so
+    // the user learns which retired settings changed behaviour on upgrade.
+    const retiredNotices = retiredSettingsNotices(stored);
     this.settings = mergeSettings(stored);
     hydrateSettingsSecrets(this.settings, this.secretStore);
     // S4: remember mode for the broadcast guard.
@@ -280,6 +284,10 @@ export default class AgenticChatPlugin extends Plugin {
       if (!migrated) return;
     }
     await this.saveSettings();
+    // Shown once: the save above rewrites data.json without the retired keys.
+    if (retiredNotices.length > 0) {
+      new Notice(`Agentic Chat: ${retiredNotices.join(" ")}`, 0);
+    }
   }
 
   /** Best-effort one-time migration of pre-plugins skills folders. Returns false when it failed and should be retried. */
