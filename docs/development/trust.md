@@ -238,6 +238,19 @@ Stop and report when:
   matrix test.
 - **Nightly drift.** Dogfood, eval, audit, and mobile lanes still run on demand.
 
+## Accepted limits of the review gate
+
+Decided for this experimental, one-account repo. Revisit if a second maintainer
+or a reviewer account appears.
+
+- **Free-text reviewer.** `Reviewer` is a name the owner types, so the owner can
+  clear a `FAIL` by naming someone else. Independence is a convention here, not
+  something the gate can prove.
+- **Workflow self-edit.** A PR can change the workflow that runs the gate. Read
+  any diff under `.github/workflows/` and `scripts/` by hand before merging.
+- **Re-trigger after a verdict.** A verdict comment does not update the PR's
+  `review` check by itself. Edit the PR body or toggle a label once after posting.
+
 ## Sources
 
 The process borrows from pstack:
