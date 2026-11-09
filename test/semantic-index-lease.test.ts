@@ -87,7 +87,7 @@ describe("writer-owned semantic index lease", () => {
 
     try {
       const blocked = await bootstrapFor(adapter, path, { leases: owner });
-      expect(blocked.leaseFailure).toEqual({ reason: "held" });
+      expect(blocked.leaseFailure).toMatchObject({ reason: "held", heldForMs: expect.any(Number) });
       expect(blocked.file).toBeNull();
       expect(blocked.completed).toBe(false);
       expect(adapter.files.has(path)).toBe(false);

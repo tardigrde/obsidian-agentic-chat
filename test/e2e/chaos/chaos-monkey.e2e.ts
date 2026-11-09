@@ -14,6 +14,7 @@ import {
 import {
   ALLOWED_NOTE,
   DENIED_NOTE,
+  MODEL_RETIRED_COMMANDS,
   RETIRED_COMMANDS,
   focusedSequence,
   genericSequence,
@@ -376,6 +377,10 @@ async function runRetiredCommands(action: ChaosAction): Promise<void> {
   const errorsBefore = await countErrorPanels();
   const transcriptBefore = await transcriptText();
   for (const command of RETIRED_COMMANDS) {
+    if (!MODEL_RETIRED_COMMANDS.includes(command)) {
+      await expectRetiredCommandHint(command);
+      continue;
+    }
     const previous = await renderedAssistantText();
     result.calls += 1;
     result.tokens += estimateTokens(command);
@@ -401,6 +406,20 @@ async function runRetiredCommands(action: ChaosAction): Promise<void> {
   if (transcriptAfter.length <= transcriptBefore.length) throw new Error("retired commands produced no transcript output");
   const sessions = await assertSessionsValid();
   if (sessions.files === 0) result.runnerNotes.push("retired-commands: no session JSONL was written yet");
+}
+
+/** A hinted retired command answers locally with an info panel and makes no model call. */
+async function expectRetiredCommandHint(command: string): Promise<void> {
+  const latestHint = async (): Promise<string> =>
+    await browser.execute(() => {
+      const panels = document.querySelectorAll(".agentic-chat-info:not(.agentic-chat-info-error)");
+      return panels.length > 0 ? (panels[panels.length - 1].textContent ?? "") : "";
+    });
+  await sendPrompt(`${command} explain what you do`);
+  await browser.waitUntil(async () => (await latestHint()).includes(`${command} was removed`), {
+    timeout: 15_000,
+    timeoutMsg: `${command} rendered no replacement hint`,
+  });
 }
 
 async function runSteer(action: ChaosAction): Promise<void> {

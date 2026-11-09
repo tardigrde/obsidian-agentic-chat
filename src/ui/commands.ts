@@ -72,3 +72,35 @@ export function slashInputTailAfterFirst(input: ParsedSlashInput): string {
   const first = input.args[0];
   return first ? input.argString.slice(first.length).trim() : "";
 }
+
+const IGNORED_FILES_HINT =
+  "the agent can read the whole vault. To keep it out of a folder, add it to Settings → Advanced → Ignored files.";
+const MODE_HINT = "use the Safe/YOLO toggle in the composer or Settings → Permission mode.";
+
+/**
+ * Commands and aliases removed by the product cuts, mapped to what replaces them.
+ * Typing one shows its hint instead of sending the literal text to the model.
+ */
+const RETIRED_COMMAND_HINTS: Readonly<Record<string, string>> = {
+  steer: "press Enter while the agent responds to steer.",
+  "follow-up": "while the agent responds, type your message and press Queue to send it after the current turn.",
+  followup: "while the agent responds, type your message and press Queue to send it after the current turn.",
+  redirect: "press Stop, then send your new message.",
+  config: MODE_HINT,
+  mode: MODE_HINT,
+  history: "use /sessions.",
+  semindex: "use /semantic-index.",
+  thinking: "use /effort.",
+  todo: "the todo tracker is gone. Ask the agent to keep a checklist in a note instead.",
+  todos: "the todo tracker is gone. Ask the agent to keep a checklist in a note instead.",
+  "add-dir": IGNORED_FILES_HINT,
+  dirs: IGNORED_FILES_HINT,
+  "working-dirs": IGNORED_FILES_HINT,
+};
+
+/** Hint for a retired command word (case-insensitive), or undefined when it was never retired. */
+export function retiredCommandHint(word: string): string | undefined {
+  const lower = word.toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(RETIRED_COMMAND_HINTS, lower)) return undefined;
+  return `/${lower} was removed: ${RETIRED_COMMAND_HINTS[lower]}`;
+}
