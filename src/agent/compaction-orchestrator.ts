@@ -3,11 +3,13 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 export interface CompactionTranscript {
   messages: AgentMessage[];
   contextWindow: number;
+  /** Non-transcript load (system prompt, tool schemas, reserve), as the context bar counts it. */
+  overheadTokens?: number;
 }
 
 export interface AgentCompactionOrchestratorOptions {
   getTranscript: () => CompactionTranscript | null;
-  compact: (messages: AgentMessage[], contextWindow: number) => Promise<AgentMessage[] | null>;
+  compact: (messages: AgentMessage[], contextWindow: number, overheadTokens?: number) => Promise<AgentMessage[] | null>;
   markPersistedMessages: (messages: AgentMessage[]) => void;
   replaceAgent: (messages: AgentMessage[]) => void;
   refreshActiveSessionInfo: () => void;
@@ -27,7 +29,7 @@ export async function maybeCompactAgentTranscript(options: AgentCompactionOrches
   try {
     const transcript = options.getTranscript();
     if (!transcript) return false;
-    const newMessages = await options.compact(transcript.messages, transcript.contextWindow);
+    const newMessages = await options.compact(transcript.messages, transcript.contextWindow, transcript.overheadTokens);
     if (!newMessages) return false;
     // From here on the session file holds the compacted transcript. A failed
     // in-memory replace must not leave the agent on the stale transcript.

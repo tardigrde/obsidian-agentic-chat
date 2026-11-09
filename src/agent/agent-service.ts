@@ -23,12 +23,13 @@ import { handleAgentRuntimeEvent } from "./agent-event-handler";
 import type { RequestCostEstimate } from "./cost";
 import {
   agentCompactionCount,
+  agentContextOverheadTokens,
   agentContextReadout,
   agentNextCostEstimate,
   agentSessionUsage,
   agentSupportsImages,
 } from "./service-readouts";
-import type { ContextReadout } from "./readouts";
+import { CachedContextOverheadCounter, type ContextReadout } from "./readouts";
 import { normalizeSteeringText, spendCapAbortReason } from "./turn-control";
 import { AgentTurnConfiguration } from "./turn-configuration";
 import { AgentActiveSessionRuntime } from "./active-session-runtime";
@@ -143,6 +144,8 @@ export class AgentService {
   private initialization: Promise<void> | null = null;
   /** Set when a compaction rewrite landed but the live transcript is stale. */
   private compactionRecoveryError: string | undefined;
+  /** Memoizes system-prompt and tool-schema token counts for the per-event readout. */
+  private readonly contextOverhead = new CachedContextOverheadCounter();
 
   /** Vault `modify` listener that drops memoized reads when a file changes externally. */
   private vaultModifyRef?: EventRef;
@@ -400,7 +403,20 @@ export class AgentService {
       settings,
       systemPrompt: this.runtimeResources.composeSystemPrompt(settings, this.getActiveModelId()),
       tools: this.agent?.state.tools ?? [],
-    });
+    }, this.contextOverhead);
+  }
+
+  /**
+   * Non-transcript load (system prompt, tool schemas, response reserve), measured
+   * exactly as {@link getContextReadout} does so compaction and the bar agree.
+   */
+  private getContextOverheadTokens(): number {
+    const settings = this.getSettings();
+    return agentContextOverheadTokens({
+      settings,
+      systemPrompt: this.runtimeResources.composeSystemPrompt(settings, this.getActiveModelId()),
+      tools: this.agent?.state.tools ?? [],
+    }, this.contextOverhead);
   }
 
   /** Fraction (0–1) of the model's context window the next request will occupy. */
@@ -612,6 +628,7 @@ export class AgentService {
     const expectedPath = this.sessions.activePath;
     const expectedGeneration = this.sessions.generation;
     const contextWindow = agent.state.model?.contextWindow ?? 0;
+    const overheadTokens = this.getContextOverheadTokens();
     const stats = {
       messageCount: messages.length,
       userTurns: messages.filter((message) => message.role === "user").length,
@@ -637,6 +654,7 @@ export class AgentService {
     try {
       result = await this.compaction.compactWithResult(messages, contextWindow, {
         force: true,
+        overheadTokens,
         customInstructions: customInstructions?.trim() || undefined,
         expectedPath,
         expectedGeneration,
@@ -703,8 +721,9 @@ export class AgentService {
     });
     return {
       compacted: true,
-      beforeTokens: stats.estimatedTokens,
-      afterTokens: estimateContextUsage(result.messages),
+      // Report the same load the context bar shows: transcript plus overhead.
+      beforeTokens: stats.estimatedTokens + overheadTokens,
+      afterTokens: estimateContextUsage(result.messages) + overheadTokens,
       contextWindow,
     };
   }
@@ -874,9 +893,11 @@ export class AgentService {
         return {
           messages: conversationMessages(agent.state.messages),
           contextWindow: agent.state.model?.contextWindow ?? 0,
+          overheadTokens: this.getContextOverheadTokens(),
         };
       },
-      compact: (messages, contextWindow) => this.compaction.compact(messages, contextWindow),
+      compact: (messages, contextWindow, overheadTokens) =>
+        this.compaction.compact(messages, contextWindow, { overheadTokens }),
       markPersistedMessages: (messages) => this.sessionEvents.markPersistedMessages(messages),
       replaceAgent: (messages) => this.parentAgent.replace(messages),
       refreshActiveSessionInfo: () => this.sessions.refreshInfoIfActive(),
