@@ -7,7 +7,7 @@ import {
   MemorySecretStore,
   settingsForStorage,
 } from "../src/secrets/secret-store";
-import { migrateLegacyPlaintextSecrets } from "../src/secrets/legacy-plaintext";
+import { migrateLegacyPlaintextSecrets, withUnmigratedSecrets } from "../src/secrets/legacy-plaintext";
 
 describe("secret storage migration", () => {
   it("keeps top-level secret handling in one registry", () => {
@@ -253,5 +253,74 @@ describe("secret storage migration", () => {
     const stored = settingsForStorage(blank, emptyStore);
     expect("openrouterApiKey" in stored).toBe(false);
     expect(emptyStore.getSecret(blank.openrouterApiKeySecretId)).toBe("");
+  });
+});
+
+describe("legacy plaintext secret migration (#285)", () => {
+  class ThrowingSecretStore extends MemorySecretStore {
+    override setSecret(): void {
+      throw new Error("secret storage unavailable");
+    }
+  }
+
+  it("does not overwrite a newer value already in the secret store", () => {
+    const store = new MemorySecretStore();
+    store.setSecret("agentic-chat-openrouter-api-key", "NEW");
+    const raw: Record<string, unknown> = { openrouterApiKey: "OLD" };
+
+    migrateLegacyPlaintextSecrets(raw, store);
+
+    expect(store.getSecret("agentic-chat-openrouter-api-key")).toBe("NEW");
+    expect("openrouterApiKey" in raw).toBe(false);
+  });
+
+  it("repoints a malformed configured secret id at the fallback id so hydration finds the value", () => {
+    const store = new MemorySecretStore();
+    const raw: Record<string, unknown> = { openrouterApiKey: "legacy-key", openrouterApiKeySecretId: "!!!" };
+
+    migrateLegacyPlaintextSecrets(raw, store);
+    const settings = mergeSettings(raw as unknown as Partial<AgenticChatSettings>);
+    hydrateSettingsSecrets(settings, store);
+
+    expect(settings.openrouterApiKeySecretId).toBe("agentic-chat-openrouter-api-key");
+    expect(settings.openrouterApiKey).toBe("legacy-key");
+  });
+
+  it("reports a failed write instead of throwing and keeps the value in memory only", () => {
+    const store = new ThrowingSecretStore();
+    const raw: Record<string, unknown> = { openrouterApiKey: "legacy-key" };
+
+    let failures: ReturnType<typeof migrateLegacyPlaintextSecrets> = [];
+    expect(() => {
+      failures = migrateLegacyPlaintextSecrets(raw, store);
+    }).not.toThrow();
+    expect(failures).toHaveLength(1);
+    expect(failures[0].secretId).toBe("agentic-chat-openrouter-api-key");
+    expect(JSON.stringify(raw)).not.toContain("legacy-key");
+
+    const settings = mergeSettings(raw as unknown as Partial<AgenticChatSettings>);
+    hydrateSettingsSecrets(settings, withUnmigratedSecrets(store, failures));
+    expect(settings.openrouterApiKey).toBe("legacy-key");
+    // The save path still omits plaintext from data.json.
+    expect(JSON.stringify(settingsForStorage(settings, new MemorySecretStore()))).not.toContain("legacy-key");
+  });
+
+  it("keeps distinct secrets for MCP servers that have no id", () => {
+    const store = new MemorySecretStore();
+    const raw: Record<string, unknown> = {
+      mcp: {
+        enabled: true,
+        servers: [
+          { name: "Alpha", url: "https://alpha.example.com/mcp", authType: "bearer", authHeaderValue: "alpha-secret" },
+          { name: "Beta", url: "https://beta.example.com/mcp", authType: "bearer", authHeaderValue: "beta-secret" },
+        ],
+      },
+    };
+
+    migrateLegacyPlaintextSecrets(raw, store);
+    const settings = mergeSettings(raw as unknown as Partial<AgenticChatSettings>);
+    hydrateSettingsSecrets(settings, store);
+
+    expect(settings.mcp.servers.map((server) => server.authHeaderValue)).toEqual(["alpha-secret", "beta-secret"]);
   });
 });
