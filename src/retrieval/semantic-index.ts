@@ -38,11 +38,17 @@ export interface SemanticIndexBootstrapInput {
   /** Called after the writer owns the path, before the first persisted write. */
   onLeaseAcquired?: () => void;
   /** Test seam: the registry that owns the path. Defaults to the shared registry. */
-  leases?: Pick<SemanticIndexLeaseRegistry, "acquireDurable">;
+  leases?: Pick<SemanticIndexLeaseRegistry, "acquireDurable"> & Partial<Pick<SemanticIndexLeaseRegistry, "describeHold">>;
 }
 
 export type SemanticIndexLeaseFailure =
-  | { reason: "held" }
+  | {
+      reason: "held";
+      /** Time since the holder's last heartbeat, when the store could tell. */
+      heldForMs?: number;
+      /** Time until that lease expires if its holder is gone. */
+      retryInMs?: number;
+    }
   | { reason: "store-error"; message: string };
 
 export type SemanticIndexBootstrapResult =
@@ -62,8 +68,17 @@ export type SemanticIndexBootstrapResult =
 
 export const SEMANTIC_INDEX_VERSION = 1;
 
-/** A stalled run loses its lease after this long without a persisted batch. */
-export const DEFAULT_SEMANTIC_INDEX_LEASE_TTL_MS = 30 * 60 * 1000;
+/**
+ * A lease expires this long after its last heartbeat. A live writer renews it on
+ * a timer (every quarter TTL) and after each persisted batch, so only a crashed
+ * or reloaded owner lets it lapse, and the next load waits at most this long.
+ */
+export const DEFAULT_SEMANTIC_INDEX_LEASE_TTL_MS = 2 * 60 * 1000;
+
+export interface SemanticIndexLeaseHold {
+  heldForMs: number;
+  retryInMs: number;
+}
 
 let semanticLeaseNamespace = "vault";
 
@@ -116,7 +131,8 @@ export class SemanticIndexLeaseRegistry {
   async acquireDurable(path: string): Promise<SemanticIndexLease | null> {
     const key = semanticLeaseKey(path);
     const local = this.acquire(path);
-    if (!local || !this.store) return local;
+    if (!local) return null;
+    if (!this.store) return this.withLocalHeartbeat(local);
     const store = this.store;
     try {
       const acquired = await store.tryAcquire(key, this.ownerId, this.now(), this.ttlMs);
@@ -132,29 +148,68 @@ export class SemanticIndexLeaseRegistry {
     }
     let owned = true;
     let touchedAt = this.now();
+    const renew = () => {
+      if (!owned) return;
+      local.touch();
+      touchedAt = this.now();
+      void store
+        .tryAcquire(key, this.ownerId, touchedAt, this.ttlMs)
+        .then((renewed) => {
+          if (!renewed) owned = false;
+        })
+        .catch(() => {
+          // A failed renewal cannot prove ownership; stop before the next write.
+          owned = false;
+        });
+    };
+    const heartbeat = window.setInterval(renew, this.heartbeatMs());
     return {
-      touch: () => {
-        if (!owned) return;
-        local.touch();
-        touchedAt = this.now();
-        void store
-          .tryAcquire(key, this.ownerId, touchedAt, this.ttlMs)
-          .then((renewed) => {
-            if (!renewed) owned = false;
-          })
-          .catch(() => {
-            // A failed renewal cannot prove ownership; stop before the next write.
-            owned = false;
-          });
-      },
+      touch: renew,
       release: () => {
         owned = false;
+        window.clearInterval(heartbeat);
         void local.release();
         return store.release(key, this.ownerId).catch((error) => {
           console.warn("Agentic Chat: could not release the semantic index lease", error);
         });
       },
       isOwned: () => owned && this.now() - touchedAt < this.ttlMs && local.isOwned(),
+    };
+  }
+
+  /**
+   * Explain a refused acquisition: how long ago the holder last renewed and when
+   * its lease lapses if that holder is gone. Null when nothing can be read.
+   */
+  async describeHold(path: string): Promise<SemanticIndexLeaseHold | null> {
+    const key = semanticLeaseKey(path);
+    let touchedAt = this.leases.get(key)?.touchedAt;
+    if (touchedAt === undefined && this.store?.peek) {
+      try {
+        touchedAt = (await this.store.peek(key))?.touchedAt;
+      } catch {
+        return null;
+      }
+    }
+    if (touchedAt === undefined) return null;
+    const heldForMs = Math.max(0, this.now() - touchedAt);
+    return { heldForMs, retryInMs: Math.max(0, this.ttlMs - heldForMs) };
+  }
+
+  private heartbeatMs(): number {
+    return Math.max(1, Math.floor(this.ttlMs / 4));
+  }
+
+  /** Without a shared store, still keep a long batch from outliving the short TTL. */
+  private withLocalHeartbeat(local: SemanticIndexLease): SemanticIndexLease {
+    const heartbeat = window.setInterval(() => local.touch(), this.heartbeatMs());
+    return {
+      touch: () => local.touch(),
+      release: () => {
+        window.clearInterval(heartbeat);
+        return local.release();
+      },
+      isOwned: () => local.isOwned(),
     };
   }
 
@@ -194,13 +249,14 @@ async function acquireSemanticIndexWriterLease(
 
 /**
  * The writer owns the lease: it claims the path before the first read or write,
- * keeps the claim fresh after every persisted batch, and releases it in
- * `finally`. A direct caller therefore cannot write without the lease.
+ * keeps the claim fresh on a heartbeat timer and after every persisted batch,
+ * and releases it in `finally`. A direct caller therefore cannot write without the lease.
  */
 export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput): Promise<SemanticIndexBootstrapResult> {
+  const leases = input.leases ?? semanticIndexLeases;
   let acquired: SemanticIndexLease | null;
   try {
-    acquired = await acquireSemanticIndexWriterLease(input.leases ?? semanticIndexLeases, input.path);
+    acquired = await acquireSemanticIndexWriterLease(leases, input.path);
   } catch (error) {
     return {
       file: null,
@@ -210,7 +266,8 @@ export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput)
     };
   }
   if (!acquired) {
-    return { file: null, completed: false, cancelled: false, leaseFailure: { reason: "held" } };
+    const hold = (await leases.describeHold?.(input.path)) ?? {};
+    return { file: null, completed: false, cancelled: false, leaseFailure: { reason: "held", ...hold } };
   }
   const lease = acquired;
   try {
