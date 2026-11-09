@@ -25,7 +25,6 @@ import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OLLAMA_BASE_URL,
   listOpenRouterModels,
-  type ProviderId,
 } from "./llm/models";
 import { type ApprovalPolicy, clearMcpPerToolApprovals, setPerToolApproval } from "./agent/approval";
 import { type AgentMode, MODE_ORDER, MODES } from "./agent/modes";
@@ -70,6 +69,8 @@ import { InstallPluginModal, noticeInstallResult } from "./ui/install-plugin-mod
 import { NewSkillModal } from "./ui/new-skill-modal";
 import { ModelSuggestModal } from "./ui/model-suggest-modal";
 import { healMcpToolGlobs } from "./mcp/tool-filter";
+import { indexControls, normalizeControlValue } from "./settings-controls";
+export { normalizeControlValue } from "./settings-controls";
 import {
   type ObservabilityBackend,
   type ObservabilityPayloadMode,
@@ -252,7 +253,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
-    return this.tabs.map((tab) => {
+    const pages = this.tabs.map((tab) => {
       const page: SettingDefinitionPage & { id: string } = {
         type: "page",
         id: tab.id,
@@ -261,6 +262,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       };
       return page;
     });
+    // Merge, not replace: a row hidden now (e.g. web.searchProvider while web is off) keeps its schema.
+    indexControls(pages, this.controlIndex);
+    return pages;
   }
 
   getControlValue(key: string): unknown {
@@ -274,56 +278,58 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
   async setControlValue(key: string, value: unknown): Promise<void> {
     const settings = this.plugin.settings;
+    // One gate for every key (#286): trim text, reject unknown enums and wrong types, clamp numbers.
+    const next = normalizeControlValue(this.controlFor(key), value, this.getControlValue(key));
     switch (key) {
-      case "provider":
-        settings.provider = value as ProviderId;
-        break;
-      case "network.proxyUrl":
-        settings.network.proxyUrl = controlText(value).trim();
-        break;
-      case "network.noProxy":
-        settings.network.noProxy = controlText(value).trim();
-        break;
-      case "mcp.proxyUrl":
-        settings.mcp.proxyUrl = controlText(value).trim();
-        break;
-      case "mcp.noProxy":
-        settings.mcp.noProxy = controlText(value).trim();
-        break;
-      case "observability.endpoint":
-        settings.observability.endpoint = controlText(value).trim();
-        break;
-      case "observability.authHeaderName":
-        settings.observability.authHeaderName = controlText(value).trim();
-        break;
-      case "web.searxngUrl":
-        settings.web.searxngUrl = controlText(value).trim();
-        break;
       case "openaiCompatibleBaseUrl":
-        settings.openaiCompatibleBaseUrl = controlText(value).trim() || DEFAULT_OPENAI_COMPATIBLE_BASE_URL;
+        settings.openaiCompatibleBaseUrl = controlText(next).trim() || DEFAULT_OPENAI_COMPATIBLE_BASE_URL;
         break;
       case "ollamaBaseUrl":
-        settings.ollamaBaseUrl = controlText(value).trim() || DEFAULT_OLLAMA_BASE_URL;
-        break;
-      case "openaiCompatibleModel":
-        settings.openaiCompatibleModel = controlText(value).trim();
-        break;
-      case "ollamaModel":
-        settings.ollamaModel = controlText(value).trim();
+        settings.ollamaBaseUrl = controlText(next).trim() || DEFAULT_OLLAMA_BASE_URL;
         break;
       case "systemPrompt":
-        settings.systemPrompt = controlText(value).trim() ? String(value) : DEFAULT_SYSTEM_PROMPT;
+        settings.systemPrompt = controlText(next).trim() ? controlText(next) : DEFAULT_SYSTEM_PROMPT;
         break;
       case "plugins.folder":
-        settings.plugins.folder = controlText(value).trim();
+        settings.plugins.folder = controlText(next).trim();
         this.plugin.pluginService.invalidate();
         this.pluginsLoadedOnce = false;
         break;
       default:
-        this.writeControlValue(settings, key, value);
+        this.writeControlValue(settings, key, next);
     }
     await this.save();
     if (CONTROL_KEYS_THAT_REDRAW.has(key)) this.redraw();
+  }
+
+  /** The declarative control for a key, including rows the current settings hide. */
+  private controlFor(key: string): SettingControl | undefined {
+    if (!this.controlIndex.has(key)) this.getSettingDefinitions();
+    if (!this.controlIndex.has(key) && !this.hiddenControlsIndexed) this.indexHiddenControls();
+    return this.controlIndex.get(key);
+  }
+
+  /**
+   * Index rows the live settings hide (web or observability off, another
+   * provider's fields) by building the definitions once per provider against a
+   * clone with every section on. Synchronous, so the swap cannot interleave.
+   */
+  private indexHiddenControls(): void {
+    this.hiddenControlsIndexed = true;
+    const live = this.plugin.settings;
+    try {
+      for (const provider of PROVIDERS) {
+        const shadow = structuredClone(live);
+        shadow.provider = provider;
+        shadow.web.enabled = true;
+        shadow.web.searchProvider = "searxng";
+        shadow.observability.enabled = true;
+        this.plugin.settings = shadow;
+        this.getSettingDefinitions();
+      }
+    } finally {
+      this.plugin.settings = live;
+    }
   }
 
   private writeControlValue(settings: AgenticChatSettings, key: string, value: unknown): void {
@@ -468,6 +474,9 @@ export class AgenticChatSettingTab extends PluginSettingTab {
 
   readonly tabs = SETTINGS_TABS;
   private pluginsLoadedOnce = false;
+  /** Declarative controls by key, refreshed by getSettingDefinitions(); the schema setControlValue validates against. */
+  private readonly controlIndex = new Map<string, SettingControl>();
+  private hiddenControlsIndexed = false;
   private pendingMcpServerName = "";
   private pendingMcpServerUrl = "";
   private externallyDeletedPlugins: LoadedPlugin[] = [];
@@ -2090,7 +2099,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         "Hard spend cap (USD)",
         { type: "number", key: "notifications.costCapUsd", min: 0, step: "any" },
         "Block new turns — and stop a turn already running — once this conversation's cost reaches this amount. " +
-          "0 disables. Applies only to models with known pricing.",
+          "0 (or an empty field) turns the cap off. Applies only to models with known pricing.",
       ),
     ];
   }
