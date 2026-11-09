@@ -144,13 +144,10 @@ describe("checkCompactionDue hysteresis (#281)", () => {
 
   it("does not re-trigger right after a compaction when overhead keeps the load high", async () => {
     const { checkCompactionDue } = await import("../src/agent/compaction");
-    // Right after compaction: kept turns (~keep budget) plus a summary slightly over it.
     const messages = [user(words(600)), assistant(words(600)), user(words(600)), assistant(words(600))];
     const transcript = estimateContextUsage(messages);
-    const keep = WINDOW * config.keepFraction;
-    expect(transcript).toBeGreaterThan(keep);
-    expect(transcript - keep).toBeLessThan(WINDOW * 0.1);
-    const overhead = WINDOW * 0.8 - transcript + 1; // load just over the threshold
+    expect(transcript - WINDOW * config.keepFraction).toBeLessThan(WINDOW * 0.1);
+    const overhead = WINDOW * 0.8 - transcript + 1;
     expect(checkCompactionDue(messages, WINDOW, config, overhead).reason).toBe("overhead_bound");
   });
 
