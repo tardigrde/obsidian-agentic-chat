@@ -17,6 +17,8 @@ export interface SemanticLeaseStore {
   /** Acquire or renew the path for `ownerId`. False when another live owner holds it. */
   tryAcquire(path: string, ownerId: string, now: number, ttlMs: number): Promise<boolean>;
   release(path: string, ownerId: string): Promise<void>;
+  /** Read the current record without changing it. Used only to explain a refusal. */
+  peek?(path: string): Promise<SemanticLeaseRecord | undefined>;
 }
 
 const DB_NAME = "agentic-chat-semantic-leases";
@@ -64,6 +66,17 @@ export class IndexedDbSemanticLeaseStore implements SemanticLeaseStore {
       tx.oncomplete = () => resolve(acquired);
       tx.onerror = () => reject(tx.error ?? new Error("Semantic lease transaction failed."));
       tx.onabort = () => reject(tx.error ?? new Error("Semantic lease transaction aborted."));
+    });
+  }
+
+  async peek(path: string): Promise<SemanticLeaseRecord | undefined> {
+    const db = await this.open();
+    return await new Promise<SemanticLeaseRecord | undefined>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readonly");
+      const get = tx.objectStore(STORE).get(path);
+      tx.oncomplete = () => resolve(get.result as SemanticLeaseRecord | undefined);
+      tx.onerror = () => reject(tx.error ?? new Error("Semantic lease read failed."));
+      tx.onabort = () => reject(tx.error ?? new Error("Semantic lease read aborted."));
     });
   }
 
