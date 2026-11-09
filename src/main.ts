@@ -17,6 +17,7 @@ import {
   DEFAULT_SETTINGS,
   mergeSettings,
 } from "./settings";
+import { retiredSettingsNotices } from "./settings-schema";
 import { AgentService, type ToolApprovalRequest } from "./agent/agent-service";
 import type { UserApprovalChoice } from "./agent/tool-call-controller";
 import type { AskUserHandler } from "./tools/ask-user-tool";
@@ -278,6 +279,9 @@ export default class AgenticChatPlugin extends Plugin {
       console.warn("Agentic chat: could not move legacy secrets to secure storage", unmigrated.map((f) => f.error));
       new Notice("Could not move your API key to secure storage; it is kept in memory for this session");
     }
+    // Read what THIS data.json still carries before mergeSettings drops it, so
+    // the user learns which retired settings changed behaviour on upgrade.
+    const retiredNotices = retiredSettingsNotices(stored);
     this.settings = mergeSettings(stored);
     hydrateSettingsSecrets(this.settings, withUnmigratedSecrets(this.secretStore, unmigrated));
     // S4: remember mode for the broadcast guard.
@@ -292,14 +296,18 @@ export default class AgenticChatPlugin extends Plugin {
     }
     if (unmigrated.length === 0) {
       await this.saveSettings();
-      return;
+    } else {
+      // The store already refused a write; a failing save must not block load.
+      // settingsForStorage never emits plaintext, so nothing leaks to data.json.
+      try {
+        await this.saveSettings();
+      } catch (error) {
+        console.warn("Agentic chat: could not save settings after secret migration failure", error);
+      }
     }
-    // The store already refused a write; a failing save must not block load.
-    // settingsForStorage never emits plaintext, so nothing leaks to data.json.
-    try {
-      await this.saveSettings();
-    } catch (error) {
-      console.warn("Agentic chat: could not save settings after secret migration failure", error);
+    // Shown once: the save above rewrites data.json without the retired keys.
+    if (retiredNotices.length > 0) {
+      new Notice(`Agentic Chat: ${retiredNotices.join(" ")}`, 0);
     }
   }
 

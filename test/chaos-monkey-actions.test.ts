@@ -227,11 +227,13 @@ describe("chaos scripted turns", () => {
   });
 
   it("concatenates turns in sequence order", async () => {
-    const { RETIRED_COMMANDS, focusedSequence, scriptedTurnsFor } = await loadActions();
+    const { MODEL_RETIRED_COMMANDS, focusedSequence, scriptedTurnsFor } = await loadActions();
     const sequence = focusedSequence("retired-commands");
     const turns = scriptedTurnsFor(sequence);
-    expect(turns).toHaveLength(RETIRED_COMMANDS.length);
-    expect(turns[0].label).toContain(RETIRED_COMMANDS[0]);
-    expect(turns.at(-1)?.label).toContain(RETIRED_COMMANDS.at(-1));
+    // Hinted retired commands answer locally; only the rest reach the scripted model (#284).
+    expect([...MODEL_RETIRED_COMMANDS]).toEqual(["/plan", "/project"]);
+    expect(turns).toHaveLength(MODEL_RETIRED_COMMANDS.length);
+    expect(turns[0].label).toContain(MODEL_RETIRED_COMMANDS[0]);
+    expect(turns.at(-1)?.label).toContain(MODEL_RETIRED_COMMANDS.at(-1));
   });
 });
