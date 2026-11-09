@@ -256,4 +256,84 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
     expect(adapter.files.get(path)).toBe(original);
     expect(adapter.files.has(`${path}.bak`)).toBe(false);
   });
+  it("a second tab's createSession must not delete the first tab's in-flight rewrite temp", async () => {
+    const adapter = new MemoryAdapter();
+    const data = adapter.asDataAdapter();
+    const tabA = new ObsidianSessionManager(data, "sessions", "vault:test");
+    const tabB = new ObsidianSessionManager(data, "sessions", "vault:test");
+    await tabA.createSession(DEFAULTS);
+    await tabA.appendMessage(userMessage("first"));
+    const originalWrite = adapter.write.bind(adapter);
+    let gate: Promise<void> | null = null;
+    adapter.write = async (target, content) => {
+      await originalWrite(target, content);
+      if (target.includes(".tmp.") && !gate) {
+        gate = tabB.createSession(DEFAULTS).then(() => undefined);
+        await gate;
+      }
+    };
+    await expect(tabA.rewriteMessages([userMessage("rewound")])).resolves.toBeUndefined();
+    expect(gate).not.toBeNull();
+    expect(messageTexts(tabA)).toEqual(["rewound"]);
+  });
+
+  it("a second tab's read must not restore the first tab's in-flight backup", async () => {
+    const adapter = new MemoryAdapter();
+    const data = adapter.asDataAdapter();
+    const tabA = new ObsidianSessionManager(data, "sessions", "vault:test");
+    const tabB = new ObsidianSessionManager(data, "sessions", "vault:test");
+    const info = await tabA.createSession(DEFAULTS);
+    await tabA.appendMessage(userMessage("first"));
+    await tabA.appendMessage(userMessage("second"));
+    const path = info.path;
+    // An adapter whose rename never overwrites forces the `.bak` fallback.
+    const originalRename = adapter.rename.bind(adapter);
+    adapter.rename = async (from, to) => {
+      if (adapter.files.has(to)) throw new Error("target exists");
+      return originalRename(from, to);
+    };
+    const originalRemove = adapter.remove.bind(adapter);
+    let raced = false;
+    adapter.remove = async (target) => {
+      await originalRemove(target);
+      if (target === path && !raced && adapter.files.has(`${path}.bak`)) {
+        raced = true;
+        await tabB.listSessions();
+        await tabB.loadSession(path).catch(() => undefined);
+      }
+    };
+
+    await expect(tabA.rewriteMessages([userMessage("rewound")])).resolves.toBeUndefined();
+
+    expect(raced).toBe(true);
+    const entries = parseSessionEntries(adapter.files.get(path) ?? "");
+    const messages = entries.filter((entry) => entry.type === "message");
+    expect(messages).toHaveLength(1);
+    expect(messageTexts(tabA)).toEqual(["rewound"]);
+    expect(sessionArtifacts(adapter, path)).toEqual([]);
+  });
+
+  it("does not share temp ownership between separate adapters", async () => {
+    const left = new MemoryAdapter();
+    const right = new MemoryAdapter();
+    const owner = new ObsidianSessionManager(left.asDataAdapter(), "sessions", "vault:test");
+    const info = await owner.createSession(DEFAULTS);
+    const tempPath = `${info.path}.tmp.inflight`;
+    const originalWrite = left.write.bind(left);
+    let checked = false;
+    left.write = async (target, content) => {
+      await originalWrite(target, content);
+      if (target.includes(".tmp.") && !checked) {
+        checked = true;
+        const ownedTemp = target;
+        right.files.set(ownedTemp, "orphan");
+        right.files.set(tempPath, "orphan");
+        await new ObsidianSessionManager(right.asDataAdapter(), "sessions", "vault:test").listSessions();
+        expect(right.files.has(ownedTemp)).toBe(false);
+        expect(right.files.has(tempPath)).toBe(false);
+      }
+    };
+    await owner.rewriteMessages([userMessage("rewound")]);
+    expect(checked).toBe(true);
+  });
 });
