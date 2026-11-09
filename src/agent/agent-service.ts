@@ -532,8 +532,8 @@ export class AgentService {
 
   /**
    * Deliver text into the active turn. pi drains its steering queue after the
-   * next completed tool batch, so the text arrives inside the same run. When the
-   * agent is idle, the same call sends the text as a normal prompt instead.
+   * current model turn, or the run ends and takeUndeliveredSteers returns it.
+   * When the agent is idle, the same call sends the text as a normal prompt.
    */
   async steerPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
     const text = normalizeSteeringText(prompt);
@@ -736,12 +736,12 @@ export class AgentService {
   }
 
   /**
-   * One stop policy for every path that ends a turn early: clear the steering
-   * queue first, then abort. Clearing first guarantees a queued message cannot
-   * be drained into the next run after the stop.
+   * One stop policy for every path that ends a turn early: clear the queues
+   * first, then abort, so a queued message cannot drain into the next run. The
+   * cleared text goes back to the composer, which emptied it on steer.
    */
   private stopAgent(agent: Agent): void {
-    agent.clearAllQueues();
+    this.takeQueuedMessages(agent);
     agent.abort();
   }
 
@@ -808,7 +808,7 @@ export class AgentService {
     // the turn budget from a previous user turn carries into this one.
     this.loopGuard.reset();
     this.turnCap.reset();
-    await this.promptTurns.run(run, expectedSessionToken);
+    await this.promptTurns.run(this.settlingQueues(run), expectedSessionToken);
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
@@ -976,6 +976,68 @@ export class AgentService {
   private notifyChange(): void {
     this.listeners.notifyChange();
   }
+
+  /** Steered text pi never delivered; the composer takes it back. */
+  private readonly undeliveredSteers: string[] = [];
+
+  /**
+   * Steered text that never reached the model because the run ended or was
+   * stopped first. Each text is returned once; the UI puts it back in the composer.
+   */
+  takeUndeliveredSteers(): string[] {
+    return this.undeliveredSteers.splice(0);
+  }
+
+  /**
+   * pi polls its queues only between turns, so a run that ends early (turn cap,
+   * loop guard) or a steer that lands after the last poll leaves messages
+   * queued, and the next prompt would deliver them as new. Drain them on the
+   * idle agent before and after every run, inside the prompt turn so the UI
+   * sees them on the run's settle notification.
+   */
+  private settlingQueues(run: PromptTurnRun): PromptTurnRun {
+    return async (agent) => {
+      this.takeQueuedMessages(agent);
+      try {
+        await run(agent);
+      } finally {
+        if (!agent.state.isStreaming) this.takeQueuedMessages(agent);
+      }
+    };
+  }
+
+  /** Empty both queues and keep the user text they carried as undelivered. */
+  private takeQueuedMessages(agent: Agent): void {
+    if (!agent.hasQueuedMessages()) return;
+    const { steeringMode, followUpMode } = agent;
+    // "all" makes peek return the whole queue, not just its head.
+    agent.steeringMode = "all";
+    agent.followUpMode = "all";
+    try {
+      const steering = agent.peekQueuedMessages();
+      agent.clearSteeringQueue();
+      // With an empty steering queue both peeks return the follow-ups.
+      const queued = new Set([...steering, ...agent.peekQueuedMessages()]);
+      agent.clearAllQueues();
+      for (const message of queued) {
+        const text = queuedUserText(message);
+        if (text) this.undeliveredSteers.push(text);
+      }
+    } finally {
+      agent.steeringMode = steeringMode;
+      agent.followUpMode = followUpMode;
+    }
+  }
+}
+
+function queuedUserText(message: AgentMessage): string {
+  if (message.role !== "user") return "";
+  if (typeof message.content === "string") return message.content.trim();
+  return message.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
 }
 
 function createUserMessage(text: string, images?: ImageContent[]): UserMessage {

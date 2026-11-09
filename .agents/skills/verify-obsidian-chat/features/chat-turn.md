@@ -61,11 +61,12 @@ await browser.waitUntil(async () =>
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:397` | no committed check | `NONE` |
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts:1258` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
 | Stop one tab without aborting the other | `src/ui/chat-view.ts:824` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
-| Stop clears queued steering | `src/agent/agent-service.ts:743` | `test/agent-service.test.ts:1559` (unit only) | `partial` |
+| Stop clears queued steering | `src/agent/agent-service.ts:743` | `test/agent-service.test.ts:1598` (unit only) | `partial` |
 | `/compact` skips when the session changed | `src/agent/agent-service.ts:615` | `test/agent-service.test.ts:970` | `partial` |
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
 | Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
-| Enter steers after a successful tool call | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:166` | `covered` |
+| Enter steers after the current model turn | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:166` | `covered` |
+| Undelivered steering returns to the composer | `src/ui/chat-view.ts:2710` | `test/agent-service.test.ts:1517`, `test/composer-input.test.ts:29` (unit only) | `partial` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts:714` | `test/e2e/specs/composer-paths.e2e.ts:267` | `covered` |
 | Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1263` | `test/e2e/specs/composer-paths.e2e.ts:200` | `covered` |
 | Stop then send replaces the turn | `src/ui/chat-view.ts:1258` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |

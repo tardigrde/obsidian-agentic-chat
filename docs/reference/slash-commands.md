@@ -30,7 +30,7 @@ These controls are not slash commands:
 | Control | What it does |
 | --- | --- |
 | Enter while idle | Send the text as a new turn. |
-| Enter while the agent responds | Steer the active turn. The text arrives after the next successful tool call. |
+| Enter while the agent responds | Steer the active turn. The text arrives after the current model turn finishes. If the run ends first (Stop, turn cap, loop guard), the text comes back to the composer. |
 | Shift+Enter | Insert a newline in the draft. |
 | **Queue** | Hold the draft until the active turn ends. The draft stays editable. |
 | **Stop**, then send | Replace the turn with the draft. |

@@ -52,7 +52,7 @@ import {
   parseInlineInstruction,
   resolveComposerAction,
   stripContextPreamble,
-  type ComposerSubmitSource,
+  type ComposerSubmitSource, restoreUndeliveredText, UNDELIVERED_STEER_STATUS,
 } from "./composer-input";
 import {
   buildModelPillState,
@@ -516,10 +516,10 @@ export class ChatView extends ItemView {
 
   private handleTabChange(tab: ChatTab): void {
     this.syncTabStrip();
-    if (tab === this.activeTab) {
-      this.syncChrome();
-      void this.flushQueuedPromptIfReady();
-    }
+    if (tab === this.activeTab) this.syncChrome();
+    // After syncChrome, so the restored-draft status line is not cleared.
+    this.restoreUndeliveredSteers(tab);
+    if (tab === this.activeTab) void this.flushQueuedPromptIfReady();
   }
 
   private async askUserForTab(tab: ChatTab, request: AskUserRequest, signal?: AbortSignal): Promise<string> {
@@ -2704,6 +2704,21 @@ export class ChatView extends ItemView {
       this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
       this.autoScrollPinned = isPinnedToBottom(this.messagesEl);
     });
+  }
+
+  /** Steered text the run never delivered goes back into that tab's composer draft. */
+  private restoreUndeliveredSteers(tab: ChatTab): void {
+    const texts = tab.service.takeUndeliveredSteers();
+    if (texts.length === 0) return;
+    const isActive = tab === this.activeTab;
+    const value = restoreUndeliveredText(isActive ? this.inputEl.value : tab.state.draft, texts);
+    if (value === null) return;
+    if (!isActive) {
+      tab.state.draft = value;
+      return;
+    }
+    this.setComposerValueQuiet(value);
+    this.statusEl.setText(UNDELIVERED_STEER_STATUS);
   }
 
   /**
