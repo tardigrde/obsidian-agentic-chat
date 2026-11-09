@@ -29,6 +29,29 @@ import {
 const SESSION_TEMP_MARKER = ".tmp.";
 const SESSION_BACKUP_SUFFIX = ".bak";
 
+/** Temp and backup paths owned by an in-flight rewrite. */
+interface SessionWriteOwnership {
+  temps: Set<string>;
+  backups: Set<string>;
+}
+
+/**
+ * Owned by ObsidianSessionManager. Every chat tab builds its own manager over
+ * the same vault adapter and session folder, so "is this temp/backup mine?"
+ * must be answered across all of them, not per instance. Keyed by adapter so
+ * separate vaults (and separate test adapters) never share entries.
+ */
+const sessionWriteOwnership = new WeakMap<DataAdapter, SessionWriteOwnership>();
+
+function getSessionWriteOwnership(adapter: DataAdapter): SessionWriteOwnership {
+  let ownership = sessionWriteOwnership.get(adapter);
+  if (!ownership) {
+    ownership = { temps: new Set(), backups: new Set() };
+    sessionWriteOwnership.set(adapter, ownership);
+  }
+  return ownership;
+}
+
 export interface SessionDefaults {
   provider: string;
   modelId: string;
@@ -80,15 +103,20 @@ export class ObsidianSessionManager {
    * session. Subsequent checkpoints for the same path are slimmed to
    * `beforeSummary` to keep the JSONL bounded for long editing sessions. */
   private fullCheckpointPaths = new Set<string>();
-  /** Temp files owned by an in-flight rewrite; stale cleanup must skip them. */
-  private readonly pendingSessionTemps = new Set<string>();
-  /** Backups owned by an in-flight replace; stale cleanup must skip them. */
-  private readonly pendingSessionBackups = new Set<string>();
+  /** Temp files owned by an in-flight rewrite in any manager on this adapter;
+   * stale cleanup must skip them. */
+  private readonly pendingSessionTemps: Set<string>;
+  /** Backups owned by an in-flight replace in any manager on this adapter;
+   * reads must not restore them. */
+  private readonly pendingSessionBackups: Set<string>;
 
   constructor(adapter: DataAdapter, sessionDir: string, cwd: string) {
     this.adapter = adapter;
     this.sessionDir = normalizeFolderPath(sessionDir, { allowPluginInternals: true });
     this.cwd = cwd;
+    const ownership = getSessionWriteOwnership(adapter);
+    this.pendingSessionTemps = ownership.temps;
+    this.pendingSessionBackups = ownership.backups;
   }
 
   static forPlugin(app: App, plugin: Plugin): ObsidianSessionManager {
