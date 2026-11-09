@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TFile, TFolder, type App } from "obsidian";
 import type { AssistantMessage, Model, TranscriptContext } from "@earendil-works/pi-ai";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
@@ -1512,6 +1512,45 @@ describe("AgentService", () => {
     expect(userTexts(controlled.runs[1].context.messages)).toEqual(["initial request", "fresh request"]);
     controlled.runs[1].finish();
     await next;
+  });
+
+  it("returns steering stranded by a turn-cap end and keeps it out of the next prompt", async () => {
+    const controlled = controlledStreamFn(["capped answer", "fresh answer"]);
+    const { service } = makeService(controlled.streamFn);
+    const turnCap = (service as unknown as { turnCap: { shouldStopAfterTurn: () => boolean } }).turnCap;
+    const capSpy = vi.spyOn(turnCap, "shouldStopAfterTurn").mockReturnValue(true);
+
+    const run = service.sendPrompt("initial request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
+    await service.steerPrompt("stranded steer");
+    controlled.runs[0].finish();
+    await run;
+    capSpy.mockRestore();
+
+    expect(userTexts(service.getMessages())).toEqual(["initial request"]);
+    const next = service.sendPrompt("fresh request");
+    await waitFor(() => controlled.runs.length === 2, "fresh run");
+    expect(userTexts(controlled.runs[1].context.messages)).toEqual(["initial request", "fresh request"]);
+    controlled.runs[1].finish();
+    await next;
+    expect(userTexts(service.getMessages())).toEqual(["initial request", "fresh request"]);
+
+    expect(service.takeUndeliveredSteers()).toEqual(["stranded steer"]);
+    expect(service.takeUndeliveredSteers()).toEqual([]);
+  });
+
+  it("returns queued steering text when the user stops the active run", async () => {
+    const controlled = controlledStreamFn(["will abort"]);
+    const { service } = makeService(controlled.streamFn);
+
+    const run = service.sendPrompt("initial request");
+    await waitFor(() => controlled.runs.length === 1 && service.isStreaming(), "first active stream");
+    await service.steerPrompt("keep this draft");
+    service.abort();
+    await run;
+
+    expect(userTexts(service.getMessages())).toEqual(["initial request"]);
+    expect(service.takeUndeliveredSteers()).toEqual(["keep this draft"]);
   });
 
   it("stops only the active tab when two services share settings", async () => {
