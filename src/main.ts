@@ -17,6 +17,7 @@ import {
   DEFAULT_SETTINGS,
   mergeSettings,
 } from "./settings";
+import { retiredSettingsNotices } from "./settings-schema";
 import { AgentService, type ToolApprovalRequest } from "./agent/agent-service";
 import type { UserApprovalChoice } from "./agent/tool-call-controller";
 import type { AskUserHandler } from "./tools/ask-user-tool";
@@ -34,7 +35,7 @@ import { ChatView } from "./ui/chat-view";
 import { buildQuickAskTarget } from "./ui/quick-ask";
 import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
-import { migrateLegacyPlaintextSecrets } from "./secrets/legacy-plaintext";
+import { migrateLegacyPlaintextSecrets, withUnmigratedSecrets } from "./secrets/legacy-plaintext";
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
 import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
@@ -65,7 +66,13 @@ export default class AgenticChatPlugin extends Plugin {
         typeof crypto.randomUUID === "function"
           ? crypto.randomUUID()
           : `vault-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      await this.saveSettings();
+      // A refusing secret store makes every save throw (#285). The lease id is
+      // usable in memory; it is persisted by the next successful save.
+      try {
+        await this.saveSettings();
+      } catch (error: unknown) {
+        console.warn("Agentic chat: could not persist the semantic lease id", error);
+      }
     }
     const adapter = this.app.vault.adapter as { getBasePath?: () => string };
     const basePath = adapter.getBasePath?.() ?? "";
@@ -265,10 +272,18 @@ export default class AgenticChatPlugin extends Plugin {
     // Move any pre-secretStorage plaintext credentials into the secret store
     // once, before mergeSettings reads the persisted shape. The legacy keys are
     // deleted from the stored object, so no plaintext fallback reaches runtime
-    // settings and the next save cannot write them back to data.json.
-    migrateLegacyPlaintextSecrets(stored, this.secretStore);
+    // settings and the next save cannot write them back to data.json. A value
+    // the store refuses stays in memory for this session only.
+    const unmigrated = migrateLegacyPlaintextSecrets(stored, this.secretStore);
+    if (unmigrated.length > 0) {
+      console.warn("Agentic chat: could not move legacy secrets to secure storage", unmigrated.map((f) => f.error));
+      new Notice("Could not move your API key to secure storage; it is kept in memory for this session");
+    }
+    // Read what THIS data.json still carries before mergeSettings drops it, so
+    // the user learns which retired settings changed behaviour on upgrade.
+    const retiredNotices = retiredSettingsNotices(stored);
     this.settings = mergeSettings(stored);
-    hydrateSettingsSecrets(this.settings, this.secretStore);
+    hydrateSettingsSecrets(this.settings, withUnmigratedSecrets(this.secretStore, unmigrated));
     // S4: remember mode for the broadcast guard.
     this.lastSyncedMode = this.settings.mode;
     if (legacySkillFolders.length > 0) {
@@ -279,7 +294,21 @@ export default class AgenticChatPlugin extends Plugin {
       const migrated = await this.tryMigrateLegacySkillFolders(legacySkillFolders);
       if (!migrated) return;
     }
-    await this.saveSettings();
+    if (unmigrated.length === 0) {
+      await this.saveSettings();
+    } else {
+      // The store already refused a write; a failing save must not block load.
+      // settingsForStorage never emits plaintext, so nothing leaks to data.json.
+      try {
+        await this.saveSettings();
+      } catch (error) {
+        console.warn("Agentic chat: could not save settings after secret migration failure", error);
+      }
+    }
+    // Shown once: the save above rewrites data.json without the retired keys.
+    if (retiredNotices.length > 0) {
+      new Notice(`Agentic Chat: ${retiredNotices.join(" ")}`, 0);
+    }
   }
 
   /** Best-effort one-time migration of pre-plugins skills folders. Returns false when it failed and should be retried. */

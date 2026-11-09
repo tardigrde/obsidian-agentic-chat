@@ -334,6 +334,39 @@ function healApprovalSettings(
   };
 }
 
+/** Persisted mode values that `healMode` maps onto Safe, with the name the user knew them by. */
+const RETIRED_MODE_LABELS: Readonly<Record<string, string>> = { plan: "Plan", ask: "Ask", agent: "Agent" };
+
+/**
+ * User-facing notices for retired settings that THIS stored data.json still carries
+ * and that `mergeSettings` is about to drop or remap. Pure: call it on the raw
+ * stored object before the healed settings are saved. Because the healed shape
+ * no longer holds these keys, a second load returns nothing.
+ */
+export function retiredSettingsNotices(stored: unknown): string[] {
+  if (!isRecord(stored)) return [];
+  const notices: string[] = [];
+  const approval = stored.approval;
+  if (isRecord(approval) && "workingDirs" in approval) {
+    const dirs = Array.isArray(approval.workingDirs)
+      ? approval.workingDirs.filter((dir): dir is string => typeof dir === "string" && dir.trim() !== "")
+      : [];
+    const yours = dirs.length > 0 ? ` Your working directories were: ${dirs.join(", ")}.` : "";
+    notices.push(
+      `Working directories were removed in this version.${yours} The agent can now read the whole vault without asking. To keep it out of a folder, add it to Settings → Advanced → Ignored files.`,
+    );
+  }
+  const mode = stored.mode;
+  if (typeof mode === "string" && Object.prototype.hasOwnProperty.call(RETIRED_MODE_LABELS, mode)) {
+    notices.push(`${RETIRED_MODE_LABELS[mode]} mode was removed in this version. Agentic Chat now starts in Safe mode.`);
+  }
+  return notices;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** Upper bound for the subagent timeout (24h) — keeps `setTimeout` under its 32-bit delay range. */
 export const MAX_SUBAGENT_TIMEOUT_SECONDS = 86_400;
 

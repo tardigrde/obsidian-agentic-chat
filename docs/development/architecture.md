@@ -206,6 +206,9 @@ Invariants:
 - The writer acquires the lease before its first write and releases it in
   `finally`.
 - Every persisted batch checks that the lease is still owned and renews it.
+- The lease TTL is 2 minutes. A live writer renews it on a timer every 30 s
+  and clears the timer on release. A crashed or reloaded owner's lease lapses
+  within the TTL, and a refused start reports the holder's age and the wait.
 - A complete target is backed up before any replacement.
 - An unreadable target is not replaced unless a complete backup exists.
 - A read serves the last complete index when the target is missing or corrupt.

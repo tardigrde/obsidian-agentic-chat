@@ -45,7 +45,7 @@ await closeAgenticChatSettings();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Settings tab opens | `src/main.ts:128` | `test/e2e/specs/settings-ui.e2e.ts:185` (opened by the helper via `app.setting`, not the nav) | `partial` |
+| Settings tab opens | `src/main.ts:129` | `test/e2e/specs/settings-ui.e2e.ts:185` (opened by the helper via `app.setting`, not the nav) | `partial` |
 | Three tabs render and switch | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
 | Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
 | A moved Advanced setting saves and survives close/reopen | `src/settings.ts:2133` | `test/e2e/specs/settings-ui.e2e.ts:491` | `covered` |

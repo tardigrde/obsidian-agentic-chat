@@ -50,17 +50,72 @@ export function expectedOutputTokens(settings: Pick<AgenticChatSettings, "maxTok
   return settings.maxTokens > 0 ? settings.maxTokens : DEFAULT_EXPECTED_OUTPUT_TOKENS;
 }
 
+/** Measures the non-transcript sections of a request: system prompt and tool schemas. */
+export interface ContextOverheadCounter {
+  systemPromptTokens(systemPrompt: string | undefined): number;
+  toolSchemaTokens(tools: readonly AgentTool[] | undefined): number;
+}
+
+const uncachedOverhead: ContextOverheadCounter = {
+  systemPromptTokens: (systemPrompt) => (systemPrompt ? estimateTextTokens(systemPrompt) : 0),
+  toolSchemaTokens: (tools) => (tools && tools.length > 0 ? estimateToolDefinitionTokens(tools) : 0),
+};
+
+/**
+ * Remembers the last system prompt and tool array it measured. The readout runs
+ * on every UI event; with unchanged inputs it must not re-serialize every tool
+ * schema. Keys are the prompt string and the tools array identity (pi copies the
+ * array on every assignment, so a changed tool set is always a new array).
+ */
+export class CachedContextOverheadCounter implements ContextOverheadCounter {
+  private prompt: { key: string; tokens: number } | undefined;
+  private tools: { key: readonly AgentTool[]; tokens: number } | undefined;
+
+  constructor(private readonly countToolTokens: (tools: readonly AgentTool[]) => number = estimateToolDefinitionTokens) {}
+
+  systemPromptTokens(systemPrompt: string | undefined): number {
+    if (!systemPrompt) return 0;
+    if (this.prompt?.key !== systemPrompt) {
+      this.prompt = { key: systemPrompt, tokens: estimateTextTokens(systemPrompt) };
+    }
+    return this.prompt.tokens;
+  }
+
+  toolSchemaTokens(tools: readonly AgentTool[] | undefined): number {
+    if (!tools || tools.length === 0) return 0;
+    if (this.tools?.key !== tools) {
+      this.tools = { key: tools, tokens: this.countToolTokens(tools) };
+    }
+    return this.tools.tokens;
+  }
+}
+
+/**
+ * Tokens every request carries besides the transcript: system prompt, tool
+ * schemas, and the response reserve. Compaction adds this to the transcript so
+ * its threshold check uses the same total as the context bar.
+ */
+export function contextOverheadTokens(
+  input: Omit<ContextLoadInput, "messages">,
+  counter: ContextOverheadCounter = uncachedOverhead,
+): number {
+  const load = estimateContextLoad({ ...input, messages: [] }, counter);
+  return load.totalTokens;
+}
+
 /**
  * Estimate the full context load for the next request. This is the single source
- * of truth for both the context fraction and the next-cost readout: every
- * section is measured once here, and neither caller repeats character math.
+ * of truth for the context fraction, the next-cost readout, and the compaction
+ * threshold: every section is measured once here, and no caller repeats
+ * character math.
  */
-export function estimateContextLoad(input: ContextLoadInput): ContextLoadEstimate {
+export function estimateContextLoad(
+  input: ContextLoadInput,
+  counter: ContextOverheadCounter = uncachedOverhead,
+): ContextLoadEstimate {
   const transcriptTokens = estimateContextUsage(input.messages);
-  const systemPromptTokens = input.systemPrompt ? estimateTextTokens(input.systemPrompt) : 0;
-  const toolSchemaTokens = input.tools && input.tools.length > 0
-    ? estimateToolDefinitionTokens(input.tools)
-    : 0;
+  const systemPromptTokens = counter.systemPromptTokens(input.systemPrompt);
+  const toolSchemaTokens = counter.toolSchemaTokens(input.tools);
   const reserveTokens = Math.max(0, Math.trunc(input.reserveTokens ?? 0));
   const inputTokens = transcriptTokens + systemPromptTokens + toolSchemaTokens;
   return {
@@ -75,9 +130,10 @@ export function estimateContextLoad(input: ContextLoadInput): ContextLoadEstimat
 
 export function contextReadout(
   input: ContextLoadInput & { contextWindow: number },
+  counter?: ContextOverheadCounter,
 ): ContextReadout | undefined {
   if (!Number.isFinite(input.contextWindow) || input.contextWindow <= 0) return undefined;
-  const load = estimateContextLoad(input);
+  const load = estimateContextLoad(input, counter);
   // Keep the readout hidden until there is a transcript to report; the full
   // request overhead alone is not a useful signal on an untouched session.
   if (load.transcriptTokens <= 0) return undefined;

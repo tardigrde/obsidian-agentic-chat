@@ -3,7 +3,15 @@ import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import type { AgenticChatSettings } from "../settings";
 import type { RequestCostEstimate } from "./cost";
 import { sumSessionUsage } from "./session-usage";
-import { compactionCount, contextReadout, estimateNextCostReadout, expectedOutputTokens, type ContextReadout } from "./readouts";
+import {
+  compactionCount,
+  contextOverheadTokens,
+  contextReadout,
+  estimateNextCostReadout,
+  expectedOutputTokens,
+  type ContextOverheadCounter,
+  type ContextReadout,
+} from "./readouts";
 
 export interface AgentServiceReadoutInput {
   messages: AgentMessage[];
@@ -24,18 +32,36 @@ type AgentNextCostReadoutInput = Pick<
   "messages" | "model" | "settings" | "systemPrompt" | "tools"
 >;
 
-export function agentContextReadout(input: AgentContextReadoutInput): ContextReadout | undefined {
+export function agentContextReadout(
+  input: AgentContextReadoutInput,
+  counter?: ContextOverheadCounter,
+): ContextReadout | undefined {
   return contextReadout({
     messages: input.messages,
     contextWindow: input.model?.contextWindow ?? 0,
     systemPrompt: input.systemPrompt,
     tools: input.tools,
     reserveTokens: expectedOutputTokens(input.settings),
-  });
+  }, counter);
 }
 
-export function agentContextFraction(input: AgentContextReadoutInput): number | undefined {
-  return agentContextReadout(input)?.fraction;
+export function agentContextFraction(
+  input: AgentContextReadoutInput,
+  counter?: ContextOverheadCounter,
+): number | undefined {
+  return agentContextReadout(input, counter)?.fraction;
+}
+
+/** Non-transcript load the compaction threshold adds, measured exactly as the readout does. */
+export function agentContextOverheadTokens(
+  input: Pick<AgentServiceReadoutInput, "settings" | "systemPrompt" | "tools">,
+  counter?: ContextOverheadCounter,
+): number {
+  return contextOverheadTokens({
+    systemPrompt: input.systemPrompt,
+    tools: input.tools,
+    reserveTokens: expectedOutputTokens(input.settings),
+  }, counter);
 }
 
 export function agentSessionUsage(input: AgentSessionUsageReadoutInput): Usage {
