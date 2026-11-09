@@ -18,25 +18,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The PR head is the tree being measured: its test and source files run.
+      - name: Check out the PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+          path: pr
+          persist-credentials: false
+
+      # The scripts that decide red/green come from the trusted base, so a PR
+      # cannot replace the verifier that judges it.
+      - name: Check out the trusted witness scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           cache: npm
+          cache-dependency-path: pr/package-lock.json
 
       - name: Install dependencies
+        working-directory: pr
         run: npm ci --ignore-scripts # NOSONAR:S6505 -- project install, not a global package install.
 
       - name: Prove the witness verifier
-        run: npm run verify:witness -- --self-test
+        working-directory: pr
+        run: node ../trusted/scripts/verify-witness.mjs --self-test
 
       - name: Run the declared witness
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: node scripts/witness-from-pr.mjs
+        working-directory: pr
+        run: node ../trusted/scripts/witness-from-pr.mjs

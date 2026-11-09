@@ -4,7 +4,7 @@ import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /**
  * Run the witness declared in a pull request body.
@@ -224,7 +224,9 @@ function main() {
   }
 
   const args = [
-    path.resolve("scripts/verify-witness.mjs"),
+    // The verifier next to this script, not the one in cwd: CI runs both from
+    // the trusted base checkout while cwd is the PR head being measured.
+    fileURLToPath(new URL("./verify-witness.mjs", import.meta.url)),
     "--base",
     base,
     "--test-file",
