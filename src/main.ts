@@ -34,7 +34,7 @@ import { ChatView } from "./ui/chat-view";
 import { buildQuickAskTarget } from "./ui/quick-ask";
 import { QuickAskModal } from "./ui/quick-ask-modal";
 import { ObsidianSecretStore, hydrateSettingsSecrets, settingsForStorage } from "./secrets/secret-store";
-import { migrateLegacyPlaintextSecrets } from "./secrets/legacy-plaintext";
+import { migrateLegacyPlaintextSecrets, withUnmigratedSecrets } from "./secrets/legacy-plaintext";
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
 import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
@@ -265,10 +265,15 @@ export default class AgenticChatPlugin extends Plugin {
     // Move any pre-secretStorage plaintext credentials into the secret store
     // once, before mergeSettings reads the persisted shape. The legacy keys are
     // deleted from the stored object, so no plaintext fallback reaches runtime
-    // settings and the next save cannot write them back to data.json.
-    migrateLegacyPlaintextSecrets(stored, this.secretStore);
+    // settings and the next save cannot write them back to data.json. A value
+    // the store refuses stays in memory for this session only.
+    const unmigrated = migrateLegacyPlaintextSecrets(stored, this.secretStore);
+    if (unmigrated.length > 0) {
+      console.warn("Agentic chat: could not move legacy secrets to secure storage", unmigrated.map((f) => f.error));
+      new Notice("Could not move your API key to secure storage; it is kept in memory for this session");
+    }
     this.settings = mergeSettings(stored);
-    hydrateSettingsSecrets(this.settings, this.secretStore);
+    hydrateSettingsSecrets(this.settings, withUnmigratedSecrets(this.secretStore, unmigrated));
     // S4: remember mode for the broadcast guard.
     this.lastSyncedMode = this.settings.mode;
     if (legacySkillFolders.length > 0) {
@@ -279,7 +284,17 @@ export default class AgenticChatPlugin extends Plugin {
       const migrated = await this.tryMigrateLegacySkillFolders(legacySkillFolders);
       if (!migrated) return;
     }
-    await this.saveSettings();
+    if (unmigrated.length === 0) {
+      await this.saveSettings();
+      return;
+    }
+    // The store already refused a write; a failing save must not block load.
+    // settingsForStorage never emits plaintext, so nothing leaks to data.json.
+    try {
+      await this.saveSettings();
+    } catch (error) {
+      console.warn("Agentic chat: could not save settings after secret migration failure", error);
+    }
   }
 
   /** Best-effort one-time migration of pre-plugins skills folders. Returns false when it failed and should be retried. */
