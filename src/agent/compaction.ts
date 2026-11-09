@@ -69,10 +69,52 @@ export function formatCompactionSummary(stats: {
   return `Compacted. ${before.toLocaleString()} → ${after.toLocaleString()} estimated tokens.`;
 }
 
+export type CompactionDueReason = "due" | "disabled" | "no_window" | "below_threshold" | "overhead_bound";
+
+export interface CompactionDueCheck {
+  reason: CompactionDueReason;
+  /** Estimated transcript tokens. */
+  transcriptTokens: number;
+  /** Transcript plus request overhead: the same total the context bar shows. */
+  loadTokens: number;
+  thresholdTokens: number;
+  keepBudgetTokens: number;
+}
+
 /**
- * Decide whether and how to compact. Returns `null` when compaction is disabled,
- * the window is unknown, the transcript is still under threshold, or there aren't
- * at least two user turns to split (one to summarize, one to keep).
+ * Whether the context load has crossed the compaction threshold. `overheadTokens`
+ * is the non-transcript load (system prompt, tool schemas, response reserve), so
+ * the check uses the same total as the context bar.
+ *
+ * Compaction only folds the transcript. When the overhead is what pushes the
+ * load past the threshold and the transcript already fits the keep budget,
+ * folding it again cannot bring the load down, so it is reported as
+ * `overhead_bound` instead of re-summarizing on every turn.
+ */
+export function checkCompactionDue(
+  messages: AgentMessage[],
+  contextWindow: number,
+  config: CompactionConfig,
+  overheadTokens = 0,
+): CompactionDueCheck {
+  const transcriptTokens = estimateContextUsage(messages);
+  const loadTokens = transcriptTokens + Math.max(0, overheadTokens);
+  const thresholdTokens = Math.max(0, contextWindow) * config.thresholdFraction;
+  const keepBudgetTokens = Math.max(0, contextWindow * config.keepFraction);
+  const base = { transcriptTokens, loadTokens, thresholdTokens, keepBudgetTokens };
+  if (!config.enabled) return { ...base, reason: "disabled" };
+  if (contextWindow <= 0) return { ...base, reason: "no_window" };
+  if (loadTokens <= thresholdTokens) return { ...base, reason: "below_threshold" };
+  if (transcriptTokens <= thresholdTokens && transcriptTokens <= keepBudgetTokens) {
+    return { ...base, reason: "overhead_bound" };
+  }
+  return { ...base, reason: "due" };
+}
+
+/**
+ * Decide whether and how to compact. Returns `null` when compaction is not due
+ * (see {@link checkCompactionDue}) or there aren't at least two user turns to
+ * split (one to summarize, one to keep).
  *
  * The cut point is always a user-message boundary, so assistant/tool-result pairs
  * are never orphaned and the retained messages remain a valid model context.
@@ -81,16 +123,17 @@ export function planCompaction(
   messages: AgentMessage[],
   contextWindow: number,
   config: CompactionConfig,
+  overheadTokens = 0,
 ): CompactionPlan | null {
-  if (!config.enabled || contextWindow <= 0) return null;
-  const tokensBefore = estimateContextUsage(messages);
-  if (tokensBefore <= contextWindow * config.thresholdFraction) return null;
+  const due = checkCompactionDue(messages, contextWindow, config, overheadTokens);
+  if (due.reason !== "due") return null;
+  const tokensBefore = due.transcriptTokens;
 
   const userIndices = messages.flatMap((message, index) => (message.role === "user" ? [index] : []));
   // Need a turn to summarize (index 0) and at least one later turn to keep.
   if (userIndices.length < 2) return null;
 
-  const keepBudget = Math.max(0, contextWindow * config.keepFraction);
+  const keepBudget = due.keepBudgetTokens;
   // Suffix sums of per-message token estimates, so each candidate's kept-token
   // total is an O(1) lookup (keeps the whole scan O(N), not O(N²)).
   const suffixTokens = new Array<number>(messages.length + 1);
