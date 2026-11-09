@@ -65,7 +65,13 @@ export default class AgenticChatPlugin extends Plugin {
         typeof crypto.randomUUID === "function"
           ? crypto.randomUUID()
           : `vault-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      await this.saveSettings();
+      // A refusing secret store makes every save throw (#285). The lease id is
+      // usable in memory; it is persisted by the next successful save.
+      try {
+        await this.saveSettings();
+      } catch (error: unknown) {
+        console.warn("Agentic chat: could not persist the semantic lease id", error);
+      }
     }
     const adapter = this.app.vault.adapter as { getBasePath?: () => string };
     const basePath = adapter.getBasePath?.() ?? "";
