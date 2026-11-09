@@ -11,19 +11,36 @@ on:
   issue_comment:
     types: [created, edited, deleted]
 
+# Comment runs get their own group: a bot comment (CodeRabbit, Sonar) must not
+# cancel the pull_request run that reports the PR's required `review` check.
 concurrency:
-  group: review-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: review-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
   review:
-    if: github.event_name == 'pull_request' || github.event.issue.pull_request
+    if: github.event_name == 'pull_request' || (github.event.issue.pull_request && github.event.comment.user.type != 'Bot')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The PR head is the tree being measured (size and head SHA). Its own
+      # scripts never run here.
+      - name: Check out the PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/pull/${{ github.event.pull_request.number || github.event.issue.number }}/head
           fetch-depth: 0
+          path: pr
+          persist-credentials: false
+
+      # The gate script comes from the trusted base, so a PR cannot weaken the
+      # gate that judges it. issue_comment events have no base SHA; use the
+      # default branch.
+      - name: Check out the trusted gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -38,4 +55,5 @@ jobs:
           # reviewer agent, recorded in the Reviewer field; the gate cannot read
           # a second login. Set to 0 when a reviewer account exists.
           REVIEW_GATE_SINGLE_ACCOUNT: "1"
-        run: node scripts/check-review-gate.mjs
+        working-directory: pr
+        run: node ../trusted/scripts/check-review-gate.mjs

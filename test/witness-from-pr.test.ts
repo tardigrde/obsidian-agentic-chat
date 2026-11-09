@@ -218,6 +218,47 @@ describe("witness-from-pr", () => {
     expect(missingBase.stderr).toContain("BASE_SHA");
   });
 
+  it("runs the verifier next to itself, not the one in the measured checkout", () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), "witness-trusted-"));
+    try {
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+      git("init");
+      git("config", "user.email", "witness@example.test");
+      git("config", "user.name", "Witness Test");
+      mkdirSync(path.join(repo, "src"), { recursive: true });
+      mkdirSync(path.join(repo, "test"), { recursive: true });
+      writeFileSync(path.join(repo, "src", "a.ts"), "export const a = 1;\n");
+      writeFileSync(path.join(repo, "test", "a.test.ts"), "export {};\n");
+      git("add", ".");
+      git("commit", "-m", "base");
+      const base = git("rev-parse", "HEAD").toString().trim();
+      // The PR plants its own verifier that always reports success.
+      mkdirSync(path.join(repo, "scripts"), { recursive: true });
+      writeFileSync(
+        path.join(repo, "scripts", "verify-witness.mjs"),
+        'console.log("PLANTED VERIFIER"); process.exit(0);\n',
+      );
+      writeFileSync(path.join(repo, "src", "a.ts"), "export const a = 2;\n");
+      git("add", ".");
+      git("commit", "-m", "change");
+
+      const result = spawnSync(process.execPath, [CLI], {
+        cwd: repo,
+        env: {
+          ...process.env,
+          PR_BODY: "<!-- witness\ntest: test/a.test.ts\nsrc: src/a.ts\n-->",
+          PR_LABELS: "",
+          BASE_SHA: base,
+        },
+        encoding: "utf8",
+      });
+      expect(result.stdout).not.toContain("PLANTED VERIFIER");
+      expect(result.stdout).toContain("verify-witness:");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   it("exits non-zero when a source change has no witness", () => {
     const repo = mkdtempSync(path.join(os.tmpdir(), "witness-cli-"));
     try {

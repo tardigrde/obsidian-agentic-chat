@@ -95,6 +95,14 @@ one filled block, the run fails; keep one block.
 Fork PRs run the same job. They get a read-only token, so the witness cannot read
 secrets or write to the repository.
 
+The job checks out the PR head into `pr/` and the pull request base commit into
+`trusted/`. It runs `trusted/scripts/verify-witness.mjs` and
+`trusted/scripts/witness-from-pr.mjs` with `pr/` as the working directory, so the
+declared test and source files come from the PR, but the scripts that decide red
+and green come from the base. A PR cannot replace the verifier that judges it.
+The test command itself (`npm run verify -- change <test>`) still runs the PR's
+`package.json` and test config; the independent verifier checks those.
+
 ## Independent verdict
 
 The verifier is a separate agent, ideally on a different model family. Load
@@ -117,13 +125,37 @@ without an explicit "merge" from the repository owner.
 ## The review gate
 
 The `Review gate` workflow runs on pull request updates and on new or edited PR
-comments. It reads the verdict comment at the current head and fails when:
+comments. It reads the verdict comments at the current head and fails when:
 
-- no comment has all four fields: `Verdict`, `Head`, `Reviewer`, `Fast lane`;
-- the verdict is `FAIL`;
+- no trusted comment has all four fields: `Verdict`, `Head`, `Reviewer`, and a
+  `Fast lane` with a test count (`Fast lane: PASS (1702 passed, 173 files)`;
+  `Fast lane: PASS` alone does not count);
+- a `FAIL` at this head is not cleared (see below);
 - the `Head` value does not match the checked-out PR head;
 - the PR changes more than 400 lines or 10 files, unless it has the `large-pr`
   label.
+
+Only comments from `OWNER`, `MEMBER`, or `COLLABORATOR` accounts count. Bots and
+`CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` accounts are ignored.
+
+A `FAIL` is sticky. Verdicts are ordered by creation time, so editing an old
+comment does not move it. A `FAIL` at the current head is cleared only by a later
+`PASS` or `PASS+NOTES` at the same head whose `Reviewer` differs from the
+`FAIL`'s. The author agent cannot overturn an independent `FAIL` by posting its
+own `PASS` under the same name; push a fix, which moves the head, or get a second
+independent reviewer.
+
+The gate script runs from the trusted base: the PR head is checked out into
+`pr/` (measured for size and head SHA), the base into `trusted/`, and the job runs
+`node ../trusted/scripts/check-review-gate.mjs` from `pr/`. On a comment event
+the base is the default branch. The workflow file itself still comes from the
+PR on `pull_request` events, so a PR that edits `.github/workflows/` needs a
+human read of that diff.
+
+A run triggered by a comment (`issue_comment`) attaches to the default branch,
+not to the PR head, so it does not update the PR's `review` check. The workflow
+stays read-only. After posting a verdict comment, re-trigger the PR check, for
+example by editing the PR body. The script prints this hint on comment runs.
 
 The size count ignores lockfiles, minified assets, coverage, and logs. Split a
 large change; use `large-pr` only for one mechanical unit.

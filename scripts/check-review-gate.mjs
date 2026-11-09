@@ -11,12 +11,18 @@ import { pathToFileURL } from "node:url";
  *   Verdict: PASS | PASS+NOTES | FAIL
  *   Head: <commit>
  *   Reviewer: <agent/session>
- *   Fast lane: <result>
+ *   Fast lane: <result with a test count, e.g. "PASS (1702 passed, 173 files)">
  *
- * The comment must be at the current head. A different GitHub account is
+ * The comment must be at the current head and come from an OWNER, MEMBER, or
+ * COLLABORATOR account that is not a bot. A FAIL is sticky: only a later PASS
+ * from a different Reviewer clears it. Comments are ordered by creation time,
+ * so editing an old comment does not move it. A different GitHub account is
  * preferred. On a single-account repository, set REVIEW_GATE_SINGLE_ACCOUNT=1
  * and keep the separate-agent rule in the process, not in GitHub.
  */
+
+const TRUSTED_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+const FAST_LANE_COUNT = /\b\d+\s+passed\b/i;
 
 const LIMITS = { changedLines: 400, changedFiles: 10 };
 const GENERATED = [
@@ -53,11 +59,21 @@ export function parseVerdict(body) {
     field("Reviewer")
       ?.replace(/[^\w .@:/-]/g, "")
       .slice(0, 80) || null;
-  const hasFastLane = field("Fast lane") !== null;
+  const hasFastLane = FAST_LANE_COUNT.test(field("Fast lane") ?? "");
   if (!/^(?:PASS(?:\+NOTES)?|FAIL)$/.test(verdict ?? "")) return null;
   if (!/^[0-9a-f]{7,40}$/.test(head ?? "")) return null;
   if (!reviewer || !hasFastLane) return null;
   return { verdict, head, reviewer };
+}
+
+function isTrustedAuthor(comment) {
+  if (String(comment.authorType ?? "").toLowerCase() === "bot") return false;
+  if (/\[bot\]$/i.test(String(comment.author ?? ""))) return false;
+  return TRUSTED_ASSOCIATIONS.has(String(comment.authorAssociation ?? "").toUpperCase());
+}
+
+function sameReviewer(left, right) {
+  return left.parsed.reviewer.toLowerCase() === right.parsed.reviewer.toLowerCase();
 }
 
 function headMatches(reviewed, current) {
@@ -95,19 +111,32 @@ export function reviewGate({
     .map((comment) => ({ ...comment, parsed: parseVerdict(comment.body) }))
     .filter((comment) => comment.parsed)
     .filter((comment) => headMatches(comment.parsed.head, headSha))
+    .filter(isTrustedAuthor)
     .filter(
       (comment) =>
         singleAccount || String(comment.author ?? "").toLowerCase() !== normalizedAuthor,
     )
-    .sort((left, right) => String(left.updatedAt ?? "").localeCompare(String(right.updatedAt ?? "")));
-  const latest = candidates.at(-1);
+    // Creation time, not update time: editing an old comment must not reorder it.
+    .sort((left, right) => String(left.createdAt ?? "").localeCompare(String(right.createdAt ?? "")));
+  const isPass = (comment) => comment.parsed.verdict !== "FAIL";
+  const later = (comment, other) =>
+    String(comment.createdAt ?? "") > String(other.createdAt ?? "");
+  // A FAIL is sticky: only a later PASS from a different Reviewer clears it.
+  const openFail = candidates.find(
+    (failed) =>
+      !isPass(failed) &&
+      !candidates.some((other) => isPass(other) && later(other, failed) && !sameReviewer(other, failed)),
+  );
+  const latest = openFail ?? candidates.at(-1);
 
   if (!latest) {
     errors.push(
-      `no verdict at head ${headSha.slice(0, 7)}; post a comment with Verdict, Head, Reviewer, and Fast lane from the independent reviewer`,
+      `no verdict at head ${headSha.slice(0, 7)}; post a comment with Verdict, Head, Reviewer, and Fast lane (with a "N passed" count) from a trusted independent reviewer`,
     );
-  } else if (latest.parsed.verdict === "FAIL") {
-    errors.push("the latest verdict at this head is FAIL");
+  } else if (openFail) {
+    errors.push(
+      `a FAIL verdict at this head by ${openFail.parsed.reviewer} is not cleared; only a later PASS from a different Reviewer clears it`,
+    );
   }
 
   errors.push(...sizeErrors({ changedLines, changedFiles, labels }));
@@ -161,8 +190,10 @@ async function apiAll(path, token) {
 function normalizeComment(item) {
   return {
     author: item.user?.login ?? "",
+    authorType: item.user?.type ?? "",
+    authorAssociation: item.author_association ?? "",
     body: item.body ?? "",
-    updatedAt: item.updated_at ?? item.submitted_at ?? item.created_at ?? "",
+    createdAt: item.created_at ?? item.submitted_at ?? "",
   };
 }
 
@@ -227,6 +258,11 @@ async function main() {
   if (!result.ok) {
     printErrors(result.errors);
     process.exitCode = 1;
+  }
+  if (process.env.GITHUB_EVENT_NAME === "issue_comment") {
+    console.log(
+      "  note: this run was triggered by a comment and attaches to the default branch, not the PR head. Re-trigger the PR's review check (for example, edit the PR body) so the required check updates.",
+    );
   }
 }
 
