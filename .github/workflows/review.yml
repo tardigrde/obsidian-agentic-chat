@@ -11,13 +11,15 @@ on:
   issue_comment:
     types: [created, edited, deleted]
 
+# Comment runs get their own group: a bot comment (CodeRabbit, Sonar) must not
+# cancel the pull_request run that reports the PR's required `review` check.
 concurrency:
-  group: review-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: review-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
   review:
-    if: github.event_name == 'pull_request' || github.event.issue.pull_request
+    if: github.event_name == 'pull_request' || (github.event.issue.pull_request && github.event.comment.user.type != 'Bot')
     runs-on: ubuntu-latest
     steps:
       # The PR head is the tree being measured (size and head SHA). Its own
