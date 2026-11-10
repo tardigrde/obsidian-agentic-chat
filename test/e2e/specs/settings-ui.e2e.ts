@@ -289,8 +289,8 @@ describe("agentic-chat settings UI", function () {
     await setSettingText("Max turns per prompt", "5000");
     await browser.pause(500);
     const after = await readAgenticChatSettings<{ maxTurnsPerPrompt: number }>();
-    expect(after.maxTurnsPerPrompt).toBeLessThanOrEqual(200);
-    expect(after.maxTurnsPerPrompt).toBeGreaterThanOrEqual(3);
+    // Rejected (kept at 60) or clamped (200); never another value such as the default.
+    expect([60, 200]).toContain(after.maxTurnsPerPrompt);
   });
 
   it("persists web access settings through the Advanced tab", async function () {
