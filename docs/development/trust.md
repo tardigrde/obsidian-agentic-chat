@@ -160,8 +160,9 @@ example by editing the PR body. The script prints this hint on comment runs.
 The size budget measures risky code only (#288). It counts lines **added**
 under `src/`. Deleted lines, tests, docs, skills, scripts, lockfiles, and other
 generated files are free, so a removal or a docs sweep fits without an
-override. A file that moves into `src/` counts; a rename inside `src/` counts
-only its added lines. Split a large change; use `large-pr` only for one
+override. Renames are judged by the destination path and count only their added
+lines, so a pure move into `src/` is free. The gate reads
+`git diff --numstat -z`, so no path is quoted or split on `=>`. Split a large change; use `large-pr` only for one
 mechanical unit.
 
 This repository has one GitHub account, so the workflow sets

@@ -32,5 +32,5 @@ export function sizeErrors(input: {
   labels?: string[];
 }): string[];
 export function reviewGate(input: ReviewGateInput): ReviewGateResult;
-export function numstatPath(file: string): string;
+export function readNumstat(base: string, head: string, cwd?: string): string;
 export function measureNumstat(output: string): { changedLines: number; changedFiles: number };

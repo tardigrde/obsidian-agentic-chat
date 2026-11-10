@@ -157,38 +157,45 @@ export function reviewGate({
  */
 const BUDGETED_PREFIX = "src/";
 
-/** Resolve the destination path of a `git diff --numstat` rename entry. */
-export function numstatPath(file) {
-  const text = String(file);
-  // Brace form: `src/{old => new}/x.ts`, `{lib => src}/x.ts`.
-  const open = text.indexOf("{");
-  const arrow = open === -1 ? -1 : text.indexOf(" => ", open);
-  const close = arrow === -1 ? -1 : text.indexOf("}", arrow);
-  if (close !== -1) {
-    const destination = text.slice(arrow + 4, close);
-    return `${text.slice(0, open)}${destination}${text.slice(close + 1)}`.replaceAll("//", "/");
-  }
-  // Plain form: `old/path.ts => new/path.ts`.
-  const plain = text.lastIndexOf(" => ");
-  return plain === -1 ? text : text.slice(plain + 4);
-}
-
+/**
+ * Size of a `git diff --numstat -z` output against the budget. With `-z`, git
+ * never quotes a path and never mixes `=>` into it: a normal record is
+ * `added\tdeleted\tpath\0`; a rename is `added\tdeleted\t\0old\0new\0`.
+ * Only the destination path is judged, so a file moved into `src/` counts its
+ * added lines. Binary files (`-`) add nothing.
+ */
 export function measureNumstat(output) {
+  const tokens = String(output).split("\0");
   let changedLines = 0;
   let changedFiles = 0;
-  for (const line of String(output).split("\n")) {
-    if (!line.trim()) continue;
-    const [added, , file] = line.split("\t");
-    if (!file) continue;
-    // Judge the destination path only: a file moved from logs/ into src/ counts.
-    const destination = numstatPath(file);
-    if (isGeneratedFile(destination) || !destination.startsWith(BUDGETED_PREFIX)) continue;
-    const addedLines = Number(added) || 0;
-    if (addedLines === 0) continue;
+  let index = 0;
+  while (index < tokens.length) {
+    const record = tokens[index++];
+    if (!record) continue;
+    const firstTab = record.indexOf("\t");
+    const secondTab = firstTab === -1 ? -1 : record.indexOf("\t", firstTab + 1);
+    if (secondTab === -1) continue;
+    const added = Number(record.slice(0, firstTab)) || 0;
+    let destination = record.slice(secondTab + 1);
+    if (destination === "") {
+      index += 1; // rename source
+      destination = tokens[index++] ?? "";
+    }
+    if (!destination.startsWith(BUDGETED_PREFIX) || isGeneratedFile(destination)) continue;
+    if (added === 0) continue;
     changedFiles += 1;
-    changedLines += addedLines;
+    changedLines += added;
   }
   return { changedLines, changedFiles };
+}
+
+/** Run `git diff --numstat -z base...head` in `cwd`. */
+export function readNumstat(base, head, cwd = process.cwd()) {
+  return execFileSync( // NOSONAR:S6350 -- base and head SHAs are validated by the caller.
+    "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
+    ["diff", "--numstat", "-z", "-M", `${base}...${head}`],
+    { cwd, encoding: "utf8", maxBuffer: 20 * 1024 * 1024 },
+  );
 }
 
 async function api(path, token) {
@@ -264,12 +271,7 @@ async function main() {
   ]);
   const comments = [...issueComments, ...reviews].map(normalizeComment);
   const base = pull.base.sha;
-  const diff = execFileSync( // NOSONAR:S6350 -- base and head SHAs are validated above.
-    "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
-    // core.quotePath=false keeps non-ASCII paths unquoted, so `src/café.ts` counts.
-    ["-c", "core.quotePath=false", "diff", "--numstat", `${base}...${head}`],
-    { encoding: "utf8", maxBuffer: 20 * 1024 * 1024 },
-  );
+  const diff = readNumstat(base, head);
   const size = measureNumstat(diff);
   const result = reviewGate({
     comments,
