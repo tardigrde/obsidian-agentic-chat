@@ -13,7 +13,11 @@ import { interleaveAdapter, seeds } from "./helpers/interleave";
  */
 
 const DEFAULTS = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" as const };
-const SEEDS = seeds(40);
+// 300 seeds: fewer missed the overwrite-mode #279 races and the restore race
+// below. INTERLEAVE_SEEDS=1000 explores more locally.
+const SEEDS = seeds(Number(process.env.INTERLEAVE_SEEDS ?? 300));
+/** The only clean ways a load may fail while another tab rewrites. */
+const CLEAN_LOAD_ERRORS = /^Error: (Session file is being replaced\.|Not found: sessions\/)/;
 
 function userMessage(text: string): AgentMessage {
   return { role: "user", content: [{ type: "text", text }], timestamp: 1 } as AgentMessage;
@@ -86,8 +90,9 @@ describe.each([
         try {
           await tabB.loadSession(path);
           return tabB.buildSessionContext().messages.length;
-        } catch {
+        } catch (error) {
           // A load that lands mid-rewrite may fail cleanly; it must not corrupt.
+          expect(String(error)).toMatch(CLEAN_LOAD_ERRORS);
           return null;
         }
       })(),
@@ -97,5 +102,32 @@ describe.each([
     expect(artifacts(adapter)).toEqual([]);
     // Tab B sees the old or the new transcript, never a partial one.
     if (seen !== null) expect([1, 2]).toContain(seen);
+  });
+});
+
+describe("interleave helper", () => {
+  it("wraps every adapter method and replays the same schedule for a seed", async () => {
+    const adapter = new MemoryAdapter();
+    const original = adapter.write;
+    interleaveAdapter(adapter, 7);
+    expect(adapter.write).not.toBe(original);
+    expect(adapter.asDataAdapter().write).toBe(adapter.write);
+
+    // Two actors racing on the same seed must finish in the same order.
+    async function order(seed: number): Promise<string[]> {
+      const raced = interleaveAdapter(new MemoryAdapter(), seed);
+      const done: string[] = [];
+      await Promise.all(
+        ["a", "b", "c", "d"].map(async (name) => {
+          await raced.write(name, name);
+          await raced.read(name);
+          done.push(name);
+        }),
+      );
+      return done;
+    }
+    expect(await order(11)).toEqual(await order(11));
+    const orders = new Set(await Promise.all(seeds(20).map(async (seed) => (await order(seed)).join(""))));
+    expect(orders.size).toBeGreaterThan(1);
   });
 });
