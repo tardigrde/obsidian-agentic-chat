@@ -203,8 +203,10 @@ describe("check-review-gate", () => {
       "7\t2\tsrc/{old => new}/b.ts", // rename inside src
       "12\t0\t{lib => src}/c.ts", // moved into src
       "9\t0\tsrc/d.ts => lib/d.ts", // moved out of src
+      "4\t0\tlogs/e.ts => src/e.ts", // moved from a generated path into src
+      "6\t0\tsrc/café.ts", // non-ASCII path (core.quotePath=false)
     ].join("\n");
-    expect(measureNumstat(numstat)).toEqual({ changedLines: 49, changedFiles: 3 });
+    expect(measureNumstat(numstat)).toEqual({ changedLines: 59, changedFiles: 5 });
     expect(measureNumstat("0\t900\tsrc/a.ts\n0\t50\tsrc/b.ts")).toEqual({ changedLines: 0, changedFiles: 0 });
     expect(measureNumstat("401\t0\tsrc/a.ts")).toEqual({ changedLines: 401, changedFiles: 1 });
   });

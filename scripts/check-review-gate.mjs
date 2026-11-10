@@ -179,8 +179,10 @@ export function measureNumstat(output) {
   for (const line of String(output).split("\n")) {
     if (!line.trim()) continue;
     const [added, , file] = line.split("\t");
-    if (!file || isGeneratedFile(file)) continue;
-    if (!numstatPath(file).startsWith(BUDGETED_PREFIX)) continue;
+    if (!file) continue;
+    // Judge the destination path only: a file moved from logs/ into src/ counts.
+    const destination = numstatPath(file);
+    if (isGeneratedFile(destination) || !destination.startsWith(BUDGETED_PREFIX)) continue;
     const addedLines = Number(added) || 0;
     if (addedLines === 0) continue;
     changedFiles += 1;
@@ -264,7 +266,8 @@ async function main() {
   const base = pull.base.sha;
   const diff = execFileSync( // NOSONAR:S6350 -- base and head SHAs are validated above.
     "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
-    ["diff", "--numstat", `${base}...${head}`],
+    // core.quotePath=false keeps non-ASCII paths unquoted, so `src/café.ts` counts.
+    ["-c", "core.quotePath=false", "diff", "--numstat", `${base}...${head}`],
     { encoding: "utf8", maxBuffer: 20 * 1024 * 1024 },
   );
   const size = measureNumstat(diff);
