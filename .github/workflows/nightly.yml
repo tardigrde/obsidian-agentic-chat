@@ -24,7 +24,9 @@ concurrency:
 jobs:
   nightly:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    # Above the sum of the lane caps (45+15+15+30+30) plus install, so the
+    # Summarize and Verdict steps always run.
+    timeout-minutes: 180
     permissions:
       contents: read
     outputs:
@@ -89,9 +91,15 @@ jobs:
         id: changed_mutation
         continue-on-error: true
         timeout-minutes: 30
+        shell: bash
         run: |
+          set -o pipefail
           # `-- src` (not 'src/**/*.ts'): the glob form misses top-level src/*.ts files.
-          changed=$(git log --since="24 hours ago" --name-only --format= -- src | grep '\.ts$' | grep -v '\.d\.ts$' | sort -u | while read -r f; do [ -f "$f" ] && echo "$f"; done | head -n 3 | paste -sd, -)
+          # The matrix files already run in the step above.
+          files=$(git log --since="24 hours ago" --name-only --format= -- src)
+          changed=$(printf '%s\n' "$files" | grep '\.ts$' | grep -v '\.d\.ts$' \
+            | grep -v -x -e 'src/agent/loop-guard.ts' -e 'src/agent/session-swap-queue.ts' \
+            | sort -u | while read -r f; do [ -f "$f" ] && echo "$f"; done | head -n 3 | paste -sd, - || true)
           if [ -z "$changed" ]; then
             echo "No source file changed in the last 24 hours."
             exit 0
