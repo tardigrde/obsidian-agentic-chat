@@ -236,7 +236,9 @@ Stop and report when:
   proof that a test can fail.
 - **State-space checks.** Session swap and compaction need a state × event
   matrix test.
-- **Nightly drift.** Dogfood, eval, audit, and mobile lanes still run on demand.
+- **Nightly drift.** The `Nightly` workflow runs the full e2e suite, the mobile
+  lane, a dry chaos run, and the mutation matrix. Dogfood, eval, and audit lanes
+  still run on demand.
 
 ## Accepted limits of the review gate
 
