@@ -264,6 +264,19 @@ describe("collectUserImageThumbs", () => {
     expect(collectUserImageThumbs([], [{ data: "  ", mimeType: "image/png" }], resolvePath)).toEqual([]);
   });
 
+  it("shows a live send's image once: vision blocks copy the vault attachments", () => {
+    // The send path passes both the attachment path and the image block loaded from it.
+    expect(
+      collectUserImageThumbs(["images/a.png"], [{ data: "aGk=", mimeType: "image/png" }], resolvePath),
+    ).toEqual([{ src: "app://resource/images/a.png", alt: "images/a.png", path: "images/a.png" }]);
+  });
+
+  it("falls back to the vision blocks when no attachment renders", () => {
+    expect(
+      collectUserImageThumbs(["gone.png", "notes/doc.md"], [{ data: "aGk=", mimeType: "image/png" }], resolvePath),
+    ).toEqual([{ src: "data:image/png;base64,aGk=", alt: "Attached image" }]);
+  });
+
   it("caps thumbnails across live and history sources", () => {
     const attachments = Array.from({ length: 10 }, (_, i) => `i${i}.png`);
     const thumbs = collectUserImageThumbs(attachments, [{ data: "aGk=", mimeType: "image/png" }], resolvePath, 8);

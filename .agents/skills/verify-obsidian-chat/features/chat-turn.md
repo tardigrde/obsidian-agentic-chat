@@ -10,6 +10,8 @@
   Queue holds a draft, and Stop then send replaces the turn.
 - Inline `ask_user` question with choices and a free-text answer.
 - Per-turn actions: Copy response, Ask again.
+- Vault images (`![[pic.png]]`, vault-relative `![](path)`) render inline in
+  replies; attached images show as thumbnails in the user bubble.
 - An error banner with Retry.
 - A vault path link on a tool step.
 - Click a sent user turn to edit and resend it.
@@ -53,34 +55,36 @@ await browser.waitUntil(async () =>
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Send a prompt and render a reply | `src/ui/chat-view.ts:1284` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
-| Stream text deltas | `src/ui/chat-view.ts:2647` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
-| Reasoning section | `src/ui/chat-view.ts:2691` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
-| Markdown rendering | `src/ui/chat-view.ts:2700` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
-| Tool step cards and diffs | `src/ui/chat-view.ts:2531` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
-| Tool-step vault path link | `src/ui/assistant-bubble.ts:397` | no committed check | `NONE` |
-| Stop the active turn (toolbar) | `src/ui/chat-view.ts:1258` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
-| Stop one tab without aborting the other | `src/ui/chat-view.ts:824` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
+| Send a prompt and render a reply | `src/ui/chat-view.ts:1289` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
+| Stream text deltas | `src/ui/chat-view.ts:2700` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
+| Reasoning section | `src/ui/chat-view.ts:2744` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
+| Markdown rendering | `src/ui/chat-view.ts:2753` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
+| Tool step cards and diffs | `src/ui/chat-view.ts:2540` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
+| Tool-step vault path link | `src/ui/assistant-bubble.ts:404` | no committed check | `NONE` |
+| Stop the active turn (toolbar) | `src/ui/chat-view.ts:1263` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
+| Stop one tab without aborting the other | `src/ui/chat-view.ts:829` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
 | Stop clears queued steering | `src/agent/agent-service.ts:743` | `test/agent-service.test.ts:1598` (unit only) | `partial` |
 | `/compact` skips when the session changed | `src/agent/agent-service.ts:615` | `test/agent-service.test.ts:970` | `partial` |
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
 | Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
 | Enter steers after the current model turn | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:166` | `covered` |
-| Undelivered steering returns to the composer | `src/ui/chat-view.ts:2710` | `test/agent-service.test.ts:1517`, `test/composer-input.test.ts:29` (unit only) | `partial` |
-| Shift+Enter inserts a newline | `src/ui/chat-view.ts:714` | `test/e2e/specs/composer-paths.e2e.ts:267` | `covered` |
-| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1263` | `test/e2e/specs/composer-paths.e2e.ts:200` | `covered` |
-| Stop then send replaces the turn | `src/ui/chat-view.ts:1258` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
+| Undelivered steering returns to the composer | `src/ui/chat-view.ts:2763` | `test/agent-service.test.ts:1517`, `test/composer-input.test.ts:29` (unit only) | `partial` |
+| Shift+Enter inserts a newline | `src/ui/chat-view.ts:719` | `test/e2e/specs/composer-paths.e2e.ts:267` | `covered` |
+| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1268` | `test/e2e/specs/composer-paths.e2e.ts:200` | `covered` |
+| Stop then send replaces the turn | `src/ui/chat-view.ts:1263` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
 | Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |
-| Inline `ask_user` card | `src/ui/chat-view.ts:567` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
-| Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:625` | no committed check | `NONE` |
-| Copy response | `src/ui/assistant-bubble.ts:827` | no committed check | `NONE` |
-| Ask again | `src/ui/assistant-bubble.ts:813` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
-| Retry keeps image attachments | `src/ui/chat-view.ts:1573` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
-| Error banner Retry | `src/ui/assistant-bubble.ts:783` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
-| Edit and resend a user turn | `src/ui/chat-view.ts:2616` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
-| Context-window bar | `src/ui/chat-view.ts:766` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
-| Usage readout | `src/ui/chat-view.ts:2124` | no committed check | `NONE` |
-| Background-tab completion notice | `src/ui/chat-view.ts:1258` | no committed check | `NONE` |
+| Inline `ask_user` card | `src/ui/chat-view.ts:572` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
+| Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:630` | no committed check | `NONE` |
+| Copy response | `src/ui/assistant-bubble.ts:841` | no committed check | `NONE` |
+| Ask again | `src/ui/assistant-bubble.ts:827` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
+| Retry keeps image attachments | `src/ui/chat-view.ts:1578` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
+| Vault images render inline in replies | `src/ui/assistant-bubble.ts:720` | `test/e2e/specs/inline-images.e2e.ts:55` | `covered` |
+| User bubble image thumbnails (live and history) | `src/ui/chat-view.ts:2553` | `test/e2e/specs/inline-images.e2e.ts:82`, `test/e2e/specs/inline-images.e2e.ts:116` | `covered` |
+| Error banner Retry | `src/ui/assistant-bubble.ts:797` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
+| Edit and resend a user turn | `src/ui/chat-view.ts:2669` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
+| Context-window bar | `src/ui/chat-view.ts:771` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
+| Usage readout | `src/ui/chat-view.ts:2130` | no committed check | `NONE` |
+| Background-tab completion notice | `src/ui/chat-view.ts:1263` | no committed check | `NONE` |
 
 ## Gotchas
 

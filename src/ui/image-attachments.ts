@@ -373,7 +373,8 @@ export function sanitizeImageMimeType(mimeType: unknown): string {
 /**
  * Thumbnail sources for a user bubble, pure and unit-testable. Live vault-path
  * attachments resolve via `resolvePath` (resource URLs; a miss/throw drops the
- * image); replayed vision blocks render from persisted base64 data. Capped so a
+ * image); replayed vision blocks render from persisted base64 data, only when
+ * no attachment rendered (they are copies of the attachments on a live send). Capped so a
  * turn can't flood the pane. The DOM wiring in `chat-view` stays thin.
  */
 export function collectUserImageThumbs(
@@ -388,6 +389,9 @@ export function collectUserImageThumbs(
     const thumb = attachmentImageThumb(entry, resolvePath);
     if (thumb) thumbs.push(thumb);
   }
+  // On a live send the vision blocks are copies of the image attachments:
+  // when any attachment rendered, showing the blocks too would repeat them.
+  if (thumbs.length > 0) return thumbs;
   for (const image of historyImages ?? []) {
     if (thumbs.length >= max) break;
     const thumb = historyImageThumb(image);
