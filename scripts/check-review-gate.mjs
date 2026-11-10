@@ -24,6 +24,7 @@ import { pathToFileURL } from "node:url";
 const TRUSTED_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 const FAST_LANE_COUNT = /\b\d+\s+passed\b/i;
 
+/** Added lines and touched files under `src/`. See measureNumstat. */
 const LIMITS = { changedLines: 400, changedFiles: 10 };
 const GENERATED = [
   /^package-lock\.json$/,
@@ -85,12 +86,12 @@ export function sizeErrors({ changedLines, changedFiles, labels = [] }) {
   const errors = [];
   if (changedLines > LIMITS.changedLines) {
     errors.push(
-      `this PR changes ${changedLines} lines; the limit is ${LIMITS.changedLines} (add the large-pr label to override)`,
+      `this PR adds ${changedLines} lines under src/; the limit is ${LIMITS.changedLines} (add the large-pr label to override)`,
     );
   }
   if (changedFiles > LIMITS.changedFiles) {
     errors.push(
-      `this PR changes ${changedFiles} files; the limit is ${LIMITS.changedFiles} (add the large-pr label to override)`,
+      `this PR adds code to ${changedFiles} files under src/; the limit is ${LIMITS.changedFiles} (add the large-pr label to override)`,
     );
   }
   return errors;
@@ -149,15 +150,34 @@ export function reviewGate({
   };
 }
 
-function parseNumstat(output) {
+/**
+ * The size budget measures risky code only (#288): lines added under `src/`.
+ * Deleted lines, tests, docs, skills, generated files, and lockfiles are free,
+ * so a removal or a docs sweep does not need the `large-pr` override.
+ */
+const BUDGETED = /^src\//;
+
+/** Resolve the destination path of a `git diff --numstat` rename entry. */
+export function numstatPath(file) {
+  const text = String(file);
+  const brace = text.match(/^(.*)\{(.*) => (.*)\}(.*)$/);
+  if (brace) return `${brace[1]}${brace[3]}${brace[4]}`.replace(/\/\//g, "/");
+  const arrow = text.split(" => ");
+  return arrow.at(-1);
+}
+
+export function measureNumstat(output) {
   let changedLines = 0;
   let changedFiles = 0;
   for (const line of String(output).split("\n")) {
     if (!line.trim()) continue;
-    const [added, deleted, file] = line.split("\t");
+    const [added, , file] = line.split("\t");
     if (!file || isGeneratedFile(file)) continue;
+    if (!BUDGETED.test(numstatPath(file))) continue;
+    const addedLines = Number(added) || 0;
+    if (addedLines === 0) continue;
     changedFiles += 1;
-    changedLines += (Number(added) || 0) + (Number(deleted) || 0);
+    changedLines += addedLines;
   }
   return { changedLines, changedFiles };
 }
@@ -240,7 +260,7 @@ async function main() {
     ["diff", "--numstat", `${base}...${head}`],
     { encoding: "utf8", maxBuffer: 20 * 1024 * 1024 },
   );
-  const size = parseNumstat(diff);
+  const size = measureNumstat(diff);
   const result = reviewGate({
     comments,
     author: pull.user?.login,
@@ -252,7 +272,7 @@ async function main() {
   });
 
   console.log(
-    `review gate: ${result.ok ? "PASS" : "FAIL"} (${size.changedFiles} files, ${size.changedLines} lines, ${result.commentsAtHead} verdict(s) at this head)`,
+    `review gate: ${result.ok ? "PASS" : "FAIL"} (src/ budget: ${size.changedFiles} files, ${size.changedLines} added lines, ${result.commentsAtHead} verdict(s) at this head)`,
   );
   if (result.verdict) console.log(`  verdict: ${result.verdict} by ${result.reviewer}`);
   if (!result.ok) {

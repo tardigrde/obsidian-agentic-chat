@@ -103,5 +103,6 @@ owns the change. The repository owner alone decides to merge.
 - `fast` fails for a reason the PR claims to fix. Stop; report the failure.
 - The PR changes product behavior or data format without an explicit decision in
   the body. Return `FAIL`; that decision is the human's call.
-- The PR is over roughly 400 changed lines or 10 files. Return `PASS+NOTES` and
-  ask for a split unless the change is one mechanical unit.
+- The PR adds more than roughly 400 lines, or touches more than 10 files, under
+  `src/`. Return `PASS+NOTES` and ask for a split unless the change is one
+  mechanical unit. Deletions, tests, and docs do not count.

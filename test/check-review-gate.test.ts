@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isGeneratedFile,
+  measureNumstat,
   parseVerdict,
   reviewGate,
   sizeErrors,
@@ -188,6 +189,24 @@ describe("check-review-gate", () => {
     expect(sizeErrors({ changedLines: 20, changedFiles: 11, labels: ["large-pr"] })).toEqual([]);
     expect(gate({ changedLines: 401 }).ok).toBe(false);
     expect(gate({ changedLines: 401, labels: ["large-pr"] }).ok).toBe(true);
+  });
+
+  it("counts only added lines in src/ toward the budget (#288)", () => {
+    const numstat = [
+      "30\t5\tsrc/agent/a.ts",
+      "0\t900\tsrc/old-feature.ts", // pure deletion: free
+      "500\t0\tdocs/development/guide.md", // docs: free
+      "300\t0\ttest/a.test.ts", // tests: free
+      "200\t0\t.agents/skills/x/features/map.md", // generated proof refs: free
+      "4000\t10\tpackage-lock.json",
+      "-\t-\tsrc/icon.png", // binary
+      "7\t2\tsrc/{old => new}/b.ts", // rename inside src
+      "12\t0\t{lib => src}/c.ts", // moved into src
+      "9\t0\tsrc/d.ts => lib/d.ts", // moved out of src
+    ].join("\n");
+    expect(measureNumstat(numstat)).toEqual({ changedLines: 49, changedFiles: 3 });
+    expect(measureNumstat("0\t900\tsrc/a.ts\n0\t50\tsrc/b.ts")).toEqual({ changedLines: 0, changedFiles: 0 });
+    expect(measureNumstat("401\t0\tsrc/a.ts")).toEqual({ changedLines: 401, changedFiles: 1 });
   });
 
   it("excludes generated files from the size count", () => {
