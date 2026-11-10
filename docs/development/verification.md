@@ -27,6 +27,8 @@ npm run verify -- all                  # everything above
 | L0 | `npm run verify -- change "test name"` | one behavior by name | seconds |
 | L1 | `npm run verify -- change test/a.test.ts` (repeat) | a few affected modules | seconds |
 | L2 | `npm run verify -- ci` | app/e2e/scripts types, lint, unit + coverage report, bundle | ~1 min |
+| L2 | `npm run verify -- upgrade` | persisted settings or session shape changes | seconds |
+| L2 | `npm run verify -- cloud` | cloud sandbox without a display: everything but e2e | ~1 min |
 | L3 | `npm run verify -- fast` | merge gate, includes smoke e2e | ~2 min |
 | L4 | `npm run verify -- e2e <spec>` | UI wiring, view lifecycle, settings migration | ~1 min |
 | L5 | `npm run verify -- dogfood` | multi-tool agent flows in a generated vault | minutes |
@@ -48,6 +50,30 @@ npm run eval:agentic:compare -- \
 The `eval` lane adds `--fail-on-skip`, so a skipped case fails the run. Pass
 `--run-scripted` to generate the dogfood artifact instead of skipping it; that
 path needs Obsidian. A leading bare `--` is tolerated, but it is not needed.
+
+### Upgrade lane
+
+`test/fixtures/releases/<version>/` holds the `data.json`, `secrets.json`
+(fake values), and session JSONL that a released version wrote.
+`test/upgrade-fixtures.test.ts` loads each one through HEAD's load path:
+secret migration, retired-setting notices, `mergeSettings`, secret hydration, a
+second load after save, and a session replay. It runs in the unit suite.
+
+After each release, capture its fixtures and commit them:
+
+```bash
+npm run capture:release-fixtures -- <version>
+```
+
+The script checks out the tag in a temporary worktree and runs
+`scripts/release-fixtures/capture.spec.ts` with that release's own code.
+
+### Cloud lane
+
+A cloud sandbox cannot start Obsidian, so it cannot run e2e, probes, or chaos.
+Run `npm run verify -- cloud` there. Do not make a UI claim (rendering, layout,
+a settings row, a click path) from a cloud run. Say which claim needs a CI
+`e2e` run or a local e2e/probe, and leave it for that run.
 
 ## What a pass has to show
 
