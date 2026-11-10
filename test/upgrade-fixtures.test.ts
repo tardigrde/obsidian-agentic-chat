@@ -56,6 +56,10 @@ describe("upgrade fixtures", () => {
       const { failures, notices, settings } = loadLikeHead(structuredClone(stored), freshStore());
 
       expect(failures).toEqual([]);
+      // Non-default values the release saved survive the load unchanged.
+      for (const key of ["temperature", "maxNetworkRetries", "requestTimeoutMs", "systemPrompt"] as const) {
+        if (key in stored) expect(settings[key]).toEqual(stored[key]);
+      }
       // Every secret the release stored still reaches runtime settings.
       expect(settings.openrouterApiKey).toBe("fixture-not-a-real-key");
       // Retired settings the release persisted are reported, never dropped silently.

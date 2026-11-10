@@ -18,7 +18,7 @@ export default tseslint.config(
       "logs/**",
       ".obsidian-cache/**",
       ".stryker-tmp/**",
-      // Copied into a release checkout and type-checked there (#290).
+      // Copied into a release checkout and run there; it is not linted or type-checked (#290).
       "scripts/release-fixtures/**",
       "reports/**",
       "src/vendor/**",

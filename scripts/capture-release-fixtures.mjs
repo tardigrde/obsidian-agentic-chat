@@ -22,11 +22,17 @@ if (!tag || !/^\d+\.\d+\.\d+$/.test(tag)) {
   process.exit(2);
 }
 const root = process.cwd();
-// The tag matched a strict x.y.z pattern above, so it cannot escape this folder.
-const out = path.join(root, "test", "fixtures", "releases", tag); // NOSONAR:S8707 -- tag validated as x.y.z.
+const releasesDir = path.resolve(root, "test", "fixtures", "releases");
+// The tag matched x.y.z above; also confirm the resolved folder stays inside.
+const out = path.resolve(releasesDir, tag);
+if (path.dirname(out) !== releasesDir || !out.startsWith(`${releasesDir}${path.sep}`)) {
+  console.error(`refusing to write outside ${releasesDir}`);
+  process.exit(2);
+}
 const work = mkdtempSync(path.join(tmpdir(), `release-fixture-${tag}-`));
 const checkout = path.join(work, "src");
-const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "inherit" });
+// NOSONAR:S4036 -- git is the repository tool, resolved from PATH like the other scripts.
+const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "inherit" }); // NOSONAR:S4036
 try {
   git("worktree", "add", "--detach", checkout, tag);
   symlinkSync(path.join(root, "node_modules"), path.join(checkout, "node_modules"));

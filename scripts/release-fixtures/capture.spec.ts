@@ -4,9 +4,9 @@
  * that release's own vitest config, so the saved shapes come from the code
  * that shipped. Use only APIs that every release has; probe the rest.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { it } from "vitest";
+import { expect, it } from "vitest";
 import * as schema from "../src/settings-schema";
 import * as secrets from "../src/secrets/secret-store";
 import * as sessions from "../src/session/session-manager";
@@ -35,6 +35,11 @@ it("captures data.json and a session JSONL", async () => {
   settings.openrouterApiKey = FAKE_KEY;
   if ("mode" in settings) settings.mode = "plan";
   if ("workingDirs" in settings.approval) settings.approval.workingDirs = ["Projects", "Journal"];
+  // Non-default choices the upgrade test asserts survive the load (#284 class).
+  settings.temperature = 0.7;
+  settings.maxNetworkRetries = 4;
+  settings.requestTimeoutMs = 45_000;
+  settings.systemPrompt = "Fixture system prompt.";
   const store = new secrets.MemorySecretStore();
   const persisted = secrets.settingsForStorage(settings as never, store);
   writeFileSync(path.join(OUT, "data.json"), `${JSON.stringify(persisted, null, 2)}\n`);
@@ -92,4 +97,5 @@ it("captures data.json and a session JSONL", async () => {
     // One session per capture, under a stable name the upgrade test reads.
     if (file.endsWith(".jsonl")) writeFileSync(path.join(OUT, "sessions", "fixture.jsonl"), content);
   }
+  expect(readdirSync(path.join(OUT, "sessions"))).toEqual(["fixture.jsonl"]);
 });
