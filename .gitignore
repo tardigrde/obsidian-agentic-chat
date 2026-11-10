@@ -13,6 +13,10 @@ docs/.vitepress/cache/
 docs/.vitepress/dist/
 data.json
 sessions/
+# Release upgrade fixtures (#290): fake values only, written by
+# scripts/capture-release-fixtures.mjs. Real plugin data stays ignored.
+!test/fixtures/releases/*/data.json
+!test/fixtures/releases/*/sessions/
 
 # e2e (wdio-obsidian-service): downloaded Obsidian builds + run logs
 .obsidian-cache/
