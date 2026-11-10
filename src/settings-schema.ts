@@ -1,4 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { healMaxTurns, PARENT_TURN_CAP } from "./agent/turn-cap";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OLLAMA_BASE_URL,
@@ -77,6 +78,8 @@ export interface AgenticChatSettings {
   maxTokens: number;
   requestTimeoutMs: number;
   maxNetworkRetries: number;
+  /** Assistant turns per prompt before the turn cap stops the run (#283). */
+  maxTurnsPerPrompt: number;
   systemPrompt: string;
   /**
    * Session permission posture: `safe` honors the approval policy, `yolo` auto-approves
@@ -182,6 +185,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   maxTokens: 0,
   requestTimeoutMs: 90_000,
   maxNetworkRetries: 2,
+  maxTurnsPerPrompt: PARENT_TURN_CAP,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   mode: DEFAULT_MODE,
   outputStyle: DEFAULT_OUTPUT_STYLE,
@@ -258,6 +262,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     mcp: healedMcp,
     plugins: healedPlugins,
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
+    maxTurnsPerPrompt: healMaxTurns(stored?.maxTurnsPerPrompt),
     embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(stored?.observability),
   };

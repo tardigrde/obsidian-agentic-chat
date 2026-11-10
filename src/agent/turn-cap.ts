@@ -6,6 +6,16 @@ export const PARENT_TURN_CAP = 25;
 /** Assistant-turn budget for one subagent child run. */
 export const CHILD_TURN_CAP = 10;
 
+/** Bounds for the user-configurable parent cap (Agent settings). */
+export const MIN_TURN_CAP = 3;
+export const MAX_TURN_CAP = 200;
+
+/** Heal a persisted or typed cap: whole turns in [MIN, MAX], default 25. */
+export function healMaxTurns(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return PARENT_TURN_CAP;
+  return Math.min(Math.max(MIN_TURN_CAP, Math.trunc(value)), MAX_TURN_CAP);
+}
+
 /** Static prefix kept for tests/grep; fired notices append the limit. */
 export const TURN_CAP_NOTICE_TEXT = "Turn cap: stopped after the assistant turn limit.";
 
@@ -15,8 +25,11 @@ export function buildTurnCapNotice(maxTurns: number): string {
 }
 
 export interface AgentTurnCapOptions {
-  /** Assistant turns allowed in one prompt epoch. Defaults to 25. */
-  maxTurns?: number;
+  /**
+   * Assistant turns allowed in one prompt epoch. Defaults to 25. A function is
+   * read on every turn, so a settings change applies to the running prompt.
+   */
+  maxTurns?: number | (() => number);
 }
 
 /**
@@ -26,7 +39,8 @@ export interface AgentTurnCapOptions {
  *
  * Wired into the parent `finishTurn` hook after the loop guard. A fire ends the
  * run gracefully before another model call. User-scoped: reset() runs on every
- * fresh prompt, so only turns inside one run count.
+ * fresh prompt and on every steer, so only turns since the user's last message
+ * count. A user who keeps steering is never capped, by design.
  */
 export class AgentTurnCap {
   private turns = 0;
@@ -35,7 +49,8 @@ export class AgentTurnCap {
   constructor(private readonly options: AgentTurnCapOptions = {}) {}
 
   get maxTurns(): number {
-    const configured = this.options.maxTurns ?? PARENT_TURN_CAP;
+    const option = this.options.maxTurns;
+    const configured = (typeof option === "function" ? option() : option) ?? PARENT_TURN_CAP;
     // A malformed threshold must never disable the cap or make it unbounded.
     return Number.isFinite(configured) ? Math.max(1, Math.floor(configured)) : PARENT_TURN_CAP;
   }

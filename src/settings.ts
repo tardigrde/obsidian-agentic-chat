@@ -89,6 +89,7 @@ import {
   type NetworkSettings,
 } from "./settings-schema";
 import { SETTINGS_TABS, type SettingsSectionId, type SettingsTabId } from "./settings-tabs";
+import { MAX_TURN_CAP, MIN_TURN_CAP } from "./agent/turn-cap";
 export {
   DEFAULT_SETTINGS,
   PROVIDERS,
@@ -854,6 +855,12 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         "Network retries",
         { type: "slider", key: "maxNetworkRetries", min: 0, max: 5, step: 1 },
         "Automatic retries on rate limits and transient server errors.",
+      ),
+      this.controlDef(
+        "Max turns per prompt",
+        { type: "number", key: "maxTurnsPerPrompt", min: MIN_TURN_CAP, max: MAX_TURN_CAP },
+        `Stop the agent after this many model turns (${MIN_TURN_CAP}-${MAX_TURN_CAP}). ` +
+          "Sending or steering a message starts a new count. Send another message to continue.",
       ),
       this.row("System prompt", (setting) => {
         setting

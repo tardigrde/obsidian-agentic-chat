@@ -861,3 +861,12 @@ describe("embedding settings — lease id", () => {
     expect(healEmbeddingSettings({ leaseId: "vault-1" }).leaseId).toBe("vault-1");
   });
 });
+
+describe("maxTurnsPerPrompt (#283)", () => {
+  it("defaults to 25 and heals stored values", () => {
+    expect(mergeSettings(undefined).maxTurnsPerPrompt).toBe(25);
+    expect(mergeSettings({ maxTurnsPerPrompt: 60 } as never).maxTurnsPerPrompt).toBe(60);
+    expect(mergeSettings({ maxTurnsPerPrompt: -4 } as never).maxTurnsPerPrompt).toBe(3);
+    expect(mergeSettings({ maxTurnsPerPrompt: "x" } as never).maxTurnsPerPrompt).toBe(25);
+  });
+});

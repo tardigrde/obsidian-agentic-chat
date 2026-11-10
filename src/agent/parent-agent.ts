@@ -8,6 +8,7 @@ import {
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
+import { toLlmMessages } from "./stop-notice";
 
 type BeforeToolCall = NonNullable<AgentOptions["beforeToolCall"]>;
 type AfterToolCall = NonNullable<AgentOptions["afterToolCall"]>;
@@ -49,6 +50,8 @@ export function createParentAgent(options: ParentAgentOptions): ParentAgentHandl
     beforeToolCall: options.beforeToolCall,
     afterToolCall: options.afterToolCall,
     finishTurn: options.finishTurn,
+    // Guard stop notices are transcript-only (#283).
+    convertToLlm: toLlmMessages,
     sessionId: options.sessionId,
     // N `subagent` calls in one message run concurrently; the subagent tool's
     // own semaphore caps the fan-out. Stateful/interactive tools (ask-user)

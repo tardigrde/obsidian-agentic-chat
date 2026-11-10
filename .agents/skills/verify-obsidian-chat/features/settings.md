@@ -46,8 +46,8 @@ await closeAgenticChatSettings();
 | entry point | source | proof | status |
 |---|---|---|---|
 | Settings tab opens | `src/main.ts:129` | `test/e2e/specs/settings-ui.e2e.ts:185` (opened by the helper via `app.setting`, not the nav) | `partial` |
-| Three tabs render and switch | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
-| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
+| Three tabs render and switch | `src/settings.ts:256` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
+| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts:256` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
 | A moved Advanced setting saves and survives close/reopen | `src/settings.ts:2133` | `test/e2e/specs/settings-ui.e2e.ts:491` | `covered` |
 | Models: provider, API key, base URL, model | `src/settings.ts:603` | `test/e2e/specs/settings-ui.e2e.ts:220` | `covered` |
 | Secrets stay out of `data.json` | `src/settings.ts:1929` | `test/e2e/specs/settings-ui.e2e.ts:220` | `covered` |
@@ -72,8 +72,8 @@ await closeAgenticChatSettings();
 | Agent plugins: plugin row toggle/open/remove | `src/settings.ts:2418` | `test/e2e/specs/mobile-viewport.e2e.ts:404` (row renders only) | `partial` |
 | Subagents: timeout | `src/settings.ts:2228` | no committed check | `NONE` |
 | Semantic retrieval: embedding controls | `src/settings.ts:2251` | no committed check | `NONE` |
-| Settings at phone width | `src/settings.ts:255` | `test/e2e/specs/mobile-viewport.e2e.ts:404` | `covered` |
-| `getSettingDefinitions()` | `src/settings.ts:255` | `test/e2e/specs/settings-ui.e2e.ts:185` (three named pages render) | `covered` |
+| Settings at phone width | `src/settings.ts:256` | `test/e2e/specs/mobile-viewport.e2e.ts:404` | `covered` |
+| `getSettingDefinitions()` | `src/settings.ts:256` | `test/e2e/specs/settings-ui.e2e.ts:185` (three named pages render) | `covered` |
 
 ## Gotchas
 
