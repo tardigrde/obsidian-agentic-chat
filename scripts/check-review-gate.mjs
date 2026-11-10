@@ -35,9 +35,10 @@ const GENERATED = [
   /^logs\//,
 ];
 
+/** One path from `git diff --numstat -z` (never a rename pair). */
 export function isGeneratedFile(file) {
-  const paths = String(file).split(" => ");
-  return paths.some((candidate) => GENERATED.some((pattern) => pattern.test(candidate)));
+  const path = String(file);
+  return GENERATED.some((pattern) => pattern.test(path));
 }
 
 export function parseVerdict(body) {

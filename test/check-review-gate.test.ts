@@ -267,5 +267,7 @@ describe("check-review-gate", () => {
     expect(isGeneratedFile("docs/package-lock.json")).toBe(false);
     expect(isGeneratedFile("main.min.js")).toBe(true);
     expect(isGeneratedFile("src/main.ts")).toBe(false);
+    // A real name that contains " => " is one path, not a rename pair.
+    expect(isGeneratedFile("src/a => logs/b.ts")).toBe(false);
   });
 });

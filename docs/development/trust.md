@@ -162,7 +162,9 @@ under `src/`. Deleted lines, tests, docs, skills, scripts, lockfiles, and other
 generated files are free, so a removal or a docs sweep fits without an
 override. Renames are judged by the destination path and count only their added
 lines, so a pure move into `src/` is free. The gate reads
-`git diff --numstat -z`, so no path is quoted or split on `=>`. Split a large change; use `large-pr` only for one
+`git diff --numstat -z`, so no path is quoted or split on `=>`. Moving or
+deleting code out of `src/` is also free; the reviewer reads such a diff, the
+budget does not. Split a large change; use `large-pr` only for one
 mechanical unit.
 
 This repository has one GitHub account, so the workflow sets
