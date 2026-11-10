@@ -49,6 +49,16 @@ The `eval` lane adds `--fail-on-skip`, so a skipped case fails the run. Pass
 `--run-scripted` to generate the dogfood artifact instead of skipping it; that
 path needs Obsidian. A leading bare `--` is tolerated, but it is not needed.
 
+### Multi-instance harness
+
+Every chat tab and window builds its own service over shared state (the session
+folder, the semantic-index lease). `test/helpers/interleave.ts` wraps an
+adapter so each call yields a seeded number of macrotask turns; a scenario runs
+two instances with `Promise.all` under many seeds and asserts invariants that
+must hold for every ordering. See `test/session-multi-instance.test.ts`. A
+failing seed replays exactly. Use it for any change to state that two tabs
+share.
+
 ## What a pass has to show
 
 - The command, its exit code, and its test counts.
