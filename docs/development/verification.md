@@ -66,7 +66,10 @@ npm run capture:release-fixtures -- <version>
 ```
 
 The script checks out the tag in a temporary worktree and runs
-`scripts/release-fixtures/capture.spec.ts` with that release's own code.
+`scripts/release-fixtures/capture.spec.ts` with that release's own code. It
+stages the output and swaps it in only when `data.json` and a session exist, so
+a failed run keeps the committed fixture. It uses this checkout's
+`node_modules`, so very old tags (before the secret store) cannot be captured.
 
 ### Cloud lane
 

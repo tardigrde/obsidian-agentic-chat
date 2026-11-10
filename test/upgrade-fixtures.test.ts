@@ -5,7 +5,6 @@ import { mergeSettings, retiredSettingsNotices } from "../src/settings-schema";
 import { migrateLegacyPlaintextSecrets } from "../src/secrets/legacy-plaintext";
 import { hydrateSettingsSecrets, MemorySecretStore, settingsForStorage } from "../src/secrets/secret-store";
 import { ObsidianSessionManager } from "../src/session/session-manager";
-import { parseSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 /**
@@ -22,7 +21,11 @@ function readJson(file: string): Record<string, unknown> {
   return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
 }
 
-/** Replays HEAD's `loadSettings` order: migrate secrets, notices, merge, hydrate. */
+/**
+ * Replays the order of `loadSettings` in src/main.ts: migrate secrets, notices,
+ * merge, hydrate. Not modelled: legacy skill folders and a refused secret
+ * write (both need the plugin and the vault). Keep this in step with main.ts.
+ */
 function loadLikeHead(stored: Record<string, unknown>, store: MemorySecretStore) {
   const failures = migrateLegacyPlaintextSecrets(stored, store);
   const notices = retiredSettingsNotices(stored);
@@ -76,25 +79,25 @@ describe("upgrade fixtures", () => {
       expect(second.settings).toEqual(first.settings);
     });
 
-    it("replays every saved session through HEAD's session manager", async () => {
-      const sessionsDir = path.join(dir, "sessions");
-      const files = readdirSync(sessionsDir).filter((file) => file.endsWith(".jsonl"));
-      expect(files.length).toBeGreaterThan(0);
-      for (const file of files) {
-        const content = readFileSync(path.join(sessionsDir, file), "utf8");
-        const savedMessages = parseSessionEntries(content).filter((entry) => entry.type === "message").length;
-        const adapter = new MemoryAdapter();
-        await adapter.mkdir("sessions");
-        await adapter.write(`sessions/${file}`, content);
-        const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:fixture");
+    it("replays the captured session through HEAD's session manager", async () => {
+      // The capture spec writes exactly this conversation; assert it literally,
+      // not with the parser under test.
+      const file = "fixture.jsonl";
+      const content = readFileSync(path.join(dir, "sessions", file), "utf8");
+      const adapter = new MemoryAdapter();
+      await adapter.mkdir("sessions");
+      await adapter.write(`sessions/${file}`, content);
+      const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:fixture");
 
-        const listed = await manager.listSessions();
-        expect(listed.map((info) => info.path)).toEqual([`sessions/${file}`]);
-        await manager.loadSession(`sessions/${file}`);
-        const context = manager.buildSessionContext();
-        expect(context.messages).toHaveLength(savedMessages);
-        expect(context.model).not.toBeNull();
-      }
+      const listed = await manager.listSessions();
+      expect(listed.map((info) => info.path)).toContain(`sessions/${file}`);
+      await manager.loadSession(`sessions/${file}`);
+      const context = manager.buildSessionContext();
+      expect(context.messages.map((message) => message.role)).toEqual(["user", "assistant", "toolResult", "assistant"]);
+      expect(JSON.stringify(context.messages[0])).toContain("Summarize Projects/plan.md");
+      expect(JSON.stringify(context.messages[3])).toContain("The plan is to ship.");
+      expect(context.model).toEqual({ provider: "openrouter", modelId: "anthropic/claude-sonnet-4" });
+      expect(context.thinkingLevel).toBe("low");
     });
   });
 });

@@ -89,6 +89,7 @@ it("captures data.json and a session JSONL", async () => {
     });
   }
   for (const [file, content] of adapter.files) {
-    if (file.endsWith(".jsonl")) writeFileSync(path.join(OUT, "sessions", path.basename(file)), content);
+    // One session per capture, under a stable name the upgrade test reads.
+    if (file.endsWith(".jsonl")) writeFileSync(path.join(OUT, "sessions", "fixture.jsonl"), content);
   }
 });
