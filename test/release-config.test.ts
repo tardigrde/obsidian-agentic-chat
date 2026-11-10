@@ -24,12 +24,15 @@ describe("release config", () => {
     expect(pluginOptions("@semantic-release/release-notes-generator").preset).toBe("conventionalcommits");
   });
 
-  it("bumps minor, not major, for breaking changes while on 0.x", () => {
-    if (!manifest.version.startsWith("0.")) return; // 1.0 was taken on purpose.
-    const rules = pluginOptions("@semantic-release/commit-analyzer").releaseRules as
-      | Array<{ breaking?: boolean; release?: string }>
-      | undefined;
-    expect(rules).toContainEqual({ breaking: true, release: "minor" });
+  it("bumps minor for breaking changes on 0.x, and drops that rule from 1.0", () => {
+    const rules = (pluginOptions("@semantic-release/commit-analyzer").releaseRules ?? []) as Array<{
+      breaking?: boolean;
+      release?: string;
+    }>;
+    const breakingAsMinor = { breaking: true, release: "minor" };
+    if (manifest.version.startsWith("0.")) expect(rules).toContainEqual(breakingAsMinor);
+    // After 1.0, a breaking change must bump major again: remove the 0.x rule.
+    else expect(rules).not.toContainEqual(breakingAsMinor);
   });
 
   it("installs the preset package in the release job", () => {
@@ -37,8 +40,12 @@ describe("release config", () => {
   });
 
   it("releases only a main push that passed the CI workflow", () => {
-    expect(releaseYml).toMatch(/workflow_run:\s*\n\s*workflows: \[CI\]/);
+    expect(releaseYml).toMatch(/workflow_run:[^\n]*\n\s*workflows: \[CI\]/);
     expect(releaseYml).toContain("github.event.workflow_run.conclusion == 'success'");
+    // Fork protection: only same-repo push runs on main reach the job secrets.
+    expect(releaseYml).toContain("github.event.workflow_run.event == 'push'");
+    expect(releaseYml).toContain("github.event.workflow_run.head_branch == 'main'");
+    expect(releaseYml).toContain("github.event.workflow_run.head_repository.full_name == github.repository");
     expect(releaseYml).toContain("ref: ${{ github.event.workflow_run.head_sha }}");
     expect(releaseYml).not.toMatch(/^\s*push:/m);
   });
