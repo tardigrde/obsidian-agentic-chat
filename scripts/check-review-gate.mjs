@@ -155,15 +155,22 @@ export function reviewGate({
  * Deleted lines, tests, docs, skills, generated files, and lockfiles are free,
  * so a removal or a docs sweep does not need the `large-pr` override.
  */
-const BUDGETED = /^src\//;
+const BUDGETED_PREFIX = "src/";
 
 /** Resolve the destination path of a `git diff --numstat` rename entry. */
 export function numstatPath(file) {
   const text = String(file);
-  const brace = text.match(/^(.*)\{(.*) => (.*)\}(.*)$/);
-  if (brace) return `${brace[1]}${brace[3]}${brace[4]}`.replace(/\/\//g, "/");
-  const arrow = text.split(" => ");
-  return arrow.at(-1);
+  // Brace form: `src/{old => new}/x.ts`, `{lib => src}/x.ts`.
+  const open = text.indexOf("{");
+  const arrow = open === -1 ? -1 : text.indexOf(" => ", open);
+  const close = arrow === -1 ? -1 : text.indexOf("}", arrow);
+  if (close !== -1) {
+    const destination = text.slice(arrow + 4, close);
+    return `${text.slice(0, open)}${destination}${text.slice(close + 1)}`.replaceAll("//", "/");
+  }
+  // Plain form: `old/path.ts => new/path.ts`.
+  const plain = text.lastIndexOf(" => ");
+  return plain === -1 ? text : text.slice(plain + 4);
 }
 
 export function measureNumstat(output) {
@@ -173,7 +180,7 @@ export function measureNumstat(output) {
     if (!line.trim()) continue;
     const [added, , file] = line.split("\t");
     if (!file || isGeneratedFile(file)) continue;
-    if (!BUDGETED.test(numstatPath(file))) continue;
+    if (!numstatPath(file).startsWith(BUDGETED_PREFIX)) continue;
     const addedLines = Number(added) || 0;
     if (addedLines === 0) continue;
     changedFiles += 1;
