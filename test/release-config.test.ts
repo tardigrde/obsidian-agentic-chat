@@ -10,7 +10,16 @@ type PluginEntry = string | [string, Record<string, unknown>];
 
 const releaserc = JSON.parse(readFileSync(".releaserc.json", "utf8")) as { plugins: PluginEntry[] };
 const manifest = JSON.parse(readFileSync("manifest.json", "utf8")) as { version: string };
-const releaseYml = readFileSync(".github/workflows/release.yml", "utf8");
+/** Workflow text without `#` comments, so a condition in a comment cannot satisfy a check. */
+function workflowCode(file: string): string {
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .map((line) => line.replace(/(^|\s)#.*$/, ""))
+    .join("\n");
+}
+
+const releaseYml = workflowCode(".github/workflows/release.yml");
+const ciYml = workflowCode(".github/workflows/ci.yml");
 
 function pluginOptions(name: string): Record<string, unknown> {
   const entry = releaserc.plugins.find((p) => (Array.isArray(p) ? p[0] : p) === name);
@@ -40,7 +49,9 @@ describe("release config", () => {
   });
 
   it("releases only a main push that passed the CI workflow", () => {
-    expect(releaseYml).toMatch(/workflow_run:[^\n]*\n\s*workflows: \[CI\]/);
+    expect(releaseYml).toMatch(/workflow_run:\s*\n\s*workflows: \[CI\]/);
+    // Renaming the CI workflow would silently stop every release.
+    expect(ciYml).toMatch(/^name: CI$/m);
     expect(releaseYml).toContain("github.event.workflow_run.conclusion == 'success'");
     // Fork protection: only same-repo push runs on main reach the job secrets.
     expect(releaseYml).toContain("github.event.workflow_run.event == 'push'");
