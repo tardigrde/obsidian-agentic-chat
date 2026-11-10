@@ -148,6 +148,10 @@ describe("guard stop notices (#283)", () => {
       turnCapNotice,
       loopGuardNotice,
       legacyNotice as unknown as AgentMessage,
+      // Marker only: wording that the legacy shape check would not match.
+      { ...buildStopNoticeMessage("Harness note with any wording."), usage: realReply.usage } as AgentMessage,
+      // Corrupt line: a text block without text must not throw.
+      { ...replyShape, content: [{ type: "text" }] } as unknown as AgentMessage,
       { role: "user", content: "continue", timestamp: 2 },
     ];
     const { agent, unsubscribe } = createParentAgent({
@@ -167,11 +171,13 @@ describe("guard stop notices (#283)", () => {
     const texts = sent.map((m) =>
       typeof m.content === "string" ? m.content : m.content.map((c) => ("text" in c ? c.text : "")).join(""),
     );
+    expect(texts).not.toContain("Harness note with any wording.");
     expect(texts).toEqual([
       "system",
       "hello",
       "Here is the summary you asked for.",
       "Turn cap: stopped is a setting.",
+      "",
       "continue",
     ]);
     // The transcript (UI + JSONL) still keeps the notices.

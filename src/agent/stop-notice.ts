@@ -53,8 +53,11 @@ export function isStopNoticeMessage(message: AgentMessage): boolean {
   const content = assistant.content;
   if (!Array.isArray(content) || content.length !== 1) return false;
   const [block] = content;
-  if (block?.type !== "text") return false;
-  return STOP_NOTICE_PREFIXES.some((prefix) => block.text.startsWith(prefix));
+  // A hand-edited or corrupt session line may lack `text`; never throw here,
+  // this runs inside convertToLlm on every request.
+  if (block?.type !== "text" || typeof block.text !== "string") return false;
+  const text = block.text;
+  return STOP_NOTICE_PREFIXES.some((prefix) => text.startsWith(prefix));
 }
 
 /**
