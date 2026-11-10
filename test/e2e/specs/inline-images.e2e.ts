@@ -72,6 +72,10 @@ describe("agentic-chat inline images", function () {
     const srcs = await lastBubbleImages(".agentic-chat-assistant");
     expect(srcs).toHaveLength(2);
     for (const src of srcs) expect(src).toMatch(/^app:\/\//);
+    const styled = await browser.execute(
+      () => document.querySelectorAll(".agentic-chat-assistant img.agentic-chat-image").length,
+    );
+    expect(styled).toBeGreaterThanOrEqual(2);
     const codeText = await browser.execute(() => {
       const bubbles = Array.from(document.querySelectorAll(".agentic-chat-assistant"));
       return bubbles.at(-1)?.querySelector("code")?.textContent ?? "";
@@ -98,6 +102,18 @@ describe("agentic-chat inline images", function () {
     const srcs = await lastBubbleImages(".agentic-chat-user");
     expect(srcs).toHaveLength(1);
     expect(srcs[0]).toMatch(/^app:\/\//);
+    // Clicking the thumbnail opens the vault image.
+    await browser.execute(() => {
+      const bubbles = Array.from(document.querySelectorAll(".agentic-chat-user"));
+      (bubbles.at(-1)?.querySelector("img.is-openable") as HTMLElement | null)?.click();
+    });
+    await browser.waitUntil(
+      async () =>
+        (await browser.executeObsidian(({ app }) => app.workspace.getActiveFile()?.path ?? "")) === IMAGE_PATH,
+      { timeout: 5000, timeoutMsg: "thumbnail click did not open the vault image" },
+    );
+    await browser.executeObsidianCommand("agentic-chat:open-chat");
+    await $(".agentic-chat-view").waitForExist();
     // The service echoes the sent user turn; the view skips it (already rendered).
     const before = await browser.execute(() => document.querySelectorAll(".agentic-chat-user").length);
     await emit({

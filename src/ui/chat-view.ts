@@ -2556,7 +2556,8 @@ export class ChatView extends ItemView {
       for (const thumb of thumbs) {
         const img = wrap.createEl("img", {
           cls: ["agentic-chat-user-image", ...(thumb.path ? ["is-openable"] : [])],
-          attr: { src: thumb.src, alt: thumb.alt },
+          // Lazy: a long transcript can hold many persisted images.
+          attr: { src: thumb.src, alt: thumb.alt, loading: "lazy" },
         });
         img.setAttr("title", thumb.alt);
         if (thumb.path) {

@@ -56,9 +56,9 @@ await browser.waitUntil(async () =>
 | entry point | source | proof | status |
 |---|---|---|---|
 | Send a prompt and render a reply | `src/ui/chat-view.ts:1289` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
-| Stream text deltas | `src/ui/chat-view.ts:2700` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
-| Reasoning section | `src/ui/chat-view.ts:2744` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
-| Markdown rendering | `src/ui/chat-view.ts:2753` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
+| Stream text deltas | `src/ui/chat-view.ts:2701` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
+| Reasoning section | `src/ui/chat-view.ts:2745` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
+| Markdown rendering | `src/ui/chat-view.ts:2754` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
 | Tool step cards and diffs | `src/ui/chat-view.ts:2540` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:404` | no committed check | `NONE` |
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts:1263` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
@@ -68,7 +68,7 @@ await browser.waitUntil(async () =>
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
 | Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
 | Enter steers after the current model turn | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:166` | `covered` |
-| Undelivered steering returns to the composer | `src/ui/chat-view.ts:2763` | `test/agent-service.test.ts:1517`, `test/composer-input.test.ts:29` (unit only) | `partial` |
+| Undelivered steering returns to the composer | `src/ui/chat-view.ts:2764` | `test/agent-service.test.ts:1517`, `test/composer-input.test.ts:29` (unit only) | `partial` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts:719` | `test/e2e/specs/composer-paths.e2e.ts:267` | `covered` |
 | Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1268` | `test/e2e/specs/composer-paths.e2e.ts:200` | `covered` |
 | Stop then send replaces the turn | `src/ui/chat-view.ts:1263` | `test/e2e/specs/composer-paths.e2e.ts:226` | `covered` |
@@ -79,9 +79,9 @@ await browser.waitUntil(async () =>
 | Ask again | `src/ui/assistant-bubble.ts:827` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
 | Retry keeps image attachments | `src/ui/chat-view.ts:1578` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
 | Vault images render inline in replies | `src/ui/assistant-bubble.ts:720` | `test/e2e/specs/inline-images.e2e.ts:55` | `covered` |
-| User bubble image thumbnails (live and history) | `src/ui/chat-view.ts:2553` | `test/e2e/specs/inline-images.e2e.ts:82`, `test/e2e/specs/inline-images.e2e.ts:116` | `covered` |
+| User bubble image thumbnails; click opens the vault image | `src/ui/chat-view.ts:2553` | `test/e2e/specs/inline-images.e2e.ts:86`, `test/e2e/specs/inline-images.e2e.ts:132` | `covered` |
 | Error banner Retry | `src/ui/assistant-bubble.ts:797` | `test/chat-view-retry.test.ts:97` (unit only) | `partial` |
-| Edit and resend a user turn | `src/ui/chat-view.ts:2669` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
+| Edit and resend a user turn | `src/ui/chat-view.ts:2670` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
 | Context-window bar | `src/ui/chat-view.ts:771` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
 | Usage readout | `src/ui/chat-view.ts:2130` | no committed check | `NONE` |
 | Background-tab completion notice | `src/ui/chat-view.ts:1263` | no committed check | `NONE` |

@@ -1008,6 +1008,12 @@ export function rewriteAssistantMarkdownImages(app: App, markdown: string, sourc
 export function fixupRenderedAssistantImages(root: HTMLElement, app: App, sourcePath: string): void {
   for (const img of Array.from(root.querySelectorAll("img"))) {
     const src = img.getAttribute("src");
+    // Vault images already rewritten to resource URLs (the main path).
+    if (src?.startsWith("app://")) {
+      img.addClass("agentic-chat-image");
+      img.setAttribute("loading", "lazy");
+      continue;
+    }
     if (!src || isExternalImageSrc(src)) continue;
     const resolved = resolveVaultImageResource(app, src, sourcePath);
     if (resolved) {
