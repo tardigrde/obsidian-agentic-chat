@@ -3,8 +3,14 @@
   "tagFormat": "${version}",
   "repositoryUrl": "git@github.com:tardigrde/obsidian-agentic-chat.git",
   "plugins": [
-    "@semantic-release/commit-analyzer",
-    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits",
+        "releaseRules": [{ "breaking": true, "release": "minor" }]
+      }
+    ],
+    ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
     [
       "@semantic-release/exec",
       { "prepareCmd": "node scripts/version-bump.mjs ${nextRelease.version} && npm run build" }
