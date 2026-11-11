@@ -29,7 +29,7 @@ if (path.dirname(out) !== releasesDir || !out.startsWith(`${releasesDir}${path.s
   console.error(`refusing to write outside ${releasesDir}`);
   process.exit(2);
 }
-const work = mkdtempSync(path.join(tmpdir(), `release-fixture-${tag}-`));
+const work = mkdtempSync(path.join(tmpdir(), "release-fixture-"));
 const checkout = path.join(work, "src");
 // NOSONAR:S4036 -- git is the repository tool, resolved from PATH like the other scripts.
 const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "inherit" }); // NOSONAR:S4036
