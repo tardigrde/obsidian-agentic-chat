@@ -57,9 +57,9 @@ await $(".agentic-chat-send").click();
 | Files context menu (multi-select) | `src/main.ts:188` | no committed check | `NONE` |
 | Composer card mounts | `src/ui/chat-view.ts:660` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
 | Empty-state suggestion chips | `src/ui/chat-view.ts:905` | no committed check | `NONE` |
-| Enter sends while idle | `src/ui/chat-view.ts:719` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
-| Enter steers while the agent runs | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:166` | `covered` |
-| Shift+Enter inserts a newline | `src/ui/chat-view.ts:719` | `test/e2e/specs/composer-paths.e2e.ts:267` | `covered` |
+| Enter sends while idle | `src/ui/chat-view.ts:719` | `test/e2e/specs/composer-paths.e2e.ts:159` | `covered` |
+| Enter steers while the agent runs | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:174` | `covered` |
+| Shift+Enter inserts a newline | `src/ui/chat-view.ts:719` | `test/e2e/specs/composer-paths.e2e.ts:275` | `covered` |
 | Send button | `src/ui/chat-view.ts:834` | `test/e2e/specs/approval-deterministic.e2e.ts:314` | `covered` |
 | ArrowUp/ArrowDown recall | `src/ui/chat-view.ts:700` | `test/composer-history.test.ts:16` (unit only) | `partial` |
 | Escape cancels edit | `src/ui/chat-view.ts:695` | `test/prompt-edit-state.test.ts:5` (unit only) | `partial` |
