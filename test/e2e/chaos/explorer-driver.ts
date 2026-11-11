@@ -9,6 +9,7 @@ import {
   explorerSystemPrompt,
   explorerUserPrompt,
   formatObservation,
+  loopVerdict,
   parseExplorerDecision,
   parseKeyChord,
   refWindow,
@@ -102,8 +103,17 @@ async function handleFor(index: number): Promise<string> {
   return entry.handle;
 }
 
+/**
+ * Switch only when the target differs. In Electron a switch can fire blur and
+ * focus events, and inputs that commit on blur (for example the session rename
+ * field) close before the next action can type into them.
+ */
+async function switchTo(handle: string): Promise<void> {
+  if ((await browser.getWindowHandle().catch(() => "")) !== handle) await browser.switchToWindow(handle);
+}
+
 async function focusMain(): Promise<void> {
-  if ((await browser.getWindowHandle().catch(() => "")) !== mainHandle) await browser.switchToWindow(mainHandle);
+  await switchTo(mainHandle);
 }
 
 // ---------------------------------------------------------------------------
@@ -342,9 +352,13 @@ async function observe(
     overflowX: false,
     lastMessages: [],
   };
-  for (const { handle, index } of await handles()) {
+  // Read non-current windows first and the current one last, so the driver
+  // ends on the window that had focus and does not blur its inputs twice.
+  const current = await browser.getWindowHandle().catch(() => mainHandle);
+  const ordered = (await handles()).sort((a, b) => Number(a.handle === current) - Number(b.handle === current));
+  for (const { handle, index } of ordered) {
     try {
-      await browser.switchToWindow(handle);
+      await switchTo(handle);
       const raw = (await browser.execute(collectWindow, index, index === 0 ? 140 : 90)) as RawWindow;
       windows.push({
         index,
@@ -368,6 +382,8 @@ async function observe(
       signals.push(`could not read window ${index}: ${message(error)}`);
     }
   }
+  windows.sort((a, b) => a.index - b.index);
+  // executeObsidian needs the main window; come back to the focused window after.
   await focusMain();
   const vault = (await browser
     .executeObsidian(({ app }) => ({
@@ -399,7 +415,7 @@ async function observe(
 // Actions
 
 async function elementFor(ref: string): Promise<WebdriverIO.Element> {
-  await browser.switchToWindow(await handleFor(refWindow(ref)));
+  await switchTo(await handleFor(refWindow(ref)));
   const element = await $(`[data-chaos-ref="${ref}"]`);
   if (!(await element.isExisting())) throw new Error(`ref ${ref} is gone; the view changed`);
   return element;
@@ -443,12 +459,27 @@ async function perform(
     case "type": {
       const element = await elementFor(decision.ref);
       const editable = await element.getAttribute("contenteditable");
-      await element.click().catch(() => undefined);
       if (editable === "true") {
+        await element.click().catch(() => undefined);
         await browser.keys(["Control", "a"]);
         await browser.keys(decision.text ? decision.text.split("") : ["Backspace"]);
       } else {
-        await element.setValue(decision.text);
+        // Focus by script, not by click: a click can hit a parent row that
+        // re-renders and removes the field (the session rename input does).
+        await browser.execute((el) => (el as unknown as HTMLElement).focus(), element);
+        try {
+          await element.setValue(decision.text);
+        } catch {
+          const stillThere = await browser.execute((ref) => {
+            const field = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-chaos-ref="${ref}"]`);
+            if (!field) return false;
+            field.focus();
+            field.value = "";
+            return true;
+          }, decision.ref);
+          if (!stillThere) throw new Error(`ref ${decision.ref} closed when focused; the field may commit on blur`);
+          await browser.keys(decision.text ? decision.text.split("") : ["Backspace"]);
+        }
       }
       if (decision.submit) await browser.keys("Enter");
       await browser.pause(400);
@@ -456,7 +487,7 @@ async function perform(
     }
     case "key": {
       const keys = parseKeyChord(decision.keys);
-      await browser.switchToWindow(await handleFor(decision.window ?? 0));
+      await switchTo(await handleFor(decision.window ?? 0));
       await browser.keys(keys);
       await browser.pause(400);
       return `pressed ${keys.join("+")}`;
@@ -518,7 +549,7 @@ async function perform(
       return "settings opened";
     case "close_window": {
       if (decision.window === 0) throw new Error("the main window cannot be closed");
-      await browser.switchToWindow(await handleFor(decision.window));
+      await switchTo(await handleFor(decision.window));
       try {
         await browser.closeWindow();
       } catch {
@@ -648,6 +679,7 @@ export async function runExplorer(context: ExplorerContext): Promise<ExplorerOut
   const system = explorerSystemPrompt(context.scenarioNames, await pluginCommands().catch(() => []));
   const expected = await readGuarded();
   const history: StepRecord[] = [];
+  const allSteps: StepRecord[] = [];
   const seenErrors = new Map<string, number>();
   let memory = "";
   let pendingSignals: string[] = [];
@@ -740,6 +772,7 @@ export async function runExplorer(context: ExplorerContext): Promise<ExplorerOut
           apiKey: apiKey as string,
           model: plan.model,
           json: true,
+          maxTokens: 2_000,
           messages: [
             { role: "system", content: system },
             { role: "user", content: explorerUserPrompt({ charter, memory, history, observation, lastError: lastReplyError }) },
@@ -753,7 +786,7 @@ export async function runExplorer(context: ExplorerContext): Promise<ExplorerOut
           outcome.explorer.invalidReplies += 1;
           consecutiveInvalid += 1;
           lastReplyError = parsed.error;
-          await append(context.outDir, "action-log.jsonl", { t: elapsed(context), step: id, surface: "explorer", status: "invalid", detail: parsed.error });
+          await append(context.outDir, "action-log.jsonl", { t: elapsed(context), step: id, surface: "explorer", status: "invalid", detail: parsed.error, raw: redactSecrets(reply.text.slice(0, 300), [apiKey]), completionTokens: reply.usage.completionTokens });
           if (consecutiveInvalid >= MAX_INVALID_REPLIES) {
             outcome.stopReason = "explorer-invalid-replies";
             break;
@@ -783,7 +816,10 @@ export async function runExplorer(context: ExplorerContext): Promise<ExplorerOut
 
     let status: "passed" | "failed" = "passed";
     let outcomeText: string;
+    const loop = loopVerdict(summary, allSteps);
+    if (loop.action === "warn") pendingSignals.push(loop.message);
     try {
+      if (loop.action === "skip") throw new Error(loop.message);
       outcomeText = await perform(decision, context, secondsLeft);
       consecutiveFailures = 0;
     } catch (error) {
@@ -814,6 +850,7 @@ export async function runExplorer(context: ExplorerContext): Promise<ExplorerOut
 
     outcome.steps.push({ id, surface: element?.region ?? decision.action, status, detail: `${summary} -> ${outcomeText}` });
     history.push({ step, summary, outcome: outcomeText });
+    allSteps.push({ step, summary, outcome: outcomeText });
     if (history.length > HISTORY_LIMIT) history.shift();
     await append(context.outDir, "action-log.jsonl", {
       t: elapsed(context),

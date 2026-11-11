@@ -534,3 +534,23 @@ export const BUILTIN_CHARTERS: Record<string, string> = {
   broad:
     "Explore the whole plugin like a curious new user on day one. Cover the chat composer, slash commands, @-mentions, note reads and writes with approvals, session tabs and history, settings tabs, the Quick Ask command on selected editor text, the command palette, and narrow window widths. Spend at most a third of the steps on any one surface. Report every bug you are confident about.",
 };
+
+export type LoopVerdict = { action: "run" } | { action: "warn"; message: string } | { action: "skip"; message: string };
+
+/**
+ * Detect an explorer that keeps retrying a failing action. Failures of the same
+ * action can alternate with other steps, so a consecutive counter misses them.
+ * Look at the recent window: warn at 3 failures, skip the action at 5.
+ */
+export function loopVerdict(summary: string, recent: StepRecord[], windowSize = 10): LoopVerdict {
+  const failures = recent
+    .slice(-windowSize)
+    .filter((record) => record.summary === summary && record.outcome.startsWith("failed")).length;
+  if (failures >= 5) {
+    return { action: "skip", message: `skipped "${summary}": it failed ${failures} times in the last ${windowSize} steps; try a different surface` };
+  }
+  if (failures >= 3) {
+    return { action: "warn", message: `"${summary}" failed ${failures} times recently; stop retrying it and explore another surface` };
+  }
+  return { action: "run" };
+}

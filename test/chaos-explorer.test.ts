@@ -206,3 +206,16 @@ describe("explorer usage accounting", () => {
     expect(() => parseChatResponse({ error: { message: "no credits" } }, "m")).toThrow(/no credits/);
   });
 });
+
+describe("explorer loop guard", () => {
+  it("warns at three recent failures of one action and skips at five, even with steps in between", async () => {
+    const { loopVerdict } = await import("../scripts/chaos/explorer-core");
+    const fail = (step: number) => ({ step, summary: 'type "x" into input', outcome: "failed: gone" });
+    const other = (step: number) => ({ step, summary: "click Rename", outcome: "clicked" });
+    expect(loopVerdict('type "x" into input', [fail(1), other(2), fail(3)])).toEqual({ action: "run" });
+    expect(loopVerdict('type "x" into input', [fail(1), other(2), fail(3), other(4), fail(5)]).action).toBe("warn");
+    const five = [fail(1), other(2), fail(3), other(4), fail(5), other(6), fail(7), other(8), fail(9)];
+    expect(loopVerdict('type "x" into input', five).action).toBe("skip");
+    expect(loopVerdict("click Rename", five)).toEqual({ action: "run" });
+  });
+});
