@@ -688,13 +688,21 @@ function getSessionModifiedTime(entries: SessionEntry[], fallback: number): numb
   return modifiedTime;
 }
 
+/** The prompt-assembly focus hint (`FOCUS_HINT` in ui/context-builder) that follows a context block. */
+const FOCUS_HINT_LINE = /^Focus: The user's request after this line is the primary task\.[^\n]*\n*/;
+
 /**
  * Derive a short session title from the first user prompt. Strips any attachment
- * `<context>…</context>` preamble, collapses whitespace, and trims to a handful of
+ * preamble (`<context>…</context>` or the `<context unchanged …</context>` marker)
+ * and the focus hint after it, collapses whitespace, and trims to a handful of
  * words. Deterministic (no model call) — see ROADMAP for the model-based upgrade.
  */
 export function deriveAutoName(firstMessage: string): string | undefined {
-  const withoutContext = firstMessage.replace(/^<context>[\s\S]*?<\/context>\s*/, "");
+  const contextMatch = /^<context\b[\s\S]*?<\/context>\s*/.exec(firstMessage);
+  // Only a hint right after a context block is synthetic; a user may start with "Focus:".
+  const withoutContext = contextMatch
+    ? firstMessage.slice(contextMatch[0].length).replace(FOCUS_HINT_LINE, "")
+    : firstMessage;
   const slashStripped = withoutContext.replace(/^\/(?:skill|template)\s+/, "");
   const condensed = slashStripped.replace(/\s+/g, " ").trim();
   if (!condensed) return undefined;
