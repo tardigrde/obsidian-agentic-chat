@@ -10,7 +10,7 @@ import path from "node:path";
  * The runner and the in-app driver call it; they do not re-implement it.
  */
 
-export const CHAOS_MODES = ["focused", "generic"] as const;
+export const CHAOS_MODES = ["focused", "generic", "explore"] as const;
 export type ChaosMode = (typeof CHAOS_MODES)[number];
 
 export const CHAOS_TARGETS = [
@@ -54,13 +54,45 @@ export const DEFAULT_CAPS: ChaosCaps = {
   maxTokens: 40_000,
 };
 
-/** A dry run cannot spend tokens, so it keeps the same shape but a small budget. */
+/**
+ * A dry run cannot spend tokens. Scripted calls are free, so the call cap only
+ * guards against a runaway loop; it must not starve the planned steps.
+ */
 export const DEFAULT_DRY_RUN_CAPS: ChaosCaps = {
   maxSteps: 8,
   maxSeconds: 120,
-  maxCalls: 6,
+  maxCalls: 200,
   maxTokens: 0,
 };
+
+/**
+ * Open-ended explore mode: an explorer model drives the UI. Tokens are real
+ * usage (explorer responses plus the plugin session JSONL), not estimates.
+ * One explorer call per step plus the plugin's own calls fit in maxCalls.
+ */
+export const DEFAULT_EXPLORE_CAPS: ChaosCaps = {
+  maxSteps: 150,
+  maxSeconds: 1800,
+  maxCalls: 600,
+  maxTokens: 2_000_000,
+};
+
+/** The only model a live chaos run may use unless the caller opts out. */
+export const CHAOS_MODEL = "deepseek/deepseek-v4.1-flash";
+const CHAOS_MODEL_ALLOW = /(^|\/)deepseek-v4\.1-flash(-\d+)?$/;
+
+/**
+ * Lock live chaos runs to DeepSeek V4.1 Flash. A shared `AGENTIC_CHAT_MODEL`
+ * from `.env` or `openrouter/auto` can route to an expensive model, and a
+ * long open-ended run multiplies that cost.
+ */
+export function assertChaosModel(model: string, allowAnyModel = false): string {
+  const trimmed = model.trim();
+  if (allowAnyModel || CHAOS_MODEL_ALLOW.test(trimmed)) return trimmed;
+  throw new ChaosGuardError(
+    `chaos runs are locked to ${CHAOS_MODEL}; got ${trimmed}. Pass --allow-any-model to override.`,
+  );
+}
 
 export const TEMP_PREFIX = "chaos-monkey-";
 export const SEED_MARKER = ".chaos-monkey-seed";
@@ -109,8 +141,8 @@ export function selectMode(modeValue: string | undefined, targetValue: string | 
     if (!CHAOS_TARGETS.includes(target)) {
       throw new ChaosGuardError(`--target must be one of ${CHAOS_TARGETS.join(", ")}, got ${targetValue}`);
     }
-    if (mode === "generic") {
-      throw new ChaosGuardError("--target belongs to --mode focused; generic mode chooses its own surfaces");
+    if (mode !== "focused") {
+      throw new ChaosGuardError(`--target belongs to --mode focused; ${mode} mode chooses its own surfaces`);
     }
     return { mode, target };
   }
@@ -182,6 +214,16 @@ export type ChaosPlan = {
   baseUrl: string;
   seededNotes: string[];
   mcpUrl?: string;
+  /** Explore mode: the goal text the explorer follows. */
+  charter?: string;
+  /** Explore mode: replay these recorded decisions instead of asking the explorer. */
+  replayFile?: string;
+  /** Window size the runner records; the driver sizes the Obsidian windows to it. */
+  size?: { width: number; height: number };
+  /** Live runs refuse any model but CHAOS_MODEL unless this is true. */
+  allowAnyModel?: boolean;
+  /** Endpoint family for live calls; decides extra request headers. */
+  llm?: "openrouter" | "opencode-go";
 };
 
 export type ChaosStopState = {

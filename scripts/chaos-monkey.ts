@@ -6,9 +6,12 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import {
+  CHAOS_MODEL,
   ChaosGuardError,
   DEFAULT_CAPS,
   DEFAULT_DRY_RUN_CAPS,
+  DEFAULT_EXPLORE_CAPS,
+  assertChaosModel,
   PLAN_VERSION,
   SEED_MARKER,
   TEMP_PREFIX,
@@ -17,8 +20,12 @@ import {
   parseCaps,
   redactSecrets,
   selectMode,
+  type ChaosMode,
   type ChaosPlan,
 } from "./chaos/monkey-core";
+import { BUILTIN_CHARTERS } from "./chaos/explorer-core";
+import { mineRun } from "./chaos/mine";
+import { parseLlmName, resolveChaosLlm, type ChaosLlmName } from "./chaos/llm-provider";
 import {
   applyEnvFile,
   extractFrames,
@@ -31,6 +38,7 @@ import {
   resolveBinary,
   run,
   startFfmpeg,
+  startXephyr,
   startXvfb,
   stamp,
   stopProcess,
@@ -50,7 +58,7 @@ import {
  */
 
 type Options = {
-  mode: "focused" | "generic";
+  mode: ChaosMode;
   target?: string;
   caps: ReturnType<typeof parseCaps>;
   live: boolean;
@@ -61,10 +69,20 @@ type Options = {
   fps: number;
   outDir: string;
   displayOverride?: string;
+  /** Run inside a nested Xephyr window on the user's desktop. */
+  headed: boolean;
+  /** Record a real display given with --display. Off by default: it captures the whole screen. */
+  recordDisplay: boolean;
   model: string;
   baseUrl: string;
   mcpUrl?: string;
   apiKey?: string;
+  charter?: string;
+  replayFile?: string;
+  allowAnyModel: boolean;
+  noMine: boolean;
+  llm: ChaosLlmName;
+  keySource: string;
 };
 
 type RunResult = {
@@ -92,13 +110,38 @@ type ReportDriver = {
   mcp?: { rendered: boolean; added: boolean };
   notes?: Array<{ path: string; exists: boolean }>;
   clock?: { startedAt: number; finishedAt: number };
+  explorer?: { charter: string; model: string; replay: boolean; calls: number; tokens: number; cost: number; invalidReplies: number; summary?: string };
+  plugin?: { tokens: number; cost: number; assistantMessages: number; models: string[] };
 };
 
 const CHAOS_SPEC = "test/e2e/chaos/chaos-monkey.e2e.ts";
 const SESSION_DIR = "logs/chaos";
 const BOOT_ALLOWANCE_MS = 120_000;
-const DEFAULT_MODEL = "openrouter/auto";
-const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
+/** An explore step can wait up to 180 s for a live turn after the time cap is reached. */
+const EXPLORE_GRACE_MS = 300_000;
+const CHARTER_DIR = ".agents/skills/chaos-monkey/charters";
+
+/** `--charter broad` reads the charter file; any other text is the charter itself. */
+function resolveCharter(value: string | undefined): string {
+  const name = (value ?? "broad").trim();
+  const file = path.resolve(CHARTER_DIR, `${name}.md`);
+  if (/^[\w-]+$/.test(name) && existsSync(file)) return readFileSync(file, "utf8").trim();
+  if (BUILTIN_CHARTERS[name]) return BUILTIN_CHARTERS[name];
+  if (existsSync(name)) return readFileSync(name, "utf8").trim();
+  if (/^[\w-]+$/.test(name)) fail(`unknown charter ${name}; add ${CHARTER_DIR}/${name}.md or pass the charter text`);
+  return name;
+}
+
+/** `--replay` takes a run folder or its explorer-decisions.jsonl. */
+function resolveReplay(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const candidate = path.resolve(value);
+  const file = existsSync(path.join(candidate, "explorer-decisions.jsonl"))
+    ? path.join(candidate, "explorer-decisions.jsonl")
+    : candidate;
+  if (!existsSync(file)) fail(`--replay: ${file} does not exist`);
+  return file;
+}
 
 function fail(message: string): never {
   console.error(`\n[chaos] ${message}`);
@@ -111,9 +154,7 @@ function parseFps(value: string | undefined): number {
   return fps;
 }
 
-function readApiKey(): string | undefined {
-  const inline = process.env.AGENTIC_CHAT_API_KEY?.trim();
-  if (inline) return inline;
+function readKeyFile(): string | undefined {
   const file = process.env.AGENTIC_CHAT_API_KEY_FILE?.trim();
   if (!file) return undefined;
   try {
@@ -126,13 +167,21 @@ function readApiKey(): string | undefined {
 function parseOptions(): Options {
   const selection = selectMode(readArg("--mode"), readArg("--target"));
   const live = hasFlag("--live");
-  const apiKey = readApiKey();
+  const llm = resolveChaosLlm(parseLlmName(readArg("--llm") ?? process.env.AGENTIC_CHAT_CHAOS_LLM));
+  const apiKey = llm.apiKey ?? (llm.name === "openrouter" ? readKeyFile() : undefined);
 
   if (live && !apiKey) {
     fail(
-      "--live needs AGENTIC_CHAT_API_KEY or AGENTIC_CHAT_API_KEY_FILE. " +
-        "Without it the runner only does a capped dry run.",
+      llm.name === "openrouter"
+        ? "--live needs AGENTIC_CHAT_API_KEY or AGENTIC_CHAT_API_KEY_FILE. Without it the runner only does a capped dry run."
+        : "--live --llm opencode-go needs OPENCODE_GO_API_KEY (or an opencode-go key in opencode's auth.json).",
     );
+  }
+
+  const explore = selection.mode === "explore";
+  const replayFile = resolveReplay(readArg("--replay"));
+  if (explore && !live && !replayFile) {
+    fail("--mode explore needs --live (a real explorer model) or --replay <run> (recorded decisions).");
   }
 
   const caps = parseCaps(
@@ -142,10 +191,18 @@ function parseOptions(): Options {
       maxCalls: readArg("--max-calls"),
       maxTokens: readArg("--max-tokens"),
     },
-    live ? DEFAULT_CAPS : DEFAULT_DRY_RUN_CAPS,
+    explore ? (live ? DEFAULT_EXPLORE_CAPS : { ...DEFAULT_EXPLORE_CAPS, maxTokens: 0 }) : live ? DEFAULT_CAPS : DEFAULT_DRY_RUN_CAPS,
   );
 
   if (live && caps.maxTokens <= 0) fail("--live needs a positive --max-tokens budget");
+
+  // Live chaos is locked to one cheap model. The shared AGENTIC_CHAT_MODEL is
+  // ignored on purpose: it may name an expensive model or openrouter/auto.
+  const allowAnyModel = hasFlag("--allow-any-model");
+  const model = assertChaosModel(
+    readArg("--model") ?? (llm.model || CHAOS_MODEL),
+    allowAnyModel,
+  );
 
   return {
     ...selection,
@@ -158,10 +215,18 @@ function parseOptions(): Options {
     fps: parseFps(readArg("--fps")),
     outDir: path.resolve(readArg("--out") ?? path.join(SESSION_DIR, stamp())),
     displayOverride: readArg("--display"),
-    model: process.env.AGENTIC_CHAT_MODEL?.trim() || DEFAULT_MODEL,
-    baseUrl: process.env.AGENTIC_CHAT_BASE_URL?.trim() || DEFAULT_BASE_URL,
+    headed: hasFlag("--headed"),
+    recordDisplay: hasFlag("--record-display"),
+    model,
+    baseUrl: llm.baseUrl,
     mcpUrl: process.env.AGENTIC_CHAT_CHAOS_MCP_URL?.trim() || process.env.AGENTIC_CHAT_E2E_MCP_URL?.trim(),
     apiKey,
+    charter: explore ? resolveCharter(readArg("--charter")) : undefined,
+    replayFile,
+    allowAnyModel,
+    noMine: hasFlag("--no-mine"),
+    llm: llm.name,
+    keySource: llm.keySource,
   };
 }
 
@@ -231,6 +296,11 @@ async function writePlan(
     baseUrl: options.baseUrl,
     seededNotes: ["Welcome.md", "Notes/Seed.md", "Chaos Scratch.md"],
     mcpUrl: options.mcpUrl,
+    charter: options.charter,
+    replayFile: options.replayFile,
+    size: options.size,
+    allowAnyModel: options.allowAnyModel,
+    llm: options.llm,
   };
   const planPath = path.join(outDir, "plan.json");
   await writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`);
@@ -326,7 +396,7 @@ async function writeReport(input: {
 - verdict: **${verdict}**
 - mode: \`${options.mode}\`${options.target ? `, target \`${options.target}\`` : ""}
 - model calls: ${driver?.calls ?? 0}
-- estimated tokens: ${driver?.tokens ?? 0}
+- ${options.mode === "explore" ? "tokens (real usage)" : "estimated tokens"}: ${driver?.tokens ?? 0}
 - skipped steps: ${driver?.skippedSteps ?? steps.filter((step) => step.status === "skipped").length}
 - stop reason: \`${driver?.stopReason ?? (result.timedOut ? "max-wall-time" : result.canceled ? "canceled" : "unknown")}\`
 - live: \`${options.live}\`
@@ -341,7 +411,8 @@ async function writeReport(input: {
 | steps | ${options.caps.maxSteps} |
 | wall time | ${options.caps.maxSeconds}s |
 | model calls | ${options.caps.maxCalls} |
-| estimated tokens | ${options.caps.maxTokens} |
+| ${options.mode === "explore" ? "tokens (real usage)" : "estimated tokens"} | ${options.caps.maxTokens > 0 ? options.caps.maxTokens : "none (dry run)"} |
+${explorerSection(options, driver)}
 
 ## Safety
 
@@ -365,8 +436,11 @@ ${findingRows}
 
 ## Notes and limitations
 
-${notes.length > 0 ? notes.map((note) => `- ${note}`).join("\n") : "- none"}
-${options.live ? "" : "- Dry run: scripted turns, not a real model. Never read this as a live model result.\n"}
+${[
+  ...notes.map((note) => `- ${note}`),
+  ...(options.live ? [] : ["- Dry run: scripted turns, not a real model. Never read this as a live model result."]),
+].join("\n") || "- none"}
+
 ## Action log (tail)
 
 | t | step | status | detail |
@@ -382,10 +456,33 @@ ${logRows}
 - \`metrics.json\`
 - \`plan.json\`
 - \`vault-info.json\`
-- \`sessions/\` copied session JSONL when the plugin wrote it
+- \`sessions/\` copied session JSONL when the plugin wrote it${
+    options.mode === "explore"
+      ? "\n- `observations.jsonl` what the explorer saw at each step\n- `explorer-decisions.jsonl` recorded decisions; replay with `--replay <run>`\n- `findings.md`, `miner-report.json`, `issues/` mining output"
+      : ""
+  }
 `;
 
   await writeFile(path.join(outDir, "report.md"), text);
+}
+
+function explorerSection(options: Options, driver: ReportDriver | undefined): string {
+  if (options.mode !== "explore") return "";
+  const explorer = driver?.explorer;
+  const plugin = driver?.plugin;
+  return `
+## Explorer
+
+- endpoint: \`${options.llm}\` (\`${options.baseUrl}\`, key from ${options.keySource})
+- model: \`${options.model}\`${options.replayFile ? ` (replay of \`${options.replayFile}\`)` : ""}
+- explorer calls: ${explorer?.calls ?? 0}, tokens: ${explorer?.tokens ?? 0}, cost: $${(explorer?.cost ?? 0).toFixed(4)}, invalid replies: ${explorer?.invalidReplies ?? 0}
+- plugin assistant messages: ${plugin?.assistantMessages ?? 0}, tokens: ${plugin?.tokens ?? 0}, models: ${plugin?.models.join(", ") || "-"}
+- summary: ${explorer?.summary ? redactSecrets(explorer.summary, [options.apiKey]) : "(explorer did not finish with done)"}
+
+Charter:
+
+> ${(options.charter ?? "").split("\n").join("\n> ")}
+`;
 }
 
 async function main(): Promise<void> {
@@ -399,10 +496,22 @@ async function main(): Promise<void> {
     "Install it: sudo apt install ffmpeg",
     fail,
   );
-  const needsXvfb = !options.displayOverride && process.platform === "linux";
+  if (options.headed && options.displayOverride) fail("--headed and --display cannot be combined");
+  if (options.headed && !process.env.DISPLAY) fail("--headed needs a desktop session (DISPLAY is not set)");
+  const needsXvfb = !options.displayOverride && !options.headed && process.platform === "linux";
   const xvfbPath = needsXvfb
     ? requireBinary("Xvfb", resolveBinary("Xvfb", process.env.XVFB_PATH), "Install it: sudo apt install xvfb", fail)
     : undefined;
+  const xephyrPath = options.headed
+    ? requireBinary(
+        "Xephyr",
+        resolveBinary("Xephyr", process.env.XEPHYR_PATH),
+        "Install it: sudo apt install xserver-xephyr",
+        fail,
+      )
+    : undefined;
+  // A real display holds the user's other windows. Never record it unless asked.
+  const record = !options.displayOverride || options.recordDisplay;
 
   await mkdir(options.outDir, { recursive: true });
   const { seedRoot, vault } = await createSeededVault();
@@ -461,16 +570,25 @@ async function main(): Promise<void> {
           // The out dir exists by now.
         }
         child?.kill("SIGTERM");
-      }, options.caps.maxSeconds * 1000 + BOOT_ALLOWANCE_MS);
+      }, options.caps.maxSeconds * 1000 + BOOT_ALLOWANCE_MS + (options.mode === "explore" ? EXPLORE_GRACE_MS : 0));
 
       try {
         if (options.displayOverride) {
-          process.stderr.write("[chaos] recording an existing display.\n");
+          process.stderr.write(
+            record
+              ? "[chaos] WARNING: recording the whole real display, including other windows.\n"
+              : "[chaos] not recording the real display (use --headed, or --record-display to capture the whole screen).\n",
+          );
+        } else if (options.headed) {
+          xvfb = await startXephyr(xephyrPath as string, display, options.size.width, options.size.height);
+          process.stdout.write(`[chaos] headed: watch the "Agentic Chat chaos" window (display ${display})\n`);
         } else {
           xvfb = await startXvfb(xvfbPath as string, display, options.size.width, options.size.height);
         }
         recordingStartedAt = Date.now();
-        ffmpeg = await startFfmpeg(ffmpegPath, display, options.size.width, options.size.height, options.fps, mp4);
+        if (record) {
+          ffmpeg = await startFfmpeg(ffmpegPath, display, options.size.width, options.size.height, options.fps, mp4);
+        }
 
         child = spawn(process.execPath, ["--import", "tsx", "scripts/run-e2e.ts", "--spec", CHAOS_SPEC], {
           env: {
@@ -541,6 +659,26 @@ async function main(): Promise<void> {
     const driver = await readJson<ReportDriver>(path.join(options.outDir, "driver-result.json"));
     const actions = await readActionLog(options.outDir);
     await writeReport({ options, outDir: options.outDir, result, driver, actions });
+
+    if (options.mode === "explore" && options.live && !options.noMine && options.apiKey && driver) {
+      process.stdout.write("[chaos] mining the run\n");
+      try {
+        const mined = await mineRun({
+          runDir: options.outDir,
+          apiKey: options.apiKey,
+          baseUrl: options.baseUrl,
+          model: options.model,
+          llm: options.llm,
+        });
+        process.stdout.write(
+          `[chaos] mined: ${mined.report.findings.length} findings, ${mined.drafts.length} issue drafts, cost $${mined.cost.toFixed(4)}\n`,
+        );
+        process.stdout.write(`[chaos] findings: ${path.join(options.outDir, "findings.md")}\n`);
+      } catch (error) {
+        console.error(`[chaos] mining failed: ${redactSecrets(error instanceof Error ? error.message : String(error), [options.apiKey])}`);
+        console.error(`[chaos] retry: npm run chaos:mine -- ${options.outDir}`);
+      }
+    }
 
     if (result.failure) console.error(`[chaos] ${redactSecrets(result.failure, [options.apiKey])}`);
     process.stdout.write(`[chaos] report: ${path.join(options.outDir, "report.md")}\n`);
