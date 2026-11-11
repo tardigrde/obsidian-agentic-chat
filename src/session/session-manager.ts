@@ -469,6 +469,16 @@ export class ObsidianSessionManager {
     }
   }
 
+  /** The session file's content when it exists and has a header, else null. */
+  private async readIfValid(path: string): Promise<string | null> {
+    try {
+      const content = await this.adapter.read(path);
+      return hasSessionHeader(content) ? content : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Put the old bytes back after a failed fallback replace. */
   private async restoreSessionFile(sessionFile: string, backupPath: string, force = false): Promise<void> {
     try {
@@ -476,6 +486,8 @@ export class ObsidianSessionManager {
         await this.removeIfExists(backupPath);
         return;
       }
+      // Without a backup there is nothing to restore: never delete the file.
+      if (!(await this.adapter.exists(backupPath))) return;
       if (await this.adapter.exists(sessionFile)) await this.adapter.remove(sessionFile);
       await this.adapter.rename(backupPath, sessionFile);
     } catch {
@@ -511,6 +523,11 @@ export class ObsidianSessionManager {
       // safe, but do not restore it over the file the replace is landing.
       throw new Error("Session file is being replaced.");
     }
+    // A replace in another tab can finish while this read awaited: its new
+    // file is in place and it removed the backup. Use that file; restoring
+    // the stale backup over it would delete the rewrite (#290 harness).
+    const landed = await this.readIfValid(path);
+    if (landed !== null) return landed;
     await this.restoreSessionFile(path, backupPath, true);
     return backup;
   }
