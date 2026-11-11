@@ -79,6 +79,25 @@ type RecordedDecision = { step: number; decision: ExplorerDecision; target?: Ele
 const PLUGIN_ID = "agentic-chat";
 const HISTORY_LIMIT = 14;
 const STUCK_TURN_MS = 240_000;
+/** An observation reads the DOM only; past this Obsidian is not answering. */
+const OBSERVE_TIMEOUT_MS = 90_000;
+/** Longest action: a 180 s turn wait, plus slack. "wait" adds its own seconds. */
+const PERFORM_TIMEOUT_MS = 240_000;
+
+/** Obsidian stopped answering WebDriver: end the run, do not wait for mocha. */
+class DriverHang extends Error {}
+
+async function withHangTimeout<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const hang = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new DriverHang(`${what} got no answer from Obsidian in ${Math.round(ms / 1000)}s`)), ms);
+  });
+  try {
+    return await Promise.race([work, hang]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 const MAX_CONSECUTIVE_FAILURES = 6;
 const MAX_INVALID_REPLIES = 4;
 const PROTECTED_KEY = /provider|model|baseurl|apikey/i;
@@ -770,7 +789,16 @@ export async function runExplorer(context: ExplorerContext): Promise<ExplorerOut
       secondsLeft: secondsLeft(),
       tokensLeft: Math.max(0, plan.caps.maxTokens - outcome.tokens),
     };
-    const { observation, errors, stats } = await observe(step, budget, pendingSignals);
+    let observed: Awaited<ReturnType<typeof observe>>;
+    try {
+      observed = await withHangTimeout(observe(step, budget, pendingSignals), OBSERVE_TIMEOUT_MS, `observe ${id}`);
+    } catch (error) {
+      if (!(error instanceof DriverHang)) throw error;
+      outcome.findings.push({ severity: "S2", step: id, message: `Obsidian stopped responding: ${error.message}`, source: "oracle:hang" });
+      outcome.stopReason = "obsidian-unresponsive";
+      break;
+    }
+    const { observation, errors, stats } = observed;
     pendingSignals = [];
     const elements = observation.windows.flatMap((window) => window.elements);
 
@@ -859,9 +887,16 @@ export async function runExplorer(context: ExplorerContext): Promise<ExplorerOut
     if (loop.action === "warn") pendingSignals.push(loop.message);
     try {
       if (loop.action === "skip") throw new Error(loop.message);
-      outcomeText = await perform(decision, context, secondsLeft);
+      const performMs = PERFORM_TIMEOUT_MS + (decision.action === "wait" ? decision.seconds * 1000 : 0);
+      outcomeText = await withHangTimeout(perform(decision, context, secondsLeft), performMs, `${decision.action} ${id}`);
       consecutiveFailures = 0;
     } catch (error) {
+      if (error instanceof DriverHang) {
+        outcome.findings.push({ severity: "S2", step: id, message: `Obsidian stopped responding: ${error.message}`, source: "oracle:hang" });
+        outcome.stopReason = "obsidian-unresponsive";
+        await append(context.outDir, "action-log.jsonl", { t: elapsed(context), step: id, surface: decision.action, status: "failed", detail: error.message });
+        break;
+      }
       status = "failed";
       outcomeText = `failed: ${message(error)}`;
       consecutiveFailures += 1;
@@ -923,8 +958,11 @@ export async function runExplorer(context: ExplorerContext): Promise<ExplorerOut
   } catch (error) {
     outcome.findings.push({ severity: "S1", step: "end", message: message(error), source: "oracle:jsonl" });
   }
-  await refreshUsage().catch(() => undefined);
-  await focusMain().catch(() => undefined);
+  // A hung Obsidian would hang these WebDriver calls too.
+  if (outcome.stopReason !== "obsidian-unresponsive") {
+    await refreshUsage().catch(() => undefined);
+    await focusMain().catch(() => undefined);
+  }
   return outcome;
 }
 
