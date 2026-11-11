@@ -30,6 +30,7 @@ import { contextLevel, contextPercent, formatContextReadoutTitle } from "./conte
 import {
   assistantUsage,
   collectToolResults,
+  failedLastTurnIndex,
   lastUserTurn,
   messageImages,
   messageText,
@@ -1584,6 +1585,21 @@ export class ChatView extends ItemView {
     // from a blocked send must not pick up an older turn's images.
     const images = lastTurn?.text === prompt ? lastTurn.images : [];
     const display = this.lastSentDisplay ?? stripContextPreamble(prompt);
+    // A failed turn is replaced, not repeated: drop it so the model sees the
+    // prompt once. Only when it is the turn being resent.
+    const failedIndex = failedLastTurnIndex(service.getMessages());
+    if (failedIndex !== undefined && lastTurn?.text === prompt) {
+      try {
+        await service.truncateMessages(failedIndex);
+      } catch (error) {
+        this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+        return;
+      }
+      if (this.isLiveTab(tab)) {
+        this.bubble = null;
+        this.renderTranscript(service.getMessages());
+      }
+    }
     this.clearEmptyState();
     // A retried image turn shows the same thumbnails it sends (#250).
     this.renderOutgoingUserMessage(display, [], images);
