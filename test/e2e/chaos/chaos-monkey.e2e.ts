@@ -51,6 +51,7 @@ import {
   sendPrompt,
   type ScriptedTurn,
 } from "../probe/support/probe-helpers";
+import { withHangTimeout } from "../../../scripts/chaos/hang-timeout";
 
 /**
  * Committed live driver for `@chaos-monkey`.
@@ -320,12 +321,18 @@ async function configureApproval(mutating: string, perTool: Record<string, strin
   await configurePlugin({ mode: "safe", approval: { mutating, perTool } });
 }
 
+// Read once while Obsidian answers; later calls (end-of-run checks, the
+// after hook) read only the disk, so a frozen Obsidian cannot block them.
+let cachedSessionDir = "";
+
 async function sessionDirPath(): Promise<string> {
-  return await browser.executeObsidian(async ({ app }, pluginId) => {
+  if (cachedSessionDir) return cachedSessionDir;
+  cachedSessionDir = await browser.executeObsidian(async ({ app }, pluginId) => {
     const basePath = (app.vault.adapter as unknown as { basePath?: string }).basePath;
     if (!basePath) return "";
     return `${basePath}/${app.vault.configDir}/plugins/${pluginId}/sessions`;
   }, "agentic-chat");
+  return cachedSessionDir;
 }
 
 /** Parse every session JSONL; throw with the file and line on corruption. */
@@ -1227,15 +1234,16 @@ describe("chaos monkey live driver", function () {
     }
 
     try {
-      await closeAgenticChatSettings();
+      await withHangTimeout(closeAgenticChatSettings(), 15_000, "close settings");
     } catch {
-      // Settings may already be closed.
+      // Settings may already be closed, or Obsidian stopped answering.
     }
   });
 
   it("drives the planned surfaces under the hard caps", async function () {
     this.timeout(Math.max(60_000, plan.caps.maxSeconds * 1000 + 300_000));
     if (plan.mode === "explore") {
+      await sessionDirPath(); // fill the cache while Obsidian answers
       const outcome = await runExplorer({
         plan,
         apiKey,

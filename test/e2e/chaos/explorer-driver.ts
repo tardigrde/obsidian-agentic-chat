@@ -26,6 +26,7 @@ import {
   type WindowObservation,
 } from "../../../scripts/chaos/explorer-core";
 import { chatComplete } from "../../../scripts/chaos/explorer-llm";
+import { DriverHang, withHangTimeout } from "../../../scripts/chaos/hang-timeout";
 import { llmHeaders } from "../../../scripts/chaos/llm-provider";
 import { mark } from "../support/record";
 import { openAgenticChatSettings } from "../support/settings-ui";
@@ -84,20 +85,6 @@ const OBSERVE_TIMEOUT_MS = 90_000;
 /** Longest action: a 180 s turn wait, plus slack. "wait" adds its own seconds. */
 const PERFORM_TIMEOUT_MS = 240_000;
 
-/** Obsidian stopped answering WebDriver: end the run, do not wait for mocha. */
-class DriverHang extends Error {}
-
-async function withHangTimeout<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const hang = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new DriverHang(`${what} got no answer from Obsidian in ${Math.round(ms / 1000)}s`)), ms);
-  });
-  try {
-    return await Promise.race([work, hang]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
 const MAX_CONSECUTIVE_FAILURES = 6;
 const MAX_INVALID_REPLIES = 4;
 const PROTECTED_KEY = /provider|model|baseurl|apikey/i;
