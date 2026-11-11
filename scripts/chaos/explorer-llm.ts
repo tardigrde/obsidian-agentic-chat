@@ -10,7 +10,13 @@ export type ChatMessage = { role: "system" | "user" | "assistant"; content: stri
 
 export type ChatUsage = { promptTokens: number; completionTokens: number; totalTokens: number; cost: number };
 
-export type ChatReply = { text: string; usage: ChatUsage; model: string };
+export type ChatReply = {
+  text: string;
+  usage: ChatUsage;
+  model: string;
+  /** The provider's finish_reason, for example "stop" or "length" (cut off). */
+  finishReason?: string;
+};
 
 export type ChatRequest = {
   baseUrl: string;
@@ -34,7 +40,7 @@ function toNumber(value: unknown): number {
 export function parseChatResponse(body: unknown, fallbackModel: string): ChatReply {
   const record = (body ?? {}) as {
     model?: string;
-    choices?: Array<{ message?: { content?: unknown; reasoning?: unknown } }>;
+    choices?: Array<{ message?: { content?: unknown; reasoning?: unknown }; finish_reason?: unknown }>;
     usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown; cost?: unknown };
     /** OpenCode Go reports how much the request counted against the plan. */
     opencode?: { allowance?: unknown };
@@ -45,9 +51,11 @@ export function parseChatResponse(body: unknown, fallbackModel: string): ChatRep
   const text = typeof content === "string" ? content : Array.isArray(content) ? content.map(String).join("") : "";
   const promptTokens = toNumber(record.usage?.prompt_tokens);
   const completionTokens = toNumber(record.usage?.completion_tokens);
+  const finishReason = record.choices?.[0]?.finish_reason;
   return {
     text,
     model: record.model ?? fallbackModel,
+    ...(typeof finishReason === "string" ? { finishReason } : {}),
     usage: {
       promptTokens,
       completionTokens,

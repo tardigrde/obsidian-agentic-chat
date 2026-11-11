@@ -4,6 +4,8 @@ import {
   condenseSessions,
   formatClock,
   isDraftWorthy,
+  minerRawLog,
+  parseMinerReply,
   parseMinerReport,
   renderFindingsMarkdown,
   renderIssueDraft,
@@ -112,5 +114,31 @@ describe("chaos miner report", () => {
     expect(markdown).toContain("| 1 | S2 | bug | high | Stop leaves the composer disabled | x004 | 01:15 |");
     expect(markdown).toContain("`issues/01-stop.md`");
     expect(slugify("Stop: leaves (the) composer!")).toBe("stop-leaves-the-composer");
+  });
+});
+
+describe("chaos miner reply parsing", () => {
+  it("reads a fenced or bare report", () => {
+    const body = '{"summary":"ok","findings":[{"title":"t","severity":"S2","kind":"bug","confidence":"high"}]}';
+    for (const text of [body, `Here it is:\n\`\`\`json\n${body}\n\`\`\``]) {
+      const parsed = parseMinerReply(text);
+      expect(parsed.ok && parsed.report.findings[0].title).toBe("t");
+    }
+  });
+
+  it("returns an error, not a throw, for empty, cut-off, or broken replies", () => {
+    expect(parseMinerReply("")).toEqual({ ok: false, error: "reply was empty" });
+    expect(parseMinerReply('{"summary":"ok","findings":[{"title":"cut')).toEqual({
+      ok: false,
+      error: "reply had no complete JSON object",
+    });
+    const broken = parseMinerReply("{summary: ok}");
+    expect(broken.ok).toBe(false);
+  });
+
+  it("logs why a reply failed and how it ended", () => {
+    const log = minerRawLog({ text: "{", finishReason: "length", model: "m" }, "reply had no complete JSON object");
+    expect(log).toContain("finish_reason: length");
+    expect(log).toContain("error: reply had no complete JSON object");
   });
 });

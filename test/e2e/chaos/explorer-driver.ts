@@ -465,22 +465,19 @@ async function perform(
         await browser.keys(["Control", "a"]);
         await browser.keys(decision.text ? decision.text.split("") : ["Backspace"]);
       } else {
-        // Focus by script, not by click: a click can hit a parent row that
-        // re-renders and removes the field (the session rename input does).
-        await browser.execute((el) => (el as unknown as HTMLElement).focus(), element);
-        try {
-          await element.setValue(decision.text);
-        } catch {
-          const stillThere = await browser.execute((ref) => {
-            const field = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-chaos-ref="${ref}"]`);
-            if (!field) return false;
-            field.focus();
-            field.value = "";
-            return true;
-          }, decision.ref);
-          if (!stillThere) throw new Error(`ref ${decision.ref} closed when focused; the field may commit on blur`);
-          await browser.keys(decision.text ? decision.text.split("") : ["Backspace"]);
-        }
+        // Focus and select by script, then type real keys. Not setValue: its
+        // WebDriver "Element Clear" blurs the field, and a field that commits on
+        // blur (the session rename input) closes before the text arrives. Not
+        // a click: it can hit a parent row that re-renders.
+        const ready = await browser.execute((ref) => {
+          const field = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-chaos-ref="${ref}"]`);
+          if (!field) return false;
+          field.focus();
+          field.select();
+          return document.activeElement === field;
+        }, decision.ref);
+        if (!ready) throw new Error(`ref ${decision.ref} could not take focus`);
+        await browser.keys(decision.text ? decision.text.split("") : ["Backspace"]);
       }
       if (decision.submit) await browser.keys("Enter");
       await browser.pause(400);
@@ -539,20 +536,49 @@ async function perform(
       const size = context.plan.size ?? { width: 1440, height: 1000 };
       const width = Math.max(320, Math.min(size.width, decision.width));
       const height = Math.max(400, Math.min(size.height, decision.height));
-      // chromedriver cannot resize an Electron window; Obsidian exposes its BrowserWindow.
-      const resized = await browser.execute(
+      // Try the Electron window first: chromedriver's resize needs
+      // Browser.getWindowForTarget, which this Electron build does not have.
+      const via = await browser.execute(
         (w, h) => {
-          const target = window as unknown as { electronWindow?: { setSize?: (w: number, h: number) => void } };
-          if (typeof target.electronWindow?.setSize !== "function") return false;
-          target.electronWindow.setSize(w, h);
-          return true;
+          type Win = { setSize?: (w: number, h: number) => void };
+          const req = (window as unknown as { require?: (id: string) => unknown }).require;
+          const candidates: Array<[string, () => Win | undefined]> = [
+            ["electronWindow", () => (window as unknown as { electronWindow?: Win }).electronWindow],
+            ["@electron/remote", () => (req?.("@electron/remote") as { getCurrentWindow?: () => Win })?.getCurrentWindow?.()],
+            ["electron.remote", () => (req?.("electron") as { remote?: { getCurrentWindow?: () => Win } })?.remote?.getCurrentWindow?.()],
+          ];
+          for (const [name, get] of candidates) {
+            try {
+              const win = get();
+              if (typeof win?.setSize === "function") {
+                win.setSize(w, h);
+                return name;
+              }
+            } catch {
+              // try the next way
+            }
+          }
+          return "";
         },
         width,
         height,
       );
-      if (!resized) await browser.setWindowSize(width, height);
+      let method = via;
+      if (!method) {
+        try {
+          await browser.setWindowRect(null, null, width, height);
+          method = "setWindowRect";
+        } catch {
+          await browser.setWindowSize(width, height);
+          method = "setWindowSize";
+        }
+      }
       await browser.pause(500);
-      return `resized to ${width}x${height}`;
+      const actual = await browser.execute(() => ({ w: window.innerWidth, h: window.innerHeight }));
+      if (Math.abs(actual.w - width) > 40) {
+        throw new Error(`resize to ${width}x${height} via ${method} left the window at ${actual.w}x${actual.h}`);
+      }
+      return `resized to ${actual.w}x${actual.h} via ${method}`;
     }
     case "open_settings":
       await openAgenticChatSettings();

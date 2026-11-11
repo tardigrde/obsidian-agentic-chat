@@ -7,6 +7,8 @@
  * person approves each draft before it becomes a GitHub issue.
  */
 
+import { extractJsonObject } from "./explorer-core";
+
 export type MinerSeverity = "S1" | "S2" | "S3" | "S4";
 export type MinerKind = "bug" | "ux" | "perf" | "harness" | "noise";
 export type MinerConfidence = "high" | "medium" | "low";
@@ -328,4 +330,29 @@ ${drafts.length ? drafts.map((draft) => `- \`issues/${draft}\``).join("\n") : "-
 
 File approved drafts: \`npm run chaos:file -- ${context.runDir} <draft numbers>\`
 `;
+}
+
+/** Completion cap for one miner reply. */
+export const MINER_MAX_TOKENS = 8_000;
+
+/** The follow-up turn when the first miner reply was not a usable report. */
+export const MINER_JSON_ONLY_RETRY =
+  "Your reply was not one valid JSON object. Reply again with only the JSON object in the required shape: no prose, no code fence, keep each detail short.";
+
+export type MinerReplyParse = { ok: true; report: MinerReport } | { ok: false; error: string };
+
+/** Parse a miner reply. Never throws; the caller retries once on failure. */
+export function parseMinerReply(text: string): MinerReplyParse {
+  const json = extractJsonObject(text);
+  if (!json) return { ok: false, error: text.trim() ? "reply had no complete JSON object" : "reply was empty" };
+  try {
+    return { ok: true, report: parseMinerReport(JSON.parse(json)) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** A debug log of a bad miner reply: why it failed, how it ended, and its text. */
+export function minerRawLog(reply: { text: string; finishReason?: string; model: string }, error: string): string {
+  return `error: ${error}\nfinish_reason: ${reply.finishReason ?? "(none)"}\nmodel: ${reply.model}\nlength: ${reply.text.length}\n\n${reply.text}\n`;
 }

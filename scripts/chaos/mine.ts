@@ -6,13 +6,15 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { CHAOS_MODEL, assertChaosModel, redactSecrets } from "./monkey-core";
-import { chatComplete } from "./explorer-llm";
-import { extractJsonObject } from "./explorer-core";
+import { chatComplete, type ChatMessage, type ChatReply } from "./explorer-llm";
 import {
   buildMinerDigest,
   isDraftWorthy,
   minerSystemPrompt,
-  parseMinerReport,
+  MINER_JSON_ONLY_RETRY,
+  MINER_MAX_TOKENS,
+  minerRawLog,
+  parseMinerReply,
   renderFindingsMarkdown,
   renderIssueDraft,
   slugify,
@@ -106,23 +108,40 @@ export async function mineRun(options: MineOptions): Promise<{ report: MinerRepo
   );
   await writeFile(path.join(runDir, "miner-digest.txt"), digest);
 
-  const reply = await chatComplete({
-    baseUrl: options.baseUrl,
-    apiKey: options.apiKey,
-    model: options.model,
-    json: true,
-    headers: llmHeaders(options.llm, `chaos-mine-${path.basename(runDir)}`),
-    maxTokens: 8_000,
-    temperature: 0.2,
-    timeoutMs: 300_000,
-    messages: [
-      { role: "system", content: minerSystemPrompt() },
-      { role: "user", content: digest },
-    ],
-  });
-  const json = extractJsonObject(reply.text);
-  if (!json) throw new Error("miner reply had no JSON object");
-  const report = parseMinerReport(JSON.parse(json));
+  const messages: ChatMessage[] = [
+    { role: "system", content: minerSystemPrompt() },
+    { role: "user", content: digest },
+  ];
+  const ask = async (maxTokens: number): Promise<ChatReply> =>
+    await chatComplete({
+      baseUrl: options.baseUrl,
+      apiKey: options.apiKey,
+      model: options.model,
+      json: true,
+      headers: llmHeaders(options.llm, `chaos-mine-${path.basename(runDir)}`),
+      maxTokens,
+      temperature: 0.2,
+      timeoutMs: 300_000,
+      messages,
+    });
+  let reply = await ask(MINER_MAX_TOKENS);
+  let parsed = parseMinerReply(reply.text);
+  if (!parsed.ok) {
+    // Keep the bad reply for debugging, then ask once more for JSON only. A
+    // reply cut off at the token cap gets twice the room.
+    await writeFile(path.join(runDir, "miner-raw-1.txt"), minerRawLog(reply, parsed.error));
+    messages.push(
+      { role: "assistant", content: reply.text.slice(0, 4_000) },
+      { role: "user", content: MINER_JSON_ONLY_RETRY },
+    );
+    reply = await ask(reply.finishReason === "length" ? MINER_MAX_TOKENS * 2 : MINER_MAX_TOKENS);
+    parsed = parseMinerReply(reply.text);
+    if (!parsed.ok) {
+      await writeFile(path.join(runDir, "miner-raw-2.txt"), minerRawLog(reply, parsed.error));
+      throw new Error(`miner reply was not a usable report after a retry: ${parsed.error}; see miner-raw-*.txt`);
+    }
+  }
+  const report = parsed.report;
   await writeFile(path.join(runDir, "miner-report.json"), `${JSON.stringify(report, null, 2)}\n`);
 
   const clock = stepClock(timeline);

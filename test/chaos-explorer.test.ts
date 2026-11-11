@@ -204,6 +204,8 @@ describe("explorer usage accounting", () => {
       usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, cost: 0.0002 },
     });
     expect(() => parseChatResponse({ error: { message: "no credits" } }, "m")).toThrow(/no credits/);
+    const cut = parseChatResponse({ choices: [{ message: { content: "{" }, finish_reason: "length" }] }, "m");
+    expect(cut.finishReason).toBe("length");
   });
 });
 
