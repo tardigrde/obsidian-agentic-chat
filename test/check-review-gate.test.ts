@@ -231,7 +231,7 @@ describe("check-review-gate", () => {
   it("measures a real git diff with renames and unusual names (#288)", () => {
     const repo = mkdtempSync(path.join(tmpdir(), "review-gate-numstat-"));
     const git = (...args: string[]) =>
-      execFileSync("git", ["-c", "user.email=t@example.invalid", "-c", "user.name=t", ...args], {
+      execFileSync("git", ["-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=", ...args], {
         cwd: repo,
         encoding: "utf8",
       }).trim();
