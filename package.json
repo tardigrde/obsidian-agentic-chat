@@ -40,6 +40,7 @@
     "verify": "node scripts/verify.mjs",
     "verify:fast": "node scripts/verify.mjs fast",
     "verify:witness": "node scripts/verify-witness.mjs",
+    "capture:release-fixtures": "node scripts/capture-release-fixtures.mjs",
     "check:feature-map": "node scripts/check-feature-map.mjs",
     "probe": "tsx scripts/probe.ts",
     "chaos": "tsx scripts/chaos-monkey.ts",

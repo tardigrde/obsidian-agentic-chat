@@ -64,7 +64,19 @@ the existing tests still pass. A behavior change with that label is `FAIL`.
 8. Check the `no-behavior-change` claim against the diff. A new branch, a changed
    output, or a changed error path is behavior. Return `FAIL`.
 
-9. Report the verdict. Do not merge.
+9. Ask the bug-class questions from #290. Each "yes" needs a test that models
+   it, or a note in the verdict:
+   - Does it touch per-instance state that another tab or window shares (a
+     session folder, a lease, a cache)? Model two instances over one adapter.
+   - Does it change a persisted shape (`data.json`, session JSONL)? The
+     upgrade lane (`npm run verify -- upgrade`) must still pass, and a removed
+     key needs a user notice.
+   - Does it add a second estimator of a number that already exists (context
+     fill, cost, turn count)? Add a test that the two agree.
+   - Does it queue work for the runtime (steer, follow-up)? Assert that the
+     queue is empty or returned at `agent_end`.
+
+10. Report the verdict. Do not merge.
 
 ## Verdicts
 
