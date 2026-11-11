@@ -212,33 +212,47 @@ describe("agentic-chat smoke", function () {
 
   it("applies a Quick Ask edit to selected editor text without a model call", async function () {
     const path = "Notes/Quick Ask.md";
-    await browser.executeObsidian(async ({ app, obsidian }, notePath) => {
-      if (!app.vault.getAbstractFileByPath("Notes")) await app.vault.createFolder("Notes");
-      const existing = app.vault.getAbstractFileByPath(notePath);
-      const body = "quick ask edit";
-      const file = existing instanceof obsidian.TFile ? existing : await app.vault.create(notePath, body);
-      if (existing instanceof obsidian.TFile) await app.vault.modify(existing, body);
-      const leaf = app.workspace.getLeaf(false);
-      await leaf.openFile(file);
-      app.workspace.setActiveLeaf(leaf, { focus: true });
-      const view = app.workspace.getActiveViewOfType(obsidian.MarkdownView);
-      if (!view) throw new Error("Markdown view did not open");
-      await view.setState({ mode: "source", source: false }, { history: false });
-      view.editor.focus();
-      view.editor.setSelection({ line: 0, ch: 0 }, { line: 0, ch: 5 });
-    }, path);
-    await browser.waitUntil(
-      async () =>
-        browser.executeObsidian(async ({ app, obsidian }) => {
-          const view = app.workspace.getActiveViewOfType(obsidian.MarkdownView);
-          return view instanceof obsidian.MarkdownView && view.editor.getSelection() === "quick";
-        }),
-      { timeout: 5_000, timeoutMsg: "Quick Ask selection was not ready" },
+    await browser.executeObsidian(
+      async ({ app, obsidian }, notePath, anchorKey, selectedText) => {
+        if (!app.vault.getAbstractFileByPath("Notes")) await app.vault.createFolder("Notes");
+        const existing = app.vault.getAbstractFileByPath(notePath);
+        const body = "quick ask edit";
+        const file = existing instanceof obsidian.TFile ? existing : await app.vault.create(notePath, body);
+        if (existing instanceof obsidian.TFile) await app.vault.modify(existing, body);
+        const leaf = app.workspace.getLeaf(false);
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        // Keep the leaf and view this test opened. Asking the workspace for the
+        // active markdown view later can return another leaf, or none at all.
+        const view = leaf.view;
+        if (!(view instanceof obsidian.MarkdownView)) throw new Error("Note did not open in a Markdown view");
+        await view.setState({ mode: "source", source: false }, { history: false });
+        view.editor.focus();
+        view.editor.setSelection({ line: 0, ch: 0 }, { line: 0, ch: selectedText.length });
+        (window as unknown as Record<string, unknown>)[anchorKey] = { leaf, view };
+      },
+      path,
+      QUICK_ASK_ANCHOR,
+      QUICK_ASK_SELECTION,
     );
+    await browser.waitUntil(refreshQuickAskSelection, {
+      timeout: 5_000,
+      timeoutMsg: "Quick Ask selection was not ready",
+    });
 
+    // The command routes to the active leaf's editor. Re-activate the anchored
+    // leaf in the same page call so a stray focus change cannot route it away.
+    if (!(await refreshQuickAskSelection())) {
+      throw new Error("Quick Ask anchor lost its selection before the command");
+    }
     await browser.executeObsidianCommand("agentic-chat:quick-ask-inline-edit");
     const modal = await $(".agentic-chat-quick-ask");
     await modal.waitForExist();
+    const target = await browser.execute(
+      () => document.querySelector<HTMLElement>(".agentic-chat-quick-ask-target")?.innerText ?? "",
+    );
+    // A lost selection would fall back to the whole line and still uppercase it.
+    expect(target).toContain("Selection");
     await browser.execute(() => {
       const input = document.querySelector<HTMLTextAreaElement>(".agentic-chat-quick-ask-instruction");
       if (!input) throw new Error("Quick Ask instruction input not found");
@@ -259,11 +273,19 @@ describe("agentic-chat smoke", function () {
         { timeout: 5_000, timeoutMsg: "Quick Ask did not update the selected text" },
       );
     } catch (error) {
-      const actual = await browser.executeObsidian(async ({ app, obsidian }, notePath) => {
-        const file = app.vault.getAbstractFileByPath(notePath);
-        if (!(file instanceof obsidian.TFile)) return null;
-        return (await app.vault.cachedRead(file)).slice(0, 40);
-      }, path);
+      const actual = await browser.executeObsidian(
+        async ({ app, obsidian }, notePath, anchorKey) => {
+          const file = app.vault.getAbstractFileByPath(notePath);
+          const view = (window as unknown as Record<string, { view?: unknown } | undefined>)[anchorKey]?.view;
+          return {
+            note: file instanceof obsidian.TFile ? (await app.vault.cachedRead(file)).slice(0, 40) : null,
+            editor: (view as QuickAskView | undefined)?.editor?.getValue().slice(0, 40) ?? null,
+            selection: (view as QuickAskView | undefined)?.editor?.getSelection() ?? null,
+          };
+        },
+        path,
+        QUICK_ASK_ANCHOR,
+      );
       throw new Error(
         `${error instanceof Error ? error.message : String(error)}; expected prefix ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
         { cause: error },
@@ -271,3 +293,50 @@ describe("agentic-chat smoke", function () {
     }
   });
 });
+
+// Helpers for the Quick Ask case above. They live after the suite so the
+// feature-map line references into this file stay accurate.
+/** Window key for the leaf/view that owns the Quick Ask note. `executeObsidian`
+ * stringifies every page callback, so a leaf handle cannot live in a local. */
+const QUICK_ASK_ANCHOR = "__agenticChatQuickAskAnchor";
+/** Text the Quick Ask command must see selected. */
+const QUICK_ASK_SELECTION = "quick";
+
+/** The editor surface Quick Ask reads. Structural on purpose: the spec must not
+ * import Obsidian values, because page callbacks are stringified. */
+type QuickAskEditor = {
+  focus(): void;
+  getValue(): string;
+  getSelection(): string;
+  setSelection(from: { line: number; ch: number }, to: { line: number; ch: number }): void;
+};
+type QuickAskView = { editor?: QuickAskEditor };
+
+/** Make the anchored leaf active and re-apply the Quick Ask selection when it
+ * drifted. Every poll repairs the state instead of only reading it: Obsidian can
+ * move the active leaf, drop focus, or redraw the editor after `setState`, and
+ * any of those silently loses the selection.
+ *
+ * Returns false when the anchor is gone, the view left the anchored leaf, or the
+ * selection does not hold the expected text after the repair. */
+async function refreshQuickAskSelection(): Promise<boolean> {
+  return browser.executeObsidian(
+    async ({ app }, key, expected) => {
+      const store = window as unknown as Record<string, { leaf?: unknown; view?: unknown } | undefined>;
+      const anchor = store[key];
+      if (!anchor) return false;
+      const leaf = anchor.leaf as Parameters<typeof app.workspace.setActiveLeaf>[0];
+      const view = anchor.view as QuickAskView;
+      // A re-opened or moved note must not pass for the note this test drove.
+      if (leaf.view !== view || !view.editor) return false;
+      app.workspace.setActiveLeaf(leaf, { focus: true });
+      view.editor.focus();
+      if (view.editor.getSelection() !== expected) {
+        view.editor.setSelection({ line: 0, ch: 0 }, { line: 0, ch: expected.length });
+      }
+      return view.editor.getSelection() === expected;
+    },
+    QUICK_ASK_ANCHOR,
+    QUICK_ASK_SELECTION,
+  );
+}
