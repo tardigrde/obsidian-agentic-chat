@@ -14,7 +14,7 @@ import process from "node:process";
 const LABEL = "chaos";
 
 function gh(args: string[]): { ok: boolean; out: string } {
-  const result = spawnSync("gh", args, { encoding: "utf8" });
+  const result = spawnSync("gh", args, { encoding: "utf8" }); // NOSONAR:S4036 — gh is a fixed developer binary resolved from the user's PATH; this script is not a privileged service.
   return { ok: result.status === 0, out: `${result.stdout ?? ""}${result.stderr ?? ""}`.trim() };
 }
 

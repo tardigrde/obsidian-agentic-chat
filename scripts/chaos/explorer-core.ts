@@ -525,7 +525,7 @@ export function sumSessionUsage(jsonlTexts: string[]): SessionUsage {
       if (typeof cost === "number" && Number.isFinite(cost)) usage.cost += cost;
     }
   }
-  usage.models = [...models].sort();
+  usage.models = [...models].sort((a, b) => a.localeCompare(b));
   return usage;
 }
 

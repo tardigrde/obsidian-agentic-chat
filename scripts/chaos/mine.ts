@@ -67,7 +67,7 @@ async function readJsonl(file: string): Promise<Array<Record<string, unknown>>> 
 
 function openChaosIssues(): Array<{ number: number; title: string }> {
   const result = spawnSync(
-    "gh",
+    "gh", // NOSONAR:S4036 — gh is a fixed developer binary resolved from the user's PATH; this script is not a privileged service.
     ["issue", "list", "--label", "chaos", "--state", "open", "--limit", "100", "--json", "number,title"],
     { encoding: "utf8" },
   );
