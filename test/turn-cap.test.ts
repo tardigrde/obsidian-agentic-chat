@@ -145,3 +145,28 @@ describe("AgentService turn cap", () => {
     expect(JSON.stringify(persistedAssistants.at(-1)?.content)).toMatch(/Turn cap/);
   });
 });
+
+describe("configurable turn cap (#283)", () => {
+  it("heals the setting into whole turns within bounds", async () => {
+    const { healMaxTurns, MIN_TURN_CAP, MAX_TURN_CAP, PARENT_TURN_CAP } = await import("../src/agent/turn-cap");
+    expect(healMaxTurns(undefined)).toBe(PARENT_TURN_CAP);
+    expect(healMaxTurns("40")).toBe(PARENT_TURN_CAP);
+    expect(healMaxTurns(Number.NaN)).toBe(PARENT_TURN_CAP);
+    expect(healMaxTurns(0)).toBe(MIN_TURN_CAP);
+    expect(healMaxTurns(40.9)).toBe(40);
+    expect(healMaxTurns(10_000)).toBe(MAX_TURN_CAP);
+  });
+
+  it("reads a live limit on every turn", async () => {
+    const { AgentTurnCap } = await import("../src/agent/turn-cap");
+    let limit = 3;
+    const cap = new AgentTurnCap({ maxTurns: () => limit });
+    expect(cap.shouldStopAfterTurn(turn())).toBe(false);
+    expect(cap.shouldStopAfterTurn(turn())).toBe(false);
+    limit = 5; // raised mid-run in settings
+    expect(cap.shouldStopAfterTurn(turn())).toBe(false);
+    expect(cap.shouldStopAfterTurn(turn())).toBe(false);
+    expect(cap.shouldStopAfterTurn(turn())).toBe(true);
+    expect(cap.noticeText).toContain("after 5 assistant turns");
+  });
+});

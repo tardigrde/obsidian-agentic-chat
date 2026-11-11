@@ -16,6 +16,7 @@ import {
   planCompaction,
   type CompactionConfig,
 } from "./compaction";
+import { isStopNoticeMessage } from "./stop-notice";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
@@ -371,6 +372,9 @@ function truncateForSummary(text: string, maxChars: number): string {
 function serializeConversation(messages: readonly AgentMessage[]): string {
   const parts: string[] = [];
   for (const msg of messages) {
+    // Guard stop notices are transcript-only (#283); a summary must not
+    // carry them back into the model context.
+    if (isStopNoticeMessage(msg)) continue;
     const part = serializeMessage(msg);
     if (part) parts.push(part);
   }

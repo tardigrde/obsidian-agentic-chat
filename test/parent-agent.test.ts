@@ -122,3 +122,66 @@ describe("createParentAgent", () => {
     unsubscribe();
   });
 });
+
+describe("guard stop notices (#283)", () => {
+  it("keeps turn-cap and loop-guard notices out of the model context", async () => {
+    const { buildStopNoticeMessage } = await import("../src/agent/stop-notice");
+    const { buildTurnCapNotice } = await import("../src/agent/turn-cap");
+    const { harnessNotice: _marker, ...replyShape } = buildStopNoticeMessage("Here is the summary you asked for.");
+    const realReply: AgentMessage = {
+      ...replyShape,
+      usage: { ...replyShape.usage, input: 10, output: 5, totalTokens: 15 },
+    };
+    // A model reply that happens to start like a notice but has real usage.
+    const lookalike: AgentMessage = { ...realReply, content: [{ type: "text", text: "Turn cap: stopped is a setting." }] };
+    const turnCapNotice = buildStopNoticeMessage(buildTurnCapNotice(25));
+    const loopGuardNotice = buildStopNoticeMessage(
+      "Loop guard: stopped after 3 identical read calls with identical results.",
+    );
+    // A session saved before this fix: same shape, no marker.
+    const legacyNotice = { ...buildStopNoticeMessage(buildTurnCapNotice(25)) } as Record<string, unknown>;
+    delete legacyNotice.harnessNotice;
+    const messages: AgentMessage[] = [
+      { role: "user", content: "hello", timestamp: 1 },
+      realReply,
+      lookalike,
+      turnCapNotice,
+      loopGuardNotice,
+      legacyNotice as unknown as AgentMessage,
+      // Marker only: wording that the legacy shape check would not match.
+      { ...buildStopNoticeMessage("Harness note with any wording."), usage: realReply.usage } as AgentMessage,
+      // Corrupt line: a text block without text must not throw.
+      { ...replyShape, content: [{ type: "text" }] } as unknown as AgentMessage,
+      { role: "user", content: "continue", timestamp: 2 },
+    ];
+    const { agent, unsubscribe } = createParentAgent({
+      streamFn,
+      systemPrompt: "system",
+      model: model(),
+      thinkingLevel: "low",
+      tools: [],
+      messages,
+      getApiKey: () => "test-key",
+      beforeToolCall: async () => undefined,
+      afterToolCall: async () => undefined,
+      onEvent: () => undefined,
+    });
+
+    const sent = await agent.convertToLlm(agent.state.messages);
+    const texts = sent.map((m) =>
+      typeof m.content === "string" ? m.content : m.content.map((c) => ("text" in c ? c.text : "")).join(""),
+    );
+    expect(texts).not.toContain("Harness note with any wording.");
+    expect(texts).toEqual([
+      "system",
+      "hello",
+      "Here is the summary you asked for.",
+      "Turn cap: stopped is a setting.",
+      "",
+      "continue",
+    ]);
+    // The transcript (UI + JSONL) still keeps the notices.
+    expect(agent.state.messages).toHaveLength(messages.length + 1);
+    unsubscribe();
+  });
+});

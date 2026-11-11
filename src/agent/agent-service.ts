@@ -54,7 +54,7 @@ import {
 } from "./service-listeners";
 import { AgentStreamRuntime } from "./stream-runtime";
 import { AgentLoopGuard } from "./loop-guard";
-import { AgentTurnCap, CHILD_TURN_CAP, PARENT_TURN_CAP } from "./turn-cap";
+import { AgentTurnCap, CHILD_TURN_CAP } from "./turn-cap";
 import { buildStopNoticeMessage, type StopNoticeModel } from "./stop-notice";
 import { AgentRuntimeResourceState } from "./runtime-resource-state";
 import type { AgentRuntimeResources } from "./runtime-resources";
@@ -136,7 +136,7 @@ export class AgentService {
   private readonly sessionState = new AgentSessionLocalState();
   private readonly listeners = new AgentServiceListeners();
   private readonly loopGuard = new AgentLoopGuard();
-  private readonly turnCap = new AgentTurnCap({ maxTurns: PARENT_TURN_CAP });
+  private readonly turnCap = new AgentTurnCap({ maxTurns: () => this.getSettings().maxTurnsPerPrompt });
   private readonly recentEvents: string[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
   private readonly commandInvocations: AgentCommandInvocationRuntime;
@@ -855,9 +855,10 @@ export class AgentService {
 
   /**
    * When the loop guard or the turn cap fired, append the plain-text
-   * explanation at the end of the transcript (live context + JSONL + chat
-   * bubble) plus a transient Notice. Append-only by design: the model sees why
-   * the run stopped on retry. The loop-guard notice wins when both fired in the
+   * explanation at the end of the transcript (JSONL + chat bubble) plus a
+   * transient Notice. The message is transcript-only: the parent agent's
+   * `convertToLlm` drops it, so the model never reads text it did not write
+   * (#283). The loop-guard notice wins when both fired in the
    * same turn, so the user never gets two stop notes. Runs once per fire — each
    * guard clears its notice on the next prompt.
    */
@@ -865,7 +866,8 @@ export class AgentService {
     const text = this.loopGuard.noticeText ?? this.turnCap.noticeText;
     if (!text) return;
     const message = buildStopNoticeMessage(text, this.agent?.state.model as StopNoticeModel | undefined);
-    // Append to live agent context first so the next turn sees the stop reason.
+    // Keep it in the live transcript so the UI and replay match; toLlmMessages
+    // filters it out of every model request.
     this.agent?.state.messages.push(message);
     await this.sessionEvents.recordMessageEnd(message);
     this.listeners.emitEvent({ type: "message_start", message });

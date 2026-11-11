@@ -47,9 +47,9 @@ await (await modal.$("button=Allow")).click();
 | Diff preview before an edit | `src/ui/approval-modal.ts:52` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
 | Remember a deny for this tool | `src/ui/approval-modal.ts:79` | `test/e2e/specs/approval-deterministic.e2e.ts:437` | `covered` |
 | Skill tools cannot be remembered | `src/ui/approval-modal.ts:68` | `test/approval-memory.test.ts:35` (policy only) | `partial` |
-| Global mutating gate persists | `src/settings.ts:895` | `test/e2e/specs/settings-ui.e2e.ts:261` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
-| Per-tool override through settings | `src/settings.ts:895` | `test/e2e/specs/settings-ui.e2e.ts:261` | `covered` |
-| Per-tool deny flips to allow in a recorded run | `src/settings.ts:895` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
+| Global mutating gate persists | `src/settings.ts:902` | `test/e2e/specs/settings-ui.e2e.ts:261` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
+| Per-tool override through settings | `src/settings.ts:902` | `test/e2e/specs/settings-ui.e2e.ts:261` | `covered` |
+| Per-tool deny flips to allow in a recorded run | `src/settings.ts:902` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
 | Working directories and `/add-dir` are gone | `src/ui/commands.ts:24` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
 | Safe asks before mutating tools | `src/agent/tool-call-controller.ts:255` | `test/e2e/specs/approval-deterministic.e2e.ts:300` | `covered` |
 | Safe/YOLO toggle | `src/ui/chat-view.ts:777` | `test/e2e/specs/plan-removal.e2e.ts:93` (existence only) | `partial` |
