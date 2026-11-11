@@ -1,0 +1,97 @@
+{
+  "provider": "openrouter",
+  "openrouterApiKeySecretId": "agentic-chat-openrouter-api-key",
+  "openrouterModel": "moonshotai/kimi-k2.6",
+  "ollamaBaseUrl": "http://localhost:11434",
+  "ollamaModel": "llama3.1",
+  "openaiCompatibleBaseUrl": "http://localhost:3000/api",
+  "openaiCompatibleApiKeySecretId": "agentic-chat-openai-compatible-api-key",
+  "openaiCompatibleModel": "",
+  "openaiCompatibleContextWindow": 0,
+  "thinkingLevel": "off",
+  "temperature": 0.7,
+  "maxTokens": 0,
+  "requestTimeoutMs": 45000,
+  "maxNetworkRetries": 4,
+  "systemPrompt": "Fixture system prompt.",
+  "mode": "plan",
+  "outputStyle": "default",
+  "privacy": {
+    "denyDataCollection": true,
+    "requireZDR": true,
+    "allowFallbacks": true
+  },
+  "approval": {
+    "mutating": "ask",
+    "perTool": {},
+    "workingDirs": [
+      "Projects",
+      "Journal"
+    ]
+  },
+  "plugins": {
+    "folder": ".agentic-plugins",
+    "enabled": {},
+    "sources": {},
+    "mcpState": {}
+  },
+  "subagentTimeoutSeconds": 0,
+  "ignoredGlobs": "",
+  "notifications": {
+    "enabled": true,
+    "costAlertUsd": 0,
+    "costCapUsd": 0
+  },
+  "compaction": {
+    "enabled": true,
+    "thresholdPercent": 80
+  },
+  "toolBudget": {
+    "enabled": true,
+    "thresholdPercent": 2
+  },
+  "network": {
+    "proxyUrl": "",
+    "noProxy": "localhost,127.0.0.1,::1"
+  },
+  "web": {
+    "enabled": false,
+    "searchProvider": "tavily",
+    "searchApiKeySecretId": "agentic-chat-web-search-api-key",
+    "searxngUrl": "",
+    "maxResults": 5,
+    "fetchCharLimit": 10000,
+    "allowedHosts": ""
+  },
+  "mcp": {
+    "enabled": false,
+    "proxyUrl": "",
+    "noProxy": "localhost,127.0.0.1,::1",
+    "servers": []
+  },
+  "embeddings": {
+    "enabled": false,
+    "provider": "openrouter",
+    "openrouterModel": "openai/text-embedding-3-small",
+    "ollamaModel": "nomic-embed-text",
+    "openaiCompatibleModel": "",
+    "dimensions": 1536,
+    "languageCoverage": "multilingual",
+    "batchSize": 32,
+    "maxDocumentChars": 12000,
+    "leaseId": ""
+  },
+  "observability": {
+    "enabled": false,
+    "backend": "langfuse",
+    "endpoint": "",
+    "proxyUrl": "",
+    "noProxy": "localhost,127.0.0.1,::1",
+    "sampleRate": 100,
+    "payloadMode": "metadata",
+    "langfusePublicKeySecretId": "agentic-chat-langfuse-public-key",
+    "langfuseSecretKeySecretId": "agentic-chat-langfuse-secret-key",
+    "authHeaderName": "",
+    "authHeaderValueSecretId": "agentic-chat-observability-auth-header-value"
+  }
+}

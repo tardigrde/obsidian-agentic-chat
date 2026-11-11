@@ -132,8 +132,8 @@ comments. It reads the verdict comments at the current head and fails when:
   `Fast lane: PASS` alone does not count);
 - a `FAIL` at this head is not cleared (see below);
 - the `Head` value does not match the checked-out PR head;
-- the PR changes more than 400 lines or 10 files, unless it has the `large-pr`
-  label.
+- the PR adds more than 400 lines under `src/`, or adds lines to more than 10
+  files under `src/`, unless it has the `large-pr` label.
 
 Only comments from `OWNER`, `MEMBER`, or `COLLABORATOR` accounts count. Bots and
 `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` accounts are ignored.
@@ -157,8 +157,15 @@ not to the PR head, so it does not update the PR's `review` check. The workflow
 stays read-only. After posting a verdict comment, re-trigger the PR check, for
 example by editing the PR body. The script prints this hint on comment runs.
 
-The size count ignores lockfiles, minified assets, coverage, and logs. Split a
-large change; use `large-pr` only for one mechanical unit.
+The size budget measures risky code only (#288). It counts lines **added**
+under `src/`. Deleted lines, tests, docs, skills, scripts, lockfiles, and other
+generated files are free, so a removal or a docs sweep fits without an
+override. Renames are judged by the destination path and count only their added
+lines, so a pure move into `src/` is free. The gate reads
+`git diff --numstat -z`, so no path is quoted or split on `=>`. Moving or
+deleting code out of `src/` is also free; the reviewer reads such a diff, the
+budget does not. Split a large change; use `large-pr` only for one
+mechanical unit.
 
 This repository has one GitHub account, so the workflow sets
 `REVIEW_GATE_SINGLE_ACCOUNT=1`. The gate cannot compare two logins. Independence

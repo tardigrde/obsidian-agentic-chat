@@ -18,6 +18,7 @@ Provider, API key, model id, and request behavior.
 | Max response tokens | `0` | `0` lets the provider decide. |
 | Request timeout | `90s` | How long to wait for the provider to start responding. |
 | Network retries | `2` | Retries on rate limits and transient errors. |
+| Max turns per prompt | `25` | Model turns before the agent stops (3-200). Sending or steering a message starts a new count. |
 | HTTP proxy (desktop) | empty | `http://host:port` with no trailing slash. Only the http scheme is accepted. On mobile, leave this empty and use the device or VPN proxy. |
 
 Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.

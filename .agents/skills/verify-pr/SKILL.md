@@ -64,7 +64,19 @@ the existing tests still pass. A behavior change with that label is `FAIL`.
 8. Check the `no-behavior-change` claim against the diff. A new branch, a changed
    output, or a changed error path is behavior. Return `FAIL`.
 
-9. Report the verdict. Do not merge.
+9. Ask the bug-class questions from #290. Each "yes" needs a test that models
+   it, or a note in the verdict:
+   - Does it touch per-instance state that another tab or window shares (a
+     session folder, a lease, a cache)? Model two instances over one adapter.
+   - Does it change a persisted shape (`data.json`, session JSONL)? The
+     upgrade lane (`npm run verify -- upgrade`) must still pass, and a removed
+     key needs a user notice.
+   - Does it add a second estimator of a number that already exists (context
+     fill, cost, turn count)? Add a test that the two agree.
+   - Does it queue work for the runtime (steer, follow-up)? Assert that the
+     queue is empty or returned at `agent_end`.
+
+10. Report the verdict. Do not merge.
 
 ## Verdicts
 
@@ -103,5 +115,6 @@ owns the change. The repository owner alone decides to merge.
 - `fast` fails for a reason the PR claims to fix. Stop; report the failure.
 - The PR changes product behavior or data format without an explicit decision in
   the body. Return `FAIL`; that decision is the human's call.
-- The PR is over roughly 400 changed lines or 10 files. Return `PASS+NOTES` and
-  ask for a split unless the change is one mechanical unit.
+- The PR adds more than roughly 400 lines, or touches more than 10 files, under
+  `src/`. Return `PASS+NOTES` and ask for a split unless the change is one
+  mechanical unit. Deletions, tests, and docs do not count.

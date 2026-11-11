@@ -48,6 +48,26 @@ const lanes = {
     step("production bundle", NODE, ["esbuild.config.mjs", "production"]),
   ],
 
+  // Upgrade lane (#290): load each captured release's data.json and sessions
+  // through HEAD's load path. Also part of the unit suite, so `fast` runs it.
+  upgrade: () => [step("upgrade fixtures", bin("vitest"), ["run", "test/upgrade-fixtures.test.ts"], { expectTests: true })],
+
+  // Cloud lane (#290): everything a sandbox without a display can run. It
+  // proves no UI claim; UI claims need a CI e2e run or a local e2e/probe.
+  cloud: () => [
+    step("typecheck", NODE, [TSC7, "-noEmit"]),
+    step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
+    step("scripts typecheck", NODE, [TSC7, "-p", "tsconfig.eslint.json", "--noEmit"]),
+    step("lint", bin("eslint"), ["."]),
+    step("lint:obsidian", bin("eslint"), ["-c", "eslint.config.obsidian.mjs", "--max-warnings", "0", "src"]),
+    step("feature map", NODE, ["scripts/check-feature-map.mjs"]),
+    step("unit tests", bin("vitest"), ["run"], { expectTests: true }),
+    step("production bundle", NODE, ["esbuild.config.mjs", "production"]),
+    step("release verification", NODE, ["scripts/verify-release.mjs"]),
+    step("mobile compatibility", NODE, ["scripts/verify-mobile-compat.mjs"]),
+    step("witness self-test", NODE, ["scripts/verify-witness.mjs", "--self-test"]),
+  ],
+
   smoke: () => [
     step("production bundle", NODE, ["esbuild.config.mjs", "production"]),
     step("smoke e2e", NODE, ["--import", "tsx", "scripts/run-e2e.ts", "--spec", SMOKE_SPEC], {
@@ -135,6 +155,8 @@ Lanes: ${names}
   fast              Merge gate: typecheck, lints, unit, production build, smoke e2e
   ci                What CI runs: typecheck (app, e2e, scripts), lints, unit + coverage report, production build
   smoke             Production build plus the no-key smoke e2e
+  upgrade           Load every captured release's data.json and sessions through HEAD
+  cloud             Everything without a display: fast minus smoke e2e, plus witness self-test
   change <target>   One unit file, or a -t pattern
   e2e [spec]        E2E bundle plus one spec (defaults to the whole suite)
   dogfood           Generated-vault dogfood e2e

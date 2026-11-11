@@ -333,6 +333,43 @@ describe("AgentCompactionRuntime", () => {
     expect(JSON.stringify(seenContext!.messages)).toContain("Additional instructions: preserve the roadmap decisions");
   });
 
+  it("keeps guard stop notices out of the summary prompt (#283)", async () => {
+    const { buildStopNoticeMessage } = await import("../src/agent/stop-notice");
+    const { buildTurnCapNotice } = await import("../src/agent/turn-cap");
+    const prompts: string[] = [];
+    const streamFn = ((model: Model<"openai-completions">, context: TranscriptContext) => {
+      prompts.push(JSON.stringify(context.messages));
+      const stream = createAssistantMessageEventStream();
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "Stream summary." }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: usage(2),
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+      return stream;
+    }) as unknown as StreamFn;
+    const { runtime } = await setup({ summarize: null, buildStreamFn: () => streamFn });
+    const transcript = largeTranscript();
+    // A capped run early in the conversation: the notice lands in the summarized part.
+    transcript.splice(2, 0, buildStopNoticeMessage(buildTurnCapNotice(25)));
+
+    const result = await runtime.compactWithResult(transcript, 128_000, { force: true });
+
+    expect(result.status).toBe("compacted");
+    expect(prompts.length).toBeGreaterThan(0);
+    expect(prompts.join("\n")).toContain("aaaa");
+    expect(prompts.join("\n")).not.toContain("Turn cap: stopped");
+  });
+
   it("summarizes oversized compaction inputs in ordered chunks", async () => {
     const calls: Array<{ messages: number; previousSummary?: string }> = [];
     const { runtime } = await setup({
