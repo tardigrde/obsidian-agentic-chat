@@ -60,7 +60,7 @@ await $(".agentic-chat-send").click();
 | Enter sends while idle | `src/ui/chat-view.ts:719` | `test/e2e/specs/composer-paths.e2e.ts:151` | `covered` |
 | Enter steers while the agent runs | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:166` | `covered` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts:719` | `test/e2e/specs/composer-paths.e2e.ts:267` | `covered` |
-| Send button | `src/ui/chat-view.ts:834` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
+| Send button | `src/ui/chat-view.ts:834` | `test/e2e/specs/approval-deterministic.e2e.ts:314` | `covered` |
 | ArrowUp/ArrowDown recall | `src/ui/chat-view.ts:700` | `test/composer-history.test.ts:16` (unit only) | `partial` |
 | Escape cancels edit | `src/ui/chat-view.ts:695` | `test/prompt-edit-state.test.ts:5` (unit only) | `partial` |
 | Autocomplete menu opens | `src/ui/chat-view.ts:948` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |

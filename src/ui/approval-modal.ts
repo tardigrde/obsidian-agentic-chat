@@ -46,8 +46,7 @@ export class ApprovalModal extends Modal {
 
   onOpen(): void {
     const { contentEl, titleEl } = this;
-    const label = this.request.sessionLabel ? `[${this.request.sessionLabel}] Allow "${this.request.label}"?` : `Allow "${this.request.label}"?`;
-    titleEl.setText(label);
+    titleEl.setText(approvalTitle(this.request, "allow"));
     if (this.isCreateSkillRequest()) {
       contentEl.createEl("p", {
         cls: "agentic-chat-approval-warning",
@@ -169,6 +168,8 @@ export class ApprovalModal extends Modal {
 
   private armDeny(button: ButtonComponent, container: HTMLElement, input: HTMLTextAreaElement): void {
     this.denyArmed = true;
+    // The title says what Confirm will do, not the Allow it replaced.
+    this.titleEl.setText(approvalTitle(this.request, "deny"));
     container.show();
     button.setButtonText("Confirm Deny");
     input.focus();
@@ -176,6 +177,7 @@ export class ApprovalModal extends Modal {
 
   private disarmDeny(button: ButtonComponent, container: HTMLElement, input: HTMLTextAreaElement): void {
     this.denyArmed = false;
+    this.titleEl.setText(approvalTitle(this.request, "allow"));
     container.hide();
     button.setButtonText("Deny");
     input.value = "";
@@ -433,4 +435,11 @@ function diffPrefix(op: string): string {
   if (op === "add") return "+";
   if (op === "remove") return "-";
   return " ";
+}
+
+/** The approval modal title: what the primary choice will do right now. */
+export function approvalTitle(request: { label: string; sessionLabel?: string }, action: "allow" | "deny"): string {
+  const verb = action === "deny" ? "Deny" : "Allow";
+  const title = `${verb} "${request.label}"?`;
+  return request.sessionLabel ? `[${request.sessionLabel}] ${title}` : title;
 }

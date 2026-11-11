@@ -277,4 +277,23 @@ describe("agentic-chat composer paths", function () {
 
     await input.clearValue();
   });
+
+  it("shows a failed turn's error without an empty green Thought pill", async function () {
+    // Every scripted turn is used, so the next request fails at the provider.
+    await sendWithButton("no scripted turn is left for this prompt");
+    const error = await $(".agentic-chat-assistant .agentic-chat-error");
+    await error.waitForExist({ timeout: 10_000 });
+    const bubble = await browser.execute(() => {
+      const banner = [...document.querySelectorAll(".agentic-chat-assistant .agentic-chat-error")].pop();
+      const turn = banner?.closest(".agentic-chat-assistant");
+      const pills = [...(turn?.querySelectorAll(".agentic-chat-reasoning") ?? [])];
+      return {
+        bannerText: banner?.textContent ?? "",
+        emptyPills: pills.filter((pill) => !pill.querySelector(".agentic-chat-reasoning-body")?.textContent?.trim()).length,
+      };
+    });
+    expect(bubble.bannerText.length).toBeGreaterThan(0);
+    expect(bubble.emptyPills).toBe(0);
+  });
 });
+

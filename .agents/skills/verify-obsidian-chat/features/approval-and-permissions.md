@@ -40,18 +40,18 @@ await (await modal.$("button=Allow")).click();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Approval modal opens before a write | `src/ui/approval-modal.ts:27` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
-| Stop closes a pending approval | `src/ui/approval-modal.ts:101` | `test/e2e/specs/approval-deterministic.e2e.ts:476` | `covered` |
-| Allow applies the change | `src/ui/approval-modal.ts:127` | `test/e2e/specs/approval-deterministic.e2e.ts:311` | `covered` |
-| Deny is two-step and blocks the change | `src/ui/approval-modal.ts:114` | `test/e2e/specs/approval-deterministic.e2e.ts:379` | `covered` |
-| Diff preview before an edit | `src/ui/approval-modal.ts:52` | `test/e2e/specs/approval-deterministic.e2e.ts:329` | `covered` |
-| Remember a deny for this tool | `src/ui/approval-modal.ts:79` | `test/e2e/specs/approval-deterministic.e2e.ts:437` | `covered` |
-| Skill tools cannot be remembered | `src/ui/approval-modal.ts:68` | `test/approval-memory.test.ts:35` (policy only) | `partial` |
+| Approval modal opens before a write | `src/ui/approval-modal.ts:27` | `test/e2e/specs/approval-deterministic.e2e.ts:314` | `covered` |
+| Stop closes a pending approval | `src/ui/approval-modal.ts:100` | `test/e2e/specs/approval-deterministic.e2e.ts:479` | `covered` |
+| Allow applies the change | `src/ui/approval-modal.ts:126` | `test/e2e/specs/approval-deterministic.e2e.ts:314` | `covered` |
+| Deny is two-step and blocks the change | `src/ui/approval-modal.ts:113` | `test/e2e/specs/approval-deterministic.e2e.ts:382` | `covered` |
+| Diff preview before an edit | `src/ui/approval-modal.ts:51` | `test/e2e/specs/approval-deterministic.e2e.ts:332` | `covered` |
+| Remember a deny for this tool | `src/ui/approval-modal.ts:78` | `test/e2e/specs/approval-deterministic.e2e.ts:440` | `covered` |
+| Skill tools cannot be remembered | `src/ui/approval-modal.ts:67` | `test/approval-memory.test.ts:35` (policy only) | `partial` |
 | Global mutating gate persists | `src/settings.ts:902` | `test/e2e/specs/settings-ui.e2e.ts:261` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
 | Per-tool override through settings | `src/settings.ts:902` | `test/e2e/specs/settings-ui.e2e.ts:261` | `covered` |
 | Per-tool deny flips to allow in a recorded run | `src/settings.ts:902` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
 | Working directories and `/add-dir` are gone | `src/ui/commands.ts:24` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
-| Safe asks before mutating tools | `src/agent/tool-call-controller.ts:255` | `test/e2e/specs/approval-deterministic.e2e.ts:300` | `covered` |
+| Safe asks before mutating tools | `src/agent/tool-call-controller.ts:255` | `test/e2e/specs/approval-deterministic.e2e.ts:303` | `covered` |
 | Safe/YOLO toggle | `src/ui/chat-view.ts:782` | `test/e2e/specs/plan-removal.e2e.ts:93` (existence only) | `partial` |
 | `/plan` and the Plan badge are gone | `src/ui/chat-view.ts:782` | `test/e2e/specs/plan-removal.e2e.ts:93` | `covered` |
 | Invalid mode transition is blocked | `src/ui/chat-view.ts:995` | `test/modes.test.ts:63` (unit only) | `partial` |

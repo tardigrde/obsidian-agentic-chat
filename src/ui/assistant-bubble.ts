@@ -262,6 +262,20 @@ export class AssistantBubble {
   }
 
   /**
+   * A failed turn with no reasoning trace must not keep a green-check "Thought"
+   * pill: it reads as success right above the error. Remove the empty shell.
+   */
+  private dropEmptyReasoning(): void {
+    if (!this.reasoningBody || this.reasoningBody.textContent?.trim()) return;
+    this.stopReasoningTimer();
+    this.reasoningBody.closest("details")?.remove();
+    this.reasoningBody = null;
+    this.reasoningLabelEl = null;
+    this.reasoningDotEl = null;
+    this.reasoningTimeEl = null;
+  }
+
+  /**
    * Settle the reasoning header into its done state: one stable label, green
    * check capsule, and (for a live turn) the final elapsed time. Idempotent —
    * can be triggered early by the first streamed answer text, or late by an
@@ -779,6 +793,7 @@ export class AssistantBubble {
   showError(message: string): void {
     const text = message.trim();
     if (!text) return;
+    this.dropEmptyReasoning();
     const existing = this.el.querySelector(".agentic-chat-error");
     if (existing?.getAttr("data-error-text") === text) return;
     const banner = this.el.createDiv({ cls: "agentic-chat-error" });
