@@ -1,4 +1,9 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import * as gateModule from "../scripts/check-review-gate.mjs";
 import {
   isGeneratedFile,
   parseVerdict,
@@ -190,10 +195,79 @@ describe("check-review-gate", () => {
     expect(gate({ changedLines: 401, labels: ["large-pr"] }).ok).toBe(true);
   });
 
+  it("exposes the src/ budget helpers (#288)", () => {
+    // An assertion, not a TypeError, when the helpers are missing.
+    expect(typeof gateModule.measureNumstat).toBe("function");
+    expect(typeof gateModule.readNumstat).toBe("function");
+  });
+
+  it("counts only added lines in src/ toward the budget (#288)", () => {
+    const record = (added: string, deleted: string, path: string) => `${added}\t${deleted}\t${path}\0`;
+    const rename = (added: string, from: string, to: string) => `${added}\t0\t\0${from}\0${to}\0`;
+    const numstat = [
+      record("30", "5", "src/agent/a.ts"),
+      record("0", "900", "src/old-feature.ts"), // pure deletion: free
+      record("500", "0", "docs/development/guide.md"), // docs: free
+      record("300", "0", "test/a.test.ts"), // tests: free
+      record("200", "0", ".agents/skills/x/features/map.md"), // skills: free
+      record("4000", "10", "package-lock.json"),
+      record("-", "-", "src/icon.png"), // binary
+      rename("7", "src/old/b.ts", "src/new/b.ts"), // rename inside src
+      rename("12", "lib/c.ts", "src/c.ts"), // moved into src
+      rename("9", "src/d.ts", "lib/d.ts"), // moved out of src
+      rename("4", "logs/e.ts", "src/e.ts"), // from a generated path into src
+      record("6", "0", "src/café.ts"), // non-ASCII
+      record("3", "0", "src/a => b.ts"), // ` => ` inside a real name
+      record("2", "0", "src/tab\tname.ts"), // tab inside a name
+    ].join("");
+    expect(gateModule.measureNumstat(numstat)).toEqual({ changedLines: 64, changedFiles: 7 });
+    expect(gateModule.measureNumstat(record("0", "900", "src/a.ts") + record("0", "50", "src/b.ts"))).toEqual({
+      changedLines: 0,
+      changedFiles: 0,
+    });
+    expect(gateModule.measureNumstat(record("401", "0", "src/a.ts"))).toEqual({ changedLines: 401, changedFiles: 1 });
+  });
+
+  it("measures a real git diff with renames and unusual names (#288)", () => {
+    const repo = mkdtempSync(path.join(tmpdir(), "review-gate-numstat-"));
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-c", "user.email=t@example.invalid", "-c", "user.name=t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=", ...args], {
+        cwd: repo,
+        encoding: "utf8",
+      }).trim();
+    try {
+      git("init", "-q", "-b", "main");
+      mkdirSync(path.join(repo, "src"));
+      mkdirSync(path.join(repo, "lib"));
+      writeFileSync(path.join(repo, "lib", "moved.ts"), Array.from({ length: 20 }, (_, i) => `export const v${i} = ${i};`).join("\n"));
+      writeFileSync(path.join(repo, "src", "old.ts"), "a\nb\nc\n");
+      git("add", "-A");
+      git("commit", "-q", "-m", "base");
+      const base = git("rev-parse", "HEAD");
+      git("mv", "lib/moved.ts", "src/moved.ts");
+      writeFileSync(path.join(repo, "src", "moved.ts"), `${readFileSync(path.join(repo, "src", "moved.ts"), "utf8")}\nexport const extra = 1;\n`);
+      writeFileSync(path.join(repo, "src", "café.ts"), "1\n2\n");
+      writeFileSync(path.join(repo, "src", "a => b.ts"), "1\n");
+      writeFileSync(path.join(repo, "docs.md"), "x\n".repeat(50));
+      git("rm", "-q", "src/old.ts");
+      git("add", "-A");
+      git("commit", "-q", "-m", "head");
+      const head = git("rev-parse", "HEAD");
+
+      const size = gateModule.measureNumstat(gateModule.readNumstat(base, head, repo));
+      // moved.ts: +2 (blank + extra); café.ts: +2; "a => b.ts": +1; docs and the deletion are free.
+      expect(size).toEqual({ changedLines: 5, changedFiles: 3 });
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   it("excludes generated files from the size count", () => {
     expect(isGeneratedFile("package-lock.json")).toBe(true);
     expect(isGeneratedFile("docs/package-lock.json")).toBe(false);
     expect(isGeneratedFile("main.min.js")).toBe(true);
     expect(isGeneratedFile("src/main.ts")).toBe(false);
+    // A real name that contains " => " is one path, not a rename pair.
+    expect(isGeneratedFile("src/a => logs/b.ts")).toBe(false);
   });
 });

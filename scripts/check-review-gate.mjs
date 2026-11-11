@@ -24,6 +24,7 @@ import { pathToFileURL } from "node:url";
 const TRUSTED_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 const FAST_LANE_COUNT = /\b\d+\s+passed\b/i;
 
+/** Added lines and touched files under `src/`. See measureNumstat. */
 const LIMITS = { changedLines: 400, changedFiles: 10 };
 const GENERATED = [
   /^package-lock\.json$/,
@@ -34,9 +35,10 @@ const GENERATED = [
   /^logs\//,
 ];
 
+/** One path from `git diff --numstat -z` (never a rename pair). */
 export function isGeneratedFile(file) {
-  const paths = String(file).split(" => ");
-  return paths.some((candidate) => GENERATED.some((pattern) => pattern.test(candidate)));
+  const path = String(file);
+  return GENERATED.some((pattern) => pattern.test(path));
 }
 
 export function parseVerdict(body) {
@@ -85,12 +87,12 @@ export function sizeErrors({ changedLines, changedFiles, labels = [] }) {
   const errors = [];
   if (changedLines > LIMITS.changedLines) {
     errors.push(
-      `this PR changes ${changedLines} lines; the limit is ${LIMITS.changedLines} (add the large-pr label to override)`,
+      `this PR adds ${changedLines} lines under src/; the limit is ${LIMITS.changedLines} (add the large-pr label to override)`,
     );
   }
   if (changedFiles > LIMITS.changedFiles) {
     errors.push(
-      `this PR changes ${changedFiles} files; the limit is ${LIMITS.changedFiles} (add the large-pr label to override)`,
+      `this PR adds code to ${changedFiles} files under src/; the limit is ${LIMITS.changedFiles} (add the large-pr label to override)`,
     );
   }
   return errors;
@@ -149,17 +151,52 @@ export function reviewGate({
   };
 }
 
-function parseNumstat(output) {
+/**
+ * The size budget measures risky code only (#288): lines added under `src/`.
+ * Deleted lines, tests, docs, skills, generated files, and lockfiles are free,
+ * so a removal or a docs sweep does not need the `large-pr` override.
+ */
+const BUDGETED_PREFIX = "src/";
+
+/**
+ * Size of a `git diff --numstat -z` output against the budget. With `-z`, git
+ * never quotes a path and never mixes `=>` into it: a normal record is
+ * `added\tdeleted\tpath\0`; a rename is `added\tdeleted\t\0old\0new\0`.
+ * Only the destination path is judged, so a file moved into `src/` counts its
+ * added lines. Binary files (`-`) add nothing.
+ */
+export function measureNumstat(output) {
+  const tokens = String(output).split("\0");
   let changedLines = 0;
   let changedFiles = 0;
-  for (const line of String(output).split("\n")) {
-    if (!line.trim()) continue;
-    const [added, deleted, file] = line.split("\t");
-    if (!file || isGeneratedFile(file)) continue;
+  let index = 0;
+  while (index < tokens.length) {
+    const record = tokens[index++];
+    if (!record) continue;
+    const firstTab = record.indexOf("\t");
+    const secondTab = firstTab === -1 ? -1 : record.indexOf("\t", firstTab + 1);
+    if (secondTab === -1) continue;
+    const added = Number(record.slice(0, firstTab)) || 0;
+    let destination = record.slice(secondTab + 1);
+    if (destination === "") {
+      index += 1; // rename source
+      destination = tokens[index++] ?? "";
+    }
+    if (!destination.startsWith(BUDGETED_PREFIX) || isGeneratedFile(destination)) continue;
+    if (added === 0) continue;
     changedFiles += 1;
-    changedLines += (Number(added) || 0) + (Number(deleted) || 0);
+    changedLines += added;
   }
   return { changedLines, changedFiles };
+}
+
+/** Run `git diff --numstat -z base...head` in `cwd`. */
+export function readNumstat(base, head, cwd = process.cwd()) {
+  return execFileSync( // NOSONAR:S6350 -- base and head SHAs are validated by the caller.
+    "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
+    ["diff", "--numstat", "-z", "-M", `${base}...${head}`],
+    { cwd, encoding: "utf8", maxBuffer: 20 * 1024 * 1024 },
+  );
 }
 
 async function api(path, token) {
@@ -235,12 +272,8 @@ async function main() {
   ]);
   const comments = [...issueComments, ...reviews].map(normalizeComment);
   const base = pull.base.sha;
-  const diff = execFileSync( // NOSONAR:S6350 -- base and head SHAs are validated above.
-    "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH in CI.
-    ["diff", "--numstat", `${base}...${head}`],
-    { encoding: "utf8", maxBuffer: 20 * 1024 * 1024 },
-  );
-  const size = parseNumstat(diff);
+  const diff = readNumstat(base, head);
+  const size = measureNumstat(diff);
   const result = reviewGate({
     comments,
     author: pull.user?.login,
@@ -252,7 +285,7 @@ async function main() {
   });
 
   console.log(
-    `review gate: ${result.ok ? "PASS" : "FAIL"} (${size.changedFiles} files, ${size.changedLines} lines, ${result.commentsAtHead} verdict(s) at this head)`,
+    `review gate: ${result.ok ? "PASS" : "FAIL"} (src/ budget: ${size.changedFiles} files, ${size.changedLines} added lines, ${result.commentsAtHead} verdict(s) at this head)`,
   );
   if (result.verdict) console.log(`  verdict: ${result.verdict} by ${result.reviewer}`);
   if (!result.ok) {
