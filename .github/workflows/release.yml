@@ -1,7 +1,13 @@
 name: Release
 
+# Release only a main commit that passed the full CI workflow (verify ci,
+# e2e, mobile lane, scripted eval). The release job does not re-run a subset.
+# Untrusted code never reaches this job: it runs only for a CI run triggered
+# by a push to this repository's main (no fork, no pull_request event).
 on:
-  push:
+  workflow_run: # NOSONAR:S7631 -- gated below to same-repo push runs on main.
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -17,10 +23,16 @@ concurrency:
 
 jobs:
   release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.workflow_run.head_sha }} # NOSONAR:S7631 -- same-repo main push only (see job if).
           fetch-depth: 0
           persist-credentials: false
 
@@ -31,9 +43,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
-
-      - name: Test
-        run: npm test
 
       - name: Build
         run: npm run build
@@ -63,4 +72,5 @@ jobs:
             --package semantic-release@25.0.5 \
             --package @semantic-release/exec@7.1.0 \
             --package @semantic-release/git@10.0.1 \
+            --package conventional-changelog-conventionalcommits@9.3.1 \
             semantic-release
