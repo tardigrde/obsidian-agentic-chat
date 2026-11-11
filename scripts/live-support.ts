@@ -177,6 +177,35 @@ export async function startXvfb(
   return child;
 }
 
+/**
+ * Start a nested X server (Xephyr) as one window on the user's desktop. The run
+ * is visible to the user, and a recording of this display holds only that
+ * window, never the rest of the real screen.
+ */
+export async function startXephyr(
+  binary: string,
+  display: string,
+  width: number,
+  height: number,
+): Promise<ChildProcess> {
+  const child = spawn(
+    binary,
+    [display, "-screen", `${width}x${height}`, "-ac", "-br", "-noreset", "-nolisten", "tcp", "-title", "Agentic Chat chaos"],
+    { stdio: ["ignore", "ignore", "pipe"] },
+  );
+  let stderr = "";
+  child.stderr?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+  const displayNumber = display.replace(":", "");
+  await waitFor(
+    () => existsSync(`/tmp/.X11-unix/X${displayNumber}`),
+    8_000,
+    `Xephyr did not start on ${display}. Is DISPLAY set to your desktop? ${stderr.trim()}`,
+  );
+  return child;
+}
+
 export async function startFfmpeg(
   binary: string,
   display: string,

@@ -4,12 +4,14 @@ import path from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
 import {
+  CHAOS_TARGETS,
   decideStop,
   estimateTokens,
   redactSecrets,
   type ChaosCaps,
   type ChaosPlan,
   type ChaosStopState,
+  type ChaosTarget,
 } from "../../../scripts/chaos/monkey-core";
 import {
   ALLOWED_NOTE,
@@ -38,6 +40,7 @@ import {
   waitForMcpAddRow,
 } from "../support/settings-ui";
 import { mark, writeMetrics } from "../support/record";
+import { runExplorer, type ExplorerOutcome } from "./explorer-driver";
 import {
   configurePlugin,
   installScriptedTurns,
@@ -82,7 +85,32 @@ type DriverResult = {
   mcp: { rendered: boolean; added: boolean };
   clock: { startedAt: number; finishedAt: number };
   caps: ChaosCaps;
+  explorer?: ExplorerOutcome["explorer"];
+  plugin?: ExplorerOutcome["plugin"];
 };
+
+/** Scenarios the explorer may call as macros. max-turns spends 25 calls, so it stays out. */
+const EXPLORER_SCENARIOS = CHAOS_TARGETS.filter((target) => target !== "max-turns");
+
+/** Generic answers for a dry replay: the plugin side stays scripted and free. */
+function dryReplayTurns(count: number): ScriptedTurn[] {
+  return Array.from({ length: count }, (_, index) => ({
+    label: `dry-replay-${index + 1}`,
+    stopReason: "stop" as const,
+    content: [{ type: "text", text: `Dry replay answer ${index + 1}.` }],
+  }));
+}
+
+/** Run one focused scenario for the explorer; keep its steps out of the explorer step list. */
+async function runScenarioForExplorer(name: string): Promise<string | undefined> {
+  const stepsBefore = result.steps.length;
+  const findingsBefore = result.findings.length;
+  for (const action of focusedSequence(name as ChaosTarget)) await runAction(action);
+  const scenarioSteps = result.steps.splice(stepsBefore);
+  const failures = scenarioSteps.filter((step) => step.status === "failed").map((step) => `${step.id}: ${step.detail ?? ""}`);
+  for (const finding of result.findings.slice(findingsBefore)) finding.step = `scenario:${name}/${finding.step}`;
+  return failures.length > 0 ? failures.join("; ") : undefined;
+}
 
 const planPath = process.env.AGENTIC_CHAT_CHAOS_PLAN?.trim();
 const outDir = process.env.AGENTIC_CHAT_CHAOS_OUT?.trim();
@@ -363,12 +391,24 @@ async function runPrompt(action: ChaosAction): Promise<void> {
 }
 
 async function runSlash(action: ChaosAction): Promise<void> {
+  const panelsBefore = await browser.execute(() => document.querySelectorAll(".agentic-chat-info").length);
   await sendPrompt(action.prompt ?? "");
-  if (action.prompt === "/help") {
-    await $(".agentic-chat-info").waitForExist({ timeout: 15_000 });
-  } else {
-    await $(".agentic-chat-action-list").waitForExist({ timeout: 15_000 });
-  }
+  // `/help` and `/status` both answer locally with a new info panel. `/status`
+  // lists the provider; an action list belongs to `/memory manage`, not here.
+  const expected = action.prompt === "/status" ? "Provider" : "";
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        (before, text) => {
+          const panels = Array.from(document.querySelectorAll<HTMLElement>(".agentic-chat-info"));
+          const latest = panels.at(-1);
+          return panels.length > before && Boolean(latest) && (latest as HTMLElement).innerText.includes(text);
+        },
+        panelsBefore,
+        expected,
+      ),
+    { timeout: 15_000, timeoutMsg: `${action.prompt ?? "slash command"} did not render a new info panel` },
+  );
   await browser.pause(300);
 }
 
@@ -1106,6 +1146,25 @@ describe("chaos monkey live driver", function () {
       caps: plan.caps,
     };
 
+    if (plan.mode === "explore") {
+      if (!plan.live) await installScriptedTurns(dryReplayTurns(400));
+      await configurePlugin({
+        provider: plan.live ? "openai-compatible" : "openrouter",
+        openrouterApiKey: plan.live ? undefined : "e2e-scripted-key",
+        openaiCompatibleApiKey: plan.live ? apiKey : undefined,
+        openaiCompatibleBaseUrl: plan.live ? plan.baseUrl : undefined,
+        openaiCompatibleModel: plan.live ? plan.model : undefined,
+        requestTimeoutMs: 120_000,
+        maxNetworkRetries: 1,
+        mode: "safe",
+        approval: { mutating: "ask", perTool: {} },
+        web: { enabled: false },
+      });
+      await openChat();
+      await mark("chat open");
+      return;
+    }
+
     let sequence =
       plan.mode === "focused" ? focusedSequence(plan.target ?? "composer") : genericSequence(plan.caps, plan.seed);
     if (sequence.length > plan.caps.maxSteps) sequence = sequence.slice(0, plan.caps.maxSteps);
@@ -1175,6 +1234,28 @@ describe("chaos monkey live driver", function () {
   });
 
   it("drives the planned surfaces under the hard caps", async function () {
+    this.timeout(Math.max(60_000, plan.caps.maxSeconds * 1000 + 300_000));
+    if (plan.mode === "explore") {
+      const outcome = await runExplorer({
+        plan,
+        apiKey,
+        outDir,
+        startedAt,
+        scenarioNames: [...EXPLORER_SCENARIOS],
+        runScenario: runScenarioForExplorer,
+        sessionDir: sessionDirPath,
+        assertSessionsValid,
+      });
+      result.steps = outcome.steps;
+      result.findings.push(...outcome.findings.map(({ severity, step, message, source }) => ({ severity, step, message: `[${source}] ${message}` })));
+      result.calls = outcome.calls;
+      result.tokens = outcome.tokens;
+      result.explorer = outcome.explorer;
+      result.plugin = outcome.plugin;
+      stopReason = outcome.stopReason;
+      expect(result.steps.length).toBeGreaterThan(0);
+      return;
+    }
     for (const step of plannedSteps) {
       const stop = checkBudget();
       if (stop) {
