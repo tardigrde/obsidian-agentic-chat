@@ -3,6 +3,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { deriveAutoName, ObsidianSessionManager } from "../src/session/session-manager";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
+import { assemblePrompt } from "../src/ui/context-builder";
 
 const DEFAULTS = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" as const };
 
@@ -174,6 +175,25 @@ describe("deriveAutoName", () => {
 
   it("strips an attachment context preamble", () => {
     expect(deriveAutoName("<context>\nlots of note text\n</context>\n\nWrite a summary")).toBe("Write a summary");
+  });
+
+  // Found by chaos run explore-full-1 (2026-11-11): an attached note made the
+  // session title "Focus: The user's request after this line is".
+  it("strips the focus hint that follows an attachment context", () => {
+    const prompt = assemblePrompt('<context>\nContents of note "Notes/Seed.md":\nseed\n</context>', "Summarize this note");
+    expect(deriveAutoName(prompt)).toBe("Summarize this note");
+  });
+
+  it("strips an unchanged-context marker and its focus hint", () => {
+    const prompt = assemblePrompt(
+      "<context unchanged since previous turn. Attached: Notes/Seed.md. Use the read tool to open any attached note if you need the full content.</context>",
+      "List the headings",
+    );
+    expect(deriveAutoName(prompt)).toBe("List the headings");
+  });
+
+  it("keeps a user prompt that itself starts with Focus:", () => {
+    expect(deriveAutoName("Focus: write the intro first")).toBe("Focus: write the intro first");
   });
 
   it("strips a leading /skill invocation", () => {
