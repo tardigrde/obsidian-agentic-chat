@@ -102,6 +102,28 @@ describe("agentic-chat inline images", function () {
     const srcs = await lastBubbleImages(".agentic-chat-user");
     expect(srcs).toHaveLength(1);
     expect(srcs[0]).toMatch(/^app:\/\//);
+    // Keyboard users can reach and open the thumbnail too (Enter on a focused
+    // role=button image). Spy on openLinkText so the click check below still
+    // starts from the chat view.
+    const keyboard = await browser.executeObsidian(({ app }) => {
+      const bubble = Array.from(document.querySelectorAll(".agentic-chat-user")).at(-1);
+      const img = bubble?.querySelector("img.is-openable") as HTMLElement | null;
+      const workspace = app.workspace as unknown as { openLinkText: (...args: unknown[]) => Promise<void> };
+      const original = workspace.openLinkText;
+      const opened: unknown[] = [];
+      workspace.openLinkText = async (target: unknown) => {
+        opened.push(target);
+      };
+      try {
+        img?.focus();
+        img?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      } finally {
+        workspace.openLinkText = original;
+      }
+      const focused = document.activeElement === img;
+      return { role: img?.getAttribute("role"), tabindex: img?.getAttribute("tabindex"), focused, opened };
+    });
+    expect(keyboard).toEqual({ role: "button", tabindex: "0", focused: true, opened: [IMAGE_PATH] });
     // Clicking the thumbnail opens the vault image.
     await browser.execute(() => {
       const bubbles = Array.from(document.querySelectorAll(".agentic-chat-user"));

@@ -1019,6 +1019,7 @@ export function fixupRenderedAssistantImages(root: HTMLElement, app: App, source
     if (resolved) {
       img.setAttribute("src", resolved);
       img.addClass("agentic-chat-image");
+      img.setAttribute("loading", "lazy");
     }
   }
   for (const embed of Array.from(root.querySelectorAll(".internal-embed"))) {
@@ -1030,7 +1031,7 @@ export function fixupRenderedAssistantImages(root: HTMLElement, app: App, source
     embed.empty();
     embed.removeClass("is-unresolved");
     embed.addClass("image-embed");
-    const img = embed.createEl("img", { attr: { src: resolved, alt: imageBasename(src) } });
+    const img = embed.createEl("img", { attr: { src: resolved, alt: imageBasename(src), loading: "lazy" } });
     img.addClass("agentic-chat-image");
   }
 }

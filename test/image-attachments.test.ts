@@ -253,6 +253,28 @@ describe("collectUserImageThumbs", () => {
     expect(seen).toEqual(["pic.png"]);
   });
 
+  it("shows every sent image when one image attachment no longer resolves", () => {
+    const blocks = [
+      { data: "YQ==", mimeType: "image/png" },
+      { data: "Yg==", mimeType: "image/png" },
+    ];
+    expect(collectUserImageThumbs(["ok.png", "gone.png"], blocks, resolvePath)).toEqual([
+      { src: "data:image/png;base64,YQ==", alt: "Attached image" },
+      { src: "data:image/png;base64,Yg==", alt: "Attached image" },
+    ]);
+  });
+
+  it("prefers openable attachment thumbs when every image resolved", () => {
+    const blocks = [{ data: "YQ==", mimeType: "image/png" }];
+    expect(collectUserImageThumbs(["notes/a.md", "ok.png"], blocks, resolvePath)).toEqual([
+      { src: "app://resource/ok.png", alt: "ok.png", path: "ok.png" },
+    ]);
+    const many = Array.from({ length: 4 }, (_, i) => `p${i}.png`);
+    const capped = collectUserImageThumbs(many, blocks, resolvePath, 2);
+    expect(capped).toHaveLength(2);
+    expect(capped[0]).toHaveProperty("path", "p0.png");
+  });
+
   it("renders history images as data URLs with sanitized mime types", () => {
     expect(
       collectUserImageThumbs([], [{ data: "aGk=", mimeType: "image/jpeg" }], resolvePath),

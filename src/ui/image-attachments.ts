@@ -384,20 +384,33 @@ export function collectUserImageThumbs(
   max = 8,
 ): UserImageThumb[] {
   const thumbs: UserImageThumb[] = [];
+  let imageAttachments = 0;
   for (const entry of attachments) {
-    if (thumbs.length >= max) break;
+    if (isImageAttachment(entry)) imageAttachments += 1;
+    if (thumbs.length >= max) continue;
     const thumb = attachmentImageThumb(entry, resolvePath);
     if (thumb) thumbs.push(thumb);
   }
-  // On a live send the vision blocks are copies of the image attachments:
-  // when any attachment rendered, showing the blocks too would repeat them.
-  if (thumbs.length > 0) return thumbs;
-  for (const image of historyImages ?? []) {
+  // On a live send the vision blocks are copies of the image attachments, so
+  // showing both would repeat them. Prefer the openable attachment thumbs when
+  // every image attachment resolved; when one did not (moved or deleted), the
+  // blocks are the only complete record of what was sent.
+  const history = historyImages ?? [];
+  if (thumbs.length > 0 && (thumbs.length >= Math.min(imageAttachments, max) || history.length === 0)) return thumbs;
+  thumbs.length = 0;
+  for (const image of history) {
     if (thumbs.length >= max) break;
     const thumb = historyImageThumb(image);
     if (thumb) thumbs.push(thumb);
   }
   return thumbs;
+}
+
+/** True when an attachment names a vault image path (resolved or not). */
+function isImageAttachment(entry: ContextAttachment): boolean {
+  if (typeof entry !== "string") return false;
+  const base = stripImageQueryFragment(attachmentBasePath(entry));
+  return Boolean(base) && isImagePath(base);
 }
 
 /** A live vault-path attachment as a thumbnail, or null when not an image. */

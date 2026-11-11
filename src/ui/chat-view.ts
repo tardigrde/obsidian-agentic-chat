@@ -2562,11 +2562,18 @@ export class ChatView extends ItemView {
         img.setAttr("title", thumb.alt);
         if (thumb.path) {
           const path = thumb.path;
-          img.addEventListener("click", (event) => {
+          const open = (event: Event): void => {
             // History bubbles are editable: don't let a thumbnail click fall
             // through to the bubble's click-to-edit handler.
             event.stopPropagation();
             void this.app.workspace.openLinkText(path, "", false);
+          };
+          img.setAttrs({ role: "button", tabindex: "0", "aria-label": `Open ${thumb.alt}` });
+          img.addEventListener("click", open);
+          img.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            open(event);
           });
         }
       }
