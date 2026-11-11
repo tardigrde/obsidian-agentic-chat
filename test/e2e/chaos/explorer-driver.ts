@@ -26,6 +26,7 @@ import {
   type WindowObservation,
 } from "../../../scripts/chaos/explorer-core";
 import { chatComplete } from "../../../scripts/chaos/explorer-llm";
+import { llmHeaders } from "../../../scripts/chaos/llm-provider";
 import { mark } from "../support/record";
 import { openAgenticChatSettings } from "../support/settings-ui";
 import { configurePlugin, openChat } from "../probe/support/probe-helpers";
@@ -538,7 +539,18 @@ async function perform(
       const size = context.plan.size ?? { width: 1440, height: 1000 };
       const width = Math.max(320, Math.min(size.width, decision.width));
       const height = Math.max(400, Math.min(size.height, decision.height));
-      await browser.setWindowSize(width, height);
+      // chromedriver cannot resize an Electron window; Obsidian exposes its BrowserWindow.
+      const resized = await browser.execute(
+        (w, h) => {
+          const target = window as unknown as { electronWindow?: { setSize?: (w: number, h: number) => void } };
+          if (typeof target.electronWindow?.setSize !== "function") return false;
+          target.electronWindow.setSize(w, h);
+          return true;
+        },
+        width,
+        height,
+      );
+      if (!resized) await browser.setWindowSize(width, height);
       await browser.pause(500);
       return `resized to ${width}x${height}`;
     }
@@ -773,6 +785,7 @@ export async function runExplorer(context: ExplorerContext): Promise<ExplorerOut
           model: plan.model,
           json: true,
           maxTokens: 2_000,
+          headers: llmHeaders(plan.llm, `chaos-explore-${plan.seed}`),
           messages: [
             { role: "system", content: system },
             { role: "user", content: explorerUserPrompt({ charter, memory, history, observation, lastError: lastReplyError }) },

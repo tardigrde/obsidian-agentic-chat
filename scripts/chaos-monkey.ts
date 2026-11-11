@@ -25,6 +25,7 @@ import {
 } from "./chaos/monkey-core";
 import { BUILTIN_CHARTERS } from "./chaos/explorer-core";
 import { mineRun } from "./chaos/mine";
+import { parseLlmName, resolveChaosLlm, type ChaosLlmName } from "./chaos/llm-provider";
 import {
   applyEnvFile,
   extractFrames,
@@ -80,6 +81,8 @@ type Options = {
   replayFile?: string;
   allowAnyModel: boolean;
   noMine: boolean;
+  llm: ChaosLlmName;
+  keySource: string;
 };
 
 type RunResult = {
@@ -139,7 +142,6 @@ function resolveReplay(value: string | undefined): string | undefined {
   if (!existsSync(file)) fail(`--replay: ${file} does not exist`);
   return file;
 }
-const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
 function fail(message: string): never {
   console.error(`\n[chaos] ${message}`);
@@ -152,9 +154,7 @@ function parseFps(value: string | undefined): number {
   return fps;
 }
 
-function readApiKey(): string | undefined {
-  const inline = process.env.AGENTIC_CHAT_API_KEY?.trim();
-  if (inline) return inline;
+function readKeyFile(): string | undefined {
   const file = process.env.AGENTIC_CHAT_API_KEY_FILE?.trim();
   if (!file) return undefined;
   try {
@@ -167,12 +167,14 @@ function readApiKey(): string | undefined {
 function parseOptions(): Options {
   const selection = selectMode(readArg("--mode"), readArg("--target"));
   const live = hasFlag("--live");
-  const apiKey = readApiKey();
+  const llm = resolveChaosLlm(parseLlmName(readArg("--llm") ?? process.env.AGENTIC_CHAT_CHAOS_LLM));
+  const apiKey = llm.apiKey ?? (llm.name === "openrouter" ? readKeyFile() : undefined);
 
   if (live && !apiKey) {
     fail(
-      "--live needs AGENTIC_CHAT_API_KEY or AGENTIC_CHAT_API_KEY_FILE. " +
-        "Without it the runner only does a capped dry run.",
+      llm.name === "openrouter"
+        ? "--live needs AGENTIC_CHAT_API_KEY or AGENTIC_CHAT_API_KEY_FILE. Without it the runner only does a capped dry run."
+        : "--live --llm opencode-go needs OPENCODE_GO_API_KEY (or an opencode-go key in opencode's auth.json).",
     );
   }
 
@@ -198,7 +200,7 @@ function parseOptions(): Options {
   // ignored on purpose: it may name an expensive model or openrouter/auto.
   const allowAnyModel = hasFlag("--allow-any-model");
   const model = assertChaosModel(
-    readArg("--model") ?? (process.env.AGENTIC_CHAT_CHAOS_MODEL?.trim() || CHAOS_MODEL),
+    readArg("--model") ?? (llm.model || CHAOS_MODEL),
     allowAnyModel,
   );
 
@@ -216,13 +218,15 @@ function parseOptions(): Options {
     headed: hasFlag("--headed"),
     recordDisplay: hasFlag("--record-display"),
     model,
-    baseUrl: process.env.AGENTIC_CHAT_BASE_URL?.trim() || DEFAULT_BASE_URL,
+    baseUrl: llm.baseUrl,
     mcpUrl: process.env.AGENTIC_CHAT_CHAOS_MCP_URL?.trim() || process.env.AGENTIC_CHAT_E2E_MCP_URL?.trim(),
     apiKey,
     charter: explore ? resolveCharter(readArg("--charter")) : undefined,
     replayFile,
     allowAnyModel,
     noMine: hasFlag("--no-mine"),
+    llm: llm.name,
+    keySource: llm.keySource,
   };
 }
 
@@ -296,6 +300,7 @@ async function writePlan(
     replayFile: options.replayFile,
     size: options.size,
     allowAnyModel: options.allowAnyModel,
+    llm: options.llm,
   };
   const planPath = path.join(outDir, "plan.json");
   await writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`);
@@ -468,6 +473,7 @@ function explorerSection(options: Options, driver: ReportDriver | undefined): st
   return `
 ## Explorer
 
+- endpoint: \`${options.llm}\` (\`${options.baseUrl}\`, key from ${options.keySource})
 - model: \`${options.model}\`${options.replayFile ? ` (replay of \`${options.replayFile}\`)` : ""}
 - explorer calls: ${explorer?.calls ?? 0}, tokens: ${explorer?.tokens ?? 0}, cost: $${(explorer?.cost ?? 0).toFixed(4)}, invalid replies: ${explorer?.invalidReplies ?? 0}
 - plugin assistant messages: ${plugin?.assistantMessages ?? 0}, tokens: ${plugin?.tokens ?? 0}, models: ${plugin?.models.join(", ") || "-"}
@@ -662,6 +668,7 @@ async function main(): Promise<void> {
           apiKey: options.apiKey,
           baseUrl: options.baseUrl,
           model: options.model,
+          llm: options.llm,
         });
         process.stdout.write(
           `[chaos] mined: ${mined.report.findings.length} findings, ${mined.drafts.length} issue drafts, cost $${mined.cost.toFixed(4)}\n`,

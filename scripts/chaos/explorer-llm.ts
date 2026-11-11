@@ -21,6 +21,8 @@ export type ChatRequest = {
   temperature?: number;
   timeoutMs?: number;
   json?: boolean;
+  /** Extra headers, for example OpenCode Go's user agent and session id. No secrets. */
+  headers?: Record<string, string>;
 };
 
 const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
@@ -34,6 +36,8 @@ export function parseChatResponse(body: unknown, fallbackModel: string): ChatRep
     model?: string;
     choices?: Array<{ message?: { content?: unknown; reasoning?: unknown } }>;
     usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown; cost?: unknown };
+    /** OpenCode Go reports how much the request counted against the plan. */
+    opencode?: { allowance?: unknown };
     error?: { message?: string };
   };
   if (record.error?.message) throw new Error(`model error: ${record.error.message}`);
@@ -48,7 +52,7 @@ export function parseChatResponse(body: unknown, fallbackModel: string): ChatRep
       promptTokens,
       completionTokens,
       totalTokens: toNumber(record.usage?.total_tokens) || promptTokens + completionTokens,
-      cost: toNumber(record.usage?.cost),
+      cost: toNumber(record.usage?.cost) || toNumber(record.opencode?.allowance),
     },
   };
 }
@@ -69,7 +73,11 @@ export async function chatComplete(request: ChatRequest, attempts = 3): Promise<
     try {
       const response = await fetch(url, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${request.apiKey}` },
+        headers: {
+          ...request.headers,
+          "content-type": "application/json",
+          authorization: `Bearer ${request.apiKey}`,
+        },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(request.timeoutMs ?? 120_000),
       });

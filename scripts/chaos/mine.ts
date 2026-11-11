@@ -20,6 +20,7 @@ import {
   type MinerReport,
 } from "./miner-core";
 import { applyEnvFile, hasFlag, readArg } from "../live-support";
+import { llmHeaders, parseLlmName, resolveChaosLlm, type ChaosLlmName } from "./llm-provider";
 
 /**
  * Mine a finished chaos run: `npm run chaos:mine -- logs/chaos/<run>`.
@@ -34,6 +35,7 @@ export type MineOptions = {
   apiKey: string;
   baseUrl: string;
   model: string;
+  llm?: ChaosLlmName;
 };
 
 async function readJson<T>(file: string, fallback: T): Promise<T> {
@@ -109,6 +111,7 @@ export async function mineRun(options: MineOptions): Promise<{ report: MinerRepo
     apiKey: options.apiKey,
     model: options.model,
     json: true,
+    headers: llmHeaders(options.llm, `chaos-mine-${path.basename(runDir)}`),
     maxTokens: 8_000,
     temperature: 0.2,
     timeoutMs: 300_000,
@@ -146,17 +149,13 @@ async function main(): Promise<void> {
   }
   const envFile = path.resolve(".env");
   if (existsSync(envFile)) applyEnvFile(envFile);
-  const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
-  if (!apiKey) {
-    console.error("[chaos:mine] needs AGENTIC_CHAT_API_KEY");
+  const llm = resolveChaosLlm(parseLlmName(readArg("--llm") ?? process.env.AGENTIC_CHAT_CHAOS_LLM));
+  if (!llm.apiKey) {
+    console.error(`[chaos:mine] needs a key for ${llm.name} (${llm.keySource})`);
     process.exit(1);
   }
-  const model = assertChaosModel(
-    readArg("--model") ?? process.env.AGENTIC_CHAT_CHAOS_MODEL?.trim() ?? CHAOS_MODEL,
-    hasFlag("--allow-any-model"),
-  );
-  const baseUrl = process.env.AGENTIC_CHAT_BASE_URL?.trim() || "https://openrouter.ai/api/v1";
-  const { report, drafts, cost } = await mineRun({ runDir, apiKey, baseUrl, model });
+  const model = assertChaosModel(readArg("--model") ?? (llm.model || CHAOS_MODEL), hasFlag("--allow-any-model"));
+  const { report, drafts, cost } = await mineRun({ runDir, apiKey: llm.apiKey, baseUrl: llm.baseUrl, model, llm: llm.name });
   process.stdout.write(`[chaos:mine] findings: ${report.findings.length}, drafts: ${drafts.length}, cost: $${cost.toFixed(4)}\n`);
   process.stdout.write(`[chaos:mine] report: ${path.join(runDir, "findings.md")}\n`);
 }

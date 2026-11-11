@@ -222,6 +222,8 @@ export type ChaosPlan = {
   size?: { width: number; height: number };
   /** Live runs refuse any model but CHAOS_MODEL unless this is true. */
   allowAnyModel?: boolean;
+  /** Endpoint family for live calls; decides extra request headers. */
+  llm?: "openrouter" | "opencode-go";
 };
 
 export type ChaosStopState = {
