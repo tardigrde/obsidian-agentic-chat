@@ -128,6 +128,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
         mcpState: Record<string, unknown>;
       };
       ignoredGlobs: string;
+      maxTurnsPerPrompt: number;
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = "";
@@ -169,6 +170,7 @@ async function resetSettingsForUiSpec(): Promise<void> {
     };
     settings.plugins = { folder: ".agentic-plugins", enabled: {}, sources: {}, mcpState: {} };
     settings.ignoredGlobs = "";
+    settings.maxTurnsPerPrompt = 25;
     app.secretStorage?.setSecret?.(secretId, "");
     app.secretStorage?.setSecret?.("agentic-chat-langfuse-public-key", "");
     app.secretStorage?.setSecret?.("agentic-chat-langfuse-secret-key", "");
@@ -273,6 +275,22 @@ describe("agentic-chat settings UI", function () {
       const snapshot = settings as unknown as SettingsSnapshot;
       return snapshot.approval.mutating === "deny" && snapshot.approval.perTool.write === "ask";
     }, "Approval settings were not persisted from the settings UI");
+  });
+
+  it("persists and clamps the turn cap through the Agent tab (#283)", async function () {
+    await selectSettingsTab("Agent");
+    await setSettingText("Max turns per prompt", "60");
+    await waitForAgenticChatSetting(
+      (settings) => (settings as unknown as { maxTurnsPerPrompt: number }).maxTurnsPerPrompt === 60,
+      "Max turns per prompt was not persisted from the settings UI",
+    );
+    // Out of range: the number input or the control normalizer must never
+    // store a value above the ceiling.
+    await setSettingText("Max turns per prompt", "5000");
+    await browser.pause(500);
+    const after = await readAgenticChatSettings<{ maxTurnsPerPrompt: number }>();
+    // Rejected (kept at 60) or clamped (200); never another value such as the default.
+    expect([60, 200]).toContain(after.maxTurnsPerPrompt);
   });
 
   it("persists web access settings through the Advanced tab", async function () {
