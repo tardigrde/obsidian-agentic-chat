@@ -8,8 +8,8 @@ import {
 } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../skills/skill-prompt";
 import { type ImageContent, type Usage, type UserMessage } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings";
-import { activeModelId, apiKeyForProvider } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
+import { activeModelId, apiKeyForProvider } from "../settings-schema";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { effectiveProxy } from "../network/proxy";
 import { createObsidianFetcher, type WebFetcher } from "../tools/web-fetch";
@@ -17,6 +17,7 @@ import type { AskUserHandler } from "../tools/ask-user-tool";
 import type { SkillScaffolder } from "../tools/skill-tools";
 import { createDynamicProxiedFetcher } from "../mcp/fetcher";
 import { AgentObservabilityRuntime } from "../observability/agent-observability";
+import { errorMessage } from "../utils/errors";
 import { type ObsidianSessionManager, type SessionDefaults, type SessionInfo } from "../session/session-manager";
 import { type AgentRole } from "./subagents";
 import { handleAgentRuntimeEvent } from "./agent-event-handler";
@@ -584,7 +585,7 @@ export class AgentService {
     } catch (error) {
       console.warn(
         `Agentic Chat: artifact cleanup after session deletion failed: ${
-          error instanceof Error ? error.message : String(error)
+          errorMessage(error)
         }`,
       );
     }
@@ -664,7 +665,7 @@ export class AgentService {
       // a normal manual-compaction result so `/compact` does not throw.
       const message =
         `Nothing compacted. The active session changed while compacting: ${
-          error instanceof Error ? error.message : String(error)
+          errorMessage(error)
         }`;
       return { compacted: false, message };
     }
@@ -696,7 +697,7 @@ export class AgentService {
       this.parentAgent.replace(result.messages);
     } catch (error) {
       if (!(await this.recoverCompactedSession())) {
-        const detail = error instanceof Error ? error.message : String(error);
+        const detail = errorMessage(error);
         const message =
           `Compaction rewrote the saved session, but the live conversation could not be replaced: ${detail}. ` +
           "Reload the session to continue from the compacted transcript.";

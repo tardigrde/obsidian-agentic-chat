@@ -1,4 +1,5 @@
 import { TFolder, type App } from "obsidian";
+import { errorMessage } from "../../utils/errors";
 
 export async function adapterPathExists(adapter: App["vault"]["adapter"], path: string): Promise<boolean> {
   try {
@@ -28,9 +29,9 @@ export async function inspectAdapterTarget(
     const isFolder = stat.type === "folder";
     return { isFolder, childCount: isFolder ? await countAdapterChildren(adapter, path) : 0 };
   } catch (error) {
-    if (/not found/i.test(error instanceof Error ? error.message : String(error))) throw error;
+    if (/not found/i.test(errorMessage(error))) throw error;
     throw new Error(
-      `Cannot delete ${path}: unable to inspect it (${error instanceof Error ? error.message : String(error)}). Refusing to guess file vs folder.`,
+      `Cannot delete ${path}: unable to inspect it (${errorMessage(error)}). Refusing to guess file vs folder.`,
       { cause: error },
     );
   }

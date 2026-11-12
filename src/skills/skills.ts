@@ -2,6 +2,7 @@ import { parseYaml } from "obsidian";
 import { normalizeVaultPath } from "../vault/path";
 import { formatSkillInvocation, type Skill } from "./skill-prompt";
 import { parseCommandArgs, substituteArgs } from "./command-args";
+import { errorMessage } from "../utils/errors";
 
 // pi 1.0.0 removed the experimental harness that used to own the spec-compatible
 // skill formatting and command-argument parsing, and no replacement package
@@ -86,7 +87,7 @@ export function resolveSkillResourcePath(skill: Skill, relativePath: string): st
   try {
     normalized = normalizeVaultPath(joined);
   } catch (error) {
-    throw new Error(error instanceof Error ? error.message : String(error), { cause: error });
+    throw new Error(errorMessage(error), { cause: error });
   }
   if (normalized !== dir && !normalized.startsWith(`${dir}/`)) {
     throw new Error(`Path "${relativePath}" escapes skill folder "${skill.name}"; must stay inside ${dir}.`);

@@ -1,7 +1,7 @@
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import { contentText, normalizeContext, type Model, type Usage } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings";
-import { activeModelConfig, apiKeyForProvider } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
+import { activeModelConfig, apiKeyForProvider } from "../settings-schema";
 import { buildModel } from "../llm/models";
 import { sharedAgentModels } from "../llm/providers";
 import type { ObsidianSessionManager } from "../session/session-manager";
@@ -17,6 +17,7 @@ import {
   type CompactionConfig,
 } from "./compaction";
 import { isStopNoticeMessage } from "./stop-notice";
+import { errorMessage } from "../utils/errors";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
@@ -299,7 +300,7 @@ export class AgentCompactionRuntime {
       return {
         ok: false,
         reason: "summary_failed",
-        message: `Nothing compacted. Summary request failed: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Nothing compacted. Summary request failed: ${errorMessage(error)}`,
       };
     } finally {
       window.clearTimeout(timer);
@@ -340,7 +341,7 @@ export class AgentCompactionRuntime {
       return {
         ok: false,
         reason: "summary_failed",
-        message: `Nothing compacted. Summary request failed: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Nothing compacted. Summary request failed: ${errorMessage(error)}`,
       };
     } finally {
       window.clearTimeout(timer);

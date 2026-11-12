@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { deriveAutoName, type ObsidianSessionManager } from "../session/session-manager";
+import { type ObsidianSessionManager } from "../session/session-manager";
+import { deriveAutoName } from "../session/session-title";
 import { conversationMessages } from "./conversation-messages";
 
 /**

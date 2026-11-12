@@ -17,6 +17,7 @@ import {
   type ScopedRetrievalIndexState,
 } from "./policy";
 import { createDefaultSemanticLeaseStore, type SemanticLeaseStore } from "./semantic-index-lease-store";
+import { errorMessage } from "../utils/errors";
 
 export interface SemanticIndexFile {
   version: 1;
@@ -620,8 +621,4 @@ async function ensureParentDirs(adapter: DataAdapter, path: string): Promise<voi
     current = current ? `${current}/${part}` : part;
     if (!(await adapter.exists(current))) await adapter.mkdir(current);
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

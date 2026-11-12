@@ -3,6 +3,7 @@ import type { PluginService } from "../plugins/service";
 import type { InstallResult } from "../plugins/import/install";
 import { slugifyPluginName } from "../plugins/manifest";
 import { confirmWithModal } from "./confirm-modal";
+import { errorMessage } from "../utils/errors";
 
 const SKILL_TEMPLATE = `# {{name}}
 
@@ -102,7 +103,7 @@ export class NewSkillModal extends Modal {
           this.onInstalled(result);
           this.close();
         } catch (error) {
-          new Notice(error instanceof Error ? error.message : String(error));
+          new Notice(errorMessage(error));
         }
       });
     });

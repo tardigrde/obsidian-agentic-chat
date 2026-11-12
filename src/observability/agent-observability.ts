@@ -1,9 +1,10 @@
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
 import type { WebFetcher } from "../tools/web-fetch";
 import type { ApprovalAuditInput } from "../agent/action-audit-log";
 import { redactText } from "../privacy/redaction";
+import { errorMessage } from "../utils/errors";
 import { exportOtlpSpans, observabilityTraceEndpoint, OtlpExportError, type OtlpAttributeValue, type OtlpSpan } from "./otlp";
 import type { ObservabilityPayloadMode, ObservabilitySettings } from "./settings";
 
@@ -448,8 +449,4 @@ function fnv1a(value: string): string {
     hash = Math.imul(hash, 0x01000193);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

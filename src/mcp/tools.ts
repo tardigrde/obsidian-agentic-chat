@@ -8,6 +8,7 @@ import { wrapToolOutput, wrapToolOutputTruncated } from "../tools/tool-output-wr
 import { McpHttpClient, type McpCallToolResult, type McpToolDefinition } from "./client";
 import type { McpAuthType, McpKnownToolSettings, McpServerSettings, McpSettings } from "./settings";
 import { filterMcpToolsByGlobs } from "./tool-filter";
+import { errorMessage } from "../utils/errors";
 
 export const MCP_TOOL_PREFIX = "mcp__";
 
@@ -156,7 +157,7 @@ async function discoverServerTools(
       },
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     console.warn(
       `Agentic Chat: failed to discover MCP tools for ${server.name}: ${message}`,
     );
@@ -334,7 +335,7 @@ async function renderMcpResult(result: McpCallToolResult, options: RenderMcpResu
     } catch (error) {
       console.warn(
         `Agentic Chat: failed to store MCP artifact for ${options.localToolName}: ${
-          error instanceof Error ? error.message : String(error)
+          errorMessage(error)
         }`,
       );
     }

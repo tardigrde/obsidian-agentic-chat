@@ -1,7 +1,8 @@
 /**
  * Single source of truth for slash commands: drives the autocomplete menu, the
- * `/help` listing, and command routing in `ChatView`. Keep this list and the
- * `handleSlashCommand` switch in sync — the switch resolves names via `resolveCommand`.
+ * `/help` listing, and command routing in `ChatView`. Routing is a
+ * `Record<SlashCommandName, handler>`, so a command added here without a
+ * handler fails the typecheck.
  */
 export interface SlashCommand {
   /** Canonical command word (no leading slash). */
@@ -18,10 +19,10 @@ export interface ParsedSlashInput {
   word: string;
   argString: string;
   args: readonly string[];
-  command?: SlashCommand;
+  command?: SlashCommandEntry;
 }
 
-export const SLASH_COMMANDS: SlashCommand[] = [
+export const SLASH_COMMANDS = [
   { name: "new", description: "start a new conversation" },
   { name: "sessions", args: "[clear --confirm]", description: "browse or clear past conversations" },
   { name: "model", description: "switch model" },
@@ -39,7 +40,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "agent", args: "[name] [task]", description: "delegate a task to a subagent" },
   { name: "init", args: "[instructions]", description: "curate the vault's AGENTS.md standing-instructions file" },
   { name: "help", description: "show this list" },
-];
+] as const satisfies readonly SlashCommand[];
+
+/** One entry of `SLASH_COMMANDS`, with its literal name. */
+export type SlashCommandEntry = (typeof SLASH_COMMANDS)[number];
+/** Canonical name of a built-in slash command. */
+export type SlashCommandName = SlashCommandEntry["name"];
 
 /** Commands shown in menus and `/help`. */
 export function visibleCommands(): SlashCommand[] {
@@ -47,7 +53,7 @@ export function visibleCommands(): SlashCommand[] {
 }
 
 /** Resolve a typed canonical name, case-insensitively. */
-export function resolveCommand(word: string): SlashCommand | undefined {
+export function resolveCommand(word: string): SlashCommandEntry | undefined {
   const lower = word.toLowerCase();
   return SLASH_COMMANDS.find((command) => command.name === lower);
 }

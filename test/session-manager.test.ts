@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { deriveAutoName, ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager } from "../src/session/session-manager";
+import { deriveAutoName } from "../src/session/session-title";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 import { assemblePrompt } from "../src/ui/context-builder";

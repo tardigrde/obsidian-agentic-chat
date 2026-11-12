@@ -31,6 +31,7 @@ import { type AgentMode, MODE_ORDER, MODES } from "./agent/modes";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { MUTATING_TOOLS } from "./tools/tool-contracts";
 import { createVaultTools } from "./tools/vault-tools";
+import { errorMessage } from "./utils/errors";
 import {
   exportMcpServerConfig,
   mcpServerSetupSteps,
@@ -695,7 +696,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
                   this.refresh();
                 }).open();
               } catch (error) {
-                new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
+                new Notice(`Agentic chat: ${errorMessage(error)}`);
               } finally {
                 button.setDisabled(false);
               }
@@ -1136,7 +1137,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
                   new Notice(`Agentic Chat MCP: created plugin package at ${result.rootPath}.`);
                   this.redraw();
                 } catch (error) {
-                  new Notice(`Agentic Chat MCP: ${error instanceof Error ? error.message : String(error)}`);
+                  new Notice(`Agentic Chat MCP: ${errorMessage(error)}`);
                 }
               }),
             );
@@ -1803,7 +1804,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       );
       this.redraw();
     } catch (error) {
-      new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`);
+      new Notice(`Agentic chat: ${errorMessage(error)}`);
     } finally {
       button?.setDisabled(false);
     }
@@ -1957,7 +1958,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     try {
       await action();
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = errorMessage(error);
       // For OAuth-required (authType none/bearer/header but server advertises resource_metadata), the client already set
       // pendingOAuthChallenge on the server. Show a banner + redraw so Authenticate & test appears without manual dropdown.
       if (msg.includes("requires OAuth") || (error as { resourceUrl?: string })?.resourceUrl) {
@@ -2074,7 +2075,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
       try {
         secretStorage.setSecret(id, "");
       } catch (error) {
-        console.warn(`Agentic Chat: failed to clear secret ${id}: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`Agentic Chat: failed to clear secret ${id}: ${errorMessage(error)}`);
       }
     }
   }

@@ -1,4 +1,4 @@
-import type { AgenticChatSettings } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
 import type { ApprovalPolicy } from "./approval";
 import { setPerToolApproval } from "./approval";
 
