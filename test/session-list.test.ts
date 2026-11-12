@@ -53,6 +53,12 @@ describe("filterSessions", () => {
   it("returns nothing when no session matches", () => {
     expect(filterSessions(sessions, "zzz")).toHaveLength(0);
   });
+
+  it("does not match text hidden inside the context preamble", () => {
+    const hidden = session({ path: "d", firstMessage: "<context>\n[[Secret.md]]\n</context>\n\nHello" });
+    expect(filterSessions([hidden], "secret")).toHaveLength(0);
+    expect(filterSessions([hidden], "hello").map((s) => s.path)).toEqual(["d"]);
+  });
 });
 
 describe("sessionRows", () => {
@@ -120,8 +126,12 @@ describe("session row state helpers", () => {
   it("builds display titles from custom names, first prompts, whitespace, and long text", () => {
     expect(sessionTitle(session({ name: "  Named chat  ", firstMessage: "ignored" }))).toBe("Named chat");
     expect(sessionTitle(session({ firstMessage: "first\nprompt" }))).toBe("first prompt");
-    expect(sessionTitle(session({ firstMessage: "   " }))).toBe("(empty conversation)");
+    expect(sessionTitle(session({ firstMessage: "   " }))).toBe("(no messages)");
     expect(sessionTitle(session({ firstMessage: "x".repeat(90) }))).toBe(`${"x".repeat(80)}…`);
+  });
+
+  it("uses the same empty wording for a first prompt that is only a context block", () => {
+    expect(sessionTitle(session({ firstMessage: "<context>\n[[A.md]]\n</context>" }))).toBe("(no messages)");
   });
 
   it("prefills rename from the custom name or first prompt", () => {
