@@ -49,8 +49,8 @@ await $(".agentic-chat-session-list").waitForExist();
 | Closing the last tab starts a new conversation | `src/ui/chat-view.ts:445` | no committed check | `NONE` |
 | Header New chat button | `src/ui/chat-view.ts:672` | no committed check | `NONE` |
 | Header history button | `src/ui/chat-view.ts:678` | no committed check | `NONE` |
-| `/new` | `src/ui/chat-view.ts:1645` | `test/session-actions.test.ts:153` (unit only) | `partial` |
-| `/sessions` opens history | `src/ui/chat-view.ts:1648` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
+| `/new` | `src/ui/chat-view.ts:1644` | `test/session-actions.test.ts:153` (unit only) | `partial` |
+| `/sessions` opens history | `src/ui/chat-view.ts:1647` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Search conversations | `src/ui/session-list-modal.ts:49` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Rename a conversation | `src/ui/session-list-modal.ts:143` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Delete a conversation | `src/ui/session-list-modal.ts:112` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
