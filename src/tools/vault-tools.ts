@@ -1,7 +1,6 @@
 import { type App, TAbstractFile, TFile, TFolder, MarkdownView, parseYaml } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { applyExactEditsPartial, type EditApplyResult } from "../vault/edit";
-import { diffLines, diffStat, diffTooLarge } from "../vault/diff";
 import { getParentPath, normalizeFolderPath, normalizeVaultPath } from "../vault/path";
 import type { IgnoreMatcher } from "../vault/ignore";
 import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../vault/search";
@@ -39,6 +38,15 @@ import {
   vaultToolDefinition,
 } from "./vault-tool-definitions";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import {
+  adapterDeletionMessage,
+  adapterPathExists,
+  inspectAdapterTarget,
+  trashAdapterFile,
+  trashAdapterFolder,
+  trashTreeFolderRecursive,
+} from "./vault/adapter-trash";
+import { buildEditDiffSummary, formatEditFailures } from "./vault/edit-diff";
 
 export { MUTATING_TOOLS } from "./tool-contracts";
 
@@ -410,58 +418,6 @@ function editToolMessage(
   return diffSummary ? untrustedTextResult(text, details, "edit") : textResult(text, details);
 }
 
-/** Produce a concise diff summary (≤20 lines) of the changed regions. */
-function buildEditDiffSummary(before: string, after: string): string {
-  if (before === after) return "";
-  if (diffTooLarge(before, after)) {
-    const beforeLines = before.split(/\r?\n/).length;
-    const afterLines = after.split(/\r?\n/).length;
-    return `Diff: ${beforeLines} → ${afterLines} lines (too large to inline).`;
-  }
-  const lines = diffLines(before, after);
-  const stat = diffStat(lines);
-  const hunks = collectDiffHunks(lines);
-  const header = `Diff summary (+${stat.added}/-${stat.removed} lines):`;
-  if (hunks.length === 0) return header;
-  return `${header}\n${formatDiffPreview(hunks, 20)}`;
-}
-
-function collectDiffHunks(lines: { op: string; text: string }[]): string[] {
-  const hunks: string[] = [];
-  let current: string[] = [];
-  const flush = () => {
-    if (current.length > 0) {
-      hunks.push(current.join("\n"));
-      current = [];
-    }
-  };
-  for (const line of lines) {
-    if (line.op === "context") {
-      if (current.length > 0 && current[current.length - 1].startsWith(" ")) {
-        current.push(` ${line.text}`);
-      } else {
-        flush();
-      }
-    } else {
-      const prefix = line.op === "add" ? "+" : "-";
-      current.push(`${prefix} ${line.text}`);
-    }
-  }
-  flush();
-  return hunks;
-}
-
-function formatDiffPreview(hunks: string[], maxLines: number): string {
-  const joined = hunks.join("\n\n");
-  const preview = joined.split("\n").slice(0, maxLines).join("\n");
-  const omitted = joined.split("\n").length - maxLines;
-  return `${preview}${omitted > 0 ? `\n... (${omitted} more lines)` : ""}`;
-}
-
-function formatEditFailures(failed: { error: string }[]): string {
-  return failed.map((failure) => `- ${failure.error}`).join("\n");
-}
-
 function createLsTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LsParameters> {
   return {
     ...vaultToolDefinition("ls"),
@@ -808,97 +764,6 @@ async function deleteStaleEntry(
     staleTree: true,
     ...(disposition === "trash" ? {} : { bypassedTrash: true }),
   });
-}
-
-async function adapterPathExists(adapter: App["vault"]["adapter"], path: string): Promise<boolean> {
-  try {
-    return (await adapter?.exists(path)) === true;
-  } catch {
-    return false;
-  }
-}
-
-interface AdapterDeletionTarget {
-  isFolder: boolean;
-  childCount: number;
-}
-
-/**
- * Fail closed: classify via stat, never by elimination. A listing failure must
- * not demote a folder to the file path (which would trash a non-empty folder
- * past the recursive guard).
- */
-async function inspectAdapterTarget(
-  adapter: App["vault"]["adapter"],
-  path: string,
-): Promise<AdapterDeletionTarget> {
-  try {
-    const stat = await adapter.stat(path);
-    if (!stat) throw new Error(`File or folder not found: ${path}`);
-    const isFolder = stat.type === "folder";
-    return { isFolder, childCount: isFolder ? await countAdapterChildren(adapter, path) : 0 };
-  } catch (error) {
-    if (/not found/i.test(error instanceof Error ? error.message : String(error))) throw error;
-    throw new Error(
-      `Cannot delete ${path}: unable to inspect it (${error instanceof Error ? error.message : String(error)}). Refusing to guess file vs folder.`,
-      { cause: error },
-    );
-  }
-}
-
-async function countAdapterChildren(adapter: App["vault"]["adapter"], path: string): Promise<number> {
-  const listing = await adapter.list(path);
-  return (listing?.folders?.length ?? 0) + (listing?.files?.length ?? 0);
-}
-
-function adapterDeletionMessage(path: string, disposition: "trash" | "removed"): string {
-  return disposition === "trash" ? `Moved ${path} to trash.` : `Deleted ${path} (bypassed trash).`;
-}
-
-/** Trash an indexed folder bottom-up so non-empty deletes work without the adapter. */
-async function trashTreeFolderRecursive(app: App, folder: TFolder): Promise<void> {
-  for (const child of [...folder.children]) {
-    if (child instanceof TFolder) {
-      await trashTreeFolderRecursive(app, child);
-    } else {
-      await app.fileManager.trashFile(child);
-    }
-  }
-  await app.fileManager.trashFile(folder);
-}
-
-/** Prefer trash for adapter-level deletes; fall back to permanent removal. */
-async function trashAdapterFile(app: App, path: string): Promise<"trash" | "removed"> {
-  try {
-    if (await app.vault.adapter.trashSystem(path)) return "trash";
-  } catch {
-    // Fall through to trashLocal / remove.
-  }
-  try {
-    await app.vault.adapter.trashLocal(path);
-    return "trash";
-  } catch {
-    // Fall through to permanent removal.
-  }
-  await app.vault.adapter.remove(path);
-  return "removed";
-}
-
-/** Prefer trash for adapter-level folder deletes; fall back to rmdir. */
-async function trashAdapterFolder(app: App, path: string, recursive: boolean): Promise<"trash" | "removed"> {
-  try {
-    if (await app.vault.adapter.trashSystem(path)) return "trash";
-  } catch {
-    // Fall through to trashLocal / rmdir.
-  }
-  try {
-    await app.vault.adapter.trashLocal(path);
-    return "trash";
-  } catch {
-    // Fall through to permanent removal.
-  }
-  await app.vault.adapter.rmdir(path, recursive);
-  return "removed";
 }
 
 function createBacklinksTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof BacklinksParameters> {
