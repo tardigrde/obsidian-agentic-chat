@@ -85,6 +85,7 @@ export class AssistantBubble {
   private readonly textEl: HTMLElement;
   private readonly actionsEl: HTMLElement;
   private reasoningBody: HTMLElement | null = null;
+  private reasoningDropped = false;
   private markdown = "";
   private readonly steps = new Map<string, StepEntry>();
   // Streaming deltas are buffered and flushed once per animation frame, so a fast
@@ -143,7 +144,9 @@ export class AssistantBubble {
   }
 
   appendReasoning(delta: string): void {
-    if (this.markdown) return;
+    // After an error dropped the empty pill, a late delta must not mount a
+    // new "Thinking" pill that can never settle.
+    if (this.markdown || this.reasoningDropped) return;
     if (!this.reasoningBody) this.ensureReasoningShell();
     this.pendingReasoning += delta;
     this.scheduleFlush();
@@ -156,7 +159,7 @@ export class AssistantBubble {
    * the pill settles to a green-check "Thought" (see settleReasoning).
    */
   beginThinking(): void {
-    if (this.markdown || this.reasoningBody) return;
+    if (this.markdown || this.reasoningBody || this.reasoningDropped) return;
     this.ensureReasoningShell();
   }
 
@@ -259,6 +262,24 @@ export class AssistantBubble {
       window.clearInterval(this.reasoningTimerHandle);
       this.reasoningTimerHandle = null;
     }
+  }
+
+  /**
+   * A failed turn with no reasoning trace must not keep a green-check "Thought"
+   * pill: it reads as success right above the error. Remove the empty shell.
+   */
+  private dropEmptyReasoning(): void {
+    if (!this.reasoningBody) return;
+    // Deltas wait for the next frame; history replay and a same-frame error
+    // reach here before the flush, so count the buffer as content too.
+    if (this.pendingReasoning.trim() || this.reasoningBody.textContent?.trim()) return;
+    this.reasoningDropped = true;
+    this.stopReasoningTimer();
+    this.reasoningBody.closest("details")?.remove();
+    this.reasoningBody = null;
+    this.reasoningLabelEl = null;
+    this.reasoningDotEl = null;
+    this.reasoningTimeEl = null;
   }
 
   /**
@@ -779,6 +800,7 @@ export class AssistantBubble {
   showError(message: string): void {
     const text = message.trim();
     if (!text) return;
+    this.dropEmptyReasoning();
     const existing = this.el.querySelector(".agentic-chat-error");
     if (existing?.getAttr("data-error-text") === text) return;
     const banner = this.el.createDiv({ cls: "agentic-chat-error" });

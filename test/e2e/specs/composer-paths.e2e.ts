@@ -4,7 +4,8 @@ import { after, before, beforeEach, describe, it } from "mocha";
 type ScriptedTurn = {
   label?: string;
   content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "length" | "toolUse";
+  stopReason?: "stop" | "length" | "toolUse" | "error";
+  errorMessage?: string;
   delayMs?: number;
   emitUpdates?: boolean;
   hold?: boolean;
@@ -132,6 +133,13 @@ describe("agentic-chat composer paths", function () {
       textTurn("queue final", "Queued answer used the edited draft."),
       textTurn("stop held", "The stopped answer must not settle.", { delayMs: 15_000 }),
       textTurn("stop replacement", "Replacement answer after stop."),
+      {
+        label: "thinking then error",
+        content: [{ type: "thinking", thinking: "I should check the config first." }],
+        stopReason: "error",
+        errorMessage: "Provider connection lost mid-stream.",
+        emitUpdates: true,
+      },
     ]);
 
     const configured = await configurePlugin();
@@ -277,4 +285,47 @@ describe("agentic-chat composer paths", function () {
 
     await input.clearValue();
   });
+
+  it("keeps the reasoning trace of a failed turn, live and after a history re-render", async function () {
+    await sendWithButton("think, then fail");
+    await browser.waitUntil(
+      async () => (await transcriptText()).includes("Provider connection lost mid-stream."),
+      { timeout: 10_000, timeoutMsg: "the scripted error never rendered" },
+    );
+    const readTrace = async () =>
+      await browser.execute(() => {
+        const banner = [...document.querySelectorAll(".agentic-chat-assistant .agentic-chat-error")].pop();
+        const turn = banner?.closest(".agentic-chat-assistant");
+        return [...(turn?.querySelectorAll(".agentic-chat-reasoning-body") ?? [])].map((body) => (body.textContent ?? "").trim());
+      });
+    await browser.pause(300);
+    expect(await readTrace()).toEqual(["I should check the config first."]);
+    // History replay renders the same turn in one synchronous block.
+    await browser.executeObsidian(({ app }) => {
+      const leaf = app.workspace.getLeavesOfType("agentic-chat-chat-view")[0];
+      const view = leaf?.view as unknown as { renderTranscript: (m: unknown[]) => void; service: { getMessages: () => unknown[] } };
+      view.renderTranscript(view.service.getMessages());
+    });
+    await browser.pause(300);
+    expect(await readTrace()).toEqual(["I should check the config first."]);
+  });
+
+  it("shows a failed turn's error without an empty green Thought pill", async function () {
+    // Every scripted turn is used, so the next request fails at the provider.
+    await sendWithButton("no scripted turn is left for this prompt");
+    const error = await $(".agentic-chat-assistant .agentic-chat-error");
+    await error.waitForExist({ timeout: 10_000 });
+    const bubble = await browser.execute(() => {
+      const banner = [...document.querySelectorAll(".agentic-chat-assistant .agentic-chat-error")].pop();
+      const turn = banner?.closest(".agentic-chat-assistant");
+      const pills = [...(turn?.querySelectorAll(".agentic-chat-reasoning") ?? [])];
+      return {
+        bannerText: banner?.textContent ?? "",
+        emptyPills: pills.filter((pill) => !pill.querySelector(".agentic-chat-reasoning-body")?.textContent?.trim()).length,
+      };
+    });
+    expect(bubble.bannerText.length).toBeGreaterThan(0);
+    expect(bubble.emptyPills).toBe(0);
+  });
 });
+

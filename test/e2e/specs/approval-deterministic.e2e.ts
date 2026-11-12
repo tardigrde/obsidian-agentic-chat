@@ -164,6 +164,9 @@ async function denyApproval(): Promise<void> {
   // Deny is two-step: the first click arms the optional reason field.
   const confirmDeny = await modal.$("button=Confirm Deny");
   await confirmDeny.waitForExist({ timeout: 5_000 });
+  // While the deny is armed, the title must say what Confirm will do.
+  const title = await browser.execute(() => document.querySelector(".agentic-chat-approval")?.closest(".modal")?.querySelector(".modal-title")?.textContent ?? "");
+  expect(title).toMatch(/^Deny "/);
   await confirmDeny.click();
   await modal.waitForExist({ reverse: true, timeout: 5_000 });
 }

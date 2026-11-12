@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { App } from "obsidian";
-import { ApprovalModal } from "../src/ui/approval-modal";
+import { ApprovalModal, approvalTitle } from "../src/ui/approval-modal";
 
 interface ModalHarness {
   open: ReturnType<typeof vi.fn>;
@@ -69,5 +69,13 @@ describe("ApprovalModal", () => {
     await expect(modal.ask(abort.signal)).resolves.toMatchObject({ approved: false });
     expect(harness.open).not.toHaveBeenCalled();
     expect(harness.close).not.toHaveBeenCalled();
+  });
+});
+
+describe("approvalTitle", () => {
+  it("names the action the primary choice takes", () => {
+    expect(approvalTitle({ label: "Write file" }, "allow")).toBe('Allow "Write file"?');
+    expect(approvalTitle({ label: "Write file" }, "deny")).toBe('Deny "Write file"?');
+    expect(approvalTitle({ label: "Edit file", sessionLabel: "Tab 2" }, "deny")).toBe('[Tab 2] Deny "Edit file"?');
   });
 });
