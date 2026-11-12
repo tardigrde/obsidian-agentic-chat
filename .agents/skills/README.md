@@ -8,6 +8,8 @@ and so do Codex and other harnesses that follow the same convention.
 
 - `factory/`
 - `ship-change/`
+- `verify-pr/`
+- `worktree/`
 - `verify-obsidian-chat/`
 - `probe-feature/`
 - `break-change/`

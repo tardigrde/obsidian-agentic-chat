@@ -8,7 +8,9 @@ argument-hint: <goal, for example "refactor the UI so behavior stays the same bu
 
 The goal is the argument. You are the orchestrator: you decide, write specs,
 review diffs, and merge. Workers do the self-contained steps. Never spawn Claude
-subagents for this; use `scripts/delegate.sh` (opencode, flat-rate model).
+subagents for this; use `scripts/delegate.sh` (opencode, flat-rate model). It
+sandboxes each run: edits only in its worktree (or only the verdict file for a
+review), a shell allowlist, no web, no `.env` reads.
 
 ## Loop
 
@@ -17,7 +19,7 @@ subagents for this; use `scripts/delegate.sh` (opencode, flat-rate model).
    test gets a test first (its own PR, or step 1 of the first PR).
 2. **Split.** Cut the goal into PRs that are small enough for the review-gate
    budget and independent where possible. Write the plan as a section in
-   `NEXT.md` (git-ignored, at the repo root): one line per PR, with its witness.
+   `NEXT.md` (at the repo root, in `.gitignore`): one line per PR, with its witness.
 3. **Delegate.** For each PR, in parallel when the files do not overlap:
    ```bash
    npm run worktree:new -- <name>
@@ -29,9 +31,11 @@ subagents for this; use `scripts/delegate.sh` (opencode, flat-rate model).
    `npm run verify -- fast`. Fix small gaps yourself; re-delegate large ones.
    Push and open the PR with the evidence table (see `@ship-change`).
 5. **Review.** `npm run delegate -- review <pr> <name> "<focus>"`, then post
-   `logs/delegate/verdict-<pr>.md` with `gh pr comment <pr> --body-file`. Fix real
+   `logs/delegate/verdict-<pr>.md` with `gh pr comment <pr> --body-file`. You post
+   it from the author's account; the gate accepts that because CI sets
+   `REVIEW_GATE_SINGLE_ACCOUNT=1`, and the Reviewer line names the worker. Fix real
    notes before the merge and say which notes you did not fix and why.
-6. **Merge.** Only when the user allowed merging for this goal. The `review` check
+6. **Merge.** Only after the user says "merge" (AGENTS.md rule 7). The `review` check
    does not re-run on a new comment: re-run the latest "Review gate" run by id.
    After each merge, the next PR needs `gh pr update-branch <pr>`, then
    `npm run delegate -- recheck <pr> <name>`, post that file, re-run the gate.

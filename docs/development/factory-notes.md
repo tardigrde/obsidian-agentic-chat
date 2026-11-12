@@ -1,7 +1,8 @@
 # Factory notes
 
-Status: notes only. No factory scripts are being built in the 2026-11-07
-simplification round. This page records the model so it is not lost.
+Status: the 2026-11-07 round built no scripts. Since 2026-11-12 the `factory`
+skill (`.agents/skills/factory/`) and `scripts/delegate.sh` run the loop with
+opencode workers. This page keeps the model behind it.
 
 ## Purpose
 
