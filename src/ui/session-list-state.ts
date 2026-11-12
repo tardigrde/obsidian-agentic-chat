@@ -7,15 +7,16 @@ export interface SessionRowState {
   active: boolean;
 }
 
-/** Substring filter over a session's display name and first message (case-insensitive). */
+/** Substring filter over a session's visible title text: display name and stripped first message (case-insensitive). */
 export function filterSessions(sessions: SessionInfo[], query: string): SessionInfo[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return sessions;
   return sessions.filter((session) => {
     const name = session.name?.trim() ?? "";
-    // Guard against a nullish firstMessage so it never coerces to "undefined"
-    // (which would otherwise match a search for "undef").
-    const firstMessage = session.firstMessage?.trim() ?? "";
+    // Search only what the row shows, so hidden attachment context never
+    // matches. Guard against a nullish firstMessage so it never coerces to
+    // "undefined" (which would otherwise match a search for "undef").
+    const firstMessage = stripPromptPreamble(session.firstMessage ?? "").trim();
     return `${name}\n${firstMessage}`.toLowerCase().includes(needle);
   });
 }
@@ -82,7 +83,7 @@ export function applySessionRename(session: SessionInfo, name: string): SessionI
 
 export function sessionTitle(session: SessionInfo): string {
   const single = sessionRenameDraft(session);
-  return single.length > 80 ? `${single.slice(0, 80)}…` : single || "(empty conversation)";
+  return single.length > 80 ? `${single.slice(0, 80)}…` : single || "(no messages)";
 }
 
 export function formatWhen(iso: string): string {

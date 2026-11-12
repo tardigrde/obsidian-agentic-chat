@@ -1,10 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { isSummaryMessage } from "../agent/compaction";
 import { collectToolResults, messageText, toolCalls } from "../ui/message-content";
-import type { SessionInfo } from "./session-manager";
-
-/** Strip an attachment `<context>…</context>` preamble so exports read like the chat. */
-const CONTEXT_PREAMBLE = /^<context>[\s\S]*?<\/context>\n\n/;
+import { stripPromptPreamble, type SessionInfo } from "./session-manager";
 
 /** Default vault folder exported conversations are written into. */
 export const EXPORT_FOLDER = "Agentic Chat Exports";
@@ -41,7 +38,8 @@ function renderUserMessage(message: AgentMessage): string[] {
     const summary = messageText(message).trim();
     return summary ? ["## Summary of earlier conversation", "", summary, ""] : [];
   }
-  const text = messageText(message).replace(CONTEXT_PREAMBLE, "").trim();
+  // Same strip as the chat, so exports read like the transcript.
+  const text = stripPromptPreamble(messageText(message)).trim();
   return text ? ["## You", "", text, ""] : [];
 }
 

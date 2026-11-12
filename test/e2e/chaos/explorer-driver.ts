@@ -14,6 +14,7 @@ import {
   parseKeyChord,
   refWindow,
   resolveReplayRef,
+  shouldBlockFallbackClick,
   summarizeDecision,
   sumSessionUsage,
   targetOf,
@@ -282,7 +283,7 @@ function collectWindow(windowNumber: number, limit: number): RawWindow {
       tag === "select"
         ? Array.from((element as HTMLSelectElement).options)
             .slice(0, 12)
-            .map((option) => flat(option.text).slice(0, 40))
+            .map((option) => `${flat(option.text).slice(0, 40)}${option.disabled ? " (disabled)" : ""}`)
         : undefined;
     const checked =
       role === "toggle"
@@ -468,6 +469,24 @@ async function perform(
       try {
         await element.click();
       } catch {
+        // A modal backdrop makes the WebDriver click fail with "element click
+        // intercepted". The JS fallback would reach under the modal, which a
+        // real user cannot do (replay-targeted-2 stacked four Conversations
+        // modals this way), so refuse instead.
+        // Hit test at the target's center, not an ancestor check: the settings
+        // window itself lives in a .modal-container, and a dialog over it must
+        // still block a click on the settings below.
+        const state = (await browser.execute((el) => {
+          const target = el as unknown as HTMLElement;
+          const box = target.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          if (!hit || hit === target || target.contains(hit)) return { modalOpen: false, targetInModal: false };
+          const cover = hit.closest(".modal-container");
+          return { modalOpen: cover !== null, targetInModal: cover !== null && cover.contains(target) };
+        }, element)) as { modalOpen: boolean; targetInModal: boolean };
+        if (shouldBlockFallbackClick(state)) {
+          throw new Error("covered by an open modal; close it first (Escape) or act inside the modal");
+        }
         await browser.execute((el) => (el as unknown as HTMLElement).click(), element);
       }
       await browser.pause(400);
@@ -476,20 +495,25 @@ async function perform(
     case "select": {
       await elementFor(decision.ref);
       // The page script inlines matchSelectOption from explorer-core.ts: a
-      // browser.execute callback cannot close over an imported helper.
+      // browser.execute callback cannot close over an imported helper. Keep the
+      // text-then-value match and the disabled rule in sync with that helper.
       const result = (await browser.execute(
         (ref, wanted) => {
           const node = document.querySelector<HTMLSelectElement>(`[data-chaos-ref="${ref}"]`);
           if (!node) return { ok: false, error: `ref ${ref} is gone; the view changed` };
           if (node.tagName.toLowerCase() !== "select") return { ok: false, error: "not a <select>; use click" };
+          if (node.disabled) return { ok: false, error: "the dropdown is disabled" };
           const options = Array.from(node.options).map((option) => ({
             text: (option.textContent ?? "").replace(/\s+/g, " ").trim(),
             value: option.value,
+            disabled: option.disabled,
           }));
           const target = wanted.trim().toLowerCase();
-          let index = options.findIndex((option) => option.text.toLowerCase() === target);
-          if (index < 0) index = options.findIndex((option) => option.value === wanted);
+          let index = options.findIndex((option) => !option.disabled && option.text.toLowerCase() === target);
+          if (index < 0) index = options.findIndex((option) => !option.disabled && option.value === wanted);
           if (index < 0) {
+            const blocked = options.find((option) => option.text.toLowerCase() === target || option.value === wanted);
+            if (blocked) return { ok: false, error: `option "${blocked.text}" is disabled` };
             return { ok: false, error: `no option "${wanted}"; options: ${options.map((option) => option.text).join("|")}` };
           }
           const option = options[index];

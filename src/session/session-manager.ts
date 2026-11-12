@@ -689,7 +689,7 @@ function getSessionModifiedTime(entries: SessionEntry[], fallback: number): numb
 }
 
 /** The prompt-assembly focus hint (`FOCUS_HINT` in ui/context-builder) that follows a context block. */
-const FOCUS_HINT_LINE = /^Focus: The user's request after this line is the primary task\.[^\n]*\n*/;
+const FOCUS_HINT_LINE = /^Focus: The user's request after this line is the primary task\.[^\r\n]*(?:\r?\n)*/;
 
 /**
  * The user's own text of a sent prompt: drops a leading `<context…</context>`
@@ -697,7 +697,9 @@ const FOCUS_HINT_LINE = /^Focus: The user's request after this line is the prima
  * returned as is, so a user prompt that starts with "Focus:" stays.
  */
 export function stripPromptPreamble(prompt: string): string {
-  const contextMatch = /^<context\b[\s\S]*?<\/context>\s*/.exec(prompt);
+  // Eat only the line breaks after the block, so the user's first-line
+  // indentation stays. CRLF and LF both work.
+  const contextMatch = /^<context\b[\s\S]*?<\/context>[ \t]*(?:\r?\n)*/.exec(prompt);
   return contextMatch ? prompt.slice(contextMatch[0].length).replace(FOCUS_HINT_LINE, "") : prompt;
 }
 
