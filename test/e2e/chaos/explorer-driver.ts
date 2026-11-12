@@ -289,7 +289,9 @@ function collectWindow(windowNumber: number, limit: number): RawWindow {
         ? element.classList.contains("is-enabled")
         : tag === "input" && (input.type === "checkbox" || input.type === "radio")
           ? input.checked
-          : undefined;
+          : element.hasAttribute("aria-checked")
+            ? element.getAttribute("aria-checked") === "true"
+            : undefined;
     items.push({
       node: element,
       region: regionOf(element) as UiElement["region"],
