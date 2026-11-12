@@ -52,11 +52,11 @@ witness, `npm run verify -- fast`, or a committed e2e assertion.
 
 An explorer model reads a text view of every Obsidian window at each step
 (buttons, inputs, toggles, menus, modals, the chat state, notices, new console
-errors) and picks one action: click, type, key chord, scroll, Obsidian command,
-send a chat prompt (with or without waiting), wait, resize, open settings,
-close a window, reload the plugin, run a scripted scenario as a macro, report a
-bug, or finish. Settings open in their own window; the explorer sees and acts in
-every window.
+errors) and picks one action: click, select a dropdown option, type, key chord,
+scroll, Obsidian command, send a chat prompt (with or without waiting), wait,
+resize, open settings, close a window, reload the plugin, run a scripted scenario
+as a macro, report a bug, or finish. Settings open in their own window; the
+explorer sees and acts in every window.
 
 ```bash
 # Full open-ended run (defaults: 150 steps, 30 min, 2M real tokens), then mining

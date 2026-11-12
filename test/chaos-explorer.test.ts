@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   BUILTIN_CHARTERS,
+  actionRef,
   extractJsonObject,
   explorerSystemPrompt,
   explorerUserPrompt,
   formatObservation,
+  matchSelectOption,
   parseExplorerDecision,
   parseKeyChord,
   resolveReplayRef,
@@ -28,6 +30,7 @@ const elements: UiElement[] = [
   { ref: "w0e1", window: 0, region: "chat", role: "button", label: "Send" },
   { ref: "w0e2", window: 0, region: "chat", role: "textarea", label: "Ask about your vault", value: "hi" },
   { ref: "w1e1", window: 1, region: "settings", role: "toggle", label: "Enable MCP", checked: false },
+  { ref: "w1e2", window: 1, region: "settings", role: "dropdown", label: "Permission mode", value: "safe", options: ["Safe", "YOLO"] },
 ];
 
 function observation(): Observation {
@@ -120,6 +123,16 @@ describe("explorer decision parsing", () => {
     expect(parseExplorerDecision("I will click send")).toEqual({ ok: false, error: "reply had no JSON object" });
   });
 
+  it("parses a select decision and rejects a missing or empty option and a missing ref", () => {
+    expect(parseExplorerDecision('{"action":"select","ref":"w0e5","option":"YOLO"}')).toMatchObject({
+      ok: true,
+      decision: { action: "select", ref: "w0e5", option: "YOLO" },
+    });
+    expect(parseExplorerDecision('{"action":"select","ref":"w0e5"}')).toMatchObject({ ok: false, error: expect.stringContaining("option") });
+    expect(parseExplorerDecision('{"action":"select","ref":"w0e5","option":"   "}')).toMatchObject({ ok: false, error: expect.stringContaining("option") });
+    expect(parseExplorerDecision('{"action":"select","option":"YOLO"}')).toMatchObject({ ok: false, error: expect.stringContaining("ref") });
+  });
+
   it("extracts the first balanced object even with braces inside strings", () => {
     expect(extractJsonObject('x {"a":"}{","b":{"c":1}} y')).toBe('{"a":"}{","b":{"c":1}}');
   });
@@ -130,6 +143,7 @@ describe("explorer view and prompt", () => {
     const text = formatObservation(observation());
     expect(text).toContain('w0e2 textarea "Ask about your vault" value="hi"');
     expect(text).toContain('w1e1 toggle "Enable MCP" off');
+    expect(text).toContain('w1e2 dropdown "Permission mode" value="safe" options=[Safe|YOLO]');
     expect(text).toContain("WINDOW 1 \"Settings\"");
     expect(text).toContain("! w0 uncaught: boom");
     expect(text).toContain("(+4 more elements not shown");
@@ -154,12 +168,32 @@ describe("explorer view and prompt", () => {
     const system = explorerSystemPrompt(["queue", "steer"], ["agentic-chat:open-chat"]);
     expect(system).toContain("Names: queue, steer");
     expect(system).toContain("agentic-chat:open-chat");
+    expect(system).toContain('"action":"select"');
     expect(system).toMatch(/Do not change the provider, model, base URL, or API key/);
   });
 
   it("summarizes a decision with the target label", () => {
     expect(summarizeDecision({ action: "click", ref: "w0e1" }, elements)).toBe('click button "Send" (chat, w0)');
+    expect(summarizeDecision({ action: "select", ref: "w1e2", option: "YOLO" }, elements)).toBe(
+      'select "YOLO" in dropdown "Permission mode" (settings, w1)',
+    );
     expect(summarizeDecision({ action: "send", text: "hello", wait: false })).toBe('send "hello" (no wait)');
+  });
+
+  it("treats select as a ref-based action", () => {
+    expect(actionRef({ action: "select", ref: "w0e5", option: "YOLO" })).toBe("w0e5");
+  });
+
+  it("matches a select option by text, then value", () => {
+    const options = [
+      { text: "Safe", value: "safe" },
+      { text: "YOLO", value: "yolo" },
+      { text: "Read only", value: "readonly" },
+    ];
+    expect(matchSelectOption(options, "YOLO")).toBe(1);
+    expect(matchSelectOption(options, "  yolo  ")).toBe(1);
+    expect(matchSelectOption(options, "readonly")).toBe(2);
+    expect(matchSelectOption(options, "Nope")).toBe(-1);
   });
 });
 

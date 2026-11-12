@@ -278,18 +278,27 @@ function collectWindow(windowNumber: number, limit: number): RawWindow {
     let value: string | undefined;
     if (tag === "input" || tag === "textarea" || tag === "select") value = flat((element as HTMLInputElement).value).slice(0, 80);
     else if (role === "editor") value = flat(element.innerText).slice(0, 80);
+    const options =
+      tag === "select"
+        ? Array.from((element as HTMLSelectElement).options)
+            .slice(0, 12)
+            .map((option) => flat(option.text).slice(0, 40))
+        : undefined;
     const checked =
       role === "toggle"
         ? element.classList.contains("is-enabled")
         : tag === "input" && (input.type === "checkbox" || input.type === "radio")
           ? input.checked
-          : undefined;
+          : element.hasAttribute("aria-checked")
+            ? element.getAttribute("aria-checked") === "true"
+            : undefined;
     items.push({
       node: element,
       region: regionOf(element) as UiElement["region"],
       role,
       label,
       value: value || undefined,
+      options,
       checked,
       disabled: (element as HTMLButtonElement).disabled === true || element.getAttribute("aria-disabled") === "true",
     });
@@ -377,6 +386,7 @@ async function observe(
           ...element,
           window: index,
           value: element.value ?? undefined,
+          options: Array.isArray(element.options) ? element.options : undefined,
           checked: typeof element.checked === "boolean" ? element.checked : undefined,
           disabled: element.disabled === true ? true : undefined,
         })),
@@ -462,6 +472,38 @@ async function perform(
       }
       await browser.pause(400);
       return "clicked";
+    }
+    case "select": {
+      await elementFor(decision.ref);
+      // The page script inlines matchSelectOption from explorer-core.ts: a
+      // browser.execute callback cannot close over an imported helper.
+      const result = (await browser.execute(
+        (ref, wanted) => {
+          const node = document.querySelector<HTMLSelectElement>(`[data-chaos-ref="${ref}"]`);
+          if (!node) return { ok: false, error: `ref ${ref} is gone; the view changed` };
+          if (node.tagName.toLowerCase() !== "select") return { ok: false, error: "not a <select>; use click" };
+          const options = Array.from(node.options).map((option) => ({
+            text: (option.textContent ?? "").replace(/\s+/g, " ").trim(),
+            value: option.value,
+          }));
+          const target = wanted.trim().toLowerCase();
+          let index = options.findIndex((option) => option.text.toLowerCase() === target);
+          if (index < 0) index = options.findIndex((option) => option.value === wanted);
+          if (index < 0) {
+            return { ok: false, error: `no option "${wanted}"; options: ${options.map((option) => option.text).join("|")}` };
+          }
+          const option = options[index];
+          node.value = option.value;
+          node.dispatchEvent(new Event("input", { bubbles: true }));
+          node.dispatchEvent(new Event("change", { bubbles: true }));
+          return { ok: true, text: option.text };
+        },
+        decision.ref,
+        decision.option,
+      )) as { ok: boolean; error?: string; text?: string };
+      await browser.pause(400);
+      if (!result.ok) throw new Error(result.error ?? "select failed");
+      return `selected "${result.text}"`;
     }
     case "type": {
       const element = await elementFor(decision.ref);
