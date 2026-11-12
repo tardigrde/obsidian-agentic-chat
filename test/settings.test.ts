@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { App } from "obsidian";
 import {
   activeModelConfig,
   activeModelId,
-  AgenticChatSettingTab,
   applyOpenAICompatiblePreset,
   apiKeyForProvider,
   DEFAULT_SETTINGS,
@@ -27,9 +27,15 @@ import {
   mcpServerEndpointProblem,
   mcpServerSetupSteps,
   normalizeMcpServerId,
-  type McpServerSettings,
 } from "../src/mcp/settings";
 import { mcpSecretId, normalizeSecretId } from "../src/secrets/secret-store";
+import { copyToClipboard } from "../src/settings-definition-kit";
+import {
+  clearMcpKnownToolsAndApprovals,
+  renameMcpServer,
+  updateMcpServerEndpoint,
+} from "../src/settings-mcp-edits";
+import { handleMcpOAuthProgress } from "../src/settings-mcp-section";
 import {
   mcpAuthProblem,
   mcpCredentialResourceChanged,
@@ -628,11 +634,9 @@ describe("mergeSettings — MCP", () => {
     });
     const server = settings.mcp.servers[0];
     const clearedSecrets: Array<[string, string]> = [];
-    const tab = Object.assign(Object.create(AgenticChatSettingTab.prototype), {
-      app: { secretStorage: { setSecret: (id: string, value: string) => clearedSecrets.push([id, value]) } },
-    }) as {
-      renameMcpServer(settings: AgenticChatSettings, server: McpServerSettings, nextId: string): void;
-    };
+    const app = {
+      secretStorage: { setSecret: (id: string, value: string) => clearedSecrets.push([id, value]) },
+    } as unknown as App;
     const previousSecretIds = [
       server.authHeaderValueSecretId,
       server.oauth.clientSecretSecretId,
@@ -640,7 +644,7 @@ describe("mergeSettings — MCP", () => {
       server.oauth.refreshTokenSecretId,
     ];
 
-    tab.renameMcpServer(settings, server, "team_docs");
+    renameMcpServer(app, settings, server, "team_docs");
 
     expect(server.id).toBe("team_docs");
     expect(server.authHeaderValueSecretId).toBe(mcpSecretId("team_docs", "auth-header-value"));
@@ -677,11 +681,7 @@ describe("mergeSettings — MCP", () => {
       },
     });
     const server = settings.mcp.servers[0];
-    const tab = Object.create(AgenticChatSettingTab.prototype) as {
-      clearMcpKnownToolsAndApprovals(settings: AgenticChatSettings, server: McpServerSettings): void;
-    };
-
-    tab.clearMcpKnownToolsAndApprovals(settings, server);
+    clearMcpKnownToolsAndApprovals(settings, server);
 
     expect(server.knownTools).toEqual([]);
     expect(settings.approval.perTool).toEqual({ write: "ask" });
@@ -714,15 +714,7 @@ describe("mergeSettings — MCP", () => {
       },
     });
     const server = settings.mcp.servers[0];
-    const tab = Object.create(AgenticChatSettingTab.prototype) as {
-      updateMcpServerEndpoint(
-        settings: AgenticChatSettings,
-        server: McpServerSettings,
-        value: string,
-      ): { clearedCredentials: boolean; shouldDisplay: boolean };
-    };
-
-    const invalid = tab.updateMcpServerEndpoint(settings, server, "not a url");
+    const invalid = updateMcpServerEndpoint(undefined, settings, server, "not a url");
 
     expect(invalid.clearedCredentials).toBe(true);
     expect(server.authHeaderValue).toBe("");
@@ -741,16 +733,8 @@ describe("mergeSettings — MCP", () => {
       },
     });
     const server = settings.mcp.servers[0];
-    const tab = Object.create(AgenticChatSettingTab.prototype) as {
-      updateMcpServerEndpoint(
-        settings: AgenticChatSettings,
-        server: McpServerSettings,
-        value: string,
-      ): { clearedCredentials: boolean; shouldDisplay: boolean };
-    };
-
     expect(server.enabled).toBe(false);
-    const result = tab.updateMcpServerEndpoint(settings, server, "https://docs.example.com/mcp");
+    const result = updateMcpServerEndpoint(undefined, settings, server, "https://docs.example.com/mcp");
 
     expect(server.enabled).toBe(true);
     expect(server.id).toBe("docs");
@@ -836,14 +820,9 @@ describe("mergeSettings — MCP", () => {
   it("does not throw when clipboard support is missing during OAuth progress", async () => {
     const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
-    const tab = Object.create(AgenticChatSettingTab.prototype) as {
-      copyToClipboard(value: string): Promise<boolean>;
-      handleMcpOAuthProgress(server: McpServerSettings, event: { stage: "authorization-url"; message: string; detail: string }): void;
-    };
-
-    await expect(tab.copyToClipboard("https://auth.example.com")).resolves.toBe(false);
+    await expect(copyToClipboard("https://auth.example.com")).resolves.toBe(false);
     expect(() =>
-      tab.handleMcpOAuthProgress(createMcpServerSettings({ id: "docs", url: "https://mcp.example.com/mcp" }), {
+      handleMcpOAuthProgress(createMcpServerSettings({ id: "docs", url: "https://mcp.example.com/mcp" }), {
         stage: "authorization-url",
         message: "Created OAuth authorization URL.",
         detail: "https://auth.example.com/authorize",
