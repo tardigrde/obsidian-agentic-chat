@@ -4,6 +4,7 @@ import { parseWwwAuthenticate, refreshMcpOAuthToken, shouldRefreshMcpOAuthToken 
 import { DEFAULT_MCP_HTTP_TIMEOUT_MS, fetchWithMcpTimeout } from "./http";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
 import { mcpUrlProblem } from "../utils/host-policy";
+import { asRecord } from "../utils/records";
 import {
   backoffDelayMs,
   classifyError,
@@ -708,10 +709,6 @@ function isProtocolVersionRejection(error: unknown): boolean {
   const message = error.message.toLowerCase();
   if (error.code === -32602 && /protocol|version/.test(message)) return true;
   return /protocol\s*version|unsupported.*version|unsupported.*protocol/.test(message);
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function asSchema(value: unknown): Record<string, unknown> | undefined {

@@ -17,6 +17,8 @@
  */
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "../mcp/http-headers";
 import { mcpUrlProblem } from "../utils/host-policy";
+import { errorMessage } from "../utils/errors";
+import { isRecord } from "../utils/records";
 
 /** Canonical plugin manifest schema identifier for Agent Plugins 1.0.0. */
 export const AGENT_PLUGINS_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
@@ -165,7 +167,7 @@ function manifestFromFields(value: Record<string, unknown>, nameValue: string): 
     ...(typeof value.repository === "string" ? { repository: value.repository } : {}),
     ...(typeof value.license === "string" ? { license: value.license } : {}),
     ...(isStringArray(value.keywords) ? { keywords: value.keywords as string[] } : {}),
-    ...(isRecord(value.extensions) ? { extensions: value.extensions as Record<string, unknown> } : {}),
+    ...(isRecord(value.extensions) ? { extensions: value.extensions } : {}),
   };
 }
 
@@ -265,7 +267,7 @@ export function validateMcpConfig(raw: string, expectedSchemaId: string): Plugin
   }
 
   const servers: PluginMcpServer[] = [];
-  for (const [key, entry] of Object.entries(mcpServers as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(mcpServers)) {
     servers.push(validateMcpServerEntry(key, entry, reports));
   }
   return { ok: true, reason: null, servers, reports };
@@ -278,7 +280,7 @@ function validateMcpServerEntry(key: string, value: unknown, reports: PluginRepo
     reports.push({ severity: "error", message: `mcp.json server "${key}" is not an object; skipped.` });
     return { key, transport: "streamable-http", problems };
   }
-  const record = value as Record<string, unknown>;
+  const record = value;
   const transport = record.type;
   if (transport !== "stdio" && transport !== "streamable-http" && transport !== "sse") {
     problems.push(`unknown transport type "${String(transport)}".`);
@@ -437,7 +439,7 @@ function validateMcpHeaders(
       assertValidHttpHeaderName(name);
       assertValidHttpHeaderValue(value);
     } catch (error) {
-      problems.push(`invalid header "${name}": ${error instanceof Error ? error.message : String(error)}`);
+      problems.push(`invalid header "${name}": ${errorMessage(error)}`);
     }
     const lower = name.toLowerCase();
     if (HARD_BLOCKED_HEADERS.has(lower)) {
@@ -506,13 +508,9 @@ function trimNonAlnumEdges(input: string): string {
   return input.slice(start, end);
 }
 
-function isRecord(value: unknown): boolean {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 function isStringRecord(value: unknown): boolean {
   if (!isRecord(value)) return false;
-  return Object.values(value as Record<string, unknown>).every((item) => typeof item === "string");
+  return Object.values(value).every((item) => typeof item === "string");
 }
 
 function isStringArray(value: unknown): boolean {
@@ -522,7 +520,7 @@ function isStringArray(value: unknown): boolean {
 function isAuthorObject(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const allowed = new Set(["name", "email", "url"]);
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, item] of Object.entries(value)) {
     if (!allowed.has(key) || typeof item !== "string") return false;
   }
   return true;
@@ -536,5 +534,5 @@ export function parseJsonObject(raw: string): Record<string, unknown> | undefine
   } catch {
     return undefined;
   }
-  return isRecord(parsed) ? (parsed as Record<string, unknown>) : undefined;
+  return isRecord(parsed) ? parsed : undefined;
 }

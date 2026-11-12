@@ -52,6 +52,19 @@ export default tseslint.config(
     },
   },
   {
+    files: ["src/**/*.ts"],
+    ignores: ["src/utils/errors.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "FunctionDeclaration[id.name='errorMessage']",
+          message: "Use errorMessage from src/utils/errors.ts.",
+        },
+      ],
+    },
+  },
+  {
     // Layering: `src/settings.ts` is the settings tab (UI). Agent, tool, MCP,
     // and other non-UI modules read settings types and helpers from
     // `settings-schema.ts`, so the tab never enters their import graph.

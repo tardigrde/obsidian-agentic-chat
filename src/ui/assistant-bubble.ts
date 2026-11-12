@@ -2,6 +2,7 @@ import { type App, type Component, loadMermaid, MarkdownRenderer, Notice, setIco
 import type { Usage } from "@earendil-works/pi-ai";
 import { SUBAGENT_TOOL_NAME, type SubagentChildStatus } from "../tools/subagent-tool";
 import type { AskUserDetails } from "../tools/ask-user-tool";
+import { errorMessage } from "../utils/errors";
 import {
   imageBasename,
   isExternalImageSrc,
@@ -1154,7 +1155,7 @@ async function renderSingleMermaidBlock(code: HTMLElement, mermaid: MermaidRende
     pre.replaceWith(target);
   } catch (error) {
     pre.addClass("agentic-chat-mermaid-error");
-    pre.setAttr("title", error instanceof Error ? error.message : String(error));
+    pre.setAttr("title", errorMessage(error));
   }
 }
 

@@ -10,6 +10,7 @@ import {
 } from "../retrieval/source-artifacts";
 import { isHostAllowedByAllowlist } from "./web-allowlist";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { errorMessage } from "../utils/errors";
 export { isHostAllowedByAllowlist, normalizeAllowedHosts } from "./web-allowlist";
 
 /** A minimal HTTP request the web tools issue. */
@@ -64,7 +65,7 @@ export function createObsidianFetcher(): WebFetcher {
       if (signal?.aborted || isAbortError(error)) throw error;
       // Offline / DNS failure / TLS error: surface as status 0 with the message
       // so the tool reports a clean error instead of crashing the agent turn.
-      return { status: 0, text: error instanceof Error ? error.message : String(error), headers: {} };
+      return { status: 0, text: errorMessage(error), headers: {} };
     }
   };
 }

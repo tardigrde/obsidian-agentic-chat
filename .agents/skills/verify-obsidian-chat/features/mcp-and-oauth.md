@@ -48,29 +48,29 @@ await clickMcpAddButton("Add MCP server");
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Advanced tab > MCP tools: enable and add a server | `src/settings.ts:1104` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
-| MCP-only proxy override | `src/settings.ts:1104` | no committed check | `NONE` |
-| Server enable toggle | `src/settings.ts:1353` | no committed check | `NONE` |
-| Server approval policy | `src/settings.ts:1353` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
-| Static header auth | `src/settings.ts:1666` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
-| Bearer token auth | `src/settings.ts:1666` | no committed check | `NONE` |
-| OAuth settings panel | `src/settings.ts:1755` | no committed check | `NONE` |
-| OAuth required banner | `src/settings.ts:1353` | `test/e2e/specs/composio-install.e2e.ts:241` (banner and button only) | `partial` |
-| Authenticate & test / PKCE sign-in | `src/settings.ts:1860` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
-| Desktop loopback callback | `src/mcp/oauth.ts:791` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
-| Mobile Obsidian protocol callback | `src/mcp/oauth.ts:848` | `test/mcp-oauth.test.ts:58` (unit only) | `partial` |
-| OAuth token refresh | `src/mcp/oauth.ts:272` | `test/mcp-oauth.test.ts:513` (unit only) | `partial` |
-| Concurrent OAuth refresh shares one request | `src/mcp/oauth.ts:272` | `test/mcp-oauth.test.ts:610` | `partial` |
-| Concurrent mobile OAuth callbacks route by state | `src/mcp/oauth.ts:931` | `test/mcp-oauth.test.ts:121` | `partial` |
-| MCP handshake retries after a failed initialized notification | `src/mcp/client.ts:149` | `test/mcp-client.test.ts:112` | `partial` |
-| Test connection / refresh tools | `src/settings.ts:1851` | `test/mcp-tools.test.ts:229` (probe helper only) | `partial` |
-| Tool allowlist/denylist | `src/settings.ts:1553` | `test/mcp-tools.test.ts:174` (unit only) | `partial` |
-| Per-tool MCP approvals | `src/settings.ts:1613` | no committed check | `NONE` |
-| Setup guide / Copy config | `src/settings.ts:1353` | `test/e2e/specs/settings-ui.e2e.ts:307` (button existence only) | `partial` |
+| Advanced tab > MCP tools: enable and add a server | `src/settings.ts:1105` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
+| MCP-only proxy override | `src/settings.ts:1105` | no committed check | `NONE` |
+| Server enable toggle | `src/settings.ts:1354` | no committed check | `NONE` |
+| Server approval policy | `src/settings.ts:1354` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
+| Static header auth | `src/settings.ts:1667` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
+| Bearer token auth | `src/settings.ts:1667` | no committed check | `NONE` |
+| OAuth settings panel | `src/settings.ts:1756` | no committed check | `NONE` |
+| OAuth required banner | `src/settings.ts:1354` | `test/e2e/specs/composio-install.e2e.ts:241` (banner and button only) | `partial` |
+| Authenticate & test / PKCE sign-in | `src/settings.ts:1861` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
+| Desktop loopback callback | `src/mcp/oauth.ts:792` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
+| Mobile Obsidian protocol callback | `src/mcp/oauth.ts:849` | `test/mcp-oauth.test.ts:58` (unit only) | `partial` |
+| OAuth token refresh | `src/mcp/oauth.ts:273` | `test/mcp-oauth.test.ts:513` (unit only) | `partial` |
+| Concurrent OAuth refresh shares one request | `src/mcp/oauth.ts:273` | `test/mcp-oauth.test.ts:610` | `partial` |
+| Concurrent mobile OAuth callbacks route by state | `src/mcp/oauth.ts:932` | `test/mcp-oauth.test.ts:121` | `partial` |
+| MCP handshake retries after a failed initialized notification | `src/mcp/client.ts:150` | `test/mcp-client.test.ts:112` | `partial` |
+| Test connection / refresh tools | `src/settings.ts:1852` | `test/mcp-tools.test.ts:229` (probe helper only) | `partial` |
+| Tool allowlist/denylist | `src/settings.ts:1554` | `test/mcp-tools.test.ts:174` (unit only) | `partial` |
+| Per-tool MCP approvals | `src/settings.ts:1614` | no committed check | `NONE` |
+| Setup guide / Copy config | `src/settings.ts:1354` | `test/e2e/specs/settings-ui.e2e.ts:307` (button existence only) | `partial` |
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts:49` | `test/e2e/specs/composio-install.e2e.ts:27` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts:322` | `test/e2e/specs/settings-ui.e2e.ts:350` | `covered` |
-| Discover and call a remote MCP tool | `src/mcp/tools.ts:71` | `test/e2e/specs/mcp-live.e2e.ts:227` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
-| Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts:647` | `test/mcp-client.test.ts:360` (unit only) | `partial` |
+| Discover and call a remote MCP tool | `src/mcp/tools.ts:72` | `test/e2e/specs/mcp-live.e2e.ts:227` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
+| Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts:648` | `test/mcp-client.test.ts:360` (unit only) | `partial` |
 
 ## Gotchas
 
