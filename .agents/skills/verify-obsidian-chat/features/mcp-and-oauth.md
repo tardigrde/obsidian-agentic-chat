@@ -52,18 +52,18 @@ await clickMcpAddButton("Add MCP server");
 | MCP-only proxy override | `src/settings-mcp-section.ts:78` | no committed check | `NONE` |
 | Server enable toggle | `src/settings-mcp-section.ts:190` | no committed check | `NONE` |
 | Server approval policy | `src/settings-mcp-section.ts:190` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
-| Static header auth | `src/settings-mcp-section.ts:503` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
-| Bearer token auth | `src/settings-mcp-section.ts:503` | no committed check | `NONE` |
-| OAuth settings panel | `src/settings-mcp-section.ts:592` | no committed check | `NONE` |
+| Static header auth | `src/settings-mcp-section.ts:473` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
+| Bearer token auth | `src/settings-mcp-section.ts:473` | no committed check | `NONE` |
+| OAuth settings panel | `src/settings-mcp-section.ts:535` | no committed check | `NONE` |
 | OAuth required banner | `src/settings-mcp-section.ts:275` | `test/e2e/specs/composio-install.e2e.ts:241` (banner and button only) | `partial` |
-| Authenticate & test / PKCE sign-in | `src/settings-mcp-section.ts:721` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
+| Authenticate & test / PKCE sign-in | `src/settings-mcp-section.ts:701` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Desktop loopback callback | `src/mcp/oauth/callback-receivers.ts:16` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Mobile Obsidian protocol callback | `src/mcp/oauth/callback-receivers.ts:99` | `test/mcp-oauth.test.ts:58` (unit only) | `partial` |
 | OAuth token refresh | `src/mcp/oauth.ts:214` | `test/mcp-oauth.test.ts:513` (unit only) | `partial` |
 | Concurrent OAuth refresh shares one request | `src/mcp/oauth.ts:214` | `test/mcp-oauth.test.ts:610` | `partial` |
 | Concurrent mobile OAuth callbacks route by state | `src/mcp/oauth/callback-receivers.ts:88` | `test/mcp-oauth.test.ts:121` | `partial` |
 | MCP handshake retries after a failed initialized notification | `src/mcp/client.ts:150` | `test/mcp-client.test.ts:112` | `partial` |
-| Test connection / refresh tools | `src/settings-mcp-section.ts:712` | `test/mcp-tools.test.ts:229` (probe helper only) | `partial` |
+| Test connection / refresh tools | `src/settings-mcp-section.ts:692` | `test/mcp-tools.test.ts:229` (probe helper only) | `partial` |
 | Tool allowlist/denylist | `src/settings-mcp-section.ts:390` | `test/mcp-tools.test.ts:174` (unit only) | `partial` |
 | Per-tool MCP approvals | `src/settings.ts:1370` | no committed check | `NONE` |
 | Setup guide / Copy config | `src/settings-mcp-section.ts:190` | `test/e2e/specs/settings-ui.e2e.ts:307` (button existence only) | `partial` |

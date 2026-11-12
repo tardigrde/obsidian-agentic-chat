@@ -400,50 +400,20 @@ export class McpSettingsSection {
             "Up to 100 patterns, 200 characters each. Examples: * · read_* · *?_danger · tool_*",
         });
       }),
-      row("Enabled tools (allowlist)", (setting) => {
-        setting
-          .setDesc("One glob per line. When non-empty, only tools matching at least one pattern are exposed. Empty allows all.")
-          .addTextArea((text) => {
-            text.inputEl.rows = 3;
-            text.inputEl.addClass("agentic-chat-system-prompt");
-            text
-              .setPlaceholder("*\nread_*\n*_safe")
-              .setValue((server.enabledTools ?? []).join("\n"))
-              .onChange(async (value) => {
-                const patterns = healMcpToolGlobs(
-                  value
-                    .split(/\r?\n/)
-                    .map((line) => line.normalize("NFC").trim())
-                    .filter((line) => line.length > 0 && !line.startsWith("#")),
-                );
-                server.enabledTools = patterns;
-                this.syncMcpServerToState(server);
-                await this.host.save();
-              });
-          });
-      }),
-      row("Disabled tools (denylist)", (setting) => {
-        setting
-          .setDesc("One glob per line. Any tool matching a disabled pattern is hidden even if it matched the allowlist.")
-          .addTextArea((text) => {
-            text.inputEl.rows = 3;
-            text.inputEl.addClass("agentic-chat-system-prompt");
-            text
-              .setPlaceholder("*_danger\nwrite_*\nsecret_*")
-              .setValue((server.disabledTools ?? []).join("\n"))
-              .onChange(async (value) => {
-                const patterns = healMcpToolGlobs(
-                  value
-                    .split(/\r?\n/)
-                    .map((line) => line.normalize("NFC").trim())
-                    .filter((line) => line.length > 0 && !line.startsWith("#")),
-                );
-                server.disabledTools = patterns;
-                this.syncMcpServerToState(server);
-                await this.host.save();
-              });
-          });
-      }),
+      this.toolGlobRow(
+        server,
+        "enabledTools",
+        "Enabled tools (allowlist)",
+        "One glob per line. When non-empty, only tools matching at least one pattern are exposed. Empty allows all.",
+        "*\nread_*\n*_safe",
+      ),
+      this.toolGlobRow(
+        server,
+        "disabledTools",
+        "Disabled tools (denylist)",
+        "One glob per line. Any tool matching a disabled pattern is hidden even if it matched the allowlist.",
+        "*_danger\nwrite_*\nsecret_*",
+      ),
     ];
   }
 
@@ -531,23 +501,12 @@ export class McpSettingsSection {
 
     if (server.authType === "bearer") {
       items.push(
-        this.secretInputDef({
-          name: "Bearer token",
-          desc: 'Paste the token only. If you include "Bearer", Agentic Chat will not add it twice.',
-          placeholder: "token",
-          hasValue: () => Boolean(server.authHeaderValue),
-          onSet: async (value) => {
-            server.authHeaderValue = value;
-            this.syncMcpServerToState(server);
-            await this.host.save();
-            this.host.redraw();
-          },
-          onForget: async () => {
-            server.authHeaderValue = "";
-            this.syncMcpServerToState(server);
-            await this.host.save();
-          },
-        }),
+        this.authValueSecretDef(
+          server,
+          "Bearer token",
+          'Paste the token only. If you include "Bearer", Agentic Chat will not add it twice.',
+          "token",
+        ),
       );
       return items;
     }
@@ -568,23 +527,7 @@ export class McpSettingsSection {
             }),
         );
       }),
-      this.secretInputDef({
-        name: "Auth value",
-        desc: "Header value sent with every MCP request.",
-        placeholder: "secret header value",
-        hasValue: () => Boolean(server.authHeaderValue),
-        onSet: async (value) => {
-          server.authHeaderValue = value;
-          this.syncMcpServerToState(server);
-          await this.host.save();
-          this.host.redraw();
-        },
-        onForget: async () => {
-          server.authHeaderValue = "";
-          this.syncMcpServerToState(server);
-          await this.host.save();
-        },
-      }),
+      this.authValueSecretDef(server, "Auth value", "Header value sent with every MCP request.", "secret header value"),
     );
     return items;
   }
@@ -613,34 +556,18 @@ export class McpSettingsSection {
               }),
           );
       }),
-      row("OAuth desktop redirect URI", (setting) => {
-        setting
-          .setDesc("Register this localhost URI with MCP OAuth servers for Obsidian desktop sign-in.")
-          .addText((text) => text.setValue(DEFAULT_MCP_OAUTH_REDIRECT_URI).setDisabled(true))
-          .addButton((button) =>
-            button.setButtonText("Copy").onClick(async () => {
-              if (await copyToClipboard(DEFAULT_MCP_OAUTH_REDIRECT_URI)) {
-                new Notice("MCP OAuth redirect URI copied.");
-              } else {
-                new Notice(`MCP OAuth redirect URI: ${DEFAULT_MCP_OAUTH_REDIRECT_URI}`);
-              }
-            }),
-          );
-      }),
-      row("OAuth mobile redirect URI", (setting) => {
-        setting
-          .setDesc("Register this Obsidian URI as an additional redirect when the provider supports mobile app callbacks.")
-          .addText((text) => text.setValue(MCP_OAUTH_OBSIDIAN_REDIRECT_URI).setDisabled(true))
-          .addButton((button) =>
-            button.setButtonText("Copy").onClick(async () => {
-              if (await copyToClipboard(MCP_OAUTH_OBSIDIAN_REDIRECT_URI)) {
-                new Notice("MCP OAuth mobile redirect URI copied.");
-              } else {
-                new Notice(`MCP OAuth mobile redirect URI: ${MCP_OAUTH_OBSIDIAN_REDIRECT_URI}`);
-              }
-            }),
-          );
-      }),
+      redirectUriRow(
+        "OAuth desktop redirect URI",
+        "Register this localhost URI with MCP OAuth servers for Obsidian desktop sign-in.",
+        DEFAULT_MCP_OAUTH_REDIRECT_URI,
+        "MCP OAuth redirect URI",
+      ),
+      redirectUriRow(
+        "OAuth mobile redirect URI",
+        "Register this Obsidian URI as an additional redirect when the provider supports mobile app callbacks.",
+        MCP_OAUTH_OBSIDIAN_REDIRECT_URI,
+        "MCP OAuth mobile redirect URI",
+      ),
       row("OAuth client id", (setting) => {
         setting
           .setDesc("Optional. Leave empty to use dynamic client registration when the server supports it.")
@@ -659,22 +586,75 @@ export class McpSettingsSection {
         desc: "Optional. Most MCP OAuth servers use public clients with PKCE and no secret.",
         placeholder: "client secret",
         hasValue: () => Boolean(server.oauth.clientSecret),
-        onSet: async (value) => {
-          server.oauth.clientSecret = value;
-          server.oauth.dynamicClientRegistration = false;
-          server.oauth.registeredRedirectUri = "";
-          this.syncMcpServerToState(server);
-          await this.host.save();
-        },
-        onForget: async () => {
-          server.oauth.clientSecret = "";
-          server.oauth.dynamicClientRegistration = false;
-          server.oauth.registeredRedirectUri = "";
-          this.syncMcpServerToState(server);
-          await this.host.save();
-        },
+        onSet: (value) => this.setOAuthClientSecret(server, value),
+        onForget: () => this.setOAuthClientSecret(server, ""),
       }),
     ];
+  }
+
+  /** One ordered glob list (allow or deny) for this server's native tool names. */
+  private toolGlobRow(
+    server: McpServerSettings,
+    key: "enabledTools" | "disabledTools",
+    name: string,
+    desc: string,
+    placeholder: string,
+  ): SettingDefinitionRender {
+    return row(name, (setting) => {
+      setting.setDesc(desc).addTextArea((text) => {
+        text.inputEl.rows = 3;
+        text.inputEl.addClass("agentic-chat-system-prompt");
+        text
+          .setPlaceholder(placeholder)
+          .setValue((server[key] ?? []).join("\n"))
+          .onChange(async (value) => {
+            const patterns = healMcpToolGlobs(
+              value
+                .split(/\r?\n/)
+                .map((line) => line.normalize("NFC").trim())
+                .filter((line) => line.length > 0 && !line.startsWith("#")),
+            );
+            server[key] = patterns;
+            this.syncMcpServerToState(server);
+            await this.host.save();
+          });
+      });
+    });
+  }
+
+  /** The secret value for bearer and static-header auth. */
+  private authValueSecretDef(
+    server: McpServerSettings,
+    name: string,
+    desc: string,
+    placeholder: string,
+  ): SettingDefinitionRender {
+    return this.secretInputDef({
+      name,
+      desc,
+      placeholder,
+      hasValue: () => Boolean(server.authHeaderValue),
+      onSet: async (value) => {
+        server.authHeaderValue = value;
+        this.syncMcpServerToState(server);
+        await this.host.save();
+        this.host.redraw();
+      },
+      onForget: async () => {
+        server.authHeaderValue = "";
+        this.syncMcpServerToState(server);
+        await this.host.save();
+      },
+    });
+  }
+
+  /** A manual client secret turns off dynamic registration; so does forgetting it. */
+  private async setOAuthClientSecret(server: McpServerSettings, value: string): Promise<void> {
+    server.oauth.clientSecret = value;
+    server.oauth.dynamicClientRegistration = false;
+    server.oauth.registeredRedirectUri = "";
+    this.syncMcpServerToState(server);
+    await this.host.save();
   }
 
   private async refreshMcpKnownTools(server: McpServerSettings, button?: ButtonComponent): Promise<void> {
@@ -808,4 +788,22 @@ export function handleMcpOAuthProgress(server: McpServerSettings, event: McpOAut
   ) {
     new Notice(`${server.name}: ${event.message}`);
   }
+}
+
+/** A read-only redirect URI with a Copy button; falls back to a notice that shows the URI. */
+function redirectUriRow(name: string, desc: string, uri: string, label: string): SettingDefinitionRender {
+  return row(name, (setting) => {
+    setting
+      .setDesc(desc)
+      .addText((text) => text.setValue(uri).setDisabled(true))
+      .addButton((button) =>
+        button.setButtonText("Copy").onClick(async () => {
+          if (await copyToClipboard(uri)) {
+            new Notice(`${label} copied.`);
+          } else {
+            new Notice(`${label}: ${uri}`);
+          }
+        }),
+      );
+  });
 }
