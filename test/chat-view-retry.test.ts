@@ -83,6 +83,67 @@ function capturingStreamFn(): { streamFn: StreamFn; contexts: TranscriptContext[
   return { streamFn, contexts };
 }
 
+/** First call fails with `reason` and no content; later calls answer "A cat.". */
+function failingThenOkStreamFn(reason: "error" | "aborted"): { streamFn: StreamFn; contexts: TranscriptContext[] } {
+  const contexts: TranscriptContext[] = [];
+  const streamFn = ((model: Model<"openai-completions">, context: TranscriptContext) => {
+    contexts.push(structuredClone(context));
+    const first = contexts.length === 1;
+    const stream = createAssistantMessageEventStream();
+    const message = {
+      role: "assistant" as const,
+      content: first ? [] : [{ type: "text" as const, text: "A cat." }],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: {
+        input: 1,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: first ? reason : ("stop" as const),
+      ...(first ? { errorMessage: reason === "aborted" ? "Request was aborted." : "boom" } : {}),
+      timestamp: Date.now(),
+    };
+    queueMicrotask(() => {
+      stream.push({ type: "start", partial: { ...message, content: [] } });
+      if (first) stream.push({ type: "error", reason, error: message } as never);
+      else stream.push({ type: "done", reason: "stop", message });
+      stream.end(message);
+    });
+    return stream;
+  }) as unknown as StreamFn;
+  return { streamFn, contexts };
+}
+
+function retryView(service: AgentService): RetryHarness {
+  return Object.assign(Object.create(ChatView.prototype), {
+    tabs: [{ service }],
+    activeTabIndex: 0,
+    closed: false,
+    lastSentPrompt: null,
+    lastSentDisplay: null,
+    bubble: null,
+    clearEmptyState: vi.fn(),
+    renderTranscript: vi.fn(),
+    renderOutgoingUserMessage: vi.fn(),
+    showServiceError: vi.fn(),
+  }) as RetryHarness;
+}
+
+function userTexts(context: TranscriptContext): string[] {
+  return context.messages
+    .filter((message) => message.role === "user")
+    .map((message) =>
+      typeof message.content === "string"
+        ? message.content
+        : message.content.map((block) => (block.type === "text" ? block.text : "")).join(""),
+    );
+}
+
 function realService(streamFn: StreamFn): AgentService {
   const settings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
   return new AgentService({
@@ -147,5 +208,31 @@ describe("ChatView retry", () => {
     }
     expect(messages[0].content).toBe(originalContent);
     expect(messages[0].content).toEqual([{ type: "text", text: "what is in this picture?" }, IMAGE]);
+  });
+  it.each(["error", "aborted"] as const)(
+    "sends a failed (%s) turn's prompt once when retried, not twice",
+    async (reason) => {
+      const { streamFn, contexts } = failingThenOkStreamFn(reason);
+      const service = realService(streamFn);
+      await service.sendPrompt("queued draft after edit");
+
+      await retryView(service).retryLast();
+
+      expect(contexts).toHaveLength(2);
+      expect(userTexts(contexts[1])).toEqual(["queued draft after edit"]);
+      expect(contexts[1].messages.some((message) => message.role === "assistant")).toBe(false);
+      const roles = service.getMessages().map((message) => message.role);
+      expect(roles).toEqual(["user", "assistant"]);
+    },
+  );
+
+  it("keeps a successful turn when Ask again re-runs it", async () => {
+    const { streamFn, contexts } = capturingStreamFn();
+    const service = realService(streamFn);
+    await service.sendPrompt("hello");
+
+    await retryView(service).retryLast();
+
+    expect(userTexts(contexts[1])).toEqual(["hello", "hello"]);
   });
 });
