@@ -8,6 +8,7 @@ import { FOLDER_PREFIX } from "./autocomplete";
 import { isTextContextAttachment, textContextSection, type ContextAttachment } from "./context-attachments";
 import { arrayBufferToBase64, imageMimeType, isImagePath } from "./image-attachments";
 import { extractNoteSlice } from "./note-slices";
+import { stripPromptPreamble } from "../session/session-manager";
 
 export interface PromptContextOptions {
   app: App;
@@ -217,11 +218,7 @@ export function assemblePrompt(context: string, request: string): string {
 
 /** Strip attachment `<context>...</context>` preamble and optional focus hint for display/retry. */
 export function stripContextPreamble(text: string): string {
-  // Handles both full and compressed contexts, optional focus hint (single line, may repeat if forged), \r\n or \n
-  return text.replace(
-    /^<context>[\s\S]*?<\/context>\r?\n\r?\n(?:Focus:[^\r\n]*\r?\n\r?\n)?/,
-    "",
-  );
+  return stripPromptPreamble(text);
 }
 
 /**

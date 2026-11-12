@@ -26,6 +26,12 @@ describe("composer input helpers", () => {
     expect(stripContextPreamble("Ask me")).toBe("Ask me");
   });
 
+  it("strips the unchanged-context marker for retry display", () => {
+    expect(
+      stripContextPreamble("<context unchanged since previous turn. Attached: [[A.md]]</context>\n\nAsk me"),
+    ).toBe("Ask me");
+  });
+
   it("restores undelivered steering text without the preamble and keeps the draft", () => {
     const steered = "<context>\n[[A.md]]\n</context>\n\nkeep citations strict";
     expect(restoreUndeliveredText("", [steered])).toBe("keep citations strict");
