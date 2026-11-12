@@ -7,7 +7,7 @@ import {
   setIcon,
 } from "obsidian";
 import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { ImageContent, Usage } from "@earendil-works/pi-ai";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
 import type { ContextReadout } from "../agent/readouts";
@@ -15,7 +15,7 @@ import type { AskUserRequest } from "../tools/ask-user-tool";
 import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
 import { applyRememberedApprovalChoice } from "../agent/approval-memory";
 import { ApprovalModal } from "./approval-modal";
-import { collectUserImageThumbs, isImagePath } from "./image-attachments";
+import { isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, apiKeyForProvider } from "../settings";
@@ -25,22 +25,9 @@ import { errorMessage } from "../utils/errors";
 import { SessionListModal } from "./session-list-modal";
 import { createFetchFromWebFetcher, createProxiedFetcher } from "../mcp/fetcher";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
-import { AssistantBubble } from "./assistant-bubble";
 import { formatDetailedUsage, formatUsage, safeJson } from "./format";
 import { contextLevel, contextPercent, formatContextReadoutTitle } from "./context-bar";
-import {
-  assistantUsage,
-  collectToolResults,
-  failedLastTurnIndex,
-  lastUserTurn,
-  messageImages,
-  messageText,
-  thinkingText,
-  toolCalls,
-  type MessageImageLite,
-  type ToolResultLite,
-  toolResultText,
-} from "./message-content";
+import { failedLastTurnIndex, lastUserTurn, toolResultText } from "./message-content";
 import {
   type AcItem,
   type AcQuery,
@@ -76,7 +63,6 @@ import {
 import { attachmentBasePath } from "./attachment-ref";
 import {
   contextAttachmentKey,
-  contextAttachmentLabel,
   createTextContextAttachment,
   isTextContextAttachment,
   type ContextAttachment,
@@ -90,8 +76,7 @@ import {
   type SlashCommandName,
 } from "./commands";
 import type { LoadedPlugin } from "../plugins/loader";
-import { isPinnedToBottom } from "./scroll-pinning";
-import { formatCompactionSummary, isSummaryMessage } from "../agent/compaction";
+import { formatCompactionSummary } from "../agent/compaction";
 import { isInstructionFilePath } from "../agent/instructions";
 import {
   type AgentMode,
@@ -132,11 +117,10 @@ import {
   renderActionPanel,
   renderErrorPanel,
   renderInfoPanel,
-  renderSummaryPanel,
 } from "./info-panel-renderer";
 import { renderContextChips, renderPendingQueueChip } from "./context-chip-renderer";
 import type { ActionRow, WorkflowRenderer } from "./workflow-renderer";
-import { openSystemUrl } from "./open-system-link";
+import { TranscriptView } from "./transcript-view";
 
 export { VIEW_TYPE_AGENT_CHAT };
 
@@ -145,9 +129,6 @@ const CONTEXT_THRESHOLDS = [0.75, 0.9] as const;
 
 /** Maximum independent sessions ("tabs") in one chat leaf. */
 const MAX_TABS = 3;
-
-/** Cap inline image thumbnails per user bubble so a turn can't flood the pane. */
-const MAX_USER_IMAGE_THUMBS = 8;
 
 /** One open conversation in the leaf: its own agent service + saved UI state. */
 interface ChatTab {
@@ -176,7 +157,6 @@ export class ChatView extends ItemView {
   private activeNoteCache = new ActiveNoteContextCache();
   private contextCache = new PromptContextCache();
   private activeNoteSuppressed = false;
-  private bubble: AssistantBubble | null = null;
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
   private notifiedContext = new Set<number>();
   private notifiedCost = false;
@@ -197,13 +177,6 @@ export class ChatView extends ItemView {
   // Last turn we sent, kept so "retry" re-runs it without re-showing the context preamble.
   private lastSentPrompt: string | null = null;
   private lastSentDisplay: string | null = null;
-  private locallyRenderedUserMessages = 0;
-  // Last error message rendered inside an assistant bubble. Used to suppress the
-  // duplicate standalone error panel that showServiceError() would otherwise
-  // emit for the same turn-level error (e.g. "Request was aborted").
-  private lastBubbleError: string | undefined;
-  // Last completed turn's usage, shown collapsed in the single bottom bar.
-  private lastTurnUsage: Usage | null = null;
   private editingEl: HTMLElement | null = null;
   private readonly promptEdit = new PromptEditState();
   // Semantic indexing can outlive the command that starts it; keep one
@@ -211,6 +184,7 @@ export class ChatView extends ItemView {
   private semanticIndexWorkflow: SemanticIndexWorkflowController | null = null;
 
   private messagesEl!: HTMLElement;
+  private transcript!: TranscriptView;
   private emptyStateEl: HTMLElement | null = null;
   private chipsEl!: HTMLElement;
   private fieldEl!: HTMLElement;
@@ -229,9 +203,6 @@ export class ChatView extends ItemView {
   private contextBarEl!: HTMLProgressElement;
   private contextPercentEl!: HTMLElement;
   private workingEl!: HTMLElement;
-  private autoScrollPinned = true;
-  private userScrollIntent = false;
-  private userScrollIntentTimer: number | null = null;
   private closed = true;
 
   constructor(
@@ -294,14 +265,11 @@ export class ChatView extends ItemView {
     this.closed = true;
     this.cancelAutocomplete();
     this.menu?.detach();
-    this.bubble?.dispose();
-    this.bubble = null;
+    this.transcript?.dispose();
     // The view owns the semantic index run; abort it so a closed view cannot
     // keep writing the index in the background.
     this.semanticIndexWorkflow?.dispose();
     this.semanticIndexWorkflow = null;
-    if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
-    this.userScrollIntentTimer = null;
     // The view owns its tab services; dispose them so no detached agent keeps running.
     for (const tab of this.tabs) {
       tab.unsubscribe();
@@ -655,11 +623,20 @@ export class ChatView extends ItemView {
     root.addClass("agentic-chat-view");
 
     this.messagesEl = root.createDiv({ cls: "agentic-chat-messages" });
-    this.registerDomEvent(this.messagesEl, "wheel", () => this.markUserScrollIntent());
-    this.registerDomEvent(this.messagesEl, "touchmove", () => this.markUserScrollIntent());
-    this.registerDomEvent(this.messagesEl, "pointerdown", () => this.markUserScrollIntent());
-    this.registerDomEvent(this.messagesEl, "keydown", () => this.markUserScrollIntent());
-    this.registerDomEvent(this.messagesEl, "scroll", () => this.updateScrollPinning());
+    this.transcript = new TranscriptView(this.messagesEl, {
+      app: this.app,
+      component: this,
+      renderEmptyState: () => this.renderEmptyState(),
+      beginEdit: (index, text, el) => this.beginEdit(index, text, el),
+      retryLast: () => void this.retryLast(),
+      abortSubagentChild: (id) => this.service.abortSubagentChild(id),
+    });
+    const transcript = this.transcript;
+    this.registerDomEvent(this.messagesEl, "wheel", () => transcript.markUserScrollIntent());
+    this.registerDomEvent(this.messagesEl, "touchmove", () => transcript.markUserScrollIntent());
+    this.registerDomEvent(this.messagesEl, "pointerdown", () => transcript.markUserScrollIntent());
+    this.registerDomEvent(this.messagesEl, "keydown", () => transcript.markUserScrollIntent());
+    this.registerDomEvent(this.messagesEl, "scroll", () => transcript.updateScrollPinning());
     this.renderEmptyState();
 
     const composer = root.createDiv({ cls: "agentic-chat-composer" });
@@ -1102,7 +1079,7 @@ export class ChatView extends ItemView {
   private renderUsageChrome(): void {
     const el = this.usageEl;
     el.empty();
-    const turn = this.lastTurnUsage;
+    const turn = this.transcript.lastTurnUsage;
     const session = this.service.getSessionUsage();
     if (!turn || session.totalTokens === 0) {
       el.hide();
@@ -1399,7 +1376,6 @@ export class ChatView extends ItemView {
       this.renderErrorMessage(errorMessage(error));
       return;
     }
-    this.bubble = null;
     this.renderTranscript(this.service.getMessages());
     await this.sendPrompt(text);
   }
@@ -1605,7 +1581,6 @@ export class ChatView extends ItemView {
         return;
       }
       if (this.isLiveTab(tab)) {
-        this.bubble = null;
         this.renderTranscript(service.getMessages());
       }
     }
@@ -1743,7 +1718,7 @@ export class ChatView extends ItemView {
     }
     if (options.history) this.resetHistoryNav();
     if (options.editing) this.endEditing(false);
-    if (options.bubble) this.bubble = null;
+    if (options.bubble) this.transcript.forgetBubble();
     if (options.queuedPrompt) this.clearQueuedPrompt();
   }
 
@@ -2186,12 +2161,6 @@ export class ChatView extends ItemView {
     this.scrollToBottom({ force: true });
   }
 
-  /** Render an auto-compaction summary as a collapsed, non-editable transcript block. */
-  private renderSummaryMessage(text: string): void {
-    renderSummaryPanel(this.messagesEl, text);
-    this.scrollToBottom();
-  }
-
   /** Render a collapsible block whose rows are clickable buttons (e.g. the skill picker). */
   private renderActionList(title: string, subtitle: string, items: ActionRow[]): void {
     renderActionPanel(this.messagesEl, title, subtitle, items);
@@ -2202,7 +2171,7 @@ export class ChatView extends ItemView {
     const error = this.service.getError();
     // Skip the standalone error panel when this same error was already rendered
     // inside the just-finalized assistant bubble (avoids the duplicate block).
-    if (error && !this.service.isStreaming() && error !== this.lastBubbleError) this.renderErrorMessage(error);
+    if (error && !this.service.isStreaming() && error !== this.transcript.lastBubbleError) this.renderErrorMessage(error);
   }
 
   /** Render an error block in the transcript (not sent to the model). */
@@ -2463,203 +2432,31 @@ export class ChatView extends ItemView {
     });
   }
 
-  // --- rendering: static transcript ---
-
-  private renderTranscript(messages: AgentMessage[]): void {
-    this.messagesEl.empty();
-    this.bubble = null;
-    this.lastBubbleError = undefined;
-    const toolResults = collectToolResults(messages);
-    const lastAssistant = lastIndex(messages, (message) => message.role === "assistant");
-    let rendered = 0;
-    messages.forEach((message, index) => {
-      if (message.role === "user" && isSummaryMessage(message)) {
-        // A compaction summary isn't a user turn: show it as a distinct,
-        // non-editable block instead of an editable user bubble.
-        this.renderSummaryMessage(messageText(message));
-        rendered += 1;
-      } else if (message.role === "user") {
-        // Hide the attachment <context> preamble so history reads like the
-        // live transcript (which renders the user's text, not the prompt).
-        // Vision attachments persist as image blocks — render them as thumbnails.
-        this.renderUserMessage(stripContextPreamble(messageText(message)), [], index, {
-          historyImages: messageImages(message),
-        });
-        rendered += 1;
-      } else if (message.role === "assistant") {
-        this.renderAssistantMessage(message, toolResults, index === lastAssistant);
-        rendered += 1;
-      }
-    });
-    if (rendered === 0) this.renderEmptyState();
-    this.scrollToBottom();
-  }
-
-  private renderAssistantMessage(
-    message: AgentMessage,
-    toolResults: Map<string, ToolResultLite>,
-    isLast: boolean,
-  ): void {
-    const bubble = this.newBubble();
-    // Mirror the live path: every assistant turn gets its Thinking → Thought
-    // status pill (mount eagerly, settle on finalize) so history replay renders
-    // identically to the live stream for text-only turns too.
-    bubble.beginThinking();
-    const reasoning = thinkingText(message);
-    if (reasoning) bubble.appendReasoning(reasoning);
-    for (const call of toolCalls(message)) {
-      bubble.startStep(call.id, call.name, JSON.stringify(call.arguments ?? {}));
-      const result = toolResults.get(call.id);
-      // Pass the persisted details wrapped in the result shape endStep reads
-      // (`resultObject.details`), so replay re-derives the live verdict — a
-      // stopped subagent dispatch must render red here too, not green.
-      if (result) bubble.endStep(call.id, result.text, result.isError, { details: result.details });
-    }
-    const text = messageText(message);
-    if (text) {
-      void bubble.finalizeText(text, this.app, this);
-      bubble.showActions({ canRetry: isLast });
-    } else {
-      bubble.finalizeWithoutText();
-    }
-    const errorMessage = (message as { errorMessage?: string }).errorMessage;
-    if (errorMessage) {
-      bubble.showError(errorMessage);
-      if (isLast) this.lastBubbleError = errorMessage;
-    }
-    const usage = assistantUsage(message);
-    if (usage) {
-      this.lastTurnUsage = usage;
-      bubble.showUsage(usage);
-    }
-  }
-
-  private renderUserMessage(
-    text: string,
-    attachments: ContextAttachment[],
-    editIndex?: number,
-    options: { forceScroll?: boolean; historyImages?: MessageImageLite[] } = {},
-  ): void {
-    const el = this.messagesEl.createDiv({ cls: ["agentic-chat-message", "agentic-chat-user"] });
-    if (attachments.length > 0) {
-      const labels = attachments.map((entry) =>
-        typeof entry === "string" && entry.startsWith(FOLDER_PREFIX)
-          ? `${entry.slice(FOLDER_PREFIX.length)}/`
-          : contextAttachmentLabel(entry),
-      );
-      el.createDiv({ cls: "agentic-chat-user-attachments", text: `Attached: ${labels.join(", ")}` });
-    }
-    const thumbs = this.userImageThumbs(attachments, options.historyImages);
-    if (thumbs.length > 0) {
-      const wrap = el.createDiv({ cls: "agentic-chat-user-images" });
-      for (const thumb of thumbs) {
-        const img = wrap.createEl("img", {
-          cls: ["agentic-chat-user-image", ...(thumb.path ? ["is-openable"] : [])],
-          // Lazy: a long transcript can hold many persisted images.
-          attr: { src: thumb.src, alt: thumb.alt, loading: "lazy" },
-        });
-        img.setAttr("title", thumb.alt);
-        if (thumb.path) {
-          const path = thumb.path;
-          const open = (event: Event): void => {
-            // History bubbles are editable: don't let a thumbnail click fall
-            // through to the bubble's click-to-edit handler.
-            event.stopPropagation();
-            void this.app.workspace.openLinkText(path, "", false);
-          };
-          img.setAttrs({ role: "button", tabindex: "0", "aria-label": `Open ${thumb.alt}` });
-          img.addEventListener("click", open);
-          img.addEventListener("keydown", (event) => {
-            if (event.key !== "Enter" && event.key !== " ") return;
-            event.preventDefault();
-            open(event);
-          });
-        }
-      }
-    }
-    el.createDiv({ cls: "agentic-chat-user-text", text });
-    // Persisted turns are editable: click to reload the prompt and rewrite it.
-    if (editIndex !== undefined) {
-      el.addClass("is-editable");
-      el.setAttribute("aria-label", "Click to edit and resend");
-      el.addEventListener("click", () => {
-        // Don't hijack a text selection inside this bubble (it's selectable for
-        // copying); a selection elsewhere on the page shouldn't block editing.
-        const selection = window.getSelection();
-        if (selection?.toString() && selection.anchorNode && el.contains(selection.anchorNode)) return;
-        this.beginEdit(editIndex, stripContextPreamble(text), el);
-      });
-    }
-    this.scrollToBottom({ force: options.forceScroll });
-  }
-
-  private renderOutgoingUserMessage(text: string, attachments: ContextAttachment[], images?: ImageContent[]): void {
-    this.locallyRenderedUserMessages += 1;
-    this.renderUserMessage(text, attachments, undefined, { forceScroll: true, historyImages: images });
-  }
-
-  /**
-   * Thumbnail sources for a user bubble: live vault-path attachments resolve to
-   * resource URLs (click opens the vault image); replayed vision blocks render
-   * from their persisted base64 data. Capped so a turn can't flood the pane.
-   */
-  private userImageThumbs(
-    attachments: ContextAttachment[],
-    historyImages?: MessageImageLite[],
-  ): Array<{ src: string; alt: string; path?: string }> {
-    return collectUserImageThumbs(
-      attachments,
-      historyImages,
-      (base) => {
-        const file = this.app.vault.getFileByPath(base);
-        if (!file) return null;
-        return this.app.vault.getResourcePath(file);
-      },
-      MAX_USER_IMAGE_THUMBS,
-    );
-  }
-
-  // --- rendering: live events ---
-
   private handleAgentEvent(event: AgentEvent): void {
     switch (event.type) {
       case "agent_start":
         this.clearEmptyState();
-        this.bubble?.dispose();
-        this.bubble = null;
+        this.transcript.beginRun();
         this.setRunning(true);
         break;
       case "message_start":
-        if (event.message.role === "assistant") {
-          this.bubble?.dispose();
-          this.bubble = this.newBubble();
-          this.lastBubbleError = undefined;
-          // The Thinking pill IS the turn's status: mount it immediately so any
-          // latency between here and the first token reads as "Thinking…".
-          this.bubble.beginThinking();
-        }
+        if (event.message.role === "assistant") this.transcript.beginAssistantMessage();
         break;
       case "message_update":
-        this.applyStreamDelta(event.assistantMessageEvent);
+        this.transcript.applyStreamDelta(event.assistantMessageEvent);
         break;
       case "message_end":
-        if (event.message.role === "user") {
-          if (this.locallyRenderedUserMessages > 0) this.locallyRenderedUserMessages -= 1;
-          else
-            this.renderUserMessage(stripContextPreamble(messageText(event.message)), [], undefined, {
-              historyImages: messageImages(event.message),
-            });
-        }
-        if (event.message.role === "assistant") this.finalizeBubble(event.message);
+        if (event.message.role === "user") this.transcript.endUserMessage(event.message);
+        if (event.message.role === "assistant") this.transcript.finalizeBubble(event.message);
         break;
       case "tool_execution_start":
-        this.ensureBubble().startStep(event.toolCallId, event.toolName, safeJson(event.args));
+        this.transcript.ensureBubble().startStep(event.toolCallId, event.toolName, safeJson(event.args));
         break;
       case "tool_execution_update":
-        this.ensureBubble().updateStep(event.toolCallId, event.partialResult);
+        this.transcript.ensureBubble().updateStep(event.toolCallId, event.partialResult);
         break;
       case "tool_execution_end":
-        this.ensureBubble().endStep(
+        this.transcript.ensureBubble().endStep(
           event.toolCallId,
           toolResultText(event.result),
           event.isError,
@@ -2667,7 +2464,7 @@ export class ChatView extends ItemView {
         );
         break;
       case "agent_end":
-        this.bubble?.finalizeWithoutText();
+        this.transcript.endRun();
         this.setRunning(false);
         this.statusEl.setText("");
         this.syncChrome();
@@ -2679,92 +2476,20 @@ export class ChatView extends ItemView {
     this.scrollToBottom();
   }
 
-  private applyStreamDelta(event: { type: string; delta?: string }): void {
-    const bubble = this.bubble;
-    if (!bubble) return;
-    if (event.type === "text_delta" && event.delta) bubble.appendText(event.delta);
-    else if (event.type === "thinking_delta" && event.delta) bubble.appendReasoning(event.delta);
+  // --- transcript entry points (the TranscriptView owns the pane) ---
+
+  private renderTranscript(messages: AgentMessage[]): void {
+    this.transcript.renderTranscript(messages);
   }
 
-  private finalizeBubble(message: AgentMessage): void {
-    const bubble = this.bubble;
-    if (!bubble) return;
-    const text = messageText(message);
-    if (text) {
-      void bubble.finalizeText(text, this.app, this);
-      bubble.showActions({ canRetry: true });
-    } else {
-      bubble.finalizeWithoutText();
-    }
-    const errorMessage = (message as { errorMessage?: string }).errorMessage;
-    if (errorMessage) {
-      bubble.showError(errorMessage);
-      this.lastBubbleError = errorMessage;
-    }
-    const usage = assistantUsage(message);
-    if (usage) {
-      this.lastTurnUsage = usage;
-      bubble.showUsage(usage);
-    }
-  }
-
-  private newBubble(): AssistantBubble {
-    return new AssistantBubble(this.messagesEl, {
-      onRetry: () => void this.retryLast(),
-      onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),
-      onOpenNote: (path) => void this.app.workspace.openLinkText(path, "", false),
-      onContentChange: () => this.scrollToBottom(),
-      onStopSubagentChild: (id) => this.service.abortSubagentChild(id),
-    });
-  }
-
-  private async openRenderedExternalLink(target: string): Promise<void> {
-    try {
-      await openSystemUrl(target);
-    } catch (error) {
-      new Notice(`Could not open link: ${errorMessage(error)}`);
-    }
-  }
-
-  private ensureBubble(): AssistantBubble {
-    this.bubble ??= this.newBubble();
-    return this.bubble;
-  }
-
-  private scrollPending = false;
-  private scrollForcePending = false;
-
-  private markUserScrollIntent(): void {
-    this.userScrollIntent = true;
-    if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
-    this.userScrollIntentTimer = window.setTimeout(() => {
-      this.userScrollIntent = false;
-      this.userScrollIntentTimer = null;
-    }, 250);
-  }
-
-  private updateScrollPinning(): void {
-    if (isPinnedToBottom(this.messagesEl)) {
-      this.autoScrollPinned = true;
-      return;
-    }
-    if (this.userScrollIntent) this.autoScrollPinned = false;
+  private renderOutgoingUserMessage(text: string, attachments: ContextAttachment[], images?: ImageContent[]): void {
+    this.transcript.renderOutgoingUserMessage(text, attachments, images);
   }
 
   private scrollToBottom(options: { force?: boolean } = {}): void {
-    if (!options.force && !this.autoScrollPinned) return;
-    this.scrollForcePending ||= !!options.force;
-    if (this.scrollPending) return;
-    this.scrollPending = true;
-    window.requestAnimationFrame(() => {
-      const force = this.scrollForcePending;
-      this.scrollPending = false;
-      this.scrollForcePending = false;
-      if (!force && !this.autoScrollPinned) return;
-      this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-      this.autoScrollPinned = isPinnedToBottom(this.messagesEl);
-    });
+    this.transcript.scrollToBottom(options);
   }
+
 
   /** Steered text the run never delivered goes back into that tab's composer draft. */
   private restoreUndeliveredSteers(tab: ChatTab): void {
@@ -2792,12 +2517,4 @@ export class ChatView extends ItemView {
     this.renderInfoMessage("Removed command", [[`/${word.toLowerCase()}`, hint]]);
     return true;
   }
-}
-
-/** Index of the last element matching `predicate`, or -1. */
-function lastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
-  for (let i = items.length - 1; i >= 0; i--) {
-    if (predicate(items[i])) return i;
-  }
-  return -1;
 }
