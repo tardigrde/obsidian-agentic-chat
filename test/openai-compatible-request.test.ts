@@ -445,6 +445,12 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
     );
 
     expect(payload.tools).toEqual([]);
+    // pi-ai 1.5.1 added requiresNonNullAssistantContent; we keep null content
+    // on tool-call-only assistant turns, as before.
+    const messages = payload.messages as Array<Record<string, unknown>>;
+    const assistant = messages.find((message) => message.role === "assistant");
+    expect(assistant?.content).toBeNull();
+    expect(assistant?.tool_calls).toHaveLength(1);
   });
 
   it("preserves OpenRouter privacy routing when using the requestUrl fallback", async () => {
