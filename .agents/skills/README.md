@@ -1,10 +1,12 @@
 # Agent skills
 
 This directory is a portable skill source. OpenCode reads `.agents/skills/`,
+Claude Code reads it through the `.claude/skills` symlink,
 and so do Codex and other harnesses that follow the same convention.
 
 ## Local, hand-written
 
+- `factory/`
 - `ship-change/`
 - `verify-obsidian-chat/`
 - `probe-feature/`

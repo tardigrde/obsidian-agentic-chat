@@ -44,6 +44,7 @@
     "check:feature-map": "node scripts/check-feature-map.mjs",
     "probe": "tsx scripts/probe.ts",
     "chaos": "tsx scripts/chaos-monkey.ts",
+    "delegate": "bash scripts/delegate.sh",
     "chaos:mine": "tsx scripts/chaos/mine.ts",
     "chaos:file": "tsx scripts/chaos/file-issues.ts",
     "pretest:e2e": "npm run build:e2e",
