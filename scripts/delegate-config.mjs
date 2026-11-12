@@ -43,7 +43,7 @@ const WORK_SHELL = ["git add *", "git commit *", "git stash *", "npx tsc *", "np
  * `git diff --no-index` (prints any file on disk), `--output` (writes a file),
  * and `--fix` (rewrites files) for a reviewer.
  */
-const SHELL_DENY = ["*>*", "*--no-index*", "*--output*"];
+const SHELL_DENY = ["*>*", "*--no-index*", "*--output*", "*--outFile*", "*--outDir*", "* -o *", "* -o"];
 const REVIEW_SHELL_DENY = ["*--fix*", "* -u*", "*--update*"];
 
 const rule = (action, resource, effect) => ({ action, resource, effect });
@@ -90,15 +90,27 @@ export function lastVerdictIsFail(bodies) {
   return verdicts.length > 0 && verdicts[verdicts.length - 1].verdict === "FAIL";
 }
 
+/**
+ * A re-check may only carry a passing review across a merge from main: the
+ * reviewed head must have a PASS or PASS+NOTES, and the last verdict must not be FAIL.
+ */
+export function recheckAllowed(bodies, reviewedHead) {
+  if (lastVerdictIsFail(bodies)) return false;
+  return bodies
+    .map((body) => parseVerdict(body))
+    .some((verdict) => verdict && verdict.verdict !== "FAIL" && reviewedHead.startsWith(verdict.head));
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [command, ...args] = process.argv.slice(2);
   if (command === "permissions") {
     const [mode, main, edit] = args;
     if (mode !== "work" && mode !== "review") throw new Error("mode must be work or review");
     console.log(JSON.stringify({ permissions: delegatePermissions({ mode, main, edit }) }));
-  } else if (command === "fail") {
-    // stdin: JSON array of comment bodies, oldest first.
-    // Exit 0: the last verdict is FAIL. 1: it is not. 2: the input is unreadable (treat as FAIL).
+  } else if (command === "recheck") {
+    // stdin: JSON array of comment bodies, oldest first; argv: the reviewed head.
+    // Exit 0: a re-check is allowed. 1: it is not. 2: the input is unreadable.
+    const [reviewedHead] = args;
     let input = "";
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => (input += chunk));
@@ -110,9 +122,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         process.exit(2);
       }
       if (!Array.isArray(bodies)) process.exit(2);
-      process.exit(lastVerdictIsFail(bodies.map(String)) ? 0 : 1);
+      process.exit(/^[0-9a-f]{40}$/.test(reviewedHead ?? "") && recheckAllowed(bodies.map(String), reviewedHead) ? 0 : 1);
     });
   } else {
-    throw new Error("usage: delegate-config.mjs permissions <work|review> <main> <edit> | fail < bodies.json");
+    throw new Error("usage: delegate-config.mjs permissions <work|review> <main> <edit> | recheck <reviewed-head> < bodies.json");
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decide, delegatePermissions, lastVerdictIsFail, wildcardMatch } from "../scripts/delegate-config.mjs";
+import { decide, delegatePermissions, lastVerdictIsFail, recheckAllowed, wildcardMatch } from "../scripts/delegate-config.mjs";
 
 const main = "/home/u/repo";
 const review = delegatePermissions({ mode: "review", main, edit: "logs/delegate/verdict-7.md" });
@@ -48,6 +48,9 @@ describe("delegate sandbox rules", () => {
         "head .env",
         "curl https://example.com",
         "rm -f src/main.ts",
+        "npx tsc --outFile /tmp/x.js src/a.ts",
+        "npx tsc --outDir /tmp/out",
+        "npx eslint -o /tmp/report.txt scripts",
       ]) {
         expect(decide(rules, "shell", command), command).toBe("deny");
       }
@@ -94,5 +97,21 @@ describe("lastVerdictIsFail", () => {
     expect(lastVerdictIsFail([verdict("FAIL"), verdict("PASS")])).toBe(false);
     expect(lastVerdictIsFail(["just a comment"])).toBe(false);
     expect(lastVerdictIsFail([])).toBe(false);
+  });
+});
+
+describe("recheckAllowed", () => {
+  const head = "abcdef1234567890abcdef1234567890abcdef12";
+  const at = (state: string, sha = head): string => `Verdict: ${state}\nHead: ${sha}\nReviewer: r\nFast lane: PASS (3 passed)`;
+
+  it("needs a passing verdict at the reviewed head", () => {
+    expect(recheckAllowed([at("PASS+NOTES")], head)).toBe(true);
+    expect(recheckAllowed([at("PASS", head.slice(0, 7))], head)).toBe(true);
+    expect(recheckAllowed([], head)).toBe(false);
+    expect(recheckAllowed([at("PASS", "1111111")], head)).toBe(false);
+  });
+
+  it("refuses when a FAIL is the last verdict", () => {
+    expect(recheckAllowed([at("PASS"), at("FAIL")], head)).toBe(false);
   });
 });

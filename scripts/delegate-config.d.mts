@@ -3,3 +3,4 @@ export function delegatePermissions(options: { mode: "work" | "review"; main: st
 export function wildcardMatch(pattern: string, value: string): boolean;
 export function decide(rules: DelegateRule[], action: string, resource: string): "allow" | "deny" | "ask";
 export function lastVerdictIsFail(bodies: string[]): boolean;
+export function recheckAllowed(bodies: string[], reviewedHead: string): boolean;

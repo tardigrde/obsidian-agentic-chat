@@ -130,11 +130,13 @@ EOF
     git -C "$W" fetch -q origin main
     [ "$(git -C "$W" rev-list --no-merges "$REVIEWED..$HEAD" --not origin/main | wc -l)" -eq 0 ] \
       || die "new non-merge commits since ${REVIEWED:0:7}; run a real review instead"
-    # The review gate lets a PASS from another reviewer clear a FAIL; a re-check
-    # must not. Parse the PR's verdict comments the way the gate does.
-    fail_state=0
-    gh pr view "$PR" --json comments -q '[.comments[].body]' | node "$ROOT/scripts/delegate-config.mjs" fail || fail_state=$?
-    [ "$fail_state" -eq 1 ] || die "the last verdict on #$PR is FAIL or unreadable (state $fail_state); run a real review"
+    # A re-check carries a passing review across a merge from main; it never
+    # replaces one. Require a PASS at the reviewed head and no FAIL after it
+    # (verdict bodies parsed with the gate's parseVerdict; PR issue comments only).
+    state=0
+    gh pr view "$PR" --json comments -q '[.comments[].body]' \
+      | node "$ROOT/scripts/delegate-config.mjs" recheck "$REVIEWED" || state=$?
+    [ "$state" -eq 0 ] || die "no passing review at ${REVIEWED:0:7}, or a later FAIL (state $state); run a real review"
     PR_HEAD=$(gh pr view "$PR" --json headRefOid -q .headRefOid)
     [ "$HEAD" = "$PR_HEAD" ] || die "worktree head ${HEAD:0:7} is not PR head ${PR_HEAD:0:7}"
     OUT="$W/logs/delegate/recheck-$PR.md"
