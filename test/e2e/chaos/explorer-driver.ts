@@ -283,7 +283,7 @@ function collectWindow(windowNumber: number, limit: number): RawWindow {
       tag === "select"
         ? Array.from((element as HTMLSelectElement).options)
             .slice(0, 12)
-            .map((option) => flat(option.text).slice(0, 40))
+            .map((option) => `${flat(option.text).slice(0, 40)}${option.disabled ? " (disabled)" : ""}`)
         : undefined;
     const checked =
       role === "toggle"
@@ -473,15 +473,16 @@ async function perform(
         // intercepted". The JS fallback would reach under the modal, which a
         // real user cannot do (replay-targeted-2 stacked four Conversations
         // modals this way), so refuse instead.
+        // Hit test at the target's center, not an ancestor check: the settings
+        // window itself lives in a .modal-container, and a dialog over it must
+        // still block a click on the settings below.
         const state = (await browser.execute((el) => {
           const target = el as unknown as HTMLElement;
-          const modals = Array.from(document.querySelectorAll<HTMLElement>(".modal-container")).filter(
-            (modal) => modal.getClientRects().length > 0,
-          );
-          return {
-            modalOpen: modals.length > 0,
-            targetInModal: target.closest(".modal-container") !== null,
-          };
+          const box = target.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          if (!hit || hit === target || target.contains(hit)) return { modalOpen: false, targetInModal: false };
+          const cover = hit.closest(".modal-container");
+          return { modalOpen: cover !== null, targetInModal: cover !== null && cover.contains(target) };
         }, element)) as { modalOpen: boolean; targetInModal: boolean };
         if (shouldBlockFallbackClick(state)) {
           throw new Error("covered by an open modal; close it first (Escape) or act inside the modal");

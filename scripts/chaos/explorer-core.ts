@@ -288,8 +288,9 @@ export function matchSelectOption(
 /**
  * A WebDriver click that fails because a modal covers the target must not fall
  * back to a JS click: `el.click()` ignores the backdrop and clicks a control a
- * real user cannot reach. Only block when a modal is open and the target sits
- * outside it; a click inside the modal itself is legitimate.
+ * real user cannot reach. The driver hit-tests the target's center:
+ * `modalOpen` means a modal covers that point, `targetInModal` means the
+ * covering modal contains the target (a click inside that modal is fine).
  */
 export function shouldBlockFallbackClick(state: { modalOpen: boolean; targetInModal: boolean }): boolean {
   return state.modalOpen && !state.targetInModal;
