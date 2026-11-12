@@ -39,6 +39,7 @@ import {
   vaultToolDefinition,
 } from "./vault-tool-definitions";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { errorMessage } from "../utils/errors";
 
 export { MUTATING_TOOLS } from "./tool-contracts";
 
@@ -838,9 +839,9 @@ async function inspectAdapterTarget(
     const isFolder = stat.type === "folder";
     return { isFolder, childCount: isFolder ? await countAdapterChildren(adapter, path) : 0 };
   } catch (error) {
-    if (/not found/i.test(error instanceof Error ? error.message : String(error))) throw error;
+    if (/not found/i.test(errorMessage(error))) throw error;
     throw new Error(
-      `Cannot delete ${path}: unable to inspect it (${error instanceof Error ? error.message : String(error)}). Refusing to guess file vs folder.`,
+      `Cannot delete ${path}: unable to inspect it (${errorMessage(error)}). Refusing to guess file vs folder.`,
       { cause: error },
     );
   }

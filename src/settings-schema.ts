@@ -12,6 +12,7 @@ import { healPerToolMap, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from
 import { type AgentMode, DEFAULT_MODE, healMode } from "./agent/modes";
 import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
+import { isRecord } from "./utils/records";
 import { DEFAULT_PLUGIN_SETTINGS, healPluginMcpState, type PluginSettings } from "./plugins/settings";
 import { DEFAULT_PLUGINS_FOLDER } from "./plugins/loader";
 import { healMcpSettings, mcpServerStateFromServer, type McpSettings } from "./mcp/settings";
@@ -366,10 +367,6 @@ export function retiredSettingsNotices(stored: unknown): string[] {
     notices.push(`${RETIRED_MODE_LABELS[mode]} mode was removed in this version. Agentic Chat now starts in Safe mode.`);
   }
   return notices;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Upper bound for the subagent timeout (24h) — keeps `setTimeout` under its 32-bit delay range. */

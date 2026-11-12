@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { truncateToolOutput } from "../vault/truncate";
 import { throwIfAborted, type WebFetcher, type WebHttpRequest } from "./web-fetch";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { asRecord } from "../utils/records";
 
 /** Supported search backends. Tavily/Brave need an API key; SearXNG needs a URL. */
 export type WebSearchProvider = "tavily" | "brave" | "searxng";
@@ -177,10 +178,6 @@ function safeJsonParse(text: string): unknown {
   } catch {
     return {};
   }
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function asArray(value: unknown): unknown[] {
