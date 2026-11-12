@@ -1,4 +1,4 @@
-import type { SessionInfo } from "../session/session-manager";
+import { stripPromptPreamble, type SessionInfo } from "../session/session-manager";
 
 export interface SessionRowState {
   session: SessionInfo;
@@ -52,7 +52,13 @@ export function restoreSessionAt(sessions: SessionInfo[], session: SessionInfo, 
 
 /** The text prefilled when a row enters inline rename mode. */
 export function sessionRenameDraft(session: SessionInfo): string {
-  return session.name?.trim() || session.firstMessage.trim();
+  // One line: an <input type=text> drops newlines, which would make an
+  // unchanged draft look edited and save it on blur.
+  return oneLine(session.name?.trim() || stripPromptPreamble(session.firstMessage ?? ""));
+}
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -75,8 +81,7 @@ export function applySessionRename(session: SessionInfo, name: string): SessionI
 }
 
 export function sessionTitle(session: SessionInfo): string {
-  const text = session.name?.trim() || session.firstMessage;
-  const single = text.replace(/\s+/g, " ").trim();
+  const single = sessionRenameDraft(session);
   return single.length > 80 ? `${single.slice(0, 80)}…` : single || "(empty conversation)";
 }
 

@@ -692,17 +692,23 @@ function getSessionModifiedTime(entries: SessionEntry[], fallback: number): numb
 const FOCUS_HINT_LINE = /^Focus: The user's request after this line is the primary task\.[^\n]*\n*/;
 
 /**
+ * The user's own text of a sent prompt: drops a leading `<context…</context>`
+ * block and the focus hint right after it. A prompt with no context block is
+ * returned as is, so a user prompt that starts with "Focus:" stays.
+ */
+export function stripPromptPreamble(prompt: string): string {
+  const contextMatch = /^<context\b[\s\S]*?<\/context>\s*/.exec(prompt);
+  return contextMatch ? prompt.slice(contextMatch[0].length).replace(FOCUS_HINT_LINE, "") : prompt;
+}
+
+/**
  * Derive a short session title from the first user prompt. Strips any attachment
  * preamble (`<context>…</context>` or the `<context unchanged …</context>` marker)
  * and the focus hint after it, collapses whitespace, and trims to a handful of
  * words. Deterministic (no model call) — see ROADMAP for the model-based upgrade.
  */
 export function deriveAutoName(firstMessage: string): string | undefined {
-  const contextMatch = /^<context\b[\s\S]*?<\/context>\s*/.exec(firstMessage);
-  // Only a hint right after a context block is synthetic; a user may start with "Focus:".
-  const withoutContext = contextMatch
-    ? firstMessage.slice(contextMatch[0].length).replace(FOCUS_HINT_LINE, "")
-    : firstMessage;
+  const withoutContext = stripPromptPreamble(firstMessage);
   const slashStripped = withoutContext.replace(/^\/(?:skill|template)\s+/, "");
   const condensed = slashStripped.replace(/\s+/g, " ").trim();
   if (!condensed) return undefined;
