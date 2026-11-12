@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import type { ObsidianSessionManager } from "../session/session-manager";
 import { applyUndo, type UndoEntry } from "./undo";
+import { errorMessage } from "../utils/errors";
 
 export interface FileCheckpoint {
   version: 1;
@@ -69,7 +70,7 @@ export async function restoreFileCheckpoint(app: App, checkpoint: FileCheckpoint
     try {
       restored.push(await applyUndo(app, entry));
     } catch (error) {
-      failed.push({ entry, error: error instanceof Error ? error.message : String(error) });
+      failed.push({ entry, error: errorMessage(error) });
     }
   }
 

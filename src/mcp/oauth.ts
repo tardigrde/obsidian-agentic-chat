@@ -4,6 +4,7 @@ import {
   type McpServerSettings,
 } from "./settings";
 import { DEFAULT_MCP_HTTP_TIMEOUT_MS, fetchWithMcpTimeout } from "./http";
+import { errorMessage } from "../utils/errors";
 import { parseWwwAuthenticate } from "./oauth/www-authenticate";
 
 export { parseWwwAuthenticate } from "./oauth/www-authenticate";
@@ -1026,7 +1027,7 @@ async function listenLoopbackOAuthServer(
 
 function isAddressInUse(error: unknown): boolean {
   const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return code === "EADDRINUSE" || /EADDRINUSE|address already in use/i.test(message);
 }
 
@@ -1172,7 +1173,7 @@ function parseJsonObject<T>(text: string, label: string): T {
   try {
     parsed = JSON.parse(text || "{}");
   } catch (error) {
-    throw new Error(`${label} was not valid JSON: ${error instanceof Error ? error.message : String(error)}.`, { cause: error });
+    throw new Error(`${label} was not valid JSON: ${errorMessage(error)}.`, { cause: error });
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`${label} was not a JSON object.`);
@@ -1207,10 +1208,6 @@ function finitePositiveNumber(value: unknown): number {
     parsed = 0;
   }
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function normalizeHttpsUrl(input: string): URL {

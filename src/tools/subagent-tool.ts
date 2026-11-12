@@ -6,6 +6,7 @@ import { sumAssistantUsage } from "../agent/usage";
 import { redactText } from "../privacy/redaction";
 import { truncateToolOutput } from "../vault/truncate";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { errorMessage } from "../utils/errors";
 
 export const SUBAGENT_TOOL_NAME = "subagent";
 
@@ -227,7 +228,7 @@ export function createSubagentTool(
         } else {
           status.status = "error";
           status.summary = redactText(
-            truncateToolOutput(error instanceof Error ? error.message : String(error), PER_CHILD_SUMMARY_CHARS),
+            truncateToolOutput(errorMessage(error), PER_CHILD_SUMMARY_CHARS),
             { redactHighEntropy: true, maxLength: 9000 },
           );
         }

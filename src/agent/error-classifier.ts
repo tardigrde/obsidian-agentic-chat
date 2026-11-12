@@ -1,3 +1,5 @@
+import { errorMessage } from "../utils/errors";
+
 export type ErrorClass = "transient" | "permanent" | "resource" | "aborted" | "model";
 
 export interface ClassifiedError {
@@ -123,7 +125,7 @@ export function classifyError(error: unknown, nowMs = Date.now()): ClassifiedErr
 }
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }
 
 function classifyFromStatusText(rawMessage: string, nowMs: number): ClassifiedError | undefined {

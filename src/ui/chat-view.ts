@@ -21,6 +21,7 @@ import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, apiKeyForProvider } from "../settings";
 import { listOpenAICompatibleModels, listOpenRouterModels } from "../llm/models";
 import { ModelSuggestModal } from "./model-suggest-modal";
+import { errorMessage } from "../utils/errors";
 import { SessionListModal } from "./session-list-modal";
 import { createFetchFromWebFetcher, createProxiedFetcher } from "../mcp/fetcher";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
@@ -80,7 +81,14 @@ import {
   isTextContextAttachment,
   type ContextAttachment,
 } from "./context-attachments";
-import { parseSlashInput, retiredCommandHint, slashInputTailAfterFirst, visibleCommands } from "./commands";
+import {
+  parseSlashInput,
+  retiredCommandHint,
+  slashInputTailAfterFirst,
+  visibleCommands,
+  type ParsedSlashInput,
+  type SlashCommandName,
+} from "./commands";
 import type { LoadedPlugin } from "../plugins/loader";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { formatCompactionSummary, isSummaryMessage } from "../agent/compaction";
@@ -278,7 +286,7 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveNote()));
     await this.createSessionActivationCoordinator().initializeActiveSession(
       () => this.service.initialize(),
-      (error) => new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`),
+      (error) => new Notice(`Agentic chat: ${errorMessage(error)}`),
     );
   }
 
@@ -423,7 +431,7 @@ export class ChatView extends ItemView {
     await this.createSessionActivationCoordinator().initializeFreshTab(
       // A new tab is always a fresh session, never a continuation of tab 0's.
       () => tab.service.newSession(),
-      (error) => new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`),
+      (error) => new Notice(`Agentic chat: ${errorMessage(error)}`),
     );
   }
 
@@ -1388,7 +1396,7 @@ export class ChatView extends ItemView {
       await this.service.truncateMessages(index);
     } catch (error) {
       // A failed session rewrite must not silently swallow the edit.
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      this.renderErrorMessage(errorMessage(error));
       return;
     }
     this.bubble = null;
@@ -1593,7 +1601,7 @@ export class ChatView extends ItemView {
       try {
         await service.truncateMessages(failedIndex);
       } catch (error) {
-        this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+        this.renderErrorMessage(errorMessage(error));
         return;
       }
       if (this.isLiveTab(tab)) {
@@ -1623,61 +1631,35 @@ export class ChatView extends ItemView {
       }
       return this.showRetiredCommandHint(word);
     }
-    switch (command.name) {
-      case "new":
-        await this.newSession();
-        return true;
-      case "style":
-        await this.runStyle(argString);
-        return true;
-      case "effort":
-        this.runEffort(argString);
-        return true;
-      case "sessions":
-        await this.createSessionWorkflow().run(argString);
-        return true;
-      case "model":
-        await this.switchModel();
-        return true;
-      case "status":
-        this.showStatus();
-        return true;
-      case "memory":
-        await this.createMemoryWorkflow().run(argString);
-        return true;
-      case "semantic-index":
-        await this.runSemanticIndex(argString);
-        return true;
-      case "doctor":
-        await this.runDoctor();
-        return true;
-      case "usage":
-        this.showUsage();
-        return true;
-      case "compact":
-        await this.runCompact(argString);
-        return true;
-      case "export":
-        await this.exportSession();
-        return true;
-      case "undo":
-        await this.runUndo();
-        return true;
-      case "skill":
-        await this.runSkill(input.args[0], slashInputTailAfterFirst(input));
-        return true;
-      case "agent":
-        await this.runAgent(input.args[0], slashInputTailAfterFirst(input));
-        return true;
-      case "init":
-        await this.runInit(argString);
-        return true;
-      case "help":
-        this.showHelp();
-        return true;
-      default:
-        return false;
-    }
+    await this.slashHandlers(input)[command.name]();
+    return true;
+  }
+
+  /**
+   * One handler per built-in command. The `Record` type makes the compiler
+   * reject a command in `SLASH_COMMANDS` that has no handler here.
+   */
+  private slashHandlers(input: ParsedSlashInput): Record<SlashCommandName, () => unknown> {
+    const { argString } = input;
+    return {
+      new: () => this.newSession(),
+      style: () => this.runStyle(argString),
+      effort: () => this.runEffort(argString),
+      sessions: () => this.createSessionWorkflow().run(argString),
+      model: () => this.switchModel(),
+      status: () => this.showStatus(),
+      memory: () => this.createMemoryWorkflow().run(argString),
+      "semantic-index": () => this.runSemanticIndex(argString),
+      doctor: () => this.runDoctor(),
+      usage: () => this.showUsage(),
+      compact: () => this.runCompact(argString),
+      export: () => this.exportSession(),
+      undo: () => this.runUndo(),
+      skill: () => this.runSkill(input.args[0], slashInputTailAfterFirst(input)),
+      agent: () => this.runAgent(input.args[0], slashInputTailAfterFirst(input)),
+      init: () => this.runInit(argString),
+      help: () => this.showHelp(),
+    };
   }
 
   /**
@@ -1695,7 +1677,7 @@ export class ChatView extends ItemView {
       // describe the same vault state.
       await this.service.reloadRuntimeResources();
     } catch (error) {
-      this.renderErrorMessage(`Doctor audit failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.renderErrorMessage(`Doctor audit failed: ${errorMessage(error)}`);
       return;
     }
     const folder = this.plugin.settings.plugins.folder || ".agentic-plugins";
@@ -1908,7 +1890,7 @@ export class ChatView extends ItemView {
       await this.persistEffortLevel(level);
     } catch (error) {
       this.renderErrorMessage(
-        `Could not save effort level: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not save effort level: ${errorMessage(error)}`,
       );
       return;
     }
@@ -2175,7 +2157,7 @@ export class ChatView extends ItemView {
       const file = await this.app.vault.create(path, markdown);
       this.renderInfoMessage("Export", [["Saved", file.path]]);
     } catch (error) {
-      this.renderErrorMessage(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.renderErrorMessage(`Export failed: ${errorMessage(error)}`);
     }
   }
 
@@ -2237,7 +2219,7 @@ export class ChatView extends ItemView {
     try {
       await coordinator.startNewConversation(() => this.service.newSession());
     } catch (error) {
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      this.renderErrorMessage(errorMessage(error));
     } finally {
       // A new conversation starts in the default (normal) output style.
       if (this.plugin.settings.outputStyle !== DEFAULT_OUTPUT_STYLE) {
@@ -2289,7 +2271,7 @@ export class ChatView extends ItemView {
     try {
       return await this.service.clearSessions();
     } catch (error) {
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      this.renderErrorMessage(errorMessage(error));
       return -1;
     }
   }
@@ -2307,7 +2289,7 @@ export class ChatView extends ItemView {
     try {
       await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
     } catch (error) {
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      this.renderErrorMessage(errorMessage(error));
     }
   }
 
@@ -2358,7 +2340,7 @@ export class ChatView extends ItemView {
         this.syncChrome();
       }, `${modelProviderLabel(settings.provider)} model`).open();
     } catch (error) {
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      this.renderErrorMessage(errorMessage(error));
     }
   }
 
@@ -2740,7 +2722,7 @@ export class ChatView extends ItemView {
     try {
       await openSystemUrl(target);
     } catch (error) {
-      new Notice(`Could not open link: ${error instanceof Error ? error.message : String(error)}`);
+      new Notice(`Could not open link: ${errorMessage(error)}`);
     }
   }
 

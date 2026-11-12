@@ -5,6 +5,7 @@ import { extractArchive, looksGzip, looksZip, safeArchivePath, type FileTree } f
 import { reRootTree } from "../plugins/import/shared";
 import { stripSingleTopLevelDir } from "../plugins/import/url-source";
 import { sniffSource, type MarketplaceSourceEntry } from "../plugins/import/sniff";
+import { errorMessage } from "../utils/errors";
 
 /**
  * The Install plugin modal: install from a GitHub/archive URL, a vault folder
@@ -86,7 +87,7 @@ export class InstallPluginModal extends Modal {
       this.onInstalled(result);
       this.close();
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.setStatus(errorMessage(error), "error");
     }
   }
 
@@ -135,7 +136,7 @@ export class InstallPluginModal extends Modal {
         const tree = stripSingleTopLevelDir(extractArchive(bytes, kind));
         await this.installTree(tree, file.name);
       } catch (error) {
-        this.setStatus(error instanceof Error ? error.message : String(error), "error");
+        this.setStatus(errorMessage(error), "error");
       }
     };
     input.click();
@@ -153,7 +154,7 @@ export class InstallPluginModal extends Modal {
       this.onInstalled(result);
       this.close();
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : String(error), "error");
+      this.setStatus(errorMessage(error), "error");
     }
   }
 
