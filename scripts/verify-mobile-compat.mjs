@@ -18,14 +18,22 @@ const desktopOnlyAllowlist = new Map([
     },
   ],
   [
-    "src/mcp/oauth.ts",
+    "src/mcp/oauth/callback-receivers.ts",
     {
-      modules: new Set(["http", "electron", "child_process"]),
-      globals: new Set(["process", "require", "window.open"]),
+      modules: new Set(["http"]),
+      globals: new Set(),
       requiredText: [
         /OAuth sign-in uses a localhost callback on desktop and an `obsidian:\/\/agentic-chat-mcp-oauth` callback on mobile/is,
         /Providers that require localhost redirects still require Obsidian desktop sign-in/is,
       ],
+    },
+  ],
+  [
+    "src/mcp/oauth/browser-open.ts",
+    {
+      modules: new Set(["electron", "child_process"]),
+      globals: new Set(["process", "require", "window.open"]),
+      requiredText: [],
     },
   ],
 ]);
