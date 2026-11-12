@@ -24,6 +24,13 @@ describe("composer input helpers", () => {
   it("strips one leading context preamble for retry display", () => {
     expect(stripContextPreamble("<context>\n[[A.md]]\n</context>\n\nAsk me")).toBe("Ask me");
     expect(stripContextPreamble("Ask me")).toBe("Ask me");
+    // A user's own "Focus:" line after the context block is their text, not the hint.
+    expect(stripContextPreamble("<context>\n[[A.md]]\n</context>\n\nFocus: my own line\n\nmore")).toBe("Focus: my own line\n\nmore");
+    // The real hint goes; first-line indentation and CRLF prompts survive.
+    expect(
+      stripContextPreamble("<context>\n[[A.md]]\n</context>\n\nFocus: The user's request after this line is the primary task.\n\n    indented code"),
+    ).toBe("    indented code");
+    expect(stripContextPreamble("<context>\r\n[[A.md]]\r\n</context>\r\n\r\nFocus: The user's request after this line is the primary task.\r\n\r\nAsk me")).toBe("Ask me");
   });
 
   it("strips the unchanged-context marker for retry display", () => {
