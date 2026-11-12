@@ -30,6 +30,8 @@ export type UiElement = {
   role: string;
   label: string;
   value?: string;
+  /** Visible option text of a `<select>`, capped for a compact view. */
+  options?: string[];
   checked?: boolean;
   disabled?: boolean;
 };
@@ -69,6 +71,7 @@ export type Observation = {
 
 export const EXPLORER_ACTIONS = [
   "click",
+  "select",
   "type",
   "key",
   "scroll",
@@ -87,6 +90,7 @@ export type ExplorerActionName = (typeof EXPLORER_ACTIONS)[number];
 
 export type ExplorerAction =
   | { action: "click"; ref: string }
+  | { action: "select"; ref: string; option: string }
   | { action: "type"; ref: string; text: string; submit?: boolean }
   | { action: "key"; keys: string; window?: number }
   | { action: "scroll"; ref: string; dy: number }
@@ -174,6 +178,8 @@ function parseAction(raw: Record<string, unknown>): ExplorerAction {
   switch (name) {
     case "click":
       return { action: "click", ref: ref(raw.ref) };
+    case "select":
+      return { action: "select", ref: ref(raw.ref), option: str(raw.option, "option", 120).trim() };
     case "type":
       return {
         action: "type",
@@ -259,7 +265,20 @@ export function parseExplorerDecision(text: string): ParseResult {
 
 /** The ref an action targets, when it targets one element. */
 export function actionRef(action: ExplorerAction): string | undefined {
-  return action.action === "click" || action.action === "type" || action.action === "scroll" ? action.ref : undefined;
+  return action.action === "click" || action.action === "select" || action.action === "type" || action.action === "scroll"
+    ? action.ref
+    : undefined;
+}
+
+/**
+ * Match an option by trimmed, case-insensitive text first, then by exact value.
+ * The driver inlines this logic because `browser.execute` cannot close over it.
+ */
+export function matchSelectOption(options: Array<{ text: string; value: string }>, wanted: string): number {
+  const target = wanted.trim().toLowerCase();
+  const byText = options.findIndex((option) => option.text.trim().toLowerCase() === target);
+  if (byText >= 0) return byText;
+  return options.findIndex((option) => option.value === wanted);
 }
 
 export function refWindow(value: string): number {
@@ -374,6 +393,7 @@ export function formatObservation(observation: Observation): string {
         element.disabled ? "disabled" : "",
         element.checked === undefined ? "" : element.checked ? "on" : "off",
         element.value ? `value="${clip(element.value, 80)}"` : "",
+        element.options && element.options.length > 0 ? `options=[${element.options.map((option) => clip(option, 40)).join("|")}]` : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -405,6 +425,7 @@ Reply format (JSON only, no prose):
 
 Actions:
 - {"action":"click","ref":"w0e12"}                      click an element from the view
+- {"action":"select","ref":"w0e5","option":"YOLO"}          choose an option in a dropdown (native <select>); click cannot open these
 - {"action":"type","ref":"w0e3","text":"...","submit":false}  replace the text of an input, textarea, or editor; submit=true presses Enter after
 - {"action":"key","keys":"Mod+P","window":0}           key chord in a window (Mod = Ctrl). Examples: Escape, Enter, Mod+Shift+P, ArrowDown
 - {"action":"scroll","ref":"w0e5","dy":600}            scroll the element's scroll container
@@ -466,6 +487,8 @@ export function summarizeDecision(decision: ExplorerAction, elements: UiElement[
   switch (decision.action) {
     case "click":
       return `click ${label(decision.ref)}`;
+    case "select":
+      return `select "${clip(decision.option, 80)}" in ${label(decision.ref)}`;
     case "type":
       return `type "${clip(decision.text, 80)}" into ${label(decision.ref)}${decision.submit ? " + Enter" : ""}`;
     case "key":
