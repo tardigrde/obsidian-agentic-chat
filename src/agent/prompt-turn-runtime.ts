@@ -1,5 +1,5 @@
 import type { Agent } from "@earendil-works/pi-agent-core";
-import type { AgenticChatSettings } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
 import { promptRunBlockReason } from "./turn-control";
 
 export type PromptTurnRun = (agent: Agent) => Promise<void>;

@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import type { WebSettings } from "../settings";
+import type { WebSettings } from "../settings-schema";
 import { createWebFetchTool, type WebFetcher } from "./web-fetch";
 import { createWebSearchTool } from "./web-search";
 

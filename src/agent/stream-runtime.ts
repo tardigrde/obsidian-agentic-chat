@@ -9,7 +9,7 @@ import {
   type StopReason,
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
 import {
   createOpenAICompatibleRequester,
   streamOpenAICompatibleViaRequestUrl,
