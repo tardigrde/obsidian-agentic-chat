@@ -22,3 +22,5 @@ sessions/
 .obsidian-cache/
 logs/
 test/e2e/vault/.obsidian/
+# Local orchestration plan (/factory skill)
+NEXT.md

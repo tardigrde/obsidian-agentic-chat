@@ -2,11 +2,13 @@
 
 ## Process
 
-Six skills carry the process. They live in `.agents/skills/`, so OpenCode,
+Eight skills carry the process. They live in `.agents/skills/` (`.claude/skills`
+links there), so Claude Code, OpenCode,
 Codex, and other agents that read that convention get the same workflow.
 
 | skill | use for |
 |---|---|
+| `@factory` | a goal that spans several PRs: split, delegate to opencode workers, review, merge, chaos |
 | `@ship-change` | behavior changes, bugs, multi-file work, dependency upgrades |
 | `@verify-obsidian-chat` | UI claims, settings, or proof in the real Obsidian app |
 | `@probe-feature` | behavior you cannot predict yet, or when the user asks for a recording |
@@ -28,7 +30,7 @@ Match the weight of the process to the change:
 - Before a product-cut PR, or when a command or UI entrypoint is deleted: load
   `@break-change`. It is exploratory, not a lane.
 
-Do not load all six at once. Each skill names the next one when it needs it.
+Do not load them all at once. Each skill names the next one when it needs it.
 
 Put each rule in the lowest layer that can enforce it: `AGENTS.md` routes,
 skills hold procedure, `scripts/` and CI hold gates.
