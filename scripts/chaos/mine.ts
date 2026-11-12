@@ -39,6 +39,8 @@ export type MineOptions = {
   model: string;
   llm?: ChaosLlmName;
   backend?: "http" | "opencode";
+  /** More secrets to strip from the digest, for example the plugin's key. */
+  redact?: Array<string | undefined>;
 };
 
 async function readJson<T>(file: string, fallback: T): Promise<T> {
@@ -105,7 +107,7 @@ export async function mineRun(options: MineOptions): Promise<{ report: MinerRepo
       sessions,
       openIssues: openChaosIssues(),
     }),
-    [options.apiKey],
+    [options.apiKey, ...(options.redact ?? [])],
   );
   await writeFile(path.join(runDir, "miner-digest.txt"), digest);
 
@@ -183,6 +185,8 @@ async function main(): Promise<void> {
     model,
     llm: llm.name,
     backend: llm.backend,
+    // The plugin under test may have used a different key than the miner.
+    redact: [process.env.AGENTIC_CHAT_API_KEY?.trim()],
   });
   const costLabel = llm.backend === "opencode" ? "subscription" : `$${cost.toFixed(4)}`;
   process.stdout.write(`[chaos:mine] findings: ${report.findings.length}, drafts: ${drafts.length}, cost: ${costLabel}\n`);

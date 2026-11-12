@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { chatComplete } from "../scripts/chaos/explorer-llm";
-import { childEnv, opencodeComplete, parseOpencodeOutput, serializeMessages } from "../scripts/chaos/opencode-run";
+import { childEnv, opencodeComplete, qualifiedModel, parseOpencodeOutput, serializeMessages } from "../scripts/chaos/opencode-run";
 
 const savedBin = process.env.OPENCODE_BIN;
 const savedCounter = process.env.CHAOS_FAKE_COUNTER;
@@ -202,5 +202,14 @@ describe("opencode child env", () => {
       OPENCODE_BIN: "/tmp/fake",
     });
     expect(env).toEqual({ PATH: "/usr/bin", HOME: "/home/x", OPENCODE_BIN: "/tmp/fake" });
+  });
+});
+
+describe("opencode model id", () => {
+  it("keeps opencode providers and maps other ids to opencode-go", () => {
+    expect(qualifiedModel("opencode-go/deepseek-v4.1-flash")).toBe("opencode-go/deepseek-v4.1-flash");
+    expect(qualifiedModel("opencode/some-model")).toBe("opencode/some-model");
+    expect(qualifiedModel("deepseek-v4.1-flash")).toBe("opencode-go/deepseek-v4.1-flash");
+    expect(qualifiedModel("deepseek/deepseek-v4.1-flash")).toBe("opencode-go/deepseek-v4.1-flash");
   });
 });

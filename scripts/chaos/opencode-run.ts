@@ -147,10 +147,16 @@ export function parseOpencodeOutput(stdout: string, fallbackModel: string): Chat
   };
 }
 
-/** opencode wants `provider/model`. A bare model name gets the Go provider. */
-function qualifiedModel(model: string): string {
+/**
+ * opencode wants `provider/model`, and the chaos backend uses the Go
+ * subscription. A bare name or an OpenRouter-style id such as
+ * `deepseek/deepseek-v4.1-flash` (a common AGENTIC_CHAT_CHAOS_MODEL value)
+ * becomes `opencode-go/<name>`. `opencode/...` and `opencode-go/...` stay.
+ */
+export function qualifiedModel(model: string): string {
   const trimmed = model.trim();
-  return trimmed.includes("/") ? trimmed : `opencode-go/${trimmed}`;
+  if (/^opencode(-go)?\//.test(trimmed)) return trimmed;
+  return `opencode-go/${trimmed.split("/").pop() ?? trimmed}`;
 }
 
 function stderrTail(stderr: string): string {

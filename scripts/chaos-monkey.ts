@@ -222,7 +222,9 @@ function parseOptions(): Options {
     readArg("--model") ?? (llm.model || CHAOS_MODEL),
     allowAnyModel,
   );
-  const pluginModel = assertChaosModel(plugin.model, allowAnyModel);
+  // With an HTTP backend the plugin shares the explorer endpoint, so --model
+  // reaches it as before. Only `opencode` gives the plugin its own model.
+  const pluginModel = llm.backend === "opencode" ? assertChaosModel(plugin.model, allowAnyModel) : model;
 
   return {
     ...selection,
@@ -705,6 +707,7 @@ async function main(): Promise<void> {
           model: options.model,
           llm: options.llm,
           backend: options.backend,
+          redact: [options.pluginApiKey],
         });
         process.stdout.write(
           `[chaos] mined: ${mined.report.findings.length} findings, ${mined.drafts.length} issue drafts, cost ${

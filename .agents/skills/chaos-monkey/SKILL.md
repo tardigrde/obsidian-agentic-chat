@@ -115,6 +115,11 @@ credits.
 - The plugin under test still calls OpenRouter. It needs `AGENTIC_CHAT_API_KEY`.
   It cannot use the CLI.
 - The explorer needs no key.
+- `--model` and `AGENTIC_CHAT_CHAOS_MODEL` set the explorer and miner model.
+  An id such as `deepseek/deepseek-v4.1-flash` becomes
+  `opencode-go/deepseek-v4.1-flash`.
+- `AGENTIC_CHAT_CHAOS_PLUGIN_MODEL` sets the plugin model (default
+  `deepseek/deepseek-v4.1-flash`).
 
 ```bash
 npm run chaos -- --mode explore --live --llm opencode --charter <c> --max-steps 30 --max-calls 6 --max-tokens 60000
