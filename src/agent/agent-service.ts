@@ -8,8 +8,8 @@ import {
 } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../skills/skill-prompt";
 import { type ImageContent, type Usage, type UserMessage } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings";
-import { activeModelId, apiKeyForProvider } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
+import { activeModelId, apiKeyForProvider } from "../settings-schema";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { effectiveProxy } from "../network/proxy";
 import { createObsidianFetcher, type WebFetcher } from "../tools/web-fetch";

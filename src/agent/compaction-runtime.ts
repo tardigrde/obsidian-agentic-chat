@@ -1,7 +1,7 @@
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
 import { contentText, normalizeContext, type Model, type Usage } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings";
-import { activeModelConfig, apiKeyForProvider } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
+import { activeModelConfig, apiKeyForProvider } from "../settings-schema";
 import { buildModel } from "../llm/models";
 import { sharedAgentModels } from "../llm/providers";
 import type { ObsidianSessionManager } from "../session/session-manager";

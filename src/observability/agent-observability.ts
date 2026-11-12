@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
 import type { WebFetcher } from "../tools/web-fetch";
 import type { ApprovalAuditInput } from "../agent/action-audit-log";
 import { redactText } from "../privacy/redaction";

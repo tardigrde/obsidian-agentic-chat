@@ -4,7 +4,7 @@ import type {
   ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
-import { activeModelId, type AgenticChatSettings } from "../settings";
+import { activeModelId, type AgenticChatSettings } from "../settings-schema";
 import type { SessionInfo } from "../session/session-manager";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import type { McpServerDiagnostic } from "../mcp/tools";
