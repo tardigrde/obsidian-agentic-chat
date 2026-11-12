@@ -1,6 +1,6 @@
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
 import type { RequestCostEstimate } from "./cost";
 import { sumSessionUsage } from "./session-usage";
 import {

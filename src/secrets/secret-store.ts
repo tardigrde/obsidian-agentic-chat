@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { AgenticChatSettings } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
 import type { WebSettings } from "../settings-schema";
 import type {
   McpOAuthSettings,

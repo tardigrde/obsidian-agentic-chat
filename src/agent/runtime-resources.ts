@@ -1,7 +1,7 @@
 import { type App } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../skills/skill-prompt";
-import type { AgenticChatSettings } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
 import { builtinSkills } from "../skills/builtin-skills";
 import {
   loadPlugins,
