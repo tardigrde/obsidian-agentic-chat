@@ -272,13 +272,28 @@ export function actionRef(action: ExplorerAction): string | undefined {
 
 /**
  * Match an option by trimmed, case-insensitive text first, then by exact value.
+ * A disabled option never matches: a real user cannot pick it.
  * The driver inlines this logic because `browser.execute` cannot close over it.
  */
-export function matchSelectOption(options: Array<{ text: string; value: string }>, wanted: string): number {
+export function matchSelectOption(
+  options: Array<{ text: string; value: string; disabled?: boolean }>,
+  wanted: string,
+): number {
   const target = wanted.trim().toLowerCase();
-  const byText = options.findIndex((option) => option.text.trim().toLowerCase() === target);
+  const byText = options.findIndex((option) => !option.disabled && option.text.trim().toLowerCase() === target);
   if (byText >= 0) return byText;
-  return options.findIndex((option) => option.value === wanted);
+  return options.findIndex((option) => !option.disabled && option.value === wanted);
+}
+
+/**
+ * A WebDriver click that fails because a modal covers the target must not fall
+ * back to a JS click: `el.click()` ignores the backdrop and clicks a control a
+ * real user cannot reach. The driver hit-tests the target's center:
+ * `modalOpen` means a modal covers that point, `targetInModal` means the
+ * covering modal contains the target (a click inside that modal is fine).
+ */
+export function shouldBlockFallbackClick(state: { modalOpen: boolean; targetInModal: boolean }): boolean {
+  return state.modalOpen && !state.targetInModal;
 }
 
 export function refWindow(value: string): number {
