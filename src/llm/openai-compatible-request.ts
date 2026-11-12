@@ -84,6 +84,8 @@ const MESSAGE_COMPAT: MessageCompat = {
   requiresToolResultName: false,
   requiresAssistantAfterToolResult: false,
   requiresNonNullAssistantContent: false,
+  // Read only by pi-ai's own payload builder. buildPayload below always sends
+  // `tools: []` on follow-up turns with tool history.
   requiresToolsWithToolHistory: false,
   requiresThinkingAsText: false,
   requiresReasoningContentOnAssistantMessages: false,
