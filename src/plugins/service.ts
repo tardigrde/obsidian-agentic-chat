@@ -1,5 +1,5 @@
 import { type App, type DataAdapter, TFolder } from "obsidian";
-import { type AgenticChatSettings } from "../settings";
+import { type AgenticChatSettings } from "../settings-schema";
 import { createMcpServerState, normalizeMcpServerId } from "../mcp/settings";
 import { clearMcpPerToolApprovals } from "../agent/approval";
 import { BUILTIN_SKILL_DOCS } from "../skills/builtin-skills";

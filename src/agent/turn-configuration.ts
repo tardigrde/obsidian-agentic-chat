@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings";
-import { activeModelConfig, activeModelId } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
+import { activeModelConfig, activeModelId } from "../settings-schema";
 import { buildModel, supportedThinkingLevels, type ModelConfig } from "../llm/models";
 import {
   normalizeModelOverride,
