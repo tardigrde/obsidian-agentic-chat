@@ -10,6 +10,7 @@ import {
   parseExplorerDecision,
   parseKeyChord,
   resolveReplayRef,
+  shouldBlockFallbackClick,
   summarizeDecision,
   sumSessionUsage,
   type Observation,
@@ -194,6 +195,31 @@ describe("explorer view and prompt", () => {
     expect(matchSelectOption(options, "  yolo  ")).toBe(1);
     expect(matchSelectOption(options, "readonly")).toBe(2);
     expect(matchSelectOption(options, "Nope")).toBe(-1);
+  });
+
+  it("never matches a disabled option", () => {
+    // Witness: the driver used to set node.value to a disabled option, which a
+    // real user cannot pick.
+    const options = [
+      { text: "Safe", value: "safe" },
+      { text: "YOLO", value: "yolo", disabled: true },
+      { text: "Read only", value: "readonly", disabled: false },
+    ];
+    expect(matchSelectOption(options, "YOLO")).toBe(-1);
+    expect(matchSelectOption(options, "yolo")).toBe(-1);
+    expect(matchSelectOption(options, "Safe")).toBe(0);
+    expect(matchSelectOption(options, "readonly")).toBe(2);
+  });
+});
+
+describe("explorer modal guard", () => {
+  it("blocks the JS click fallback only when a modal covers an outside target", () => {
+    // Witness: in replay-targeted-2 the fallback clicked through a modal
+    // backdrop and stacked four Conversations modals.
+    expect(shouldBlockFallbackClick({ modalOpen: true, targetInModal: false })).toBe(true);
+    expect(shouldBlockFallbackClick({ modalOpen: true, targetInModal: true })).toBe(false);
+    expect(shouldBlockFallbackClick({ modalOpen: false, targetInModal: false })).toBe(false);
+    expect(shouldBlockFallbackClick({ modalOpen: false, targetInModal: true })).toBe(false);
   });
 });
 
