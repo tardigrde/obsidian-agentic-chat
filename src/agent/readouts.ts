@@ -1,7 +1,7 @@
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { estimateTextTokens } from "@earendil-works/pi-ai/utils/estimate";
-import type { AgenticChatSettings } from "../settings";
+import type { AgenticChatSettings } from "../settings-schema";
 import { isPricingUnknown } from "../llm/pricing-cache";
 import { estimateContextUsage, isSummaryMessage } from "./compaction";
 import {

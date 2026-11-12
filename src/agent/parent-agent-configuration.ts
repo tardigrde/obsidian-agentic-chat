@@ -1,5 +1,5 @@
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
-import { apiKeyForProvider, type AgenticChatSettings } from "../settings";
+import { apiKeyForProvider, type AgenticChatSettings } from "../settings-schema";
 import type { AgentActiveSessionRuntime } from "./active-session-runtime";
 import type { ParentAgentRuntime, ParentAgentRuntimeConfiguration } from "./parent-agent-runtime";
 import type { AgentRuntimeResourceState } from "./runtime-resource-state";
