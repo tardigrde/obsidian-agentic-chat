@@ -72,11 +72,11 @@ await $(".agentic-chat-info").waitForExist();
 | `/add-dir` and `/dirs` removed | `src/ui/commands.ts:24` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
 | `/agent` | `src/ui/commands.ts:39` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
 | `/skill <name>` | `src/ui/commands.ts:38` | `test/e2e/specs/skill-chip.e2e.ts:22` | `covered` |
-| `/skill` with no name (picker) | `src/ui/chat-view.ts:1851` | no committed check | `NONE` |
-| Bare `/<skill-name>` | `src/ui/chat-view.ts:1679` | `test/commands.test.ts:94` (parse only) | `partial` |
-| `/template` as a command | `src/ui/chat-view.ts:1679` | no handler; the word falls through to the model | `unreachable` |
+| `/skill` with no name (picker) | `src/ui/chat-view.ts:1867` | no committed check | `NONE` |
+| Bare `/<skill-name>` | `src/ui/chat-view.ts:1695` | `test/commands.test.ts:94` (parse only) | `partial` |
+| `/template` as a command | `src/ui/chat-view.ts:1695` | no handler; the word falls through to the model | `unreachable` |
 | `/template <partial>` skill autocomplete | `src/ui/autocomplete.ts:77` | `test/autocomplete.test.ts:42` (unit only) | `partial` |
-| Autocomplete menu for commands | `src/ui/chat-view.ts:971` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
+| Autocomplete menu for commands | `src/ui/chat-view.ts:972` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
 | Autocomplete keyboard keys | `src/ui/autocomplete-menu.ts:108` | no committed check | `NONE` |
 | Built-in skills are available | `src/skills/builtin-skills.ts:202` | `test/builtin-skills.test.ts:4` (catalog only) | `partial` |
 | Plugin skills load with built-ins | `src/agent/runtime-resources.ts:81` | `test/runtime-resources.test.ts:126` (unit only) | `partial` |

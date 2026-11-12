@@ -11,6 +11,7 @@ import {
   sessionTitle,
 } from "../src/ui/session-list-state";
 import type { SessionInfo } from "../src/session/session-manager";
+import { assemblePrompt } from "../src/ui/context-builder";
 
 function session(over: Partial<SessionInfo>): SessionInfo {
   return {
@@ -144,5 +145,30 @@ describe("session row state helpers", () => {
     expect(applySessionRename(original, "New")).toEqual({ ...original, name: "New" });
     expect(applySessionRename(original, "")).toEqual({ ...original, name: undefined });
     expect(original.name).toBe("Old");
+  });
+});
+
+describe("unnamed sessions whose first prompt carries attached context", () => {
+  const prompt = assemblePrompt(
+    '<context>\nThe user attached the following from their vault:\nActive note "Approval Test.md":\nHELLO FROM QA\n</context>',
+    "Append the line 'QA write test' to Approval Test.md",
+  );
+  const unnamed = session({ firstMessage: prompt });
+
+  it("titles the row with the user's request, not the context block", () => {
+    expect(sessionTitle(unnamed)).toBe("Append the line 'QA write test' to Approval Test.md");
+  });
+
+  it("prefills rename with the user's request on one line", () => {
+    expect(sessionRenameDraft(unnamed)).toBe("Append the line 'QA write test' to Approval Test.md");
+  });
+
+  it("saves nothing when the field loses focus with the draft unchanged", () => {
+    // An <input type=text> drops newlines from its value, so compare that value.
+    const inputValue = sessionRenameDraft(unnamed).replace(/[\r\n]/g, "");
+    expect(resolveSessionRename(unnamed, inputValue, true)).toBeNull();
+    const multiLine = session({ firstMessage: "first line\nsecond line" });
+    expect(sessionRenameDraft(multiLine)).toBe("first line second line");
+    expect(resolveSessionRename(multiLine, sessionRenameDraft(multiLine), true)).toBeNull();
   });
 });
