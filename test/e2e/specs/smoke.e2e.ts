@@ -253,6 +253,20 @@ describe("agentic-chat smoke", function () {
     );
     // A lost selection would fall back to the whole line and still uppercase it.
     expect(target).toContain("Selection");
+    // An unknown instruction keeps Accept disabled and says why (#324).
+    const unknown = await browser.execute(() => {
+      const input = document.querySelector<HTMLTextAreaElement>(".agentic-chat-quick-ask-instruction");
+      if (!input) throw new Error("Quick Ask instruction input not found");
+      input.value = "frobnicate";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return {
+        text: document.querySelector<HTMLElement>(".agentic-chat-quick-ask-empty")?.innerText ?? "",
+        acceptDisabled: document.querySelector<HTMLButtonElement>(".agentic-chat-quick-ask-accept")?.disabled ?? false,
+      };
+    });
+    expect(unknown.text).toContain("No rule matches this instruction.");
+    expect(unknown.text).toContain("Try: uppercase");
+    expect(unknown.acceptDisabled).toBe(true);
     await browser.execute(() => {
       const input = document.querySelector<HTMLTextAreaElement>(".agentic-chat-quick-ask-instruction");
       if (!input) throw new Error("Quick Ask instruction input not found");

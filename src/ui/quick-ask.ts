@@ -61,11 +61,19 @@ export function buildQuickAskProposal(target: QuickAskTarget, instruction: strin
 }
 
 /**
- * Shown in the Quick Ask modal when no rule matches. Keep this list next to the
- * rules above so the two cannot drift apart.
+ * Shown in the Quick Ask modal when there is no edit. Keep this list next to
+ * the rules below; a test runs every listed entry through the rules.
  */
 export const QUICK_ASK_HINT =
-  "Try: uppercase, lowercase, sentence case, title case, trim, quote, numbered list, bullet list, replace: <text>, append: <text>, prefix: <text>";
+  "Try: uppercase, lowercase, sentence case, title case, trim, quote, numbered list, bullet list, replace: <text>, rewrite: <text>, append: <text>, prefix: <text>";
+
+/** The empty-state text: the hint, no matching rule, or a rule that changes nothing. */
+export function quickAskEmptyMessage(target: QuickAskTarget, instruction: string): string {
+  const trimmed = instruction.trim();
+  if (!trimmed) return QUICK_ASK_HINT;
+  if (applyQuickAskInstruction(target.text, trimmed) === null) return `No rule matches this instruction. ${QUICK_ASK_HINT}`;
+  return "This instruction leaves the text unchanged.";
+}
 
 export function applyQuickAskInstruction(text: string, instruction: string): string | null {
   const normalized = instruction.trim().toLowerCase();

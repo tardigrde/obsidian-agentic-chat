@@ -4,6 +4,7 @@ import {
   buildQuickAskProposal,
   buildQuickAskTarget,
   QUICK_ASK_HINT,
+  quickAskEmptyMessage,
   type QuickAskEditorLike,
 } from "../src/ui/quick-ask";
 
@@ -81,6 +82,19 @@ describe("QUICK_ASK_HINT", () => {
     for (const keyword of keywords) {
       expect(applyQuickAskInstruction("abc", keyword), keyword).not.toBeNull();
     }
+  });
+});
+
+describe("quickAskEmptyMessage", () => {
+  const target = buildQuickAskTarget(editor({ text: "already clean", selection: "already clean" }), "Note.md");
+  it("shows the hint for an empty instruction", () => {
+    expect(quickAskEmptyMessage(target, "  ")).toBe(QUICK_ASK_HINT);
+  });
+  it("says no rule matches for an unknown instruction", () => {
+    expect(quickAskEmptyMessage(target, "frobnicate")).toBe(`No rule matches this instruction. ${QUICK_ASK_HINT}`);
+  });
+  it("says the text is unchanged when a known rule is a no-op", () => {
+    expect(quickAskEmptyMessage(target, "trim")).toBe("This instruction leaves the text unchanged.");
   });
 });
 
