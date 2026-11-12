@@ -50,13 +50,13 @@ await (await modal.$("button=Allow")).click();
 | Global mutating gate persists | `src/settings.ts:902` | `test/e2e/specs/settings-ui.e2e.ts:261` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
 | Per-tool override through settings | `src/settings.ts:902` | `test/e2e/specs/settings-ui.e2e.ts:261` | `covered` |
 | Per-tool deny flips to allow in a recorded run | `src/settings.ts:902` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
-| Working directories and `/add-dir` are gone | `src/ui/commands.ts:24` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
+| Working directories and `/add-dir` are gone | `src/ui/commands.ts:25` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
 | Safe asks before mutating tools | `src/agent/tool-call-controller.ts:255` | `test/e2e/specs/approval-deterministic.e2e.ts:308` | `covered` |
-| Safe/YOLO toggle | `src/ui/chat-view.ts:783` | `test/e2e/specs/plan-removal.e2e.ts:95` (existence only) | `partial` |
-| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts:783` | `test/e2e/specs/plan-removal.e2e.ts:95` | `covered` |
-| Invalid mode transition is blocked | `src/ui/chat-view.ts:996` | `test/modes.test.ts:63` (unit only) | `partial` |
-| Background-tab approval badge and label | `src/ui/chat-view.ts:543` | `test/e2e/specs/multi-tab-approval.e2e.ts:102` | `covered` |
-| Closing a tab clears its pending approval | `src/ui/chat-view.ts:445` | `test/e2e/specs/multi-tab-approval.e2e.ts:167` | `covered` |
+| Safe/YOLO toggle | `src/ui/chat-view.ts:790` | `test/e2e/specs/plan-removal.e2e.ts:95` (existence only) | `partial` |
+| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts:790` | `test/e2e/specs/plan-removal.e2e.ts:95` | `covered` |
+| Invalid mode transition is blocked | `src/ui/chat-view.ts:1003` | `test/modes.test.ts:63` (unit only) | `partial` |
+| Background-tab approval badge and label | `src/ui/chat-view.ts:550` | `test/e2e/specs/multi-tab-approval.e2e.ts:102` | `covered` |
+| Closing a tab clears its pending approval | `src/ui/chat-view.ts:452` | `test/e2e/specs/multi-tab-approval.e2e.ts:167` | `covered` |
 | Approval modal at phone width | `src/ui/approval-modal.ts:34` | `test/e2e/specs/mobile-viewport.e2e.ts:437` | `covered` |
 
 ## Gotchas
