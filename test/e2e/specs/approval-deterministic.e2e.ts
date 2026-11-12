@@ -1,5 +1,6 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, afterEach, before, beforeEach, describe, it } from "mocha";
+import { waitForComposerReady } from "../support/layout";
 
 const WRITE_NOTE_PATH = "E2E-Deterministic-Write.md";
 const WRITE_NOTE_BODY = "deterministic write ok";
@@ -25,9 +26,13 @@ type ScriptedTurn = {
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
   await $(".agentic-chat-view").waitForExist();
+  await waitForComposerReady();
 }
 
 async function sendPrompt(prompt: string): Promise<void> {
+  // A missed first send shifts every later scripted turn by one, so a flaky
+  // click here fails the whole spec. Wait until the composer can be hit.
+  await waitForComposerReady();
   const input = await $(".agentic-chat-input");
   await input.click();
   await input.setValue(prompt);

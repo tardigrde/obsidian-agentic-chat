@@ -1,5 +1,6 @@
 import { $, browser, expect } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
+import { waitForComposerReady } from "../support/layout";
 import { openAgenticChatSettings, closeAgenticChatSettings, selectSettingsTab, waitForSetting } from "../support/settings-ui";
 
 const VIEW_TYPE_AGENT_CHAT = "agentic-chat-chat-view";
@@ -58,6 +59,7 @@ async function setMobileViewport(): Promise<void> {
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
   await $(".agentic-chat-view").waitForExist();
+  await waitForComposerReady();
 }
 
 async function sendPrompt(prompt: string): Promise<void> {

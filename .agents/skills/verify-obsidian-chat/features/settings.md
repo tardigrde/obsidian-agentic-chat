@@ -69,10 +69,10 @@ await closeAgenticChatSettings();
 | Recover an interrupted plugin install | `src/plugins/service.ts:597` | `test/plugins-service.test.ts:109` | `partial` |
 | Agent plugins: Repair built-ins | `src/settings.ts:2161` | no committed check | `NONE` |
 | Agent plugins: folder, ignored files | `src/settings.ts:2161` | `test/e2e/specs/settings-ui.e2e.ts:474` | `covered` |
-| Agent plugins: plugin row toggle/open/remove | `src/settings.ts:2425` | `test/e2e/specs/mobile-viewport.e2e.ts:404` (row renders only) | `partial` |
+| Agent plugins: plugin row toggle/open/remove | `src/settings.ts:2425` | `test/e2e/specs/mobile-viewport.e2e.ts:406` (row renders only) | `partial` |
 | Subagents: timeout | `src/settings.ts:2235` | no committed check | `NONE` |
 | Semantic retrieval: embedding controls | `src/settings.ts:2258` | no committed check | `NONE` |
-| Settings at phone width | `src/settings.ts:256` | `test/e2e/specs/mobile-viewport.e2e.ts:404` | `covered` |
+| Settings at phone width | `src/settings.ts:256` | `test/e2e/specs/mobile-viewport.e2e.ts:406` | `covered` |
 | `getSettingDefinitions()` | `src/settings.ts:256` | `test/e2e/specs/settings-ui.e2e.ts:185` (three named pages render) | `covered` |
 
 ## Gotchas

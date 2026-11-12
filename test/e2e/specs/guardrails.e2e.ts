@@ -1,5 +1,6 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { before, describe, it } from "mocha";
+import { waitForComposerReady } from "../support/layout";
 
 /**
  * Model-backed e2e (NB6): exercises the paths the smoke spec deliberately avoids
@@ -27,6 +28,7 @@ const EDIT_AFTER = "after edit";
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
   await $(".agentic-chat-view").waitForExist();
+  await waitForComposerReady();
 }
 
 /** Type a prompt and submit it via the explicit composer control (same path as Enter). */

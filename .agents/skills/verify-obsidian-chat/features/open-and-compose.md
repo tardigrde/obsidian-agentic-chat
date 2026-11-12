@@ -60,7 +60,7 @@ await $(".agentic-chat-send").click();
 | Enter sends while idle | `src/ui/chat-view.ts:720` | `test/e2e/specs/composer-paths.e2e.ts:159` | `covered` |
 | Enter steers while the agent runs | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:174` | `covered` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts:720` | `test/e2e/specs/composer-paths.e2e.ts:275` | `covered` |
-| Send button | `src/ui/chat-view.ts:835` | `test/e2e/specs/approval-deterministic.e2e.ts:314` | `covered` |
+| Send button | `src/ui/chat-view.ts:835` | `test/e2e/specs/approval-deterministic.e2e.ts:319` | `covered` |
 | ArrowUp/ArrowDown recall | `src/ui/chat-view.ts:701` | `test/composer-history.test.ts:16` (unit only) | `partial` |
 | Escape cancels edit | `src/ui/chat-view.ts:696` | `test/prompt-edit-state.test.ts:5` (unit only) | `partial` |
 | Autocomplete menu opens | `src/ui/chat-view.ts:949` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
@@ -68,7 +68,7 @@ await $(".agentic-chat-send").click();
 | `@` mention autocomplete | `src/ui/autocomplete.ts:80` | `test/autocomplete.test.ts:51` (detection only) | `partial` |
 | Drag-and-drop attach | `src/ui/chat-view.ts:843` | `test/drag-drop.test.ts:4` (parser only) | `partial` |
 | Active note auto-chip | `src/ui/chat-view.ts:2400` | `test/e2e/specs/smoke.e2e.ts:99` | `covered` |
-| Ignored active note stays out | `src/ui/active-note.ts:54` | `test/e2e/specs/runtime-behavior.e2e.ts:194` | `covered` |
+| Ignored active note stays out | `src/ui/active-note.ts:54` | `test/e2e/specs/runtime-behavior.e2e.ts:196` | `covered` |
 | Remove an attachment chip | `src/ui/chat-view.ts:2445` | `test/context-chip-renderer.test.ts:121` (unit only) | `partial` |
 | Image attachment guard | `src/ui/chat-view.ts:2368` | `test/image-attachments.test.ts:4` (encoding only) | `partial` |
 | Quick Ask accept | `src/ui/quick-ask-modal.ts:56` | `test/e2e/specs/smoke.e2e.ts:213` | `covered` |

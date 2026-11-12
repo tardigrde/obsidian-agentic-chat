@@ -1,5 +1,6 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
+import { waitForComposerReady } from "../support/layout";
 
 type ScriptedTurn = {
   label?: string;
@@ -14,6 +15,7 @@ function textTurn(label: string, text: string): ScriptedTurn {
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
   await $(".agentic-chat-view").waitForExist();
+  await waitForComposerReady();
 }
 
 async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {

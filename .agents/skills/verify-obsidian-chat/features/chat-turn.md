@@ -59,7 +59,7 @@ await browser.waitUntil(async () =>
 | Stream text deltas | `src/ui/chat-view.ts:2724` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
 | Reasoning section | `src/ui/chat-view.ts:2768` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
 | Markdown rendering | `src/ui/chat-view.ts:2777` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
-| Tool step cards and diffs | `src/ui/chat-view.ts:2556` | `test/e2e/specs/approval-deterministic.e2e.ts:332` | `covered` |
+| Tool step cards and diffs | `src/ui/chat-view.ts:2556` | `test/e2e/specs/approval-deterministic.e2e.ts:337` | `covered` |
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:425` | no committed check | `NONE` |
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts:1264` | `test/e2e/specs/composer-paths.e2e.ts:234` | `covered` |
 | Stop one tab without aborting the other | `src/ui/chat-view.ts:830` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
