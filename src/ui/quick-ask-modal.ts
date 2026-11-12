@@ -1,6 +1,6 @@
 import { App, Modal } from "obsidian";
 import { diffLines, diffStat, diffTooLarge } from "../vault/diff";
-import { buildQuickAskProposal, type QuickAskProposal, type QuickAskTarget } from "./quick-ask";
+import { buildQuickAskProposal, quickAskEmptyMessage, type QuickAskProposal, type QuickAskTarget } from "./quick-ask";
 
 const MAX_DIFF_DISPLAY_LINES = 400;
 
@@ -40,7 +40,7 @@ export class QuickAskModal extends Modal {
       preview.empty();
       if (!this.proposal) {
         accept.disabled = true;
-        preview.createEl("p", { cls: "agentic-chat-quick-ask-empty", text: "No edit available." });
+        preview.createEl("p", { cls: "agentic-chat-quick-ask-empty", text: quickAskEmptyMessage(this.target, input.value) });
         return;
       }
       accept.disabled = false;

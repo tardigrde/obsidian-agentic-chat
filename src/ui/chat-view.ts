@@ -783,7 +783,7 @@ export class ChatView extends ItemView {
     // Prompt Bar pattern); the ask/plan/agent dropdown is retired.
     this.modeToggleEl = toolbarRight.createDiv({
       cls: "agentic-chat-mode-toggle",
-      attr: { role: "switch", tabindex: "0", "aria-label": "Safe ↔ YOLO mode", "aria-checked": "false" },
+      attr: { role: "switch", tabindex: "0", "aria-label": "Permission mode: Safe", "aria-checked": "false" },
     });
     this.modeToggleEl.createSpan({ cls: "agentic-chat-mode-seg", text: "Safe" });
     this.modeToggleEl.createSpan({ cls: "agentic-chat-mode-seg", text: "YOLO" });
@@ -1052,6 +1052,7 @@ export class ChatView extends ItemView {
     this.modeToggleEl.toggleClass("is-active", settings.mode === "yolo");
     this.modeToggleEl.toggleClass("is-disabled", streaming);
     this.modeToggleEl.setAttr("aria-checked", String(settings.mode === "yolo"));
+    this.modeToggleEl.setAttr("aria-label", `Permission mode: ${settings.mode === "yolo" ? "YOLO" : "Safe"}`);
     // Effort can't change mid-turn (it would disagree with the in-flight request).
     this.effortKnobEl?.toggleClass("is-disabled", streaming);
   }
