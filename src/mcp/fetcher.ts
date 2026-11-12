@@ -2,6 +2,7 @@ import type { WebFetcher, WebHttpRequest, WebHttpResponse } from "../tools/web-f
 import { createObsidianFetcher } from "../tools/web-fetch";
 import type { ProxySettings } from "../network/proxy";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
+import { errorMessage } from "../utils/errors";
 // H3: MCP transient retries (429/5xx + Retry-After, 500ms→8s+jitter) are owned by
 // `src/mcp/client.ts` (post/getSseAfter) to avoid double multiplication with a
 // fetcher-level loop. This module stays retry-free; the client is the single owner
@@ -386,10 +387,6 @@ function optionalNodeRequire(): ((moduleName: string) => unknown) | undefined {
 
 function destroySocket(socket: NodeSocket): void {
   socket.destroy?.();
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function headersFromFetchInit(headers: HeadersInit | undefined): Record<string, string> {

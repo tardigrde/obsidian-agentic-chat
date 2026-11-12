@@ -60,7 +60,7 @@ await $(".agentic-chat-session-list").waitForExist();
 | Send waits for an in-flight session swap | `src/agent/session-actions.ts:63` | `test/agent-service.test.ts:1133` | `partial` |
 | Failed swap restores the previous session or recovers on next send | `src/agent/session-actions.ts:273` | `test/session-actions.test.ts:242`; `test/session-actions.test.ts:267` | `partial` |
 | A queued prompt is dropped on session change | `src/ui/session-activation-coordinator.ts:86`; `src/ui/chat-view.ts:1764` | `test/chat-view-lifecycle.test.ts:7`; `test/chat-view-lifecycle.test.ts:118` | `partial` |
-| A queued prompt flushes once the swap is live | `src/ui/chat-view.ts:1277` | `test/chat-view-lifecycle.test.ts:63` | `partial` |
+| A queued prompt flushes once the swap is live | `src/ui/chat-view.ts:1278` | `test/chat-view-lifecycle.test.ts:63` | `partial` |
 | Compaction rewrite rejects a changed session | `src/agent/compaction-runtime.ts:249` | `test/compaction-runtime.test.ts:354`; `test/session-invariants.test.ts:129` | `partial` |
 | A crash during rewrite keeps the old transcript or the new one | `src/session/session-manager.ts:454` | `test/session-rewrite-atomic.test.ts:82` (unit only) | `partial` |
 | A slow append stays in its original session file | `src/session/session-manager.ts:552` | `test/session-invariants.test.ts:91` | `partial` |

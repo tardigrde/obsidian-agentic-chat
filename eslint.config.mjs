@@ -52,6 +52,19 @@ export default tseslint.config(
     },
   },
   {
+    files: ["src/**/*.ts"],
+    ignores: ["src/utils/errors.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "FunctionDeclaration[id.name='errorMessage']",
+          message: "Use errorMessage from src/utils/errors.ts.",
+        },
+      ],
+    },
+  },
+  {
     files: [
       "src/**/*.ts",
       "test/**/*.ts",

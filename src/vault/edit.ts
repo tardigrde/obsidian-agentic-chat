@@ -1,5 +1,7 @@
 // Adapted from lhr0909/pi-obsidian (Simon Liang), MIT License.
 // https://github.com/lhr0909/pi-obsidian
+import { errorMessage } from "../utils/errors";
+
 export interface ExactEdit {
   oldText: string;
   newText: string;
@@ -130,7 +132,7 @@ export function applyExactEditsPartial(content: string, edits: ExactEdit[]): Edi
     try {
       resolved.push(resolveEdit(content, edit));
     } catch (error) {
-      failed.push({ edit, error: error instanceof Error ? error.message : String(error) });
+      failed.push({ edit, error: errorMessage(error) });
     }
   }
 

@@ -18,6 +18,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { convertMessages } from "@earendil-works/pi-ai/api/openai-completions";
 import type { WebFetcher } from "../tools/web-fetch";
+import { errorMessage } from "../utils/errors";
 import { normalizeOpenAICompatibleApiBaseUrl } from "./models";
 import {
   backoffDelayMs,
@@ -643,8 +644,4 @@ function parseJsonMaybe(text: string): unknown {
 
 function hasHeader(headers: Record<string, string>, target: string): boolean {
   return Object.keys(headers).some((key) => key.toLowerCase() === target.toLowerCase());
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

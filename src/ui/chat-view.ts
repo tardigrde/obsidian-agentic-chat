@@ -21,6 +21,7 @@ import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, apiKeyForProvider } from "../settings";
 import { listOpenAICompatibleModels, listOpenRouterModels } from "../llm/models";
 import { ModelSuggestModal } from "./model-suggest-modal";
+import { errorMessage } from "../utils/errors";
 import { SessionListModal } from "./session-list-modal";
 import { createFetchFromWebFetcher, createProxiedFetcher } from "../mcp/fetcher";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
@@ -278,7 +279,7 @@ export class ChatView extends ItemView {
     this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveNote()));
     await this.createSessionActivationCoordinator().initializeActiveSession(
       () => this.service.initialize(),
-      (error) => new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`),
+      (error) => new Notice(`Agentic chat: ${errorMessage(error)}`),
     );
   }
 
@@ -423,7 +424,7 @@ export class ChatView extends ItemView {
     await this.createSessionActivationCoordinator().initializeFreshTab(
       // A new tab is always a fresh session, never a continuation of tab 0's.
       () => tab.service.newSession(),
-      (error) => new Notice(`Agentic chat: ${error instanceof Error ? error.message : String(error)}`),
+      (error) => new Notice(`Agentic chat: ${errorMessage(error)}`),
     );
   }
 
@@ -1388,7 +1389,7 @@ export class ChatView extends ItemView {
       await this.service.truncateMessages(index);
     } catch (error) {
       // A failed session rewrite must not silently swallow the edit.
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      this.renderErrorMessage(errorMessage(error));
       return;
     }
     this.bubble = null;
@@ -1593,7 +1594,7 @@ export class ChatView extends ItemView {
       try {
         await service.truncateMessages(failedIndex);
       } catch (error) {
-        this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+        this.renderErrorMessage(errorMessage(error));
         return;
       }
       if (this.isLiveTab(tab)) {
@@ -1695,7 +1696,7 @@ export class ChatView extends ItemView {
       // describe the same vault state.
       await this.service.reloadRuntimeResources();
     } catch (error) {
-      this.renderErrorMessage(`Doctor audit failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.renderErrorMessage(`Doctor audit failed: ${errorMessage(error)}`);
       return;
     }
     const folder = this.plugin.settings.plugins.folder || ".agentic-plugins";
@@ -1908,7 +1909,7 @@ export class ChatView extends ItemView {
       await this.persistEffortLevel(level);
     } catch (error) {
       this.renderErrorMessage(
-        `Could not save effort level: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not save effort level: ${errorMessage(error)}`,
       );
       return;
     }
@@ -2175,7 +2176,7 @@ export class ChatView extends ItemView {
       const file = await this.app.vault.create(path, markdown);
       this.renderInfoMessage("Export", [["Saved", file.path]]);
     } catch (error) {
-      this.renderErrorMessage(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.renderErrorMessage(`Export failed: ${errorMessage(error)}`);
     }
   }
 
@@ -2237,7 +2238,7 @@ export class ChatView extends ItemView {
     try {
       await coordinator.startNewConversation(() => this.service.newSession());
     } catch (error) {
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      this.renderErrorMessage(errorMessage(error));
     } finally {
       // A new conversation starts in the default (normal) output style.
       if (this.plugin.settings.outputStyle !== DEFAULT_OUTPUT_STYLE) {
@@ -2289,7 +2290,7 @@ export class ChatView extends ItemView {
     try {
       return await this.service.clearSessions();
     } catch (error) {
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      this.renderErrorMessage(errorMessage(error));
       return -1;
     }
   }
@@ -2307,7 +2308,7 @@ export class ChatView extends ItemView {
     try {
       await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
     } catch (error) {
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      this.renderErrorMessage(errorMessage(error));
     }
   }
 
@@ -2358,7 +2359,7 @@ export class ChatView extends ItemView {
         this.syncChrome();
       }, `${modelProviderLabel(settings.provider)} model`).open();
     } catch (error) {
-      this.renderErrorMessage(error instanceof Error ? error.message : String(error));
+      this.renderErrorMessage(errorMessage(error));
     }
   }
 
@@ -2740,7 +2741,7 @@ export class ChatView extends ItemView {
     try {
       await openSystemUrl(target);
     } catch (error) {
-      new Notice(`Could not open link: ${error instanceof Error ? error.message : String(error)}`);
+      new Notice(`Could not open link: ${errorMessage(error)}`);
     }
   }
 

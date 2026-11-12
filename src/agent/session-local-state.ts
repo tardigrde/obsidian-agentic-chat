@@ -1,6 +1,7 @@
 import type { Usage } from "@earendil-works/pi-ai";
 import { ReadMemo } from "../vault/read-memo";
 import { addUsage, emptyUsage } from "./usage";
+import { errorMessage } from "../utils/errors";
 
 export class AgentSessionLocalState {
   /** De-dupes repeat `read` calls so re-reading can't double a file into the context window. */
@@ -23,7 +24,7 @@ export class AgentSessionLocalState {
   }
 
   setError(error: unknown): void {
-    this.errorMessage = error instanceof Error ? error.message : String(error);
+    this.errorMessage = errorMessage(error);
   }
 
   setErrorMessage(message: string): void {
