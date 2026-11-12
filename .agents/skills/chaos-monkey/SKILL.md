@@ -121,8 +121,9 @@ npm run chaos -- --mode explore --live --llm opencode --charter <c> --max-steps 
 npm run chaos:mine -- <runDir> --llm opencode
 ```
 
-The CLI agent file is `scripts/chaos/opencode-agent/.opencode/agent/chaos-llm.md`.
-It disables tools to keep the prompt small.
+Each call runs `opencode run --standalone` from an empty temp directory. The
+`chaos-llm` agent is defined inline in `scripts/chaos/opencode-run.ts` with all
+tools off, so a call costs about 1k tokens of overhead.
 
 ## Scripted modes
 

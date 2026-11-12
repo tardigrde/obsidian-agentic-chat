@@ -1,9 +1,9 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { chatComplete } from "../scripts/chaos/explorer-llm";
-import { opencodeComplete, parseOpencodeOutput, serializeMessages } from "../scripts/chaos/opencode-run";
+import { childEnv, opencodeComplete, parseOpencodeOutput, serializeMessages } from "../scripts/chaos/opencode-run";
 
 const savedBin = process.env.OPENCODE_BIN;
 const savedCounter = process.env.CHAOS_FAKE_COUNTER;
@@ -23,7 +23,7 @@ process.stdin.setEncoding("utf8");
 let input = "";
 process.stdin.on("data", (chunk) => { input += chunk; });
 process.stdin.on("end", () => {
-  const reply = JSON.stringify({ stdin: input.length, argv: process.argv.slice(2).join(" ") });
+  const reply = JSON.stringify({ stdin: input.length, argv: process.argv.slice(2).join(" "), cwd: process.cwd(), config: process.env.OPENCODE_CONFIG_CONTENT ?? "", leaked: Boolean(process.env.AGENTIC_CHAT_API_KEY) });
   process.stdout.write(JSON.stringify({ type: "step_start", sessionID: "ses_x", part: { type: "step-start" } }) + "\\n");
   process.stdout.write(JSON.stringify({ type: "text", sessionID: "ses_x", part: { type: "text", text: reply } }) + "\\n");
   process.stdout.write(JSON.stringify({ type: "step_finish", sessionID: "ses_x", part: { type: "step-finish", reason: "stop", cost: 0, tokens: { input: 985, output: 7, reasoning: 0, cache: { read: 0, write: 0 } } } }) + "\\n");
@@ -111,6 +111,12 @@ describe("opencode output parser", () => {
 describe("opencodeComplete", () => {
   it("runs the agent with stdin and reads the reply", async () => {
     process.env.OPENCODE_BIN = fakeBin(okScript);
+    const savedKey = process.env.AGENTIC_CHAT_API_KEY;
+    process.env.AGENTIC_CHAT_API_KEY = "sk-or-test-not-for-the-child";
+    onTestFinished(() => {
+      if (savedKey === undefined) delete process.env.AGENTIC_CHAT_API_KEY;
+      else process.env.AGENTIC_CHAT_API_KEY = savedKey;
+    });
     const messages = [
       { role: "system" as const, content: "system text" },
       { role: "user" as const, content: "hello" },
@@ -126,7 +132,11 @@ describe("opencodeComplete", () => {
       },
       1,
     );
-    const body = JSON.parse(reply.text) as { stdin: number; argv: string };
+    const body = JSON.parse(reply.text) as { stdin: number; argv: string; cwd: string; config: string; leaked: boolean };
+    expect(body.argv).toContain("--standalone");
+    expect(JSON.parse(body.config).agent["chaos-llm"].tools).toEqual({ "*": false });
+    expect(path.relative(process.cwd(), body.cwd).startsWith("..")).toBe(true);
+    expect(body.leaked).toBe(false);
     expect(body.stdin).toBe(serializeMessages(messages, true).length);
     expect(body.argv).toContain("--agent chaos-llm");
     expect(body.argv).toContain("-m opencode-go/deepseek-v4.1-flash");
@@ -177,5 +187,20 @@ process.stdout.write(JSON.stringify({ type: "text", part: { type: "text", text: 
     });
     expect(reply.usage.totalTokens).toBe(992);
     expect(JSON.parse(reply.text).argv).toContain("--agent chaos-llm");
+  });
+});
+
+describe("opencode child env", () => {
+  it("drops API keys and plugin settings but keeps PATH and HOME", () => {
+    const env = childEnv({
+      PATH: "/usr/bin",
+      HOME: "/home/x",
+      AGENTIC_CHAT_API_KEY: "sk-or-secret",
+      AGENTIC_CHAT_BASE_URL: "https://openrouter.ai/api/v1",
+      OPENCODE_GO_API_KEY: "go-secret",
+      GITHUB_TOKEN: "ghp-secret",
+      OPENCODE_BIN: "/tmp/fake",
+    });
+    expect(env).toEqual({ PATH: "/usr/bin", HOME: "/home/x", OPENCODE_BIN: "/tmp/fake" });
   });
 });

@@ -104,10 +104,8 @@ export function resolveChaosLlm(
 export function resolvePluginLlm(
   llm: ChaosLlm,
   env: NodeJS.ProcessEnv = process.env,
-  keyFile?: string,
 ): { baseUrl: string; model: string; apiKey?: string; keySource: string } {
-  // Key file handling stays in chaos-monkey.ts, which owns readKeyFile().
-  void keyFile;
+  // AGENTIC_CHAT_API_KEY_FILE is read in chaos-monkey.ts (readKeyFile).
   if (llm.name !== "opencode") {
     return { baseUrl: llm.baseUrl, model: llm.model, apiKey: llm.apiKey, keySource: llm.keySource };
   }

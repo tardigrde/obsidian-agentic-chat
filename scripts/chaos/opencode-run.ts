@@ -11,12 +11,50 @@
  */
 
 import { spawn } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ChatMessage, ChatReply, ChatRequest } from "./explorer-llm";
 
-/** cwd for the child. Only this directory's agent file is visible to opencode. */
-export const OPENCODE_AGENT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "opencode-agent");
+export const OPENCODE_AGENT = "chaos-llm";
+
+/**
+ * The agent is defined inline. `opencode run` without `--standalone` talks to a
+ * shared background service that ignores the child's env and cwd, and inside a
+ * git repo opencode reads `.opencode/` only at the repo root. So the child runs
+ * `--standalone`, gets this config through OPENCODE_CONFIG_CONTENT, and starts
+ * in an empty temp directory, so no repo AGENTS.md enters the prompt (about 1k
+ * input tokens of overhead instead of 3k+).
+ */
+export const OPENCODE_AGENT_CONFIG = JSON.stringify({
+  agent: {
+    [OPENCODE_AGENT]: {
+      mode: "primary",
+      description: "Plain completion for the chaos explorer and miner. No tools.",
+      prompt: "You are a plain completion endpoint. Follow the instructions in the message exactly. Never use tools.",
+      tools: { "*": false },
+    },
+  },
+});
+
+export const OPENCODE_ARGS = (model: string): string[] => [
+  "run",
+  "--standalone",
+  "--archived",
+  "--agent",
+  OPENCODE_AGENT,
+  "-m",
+  model,
+  "--format",
+  "json",
+];
+
+let workDir: string | undefined;
+/** One empty directory per process, outside any repo. */
+function opencodeWorkDir(): string {
+  workDir ??= mkdtempSync(path.join(os.tmpdir(), "chaos-opencode-cwd-"));
+  return workDir;
+}
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const RETRY_BASE_MS = 1_500;
@@ -120,13 +158,26 @@ function stderrTail(stderr: string): string {
   return trimmed.length > STDERR_TAIL ? trimmed.slice(-STDERR_TAIL) : trimmed;
 }
 
+/** The child needs only the opencode login. Keep the plugin and API keys out of its env. */
+export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const clean: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (/^(AGENTIC_CHAT_|OPENROUTER_|OPENAI_|ANTHROPIC_)/.test(name) || /(API_KEY|TOKEN|SECRET)/.test(name)) continue;
+    clean[name] = value;
+  }
+  return clean;
+}
+
 function runOnce(model: string, input: string, timeoutMs: number): Promise<ChatReply> {
   return new Promise<ChatReply>((resolve, reject) => {
     const bin = process.env.OPENCODE_BIN || "opencode";
-    const args = ["run", "--archived", "--agent", "chaos-llm", "-m", model, "--format", "json"];
+    const args = OPENCODE_ARGS(model);
     // maxTokens and temperature are ignored on purpose: `opencode run` has no
     // flag for them. The prompt controls the reply shape.
-    const child = spawn(bin, args, { cwd: OPENCODE_AGENT_DIR, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(bin, args, {
+      cwd: opencodeWorkDir(),
+      env: { ...childEnv(), OPENCODE_CONFIG_CONTENT: OPENCODE_AGENT_CONFIG },
+      stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
