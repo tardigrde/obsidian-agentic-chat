@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 /**
  * Prove that a test is a witness: it must fail when the production change is
@@ -49,6 +50,10 @@ const NON_ASSERTION_RED_MARKERS = [
   { label: "Unexpected token", pattern: /Unexpected token/ },
   { label: "TSError", pattern: /TSError/ },
   { label: "TypeScript compiler error", pattern: /error TS\d+/ },
+  // A reverted file that a test imports leaves the binding undefined. Match only
+  // the bundler's import shapes (tsx/esbuild `(0 , import_x.y)`, vitest
+  // `__vi_import_0__.y`), so a TypeError from the code under test still counts.
+  { label: "missing import", pattern: /(?:\(0\s*,\s*import_\w+\.\w+\)|__vi_import_\d+__\.\w+) is not a function/ },
 ];
 
 const FAILED_TEST_COUNT_PATTERNS = [
@@ -214,7 +219,7 @@ function failedTestCount(output) {
   return undefined;
 }
 
-function verdictFor(reverted, restored) {
+export function verdictFor(reverted, restored) {
   if (reverted.status === 0) {
     return {
       verdict: "FAIL",
@@ -652,4 +657,4 @@ function main() {
   process.exit(result.verdict === "PASS" || result.verdict === "DRY-RUN" ? 0 : 1);
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
