@@ -8,7 +8,7 @@ import { FOLDER_PREFIX } from "./autocomplete";
 import { isTextContextAttachment, textContextSection, type ContextAttachment } from "./context-attachments";
 import { arrayBufferToBase64, imageMimeType, isImagePath } from "./image-attachments";
 import { extractNoteSlice } from "./note-slices";
-import { stripPromptPreamble } from "../session/session-manager";
+import { stripPromptPreamble } from "../session/session-title";
 
 export interface PromptContextOptions {
   app: App;

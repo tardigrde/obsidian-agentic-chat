@@ -1,4 +1,5 @@
-import { stripPromptPreamble, type SessionInfo } from "../session/session-manager";
+import { type SessionInfo } from "../session/session-manager";
+import { stripPromptPreamble } from "../session/session-title";
 
 export interface SessionRowState {
   session: SessionInfo;

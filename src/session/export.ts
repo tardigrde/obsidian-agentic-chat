@@ -1,7 +1,8 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { isSummaryMessage } from "../agent/compaction";
 import { collectToolResults, messageText, toolCalls } from "../ui/message-content";
-import { stripPromptPreamble, type SessionInfo } from "./session-manager";
+import { type SessionInfo } from "./session-manager";
+import { stripPromptPreamble } from "./session-title";
 
 /** Default vault folder exported conversations are written into. */
 export const EXPORT_FOLDER = "Agentic Chat Exports";
