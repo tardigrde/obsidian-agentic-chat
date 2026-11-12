@@ -6,6 +6,8 @@
  * logs the key.
  */
 
+import { opencodeComplete } from "./opencode-run";
+
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 export type ChatUsage = { promptTokens: number; completionTokens: number; totalTokens: number; cost: number };
@@ -29,6 +31,8 @@ export type ChatRequest = {
   json?: boolean;
   /** Extra headers, for example OpenCode Go's user agent and session id. No secrets. */
   headers?: Record<string, string>;
+  /** `opencode` runs the local CLI. It ignores baseUrl, apiKey, and headers. */
+  backend?: "http" | "opencode";
 };
 
 const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
@@ -66,6 +70,7 @@ export function parseChatResponse(body: unknown, fallbackModel: string): ChatRep
 }
 
 export async function chatComplete(request: ChatRequest, attempts = 3): Promise<ChatReply> {
+  if (request.backend === "opencode") return opencodeComplete(request);
   const url = `${request.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   const payload: Record<string, unknown> = {
     model: request.model,

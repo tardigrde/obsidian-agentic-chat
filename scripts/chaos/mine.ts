@@ -38,6 +38,9 @@ export type MineOptions = {
   baseUrl: string;
   model: string;
   llm?: ChaosLlmName;
+  backend?: "http" | "opencode";
+  /** More secrets to strip from the digest, for example the plugin's key. */
+  redact?: Array<string | undefined>;
 };
 
 async function readJson<T>(file: string, fallback: T): Promise<T> {
@@ -104,7 +107,7 @@ export async function mineRun(options: MineOptions): Promise<{ report: MinerRepo
       sessions,
       openIssues: openChaosIssues(),
     }),
-    [options.apiKey],
+    [options.apiKey, ...(options.redact ?? [])],
   );
   await writeFile(path.join(runDir, "miner-digest.txt"), digest);
 
@@ -118,6 +121,7 @@ export async function mineRun(options: MineOptions): Promise<{ report: MinerRepo
       apiKey: options.apiKey,
       model: options.model,
       json: true,
+      backend: options.backend ?? "http",
       headers: llmHeaders(options.llm, `chaos-mine-${path.basename(runDir)}`),
       maxTokens,
       temperature: 0.2,
@@ -169,13 +173,23 @@ async function main(): Promise<void> {
   const envFile = path.resolve(".env");
   if (existsSync(envFile)) applyEnvFile(envFile);
   const llm = resolveChaosLlm(parseLlmName(readArg("--llm") ?? process.env.AGENTIC_CHAT_CHAOS_LLM));
-  if (!llm.apiKey) {
+  if (llm.backend === "http" && !llm.apiKey) {
     console.error(`[chaos:mine] needs a key for ${llm.name} (${llm.keySource})`);
     process.exit(1);
   }
   const model = assertChaosModel(readArg("--model") ?? (llm.model || CHAOS_MODEL), hasFlag("--allow-any-model"));
-  const { report, drafts, cost } = await mineRun({ runDir, apiKey: llm.apiKey, baseUrl: llm.baseUrl, model, llm: llm.name });
-  process.stdout.write(`[chaos:mine] findings: ${report.findings.length}, drafts: ${drafts.length}, cost: $${cost.toFixed(4)}\n`);
+  const { report, drafts, cost } = await mineRun({
+    runDir,
+    apiKey: llm.apiKey ?? "",
+    baseUrl: llm.baseUrl,
+    model,
+    llm: llm.name,
+    backend: llm.backend,
+    // The plugin under test may have used a different key than the miner.
+    redact: [process.env.AGENTIC_CHAT_API_KEY?.trim()],
+  });
+  const costLabel = llm.backend === "opencode" ? "subscription" : `$${cost.toFixed(4)}`;
+  process.stdout.write(`[chaos:mine] findings: ${report.findings.length}, drafts: ${drafts.length}, cost: ${costLabel}\n`);
   process.stdout.write(`[chaos:mine] report: ${path.join(runDir, "findings.md")}\n`);
 }
 

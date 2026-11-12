@@ -25,7 +25,7 @@ import {
 } from "./chaos/monkey-core";
 import { BUILTIN_CHARTERS } from "./chaos/explorer-core";
 import { mineRun } from "./chaos/mine";
-import { parseLlmName, resolveChaosLlm, type ChaosLlmName } from "./chaos/llm-provider";
+import { parseLlmName, resolveChaosLlm, resolvePluginLlm, type ChaosLlmName } from "./chaos/llm-provider";
 import {
   applyEnvFile,
   extractFrames,
@@ -77,6 +77,12 @@ type Options = {
   baseUrl: string;
   mcpUrl?: string;
   apiKey?: string;
+  /** The plugin under test cannot use the CLI; it always gets an HTTP endpoint. */
+  pluginBaseUrl: string;
+  pluginModel: string;
+  pluginApiKey?: string;
+  pluginKeySource: string;
+  backend: "http" | "opencode";
   charter?: string;
   replayFile?: string;
   allowAnyModel: boolean;
@@ -168,13 +174,26 @@ function parseOptions(): Options {
   const selection = selectMode(readArg("--mode"), readArg("--target"));
   const live = hasFlag("--live");
   const llm = resolveChaosLlm(parseLlmName(readArg("--llm") ?? process.env.AGENTIC_CHAT_CHAOS_LLM));
-  const apiKey = llm.apiKey ?? (llm.name === "openrouter" ? readKeyFile() : undefined);
+  const plugin = resolvePluginLlm(llm);
+  const apiKey =
+    llm.apiKey ?? (llm.backend === "http" && llm.name === "openrouter" ? readKeyFile() : undefined);
+  // The plugin endpoint is OpenRouter for `openrouter` and `opencode`; both may
+  // take the key from a file.
+  const pluginKeyFile = llm.name === "openrouter" || llm.name === "opencode";
+  const pluginApiKey = plugin.apiKey ?? (pluginKeyFile ? readKeyFile() : undefined);
 
-  if (live && !apiKey) {
+  if (live && llm.backend === "http" && !apiKey) {
     fail(
       llm.name === "openrouter"
         ? "--live needs AGENTIC_CHAT_API_KEY or AGENTIC_CHAT_API_KEY_FILE. Without it the runner only does a capped dry run."
         : "--live --llm opencode-go needs OPENCODE_GO_API_KEY (or an opencode-go key in opencode's auth.json).",
+    );
+  }
+  if (live && !pluginApiKey) {
+    fail(
+      llm.name === "opencode"
+        ? "--live --llm opencode still needs AGENTIC_CHAT_API_KEY (or AGENTIC_CHAT_API_KEY_FILE) for the plugin under test; the explorer and miner use the opencode CLI."
+        : "--live needs AGENTIC_CHAT_API_KEY or AGENTIC_CHAT_API_KEY_FILE for the plugin under test.",
     );
   }
 
@@ -203,6 +222,9 @@ function parseOptions(): Options {
     readArg("--model") ?? (llm.model || CHAOS_MODEL),
     allowAnyModel,
   );
+  // With an HTTP backend the plugin shares the explorer endpoint, so --model
+  // reaches it as before. Only `opencode` gives the plugin its own model.
+  const pluginModel = llm.backend === "opencode" ? assertChaosModel(plugin.model, allowAnyModel) : model;
 
   return {
     ...selection,
@@ -221,6 +243,11 @@ function parseOptions(): Options {
     baseUrl: llm.baseUrl,
     mcpUrl: process.env.AGENTIC_CHAT_CHAOS_MCP_URL?.trim() || process.env.AGENTIC_CHAT_E2E_MCP_URL?.trim(),
     apiKey,
+    pluginBaseUrl: plugin.baseUrl,
+    pluginModel,
+    pluginApiKey,
+    pluginKeySource: plugin.keySource,
+    backend: llm.backend,
     charter: explore ? resolveCharter(readArg("--charter")) : undefined,
     replayFile,
     allowAnyModel,
@@ -294,6 +321,9 @@ async function writePlan(
     seed: Math.floor(Date.now() % 2_147_483_647),
     model: options.model,
     baseUrl: options.baseUrl,
+    backend: options.backend,
+    pluginBaseUrl: options.pluginBaseUrl,
+    pluginModel: options.pluginModel,
     seededNotes: ["Welcome.md", "Notes/Seed.md", "Chaos Scratch.md"],
     mcpUrl: options.mcpUrl,
     charter: options.charter,
@@ -366,7 +396,7 @@ async function writeReport(input: {
       ? steps
           .map(
             (step) =>
-              `| ${step.id} | ${step.surface} | ${step.status} | ${redactSecrets(step.detail ?? "", [options.apiKey]) || "-"} |`,
+              `| ${step.id} | ${step.surface} | ${step.status} | ${redactSecrets(step.detail ?? "", [options.apiKey, options.pluginApiKey]) || "-"} |`,
           )
           .join("\n")
       : "| - | - | no steps executed | - |";
@@ -375,7 +405,7 @@ async function writeReport(input: {
       ? findings
           .map(
             (finding) =>
-              `| ${finding.severity} | ${finding.step} | ${redactSecrets(finding.message, [options.apiKey])} |`,
+              `| ${finding.severity} | ${finding.step} | ${redactSecrets(finding.message, [options.apiKey, options.pluginApiKey])} |`,
           )
           .join("\n")
       : "| - | - | none |";
@@ -386,7 +416,7 @@ async function writeReport(input: {
           .slice(-40)
           .map(
             (action) =>
-              `| ${stringField(action.t)}s | ${stringField(action.step)} | ${stringField(action.status)} | ${redactSecrets(stringField(action.detail), [options.apiKey])} |`,
+              `| ${stringField(action.t)}s | ${stringField(action.step)} | ${stringField(action.status)} | ${redactSecrets(stringField(action.detail), [options.apiKey, options.pluginApiKey])} |`,
           )
           .join("\n")
       : "| - | - | - | no actions |";
@@ -402,7 +432,7 @@ async function writeReport(input: {
 - live: \`${options.live}\`
 - duration: ${(durationMs / 1000).toFixed(1)}s
 - display: \`${result.display}\` ${options.size.width}x${options.size.height} @ ${options.fps}fps
-- exit: ${result.code}${result.failure ? ` (${redactSecrets(result.failure, [options.apiKey])})` : ""}
+- exit: ${result.code}${result.failure ? ` (${redactSecrets(result.failure, [options.apiKey, options.pluginApiKey])})` : ""}
 
 ## Hard caps
 
@@ -473,11 +503,12 @@ function explorerSection(options: Options, driver: ReportDriver | undefined): st
   return `
 ## Explorer
 
-- endpoint: \`${options.llm}\` (\`${options.baseUrl}\`, key from ${options.keySource})
-- model: \`${options.model}\`${options.replayFile ? ` (replay of \`${options.replayFile}\`)` : ""}
+- plugin endpoint: \`${options.pluginModel}\` (\`${options.pluginBaseUrl}\`, key from ${options.pluginKeySource})
+- explorer/miner endpoint: \`${options.llm}\` (\`${options.baseUrl}\`, key from ${options.keySource})
+- explorer model: \`${options.model}\`${options.replayFile ? ` (replay of \`${options.replayFile}\`)` : ""}
 - explorer calls: ${explorer?.calls ?? 0}, tokens: ${explorer?.tokens ?? 0}, cost: $${(explorer?.cost ?? 0).toFixed(4)}, invalid replies: ${explorer?.invalidReplies ?? 0}
 - plugin assistant messages: ${plugin?.assistantMessages ?? 0}, tokens: ${plugin?.tokens ?? 0}, models: ${plugin?.models.join(", ") || "-"}
-- summary: ${explorer?.summary ? redactSecrets(explorer.summary, [options.apiKey]) : "(explorer did not finish with done)"}
+- summary: ${explorer?.summary ? redactSecrets(explorer.summary, [options.apiKey, options.pluginApiKey]) : "(explorer did not finish with done)"}
 
 Charter:
 
@@ -604,9 +635,9 @@ async function main(): Promise<void> {
             AGENTIC_CHAT_E2E_HEADLESS: "0",
             AGENTIC_CHAT_E2E_MOBILE_VIEWPORT: "0",
             WDIO_MAX_INSTANCES: "1",
-            AGENTIC_CHAT_API_KEY: options.apiKey ?? "",
-            AGENTIC_CHAT_BASE_URL: options.baseUrl,
-            AGENTIC_CHAT_MODEL: options.model,
+            AGENTIC_CHAT_API_KEY: options.pluginApiKey ?? "",
+            AGENTIC_CHAT_BASE_URL: options.pluginBaseUrl,
+            AGENTIC_CHAT_MODEL: options.pluginModel,
           },
           stdio: ["ignore", "pipe", "pipe"],
         });
@@ -660,27 +691,42 @@ async function main(): Promise<void> {
     const actions = await readActionLog(options.outDir);
     await writeReport({ options, outDir: options.outDir, result, driver, actions });
 
-    if (options.mode === "explore" && options.live && !options.noMine && options.apiKey && driver) {
+    if (
+      options.mode === "explore" &&
+      options.live &&
+      !options.noMine &&
+      (options.backend === "opencode" || options.apiKey) &&
+      driver
+    ) {
       process.stdout.write("[chaos] mining the run\n");
       try {
         const mined = await mineRun({
           runDir: options.outDir,
-          apiKey: options.apiKey,
+          apiKey: options.apiKey ?? "",
           baseUrl: options.baseUrl,
           model: options.model,
           llm: options.llm,
+          backend: options.backend,
+          redact: [options.pluginApiKey],
         });
         process.stdout.write(
-          `[chaos] mined: ${mined.report.findings.length} findings, ${mined.drafts.length} issue drafts, cost $${mined.cost.toFixed(4)}\n`,
+          `[chaos] mined: ${mined.report.findings.length} findings, ${mined.drafts.length} issue drafts, cost ${
+            options.backend === "opencode" ? "subscription" : `$${mined.cost.toFixed(4)}`
+          }\n`,
         );
         process.stdout.write(`[chaos] findings: ${path.join(options.outDir, "findings.md")}\n`);
       } catch (error) {
-        console.error(`[chaos] mining failed: ${redactSecrets(error instanceof Error ? error.message : String(error), [options.apiKey])}`);
+        console.error(
+          `[chaos] mining failed: ${redactSecrets(error instanceof Error ? error.message : String(error), [
+            options.apiKey,
+            options.pluginApiKey,
+          ])}`,
+        );
         console.error(`[chaos] retry: npm run chaos:mine -- ${options.outDir}`);
       }
     }
 
-    if (result.failure) console.error(`[chaos] ${redactSecrets(result.failure, [options.apiKey])}`);
+    if (result.failure) console.error(`[chaos] ${redactSecrets(result.failure, [options.apiKey, options.pluginApiKey])}`);
     process.stdout.write(`[chaos] report: ${path.join(options.outDir, "report.md")}\n`);
     if (existsSync(result.mp4)) process.stdout.write(`[chaos] video: ${result.mp4}\n`);
 
