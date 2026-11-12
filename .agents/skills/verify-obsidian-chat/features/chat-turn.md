@@ -70,7 +70,7 @@ await browser.waitUntil(async () =>
 | Enter steers after the current model turn | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:174` | `covered` |
 | Undelivered steering returns to the composer | `src/ui/chat-view.ts:2787` | `test/agent-service.test.ts:1517`, `test/composer-input.test.ts:29` (unit only) | `partial` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts:720` | `test/e2e/specs/composer-paths.e2e.ts:275` | `covered` |
-| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1269` | `test/e2e/specs/composer-paths.e2e.ts:208` | `covered` |
+| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1270` | `test/e2e/specs/composer-paths.e2e.ts:208` | `covered` |
 | Stop then send replaces the turn | `src/ui/chat-view.ts:1264` | `test/e2e/specs/composer-paths.e2e.ts:234` | `covered` |
 | Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |
 | Inline `ask_user` card | `src/ui/chat-view.ts:573` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |

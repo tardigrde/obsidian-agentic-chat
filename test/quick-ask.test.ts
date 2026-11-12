@@ -3,6 +3,7 @@ import {
   applyQuickAskInstruction,
   buildQuickAskProposal,
   buildQuickAskTarget,
+  QUICK_ASK_HINT,
   type QuickAskEditorLike,
 } from "../src/ui/quick-ask";
 
@@ -70,6 +71,16 @@ describe("applyQuickAskInstruction", () => {
 
   it("returns null for unsupported instructions", () => {
     expect(applyQuickAskInstruction("alpha", "make this more exciting")).toBeNull();
+  });
+});
+
+describe("QUICK_ASK_HINT", () => {
+  it("names every instruction the rule engine accepts", () => {
+    const keywords = QUICK_ASK_HINT.replace(/^Try:\s*/, "").split(", ");
+    expect(keywords.length).toBeGreaterThanOrEqual(11);
+    for (const keyword of keywords) {
+      expect(applyQuickAskInstruction("abc", keyword), keyword).not.toBeNull();
+    }
   });
 });
 

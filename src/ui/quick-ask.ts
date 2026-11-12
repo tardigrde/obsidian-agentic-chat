@@ -60,6 +60,13 @@ export function buildQuickAskProposal(target: QuickAskTarget, instruction: strin
   };
 }
 
+/**
+ * Shown in the Quick Ask modal when no rule matches. Keep this list next to the
+ * rules above so the two cannot drift apart.
+ */
+export const QUICK_ASK_HINT =
+  "Try: uppercase, lowercase, sentence case, title case, trim, quote, numbered list, bullet list, replace: <text>, append: <text>, prefix: <text>";
+
 export function applyQuickAskInstruction(text: string, instruction: string): string | null {
   const normalized = instruction.trim().toLowerCase();
   const replacement = explicitReplacement(instruction);

@@ -67,12 +67,12 @@ await $(".agentic-chat-send").click();
 | Autocomplete keys | `src/ui/autocomplete-menu.ts:108` | no committed check | `NONE` |
 | `@` mention autocomplete | `src/ui/autocomplete.ts:80` | `test/autocomplete.test.ts:51` (detection only) | `partial` |
 | Drag-and-drop attach | `src/ui/chat-view.ts:843` | `test/drag-drop.test.ts:4` (parser only) | `partial` |
-| Active note auto-chip | `src/ui/chat-view.ts:2399` | `test/e2e/specs/smoke.e2e.ts:99` | `covered` |
+| Active note auto-chip | `src/ui/chat-view.ts:2400` | `test/e2e/specs/smoke.e2e.ts:99` | `covered` |
 | Ignored active note stays out | `src/ui/active-note.ts:54` | `test/e2e/specs/runtime-behavior.e2e.ts:194` | `covered` |
 | Remove an attachment chip | `src/ui/chat-view.ts:2445` | `test/context-chip-renderer.test.ts:121` (unit only) | `partial` |
 | Image attachment guard | `src/ui/chat-view.ts:2368` | `test/image-attachments.test.ts:4` (encoding only) | `partial` |
-| Quick Ask accept | `src/ui/quick-ask-modal.ts:53` | `test/e2e/specs/smoke.e2e.ts:213` | `covered` |
-| Quick Ask Enter accept | `src/ui/quick-ask-modal.ts:58` | no committed check | `NONE` |
+| Quick Ask accept | `src/ui/quick-ask-modal.ts:56` | `test/e2e/specs/smoke.e2e.ts:213` | `covered` |
+| Quick Ask Enter accept | `src/ui/quick-ask-modal.ts:61` | no committed check | `NONE` |
 
 ## Gotchas
 

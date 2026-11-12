@@ -117,5 +117,10 @@ describe("agentic-chat plan mode removal", function () {
       return plugin?.settings?.mode ?? "";
     });
     expect(mode).toBe("safe");
+    const toggle = $(".agentic-chat-mode-toggle");
+    expect(await toggle.getAttribute("aria-label")).toBe(
+      `Permission mode: ${mode === "yolo" ? "YOLO" : "Safe"}`,
+    );
+    expect(await toggle.getAttribute("aria-checked")).toBe(String(mode === "yolo"));
   });
 });
