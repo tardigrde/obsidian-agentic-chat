@@ -3,6 +3,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
   assistantUsage,
   collectToolResults,
+  failedLastTurnIndex,
   lastUserText,
   lastUserTurn,
   messageImages,
@@ -194,5 +195,25 @@ describe("lastUserText", () => {
   });
   it("returns undefined when there is no user turn", () => {
     expect(lastUserText([msg({ role: "assistant", content: [] })])).toBeUndefined();
+  });
+});
+
+describe("failedLastTurnIndex", () => {
+  const user = (text: string) => ({ role: "user", content: text, timestamp: 1 }) as unknown as AgentMessage;
+  const reply = (stopReason: string, text = "") =>
+    ({ role: "assistant", content: text ? [{ type: "text", text }] : [], stopReason, timestamp: 2 }) as unknown as AgentMessage;
+  const toolResult = { role: "toolResult", content: [], timestamp: 3 } as unknown as AgentMessage;
+
+  it("returns the last user index when every later reply failed", () => {
+    expect(failedLastTurnIndex([user("a"), reply("stop", "ok"), user("b"), reply("aborted")])).toBe(2);
+    expect(failedLastTurnIndex([user("b"), reply("error"), reply("error", "partial")])).toBe(0);
+  });
+
+  it("keeps answered turns, turns that ran tools, and turns with no reply", () => {
+    expect(failedLastTurnIndex([user("a"), reply("stop", "ok")])).toBeUndefined();
+    expect(failedLastTurnIndex([user("a"), reply("toolUse"), toolResult, reply("error")])).toBeUndefined();
+    expect(failedLastTurnIndex([user("a")])).toBeUndefined();
+    expect(failedLastTurnIndex([reply("error")])).toBeUndefined();
+    expect(failedLastTurnIndex([])).toBeUndefined();
   });
 });
