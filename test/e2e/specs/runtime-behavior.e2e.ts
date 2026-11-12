@@ -1,5 +1,6 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { afterEach, before, describe, it } from "mocha";
+import { waitForComposerReady } from "../support/layout";
 
 const VIEW_TYPE_AGENT_CHAT = "agentic-chat-chat-view";
 const PRIVATE_NOTE_PATH = "Private/Secret.md";
@@ -8,6 +9,7 @@ const PRIVATE_NOTE_BODY = "PRIVATE E2E SECRET: ignored active note body must not
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
   await $(".agentic-chat-view").waitForExist();
+  await waitForComposerReady();
 }
 
 async function runSlashCommand(command: string): Promise<void> {

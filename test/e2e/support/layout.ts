@@ -20,7 +20,11 @@ type ComposerHit = {
   hitClass: string;
 };
 
-/** Whether a real click at the composer's center would land on the composer, plus layout widths. */
+/**
+ * Whether a real click at the composer's center would land on the composer, plus
+ * layout widths. It reads the current window's document: switch back to the main
+ * window before calling it after a settings popout.
+ */
 export async function composerHitTest(): Promise<ComposerHit> {
   return await browser.execute(() => {
     const box = (element: Element | null) => {
@@ -29,6 +33,8 @@ export async function composerHitTest(): Promise<ComposerHit> {
       return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom };
     };
     const input = document.querySelector<HTMLElement>(".agentic-chat-input");
+    // WebDriver scrolls an element into view before it clicks; do the same.
+    input?.scrollIntoView({ block: "nearest", inline: "nearest" });
     const rect = input?.getBoundingClientRect();
     let hit = false;
     let hitClass = "";
@@ -64,8 +70,10 @@ export async function waitForComposerReady({ timeoutMs = 15_000 } = {}): Promise
       },
       { timeout: timeoutMs, interval: 250 },
     )
-    .catch(() => {
-      throw new Error(`chat composer never became reachable: ${JSON.stringify(last)}`);
+    .catch((error: unknown) => {
+      throw new Error(`chat composer never became reachable within ${timeoutMs} ms: ${JSON.stringify(last)}`, {
+        cause: error,
+      });
     });
 }
 
