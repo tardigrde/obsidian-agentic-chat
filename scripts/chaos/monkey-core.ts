@@ -223,7 +223,12 @@ export type ChaosPlan = {
   /** Live runs refuse any model but CHAOS_MODEL unless this is true. */
   allowAnyModel?: boolean;
   /** Endpoint family for live calls; decides extra request headers. */
-  llm?: "openrouter" | "opencode-go";
+  llm?: "openrouter" | "opencode-go" | "opencode";
+  /** `opencode`: the explorer and miner use the CLI. */
+  backend?: "http" | "opencode";
+  /** The plugin under test always uses an HTTP endpoint. */
+  pluginBaseUrl?: string;
+  pluginModel?: string;
 };
 
 export type ChaosStopState = {

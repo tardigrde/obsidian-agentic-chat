@@ -822,9 +822,10 @@ export async function runExplorer(context: ExplorerContext): Promise<ExplorerOut
       try {
         const reply = await chatComplete({
           baseUrl: plan.baseUrl,
-          apiKey: apiKey as string,
+          apiKey: plan.backend === "opencode" ? "" : (apiKey as string),
           model: plan.model,
           json: true,
+          backend: plan.backend ?? "http",
           maxTokens: 2_000,
           headers: llmHeaders(plan.llm, `chaos-explore-${plan.seed}`),
           messages: [

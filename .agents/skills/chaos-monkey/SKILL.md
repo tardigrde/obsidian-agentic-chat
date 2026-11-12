@@ -106,6 +106,24 @@ transcript, console errors, and open `chaos` issues. It writes `findings.md`,
 `miner-report.json`, and `issues/NN-<slug>.md` drafts for confident, new
 product findings. Nothing is filed until you run `chaos:file` with draft numbers.
 
+## Cheap runs: `--llm opencode`
+
+Add `--llm opencode` to spend the flat-rate opencode Go subscription, not API
+credits.
+
+- The explorer and the miner call the local `opencode run` CLI.
+- The plugin under test still calls OpenRouter. It needs `AGENTIC_CHAT_API_KEY`.
+  It cannot use the CLI.
+- The explorer needs no key.
+
+```bash
+npm run chaos -- --mode explore --live --llm opencode --charter <c> --max-steps 30 --max-calls 6 --max-tokens 60000
+npm run chaos:mine -- <runDir> --llm opencode
+```
+
+The CLI agent file is `scripts/chaos/opencode-agent/.opencode/agent/chaos-llm.md`.
+It disables tools to keep the prompt small.
+
 ## Scripted modes
 
 ```bash
