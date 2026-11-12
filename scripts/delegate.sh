@@ -11,12 +11,9 @@
 #          write logs/delegate/recheck-<pr>.md (post it with gh pr comment).
 #
 # Sandbox: `opencode run --standalone` with OpenCode V2 `permissions` rules in
-# OPENCODE_CONFIG_CONTENT. Without --standalone the shared background service
-# ignores the client's env, so no rule applies. Rules: deny everything, then
-# allow reads (not .env), edits inside the project (work) or only the verdict
-# file (review), and a shell allowlist without cat/grep/head/tail (the read and
-# grep tools cover those and obey the .env deny). Web, code execution, and
-# subagents stay denied.
+# OPENCODE_CONFIG_CONTENT (see scripts/delegate-config.mjs). Without --standalone
+# the shared background service ignores the client's env, so no rule applies.
+# Known limit: allowed commands like `npm run verify` run repository code.
 #
 # Model: DELEGATE_MODEL (default opencode-go/deepseek-v4.1-flash, flat-rate).
 # Logs and verdicts go to <worktree>/logs/delegate/ (git-ignored).
@@ -36,25 +33,9 @@ tree() {
   echo "$w"
 }
 
-# V2 permissions. Last matching rule wins, so the catch-all deny comes first.
-config() { # <edit-resource, relative to the worktree> <extra-shell-csv>
-  python3 -I - "$1" "$MAIN" "$2" <<'PY'
-import json, sys
-edit, main, extra = sys.argv[1:4]
-shell = ["git status *", "git diff *", "git log *", "git show *", "git rev-parse *", "git stash *",
-         "npx vitest *", "npx tsc *", "npx eslint *", "npm run verify *", "npm run verify:*",
-         "node scripts/verify.mjs *", "node scripts/verify-witness.mjs *", "npm ls *",
-         "gh pr view *", "gh pr diff *", "ls *", "wc *"] + [x for x in extra.split(",") if x]
-rule = lambda action, resource, effect: {"action": action, "resource": resource, "effect": effect}
-rules = [rule("*", "*", "deny")]
-rules += [rule(a, "*", "allow") for a in ("read", "glob", "grep", "list", "todowrite", "todoread")]
-rules += [rule("read", p, "deny") for p in ("*.env", "*.env.*", "*auth.json")]
-rules += [rule("external_directory", f"{main}/node_modules/*", "allow"),
-          rule("external_directory", f"{main}/.obsidian-cache/*", "allow")]
-rules += [rule("edit", edit, "allow")]
-rules += [rule("shell", s, "allow") for s in shell]
-print(json.dumps({"permissions": rules}))
-PY
+# Sandbox rules live in scripts/delegate-config.mjs (unit-tested).
+config() { # <work|review> <edit-resource, relative to the worktree>
+  node "$ROOT/scripts/delegate-config.mjs" permissions "$1" "$MAIN" "$2"
 }
 
 run() { # <worktree> <title> <config> <prompt-file> <log>
@@ -97,7 +78,7 @@ the fast-lane unit and smoke e2e counts, and the commit hash.
 EOF
     } > "$PROMPT"
     status=0
-    run "$W" "work $1" "$(config "*" "git add *,git commit *,npm run lint *,npm run typecheck *")" "$PROMPT" "$LOG" || status=$?
+    run "$W" "work $1" "$(config work "*")" "$PROMPT" "$LOG" || status=$?
     echo "log: $LOG (exit $status)"; tail -n 25 "$LOG"
     exit "$status"
     ;;
@@ -122,7 +103,8 @@ Always: prove the witness (for a src/ change it must fail without the src change
 for example node scripts/verify-witness.mjs --base origin/main --test-file <t> --src <s>),
 and run npm run verify -- fast; report the unit and smoke e2e counts.
 
-Write the verdict to $OUT (relative to the worktree), first lines exactly:
+Shell output redirection (>) is denied; read files with the read tool.
+Write the verdict to $OUT (relative to the worktree) with the edit tool, first lines exactly:
 Verdict: PASS | PASS+NOTES | FAIL
 Head: $HEAD
 Reviewer: $REVIEWER
@@ -130,9 +112,11 @@ Fast lane: PASS (<n> passed, <files> files; smoke e2e <n> passed)
 Then findings with file:line. A FAIL needs a concrete failure scenario.
 EOF
     status=0
-    run "$W" "review $PR" "$(config "$OUT" "")" "$PROMPT" "$LOG" || status=$?
+    run "$W" "review $PR" "$(config review "$OUT")" "$PROMPT" "$LOG" || status=$?
     [ -f "$W/$OUT" ] || die "no verdict written (exit $status); see $LOG"
+    [ "$status" -eq 0 ] || echo "delegate: WARNING reviewer exited $status; the verdict may be partial" >&2
     echo "verdict: $W/$OUT"; head -n 4 "$W/$OUT"
+    exit "$status"
     ;;
   recheck)
     [ $# -eq 2 ] || die "usage: recheck <pr> <worktree>"
@@ -146,10 +130,11 @@ EOF
     git -C "$W" fetch -q origin main
     [ "$(git -C "$W" rev-list --no-merges "$REVIEWED..$HEAD" --not origin/main | wc -l)" -eq 0 ] \
       || die "new non-merge commits since ${REVIEWED:0:7}; run a real review instead"
-    # The review gate lets a PASS from another reviewer clear a FAIL; a re-check must not.
-    if grep -qx "Verdict: FAIL" "$W/logs/delegate/verdict-$PR.md" 2>/dev/null; then
-      die "the last review of #$PR is FAIL; fix it and run a real review"
-    fi
+    # The review gate lets a PASS from another reviewer clear a FAIL; a re-check
+    # must not. Parse the PR's verdict comments the way the gate does.
+    fail_state=0
+    gh pr view "$PR" --json comments -q '[.comments[].body]' | node "$ROOT/scripts/delegate-config.mjs" fail || fail_state=$?
+    [ "$fail_state" -eq 1 ] || die "the last verdict on #$PR is FAIL or unreadable (state $fail_state); run a real review"
     PR_HEAD=$(gh pr view "$PR" --json headRefOid -q .headRefOid)
     [ "$HEAD" = "$PR_HEAD" ] || die "worktree head ${HEAD:0:7} is not PR head ${PR_HEAD:0:7}"
     OUT="$W/logs/delegate/recheck-$PR.md"
