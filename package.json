@@ -88,7 +88,7 @@
     "eslint": "^10.7.0",
     "eslint-plugin-no-unsanitized": "^4.1.5",
     "eslint-plugin-obsidianmd": "^0.5.1",
-    "fake-indexeddb": "^6.2.7",
+    "fake-indexeddb": "^6.2.8",
     "globals": "^17.14.0",
     "jiti": "^2.7.0",
     "mocha": "12.0.3",
@@ -97,8 +97,8 @@
     "tsx": "^4.23.15",
     "typescript": "^5.5.4",
     "typescript-7": "npm:typescript@7.0.2",
-    "typescript-eslint": "^8.70.1",
-    "undici": "^8.12.3",
+    "typescript-eslint": "^8.72.2",
+    "undici": "^8.12.4",
     "vitepress": "^1.6.4",
     "vitest": "^5.1.0",
     "wdio-obsidian-reporter": "3.5.0",
@@ -111,10 +111,10 @@
   },
   "overrides": {
     "@electron/get": {
-      "undici": "8.12.3"
+      "undici": "8.12.4"
     },
     "cheerio": {
-      "undici": "8.12.3"
+      "undici": "8.12.4"
     },
     "js-yaml": "4.3.2",
     "moment": "2.31.0",
@@ -123,7 +123,7 @@
       "vite": "6.4.5"
     },
     "webdriverio": {
-      "undici": "8.12.3"
+      "undici": "8.12.4"
     },
     "qs": "^6.17.1",
     "fast-xml-parser": "^5.12.0",
