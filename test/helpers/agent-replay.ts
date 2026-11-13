@@ -55,7 +55,7 @@ export async function runAgentReplay(options: AgentReplayOptions): Promise<Agent
 
   await service.sendPrompt(options.prompt ?? "run replay");
   const sessionText = [...adapter.files.entries()]
-    .filter(([path]) => path.endsWith(".jsonl") && !path.endsWith(".audit.jsonl"))
+    .filter(([path]) => path.endsWith(".jsonl"))
     .map(([, content]) => content)
     .join("\n");
 

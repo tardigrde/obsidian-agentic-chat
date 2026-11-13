@@ -697,8 +697,10 @@ export class AgentService {
         return { compacted: false, message };
       }
     }
-    // Audit events live in the append-only sidecar, so the rewrite above no
-    // longer drops the start event. Record only the matching end event.
+    // A successful compaction rewrites the session file, which drops audit
+    // entries written before the rewrite. Re-record start so the final JSONL
+    // still shows a complete start/end pair for the manual attempt.
+    await this.actionAudit.record(startEvent);
     await this.actionAudit.record({
       category: "compaction",
       action: "end",
