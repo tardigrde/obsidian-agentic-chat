@@ -157,13 +157,6 @@ export function parsePdfImportProvenance(text: string): PdfImportProvenance | nu
   };
 }
 
-export async function writePdfSourceArtifact(
-  store: ToolArtifactStoreLike,
-  input: PdfImportWriteInput,
-): Promise<PdfImportWriteResult> {
-  return new PdfArtifactDeduper().write(store, input);
-}
-
 export class PdfArtifactDeduper {
   private readonly byKey = new Map<string, CachedPdfImport>();
 

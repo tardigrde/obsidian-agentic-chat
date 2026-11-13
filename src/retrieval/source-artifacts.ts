@@ -2,7 +2,7 @@ import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/t
 import { formatSourceReference } from "./citations";
 import { formatFrontmatterScalar, parseFrontmatterFields } from "./frontmatter";
 import { legacyStableTextHash, stableTextHash } from "./source-hash";
-import { findExistingSourceArtifact } from "./source-artifact-dedupe";
+import { resolveSourceArtifact, type SourceArtifactCacheValue } from "./source-ingest";
 
 export const SOURCE_IMPORT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 export const SOURCE_IMPORT_SOURCE_TOOL = "agentic-chat.source-import";
@@ -55,13 +55,7 @@ export interface SourceImportWriteResult {
   text: string;
 }
 
-interface CachedSourceImport {
-  metadata: ToolArtifactMetadata;
-  provenance: SourceImportProvenance;
-  artifactCitation: string;
-  urlCitation: string;
-  text: string;
-}
+type CachedSourceImport = SourceArtifactCacheValue<SourceImportProvenance, undefined>;
 
 const CANDIDATE_TAGS = ["article", "main"];
 const CANDIDATE_ATTRS = /\b(?:role\s*=\s*["']main["']|id\s*=\s*["'][^"']*(?:article|content|entry|main|post)[^"']*["']|class\s*=\s*["'][^"']*(?:article|content|entry|main|post)[^"']*["'])/i;
@@ -178,74 +172,41 @@ export function parseSourceImportProvenance(text: string): SourceImportProvenanc
   };
 }
 
-export async function writeSourceImportArtifact(
-  store: ToolArtifactStoreLike,
-  input: SourceImportWriteInput,
-): Promise<SourceImportWriteResult> {
-  return new SourceArtifactDeduper().write(store, input);
-}
-
 export class SourceArtifactDeduper {
   private readonly byKey = new Map<string, CachedSourceImport>();
 
   async write(store: ToolArtifactStoreLike, input: SourceImportWriteInput): Promise<SourceImportWriteResult> {
     const provenance = await createSourceImportProvenance(input);
-    const cached = this.byKey.get(provenance.dedupKey);
-    if (cached) return { ...cached, duplicate: true };
-
-    const existing = await findExistingSourceArtifact(store, {
-      dedupKey: provenance.dedupKey,
-      textHash: provenance.textHash,
+    const resolved = await resolveSourceArtifact({
+      store,
+      cache: this.byKey,
+      provenance,
+      chunks: [],
+      extraction: undefined,
+      citationLabel: input.title || input.finalUrl || input.url,
       legacyDedupKeys: [legacySourceDedupKey(input)],
       legacyTextHashes: [legacySourceTextHash(input.text)],
-    });
-    if (existing) {
-      const artifactCitation = formatSourceReference({
-        type: "artifact",
-        artifactId: existing.artifact.metadata.id,
-        label: input.title || input.finalUrl || input.url,
-      });
-      const urlCitation = formatSourceReference({
-        type: "url",
-        url: input.finalUrl ?? input.url,
-        label: input.title || input.finalUrl || input.url,
-      });
-      const persistedProvenance = parseSourceImportProvenance(existing.artifact.text) ?? provenance;
-      const value = {
-        metadata: existing.artifact.metadata,
-        provenance: persistedProvenance,
-        artifactCitation,
-        urlCitation,
-        text: existing.artifact.text,
-      };
-      this.byKey.set(provenance.dedupKey, value);
-      return { ...value, duplicate: true };
-    }
-
-    const text = formatSourceImportArtifact(provenance, input.text);
-    const metadata = await store.writeArtifact({
-      label: sourceArtifactLabel(input.title, input.finalUrl ?? input.url),
+      artifactLabel: sourceArtifactLabel(input.title, input.finalUrl ?? input.url),
       sourceToolName: SOURCE_IMPORT_SOURCE_TOOL,
       contentType: SOURCE_IMPORT_CONTENT_TYPE,
-      dedupKey: provenance.dedupKey,
-      sourceUrl: input.finalUrl ?? input.url,
       sourceKind: provenance.sourceKind,
-      sourceTextHash: provenance.textHash,
-      text,
+      formatArtifactText: (value) => formatSourceImportArtifact(value, input.text),
+      parseProvenance: parseSourceImportProvenance,
     });
-    const artifactCitation = formatSourceReference({
-      type: "artifact",
-      artifactId: metadata.id,
-      label: input.title || input.finalUrl || input.url,
-    });
+    const source = resolved.provenance;
     const urlCitation = formatSourceReference({
       type: "url",
-      url: input.finalUrl ?? input.url,
-      label: input.title || input.finalUrl || input.url,
+      url: source.finalUrl ?? source.url,
+      label: source.title || source.finalUrl || source.url,
     });
-    const value = { metadata, provenance, artifactCitation, urlCitation, text };
-    this.byKey.set(provenance.dedupKey, value);
-    return { ...value, duplicate: false };
+    return {
+      metadata: resolved.metadata,
+      provenance: resolved.provenance,
+      artifactCitation: resolved.artifactCitation,
+      urlCitation,
+      duplicate: resolved.duplicate,
+      text: resolved.text,
+    };
   }
 }
 
