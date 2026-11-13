@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike, ToolArtifactWriteInput } from "../src/artifacts/tool-artifact-store";
 import { createDocumentTools } from "../src/tools/document-tools";
-import { parseSourceReference } from "../src/retrieval/citations";
 import { legacyStableTextHash } from "../src/retrieval/source-hash";
 import {
   PDF_IMPORT_CONTENT_TYPE,
@@ -11,8 +10,6 @@ import {
   chunkPdfText,
   extractPdfText,
   formatPdfImportArtifact,
-  parsePdfImportProvenance,
-  writePdfSourceArtifact,
 } from "../src/retrieval/pdf-ingest";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
@@ -84,37 +81,6 @@ describe("PDF source ingestion", () => {
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.map((chunk) => chunk.anchor)).toEqual(chunks.map((_, index) => `pdf-chunk-${index + 1}`));
     expect(chunks.every((chunk) => chunk.text.length <= 48)).toBe(true);
-  });
-
-  it("writes PDF artifacts with provenance, anchors, and parser-readable artifact citations", async () => {
-    const { store, writes } = memoryArtifactStore();
-
-    const result = await writePdfSourceArtifact(store, {
-      sourcePath: "Research/embeddings.pdf",
-      title: "Embedding tradeoffs",
-      data: PDF_FIXTURE,
-      importedAt: FIXED_IMPORTED_AT,
-      maxChunkChars: 64,
-    });
-
-    expect(writes[0]).toMatchObject({
-      sourceToolName: PDF_IMPORT_SOURCE_TOOL,
-      contentType: PDF_IMPORT_CONTENT_TYPE,
-      dedupKey: result.provenance.dedupKey,
-      sourceKind: "pdf",
-      sourceTextHash: result.provenance.textHash,
-    });
-    expect(writes[0].text).toContain("agentic_chat_pdf_source: 1");
-    expect(writes[0].text).toContain('source_path: "Research/embeddings.pdf"');
-    expect(result.provenance.textHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(writes[0].text).toContain("<!-- pdf-chunk-1 characters 0-");
-    expect(writes[0].text).toContain("^pdf-chunk-1");
-    expect(parsePdfImportProvenance(writes[0].text)).toEqual(result.provenance);
-    expect(parseSourceReference(result.artifactCitation)).toEqual({
-      type: "artifact",
-      artifactId: "artifact-1",
-      label: "Embedding tradeoffs",
-    });
   });
 
   it("deduplicates repeated PDF imports by source path and extracted text", async () => {

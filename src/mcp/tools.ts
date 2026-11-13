@@ -6,6 +6,7 @@ import type { WebFetcher } from "../tools/web-fetch";
 import { truncateToolOutput } from "../vault/truncate";
 import { wrapToolOutput, wrapToolOutputTruncated } from "../tools/tool-output-wrapper";
 import { McpHttpClient, type McpCallToolResult, type McpToolDefinition } from "./client";
+import { McpError, type McpErrorCategory } from "./errors";
 import type { McpAuthType, McpKnownToolSettings, McpServerSettings, McpSettings } from "./settings";
 import { filterMcpToolsByGlobs } from "./tool-filter";
 import { errorMessage } from "../utils/errors";
@@ -32,7 +33,7 @@ export interface McpToolCreationOptions {
   artifactThresholdChars?: number;
 }
 
-export type McpDiagnosticErrorCategory = "auth" | "http" | "network" | "protocol" | "timeout" | "unknown";
+export type McpDiagnosticErrorCategory = McpErrorCategory;
 
 export interface McpServerDiagnostic {
   serverId: string;
@@ -69,6 +70,35 @@ export interface McpServerProbeResult {
 const MCP_ARTIFACT_THRESHOLD_CHARS = 8_000;
 const MCP_ARTIFACT_PREVIEW_CHARS = 4_000;
 
+/**
+ * One transport per server settings shape. A fresh client per call threw away
+ * the session id, the negotiated protocol version, and the terminated-session
+ * retry, so every call paid for a new handshake. Keyed by server id; an endpoint
+ * or auth-header change replaces the entry. The tool layer owns it, so a plugin
+ * unload drops it with the tools.
+ */
+class McpClientCache {
+  private readonly clients = new Map<string, { key: string; client: McpHttpClient }>();
+
+  constructor(
+    private readonly fetcher: WebFetcher,
+    private readonly onServerChanged?: (server: McpServerSettings) => void | Promise<void>,
+  ) {}
+
+  get(server: McpServerSettings): McpHttpClient {
+    const key = mcpClientKey(server);
+    const existing = this.clients.get(server.id);
+    if (existing?.key === key) return existing.client;
+    const client = new McpHttpClient({ server, fetcher: this.fetcher, onServerChanged: this.onServerChanged });
+    this.clients.set(server.id, { key, client });
+    return client;
+  }
+}
+
+function mcpClientKey(server: McpServerSettings): string {
+  return JSON.stringify([server.url, server.authType, server.authHeaderName, server.authHeaderValue, server.headers]);
+}
+
 export async function createMcpTools(
   settings: McpSettings,
   fetcher: WebFetcher,
@@ -85,6 +115,7 @@ export async function createMcpToolsWithDiagnostics(
   if (!settings.enabled) return { tools: [], diagnostics: [] };
   const tools: AgentTool[] = [];
   const diagnostics: McpServerDiagnostic[] = [];
+  const clients = new McpClientCache(fetcher, options.onServerChanged);
   for (const server of settings.servers) {
     if (!server.enabled) {
       diagnostics.push({
@@ -95,7 +126,7 @@ export async function createMcpToolsWithDiagnostics(
       });
       continue;
     }
-    const discovered = await discoverServerTools(server, fetcher, options);
+    const discovered = await discoverServerTools(server, clients, options);
     diagnostics.push(discovered.diagnostic);
     tools.push(...discovered.tools);
   }
@@ -136,16 +167,16 @@ export function localMcpToolNames(serverId: string, remoteToolNames: readonly st
 
 async function discoverServerTools(
   server: McpServerSettings,
-  fetcher: WebFetcher,
+  clients: McpClientCache,
   options: McpToolCreationOptions,
 ): Promise<{ tools: AgentTool[]; diagnostic: McpServerDiagnostic }> {
   try {
-    const client = new McpHttpClient({ server, fetcher, onServerChanged: options.onServerChanged });
+    const client = clients.get(server);
     const remoteTools = await client.listTools();
     const filtered = filterMcpToolsByGlobs(remoteTools, server.enabledTools ?? [], server.disabledTools ?? []);
     const usedNames = new Set<string>();
     const tools = filtered.map((tool) =>
-      createMcpTool(server, fetcher, options, tool, nextLocalToolName(server.id, tool.name, usedNames)),
+      createMcpTool(server, clients, options, tool, nextLocalToolName(server.id, tool.name, usedNames)),
     );
     return {
       tools,
@@ -168,7 +199,7 @@ async function discoverServerTools(
         status: "error",
         toolCount: 0,
         toolNames: [],
-        errorCategory: categorizeMcpDiagnosticError(message),
+        errorCategory: categorizeMcpDiagnosticError(message, error),
         error: message,
       },
     };
@@ -199,7 +230,13 @@ function baseDiagnostic(
   };
 }
 
-export function categorizeMcpDiagnosticError(message: string): McpDiagnosticErrorCategory {
+export function categorizeMcpDiagnosticError(
+  message: string,
+  error?: unknown,
+): McpDiagnosticErrorCategory {
+  // Typed failures carry their category; the text match below is the fallback
+  // for errors from providers, fetch, and older call paths.
+  if (error instanceof McpError) return error.category;
   const lower = message.toLowerCase();
   if (lower.includes("timed out") || lower.includes("timeout")) return "timeout";
   if (
@@ -231,7 +268,7 @@ export function categorizeMcpDiagnosticError(message: string): McpDiagnosticErro
 
 function createMcpTool(
   server: McpServerSettings,
-  fetcher: WebFetcher,
+  clients: McpClientCache,
   options: McpToolCreationOptions,
   remoteTool: McpToolDefinition,
   localName: string,
@@ -246,7 +283,7 @@ function createMcpTool(
       `Remote MCP tool "${remoteTool.name}" on ${server.name}. Sends the tool arguments to ${server.url}.`,
     parameters,
     execute: async (_id, params, signal) => {
-      const client = new McpHttpClient({ server, fetcher, onServerChanged: options.onServerChanged });
+      const client = clients.get(server);
       const result = await client.callTool(remoteTool.name, params as Record<string, unknown>, signal);
       const rendered = await renderMcpResult(result, {
         artifactStore: options.artifactStore,

@@ -9,6 +9,7 @@ import {
 } from "../retrieval/document-ingest";
 import { PdfArtifactDeduper } from "../retrieval/pdf-ingest";
 import { normalizeVaultPath } from "../vault/path";
+import { toolResult } from "./result";
 
 const ImportPdfParameters = Type.Object({
   path: Type.String({ description: "vault-relative PDF path" }),
@@ -54,13 +55,10 @@ function createImportPdfTool(
         maxChunkChars: normalizeMaxChunkChars(params.maxChunkChars),
         data,
       });
-      return {
-        content: [{ type: "text", text: formatImportPdfResult(result) }],
-        details: {
-          ...sourceArtifactDetails(path, result),
-          pageCount: result.provenance.pageCount,
-        },
-      };
+      return toolResult(formatImportPdfResult(result), {
+        ...sourceArtifactDetails(path, result),
+        pageCount: result.provenance.pageCount,
+      });
     },
   };
 }
@@ -91,10 +89,7 @@ function createImportDocumentTool(
           maxChunkChars,
           data,
         });
-        return {
-          content: [{ type: "text", text: formatImportPdfResult(result) }],
-          details: pdfImportDetails(path, result),
-        };
+        return toolResult(formatImportPdfResult(result), pdfImportDetails(path, result));
       }
 
       documentKindFromPath(path);
@@ -108,10 +103,7 @@ function createImportDocumentTool(
         maxChunkChars,
         data,
       });
-      return {
-        content: [{ type: "text", text: formatImportDocumentResult(result) }],
-        details: documentImportDetails(path, result),
-      };
+      return toolResult(formatImportDocumentResult(result), documentImportDetails(path, result));
     },
   };
 }

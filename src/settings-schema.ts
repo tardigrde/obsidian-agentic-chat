@@ -220,13 +220,30 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
 };
 
+/**
+ * Numeric leaves the settings UI bounds. A persisted value outside its range is
+ * treated like a wrong type and falls back to the default. Fields with a
+ * dedicated heal (turn cap, embeddings, sampling) keep their own policy.
+ */
+const SETTING_NUMBER_RANGES: Readonly<Record<string, readonly [number, number]>> = {
+  temperature: [0, 2],
+  maxTokens: [0, Number.POSITIVE_INFINITY],
+  requestTimeoutMs: [5_000, Number.POSITIVE_INFINITY],
+  maxNetworkRetries: [0, 5],
+  "notifications.costAlertUsd": [0, Number.POSITIVE_INFINITY],
+  "notifications.costCapUsd": [0, Number.POSITIVE_INFINITY],
+  "compaction.thresholdPercent": [50, 95],
+  "web.maxResults": [1, 10],
+  "web.fetchCharLimit": [500, Number.POSITIVE_INFINITY],
+};
+
 /** Merge stored settings over defaults, healing nested objects. */
 export function mergeSettings(stored: Partial<AgenticChatSettings> | null | undefined): AgenticChatSettings {
   const remaining = dropRetiredSettingKeys(stored);
-  const healedMcp = healMcpSettings(stored?.mcp);
+  const healedMcp = healMcpSettings(sanitizeProxyLeaves(stored?.mcp));
   const healedPlugins = healPluginSettings(stored?.plugins);
   migrateLegacyPluginServers(healedMcp, healedPlugins);
-  return {
+  const merged: AgenticChatSettings = {
     ...DEFAULT_SETTINGS,
     ...remaining,
     // Plaintext secret keys are never read from persisted data once loaded;
@@ -236,6 +253,7 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     openaiCompatibleApiKey: "",
     // Heal enum-like fields so an unknown (or retired ask/plan/agent) value can't break the gate.
     provider: healProvider(stored?.provider),
+    thinkingLevel: healThinkingLevel(stored?.thinkingLevel),
     openrouterApiKeySecretId: stringSetting(stored?.openrouterApiKeySecretId, OPENROUTER_API_KEY_SECRET_ID),
     openaiCompatibleApiKeySecretId: stringSetting(
       stored?.openaiCompatibleApiKeySecretId,
@@ -258,19 +276,66 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
       searchProvider: healSearchProvider(stored?.web?.searchProvider),
       searchApiKeySecretId: stringSetting(stored?.web?.searchApiKeySecretId, WEB_SEARCH_API_KEY_SECRET_ID),
       searchApiKey: "",
-      allowedHosts: normalizeAllowedHosts(stored?.web?.allowedHosts),
+      allowedHosts: normalizeAllowedHosts(
+        typeof stored?.web?.allowedHosts === "string" ? stored.web.allowedHosts : "",
+      ),
     },
     mcp: healedMcp,
     plugins: healedPlugins,
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     maxTurnsPerPrompt: healMaxTurns(stored?.maxTurnsPerPrompt),
     embeddings: healEmbeddingSettings(stored?.embeddings),
-    observability: healObservabilitySettings(stored?.observability),
+    observability: healObservabilitySettings(sanitizeProxyLeaves(stored?.observability)),
   };
+  // Last pass: a persisted leaf whose type (or UI-bounded number) is invalid
+  // falls back to the default, including leaves no dedicated heal covers yet.
+  return healPrimitiveLeaves(merged, DEFAULT_SETTINGS);
 }
 
 function stringSetting(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function healThinkingLevel(value: unknown): ThinkingLevel {
+  return typeof value === "string" && THINKING_LEVELS.includes(value as ThinkingLevel)
+    ? (value as ThinkingLevel)
+    : DEFAULT_SETTINGS.thinkingLevel;
+}
+
+/** Keep non-string proxy leaves away from the shared normalizers. */
+function sanitizeProxyLeaves<T extends Partial<ProxySettings> | null | undefined>(stored: T): T {
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return stored;
+  const copy = { ...stored } as T & Record<string, unknown>;
+  if (typeof copy.proxyUrl !== "string") copy.proxyUrl = DEFAULT_PROXY_SETTINGS.proxyUrl;
+  if (typeof copy.noProxy !== "string") copy.noProxy = DEFAULT_PROXY_SETTINGS.noProxy;
+  return copy;
+}
+
+/**
+ * Walk the default shape and replace every primitive leaf whose stored type is
+ * wrong. Numbers outside the UI range fall back too, so a corrupt data.json can
+ * never reach the runtime with a value the UI cannot produce.
+ */
+function healPrimitiveLeaves<T>(value: T, fallback: unknown, path = ""): T {
+  // No type to check against: keep the stored value (arrays, null defaults).
+  if (Array.isArray(fallback) || fallback === null || fallback === undefined) return value;
+  if (fallback && typeof fallback === "object") {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return structuredClone(fallback) as T;
+    }
+    const target = value as Record<string, unknown>;
+    for (const [key, child] of Object.entries(fallback as Record<string, unknown>)) {
+      target[key] = healPrimitiveLeaves(target[key], child, path ? `${path}.${key}` : key);
+    }
+    return value;
+  }
+  if (typeof value !== typeof fallback) return fallback as T;
+  if (typeof fallback === "number") {
+    if (typeof value !== "number" || !Number.isFinite(value)) return fallback as T;
+    const range = SETTING_NUMBER_RANGES[path];
+    if (range && (value < range[0] || value > range[1])) return fallback as T;
+  }
+  return value;
 }
 
 /**
@@ -386,8 +451,8 @@ function healContextWindow(value: unknown): number {
 
 function healNetworkSettings(stored: Partial<NetworkSettings> | null | undefined): NetworkSettings {
   return {
-    proxyUrl: normalizeProxyUrl(stored?.proxyUrl),
-    noProxy: normalizeNoProxy(stored?.noProxy),
+    proxyUrl: normalizeProxyUrl(typeof stored?.proxyUrl === "string" ? stored.proxyUrl : undefined),
+    noProxy: normalizeNoProxy(typeof stored?.noProxy === "string" ? stored.noProxy : undefined),
   };
 }
 

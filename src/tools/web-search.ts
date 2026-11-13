@@ -1,8 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import { truncateToolOutput } from "../vault/truncate";
 import { throwIfAborted, type WebFetcher, type WebHttpRequest } from "./web-fetch";
-import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { untrustedToolResult } from "./result";
 import { asRecord } from "../utils/records";
 
 /** Supported search backends. Tavily/Brave need an API key; SearXNG needs a URL. */
@@ -149,10 +148,11 @@ export function createWebSearchTool(config: WebSearchConfig): AgentTool<typeof S
         throw new Error(`web_search failed via ${config.provider} (HTTP ${response.status}).`);
       }
       const results = adapter.parse(safeJsonParse(response.text)).filter((result) => result.url).slice(0, maxResults);
-      return {
-        content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(formatResults(query, results)), "web_search") }],
-        details: { provider: config.provider, query, count: results.length, results },
-      };
+      return untrustedToolResult(
+        formatResults(query, results),
+        { provider: config.provider, query, count: results.length, results },
+        "web_search",
+      );
     },
   };
 }

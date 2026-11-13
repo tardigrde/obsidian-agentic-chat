@@ -3,7 +3,7 @@ import { formatSkillInvocation, type Skill } from "../skills/skill-prompt";
 import { TFolder, type App } from "obsidian";
 import { Type } from "typebox";
 import { resolveSkillResourcePath } from "../skills/skills";
-import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { toolResult, untrustedToolResult } from "./result";
 import { TEXT_EXTENSIONS } from "./vault-tools";
 import {
   formatTextSlice,
@@ -53,10 +53,7 @@ export function createReadSkillTool(skills: Skill[]): AgentTool<typeof ReadSkill
         skill.filePath && !skill.filePath.startsWith("(")
           ? `\n\nFrontmatter for exact copy:\n${frontmatter}\nSource file: ${skill.filePath} — use read for a byte-exact copy (frontmatter included).`
           : `\n\nFrontmatter for exact copy:\n${frontmatter}`;
-      return {
-        content: [{ type: "text", text: `${body}${copyHint}` }],
-        details: { name: skill.name, filePath: skill.filePath },
-      };
+      return toolResult(`${body}${copyHint}`, { name: skill.name, filePath: skill.filePath });
     },
   };
 }
@@ -99,10 +96,7 @@ export function createReadSkillFileTool(app: App, skills: Skill[]): AgentTool<ty
         const hint =
           `Binary file at ${resolved} — ${size.toLocaleString()} bytes, not displayed as text. ` +
           `This is a skill asset (e.g. image/PDF) referenced by "${skill.name}". Open in editor or use ls to verify.`;
-        return {
-          content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(hint), "read_skill_file") }],
-          details: { path: resolved, skill: skill.name, binary: true, size },
-        };
+        return untrustedToolResult(hint, { path: resolved, skill: skill.name, binary: true, size }, "read_skill_file");
       }
       if (!file) {
         // Fallback to adapter read for stale tree (same as loader's readVaultFile)
@@ -115,10 +109,11 @@ export function createReadSkillFileTool(app: App, skills: Skill[]): AgentTool<ty
             limit: params.limit,
           });
           if (guidance) {
-            return {
-              content: [{ type: "text", text: truncateToolOutput(guidance) }],
-              details: { path: resolved, skill: skill.name, tooLarge: true },
-            };
+            return toolResult(truncateToolOutput(guidance), {
+              path: resolved,
+              skill: skill.name,
+              tooLarge: true,
+            });
           }
           return handleSkillFileContent(resolved, content, params, skill.name);
         } catch (error) {
@@ -134,10 +129,11 @@ export function createReadSkillFileTool(app: App, skills: Skill[]): AgentTool<ty
         limit: params.limit,
       });
       if (guidance) {
-        return {
-          content: [{ type: "text", text: truncateToolOutput(guidance) }],
-          details: { path: resolved, skill: skill.name, tooLarge: true },
-        };
+        return toolResult(truncateToolOutput(guidance), {
+          path: resolved,
+          skill: skill.name,
+          tooLarge: true,
+        });
       }
       let content: string;
       try {
@@ -156,16 +152,16 @@ function handleSkillFileContent(
   content: string,
   params: { offset?: number; limit?: number },
   skillName?: string,
-): { content: { type: "text"; text: string }[]; details: Record<string, unknown> } {
+) {
   const window = resolveLineWindow({
     offset: params.offset,
     limit: params.limit,
   });
   const slice = sliceTextByLines(content, window);
   const formatted = formatTextSlice(path, slice);
-  return {
-    content: [{ type: "text", text: wrapToolOutputTruncated(formatted, "read_skill_file") }],
-    details: {
+  return untrustedToolResult(
+    formatted,
+    {
       path,
       ...(skillName ? { skill: skillName } : {}),
       startLine: slice.startLine,
@@ -173,5 +169,6 @@ function handleSkillFileContent(
       totalLines: slice.totalLines,
       truncated: slice.truncated,
     },
-  };
+    "read_skill_file",
+  );
 }

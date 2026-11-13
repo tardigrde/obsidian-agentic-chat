@@ -1,7 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { truncateToolOutput } from "../vault/truncate";
-import { wrapToolOutputTruncated } from "../tools/tool-output-wrapper";
+import { toolResult, untrustedToolResult } from "../tools/result";
 import type { ToolArtifactStoreLike, ToolArtifactReadResult } from "./tool-artifact-store";
 
 const DEFAULT_READ_LIMIT = 12_000;
@@ -47,15 +47,12 @@ function createListArtifactsTool(store: ToolArtifactStoreLike): AgentTool {
       const visible = artifacts
         .filter((artifact) => !sourceKind || artifact.sourceKind === sourceKind)
         .slice(0, limit);
-      return {
-        content: [{ type: "text", text: formatArtifactList(visible, sourceKind) }],
-        details: {
-          count: visible.length,
-          sourceKind,
-          limit,
-          totalAvailable: artifacts.length,
-        },
-      };
+      return toolResult(formatArtifactList(visible, sourceKind), {
+        count: visible.length,
+        sourceKind,
+        limit,
+        totalAvailable: artifacts.length,
+      });
     },
   };
 }
@@ -83,9 +80,9 @@ function createReadArtifactTool(store: ToolArtifactStoreLike): AgentTool {
       const limit = normalizeLimit((params as { limit?: number }).limit, DEFAULT_READ_LIMIT, MAX_READ_LIMIT);
       const end = Math.min(read.text.length, offset + limit);
       const chunk = read.text.slice(offset, end);
-      return {
-        content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(formatArtifactRead(read, offset, end, chunk), MAX_READ_LIMIT + 1_000), "read_artifact") }],
-        details: {
+      return untrustedToolResult(
+        truncateToolOutput(formatArtifactRead(read, offset, end, chunk), MAX_READ_LIMIT + 1_000),
+        {
           artifactId: read.metadata.id,
           offset,
           limit,
@@ -93,7 +90,8 @@ function createReadArtifactTool(store: ToolArtifactStoreLike): AgentTool {
           totalChars: read.text.length,
           truncated: end < read.text.length,
         },
-      };
+        "read_artifact",
+      );
     },
   };
 }
@@ -125,15 +123,16 @@ function createSearchArtifactTool(store: ToolArtifactStoreLike): AgentTool {
       );
       const read = await store.readArtifact(id);
       const matches = findMatches(read.text, query, maxMatches);
-      return {
-        content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(formatArtifactSearch(read, query, matches)), "search_artifact") }],
-        details: {
+      return untrustedToolResult(
+        truncateToolOutput(formatArtifactSearch(read, query, matches)),
+        {
           artifactId: read.metadata.id,
           query,
           matches: matches.length,
           totalChars: read.text.length,
         },
-      };
+        "search_artifact",
+      );
     },
   };
 }
@@ -161,9 +160,9 @@ function createExportArtifactTool(store: ToolArtifactStoreLike): AgentTool {
       const limit = normalizeLimit((params as { limit?: number }).limit, DEFAULT_EXPORT_LIMIT, MAX_EXPORT_LIMIT);
       const truncated = read.text.length > limit;
       const payload = formatArtifactExport(read, format, limit);
-      return {
-        content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(payload, MAX_EXPORT_LIMIT + 2_000), "export_artifact") }],
-        details: {
+      return untrustedToolResult(
+        truncateToolOutput(payload, MAX_EXPORT_LIMIT + 2_000),
+        {
           artifactId: read.metadata.id,
           format,
           limit,
@@ -171,7 +170,8 @@ function createExportArtifactTool(store: ToolArtifactStoreLike): AgentTool {
           totalChars: read.text.length,
           truncated,
         },
-      };
+        "export_artifact",
+      );
     },
   };
 }

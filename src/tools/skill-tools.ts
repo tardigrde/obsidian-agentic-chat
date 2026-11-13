@@ -2,6 +2,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../skills/skill-prompt";
 import { Type } from "typebox";
 import { SkillLoadRegistry } from "../skills/skill-load-state";
+import { toolResult } from "./result";
 
 const LoadSkillParameters = Type.Object({
   name: Type.String({ description: "skill name to load", pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }),
@@ -44,22 +45,19 @@ export function createLoadSkillTool(
     execute: async (_id, params) => {
       const skill = requireSkill(skills, params.name);
       if (registry.isLoaded(skill.name)) {
-        return {
-          content: [{ type: "text", text: `Skill "${skill.name}" already loaded.` }],
-          details: { name: skill.name, loaded: true, alreadyLoaded: true, loadedSkills: registry.names() },
-        };
+        return toolResult(`Skill "${skill.name}" already loaded.`, {
+          name: skill.name,
+          loaded: true,
+          alreadyLoaded: true,
+          loadedSkills: registry.names(),
+        });
       }
       registry.load(skill.name);
       const estTokens = Math.ceil(skill.content.length / 4);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Loaded skill "${skill.name}" (~${estTokens} tok) — body now in system prompt for subsequent turns.`,
-          },
-        ],
-        details: { name: skill.name, loaded: true, loadedSkills: registry.names() },
-      };
+      return toolResult(
+        `Loaded skill "${skill.name}" (~${estTokens} tok) — body now in system prompt for subsequent turns.`,
+        { name: skill.name, loaded: true, loadedSkills: registry.names() },
+      );
     },
   };
 }
@@ -80,10 +78,11 @@ export function createUnloadSkillTool(
     execute: async (_id, params) => {
       const skill = requireSkill(skills, params.name);
       const wasLoaded = registry.unload(skill.name);
-      return {
-        content: [{ type: "text", text: wasLoaded ? `Unloaded skill "${skill.name}".` : `Skill "${skill.name}" was not loaded.` }],
-        details: { name: skill.name, unloaded: wasLoaded, loadedSkills: registry.names() },
-      };
+      return toolResult(wasLoaded ? `Unloaded skill "${skill.name}".` : `Skill "${skill.name}" was not loaded.`, {
+        name: skill.name,
+        unloaded: wasLoaded,
+        loadedSkills: registry.names(),
+      });
     },
   };
 }
@@ -139,17 +138,11 @@ export function createCreateSkillTool(scaffolder: SkillScaffolder): AgentTool<ty
     execute: async (_id, params) => {
       const name = params.name.trim().toLowerCase();
       if (!params.overwrite && (await scaffolder.packageExists(name))) {
-        return {
-          content: [
-            {
-              type: "text",
-              text:
-                `A plugin named "${name}" already exists. Nothing was written. ` +
-                `Ask the user whether to replace it (retry with overwrite: true) or pick another name.`,
-            },
-          ],
-          details: { name, alreadyExists: true },
-        };
+        return toolResult(
+          `A plugin named "${name}" already exists. Nothing was written. ` +
+            `Ask the user whether to replace it (retry with overwrite: true) or pick another name.`,
+          { name, alreadyExists: true },
+        );
       }
       const result = await scaffolder.scaffoldSkill(
         {
@@ -162,10 +155,7 @@ export function createCreateSkillTool(scaffolder: SkillScaffolder): AgentTool<ty
       const text = result.updated
         ? `Replaced skill "${result.name}" in ${result.rootPath}. The previous package is gone and cannot be undone with /undo.`
         : `Created skill "${result.name}" in ${result.rootPath}. It appears in the Resources tab; MCP servers are not involved. It persists across sessions and cannot be undone with /undo.`;
-      return {
-        content: [{ type: "text", text }],
-        details: { ...result },
-      };
+      return toolResult(text, { ...result });
     },
   };
 }

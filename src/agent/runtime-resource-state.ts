@@ -8,6 +8,7 @@ import type { SkillScaffolder } from "../tools/skill-tools";
 import type { ReadMemo } from "../vault/read-memo";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import type { AgentRole } from "./subagents";
+import type { PluginCatalog } from "../plugins/service";
 import {
   EMPTY_AGENT_RUNTIME_RESOURCES,
   buildAgentParentTools,
@@ -36,6 +37,8 @@ export interface AgentRuntimeResourceStateOptions {
   saveSettings?: () => void | Promise<void>;
   artifactStore?: ToolArtifactStoreLike;
   skillScaffolder?: SkillScaffolder;
+  /** Shared plugin catalog; without it the runtime scans the plugins folder itself. */
+  plugins?: PluginCatalog;
 }
 
 export class AgentRuntimeResourceState {
@@ -99,12 +102,17 @@ export class AgentRuntimeResourceState {
   }
 
   async reload(): Promise<AgentRuntimeResources> {
+    // One catalog: take the PluginService cache when it holds a scan. Never call
+    // its load(): that reload prunes plugin settings and saves, and the runtime
+    // reloads at startup and after every invalidation.
+    const plugins = this.options.plugins?.peekLoaded() ?? undefined;
     this.resources = await loadAgentRuntimeResources(
       this.options.app,
       this.options.getSettings(),
       this.options.webFetch,
       this.options.saveSettings,
       this.options.artifactStore,
+      plugins,
     );
     // Prune any loaded skill that disappeared (plugin disabled/removed)
     this.skillLoads.prune(new Set(this.resources.skills.map((s) => s.name)));

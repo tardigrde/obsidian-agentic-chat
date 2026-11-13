@@ -65,6 +65,32 @@ export default tseslint.config(
     },
   },
   {
+    files: ["src/**/*.ts"],
+    ignores: [
+      // The envelope lives here; this is the one place the literal shape is allowed.
+      "src/tools/result.ts",
+      // Owned by another PR; keep the rule quiet until that call site converts.
+      "src/mcp/tools.ts",
+      // Agent-owned call sites convert in a later batch.
+      "src/agent/**",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "Property[key.name='content'] > ArrayExpression > ObjectExpression > Property[key.name='type'][value.value='text']",
+          message: "Use toolResult() or untrustedToolResult() from src/tools/result.ts.",
+        },
+        {
+          selector:
+            "Property[key.name='content'] > ArrayExpression > ObjectExpression > Property[key.name='type'] > TSAsExpression > Literal[value='text']",
+          message: "Use toolResult() or untrustedToolResult() from src/tools/result.ts.",
+        },
+      ],
+    },
+  },
+  {
     // Layering: `src/settings.ts` is the settings tab (UI). Agent, tool, MCP,
     // and other non-UI modules read settings types and helpers from
     // `settings-schema.ts`, so the tab never enters their import graph.

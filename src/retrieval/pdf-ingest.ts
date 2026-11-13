@@ -1,5 +1,5 @@
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import { formatFrontmatterScalar, parseFrontmatterFields } from "./frontmatter";
+import { formatFrontmatterScalar, parseFrontmatterFields } from "../vault/frontmatter";
 import { stableTextHash } from "./source-hash";
 import {
   chunkSourceText,
@@ -155,13 +155,6 @@ export function parsePdfImportProvenance(text: string): PdfImportProvenance | nu
     pageCount,
     chunkCount,
   };
-}
-
-export async function writePdfSourceArtifact(
-  store: ToolArtifactStoreLike,
-  input: PdfImportWriteInput,
-): Promise<PdfImportWriteResult> {
-  return new PdfArtifactDeduper().write(store, input);
 }
 
 export class PdfArtifactDeduper {

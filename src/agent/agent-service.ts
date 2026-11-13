@@ -62,6 +62,7 @@ import { AgentLoopGuard } from "./loop-guard";
 import { AgentTurnCap, CHILD_TURN_CAP } from "./turn-cap";
 import { buildStopNoticeMessage, type StopNoticeModel } from "./stop-notice";
 import { AgentRuntimeResourceState } from "./runtime-resource-state";
+import type { PluginCatalog } from "../plugins/service";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import { AgentSubagentRuntime } from "./subagent-runtime";
 import { AgentPromptTurnRuntime, SESSION_CHANGED_MESSAGE, type PromptTurnRun } from "./prompt-turn-runtime";
@@ -74,6 +75,9 @@ import {
 export type { ToolApprovalRequest } from "./tool-call-controller";
 
 export type { SummarizeFn } from "./compaction-runtime";
+
+/** Coalesces the vault events of one plugin install into one runtime reload. */
+const PLUGIN_RELOAD_DEBOUNCE_MS = 300;
 
 export interface AgentServiceOptions {
   app: App;
@@ -103,6 +107,8 @@ export interface AgentServiceOptions {
   artifactStore?: ToolArtifactStoreLike;
   /** Backs the agent `create_skill` tool with the New skill wizard writer. Omitted in tests without a vault. */
   skillScaffolder?: SkillScaffolder;
+  /** Shared plugin catalog: one cache for settings, the runtime, and MCP tools. */
+  pluginService?: PluginCatalog;
 }
 
 export type ManualCompactionResult =
@@ -146,6 +152,9 @@ export class AgentService {
   private initialization: Promise<void> | null = null;
   /** Set when a compaction rewrite landed but the live transcript is stale. */
   private compactionRecoveryError: string | undefined;
+  /** Drops the plugin-invalidation subscription on dispose. */
+  private unsubscribePluginInvalidation?: () => void;
+  private pluginReloadTimer: number | undefined;
   /** Memoizes system-prompt and tool-schema token counts for the per-event readout. */
   private readonly contextOverhead = new CachedContextOverheadCounter();
 
@@ -202,6 +211,21 @@ export class AgentService {
       saveSettings: options.saveSettings,
       artifactStore: options.artifactStore,
       skillScaffolder: options.skillScaffolder,
+      plugins: options.pluginService,
+    });
+    // An install or a vault edit under the plugins folder invalidates the
+    // catalog; rebuild the runtime so the next turn gets the new MCP tools
+    // instead of waiting for an unrelated reload.
+    // An install writes many files, so coalesce the burst into one reload.
+    this.unsubscribePluginInvalidation = options.pluginService?.onInvalidated(() => {
+      if (this.pluginReloadTimer !== undefined) return;
+      this.pluginReloadTimer = window.setTimeout(() => {
+        this.pluginReloadTimer = undefined;
+        if (this.conversation.isDisposed) return;
+        void this.runtimeResources.reload().catch((error: unknown) => {
+          console.warn("Agentic chat: could not reload runtime resources after a plugin change", error);
+        });
+      }, PLUGIN_RELOAD_DEBOUNCE_MS);
     });
     this.subagents = new AgentSubagentRuntime({
       app: this.app,
@@ -781,6 +805,10 @@ export class AgentService {
 
   dispose(): void {
     if (this.conversation.isDisposed) return;
+    this.unsubscribePluginInvalidation?.();
+    this.unsubscribePluginInvalidation = undefined;
+    if (this.pluginReloadTimer !== undefined) window.clearTimeout(this.pluginReloadTimer);
+    this.pluginReloadTimer = undefined;
     if (this.vaultModifyRef) this.app.vault.offref(this.vaultModifyRef);
     this.vaultModifyRef = undefined;
     this.conversation.dispose();

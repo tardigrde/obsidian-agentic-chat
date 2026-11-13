@@ -1,5 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import { toolResult } from "./result";
 
 export interface AskUserRequest {
   question: string;
@@ -42,16 +43,21 @@ export function createAskUserTool(askUser: AskUserHandler): AgentTool<typeof Ask
         choices: normalizeChoices(params.choices),
       };
       if (!request.question) throw new Error("ask_user requires a non-empty question.");
-      onUpdate?.({
-        content: [{ type: "text", text: `Waiting for the user to answer: ${request.question}` }],
-        details: { kind: "ask_user", status: "waiting", ...request },
-      });
+      onUpdate?.(
+        toolResult(`Waiting for the user to answer: ${request.question}`, {
+          kind: "ask_user",
+          status: "waiting",
+          ...request,
+        }),
+      );
       const answer = (await askUser(request, signal)).trim();
       if (!answer) throw new Error("The user did not provide an answer.");
-      return {
-        content: [{ type: "text", text: `User answered: ${answer}` }],
-        details: { kind: "ask_user", status: "answered", ...request, answer },
-      };
+      return toolResult(`User answered: ${answer}`, {
+        kind: "ask_user",
+        status: "answered",
+        ...request,
+        answer,
+      });
     },
   };
 }

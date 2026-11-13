@@ -41,11 +41,11 @@ await $(".agentic-chat-session-list").waitForExist();
 | entry point | source | proof | status |
 |---|---|---|---|
 | Tab strip renders | `src/ui/chat-view.ts:387` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
-| `+` adds a tab | `src/ui/chat-view.ts:331` | `test/e2e/specs/multi-tab-approval.e2e.ts:82` | `covered` |
-| Switch between tabs | `src/ui/chat-view.ts:331` | `test/e2e/specs/multi-tab-approval.e2e.ts:82` | `covered` |
+| `+` adds a tab | `src/ui/chat-view.ts:331` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
+| Switch between tabs | `src/ui/chat-view.ts:331` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
 | Busy dot on a streaming tab | `src/ui/chat-view.ts:399` | no committed check | `NONE` |
-| Needs-approval tab badge | `src/ui/chat-view.ts:400` | `test/e2e/specs/multi-tab-approval.e2e.ts:82` | `covered` |
-| `x` closes a tab | `src/ui/chat-view.ts:406` | `test/e2e/specs/multi-tab-approval.e2e.ts:147` (calls `closeTab`, does not click `x`) | `partial` |
+| Needs-approval tab badge | `src/ui/chat-view.ts:400` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
+| `x` closes a tab | `src/ui/chat-view.ts:406` | `test/e2e/specs/multi-tab-approval.e2e.ts:148` (calls `closeTab`, does not click `x`) | `partial` |
 | Closing the last tab starts a new conversation | `src/ui/chat-view.ts:346` | no committed check | `NONE` |
 | Header New chat button | `src/ui/chat-view.ts:582` | no committed check | `NONE` |
 | Header history button | `src/ui/chat-view.ts:588` | no committed check | `NONE` |
@@ -62,7 +62,7 @@ await $(".agentic-chat-session-list").waitForExist();
 | A queued prompt is dropped on session change | `src/ui/session-activation-coordinator.ts:82`; `src/ui/chat-view.ts:1489` | `test/chat-view-lifecycle.test.ts:6`; `test/chat-view-lifecycle.test.ts:100` | `partial` |
 | A queued prompt flushes once the swap is live | `src/ui/chat-view.ts:1194` | `test/chat-view-lifecycle.test.ts:56` | `partial` |
 | Compaction rewrite rejects a changed session | `src/agent/compaction-runtime.ts:250` | `test/compaction-runtime.test.ts:354`; `test/session-invariants.test.ts:129` | `partial` |
-| A crash during rewrite keeps the old transcript or the new one | `src/session/session-manager.ts:435` | `test/session-rewrite-atomic.test.ts:82` (unit only) | `partial` |
+| A crash during rewrite keeps the old transcript or the new one | `src/session/session-manager.ts:461` | `test/session-rewrite-atomic.test.ts:82` (unit only) | `partial` |
 | A slow append stays in its original session file | `src/session/session-manager.ts:559` | `test/session-invariants.test.ts:91` | `partial` |
 | Do not open one session in two tabs | `src/ui/chat-view.ts:2013` | no committed check | `NONE` |
 | History modal at phone width | `src/ui/session-list-modal.ts:43` | `test/e2e/specs/mobile-viewport.e2e.ts:412` | `covered` |
