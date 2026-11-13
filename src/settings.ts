@@ -283,12 +283,15 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private indexHiddenControls(): void {
     this.hiddenControlsIndexed = true;
     for (const provider of PROVIDERS) {
-      const shadow = structuredClone(this.plugin.settings);
-      shadow.provider = provider;
-      shadow.web.enabled = true;
-      shadow.web.searchProvider = "searxng";
-      shadow.observability.enabled = true;
-      this.buildDefinitions(shadow);
+      for (const backend of ["langfuse", "otlp"] as const) {
+        const shadow = structuredClone(this.plugin.settings);
+        shadow.provider = provider;
+        shadow.web.enabled = true;
+        shadow.web.searchProvider = "searxng";
+        shadow.observability.enabled = true;
+        shadow.observability.backend = backend;
+        this.buildDefinitions(shadow);
+      }
     }
   }
 
