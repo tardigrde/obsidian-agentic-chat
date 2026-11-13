@@ -9,7 +9,7 @@ import { STOPPED_APPROVAL_REASON, type UserApprovalChoice } from "../src/agent/t
 import type { AskUserHandler, AskUserRequest } from "../src/tools/ask-user-tool";
 import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
 import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";

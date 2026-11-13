@@ -3,7 +3,7 @@ import {
   applyRememberedApprovalChoice,
   approvalPolicyForRememberedChoice,
 } from "../src/agent/approval-memory";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 
 function settings(): AgenticChatSettings {
   return {

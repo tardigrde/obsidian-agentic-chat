@@ -12,7 +12,7 @@ import { AgentCompactionRuntime, type SummarizeFn } from "../src/agent/compactio
 import { getCompactedUsage, isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { parseSessionEntries } from "../src/session/jsonl";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 const DEFAULTS = { provider: "openrouter", modelId: "test/model", thinkingLevel: "off" as const };

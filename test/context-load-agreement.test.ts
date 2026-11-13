@@ -7,7 +7,7 @@ import { CachedContextOverheadCounter } from "../src/agent/readouts";
 import { agentContextOverheadTokens, agentContextReadout } from "../src/agent/service-readouts";
 import { estimateToolDefinitionTokens } from "../src/agent/tool-budget";
 import { ObsidianSessionManager } from "../src/session/session-manager";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 const WINDOW = 10_000;

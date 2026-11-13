@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMcpServerSettings, createMcpServerState } from "../src/mcp/settings";
-import { DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings-schema";
 import {
   SETTINGS_SECRET_SLOTS,
   hydrateSettingsSecrets,

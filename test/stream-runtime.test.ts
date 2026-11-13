@@ -8,7 +8,7 @@ import {
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { buildModel } from "../src/llm/models";
 import { AgentStreamRuntime, type StreamSimpleFn } from "../src/agent/stream-runtime";
 import type { streamOpenAICompatibleViaRequestUrl } from "../src/llm/openai-compatible-request";

@@ -1,5 +1,5 @@
 import { errorMessage } from "../../utils/errors";
-import { optionalNodeRequire } from "./browser-open";
+import { optionalNodeRequire } from "../../platform/node-runtime";
 import type { McpOAuthCallback, McpOAuthCallbackReceiver, McpOAuthProtocolParams } from "./types";
 import { stringValue } from "./values";
 

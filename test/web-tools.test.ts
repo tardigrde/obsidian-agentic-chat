@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, type WebSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type WebSettings } from "../src/settings-schema";
 import { createWebTools, WEB_TOOL_NAMES } from "../src/tools/web-tools";
 import type { WebFetcher } from "../src/tools/web-fetch";
 
