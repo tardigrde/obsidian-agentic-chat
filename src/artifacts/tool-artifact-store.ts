@@ -177,9 +177,16 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
     const listing = await this.adapter.list(this.artifactDir);
     const metadataFiles = listing.files.filter((path) => path.endsWith(".json"));
     const index = await this.ensureIndex();
-    const presentIds = new Set(metadataFiles.map((path) => path.split("/").pop()?.replace(/\.json$/, "") ?? ""));
+    const idOf = (path: string): string => path.split("/").pop()?.replace(/\.json$/, "") ?? "";
+    const presentIds = new Set(metadataFiles.map(idOf));
     for (const id of [...index.keys()]) {
       if (!presentIds.has(id)) index.delete(id);
+    }
+    // Each chat tab has its own store over the same folder. Index what another
+    // instance wrote, or the orphan sweep below would delete its files.
+    const unindexed = metadataFiles.filter((path) => !index.has(idOf(path)));
+    for (const artifact of await Promise.all(unindexed.map((path) => this.readMetadataFile(path)))) {
+      if (artifact) index.set(artifact.id, artifact);
     }
     const validArtifacts = [...index.values()];
     const now = this.now();

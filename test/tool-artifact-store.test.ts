@@ -260,3 +260,19 @@ describe("ToolArtifactStore", () => {
     expect(calls).toBeLessThan(150);
   });
 });
+
+describe("two stores over one folder (one per chat tab)", () => {
+  it("does not delete an artifact the other tab wrote after its index was built", async () => {
+    const adapter = new MemoryAdapter();
+    const dir = ".obsidian/plugins/agentic-chat/artifacts";
+    const tabA = new ToolArtifactStore(adapter.asDataAdapter(), dir);
+    const tabB = new ToolArtifactStore(adapter.asDataAdapter(), dir);
+    await tabB.writeArtifact({ label: "b1", sourceToolName: "t", text: "from b", contentType: "text/plain" });
+
+    const fromA = await tabA.writeArtifact({ label: "a1", sourceToolName: "t", text: "from a", contentType: "text/plain" });
+    await tabB.writeArtifact({ label: "b2", sourceToolName: "t", text: "from b again", contentType: "text/plain" });
+
+    expect(await tabA.readArtifact(fromA.id)).toMatchObject({ text: "from a" });
+    expect((await tabB.listArtifacts()).map((artifact) => artifact.label).sort()).toEqual(["a1", "b1", "b2"]);
+  });
+});
