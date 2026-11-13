@@ -671,12 +671,17 @@ export class McpSettingsSection {
     }
   }
 
-  private adminDeps(server: McpServerSettings) {
+  /**
+   * `forSignIn` creates the mobile OAuth callback receiver. Only sign-in may
+   * create one: a receiver stays registered until a callback consumes it.
+   */
+  private adminDeps(server: McpServerSettings, forSignIn = false) {
     return {
       save: () => this.host.save(),
       sync: (changed: McpServerSettings) => this.syncMcpServerToState(changed),
       fetcher: createMcpFetcher(this.effectiveMcpProxySettings()),
-      callbackReceiver: Platform.isMobileApp ? this.host.plugin.createMcpOAuthCallbackReceiver() : undefined,
+      callbackReceiver:
+        forSignIn && Platform.isMobileApp ? this.host.plugin.createMcpOAuthCallbackReceiver() : undefined,
       onProgress: (event: McpOAuthProgressEvent) => handleMcpOAuthProgress(server, event),
     };
   }
@@ -691,7 +696,7 @@ export class McpSettingsSection {
   }
 
   private async authenticateAndProbeMcpServer(server: McpServerSettings): Promise<void> {
-    const result = await authenticateAndProbe(server, this.adminDeps(server));
+    const result = await authenticateAndProbe(server, this.adminDeps(server, true));
     const sample = formatMcpToolSample(result.toolNames);
     new Notice(
       `Authenticated ${server.name}; discovered ${result.toolCount} tool${
