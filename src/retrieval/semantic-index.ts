@@ -39,7 +39,9 @@ export interface SemanticIndexBootstrapInput {
   signal?: AbortSignal;
   /** Called after the writer owns the path, before the first persisted write. */
   onLeaseAcquired?: () => void;
-  /** Test seam: the registry that owns the path. Defaults to the shared registry. */
+  /** Per-vault namespace plus timer. Defaults to the adapter's registered scope. */
+  leaseScope?: SemanticIndexLeaseScope;
+  /** Test seam: the registry that owns the path. Defaults to the adapter's registry. */
   leases?: Pick<SemanticIndexLeaseRegistry, "acquireDurable"> & Partial<Pick<SemanticIndexLeaseRegistry, "describeHold">>;
 }
 
@@ -82,16 +84,27 @@ export interface SemanticIndexLeaseHold {
   retryInMs: number;
 }
 
-let semanticLeaseNamespace = "vault";
-
-/** Namespace store keys by vault so two vaults do not block each other. */
-export function setSemanticLeaseNamespace(namespace: string): void {
-  const trimmed = namespace.trim();
-  if (trimmed) semanticLeaseNamespace = trimmed;
+export interface SemanticIndexLeaseTimer {
+  setInterval(handler: () => void, ms: number): unknown;
+  clearInterval(id: unknown): void;
 }
 
-function semanticLeaseKey(path: string): string {
-  return `${semanticLeaseNamespace}:${path}`;
+const defaultLeaseTimer: SemanticIndexLeaseTimer = {
+  setInterval: (handler, ms) => globalThis.setInterval(handler, ms),
+  clearInterval: (id) => globalThis.clearInterval(id as ReturnType<typeof setInterval>),
+};
+
+/**
+ * Per-vault lease scope: namespaced keys and an injectable timer. There is no
+ * module-level namespace, so two vaults in one process cannot overwrite each
+ * other's keys.
+ */
+export interface SemanticIndexLeaseScope {
+  namespace: string;
+  now?: () => number;
+  ttlMs?: number;
+  store?: SemanticLeaseStore | null;
+  timer?: SemanticIndexLeaseTimer;
 }
 
 export interface SemanticIndexLease {
@@ -122,7 +135,13 @@ export class SemanticIndexLeaseRegistry {
     private readonly now: () => number = Date.now,
     private readonly ttlMs: number = DEFAULT_SEMANTIC_INDEX_LEASE_TTL_MS,
     private readonly store: SemanticLeaseStore | null = createDefaultSemanticLeaseStore(),
+    private readonly namespace: string = "vault",
+    private readonly timer: SemanticIndexLeaseTimer = defaultLeaseTimer,
   ) {}
+
+  private key(path: string): string {
+    return `${this.namespace}:${path}`;
+  }
 
   /**
    * Claim the path in the shared store after taking the same-window lease.
@@ -131,7 +150,7 @@ export class SemanticIndexLeaseRegistry {
    * lease. A lost renewal sets `isOwned` false before the next persisted batch.
    */
   async acquireDurable(path: string): Promise<SemanticIndexLease | null> {
-    const key = semanticLeaseKey(path);
+    const key = this.key(path);
     const local = this.acquire(path);
     if (!local) return null;
     if (!this.store) return this.withLocalHeartbeat(local);
@@ -164,12 +183,12 @@ export class SemanticIndexLeaseRegistry {
           owned = false;
         });
     };
-    const heartbeat = window.setInterval(renew, this.heartbeatMs());
+    const heartbeat = this.timer.setInterval(renew, this.heartbeatMs());
     return {
       touch: renew,
       release: () => {
         owned = false;
-        window.clearInterval(heartbeat);
+        this.timer.clearInterval(heartbeat);
         void local.release();
         return store.release(key, this.ownerId).catch((error) => {
           console.warn("Agentic Chat: could not release the semantic index lease", error);
@@ -184,7 +203,7 @@ export class SemanticIndexLeaseRegistry {
    * its lease lapses if that holder is gone. Null when nothing can be read.
    */
   async describeHold(path: string): Promise<SemanticIndexLeaseHold | null> {
-    const key = semanticLeaseKey(path);
+    const key = this.key(path);
     let touchedAt = this.leases.get(key)?.touchedAt;
     if (touchedAt === undefined && this.store?.peek) {
       try {
@@ -204,11 +223,11 @@ export class SemanticIndexLeaseRegistry {
 
   /** Without a shared store, still keep a long batch from outliving the short TTL. */
   private withLocalHeartbeat(local: SemanticIndexLease): SemanticIndexLease {
-    const heartbeat = window.setInterval(() => local.touch(), this.heartbeatMs());
+    const heartbeat = this.timer.setInterval(() => local.touch(), this.heartbeatMs());
     return {
       touch: () => local.touch(),
       release: () => {
-        window.clearInterval(heartbeat);
+        this.timer.clearInterval(heartbeat);
         return local.release();
       },
       isOwned: () => local.isOwned(),
@@ -216,7 +235,7 @@ export class SemanticIndexLeaseRegistry {
   }
 
   acquire(path: string): SemanticIndexLease | null {
-    const key = semanticLeaseKey(path);
+    const key = this.key(path);
     const existing = this.leases.get(key);
     if (existing && this.now() - existing.touchedAt < this.ttlMs) return null;
     const entry = { touchedAt: this.now() };
@@ -233,13 +252,45 @@ export class SemanticIndexLeaseRegistry {
   }
 
   isLeased(path: string): boolean {
-    const key = semanticLeaseKey(path);
+    const key = this.key(path);
     const existing = this.leases.get(key);
     return Boolean(existing && this.now() - existing.touchedAt < this.ttlMs);
   }
 }
 
-export const semanticIndexLeases = new SemanticIndexLeaseRegistry();
+const leaseScopes = new WeakMap<object, SemanticIndexLeaseScope>();
+const leaseRegistries = new WeakMap<object, Map<string, SemanticIndexLeaseRegistry>>();
+
+/** Register the per-vault lease scope once at plugin load. */
+export function setSemanticIndexLeaseScope(adapter: DataAdapter, scope: SemanticIndexLeaseScope): void {
+  leaseScopes.set(adapter, { ...scope, namespace: scope.namespace.trim() || "vault" });
+  leaseRegistries.delete(adapter);
+}
+
+/** The registry for one adapter and namespace, so equal scopes share one lock. */
+export function semanticIndexLeaseRegistryFor(
+  adapter: DataAdapter,
+  scope?: SemanticIndexLeaseScope,
+): SemanticIndexLeaseRegistry {
+  const resolved = scope ? { ...scope, namespace: scope.namespace.trim() || "vault" } : leaseScopes.get(adapter) ?? { namespace: "vault" };
+  let byNamespace = leaseRegistries.get(adapter);
+  if (!byNamespace) {
+    byNamespace = new Map();
+    leaseRegistries.set(adapter, byNamespace);
+  }
+  let registry = byNamespace.get(resolved.namespace);
+  if (!registry) {
+    registry = new SemanticIndexLeaseRegistry(
+      resolved.now,
+      resolved.ttlMs,
+      resolved.store,
+      resolved.namespace,
+      resolved.timer,
+    );
+    byNamespace.set(resolved.namespace, registry);
+  }
+  return registry;
+}
 
 /** One acquisition path for the writer and for the read-repair critical section. */
 async function acquireSemanticIndexWriterLease(
@@ -255,7 +306,7 @@ async function acquireSemanticIndexWriterLease(
  * and releases it in `finally`. A direct caller therefore cannot write without the lease.
  */
 export async function bootstrapSemanticIndex(input: SemanticIndexBootstrapInput): Promise<SemanticIndexBootstrapResult> {
-  const leases = input.leases ?? semanticIndexLeases;
+  const leases = input.leases ?? semanticIndexLeaseRegistryFor(input.adapter, input.leaseScope);
   let acquired: SemanticIndexLease | null;
   try {
     acquired = await acquireSemanticIndexWriterLease(leases, input.path);
@@ -394,11 +445,15 @@ async function runSemanticIndexBootstrap(input: SemanticIndexBootstrapRunInput):
   }
 }
 
-export async function readSemanticIndexFile(adapter: DataAdapter, path: string): Promise<SemanticIndexFile | null> {
+export async function readSemanticIndexFile(
+  adapter: DataAdapter,
+  path: string,
+  leaseScope?: SemanticIndexLeaseScope,
+): Promise<SemanticIndexFile | null> {
   const primary = await readValidSemanticIndexFile(adapter, path);
   if (primary) {
     if (primary.state.status.state === "running") {
-      return await repairInterruptedIndex(adapter, path, primary);
+      return await repairInterruptedIndex(adapter, path, primary, leaseScope);
     }
     return primary;
   }
@@ -462,13 +517,14 @@ async function repairInterruptedIndex(
   adapter: DataAdapter,
   path: string,
   file: SemanticIndexFile,
+  leaseScope?: SemanticIndexLeaseScope,
 ): Promise<SemanticIndexFile> {
   if (file.state.status.state !== "running") return file;
   // Hold the same lease a writer uses. Without it, a writer can acquire the
   // index between the check and the write and lose its file to our repair.
   let lease: SemanticIndexLease | null;
   try {
-    lease = await acquireSemanticIndexWriterLease(semanticIndexLeases, path);
+    lease = await acquireSemanticIndexWriterLease(semanticIndexLeaseRegistryFor(adapter, leaseScope), path);
   } catch {
     // A status read must still work when the shared lease store is unavailable.
     return file;
