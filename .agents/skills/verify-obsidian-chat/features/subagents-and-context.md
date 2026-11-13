@@ -43,8 +43,8 @@ await $(".agentic-chat-action-list").waitForExist();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| `/agent` with no argument (picker) | `src/ui/chat-view.ts:1997` | no committed check | `NONE` |
-| `/agent <name> <task>` | `src/ui/chat-view.ts:1953` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
+| `/agent` with no argument (picker) | `src/ui/chat-view.ts:1877` | no committed check | `NONE` |
+| `/agent <name> <task>` | `src/ui/chat-view.ts:1833` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
 | Model calls the `subagent` tool | `src/tools/subagent-tool.ts:112` | `test/subagents.test.ts:323` (unit only) | `partial` |
 | Built-in Explorer role | `src/agent/subagents.ts:34` | `test/subagent-runtime.test.ts:147` (unit only) | `partial` |
 | Parallel cap of ten and queueing | `src/tools/subagent-tool.ts:14` | `test/subagents.test.ts:505` (unit only) | `partial` |
@@ -59,7 +59,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Ignore-list withholding | `src/ui/attachments.ts:39` | `test/attachments.test.ts:37` (unit only) | `partial` |
 | Context chips order and removal | `src/ui/context-chip-renderer.ts:21` | `test/context-chip-renderer.test.ts:85` (unit only) | `partial` |
 | Source chips and note open | `src/ui/assistant-bubble.ts:779` | `test/e2e/specs/beautifului-polish.e2e.ts:198` | `covered` |
-| Context-window bar | `src/ui/chat-view.ts:757` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
+| Context-window bar | `src/ui/chat-view.ts:723` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
 
 ## Gotchas
 

@@ -8,7 +8,7 @@ import {
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
-import { ChatView } from "../src/ui/chat-view";
+import { chatViewHarness } from "./helpers/chat-view-harness";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS } from "../src/settings";
 import { MemoryAdapter } from "./helpers/memory-adapter";
@@ -38,16 +38,13 @@ function harness(messages: AgentMessage[], sendPrompt: ReturnType<typeof vi.fn>)
     sendPrompt,
     getError: () => undefined,
   };
-  return Object.assign(Object.create(ChatView.prototype), {
-    tabs: [{ service }],
-    activeTabIndex: 0,
-    closed: false,
-    lastSentPrompt: "what is in this picture?",
-    lastSentDisplay: "what is in this picture?",
+  return chatViewHarness<RetryHarness>({
+    service,
+    state: { lastSentPrompt: "what is in this picture?", lastSentDisplay: "what is in this picture?" },
     clearEmptyState: vi.fn(),
     renderOutgoingUserMessage: vi.fn(),
     showServiceError: vi.fn(),
-  }) as RetryHarness;
+  });
 }
 
 /** Stream function that records the transcript context handed to the provider. */
@@ -120,18 +117,15 @@ function failingThenOkStreamFn(reason: "error" | "aborted"): { streamFn: StreamF
 }
 
 function retryView(service: AgentService): RetryHarness {
-  return Object.assign(Object.create(ChatView.prototype), {
-    tabs: [{ service }],
-    activeTabIndex: 0,
-    closed: false,
-    lastSentPrompt: null,
-    lastSentDisplay: null,
+  return chatViewHarness<RetryHarness>({
+    service,
+    state: { lastSentPrompt: null, lastSentDisplay: null },
     bubble: null,
     clearEmptyState: vi.fn(),
     renderTranscript: vi.fn(),
     renderOutgoingUserMessage: vi.fn(),
     showServiceError: vi.fn(),
-  }) as RetryHarness;
+  });
 }
 
 function userTexts(context: TranscriptContext): string[] {
@@ -161,16 +155,13 @@ describe("ChatView retry", () => {
     const service = realService(streamFn);
     await service.sendPrompt("what is in this picture?", [IMAGE]);
 
-    const view = Object.assign(Object.create(ChatView.prototype), {
-      tabs: [{ service }],
-      activeTabIndex: 0,
-      closed: false,
-      lastSentPrompt: null,
-      lastSentDisplay: null,
+    const view = chatViewHarness<RetryHarness>({
+      service,
+      state: { lastSentPrompt: null, lastSentDisplay: null },
       clearEmptyState: vi.fn(),
       renderOutgoingUserMessage: vi.fn(),
       showServiceError: vi.fn(),
-    }) as RetryHarness;
+    });
 
     await view.retryLast();
 

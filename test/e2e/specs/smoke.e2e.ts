@@ -77,10 +77,11 @@ describe("agentic-chat smoke", function () {
 
     const state = await browser.executeObsidian(async ({ app }, viewType) => {
       const view = app.workspace.getLeavesOfType(viewType)[0]?.view as unknown as {
-        lastSentPrompt?: string | null;
+        tabs: Array<{ state: { lastSentPrompt: string | null } }>;
+        activeTabIndex: number;
       };
       return {
-        lastSentPrompt: view?.lastSentPrompt ?? null,
+        lastSentPrompt: view.tabs[view.activeTabIndex].state.lastSentPrompt,
         transcript: document.querySelector<HTMLElement>(".agentic-chat-messages")?.innerText ?? "",
         input: document.querySelector<HTMLTextAreaElement>(".agentic-chat-input")?.value ?? "(missing)",
       };
