@@ -49,9 +49,9 @@ await $(".agentic-chat-send").click();
 | entry point | source | proof | status |
 |---|---|---|---|
 | Ribbon icon | `src/main.ts:112` | no committed check | `NONE` |
-| Command palette: Open chat | `src/main.ts:114` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
-| Command palette: New conversation | `src/main.ts:120` | `test/session-actions.test.ts:153` (unit only) | `partial` |
-| Command palette: Quick Ask inline edit | `src/main.ts:126` | `test/e2e/specs/smoke.e2e.ts:214` | `covered` |
+| Command palette: Open chat | `src/main.ts:115` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
+| Command palette: New conversation | `src/main.ts:121` | `test/session-actions.test.ts:153` (unit only) | `partial` |
+| Command palette: Quick Ask inline edit | `src/main.ts:127` | `test/e2e/specs/smoke.e2e.ts:214` | `covered` |
 | Editor selection context menu | `src/main.ts:184` | no committed check | `NONE` |
 | File context menu | `src/main.ts:189` | no committed check | `NONE` |
 | Files context menu (multi-select) | `src/main.ts:194` | no committed check | `NONE` |
