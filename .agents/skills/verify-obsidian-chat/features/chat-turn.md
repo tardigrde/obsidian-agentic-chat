@@ -48,8 +48,8 @@ await browser.waitUntil(async () =>
 - Approval: wait for `.agentic-chat-approval`, then `button=Allow` or
   `button=Deny`.
 - Side effect: `browser.executeObsidian(({ app, obsidian }, path) => ...)`.
-- Tool steps: `.agentic-chat-tool`, `.agentic-chat-diff-line.is-add`,
-  `.agentic-chat-diff-line.is-del`.
+- Tool steps: `.agentic-chat-tool`, `.agentic-chat-step-diff-line.is-add`,
+  `.agentic-chat-step-diff-line.is-del`.
 
 ## Proof
 

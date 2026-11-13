@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import { diffLines, diffStat, diffTooLarge } from "../vault/diff";
+import { diffLines, diffPrefix, diffStat, diffTooLarge } from "../vault/diff";
 import { buildQuickAskProposal, quickAskEmptyMessage, type QuickAskProposal, type QuickAskTarget } from "./quick-ask";
 
 const MAX_DIFF_DISPLAY_LINES = 400;
@@ -77,13 +77,8 @@ function buildQuickAskTargetText(target: QuickAskTarget): string {
   return `${kindLabel} in ${target.path}`;
 }
 
-function diffPrefix(op: string): string {
-  if (op === "add") return "+";
-  if (op === "remove") return "-";
-  return " ";
-}
-
-function renderQuickAskDiff(container: HTMLElement, before: string, after: string): void {
+/** Quick Ask diff preview, with its own scoped line class (not the approval table). */
+export function renderQuickAskDiff(container: HTMLElement, before: string, after: string): void {
   if (diffTooLarge(before, after)) {
     const beforeLines = before ? before.split("\n").length : 0;
     const afterLines = after ? after.split("\n").length : 0;
@@ -102,10 +97,15 @@ function renderQuickAskDiff(container: HTMLElement, before: string, after: strin
   const pre = container.createEl("pre", { cls: "agentic-chat-diff" });
   const shown = lines.slice(0, MAX_DIFF_DISPLAY_LINES);
   for (const line of shown) {
-    const prefix = diffPrefix(line.op);
-    pre.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
+    pre.createDiv({
+      cls: `agentic-chat-quick-ask-diff-line is-${line.op}`,
+      text: `${diffPrefix(line.op)} ${line.text}`,
+    });
   }
   if (lines.length > shown.length) {
-    pre.createDiv({ cls: "agentic-chat-diff-line is-context", text: `... ${lines.length - shown.length} more lines` });
+    pre.createDiv({
+      cls: "agentic-chat-quick-ask-diff-line is-context",
+      text: `... ${lines.length - shown.length} more lines`,
+    });
   }
 }

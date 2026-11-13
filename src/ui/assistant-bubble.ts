@@ -442,25 +442,7 @@ export class AssistantBubble {
 
   /** Render a compact oldText(−)/newText(+) diff, capped so it can't dominate the step. */
   private renderEditDiff(call: HTMLElement, edits: EditPair[]): void {
-    const pre = call.createEl("pre", { cls: "agentic-chat-step-diff" });
-    const MAX_LINES = 24;
-    let count = 0;
-    let elided = false;
-    const pushLine = (text: string, cls: string, marker: string): void => {
-      if (count >= MAX_LINES) {
-        elided = true;
-        return;
-      }
-      const row = pre.createDiv({ cls: ["agentic-chat-diff-line", cls] });
-      row.createSpan({ cls: "agentic-chat-diff-marker", text: marker });
-      row.createSpan({ text: text === "" ? " " : text });
-      count += 1;
-    };
-    for (const edit of edits) {
-      for (const line of edit.oldText.split("\n")) pushLine(line, "is-del", "−");
-      for (const line of edit.newText.split("\n")) pushLine(line, "is-add", "+");
-    }
-    if (elided) pre.createDiv({ cls: "agentic-chat-diff-elide", text: "…" });
+    renderStepEditDiff(call, edits);
   }
 
   /**
@@ -1162,6 +1144,32 @@ function calloutTitle(type: string): string {
 interface EditPair {
   oldText: string;
   newText: string;
+}
+
+/**
+ * Render a compact oldText(−)/newText(+) diff for an edit step. The step keeps
+ * its own line class: the approval modal and Quick Ask use a diff-table style
+ * that must not leak into this flex marker layout.
+ */
+export function renderStepEditDiff(call: HTMLElement, edits: EditPair[], maxLines = 24): void {
+  const pre = call.createEl("pre", { cls: "agentic-chat-step-diff" });
+  let count = 0;
+  let elided = false;
+  const pushLine = (text: string, cls: string, marker: string): void => {
+    if (count >= maxLines) {
+      elided = true;
+      return;
+    }
+    const row = pre.createDiv({ cls: ["agentic-chat-step-diff-line", cls] });
+    row.createSpan({ cls: "agentic-chat-diff-marker", text: marker });
+    row.createSpan({ text: text === "" ? " " : text });
+    count += 1;
+  };
+  for (const edit of edits) {
+    for (const line of edit.oldText.split("\n")) pushLine(line, "is-del", "−");
+    for (const line of edit.newText.split("\n")) pushLine(line, "is-add", "+");
+  }
+  if (elided) pre.createDiv({ cls: "agentic-chat-diff-elide", text: "…" });
 }
 
 /** "lines a–b" for a read call's offset/limit, or "" when neither is set. */

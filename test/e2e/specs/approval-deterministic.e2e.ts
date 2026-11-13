@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 import { browser, expect, $ } from "@wdio/globals";
 import { after, afterEach, before, beforeEach, describe, it } from "mocha";
 import { waitForComposerReady } from "../support/layout";
@@ -327,15 +329,15 @@ describe("agentic-chat deterministic approvals", function () {
     await browser.waitUntil(
       async () =>
         await browser.execute(() => {
-          const add = document.querySelector<HTMLElement>(".agentic-chat-diff-line.is-add");
-          const remove = document.querySelector<HTMLElement>(".agentic-chat-diff-line.is-remove");
+          const add = document.querySelector<HTMLElement>(".agentic-chat-approval-diff-line.is-add");
+          const remove = document.querySelector<HTMLElement>(".agentic-chat-approval-diff-line.is-remove");
           return Boolean(add && remove);
         }),
       { timeout: 5_000, timeoutMsg: "approval diff did not render add/remove lines" },
     );
     const diffStyles = await browser.execute(() => {
-      const add = document.querySelector<HTMLElement>(".agentic-chat-diff-line.is-add");
-      const remove = document.querySelector<HTMLElement>(".agentic-chat-diff-line.is-remove");
+      const add = document.querySelector<HTMLElement>(".agentic-chat-approval-diff-line.is-add");
+      const remove = document.querySelector<HTMLElement>(".agentic-chat-approval-diff-line.is-remove");
       if (!add || !remove) throw new Error("approval diff lines missing");
       const addStyle = getComputedStyle(add);
       const removeStyle = getComputedStyle(remove);
@@ -348,6 +350,13 @@ describe("agentic-chat deterministic approvals", function () {
     });
     expect(diffStyles.addColor).not.toBe(diffStyles.removeColor);
     expect(diffStyles.addBackground).not.toBe(diffStyles.removeBackground);
+    const shotDir = path.join(
+      "logs",
+      "design-audit",
+      `${new Date().toISOString().replace(/[:.]/g, "-")}-approval`,
+    );
+    mkdirSync(shotDir, { recursive: true });
+    await browser.saveScreenshot(path.join(shotDir, "approval-diff.full.png"));
     await allowApproval();
 
     await browser.waitUntil(async () => (await readNote(EDIT_NOTE_PATH)).includes(EDIT_AFTER), {
