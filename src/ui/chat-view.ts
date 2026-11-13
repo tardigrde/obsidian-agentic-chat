@@ -1004,8 +1004,21 @@ export class ChatView extends ItemView {
   // --- chrome (header pill, usage, running state) ---
 
   private syncChrome(): void {
-    const { settings } = this.plugin;
     this.syncControls();
+    this.renderModelPill();
+    this.syncEffortKnob();
+
+    const readout = this.service.getContextReadout();
+    this.renderUsageChrome();
+    this.syncContextBar(readout);
+
+    this.renderRunning();
+    this.checkUsageNotifications();
+  }
+
+  /** Header model pill: provider/model label plus the one-shot override state. */
+  private renderModelPill(): void {
+    const { settings } = this.plugin;
     this.modelPillEl.empty();
     const modelPill = buildModelPillState({
       provider: settings.provider,
@@ -1017,16 +1030,13 @@ export class ChatView extends ItemView {
     this.modelPillEl.setAttr("title", modelPill.title);
     if (modelPill.isOverride) this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: modelPill.providerLabel });
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: modelPill.shortModel });
-    this.syncEffortKnob();
+  }
 
-    const readout = this.service.getContextReadout();
-    this.renderUsageChrome();
-    this.syncContextBar(readout);
-
+  /** Toolbar running state: queue/send label, stop button, and stale status clear. */
+  private renderRunning(): void {
     const error = this.service.getError();
     this.setRunning(this.service.isStreaming());
     if (error && !this.service.isStreaming()) this.statusEl.setText("");
-    this.checkUsageNotifications();
   }
 
   /**
