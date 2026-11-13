@@ -46,7 +46,7 @@ await closeAgenticChatSettings();
 | entry point | source | proof | status |
 |---|---|---|---|
 | Settings tab opens | `src/main.ts#onload` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` (opened by the helper via `app.setting`, not the nav) | `partial` |
-| Three tabs render and switch | `src/settings.ts#SETTINGS_TABS` | `test/e2e/specs/settings-ui.e2e.ts#shows exactly three tabs and groups the advanced sections` | `covered` |
+| Three tabs render and switch | `src/settings.ts#sectionDefinition` | `test/e2e/specs/settings-ui.e2e.ts#shows exactly three tabs and groups the advanced sections` | `covered` |
 | Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts#sectionDefinition` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` | `covered` |
 | A moved Advanced setting saves and survives close/reopen | `src/settings-tab-agent.ts#notificationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#keeps a moved Advanced setting after close and reopen` | `covered` |
 | Models: provider, API key, base URL, model | `src/settings-tab-models.ts#modelsDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
@@ -72,7 +72,7 @@ await closeAgenticChatSettings();
 | Agent plugins: Plugins folder | `src/settings-tab-plugins.ts#row("Plugins folder"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
 | Agent plugins: plugin row toggle/open/remove | `src/settings-tab-plugins.ts#pluginRowDefinition` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` (row renders only) | `partial` |
 | Semantic retrieval: embedding controls | `src/settings-tab-retrieval.ts#retrievalDefinitions` | no committed check | `NONE` |
-| Settings at phone width | `src/settings.ts#writeControlValue` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` | `covered` |
+| Settings at phone width | `src/settings.ts#sectionDefinition` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` | `covered` |
 | `getSettingDefinitions()` | `src/settings.ts#getSettingDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` (three named pages render) | `covered` |
 | Settings: Request timeout (seconds) | `src/settings-tab-agent.ts#row("Request timeout (seconds)"` | `test/e2e/chaos/chaos-monkey.e2e.ts#applyPersistedSettings` (chaos run only) | `partial` |
 | Settings: System prompt | `src/settings-tab-agent.ts#row("System prompt"` | `test/settings-definitions.test.ts#puts the expected surrounding rows in each section group` (definition only) | `partial` |

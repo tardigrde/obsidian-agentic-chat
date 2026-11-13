@@ -50,8 +50,8 @@ await clickMcpAddButton("Add MCP server");
 |---|---|---|---|
 | Advanced tab > MCP tools: enable and add a server | `src/settings-mcp-section.ts#definitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
 | MCP-only proxy override | `src/settings-mcp-section.ts#definitions` | no committed check | `NONE` |
-| Server enable toggle | `src/settings-mcp-section.ts#definitions` | no committed check | `NONE` |
-| Server approval policy | `src/settings-mcp-section.ts#definitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
+| Server enable toggle | `src/settings-mcp-section.ts#mcpServerDefinitions` | no committed check | `NONE` |
+| Server approval policy | `src/settings-mcp-section.ts#mcpServerDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
 | Static header auth | `src/settings-mcp-section.ts#mcpAuthenticationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
 | Bearer token auth | `src/settings-mcp-section.ts#mcpAuthenticationDefinitions` | no committed check | `NONE` |
 | OAuth settings panel | `src/settings-mcp-section.ts#mcpOAuthDefinitions` | no committed check | `NONE` |
@@ -65,8 +65,8 @@ await clickMcpAddButton("Add MCP server");
 | MCP handshake retries after a failed initialized notification | `src/mcp/client.ts#initialize` | `test/mcp-client.test.ts#does not mark the client initialized when the initialized notification fails` | `partial` |
 | Test connection / refresh tools | `src/settings-mcp-section.ts#testMcpServer` | `test/mcp-tools.test.ts#probes a server with the same initialize and list-tools path used for registration` (probe helper only) | `partial` |
 | Tool allowlist/denylist | `src/settings-mcp-section.ts#mcpToolFilterDefinitions` | `test/mcp-tools.test.ts#filters discovered tools by enabled/disabled globs before registration` (unit only) | `partial` |
-| Per-tool MCP approvals | `src/settings-mcp-section.ts#mcpToolFilterDefinitions` | no committed check | `NONE` |
-| Setup guide / Copy config | `src/settings-mcp-section.ts#definitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` (button existence only) | `partial` |
+| Per-tool MCP approvals | `src/settings-mcp-section.ts#mcpToolApprovalDefinitions` | no committed check | `NONE` |
+| Setup guide / Copy config | `src/settings-mcp-section.ts#mcpServerDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` (button existence only) | `partial` |
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts#installPackage` | `test/e2e/specs/composio-install.e2e.ts#installs Composio bundle via archive URL and verifies 2 skills + 1 MCP (popout-safe)` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts#mcpServerFromPluginEntry` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
 | Discover and call a remote MCP tool | `src/mcp/tools.ts#createMcpTools` | `test/e2e/specs/mcp-live.e2e.ts#agentic-chat live MCP over HTTPS` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
