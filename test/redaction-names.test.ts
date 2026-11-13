@@ -35,3 +35,14 @@ describe("secret key names", () => {
     expect(containsSensitiveText(`${name}: ${value}`)).toBe(true);
   });
 });
+
+describe("memory gate prose", () => {
+  it.each([
+    "The token budget is about 4k per turn.",
+    "The auth flow uses OAuth in the browser.",
+    "I always dismiss the cookie banner.",
+    "Authorization is handled by the gateway.",
+  ])("keeps generic words in prose: %s", (text) => {
+    expect(containsSensitiveText(text)).toBe(false);
+  });
+});

@@ -317,7 +317,8 @@ function sanitizeProxyLeaves<T extends Partial<ProxySettings> | null | undefined
  * never reach the runtime with a value the UI cannot produce.
  */
 function healPrimitiveLeaves<T>(value: T, fallback: unknown, path = ""): T {
-  if (Array.isArray(fallback)) return value;
+  // No type to check against: keep the stored value (arrays, null defaults).
+  if (Array.isArray(fallback) || fallback === null || fallback === undefined) return value;
   if (fallback && typeof fallback === "object") {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return structuredClone(fallback) as T;

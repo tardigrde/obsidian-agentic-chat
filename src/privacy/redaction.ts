@@ -6,25 +6,34 @@ const DEFAULT_MAX_OBJECT_KEYS = 30;
 const DEFAULT_MAX_DEPTH = 4;
 
 /**
- * One table for every secret-bearing name. All three patterns below are built
- * from it, so the log redactor, the text redactor, and the memory gate cannot
- * drift apart. `[-_ ]?` accepts the common separator variants.
+ * One table for every secret-bearing name. All patterns below are built from
+ * it, so the log redactor, the text redactor, and the memory gate cannot drift
+ * apart. `[-_ ]?` accepts the common separator variants.
+ *
+ * `bareWord: false` marks generic words ("token", "auth", "cookie") that are
+ * secrets only as a key or an assignment (`cookie: ...`). Ordinary prose such
+ * as "the token budget" must still pass the memory gate.
  */
-export const SECRET_KEY_NAMES: readonly string[] = [
-  "api[-_ ]?key",
-  "access[-_ ]?token",
-  "auth(?:orization)?",
-  "auth[-_ ]?token",
-  "bearer",
-  "client[-_ ]?secret",
-  "cookie",
-  "password",
-  "refresh[-_ ]?token",
-  "secret",
-  "token",
+const SECRET_KEY_TABLE: readonly { source: string; bareWord: boolean }[] = [
+  { source: "api[-_ ]?key", bareWord: true },
+  { source: "access[-_ ]?token", bareWord: true },
+  { source: "auth(?:orization)?", bareWord: false },
+  { source: "auth[-_ ]?token", bareWord: true },
+  { source: "bearer", bareWord: true },
+  { source: "client[-_ ]?secret", bareWord: true },
+  { source: "cookie", bareWord: false },
+  { source: "password", bareWord: true },
+  { source: "refresh[-_ ]?token", bareWord: true },
+  { source: "secret", bareWord: true },
+  { source: "token", bareWord: false },
 ];
 
+export const SECRET_KEY_NAMES: readonly string[] = SECRET_KEY_TABLE.map((entry) => entry.source);
+
 const SECRET_KEY_SOURCE = SECRET_KEY_NAMES.join("|");
+const SECRET_BARE_WORD_SOURCE = SECRET_KEY_TABLE.filter((entry) => entry.bareWord)
+  .map((entry) => entry.source)
+  .join("|");
 const SENSITIVE_KEY_PATTERN = new RegExp(`(?:${SECRET_KEY_SOURCE})`, "i");
 const CONTENT_KEY_PATTERN = /^(content|before|after|body|text)$/i;
 const BEARER_PATTERN = /\bBearer\s+[-A-Za-z0-9._~+/=]{8,}/gi;
@@ -34,7 +43,7 @@ const ASSIGNMENT_SECRET_PATTERN = new RegExp(
   `\\b(${SECRET_KEY_SOURCE})\\s*[:=]\\s*(?:"[^"\\r\\n]*"|'[^'\\r\\n]*'|[^&\\s"']+)`,
   "gi",
 );
-const SENSITIVE_TEXT_PATTERN = new RegExp(`\\b(?:${SECRET_KEY_SOURCE})\\b`, "i");
+const SENSITIVE_TEXT_PATTERN = new RegExp(`\\b(?:${SECRET_BARE_WORD_SOURCE})\\b`, "i");
 const HIGH_ENTROPY_PATTERN = /\b(?=[A-Za-z0-9+/=]{32,}\b)(?=[A-Za-z0-9+/=]*[A-Za-z])(?=[A-Za-z0-9+/=]*\d)[A-Za-z0-9+/]{32,}={0,2}\b/g;
 
 export interface RedactTextOptions {
