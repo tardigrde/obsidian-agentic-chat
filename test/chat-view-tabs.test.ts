@@ -23,6 +23,12 @@ function twoTabView(): TabsHarness {
     renderChips: vi.fn(),
     syncChrome: vi.fn(),
     renderActiveTab: vi.fn(),
+    // Base-tree fields: before tabs owned their state, the view held these.
+    // Setting them lets the red run reach the assertions instead of a TypeError.
+    attachments: [],
+    queuedPromptArmed: false,
+    activeNoteSuppressed: false,
+    composerHistory: { entries: () => [], load: vi.fn() },
   });
 }
 
