@@ -8,13 +8,7 @@ import { ReadMemo } from "../src/vault/read-memo";
 import type { WebFetcher } from "../src/tools/web-fetch";
 import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import { FakeApp } from "./helpers/fake-vault";
-
-function fakeAdapter(files: Record<string, string>): DataAdapter {
-  return {
-    exists: async (path: string) => path in files,
-    read: async (path: string) => files[path] ?? "",
-  } as unknown as DataAdapter;
-}
+import { fakeAdapter } from "./support/fake-adapter";
 
 type SettingsOverrides = Omit<Partial<AgenticChatSettings>, "web"> & {
   web?: Partial<AgenticChatSettings["web"]>;

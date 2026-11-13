@@ -45,7 +45,7 @@ await closeAgenticChatSettings();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Settings tab opens | `src/main.ts:124` | `test/e2e/specs/settings-ui.e2e.ts:185` (opened by the helper via `app.setting`, not the nav) | `partial` |
+| Settings tab opens | `src/main.ts:132` | `test/e2e/specs/settings-ui.e2e.ts:185` (opened by the helper via `app.setting`, not the nav) | `partial` |
 | Three tabs render and switch | `src/settings.ts:212` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
 | Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts:212` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
 | A moved Advanced setting saves and survives close/reopen | `src/settings.ts:1102` | `test/e2e/specs/settings-ui.e2e.ts:491` | `covered` |
@@ -66,7 +66,7 @@ await closeAgenticChatSettings();
 | Notifications section | `src/settings.ts:1102` | `test/e2e/specs/settings-ui.e2e.ts:491` | `covered` |
 | Agent plugins: Install plugin | `src/settings.ts:1123` | `test/e2e/specs/settings-ui.e2e.ts:350` | `covered` |
 
-| Recover an interrupted plugin install | `src/plugins/service.ts:606` | `test/plugins-service.test.ts:109` | `partial` |
+| Recover an interrupted plugin install | `src/plugins/service.ts:630` | `test/plugins-service.test.ts:109` | `partial` |
 | Agent plugins: Repair built-ins | `src/settings.ts:1123` | no committed check | `NONE` |
 | Agent plugins: folder, ignored files | `src/settings.ts:1123` | `test/e2e/specs/settings-ui.e2e.ts:474` | `covered` |
 | Agent plugins: plugin row toggle/open/remove | `src/settings.ts:1384` | `test/e2e/specs/mobile-viewport.e2e.ts:406` (row renders only) | `partial` |

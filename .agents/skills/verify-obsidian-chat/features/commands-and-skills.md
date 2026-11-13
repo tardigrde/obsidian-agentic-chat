@@ -66,8 +66,8 @@ await $(".agentic-chat-info").waitForExist();
 | `/usage` | `src/ui/commands.ts:35` | no committed check | `NONE` |
 | `/export` | `src/ui/commands.ts:37` | `test/session-export.test.ts:31` (renderer only) | `partial` |
 | `/semantic-index` | `src/ui/commands.ts:31` | `test/semantic-index-workflow-controller.test.ts:85` (workflow unit) | `partial` |
-| Repair a stale semantic index on read | `src/retrieval/semantic-index.ts:403` | `test/semantic-index.test.ts:90` | `partial` |
-| One semantic index writer across tabs | `src/retrieval/semantic-index.ts:201` | `test/semantic-index-lease.test.ts:81` | `partial` |
+| Repair a stale semantic index on read | `src/retrieval/semantic-index.ts:448` | `test/semantic-index.test.ts:59` | `partial` |
+| One semantic index writer across tabs | `src/retrieval/semantic-index.ts:152` | `test/semantic-index-lease.test.ts:81` | `partial` |
 | `/doctor` | `src/ui/commands.ts:32` | `test/runtime-diagnostics.test.ts:13` (diagnostics only) | `partial` |
 | `/add-dir` and `/dirs` removed | `src/ui/commands.ts:25` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
 | `/agent` | `src/ui/commands.ts:40` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
@@ -79,7 +79,7 @@ await $(".agentic-chat-info").waitForExist();
 | Autocomplete menu for commands | `src/ui/chat-view.ts:890` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
 | Autocomplete keyboard keys | `src/ui/autocomplete-menu.ts:108` | no committed check | `NONE` |
 | Built-in skills are available | `src/skills/builtin-skills.ts:202` | `test/builtin-skills.test.ts:4` (catalog only) | `partial` |
-| Plugin skills load with built-ins | `src/agent/runtime-resources.ts:81` | `test/runtime-resources.test.ts:126` (unit only) | `partial` |
+| Plugin skills load with built-ins | `src/agent/runtime-resources.ts:86` | `test/runtime-resources.test.ts:126` (unit only) | `partial` |
 | `read_skill` | `src/tools/read-skill-tool.ts:37` | `test/read-skill-tool.test.ts:5` (unit only) | `partial` |
 | `read_skill_file` | `src/tools/read-skill-tool.ts:71` | no committed check | `NONE` |
 | `load_skill` | `src/tools/skill-tools.ts:35` | no committed check | `NONE` |

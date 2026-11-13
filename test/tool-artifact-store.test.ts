@@ -223,4 +223,56 @@ describe("ToolArtifactStore", () => {
     await expect(store.listArtifacts()).resolves.toEqual([]);
     expect(await adapter.exists(".obsidian/plugins/agentic-chat/artifacts/orphan.txt")).toBe(false);
   });
+
+  it("keeps adapter calls small across repeated writes and lookups", async () => {
+    const adapter = new MemoryAdapter();
+    let calls = 0;
+    const tracked = new Proxy(adapter.asDataAdapter(), {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver) as unknown;
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          calls += 1;
+          return (value as (...inner: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+    const store = new ToolArtifactStore(tracked, ".obsidian/plugins/agentic-chat/artifacts", {
+      maxArtifactCount: 200,
+    });
+
+    for (let index = 0; index < 10; index += 1) {
+      await store.writeArtifact({
+        label: `artifact ${index}`,
+        sourceToolName: "tool",
+        text: `text ${index}`,
+        dedupKey: `dedupe-${index}`,
+      });
+    }
+    for (let index = 0; index < 10; index += 1) {
+      await expect(store.findArtifactByDedupKey(`dedupe-${index}`)).resolves.toMatchObject({
+        text: `text ${index}`,
+      });
+    }
+    const listed = await store.listArtifacts();
+
+    expect(listed).toHaveLength(10);
+    expect(calls).toBeLessThan(150);
+  });
+});
+
+describe("two stores over one folder (one per chat tab)", () => {
+  it("does not delete an artifact the other tab wrote after its index was built", async () => {
+    const adapter = new MemoryAdapter();
+    const dir = ".obsidian/plugins/agentic-chat/artifacts";
+    const tabA = new ToolArtifactStore(adapter.asDataAdapter(), dir);
+    const tabB = new ToolArtifactStore(adapter.asDataAdapter(), dir);
+    await tabB.writeArtifact({ label: "b1", sourceToolName: "t", text: "from b", contentType: "text/plain" });
+
+    const fromA = await tabA.writeArtifact({ label: "a1", sourceToolName: "t", text: "from a", contentType: "text/plain" });
+    await tabB.writeArtifact({ label: "b2", sourceToolName: "t", text: "from b again", contentType: "text/plain" });
+
+    expect(await tabA.readArtifact(fromA.id)).toMatchObject({ text: "from a" });
+    expect((await tabB.listArtifacts()).map((artifact) => artifact.label).sort()).toEqual(["a1", "b1", "b2"]);
+  });
 });

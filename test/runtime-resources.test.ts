@@ -11,11 +11,11 @@ import {
   loadAgentRuntimeResources,
   type AgentRuntimeResources,
 } from "../src/agent/runtime-resources";
-import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import type { WebFetcher } from "../src/tools/web-fetch";
 import { createMcpServerSettings, createMcpServerState } from "../src/mcp/settings";
 import { pluginMcpServerId } from "../src/plugins/loader";
 import { FakeApp } from "./helpers/fake-vault";
+import { fakeAdapter, noopArtifactStore } from "./support/fake-adapter";
 
 /** A persisted, user-enabled record for the seeded mcp-server plugin. */
 function enabledPluginServer(): ReturnType<typeof createMcpServerSettings> {
@@ -30,13 +30,6 @@ function enabledPluginServer(): ReturnType<typeof createMcpServerSettings> {
     pluginRoot: ".agentic-plugins/mcp-server",
     headers: {},
   };
-}
-
-function fakeAdapter(files: Record<string, string>): DataAdapter {
-  return {
-    exists: async (path: string) => path in files,
-    read: async (path: string) => files[path] ?? "",
-  } as unknown as DataAdapter;
 }
 
 async function seededApp(): Promise<App> {
@@ -79,31 +72,6 @@ function settings(overrides: SettingsOverrides = {}): AgenticChatSettings {
 }
 
 const noopFetcher: WebFetcher = async () => ({ status: 200, text: "", headers: {} });
-const noopArtifactStore: ToolArtifactStoreLike = {
-  async writeArtifact(input) {
-    return {
-      id: "artifact-1",
-      label: input.label,
-      sourceToolName: input.sourceToolName,
-      contentType: input.contentType ?? "text/plain",
-      createdAt: "2026-06-24T00:00:00.000Z",
-      charLength: input.text.length,
-    };
-  },
-  async readArtifact() {
-    return {
-      metadata: {
-        id: "artifact-1",
-        label: "Artifact",
-        sourceToolName: "tool",
-        contentType: "text/plain",
-        createdAt: "2026-06-24T00:00:00.000Z",
-        charLength: 0,
-      },
-      text: "",
-    };
-  },
-};
 
 function mcpFetcher(): WebFetcher {
   const responses = [

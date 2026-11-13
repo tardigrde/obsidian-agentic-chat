@@ -13,6 +13,7 @@ import { syncMcpServerState } from "./mcp/server-state";
 import { localMcpToolNames } from "./mcp/tools";
 import { mcpCredentialResourceChanged, mcpEndpointProblem, mcpKnownToolLocalName, mcpSecretIds } from "./settings-mcp-state";
 import type { AgenticChatSettings } from "./settings-schema";
+import { ObsidianSecretStore } from "./secrets/secret-store";
 import { errorMessage } from "./utils/errors";
 
 /**
@@ -128,10 +129,11 @@ function rebaseMcpKnownToolLocalNames(server: McpServerSettings): void {
 function clearSecretIds(app: App | undefined, secretIds: string[]): void {
   const secretStorage = (app as { secretStorage?: { setSecret?: (id: string, value: string) => void } } | undefined)
     ?.secretStorage;
-  if (!secretStorage?.setSecret) return;
+  if (!app || !secretStorage?.setSecret) return;
+  const store = new ObsidianSecretStore(app);
   for (const id of secretIds) {
     try {
-      secretStorage.setSecret(id, "");
+      store.deleteSecret(id);
     } catch (error) {
       console.warn(`Agentic Chat: failed to clear secret ${id}: ${errorMessage(error)}`);
     }

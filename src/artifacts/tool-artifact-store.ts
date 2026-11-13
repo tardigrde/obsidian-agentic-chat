@@ -41,6 +41,8 @@ export interface ToolArtifactStoreLike {
   deleteArtifact?(id: string): Promise<boolean>;
   clearArtifacts?(): Promise<number>;
   cleanupArtifacts?(): Promise<void>;
+  /** Prune through the in-memory index without rescanning every metadata file. */
+  pruneArtifacts?(): Promise<void>;
   pinArtifact?(id: string, pinned?: boolean): Promise<ToolArtifactMetadata>;
   findArtifactByDedupKey?(dedupKey: string): Promise<ToolArtifactReadResult | null>;
   findArtifactBySourceTextHash?(sourceTextHash: string): Promise<ToolArtifactReadResult | null>;
@@ -67,6 +69,7 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
   private readonly maxTotalArtifactBytes: number;
   private readonly referencedArtifactIds?: () => Iterable<string> | Promise<Iterable<string>>;
   private readonly now: () => number;
+  private index: Map<string, ToolArtifactMetadata> | null = null;
 
   constructor(adapter: DataAdapter, artifactDir: string, options: ToolArtifactStoreOptions = {}) {
     this.adapter = adapter;
@@ -101,7 +104,8 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
     };
     await this.adapter.write(this.artifactPath(metadata.id), input.text);
     await this.adapter.write(this.metadataPath(metadata.id), JSON.stringify(metadata, null, 2));
-    await this.cleanupArtifacts();
+    (await this.ensureIndex()).set(metadata.id, metadata);
+    await this.pruneArtifacts();
     return metadata;
   }
 
@@ -134,6 +138,7 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
     const safeId = normalizeArtifactId(id);
     const existed = (await this.adapter.exists(this.artifactPath(safeId))) || (await this.adapter.exists(this.metadataPath(safeId)));
     if (existed) await this.removeArtifactFiles(safeId);
+    this.index?.delete(safeId);
     return existed;
   }
 
@@ -141,6 +146,7 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
     const artifacts = await this.readAllMetadata();
     const ids = new Set(artifacts.map((artifact) => artifact.id));
     for (const id of ids) await this.removeArtifactFiles(id);
+    this.index?.clear();
     if (await this.adapter.exists(this.artifactDir)) {
       const listing = await this.adapter.list(this.artifactDir);
       await this.removeOrphanArtifactFiles(listing.files, new Set());
@@ -155,15 +161,34 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
     const next = { ...metadata, pinned };
     // A rewrite of existing metadata: a torn write would orphan the artifact.
     await writeFileAtomically(this.adapter, this.metadataPath(safeId), JSON.stringify(next, null, 2));
+    this.index?.set(safeId, next);
     return next;
   }
 
   async cleanupArtifacts(): Promise<void> {
-    if (!(await this.adapter.exists(this.artifactDir))) return;
+    await this.pruneArtifacts();
+  }
+
+  async pruneArtifacts(): Promise<void> {
+    if (!(await this.adapter.exists(this.artifactDir))) {
+      this.index = new Map();
+      return;
+    }
     const listing = await this.adapter.list(this.artifactDir);
     const metadataFiles = listing.files.filter((path) => path.endsWith(".json"));
-    const artifacts = await Promise.all(metadataFiles.map((path) => this.readMetadataFile(path)));
-    const validArtifacts = artifacts.filter((artifact): artifact is ToolArtifactMetadata => artifact !== null);
+    const index = await this.ensureIndex();
+    const idOf = (path: string): string => path.split("/").pop()?.replace(/\.json$/, "") ?? "";
+    const presentIds = new Set(metadataFiles.map(idOf));
+    for (const id of [...index.keys()]) {
+      if (!presentIds.has(id)) index.delete(id);
+    }
+    // Each chat tab has its own store over the same folder. Index what another
+    // instance wrote, or the orphan sweep below would delete its files.
+    const unindexed = metadataFiles.filter((path) => !index.has(idOf(path)));
+    for (const artifact of await Promise.all(unindexed.map((path) => this.readMetadataFile(path)))) {
+      if (artifact) index.set(artifact.id, artifact);
+    }
+    const validArtifacts = [...index.values()];
     const now = this.now();
     const referenced = await this.currentReferencedArtifactIds();
     const byNewest = [...validArtifacts].sort((left, right) => timestampOf(right.createdAt) - timestampOf(left.createdAt));
@@ -183,7 +208,10 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
     enforceTotalByteLimit(keep, byNewest, this.maxTotalArtifactBytes, referenced);
     const knownIds = new Set(validArtifacts.map((artifact) => artifact.id));
     for (const artifact of validArtifacts) {
-      if (!keep.has(artifact.id)) await this.removeArtifactFiles(artifact.id);
+      if (!keep.has(artifact.id)) {
+        await this.removeArtifactFiles(artifact.id);
+        index.delete(artifact.id);
+      }
     }
     await this.removeOrphanArtifactFiles(listing.files, knownIds);
   }
@@ -238,14 +266,24 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
   }
 
   private async readAllMetadata(): Promise<ToolArtifactMetadata[]> {
-    if (!(await this.adapter.exists(this.artifactDir))) return [];
-    const listing = await this.adapter.list(this.artifactDir);
-    const artifacts = await Promise.all(
-      listing.files.filter((path) => path.endsWith(".json")).map((path) => this.readMetadataFile(path)),
-    );
-    return artifacts
-      .filter((artifact): artifact is ToolArtifactMetadata => artifact !== null)
-      .sort((left, right) => timestampOf(right.createdAt) - timestampOf(left.createdAt));
+    const index = await this.ensureIndex();
+    return [...index.values()].sort((left, right) => timestampOf(right.createdAt) - timestampOf(left.createdAt));
+  }
+
+  private async ensureIndex(): Promise<Map<string, ToolArtifactMetadata>> {
+    if (this.index) return this.index;
+    const index = new Map<string, ToolArtifactMetadata>();
+    if (await this.adapter.exists(this.artifactDir)) {
+      const listing = await this.adapter.list(this.artifactDir);
+      const artifacts = await Promise.all(
+        listing.files.filter((path) => path.endsWith(".json")).map((path) => this.readMetadataFile(path)),
+      );
+      for (const artifact of artifacts) {
+        if (artifact) index.set(artifact.id, artifact);
+      }
+    }
+    this.index = index;
+    return index;
   }
 }
 
