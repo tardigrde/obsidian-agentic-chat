@@ -8,7 +8,7 @@ import type { AgentCompactionRuntime } from "../src/agent/compaction-runtime";
 import { STOPPED_APPROVAL_REASON, type UserApprovalChoice } from "../src/agent/tool-call-controller";
 import type { AskUserHandler, AskUserRequest } from "../src/tools/ask-user-tool";
 import { isSummaryMessage } from "../src/agent/compaction";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, sessionAuditPath } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
 import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
@@ -200,7 +200,9 @@ async function persistedMessageRoles(adapter: MemoryAdapter, service: AgentServi
 async function persistedActionAuditEvents(adapter: MemoryAdapter, service: AgentService) {
   const path = service.getSessionInfo()?.path;
   if (!path) throw new Error("No active session path.");
-  return parseSessionEntries(await adapter.read(path))
+  const auditPath = sessionAuditPath(path);
+  if (!adapter.files.has(auditPath)) return [];
+  return parseSessionEntries(await adapter.read(auditPath))
     .filter((entry) => entry.type === "action_audit")
     .map((entry) => entry.event);
 }
@@ -350,7 +352,9 @@ describe("AgentService", () => {
     await tab2.sendPrompt("second tab message");
 
     // Two distinct session files, each holding only its own conversation.
-    const files = [...adapter.files.keys()].filter((path) => path.endsWith(".jsonl"));
+    const files = [...adapter.files.keys()].filter(
+      (path) => path.endsWith(".jsonl") && !path.endsWith(".audit.jsonl"),
+    );
     expect(files.length).toBe(2);
     const contents = files.map((path) => adapter.files.get(path) as string);
     expect(contents.some((c) => c.includes("first tab message") && !c.includes("second tab message"))).toBe(true);
@@ -363,7 +367,9 @@ describe("AgentService", () => {
     const { service, adapter } = makeService(cannedStreamFn("Persisted reply."));
     await service.sendPrompt("Remember this");
 
-    const sessionFile = [...adapter.files.keys()].find((path) => path.endsWith(".jsonl"));
+    const sessionFile = [...adapter.files.keys()].find(
+      (path) => path.endsWith(".jsonl") && !path.endsWith(".audit.jsonl"),
+    );
     expect(sessionFile).toBeDefined();
     const entries = parseSessionEntries(adapter.files.get(sessionFile as string) as string);
     const messageEntries = entries.filter((entry) => entry.type === "message");

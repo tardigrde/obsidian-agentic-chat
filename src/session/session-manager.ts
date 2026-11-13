@@ -192,6 +192,7 @@ export class ObsidianSessionManager {
       await this.adapter.remove(sessionPath);
     }
     await removeIfExists(this.adapter, `${sessionPath}${SESSION_BACKUP_SUFFIX}`);
+    await removeIfExists(this.adapter, sessionAuditPath(sessionPath));
     if (this.sessionFile === sessionPath) {
       this.sessionFile = null;
       this.sessionGeneration += 1;
@@ -259,14 +260,54 @@ export class ObsidianSessionManager {
     });
   }
 
+  /**
+   * Audit entries live in an append-only sidecar so a transcript rewrite never
+   * deletes them. The shape stays the same as the legacy in-session entry, so
+   * old files and readers keep working.
+   */
   async appendActionAuditEvent(event: ActionAuditEvent): Promise<string> {
-    return this.appendEntry<ActionAuditSessionEntry>({
+    const sessionFile = this.sessionFile;
+    if (!sessionFile) throw new Error("No active session.");
+    const entry: ActionAuditSessionEntry = {
       type: "action_audit",
       id: createEntryId(this.entries),
       parentId: this.leafId,
       timestamp: event.timestamp,
       event,
-    });
+    };
+    await this.adapter.append(sessionAuditPath(sessionFile), `${JSON.stringify(entry)}\n`);
+    return entry.id;
+  }
+
+  /**
+   * Read audit events for a session: the append-only sidecar plus legacy
+   * `action_audit` entries that older sessions keep in the transcript.
+   */
+  async readActionAuditEvents(path?: string | null): Promise<ActionAuditEvent[]> {
+    const sessionPath = path
+      ? normalizeFolderPath(path, { allowPluginInternals: true })
+      : this.sessionFile;
+    if (!sessionPath) return [];
+    const legacy = await this.readLegacyActionAuditEvents(sessionPath);
+    let sidecar: ActionAuditEvent[] = [];
+    try {
+      const content = await this.adapter.read(sessionAuditPath(sessionPath));
+      sidecar = actionAuditEventsFromContent(content);
+    } catch {
+      // No sidecar yet (pre-migration session) or it is unreadable.
+    }
+    if (sidecar.length === 0) return legacy;
+    const seen = new Set(legacy.map((event) => JSON.stringify(event)));
+    const merged = [...legacy, ...sidecar.filter((event) => !seen.has(JSON.stringify(event)))];
+    return merged.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+  }
+
+  private async readLegacyActionAuditEvents(sessionPath: string): Promise<ActionAuditEvent[]> {
+    try {
+      return actionAuditEventsFromContent(await this.readSessionContent(sessionPath));
+    } catch {
+      return [];
+    }
   }
 
   async appendFileCheckpoint(checkpoint: FileCheckpoint): Promise<string> {
@@ -587,6 +628,19 @@ export class ObsidianSessionManager {
 export function getPluginSessionDir(app: App, plugin: Plugin): string {
   const pluginDir = plugin.manifest.dir ?? `${app.vault.configDir}/plugins/${plugin.manifest.id}`;
   return `${pluginDir}/sessions`;
+}
+
+/** Append-only audit sidecar next to a session file. */
+export function sessionAuditPath(sessionPath: string): string {
+  return sessionPath.endsWith(".jsonl")
+    ? `${sessionPath.slice(0, -".jsonl".length)}.audit.jsonl`
+    : `${sessionPath}.audit.jsonl`;
+}
+
+function actionAuditEventsFromContent(content: string): ActionAuditEvent[] {
+  return parseSessionEntries(content)
+    .filter((entry): entry is ActionAuditSessionEntry => entry.type === "action_audit")
+    .map((entry) => entry.event);
 }
 
 function sessionFileName(path: string): string {

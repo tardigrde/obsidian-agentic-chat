@@ -19,8 +19,18 @@ import { MemoryAdapter } from "./helpers/memory-adapter";
 const DEFAULTS = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" as const };
 const FIXED_NOW = Date.UTC(2026, 5, 26, 9, 0, 0);
 
+function auditPathFor(path: string): string {
+  return path.endsWith(".jsonl") ? `${path.slice(0, -".jsonl".length)}.audit.jsonl` : `${path}.audit.jsonl`;
+}
+
+function auditEventsIn(adapter: MemoryAdapter, path: string): ActionAuditEvent[] {
+  return parseSessionEntries(adapter.files.get(path) ?? "")
+    .filter((entry): entry is Extract<SessionEntry, { type: "action_audit" }> => entry.type === "action_audit")
+    .map((entry) => entry.event);
+}
+
 function auditEntries(adapter: MemoryAdapter, path: string): Extract<SessionEntry, { type: "action_audit" }>[] {
-  return parseSessionEntries(adapter.files.get(path) ?? "").filter(
+  return parseSessionEntries(adapter.files.get(auditPathFor(path)) ?? "").filter(
     (entry): entry is Extract<SessionEntry, { type: "action_audit" }> => entry.type === "action_audit",
   );
 }
@@ -86,6 +96,50 @@ describe("AgentActionAuditRecorder", () => {
     ]);
     expect(JSON.stringify(events)).not.toContain("live-secret");
     expect(JSON.stringify(events)).not.toContain("secret body should be summarized");
+  });
+
+  it("keeps audit events readable after a transcript rewrite", async () => {
+    const adapter = new MemoryAdapter();
+    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const info = await manager.createSession(DEFAULTS);
+    const recorder = new AgentActionAuditRecorder({
+      sessionManager: manager,
+      getContext: () => ({ now: () => FIXED_NOW }),
+    });
+
+    await recorder.recordAgentEvent({ type: "agent_start" });
+    await manager.rewriteMessages([]);
+
+    // The transcript no longer carries audit entries, but the sidecar still does.
+    expect(adapter.files.get(info.path)).not.toContain("action_audit");
+    const events = auditEventsIn(adapter, auditPathFor(info.path));
+    expect(events).toEqual([
+      expect.objectContaining({ category: "turn", action: "agent_start", timestamp: new Date(FIXED_NOW).toISOString() }),
+    ]);
+  });
+
+  it("still reads legacy action_audit entries from the session file", async () => {
+    const adapter = new MemoryAdapter();
+    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const info = await manager.createSession(DEFAULTS);
+    const legacy = {
+      type: "action_audit",
+      id: "a1",
+      parentId: null,
+      timestamp: new Date(FIXED_NOW).toISOString(),
+      event: {
+        category: "approval",
+        action: "decision",
+        timestamp: new Date(FIXED_NOW).toISOString(),
+        decision: "denied",
+        toolCallId: "call-1",
+        toolName: "write",
+        touchedFiles: [],
+      },
+    };
+    await adapter.append(info.path, `${JSON.stringify(legacy)}\n`);
+
+    expect(await manager.readActionAuditEvents(info.path)).toEqual([legacy.event]);
   });
 
   it("redacts secret fields, summarizes content fields, and truncates large values", () => {

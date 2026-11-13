@@ -234,7 +234,9 @@ describe("exact-once persistence (WeakSet de-dupe)", () => {
     const { service, adapter } = makeService(streamFn);
     await service.sendPrompt("Create note.md");
 
-    const sessionFile = [...adapter.files.keys()].find((p) => p.endsWith(".jsonl")) as string;
+    const sessionFile = [...adapter.files.keys()].find(
+      (p) => p.endsWith(".jsonl") && !p.endsWith(".audit.jsonl"),
+    ) as string;
     const entries = parseSessionEntries(adapter.files.get(sessionFile) as string);
     const messages = entries.filter((e): e is Extract<SessionEntry, { type: "message" }> => e.type === "message");
 

@@ -243,7 +243,9 @@ describe("session/event-log invariants", () => {
         replayTextTurn("I could not write because it is disabled.", { usage: { input: 2, output: 4, totalTokens: 6 } }),
       ],
     });
-    const sessionPath = [...replay.adapter.files.keys()].find((path) => path.endsWith(".jsonl"));
+    const sessionPath = [...replay.adapter.files.keys()].find(
+      (path) => path.endsWith(".jsonl") && !path.endsWith(".audit.jsonl"),
+    );
     if (!sessionPath) throw new Error("session file missing");
 
     const entries = assertSessionFile(replay.adapter.files.get(sessionPath) ?? "", [
