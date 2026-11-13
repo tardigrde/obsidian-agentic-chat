@@ -32,14 +32,18 @@ Each one keeps the same five sections, in this order:
   Use `test/e2e/support/settings-ui.ts`; do not query the main window.
 - For deterministic turns, install `window.__AGENTIC_CHAT_E2E_TURNS__` with
   `installScriptedTurns()`. The plugin reaches it through
-  `createWindowE2EStreamFn` in `src/agent/e2e-stream.ts:34`.
+  `createWindowE2EStreamFn` in `src/agent/e2e-stream.ts#getWindowE2ETarget`.
 - Live turns need `AGENTIC_CHAT_API_KEY`, `AGENTIC_CHAT_BASE_URL`, and
   `AGENTIC_CHAT_MODEL`. A live spec skips without them and still exits 0. Read
   the test counts.
-- This audit records source references as `path:line`. `refs.lock.json` pins the
-  trimmed text of every referenced line, so a ref that drifts to the wrong
-  non-blank line fails. The checker rejects a missing file, an out-of-range
-  line, a blank line, and a line whose text differs from the lock.
+- This audit records references as `path#anchor`. The anchor is text that names
+  the thing in that file: a function, method, or class name
+  (`src/ui/slash/session.ts#exportSession`), a command id
+  (`src/main.ts#open-chat`), a settings row name (`src/settings-tab-web.ts#Allowed hosts`),
+  or a test title (`test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help)`). A move
+  inside the file changes nothing. The checker rejects a missing file, an anchor
+  that is no longer in the file, and any old `path:line` ref (line numbers
+  drifted on every edit).
 
 ## Proof rules
 
@@ -75,19 +79,15 @@ paths must exist in the repository.
 - Keep one journey as the single place that documents a behavior. Other
   journeys may link to it instead of repeating the proof table.
 - Run `npm run check:feature-map` after any edit. It checks the five sections,
-  the table shape, the status values, every `path:line`, and its locked text. It
+  the table shape, the status values, and that every `path#anchor` is still in its file. It
   also enumerates the command ids, slash commands, and literal settings rows in
   the source and fails when one is not named in a proof row. It runs in `ci` and
   `fast`.
-- A drifted ref: run `npm run fix:feature-map`. For each ref whose text no
-  longer matches, it finds the locked text again, first in the same file
-  (nearest exact match), then as a unique exact match under `src/` or `test/`.
-  It rewrites the markdown and the lock key, prints every move, and prints every
-  ref it could not place. Those stay failing. `--fix` never moves a ref whose
-  text still matches.
-- After an intended move, adopt the new lines with
-  `npm run fix:feature-map -- --write-lock`. The merge procedure is: take main's
-  `features/` directory (map and lock), then run `--fix`.
+- A broken anchor means the symbol was renamed or moved to another file: point
+  the ref at its new home (`grep -rn <anchor> src test`). Choose a specific
+  anchor: a name, id, or title, not a common word.
+- Merging `main` into a branch: take `main`'s `features/` directory, then run the
+  check; only a renamed or moved symbol needs a hand fix.
 - An entry point that must stay out of the map goes in the checker's
   `INVENTORY_ALLOWLIST` with a one-line reason.
 - The checker cannot judge whether a test asserts the user action. A reviewer

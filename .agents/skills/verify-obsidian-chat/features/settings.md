@@ -45,44 +45,46 @@ await closeAgenticChatSettings();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Settings tab opens | `src/main.ts:133` | `test/e2e/specs/settings-ui.e2e.ts:185` (opened by the helper via `app.setting`, not the nav) | `partial` |
-| Three tabs render and switch | `src/settings.ts:200` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
-| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts:200` | `test/e2e/specs/settings-ui.e2e.ts:185` | `covered` |
-| A moved Advanced setting saves and survives close/reopen | `src/settings-tab-agent.ts:170` | `test/e2e/specs/settings-ui.e2e.ts:491` | `covered` |
-| Models: provider, API key, base URL, model | `src/settings-mcp-edits.ts:44` | `test/e2e/specs/settings-ui.e2e.ts:220` | `covered` |
-| Secrets stay out of `data.json` | `src/settings-definition-kit.ts:90` | `test/e2e/specs/settings-ui.e2e.ts:220` | `covered` |
-| OpenRouter privacy toggles | `src/settings-tab-models.ts:129` | no committed check | `NONE` |
-| Ollama server URL and model | `src/settings-tab-models.ts:206` | no committed check | `NONE` |
-| Global network proxy | `src/settings-mcp-edits.ts:44` | no committed check | `NONE` |
-| Agent: permission mode dropdown | `src/settings-tab-agent.ts:14` | no committed check | `NONE` |
-| Agent: sampling, timeout, retries, prompt, compaction, budget | `src/settings-tab-agent.ts:12` | no committed check | `NONE` |
-| Approval gates and per-tool overrides | `src/settings-tab-agent.ts:104` | `test/e2e/specs/settings-ui.e2e.ts:261` | `covered` |
-| Approval: working directories section removed | `src/settings-tab-agent.ts:104` | `test/e2e/specs/settings-ui.e2e.ts:261` | `covered` |
-| Web: enable, provider, key, results, fetch limit | `src/settings-tab-web.ts:21` | `test/e2e/specs/settings-ui.e2e.ts:278` | `covered` |
-| Web: allowed hosts | `src/settings-tab-web.ts:99` | no committed check | `NONE` |
-| MCP tools: enable and add a server | `src/settings-mcp-section.ts:77` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
-| Observability with Langfuse | `src/settings-tab-web.ts:121` | `test/e2e/specs/settings-ui.e2e.ts:433` | `covered` |
-| Observability: generic OTLP auth header | `src/settings-tab-web.ts:121` | `test/e2e/specs/settings-migration.e2e.ts:199` (migration only) | `partial` |
-| Notifications section | `src/settings-tab-agent.ts:170` | `test/e2e/specs/settings-ui.e2e.ts:491` | `covered` |
-| Agent plugins: Install plugin | `src/settings-tab-plugins.ts:34` | `test/e2e/specs/settings-ui.e2e.ts:350` | `covered` |
+| Settings tab opens | `src/main.ts#onload` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` (opened by the helper via `app.setting`, not the nav) | `partial` |
+| Three tabs render and switch | `src/settings.ts#writeControlValue` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` | `covered` |
+| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts#writeControlValue` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` | `covered` |
+| A moved Advanced setting saves and survives close/reopen | `src/settings-tab-agent.ts#notificationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists observability settings through the Advanced tab` | `covered` |
+| Models: provider, API key, base URL, model | `src/settings-mcp-edits.ts#nextMcpServerId` | `test/e2e/specs/settings-ui.e2e.ts#shows exactly three tabs and groups the advanced sections` | `covered` |
+| Secrets stay out of `data.json` | `src/settings-definition-kit.ts#secretInputDef` | `test/e2e/specs/settings-ui.e2e.ts#shows exactly three tabs and groups the advanced sections` | `covered` |
+| OpenRouter privacy toggles | `src/settings-tab-models.ts#openRouterDefinitions` | no committed check | `NONE` |
+| Ollama server URL and model | `src/settings-tab-models.ts#ollamaDefinitions` | no committed check | `NONE` |
+| Global network proxy | `src/settings-mcp-edits.ts#nextMcpServerId` | no committed check | `NONE` |
+| Agent: permission mode dropdown | `src/settings-tab-agent.ts#row("Permission mode"` | no committed check | `NONE` |
+| Agent: sampling, timeout, retries, prompt, compaction, budget | `src/settings-tab-agent.ts#agentDefinitions` | no committed check | `NONE` |
+| Approval gates: Per-tool overrides | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
+| Approval: working directories section removed | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
+| Web: enable, provider, key, results, fetch limit | `src/settings-tab-web.ts#webDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
+| Web: allowed hosts | `src/settings-tab-web.ts#row("Allowed hosts"` | no committed check | `NONE` |
+| MCP tools: enable and add a server | `src/settings-mcp-section.ts#definitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
+| Observability with Langfuse | `src/settings-tab-web.ts#observabilityDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#installs a plugin package from an archive URL through the Install plugin modal` | `covered` |
+| Observability: generic OTLP auth header | `src/settings-tab-web.ts#observabilityDefinitions` | `test/e2e/specs/settings-migration.e2e.ts#loads existing data.json, heals legacy fields, and migrates plaintext secrets` (migration only) | `partial` |
+| Notifications section | `src/settings-tab-agent.ts#notificationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists observability settings through the Advanced tab` | `covered` |
+| Agent plugins: Install plugin | `src/settings-tab-plugins.ts#pluginDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
+| Agent plugins: Import | `src/settings-tab-plugins.ts#row("Import"` | `test/e2e/specs/settings-ui.e2e.ts#installs a plugin package from an archive URL through the Install plugin modal` | `covered` |
 
-| Recover an interrupted plugin install | `src/plugins/service.ts:630` | `test/plugins-service.test.ts:109` | `partial` |
-| Agent plugins: Repair built-ins | `src/settings-tab-plugins.ts:49` | no committed check | `NONE` |
-| Agent plugins: Plugins folder, ignored files | `src/settings-tab-plugins.ts:60` | `test/e2e/specs/settings-ui.e2e.ts:505` | `covered` |
-| Agent plugins: plugin row toggle/open/remove | `src/settings-tab-plugins.ts:152` | `test/e2e/specs/mobile-viewport.e2e.ts:372` (row renders only) | `partial` |
-| Subagents: timeout | `src/settings-tab-agent.ts:150` | no committed check | `NONE` |
-| Semantic retrieval: embedding controls | `src/settings-tab-retrieval.ts:7` | no committed check | `NONE` |
-| Settings at phone width | `src/settings.ts:200` | `test/e2e/specs/mobile-viewport.e2e.ts:372` | `covered` |
-| `getSettingDefinitions()` | `src/settings.ts:111` | `test/e2e/specs/settings-ui.e2e.ts:185` (three named pages render) | `covered` |
-| Settings: Request timeout (seconds) | `src/settings-tab-agent.ts:37` | `test/e2e/chaos/chaos-monkey.e2e.ts:674` (chaos run only) | `partial` |
-| Settings: System prompt | `src/settings-tab-agent.ts:59` | `test/settings-definitions.test.ts:79` (definition only) | `partial` |
-| Models: Gateway preset | `src/settings-tab-models.ts:228` | no committed check | `NONE` |
-| Models: Context window (tokens) | `src/settings-tab-models.ts:280` | no committed check | `NONE` |
-| Semantic retrieval: Embedding model | `src/settings-tab-retrieval.ts:27` | no committed check | `NONE` |
-| Semantic retrieval: Vector dimensions | `src/settings-tab-retrieval.ts:40` | no committed check | `NONE` |
-| Semantic retrieval: Batch size | `src/settings-tab-retrieval.ts:63` | no committed check | `NONE` |
-| Semantic retrieval: Max indexed characters per note | `src/settings-tab-retrieval.ts:77` | no committed check | `NONE` |
-| Web: Fetched page character limit | `src/settings-tab-web.ts:86` | `test/e2e/specs/settings-ui.e2e.ts:327` | `covered` |
+| Recover an interrupted plugin install | `src/plugins/service.ts#materializeLegacySkills` | `test/plugins-service.test.ts#restores a backup when the target is missing before sweeping` | `partial` |
+| Agent plugins: Repair built-ins | `src/settings-tab-plugins.ts#pluginDefinitions` | no committed check | `NONE` |
+| Agent plugins: Plugins folder | `src/settings-tab-plugins.ts#row("Plugins folder"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
+| Agent plugins: plugin row toggle/open/remove | `src/settings-tab-plugins.ts#pluginRowDefinition` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` (row renders only) | `partial` |
+| Subagents: timeout | `src/settings-tab-agent.ts#row("Subagent timeout"` | no committed check | `NONE` |
+| Semantic retrieval: embedding controls | `src/settings-tab-retrieval.ts#retrievalDefinitions` | no committed check | `NONE` |
+| Settings at phone width | `src/settings.ts#writeControlValue` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` | `covered` |
+| `getSettingDefinitions()` | `src/settings.ts#getSettingDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` (three named pages render) | `covered` |
+| Settings: Request timeout (seconds) | `src/settings-tab-agent.ts#row("Request timeout (seconds)"` | `test/e2e/chaos/chaos-monkey.e2e.ts#applyPersistedSettings` (chaos run only) | `partial` |
+| Settings: System prompt | `src/settings-tab-agent.ts#row("System prompt"` | `test/settings-definitions.test.ts#puts the expected surrounding rows in each section group` (definition only) | `partial` |
+| Models: Gateway preset | `src/settings-tab-models.ts#row("Gateway preset"` | no committed check | `NONE` |
+| Models: Context window (tokens) | `src/settings-tab-models.ts#row("Context window (tokens)"` | no committed check | `NONE` |
+| Semantic retrieval: Embedding model | `src/settings-tab-retrieval.ts#row("Embedding model"` | no committed check | `NONE` |
+| Semantic retrieval: Vector dimensions | `src/settings-tab-retrieval.ts#row("Vector dimensions"` | no committed check | `NONE` |
+| Semantic retrieval: Batch size | `src/settings-tab-retrieval.ts#row("Batch size"` | no committed check | `NONE` |
+| Semantic retrieval: Max indexed characters per note | `src/settings-tab-retrieval.ts#row("Max indexed characters per note"` | no committed check | `NONE` |
+| Semantic retrieval: Ignore list | `src/settings-tab-retrieval.ts#row("Ignore list"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
+| Web: Fetched page character limit | `src/settings-tab-web.ts#row("Fetched page character limit"` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
 
 ## Gotchas
 

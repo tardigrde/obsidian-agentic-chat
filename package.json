@@ -42,7 +42,6 @@
     "verify:witness": "node scripts/verify-witness.mjs",
     "capture:release-fixtures": "node scripts/capture-release-fixtures.mjs",
     "check:feature-map": "node scripts/check-feature-map.mjs",
-    "fix:feature-map": "node scripts/check-feature-map.mjs --fix",
     "probe": "tsx scripts/probe.ts",
     "chaos": "tsx scripts/chaos-monkey.ts",
     "delegate": "bash scripts/delegate.sh",
