@@ -1,21 +1,7 @@
 import { type App, type Component, MarkdownRenderer, Notice, setIcon } from "obsidian";
-import { SUBAGENT_TOOL_NAME, type SubagentChildStatus } from "../tools/subagent-tool";
-import type { AskUserDetails } from "../tools/ask-user-tool";
+import { SUBAGENT_TOOL_NAME } from "../tools/subagent-tool";
+import { callPath, formatElapsed, HIDE_RESULT_TOOLS, safeJson, truncateText } from "./format";
 import {
-  callPath,
-  describeCall,
-  formatCallBody,
-  formatCost,
-  formatElapsed,
-  formatTokenInteger,
-  HIDE_RESULT_TOOLS,
-  PATH_TOOLS,
-  safeJson,
-  TOOL_LABELS,
-  truncateText,
-} from "./format";
-import {
-  type EditPair,
   MAX_SOURCE_CHIPS,
   SOURCE_TOOLS,
   activeNotePathFromText,
@@ -24,47 +10,22 @@ import {
   fixupRenderedAssistantImages,
   installRenderedLinkHandlers,
   isAskUserDetails,
-  isStringEditPair,
-  middleEllipsis,
-  readRangeText,
   renderMermaidBlocks,
-  renderStepEditDiff,
   rewriteAssistantMarkdownImages,
   sourceChipName,
 } from "./assistant-markdown";
-
-const SUBAGENT_STATUS_LABEL: Record<SubagentChildStatus["status"], string> = {
-  queued: "queued",
-  running: "running…",
-  done: "done",
-  error: "failed",
-  aborted: "stopped",
-};
-
-/** Extract the child statuses from a subagent details payload, or [] when absent/malformed. */
-function subagentChildren(details: unknown): SubagentChildStatus[] {
-  const shaped = details as { kind?: string; children?: unknown } | undefined;
-  if (shaped?.kind !== "subagent" || !Array.isArray(shaped.children)) return [];
-  return shaped.children.filter(
-    (child): child is SubagentChildStatus =>
-      !!child &&
-      typeof child === "object" &&
-      typeof (child as { agent?: unknown }).agent === "string" &&
-      typeof (child as { status?: unknown }).status === "string",
-  );
-}
-
-/**
- * Whether a subagent dispatch's settled child statuses force the step to render
- * as failed. A stopped (or timed-out) dispatch returns a NORMAL tool result —
- * so the parent won't re-dispatch — but the UI must still read it as stopped.
- * Accepts both shapes: the live tool result object and replay's wrapped
- * persisted details (`{ details }`).
- */
-export function subagentResultForcesError(resultObject: unknown): boolean {
-  const children = subagentChildren((resultObject as { details?: unknown } | undefined)?.details);
-  return children.some((child) => child.status === "error" || child.status === "aborted");
-}
+import {
+  renderAskUserStep,
+  renderCallSection,
+  renderStepTitle,
+  syncStepCollapsible,
+  toggleStep,
+} from "./step-card";
+import {
+  renderSubagentChildren,
+  subagentChildren,
+  subagentResultForcesError,
+} from "./subagent-tree";
 
 /** Per-step DOM + identity kept on the bubble for live updates and settle. */
 interface StepEntry {
@@ -333,12 +294,12 @@ export class AssistantBubble {
     setIcon(chevron, "chevron-right");
     toggle.addEventListener("click", (event) => {
       event.stopPropagation();
-      this.toggleStep(row);
+      toggleStep(row);
     });
     toggle.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        this.toggleStep(row);
+        toggleStep(row);
       }
     });
     const card = row.createDiv({ cls: ["agentic-chat-step", "is-running"] });
@@ -346,11 +307,11 @@ export class AssistantBubble {
     const icon = header.createSpan({ cls: "agentic-chat-step-icon" });
     setIcon(icon, "loader-2");
     const nameEl = header.createSpan({ cls: "agentic-chat-step-name" });
-    this.renderStepTitle(nameEl, name, rawArgs);
+    renderStepTitle(nameEl, name, rawArgs, this.actions.onOpenNote);
     if (name.startsWith("mcp__")) nameEl.setAttr("title", name);
     const body = card.createDiv({ cls: "agentic-chat-step-body" });
-    this.renderCallSection(body, name, rawArgs);
-    this.syncStepCollapsible(row, body);
+    renderCallSection(body, name, rawArgs);
+    syncStepCollapsible(row, body);
     this.ensureTimeline();
     this.steps.set(id, { card, icon, body, name, startedAt: performance.now() });
     // Record the tool's vault target (if any) so finalized turns can surface a
@@ -367,99 +328,6 @@ export class AssistantBubble {
     }
   }
 
-  /** Toggle a step's body open/closed and reflect state on the chevron + aria. */
-  private toggleStep(row: HTMLElement): void {
-    const card = row.querySelector(".agentic-chat-step");
-    if (!card) return;
-    const open = card.classList.toggle("is-open");
-    row.classList.toggle("is-open", open);
-    row.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", String(open));
-  }
-
-  /** Hide the chevron + collapse affordance when the body has nothing to show. */
-  private syncStepCollapsible(row: HTMLElement, body: HTMLElement): void {
-    const toggle = row.querySelector<HTMLElement>(".agentic-chat-step-toggle");
-    if (!toggle) return;
-    toggle.toggleClass("is-hidden", body.childElementCount === 0);
-  }
-
-  /** Render the header title: a readable label, with a clickable vault path for path-bearing tools. */
-  private renderStepTitle(nameEl: HTMLElement, name: string, rawArgs: string): void {
-    if (name.startsWith("mcp__")) {
-      // "mcp__<server>__<tool>" → human "MCP · <tool>"; full id in the tooltip.
-      const segments = name.split("__");
-      nameEl.appendText(`MCP · ${segments.at(-1) ?? name}`);
-      return;
-    }
-    if (PATH_TOOLS.has(name)) {
-      nameEl.appendText(TOOL_LABELS[name] ?? `Running ${name}`);
-      const path = callPath(rawArgs);
-      if (path) {
-        nameEl.appendText(": ");
-        this.appendPathLink(nameEl, path);
-      }
-      return;
-    }
-    nameEl.appendText(describeCall(name, rawArgs));
-  }
-
-  /**
-   * Render the step body extras. The title (label + clickable path) lives in the
-   * header, so the body only holds per-tool extras: a read's line range, an
-   * edit's mini oldText→newText diff, or readable key:value lines for other
-   * tools. The Result/Error section is appended on endStep. The edit diff shows
-   * the change itself (no file context at render time, unlike the approval modal).
-   */
-  private renderCallSection(body: HTMLElement, name: string, rawArgs: string): void {
-    let args: Record<string, unknown>;
-    try {
-      args = JSON.parse(rawArgs) as Record<string, unknown>;
-    } catch {
-      args = {};
-    }
-
-    if (name === "read" || name === "get_active_note") {
-      const range = readRangeText(args);
-      if (range) body.createDiv({ cls: "agentic-chat-step-call-args", text: range });
-      return;
-    }
-    if (name === "edit") {
-      const edits = Array.isArray(args.edits) ? args.edits.filter(isStringEditPair) : [];
-      if (edits.length) {
-        body.createDiv({ cls: "agentic-chat-step-call-args", text: `${edits.length} edit${edits.length === 1 ? "" : "s"}` });
-        this.renderEditDiff(body, edits);
-      }
-      return;
-    }
-    if (name === "write") return; // title carries the path; success result is hidden
-    // Non-path tools: readable key:value lines.
-    const text = formatCallBody(name, rawArgs);
-    if (text) body.createDiv({ cls: "agentic-chat-step-call-args", text });
-  }
-
-  /** Append a clickable vault-path link (opens the note via onOpenNote). */
-  private appendPathLink(parent: HTMLElement, path: string): void {
-    if (!path) {
-      parent.appendText("(unknown path)");
-      return;
-    }
-    const link = parent.createEl("a", { cls: "agentic-chat-step-path-link", attr: { href: "#", role: "button" } });
-    // Middle-truncate long vault paths (keep the head/basename readable) instead
-    // of ellipsis-ing only the tail, which hides the distinguishing filename.
-    const display = path.length > 36 ? middleEllipsis(path, 36) : path;
-    link.setText(display);
-    link.setAttr("title", path);
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      this.actions.onOpenNote?.(path);
-    });
-  }
-
-  /** Render a compact oldText(−)/newText(+) diff, capped so it can't dominate the step. */
-  private renderEditDiff(call: HTMLElement, edits: EditPair[]): void {
-    renderStepEditDiff(call, edits);
-  }
-
   /**
    * Live update for a running tool step. Currently renders subagent child
    * progress (a collapsed-per-child, expandable tree) as the dispatch runs.
@@ -470,8 +338,8 @@ export class AssistantBubble {
     const details = (partial as { details?: unknown } | undefined)?.details;
     const children = subagentChildren(details);
     if (children.length > 0) {
-      this.renderSubagentChildren(step.body, children);
-      if (step.card.parentElement) this.syncStepCollapsible(step.card.parentElement, step.body);
+      renderSubagentChildren(step.body, children, this.actions.onStopSubagentChild);
+      if (step.card.parentElement) syncStepCollapsible(step.card.parentElement, step.body);
       // Auto-open so live child progress is visible while the step runs.
       step.card.addClass("is-open");
       step.card.parentElement?.addClass("is-open");
@@ -479,163 +347,13 @@ export class AssistantBubble {
       return;
     }
     if (isAskUserDetails(details)) {
-      this.renderAskUserStep(step.body, details);
-      if (step.card.parentElement) this.syncStepCollapsible(step.card.parentElement, step.body);
+      renderAskUserStep(step.body, details);
+      if (step.card.parentElement) syncStepCollapsible(step.card.parentElement, step.body);
       // Auto-open so the ask-user state is visible while waiting.
       step.card.addClass("is-open");
       step.card.parentElement?.addClass("is-open");
       step.card.parentElement?.querySelector(".agentic-chat-step-toggle")?.setAttribute("aria-expanded", "true");
     }
-  }
-
-  private renderSubagentChildren(card: HTMLElement, children: SubagentChildStatus[]): void {
-    let list = card.querySelector<HTMLElement>(".agentic-chat-subagents");
-    list ??= card.createDiv({ cls: "agentic-chat-subagents" });
-    // ponytail: index-based identity assumes stable child order. Add keyed lookup if reordering is introduced.
-    while (list.childElementCount < children.length) {
-      list.createEl("details", { cls: "agentic-chat-subagent" });
-    }
-    while (list.childElementCount > children.length) {
-      list.lastElementChild?.remove();
-    }
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i];
-      const childRow = list.children[i] as HTMLDetailsElement;
-      childRow.className = `agentic-chat-subagent is-${child.status}`;
-      childRow.open = child.status === "running";
-      this.renderSubagentHeader(childRow, child);
-      this.renderSubagentBody(childRow, child);
-    }
-    // Aggregate child state into ONE status pill on the step header so a card
-    // never reads "stoppable" and "done" at the same time (Stop only ever
-    // accompanies a still-running aggregate; done/failed have none).
-    this.renderSubagentAggregate(card, children);
-  }
-
-  private renderSubagentAggregate(card: HTMLElement, children: SubagentChildStatus[]): void {
-    // `card` is the step BODY; the status pill lives in the step HEADER, which is
-    // a child of the step card (the body's parent).
-    const header = card.parentElement?.querySelector<HTMLElement>(".agentic-chat-step-header");
-    if (!header) return;
-    let pill = header.querySelector<HTMLElement>(".agentic-chat-step-status");
-    pill ??= header.createSpan({ cls: "agentic-chat-step-status" });
-    const running = children.some((child) => child.status === "running");
-    const queued = !running && children.some((child) => child.status === "queued");
-    const failed = children.some((child) => child.status === "error");
-    const stopped = !failed && children.some((child) => child.status === "aborted");
-    let text: string;
-    let stateClass: string;
-    if (running) {
-      text = "Running…";
-      stateClass = "is-running";
-    } else if (queued) {
-      text = "Queued…";
-      stateClass = "is-queued";
-    } else if (failed) {
-      text = "Failed";
-      stateClass = "is-error";
-    } else if (stopped) {
-      text = "Stopped";
-      stateClass = "is-error";
-    } else {
-      text = "Done";
-      stateClass = "is-done";
-    }
-    pill.setText(text);
-    pill.removeClass("is-running");
-    pill.removeClass("is-done");
-    pill.removeClass("is-error");
-    pill.removeClass("is-queued");
-    pill.addClass(stateClass);
-  }
-
-  private renderSubagentHeader(row: HTMLDetailsElement, child: SubagentChildStatus): void {
-    let summary = row.querySelector("summary");
-    if (!summary) summary = row.createEl("summary");
-    const nameText = `${String(child.agent ?? "?")}: ${truncateText(String(child.task ?? ""), 120)}`;
-    const statusText = SUBAGENT_STATUS_LABEL[child.status] ?? String(child.status ?? "unknown");
-    const metaText = this.subagentMetaText(child);
-    const currentName = summary.querySelector<HTMLElement>(".agentic-chat-subagent-name")?.textContent;
-    const currentStatus = summary.querySelector<HTMLElement>(".agentic-chat-subagent-status")?.textContent;
-    const currentMeta = summary.querySelector<HTMLElement>(".agentic-chat-subagent-meta")?.textContent;
-    // Absent meta renders as "" (queued/running); compare normalized so a
-    // settled header with no meta isn't rebuilt on every live emit.
-    if (currentName === nameText && currentStatus === statusText && (currentMeta ?? "") === metaText) return;
-    summary.empty();
-    summary.createSpan({ cls: "agentic-chat-subagent-name", text: nameText });
-    summary.createSpan({ cls: "agentic-chat-subagent-status", text: statusText });
-    // Small, subtle completion readout once the child settles: how long it ran,
-    // how many tokens it used, and the approximate cost (when priced).
-    if (metaText) {
-      summary.createSpan({ cls: "agentic-chat-subagent-meta", text: metaText });
-    }
-    if (child.status === "running" && child.stopId && this.actions.onStopSubagentChild) {
-      const stopBtn = summary.createEl("button", { cls: "agentic-chat-subagent-stop", text: "Stop" });
-      const id = child.stopId;
-      stopBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.actions.onStopSubagentChild?.(id);
-      });
-    }
-  }
-
-  private subagentMetaText(child: SubagentChildStatus): string {
-    if (child.status === "queued" || child.status === "running") return "";
-    const parts: string[] = [];
-    if (child.usage) {
-      // Cost is a normalized field of its own — render it whenever positive,
-      // even when the provider reported no token counts.
-      if (child.usage.totalTokens > 0) parts.push(`${formatTokenInteger(child.usage.totalTokens)} tok`);
-      if (child.usage.costUsd > 0) parts.push(formatCost(child.usage.costUsd));
-    }
-    if (child.durationMs !== undefined) parts.unshift(formatElapsed(child.durationMs));
-    return parts.join(" · ");
-  }
-
-  private renderSubagentBody(row: HTMLDetailsElement, child: SubagentChildStatus): void {
-    let pre = row.querySelector<HTMLPreElement>("pre");
-    if (!pre) pre = row.createEl("pre");
-    if (child.transcript && child.transcript.length > 0) {
-      const rendered = Number(pre.dataset.rendered ?? "0");
-      if (rendered < child.transcript.length) {
-        for (let j = rendered; j < child.transcript.length; j++) {
-          pre.appendText(this.formatTranscriptEntry(child.transcript[j]));
-        }
-        pre.dataset.rendered = String(child.transcript.length);
-      }
-    }
-    if (child.status === "running") {
-      delete pre.dataset.hasSummary;
-    } else if (child.summary) {
-      if (!pre.dataset.hasSummary) {
-        pre.appendText("\n———\n");
-        pre.appendText(truncateText(child.summary, 4_000));
-        pre.dataset.hasSummary = "true";
-      }
-    }
-  }
-
-  private formatTranscriptEntry(entry: NonNullable<SubagentChildStatus["transcript"]>[number]): string {
-    if (entry.type === "text") return entry.text;
-    const marker = entry.status === "start" ? "▶" : entry.isError ? "✗" : "✓";
-    if (entry.status === "start" && entry.args !== undefined) {
-      const label = describeCall(entry.name, safeJson(entry.args));
-      return `\n${marker} ${label}\n`;
-    }
-    return `\n${marker} ${entry.name}\n`;
-  }
-
-  private renderAskUserStep(card: HTMLElement, details: AskUserDetails): void {
-    let row = card.querySelector<HTMLElement>(".agentic-chat-step-ask-user");
-    row ??= card.createDiv({ cls: "agentic-chat-step-ask-user" });
-    row.empty();
-    row.createDiv({
-      cls: "agentic-chat-step-ask-user-status",
-      text: details.status === "answered" ? "answered" : "waiting for user",
-    });
-    row.createDiv({ cls: "agentic-chat-step-ask-user-question", text: truncateText(details.question, 400) });
-    if (details.answer) row.createDiv({ cls: "agentic-chat-step-ask-user-answer", text: truncateText(details.answer, 400) });
   }
 
   endStep(id: string, result: string, isError: boolean, resultObject?: unknown): void {
@@ -656,7 +374,7 @@ export class AssistantBubble {
     if (failed) this.retractFailedSource(step, id);
     this.renderStepResult(step, result, failed);
     const row = step.card.parentElement;
-    if (row) this.syncStepCollapsible(row, step.body);
+    if (row) syncStepCollapsible(row, step.body);
   }
 
   /**
@@ -668,9 +386,9 @@ export class AssistantBubble {
     const maybeDetails = (resultObject as { details?: unknown } | undefined)?.details;
     const children = subagentChildren(maybeDetails);
     if (children.length === 0) return;
-    this.renderSubagentChildren(step.body, children);
+    renderSubagentChildren(step.body, children, this.actions.onStopSubagentChild);
     const row = step.card.parentElement;
-    if (row) this.syncStepCollapsible(row, step.body);
+    if (row) syncStepCollapsible(row, step.body);
   }
 
   private markStepSettled(step: StepEntry, isError: boolean): void {

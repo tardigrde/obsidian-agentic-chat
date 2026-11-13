@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { subagentResultForcesError } from "../src/ui/assistant-bubble";
+import { subagentResultForcesError } from "../src/ui/subagent-tree";
 import {
   classifyRenderedChatLink,
   enhanceCallouts,

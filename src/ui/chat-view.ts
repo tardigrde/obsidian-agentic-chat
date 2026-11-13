@@ -6,7 +6,7 @@ import {
   type WorkspaceLeaf,
   setIcon,
 } from "obsidian";
-import type { AgentEvent, AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
@@ -16,17 +16,11 @@ import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call
 import { applyRememberedApprovalChoice } from "../agent/approval-memory";
 import { ApprovalModal } from "./approval-modal";
 import { isImagePath } from "./image-attachments";
-import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
-import { writeVaultFile } from "../vault/storage";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
-import { activeModelId, apiKeyForProvider } from "../settings-schema";
-import { listOpenAICompatibleModels, listOpenRouterModels } from "../llm/models";
-import { ModelSuggestModal } from "./model-suggest-modal";
+import { activeModelId } from "../settings-schema";
 import { errorMessage } from "../utils/errors";
-import { SessionListModal } from "./session-list-modal";
-import { createFetchFromWebFetcher, createProxiedFetcher } from "../mcp/fetcher";
 import { highestUnnotifiedThreshold, Notifier } from "./notifications";
-import { formatDetailedUsage, formatUsage, safeJson } from "./format";
+import { formatUsage, safeJson } from "./format";
 import { contextLevel, contextPercent, formatContextReadoutTitle } from "./context-bar";
 import { failedLastTurnIndex, lastUserTurn, toolResultText } from "./message-content";
 import {
@@ -49,7 +43,6 @@ import {
 import {
   buildModelPillState,
   buildTurnUsageChromeParts,
-  modelProviderLabel,
   toolBudgetNotificationKey,
 } from "./chrome-state";
 import { PromptEditState } from "./prompt-edit-state";
@@ -80,12 +73,9 @@ import {
   type ParsedSlashInput,
   type SlashCommandName,
 } from "./commands";
-import type { LoadedPlugin } from "../plugins/loader";
-import { formatCompactionSummary } from "../agent/compaction";
 import { isInstructionFilePath } from "../agent/instructions";
 import {
   type AgentMode,
-  MODES,
   resolveModeTransition,
   validateModeTransition,
 } from "../agent/modes";
@@ -94,19 +84,10 @@ import {
   autoActiveNotePath,
   effectiveActiveNote,
 } from "./active-note";
-import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLE_ORDER, OUTPUT_STYLES } from "../agent/output-styles";
-import {
-  formatToolBudgetDiagnostic,
-  formatMcpDiagnosticRows,
-  formatMcpDiagnosticSummary,
-  formatRuntimeDiagnosticsRows,
-} from "../agent/diagnostics";
+import type { OutputStyle } from "../agent/output-styles";
+import { formatToolBudgetDiagnostic } from "../agent/diagnostics";
 import { MemoryWorkflowController } from "./memory-workflow-controller";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
-import {
-  createMemoryWorkflowController,
-  createSemanticIndexWorkflowController,
-} from "./chat-services";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
 import { SessionWorkflowController } from "./session-workflow-controller";
 import {
@@ -117,6 +98,18 @@ import {
 import { renderContextChips, renderPendingQueueChip } from "./context-chip-renderer";
 import type { ActionRow, WorkflowRenderer } from "./workflow-renderer";
 import { TranscriptView } from "./transcript-view";
+import { runAgent, runInit, runSkill } from "./slash/agents";
+import type { SlashContext } from "./slash/context";
+import { runDoctor, showHelp, showStatus, showUsage } from "./slash/info";
+import {
+  createMemoryWorkflow,
+  runMemory,
+  runSemanticIndex,
+  semanticIndexWorkflowController,
+} from "./slash/index-commands";
+import { persistEffortLevel, runEffort, runStyle, switchModel } from "./slash/model";
+import { createWorkflowRenderer } from "./slash/renderer";
+import { createSessionWorkflow, exportSession, newSession, runCompact, runSessions, runUndo } from "./slash/session";
 
 export { VIEW_TYPE_AGENT_CHAT };
 
@@ -1526,10 +1519,10 @@ export class ChatView extends ItemView {
       new: () => this.newSession(),
       style: () => this.runStyle(argString),
       effort: () => this.runEffort(argString),
-      sessions: () => this.createSessionWorkflow().run(argString),
+      sessions: () => runSessions(this.slashCtx, argString),
       model: () => this.switchModel(),
       status: () => this.showStatus(),
-      memory: () => this.createMemoryWorkflow().run(argString),
+      memory: () => runMemory(this.slashCtx, argString),
       "semantic-index": () => this.runSemanticIndex(argString),
       doctor: () => this.runDoctor(),
       usage: () => this.showUsage(),
@@ -1543,59 +1536,46 @@ export class ChatView extends ItemView {
     };
   }
 
-  /**
-   * `/doctor`: one health panel for everything that matters — an aggregate
-   * status line, the agent-plugin audit, then the full runtime diagnostics.
-   */
-  private async runDoctor(): Promise<void> {
-    this.clearEmptyState();
-    const service = this.plugin.pluginService;
-    let plugins: LoadedPlugin[];
-    try {
-      plugins = await service.reload();
-      // Diagnostics come from the active session's runtime resources, which
-      // only reload per turn; refresh them so the audit and the health rows
-      // describe the same vault state.
-      await this.service.reloadRuntimeResources();
-    } catch (error) {
-      this.renderErrorMessage(`Doctor audit failed: ${errorMessage(error)}`);
-      return;
-    }
-    const folder = this.plugin.settings.plugins.folder || ".agentic-plugins";
-    const pluginAudit =
-      plugins.length === 0
-        ? `No plugin packages found in ${folder}. Generate one from the MCP settings tab.`
-        : service.auditText(plugins);
-    const diagnostics = this.service.getRuntimeDiagnostics();
-    const issues: string[] = [];
-    const failedPlugins = plugins.filter((plugin) => plugin.auditStatus === "failed").length;
-    if (failedPlugins > 0) issues.push(`${failedPlugins} of ${plugins.length} agent plugin(s) need attention`);
-    const failedMcp = diagnostics.resources.mcpServers.filter((server) => server.status === "error").length;
-    if (failedMcp > 0) issues.push(`${failedMcp} MCP server(s) failing`);
-    if (diagnostics.state.lastError) issues.push("last run ended in an error");
-    if (diagnostics.observability.enabled && diagnostics.observability.exportHealth.failedExports > 0) {
-      issues.push("observability exports failing");
-    }
-    this.renderInfoMessage("Doctor", [
-      ["Status", issues.length === 0 ? "All OK." : `${issues.join("; ")}.`],
-      ["Agent plugins", pluginAudit],
-      ...formatRuntimeDiagnosticsRows(diagnostics),
-    ]);
-  }
+  /** Narrow view of this view for the slash handler modules. */
+  private slashContext: SlashContext | undefined;
 
-  private createSessionWorkflow(): SessionWorkflowController {
-    return new SessionWorkflowController({
-      listSessions: () => this.service.listSessions(),
-      activeSessionPath: () => this.service.getSessionInfo()?.path ?? null,
-      clearSessions: () => this.clearAllSessions(),
-      loadSession: (path) => void this.loadSession(path),
-      deleteSession: (path) => this.deleteSessionFromList(path),
-      renameSession: (path, name) => this.service.renameSession(path, name),
-      openList: (sessions, activePath, callbacks) => new SessionListModal(this.app, sessions, activePath, callbacks).open(),
-      afterClear: () => this.createSessionActivationCoordinator().afterSessionsCleared(),
-      renderer: this.workflowRenderer(),
+  private get slashCtx(): SlashContext {
+    // A real object (not a cast of `this`), so the compiler checks every member.
+    // State members are accessors: handlers must see and set the live view state.
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- accessors below read live view state
+    const view = this;
+    return (this.slashContext ??= {
+      get service() { return view.service; },
+      get plugin() { return view.plugin; },
+      get app() { return view.app; },
+      get inputEl() { return view.inputEl; },
+      get activeNotePath() { return view.activeNotePath; },
+      get semanticIndexWorkflow() { return view.semanticIndexWorkflow; },
+      set semanticIndexWorkflow(value) { view.semanticIndexWorkflow = value; },
+      clearEmptyState: () => view.clearEmptyState(),
+      renderInfoMessage: (title, entries) => view.renderInfoMessage(title, entries),
+      renderActionList: (title, subtitle, items) => view.renderActionList(title, subtitle, items),
+      renderErrorMessage: (message) => view.renderErrorMessage(message),
+      showServiceError: () => view.showServiceError(),
+      renderOutgoingUserMessage: (text, attachments, images) => view.renderOutgoingUserMessage(text, attachments, images),
+      renderTranscript: (messages) => view.renderTranscript(messages),
+      syncChrome: () => view.syncChrome(),
+      setOutputStyle: (style) => view.setOutputStyle(style),
+      setComposerValue: (text) => view.setComposerValue(text),
+      createSessionWorkflow: () => view.createSessionWorkflow(),
+      createSessionActivationCoordinator: () => view.createSessionActivationCoordinator(),
+      createMemoryWorkflow: () => view.createMemoryWorkflow(),
+      semanticIndexWorkflowController: () => view.semanticIndexWorkflowController(),
+      workflowRenderer: () => view.workflowRenderer(),
+      clearAllSessions: () => view.clearAllSessions(),
+      loadSession: (path) => view.loadSession(path),
+      deleteSessionFromList: (path) => view.deleteSessionFromList(path),
     });
   }
+
+  private runDoctor(): Promise<void> { return runDoctor(this.slashCtx); }
+
+  private createSessionWorkflow(): SessionWorkflowController { return createSessionWorkflow(this.slashCtx); }
 
   private createSessionActivationCoordinator(): SessionActivationCoordinator {
     return new SessionActivationCoordinator({
@@ -1632,145 +1612,15 @@ export class ChatView extends ItemView {
     this.showServiceError();
   }
 
-  /** Run a skill by name: render a loaded-signal, then invoke it as a prompt. */
-  private async runSkill(name: string | undefined, extra: string, display?: string): Promise<void> {
-    if (!name) {
-      this.showSkillList();
-      return;
-    }
-    this.clearEmptyState();
-    const extraPart = extra ? ` ${extra}` : "";
-    this.renderOutgoingUserMessage(display ?? `/skill ${name}${extraPart}`, []);
-    const skill = this.service.getSkills().find((item) => item.name.toLowerCase() === name.toLowerCase());
-    // Visible success signal: /skill otherwise injects silently and the
-    // transcript jumps straight to the first thought/tool step.
-    if (skill) this.renderInfoMessage("Skill", [[skill.name, skill.description]]);
-    await this.service.invokeSkill(name, extra || undefined);
-    this.showServiceError();
-  }
+  private runSkill(name: string | undefined, extra: string, display?: string): Promise<void> { return runSkill(this.slashCtx, name, extra, display); }
 
-  /** `/init`: drive the agent to curate the vault's AGENTS.md standing-instructions file. */
-  private async runInit(instructions = ""): Promise<void> {
-    this.clearEmptyState();
-    const initPart = instructions.trim() ? ` ${instructions.trim()}` : "";
-    const display = `/init${initPart}`;
-    this.renderOutgoingUserMessage(display, []);
-    await this.service.invokeInit(instructions);
-    this.showServiceError();
-  }
+  private runInit(instructions = ""): Promise<void> { return runInit(this.slashCtx, instructions); }
 
-  /** `/compact [instructions]`: rewrite older transcript turns into a summary now. */
-  private async runCompact(instructions = ""): Promise<void> {
-    this.clearEmptyState();
-    const compactPart = instructions.trim() ? ` ${instructions.trim()}` : "";
-    const display = `/compact${compactPart}`;
-    this.renderOutgoingUserMessage(display, []);
-    const pending = new Notice("Compacting conversation…", 0);
-    let result;
-    try {
-      result = await this.service.compactNow(instructions);
-    } finally {
-      pending.hide();
-    }
-    if (result.compacted) {
-      this.renderTranscript(this.service.getMessages());
-      this.syncChrome();
-      this.renderInfoMessage("Compact", [["result", formatCompactionSummary(result)]]);
-      return;
-    }
-    this.renderInfoMessage("Compact", [["result", result.message]]);
-    this.showServiceError();
-  }
+  private runCompact(instructions = ""): Promise<void> { return runCompact(this.slashCtx, instructions); }
 
-  /** `/style [name]`: no arg shows a picker; an arg switches output style directly. */
-  private async runStyle(arg: string): Promise<void> {
-    this.clearEmptyState();
-    if (!arg) {
-      this.showStyleList();
-      return;
-    }
-    const lower = arg.toLowerCase();
-    const style = OUTPUT_STYLE_ORDER.find((id) => id === lower || OUTPUT_STYLES[id].label.toLowerCase() === lower);
-    if (!style) {
-      this.renderErrorMessage(`Unknown output style "${arg}". Options: ${OUTPUT_STYLE_ORDER.join(", ")}.`);
-      return;
-    }
-    await this.chooseStyle(style);
-  }
+  private runStyle(arg: string): Promise<void> { return runStyle(this.slashCtx, arg); }
 
-  /** Clickable output-style picker, applied in-pane. */
-  private showStyleList(): void {
-    const { settings } = this.plugin;
-    this.renderActionList(
-      "Output style",
-      `How the assistant talks · current: ${OUTPUT_STYLES[settings.outputStyle].label}`,
-      OUTPUT_STYLE_ORDER.map((id) => ({
-        label: OUTPUT_STYLES[id].label,
-        detail: OUTPUT_STYLES[id].description,
-        icon: OUTPUT_STYLES[id].icon,
-        onClick: () => void this.chooseStyle(id),
-      })),
-    );
-  }
-
-  /** `/effort [level]`: no arg shows a picker; an arg sets your reasoning effort (persisted). */
-  private runEffort(arg: string): void {
-    this.clearEmptyState();
-    if (!arg) {
-      this.showEffortList();
-      return;
-    }
-    const lower = arg.toLowerCase();
-    const levels = this.service.getActiveThinkingLevels();
-    const level = levels.find((id) => id === lower);
-    if (!level) {
-      this.renderErrorMessage(`Unknown or unsupported effort "${arg}". Options: ${levels.join(", ")}.`);
-      return;
-    }
-    void this.chooseEffort(level);
-  }
-
-  /** Clickable effort picker. The subtitle warns that switching costs a one-time cache miss. */
-  private showEffortList(): void {
-    const current = this.service.getActiveThinkingLevel();
-    const levels = this.service.getActiveThinkingLevels();
-    if (levels.length <= 1) {
-      this.renderInfoMessage("Effort", [
-        ["off", "The active model only exposes reasoning effort as off."],
-      ]);
-      return;
-    }
-    this.renderActionList(
-      "Effort",
-      `Reasoning effort for your messages · current: ${current}. ` +
-        "Changing it re-processes the prompt once (a cache miss) — affects cost.",
-      levels.map((id) => ({
-        label: id,
-        detail: id === current ? "current" : "",
-        icon: "gauge",
-        onClick: () => void this.chooseEffort(id),
-      })),
-    );
-  }
-
-  /** Apply an effort level and remember it (persisted). */
-  private async chooseEffort(level: ThinkingLevel): Promise<void> {
-    if (this.service.isStreaming()) {
-      this.renderErrorMessage("Can't change effort while the agent is responding.");
-      return;
-    }
-    try {
-      await this.persistEffortLevel(level);
-    } catch (error) {
-      this.renderErrorMessage(
-        `Could not save effort level: ${errorMessage(error)}`,
-      );
-      return;
-    }
-    this.renderInfoMessage("Effort", [
-      [level, "Saved. Applies to your messages going forward; switching effort re-processes the prompt once (a cache miss) — affects cost."],
-    ]);
-  }
+  private runEffort(arg: string): void { runEffort(this.slashCtx, arg); }
 
   /** Composer effort knob: cycle to the next supported reasoning level. */
   private async cycleEffort(): Promise<void> {
@@ -1785,29 +1635,10 @@ export class ChatView extends ItemView {
     const index = levels.indexOf(current);
     const next = levels[(index + 1) % levels.length];
     try {
-      await this.persistEffortLevel(next);
+      await persistEffortLevel(this.slashCtx, next);
     } catch {
       // persistEffortLevel already rolled the knob back to the saved level.
       new Notice("Could not save effort level.");
-    }
-  }
-
-  /**
-   * Persist the chosen effort level and repaint the knob. Rolls the setting
-   * back if saving fails, so the UI never advertises a level that didn't stick.
-   */
-  private async persistEffortLevel(level: ThinkingLevel): Promise<void> {
-    const previous = this.plugin.settings.thinkingLevel;
-    if (previous === level) return;
-    this.plugin.settings.thinkingLevel = level;
-    // Repaint instantly; persistence lands in the background.
-    this.syncChrome();
-    try {
-      await this.plugin.saveSettings();
-    } catch (error) {
-      this.plugin.settings.thinkingLevel = previous;
-      this.syncChrome();
-      throw error;
     }
   }
 
@@ -1834,177 +1665,29 @@ export class ChatView extends ItemView {
     this.effortKnobEl.setAttr("aria-label", hint);
   }
 
-  /** `/skill` with no argument: a clickable picker, not a static list. */
-  private showSkillList(): void {
-    const skills = this.service.getSkills();
-    this.clearEmptyState();
-    if (skills.length === 0) {
-      this.renderInfoMessage("Skills", [["(none)", "Set a skills folder in settings to add skills."]]);
-      return;
-    }
-    this.renderActionList(
-      "Skills",
-      "Pick a skill to run.",
-      skills.map((skill) => ({
-        label: skill.name,
-        detail: skill.description,
-        icon: "sparkles",
-        onClick: () => void this.runSkill(skill.name, ""),
-      })),
-    );
+  private runAgent(name: string | undefined, task: string): Promise<void> {
+    return runAgent(this.slashCtx, name, task);
   }
 
-  private async runAgent(name: string | undefined, task: string): Promise<void> {
-    if (!name) {
-      this.showAgentList();
-      return;
-    }
-    this.clearEmptyState();
-    const taskPart = task ? ` ${task}` : "";
-    this.renderOutgoingUserMessage(`/agent ${name}${taskPart}`, []);
-    await this.service.invokeAgent(name, task);
-    this.showServiceError();
-  }
-
-  /** `/agent` with no argument: a clickable picker that prefills the composer. */
-  private showAgentList(): void {
-    const profiles = this.service.getProfiles();
-    this.clearEmptyState();
-    if (profiles.length === 0) {
-      this.renderInfoMessage("Subagents", [
-        ["(none)", "Enable built-in subagents or set a subagents folder in settings."],
-      ]);
-      return;
-    }
-    this.renderActionList(
-      "Subagents",
-      "Pick a subagent, then type its task.",
-      profiles.map((profile) => ({
-        label: profile.name,
-        detail: profile.description,
-        icon: "bot",
-        onClick: () => this.prefillComposer(`/agent ${profile.name} `),
-      })),
-    );
-  }
-
-  private async runSemanticIndex(arg: string): Promise<void> {
-    await this.semanticIndexWorkflowController().run(arg);
-  }
+  private runSemanticIndex(arg: string): Promise<void> { return runSemanticIndex(this.slashCtx, arg); }
 
   private semanticIndexWorkflowController(): SemanticIndexWorkflowController {
-    if (this.semanticIndexWorkflow) return this.semanticIndexWorkflow;
-    this.semanticIndexWorkflow = createSemanticIndexWorkflowController({
-      app: this.app,
-      settings: this.plugin.settings,
-      pluginDir: this.plugin.manifest.dir,
-      pluginId: this.plugin.manifest.id,
-      activeNotePath: () => this.activeNotePath,
-      isPathIgnored: (path) => this.service.isPathIgnored(path),
-      renderer: this.workflowRenderer(),
-    });
-    return this.semanticIndexWorkflow;
+    return semanticIndexWorkflowController(this.slashCtx);
   }
 
-  private createMemoryWorkflow(): MemoryWorkflowController {
-    return createMemoryWorkflowController({
-      app: this.app,
-      messages: () => this.service.getMessages(),
-      sessionInfo: () => this.service.getSessionInfo(),
-      renderer: this.workflowRenderer(),
-    });
-  }
+  private createMemoryWorkflow(): MemoryWorkflowController { return createMemoryWorkflow(this.slashCtx); }
 
-  private workflowRenderer(): WorkflowRenderer {
-    return {
-      clear: () => this.clearEmptyState(),
-      info: (title, entries) => this.renderInfoMessage(title, entries),
-      error: (message) => this.renderErrorMessage(message),
-      actionList: (title, subtitle, items) => this.renderActionList(title, subtitle, items),
-    };
-  }
+  private workflowRenderer(): WorkflowRenderer { return createWorkflowRenderer(this.slashCtx); }
 
-  private prefillComposer(text: string): void {
-    // setComposerValue dispatches the "input" event so autocomplete/composer
-    // state stays in sync (a bare `.value =` would not).
-    this.setComposerValue(text);
-    this.inputEl.focus();
-    this.inputEl.setSelectionRange(text.length, text.length);
-  }
+  private showStatus(): void { showStatus(this.slashCtx); }
 
-  private showStatus(): void {
-    const { settings } = this.plugin;
-    const session = this.service.getSessionInfo();
-    const override = this.service.getModelOverride();
-    const diagnostics = this.service.getRuntimeDiagnostics();
-    this.clearEmptyState();
-    this.renderInfoMessage("Status", [
-      ["Provider", settings.provider],
-      ["Model", override ? `${override} (next message only)` : activeModelId(settings)],
-      ["Mode", MODES[settings.mode].label],
-      ["Output style", OUTPUT_STYLES[settings.outputStyle].label],
-      // The active level, i.e. the configured level clamped to what the model
-      // actually supports — the raw setting alone can overstate the next turn.
-      ["Thinking", this.service.getActiveThinkingLevel()],
-      ["Approval (mutating)", settings.approval.mutating],
-      ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],
-      ["Session", session ? `${session.messageCount} messages` : "(none)"],
-      ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
-      ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),
-    ]);
-  }
+  private runUndo(): Promise<void> { return runUndo(this.slashCtx); }
 
-  private async chooseStyle(style: OutputStyle): Promise<void> {
-    await this.setOutputStyle(style);
-    this.renderInfoMessage("Output style", [[OUTPUT_STYLES[style].label, OUTPUT_STYLES[style].description]]);
-  }
+  private showUsage(): void { showUsage(this.slashCtx); }
 
-  /** `/undo`: revert the agent's most recent vault change, reported in-pane. */
-  private async runUndo(): Promise<void> {
-    this.clearEmptyState();
-    const result = await this.service.undoLastChange();
-    this.renderInfoMessage("Undo", [["result", result]]);
-  }
+  private exportSession(): Promise<void> { return exportSession(this.slashCtx); }
 
-  private showUsage(): void {
-    const usage = this.service.getSessionUsage();
-    this.clearEmptyState();
-    this.renderInfoMessage(
-      "Usage",
-      usage.totalTokens > 0
-        ? formatDetailedUsage(usage, { includesCompactedUsage: true, includesSubagentUsage: true })
-        : [["Usage", "No usage recorded yet for this conversation."]],
-    );
-  }
-
-  /** `/export`: write the active conversation to a Markdown note without changing active-note context. */
-  private async exportSession(): Promise<void> {
-    this.clearEmptyState();
-    const messages = this.service.getMessages();
-    if (!hasExportableTurns(messages)) {
-      this.renderInfoMessage("Export", [["Export", "Nothing to export yet — send a message first."]]);
-      return;
-    }
-    try {
-      const markdown = sessionToMarkdown(messages, this.service.getSessionInfo());
-      const path = `${EXPORT_FOLDER}/${exportFileName(this.service.getSessionInfo(), Date.now())}`;
-      const file = await writeVaultFile(this.app, path, markdown);
-      this.renderInfoMessage("Export", [["Saved", file.path]]);
-    } catch (error) {
-      this.renderErrorMessage(`Export failed: ${errorMessage(error)}`);
-    }
-  }
-
-  private showHelp(): void {
-    this.clearEmptyState();
-    this.renderInfoMessage(
-      "Slash commands",
-      visibleCommands().map((command): [string, string] => {
-        const argsPart = command.args ? ` ${command.args}` : "";
-        return [`/${command.name}${argsPart}`, command.description];
-      }),
-    );
-  }
+  private showHelp(): void { showHelp(this.slashCtx); }
 
   /** Render a collapsible info block in the transcript (not sent to the model). */
   private renderInfoMessage(title: string, entries: Array<[string, string]>): void {
@@ -2034,20 +1717,7 @@ export class ChatView extends ItemView {
 
   // --- session + model actions ---
 
-  private async newSession(): Promise<void> {
-    const coordinator = this.createSessionActivationCoordinator();
-    try {
-      await coordinator.startNewConversation(() => this.service.newSession());
-    } catch (error) {
-      this.renderErrorMessage(errorMessage(error));
-    } finally {
-      // A new conversation starts in the default (normal) output style.
-      if (this.plugin.settings.outputStyle !== DEFAULT_OUTPUT_STYLE) {
-        this.plugin.settings.outputStyle = DEFAULT_OUTPUT_STYLE;
-        await this.plugin.saveSettings();
-      }
-    }
-  }
+  private newSession(): Promise<void> { return newSession(this.slashCtx); }
 
   /**
    * Clear one-shot notification state. When `muteExisting` is set (loading a
@@ -2113,56 +1783,7 @@ export class ChatView extends ItemView {
     }
   }
 
-  private async switchModel(): Promise<void> {
-    const { settings } = this.plugin;
-    if (settings.provider === "ollama") {
-      this.renderErrorMessage("Set the Ollama model in plugin settings.");
-      return;
-    }
-    const apiKey = apiKeyForProvider(settings, settings.provider);
-    if (!apiKey) {
-      this.renderErrorMessage(`Set your ${modelProviderLabel(settings.provider)} API key in settings first.`);
-      return;
-    }
-    try {
-      const fetchImpl = settings.network.proxyUrl
-        ? createFetchFromWebFetcher(createProxiedFetcher(settings.network))
-        : undefined;
-      const models =
-        settings.provider === "openrouter"
-          ? (
-              await listOpenRouterModels(apiKey, {
-                zdr: settings.privacy.requireZDR,
-                denyDataCollection: settings.privacy.denyDataCollection,
-                fetchImpl,
-                timeoutMs: settings.requestTimeoutMs,
-              })
-            )
-              .filter((model) => model.supportsTools)
-              .sort((a, b) => a.id.localeCompare(b.id))
-          : (
-              await listOpenAICompatibleModels(apiKey, {
-                baseUrl: settings.openaiCompatibleBaseUrl,
-                fetchImpl,
-                timeoutMs: settings.requestTimeoutMs,
-              })
-            ).sort((a, b) => a.id.localeCompare(b.id));
-      new ModelSuggestModal(this.app, models, (model, once) => {
-        if (once) {
-          // Per-request override: use this model for the next prompt only, then revert.
-          this.service.setModelOverride(model.id);
-        } else {
-          if (settings.provider === "openrouter") settings.openrouterModel = model.id;
-          else settings.openaiCompatibleModel = model.id;
-          this.service.setModelOverride(null);
-          void this.plugin.saveSettings();
-        }
-        this.syncChrome();
-      }, `${modelProviderLabel(settings.provider)} model`).open();
-    } catch (error) {
-      this.renderErrorMessage(errorMessage(error));
-    }
-  }
+  private switchModel(): Promise<void> { return switchModel(this.slashCtx); }
 
   // --- attachments ---
 
