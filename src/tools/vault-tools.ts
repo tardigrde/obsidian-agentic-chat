@@ -38,7 +38,7 @@ import {
   WriteParameters,
   vaultToolDefinition,
 } from "./vault-tool-definitions";
-import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { toolResult, untrustedToolResult } from "./result";
 import {
   adapterDeletionMessage,
   adapterPathExists,
@@ -976,7 +976,7 @@ function requestedWindow(path: string, window: LineWindow): RequestedWindow {
 }
 
 function textResult(text: string, details: Record<string, unknown>): AgentToolResult<Record<string, unknown>> {
-  return { content: [{ type: "text", text: truncateToolOutput(text) }], details };
+  return toolResult(truncateToolOutput(text), details);
 }
 
 function untrustedTextResult(
@@ -984,8 +984,5 @@ function untrustedTextResult(
   details: Record<string, unknown>,
   toolName?: string,
 ): AgentToolResult<Record<string, unknown>> {
-  return {
-    content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(text), toolName) }],
-    details,
-  };
+  return untrustedToolResult(text, details, toolName);
 }

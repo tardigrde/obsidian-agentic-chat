@@ -6,6 +6,7 @@ import { sumAssistantUsage } from "../agent/usage";
 import { redactText } from "../privacy/redaction";
 import { truncateToolOutput } from "../vault/truncate";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { toolResult, untrustedToolResult } from "./result";
 import { errorMessage } from "../utils/errors";
 
 export const SUBAGENT_TOOL_NAME = "subagent";
@@ -182,7 +183,7 @@ export function createSubagentTool(
 
       const status: SubagentChildStatus = { agent, task, status: "queued" };
       const emit = (): void =>
-        onUpdate?.({ content: [{ type: "text", text: progressText(status) }], details: snapshot([status]) });
+        onUpdate?.(toolResult(progressText(status), snapshot([status])));
 
       let emitTimer: number | null = null;
       const scheduleEmit = (): void => {
@@ -211,10 +212,7 @@ export function createSubagentTool(
         status.status = "aborted";
         status.summary = "Stopped before it started";
         flushEmit();
-        return {
-          content: [{ type: "text", text: truncateToolOutput(`Subagent "${agent}" aborted before it started.`) }],
-          details: snapshot([status]),
-        };
+        return toolResult(truncateToolOutput(`Subagent "${agent}" aborted before it started.`), snapshot([status]));
       }
 
       status.status = "running";
@@ -251,10 +249,7 @@ export function createSubagentTool(
         );
       }
 
-      return {
-        content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(mergeSummaries([status])), "subagent") }],
-        details: snapshot([status]),
-      };
+      return untrustedToolResult(mergeSummaries([status]), snapshot([status]), "subagent");
     },
   };
 }

@@ -9,7 +9,7 @@ import {
   type SourceTextExtractor,
 } from "../retrieval/source-artifacts";
 import { isHostAllowedByAllowlist } from "./web-allowlist";
-import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { untrustedToolResult } from "./result";
 import { errorMessage } from "../utils/errors";
 import { isPrivateNetworkHost } from "../utils/host-policy";
 export { isHostAllowedByAllowlist, normalizeAllowedHosts } from "./web-allowlist";
@@ -189,9 +189,9 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
       const artifactText = artifact
         ? `${rendered.text}\n\nSource artifact: ${artifact.artifactCitation}${duplicateHint}`
         : rendered.text;
-      return {
-        content: [{ type: "text", text: wrapToolOutputTruncated(artifactText, "fetch_url") }],
-        details: {
+      return untrustedToolResult(
+        artifactText,
+        {
           url,
           title: rendered.title,
           contentType,
@@ -209,7 +209,8 @@ export function createWebFetchTool(config: WebFetchConfig): AgentTool<typeof Fet
           sourceArtifactDuplicate: artifact?.duplicate,
           sourceDedupKey: artifact?.provenance.dedupKey,
         },
-      };
+        "fetch_url",
+      );
     },
   };
 }
