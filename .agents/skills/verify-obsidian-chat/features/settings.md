@@ -68,22 +68,21 @@ await closeAgenticChatSettings();
 
 | Recover an interrupted plugin install | `src/plugins/service.ts:630` | `test/plugins-service.test.ts:109` | `partial` |
 | Agent plugins: Repair built-ins | `src/settings-tab-plugins.ts:49` | no committed check | `NONE` |
-| Agent plugins: folder, ignored files | `src/settings-tab-plugins.ts:60` | `test/e2e/specs/settings-ui.e2e.ts:474` | `covered` |
+| Agent plugins: Plugins folder, ignored files | `src/settings-tab-plugins.ts:60` | `test/e2e/specs/settings-ui.e2e.ts:505` | `covered` |
 | Agent plugins: plugin row toggle/open/remove | `src/settings-tab-plugins.ts:152` | `test/e2e/specs/mobile-viewport.e2e.ts:372` (row renders only) | `partial` |
 | Subagents: timeout | `src/settings-tab-agent.ts:150` | no committed check | `NONE` |
 | Semantic retrieval: embedding controls | `src/settings-tab-retrieval.ts:7` | no committed check | `NONE` |
 | Settings at phone width | `src/settings.ts:200` | `test/e2e/specs/mobile-viewport.e2e.ts:372` | `covered` |
 | `getSettingDefinitions()` | `src/settings.ts:111` | `test/e2e/specs/settings-ui.e2e.ts:185` (three named pages render) | `covered` |
-| Settings: Request timeout (seconds) | `src/settings-tab-agent.ts:37` | no committed check | `NONE` |
-| Settings: System prompt | `src/settings-tab-agent.ts:59` | no committed check | `NONE` |
+| Settings: Request timeout (seconds) | `src/settings-tab-agent.ts:37` | `test/e2e/chaos/chaos-monkey.e2e.ts:674` (chaos run only) | `partial` |
+| Settings: System prompt | `src/settings-tab-agent.ts:59` | `test/settings-definitions.test.ts:79` (definition only) | `partial` |
 | Models: Gateway preset | `src/settings-tab-models.ts:228` | no committed check | `NONE` |
 | Models: Context window (tokens) | `src/settings-tab-models.ts:280` | no committed check | `NONE` |
-| Agent plugins: Plugins folder | `src/settings-tab-plugins.ts:60` | no committed check | `NONE` |
 | Semantic retrieval: Embedding model | `src/settings-tab-retrieval.ts:27` | no committed check | `NONE` |
 | Semantic retrieval: Vector dimensions | `src/settings-tab-retrieval.ts:40` | no committed check | `NONE` |
 | Semantic retrieval: Batch size | `src/settings-tab-retrieval.ts:63` | no committed check | `NONE` |
 | Semantic retrieval: Max indexed characters per note | `src/settings-tab-retrieval.ts:77` | no committed check | `NONE` |
-| Web: Fetched page character limit | `src/settings-tab-web.ts:86` | no committed check | `NONE` |
+| Web: Fetched page character limit | `src/settings-tab-web.ts:86` | `test/e2e/specs/settings-ui.e2e.ts:327` | `covered` |
 
 ## Gotchas
 
