@@ -65,7 +65,7 @@ await clickMcpAddButton("Add MCP server");
 | MCP handshake retries after a failed initialized notification | `src/mcp/client.ts:122` | `test/mcp-client.test.ts:112` | `partial` |
 | Test connection / refresh tools | `src/settings-mcp-section.ts:684` | `test/mcp-tools.test.ts:283` (probe helper only) | `partial` |
 | Tool allowlist/denylist | `src/settings-mcp-section.ts:388` | `test/mcp-tools.test.ts:228` (unit only) | `partial` |
-| Per-tool MCP approvals | `src/settings.ts:1332` | no committed check | `NONE` |
+| Per-tool MCP approvals | `src/settings-mcp-section.ts:418` | no committed check | `NONE` |
 | Setup guide / Copy config | `src/settings-mcp-section.ts:188` | `test/e2e/specs/settings-ui.e2e.ts:307` (button existence only) | `partial` |
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts:49` | `test/e2e/specs/composio-install.e2e.ts:27` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts:323` | `test/e2e/specs/settings-ui.e2e.ts:350` | `covered` |
