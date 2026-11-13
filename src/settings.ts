@@ -49,12 +49,11 @@ import {
   type ObservabilityBackend,
   type ObservabilityPayloadMode,
 } from "./observability/settings";
-import { activeEmbeddingModel, DEFAULT_EMBEDDING_SETTINGS } from "./retrieval/embeddings";
+import { activeEmbeddingModel } from "./retrieval/embeddings";
 
 import { DEFAULT_PROXY_SETTINGS, PROXY_URL_EXAMPLE } from "./network/proxy";
 import { normalizeAllowedHosts } from "./tools/web-allowlist";
 import {
-  DEFAULT_SETTINGS,
   PROVIDERS,
   PROVIDER_LABELS,
   embeddingModelPlaceholder,
@@ -71,6 +70,16 @@ const OBSERVABILITY_BACKEND_LABELS: Record<ObservabilityBackend, string> = {
 /** Text controls always arrive as strings; ignore malformed values from a stale caller. */
 function controlText(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+/**
+ * Parse a numeric text row. Out-of-range input clamps to the row bounds;
+ * unparsable input returns undefined so the caller keeps the stored value.
+ */
+function clampRowNumber(value: string, min: number, max: number): number | undefined {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 /** First heading of each section, so the declarative group keeps the old visible order. */
@@ -250,14 +259,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         break;
       case "ollamaBaseUrl":
         settings.ollamaBaseUrl = controlText(next).trim() || DEFAULT_OLLAMA_BASE_URL;
-        break;
-      case "systemPrompt":
-        settings.systemPrompt = controlText(next).trim() ? controlText(next) : DEFAULT_SYSTEM_PROMPT;
-        break;
-      case "plugins.folder":
-        settings.plugins.folder = controlText(next).trim();
-        this.plugin.pluginService.invalidate();
-        this.pluginsLoadedOnce = false;
         break;
       default:
         this.writeControlValue(settings, key, next);
@@ -726,9 +727,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
           .setDesc("How long to wait for the provider to start responding.")
           .addText((text) =>
             text.setValue(String(Math.round(settings.requestTimeoutMs / 1000))).onChange(async (value) => {
-              const parsed = Number.parseInt(value, 10);
-              settings.requestTimeoutMs =
-                Number.isFinite(parsed) && parsed >= 5 ? parsed * 1000 : DEFAULT_SETTINGS.requestTimeoutMs;
+              const seconds = clampRowNumber(value, 5, Number.POSITIVE_INFINITY);
+              if (seconds !== undefined) settings.requestTimeoutMs = seconds * 1000;
               await this.save();
             }),
           );
@@ -905,9 +905,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             text.inputEl.type = "number";
             text.inputEl.setAttribute("min", "500");
             text.setValue(String(settings.web.fetchCharLimit)).onChange(async (value) => {
-              const parsed = Number.parseInt(value, 10);
-              settings.web.fetchCharLimit =
-                Number.isFinite(parsed) && parsed >= 500 ? parsed : DEFAULT_SETTINGS.web.fetchCharLimit;
+              const limit = clampRowNumber(value, 500, Number.POSITIVE_INFINITY);
+              if (limit !== undefined) settings.web.fetchCharLimit = limit;
               await this.save();
             });
           });
@@ -1227,10 +1226,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             text.inputEl.setAttribute("min", "16");
             text.inputEl.setAttribute("max", "16384");
             text.setValue(String(settings.embeddings.dimensions)).onChange(async (value) => {
-              const parsed = Number.parseInt(value, 10);
-              settings.embeddings.dimensions = Number.isFinite(parsed)
-                ? Math.min(16_384, Math.max(16, parsed))
-                : DEFAULT_EMBEDDING_SETTINGS.dimensions;
+              const dimensions = clampRowNumber(value, 16, 16_384);
+              if (dimensions !== undefined) settings.embeddings.dimensions = dimensions;
               await this.save();
             });
           });
@@ -1252,10 +1249,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             text.inputEl.setAttribute("min", "1");
             text.inputEl.setAttribute("max", "256");
             text.setValue(String(settings.embeddings.batchSize)).onChange(async (value) => {
-              const parsed = Number.parseInt(value, 10);
-              settings.embeddings.batchSize = Number.isFinite(parsed)
-                ? Math.min(256, Math.max(1, parsed))
-                : DEFAULT_EMBEDDING_SETTINGS.batchSize;
+              const batchSize = clampRowNumber(value, 1, 256);
+              if (batchSize !== undefined) settings.embeddings.batchSize = batchSize;
               await this.save();
             });
           });
@@ -1268,10 +1263,8 @@ export class AgenticChatSettingTab extends PluginSettingTab {
             text.inputEl.setAttribute("min", "500");
             text.inputEl.setAttribute("max", "200000");
             text.setValue(String(settings.embeddings.maxDocumentChars)).onChange(async (value) => {
-              const parsed = Number.parseInt(value, 10);
-              settings.embeddings.maxDocumentChars = Number.isFinite(parsed)
-                ? Math.min(200_000, Math.max(500, parsed))
-                : DEFAULT_EMBEDDING_SETTINGS.maxDocumentChars;
+              const maxChars = clampRowNumber(value, 500, 200_000);
+              if (maxChars !== undefined) settings.embeddings.maxDocumentChars = maxChars;
               await this.save();
             });
           });
