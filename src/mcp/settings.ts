@@ -18,13 +18,11 @@ export interface McpSettings extends ProxySettings {
   servers: McpServerSettings[];
 }
 
-export interface McpServerSettings {
-  /** Stable local id used in exposed tool names: mcp__<id>__<tool>. */
-  id: string;
-  /** User-facing server name. */
-  name: string;
-  /** Streamable HTTP endpoint, e.g. https://mcp.example.com/mcp. */
-  url: string;
+/**
+ * Client-owned fields shared by the persisted settings shape and the plugin
+ * state map. One base type keeps the two from drifting apart field by field.
+ */
+export interface McpServerOwnedFields {
   enabled: boolean;
   /** Authentication mechanism for this remote MCP server. */
   authType: McpAuthType;
@@ -41,15 +39,6 @@ export interface McpServerSettings {
   /** Last discovered tools, cached only to render per-tool approval controls. */
   knownTools: McpKnownToolSettings[];
   /**
-   * Literal headers from a plugin's mcp.json. Client-generated headers
-   * (MCP protocol, auth) take precedence per the Agent Plugins spec.
-   */
-  headers: Record<string, string>;
-  /** Where this server configuration came from. */
-  source: "user" | "plugin";
-  /** Vault path of the plugin package that declared this server, when plugin-sourced. */
-  pluginRoot?: string;
-  /**
    * Ordered allow-then-deny globs for remote tools (S5).
    * `enabledTools` is an allowlist: when non-empty only matching tools are exposed.
    * `disabledTools` is a denylist: any match is hidden even if allowed. Deny wins.
@@ -64,26 +53,28 @@ export interface McpServerSettings {
   pendingOAuthResourceUrl?: string;
 }
 
+export interface McpServerSettings extends McpServerOwnedFields {
+  /** Stable local id used in exposed tool names: mcp__<id>__<tool>. */
+  id: string;
+  /** User-facing server name. */
+  name: string;
+  /** Streamable HTTP endpoint, e.g. https://mcp.example.com/mcp. */
+  url: string;
+  /**
+   * Literal headers from a plugin's mcp.json. Client-generated headers
+   * (MCP protocol, auth) take precedence per the Agent Plugins spec.
+   */
+  headers: Record<string, string>;
+  /** Where this server configuration came from. */
+  source: "user" | "plugin";
+  /** Vault path of the plugin package that declared this server, when plugin-sourced. */
+  pluginRoot?: string;
+}
+
 /** Client-owned state for a plugin-derived MCP server (shape lives in mcp.json). */
-export interface McpServerState {
-  enabled: boolean;
-  approval: ApprovalPolicy;
-  authType: McpAuthType;
-  authHeaderName: string;
-  authHeaderValueSecretId: string;
-  /** Runtime-only in-memory secret cache, hydrated from Obsidian secretStorage through {@link authHeaderValueSecretId}. Never persisted. */
-  authHeaderValue: string;
-  oauth: McpOAuthSettings;
-  knownTools: McpKnownToolSettings[];
+export interface McpServerState extends McpServerOwnedFields {
   /** Last known URL for change detection — cleared auth if mcp.json moves host. */
   lastUrl?: string;
-  /** Ordered allow-then-deny globs for remote tools (S5) — client-owned, like approval/auth. */
-  enabledTools: string[];
-  /** Deny globs for remote tools — deny wins. */
-  disabledTools: string[];
-  /** Last OAuth challenge; kept in the state map so a redraw or reload can show the banner until authentication succeeds. */
-  pendingOAuthChallenge?: string;
-  pendingOAuthResourceUrl?: string;
 }
 
 export interface McpKnownToolSettings {
@@ -193,49 +184,151 @@ function isMcpServer(server: McpServerSettings | null): server is McpServerSetti
   return server !== null;
 }
 
+/** Defaults for the client-owned fields both shapes share. Fresh arrays per call. */
+function mcpServerOwnedDefaults(): Omit<McpServerOwnedFields, "oauth"> {
+  return {
+    enabled: false,
+    approval: "ask",
+    authType: "none",
+    authHeaderName: "",
+    authHeaderValueSecretId: "",
+    authHeaderValue: "",
+    knownTools: [],
+    enabledTools: [],
+    disabledTools: [],
+  };
+}
+
+/** `heal` normalizes persisted/raw input; `copy` mirrors a live record unchanged. */
+type McpServerBuildMode = "heal" | "copy";
+
+interface McpServerBuildOptions {
+  id: string;
+  mode: McpServerBuildMode;
+  /** Caller-built overrides keep plaintext; persisted data never does. */
+  includePlaintext: boolean;
+  /** `trim` for state, `raw` for persisted settings, omitted by the settings generator. */
+  pending: "trim" | "raw" | "omit";
+  legacyPreset?: LegacyMcpServerPreset;
+}
+
+interface McpServerBuildInput {
+  enabled: boolean;
+  approval: unknown;
+  authType: unknown;
+  authHeaderName: unknown;
+  authHeaderValueSecretId: unknown;
+  authHeaderValue: unknown;
+  oauth: Partial<McpOAuthSettings> | null | undefined;
+  knownTools: unknown;
+  enabledTools: unknown;
+  disabledTools: unknown;
+  pendingOAuthChallenge: unknown;
+  pendingOAuthResourceUrl: unknown;
+}
+
+/** One place for the 12 shared fields; the six builders below are wrappers. */
+function buildMcpServer(input: McpServerBuildInput, options: McpServerBuildOptions): McpServerOwnedFields {
+  const copy = options.mode === "copy";
+  const owned: McpServerOwnedFields = {
+    enabled: input.enabled,
+    approval: copy ? (input.approval as ApprovalPolicy) : healApproval(input.approval as ApprovalPolicy | undefined),
+    authType: copy
+      ? (input.authType as McpAuthType)
+      : healAuthType(input.authType as McpAuthType | undefined, options.legacyPreset, input.authHeaderName),
+    authHeaderName: copy ? String(input.authHeaderName ?? "") : stringValue(input.authHeaderName),
+    authHeaderValueSecretId:
+      (copy ? String(input.authHeaderValueSecretId ?? "") : stringValue(input.authHeaderValueSecretId)) ||
+      mcpSecretId(options.id, "auth-header-value"),
+    authHeaderValue: copy
+      ? String(input.authHeaderValue ?? "")
+      : options.includePlaintext
+        ? stringValue(input.authHeaderValue)
+        : "",
+    oauth: copy
+      ? { ...(input.oauth as McpOAuthSettings) }
+      : healOAuthSettings(input.oauth, options.id, options.includePlaintext),
+    knownTools: copy
+      ? [...((input.knownTools as McpKnownToolSettings[] | undefined) ?? [])]
+      : healMcpKnownTools(input.knownTools),
+    enabledTools: copy
+      ? [...((input.enabledTools as string[] | undefined) ?? [])]
+      : healMcpToolGlobs(input.enabledTools),
+    disabledTools: copy
+      ? [...((input.disabledTools as string[] | undefined) ?? [])]
+      : healMcpToolGlobs(input.disabledTools),
+  };
+  if (options.pending === "omit") return owned;
+  if (copy) {
+    // State-from-server keeps the keys present, even when undefined.
+    return {
+      ...owned,
+      pendingOAuthChallenge: input.pendingOAuthChallenge as string | undefined,
+      pendingOAuthResourceUrl: input.pendingOAuthResourceUrl as string | undefined,
+    };
+  }
+  const trim = options.pending === "trim";
+  const challenge = trim
+    ? stringValue(input.pendingOAuthChallenge)
+    : typeof input.pendingOAuthChallenge === "string" && input.pendingOAuthChallenge
+      ? input.pendingOAuthChallenge
+      : "";
+  const resourceUrl = trim
+    ? stringValue(input.pendingOAuthResourceUrl)
+    : typeof input.pendingOAuthResourceUrl === "string" && input.pendingOAuthResourceUrl
+      ? input.pendingOAuthResourceUrl
+      : "";
+  return {
+    ...owned,
+    ...(challenge ? { pendingOAuthChallenge: challenge } : {}),
+    ...(resourceUrl ? { pendingOAuthResourceUrl: resourceUrl } : {}),
+  };
+}
+
+function ownedInput(record: Record<string, unknown>, enabled: boolean): McpServerBuildInput {
+  return {
+    enabled,
+    approval: record.approval,
+    authType: record.authType,
+    authHeaderName: record.authHeaderName,
+    authHeaderValueSecretId: record.authHeaderValueSecretId,
+    authHeaderValue: record.authHeaderValue,
+    oauth: record.oauth as McpServerBuildInput["oauth"],
+    knownTools: record.knownTools,
+    enabledTools: record.enabledTools ?? record.enabled_tools,
+    disabledTools: record.disabledTools ?? record.disabled_tools,
+    pendingOAuthChallenge: record.pendingOAuthChallenge,
+    pendingOAuthResourceUrl: record.pendingOAuthResourceUrl,
+  };
+}
+
 function healMcpServer(server: Partial<McpServerSettings> | null | undefined): McpServerSettings | null {
   if (!server) return null;
   const url = normalizeLegacyMcpServerUrl(server);
   const legacyPreset = legacyMcpServerPreset((server as { preset?: unknown }).preset);
   const id = normalizeMcpServerId(server.id || server.name || serverIdFromMcpUrl(url) || "mcp");
   if (!url) return null;
+  const record = server as Record<string, unknown>;
   return {
     id,
     name: typeof server.name === "string" && server.name.trim() ? server.name.trim() : id,
     url,
-    enabled: server.enabled !== false,
-    authType: healAuthType(server.authType, legacyPreset, server.authHeaderName),
-    authHeaderName: typeof server.authHeaderName === "string" ? server.authHeaderName.trim() : "",
-    authHeaderValueSecretId: stringValue(server.authHeaderValueSecretId) || mcpSecretId(id, "auth-header-value"),
-    authHeaderValue: "",
-    oauth: healOAuthSettings(server.oauth, id, false),
-    approval: healApproval(server.approval),
-    knownTools: healMcpKnownTools(server.knownTools),
+    ...buildMcpServer(ownedInput(record, server.enabled !== false), {
+      id,
+      mode: "heal",
+      includePlaintext: false,
+      pending: "raw",
+      legacyPreset,
+    }),
     headers: healHeaderMap(server.headers),
     source: healServerSource(server.source),
     ...(typeof server.pluginRoot === "string" && server.pluginRoot.trim() ? { pluginRoot: server.pluginRoot.trim() } : {}),
-    enabledTools: healMcpToolGlobs((server as Record<string, unknown>).enabledTools ?? (server as Record<string, unknown>).enabled_tools),
-    disabledTools: healMcpToolGlobs((server as Record<string, unknown>).disabledTools ?? (server as Record<string, unknown>).disabled_tools),
-    ...(typeof (server as Record<string, unknown>).pendingOAuthChallenge === "string" && (server as Record<string, unknown>).pendingOAuthChallenge
-      ? { pendingOAuthChallenge: String((server as Record<string, unknown>).pendingOAuthChallenge) }
-      : {}),
-    ...(typeof (server as Record<string, unknown>).pendingOAuthResourceUrl === "string" && (server as Record<string, unknown>).pendingOAuthResourceUrl
-      ? { pendingOAuthResourceUrl: String((server as Record<string, unknown>).pendingOAuthResourceUrl) }
-      : {}),
   };
 }
 
 export const DEFAULT_MCP_SERVER_STATE: McpServerState = {
-  enabled: false,
-  approval: "ask",
-  authType: "none",
-  authHeaderName: "",
-  authHeaderValueSecretId: "",
-  authHeaderValue: "",
+  ...mcpServerOwnedDefaults(),
   oauth: { ...DEFAULT_MCP_OAUTH_SETTINGS },
-  knownTools: [],
-  enabledTools: [],
-  disabledTools: [],
 };
 
 export function healMcpServerState(
@@ -248,25 +341,13 @@ export function healMcpServerState(
       ? (stored as { [key: string]: unknown })
       : null;
   return {
-    enabled: stored?.enabled === true,
-    approval: healApproval(stored?.approval),
-    authType: healAuthType(stored?.authType, undefined, stored?.authHeaderName),
-    authHeaderName: typeof stored?.authHeaderName === "string" ? stored.authHeaderName.trim() : "",
-    authHeaderValueSecretId: stringValue(stored?.authHeaderValueSecretId) || mcpSecretId(healedId, "auth-header-value"),
-    authHeaderValue: "",
-    oauth: healOAuthSettings(stored?.oauth, healedId, false),
-    knownTools: healMcpKnownTools(stored?.knownTools),
-    ...(typeof record?.lastUrl === "string" && record.lastUrl.trim()
-      ? { lastUrl: record.lastUrl.trim() }
-      : {}),
-    enabledTools: healMcpToolGlobs(record?.enabledTools ?? record?.enabled_tools),
-    disabledTools: healMcpToolGlobs(record?.disabledTools ?? record?.disabled_tools),
-    ...(typeof record?.pendingOAuthChallenge === "string" && record.pendingOAuthChallenge.trim()
-      ? { pendingOAuthChallenge: record.pendingOAuthChallenge.trim() }
-      : {}),
-    ...(typeof record?.pendingOAuthResourceUrl === "string" && record.pendingOAuthResourceUrl.trim()
-      ? { pendingOAuthResourceUrl: record.pendingOAuthResourceUrl.trim() }
-      : {}),
+    ...buildMcpServer(ownedInput(record ?? {}, stored?.enabled === true), {
+      id: healedId,
+      mode: "heal",
+      includePlaintext: false,
+      pending: "trim",
+    }),
+    ...(typeof record?.lastUrl === "string" && record.lastUrl.trim() ? { lastUrl: record.lastUrl.trim() } : {}),
   };
 }
 
@@ -274,58 +355,38 @@ export function createMcpServerState(id: string, overrides: Partial<McpServerSta
   const healedId = normalizeMcpServerId(id);
   const raw = overrides as Record<string, unknown>;
   return {
-    enabled: typeof overrides.enabled === "boolean" ? overrides.enabled : false,
-    approval: healApproval(overrides.approval),
-    authType: healAuthType(overrides.authType, undefined, overrides.authHeaderName),
-    authHeaderName: stringValue(overrides.authHeaderName),
-    authHeaderValueSecretId: stringValue(overrides.authHeaderValueSecretId) || mcpSecretId(healedId, "auth-header-value"),
-    authHeaderValue: stringValue(overrides.authHeaderValue),
-    oauth: healOAuthSettings(overrides.oauth, healedId, true),
-    knownTools: healMcpKnownTools(overrides.knownTools),
+    ...buildMcpServer(ownedInput(raw, typeof overrides.enabled === "boolean" ? overrides.enabled : false), {
+      id: healedId,
+      mode: "heal",
+      includePlaintext: true,
+      pending: "trim",
+    }),
     ...(typeof overrides.lastUrl === "string" && overrides.lastUrl.trim() ? { lastUrl: overrides.lastUrl.trim() } : {}),
-    ...(typeof overrides.pendingOAuthChallenge === "string" && overrides.pendingOAuthChallenge.trim()
-      ? { pendingOAuthChallenge: overrides.pendingOAuthChallenge.trim() }
-      : {}),
-    ...(typeof overrides.pendingOAuthResourceUrl === "string" && overrides.pendingOAuthResourceUrl.trim()
-      ? { pendingOAuthResourceUrl: overrides.pendingOAuthResourceUrl.trim() }
-      : {}),
-    enabledTools: healMcpToolGlobs(raw.enabledTools ?? raw.enabled_tools),
-    disabledTools: healMcpToolGlobs(raw.disabledTools ?? raw.disabled_tools),
   };
 }
 
 export function mcpServerStateFromServer(server: McpServerSettings): McpServerState {
   return {
-    enabled: server.enabled,
-    approval: server.approval,
-    authType: server.authType,
-    authHeaderName: server.authHeaderName,
-    authHeaderValueSecretId: server.authHeaderValueSecretId || mcpSecretId(server.id, "auth-header-value"),
-    authHeaderValue: server.authHeaderValue,
-    oauth: { ...server.oauth },
-    knownTools: [...server.knownTools],
+    ...buildMcpServer(ownedInput(server as unknown as Record<string, unknown>, server.enabled), {
+      id: server.id,
+      mode: "copy",
+      includePlaintext: true,
+      pending: "raw",
+    }),
     lastUrl: server.url,
-    enabledTools: [...(server.enabledTools ?? [])],
-    disabledTools: [...(server.disabledTools ?? [])],
-    pendingOAuthChallenge: server.pendingOAuthChallenge,
-    pendingOAuthResourceUrl: server.pendingOAuthResourceUrl,
   };
 }
 
 export function applyMcpServerState(server: McpServerSettings, state: McpServerState): void {
-  server.enabled = state.enabled;
-  server.approval = state.approval;
-  server.authType = state.authType;
-  server.authHeaderName = state.authHeaderName;
-  server.authHeaderValueSecretId = state.authHeaderValueSecretId || mcpSecretId(server.id, "auth-header-value");
-  server.authHeaderValue = state.authHeaderValue;
-  server.oauth = { ...state.oauth };
-  server.knownTools = [...state.knownTools];
-  server.enabledTools = [...(state.enabledTools ?? [])];
-  server.disabledTools = [...(state.disabledTools ?? [])];
-  server.pendingOAuthChallenge = state.pendingOAuthChallenge;
-  server.pendingOAuthResourceUrl = state.pendingOAuthResourceUrl;
-  server.authHeaderValueSecretId ||= mcpSecretId(server.id, "auth-header-value");
+  Object.assign(
+    server,
+    buildMcpServer(ownedInput(state as unknown as Record<string, unknown>, state.enabled), {
+      id: server.id,
+      mode: "copy",
+      includePlaintext: true,
+      pending: "raw",
+    }),
+  );
   ensureMcpOAuthSecretRefs(server.id, server.oauth);
   // lastUrl is tracked in state, not in server shape
 }
@@ -354,21 +415,15 @@ export function createMcpServerSettings(
     id,
     name: stringValue(overrides.name) || "MCP server",
     url,
-    enabled: typeof overrides.enabled === "boolean" ? overrides.enabled : Boolean(url && url !== "https://"),
-    authType: healAuthType(overrides.authType, undefined, overrides.authHeaderName),
-    authHeaderName: stringValue(overrides.authHeaderName),
-    authHeaderValueSecretId: stringValue(overrides.authHeaderValueSecretId) || mcpSecretId(id, "auth-header-value"),
-    authHeaderValue: stringValue(overrides.authHeaderValue),
-    oauth: healOAuthSettings(overrides.oauth, id, true),
-    approval: healApproval(overrides.approval),
-    knownTools: healMcpKnownTools(overrides.knownTools),
+    ...buildMcpServer(
+      ownedInput(raw, typeof overrides.enabled === "boolean" ? overrides.enabled : Boolean(url && url !== "https://")),
+      { id, mode: "heal", includePlaintext: true, pending: "omit" },
+    ),
     headers: healHeaderMap(overrides.headers),
     source: overrides.source ?? "user",
     ...(typeof overrides.pluginRoot === "string" && overrides.pluginRoot.trim()
       ? { pluginRoot: overrides.pluginRoot.trim() }
       : {}),
-    enabledTools: healMcpToolGlobs(raw.enabledTools ?? raw.enabled_tools),
-    disabledTools: healMcpToolGlobs(raw.disabledTools ?? raw.disabled_tools),
   };
 }
 
