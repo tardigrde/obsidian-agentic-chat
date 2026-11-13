@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { PluginService } from "../src/plugins/service";
 import { USER_SKILLS_PACKAGE } from "../src/plugins/manifest";
 import { loadPlugins, type LoadedPlugin } from "../src/plugins/loader";

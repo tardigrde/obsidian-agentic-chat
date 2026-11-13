@@ -17,14 +17,14 @@ import process from "node:process";
  * Usage:
  *   npm run verify:witness -- \
  *     --base origin/main \
- *     --test-file test/session-activation.test.ts \
- *     --src src/agent/session-activation.ts
+ *     --test-file test/agent-conversation.test.ts \
+ *     --src src/agent/conversation.ts
  *
  * Or with an arbitrary command:
  *   npm run verify:witness -- \
  *     --base origin/main \
- *     --test "npm run verify -- change test/session-activation.test.ts" \
- *     --src src/agent/session-activation.ts
+ *     --test "npm run verify -- change test/agent-conversation.test.ts" \
+ *     --src src/agent/conversation.ts
  *
  * Self-test:
  *   npm run verify:witness -- --self-test

@@ -8,7 +8,7 @@ import {
   type ReplayTurn,
 } from "../../src/agent/replay-stream";
 import { ObsidianSessionManager } from "../../src/session/session-manager";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../../src/settings-schema";
 import { MemoryAdapter } from "./memory-adapter";
 
 export interface AgentReplayOptions {

@@ -11,13 +11,8 @@ import {
   type TAbstractFile,
 } from "obsidian";
 import { VIEW_TYPE_AGENT_CHAT } from "./constants";
-import {
-  AgenticChatSettingTab,
-  type AgenticChatSettings,
-  DEFAULT_SETTINGS,
-  mergeSettings,
-} from "./settings";
-import { retiredSettingsNotices } from "./settings-schema";
+import { AgenticChatSettingTab } from "./settings";
+import { type AgenticChatSettings, DEFAULT_SETTINGS, mergeSettings, retiredSettingsNotices } from "./settings-schema";
 import { AgentService, type ToolApprovalRequest } from "./agent/agent-service";
 import type { UserApprovalChoice } from "./agent/tool-call-controller";
 import type { AskUserHandler } from "./tools/ask-user-tool";

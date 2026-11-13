@@ -5,8 +5,7 @@ import {
   type AgentSessionActionsRuntime,
   type AgentSessionActivationRuntime,
 } from "../src/agent/session-actions";
-import type { ActivateSessionOptions } from "../src/agent/session-activation";
-import type { ActiveSessionSnapshot } from "../src/agent/active-session-runtime";
+import type { ActivateSessionOptions, ActiveSessionSnapshot } from "../src/agent/conversation";
 import type { SessionInfo } from "../src/session/session-manager";
 
 function userMessage(text: string): AgentMessage {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
-import { DEFAULT_SETTINGS } from "../src/settings";
+import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { buildAgentParentTools, EMPTY_AGENT_RUNTIME_RESOURCES } from "../src/agent/runtime-resources";
 import { createCreateSkillTool, type SkillScaffolder } from "../src/tools/skill-tools";
 import { ReadMemo } from "../src/vault/read-memo";

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { App, SettingControl } from "obsidian";
-import { AgenticChatSettingTab, normalizeControlValue } from "../src/settings";
+import { AgenticChatSettingTab } from "../src/settings";
+import { normalizeControlValue } from "../src/settings-controls";
 import { PROVIDERS, DEFAULT_SETTINGS } from "../src/settings-schema";
 
 type Settings = typeof DEFAULT_SETTINGS;

@@ -45,7 +45,6 @@ import {
   warning,
 } from "./settings-definition-kit";
 import { McpSettingsSection } from "./settings-mcp-section";
-export { normalizeControlValue } from "./settings-controls";
 import {
   type ObservabilityBackend,
   type ObservabilityPayloadMode,
@@ -64,24 +63,6 @@ import {
 } from "./settings-schema";
 import { SETTINGS_TABS, type SettingsSectionId, type SettingsTabId } from "./settings-tabs";
 import { MAX_TURN_CAP, MIN_TURN_CAP } from "./agent/turn-cap";
-export {
-  DEFAULT_SETTINGS,
-  PROVIDERS,
-  PROVIDER_LABELS,
-  THINKING_LEVELS,
-  activeModelConfig,
-  activeModelId,
-  apiKeyForProvider,
-  embeddingModelPlaceholder,
-  mergeSettings,
-} from "./settings-schema";
-export type {
-  AgenticChatSettings,
-  CompactionSettings,
-  NetworkSettings,
-  NotificationSettings,
-  WebSettings,
-} from "./settings-schema";
 const OBSERVABILITY_BACKEND_LABELS: Record<ObservabilityBackend, string> = {
   langfuse: "Langfuse",
   otlp: "Generic OTLP",
@@ -228,12 +209,20 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
+    return this.buildDefinitions(this.plugin.settings);
+  }
+
+  /**
+   * Every page built against `settings`. Builders read only this argument, so
+   * indexing a hypothetical configuration never touches the live settings.
+   */
+  private buildDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     const pages = this.tabs.map((tab) => {
       const page: SettingDefinitionPage & { id: string } = {
         type: "page",
         id: tab.id,
         name: tab.label,
-        items: tab.sections.map((section) => this.sectionDefinition(tab.id, section)),
+        items: tab.sections.map((section) => this.sectionDefinition(tab.id, section, settings)),
       };
       return page;
     });
@@ -287,23 +276,18 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   /**
    * Index rows the live settings hide (web or observability off, another
    * provider's fields) by building the definitions once per provider against a
-   * clone with every section on. Synchronous, so the swap cannot interleave.
+   * clone with every section on. The clone is only read for control schemas;
+   * its rows are never rendered.
    */
   private indexHiddenControls(): void {
     this.hiddenControlsIndexed = true;
-    const live = this.plugin.settings;
-    try {
-      for (const provider of PROVIDERS) {
-        const shadow = structuredClone(live);
-        shadow.provider = provider;
-        shadow.web.enabled = true;
-        shadow.web.searchProvider = "searxng";
-        shadow.observability.enabled = true;
-        this.plugin.settings = shadow;
-        this.getSettingDefinitions();
-      }
-    } finally {
-      this.plugin.settings = live;
+    for (const provider of PROVIDERS) {
+      const shadow = structuredClone(this.plugin.settings);
+      shadow.provider = provider;
+      shadow.web.enabled = true;
+      shadow.web.searchProvider = "searxng";
+      shadow.observability.enabled = true;
+      this.buildDefinitions(shadow);
     }
   }
 
@@ -318,41 +302,45 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     target[parts[parts.length - 1]] = value;
   }
 
-  private sectionDefinition(tabId: SettingsTabId, section: SettingsSectionId): SettingDefinitionGroup {
+  private sectionDefinition(
+    tabId: SettingsTabId,
+    section: SettingsSectionId,
+    settings: AgenticChatSettings,
+  ): SettingDefinitionGroup {
     const items: SettingDefinitionItem[] = [this.sectionMarker(tabId, section)];
     switch (section) {
       case "models":
-        items.push(...this.modelsDefinitions());
+        items.push(...this.modelsDefinitions(settings));
         break;
       case "agent":
-        items.push(...this.agentDefinitions());
+        items.push(...this.agentDefinitions(settings));
         break;
       case "approval":
-        items.push(...this.approvalDefinitions());
+        items.push(...this.approvalDefinitions(settings));
         break;
       case "web":
-        items.push(...this.webDefinitions());
+        items.push(...this.webDefinitions(settings));
         break;
       case "mcp":
-        items.push(...this.mcpSection.definitions());
+        items.push(...this.mcpSection.definitions(settings));
         break;
       case "observability":
-        items.push(...this.observabilityDefinitions());
+        items.push(...this.observabilityDefinitions(settings));
         break;
       case "notifications":
         items.push(...this.notificationDefinitions());
         break;
       case "plugins":
-        items.push(...this.pluginDefinitions());
+        items.push(...this.pluginDefinitions(settings));
         break;
       case "subagents":
-        items.push(...this.subagentDefinitions());
+        items.push(...this.subagentDefinitions(settings));
         break;
       case "retrieval":
-        items.push(...this.retrievalDefinitions());
+        items.push(...this.retrievalDefinitions(settings));
         break;
       case "ignored-files":
-        items.push(...this.ignoredFileDefinitions());
+        items.push(...this.ignoredFileDefinitions(settings));
         break;
     }
     return {
@@ -505,8 +493,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     return mutated;
   }
 
-  private modelsDefinitions(): SettingDefinitionItem[] {
-    const settings = this.plugin.settings;
+  private modelsDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     const items: SettingDefinitionItem[] = [
       controlDef(
         "Model provider",
@@ -709,8 +696,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     ];
   }
 
-  private agentDefinitions(): SettingDefinitionItem[] {
-    const settings = this.plugin.settings;
+  private agentDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     return [
       row("Permission mode", (setting) => {
         setting
@@ -725,7 +711,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
               const target = value as AgentMode;
               await this.plugin.requestModeChange(target);
               // Re-sync the dropdown to the actual persisted value (blocked transitions leave it unchanged; Notice is shown by requestModeChange).
-              dropdown.setValue(this.plugin.settings.mode);
+              dropdown.setValue(settings.mode);
             });
           });
       }),
@@ -803,8 +789,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     ];
   }
 
-  private approvalDefinitions(): SettingDefinitionItem[] {
-    const settings = this.plugin.settings;
+  private approvalDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     const items: SettingDefinitionItem[] = [
       controlDef(
         "Before mutating tools",
@@ -848,8 +833,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     return items;
   }
 
-  private webDefinitions(): SettingDefinitionItem[] {
-    const settings = this.plugin.settings;
+  private webDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     const items: SettingDefinitionItem[] = [
       warning(
         "⚠",
@@ -950,8 +934,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     return items;
   }
 
-  private observabilityDefinitions(): SettingDefinitionItem[] {
-    const settings = this.plugin.settings;
+  private observabilityDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     const items: SettingDefinitionItem[] = [
       warning(
         "i",
@@ -1108,8 +1091,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     ];
   }
 
-  private pluginDefinitions(): SettingDefinitionItem[] {
-    const settings = this.plugin.settings;
+  private pluginDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     const items: SettingDefinitionItem[] = [
       block((setting) => {
         setting.settingEl.createDiv({ cls: "setting-item-description" }).createSpan({
@@ -1182,8 +1164,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     this.redraw();
   }
 
-  private subagentDefinitions(): SettingDefinitionItem[] {
-    const settings = this.plugin.settings;
+  private subagentDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     return [
       row("Subagent timeout", (setting) => {
         setting
@@ -1205,8 +1186,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     ];
   }
 
-  private retrievalDefinitions(): SettingDefinitionItem[] {
-    const settings = this.plugin.settings;
+  private retrievalDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     return [
       controlDef(
         "Embeddings",
@@ -1299,8 +1279,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     ];
   }
 
-  private ignoredFileDefinitions(): SettingDefinitionItem[] {
-    const settings = this.plugin.settings;
+  private ignoredFileDefinitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     return [
       row("Ignore list", (setting) => {
         setting

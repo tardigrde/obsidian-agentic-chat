@@ -3,7 +3,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../src/skills/skill-prompt";
 import type { App, DataAdapter } from "obsidian";
 import { ReadMemo } from "../src/vault/read-memo";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import {
   buildAgentParentTools,
   composeAgentSystemPrompt,

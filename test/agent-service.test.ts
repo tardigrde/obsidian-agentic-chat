@@ -9,7 +9,7 @@ import { STOPPED_APPROVAL_REASON, type UserApprovalChoice } from "../src/agent/t
 import type { AskUserHandler, AskUserRequest } from "../src/tools/ask-user-tool";
 import { isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager } from "../src/session/session-manager";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
 import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
@@ -795,6 +795,20 @@ describe("AgentService", () => {
     expect(error).toMatch(/deep-research/); // "deep" is hinted as the deep-research skill
   });
 
+  it("runs a resolved command plan as a prompt and surfaces an unresolved one as an error", async () => {
+    const { service } = makeService(cannedStreamFn("noted"));
+    await service.initialize();
+
+    await service.invokeSkill("missing");
+    expect(service.getError()).toBe('No skill named "missing".');
+    expect(service.getMessages()).toEqual([]);
+
+    await service.invokeInstruction("Prefer concise updates.");
+    expect(service.getError()).toBeUndefined();
+    const prompt = service.getMessages().find((message) => message.role === "user");
+    expect(JSON.stringify(prompt)).toContain("Prefer concise updates.");
+  });
+
   it("auto-compacts old turns once the context window fills, preserving usage", async () => {
     // The synthesized model has a 128k window. Large prompt bodies push the real
     // transcript estimate over the 80% threshold, while provider usage remains
@@ -937,17 +951,17 @@ describe("AgentService", () => {
     expect(streamCalls).toBe(2);
 
     // Simulate the agent replacement failing after the JSONL rewrite succeeds.
-    const parentAgent = (service as unknown as {
-      parentAgent: { replace: (messages: AgentMessage[]) => unknown };
-    }).parentAgent;
-    const replace = parentAgent.replace.bind(parentAgent);
+    const conversation = (service as unknown as {
+      conversation: { installTranscript: (messages: AgentMessage[]) => unknown };
+    }).conversation;
+    const install = conversation.installTranscript.bind(conversation);
     let failedOnce = false;
-    parentAgent.replace = (messages) => {
+    conversation.installTranscript = (messages) => {
       if (!failedOnce) {
         failedOnce = true;
         throw new Error("simulated replace failure");
       }
-      return replace(messages);
+      return install(messages);
     };
 
     await service.sendPrompt("third");
@@ -1211,10 +1225,10 @@ describe("AgentService", () => {
     await service.sendPrompt(`second ${"word ".repeat(50_000)}`);
     expect(streamCalls).toBe(2);
 
-    const parentAgent = (service as unknown as {
-      parentAgent: { replace: (messages: AgentMessage[]) => unknown };
-    }).parentAgent;
-    parentAgent.replace = () => {
+    const conversation = (service as unknown as {
+      conversation: { installTranscript: (messages: AgentMessage[]) => unknown };
+    }).conversation;
+    conversation.installTranscript = () => {
       throw new Error("simulated replace failure");
     };
     const originalLoad = sessionManager.loadSession.bind(sessionManager);
