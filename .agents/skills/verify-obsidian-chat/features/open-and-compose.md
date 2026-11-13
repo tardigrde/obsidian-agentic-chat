@@ -67,7 +67,7 @@ await $(".agentic-chat-send").click();
 | Autocomplete keys | `src/ui/autocomplete-menu.ts#handleKey` | no committed check | `NONE` |
 | `@` mention autocomplete | `src/ui/autocomplete.ts#detectQuery` | `test/autocomplete.test.ts#detects a mention after whitespace mid-message` (detection only) | `partial` |
 | Drag-and-drop attach | `src/ui/chat-view.ts#handleDrop` | `test/drag-drop.test.ts#parseDroppedVaultPath` (parser only) | `partial` |
-| Active note auto-chip | `src/ui/chat-view.ts#syncActiveNote` | `test/e2e/specs/smoke.e2e.ts#auto-attaches the active note as a context chip` | `covered` |
+| Active note auto-chip | `src/ui/chat-view.ts#private effectiveActiveNote()` | `test/e2e/specs/smoke.e2e.ts#auto-attaches the active note as a context chip` | `covered` |
 | Ignored active note stays out | `src/ui/active-note.ts#autoActiveNotePath` | `test/e2e/specs/runtime-behavior.e2e.ts#does not auto-attach an ignored active note` | `covered` |
 | Remove an attachment chip | `src/ui/chat-view.ts#renderChips` | `test/context-chip-renderer.test.ts#wires remove callbacks to the matching chip` (unit only) | `partial` |
 | Image attachment guard | `src/ui/chat-view.ts#addAttachment` | `test/image-attachments.test.ts#collectUserImageThumbs,` (encoding only) | `partial` |

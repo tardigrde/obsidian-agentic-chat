@@ -47,7 +47,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | `/agent <name> <task>` | `src/ui/slash/agents.ts#showSkillList` | `test/command-dispatcher.test.ts#resolves a named subagent with the trimmed task` (unit only) | `partial` |
 | Model calls the `subagent` tool | `src/tools/subagent-tool.ts#toPersistedChild` | `test/subagents.test.ts#aborts in-flight children when the dispatch signal aborts` (unit only) | `partial` |
 | Built-in Explorer role | `src/agent/subagents.ts#BUILTIN_AGENT_ROLES` | `test/subagent-runtime.test.ts#makeRuntime` (unit only) | `partial` |
-| Parallel cap of ten and queueing | `src/tools/subagent-tool.ts#SUBAGENT_TOOL_NAME` | `test/subagents.test.ts#caps concurrent dispatches at 10 and queues the rest, promoting on stop` (unit only) | `partial` |
+| Parallel cap of ten and queueing | `src/tools/subagent-tool.ts#MAX_CONCURRENCY` | `test/subagents.test.ts#caps concurrent dispatches at 10 and queues the rest, promoting on stop` (unit only) | `partial` |
 | Live child status tree | `src/ui/assistant-bubble.ts#updateStep` | `test/e2e/specs/design-audit.e2e.ts#captures the full design journey screenshots` (disabled unless `AGENTIC_CHAT_DESIGN_AUDIT=1`) | `partial` |
 | Per-child Stop button | `src/ui/subagent-tree.ts#renderSubagentHeader` | `test/subagents.test.ts#lets a caller abort one dispatch without stopping its siblings` (abort path only, no button click) | `partial` |
 | Replay a done dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/e2e/specs/subagent-replay.e2e.ts#rehydrates a done dispatch from tool_execution_end alone (no updateStep), collapsed with summary` | `covered` |

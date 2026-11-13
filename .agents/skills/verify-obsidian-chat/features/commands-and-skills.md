@@ -82,9 +82,9 @@ await $(".agentic-chat-info").waitForExist();
 | Plugin skills load with built-ins | `src/agent/runtime-resources.ts#loadAgentRuntimeResources` | `test/runtime-resources.test.ts#composes the system prompt from a loaded resource snapshot` (unit only) | `partial` |
 | `read_skill` | `src/tools/read-skill-tool.ts#createReadSkillTool` | `test/read-skill-tool.test.ts#createReadSkillTool` (unit only) | `partial` |
 | `read_skill_file` | `src/tools/read-skill-tool.ts#createReadSkillFileTool` | no committed check | `NONE` |
-| `load_skill` | `src/tools/skill-tools.ts#requireSkill` | no committed check | `NONE` |
-| `unload_skill` | `src/tools/skill-tools.ts#createLoadSkillTool` | no committed check | `NONE` |
-| `create_skill` | `src/tools/skill-tools.ts#SkillScaffolder` | `test/skill-create-tool.test.ts#create_skill tool` (unit only) | `partial` |
+| `load_skill` | `src/tools/skill-tools.ts#createLoadSkillTool` | no committed check | `NONE` |
+| `unload_skill` | `src/tools/skill-tools.ts#createUnloadSkillTool` | no committed check | `NONE` |
+| `create_skill` | `src/tools/skill-tools.ts#createCreateSkillTool` | `test/skill-create-tool.test.ts#create_skill tool` (unit only) | `partial` |
 | New skill modal | `src/ui/new-skill-modal.ts#onOpen` | no committed check | `NONE` |
 | Repair built-ins | `src/settings-tab-plugins.ts#pluginDefinitions` | no committed check | `NONE` |
 | Unregistered compat tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/vault-tools.ts#createVaultTools` | no production caller passes `surface: "compat"`; the default surface filters these out at `src/tools/tool-contracts.ts#DEFAULT_BUILTIN_TOOL_CONTRACTS` | `unreachable` |

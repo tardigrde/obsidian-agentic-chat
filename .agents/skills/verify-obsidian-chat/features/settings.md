@@ -47,7 +47,7 @@ await closeAgenticChatSettings();
 |---|---|---|---|
 | Settings tab opens | `src/main.ts#onload` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` (opened by the helper via `app.setting`, not the nav) | `partial` |
 | Three tabs render and switch | `src/settings.ts#SETTINGS_TABS` | `test/e2e/specs/settings-ui.e2e.ts#shows exactly three tabs and groups the advanced sections` | `covered` |
-| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts#writeControlValue` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` | `covered` |
+| Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts#sectionDefinition` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` | `covered` |
 | A moved Advanced setting saves and survives close/reopen | `src/settings-tab-agent.ts#notificationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#keeps a moved Advanced setting after close and reopen` | `covered` |
 | Models: provider, API key, base URL, model | `src/settings-tab-models.ts#modelsDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
 | Secrets stay out of `data.json` | `src/settings-definition-kit.ts#secretInputDef` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
@@ -67,7 +67,7 @@ await closeAgenticChatSettings();
 | Agent plugins: Install plugin | `src/settings-tab-plugins.ts#pluginDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
 | Agent plugins: Import | `src/settings-tab-plugins.ts#row("Import"` | `test/e2e/specs/settings-ui.e2e.ts#installs a plugin package from an archive URL through the Install plugin modal` | `covered` |
 
-| Recover an interrupted plugin install | `src/plugins/service.ts#materializeLegacySkills` | `test/plugins-service.test.ts#restores a backup when the target is missing before sweeping` | `partial` |
+| Recover an interrupted plugin install | `src/plugins/service.ts#sweepImportStages` | `test/plugins-service.test.ts#restores a backup when the target is missing before sweeping` | `partial` |
 | Agent plugins: Repair built-ins | `src/settings-tab-plugins.ts#pluginDefinitions` | no committed check | `NONE` |
 | Agent plugins: Plugins folder | `src/settings-tab-plugins.ts#row("Plugins folder"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
 | Agent plugins: plugin row toggle/open/remove | `src/settings-tab-plugins.ts#pluginRowDefinition` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` (row renders only) | `partial` |
