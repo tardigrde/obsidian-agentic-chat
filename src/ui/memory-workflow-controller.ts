@@ -22,6 +22,7 @@ import {
 } from "../memory/memory";
 import { containsSensitiveText } from "../privacy/redaction";
 import type { WorkflowRenderer } from "./workflow-renderer";
+import { fnv1a32 } from "../utils/hash";
 
 export interface MemoryWorkflowControllerOptions {
   adapter: DataAdapter;
@@ -284,10 +285,5 @@ function sentence(value: string): string {
 }
 
 function hashString(value: string): string {
-  let hash = 2166136261;
-  for (const char of value) {
-    hash ^= char.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
+  return fnv1a32(value, { codePoints: true }).toString(36);
 }

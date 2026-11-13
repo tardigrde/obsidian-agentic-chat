@@ -1,3 +1,4 @@
+import { fnv1a32 } from "../utils/hash";
 /** A literal text slice the user attached from the editor context menu. */
 export interface TextContextAttachment {
   type: "text";
@@ -56,10 +57,5 @@ export function textContextSection(entry: TextContextAttachment, restricted: boo
 }
 
 function hashText(text: string): string {
-  let hash = 2166136261;
-  for (const char of text) {
-    hash ^= char.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
+  return fnv1a32(text, { codePoints: true }).toString(36);
 }

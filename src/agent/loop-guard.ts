@@ -1,5 +1,6 @@
 import type { AgentTurnContext, AgentTurnDecision } from "@earendil-works/pi-agent-core";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import { fnv1a32 } from "../utils/hash";
 
 /** Default streak of consecutive identical tool batches that triggers the guard. */
 export const LOOP_GUARD_DEFAULT_MAX_IDENTICAL_BATCHES = 4;
@@ -22,12 +23,7 @@ export function buildLoopGuardNotice(toolNames: readonly string[], count: number
 
 /** Deterministic FNV-1a 32-bit hex hash (matches undo/observability style). */
 export function fnv1a(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `h${hash.toString(16)}`;
+  return `h${fnv1a32(value).toString(16)}`;
 }
 
 /**

@@ -1,5 +1,6 @@
 import { requestUrl, type App, type DataAdapter, type Plugin } from "obsidian";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { withTimeout } from "../utils/async";
 
 export interface CompactModelInfo {
   id: string;
@@ -266,11 +267,3 @@ async function writeCache(cache: PricingCache): Promise<void> {
   }
 }
 
-function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      window.setTimeout(() => reject(new Error("Timeout")), timeoutMs);
-    }),
-  ]);
-}

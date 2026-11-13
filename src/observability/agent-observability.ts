@@ -7,6 +7,7 @@ import { redactText } from "../privacy/redaction";
 import { errorMessage } from "../utils/errors";
 import { exportOtlpSpans, observabilityTraceEndpoint, OtlpExportError, type OtlpAttributeValue, type OtlpSpan } from "./otlp";
 import type { ObservabilityPayloadMode, ObservabilitySettings } from "./settings";
+import { fnv1a32 } from "../utils/hash";
 
 export interface AgentObservabilityRuntimeOptions {
   getSettings: () => AgenticChatSettings;
@@ -443,10 +444,5 @@ function unixNano(ms: number): string {
 }
 
 function fnv1a(value: string): string {
-  let hash = 0x811c9dc5;
-  for (const char of value) {
-    hash ^= char.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return fnv1a32(value, { codePoints: true }).toString(16).padStart(8, "0");
 }

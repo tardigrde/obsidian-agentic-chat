@@ -126,6 +126,14 @@ describe("embedding index format", () => {
     await expect(embeddingDocumentFingerprint({ ...MULTILINGUAL_RETRIEVAL_FIXTURE[0] })).resolves.toBe(fingerprint);
   });
 
+  it.each(["http://[::1]:8080/v1", "http://127.0.0.2:8080/v1", "http://localhost:8080/v1"])(
+    "treats an OpenAI-compatible loopback endpoint as local: %s",
+    (baseUrl) => {
+      const profile = embeddingProfileFromConfig({ provider: "openai-compatible", model: "embed", baseUrl });
+      expect(profile).toMatchObject({ execution: "local-cpu", requiresNetwork: false });
+    },
+  );
+
   it("creates, upserts, and removes validated index records", async () => {
     const model = embeddingProfileFromConfig({
       provider: "openai-compatible",

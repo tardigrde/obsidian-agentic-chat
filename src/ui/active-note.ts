@@ -1,3 +1,4 @@
+import { fnv1a32 } from "../utils/hash";
 /**
  * Pure helpers for the "active note attached by default" composer behavior. The
  * active leaf is auto-attached as a removable context chip; this module decides
@@ -134,10 +135,5 @@ function renderedActiveNoteBody(content: ActiveNoteContent): string | null {
 }
 
 function hashActiveNoteBody(text: string): string {
-  let hash = 0x811c9dc5;
-  for (const char of text) {
-    hash ^= char.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `${text.length}:${(hash >>> 0).toString(16)}`;
+  return `${text.length}:${fnv1a32(text, { codePoints: true }).toString(16)}`;
 }
