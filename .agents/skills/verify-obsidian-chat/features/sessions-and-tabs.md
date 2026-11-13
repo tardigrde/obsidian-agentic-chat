@@ -62,8 +62,8 @@ await $(".agentic-chat-session-list").waitForExist();
 | A queued prompt is dropped on session change | `src/ui/session-activation-coordinator.ts:82`; `src/ui/chat-view.ts:1507` | `test/chat-view-lifecycle.test.ts:6`; `test/chat-view-lifecycle.test.ts:100` | `partial` |
 | A queued prompt flushes once the swap is live | `src/ui/chat-view.ts:1197` | `test/chat-view-lifecycle.test.ts:56` | `partial` |
 | Compaction rewrite rejects a changed session | `src/agent/compaction-runtime.ts:250` | `test/compaction-runtime.test.ts:354`; `test/session-invariants.test.ts:129` | `partial` |
-| A crash during rewrite keeps the old transcript or the new one | `src/session/session-manager.ts:461` | `test/session-rewrite-atomic.test.ts:82` (unit only) | `partial` |
-| A slow append stays in its original session file | `src/session/session-manager.ts:559` | `test/session-invariants.test.ts:91` | `partial` |
+| A crash during rewrite keeps the old transcript or the new one | `src/session/session-manager.ts:448` | `test/session-rewrite-atomic.test.ts:82` (unit only) | `partial` |
+| A slow append stays in its original session file | `src/session/session-manager.ts:572` | `test/session-invariants.test.ts:91` | `partial` |
 | Do not open one session in two tabs | `src/ui/chat-view.ts:1992` | no committed check | `NONE` |
 | History modal at phone width | `src/ui/session-list-modal.ts:43` | `test/e2e/specs/mobile-viewport.e2e.ts:412` | `covered` |
 
