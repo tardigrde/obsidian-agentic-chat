@@ -95,7 +95,7 @@ export class TranscriptView {
   }
 
   dispose(): void {
-    this.bubble?.dispose();
+    this.destroyMountedBubbles();
     this.bubble = null;
     if (this.userScrollIntentTimer !== null) window.clearTimeout(this.userScrollIntentTimer);
     this.userScrollIntentTimer = null;
@@ -107,7 +107,16 @@ export class TranscriptView {
     this.scrollToBottom();
   }
 
+  /** Every bubble whose DOM is in `messagesEl`; destroyed when that DOM is cleared. */
+  private readonly mountedBubbles = new Set<AssistantBubble>();
+
+  private destroyMountedBubbles(): void {
+    for (const bubble of this.mountedBubbles) bubble.destroy();
+    this.mountedBubbles.clear();
+  }
+
   renderTranscript(messages: AgentMessage[]): void {
+    this.destroyMountedBubbles();
     this.messagesEl.empty();
     this.bubble = null;
     this.lastBubbleError = undefined;
@@ -288,6 +297,12 @@ export class TranscriptView {
   }
 
   private newBubble(): AssistantBubble {
+    const bubble = this.createBubble();
+    this.mountedBubbles.add(bubble);
+    return bubble;
+  }
+
+  private createBubble(): AssistantBubble {
     return new AssistantBubble(this.messagesEl, {
       onRetry: () => this.host.retryLast(),
       onOpenExternalLink: (target) => void this.openRenderedExternalLink(target),

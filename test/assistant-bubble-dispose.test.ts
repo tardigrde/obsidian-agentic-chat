@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { AssistantBubble } from "../src/ui/assistant-bubble";
+import type { App, Component } from "obsidian";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { TranscriptView } from "../src/ui/transcript-view";
 import { fakeElement } from "./helpers/fake-dom";
 
 class CountingResizeObserver {
@@ -23,28 +26,50 @@ class CountingResizeObserver {
 afterEach(() => {
   CountingResizeObserver.live.clear();
   delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+  delete (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
+  delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
 });
 
-describe("AssistantBubble dispose", () => {
-  it("disconnects the timeline observer so a re-render leaves no live observer", () => {
-    Object.defineProperty(globalThis, "ResizeObserver", {
-      configurable: true,
-      value: CountingResizeObserver,
-    });
+function useCountingObserver(): void {
+  Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: CountingResizeObserver });
+  Object.defineProperty(globalThis, "requestAnimationFrame", { configurable: true, value: () => 1 });
+  Object.defineProperty(globalThis, "cancelAnimationFrame", { configurable: true, value: () => {} });
+}
 
-    const first = new AssistantBubble(fakeElement() as unknown as HTMLElement);
-    first.beginThinking();
+function transcript(): TranscriptView {
+  return new TranscriptView(fakeElement() as unknown as HTMLElement, {
+    app: { workspace: {}, vault: {} } as unknown as App,
+    component: {} as Component,
+    renderEmptyState: () => {},
+    beginEdit: () => {},
+    retryLast: () => {},
+    abortSubagentChild: () => {},
+  });
+}
+
+describe("AssistantBubble observer lifecycle", () => {
+  it("keeps the rail observer on a settled history bubble, so its toggles still resize the rail", () => {
+    useCountingObserver();
+    const bubble = new AssistantBubble(fakeElement() as unknown as HTMLElement);
+    bubble.beginThinking();
+
+    // TranscriptView disposes the previous live bubble when the next turn
+    // starts, but that bubble stays on screen and interactive.
+    bubble.dispose();
     expect(CountingResizeObserver.live.size).toBe(1);
 
-    // TranscriptView.beginRun/beginAssistantMessage disposes the old bubble
-    // before mounting the next one.
-    first.dispose();
+    bubble.destroy();
     expect(CountingResizeObserver.live.size).toBe(0);
+  });
 
-    const second = new AssistantBubble(fakeElement() as unknown as HTMLElement);
-    second.beginThinking();
-    expect(CountingResizeObserver.live.size).toBe(1);
-    second.dispose();
+  it("a transcript re-render leaves no observer from the cleared bubbles", () => {
+    useCountingObserver();
+    const view = transcript();
+    view.beginAssistantMessage();
+    view.beginAssistantMessage();
+    expect(CountingResizeObserver.live.size).toBe(2);
+
+    view.renderTranscript([] as AgentMessage[]);
     expect(CountingResizeObserver.live.size).toBe(0);
   });
 });

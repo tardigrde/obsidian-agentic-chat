@@ -225,9 +225,16 @@ export class AssistantBubble {
     }
   }
 
-  /** Free live timers and observers without touching the rendered DOM. */
+  /** Free live timers (reasoning) without touching the rendered DOM. */
   dispose(): void {
     this.stopReasoningTimer();
+    // NOTE: the timeline ResizeObserver stays attached — history bubbles remain
+    // interactive (reasoning/step toggles must keep the rail hugging content).
+  }
+
+  /** The bubble's DOM is gone: free the timers and the timeline observer. */
+  destroy(): void {
+    this.dispose();
     this.timelineObserver?.disconnect();
     this.timelineObserver = null;
   }
