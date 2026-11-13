@@ -22,7 +22,13 @@ const SECRET_PATHS = ["*.env", "*.env.*", "*auth.json"];
  * own script, so every allowed `git status` ran any command (2026-11-13).
  * These denies come after the edit allow, so they win.
  */
-const EXEC_CONFIG_PATHS = [".git", "*/.git", ".git/*", "*/.git/*", ".gitmodules", "*/.gitmodules", ".gitattributes", "*/.gitattributes", ".npmrc", "*/.npmrc"];
+const EXEC_CONFIG_PATHS = [
+  ".git", "*/.git", ".git/*", "*/.git/*",
+  ".gitmodules", "*/.gitmodules", ".gitattributes", "*/.gitattributes",
+  ".npmrc", "*/.npmrc",
+  // node_modules is a link to the main checkout: an edit there runs in every lane.
+  "node_modules/*", "*/node_modules/*",
+];
 
 /**
  * Command-line git config for every delegate run (`GIT_CONFIG_COUNT` beats the

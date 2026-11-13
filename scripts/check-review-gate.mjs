@@ -285,6 +285,8 @@ async function main() {
   const checkRuns = await api(`/repos/${repository}/commits/${head}/check-runs?per_page=100`, token);
   const passed = new Set(
     (checkRuns.check_runs ?? [])
+      // Only GitHub Actions jobs: a third-party app could report a check named "ci".
+      .filter((run) => run.app?.slug === "github-actions")
       .filter((run) => run.status === "completed" && run.conclusion === "success")
       .map((run) => run.name),
   );

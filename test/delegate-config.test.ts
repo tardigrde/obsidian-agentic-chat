@@ -123,7 +123,7 @@ describe("delegate sandbox: git cannot run worker code", () => {
   // `git status` ran an arbitrary command.
   it("denies edits to git metadata and npm config for workers and reviewers", () => {
     for (const rules of [review, work]) {
-      for (const path of [".git", ".git/config", "sub/.git", "sub/.git/config", ".gitmodules", ".gitattributes", ".npmrc", "x/.npmrc"]) {
+      for (const path of [".git", ".git/config", "sub/.git", "sub/.git/config", ".gitmodules", ".gitattributes", ".npmrc", "x/.npmrc", "node_modules/eslint/bin/eslint.js", "sub/node_modules/x.js"]) {
         expect(decide(rules, "edit", path), path).toBe("deny");
       }
     }

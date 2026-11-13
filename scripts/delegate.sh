@@ -73,10 +73,16 @@ PY
 # Re-run the newest pull_request "Review gate" run for this PR. The `review`
 # check comes from that run; a new comment alone does not update it.
 gate_rerun() { # <pr>
-  local branch run
+  local branch head run tries=0
   branch=$(gh pr view "$1" --json headRefName -q .headRefName)
-  sleep 5
-  run=$(gh run list --branch "$branch" --workflow "Review gate" --event pull_request -L 1 --json databaseId -q '.[0].databaseId')
+  head=$(gh pr view "$1" --json headRefOid -q .headRefOid)
+  # Only the run for the current head counts; wait for GitHub to register it.
+  while [ $tries -lt 12 ]; do
+    run=$(gh run list --branch "$branch" --workflow "Review gate" --event pull_request -L 10 --json databaseId,headSha \
+      -q "[.[] | select(.headSha==\"$head\")][0].databaseId")
+    [ -n "$run" ] && break
+    tries=$((tries + 1)); sleep 5
+  done
   [ -n "$run" ] || { echo "delegate: no Review gate run for #$1" >&2; return 0; }
   gh run watch "$run" > /dev/null 2>&1 || true
   gh run rerun "$run" > /dev/null 2>&1 || true
@@ -105,7 +111,8 @@ ci_at_head() { # <pr> <sha>
   local pr=$1 sha=$2 deadline=$((SECONDS + 1800)) state
   while [ $SECONDS -lt $deadline ]; do
     [ "$(gh pr view "$pr" --json headRefOid -q .headRefOid)" = "$sha" ] || { echo "MOVED"; return; }
-    state=$(gh pr checks "$pr" --json name,state -q '[.[] | select(.name=="ci" or .name=="e2e") | .state] | join(" ")')
+    # gh pr checks exits non-zero while checks are pending; that is not an error here.
+    state=$(gh pr checks "$pr" --json name,state -q '[.[] | select(.name=="ci" or .name=="e2e") | .state] | join(" ")' 2>/dev/null || true)
     case "$state" in
       *FAILURE*|*ERROR*|*CANCELLED*) echo "FAIL"; return ;;
       "SUCCESS SUCCESS") echo "PASS"; return ;;
@@ -253,7 +260,7 @@ case "$cmd" in
       || { git -C "$W" merge --abort; die "feature map does not pass after the merge; fix it by hand"; }
     git -C "$W" add -A "$MAP"
     git -C "$W" commit -q --no-edit
-    git -C "$W" push -q
+    git -C "$W" push -q origin "HEAD:$(gh pr view "$PR" --json headRefName -q .headRefName)"
     do_recheck "$PR" "$2" "$REVIEWED"
     ;;
   ship)
