@@ -48,25 +48,25 @@ await clickMcpAddButton("Add MCP server");
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Advanced tab > MCP tools: enable and add a server | `src/settings-mcp-section.ts:78` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
-| MCP-only proxy override | `src/settings-mcp-section.ts:78` | no committed check | `NONE` |
-| Server enable toggle | `src/settings-mcp-section.ts:189` | no committed check | `NONE` |
-| Server approval policy | `src/settings-mcp-section.ts:189` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
-| Static header auth | `src/settings-mcp-section.ts:472` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
-| Bearer token auth | `src/settings-mcp-section.ts:472` | no committed check | `NONE` |
-| OAuth settings panel | `src/settings-mcp-section.ts:534` | no committed check | `NONE` |
-| OAuth required banner | `src/settings-mcp-section.ts:274` | `test/e2e/specs/composio-install.e2e.ts:241` (banner and button only) | `partial` |
-| Authenticate & test / PKCE sign-in | `src/settings-mcp-section.ts:700` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
+| Advanced tab > MCP tools: enable and add a server | `src/settings-mcp-section.ts:77` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
+| MCP-only proxy override | `src/settings-mcp-section.ts:77` | no committed check | `NONE` |
+| Server enable toggle | `src/settings-mcp-section.ts:188` | no committed check | `NONE` |
+| Server approval policy | `src/settings-mcp-section.ts:188` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
+| Static header auth | `src/settings-mcp-section.ts:471` | `test/e2e/specs/settings-ui.e2e.ts:307` | `covered` |
+| Bearer token auth | `src/settings-mcp-section.ts:471` | no committed check | `NONE` |
+| OAuth settings panel | `src/settings-mcp-section.ts:533` | no committed check | `NONE` |
+| OAuth required banner | `src/settings-mcp-section.ts:273` | `test/e2e/specs/composio-install.e2e.ts:241` (banner and button only) | `partial` |
+| Authenticate & test / PKCE sign-in | `src/settings-mcp-section.ts:694` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Desktop loopback callback | `src/mcp/oauth/callback-receivers.ts:16` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Mobile Obsidian protocol callback | `src/mcp/oauth/callback-receivers.ts:99` | `test/mcp-oauth.test.ts:58` (unit only) | `partial` |
 | OAuth token refresh | `src/mcp/oauth.ts:214` | `test/mcp-oauth.test.ts:513` (unit only) | `partial` |
 | Concurrent OAuth refresh shares one request | `src/mcp/oauth.ts:214` | `test/mcp-oauth.test.ts:610` | `partial` |
 | Concurrent mobile OAuth callbacks route by state | `src/mcp/oauth/callback-receivers.ts:88` | `test/mcp-oauth.test.ts:121` | `partial` |
 | MCP handshake retries after a failed initialized notification | `src/mcp/client.ts:122` | `test/mcp-client.test.ts:112` | `partial` |
-| Test connection / refresh tools | `src/settings-mcp-section.ts:691` | `test/mcp-tools.test.ts:283` (probe helper only) | `partial` |
-| Tool allowlist/denylist | `src/settings-mcp-section.ts:389` | `test/mcp-tools.test.ts:228` (unit only) | `partial` |
-| Per-tool MCP approvals | `src/settings.ts:1332` | no committed check | `NONE` |
-| Setup guide / Copy config | `src/settings-mcp-section.ts:189` | `test/e2e/specs/settings-ui.e2e.ts:307` (button existence only) | `partial` |
+| Test connection / refresh tools | `src/settings-mcp-section.ts:685` | `test/mcp-tools.test.ts:284` (probe helper only) | `partial` |
+| Tool allowlist/denylist | `src/settings-mcp-section.ts:388` | `test/mcp-tools.test.ts:229` (unit only) | `partial` |
+| Per-tool MCP approvals | `src/settings-mcp-section.ts:418` | no committed check | `NONE` |
+| Setup guide / Copy config | `src/settings-mcp-section.ts:188` | `test/e2e/specs/settings-ui.e2e.ts:307` (button existence only) | `partial` |
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts:49` | `test/e2e/specs/composio-install.e2e.ts:27` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts:323` | `test/e2e/specs/settings-ui.e2e.ts:350` | `covered` |
 | Discover and call a remote MCP tool | `src/mcp/tools.ts:102` | `test/e2e/specs/mcp-live.e2e.ts:193` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
