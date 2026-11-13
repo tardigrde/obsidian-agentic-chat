@@ -40,15 +40,18 @@ function collectControls(node: unknown, out: Map<string, SettingControl>): void 
   for (const child of item.items ?? []) collectControls(child, out);
 }
 
-/** Every declarative control the tab can show, across provider-specific variants. */
+/** Every declarative control the tab can show, across provider and OTLP variants. */
 function allControls(): SettingControl[] {
   const controls = new Map<string, SettingControl>();
   for (const provider of PROVIDERS) {
-    const { tab } = makeHarness((settings) => {
-      enableEverything(settings);
-      settings.provider = provider;
-    });
-    for (const page of tab.getSettingDefinitions()) collectControls(page, controls);
+    for (const backend of ["langfuse", "otlp"] as const) {
+      const { tab } = makeHarness((settings) => {
+        enableEverything(settings);
+        settings.provider = provider;
+        settings.observability.backend = backend;
+      });
+      for (const page of tab.getSettingDefinitions()) collectControls(page, controls);
+    }
   }
   return [...controls.values()];
 }
@@ -77,6 +80,7 @@ describe("setControlValue normalization (#286)", () => {
         "observability.proxyUrl",
         "observability.backend",
         "observability.payloadMode",
+        "observability.authHeaderName",
         "embeddings.provider",
         "embeddings.languageCoverage",
         "web.searchProvider",
@@ -150,6 +154,13 @@ describe("setControlValue normalization (#286)", () => {
     expect(plugin.settings).toBe(settings);
     expect(settings.web.searchProvider).toBe(DEFAULT_SETTINGS.web.searchProvider);
     expect(settings.web.maxResults).toBe(10);
+  });
+
+  it("indexes OTLP-only rows while the default backend hides them", async () => {
+    const { tab, settings } = makeHarness();
+    expect(settings.observability.backend).toBe("langfuse");
+    await tab.setControlValue("observability.authHeaderName", "  X-OTel-Token \n");
+    expect(settings.observability.authHeaderName).toBe("X-OTel-Token");
   });
 
   it("normalizeControlValue is a pure per-control rule", () => {
