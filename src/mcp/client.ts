@@ -104,6 +104,8 @@ export class McpHttpClient {
   private protocolVersion = MCP_PROTOCOL_VERSION;
   private sessionId: string | undefined;
   private initialized = false;
+  /** The handshake in flight, shared by concurrent calls on one client. */
+  private initializing: Promise<void> | null = null;
 
   constructor(options: McpHttpClientOptions) {
     this.server = options.server;
@@ -174,7 +176,15 @@ export class McpHttpClient {
   }
 
   private async ensureInitialized(signal?: AbortSignal): Promise<void> {
-    if (!this.initialized) await this.initialize(signal);
+    if (this.initialized) return;
+    // One client now serves every call to a server, so parallel tool calls
+    // must share one handshake instead of racing on the session id.
+    this.initializing ??= this.initialize(signal)
+      .then(() => undefined)
+      .finally(() => {
+        this.initializing = null;
+      });
+    await this.initializing;
   }
 
   private async request<T>(

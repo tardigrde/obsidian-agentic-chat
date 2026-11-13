@@ -76,6 +76,9 @@ export type { ToolApprovalRequest } from "./tool-call-controller";
 
 export type { SummarizeFn } from "./compaction-runtime";
 
+/** Coalesces the vault events of one plugin install into one runtime reload. */
+const PLUGIN_RELOAD_DEBOUNCE_MS = 300;
+
 export interface AgentServiceOptions {
   app: App;
   getSettings: () => AgenticChatSettings;
@@ -151,6 +154,7 @@ export class AgentService {
   private compactionRecoveryError: string | undefined;
   /** Drops the plugin-invalidation subscription on dispose. */
   private unsubscribePluginInvalidation?: () => void;
+  private pluginReloadTimer: number | undefined;
   /** Memoizes system-prompt and tool-schema token counts for the per-event readout. */
   private readonly contextOverhead = new CachedContextOverheadCounter();
 
@@ -212,10 +216,16 @@ export class AgentService {
     // An install or a vault edit under the plugins folder invalidates the
     // catalog; rebuild the runtime so the next turn gets the new MCP tools
     // instead of waiting for an unrelated reload.
+    // An install writes many files, so coalesce the burst into one reload.
     this.unsubscribePluginInvalidation = options.pluginService?.onInvalidated(() => {
-      void this.runtimeResources.reload().catch((error: unknown) => {
-        console.warn("Agentic chat: could not reload runtime resources after a plugin change", error);
-      });
+      if (this.pluginReloadTimer !== undefined) return;
+      this.pluginReloadTimer = window.setTimeout(() => {
+        this.pluginReloadTimer = undefined;
+        if (this.conversation.isDisposed) return;
+        void this.runtimeResources.reload().catch((error: unknown) => {
+          console.warn("Agentic chat: could not reload runtime resources after a plugin change", error);
+        });
+      }, PLUGIN_RELOAD_DEBOUNCE_MS);
     });
     this.subagents = new AgentSubagentRuntime({
       app: this.app,
@@ -799,6 +809,8 @@ export class AgentService {
     if (this.conversation.isDisposed) return;
     this.unsubscribePluginInvalidation?.();
     this.unsubscribePluginInvalidation = undefined;
+    if (this.pluginReloadTimer !== undefined) window.clearTimeout(this.pluginReloadTimer);
+    this.pluginReloadTimer = undefined;
     if (this.vaultModifyRef) this.app.vault.offref(this.vaultModifyRef);
     this.vaultModifyRef = undefined;
     this.conversation.dispose();

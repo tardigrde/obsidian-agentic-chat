@@ -102,8 +102,10 @@ export class AgentRuntimeResourceState {
   }
 
   async reload(): Promise<AgentRuntimeResources> {
-    // One catalog: take the PluginService cache when wired, not a second scan.
-    const plugins = this.options.plugins ? await this.options.plugins.load() : undefined;
+    // One catalog: take the PluginService cache when it holds a scan. Never call
+    // its load(): that reload prunes plugin settings and saves, and the runtime
+    // reloads at startup and after every invalidation.
+    const plugins = this.options.plugins?.peekLoaded() ?? undefined;
     this.resources = await loadAgentRuntimeResources(
       this.options.app,
       this.options.getSettings(),

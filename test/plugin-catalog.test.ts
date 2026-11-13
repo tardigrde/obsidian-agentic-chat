@@ -92,3 +92,31 @@ describe("one plugin catalog", () => {
     }
   });
 });
+
+describe("runtime reads the catalog without pruning", () => {
+  it("never calls the service reload, which prunes settings and saves", async () => {
+    const app = new FakeApp();
+    await app.vault.createFolder(".agentic-plugins");
+    const current = settings();
+    const service = new PluginService(app as unknown as App, () => current, () => {});
+    let reloads = 0;
+    const realReload = service.reload.bind(service);
+    service.reload = async () => {
+      reloads += 1;
+      return realReload();
+    };
+    const state = new AgentRuntimeResourceState({
+      app: app as unknown as App,
+      getSettings: () => current,
+      readMemo: new ReadMemo(),
+      webFetch: noopFetcher,
+      plugins: service,
+    });
+
+    await state.reload();
+    service.invalidate();
+    await state.reload();
+
+    expect(reloads).toBe(0);
+  });
+});

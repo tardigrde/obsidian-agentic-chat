@@ -37,7 +37,12 @@ export { FIRST_PARTY_PACKAGE_NAMES, USER_SKILLS_PACKAGE } from "./manifest";
  * from this list, and an install or vault edit invalidates it.
  */
 export interface PluginCatalog {
-  load(): Promise<LoadedPlugin[]>;
+  /**
+   * The cached list, or null when no scan is cached. Read-only: it never runs
+   * the reload, which prunes plugin settings and saves. The runtime scans the
+   * folder itself when this is null.
+   */
+  peekLoaded(): LoadedPlugin[] | null;
   /** Returns an unsubscribe function. */
   onInvalidated(listener: () => void): () => void;
 }
@@ -153,6 +158,10 @@ export class PluginService {
 
   getLoaded(): LoadedPlugin[] {
     return this.cache ?? [];
+  }
+
+  peekLoaded(): LoadedPlugin[] | null {
+    return this.cache;
   }
 
   /** True while the cache holds a scanned plugin list (valid or empty). */
