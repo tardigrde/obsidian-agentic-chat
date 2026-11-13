@@ -48,13 +48,13 @@ await $(".agentic-chat-send").click();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Ribbon icon | `src/main.ts:111` | no committed check | `NONE` |
+| Ribbon icon | `src/main.ts:112` | no committed check | `NONE` |
 | Command palette: Open chat | `src/main.ts:114` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
 | Command palette: New conversation | `src/main.ts:120` | `test/session-actions.test.ts:153` (unit only) | `partial` |
 | Command palette: Quick Ask inline edit | `src/main.ts:126` | `test/e2e/specs/smoke.e2e.ts:214` | `covered` |
-| Editor selection context menu | `src/main.ts:174` | no committed check | `NONE` |
-| File context menu | `src/main.ts:179` | no committed check | `NONE` |
-| Files context menu (multi-select) | `src/main.ts:184` | no committed check | `NONE` |
+| Editor selection context menu | `src/main.ts:184` | no committed check | `NONE` |
+| File context menu | `src/main.ts:189` | no committed check | `NONE` |
+| Files context menu (multi-select) | `src/main.ts:194` | no committed check | `NONE` |
 | Composer card mounts | `src/ui/chat-view.ts:605` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
 | Empty-state suggestion chips | `src/ui/chat-view.ts:850` | no committed check | `NONE` |
 | Enter sends while idle | `src/ui/chat-view.ts:664` | `test/e2e/specs/composer-paths.e2e.ts:107` | `covered` |
