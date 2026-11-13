@@ -172,7 +172,6 @@ export class TranscriptView {
     const usage = assistantUsage(message);
     if (usage) {
       this.lastTurnUsage = usage;
-      bubble.showUsage(usage);
     }
   }
 
@@ -286,7 +285,6 @@ export class TranscriptView {
     const usage = assistantUsage(message);
     if (usage) {
       this.lastTurnUsage = usage;
-      bubble.showUsage(usage);
     }
   }
 

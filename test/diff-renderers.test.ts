@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderStepEditDiff } from "../src/ui/assistant-bubble";
+import { renderStepEditDiff } from "../src/ui/assistant-markdown";
 import { renderApprovalDiffLines } from "../src/ui/approval-modal";
 import { renderQuickAskDiff } from "../src/ui/quick-ask-modal";
 import { fakeElement, type FakeElement } from "./helpers/fake-dom";
