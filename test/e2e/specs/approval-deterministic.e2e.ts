@@ -279,15 +279,15 @@ describe("agentic-chat deterministic approvals", function () {
     await browser.waitUntil(
       async () =>
         await browser.execute(() => {
-          const add = document.querySelector<HTMLElement>(".agentic-chat-diff-line.is-add");
-          const remove = document.querySelector<HTMLElement>(".agentic-chat-diff-line.is-remove");
+          const add = document.querySelector<HTMLElement>(".agentic-chat-approval-diff-line.is-add");
+          const remove = document.querySelector<HTMLElement>(".agentic-chat-approval-diff-line.is-remove");
           return Boolean(add && remove);
         }),
       { timeout: 5_000, timeoutMsg: "approval diff did not render add/remove lines" },
     );
     const diffStyles = await browser.execute(() => {
-      const add = document.querySelector<HTMLElement>(".agentic-chat-diff-line.is-add");
-      const remove = document.querySelector<HTMLElement>(".agentic-chat-diff-line.is-remove");
+      const add = document.querySelector<HTMLElement>(".agentic-chat-approval-diff-line.is-add");
+      const remove = document.querySelector<HTMLElement>(".agentic-chat-approval-diff-line.is-remove");
       if (!add || !remove) throw new Error("approval diff lines missing");
       const addStyle = getComputedStyle(add);
       const removeStyle = getComputedStyle(remove);

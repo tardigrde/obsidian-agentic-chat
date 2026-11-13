@@ -52,11 +52,11 @@ await (await modal.$("button=Allow")).click();
 | Per-tool deny flips to allow in a recorded run | `src/settings.ts:767` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
 | Working directories and `/add-dir` are gone | `src/ui/commands.ts:25` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
 | Safe asks before mutating tools | `src/agent/tool-call-controller.ts:255` | `test/e2e/specs/approval-deterministic.e2e.ts:260` | `covered` |
-| Safe/YOLO toggle | `src/ui/chat-view.ts:700` | `test/e2e/specs/plan-removal.e2e.ts:68` (existence only) | `partial` |
-| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts:700` | `test/e2e/specs/plan-removal.e2e.ts:68` | `covered` |
-| Invalid mode transition is blocked | `src/ui/chat-view.ts:913` | `test/modes.test.ts:63` (unit only) | `partial` |
-| Background-tab approval badge and label | `src/ui/chat-view.ts:451` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
-| Closing a tab clears its pending approval | `src/ui/chat-view.ts:353` | `test/e2e/specs/multi-tab-approval.e2e.ts:148` | `covered` |
+| Safe/YOLO toggle | `src/ui/chat-view.ts:693` | `test/e2e/specs/plan-removal.e2e.ts:68` (existence only) | `partial` |
+| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts:693` | `test/e2e/specs/plan-removal.e2e.ts:68` | `covered` |
+| Invalid mode transition is blocked | `src/ui/chat-view.ts:906` | `test/modes.test.ts:63` (unit only) | `partial` |
+| Background-tab approval badge and label | `src/ui/chat-view.ts:444` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
+| Closing a tab clears its pending approval | `src/ui/chat-view.ts:346` | `test/e2e/specs/multi-tab-approval.e2e.ts:148` | `covered` |
 | Approval modal at phone width | `src/ui/approval-modal.ts:34` | `test/e2e/specs/mobile-viewport.e2e.ts:403` | `covered` |
 
 ## Gotchas

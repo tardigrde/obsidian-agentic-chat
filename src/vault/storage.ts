@@ -1,4 +1,4 @@
-import { TFolder, type App, type DataAdapter } from "obsidian";
+import { TFile, TFolder, type App, type DataAdapter } from "obsidian";
 import { getParentPath } from "./path";
 
 /**
@@ -149,4 +149,10 @@ export async function ensureVaultFolder(app: App, folderPath: string): Promise<v
 /** Create every missing parent folder of the vault file at `filePath`. */
 export async function ensureVaultParentFolder(app: App, filePath: string): Promise<void> {
   await ensureVaultFolder(app, getParentPath(filePath));
+}
+
+/** Create a whole file through the vault API, with its parent folders. */
+export async function writeVaultFile(app: App, path: string, content: string): Promise<TFile> {
+  await ensureVaultParentFolder(app, path);
+  return app.vault.create(path, content);
 }

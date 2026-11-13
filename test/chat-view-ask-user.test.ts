@@ -1,4 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { TFolder } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 import type { AskUserRequest } from "../src/tools/ask-user-tool";
 import { ChatView } from "../src/ui/chat-view";
@@ -132,6 +133,7 @@ describe("ChatView ask_user prompt", () => {
         vault: {
           configDir: ".obsidian",
           adapter: adapter.asDataAdapter(),
+          getAbstractFileByPath: () => new TFolder(),
           create,
         },
         workspace: { getLeaf },
@@ -141,7 +143,6 @@ describe("ChatView ask_user prompt", () => {
         getMessages: (): AgentMessage[] => [],
         getSessionInfo: () => ({ id: "session-1" }),
       },
-      ensureExportFolder: vi.fn(async () => undefined),
       workflowRenderer: (ChatView.prototype as unknown as { workflowRenderer: () => unknown }).workflowRenderer,
       clearEmptyState: vi.fn(),
       renderInfoMessage,

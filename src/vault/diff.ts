@@ -107,6 +107,13 @@ export function diffStat(lines: DiffLine[]): DiffStat {
   return { added, removed };
 }
 
+/** Unified-diff prefix marker for one line: `+`, `-`, or a space. */
+export function diffPrefix(op: string): string {
+  if (op === "add") return "+";
+  if (op === "remove") return "-";
+  return " ";
+}
+
 export function compactDiffLines(lines: DiffLine[], options: CompactDiffOptions = {}): CompactDiffWindow {
   const total = lines.length;
   const firstChanged = lines.findIndex((line) => line.op !== "context");

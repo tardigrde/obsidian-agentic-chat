@@ -4,7 +4,7 @@ import { STOPPED_APPROVAL_REASON, type UserApprovalChoice } from "../agent/tool-
 import { buildEditPreview, buildExactEditPreviewWindow, type EditPreview } from "../agent/edit-preview";
 import { slugifyPluginName } from "../plugins/manifest";
 import { approvalPreviewNeedsContent, toolApprovalDescription } from "../tools/tool-contracts";
-import { compactDiffLines, diffLines, diffStat, diffTooLarge, type CompactDiffWindow } from "../vault/diff";
+import { compactDiffLines, diffLines, diffPrefix, diffStat, diffTooLarge, type CompactDiffWindow, type DiffLine } from "../vault/diff";
 import { normalizeVaultPath } from "../vault/path";
 
 /** Cap diff lines rendered in the modal so a huge change can't bloat the dialog. */
@@ -351,10 +351,7 @@ export class ApprovalModal extends Modal {
           renderWindow();
         });
       }
-      for (const line of lines) {
-        const prefix = diffPrefix(line.op);
-        pre.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
-      }
+      renderApprovalDiffLines(pre, lines);
       if (windowed.hiddenAfter > 0) {
         this.renderDiffExpandButton(pre, "below", windowed.hiddenAfter, () => {
           contextAfter += DEFAULT_DIFF_CONTEXT_LINES;
@@ -374,10 +371,7 @@ export class ApprovalModal extends Modal {
     if (windowed.hiddenBefore > 0) {
       this.renderDiffExpandButton(container, "above", windowed.hiddenBefore, callbacks.expandAbove);
     }
-    for (const line of windowed.lines) {
-      const prefix = diffPrefix(line.op);
-      container.createDiv({ cls: `agentic-chat-diff-line is-${line.op}`, text: `${prefix} ${line.text}` });
-    }
+    renderApprovalDiffLines(container, windowed.lines);
     if (windowed.hiddenAfter > 0) {
       this.renderDiffExpandButton(container, "below", windowed.hiddenAfter, callbacks.expandBelow);
     }
@@ -431,10 +425,14 @@ function previewArgs(args: unknown): string {
   return text.length > 2_000 ? `${text.slice(0, 2_000)}\n…` : text;
 }
 
-function diffPrefix(op: string): string {
-  if (op === "add") return "+";
-  if (op === "remove") return "-";
-  return " ";
+/** Render approval-modal diff lines with their own scoped class. */
+export function renderApprovalDiffLines(container: HTMLElement, lines: readonly DiffLine[]): void {
+  for (const line of lines) {
+    container.createDiv({
+      cls: `agentic-chat-approval-diff-line is-${line.op}`,
+      text: `${diffPrefix(line.op)} ${line.text}`,
+    });
+  }
 }
 
 /** The approval modal title: what the primary choice will do right now. */

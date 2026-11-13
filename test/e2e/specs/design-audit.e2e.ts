@@ -145,6 +145,21 @@ describe(ENABLED ? "agentic-chat design audit" : "agentic-chat design audit (dis
     await emit(toolEnd("t-1", { output: "# Welcome\nWelcome to your vault. This note is your starting point." }));
     await shot("06-tool-done", ".agentic-chat-step-header");
 
+    // 6b. edit step with the scoped inline old/new diff
+    await emit(
+      toolStart("t-edit", "edit", {
+        path: "Welcome.md",
+        edits: [{ oldText: "Welcome to your vault.", newText: "Welcome to your vault. Start here." }],
+      }),
+    );
+    await emit(toolEnd("t-edit", { output: "Edited Welcome.md" }));
+    // The step body starts collapsed; open the edit card so the diff is visible.
+    await browser.execute(() => {
+      const rows = document.querySelectorAll<HTMLElement>(".agentic-chat-step-row");
+      rows[rows.length - 1]?.querySelector<HTMLElement>(".agentic-chat-step-toggle")?.click();
+    });
+    await shot("06b-tool-edit-diff", ".agentic-chat-step-diff");
+
     // 7. second read + an errored tool call for the error step state
     await emit(toolStart("t-2", "read", { path: "Notes/Missing.md" }));
     await emit(toolEnd("t-2", { error: "File not found: Notes/Missing.md" }, true));

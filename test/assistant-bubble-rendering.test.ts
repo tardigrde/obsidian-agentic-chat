@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { subagentResultForcesError } from "../src/ui/assistant-bubble";
 import {
   classifyRenderedChatLink,
   enhanceCallouts,
   renderMermaidBlocks,
   sourceChipName,
-  subagentResultForcesError,
-} from "../src/ui/assistant-bubble";
+} from "../src/ui/assistant-markdown";
 
 class FakeClassList {
   private readonly values = new Set<string>();

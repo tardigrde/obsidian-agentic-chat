@@ -947,18 +947,18 @@
   font-size: var(--font-smallest);
 }
 
-.agentic-chat-diff-line {
+.agentic-chat-step-diff-line {
   display: flex;
   gap: var(--size-2-1);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.agentic-chat-diff-line.is-del {
+.agentic-chat-step-diff-line.is-del {
   color: var(--color-red);
 }
 
-.agentic-chat-diff-line.is-add {
+.agentic-chat-step-diff-line.is-add {
   color: var(--color-green);
 }
 
@@ -1855,24 +1855,28 @@
   background-color: var(--background-modifier-hover);
 }
 
-.agentic-chat-diff-line {
+.agentic-chat-approval-diff-line,
+.agentic-chat-quick-ask-diff-line {
   display: block;
   margin: 0 calc(var(--size-2-3) * -1);
   padding: 0 var(--size-2-3);
   white-space: pre-wrap;
 }
 
-.agentic-chat-diff-line.is-add {
+.agentic-chat-approval-diff-line.is-add,
+.agentic-chat-quick-ask-diff-line.is-add {
   color: var(--text-success);
   background-color: rgba(var(--color-green-rgb), 0.12);
 }
 
-.agentic-chat-diff-line.is-remove {
+.agentic-chat-approval-diff-line.is-remove,
+.agentic-chat-quick-ask-diff-line.is-remove {
   color: var(--text-error);
   background-color: rgba(var(--color-red-rgb), 0.12);
 }
 
-.agentic-chat-diff-line.is-context {
+.agentic-chat-approval-diff-line.is-context,
+.agentic-chat-quick-ask-diff-line.is-context {
   color: var(--text-muted);
 }
 

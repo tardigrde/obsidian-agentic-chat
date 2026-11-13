@@ -35,6 +35,7 @@ function harness(messages: AgentMessage[], sendPrompt: ReturnType<typeof vi.fn>)
   const service = {
     isStreaming: () => false,
     getMessages: () => messages,
+    getSessionToken: () => "session-a",
     sendPrompt,
     getError: () => undefined,
   };
@@ -178,7 +179,49 @@ describe("ChatView retry", () => {
     await view.retryLast();
 
     expect(sendPrompt).toHaveBeenCalledTimes(1);
-    expect(sendPrompt).toHaveBeenCalledWith("what is in this picture?", [IMAGE]);
+    expect(sendPrompt).toHaveBeenCalledWith("what is in this picture?", [IMAGE], "session-a");
+  });
+
+  it("does not send a retry into a session swapped while truncate is pending", async () => {
+    const messages = [
+      userMessage("hello"),
+      { role: "assistant", content: [], stopReason: "error", timestamp: 2 } as unknown as AgentMessage,
+    ];
+    let sessionToken = "session-a";
+    let finishTruncate: () => void = () => {};
+    const truncateMessages = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishTruncate = resolve;
+        }),
+    );
+    const sendPrompt = vi.fn(async () => {});
+    const view = chatViewHarness<RetryHarness>({
+      service: {
+        isStreaming: () => false,
+        getMessages: () => messages,
+        getSessionToken: () => sessionToken,
+        truncateMessages,
+        sendPrompt,
+        reportSessionChanged: vi.fn(),
+        getError: () => undefined,
+      },
+      state: { lastSentPrompt: "hello", lastSentDisplay: "hello" },
+      clearEmptyState: vi.fn(),
+      renderTranscript: vi.fn(),
+      renderOutgoingUserMessage: vi.fn(),
+      showServiceError: vi.fn(),
+    });
+
+    const retry = view.retryLast();
+    // Retry captured session-a, then the same tab loaded session-b while the
+    // transcript rewrite was still in flight.
+    sessionToken = "session-b";
+    finishTruncate();
+    await retry;
+
+    expect(truncateMessages).toHaveBeenCalledTimes(1);
+    expect(sendPrompt).not.toHaveBeenCalled();
   });
 
   it("does not duplicate or mutate image attachments when retried twice", async () => {

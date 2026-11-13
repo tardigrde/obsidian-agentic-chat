@@ -5,7 +5,7 @@ import {
   fixupRenderedAssistantImages,
   resolveVaultImageResource,
   rewriteAssistantMarkdownImages,
-} from "../src/ui/assistant-bubble";
+} from "../src/ui/assistant-markdown";
 
 class FakeEl {
   readonly children: FakeEl[] = [];

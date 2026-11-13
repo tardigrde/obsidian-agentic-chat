@@ -46,7 +46,7 @@ Verified selectors and helpers:
 | open chat | `browser.executeObsidianCommand("agentic-chat:open-chat")` |
 | composer | `.agentic-chat-input`, `.agentic-chat-send` |
 | transcript | `.agentic-chat-messages`, `.agentic-chat-assistant .agentic-chat-text` |
-| tool card | `.agentic-chat-tool`, `.agentic-chat-diff-line.is-add` |
+| tool card | `.agentic-chat-tool`, `.agentic-chat-step-diff-line.is-add` |
 | approval | `.agentic-chat-approval`, `button=Allow`, `button=Deny` |
 | info block | `.agentic-chat-info` |
 | settings | `test/e2e/support/settings-ui.ts` |

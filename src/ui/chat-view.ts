@@ -17,6 +17,7 @@ import { applyRememberedApprovalChoice } from "../agent/approval-memory";
 import { ApprovalModal } from "./approval-modal";
 import { isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
+import { writeVaultFile } from "../vault/storage";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, apiKeyForProvider } from "../settings-schema";
 import { listOpenAICompatibleModels, listOpenRouterModels } from "../llm/models";
@@ -100,20 +101,12 @@ import {
   formatMcpDiagnosticSummary,
   formatRuntimeDiagnosticsRows,
 } from "../agent/diagnostics";
-import { loadVaultRetrievalDocuments } from "../retrieval/relevant-notes";
-import {
-  OpenAICompatibleEmbeddingProvider,
-  activeEmbeddingModel,
-  embeddingConfigFromSettings,
-} from "../retrieval/embeddings";
-import {
-  readSemanticIndexFile,
-  semanticIndexPath,
-  type SemanticIndexFile,
-} from "../retrieval/semantic-index";
-import { memoryPathForApp } from "../tools/memory-tools";
 import { MemoryWorkflowController } from "./memory-workflow-controller";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
+import {
+  createMemoryWorkflowController,
+  createSemanticIndexWorkflowController,
+} from "./chat-services";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
 import { SessionWorkflowController } from "./session-workflow-controller";
 import {
@@ -1011,8 +1004,21 @@ export class ChatView extends ItemView {
   // --- chrome (header pill, usage, running state) ---
 
   private syncChrome(): void {
-    const { settings } = this.plugin;
     this.syncControls();
+    this.renderModelPill();
+    this.syncEffortKnob();
+
+    const readout = this.service.getContextReadout();
+    this.renderUsageChrome();
+    this.syncContextBar(readout);
+
+    this.renderRunning();
+    this.checkUsageNotifications();
+  }
+
+  /** Header model pill: provider/model label plus the one-shot override state. */
+  private renderModelPill(): void {
+    const { settings } = this.plugin;
     this.modelPillEl.empty();
     const modelPill = buildModelPillState({
       provider: settings.provider,
@@ -1024,16 +1030,13 @@ export class ChatView extends ItemView {
     this.modelPillEl.setAttr("title", modelPill.title);
     if (modelPill.isOverride) this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: modelPill.providerLabel });
     this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: modelPill.shortModel });
-    this.syncEffortKnob();
+  }
 
-    const readout = this.service.getContextReadout();
-    this.renderUsageChrome();
-    this.syncContextBar(readout);
-
+  /** Toolbar running state: queue/send label, stop button, and stale status clear. */
+  private renderRunning(): void {
     const error = this.service.getError();
     this.setRunning(this.service.isStreaming());
     if (error && !this.service.isStreaming()) this.statusEl.setText("");
-    this.checkUsageNotifications();
   }
 
   /**
@@ -1451,6 +1454,10 @@ export class ChatView extends ItemView {
     const tab = this.activeTab;
     const service = tab.service;
     if (service.isStreaming()) return;
+    // Bind the retry to the session that is active now: the transcript rewrite
+    // below can await, and a same-tab session load during that await must not
+    // receive this prompt.
+    let sessionToken = service.getSessionToken();
     const lastTurn = lastUserTurn(service.getMessages());
     const prompt = this.state.lastSentPrompt ?? lastTurn?.text;
     if (!prompt) return;
@@ -1468,6 +1475,17 @@ export class ChatView extends ItemView {
         this.renderErrorMessage(errorMessage(error));
         return;
       }
+      if (service.getSessionToken() !== sessionToken) {
+        const currentToken = service.getSessionToken();
+        // A rewind advances the same session's epoch, so a bare token inequality
+        // is expected after truncate. Only a different conversation is a swap.
+        if (sessionIdentity(currentToken) !== sessionIdentity(sessionToken)) {
+          service.reportSessionChanged();
+          this.showServiceError();
+          return;
+        }
+        sessionToken = currentToken;
+      }
       if (this.isLiveTab(tab)) {
         this.renderTranscript(service.getMessages());
       }
@@ -1475,7 +1493,7 @@ export class ChatView extends ItemView {
     this.clearEmptyState();
     // A retried image turn shows the same thumbnails it sends (#250).
     this.renderOutgoingUserMessage(display, [], images);
-    await service.sendPrompt(prompt, images);
+    await service.sendPrompt(prompt, images, sessionToken);
     if (!this.isLiveTab(tab)) return;
     this.showServiceError();
   }
@@ -1874,64 +1892,26 @@ export class ChatView extends ItemView {
     await this.semanticIndexWorkflowController().run(arg);
   }
 
-  private semanticEmbeddingConfig(): ConstructorParameters<typeof OpenAICompatibleEmbeddingProvider>[0] {
-    const settings = this.plugin.settings;
-    return embeddingConfigFromSettings(settings.embeddings, {
-      openrouterApiKey: settings.openrouterApiKey,
-      openaiCompatibleApiKey: settings.openaiCompatibleApiKey,
-      ollamaBaseUrl: settings.ollamaBaseUrl,
-      openaiCompatibleBaseUrl: settings.openaiCompatibleBaseUrl,
-      privacy: settings.privacy,
-    });
-  }
-
-  private async readSemanticIndex(): Promise<SemanticIndexFile | null> {
-    return readSemanticIndexFile(this.app.vault.adapter, this.semanticIndexFilePath());
-  }
-
-  private semanticIndexFilePath(): string {
-    const pluginDir = this.plugin.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.plugin.manifest.id}`;
-    return semanticIndexPath(pluginDir);
-  }
-
   private semanticIndexWorkflowController(): SemanticIndexWorkflowController {
     if (this.semanticIndexWorkflow) return this.semanticIndexWorkflow;
-    this.semanticIndexWorkflow = new SemanticIndexWorkflowController({
-      adapter: this.app.vault.adapter,
-      indexPath: () => this.semanticIndexFilePath(),
+    this.semanticIndexWorkflow = createSemanticIndexWorkflowController({
+      app: this.app,
+      settings: this.plugin.settings,
+      pluginDir: this.plugin.manifest.dir,
+      pluginId: this.plugin.manifest.id,
       activeNotePath: () => this.activeNotePath,
-      loadDocuments: (scopeFolders) =>
-        loadVaultRetrievalDocuments(this.app, (path) => this.service.isPathIgnored(path), scopeFolders),
-      embeddingConfig: () => this.semanticEmbeddingConfig(),
-      embeddingsEnabled: () => this.plugin.settings.embeddings.enabled,
-      activeEmbeddingModel: () => activeEmbeddingModel(this.plugin.settings.embeddings),
-      batchSize: () => this.plugin.settings.embeddings.batchSize,
-      createEmbedder: () =>
-        new OpenAICompatibleEmbeddingProvider(
-          this.semanticEmbeddingConfig(),
-          createProxiedFetcher(this.plugin.settings.network),
-      ),
+      isPathIgnored: (path) => this.service.isPathIgnored(path),
       renderer: this.workflowRenderer(),
     });
     return this.semanticIndexWorkflow;
   }
 
   private createMemoryWorkflow(): MemoryWorkflowController {
-    return new MemoryWorkflowController({
-      adapter: this.app.vault.adapter,
-      memoryPath: () => memoryPathForApp(this.app),
+    return createMemoryWorkflowController({
+      app: this.app,
       messages: () => this.service.getMessages(),
-      defaultScope: () => "vault",
-      sessionSource: () => {
-        const session = this.service.getSessionInfo();
-        return session ? `[[Agentic Chat Sessions/${session.id}|Chat session]]` : undefined;
-      },
+      sessionInfo: () => this.service.getSessionInfo(),
       renderer: this.workflowRenderer(),
-      writeExport: async (filename, contents) => {
-        await this.ensureExportFolder();
-        const file = await this.app.vault.create(`${EXPORT_FOLDER}/${filename}`, contents);
-        return file.path;
-      },
     });
   }
 
@@ -2007,9 +1987,8 @@ export class ChatView extends ItemView {
     }
     try {
       const markdown = sessionToMarkdown(messages, this.service.getSessionInfo());
-      await this.ensureExportFolder();
       const path = `${EXPORT_FOLDER}/${exportFileName(this.service.getSessionInfo(), Date.now())}`;
-      const file = await this.app.vault.create(path, markdown);
+      const file = await writeVaultFile(this.app, path, markdown);
       this.renderInfoMessage("Export", [["Saved", file.path]]);
     } catch (error) {
       this.renderErrorMessage(`Export failed: ${errorMessage(error)}`);
@@ -2025,14 +2004,6 @@ export class ChatView extends ItemView {
         return [`/${command.name}${argsPart}`, command.description];
       }),
     );
-  }
-
-  private async ensureExportFolder(): Promise<void> {
-    // getAbstractFileByPath (not getFolderByPath, which needs Obsidian >=1.5.3) so
-    // the folder check works down to the manifest's minAppVersion.
-    if (!this.app.vault.getAbstractFileByPath(EXPORT_FOLDER)) {
-      await this.app.vault.createFolder(EXPORT_FOLDER);
-    }
   }
 
   /** Render a collapsible info block in the transcript (not sent to the model). */
@@ -2380,4 +2351,9 @@ export class ChatView extends ItemView {
     this.renderInfoMessage("Removed command", [[`/${word.toLowerCase()}`, hint]]);
     return true;
   }
+}
+
+/** The conversation part of a service session token, without its epoch suffix. */
+function sessionIdentity(token: string): string {
+  return token.replace(/:\d+$/, "");
 }
