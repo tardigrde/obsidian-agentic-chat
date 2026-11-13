@@ -49,6 +49,12 @@ const NON_ASSERTION_RED_MARKERS = [
   { label: "Unexpected token", pattern: /Unexpected token/ },
   { label: "TSError", pattern: /TSError/ },
   { label: "TypeScript compiler error", pattern: /error TS\d+/ },
+  { label: "TypeError", pattern: /\bTypeError\b/ },
+  { label: "is not a function", pattern: /\bis not a function\b/ },
+  {
+    label: "setup hook failure",
+    pattern: /\b(?:beforeEach|beforeAll|afterEach|afterAll)\b[^\n]*\b(?:failed|error)\b/i,
+  },
 ];
 
 const FAILED_TEST_COUNT_PATTERNS = [
@@ -563,6 +569,42 @@ function selfTest() {
       throw new Error(`self-test syntax case gave the wrong reason: ${syntax.reason}`);
     }
 
+    // Red run dies in a setup hook before any test assertion runs.
+    const setupPath = path.join(repo, "test", "setup.test.mjs");
+    writeFileSync(
+      setupPath,
+      [
+        'console.log("Tests 1 failed (1)");',
+        'console.error("TypeError: writeLock is not a function");',
+        "process.exitCode = 1;",
+        "",
+      ].join("\n"),
+    );
+    const setupBase = commit("add a setup hook failure");
+    writeFileSync(setupPath, 'console.log("Tests 1 passed (1)");\n');
+    commit("repair the setup hook");
+
+    const setup = verifyWitness(
+      {
+        base: setupBase,
+        sources: ["test/setup.test.mjs"],
+        testCommand: {
+          display: `${process.execPath} test/setup.test.mjs`,
+          command: process.execPath,
+          args: [setupPath],
+          shell: false,
+        },
+        reportDir: path.join(scratch, "setup-report"),
+      },
+      repo,
+    );
+    if (setup.verdict !== "FAIL") {
+      throw new Error("self-test setup case passed: a setup hook failure was accepted as a witness");
+    }
+    if (!setup.reason.includes("red run did not reach an assertion")) {
+      throw new Error(`self-test setup case gave the wrong reason: ${setup.reason}`);
+    }
+
     // Red run exits non-zero but never reports how many tests failed.
     const uncountedPath = path.join(repo, "test", "uncounted.test.mjs");
     writeFileSync(
@@ -604,6 +646,7 @@ function selfTest() {
     console.log("  positive: red without the fix, green with it");
     console.log("  negative: rejected a test that passes without the fix");
     console.log("  syntax error: rejected a red run that never reached an assertion");
+    console.log("  setup hook: rejected a red run that died before an assertion");
     console.log("  no count: rejected a red run without a failed test count");
   } finally {
     rmSync(scratch, { recursive: true, force: true });
