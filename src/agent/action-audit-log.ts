@@ -401,7 +401,7 @@ function stringField(value: unknown, key: string): string | undefined {
   return typeof raw === "string" ? truncateString(raw) : undefined;
 }
 
-function normalizePath(path: string): string {
+export function normalizePath(path: string): string {
   return path.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+/g, "/");
 }
 
