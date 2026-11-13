@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
+import type { App } from "obsidian";
 import { createMcpServerSettings, createMcpServerState } from "../src/mcp/settings";
 import { DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings-schema";
 import {
   SETTINGS_SECRET_SLOTS,
   hydrateSettingsSecrets,
   MemorySecretStore,
+  normalizeSecretId,
+  ObsidianSecretStore,
   settingsForStorage,
 } from "../src/secrets/secret-store";
 import { migrateLegacyPlaintextSecrets, withUnmigratedSecrets } from "../src/secrets/legacy-plaintext";
+import { clearMcpSecretSlots } from "../src/settings-mcp-edits";
 
 describe("secret storage migration", () => {
   it("keeps top-level secret handling in one registry", () => {
@@ -322,5 +326,33 @@ describe("legacy plaintext secret migration (#285)", () => {
     hydrateSettingsSecrets(settings, store);
 
     expect(settings.mcp.servers.map((server) => server.authHeaderValue)).toEqual(["alpha-secret", "beta-secret"]);
+  });
+});
+
+describe("clearing MCP secret slots", () => {
+  it("clears the normalized slot for a legacy id over 64 chars", () => {
+    const values = new Map<string, string>();
+    const app = {
+      secretStorage: {
+        getSecret: (id: string) => values.get(id) ?? "",
+        setSecret: (id: string, value: string) => {
+          values.set(id, value);
+        },
+      },
+    } as unknown as App;
+    const server = createMcpServerSettings({
+      id: "legacy",
+      url: "https://mcp.example.com/mcp",
+      authType: "bearer",
+    });
+    const legacyId = `agentic-chat-mcp-${"x".repeat(80)}-auth-header-value`;
+    server.authHeaderValueSecretId = legacyId;
+    const normalized = normalizeSecretId(legacyId);
+    new ObsidianSecretStore(app).setSecret(legacyId, "token");
+    expect(values.get(normalized)).toBe("token");
+
+    clearMcpSecretSlots(app, server);
+
+    expect(values.get(normalized) ?? "").toBe("");
   });
 });

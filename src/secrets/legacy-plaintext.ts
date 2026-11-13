@@ -100,6 +100,10 @@ export function withUnmigratedSecrets(
   return {
     getSecret: (id) => store.getSecret(id) || pending.get(normalizeSecretId(id)) || "",
     setSecret: (id, value) => store.setSecret(id, value),
+    deleteSecret: (id) => {
+      pending.delete(normalizeSecretId(id));
+      store.deleteSecret(id);
+    },
   };
 }
 
