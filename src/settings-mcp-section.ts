@@ -3,7 +3,6 @@ import type AgenticChatPlugin from "./main";
 import { type ApprovalPolicy, clearMcpPerToolApprovals, setPerToolApproval } from "./agent/approval";
 import { createMcpFetcher } from "./mcp/fetcher";
 import {
-  authenticateMcpServer,
   DEFAULT_MCP_OAUTH_REDIRECT_URI,
   forgetMcpOAuthTokens,
   hasMcpOAuthAccess,
@@ -17,8 +16,8 @@ import {
   type McpAuthType,
   type McpServerSettings,
 } from "./mcp/settings";
+import { authenticateAndProbe, probeAndCache } from "./mcp/server-admin";
 import { healMcpToolGlobs } from "./mcp/tool-filter";
-import { probeMcpServer } from "./mcp/tools";
 import { effectiveProxy, DEFAULT_PROXY_SETTINGS, PROXY_URL_EXAMPLE } from "./network/proxy";
 import { resolveMcpServers } from "./plugins/loader";
 import { validateMcpUrl } from "./plugins/manifest";
@@ -659,7 +658,7 @@ export class McpSettingsSection {
   private async refreshMcpKnownTools(server: McpServerSettings, button?: ButtonComponent): Promise<void> {
     button?.setDisabled(true);
     try {
-      const result = await this.probeAndCacheMcpTools(server);
+      const result = await probeAndCache(server, this.adminDeps(server));
       const sample = formatMcpToolSample(result.toolNames);
       new Notice(
         `${server.name}: refreshed ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"}${sample}.`,
@@ -672,24 +671,19 @@ export class McpSettingsSection {
     }
   }
 
-  private async probeAndCacheMcpTools(server: McpServerSettings): Promise<Awaited<ReturnType<typeof probeMcpServer>>> {
-    const endpointProblem = mcpEndpointProblem(server.url);
-    if (endpointProblem) throw new Error(endpointProblem);
-    const result = await probeMcpServer(server, createMcpFetcher(this.effectiveMcpProxySettings()), {
-      onServerChanged: async (changed) => {
-        this.syncMcpServerToState(changed);
-        await this.host.save();
-      },
-    });
-    server.knownTools = result.tools;
-    server.enabled = true;
-    this.syncMcpServerToState(server);
-    await this.host.save();
-    return result;
+  private adminDeps(server: McpServerSettings) {
+    return {
+      save: () => this.host.save(),
+      sync: (changed: McpServerSettings) => this.syncMcpServerToState(changed),
+      fetcher: createMcpFetcher(this.effectiveMcpProxySettings()),
+      createCallbackReceiver: () =>
+        Platform.isMobileApp ? this.host.plugin.createMcpOAuthCallbackReceiver() : undefined,
+      onProgress: (event: McpOAuthProgressEvent) => handleMcpOAuthProgress(server, event),
+    };
   }
 
   private async testMcpServer(server: McpServerSettings): Promise<void> {
-    const result = await this.probeAndCacheMcpTools(server);
+    const result = await probeAndCache(server, this.adminDeps(server));
     const sample = formatMcpToolSample(result.toolNames);
     new Notice(
       `${server.name}: connected; discovered ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"}${sample}.`,
@@ -698,21 +692,7 @@ export class McpSettingsSection {
   }
 
   private async authenticateAndProbeMcpServer(server: McpServerSettings): Promise<void> {
-    const fetcher = createMcpFetcher(this.effectiveMcpProxySettings());
-    await authenticateMcpServer(server, fetcher, {
-      callbackReceiver: Platform.isMobileApp ? this.host.plugin.createMcpOAuthCallbackReceiver() : undefined,
-      onProgress: (event) => handleMcpOAuthProgress(server, event),
-    });
-    this.syncMcpServerToState(server);
-    const result = await probeMcpServer(server, fetcher, {
-      onServerChanged: async (changed) => {
-        this.syncMcpServerToState(changed);
-        await this.host.save();
-      },
-    });
-    server.knownTools = result.tools;
-    this.syncMcpServerToState(server);
-    await this.host.save();
+    const result = await authenticateAndProbe(server, this.adminDeps(server));
     const sample = formatMcpToolSample(result.toolNames);
     new Notice(
       `Authenticated ${server.name}; discovered ${result.toolCount} tool${
