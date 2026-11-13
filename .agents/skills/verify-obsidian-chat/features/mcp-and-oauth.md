@@ -62,7 +62,7 @@ await clickMcpAddButton("Add MCP server");
 | OAuth token refresh | `src/mcp/oauth.ts:214` | `test/mcp-oauth.test.ts:513` (unit only) | `partial` |
 | Concurrent OAuth refresh shares one request | `src/mcp/oauth.ts:214` | `test/mcp-oauth.test.ts:610` | `partial` |
 | Concurrent mobile OAuth callbacks route by state | `src/mcp/oauth/callback-receivers.ts:88` | `test/mcp-oauth.test.ts:121` | `partial` |
-| MCP handshake retries after a failed initialized notification | `src/mcp/client.ts:120` | `test/mcp-client.test.ts:112` | `partial` |
+| MCP handshake retries after a failed initialized notification | `src/mcp/client.ts:122` | `test/mcp-client.test.ts:112` | `partial` |
 | Test connection / refresh tools | `src/settings-mcp-section.ts:691` | `test/mcp-tools.test.ts:229` (probe helper only) | `partial` |
 | Tool allowlist/denylist | `src/settings-mcp-section.ts:389` | `test/mcp-tools.test.ts:174` (unit only) | `partial` |
 | Per-tool MCP approvals | `src/settings.ts:1332` | no committed check | `NONE` |
@@ -70,7 +70,7 @@ await clickMcpAddButton("Add MCP server");
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts:49` | `test/e2e/specs/composio-install.e2e.ts:27` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts:323` | `test/e2e/specs/settings-ui.e2e.ts:350` | `covered` |
 | Discover and call a remote MCP tool | `src/mcp/tools.ts:102` | `test/e2e/specs/mcp-live.e2e.ts:227` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
-| Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts:610` | `test/mcp-client.test.ts:360` (unit only) | `partial` |
+| Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts:620` | `test/mcp-client.test.ts:360` (unit only) | `partial` |
 
 ## Gotchas
 

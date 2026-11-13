@@ -63,8 +63,8 @@ await browser.waitUntil(async () =>
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:427` | no committed check | `NONE` |
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts:1215` | `test/e2e/specs/composer-paths.e2e.ts:234` | `covered` |
 | Stop one tab without aborting the other | `src/ui/chat-view.ts:781` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
-| Stop clears queued steering | `src/agent/agent-service.ts:744` | `test/agent-service.test.ts:1598` (unit only) | `partial` |
-| `/compact` skips when the session changed | `src/agent/agent-service.ts:655` | `test/agent-service.test.ts:970` | `partial` |
+| Stop clears queued steering | `src/agent/agent-service.ts:754` | `test/agent-service.test.ts:1598` (unit only) | `partial` |
+| `/compact` skips when the session changed | `src/agent/agent-service.ts:665` | `test/agent-service.test.ts:970` | `partial` |
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
 | Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:159` | `covered` |
 | Enter steers after the current model turn | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:174` | `covered` |
