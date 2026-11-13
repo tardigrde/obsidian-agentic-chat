@@ -1,5 +1,3 @@
-import { mkdirSync } from "node:fs";
-import path from "node:path";
 import { browser, expect, $ } from "@wdio/globals";
 import { after, afterEach, before, beforeEach, describe, it } from "mocha";
 import { waitForComposerReady } from "../support/layout";
@@ -350,13 +348,6 @@ describe("agentic-chat deterministic approvals", function () {
     });
     expect(diffStyles.addColor).not.toBe(diffStyles.removeColor);
     expect(diffStyles.addBackground).not.toBe(diffStyles.removeBackground);
-    const shotDir = path.join(
-      "logs",
-      "design-audit",
-      `${new Date().toISOString().replace(/[:.]/g, "-")}-approval`,
-    );
-    mkdirSync(shotDir, { recursive: true });
-    await browser.saveScreenshot(path.join(shotDir, "approval-diff.full.png"));
     await allowApproval();
 
     await browser.waitUntil(async () => (await readNote(EDIT_NOTE_PATH)).includes(EDIT_AFTER), {
