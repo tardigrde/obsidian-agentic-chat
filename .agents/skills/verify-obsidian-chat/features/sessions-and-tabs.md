@@ -40,9 +40,9 @@ await $(".agentic-chat-session-list").waitForExist();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Tab strip renders | `src/ui/chat-view.ts#closeTab` | `test/e2e/specs/smoke.e2e.ts#renders the unified composer card with a tab and textarea` | `covered` |
-| `+` adds a tab | `src/ui/chat-view.ts#restoreDraft` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
-| Switch between tabs | `src/ui/chat-view.ts#restoreDraft` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
+| Tab strip renders | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/smoke.e2e.ts#renders the unified composer card with a tab and textarea` | `covered` |
+| `+` adds a tab | `src/ui/chat-view.ts#addTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
+| Switch between tabs | `src/ui/chat-view.ts#switchToTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
 | Busy dot on a streaming tab | `src/ui/chat-view.ts#tabLabel` | no committed check | `NONE` |
 | Needs-approval tab badge | `src/ui/chat-view.ts#tabLabel` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
 | `x` closes a tab | `src/ui/chat-view.ts#onActivate` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` (calls `closeTab`, does not click `x`) | `partial` |

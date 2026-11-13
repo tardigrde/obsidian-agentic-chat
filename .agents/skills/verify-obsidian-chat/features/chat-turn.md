@@ -58,7 +58,7 @@ await browser.waitUntil(async () =>
 | Send a prompt and render a reply | `src/ui/chat-view.ts#flushQueuedPromptIfReady` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
 | Stream text deltas | `src/ui/transcript-view.ts#renderTranscript` | `test/e2e/specs/beautifului-polish.e2e.ts#live reasoning settles to Thought with a final elapsed timer once the answer streams` (synthetic stream) | `partial` |
 | Reasoning section | `src/ui/transcript-view.ts#updateScrollPinning` | `test/e2e/specs/beautifului-polish.e2e.ts#live reasoning settles to Thought with a final elapsed timer once the answer streams` | `partial` |
-| Markdown rendering | `src/ui/transcript-view.ts#scrollToBottom` | `test/assistant-bubble-rendering.test.ts#converts Obsidian callout blockquotes when MarkdownRenderer leaves them plain` (unit only) | `partial` |
+| Markdown rendering | `src/ui/assistant-bubble.ts#MarkdownRenderer.render` | `test/assistant-bubble-rendering.test.ts#converts Obsidian callout blockquotes when MarkdownRenderer leaves them plain` (unit only) | `partial` |
 | Tool step cards and diffs | `src/ui/transcript-view.ts#renderTranscript` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
 | Tool-step vault path link | `src/ui/step-card.ts#appendPathLink` | no committed check | `NONE` |
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts#stopActiveTurn` | `test/e2e/specs/composer-paths.e2e.ts#stops, then sends the draft as a replacement turn` | `covered` |

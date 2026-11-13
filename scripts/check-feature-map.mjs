@@ -247,19 +247,17 @@ function normalizedWords(text) {
 }
 
 /**
- * Match the entry name against the row's first cell only. A match starts at a
- * word boundary at the start of the cell or of one `:`/`>` segment, so
- * `row("Name")` does not pass on "`/agent <name> <task>`" and `row("Import")`
- * does not pass on "Imported MCP servers start disabled".
+ * Match the entry name against the row's first cell only, as one whole segment
+ * (split on `:`, `>`, `,`, `;`, and " / "). So `row("Name")` does not pass on
+ * "`/agent <name> <task>`", `row("Import")` not on "Imported MCP servers ...",
+ * and `row("Model")` not on "Model calls the `subagent` tool".
  */
 function namesEntryPoint(cell, name) {
-  const needle = normalizedWords(name);
-  if (needle.length === 0) return false;
-  for (const part of cell.split(/[:>]/)) {
-    const words = normalizedWords(part);
-    if (needle.every((word, index) => words[index] === word)) return true;
-  }
-  return false;
+  const needle = normalizedWords(name).join(" ");
+  if (!needle) return false;
+  return cell
+    .split(/[:>,;]|\s\/\s/)
+    .some((part) => normalizedWords(part).join(" ") === needle);
 }
 
 function checkInventory(root, rows, errors) {

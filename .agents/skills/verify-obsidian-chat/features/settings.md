@@ -46,24 +46,24 @@ await closeAgenticChatSettings();
 | entry point | source | proof | status |
 |---|---|---|---|
 | Settings tab opens | `src/main.ts#onload` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` (opened by the helper via `app.setting`, not the nav) | `partial` |
-| Three tabs render and switch | `src/settings.ts#writeControlValue` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` | `covered` |
+| Three tabs render and switch | `src/settings.ts#SETTINGS_TABS` | `test/e2e/specs/settings-ui.e2e.ts#shows exactly three tabs and groups the advanced sections` | `covered` |
 | Advanced groups web, MCP, observability, notifications, plugins, subagents, retrieval, ignore list | `src/settings.ts#writeControlValue` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` | `covered` |
-| A moved Advanced setting saves and survives close/reopen | `src/settings-tab-agent.ts#notificationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists observability settings through the Advanced tab` | `covered` |
-| Models: provider, API key, base URL, model | `src/settings-mcp-edits.ts#nextMcpServerId` | `test/e2e/specs/settings-ui.e2e.ts#shows exactly three tabs and groups the advanced sections` | `covered` |
-| Secrets stay out of `data.json` | `src/settings-definition-kit.ts#secretInputDef` | `test/e2e/specs/settings-ui.e2e.ts#shows exactly three tabs and groups the advanced sections` | `covered` |
+| A moved Advanced setting saves and survives close/reopen | `src/settings-tab-agent.ts#notificationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#keeps a moved Advanced setting after close and reopen` | `covered` |
+| Models: provider, API key, base URL, model | `src/settings-tab-models.ts#modelsDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
+| Secrets stay out of `data.json` | `src/settings-definition-kit.ts#secretInputDef` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
 | OpenRouter privacy toggles | `src/settings-tab-models.ts#openRouterDefinitions` | no committed check | `NONE` |
 | Ollama server URL and model | `src/settings-tab-models.ts#ollamaDefinitions` | no committed check | `NONE` |
-| Global network proxy | `src/settings-mcp-edits.ts#nextMcpServerId` | no committed check | `NONE` |
-| Agent: permission mode dropdown | `src/settings-tab-agent.ts#row("Permission mode"` | no committed check | `NONE` |
+| Global network proxy | `src/settings-tab-models.ts#headingRow("Network proxy")` | no committed check | `NONE` |
+| Agent: Permission mode | `src/settings-tab-agent.ts#row("Permission mode"` | no committed check | `NONE` |
 | Agent: sampling, timeout, retries, prompt, compaction, budget | `src/settings-tab-agent.ts#agentDefinitions` | no committed check | `NONE` |
 | Approval gates: Per-tool overrides | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
-| Approval: working directories section removed | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists provider, API key, base URL, and model through the Models tab` | `covered` |
-| Web: enable, provider, key, results, fetch limit | `src/settings-tab-web.ts#webDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
+| Approval: working directories section removed | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
+| Web: enable, provider, key, results, fetch limit | `src/settings-tab-web.ts#webDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
 | Web: allowed hosts | `src/settings-tab-web.ts#row("Allowed hosts"` | no committed check | `NONE` |
-| MCP tools: enable and add a server | `src/settings-mcp-section.ts#definitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
-| Observability with Langfuse | `src/settings-tab-web.ts#observabilityDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#installs a plugin package from an archive URL through the Install plugin modal` | `covered` |
+| MCP tools: enable and add a server | `src/settings-mcp-section.ts#definitions` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
+| Observability with Langfuse | `src/settings-tab-web.ts#observabilityDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists observability settings through the Advanced tab` | `covered` |
 | Observability: generic OTLP auth header | `src/settings-tab-web.ts#observabilityDefinitions` | `test/e2e/specs/settings-migration.e2e.ts#loads existing data.json, heals legacy fields, and migrates plaintext secrets` (migration only) | `partial` |
-| Notifications section | `src/settings-tab-agent.ts#notificationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists observability settings through the Advanced tab` | `covered` |
+| Notifications section | `src/settings-tab-agent.ts#notificationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#keeps a moved Advanced setting after close and reopen` | `covered` |
 | Agent plugins: Install plugin | `src/settings-tab-plugins.ts#pluginDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
 | Agent plugins: Import | `src/settings-tab-plugins.ts#row("Import"` | `test/e2e/specs/settings-ui.e2e.ts#installs a plugin package from an archive URL through the Install plugin modal` | `covered` |
 
@@ -71,7 +71,6 @@ await closeAgenticChatSettings();
 | Agent plugins: Repair built-ins | `src/settings-tab-plugins.ts#pluginDefinitions` | no committed check | `NONE` |
 | Agent plugins: Plugins folder | `src/settings-tab-plugins.ts#row("Plugins folder"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
 | Agent plugins: plugin row toggle/open/remove | `src/settings-tab-plugins.ts#pluginRowDefinition` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` (row renders only) | `partial` |
-| Subagents: timeout | `src/settings-tab-agent.ts#row("Subagent timeout"` | no committed check | `NONE` |
 | Semantic retrieval: embedding controls | `src/settings-tab-retrieval.ts#retrievalDefinitions` | no committed check | `NONE` |
 | Settings at phone width | `src/settings.ts#writeControlValue` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` | `covered` |
 | `getSettingDefinitions()` | `src/settings.ts#getSettingDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` (three named pages render) | `covered` |

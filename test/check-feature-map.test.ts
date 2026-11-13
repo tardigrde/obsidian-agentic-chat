@@ -176,6 +176,20 @@ describe("check-feature-map", () => {
     expect(run(root).status).toBe(0);
   });
 
+  it("does not count a row whose first cell only starts with the settings row name", () => {
+    const features = path.join(root, FEATURES);
+    writeFileSync(
+      path.join(root, "src", "settings-models.ts"),
+      'import { row } from "./settings-definition-kit";\nconst model = row("Model", () => {});\n',
+    );
+    const unrelated = "| Model calls the `subagent` tool | `src/a.ts#alpha` | `test/e2e/sample.e2e.ts#sample flow` | `covered` |";
+    writeFileSync(path.join(features, "sample.md"), journey(`${row()}\n${unrelated}`));
+    expect(run(root).output).toContain('settings row "Model" is not named');
+    const own = "| Models: provider, model | `src/settings-models.ts#row(\"Model\"` | `test/e2e/sample.e2e.ts#sample flow` | `covered` |";
+    writeFileSync(path.join(features, "sample.md"), journey(`${row()}\n${unrelated}\n${own}`));
+    expect(run(root).status).toBe(0);
+  });
+
   it("fails when a known command id has no map row, and passes once the row is added", () => {
     writeFileSync(
       path.join(root, "src", "main.ts"),

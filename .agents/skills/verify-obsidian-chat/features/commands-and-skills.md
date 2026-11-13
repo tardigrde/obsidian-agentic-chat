@@ -71,7 +71,7 @@ await $(".agentic-chat-info").waitForExist();
 | `/doctor` | `src/ui/commands.ts#name: "doctor"` | `test/runtime-diagnostics.test.ts#runtime diagnostics` (diagnostics only) | `partial` |
 | `/add-dir` and `/dirs` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
 | `/agent` | `src/ui/commands.ts#name: "agent"` | `test/command-dispatcher.test.ts#resolves a named subagent with the trimmed task` (unit only) | `partial` |
-| `/skill <name>` | `src/ui/commands.ts#name: "skill"` | `test/e2e/specs/skill-chip.e2e.ts#renders a Skill block naming the loaded skill` | `covered` |
+| `/skill`, `/skill <name>` | `src/ui/commands.ts#name: "skill"` | `test/e2e/specs/skill-chip.e2e.ts#renders a Skill block naming the loaded skill` | `covered` |
 | `/skill` with no name (picker) | `src/ui/slash/agents.ts#runSkill` | no committed check | `NONE` |
 | Bare `/<skill-name>` | `src/ui/chat-view.ts#dispatchPrompt` | `test/commands.test.ts#keeps multiline argument tails for commands such as init and compact` (parse only) | `partial` |
 | `/template` as a command | `src/ui/chat-view.ts#dispatchPrompt` | no handler; the word falls through to the model | `unreachable` |

@@ -32,7 +32,7 @@ Each one keeps the same five sections, in this order:
   Use `test/e2e/support/settings-ui.ts`; do not query the main window.
 - For deterministic turns, install `window.__AGENTIC_CHAT_E2E_TURNS__` with
   `installScriptedTurns()`. The plugin reaches it through
-  `createWindowE2EStreamFn` in `src/agent/e2e-stream.ts#getWindowE2ETarget`.
+  `createWindowE2EStreamFn` in `src/agent/e2e-stream.ts#createWindowE2EStreamFn`.
 - Live turns need `AGENTIC_CHAT_API_KEY`, `AGENTIC_CHAT_BASE_URL`, and
   `AGENTIC_CHAT_MODEL`. A live spec skips without them and still exits 0. Read
   the test counts.
