@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { estimateTextTokens } from "@earendil-works/pi-ai/utils/estimate";
 import {
   applyToolBudget,
   createToolBudgetState,
+  estimateToolDefinitionTokens,
   toolBudgetDropReason,
   type ToolBudgetSettings,
 } from "../src/agent/tool-budget";
@@ -153,6 +155,14 @@ describe("tool budget", () => {
 
     expect(disabled.tools.map((tool) => tool.name)).toEqual(["read", "subagent"]);
     expect(disabled.snapshot).toMatchObject({ enabled: false, active: false, droppedTools: [] });
+  });
+
+  it("uses the same characters-per-token ratio as pi-ai text estimates", () => {
+    const description = "x".repeat(700);
+    const tool = { name: "read", label: "Read", description, parameters: {} } as AgentTool;
+    const serialized = JSON.stringify([{ name: "read", description, parameters: {} }]);
+
+    expect(estimateToolDefinitionTokens([tool])).toBe(estimateTextTokens(serialized));
   });
 
   it("classifies only optional tool surfaces as droppable", () => {

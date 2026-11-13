@@ -48,13 +48,11 @@ function parentTools(withScaffolder: boolean): AgentTool[] {
 }
 
 describe("tool schema token budget", () => {
-  it("keeps the full parent tool set under 2400 model-visible schema tokens", () => {
+  it("keeps the full parent tool set under 2800 model-visible schema tokens", () => {
     const tokens = estimateToolDefinitionTokens(parentTools(false));
-    // Trimmed tool descriptions are a per-turn context + cost win and keep the
-    // tool budget (2% of a 128k window = 2560) from silently dropping optional
-    // tools. This ceiling guards against prose creeping back in. F10+H8 added
-    // read_skill_file + load/unload_skill (+~150 tokens) so limit raised 2200→2400.
-    expect(tokens).toBeLessThan(2400);
+    // Measured with pi-ai's 3.5 chars-per-token ratio, the same one the context
+    // readout uses. This ceiling guards against prose creeping back in.
+    expect(tokens).toBeLessThan(2800);
   });
 
   it("keeps the production parent tool set (with create_skill) under the same ceiling", () => {
@@ -62,7 +60,7 @@ describe("tool schema token budget", () => {
     // create_skill adds ~750 tokens of schema (name/description/body/overwrite
     // params + safety description). Production already carries MCP tools on top,
     // so this ceiling only guards prose creep in the fixed test config.
-    expect(tokens).toBeLessThan(2700);
+    expect(tokens).toBeLessThan(3000);
   });
 
   it("keeps the default vault surface under 1000 tokens (eval max_tool_schema_tokens is 1200)", () => {

@@ -57,7 +57,7 @@ function model(cost: Model<Api>["cost"]): Model<Api> {
   };
 }
 
-/** 34 estimated tokens with the tool-budget JSON/4 heuristic. */
+/** 39 estimated tokens with pi-ai's 3.5 chars-per-token ratio. */
 const READ_TOOL = {
   name: "read",
   label: "Read",
@@ -101,14 +101,14 @@ describe("agent readouts", () => {
 
     // The old readout counted only the transcript: 100 / 10,000 = 0.01.
     expect(contextFraction(messages, contextWindow)).toBe(0.01);
-    // 100 transcript + 100 system prompt + 34 tool schemas + 1,000 reserve.
+    // 100 transcript + 100 system prompt + 39 tool schemas + 1,000 reserve.
     expect(
       contextFraction(messages, contextWindow, {
         systemPrompt,
         tools: [READ_TOOL],
         reserveTokens: 1_000,
       }),
-    ).toBeCloseTo(0.1234, 10);
+    ).toBeCloseTo(0.1239, 10);
 
     const estimate = estimateNextCostReadout({
       messages,
@@ -118,7 +118,7 @@ describe("agent readouts", () => {
       tools: [READ_TOOL],
     });
     // Input excludes the reserve; the old first-turn value was 200 (100 + prompt only).
-    expect(estimate?.inputTokens).toBe(234);
+    expect(estimate?.inputTokens).toBe(239);
     expect(estimate?.outputTokens).toBe(1_000);
   });
 
@@ -148,12 +148,12 @@ describe("agent readouts", () => {
     const withTools = estimateNextCostReadout({ ...base, tools: [READ_TOOL] });
     const toolSchemaTokens = estimateToolDefinitionTokens([READ_TOOL]);
 
-    expect(toolSchemaTokens).toBe(34);
-    // 600 transcript + 100 system prompt + 34 tool schemas; the prior turn's
+    expect(toolSchemaTokens).toBe(39);
+    // 600 transcript + 100 system prompt + 39 tool schemas; the prior turn's
     // provider usage no longer hides the tools.
     expect(withoutTools?.inputTokens).toBe(700);
-    expect(withTools?.inputTokens).toBe(734);
-    expect((withTools?.inputTokens ?? 0) - (withoutTools?.inputTokens ?? 0)).toBe(34);
+    expect(withTools?.inputTokens).toBe(739);
+    expect((withTools?.inputTokens ?? 0) - (withoutTools?.inputTokens ?? 0)).toBe(39);
   });
 
   it("counts the response reserve as output tokens for the next request", () => {

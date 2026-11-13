@@ -91,13 +91,20 @@ export function applyToolBudget(options: ApplyToolBudgetOptions): { tools: Agent
   };
 }
 
+/** Same ratio pi-ai uses for transcript and prompt text estimates. */
+const CHARS_PER_TOKEN = 3.5;
+
+export function estimateTokensFromChars(chars: number): number {
+  return Math.ceil(chars / CHARS_PER_TOKEN);
+}
+
 export function estimateToolDefinitionTokens(tools: readonly AgentTool[]): number {
   const modelVisible = tools.map((tool) => ({
     name: tool.name,
     description: tool.description ?? "",
     parameters: tool.parameters ?? {},
   }));
-  return Math.ceil(JSON.stringify(modelVisible).length / 4);
+  return estimateTokensFromChars(JSON.stringify(modelVisible).length);
 }
 
 export function toolBudgetDropReason(toolName: string): string | null {
