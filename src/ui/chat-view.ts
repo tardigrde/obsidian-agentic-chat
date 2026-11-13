@@ -17,6 +17,7 @@ import { applyRememberedApprovalChoice } from "../agent/approval-memory";
 import { ApprovalModal } from "./approval-modal";
 import { isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
+import { writeVaultFile } from "../vault/storage";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
 import { activeModelId, apiKeyForProvider } from "../settings-schema";
 import { listOpenAICompatibleModels, listOpenRouterModels } from "../llm/models";
@@ -100,20 +101,12 @@ import {
   formatMcpDiagnosticSummary,
   formatRuntimeDiagnosticsRows,
 } from "../agent/diagnostics";
-import { loadVaultRetrievalDocuments } from "../retrieval/relevant-notes";
-import {
-  OpenAICompatibleEmbeddingProvider,
-  activeEmbeddingModel,
-  embeddingConfigFromSettings,
-} from "../retrieval/embeddings";
-import {
-  readSemanticIndexFile,
-  semanticIndexPath,
-  type SemanticIndexFile,
-} from "../retrieval/semantic-index";
-import { memoryPathForApp } from "../tools/memory-tools";
 import { MemoryWorkflowController } from "./memory-workflow-controller";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
+import {
+  createMemoryWorkflowController,
+  createSemanticIndexWorkflowController,
+} from "./chat-services";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
 import { SessionWorkflowController } from "./session-workflow-controller";
 import {
@@ -1889,64 +1882,26 @@ export class ChatView extends ItemView {
     await this.semanticIndexWorkflowController().run(arg);
   }
 
-  private semanticEmbeddingConfig(): ConstructorParameters<typeof OpenAICompatibleEmbeddingProvider>[0] {
-    const settings = this.plugin.settings;
-    return embeddingConfigFromSettings(settings.embeddings, {
-      openrouterApiKey: settings.openrouterApiKey,
-      openaiCompatibleApiKey: settings.openaiCompatibleApiKey,
-      ollamaBaseUrl: settings.ollamaBaseUrl,
-      openaiCompatibleBaseUrl: settings.openaiCompatibleBaseUrl,
-      privacy: settings.privacy,
-    });
-  }
-
-  private async readSemanticIndex(): Promise<SemanticIndexFile | null> {
-    return readSemanticIndexFile(this.app.vault.adapter, this.semanticIndexFilePath());
-  }
-
-  private semanticIndexFilePath(): string {
-    const pluginDir = this.plugin.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.plugin.manifest.id}`;
-    return semanticIndexPath(pluginDir);
-  }
-
   private semanticIndexWorkflowController(): SemanticIndexWorkflowController {
     if (this.semanticIndexWorkflow) return this.semanticIndexWorkflow;
-    this.semanticIndexWorkflow = new SemanticIndexWorkflowController({
-      adapter: this.app.vault.adapter,
-      indexPath: () => this.semanticIndexFilePath(),
+    this.semanticIndexWorkflow = createSemanticIndexWorkflowController({
+      app: this.app,
+      settings: this.plugin.settings,
+      pluginDir: this.plugin.manifest.dir,
+      pluginId: this.plugin.manifest.id,
       activeNotePath: () => this.activeNotePath,
-      loadDocuments: (scopeFolders) =>
-        loadVaultRetrievalDocuments(this.app, (path) => this.service.isPathIgnored(path), scopeFolders),
-      embeddingConfig: () => this.semanticEmbeddingConfig(),
-      embeddingsEnabled: () => this.plugin.settings.embeddings.enabled,
-      activeEmbeddingModel: () => activeEmbeddingModel(this.plugin.settings.embeddings),
-      batchSize: () => this.plugin.settings.embeddings.batchSize,
-      createEmbedder: () =>
-        new OpenAICompatibleEmbeddingProvider(
-          this.semanticEmbeddingConfig(),
-          createProxiedFetcher(this.plugin.settings.network),
-      ),
+      isPathIgnored: (path) => this.service.isPathIgnored(path),
       renderer: this.workflowRenderer(),
     });
     return this.semanticIndexWorkflow;
   }
 
   private createMemoryWorkflow(): MemoryWorkflowController {
-    return new MemoryWorkflowController({
-      adapter: this.app.vault.adapter,
-      memoryPath: () => memoryPathForApp(this.app),
+    return createMemoryWorkflowController({
+      app: this.app,
       messages: () => this.service.getMessages(),
-      defaultScope: () => "vault",
-      sessionSource: () => {
-        const session = this.service.getSessionInfo();
-        return session ? `[[Agentic Chat Sessions/${session.id}|Chat session]]` : undefined;
-      },
+      sessionInfo: () => this.service.getSessionInfo(),
       renderer: this.workflowRenderer(),
-      writeExport: async (filename, contents) => {
-        await this.ensureExportFolder();
-        const file = await this.app.vault.create(`${EXPORT_FOLDER}/${filename}`, contents);
-        return file.path;
-      },
     });
   }
 
@@ -2022,9 +1977,8 @@ export class ChatView extends ItemView {
     }
     try {
       const markdown = sessionToMarkdown(messages, this.service.getSessionInfo());
-      await this.ensureExportFolder();
       const path = `${EXPORT_FOLDER}/${exportFileName(this.service.getSessionInfo(), Date.now())}`;
-      const file = await this.app.vault.create(path, markdown);
+      const file = await writeVaultFile(this.app, path, markdown);
       this.renderInfoMessage("Export", [["Saved", file.path]]);
     } catch (error) {
       this.renderErrorMessage(`Export failed: ${errorMessage(error)}`);
@@ -2040,14 +1994,6 @@ export class ChatView extends ItemView {
         return [`/${command.name}${argsPart}`, command.description];
       }),
     );
-  }
-
-  private async ensureExportFolder(): Promise<void> {
-    // getAbstractFileByPath (not getFolderByPath, which needs Obsidian >=1.5.3) so
-    // the folder check works down to the manifest's minAppVersion.
-    if (!this.app.vault.getAbstractFileByPath(EXPORT_FOLDER)) {
-      await this.app.vault.createFolder(EXPORT_FOLDER);
-    }
   }
 
   /** Render a collapsible info block in the transcript (not sent to the model). */
