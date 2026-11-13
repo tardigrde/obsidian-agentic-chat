@@ -24,7 +24,7 @@ import {
   backoffDelayMs,
   classifyError,
   classifyHttpResponse,
-  sleep,
+  sleepWithAbort,
   type ClassifiedError,
 } from "../agent/error-classifier";
 
@@ -285,11 +285,7 @@ async function waitForRetry(
   if (maxRetryDelayMs !== undefined && maxRetryDelayMs > 0 && delayMs > maxRetryDelayMs) {
     throw new Error(`Retry requested a ${delayMs}ms delay, exceeding maxRetryDelayMs=${maxRetryDelayMs}.`, { cause: decision.cause });
   }
-  await sleep(delayMs, options?.signal);
-}
-
-export function isRetryableResponse(response: OpenAICompatibleResponse): boolean {
-  return classifyHttpResponse(response.status, response.headers, extractErrorDetail(response) || response.text).retryable;
+  await sleepWithAbort(delayMs, options?.signal);
 }
 
 function buildPayload(

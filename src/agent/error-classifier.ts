@@ -134,9 +134,7 @@ function classifyFromStatusText(rawMessage: string, nowMs: number): ClassifiedEr
   if (!statusStr) return undefined;
   const status = Number.parseInt(statusStr, 10);
   if (!Number.isFinite(status)) return undefined;
-  const retryAfterMs = extractRetryAfterFromMessage(rawMessage);
-  const headers = retryAfterMs ? { "retry-after": String(retryAfterMs / 1000) } : undefined;
-  return classifyStatus(status, rawMessage, headers, nowMs);
+  return classifyStatus(status, rawMessage, undefined, nowMs);
 }
 
 function classifyFromMessageText(rawMessage: string): ClassifiedError {
@@ -151,10 +149,6 @@ function classifyFromMessageText(rawMessage: string): ClassifiedError {
     return { class: "permanent", retryable: false, message: rawMessage };
   }
   return { class: "permanent", retryable: false, message: rawMessage || "unknown error" };
-}
-
-function extractRetryAfterFromMessage(_message: string): number | undefined {
-  return undefined;
 }
 
 export function backoffDelayMs(attempt: number, retryAfterMs?: number): number {
@@ -184,23 +178,7 @@ function secureRandom(): number {
   return Math.random(); // NOSONAR - jitter for backoff, not security-sensitive; crypto is primary
 }
 
-export function shouldRetry(classified: ClassifiedError, attempt: number, maxRetries: number): boolean {
-  if (!classified.retryable) return false;
-  if (classified.class === "aborted" || classified.class === "resource" || classified.class === "model" || classified.class === "permanent") return false;
-  return attempt < maxRetries;
-}
-
-export async function sleepWithBackoff(
-  attempt: number,
-  classified: ClassifiedError,
-  signal?: AbortSignal,
-): Promise<void> {
-  const delay = backoffDelayMs(attempt, classified.retryAfterMs);
-  if (delay <= 0) return;
-  await sleep(delay, signal);
-}
-
-export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+export function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
   if (ms <= 0) return Promise.resolve();
   if (signal?.aborted) return Promise.reject(new Error("Aborted."));
   return new Promise<void>((resolve, reject) => {

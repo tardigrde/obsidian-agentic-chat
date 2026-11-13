@@ -9,6 +9,7 @@ import {
   type ToolCall,
   type Usage,
 } from "@earendil-works/pi-ai";
+import { sleepWithAbort } from "./error-classifier";
 
 export type ReplayStopReason = Extract<StopReason, "stop" | "length" | "toolUse" | "error" | "aborted">;
 
@@ -199,7 +200,7 @@ async function emitReplayTurn(
       await emitContentUpdates(stream, partial, message.content, turn.updateDelayMs ?? 0, signal);
     }
     if (turn?.hold) await waitForRelease?.();
-    await wait(turn?.delayMs ?? 0, signal);
+    await sleepWithAbort(turn?.delayMs ?? 0, signal);
   } catch {
     const aborted: AssistantMessage = { ...message, content: [], stopReason: "aborted" };
     stream.push({ type: "error", reason: "aborted", error: aborted });
@@ -239,12 +240,12 @@ async function emitContentUpdates(
       const partialBlock = { type: "text" as const, text: "" };
       partial.content.push(partialBlock);
       stream.push({ type: "text_start", contentIndex, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs, signal);
+      await sleepWithAbort(updateDelayMs, signal);
       partialBlock.text = block.text;
       stream.push({ type: "text_delta", contentIndex, delta: block.text, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs, signal);
+      await sleepWithAbort(updateDelayMs, signal);
       stream.push({ type: "text_end", contentIndex, content: block.text, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs, signal);
+      await sleepWithAbort(updateDelayMs, signal);
       continue;
     }
     if (block.type === "thinking") {
@@ -252,12 +253,12 @@ async function emitContentUpdates(
       const partialBlock = { type: "thinking" as const, thinking: "" };
       partial.content.push(partialBlock);
       stream.push({ type: "thinking_start", contentIndex, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs, signal);
+      await sleepWithAbort(updateDelayMs, signal);
       partialBlock.thinking = block.thinking;
       stream.push({ type: "thinking_delta", contentIndex, delta: block.thinking, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs, signal);
+      await sleepWithAbort(updateDelayMs, signal);
       stream.push({ type: "thinking_end", contentIndex, content: block.thinking, partial: cloneAssistant(partial) });
-      await wait(updateDelayMs, signal);
+      await sleepWithAbort(updateDelayMs, signal);
       continue;
     }
     const contentIndex = partial.content.length;
@@ -269,13 +270,13 @@ async function emitContentUpdates(
     };
     partial.content.push(partialBlock);
     stream.push({ type: "toolcall_start", contentIndex, partial: cloneAssistant(partial) });
-    await wait(updateDelayMs, signal);
+    await sleepWithAbort(updateDelayMs, signal);
     const delta = JSON.stringify(block.arguments ?? {});
     partialBlock.arguments = cloneJsonObject(block.arguments);
     stream.push({ type: "toolcall_delta", contentIndex, delta, partial: cloneAssistant(partial) });
-    await wait(updateDelayMs, signal);
+    await sleepWithAbort(updateDelayMs, signal);
     stream.push({ type: "toolcall_end", contentIndex, toolCall: cloneToolCall(partialBlock), partial: cloneAssistant(partial) });
-    await wait(updateDelayMs, signal);
+    await sleepWithAbort(updateDelayMs, signal);
   }
 }
 
@@ -320,22 +321,4 @@ function replayUsage(usage: ReplayUsage = {}): Usage {
   };
 }
 
-function wait(ms: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) return Promise.reject(new Error("aborted"));
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      cleanup();
-      reject(new Error("aborted"));
-    };
-    const cleanup = () => {
-      window.clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
+
