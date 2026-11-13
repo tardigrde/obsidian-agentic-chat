@@ -101,3 +101,15 @@ describe("retry policy table", () => {
     expect(request).toBeDefined();
   });
 });
+
+describe("classifyError edge cases", () => {
+  it("keeps a content-filter refusal as a model error even with an HTTP status", () => {
+    const error = Object.assign(new Error("finish_reason: content_filter"), { status: 400 });
+    expect(classifyError(error).class).toBe("model");
+  });
+
+  it("does not read a leading count as an HTTP status", () => {
+    expect(classifyError(new Error("200 files were skipped")).retryable).toBe(false);
+    expect(classifyError(new Error("503 Service Unavailable")).retryable).toBe(true);
+  });
+});

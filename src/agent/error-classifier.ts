@@ -115,13 +115,13 @@ export function classifyError(error: unknown, nowMs = Date.now()): ClassifiedErr
     return { class: "resource", retryable: false, message: errorText(error) };
   }
   const rawMessage = error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
+  if (/content_filter|finish_reason:\s*content_filter/i.test(rawMessage)) {
+    return { class: "model", retryable: false, message: rawMessage };
+  }
+
   const explicitStatus = statusFromError(error);
   if (explicitStatus !== undefined) {
     return classifyStatus(explicitStatus, rawMessage, undefined, nowMs);
-  }
-
-  if (/content_filter|finish_reason:\s*content_filter/i.test(rawMessage)) {
-    return { class: "model", retryable: false, message: rawMessage };
   }
 
   const statusClassified = classifyFromStatusText(rawMessage, nowMs);
@@ -141,7 +141,7 @@ function errorText(error: unknown): string {
 }
 
 function classifyFromStatusText(rawMessage: string, nowMs: number): ClassifiedError | undefined {
-  const statusMatch = /(?:http\s+(\d{3})|status\s+(?:code\s+)?(\d{3})|(\d{3})\s+status\s+code|^\s*(\d{3})\b)/i.exec(rawMessage);
+  const statusMatch = /(?:http\s+(\d{3})|status\s+(?:code\s+)?(\d{3})|(\d{3})\s+status\s+code|^\s*([45]\d{2})\b)/i.exec(rawMessage);
   const statusStr = statusMatch?.slice(1).find((value) => value !== undefined);
   if (!statusStr) return undefined;
   const status = Number.parseInt(statusStr, 10);
