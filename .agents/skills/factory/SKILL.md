@@ -20,25 +20,28 @@ review), a shell allowlist, no web, no `.env` reads.
 2. **Split.** Cut the goal into PRs that are small enough for the review-gate
    budget and independent where possible. Write the plan as a section in
    `NEXT.md` (at the repo root, in `.gitignore`): one line per PR, with its witness.
-3. **Delegate.** For each PR, in parallel when the files do not overlap:
+3. **Delegate.** For each PR, in parallel (e2e lanes can run side by side):
    ```bash
    npm run worktree:new -- <name>
-   npm run delegate -- work <name> <spec.md>   # spec: goal, files, witness, checks
+   npm run delegate -- ship <name> <spec.md> "<pr title>" "<review focus>"
    ```
-   A spec names the exact files, the behavior, the witness test, and the checks.
-   A vague spec gives a vague diff.
-4. **Check the worker.** Read the full diff yourself. Run the witness red/green and
-   `npm run verify -- fast`. Fix small gaps yourself; re-delegate large ones.
-   Push and open the PR with the evidence table (see `@ship-change`).
-5. **Review.** `npm run delegate -- review <pr> <name> "<focus>"`, then post
-   `logs/delegate/verdict-<pr>.md` with `gh pr comment <pr> --body-file`. You post
-   it from the author's account; the gate accepts that because CI sets
-   `REVIEW_GATE_SINGLE_ACCOUNT=1`, and the Reviewer line names the worker. Fix real
-   notes before the merge and say which notes you did not fix and why.
-6. **Merge.** Only after the user says "merge" (AGENTS.md rule 7). The `review` check
-   does not re-run on a new comment: re-run the latest "Review gate" run by id.
-   After each merge, the next PR needs `gh pr update-branch <pr>`, then
-   `npm run delegate -- recheck <pr> <name>`, post that file, re-run the gate.
+   `ship` = work, then the script (never the worker) pushes and opens the PR from
+   the worker's `logs/delegate/pr-body.md`, then the independent review. The
+   shared worker rules in `spec-rules.md` go in front of every spec; the spec
+   adds the exact files, the behavior, the witness test, and "Do not touch".
+   A vague spec gives a vague diff. (`work` alone still exists.)
+4. **Check the worker.** Read the full diff yourself while the review runs. Fix
+   small gaps yourself (then run a new `review`); re-delegate large ones.
+5. **Review.** `review` posts the verdict to the PR and re-runs the Review gate. On
+   a PASS it also sets `no-behavior-change` (when the verdict says
+   `Behavior change: none`) and `large-pr` (over 25 `src/` files or 1000 added
+   lines). The reviewer cites green CI instead of re-running `fast`. Fix real notes
+   before the merge and say which notes you did not fix and why.
+6. **Merge.** Only after the user says "merge" (AGENTS.md rule 7); then merge each
+   PR when it is green (`gh pr merge <n> --squash`). After each merge, run
+   `npm run delegate -- update <next-pr> <name>` for the next PR: it merges `main`,
+   takes `main`'s feature map and fixes its refs, pushes, waits for CI, posts a
+   re-check, and re-runs the gate. It stops on a source conflict.
 7. **Chaos.** After the PRs merge, load `@chaos-monkey` and run a capped explore
    on the changed area with `--llm opencode` (explorer and miner on the
    subscription; only plugin replies cost money). Check every finding in code
