@@ -10,14 +10,12 @@ export interface CompactionTranscript {
 export interface AgentCompactionOrchestratorOptions {
   getTranscript: () => CompactionTranscript | null;
   compact: (messages: AgentMessage[], contextWindow: number, overheadTokens?: number) => Promise<AgentMessage[] | null>;
-  markPersistedMessages: (messages: AgentMessage[]) => void;
-  replaceAgent: (messages: AgentMessage[]) => void;
-  refreshActiveSessionInfo: () => void;
-  notifyChange: () => void;
+  /** Install the compacted transcript on the live agent and publish the change. */
+  install: (messages: AgentMessage[]) => void;
   /**
-   * Called when the JSONL rewrite succeeded but the in-memory replacement
-   * failed. Return true when the caller reloaded the persisted transcript and
-   * the runtime is usable again.
+   * Called when the JSONL rewrite succeeded but the in-memory install failed.
+   * Return true when the caller reloaded and published the persisted
+   * transcript and the runtime is usable again.
    */
   recoverAfterReplaceFailure?: (error: unknown) => Promise<boolean> | boolean;
   /** Observability hook; `persisted` is true once the rewrite landed on disk. */
@@ -34,17 +32,12 @@ export async function maybeCompactAgentTranscript(options: AgentCompactionOrches
     // From here on the session file holds the compacted transcript. A failed
     // in-memory replace must not leave the agent on the stale transcript.
     persisted = true;
-    options.markPersistedMessages(newMessages);
     try {
-      options.replaceAgent(newMessages);
+      options.install(newMessages);
     } catch (error) {
+      // Recovery reloads the persisted transcript and publishes it itself.
       if (!(await options.recoverAfterReplaceFailure?.(error))) throw error;
-      options.refreshActiveSessionInfo();
-      options.notifyChange();
-      return true;
     }
-    options.refreshActiveSessionInfo();
-    options.notifyChange();
     return true;
   } catch (error) {
     options.onCompactionFailure?.(error, persisted);

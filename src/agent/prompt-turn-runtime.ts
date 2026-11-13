@@ -1,5 +1,7 @@
 import type { Agent } from "@earendil-works/pi-agent-core";
 import type { AgenticChatSettings } from "../settings-schema";
+import type { AgentConversation } from "./conversation";
+import type { AgentSessionLocalState } from "./session-local-state";
 import { promptRunBlockReason } from "./turn-control";
 
 export type PromptTurnRun = (agent: Agent) => Promise<void>;
@@ -9,11 +11,13 @@ export const SESSION_CHANGED_MESSAGE =
   "The session changed while preparing this turn. Send the message again.";
 
 export interface AgentPromptTurnRuntimeOptions {
-  requireAgent: () => Agent;
+  /** The live agent a turn runs on, refreshed against current settings before each turn. */
+  conversation: Pick<AgentConversation, "requireAgent" | "refreshConfiguration">;
+  /** Where a blocked, stale, or failed turn reports its error. */
+  errors: Pick<AgentSessionLocalState, "clearError" | "setError" | "setErrorMessage">;
   getSettings: () => AgenticChatSettings;
   hasApiKey: () => boolean;
   getSessionCostUsd: () => number;
-  refreshConfiguration: () => Promise<void>;
   maybeCompact: () => Promise<void>;
   /** Return a message when compaction left the transcript unusable. */
   afterCompaction?: () => string | undefined;
@@ -21,9 +25,6 @@ export interface AgentPromptTurnRuntimeOptions {
   sessionToken?: () => string;
   /** Called once an accepted turn starts, after the synchronous in-flight guard. */
   onTurnStart?: () => void;
-  clearError: () => void;
-  setError: (error: unknown) => void;
-  setErrorMessage: (message: string) => void;
   consumeOverrides: () => void;
   notifyChange: () => void;
 }
@@ -52,7 +53,7 @@ export class AgentPromptTurnRuntime {
   async run(run: PromptTurnRun, expectedSessionToken?: string): Promise<void> {
     const blockReason = this.blockReason();
     if (blockReason) {
-      this.options.setErrorMessage(blockReason);
+      this.options.errors.setErrorMessage(blockReason);
       this.options.notifyChange();
       return;
     }
@@ -61,7 +62,7 @@ export class AgentPromptTurnRuntime {
     // sends could both pass the pre-flight check and race into `agent.prompt()`.
     if (this.inFlight) {
       const message = "A turn is already starting. Wait for it to finish before sending another message.";
-      this.options.setErrorMessage(message);
+      this.options.errors.setErrorMessage(message);
       this.options.notifyChange();
       return;
     }
@@ -77,7 +78,7 @@ export class AgentPromptTurnRuntime {
         this.sessionChanged();
         return;
       }
-      await this.options.refreshConfiguration();
+      await this.options.conversation.refreshConfiguration();
       await this.options.maybeCompact();
       if (sessionToken !== undefined && this.options.sessionToken?.() !== sessionToken) {
         this.sessionChanged();
@@ -85,16 +86,16 @@ export class AgentPromptTurnRuntime {
       }
       const compactionError = this.options.afterCompaction?.();
       if (compactionError) {
-        this.options.setErrorMessage(compactionError);
+        this.options.errors.setErrorMessage(compactionError);
         this.options.notifyChange();
         return;
       }
       try {
-        this.options.clearError();
+        this.options.errors.clearError();
         this.options.notifyChange();
-        await run(this.options.requireAgent());
+        await run(this.options.conversation.requireAgent());
       } catch (error) {
-        this.options.setError(error);
+        this.options.errors.setError(error);
       } finally {
         // One-shot model/thinking overrides are consumed by the attempted turn.
         this.options.consumeOverrides();
@@ -107,14 +108,14 @@ export class AgentPromptTurnRuntime {
   }
 
   private sessionChanged(): void {
-    this.options.setErrorMessage(SESSION_CHANGED_MESSAGE);
+    this.options.errors.setErrorMessage(SESSION_CHANGED_MESSAGE);
     this.options.notifyChange();
   }
 
   private blockReason(): string | undefined {
     const settings = this.options.getSettings();
     return promptRunBlockReason({
-      isStreaming: this.options.requireAgent().state.isStreaming,
+      isStreaming: this.options.conversation.requireAgent().state.isStreaming,
       hasApiKey: this.options.hasApiKey(),
       provider: settings.provider,
       spendCapUsd: settings.notifications.costCapUsd,

@@ -128,8 +128,8 @@ failed on an assertion and the green run passed:
 ```bash
 npm run verify:witness -- \
   --base origin/main \
-  --test-file test/session-activation.test.ts \
-  --src src/agent/session-activation.ts
+  --test-file test/agent-conversation.test.ts \
+  --src src/agent/conversation.ts
 ```
 
 A non-zero exit alone is not proof. The verifier rejects loader, parser, and
@@ -145,8 +145,8 @@ base commit; the PR supplies one test file and one or more source paths.
 
 ```markdown
 <!-- witness
-test: test/session-activation.test.ts
-src: src/agent/session-activation.ts
+test: test/agent-conversation.test.ts
+src: src/agent/conversation.ts
 -->
 ```
 
