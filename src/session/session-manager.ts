@@ -341,6 +341,13 @@ export class ObsidianSessionManager {
         message,
       });
     }
+    // Carry the audit trail across the rewrite. Audit entries are not
+    // transcript, so a rewind or compaction must not delete them; they keep
+    // their original timestamps and land after the rewritten messages.
+    for (const entry of this.entries) {
+      if (entry.type !== "action_audit") continue;
+      push({ ...entry, id: createEntryId(rebuilt), parentId });
+    }
     // Re-append session metadata after the rewritten transcript. Assistant
     // messages also carry provider/model ids, so trailing metadata preserves the
     // active config when a rewind keeps an older assistant message.

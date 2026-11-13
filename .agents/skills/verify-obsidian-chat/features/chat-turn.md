@@ -55,23 +55,23 @@ await browser.waitUntil(async () =>
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Send a prompt and render a reply | `src/ui/chat-view.ts:1241` | `test/e2e/specs/composer-paths.e2e.ts:159` | `covered` |
+| Send a prompt and render a reply | `src/ui/chat-view.ts:1241` | `test/e2e/specs/composer-paths.e2e.ts:107` | `covered` |
 | Stream text deltas | `src/ui/transcript-view.ts:174` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
 | Reasoning section | `src/ui/transcript-view.ts:332` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
 | Markdown rendering | `src/ui/transcript-view.ts:341` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
-| Tool step cards and diffs | `src/ui/transcript-view.ts:180` | `test/e2e/specs/approval-deterministic.e2e.ts:337` | `covered` |
+| Tool step cards and diffs | `src/ui/transcript-view.ts:180` | `test/e2e/specs/approval-deterministic.e2e.ts:289` | `covered` |
 | Tool-step vault path link | `src/ui/assistant-bubble.ts:427` | no committed check | `NONE` |
-| Stop the active turn (toolbar) | `src/ui/chat-view.ts:1215` | `test/e2e/specs/composer-paths.e2e.ts:234` | `covered` |
-| Stop one tab without aborting the other | `src/ui/chat-view.ts:781` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
-| Stop clears queued steering | `src/agent/agent-service.ts:768` | `test/agent-service.test.ts:1598` (unit only) | `partial` |
+| Stop the active turn (toolbar) | `src/ui/chat-view.ts:1215` | `test/e2e/specs/composer-paths.e2e.ts:182` | `covered` |
+| Stop one tab without aborting the other | `src/ui/chat-view.ts:781` | `test/e2e/specs/two-tab-stop.e2e.ts:112` | `covered` |
+| Stop clears queued steering | `src/agent/agent-service.ts:766` | `test/agent-service.test.ts:1598` (unit only) | `partial` |
 | `/compact` skips when the session changed | `src/agent/agent-service.ts:640` | `test/agent-service.test.ts:970` | `partial` |
 | Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
-| Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:159` | `covered` |
-| Enter steers after the current model turn | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:174` | `covered` |
+| Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:107` | `covered` |
+| Enter steers after the current model turn | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:122` | `covered` |
 | Undelivered steering returns to the composer | `src/ui/chat-view.ts:2357` | `test/agent-service.test.ts:1517`, `test/composer-input.test.ts:29` (unit only) | `partial` |
-| Shift+Enter inserts a newline | `src/ui/chat-view.ts:671` | `test/e2e/specs/composer-paths.e2e.ts:275` | `covered` |
-| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1221` | `test/e2e/specs/composer-paths.e2e.ts:208` | `covered` |
-| Stop then send replaces the turn | `src/ui/chat-view.ts:1215` | `test/e2e/specs/composer-paths.e2e.ts:234` | `covered` |
+| Shift+Enter inserts a newline | `src/ui/chat-view.ts:671` | `test/e2e/specs/composer-paths.e2e.ts:223` | `covered` |
+| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1221` | `test/e2e/specs/composer-paths.e2e.ts:156` | `covered` |
+| Stop then send replaces the turn | `src/ui/chat-view.ts:1215` | `test/e2e/specs/composer-paths.e2e.ts:182` | `covered` |
 | Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |
 | Inline `ask_user` card | `src/ui/chat-view.ts:515` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
 | Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:573` | no committed check | `NONE` |

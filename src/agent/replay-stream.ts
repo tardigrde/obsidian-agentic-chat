@@ -9,6 +9,7 @@ import {
   type ToolCall,
   type Usage,
 } from "@earendil-works/pi-ai";
+import { sleepWithAbort } from "./error-classifier";
 
 export type ReplayStopReason = Extract<StopReason, "stop" | "length" | "toolUse" | "error" | "aborted">;
 
@@ -320,22 +321,8 @@ function replayUsage(usage: ReplayUsage = {}): Usage {
   };
 }
 
+/** Replay checks abort before the delay, so a 0 ms step still stops an aborted turn. */
 function wait(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) return Promise.reject(new Error("aborted"));
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      cleanup();
-      reject(new Error("aborted"));
-    };
-    const cleanup = () => {
-      window.clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
+  return sleepWithAbort(ms, signal);
 }

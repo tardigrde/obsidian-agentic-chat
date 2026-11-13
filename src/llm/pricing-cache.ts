@@ -1,6 +1,7 @@
 import { requestUrl, type App, type DataAdapter, type Plugin } from "obsidian";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { withTimeout } from "../utils/async";
+import { parseModelsPayload, type ParsedModel } from "./model-catalog";
 
 export interface CompactModelInfo {
   id: string;
@@ -60,31 +61,6 @@ export function resolveModelPricingSync(
   }
 
   const info = resolveModelInfoSync(provider, modelId);
-
-  if (info) {
-    return {
-      input: info.pi,
-      output: info.po,
-      cacheRead: info.pr,
-      cacheWrite: info.pw,
-      isUnknown: false,
-    };
-  }
-
-  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, isUnknown: true };
-}
-
-/** Async version: triggers a background refresh if cache is stale/missing. */
-export async function resolveModelPricing(
-  provider: "openrouter" | "ollama" | "openai-compatible",
-  modelId: string,
-): Promise<{ input: number; output: number; cacheRead: number; cacheWrite: number; isUnknown: boolean }> {
-  if (provider === "ollama") {
-    return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, isUnknown: false };
-  }
-
-  const cache = await getCache();
-  const info = findInCache(cache, provider, modelId);
 
   if (info) {
     return {
@@ -184,8 +160,7 @@ async function fetchAndStoreCache(): Promise<PricingCache> {
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`OpenRouter models API returned ${response.status}`);
     }
-    const payload = response.json as { data?: Array<Record<string, unknown>> } | null;
-    const models = compactifyModels(payload?.data ?? []);
+    const models = compactifyModels(parseModelsPayload(response.json) ?? []);
     const cache: PricingCache = { fetchedAt: Date.now(), models };
     await writeCache(cache);
     memoryCache = cache;
@@ -198,64 +173,25 @@ async function fetchAndStoreCache(): Promise<PricingCache> {
   }
 }
 
-function parsePrice(value: string | undefined): number {
-  if (!value) return 0;
-  const raw = parseFloat(value);
-  if (!Number.isFinite(raw)) return 0;
-  return Math.round(raw * 1_000_000 * 100) / 100;
-}
-
-function buildThinkingLevelMap(reasoning: Record<string, unknown> | undefined): Record<ThinkingLevel, string | null> | null {
-  if (!reasoning) return null;
-  const supportedEfforts = reasoning.supported_efforts;
-  if (!Array.isArray(supportedEfforts)) return null;
-  const map: Partial<Record<ThinkingLevel, string | null>> = {};
-  for (const effort of supportedEfforts) {
-    if (typeof effort !== "string") continue;
-    const level = effort.toLowerCase() as ThinkingLevel;
-    if (["off", "minimal", "low", "medium", "high", "xhigh"].includes(level)) {
-      map[level] = effort;
-    }
-  }
-  // If no entries, return null
-  if (Object.keys(map).length === 0) return null;
-  return map as Record<ThinkingLevel, string | null>;
-}
-
-function compactifyModels(data: Array<Record<string, unknown>>): Record<string, CompactModelInfo> {
+function compactifyModels(models: ParsedModel[]): Record<string, CompactModelInfo> {
   const result: Record<string, CompactModelInfo> = {};
-  for (const m of data) {
-    const compact = compactifyModel(m);
-    if (compact) result[compact.id] = compact;
+  for (const model of models) {
+    if (!model.id) continue;
+    result[model.id] = {
+      id: model.id,
+      n: model.name,
+      c: model.contextLength ?? 0,
+      m: model.maxCompletionTokens,
+      pi: model.pricing.input,
+      po: model.pricing.output,
+      pr: model.pricing.cacheRead,
+      pw: model.pricing.cacheWrite,
+      t: model.supportsTools ? 1 : 0,
+      re: model.reasoningMetadata ? 1 : 0,
+      tlm: model.thinkingLevelMap,
+    };
   }
   return result;
-}
-
-function compactifyModel(m: Record<string, unknown>): CompactModelInfo | null {
-  const id = typeof m.id === "string" ? m.id : "";
-  if (!id) return null;
-  const pricing = m.pricing as Record<string, string> | undefined;
-  const topProvider = m.top_provider as Record<string, unknown> | undefined;
-  const supportedParams = m.supported_parameters as string[] | undefined;
-  const reasoning = m.reasoning as Record<string, unknown> | undefined;
-  return {
-    id,
-    n: typeof m.name === "string" ? m.name : id,
-    c: typeof m.context_length === "number" ? m.context_length : 0,
-    m: maxCompletionTokens(m, topProvider),
-    pi: parsePrice(pricing?.prompt),
-    po: parsePrice(pricing?.completion),
-    pr: parsePrice(pricing?.input_cache_read),
-    pw: parsePrice(pricing?.input_cache_write),
-    t: supportedParams?.includes("tools") ? 1 : 0,
-    re: reasoning || supportedParams?.includes("reasoning") ? 1 : 0,
-    tlm: buildThinkingLevelMap(reasoning),
-  };
-}
-
-function maxCompletionTokens(m: Record<string, unknown>, topProvider: Record<string, unknown> | undefined): number {
-  if (typeof topProvider?.max_completion_tokens === "number") return topProvider.max_completion_tokens;
-  return typeof m.maxTokens === "number" ? m.maxTokens : 0;
 }
 
 async function writeCache(cache: PricingCache): Promise<void> {

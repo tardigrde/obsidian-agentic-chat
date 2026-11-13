@@ -3,7 +3,13 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { AgentObservabilityRuntime } from "../src/observability/agent-observability";
 import { buildOtlpTraceRequest, observabilityAuthHeaders, observabilityTraceEndpoint } from "../src/observability/otlp";
-import { DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings-schema";
+import {
+  DEFAULT_SETTINGS,
+  PROVIDERS,
+  activeModelId,
+  mergeSettings,
+  type AgenticChatSettings,
+} from "../src/settings-schema";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
 
 describe("observability settings and OTLP export", () => {
@@ -201,6 +207,44 @@ describe("observability settings and OTLP export", () => {
     expect(runtime.getHealth().lastError).toContain("HTTP 503");
   });
 
+  it("traces the active model id for every provider in the schema", async () => {
+    const modelForProvider = {
+      openrouter: "openrouter/model-under-test",
+      ollama: "ollama-model-under-test",
+      "openai-compatible": "openai-compatible-model-under-test",
+    } as const;
+
+    for (const provider of PROVIDERS) {
+      const requests: WebHttpRequest[] = [];
+      const runtime = runtimeWithRequests(requests, {
+        provider,
+        openrouterModel: modelForProvider.openrouter,
+        ollamaModel: modelForProvider.ollama,
+        openaiCompatibleModel: modelForProvider["openai-compatible"],
+        observability: {
+          ...DEFAULT_SETTINGS.observability,
+          enabled: true,
+          backend: "otlp",
+          endpoint: "https://otel.corp.example/v1/traces",
+        },
+      });
+
+      runtime.handleAgentEvent({ type: "agent_start" });
+      await runtime.flush();
+
+      const body = JSON.parse(requests[0].body ?? "{}") as OtlpBody;
+      const attributes = body.resourceSpans[0].scopeSpans[0].spans[0].attributes;
+      expect(otlpStringAttribute(attributes, "agentic.model")).toBe(modelForProvider[provider]);
+      expect(modelForProvider[provider]).toBe(activeModelId(mergeSettings({
+        ...DEFAULT_SETTINGS,
+        provider,
+        openrouterModel: modelForProvider.openrouter,
+        ollamaModel: modelForProvider.ollama,
+        openaiCompatibleModel: modelForProvider["openai-compatible"],
+      })));
+    }
+  });
+
   it("does not call Langfuse until both project keys are configured", async () => {
     const requests: WebHttpRequest[] = [];
     const runtime = runtimeWithRequests(requests, {
@@ -281,7 +325,17 @@ function assistantMessage(text: string): AssistantMessage {
 interface OtlpBody {
   resourceSpans: Array<{
     scopeSpans: Array<{
-      spans: Array<{ name: string }>;
+      spans: Array<{
+        name: string;
+        attributes?: Array<{ key: string; value: { stringValue?: string } }>;
+      }>;
     }>;
   }>;
+}
+
+function otlpStringAttribute(
+  attributes: Array<{ key: string; value: { stringValue?: string } }> | undefined,
+  key: string,
+): string | undefined {
+  return attributes?.find((attribute) => attribute.key === key)?.value.stringValue;
 }

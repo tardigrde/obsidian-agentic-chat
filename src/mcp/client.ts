@@ -17,7 +17,7 @@ import {
   backoffDelayMs,
   classifyError,
   classifyHttpResponse,
-  sleep,
+  sleepWithAbort,
 } from "../agent/error-classifier";
 
 export type { McpToolDefinition } from "./jsonrpc";
@@ -401,7 +401,7 @@ export class McpHttpClient {
   ): Promise<void> {
     const classified = classifyError(error);
     if (!classified.retryable || attempt >= maxRetries || signal?.aborted) throw error;
-    await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
+    await sleepWithAbort(backoffDelayMs(attempt, classified.retryAfterMs), signal);
     if (signal?.aborted) throw new Error("Aborted.", { cause: error });
   }
 
@@ -414,7 +414,7 @@ export class McpHttpClient {
   ): Promise<void> {
     const classified = classifyHttpResponse(0, response.headers, response.text);
     if (!classified.retryable || attempt >= maxRetries) throw new Error(statusZeroMessage(response));
-    await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
+    await sleepWithAbort(backoffDelayMs(attempt, classified.retryAfterMs), signal);
     if (signal?.aborted) throw new Error("Aborted.");
   }
 
@@ -428,7 +428,7 @@ export class McpHttpClient {
     await this.throwForAuthChallenge(response);
     const classified = classifyHttpResponse(response.status, response.headers, response.text);
     if (!classified.retryable || attempt >= maxRetries) throw new Error(httpErrorMessage(response));
-    await sleep(backoffDelayMs(attempt, classified.retryAfterMs), signal);
+    await sleepWithAbort(backoffDelayMs(attempt, classified.retryAfterMs), signal);
     if (signal?.aborted) throw new Error("Aborted.");
   }
 

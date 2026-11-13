@@ -1,5 +1,6 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
+import { clearScriptedTurns, installScriptedTurns, textTurn, toolTurn } from "../support/scripted-stream";
 
 /**
  * Live MCP e2e: deterministic model turn, real HTTPS MCP server.
@@ -15,12 +16,6 @@ import { after, before, describe, it } from "mocha";
  *
  * The spec refuses non-HTTPS URLs. No local/insecure MCP server is allowed here.
  */
-
-type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "length" | "toolUse";
-};
 
 interface McpE2EConfig {
   url: string;
@@ -58,35 +53,6 @@ function localMcpToolName(serverId: string, remoteTool: string): string {
     .replace(/^_+|_+$/g, "")
     .slice(0, 48);
   return `mcp__${serverId}__${part || "tool"}`;
-}
-
-function toolTurn(label: string, id: string, name: string, args: Record<string, unknown>): ScriptedTurn {
-  return {
-    label,
-    stopReason: "toolUse",
-    content: [{ type: "toolCall", id, name, arguments: args }],
-  };
-}
-
-function textTurn(label: string, text: string): ScriptedTurn {
-  return {
-    label,
-    stopReason: "stop",
-    content: [{ type: "text", text }],
-  };
-}
-
-async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-  }, turns);
 }
 
 async function configurePlugin(config: McpE2EConfig): Promise<boolean> {
@@ -250,15 +216,6 @@ describe("agentic-chat live MCP over HTTPS", function () {
   });
 
   after(async function () {
-    await browser.execute(() => {
-      const target = window as typeof window & {
-        __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-        __AGENTIC_CHAT_E2E_CALLS__?: number;
-        __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-      };
-      delete target.__AGENTIC_CHAT_E2E_TURNS__;
-      delete target.__AGENTIC_CHAT_E2E_CALLS__;
-      delete target.__AGENTIC_CHAT_E2E_CALL_LOG__;
-    });
+    await clearScriptedTurns();
   });
 });

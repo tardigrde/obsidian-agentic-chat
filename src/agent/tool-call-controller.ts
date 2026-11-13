@@ -8,6 +8,7 @@ import {
   type FileCheckpoint,
 } from "./file-checkpoints";
 import { type ApprovalPolicy, getPerToolApproval } from "./approval";
+import { resolveToolPolicy } from "./approval-policy";
 import { isMcpToolName, mcpServerIdFromToolName } from "../mcp/tools";
 import { MUTATING_TOOLS } from "../tools/tool-contracts";
 import {
@@ -19,7 +20,6 @@ import {
 } from "../tools/subagent-tool";
 import type { AgentRole } from "./subagents";
 import { findAgentRole } from "./subagents";
-import { resolveModePolicy } from "./modes";
 import { UNDOABLE_TOOLS, captureUndo } from "./undo";
 
 /** A pending tool call the user must approve. */
@@ -234,29 +234,17 @@ export class AgentToolCallController {
     signal?: AbortSignal,
   ): Promise<ToolGateDecision> {
     const settings = this.getSettings();
-    const modeDecision = resolveModePolicy(settings.mode, settings.approval, toolName);
-    if (modeDecision.policy === "deny" && modeDecision.reason) {
-      await this.auditApproval({ decision: "denied", toolCallId, toolName, label: this.labelForTool(toolName), args, reason: modeDecision.reason });
-      return { block: true, reason: modeDecision.reason };
-    }
     if (toolName === SUBAGENT_TOOL_NAME) return this.gateSubagentDispatch(settings, toolCallId, args);
     if (isMcpToolName(toolName)) return this.gateMcpToolCall(settings, toolCallId, toolName, args, signal);
-    const decision = modeDecision;
+    const decision = resolveToolPolicy({
+      mode: settings.mode,
+      approval: settings.approval,
+      family: "vault",
+      toolName,
+      args,
+    });
     const { reason } = decision;
-    // H8 load/unload mutates prompt overlay (persistent) — default to ask to prevent
-    // auto-injection via indirect prompt injection (fetch_url -> load_skill evil).
-    // create_skill persists a new vault package — same ask default.
-    // Respects perTool override so user can set allow/deny explicitly.
-    const isPersistentSkillTool = toolName === "load_skill" || toolName === "unload_skill" || toolName === "create_skill";
-    const policy = isPersistentSkillTool ? (getPerToolApproval(settings.approval, toolName) ?? "ask") : decision.policy;
-    // Recursive folder delete always asks, even when the mode would
-    // auto-approve: bulk destruction needs a plain per-path confirmation.
-    // An explicit per-tool "allow" for delete still counts as standing
-    // consent; anything else (YOLO blanket allow included) routes to ask.
-    const effectivePolicy =
-      isRecursiveDeleteArgs(args) && policy === "allow" && getPerToolApproval(settings.approval, toolName) !== "allow"
-        ? "ask"
-        : policy;
+    const effectivePolicy = decision.policy;
     const label = this.labelForTool(toolName);
     if (effectivePolicy === "allow") {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });
@@ -283,24 +271,20 @@ export class AgentToolCallController {
     args: unknown,
     signal?: AbortSignal,
   ): Promise<ToolGateDecision> {
-    // S1: MCP respects the same Safe/YOLO mode overlay as vault tools.
-    const modeCheck = resolveModePolicy(settings.mode, settings.approval, toolName);
-    if (modeCheck.policy === "deny" && modeCheck.reason) {
-      await this.auditApproval({ decision: "denied", toolCallId, toolName, label: this.labelForTool(toolName), args, reason: modeCheck.reason });
-      return { block: true, reason: modeCheck.reason };
-    }
-    const perTool = getPerToolApproval(settings.approval, toolName);
-    const serverApproval = this.resolveMcpServerApproval(settings, toolName);
-    const serverBase = serverApproval ?? "ask";
-    const yoloServerBase = settings.mode === "yolo" && serverBase !== "deny" ? "allow" : serverBase;
-    const policy = perTool ?? yoloServerBase;
+    const decision = resolveToolPolicy({
+      mode: settings.mode,
+      approval: settings.approval,
+      family: "mcp",
+      toolName,
+      serverApproval: this.resolveMcpServerApproval(settings, toolName),
+    });
     const label = this.labelForTool(toolName);
-    if (policy === "allow") {
+    if (decision.policy === "allow") {
       await this.auditApproval({ decision: "auto-approved", toolCallId, toolName, label, args });
       return undefined;
     }
-    if (policy === "deny") {
-      const reason = `The "${toolName}" MCP tool is disabled by your MCP approval settings.`;
+    if (decision.policy === "deny") {
+      const reason = decision.reason ?? `The "${toolName}" MCP tool is disabled by your MCP approval settings.`;
       await this.auditApproval({ decision: "denied", toolCallId, toolName, label, args, reason });
       return { block: true, reason };
     }
@@ -311,12 +295,6 @@ export class AgentToolCallController {
       signal,
     );
     return this.decisionForChoice(choice, "The user declined this MCP tool call.");
-  }
-
-  private resolveMcpPolicy(settings: AgenticChatSettings, toolName: string): ApprovalPolicy {
-    const override = getPerToolApproval(settings.approval, toolName);
-    if (override) return override;
-    return this.resolveMcpServerApproval(settings, toolName) ?? "ask";
   }
 
   private resolveMcpServerApproval(settings: AgenticChatSettings, toolName: string): ApprovalPolicy | undefined {
@@ -342,26 +320,25 @@ export class AgentToolCallController {
     // Unknown agents fail closed with a distinct audit: the dispatch never ran,
     // so it must not be logged as auto-approved (execute would throw unknown-agent).
     const unknown = normalizeTasks((args ?? {})).find((task) => !findAgentRole(this.getProfiles(), task.agent));
-    if (unknown) {
-      const available = this.getProfiles().map((candidate) => candidate.name).join(", ") || "(none)";
-      const reason = `subagent: unknown agent "${unknown.agent.trim()}". Available: ${available}.`;
+    const available = this.getProfiles().map((candidate) => candidate.name).join(", ") || "(none)";
+    const unknownAgentReason = unknown
+      ? `subagent: unknown agent "${unknown.agent.trim()}". Available: ${available}.`
+      : undefined;
+    const decision = resolveToolPolicy({
+      mode: settings.mode,
+      approval: settings.approval,
+      family: "subagent",
+      canMutate: this.dispatchCanMutate(settings, args),
+      unknownAgentReason,
+    });
+    if (decision.policy === "deny") {
+      const reason = decision.reason ?? "Subagent dispatch is blocked because mutating tools are denied.";
       await this.auditApproval({ decision: "denied", toolCallId, toolName: SUBAGENT_TOOL_NAME, args, reason });
       return { block: true, reason };
     }
-    if (!this.dispatchCanMutate(settings, args)) {
-      await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
-      return undefined;
-    }
-    const policy = settings.mode === "yolo" ? "allow" : settings.approval.mutating;
-    if (policy === "allow") {
-      await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
-      return undefined;
-    }
-    if (policy === "deny") {
-      const reason = "Subagent dispatch is blocked because mutating tools are denied.";
-      await this.auditApproval({ decision: "denied", toolCallId, toolName: SUBAGENT_TOOL_NAME, args, reason });
-      return { block: true, reason };
-    }
+    // Today an `ask` subagent dispatch auto-approves exactly like `allow`; only
+    // the child tool calls are gated afterwards. Pinned by the approval matrix.
+    // Open question: `ask` may need to prompt here (safety review pending).
     await this.auditApproval({ decision: "auto-approved", toolCallId, toolName: SUBAGENT_TOOL_NAME, args });
     return undefined;
   }
@@ -440,13 +417,4 @@ function deniedDecision(choice: UserApprovalChoice, fallback: string): ToolGateD
   if (choice.approved) return undefined;
   const reason = choice.reason ?? fallback;
   return choice.stopped === true ? { block: true, reason, terminate: true } : { block: true, reason };
-}
-
-/** True when the args request a recursive folder delete (bulk destruction). */
-function isRecursiveDeleteArgs(args: unknown): boolean {
-  return (
-    typeof args === "object" &&
-    args !== null &&
-    (args as { recursive?: unknown }).recursive === true
-  );
 }

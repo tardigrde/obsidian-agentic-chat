@@ -13,6 +13,11 @@ import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
+import {
+  clearScriptedTurns,
+  installScriptedTurns,
+  textTurn,
+} from "../support/scripted-stream";
 
 const RUN_ID = process.env.BREAK_CHANGE_RUN_ID ?? "__BREAK_CHANGE_RUN_ID__";
 const OUT_DIR = path.resolve(process.env.BREAK_CHANGE_RUN_DIR ?? "__BREAK_CHANGE_OUT_DIR__");
@@ -21,13 +26,6 @@ const LIVE = process.env.BREAK_CHANGE_LIVE === "1";
 const MAX_LIVE_TURNS = Number(process.env.BREAK_CHANGE_MAX_LIVE_TURNS ?? "0");
 const ABSENT_COMMAND = "/break-change-absent-command";
 const PROBE_NOTE = "Break Change Probe.md";
-
-type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "length" | "toolUse";
-  delayMs?: number;
-};
 
 type Severity = "S1" | "S2" | "S3" | "S4";
 
@@ -84,23 +82,6 @@ async function configureScriptedProvider(): Promise<void> {
     return true;
   });
   if (!configured) throw new Error("agentic-chat plugin not found in the e2e sandbox");
-}
-
-async function installTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-  }, turns);
-}
-
-function textTurn(label: string, text: string): ScriptedTurn {
-  return { label, stopReason: "stop", content: [{ type: "text", text }] };
 }
 
 async function sendPrompt(prompt: string): Promise<void> {
@@ -259,7 +240,7 @@ describe("break-change exploratory scenarios", function () {
     // Install the queue before the chat view creates its service. The e2e
     // stream hook is captured at service creation, so a later install is too
     // late. Keep one text turn per scenario that sends a prompt.
-    await installTurns([
+    await installScriptedTurns([
       textTurn("S1", "break-change scripted reply"),
       textTurn("S2", "absent command reached the model"),
     ]);
@@ -269,16 +250,7 @@ describe("break-change exploratory scenarios", function () {
 
   after(async function () {
     await trashProbeNotes();
-    await browser.execute(() => {
-      const target = window as typeof window & {
-        __AGENTIC_CHAT_E2E_TURNS__?: unknown;
-        __AGENTIC_CHAT_E2E_CALLS__?: number;
-        __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-      };
-      delete target.__AGENTIC_CHAT_E2E_TURNS__;
-      delete target.__AGENTIC_CHAT_E2E_CALLS__;
-      delete target.__AGENTIC_CHAT_E2E_CALL_LOG__;
-    });
+    await clearScriptedTurns();
   });
 
   for (const scenario of scenarios) {
