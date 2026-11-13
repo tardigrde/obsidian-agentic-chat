@@ -56,11 +56,11 @@ await browser.waitUntil(async () =>
 | entry point | source | proof | status |
 |---|---|---|---|
 | Send a prompt and render a reply | `src/ui/chat-view.ts:1158` | `test/e2e/specs/composer-paths.e2e.ts:159` | `covered` |
-| Stream text deltas | `src/ui/transcript-view.ts:263` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
+| Stream text deltas | `src/ui/transcript-view.ts:272` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
 | Reasoning section | `src/ui/assistant-bubble.ts:148` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
-| Markdown rendering | `src/ui/assistant-bubble.ts:712` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
-| Tool step cards and diffs | `src/ui/transcript-view.ts:140` | `test/e2e/specs/approval-deterministic.e2e.ts:337` | `covered` |
-| Tool-step vault path link | `src/ui/assistant-bubble.ts:434` | no committed check | `NONE` |
+| Markdown rendering | `src/ui/assistant-bubble.ts:719` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
+| Tool step cards and diffs | `src/ui/transcript-view.ts:149` | `test/e2e/specs/approval-deterministic.e2e.ts:337` | `covered` |
+| Tool-step vault path link | `src/ui/assistant-bubble.ts:441` | no committed check | `NONE` |
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts:1217` | `test/e2e/specs/composer-paths.e2e.ts:234` | `covered` |
 | Stop one tab without aborting the other | `src/ui/chat-view.ts:781` | `test/e2e/specs/two-tab-stop.e2e.ts:131` | `covered` |
 | Stop clears queued steering | `src/agent/agent-service.ts:744` | `test/agent-service.test.ts:1598` (unit only) | `partial` |
@@ -75,12 +75,12 @@ await browser.waitUntil(async () =>
 | Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |
 | Inline `ask_user` card | `src/ui/chat-view.ts:506` | `test/chat-view-ask-user.test.ts:84` (unit only) | `partial` |
 | Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:565` | no committed check | `NONE` |
-| Copy response | `src/ui/assistant-bubble.ts:841` | no committed check | `NONE` |
-| Ask again | `src/ui/assistant-bubble.ts:823` | `test/chat-view-retry.test.ts:263` (unit only) | `partial` |
+| Copy response | `src/ui/assistant-bubble.ts:848` | no committed check | `NONE` |
+| Ask again | `src/ui/assistant-bubble.ts:830` | `test/chat-view-retry.test.ts:263` (unit only) | `partial` |
 | Retry keeps image attachments | `src/ui/chat-view.ts:1450` | `test/chat-view-retry.test.ts:154` (unit only) | `partial` |
-| Vault images render inline in replies | `src/ui/assistant-bubble.ts:712` | `test/e2e/specs/inline-images.e2e.ts:55` | `covered` |
-| User bubble image thumbnails; click opens the vault image | `src/ui/transcript-view.ts:178` | `test/e2e/specs/inline-images.e2e.ts:86`, `test/e2e/specs/inline-images.e2e.ts:154` | `covered` |
-| Error banner Retry | `src/ui/assistant-bubble.ts:792` | `test/chat-view-retry.test.ts:153` (unit only) | `partial` |
+| Vault images render inline in replies | `src/ui/assistant-bubble.ts:719` | `test/e2e/specs/inline-images.e2e.ts:55` | `covered` |
+| User bubble image thumbnails; click opens the vault image | `src/ui/transcript-view.ts:187` | `test/e2e/specs/inline-images.e2e.ts:86`, `test/e2e/specs/inline-images.e2e.ts:154` | `covered` |
+| Error banner Retry | `src/ui/assistant-bubble.ts:799` | `test/chat-view-retry.test.ts:153` (unit only) | `partial` |
 | Edit and resend a user turn | `src/ui/chat-view.ts:1340` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
 | Context-window bar | `src/ui/chat-view.ts:1068` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
 | Usage readout | `src/ui/chat-view.ts:1969` | no committed check | `NONE` |
