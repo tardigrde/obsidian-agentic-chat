@@ -1,46 +1,22 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
+import {
+  clearScriptedTurns,
+  installScriptedTurns,
+  scriptedCallLabels,
+  scriptedCallToolNames,
+  textTurn,
+  toolBatch,
+  type ScriptedTurn,
+} from "../support/scripted-stream";
 
 const TURN_TIMEOUT_MS = Number(process.env.DOGFOOD_TURN_TIMEOUT_MS || 120_000);
 const SECRET_TEXT = "SYNTHETIC_SECRET_DO_NOT_LEAK";
-
-type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "length" | "toolUse" | "error" | "aborted";
-  delayMs?: number;
-  usage?: Record<string, unknown>;
-};
 
 type SettingsPlugin = {
   settings?: Record<string, unknown>;
   saveSettings?: () => Promise<void>;
 };
-
-function textTurn(label: string, text: string): ScriptedTurn {
-  return { label, stopReason: "stop", content: [{ type: "text", text }] };
-}
-
-function toolBatch(label: string, calls: Array<{ id: string; name: string; args: Record<string, unknown> }>): ScriptedTurn {
-  return {
-    label,
-    stopReason: "toolUse",
-    content: calls.map((call) => ({ type: "toolCall", id: call.id, name: call.name, arguments: call.args })),
-  };
-}
-
-async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-  }, turns);
-}
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
@@ -253,24 +229,6 @@ async function latestSessionText(): Promise<string> {
   });
 }
 
-async function scriptedCallLabels(): Promise<string[]> {
-  return await browser.execute(() => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: Array<{ label?: string }>;
-    };
-    return target.__AGENTIC_CHAT_E2E_CALL_LOG__?.map((call) => call.label ?? "") ?? [];
-  });
-}
-
-async function scriptedToolNamesByCall(): Promise<string[][]> {
-  return await browser.execute(() => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: Array<{ toolNames?: string[] }>;
-    };
-    return target.__AGENTIC_CHAT_E2E_CALL_LOG__?.map((call) => call.toolNames ?? []) ?? [];
-  });
-}
-
 async function sessionStats(): Promise<{
   toolStarts: Record<string, number>;
   toolErrors: Record<string, number>;
@@ -445,7 +403,7 @@ describe("agentic-chat stretched synthetic dogfood", function () {
     expect(matrix).toContain("Initial matrix note refined.");
     expect(matrix).toContain("verified: true");
 
-    const toolNames = (await scriptedToolNamesByCall())[0] ?? [];
+    const toolNames = (await scriptedCallToolNames())[0] ?? [];
     for (const expected of ["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties", "search_memory", "ask_user"]) {
       expect(toolNames).toContain(expected);
     }
@@ -533,15 +491,6 @@ describe("agentic-chat stretched synthetic dogfood", function () {
 
   after(async function () {
     await restoreSafeSettings().catch(() => undefined);
-    await browser.execute(() => {
-      const target = window as typeof window & {
-        __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-        __AGENTIC_CHAT_E2E_CALLS__?: number;
-        __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-      };
-      delete target.__AGENTIC_CHAT_E2E_TURNS__;
-      delete target.__AGENTIC_CHAT_E2E_CALLS__;
-      delete target.__AGENTIC_CHAT_E2E_CALL_LOG__;
-    });
+    await clearScriptedTurns();
   });
 });

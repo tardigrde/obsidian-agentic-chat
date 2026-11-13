@@ -4,11 +4,19 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
-import type { UserApprovalChoice } from "../src/agent/tool-call-controller";
+import type { ApprovalAuditInput } from "../src/agent/action-audit-log";
+import {
+  AgentToolCallController,
+  type ToolApprovalRequest,
+  type UserApprovalChoice,
+} from "../src/agent/tool-call-controller";
 import { type ApprovalPolicy, type ApprovalSettings } from "../src/agent/approval";
 import { type AgentMode, resolveModePolicy } from "../src/agent/modes";
+import type { AgentRole } from "../src/agent/subagents";
+import { createMcpServerSettings } from "../src/mcp/settings";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
+import { SubagentRegistry } from "../src/tools/subagent-tool";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 /**
@@ -240,4 +248,141 @@ describe("subagent dispatch matrix (gateSubagentDispatch × dispatchCanMutate ×
     expect(toolResult(service)?.isError).toBe(false);
     expect(toolResult(service)?.text).toContain("explorer reply");
   });
+});
+
+type GateCell = {
+  name: string;
+  mode: AgentMode;
+  approval: ApprovalSettings;
+  tool: string;
+  args?: unknown;
+  mcpServerApproval?: ApprovalPolicy;
+  mcpStateApproval?: ApprovalPolicy;
+  profiles?: AgentRole[];
+  expectedDecision: ApprovalAuditInput["decision"];
+  expectedConfirmed: boolean;
+  expectedBlocked: boolean;
+  expectedReason?: string;
+};
+
+const EXPLORER: AgentRole = {
+  name: "explorer",
+  description: "Read-only explorer",
+  systemPrompt: "",
+  toolAllowlist: ["read", "search"],
+};
+
+const WRITER: AgentRole = {
+  name: "writer",
+  description: "Writes notes",
+  systemPrompt: "",
+  toolAllowlist: ["write"],
+};
+
+const GATE_CELLS: GateCell[] = [
+  // Vault tools.
+  { name: "safe read allows", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "read", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "safe mutating ask confirms", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "write", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  { name: "safe mutating deny blocks", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "write", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true, expectedReason: "The \"write\" tool is disabled by your approval settings." },
+  { name: "safe per-tool allow wins", mode: "safe", approval: { mutating: "ask", perTool: { write: "allow" } }, tool: "write", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "safe per-tool deny wins", mode: "safe", approval: { mutating: "allow", perTool: { write: "deny" } }, tool: "write", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
+  { name: "safe per-tool ask confirms", mode: "safe", approval: { mutating: "allow", perTool: { write: "ask" } }, tool: "write", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  { name: "yolo forces mutating allow", mode: "yolo", approval: { mutating: "deny", perTool: {} }, tool: "write", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "yolo keeps per-tool deny", mode: "yolo", approval: { mutating: "allow", perTool: { write: "deny" } }, tool: "write", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
+  { name: "yolo keeps per-tool ask", mode: "yolo", approval: { mutating: "allow", perTool: { write: "ask" } }, tool: "write", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+
+  // Persistent skill tools default to ask.
+  { name: "load_skill ignores mutating allow", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "load_skill", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  { name: "load_skill honors per-tool allow", mode: "safe", approval: { mutating: "ask", perTool: { load_skill: "allow" } }, tool: "load_skill", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "create_skill honors per-tool deny", mode: "safe", approval: { mutating: "allow", perTool: { create_skill: "deny" } }, tool: "create_skill", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
+  { name: "yolo still asks skill tools", mode: "yolo", approval: { mutating: "deny", perTool: {} }, tool: "unload_skill", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+
+  // Recursive folder delete always asks unless the user gave a standing allow.
+  { name: "recursive delete asks even when mutating allows", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "delete", args: { path: "Folder", recursive: true }, expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  { name: "recursive delete honors per-tool allow", mode: "safe", approval: { mutating: "ask", perTool: { delete: "allow" } }, tool: "delete", args: { path: "Folder", recursive: true }, expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "yolo recursive delete still asks", mode: "yolo", approval: { mutating: "allow", perTool: {} }, tool: "delete", args: { path: "Folder", recursive: true }, expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  { name: "recursive delete per-tool deny blocks", mode: "safe", approval: { mutating: "allow", perTool: { delete: "deny" } }, tool: "delete", args: { path: "Folder", recursive: true }, expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
+  { name: "non-recursive delete follows mutating allow", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "delete", args: { path: "Notes/A.md" }, expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+
+  // MCP tools: per-tool > server (ask default) > YOLO rewrite.
+  { name: "mcp server ask confirms", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "mcp__docs__search", mcpServerApproval: "ask", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  { name: "mcp server allow auto-approves", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "mcp__docs__search", mcpServerApproval: "allow", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "mcp server deny blocks", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "mcp__docs__search", mcpServerApproval: "deny", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true, expectedReason: "The \"mcp__docs__search\" MCP tool is disabled by your MCP approval settings." },
+  { name: "mcp per-tool allow beats server ask", mode: "safe", approval: { mutating: "ask", perTool: { "mcp__docs__search": "allow" } }, tool: "mcp__docs__search", mcpServerApproval: "ask", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "mcp per-tool deny beats server allow", mode: "safe", approval: { mutating: "ask", perTool: { "mcp__docs__search": "deny" } }, tool: "mcp__docs__search", mcpServerApproval: "allow", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
+  { name: "mcp per-tool ask beats server allow", mode: "safe", approval: { mutating: "ask", perTool: { "mcp__docs__search": "ask" } }, tool: "mcp__docs__search", mcpServerApproval: "allow", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  { name: "yolo rewrites mcp server ask to allow", mode: "yolo", approval: { mutating: "deny", perTool: {} }, tool: "mcp__docs__search", mcpServerApproval: "ask", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "yolo keeps mcp server deny", mode: "yolo", approval: { mutating: "allow", perTool: {} }, tool: "mcp__docs__search", mcpServerApproval: "deny", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
+  { name: "yolo keeps mcp per-tool deny", mode: "yolo", approval: { mutating: "allow", perTool: { "mcp__docs__search": "deny" } }, tool: "mcp__docs__search", mcpServerApproval: "ask", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
+  { name: "yolo keeps mcp per-tool ask", mode: "yolo", approval: { mutating: "allow", perTool: { "mcp__docs__search": "ask" } }, tool: "mcp__docs__search", mcpServerApproval: "allow", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  { name: "mcp plugin state overrides server settings", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "mcp__docs__search", mcpServerApproval: "ask", mcpStateApproval: "allow", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "mcp without a configured server defaults to ask", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "mcp__missing__search", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+
+  // Subagent dispatch: only mutating child allowlists matter; ask auto-approves today.
+  { name: "subagent explorer dispatch auto-approves", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "subagent", args: { agent: "explorer", task: "look" }, profiles: [EXPLORER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "subagent mutating allow auto-approves", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "subagent mutating ask auto-approves today", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "subagent mutating deny blocks", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true, expectedReason: "Subagent dispatch is blocked because mutating tools are denied." },
+  { name: "yolo subagent mutating deny auto-approves", mode: "yolo", approval: { mutating: "deny", perTool: {} }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "subagent per-tool deny makes the dispatch read-only", mode: "safe", approval: { mutating: "deny", perTool: { write: "deny" } }, tool: "subagent", args: { agent: "writer", task: "write" }, profiles: [WRITER], expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "subagent unknown agent fails closed", mode: "safe", approval: { mutating: "ask", perTool: {} }, tool: "subagent", args: { agent: "missing", task: "write" }, profiles: [WRITER], expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true, expectedReason: "subagent: unknown agent \"missing\". Available: writer." },
+];
+
+describe("tool-call controller policy table", () => {
+  for (const cell of GATE_CELLS) {
+    it(cell.name, async () => {
+      const requests: ToolApprovalRequest[] = [];
+      const approvals: ApprovalAuditInput[] = [];
+      const settings: AgenticChatSettings = {
+        ...DEFAULT_SETTINGS,
+        provider: "openrouter",
+        openrouterApiKey: "test-key",
+        mode: cell.mode,
+        approval: cell.approval,
+        mcp: {
+          ...DEFAULT_SETTINGS.mcp,
+          servers: cell.mcpServerApproval
+            ? [createMcpServerSettings({ id: "docs", name: "Docs", url: "https://docs.example/mcp", approval: cell.mcpServerApproval })]
+            : [],
+        },
+        plugins: {
+          ...DEFAULT_SETTINGS.plugins,
+          mcpState: cell.mcpStateApproval
+            ? {
+                docs: {
+                  ...createMcpServerSettings({ id: "docs", approval: cell.mcpStateApproval }),
+                  approval: cell.mcpStateApproval,
+                },
+              }
+            : {},
+        },
+      };
+      const controller = new AgentToolCallController({
+        app: {} as App,
+        getSettings: () => settings,
+        confirmToolCall: async (request) => {
+          requests.push(request);
+          return { approved: true, remember: false };
+        },
+        getTools: () => [{ name: cell.tool, label: cell.tool } as never],
+        getProfiles: () => cell.profiles ?? [],
+        onUndoApplied: () => {},
+        recordApproval: (input) => {
+          approvals.push(input);
+        },
+        subagentRegistry: new SubagentRegistry(),
+      });
+
+      const decision = await controller.beforeToolCall({
+        toolCall: { id: `call-${cell.name}`, name: cell.tool },
+        args: cell.args ?? {},
+      });
+
+      const decisions = approvals.map((approval) => approval.decision);
+      expect(decisions.at(-1)).toBe(cell.expectedDecision);
+      expect(requests).toHaveLength(cell.expectedConfirmed ? 1 : 0);
+      expect(Boolean(decision?.block)).toBe(cell.expectedBlocked);
+      if (cell.expectedReason) expect(decision?.reason).toBe(cell.expectedReason);
+    });
+  }
 });

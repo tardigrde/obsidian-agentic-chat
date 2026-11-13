@@ -1,29 +1,10 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
-
-type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "toolUse";
-  delayMs?: number;
-};
+import { clearScriptedTurns, installScriptedTurns } from "../support/scripted-stream";
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
   await $(".agentic-chat-view").waitForExist();
-}
-
-async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-  }, turns);
 }
 
 async function configureSafe(): Promise<void> {
@@ -194,15 +175,6 @@ describe("two-tab Stop", function () {
   });
 
   after(async function () {
-    await browser.execute(() => {
-      const target = window as typeof window & {
-        __AGENTIC_CHAT_E2E_TURNS__?: unknown;
-        __AGENTIC_CHAT_E2E_CALLS__?: unknown;
-        __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown;
-      };
-      delete target.__AGENTIC_CHAT_E2E_TURNS__;
-      delete target.__AGENTIC_CHAT_E2E_CALLS__;
-      delete target.__AGENTIC_CHAT_E2E_CALL_LOG__;
-    });
+    await clearScriptedTurns();
   });
 });

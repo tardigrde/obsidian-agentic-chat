@@ -1,5 +1,6 @@
 import type { App, TFile } from "obsidian";
 import type { IgnoreMatcher } from "../vault/ignore";
+import { splitFrontmatter } from "../vault/frontmatter";
 import type { RetrievalDocument } from "./policy";
 
 export async function loadVaultRetrievalDocuments(
@@ -37,7 +38,12 @@ export function markdownToRetrievalDocument(input: {
   content: string;
   modifiedTime?: number;
 }): RetrievalDocument {
-  const { frontmatter, body } = splitFrontmatter(input.content);
+  const { data: frontmatterData, body } = splitFrontmatter(input.content, {
+    flavor: "simple",
+    normalizeNewlines: true,
+    body: "drop-one-newline",
+  });
+  const frontmatter = frontmatterData as NonNullable<RetrievalDocument["frontmatter"]>;
   const aliases = stringList(frontmatter.aliases ?? frontmatter.alias);
   const frontmatterTags = stringList(frontmatter.tags ?? frontmatter.tag);
   const contentTags = extractTags(body);
@@ -72,48 +78,6 @@ function withBacklinks(documents: readonly RetrievalDocument[]): RetrievalDocume
     ...document,
     backlinks: backlinks.get(normalizePath(document.path)) ?? [],
   }));
-}
-
-function splitFrontmatter(content: string): {
-  frontmatter: Record<string, string | readonly string[]>;
-  body: string;
-} {
-  const normalized = content.replace(/\r\n?/g, "\n");
-  if (!normalized.startsWith("---\n")) return { frontmatter: {}, body: normalized };
-  const end = normalized.indexOf("\n---", 4);
-  if (end === -1) return { frontmatter: {}, body: normalized };
-  const yaml = normalized.slice(4, end);
-  const body = normalized.slice(end + 4).replace(/^\n/, "");
-  return { frontmatter: parseSimpleYaml(yaml), body };
-}
-
-function parseSimpleYaml(yaml: string): Record<string, string | readonly string[]> {
-  const data: Record<string, string | readonly string[]> = {};
-  for (const line of yaml.split("\n")) {
-    const match = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line.trim());
-    if (!match) continue;
-    data[match[1]] = parseYamlValue(match[2]);
-  }
-  return data;
-}
-
-function parseYamlValue(value: string): string | readonly string[] {
-  const trimmed = value.trim();
-  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-    return trimmed
-      .slice(1, -1)
-      .split(",")
-      .map((item) => stripQuotes(item.trim()))
-      .filter(Boolean);
-  }
-  return stripQuotes(trimmed);
-}
-
-function stripQuotes(value: string): string {
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1);
-  }
-  return value;
 }
 
 function stringList(value: unknown): readonly string[] {

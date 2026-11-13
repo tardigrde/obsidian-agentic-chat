@@ -16,7 +16,7 @@ import {
 } from "../llm/openai-compatible-request";
 import { sharedAgentModels } from "../llm/providers";
 import { createProxiedFetcher } from "../mcp/fetcher";
-import { backoffDelayMs, classifyError, sleep, type ClassifiedError } from "./error-classifier";
+import { backoffDelayMs, classifyError, sleepWithAbort, type ClassifiedError } from "./error-classifier";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
@@ -272,7 +272,7 @@ export class AgentStreamRuntime {
 
   private async sleepOrAbort(buffered: unknown[], outer: AssistantMessageEventStream, model: Model<Api>, delay: number, signal?: AbortSignal): Promise<boolean> {
     try {
-      await sleep(delay, signal);
+      await sleepWithAbort(delay, signal);
       return true;
     } catch {
       for (const event of buffered) outer.push(event as never);

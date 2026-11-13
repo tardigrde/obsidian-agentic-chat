@@ -2,6 +2,7 @@ import type { App, DataAdapter } from "obsidian";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { PLUGIN_ID } from "../constants";
+import { toolResult } from "./result";
 import {
   formatMemorySearchResponse,
   loadMemoryRecords,
@@ -55,19 +56,16 @@ function createSearchMemoryTool(
           allowedScopes: ["global", "vault"],
         },
       );
-      return {
-        content: [{ type: "text", text: formatMemorySearchResponse({ query }, response) }],
-        details: {
-          memoryPath,
-          query,
-          returned: response.matches.length,
-          totalMatches: response.totalMatches,
-          filteredCount: response.filteredCount,
-          disabledCount: response.disabledCount,
-          citations: memoryCitations(response.matches),
-          memoryIds: response.matches.map((match) => match.record.id),
-        },
-      };
+      return toolResult(formatMemorySearchResponse({ query }, response), {
+        memoryPath,
+        query,
+        returned: response.matches.length,
+        totalMatches: response.totalMatches,
+        filteredCount: response.filteredCount,
+        disabledCount: response.disabledCount,
+        citations: memoryCitations(response.matches),
+        memoryIds: response.matches.map((match) => match.record.id),
+      });
     },
   };
 }

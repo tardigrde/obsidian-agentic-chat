@@ -2,7 +2,6 @@ import type { App } from "obsidian";
 import { clearMcpPerToolApprovals, setPerToolApproval } from "./agent/approval";
 import {
   createMcpServerState,
-  mcpServerStateFromServer,
   nextUniqueMcpServerId,
   resetMcpCredentials,
   resetMcpServerSecretRefs,
@@ -10,9 +9,11 @@ import {
   type McpServerSettings,
   type McpServerState,
 } from "./mcp/settings";
+import { syncMcpServerState } from "./mcp/server-state";
 import { localMcpToolNames } from "./mcp/tools";
 import { mcpCredentialResourceChanged, mcpEndpointProblem, mcpKnownToolLocalName, mcpSecretIds } from "./settings-mcp-state";
 import type { AgenticChatSettings } from "./settings-schema";
+import { ObsidianSecretStore } from "./secrets/secret-store";
 import { errorMessage } from "./utils/errors";
 
 /**
@@ -31,22 +32,7 @@ export function ensureMcpStateEntry(settings: AgenticChatSettings, id: string): 
 export function syncMcpServerToState(settings: AgenticChatSettings, server: McpServerSettings): void {
   if (server.source !== "plugin") return;
   const state = ensureMcpStateEntry(settings, server.id);
-  const next = mcpServerStateFromServer(server);
-  // Preserve secret ids already in state (they are derived from id, but keep if present)
-  state.enabled = next.enabled;
-  state.approval = next.approval;
-  state.authType = next.authType;
-  state.authHeaderName = next.authHeaderName;
-  state.authHeaderValueSecretId = next.authHeaderValueSecretId;
-  state.authHeaderValue = next.authHeaderValue;
-  state.oauth = next.oauth;
-  state.knownTools = next.knownTools;
-  state.enabledTools = [...next.enabledTools];
-  state.disabledTools = [...next.disabledTools];
-  state.pendingOAuthChallenge = next.pendingOAuthChallenge;
-  state.pendingOAuthResourceUrl = next.pendingOAuthResourceUrl;
-  if (next.lastUrl) state.lastUrl = next.lastUrl;
-  else delete state.lastUrl;
+  syncMcpServerState(state, server);
 }
 
 export function nextMcpServerId(
@@ -143,10 +129,11 @@ function rebaseMcpKnownToolLocalNames(server: McpServerSettings): void {
 function clearSecretIds(app: App | undefined, secretIds: string[]): void {
   const secretStorage = (app as { secretStorage?: { setSecret?: (id: string, value: string) => void } } | undefined)
     ?.secretStorage;
-  if (!secretStorage?.setSecret) return;
+  if (!app || !secretStorage?.setSecret) return;
+  const store = new ObsidianSecretStore(app);
   for (const id of secretIds) {
     try {
-      secretStorage.setSecret(id, "");
+      store.deleteSecret(id);
     } catch (error) {
       console.warn(`Agentic Chat: failed to clear secret ${id}: ${errorMessage(error)}`);
     }

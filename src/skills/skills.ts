@@ -1,5 +1,5 @@
-import { parseYaml } from "obsidian";
 import { normalizeVaultPath } from "../vault/path";
+import { splitFrontmatter as splitSharedFrontmatter, type SplitFrontmatterResult } from "../vault/frontmatter";
 import { formatSkillInvocation, type Skill } from "./skill-prompt";
 import { parseCommandArgs, substituteArgs } from "./command-args";
 import { errorMessage } from "../utils/errors";
@@ -33,24 +33,14 @@ export function buildSkillInvocation(skill: Skill, argString?: string): string {
   return formatSkillInvocation(skill, trimmed);
 }
 
-export interface Frontmatter {
-  data: Record<string, unknown>;
-  body: string;
-  /** Set when frontmatter exists but failed to parse as YAML. */
-  parseProblem?: string;
-}
+export type Frontmatter = SplitFrontmatterResult;
 
 export function splitFrontmatter(content: string): Frontmatter {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(content);
-  if (!match) return { data: {}, body: content };
-  let data: Record<string, unknown>;
-  try {
-    data = (parseYaml(match[1]) as Record<string, unknown>) ?? {};
-    return { data, body: content.slice(match[0].length).trimStart() };
-  } catch (error) {
-    const detail = error instanceof Error && error.message ? ` (${error.message})` : "";
-    return { data: {}, body: content.slice(match[0].length).trimStart(), parseProblem: `frontmatter is not valid YAML${detail}` };
-  }
+  return splitSharedFrontmatter(content, {
+    flavor: "yaml",
+    body: "trimStart",
+    objectOnly: false,
+  });
 }
 
 export function stringField(data: Record<string, unknown>, key: string): string | undefined {

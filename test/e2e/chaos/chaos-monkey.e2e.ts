@@ -1184,7 +1184,7 @@ describe("chaos monkey live driver", function () {
     plannedStopReason = budget.stopReason;
     if (!plan.live) {
       const runnable = plannedSteps.filter((step) => step.status === "run").map((step) => step.action);
-      await installScriptedTurns(scriptedTurnsFor(runnable) as ScriptedTurn[]);
+      await installScriptedTurns(scriptedTurnsFor(runnable) as unknown as ScriptedTurn[]);
     }
 
     await configurePlugin({

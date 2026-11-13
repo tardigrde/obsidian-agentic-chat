@@ -7,6 +7,7 @@ import {
   type McpServerSettings,
   type McpServerState,
 } from "../mcp/settings";
+import { clearAuthForUrlChange } from "../mcp/server-state";
 import { parseSkillMarkdown } from "../skills/skill-format";
 import { sha256Hex } from "../utils/sha256";
 import {
@@ -330,106 +331,6 @@ export function mcpServerFromPluginEntry(
 }
 
 /**
- * Merge derived plugin servers with persisted client-owned state. The plugin's
- * mcp.json is authoritative for url/name/headers; everything the user
- * configured (enabled, approval, auth, knownTools, oauth) is preserved by id.
- *
- * Returned list = every persisted non-plugin (user) server, plus the derived
- * plugin servers merged with their persisted records by id. Orphaned persisted
- * *plugin* records (servers no plugin declares anymore) are dropped; user
- * servers always survive, so a merge must never wipe hand-configured servers.
- *
- * Matched records are updated in place and returned by identity: the runtime
- * holds these very records, so mutations the MCP client makes while running
- * (OAuth token refreshes, forgotten tokens) land in settings and persist on
- * the next save instead of being written to a detached copy. When a plugin
- * moves a server's URL, client-owned auth state is cleared so tokens minted
- * for the old host are never replayed to the new one.
- */
-export function mergePluginMcpServers(
-  persisted: readonly McpServerSettings[],
-  derived: readonly McpServerSettings[],
-): McpServerSettings[] {
-  const byId = new Map<string, McpServerSettings>();
-  for (const server of persisted) byId.set(server.id, server);
-  const mergedDerived = derived.map((server) => {
-    const record = byId.get(server.id);
-    if (!record) return server;
-    const urlChanged = record.url !== server.url;
-    record.url = server.url;
-    record.name = server.name;
-    record.headers = server.headers;
-    record.source = server.source;
-    record.pluginRoot = server.pluginRoot;
-    if (urlChanged) {
-      // A token/secret minted for the old endpoint must never be replayed to
-      // a new one; drop client-owned auth state when the plugin moves a URL.
-      record.oauth = { ...record.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
-      record.authHeaderValue = "";
-    }
-    return record;
-  });
-  const userPersisted = persisted.filter((server) => server.source !== "plugin");
-  return [...userPersisted, ...mergedDerived];
-}
-
-/** Persist a client-owned record for every derived server (prunes plugin orphans). */
-export function syncMcpServers(
-  settings: { mcp: { servers: McpServerSettings[] } },
-  derived: readonly McpServerSettings[],
-): void {
-  settings.mcp.servers = mergePluginMcpServers(settings.mcp.servers, derived);
-}
-
-/**
- * New S10 path: derive the runtime MCP server list from plugin shape + client-owned
- * state map (settings.plugins.mcpState). Shape (url/name/headers/pluginRoot) comes
- * from the plugin file; enabled/approval/auth/knownTools/oauth comes from the map.
- * No merge/sync of settings.mcp.servers — the two cannot diverge.
- */
-export function deriveMcpServers(
-  derived: readonly McpServerSettings[],
-  stateMap: Record<string, McpServerState>,
-): McpServerSettings[] {
-  return derived.map((server) => {
-    const state = stateMap[server.id];
-    if (!state) return server;
-    // Security: if mcp.json moved the URL, never replay tokens minted for the old host.
-    // Derive is pure — do not mutate the persisted stateMap (read path). Use an
-    // effective copy with cleared auth/knownTools and updated lastUrl for this turn;
-    // persistence of the cleared state happens via explicit save/prune elsewhere.
-    const urlChanged = Boolean(state.lastUrl && state.lastUrl !== server.url);
-    const effectiveState: McpServerState = urlChanged
-      ? {
-          ...state,
-          authHeaderValue: "",
-          oauth: { ...state.oauth, accessToken: "", refreshToken: "", expiresAt: 0 },
-          knownTools: [],
-          lastUrl: server.url,
-          pendingOAuthChallenge: undefined,
-          pendingOAuthResourceUrl: undefined,
-        }
-      : state.lastUrl === server.url
-        ? state
-        : { ...state, lastUrl: server.url };
-    const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
-    applyMcpServerState(copy, effectiveState);
-    return copy;
-  });
-}
-
-/** Prune orphaned mcpState entries that no longer have a derived server (e.g. after plugin removal). */
-export function pruneOrphanMcpState(
-  stateMap: Record<string, McpServerState>,
-  derivedIds: ReadonlySet<string> | readonly string[],
-): void {
-  const alive = derivedIds instanceof Set ? derivedIds : new Set(derivedIds);
-  for (const id of Object.keys(stateMap)) {
-    if (!alive.has(id)) delete stateMap[id];
-  }
-}
-
-/**
  * Resolve all MCP servers for the runtime: plugin-derived (via mcpState map) plus
  * legacy user servers that still live in settings.mcp.servers (source=user).
  * After the one-time migration, the only survivors in mcp.servers are user servers
@@ -449,18 +350,9 @@ export function resolveMcpServers(
     if (state) {
       // mcp.json moved the URL: never replay tokens, tools, or a challenge minted
       // for the old host, even before the settings reconcile persists the clear.
-      const effective =
-        state.lastUrl && state.lastUrl !== server.url
-          ? {
-              ...state,
-              authHeaderValue: "",
-              oauth: { ...state.oauth, accessToken: "", refreshToken: "", expiresAt: 0 },
-              knownTools: [],
-              lastUrl: server.url,
-              pendingOAuthChallenge: undefined,
-              pendingOAuthResourceUrl: undefined,
-            }
-          : state;
+      const urlChanged = Boolean(state.lastUrl && state.lastUrl !== server.url);
+      const effective = urlChanged ? clearAuthForUrlChange({ ...state }) : state;
+      if (urlChanged) effective.lastUrl = server.url;
       const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
       applyMcpServerState(copy, effective);
       return copy;

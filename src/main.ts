@@ -34,7 +34,7 @@ import { migrateLegacyPlaintextSecrets, withUnmigratedSecrets } from "./secrets/
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
 import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
-import { setSemanticLeaseNamespace } from "./retrieval/semantic-index";
+import { setSemanticIndexLeaseScope } from "./retrieval/semantic-index";
 
 declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
 
@@ -71,7 +71,9 @@ export default class AgenticChatPlugin extends Plugin {
     }
     const adapter = this.app.vault.adapter as { getBasePath?: () => string };
     const basePath = adapter.getBasePath?.() ?? "";
-    setSemanticLeaseNamespace(basePath || this.settings.embeddings.leaseId);
+    setSemanticIndexLeaseScope(this.app.vault.adapter, {
+      namespace: basePath || this.settings.embeddings.leaseId,
+    });
     // Recover an interrupted package install before any turn can load plugins:
     // a retained backup must own the settings readers use.
     try {
@@ -158,6 +160,7 @@ export default class AgenticChatPlugin extends Plugin {
       loopGuardDisabled: __AGENTIC_CHAT_ENABLE_E2E_STREAM__,
       saveSettings: () => this.saveSettings(),
       skillScaffolder: this.pluginService,
+      pluginService: this.pluginService,
       artifactStore: ToolArtifactStore.forPlugin(this.app, this, {
         referencedArtifactIds: () => sessionManager.listReferencedArtifactIds(),
       }),

@@ -88,6 +88,25 @@ describe("AgentActionAuditRecorder", () => {
     expect(JSON.stringify(events)).not.toContain("secret body should be summarized");
   });
 
+  it("keeps audit entries in the session file across a transcript rewrite", async () => {
+    const adapter = new MemoryAdapter();
+    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const info = await manager.createSession(DEFAULTS);
+    const recorder = new AgentActionAuditRecorder({
+      sessionManager: manager,
+      getContext: () => ({ now: () => FIXED_NOW }),
+    });
+
+    await recorder.recordAgentEvent({ type: "agent_start" });
+    await manager.rewriteMessages([]);
+    await manager.rewriteMessages([]);
+
+    const events = auditEntries(adapter, info.path).map((entry) => entry.event);
+    expect(events).toEqual([
+      expect.objectContaining({ category: "turn", action: "agent_start", timestamp: new Date(FIXED_NOW).toISOString() }),
+    ]);
+  });
+
   it("redacts secret fields, summarizes content fields, and truncates large values", () => {
     const redacted = redactAuditValue({
       authorization: "Bearer secret",

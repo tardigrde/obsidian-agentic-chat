@@ -1,6 +1,14 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, afterEach, before, beforeEach, describe, it } from "mocha";
 import { waitForComposerReady } from "../support/layout";
+import {
+  installScriptedTurns,
+  releaseScriptedTurns,
+  scriptedCallLabels,
+  textTurn,
+  toolTurn,
+  type ScriptedTurn,
+} from "../support/scripted-stream";
 
 const WRITE_NOTE_PATH = "E2E-Deterministic-Write.md";
 const WRITE_NOTE_BODY = "deterministic write ok";
@@ -14,14 +22,6 @@ const REMEMBER_DENY_PATH = "E2E-Remember-Deny.md";
 const REMEMBER_DENY_SECOND_PATH = "E2E-Remember-Deny-Second.md";
 const EMPTY_FOLDER_PATH = "E2E-Empty-Folder";
 const STOP_APPROVAL_NOTE_PATH = "E2E-Stop-Approval.md";
-
-type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "length" | "toolUse";
-  delayMs?: number;
-  hold?: boolean;
-};
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
@@ -41,45 +41,6 @@ async function sendPrompt(prompt: string): Promise<void> {
 
 async function runSlashCommand(command: string): Promise<void> {
   await sendPrompt(command);
-}
-
-function toolTurn(label: string, id: string, name: string, args: Record<string, unknown>): ScriptedTurn {
-  return {
-    label,
-    stopReason: "toolUse",
-    content: [{ type: "toolCall", id, name, arguments: args }],
-  };
-}
-
-function textTurn(label: string, text: string, options: Omit<Partial<ScriptedTurn>, "label" | "content"> = {}): ScriptedTurn {
-  return {
-    ...options,
-    label,
-    stopReason: "stop",
-    content: [{ type: "text", text }],
-  };
-}
-
-async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-      __AGENTIC_CHAT_E2E_RELEASE__?: boolean;
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-    target.__AGENTIC_CHAT_E2E_RELEASE__ = false;
-  }, turns);
-}
-
-async function setE2ERelease(release: boolean): Promise<void> {
-  await browser.execute((value) => {
-    const target = window as typeof window & { __AGENTIC_CHAT_E2E_RELEASE__?: boolean };
-    target.__AGENTIC_CHAT_E2E_RELEASE__ = value;
-  }, release);
 }
 
 async function configurePlugin(): Promise<boolean> {
@@ -209,15 +170,6 @@ async function perToolApproval(toolName: string): Promise<string | undefined> {
   }, toolName);
 }
 
-async function scriptedCallLabels(): Promise<string[]> {
-  return await browser.execute(() => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: Array<{ label?: string }>;
-    };
-    return target.__AGENTIC_CHAT_E2E_CALL_LOG__?.map((call) => call.label ?? "") ?? [];
-  });
-}
-
 async function dismissOpenApproval(): Promise<void> {
   const modal = await $(".agentic-chat-approval");
   if (!(await modal.isExisting())) return;
@@ -284,12 +236,12 @@ describe("agentic-chat deterministic approvals", function () {
 
   beforeEach(async function () {
     expect(await $(".agentic-chat-approval").isExisting()).toBe(false);
-    await setE2ERelease(false);
+    await releaseScriptedTurns(false);
   });
 
   afterEach(async function () {
     // Unblock a held turn even when the test fails before its edit step.
-    await setE2ERelease(true);
+    await releaseScriptedTurns(true);
     // A failed test can leave the approval modal open. Close it here so the
     // next test fails on its own assertion, not on an intercepted click.
     await dismissOpenApproval();
@@ -506,7 +458,7 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   after(async function () {
-    await setE2ERelease(true);
+    await releaseScriptedTurns(true);
     await cleanupNotes();
     await browser.execute(() => {
       const target = window as typeof window & {

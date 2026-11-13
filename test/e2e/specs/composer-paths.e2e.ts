@@ -1,59 +1,16 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, beforeEach, describe, it } from "mocha";
-
-type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "length" | "toolUse" | "error";
-  errorMessage?: string;
-  delayMs?: number;
-  emitUpdates?: boolean;
-  hold?: boolean;
-};
-
-function textTurn(label: string, text: string, options: Omit<Partial<ScriptedTurn>, "label" | "content"> = {}): ScriptedTurn {
-  return {
-    ...options,
-    label,
-    stopReason: "stop",
-    content: [{ type: "text", text }],
-  };
-}
-
-function readTurn(label: string, path: string, options: Omit<Partial<ScriptedTurn>, "label" | "content"> = {}): ScriptedTurn {
-  return {
-    ...options,
-    label,
-    stopReason: "toolUse",
-    content: [{ type: "toolCall", id: `e2e-${label}`, name: "read", arguments: { path } }],
-  };
-}
+import {
+  installScriptedTurns,
+  readTurn,
+  releaseScriptedTurns,
+  scriptedCallLabels,
+  textTurn,
+} from "../support/scripted-stream";
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
   await $(".agentic-chat-view").waitForExist();
-}
-
-async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-      __AGENTIC_CHAT_E2E_RELEASE__?: boolean;
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-    target.__AGENTIC_CHAT_E2E_RELEASE__ = false;
-  }, turns);
-}
-
-async function setE2ERelease(release: boolean): Promise<void> {
-  await browser.execute((value) => {
-    const target = window as typeof window & { __AGENTIC_CHAT_E2E_RELEASE__?: boolean };
-    target.__AGENTIC_CHAT_E2E_RELEASE__ = value;
-  }, release);
 }
 
 async function configurePlugin(): Promise<boolean> {
@@ -77,15 +34,6 @@ async function configurePlugin(): Promise<boolean> {
     settings.web.enabled = false;
     await plugin.saveSettings?.();
     return true;
-  });
-}
-
-async function scriptedCallLabels(): Promise<string[]> {
-  return await browser.execute(() => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: Array<{ label?: string }>;
-    };
-    return target.__AGENTIC_CHAT_E2E_CALL_LOG__?.map((call) => call.label ?? "") ?? [];
   });
 }
 
@@ -148,11 +96,11 @@ describe("agentic-chat composer paths", function () {
   });
 
   after(async function () {
-    await setE2ERelease(true);
+    await releaseScriptedTurns(true);
   });
 
   beforeEach(async function () {
-    await setE2ERelease(false);
+    await releaseScriptedTurns(false);
   });
 
   it("sends with Enter while the agent is idle", async function () {
@@ -189,7 +137,7 @@ describe("agentic-chat composer paths", function () {
     );
     expect(await scriptedCallLabels()).toEqual(["idle send", "steer tool"]);
 
-    await setE2ERelease(true);
+    await releaseScriptedTurns(true);
 
     await browser.waitUntil(async () => (await transcriptText()).includes("Steered answer used the added constraint."), {
       timeout: 10_000,
@@ -218,7 +166,7 @@ describe("agentic-chat composer paths", function () {
     await input.setValue("queued draft after edit");
     expect(await input.getValue()).toBe("queued draft after edit");
 
-    await setE2ERelease(true);
+    await releaseScriptedTurns(true);
 
     await browser.waitUntil(async () => (await transcriptText()).includes("Queued answer used the edited draft."), {
       timeout: 10_000,
@@ -294,9 +242,9 @@ describe("agentic-chat composer paths", function () {
     );
     const readTrace = async () =>
       await browser.execute(() => {
-        const banner = [...document.querySelectorAll(".agentic-chat-assistant .agentic-chat-error")].pop();
+        const banner = Array.from(document.querySelectorAll(".agentic-chat-assistant .agentic-chat-error")).pop();
         const turn = banner?.closest(".agentic-chat-assistant");
-        return [...(turn?.querySelectorAll(".agentic-chat-reasoning-body") ?? [])].map((body) => (body.textContent ?? "").trim());
+        return Array.from(turn?.querySelectorAll(".agentic-chat-reasoning-body") ?? []).map((body) => (body.textContent ?? "").trim());
       });
     await browser.pause(300);
     expect(await readTrace()).toEqual(["I should check the config first."]);
@@ -316,9 +264,9 @@ describe("agentic-chat composer paths", function () {
     const error = await $(".agentic-chat-assistant .agentic-chat-error");
     await error.waitForExist({ timeout: 10_000 });
     const bubble = await browser.execute(() => {
-      const banner = [...document.querySelectorAll(".agentic-chat-assistant .agentic-chat-error")].pop();
+      const banner = Array.from(document.querySelectorAll(".agentic-chat-assistant .agentic-chat-error")).pop();
       const turn = banner?.closest(".agentic-chat-assistant");
-      const pills = [...(turn?.querySelectorAll(".agentic-chat-reasoning") ?? [])];
+      const pills = Array.from(turn?.querySelectorAll(".agentic-chat-reasoning") ?? []);
       return {
         bannerText: banner?.textContent ?? "",
         emptyPills: pills.filter((pill) => !pill.querySelector(".agentic-chat-reasoning-body")?.textContent?.trim()).length,

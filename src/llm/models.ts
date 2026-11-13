@@ -2,6 +2,7 @@ import { type Model, type OpenAICompletionsCompat, type OpenRouterRouting } from
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { requestUrl } from "obsidian";
 import { resolveModelInfoSync, resolveModelPricingSync } from "./pricing-cache";
+import { parseModelsPayload } from "./model-catalog";
 import { withTimeout } from "../utils/async";
 export { initPricingCache } from "./pricing-cache";
 
@@ -256,9 +257,7 @@ async function fetchModelListCatalog(
 ): Promise<OpenRouterModelInfo[]> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_LIST_TIMEOUT_MS;
   let status: number;
-  let payload: {
-    data?: Array<ModelListItem>;
-  } | null;
+  let payload: unknown;
   try {
     if (options?.fetchImpl) {
       const controller = new AbortController();
@@ -269,8 +268,7 @@ async function fetchModelListCatalog(
           signal: controller.signal,
         });
         status = response.status;
-        const responsePayload: unknown = await response.json();
-        payload = isModelListPayload(responsePayload) ? responsePayload : null;
+        payload = await response.json();
       } finally {
         window.clearTimeout(timer);
       }
@@ -285,7 +283,7 @@ async function fetchModelListCatalog(
         () => new RequestTimeoutError(),
       );
       status = response.status;
-      payload = response.json as typeof payload;
+      payload = response.json;
     }
   } catch (error) {
     if (error instanceof RequestTimeoutError || isAbortError(error)) {
@@ -296,12 +294,12 @@ async function fetchModelListCatalog(
   if (status < 200 || status >= 300) {
     throw new ModelListError(`Failed to list models (status ${status}).`, status);
   }
-  return (payload?.data ?? []).map((model) => ({
+  return (parseModelsPayload(payload) ?? []).map((model) => ({
     id: model.id,
-    name: model.name ?? model.id,
-    contextLength: model.context_length ?? null,
-    supportsTools: (model.supported_parameters ?? []).includes("tools"),
-    supportsReasoning: modelSupportsReasoning(model),
+    name: model.name,
+    contextLength: model.contextLength,
+    supportsTools: model.supportsTools,
+    supportsReasoning: model.supportsReasoning,
   }));
 }
 
@@ -347,52 +345,6 @@ class RequestTimeoutError extends Error {}
 
 function isAbortError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
-}
-
-function isModelListPayload(
-  value: unknown,
-): value is {
-  data?: ModelListItem[];
-} {
-  if (typeof value !== "object" || value === null) return false;
-  if (!("data" in value) || value.data === undefined) return true;
-  return (
-    Array.isArray(value.data) &&
-    value.data.every(
-      (model: unknown) =>
-        typeof model === "object" &&
-        model !== null &&
-        "id" in model &&
-        typeof model.id === "string" &&
-        (!("name" in model) || model.name === undefined || typeof model.name === "string") &&
-        (!("context_length" in model) ||
-          model.context_length === undefined ||
-          typeof model.context_length === "number") &&
-        (!("supported_parameters" in model) ||
-          model.supported_parameters === undefined ||
-          (Array.isArray(model.supported_parameters) &&
-            model.supported_parameters.every((parameter: unknown) => typeof parameter === "string"))) &&
-        (!("supports_reasoning" in model) ||
-          model.supports_reasoning === undefined ||
-          typeof model.supports_reasoning === "boolean") &&
-        (!("reasoning" in model) || model.reasoning === undefined || typeof model.reasoning === "object"),
-    )
-  );
-}
-
-interface ModelListItem {
-  id: string;
-  name?: string;
-  context_length?: number;
-  supported_parameters?: string[];
-  supports_reasoning?: boolean;
-  reasoning?: { supported_efforts?: string[] | null } | null;
-}
-
-function modelSupportsReasoning(model: ModelListItem): boolean {
-  if (typeof model.supports_reasoning === "boolean") return model.supports_reasoning;
-  if (model.reasoning && typeof model.reasoning === "object") return true;
-  return (model.supported_parameters ?? []).includes("reasoning");
 }
 
 // Keep the OpenAICompletionsCompat type referenced so downstream imports resolve.

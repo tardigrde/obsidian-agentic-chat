@@ -1,7 +1,8 @@
-import { type App, TAbstractFile, TFile, TFolder, MarkdownView, parseYaml } from "obsidian";
+import { type App, TAbstractFile, TFile, TFolder, MarkdownView } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { applyExactEditsPartial, type EditApplyResult } from "../vault/edit";
 import { normalizeFolderPath, normalizeVaultPath } from "../vault/path";
+import { splitFrontmatter } from "../vault/frontmatter";
 import type { IgnoreMatcher } from "../vault/ignore";
 import { ensureVaultParentFolder } from "../vault/storage";
 import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../vault/search";
@@ -38,7 +39,7 @@ import {
   WriteParameters,
   vaultToolDefinition,
 } from "./vault-tool-definitions";
-import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+import { toolResult, untrustedToolResult } from "./result";
 import {
   adapterDeletionMessage,
   adapterPathExists,
@@ -914,11 +915,11 @@ async function readFrontmatter(app: App, file: TFile): Promise<Record<string, un
 
 /** Parse the leading `---` YAML block of a note into structured data. */
 function parseFrontmatterBlock(content: string): Record<string, unknown> {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
-  if (!match) return {};
-  // parseYaml returns null/undefined for an empty or scalar block; normalize to {}.
-  const parsed = parseYaml(match[1]) as Record<string, unknown> | null | undefined;
-  return parsed && typeof parsed === "object" ? parsed : {};
+  return splitFrontmatter(content, {
+    flavor: "yaml",
+    objectOnly: true,
+    reportParseProblem: false,
+  }).data;
 }
 
 function getVaultFile(app: App, path: string): TFile {
@@ -976,7 +977,7 @@ function requestedWindow(path: string, window: LineWindow): RequestedWindow {
 }
 
 function textResult(text: string, details: Record<string, unknown>): AgentToolResult<Record<string, unknown>> {
-  return { content: [{ type: "text", text: truncateToolOutput(text) }], details };
+  return toolResult(truncateToolOutput(text), details);
 }
 
 function untrustedTextResult(
@@ -984,8 +985,5 @@ function untrustedTextResult(
   details: Record<string, unknown>,
   toolName?: string,
 ): AgentToolResult<Record<string, unknown>> {
-  return {
-    content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(text), toolName) }],
-    details,
-  };
+  return untrustedToolResult(text, details, toolName);
 }

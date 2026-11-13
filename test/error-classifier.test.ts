@@ -5,7 +5,7 @@ import {
   classifyHttpResponse,
   getRetryAfterMsFromHeaders,
   parseRetryAfterMs,
-  sleep,
+  sleepWithAbort,
 } from "../src/agent/error-classifier";
 
 describe("error-classifier", () => {
@@ -113,10 +113,10 @@ describe("error-classifier", () => {
 
   it("sleep resolves after delay and respects abort", async () => {
     const start = Date.now();
-    await sleep(10);
+    await sleepWithAbort(10);
     expect(Date.now() - start).toBeGreaterThanOrEqual(5);
     const controller = new AbortController();
-    const promise = sleep(100, controller.signal);
+    const promise = sleepWithAbort(100, controller.signal);
     controller.abort();
     await expect(promise).rejects.toThrow(/Aborted/);
   });

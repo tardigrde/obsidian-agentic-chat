@@ -7,14 +7,7 @@ import {
   loadVaultInstructions,
   MAX_INSTRUCTIONS_CHARS,
 } from "../src/agent/instructions";
-
-/** Minimal DataAdapter stub backed by an in-memory path → content map. */
-function fakeAdapter(files: Record<string, string>): DataAdapter {
-  return {
-    exists: async (path: string) => path in files,
-    read: async (path: string) => files[path] ?? "",
-  } as unknown as DataAdapter;
-}
+import { fakeAdapter } from "./support/fake-adapter";
 
 describe("loadVaultInstructions", () => {
   it("returns empty when no instruction file exists", async () => {

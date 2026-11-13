@@ -62,6 +62,60 @@ function memoryArtifactStore(): { store: ToolArtifactStoreLike; writes: ToolArti
 }
 
 describe("MCP tools", () => {
+  it("keeps one client and one session per server across tool calls", async () => {
+    const requests: WebHttpRequest[] = [];
+    const fetcher: WebFetcher = async (request) => {
+      requests.push(request);
+      const body = JSON.parse(request.body ?? "{}") as { id?: number; method?: string };
+      if (body.method === "initialize") {
+        return { ...rpc(body.id ?? 0, { protocolVersion: "2025-11-25" }), headers: { "mcp-session-id": "s1" } };
+      }
+      if (body.method === "notifications/initialized") return { status: 202, text: "", headers: {} };
+      if (body.method === "tools/list") return rpc(body.id ?? 0, { tools: [{ name: "get_time" }] });
+      if (body.method === "tools/call") return rpc(body.id ?? 0, { content: [{ type: "text", text: "ok" }] });
+      throw new Error(`unexpected method ${body.method}`);
+    };
+
+    const tools = await createMcpTools(mcpSettings(), fetcher);
+    await tools[0].execute("call-1", {});
+    await tools[0].execute("call-2", {});
+
+    const methods = requests.map((request) => (JSON.parse(request.body ?? "{}") as { method?: string }).method);
+    expect(methods).toEqual([
+      "initialize",
+      "notifications/initialized",
+      "tools/list",
+      "tools/call",
+      "tools/call",
+    ]);
+    expect(methods.filter((method) => method === "initialize")).toHaveLength(1);
+    expect(requests.slice(3).map((request) => request.headers?.["MCP-Session-Id"])).toEqual(["s1", "s1"]);
+  });
+
+  it("drops the client when the server endpoint changes", async () => {
+    const requests: WebHttpRequest[] = [];
+    const fetcher: WebFetcher = async (request) => {
+      requests.push(request);
+      const body = JSON.parse(request.body ?? "{}") as { id?: number; method?: string };
+      if (body.method === "initialize") return rpc(body.id ?? 0, { protocolVersion: "2025-11-25" });
+      if (body.method === "notifications/initialized") return { status: 202, text: "", headers: {} };
+      if (body.method === "tools/list") return rpc(body.id ?? 0, { tools: [{ name: "get_time" }] });
+      if (body.method === "tools/call") return rpc(body.id ?? 0, { content: [{ type: "text", text: "ok" }] });
+      throw new Error(`unexpected method ${body.method}`);
+    };
+    const server = createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://a.example/mcp" });
+
+    const tools = await createMcpTools(mcpSettings({ servers: [server] }), fetcher);
+    await tools[0].execute("call-1", {});
+    server.url = "https://b.example/mcp";
+    await tools[0].execute("call-2", {});
+
+    const inits = requests.filter(
+      (request) => (JSON.parse(request.body ?? "{}") as { method?: string }).method === "initialize",
+    );
+    expect(inits.map((request) => request.url)).toEqual(["https://a.example/mcp", "https://b.example/mcp"]);
+  });
+
   it("registers nothing while MCP is disabled", async () => {
     await expect(createMcpTools(mcpSettings({ enabled: false }), queuedFetcher([]))).resolves.toEqual([]);
   });
@@ -330,9 +384,7 @@ describe("MCP tools", () => {
               },
             ],
           }),
-          rpc(1, { protocolVersion: "2025-11-25" }),
-          { status: 202, text: "", headers: {} },
-          rpc(2, { content: [{ type: "text", text: huge }] }),
+          rpc(3, { content: [{ type: "text", text: huge }] }),
         ],
         requests,
       ),
@@ -340,7 +392,7 @@ describe("MCP tools", () => {
 
     const result = await tools[0].execute("call-1", { libraryId: "/obsidianmd/obsidian" });
 
-    expect(JSON.parse(requests[5].body ?? "{}")).toMatchObject({
+    expect(JSON.parse(requests[3].body ?? "{}")).toMatchObject({
       method: "tools/call",
       params: {
         name: "get-library-docs",
@@ -365,9 +417,7 @@ describe("MCP tools", () => {
         rpc(1, { protocolVersion: "2025-11-25" }),
         { status: 202, text: "", headers: {} },
         rpc(2, { tools: [{ name: "jira_search", title: "Search issues" }] }),
-        rpc(1, { protocolVersion: "2025-11-25" }),
-        { status: 202, text: "", headers: {} },
-        rpc(2, {
+        rpc(3, {
           content: [{ type: "text", text: body }],
           structuredContent: { result: body },
         }),
