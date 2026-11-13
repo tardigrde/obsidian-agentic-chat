@@ -69,10 +69,6 @@ export default tseslint.config(
     ignores: [
       // The envelope lives here; this is the one place the literal shape is allowed.
       "src/tools/result.ts",
-      // Owned by another PR; keep the rule quiet until that call site converts.
-      "src/mcp/tools.ts",
-      // Agent-owned call sites convert in a later batch.
-      "src/agent/**",
     ],
     rules: {
       "no-restricted-syntax": [

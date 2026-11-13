@@ -4,7 +4,7 @@ import { Type, type TSchema } from "typebox";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import type { WebFetcher } from "../tools/web-fetch";
 import { truncateToolOutput } from "../vault/truncate";
-import { wrapToolOutput, wrapToolOutputTruncated } from "../tools/tool-output-wrapper";
+import { textContent, untrustedToolResult } from "../tools/result";
 import { McpHttpClient, type McpCallToolResult, type McpToolDefinition } from "./client";
 import { McpError, type McpErrorCategory } from "./errors";
 import type { McpAuthType, McpKnownToolSettings, McpServerSettings, McpSettings } from "./settings";
@@ -365,7 +365,7 @@ async function renderMcpResult(result: McpCallToolResult, options: RenderMcpResu
         contentType: "text/plain",
       });
       return {
-        content: [{ type: "text", text: wrapToolOutput(renderArtifactPreview(text, artifact), options.localToolName) }],
+        content: untrustedToolResult(renderArtifactPreview(text, artifact), {}, options.localToolName).content,
         truncated: true,
         artifact,
       };
@@ -380,11 +380,12 @@ async function renderMcpResult(result: McpCallToolResult, options: RenderMcpResu
   const truncated = text.length > 50_000;
   // Wrap payload only; keep harness prefix outside the trust boundary
   const payload = renderedParts.length > 0 ? renderedParts.join("\n\n") : "(MCP tool returned no content.)";
+  const wrapped = untrustedToolResult(truncateToolOutput(payload), {}, options.localToolName);
   if (prefix) {
-    const wrapped = wrapToolOutputTruncated(truncateToolOutput(payload), options.localToolName);
-    return { content: [{ type: "text", text: `${prefix}${wrapped}` }], truncated };
+    const wrappedText = (wrapped.content[0] as TextContent).text;
+    return { content: [textContent(`${prefix}${wrappedText}`)], truncated };
   }
-  return { content: [{ type: "text", text: wrapToolOutputTruncated(truncateToolOutput(payload), options.localToolName) }], truncated };
+  return { content: wrapped.content, truncated };
 }
 
 function renderArtifactPreview(text: string, artifact: ToolArtifactMetadata): string {

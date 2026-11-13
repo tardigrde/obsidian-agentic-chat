@@ -10,6 +10,7 @@ import {
   type Usage,
 } from "@earendil-works/pi-ai";
 import { sleepWithAbort } from "./error-classifier";
+import { textContent } from "../tools/result";
 
 export type ReplayStopReason = Extract<StopReason, "stop" | "length" | "toolUse" | "error" | "aborted">;
 
@@ -118,7 +119,7 @@ export function createReplayStreamFn(turns: readonly ReplayTurn[], options?: Rep
 }
 
 export function replayTextTurn(text: string, options: Omit<ReplayTurn, "content"> = {}): ReplayTurn {
-  return { ...options, content: [{ type: "text", text }], stopReason: options.stopReason ?? "stop" };
+  return { ...options, content: [textContent(text)], stopReason: options.stopReason ?? "stop" };
 }
 
 export function replayToolCallTurn(

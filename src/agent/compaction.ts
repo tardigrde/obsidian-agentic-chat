@@ -2,6 +2,7 @@ import { estimateMessageTokens } from "@earendil-works/pi-ai/utils/estimate";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import { collectArtifactIdsFromText } from "../artifacts/artifact-references";
+import { textContent } from "../tools/result";
 
 /**
  * Auto-compaction configuration. Fractions are of the model's context window.
@@ -180,10 +181,9 @@ export function buildSummaryMessage(
   return {
     role: "user",
     content: [
-      {
-        type: "text",
-        text: `Earlier conversation was summarized to save context:\n\n<conversation-summary>\n${summaryWithManifest}\n</conversation-summary>`,
-      },
+      textContent(
+        `Earlier conversation was summarized to save context:\n\n<conversation-summary>\n${summaryWithManifest}\n</conversation-summary>`,
+      ),
     ],
     timestamp,
     // Carried on the message (not just in memory) so the dropped turns' usage
