@@ -4,7 +4,7 @@ import type { AgenticChatSettings } from "../settings-schema";
 import { activeModelConfig, apiKeyForProvider } from "../settings-schema";
 import { buildModel } from "../llm/models";
 import { sharedAgentModels } from "../llm/providers";
-import type { ObsidianSessionManager } from "../session/session-manager";
+import type { SessionBinding } from "./session-actions";
 import { addUsage, emptyUsage, sumAssistantUsage } from "./usage";
 import {
   DEFAULT_COMPACTION_CONFIG,
@@ -129,8 +129,15 @@ export interface AgentCompactionRuntimeOptionsForRun {
   /** Optional user instructions to append to the summarization prompt. */
   customInstructions?: string;
   /** Session captured with the messages; defaults to the session at run start. */
-  expectedPath?: string | null;
-  expectedGeneration?: number;
+  binding?: SessionBinding;
+}
+
+/** Where a compaction pass lands its result: the session queue in production. */
+export interface CompactionTarget {
+  /** The session and generation the caller's messages were read from. */
+  getBinding(): SessionBinding;
+  /** Persist the compacted transcript and put it on the live agent, as one step. */
+  commitCompaction(messages: AgentMessage[], binding: SessionBinding): Promise<void>;
 }
 
 export type AgentCompactionSkipReason =
@@ -150,19 +157,19 @@ type SummaryResult =
 
 export interface AgentCompactionRuntimeOptions {
   getSettings: () => AgenticChatSettings;
-  sessionManager: ObsidianSessionManager;
+  session: CompactionTarget;
   buildStreamFn?: () => StreamFn;
   summarize?: SummarizeFn;
 }
 
 /**
- * Runs the transcript compaction pipeline: plan, summarize, carry usage, and
- * persist the rewritten session. The caller owns in-memory agent replacement and
- * UI notifications after a non-null result.
+ * Runs one transcript compaction pass: plan, summarize, carry usage, then
+ * commit the result through the session queue, which persists it and replaces
+ * the live agent as one step. At most one pass is in flight.
  */
 export class AgentCompactionRuntime {
   private readonly getSettings: () => AgenticChatSettings;
-  private readonly sessionManager: ObsidianSessionManager;
+  private readonly session: CompactionTarget;
   private readonly buildStreamFn: () => StreamFn;
   private readonly injectedSummarize?: SummarizeFn;
   /** Single-flight: equivalent callers share one run; forced/manual callers never do. */
@@ -170,7 +177,7 @@ export class AgentCompactionRuntime {
 
   constructor(options: AgentCompactionRuntimeOptions) {
     this.getSettings = options.getSettings;
-    this.sessionManager = options.sessionManager;
+    this.session = options.session;
     this.buildStreamFn =
       options.buildStreamFn ??
       (() => (model, context, streamOptions) => sharedAgentModels().streamSimple(model, context, streamOptions));
@@ -222,10 +229,7 @@ export class AgentCompactionRuntime {
     // Summarization can take seconds and the user can switch sessions meanwhile.
     // Callers that captured a session with their messages pass it in so a swap
     // during their own pre-work cannot retarget this rewrite.
-    let expectedPath = options.expectedPath;
-    if (expectedPath === undefined) expectedPath = this.sessionManager.getActiveSessionPath();
-    let expectedGeneration = options.expectedGeneration;
-    expectedGeneration ??= this.sessionManager.getActiveSessionGeneration();
+    const binding = options.binding ?? this.session.getBinding();
     const config = options.force
       ? { ...compactionConfig(this.getSettings()), enabled: true, thresholdFraction: 0 }
       : compactionConfig(this.getSettings());
@@ -252,10 +256,9 @@ export class AgentCompactionRuntime {
     const dropped = collectDroppedUsage(plan.summarize);
     const manifest = collectCompactionManifest(plan.summarize);
     const newMessages = [buildSummaryMessage(summary.summary, Date.now(), dropped, manifest), ...plan.keep];
-    // Persist the rewrite first; only mutate in-memory state once disk succeeds.
-    // The captured path/generation stop a swap during summarization from
-    // writing this transcript into a different session.
-    await this.sessionManager.rewriteMessages(newMessages, { expectedPath, expectedGeneration });
+    // The captured binding stops a swap, rewind, or rewrite during
+    // summarization from landing this transcript on a different one.
+    await this.session.commitCompaction(newMessages, binding);
     return { status: "compacted", messages: newMessages };
   }
 

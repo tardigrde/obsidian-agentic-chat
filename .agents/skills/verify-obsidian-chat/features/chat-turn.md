@@ -63,9 +63,9 @@ await browser.waitUntil(async () =>
 | Tool-step vault path link | `src/ui/step-card.ts#appendPathLink` | no committed check | `NONE` |
 | Stop the active turn (toolbar) | `src/ui/chat-view.ts#stopActiveTurn` | `test/e2e/specs/composer-paths.e2e.ts#stops, then sends the draft as a replacement turn` | `covered` |
 | Stop one tab without aborting the other | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/two-tab-stop.e2e.ts#stopping one tab does not abort the other tab's turn` | `covered` |
-| Stop clears queued steering | `src/agent/agent-service.ts#continueRecentSession` | `test/agent-service.test.ts#clears queued steering when the spend cap stops a run` (unit only) | `partial` |
-| `/compact` skips when the session changed | `src/agent/agent-service.ts#compactNow` | `test/agent-service.test.ts#reloads the persisted transcript when compaction cannot replace the live agent` | `partial` |
-| Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts#async run(run: PromptTurnRun` | `test/agent-service.test.ts#blocks a prompt when the session changes during turn preparation` | `partial` |
+| Stop clears queued steering | `src/agent/steering-queue.ts#stop(agent: Agent)` | `test/agent-service.test.ts#clears queued steering when the spend cap stops a run` (unit only) | `partial` |
+| `/compact` skips when the session changed | `src/agent/conversation-compaction.ts#runManual` | `test/agent-service.test.ts#reloads the persisted transcript when compaction cannot replace the live agent` | `partial` |
+| Compaction recovery stops the next prompt | `src/agent/conversation-compaction.ts#runAutomatic` | `test/agent-service.test.ts#blocks a prompt when the session changes during turn preparation` | `partial` |
 | Enter sends while idle | `src/ui/composer-input.ts#resolveComposerAction` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
 | Enter steers after the current model turn | `src/ui/composer-input.ts#resolveComposerAction` | `test/e2e/specs/composer-paths.e2e.ts#steers after a successful tool call while the agent is running` | `covered` |
 | Undelivered steering returns to the composer | `src/ui/chat-view.ts#restoreUndeliveredSteers` | `test/agent-service.test.ts#clears queued steering when the user stops the active run`, `test/composer-input.test.ts#strips one leading context preamble for retry display` (unit only) | `partial` |

@@ -164,8 +164,18 @@ export class AgentConversation {
     return this.options.sessionManager.getActiveSessionPath();
   }
 
+  /** The token a rewrite or reload must still match. */
   get generation(): number {
     return this.options.sessionManager.getActiveSessionGeneration();
+  }
+
+  /** The token a send must still match; see {@link ObsidianSessionManager.beginConversation}. */
+  get conversationGeneration(): number {
+    return this.options.sessionManager.getConversationGeneration();
+  }
+
+  beginConversation(): number {
+    return this.options.sessionManager.beginConversation();
   }
 
   async continueRecent(): Promise<ActiveSessionSnapshot> {

@@ -9,6 +9,7 @@ import { estimateToolDefinitionTokens } from "../src/agent/tool-budget";
 import { ObsidianSessionManager } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
+import { managerCompactionTarget } from "./helpers/compaction-target";
 
 const WINDOW = 10_000;
 
@@ -62,7 +63,7 @@ async function runtime(): Promise<AgentCompactionRuntime> {
   await manager.createSession({ provider: "openrouter", modelId: "test/model", thinkingLevel: "off" });
   return new AgentCompactionRuntime({
     getSettings: () => settings,
-    sessionManager: manager,
+    session: managerCompactionTarget(manager),
     summarize: async () => "Summary of earlier turns.",
   });
 }
