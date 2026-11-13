@@ -55,8 +55,6 @@ describe("retry policy table", () => {
   it.each(statusRows)("$name: both engines agree", (row) => {
     const request = responseRetryDecision(responseFor(row), 0, 1);
     const stream = streamRetry(new Error(`HTTP ${row.status}: ${row.body}`));
-    // eslint-disable-next-line no-console
-    console.log(row.name, "stream", stream, "request", Boolean(request));
     expect(stream).toBe(row.retry);
     expect(Boolean(request)).toBe(row.retry);
   });
@@ -69,8 +67,6 @@ describe("retry policy table", () => {
       1,
     );
     const retryAfterMs = getRetryAfterMsFromHeaders(headers);
-    // eslint-disable-next-line no-console
-    console.log("429 retry-after", "retryAfterMs", retryAfterMs, "delay", backoffDelayMs(0, retryAfterMs));
     expect(decision).toBeDefined();
     expect(retryAfterMs).toBe(2000);
     expect(backoffDelayMs(0, decision?.classified.retryAfterMs)).toBeGreaterThanOrEqual(2000);
@@ -81,8 +77,6 @@ describe("retry policy table", () => {
     const error = new Error("fetch failed");
     const request = errorRetryDecision(error, 0, 1);
     const stream = streamRetry(error);
-    // eslint-disable-next-line no-console
-    console.log("network", "stream", stream, "request", Boolean(request));
     expect(stream).toBe(true);
     expect(request).toBeDefined();
   });
@@ -95,8 +89,6 @@ describe("retry policy table", () => {
       1,
     );
     const stream = streamRetry(error);
-    // eslint-disable-next-line no-console
-    console.log("sdk 429", "stream", stream, "request", Boolean(request));
     expect(stream).toBe(true);
     expect(request).toBeDefined();
   });
