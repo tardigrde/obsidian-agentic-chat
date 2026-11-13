@@ -1451,6 +1451,10 @@ export class ChatView extends ItemView {
     const tab = this.activeTab;
     const service = tab.service;
     if (service.isStreaming()) return;
+    // Bind the retry to the session that is active now: the transcript rewrite
+    // below can await, and a same-tab session load during that await must not
+    // receive this prompt.
+    let sessionToken = service.getSessionToken();
     const lastTurn = lastUserTurn(service.getMessages());
     const prompt = this.state.lastSentPrompt ?? lastTurn?.text;
     if (!prompt) return;
@@ -1468,6 +1472,17 @@ export class ChatView extends ItemView {
         this.renderErrorMessage(errorMessage(error));
         return;
       }
+      if (service.getSessionToken() !== sessionToken) {
+        const currentToken = service.getSessionToken();
+        // A rewind advances the same session's epoch, so a bare token inequality
+        // is expected after truncate. Only a different conversation is a swap.
+        if (sessionIdentity(currentToken) !== sessionIdentity(sessionToken)) {
+          service.reportSessionChanged();
+          this.showServiceError();
+          return;
+        }
+        sessionToken = currentToken;
+      }
       if (this.isLiveTab(tab)) {
         this.renderTranscript(service.getMessages());
       }
@@ -1475,7 +1490,7 @@ export class ChatView extends ItemView {
     this.clearEmptyState();
     // A retried image turn shows the same thumbnails it sends (#250).
     this.renderOutgoingUserMessage(display, [], images);
-    await service.sendPrompt(prompt, images);
+    await service.sendPrompt(prompt, images, sessionToken);
     if (!this.isLiveTab(tab)) return;
     this.showServiceError();
   }
@@ -2380,4 +2395,9 @@ export class ChatView extends ItemView {
     this.renderInfoMessage("Removed command", [[`/${word.toLowerCase()}`, hint]]);
     return true;
   }
+}
+
+/** The conversation part of a service session token, without its epoch suffix. */
+function sessionIdentity(token: string): string {
+  return token.replace(/:\d+$/, "");
 }
