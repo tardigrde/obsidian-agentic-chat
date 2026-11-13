@@ -90,8 +90,8 @@ export interface SemanticIndexLeaseTimer {
 }
 
 const defaultLeaseTimer: SemanticIndexLeaseTimer = {
-  setInterval: (handler, ms) => globalThis.setInterval(handler, ms),
-  clearInterval: (id) => globalThis.clearInterval(id as ReturnType<typeof setInterval>),
+  setInterval: (handler, ms) => window.setInterval(handler, ms),
+  clearInterval: (id) => window.clearInterval(id as number),
 };
 
 /**

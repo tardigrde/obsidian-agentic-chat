@@ -87,7 +87,7 @@ export function splitFrontmatter(
   }
 
   try {
-    const parsed = parseYaml(match[1]);
+    const parsed = parseYaml(match[1]) as unknown;
     if (options.objectOnly === false) {
       return { data: (parsed ?? {}) as Record<string, unknown>, body };
     }
