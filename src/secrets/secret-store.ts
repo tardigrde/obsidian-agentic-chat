@@ -19,6 +19,7 @@ import {
 export interface SecretStore {
   getSecret(id: string): string;
   setSecret(id: string, value: string): void;
+  deleteSecret(id: string): void;
 }
 
 export class ObsidianSecretStore implements SecretStore {
@@ -38,6 +39,13 @@ export class ObsidianSecretStore implements SecretStore {
   setSecret(id: string, value: string): void {
     this.app.secretStorage.setSecret(normalizeSecretId(id), value);
   }
+
+  deleteSecret(id: string): void {
+    const normalized = normalizeSecretId(id);
+    this.app.secretStorage.setSecret(normalized, "");
+    const legacy = legacySecretId(id);
+    if (legacy !== normalized) this.app.secretStorage.setSecret(legacy, "");
+  }
 }
 
 export class MemorySecretStore implements SecretStore {
@@ -54,6 +62,13 @@ export class MemorySecretStore implements SecretStore {
 
   setSecret(id: string, value: string): void {
     this.secrets.set(normalizeSecretId(id), value);
+  }
+
+  deleteSecret(id: string): void {
+    const normalized = normalizeSecretId(id);
+    this.secrets.delete(normalized);
+    const legacy = legacySecretId(id);
+    if (legacy !== normalized) this.secrets.delete(legacy);
   }
 }
 
