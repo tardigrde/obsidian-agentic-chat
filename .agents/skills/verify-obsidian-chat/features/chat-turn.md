@@ -73,7 +73,7 @@ await browser.waitUntil(async () =>
 | Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1224` | `test/e2e/specs/composer-paths.e2e.ts:208` | `covered` |
 | Stop then send replaces the turn | `src/ui/chat-view.ts:1217` | `test/e2e/specs/composer-paths.e2e.ts:234` | `covered` |
 | Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |
-| Inline `ask_user` card | `src/ui/chat-view.ts:506` | `test/chat-view-ask-user.test.ts:82` (unit only) | `partial` |
+| Inline `ask_user` card | `src/ui/chat-view.ts:506` | `test/chat-view-ask-user.test.ts:84` (unit only) | `partial` |
 | Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:565` | no committed check | `NONE` |
 | Copy response | `src/ui/assistant-bubble.ts:841` | no committed check | `NONE` |
 | Ask again | `src/ui/assistant-bubble.ts:823` | `test/chat-view-retry.test.ts:263` (unit only) | `partial` |

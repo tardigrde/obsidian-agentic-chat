@@ -108,7 +108,7 @@ export function diffStat(lines: DiffLine[]): DiffStat {
 }
 
 /** Unified-diff prefix marker for one line: `+`, `-`, or a space. */
-export function diffPrefix(op: DiffLine["op"] | string): string {
+export function diffPrefix(op: string): string {
   if (op === "add") return "+";
   if (op === "remove") return "-";
   return " ";

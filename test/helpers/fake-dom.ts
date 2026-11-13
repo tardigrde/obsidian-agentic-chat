@@ -228,7 +228,8 @@ export class FakeElement {
   closest(selector: string): FakeElement | null {
     if (!selector.startsWith(".")) return null;
     const classes = selector.slice(1).split(".").filter(Boolean);
-    let current: FakeElement | null = this;
+    if (classes.every((cls) => this.classes.has(cls))) return this;
+    let current = this.parentElement;
     while (current) {
       if (classes.every((cls) => current?.classes.has(cls))) return current;
       current = current.parentElement;
