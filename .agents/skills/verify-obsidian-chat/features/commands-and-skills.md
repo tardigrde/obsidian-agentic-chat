@@ -66,7 +66,7 @@ await $(".agentic-chat-info").waitForExist();
 | `/usage` | `src/ui/commands.ts:35` | no committed check | `NONE` |
 | `/export` | `src/ui/commands.ts:37` | `test/session-export.test.ts:31` (renderer only) | `partial` |
 | `/semantic-index` | `src/ui/commands.ts:31` | `test/semantic-index-workflow-controller.test.ts:85` (workflow unit) | `partial` |
-| Repair a stale semantic index on read | `src/retrieval/semantic-index-repair.ts:14` | `test/semantic-index.test.ts:59` | `partial` |
+| Repair a stale semantic index on read | `src/retrieval/semantic-index.ts:445` | `test/semantic-index.test.ts:59` | `partial` |
 | One semantic index writer across tabs | `src/retrieval/semantic-index.ts:149` | `test/semantic-index-lease.test.ts:81` | `partial` |
 | `/doctor` | `src/ui/commands.ts:32` | `test/runtime-diagnostics.test.ts:13` (diagnostics only) | `partial` |
 | `/add-dir` and `/dirs` removed | `src/ui/commands.ts:25` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
@@ -86,8 +86,8 @@ await $(".agentic-chat-info").waitForExist();
 | `unload_skill` | `src/tools/skill-tools.ts:68` | no committed check | `NONE` |
 | `create_skill` | `src/tools/skill-tools.ts:124` | `test/skill-create-tool.test.ts:21` (unit only) | `partial` |
 | New skill modal | `src/ui/new-skill-modal.ts:36` | no committed check | `NONE` |
-| Repair built-ins | `src/settings.ts:1158` | no committed check | `NONE` |
-| Unregistered compat tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/vault-tools.ts:36` | no production caller passes `surface: "compat"`; the default surface filters these out at `src/tools/tool-contracts.ts:305` | `unreachable` |
+| Repair built-ins | `src/settings-tab-plugins.ts:49` | no committed check | `NONE` |
+| Unregistered compat tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/vault-tools.ts:41` | no production caller passes `surface: "compat"`; the default surface filters these out at `src/tools/tool-contracts.ts:305` | `unreachable` |
 
 ## Gotchas
 
