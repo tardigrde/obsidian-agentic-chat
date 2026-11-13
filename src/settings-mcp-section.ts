@@ -75,8 +75,7 @@ export class McpSettingsSection {
     return resolveMcpServers(settings, pluginServers);
   }
 
-  definitions(): SettingDefinitionItem[] {
-    const settings = this.host.plugin.settings;
+  definitions(settings: AgenticChatSettings): SettingDefinitionItem[] {
     const enabled = () => settings.mcp.enabled;
     return [
       warning(

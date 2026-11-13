@@ -1,4 +1,5 @@
 import { type App, type Component, loadMermaid, MarkdownRenderer, Notice, setIcon, TFile } from "obsidian";
+import { openSystemUrl } from "../platform/system-browser";
 import type { Usage } from "@earendil-works/pi-ai";
 import { SUBAGENT_TOOL_NAME, type SubagentChildStatus } from "../tools/subagent-tool";
 import type { AskUserDetails } from "../tools/ask-user-tool";
@@ -925,7 +926,6 @@ function installRenderedLinkHandlers(
   root: HTMLElement,
   app: App,
   onOpenExternalLink: ((target: string) => void) | undefined,
-  openWindow: (url: string) => void = defaultExternalLinkOpener,
 ): void {
   root.addEventListener("click", (event) => {
     if (event.defaultPrevented) return;
@@ -942,20 +942,9 @@ function installRenderedLinkHandlers(
     } else if (onOpenExternalLink) {
       onOpenExternalLink(link.target);
     } else {
-      openWindow(link.target);
+      openSystemUrl(link.target).catch((error: unknown) => new Notice(`Could not open link: ${errorMessage(error)}`));
     }
   });
-}
-
-/**
- * Last-resort opener used only when no `onOpenExternalLink` handler is wired
- * (production always wires one through the mobile-safe system-link path).
- * Reaches the global opener indirectly so the mobile-compat verifier does not
- * flag a bare browser-open call in the source.
- */
-function defaultExternalLinkOpener(url: string): void {
-  const opener = (window as { open?: (url: string, target?: string, features?: string) => Window | null }).open;
-  opener?.(url, "_blank", "noopener,noreferrer");
 }
 
 function closestAnchor(target: EventTarget | null): HTMLAnchorElement | null {

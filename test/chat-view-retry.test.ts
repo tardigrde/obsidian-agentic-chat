@@ -10,7 +10,7 @@ import {
 import { AgentService } from "../src/agent/agent-service";
 import { ChatView } from "../src/ui/chat-view";
 import { ObsidianSessionManager } from "../src/session/session-manager";
-import { DEFAULT_SETTINGS } from "../src/settings";
+import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 const IMAGE: ImageContent = { type: "image", data: "aW1hZ2U=", mimeType: "image/png" };

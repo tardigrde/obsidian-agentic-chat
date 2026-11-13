@@ -1,16 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
-import {
-  activeModelConfig,
-  activeModelId,
-  applyOpenAICompatiblePreset,
-  apiKeyForProvider,
-  DEFAULT_SETTINGS,
-  mergeSettings,
-  OPENAI_COMPATIBLE_PRESETS,
-  openAICompatiblePresetForBaseUrl,
-  type AgenticChatSettings,
-} from "../src/settings";
+import { applyOpenAICompatiblePreset, OPENAI_COMPATIBLE_PRESETS, openAICompatiblePresetForBaseUrl } from "../src/settings";
+import { activeModelConfig, activeModelId, apiKeyForProvider, DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings-schema";
 import { DEFAULT_OPENAI_COMPATIBLE_BASE_URL } from "../src/llm/models";
 import {
   DEFAULT_EMBEDDING_SETTINGS,

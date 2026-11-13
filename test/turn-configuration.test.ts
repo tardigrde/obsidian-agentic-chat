@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { AgentTurnConfiguration } from "../src/agent/turn-configuration";
 import type { ModelConfig } from "../src/llm/models";
 

@@ -11,7 +11,7 @@ import {
 } from "../src/agent/tool-call-controller";
 import { SubagentRegistry } from "../src/tools/subagent-tool";
 import type { AgentRole } from "../src/agent/subagents";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { createMcpServerSettings } from "../src/mcp/settings";
 import { FakeVault } from "./helpers/fake-vault";
 

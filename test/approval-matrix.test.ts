@@ -8,7 +8,7 @@ import type { UserApprovalChoice } from "../src/agent/tool-call-controller";
 import { type ApprovalPolicy, type ApprovalSettings } from "../src/agent/approval";
 import { type AgentMode, resolveModePolicy } from "../src/agent/modes";
 import { ObsidianSessionManager } from "../src/session/session-manager";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 /**

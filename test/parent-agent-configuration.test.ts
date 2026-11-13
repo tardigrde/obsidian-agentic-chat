@@ -4,7 +4,7 @@ import type { Model } from "@earendil-works/pi-ai";
 import { AgentParentConfigurationRuntime } from "../src/agent/parent-agent-configuration";
 import type { AgentRole } from "../src/agent/subagents";
 import type { SessionInfo } from "../src/session/session-manager";
-import { DEFAULT_SETTINGS } from "../src/settings";
+import { DEFAULT_SETTINGS } from "../src/settings-schema";
 
 describe("AgentParentConfigurationRuntime", () => {
   it("builds the parent agent configuration from the current runtime collaborators", () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { App } from "obsidian";
-import { DEFAULT_SETTINGS } from "../src/settings";
+import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { buildAgentParentTools } from "../src/agent/runtime-resources";
 import { estimateToolDefinitionTokens } from "../src/agent/tool-budget";
 import { createSubagentTool } from "../src/tools/subagent-tool";

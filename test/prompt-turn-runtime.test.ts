@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Agent } from "@earendil-works/pi-agent-core";
 import { AgentPromptTurnRuntime } from "../src/agent/prompt-turn-runtime";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 
 interface Harness {
   runtime: AgentPromptTurnRuntime;

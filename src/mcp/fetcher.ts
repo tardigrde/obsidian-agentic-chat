@@ -1,4 +1,5 @@
 import type { WebFetcher, WebHttpRequest, WebHttpResponse } from "../tools/web-fetch";
+import { optionalNodeRequire } from "../platform/node-runtime";
 import { createObsidianFetcher } from "../tools/web-fetch";
 import type { ProxySettings } from "../network/proxy";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
@@ -377,12 +378,6 @@ function headerName(key: string): string {
     .split("-")
     .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1)}` : part))
     .join("-");
-}
-
-function optionalNodeRequire(): ((moduleName: string) => unknown) | undefined {
-  const candidate = (window as unknown as { require?: (moduleName: string) => unknown }).require;
-  if (typeof candidate === "function") return candidate;
-  return typeof require === "function" ? require : undefined;
 }
 
 function destroySocket(socket: NodeSocket): void {

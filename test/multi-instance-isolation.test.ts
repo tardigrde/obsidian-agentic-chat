@@ -7,7 +7,7 @@ import { AgentSubagentRuntime } from "../src/agent/subagent-runtime";
 import type { AgentRuntimeResources } from "../src/agent/runtime-resources";
 import type { AgentRole } from "../src/agent/subagents";
 import type { AgentToolCallController } from "../src/agent/tool-call-controller";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { ReadMemo } from "../src/vault/read-memo";
 import type { WebFetcher } from "../src/tools/web-fetch";
 import { FakeApp } from "./helpers/fake-vault";
