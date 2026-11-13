@@ -32,6 +32,16 @@ export function normalizeFolderPath(input: string, options: VaultPathOptions = {
   return normalized === "." ? "" : normalized;
 }
 
+/**
+ * Normalize a lookup key for retrieval matching: case-insensitive, slash
+ * separated, and without a leading slash. It deliberately keeps trailing and
+ * `.`/`..` segments because note links may contain them. Do not use it for
+ * file access; use {@link normalizeVaultPath} for that.
+ */
+export function normalizeLookupPath(path: string): string {
+  return path.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+/g, "/").toLowerCase();
+}
+
 export function getParentPath(path: string): string {
   const index = path.lastIndexOf("/");
   return index === -1 ? "" : path.slice(0, index);

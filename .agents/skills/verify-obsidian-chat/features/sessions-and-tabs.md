@@ -40,31 +40,31 @@ await $(".agentic-chat-session-list").waitForExist();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Tab strip renders | `src/ui/chat-view.ts:380` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
-| `+` adds a tab | `src/ui/chat-view.ts:324` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
-| Switch between tabs | `src/ui/chat-view.ts:324` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
-| Busy dot on a streaming tab | `src/ui/chat-view.ts:392` | no committed check | `NONE` |
-| Needs-approval tab badge | `src/ui/chat-view.ts:393` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
-| `x` closes a tab | `src/ui/chat-view.ts:399` | `test/e2e/specs/multi-tab-approval.e2e.ts:148` (calls `closeTab`, does not click `x`) | `partial` |
-| Closing the last tab starts a new conversation | `src/ui/chat-view.ts:339` | no committed check | `NONE` |
-| Header New chat button | `src/ui/chat-view.ts:575` | no committed check | `NONE` |
-| Header history button | `src/ui/chat-view.ts:581` | no committed check | `NONE` |
-| `/new` | `src/ui/chat-view.ts:1450` | `test/session-actions.test.ts:153` (unit only) | `partial` |
-| `/sessions` opens history | `src/ui/chat-view.ts:1450` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
+| Tab strip renders | `src/ui/chat-view.ts:373` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
+| `+` adds a tab | `src/ui/chat-view.ts:317` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
+| Switch between tabs | `src/ui/chat-view.ts:317` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
+| Busy dot on a streaming tab | `src/ui/chat-view.ts:385` | no committed check | `NONE` |
+| Needs-approval tab badge | `src/ui/chat-view.ts:386` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
+| `x` closes a tab | `src/ui/chat-view.ts:392` | `test/e2e/specs/multi-tab-approval.e2e.ts:148` (calls `closeTab`, does not click `x`) | `partial` |
+| Closing the last tab starts a new conversation | `src/ui/chat-view.ts:332` | no committed check | `NONE` |
+| Header New chat button | `src/ui/chat-view.ts:568` | no committed check | `NONE` |
+| Header history button | `src/ui/chat-view.ts:574` | no committed check | `NONE` |
+| `/new` | `src/ui/chat-view.ts:1443` | `test/session-actions.test.ts:153` (unit only) | `partial` |
+| `/sessions` opens history | `src/ui/chat-view.ts:1443` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Search conversations | `src/ui/session-list-modal.ts:49` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Rename a conversation | `src/ui/session-list-modal.ts:143` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Delete a conversation | `src/ui/session-list-modal.ts:112` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Clear all conversations | `src/ui/session-workflow-controller.ts:20` | `test/session-workflow-controller.test.ts:121` (unit only) | `partial` |
-| `/export` | `src/ui/chat-view.ts:1981` | `test/session-export.test.ts:31` (renderer only) | `partial` |
-| Reload a persisted session | `src/ui/chat-view.ts:1992` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
+| `/export` | `src/ui/slash/session.ts:69` | `test/session-export.test.ts:31` (renderer only) | `partial` |
+| Reload a persisted session | `src/ui/slash/session.ts:80` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Send waits for an in-flight session swap | `src/agent/session-actions.ts:63` | `test/agent-service.test.ts:1133` | `partial` |
 | Failed swap restores the previous session or recovers on next send | `src/agent/session-actions.ts:273` | `test/session-actions.test.ts:242`; `test/session-actions.test.ts:267` | `partial` |
-| A queued prompt is dropped on session change | `src/ui/session-activation-coordinator.ts:82`; `src/ui/chat-view.ts:1507` | `test/chat-view-lifecycle.test.ts:6`; `test/chat-view-lifecycle.test.ts:100` | `partial` |
-| A queued prompt flushes once the swap is live | `src/ui/chat-view.ts:1197` | `test/chat-view-lifecycle.test.ts:56` | `partial` |
+| A queued prompt is dropped on session change | `src/ui/session-activation-coordinator.ts:82`; `src/ui/chat-view.ts:1500` | `test/chat-view-lifecycle.test.ts:6`; `test/chat-view-lifecycle.test.ts:100` | `partial` |
+| A queued prompt flushes once the swap is live | `src/ui/chat-view.ts:1190` | `test/chat-view-lifecycle.test.ts:56` | `partial` |
 | Compaction rewrite rejects a changed session | `src/agent/compaction-runtime.ts:251` | `test/compaction-runtime.test.ts:354`; `test/session-invariants.test.ts:129` | `partial` |
-| A crash during rewrite keeps the old transcript or the new one | `src/session/session-manager.ts:461` | `test/session-rewrite-atomic.test.ts:82` (unit only) | `partial` |
-| A slow append stays in its original session file | `src/session/session-manager.ts:559` | `test/session-invariants.test.ts:91` | `partial` |
-| Do not open one session in two tabs | `src/ui/chat-view.ts:1992` | no committed check | `NONE` |
+| A crash during rewrite keeps the old transcript or the new one | `src/session/session-manager.ts:474` | `test/session-rewrite-atomic.test.ts:82` (unit only) | `partial` |
+| A slow append stays in its original session file | `src/session/session-manager.ts:572` | `test/session-invariants.test.ts:91` | `partial` |
+| Do not open one session in two tabs | `src/ui/slash/session.ts:80` | no committed check | `NONE` |
 | History modal at phone width | `src/ui/session-list-modal.ts:43` | `test/e2e/specs/mobile-viewport.e2e.ts:412` | `covered` |
 
 ## Gotchas

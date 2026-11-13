@@ -1,4 +1,5 @@
 import type { IgnoreMatcher } from "../vault/ignore";
+import { normalizeLookupPath } from "../vault/path";
 import type { RetrievalDocument, RetrievalSignalKind } from "./policy";
 
 export interface LexicalVaultQaQuery {
@@ -213,9 +214,7 @@ function graphText(paths: readonly string[] | undefined): string {
     .join(" ");
 }
 
-function normalizePath(path: string): string {
-  return path.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+/g, "/").toLowerCase();
-}
+export const normalizePath = normalizeLookupPath;
 
 function compareResults(left: LexicalVaultQaResult, right: LexicalVaultQaResult): number {
   if (right.score !== left.score) return right.score - left.score;

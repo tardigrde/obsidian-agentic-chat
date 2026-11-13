@@ -6,6 +6,9 @@ import { ChatView } from "../src/ui/chat-view";
 import { writeMemoryRecords } from "../src/memory/management";
 import type { MemoryRecord } from "../src/memory/memory";
 import { MemoryAdapter } from "./helpers/memory-adapter";
+import type { SlashContext } from "../src/ui/slash/context";
+import { createMemoryWorkflow } from "../src/ui/slash/index-commands";
+import { createWorkflowRenderer } from "../src/ui/slash/renderer";
 
 class FakeElement {
   readonly children: FakeElement[] = [];
@@ -143,17 +146,13 @@ describe("ChatView ask_user prompt", () => {
         getMessages: (): AgentMessage[] => [],
         getSessionInfo: () => ({ id: "session-1" }),
       },
-      workflowRenderer: (ChatView.prototype as unknown as { workflowRenderer: () => unknown }).workflowRenderer,
+      workflowRenderer: () => createWorkflowRenderer(fakeView as unknown as SlashContext),
       clearEmptyState: vi.fn(),
       renderInfoMessage,
       renderErrorMessage: vi.fn(),
       renderActionList: vi.fn(),
     };
-    const createMemoryWorkflow = (ChatView.prototype as unknown as {
-      createMemoryWorkflow: (this: typeof fakeView) => { run: (command: string) => Promise<void> };
-    }).createMemoryWorkflow;
-
-    const controller = createMemoryWorkflow.call(fakeView);
+    const controller = createMemoryWorkflow(fakeView as unknown as SlashContext);
     await controller.run("export");
 
     expect(create).toHaveBeenCalledWith(expect.stringMatching(/^Agentic Chat Exports\/Agentic chat memories .*\.jsonl$/), expect.any(String));
