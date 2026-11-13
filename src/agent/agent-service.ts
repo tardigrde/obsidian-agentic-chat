@@ -697,10 +697,8 @@ export class AgentService {
         return { compacted: false, message };
       }
     }
-    // A successful compaction rewrites the session file, which drops audit
-    // entries written before the rewrite. Re-record start so the final JSONL
-    // still shows a complete start/end pair for the manual attempt.
-    await this.actionAudit.record(startEvent);
+    // The rewrite carries existing audit entries over, so the start event
+    // recorded above survives; record only the matching end event.
     await this.actionAudit.record({
       category: "compaction",
       action: "end",
