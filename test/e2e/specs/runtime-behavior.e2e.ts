@@ -210,9 +210,12 @@ describe("agentic-chat runtime behavior", function () {
 
     const prompt = await browser.executeObsidian(async ({ app }, viewType) => {
       const view = app.workspace.getLeavesOfType(viewType)[0]?.view as unknown as {
-        lastSentPrompt?: string;
+        tabs: Array<{ state: { lastSentPrompt: string | null } }>;
+        activeTabIndex: number;
       };
-      return view?.lastSentPrompt ?? "";
+      const lastSentPrompt = view.tabs[view.activeTabIndex].state.lastSentPrompt;
+      if (lastSentPrompt === null) throw new Error("the ignored-note send never recorded a prompt");
+      return lastSentPrompt;
     }, VIEW_TYPE_AGENT_CHAT);
     expect(prompt).not.toContain(PRIVATE_NOTE_PATH);
     expect(prompt).not.toContain("contents are withheld");

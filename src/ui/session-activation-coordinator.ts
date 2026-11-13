@@ -1,12 +1,8 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ChatTabStateReset } from "./chat-tab-state";
 
-export interface SessionUiResetOptions {
-  attachments?: boolean;
-  activeNoteSuppression?: boolean;
-  activeNoteCache?: boolean;
-  contextCache?: boolean;
-  lastSent?: boolean;
-  history?: boolean;
+/** Tab-state resets plus the view-only pieces (edit mode, live bubble, queue chip). */
+export interface SessionUiResetOptions extends ChatTabStateReset {
   editing?: boolean;
   bubble?: boolean;
   /** Disarm a queued prompt so it cannot fire into the new session. */
