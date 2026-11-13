@@ -104,8 +104,10 @@ export class AgentToolCallController {
   private undoStack: FileCheckpoint[] = [];
   /** Undo records captured pre-execution, keyed by tool call id, pending success. */
   private pendingUndo = new Map<string, FileCheckpoint>();
-  /** Set when a user stop must end the current turn even if pi aborts first. */
-  private stopRequested = false;
+  /** Token for the active turn; a stop only blocks calls that share this token. */
+  private currentTurn: object = {};
+  /** The turn a user stop belongs to, even if pi aborts before `finishTurn`. */
+  private stopTurn: object | null = null;
 
   constructor(options: ToolCallControllerOptions) {
     this.app = options.app;
@@ -125,15 +127,16 @@ export class AgentToolCallController {
     return this.undoStack.length > 0;
   }
 
-  /** True once after a stopped approval; `finishTurn` uses it to end the turn. */
-  consumeStopRequested(): boolean {
-    const requested = this.stopRequested;
-    this.stopRequested = false;
-    return requested;
+  /** Start a new turn: a stop latched by an earlier turn no longer blocks calls. */
+  beginTurn(): void {
+    this.currentTurn = {};
   }
 
-  clearStopRequested(): void {
-    this.stopRequested = false;
+  /** True once after a stopped approval; `finishTurn` uses it to end the turn. */
+  consumeStopRequested(): boolean {
+    const requested = this.stopTurn === this.currentTurn;
+    this.stopTurn = null;
+    return requested;
   }
 
   /**
@@ -162,7 +165,7 @@ export class AgentToolCallController {
   async beforeToolCall(context: BeforeToolCallContext, signal?: AbortSignal): Promise<ToolGateDecision> {
     // A stop latched by a sibling call in this batch must terminate every
     // remaining call before approval or execution.
-    if (this.stopRequested) {
+    if (this.stopTurn === this.currentTurn) {
       return { block: true, reason: STOPPED_APPROVAL_REASON, terminate: true };
     }
     const decision = await this.gateToolCall(context.toolCall.id, context.toolCall.name, context.args, signal);
@@ -361,7 +364,7 @@ export class AgentToolCallController {
     if (stopped) {
       // Latch and abort before the audit: a slow or failing audit must not let a
       // sibling prepared call execute or start another turn.
-      this.stopRequested = true;
+      this.stopTurn = this.currentTurn;
       this.onStopRequested?.();
     }
     try {
@@ -381,7 +384,7 @@ export class AgentToolCallController {
 
   private decisionForChoice(choice: UserApprovalChoice, fallback: string): ToolGateDecision {
     const decision = deniedDecision(choice, fallback);
-    if (decision?.terminate) this.stopRequested = true;
+    if (decision?.terminate) this.stopTurn = this.currentTurn;
     return decision;
   }
 

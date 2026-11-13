@@ -108,6 +108,7 @@ describe("AgentToolCallController", () => {
       }),
     });
 
+    controller.beginTurn();
     const decision = await controller.beforeToolCall({
       toolCall: { id: "call-stop", name: "write" },
       args: { path: "Notes/a.md", content: "hi" },
@@ -115,6 +116,61 @@ describe("AgentToolCallController", () => {
 
     expect(decision).toMatchObject({ block: true, terminate: true });
     expect(controller.consumeStopRequested()).toBe(true);
+    expect(controller.consumeStopRequested()).toBe(false);
+  });
+
+  it("blocks sibling calls in the same batch after a stopped approval", async () => {
+    const { controller, requests } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
+      confirmToolCall: async () => ({
+        approved: false,
+        remember: false,
+        reason: STOPPED_APPROVAL_REASON,
+        stopped: true,
+      }),
+    });
+
+    controller.beginTurn();
+    const first = await controller.beforeToolCall({
+      toolCall: { id: "call-1", name: "write" },
+      args: { path: "Notes/a.md", content: "hi" },
+    });
+    const sibling = await controller.beforeToolCall({
+      toolCall: { id: "call-2", name: "write" },
+      args: { path: "Notes/b.md", content: "hi" },
+    });
+
+    expect(first).toMatchObject({ block: true, terminate: true });
+    expect(sibling).toEqual({ block: true, reason: STOPPED_APPROVAL_REASON, terminate: true });
+    expect(requests).toHaveLength(1);
+  });
+
+  it("does not block the next turn after an unconsumed stop", async () => {
+    let call = 0;
+    const { controller, requests } = makeController({
+      settings: { mode: "safe", approval: { mutating: "ask", perTool: {} } },
+      confirmToolCall: async () => {
+        call += 1;
+        return call === 1
+          ? { approved: false, remember: false, reason: STOPPED_APPROVAL_REASON, stopped: true }
+          : { approved: true, remember: false };
+      },
+    });
+
+    const stopped = await controller.beforeToolCall({
+      toolCall: { id: "call-stop", name: "write" },
+      args: { path: "Notes/a.md", content: "hi" },
+    });
+    expect(stopped).toMatchObject({ block: true, terminate: true });
+
+    // Nothing consumed the stop; a new turn must still start clean.
+    controller.beginTurn();
+    const next = await controller.beforeToolCall({
+      toolCall: { id: "call-next", name: "write" },
+      args: { path: "Notes/b.md", content: "hi" },
+    });
+    expect(next).toBeUndefined();
+    expect(requests).toHaveLength(2);
     expect(controller.consumeStopRequested()).toBe(false);
   });
 
