@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+import { textContent } from "../tools/result";
 
 /** Model fields needed to shape a synthetic assistant message. */
 export interface StopNoticeModel {
@@ -24,7 +25,7 @@ export function buildStopNoticeMessage(text: string, model?: StopNoticeModel): S
   return {
     harnessNotice: true,
     role: "assistant",
-    content: [{ type: "text", text }],
+    content: [textContent(text)],
     api: model?.api ?? "openai-completions",
     provider: model?.provider ?? "openrouter",
     model: model?.id ?? "unknown",

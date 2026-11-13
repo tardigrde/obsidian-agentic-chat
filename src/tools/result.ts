@@ -1,5 +1,11 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { TextContent } from "@earendil-works/pi-ai";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
+
+/** One text block for a message or tool result. */
+export function textContent(text: string): TextContent {
+  return { type: "text", text };
+}
 
 /**
  * The one tool-result envelope. Plain output is bounded by each tool before it
@@ -9,7 +15,7 @@ export function toolResult<TDetails = Record<string, unknown>>(
   text: string,
   details: TDetails = {} as TDetails,
 ): AgentToolResult<TDetails> {
-  return { content: [{ type: "text", text }], details };
+  return { content: [textContent(text)], details };
 }
 
 export function untrustedToolResult<TDetails = Record<string, unknown>>(
@@ -18,7 +24,7 @@ export function untrustedToolResult<TDetails = Record<string, unknown>>(
   toolName?: string,
 ): AgentToolResult<TDetails> {
   return {
-    content: [{ type: "text", text: wrapToolOutputTruncated(text, toolName) }],
+    content: [textContent(wrapToolOutputTruncated(text, toolName))],
     details,
   };
 }

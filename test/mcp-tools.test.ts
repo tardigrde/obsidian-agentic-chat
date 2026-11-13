@@ -9,6 +9,7 @@ import {
 import { createMcpServerSettings, type McpSettings } from "../src/mcp/settings";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike, ToolArtifactWriteInput } from "../src/artifacts/tool-artifact-store";
 import type { WebFetcher, WebHttpRequest, WebHttpResponse } from "../src/tools/web-fetch";
+import { TOOL_OUTPUT_BEGIN_PREFIX } from "../src/tools/tool-output-wrapper";
 
 function mcpSettings(overrides: Partial<McpSettings> = {}): McpSettings {
   return {
@@ -401,6 +402,10 @@ describe("MCP tools", () => {
     });
     expect(result.content[0]).toMatchObject({ type: "text" });
     expect(result.content[0].type === "text" ? result.content[0].text.length : 0).toBeLessThan(60_000);
+    // MCP output is untrusted: the model must see it inside the marker wrapper.
+    expect(result.content[0].type === "text" ? result.content[0].text : "").toContain(
+      `${TOOL_OUTPUT_BEGIN_PREFIX} tool="`,
+    );
     expect(result.details).toMatchObject({
       serverId: "docs",
       remoteToolName: "get-library-docs",
@@ -430,6 +435,7 @@ describe("MCP tools", () => {
     const text = result.content[0].type === "text" ? result.content[0].text : "";
     expect(text).toContain('MCP result stored as artifact "artifact-1"');
     expect(text).toContain("read_artifact");
+    expect(text).toContain(`${TOOL_OUTPUT_BEGIN_PREFIX} tool="`);
     expect(artifacts.writes).toHaveLength(1);
     expect(artifacts.writes[0].text).toBe(body);
     expect(result.details).toMatchObject({

@@ -295,7 +295,7 @@ export class AgentService {
       maybeCompact: () => this.maybeCompact(),
       afterCompaction: () => this.compactionRecoveryError,
       sessionToken: () => this.sessionActions.getSessionToken(),
-      onTurnStart: () => this.toolCalls.clearStopRequested(),
+      onTurnStart: () => this.toolCalls.beginTurn(),
       consumeOverrides: () => this.turns.consumeOverrides(),
       notifyChange: () => this.notifyChange(),
     });

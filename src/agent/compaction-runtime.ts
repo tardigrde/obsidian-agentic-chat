@@ -18,6 +18,7 @@ import {
 } from "./compaction";
 import { isStopNoticeMessage } from "./stop-notice";
 import { errorMessage } from "../utils/errors";
+import { textContent } from "../tools/result";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
@@ -478,7 +479,7 @@ async function generateSummaryWithStream(
   const summarizationMessages = [
     {
       role: "user" as const,
-      content: [{ type: "text" as const, text: promptText }],
+      content: [textContent(promptText)],
       timestamp: Date.now(),
     },
   ];

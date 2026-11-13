@@ -16,7 +16,13 @@ import {
 } from "../llm/openai-compatible-request";
 import { sharedAgentModels } from "../llm/providers";
 import { createProxiedFetcher } from "../mcp/fetcher";
-import { backoffDelayMs, classifyError, sleepWithAbort, type ClassifiedError } from "./error-classifier";
+import {
+  backoffDelayMs,
+  classifyError,
+  shouldRetryError,
+  sleepWithAbort,
+  type ClassifiedError,
+} from "./error-classifier";
 
 const HTTP_REFERER = "https://github.com/tardigrde/obsidian-agentic-chat";
 const X_TITLE = "Obsidian Agentic Chat";
@@ -78,6 +84,17 @@ function resultErrorMessage(result: AssistantMessage, previous: string | undefin
   if (result.stopReason === "error" && result.errorMessage) return result.errorMessage;
   if (result.stopReason === "aborted") return result.errorMessage ?? "aborted";
   return previous;
+}
+
+/** Stream-only guard on top of the shared retry decision: never replay after content. */
+export function shouldRetryStreamError(
+  classified: ClassifiedError,
+  hadContent: boolean,
+  attempt: number,
+  maxRetries: number,
+  signal?: AbortSignal,
+): boolean {
+  return !hadContent && !signal?.aborted && shouldRetryError(classified, attempt, maxRetries);
 }
 
 export type StreamSimpleFn = (
@@ -222,7 +239,7 @@ export class AgentStreamRuntime {
   ): RetryPlan | undefined {
     const classified = this.classifyOutcome(outcome);
     if (!classified) return undefined;
-    if (!this.shouldRetryStream(classified, outcome.hadContent, attempt, maxRetries, signal)) return undefined;
+    if (!shouldRetryStreamError(classified, outcome.hadContent, attempt, maxRetries, signal)) return undefined;
     const delay = backoffDelayMs(attempt, classified.retryAfterMs);
     if (this.exceedsMaxDelay(delay, streamOptions.maxRetryDelayMs)) return undefined;
     return { classified, delay };
@@ -254,16 +271,6 @@ export class AgentStreamRuntime {
   ): Promise<boolean> {
     console.warn(`Agentic Chat: model stream ${plan.classified.class} (attempt ${attempt + 1}/${maxRetries}) retrying in ${plan.delay}ms: ${plan.classified.message.slice(0, 200)}`);
     return this.sleepOrAbort(outcome.buffered, outer, model, plan.delay, signal);
-  }
-
-  private shouldRetryStream(
-    classified: ReturnType<typeof classifyError>,
-    hadContent: boolean,
-    attempt: number,
-    maxRetries: number,
-    signal?: AbortSignal,
-  ): boolean {
-    return !hadContent && classified.retryable && attempt < maxRetries && !signal?.aborted && classified.class !== "resource" && classified.class !== "aborted" && classified.class !== "model" && classified.class !== "permanent";
   }
 
   private exceedsMaxDelay(delay: number, maxDelay: number | undefined): boolean {
