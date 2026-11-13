@@ -37,10 +37,11 @@ the existing tests still pass. A behavior change with that label is `FAIL`.
    restores the diff, and runs the test again (must pass). The command prints
    `verify-witness: PASS` and writes `logs/witness/<timestamp>/report.md`.
 
-4. Run the merge lane:
+4. Run the merge lane, unless CI already ran it at this head:
 
    ```bash
-   npm run verify -- fast
+   gh pr checks <pr>          # ci and e2e passing at the PR head? cite them
+   npm run verify -- fast     # otherwise run it
    ```
 
    Read the counts. Zero tests, or every test skipped, is a failure.
@@ -96,12 +97,16 @@ Witness: <command>
   before fix: FAIL (assertion, counts)
   after fix:  PASS (counts)
 Witness proof: logs/witness/<timestamp>/report.md
-Fast lane: PASS (X passed, Y files)
+Fast lane: PASS (X passed, Y files) | CI (ci + e2e green at this head)
+Behavior change: none | yes (<one line>)
 New global state: none | <file:line + isolation test>
 Notes: none | <max 5 bullets>
 ```
 
-Post the output as a PR comment. The `Review gate` workflow reads it. The `Head`
+Post the output as a PR comment. The `Review gate` workflow reads it. A
+`Fast lane: CI` line counts only when the gate itself sees the `ci` and `e2e`
+checks pass at the head. `Behavior change: none` lets the delegate script set
+the `no-behavior-change` label; write it only for a pure refactor you checked. The `Head`
 must be the current PR head; a push invalidates the verdict.
 
 Do not apply fixes. Report the failure and the command that proves it. The author

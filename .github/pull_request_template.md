@@ -41,9 +41,8 @@ npm run verify -- change <witness>
 npm run verify -- fast
 ```
 
-- `change`:
-- `fast`:
-- CI:
+Do not paste test counts here: they go stale after the next push. The
+latest verdict comment carries the counts at its head.
 
 ## Break-change
 

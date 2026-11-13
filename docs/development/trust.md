@@ -132,7 +132,9 @@ comments. It reads the verdict comments at the current head and fails when:
   `Fast lane: PASS` alone does not count);
 - a `FAIL` at this head is not cleared (see below);
 - the `Head` value does not match the checked-out PR head;
-- the PR adds more than 400 lines under `src/`, or adds lines to more than 10
+- the `Fast lane` cites CI (`Fast lane: CI ...`) but the `ci` and `e2e` checks
+  have not both passed at the head;
+- the PR adds more than 1000 lines under `src/`, or adds lines to more than 25
   files under `src/`, unless it has the `large-pr` label.
 
 Only comments from `OWNER`, `MEMBER`, or `COLLABORATOR` accounts count. Bots and
@@ -256,7 +258,9 @@ or a reviewer account appears.
 - **Workflow self-edit.** A PR can change the workflow that runs the gate. Read
   any diff under `.github/workflows/` and `scripts/` by hand before merging.
 - **Re-trigger after a verdict.** A verdict comment does not update the PR's
-  `review` check by itself. Edit the PR body or toggle a label once after posting.
+  `review` check by itself. `npm run delegate -- review|recheck|update` re-runs
+  the newest `pull_request` Review gate run after posting; by hand, re-run that
+  run (`gh run rerun <id>`).
 
 ## Sources
 
