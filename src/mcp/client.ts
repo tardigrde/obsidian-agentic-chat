@@ -5,6 +5,7 @@ import { DEFAULT_MCP_HTTP_TIMEOUT_MS, fetchWithMcpTimeout } from "./http";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
 import { isPrivateNetworkHost, mcpUrlProblem } from "../utils/host-policy";
 import { asRecord } from "../utils/records";
+import { McpError } from "./errors";
 import {
   backoffDelayMs,
   classifyError,
@@ -245,12 +246,12 @@ export class McpHttpClient {
   ): Promise<T> {
     if (error instanceof McpOAuthUnauthorizedError) {
       const refreshed = await this.refreshOAuthAfterUnauthorized(signal);
-      if (!refreshed) throw new Error(this.oauthAuthenticationMessage(error.challenge), { cause: error });
+      if (!refreshed) throw new McpError("auth", this.oauthAuthenticationMessage(error.challenge), { cause: error });
       return this.reinitializeAndRetry<T>(method, params, signal);
     }
     if (error instanceof McpOAuthForbiddenError) {
       const refreshed = await this.refreshOAuthForRequiredScope(error.challenge, signal);
-      if (!refreshed) throw new Error(this.oauthForbiddenMessage(error.challenge), { cause: error });
+      if (!refreshed) throw new McpError("auth", this.oauthForbiddenMessage(error.challenge), { cause: error });
       return this.reinitializeAndRetry<T>(method, params, signal);
     }
     if (method !== "initialize" && error instanceof McpSessionTerminatedError) {
@@ -303,7 +304,7 @@ export class McpHttpClient {
       await this.post({ jsonrpc: JSON_RPC, method, params }, signal);
     } catch (error) {
       if (error instanceof McpOAuthUnauthorizedError) {
-        throw new Error(this.oauthAuthenticationMessage(error.challenge), { cause: error });
+        throw new McpError("auth", this.oauthAuthenticationMessage(error.challenge), { cause: error });
       }
       throw error;
     }

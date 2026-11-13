@@ -6,6 +6,7 @@ import type { WebFetcher } from "../tools/web-fetch";
 import { truncateToolOutput } from "../vault/truncate";
 import { wrapToolOutput, wrapToolOutputTruncated } from "../tools/tool-output-wrapper";
 import { McpHttpClient, type McpCallToolResult, type McpToolDefinition } from "./client";
+import { McpError, type McpErrorCategory } from "./errors";
 import type { McpAuthType, McpKnownToolSettings, McpServerSettings, McpSettings } from "./settings";
 import { filterMcpToolsByGlobs } from "./tool-filter";
 import { errorMessage } from "../utils/errors";
@@ -32,7 +33,7 @@ export interface McpToolCreationOptions {
   artifactThresholdChars?: number;
 }
 
-export type McpDiagnosticErrorCategory = "auth" | "http" | "network" | "protocol" | "timeout" | "unknown";
+export type McpDiagnosticErrorCategory = McpErrorCategory;
 
 export interface McpServerDiagnostic {
   serverId: string;
@@ -168,7 +169,7 @@ async function discoverServerTools(
         status: "error",
         toolCount: 0,
         toolNames: [],
-        errorCategory: categorizeMcpDiagnosticError(message),
+        errorCategory: categorizeMcpDiagnosticError(message, error),
         error: message,
       },
     };
@@ -199,7 +200,13 @@ function baseDiagnostic(
   };
 }
 
-export function categorizeMcpDiagnosticError(message: string): McpDiagnosticErrorCategory {
+export function categorizeMcpDiagnosticError(
+  message: string,
+  error?: unknown,
+): McpDiagnosticErrorCategory {
+  // Typed failures carry their category; the text match below is the fallback
+  // for errors from providers, fetch, and older call paths.
+  if (error instanceof McpError) return error.category;
   const lower = message.toLowerCase();
   if (lower.includes("timed out") || lower.includes("timeout")) return "timeout";
   if (
