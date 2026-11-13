@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { TFolder, type App } from "obsidian";
-import { DEFAULT_SETTINGS, AgenticChatSettingTab, type AgenticChatSettings } from "../src/settings";
+import { AgenticChatSettingTab } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { PluginService } from "../src/plugins/service";
 import { pluginMcpServerId } from "../src/plugins/loader";
 import { createMcpServerState } from "../src/mcp/settings";

@@ -21,37 +21,62 @@ function options(
       events.push(`compact:${messages.length}:${contextWindow}`);
       return compacted;
     },
-    markPersistedMessages: (messages) => {
-      events.push(`mark:${messages.length}`);
-    },
-    replaceAgent: (messages) => {
-      events.push(`replace:${messages.length}`);
-    },
-    refreshActiveSessionInfo: () => {
-      events.push("refresh-session");
-    },
-    notifyChange: () => {
-      events.push("notify");
+    install: (messages) => {
+      events.push(`install:${messages.length}`);
     },
     ...overrides,
   };
 }
 
 describe("maybeCompactAgentTranscript", () => {
-  it("compacts the active transcript and applies the replacement side effects in order", async () => {
+  it("compacts the active transcript and installs the replacement", async () => {
     const events: string[] = [];
 
     const compacted = await maybeCompactAgentTranscript(options(events));
 
-    expect(events).toEqual([
-      "get-transcript",
-      "compact:1:100",
-      "mark:1",
-      "replace:1",
-      "refresh-session",
-      "notify",
-    ]);
+    expect(events).toEqual(["get-transcript", "compact:1:100", "install:1"]);
     expect(compacted).toBe(true);
+  });
+
+  it("recovers from a failed install once the rewrite is persisted", async () => {
+    const events: string[] = [];
+    const failures: boolean[] = [];
+
+    const compacted = await maybeCompactAgentTranscript(
+      options(events, {
+        install: () => {
+          events.push("install");
+          throw new Error("replace failed");
+        },
+        recoverAfterReplaceFailure: () => {
+          events.push("recover");
+          return true;
+        },
+        onCompactionFailure: (_error, persisted) => failures.push(persisted),
+      }),
+    );
+
+    expect(events).toEqual(["get-transcript", "compact:1:100", "install", "recover"]);
+    expect(failures).toEqual([]);
+    expect(compacted).toBe(true);
+  });
+
+  it("reports a persisted failure when recovery also fails", async () => {
+    const events: string[] = [];
+    const failures: boolean[] = [];
+
+    const compacted = await maybeCompactAgentTranscript(
+      options(events, {
+        install: () => {
+          throw new Error("replace failed");
+        },
+        recoverAfterReplaceFailure: () => false,
+        onCompactionFailure: (_error, persisted) => failures.push(persisted),
+      }),
+    );
+
+    expect(failures).toEqual([true]);
+    expect(compacted).toBe(false);
   });
 
   it("skips compaction when there is no active transcript", async () => {

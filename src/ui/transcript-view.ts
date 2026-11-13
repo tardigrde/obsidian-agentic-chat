@@ -18,7 +18,7 @@ import {
   type MessageImageLite,
   type ToolResultLite,
 } from "./message-content";
-import { openSystemUrl } from "./open-system-link";
+import { openSystemUrl } from "../platform/system-browser";
 import { isPinnedToBottom } from "./scroll-pinning";
 import { isSummaryMessage } from "../agent/compaction";
 

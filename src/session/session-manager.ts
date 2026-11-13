@@ -7,6 +7,7 @@ import type { ActionAuditEvent } from "../agent/action-audit-log";
 import type { FileCheckpoint } from "../agent/file-checkpoints";
 import type { UndoEntry } from "../agent/undo";
 import { normalizeFolderPath } from "../vault/path";
+import { ensureAdapterFolder, removeIfExists, renameOver } from "../vault/storage";
 import {
   type ActionAuditSessionEntry,
   type FileCheckpointSessionEntry,
@@ -190,7 +191,7 @@ export class ObsidianSessionManager {
     if (await this.adapter.exists(sessionPath)) {
       await this.adapter.remove(sessionPath);
     }
-    await this.removeIfExists(`${sessionPath}${SESSION_BACKUP_SUFFIX}`);
+    await removeIfExists(this.adapter, `${sessionPath}${SESSION_BACKUP_SUFFIX}`);
     if (this.sessionFile === sessionPath) {
       this.sessionFile = null;
       this.sessionGeneration += 1;
@@ -431,7 +432,7 @@ export class ObsidianSessionManager {
       await this.adapter.write(tempPath, content);
       await this.replaceSessionFile(tempPath, sessionFile);
     } catch (error) {
-      await this.removeIfExists(tempPath);
+      await removeIfExists(this.adapter, tempPath);
       throw error;
     } finally {
       this.pendingSessionTemps.delete(tempPath);
@@ -440,33 +441,24 @@ export class ObsidianSessionManager {
 
   /** Rename the staged file into place, using a backup when overwrite is refused. */
   private async replaceSessionFile(tempPath: string, sessionFile: string): Promise<void> {
-    try {
-      await this.adapter.rename(tempPath, sessionFile);
-      return;
-    } catch (error) {
-      // Only a rename that failed with the staged file still present can use
-      // the backup fallback. A missing temp file is a write-side failure.
-      if (!(await this.adapter.exists(tempPath))) throw error;
-    }
-    if (!(await this.adapter.exists(sessionFile))) {
-      throw new Error("Could not replace the session file.");
-    }
-    const backupPath = `${sessionFile}${SESSION_BACKUP_SUFFIX}`;
-    this.pendingSessionBackups.add(backupPath);
-    try {
-      const previous = await this.adapter.read(sessionFile);
-      await this.adapter.write(backupPath, previous);
+    await renameOver(this.adapter, tempPath, sessionFile, async () => {
+      const backupPath = `${sessionFile}${SESSION_BACKUP_SUFFIX}`;
+      this.pendingSessionBackups.add(backupPath);
       try {
-        await this.adapter.remove(sessionFile);
-        await this.adapter.rename(tempPath, sessionFile);
-      } catch (error) {
-        await this.restoreSessionFile(sessionFile, backupPath);
-        throw error;
+        const previous = await this.adapter.read(sessionFile);
+        await this.adapter.write(backupPath, previous);
+        try {
+          await this.adapter.remove(sessionFile);
+          await this.adapter.rename(tempPath, sessionFile);
+        } catch (error) {
+          await this.restoreSessionFile(sessionFile, backupPath);
+          throw error;
+        }
+        await removeIfExists(this.adapter, backupPath);
+      } finally {
+        this.pendingSessionBackups.delete(backupPath);
       }
-      await this.removeIfExists(backupPath);
-    } finally {
-      this.pendingSessionBackups.delete(backupPath);
-    }
+    });
   }
 
   /** The session file's content when it exists and has a header, else null. */
@@ -483,7 +475,7 @@ export class ObsidianSessionManager {
   private async restoreSessionFile(sessionFile: string, backupPath: string, force = false): Promise<void> {
     try {
       if (!force && (await this.adapter.exists(sessionFile))) {
-        await this.removeIfExists(backupPath);
+        await removeIfExists(this.adapter, backupPath);
         return;
       }
       // Without a backup there is nothing to restore: never delete the file.
@@ -503,7 +495,7 @@ export class ObsidianSessionManager {
     try {
       content = await this.adapter.read(path);
       if (hasSessionHeader(content)) {
-        if (!this.pendingSessionBackups.has(backupPath)) await this.removeIfExists(backupPath);
+        if (!this.pendingSessionBackups.has(backupPath)) await removeIfExists(this.adapter, backupPath);
         return content;
       }
     } catch (error) {
@@ -554,16 +546,7 @@ export class ObsidianSessionManager {
     const stale = listing.files.filter(
       (path) => isSessionTempPath(path) && !this.pendingSessionTemps.has(path),
     );
-    await Promise.all(stale.map((path) => this.removeIfExists(path)));
-  }
-
-  /** Best-effort removal for cleanup paths that must not fail a read. */
-  private async removeIfExists(path: string): Promise<void> {
-    try {
-      if (await this.adapter.exists(path)) await this.adapter.remove(path);
-    } catch {
-      // Cleanup is best effort; the main session file stays intact.
-    }
+    await Promise.all(stale.map((path) => removeIfExists(this.adapter, path)));
   }
 
   private async appendEntry<TEntry extends Exclude<SessionEntry, { type: "session" }>>(entry: TEntry): Promise<string> {
@@ -583,13 +566,7 @@ export class ObsidianSessionManager {
   }
 
   private async ensureSessionDirectory(): Promise<void> {
-    let current = "";
-    for (const segment of this.sessionDir.split("/")) {
-      current = current ? `${current}/${segment}` : segment;
-      if (!(await this.adapter.exists(current))) {
-        await this.adapter.mkdir(current);
-      }
-    }
+    await ensureAdapterFolder(this.adapter, this.sessionDir);
     await this.cleanupStaleSessionTemps();
   }
 

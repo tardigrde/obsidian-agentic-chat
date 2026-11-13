@@ -3,7 +3,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { AgentObservabilityRuntime } from "../src/observability/agent-observability";
 import { buildOtlpTraceRequest, observabilityAuthHeaders, observabilityTraceEndpoint } from "../src/observability/otlp";
-import { DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings-schema";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
 
 describe("observability settings and OTLP export", () => {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { rm } from "node:fs/promises";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { App, DataAdapter } from "obsidian";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { AgentRuntimeResourceState } from "../src/agent/runtime-resource-state";
 import { ReadMemo } from "../src/vault/read-memo";
 import type { WebFetcher } from "../src/tools/web-fetch";

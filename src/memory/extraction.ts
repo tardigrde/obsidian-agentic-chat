@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { DataAdapter } from "obsidian";
+import { ensureAdapterParentFolder } from "../vault/storage";
 import {
   formatSourceReference,
   parseSourceReference,
@@ -119,7 +120,7 @@ export async function appendApprovedMemoryRecord(
   path: string,
   record: MemoryRecord,
 ): Promise<void> {
-  await ensureParentDirs(adapter, path);
+  await ensureAdapterParentFolder(adapter, path);
   const line = `${JSON.stringify(record)}\n`;
   if (await adapter.exists(path)) {
     await adapter.append(path, line);
@@ -263,13 +264,4 @@ function hashString(value: string): string {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(36);
-}
-
-async function ensureParentDirs(adapter: DataAdapter, path: string): Promise<void> {
-  const parts = path.split("/").slice(0, -1);
-  let current = "";
-  for (const part of parts) {
-    current = current ? `${current}/${part}` : part;
-    if (!(await adapter.exists(current))) await adapter.mkdir(current);
-  }
 }

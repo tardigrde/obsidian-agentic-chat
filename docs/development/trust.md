@@ -23,8 +23,8 @@ runs the test again.
 ```bash
 npm run verify:witness -- \
   --base origin/main \
-  --test-file test/session-activation.test.ts \
-  --src src/agent/session-activation.ts
+  --test-file test/agent-conversation.test.ts \
+  --src src/agent/conversation.ts
 ```
 
 A real witness prints `verify-witness: PASS` and is red then green. A test that
@@ -78,8 +78,8 @@ supplies the base, so a PR cannot choose its own comparison point.
 
 ```markdown
 <!-- witness
-test: test/session-activation.test.ts
-src: src/agent/session-activation.ts
+test: test/agent-conversation.test.ts
+src: src/agent/conversation.ts
 -->
 ```
 

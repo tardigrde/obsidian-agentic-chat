@@ -53,8 +53,8 @@ await $(".agentic-chat-info").waitForExist();
 | `/help` | `src/ui/commands.ts:42` | `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
 | `/init` | `src/ui/commands.ts:41` | `test/e2e/specs/smoke.e2e.ts:59` | `covered` |
 | `/compact` | `src/ui/commands.ts:36` | `test/e2e/specs/smoke.e2e.ts:73` | `covered` |
-| `/memory` | `src/ui/commands.ts:30` | `test/e2e/specs/smoke.e2e.ts:134` | `covered` |
-| `/status` | `src/ui/commands.ts:29` | `test/e2e/specs/runtime-behavior.e2e.ts:225` | `covered` |
+| `/memory` | `src/ui/commands.ts:30` | `test/e2e/specs/smoke.e2e.ts:135` | `covered` |
+| `/status` | `src/ui/commands.ts:29` | `test/e2e/specs/runtime-behavior.e2e.ts:228` | `covered` |
 | `/plan` removed | `src/ui/commands.ts:25` | `test/e2e/specs/plan-removal.e2e.ts:95` | `covered` |
 | `/undo` | `src/ui/commands.ts:38` | `test/e2e/specs/approval-deterministic.e2e.ts:319` | `covered` |
 | `/sessions` | `src/ui/commands.ts:27` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
@@ -72,11 +72,11 @@ await $(".agentic-chat-info").waitForExist();
 | `/add-dir` and `/dirs` removed | `src/ui/commands.ts:25` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
 | `/agent` | `src/ui/commands.ts:40` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
 | `/skill <name>` | `src/ui/commands.ts:39` | `test/e2e/specs/skill-chip.e2e.ts:22` | `covered` |
-| `/skill` with no name (picker) | `src/ui/chat-view.ts:1820` | no committed check | `NONE` |
-| Bare `/<skill-name>` | `src/ui/chat-view.ts:1489` | `test/commands.test.ts:94` (parse only) | `partial` |
-| `/template` as a command | `src/ui/chat-view.ts:1489` | no handler; the word falls through to the model | `unreachable` |
+| `/skill` with no name (picker) | `src/ui/chat-view.ts:1700` | no committed check | `NONE` |
+| Bare `/<skill-name>` | `src/ui/chat-view.ts:1447` | `test/commands.test.ts:94` (parse only) | `partial` |
+| `/template` as a command | `src/ui/chat-view.ts:1447` | no handler; the word falls through to the model | `unreachable` |
 | `/template <partial>` skill autocomplete | `src/ui/autocomplete.ts:77` | `test/autocomplete.test.ts:42` (unit only) | `partial` |
-| Autocomplete menu for commands | `src/ui/chat-view.ts:923` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
+| Autocomplete menu for commands | `src/ui/chat-view.ts:890` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
 | Autocomplete keyboard keys | `src/ui/autocomplete-menu.ts:108` | no committed check | `NONE` |
 | Built-in skills are available | `src/skills/builtin-skills.ts:202` | `test/builtin-skills.test.ts:4` (catalog only) | `partial` |
 | Plugin skills load with built-ins | `src/agent/runtime-resources.ts:81` | `test/runtime-resources.test.ts:126` (unit only) | `partial` |
@@ -86,7 +86,7 @@ await $(".agentic-chat-info").waitForExist();
 | `unload_skill` | `src/tools/skill-tools.ts:68` | no committed check | `NONE` |
 | `create_skill` | `src/tools/skill-tools.ts:124` | `test/skill-create-tool.test.ts:21` (unit only) | `partial` |
 | New skill modal | `src/ui/new-skill-modal.ts:36` | no committed check | `NONE` |
-| Repair built-ins | `src/settings.ts:1194` | no committed check | `NONE` |
+| Repair built-ins | `src/settings.ts:1175` | no committed check | `NONE` |
 | Unregistered compat tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/vault-tools.ts:76` | no production caller passes `surface: "compat"`; the default surface filters these out at `src/tools/tool-contracts.ts:305` | `unreachable` |
 
 ## Gotchas

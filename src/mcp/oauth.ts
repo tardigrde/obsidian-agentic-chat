@@ -4,7 +4,7 @@ import {
   type McpServerSettings,
 } from "./settings";
 import { DEFAULT_MCP_HTTP_TIMEOUT_MS, fetchWithMcpTimeout } from "./http";
-import { openAuthorizationUrl } from "./oauth/browser-open";
+import { openSystemUrl } from "../platform/system-browser";
 import { createLoopbackOAuthCallbackReceiver } from "./oauth/callback-receivers";
 import { assertPkceSupported, discoverOAuth, scopeFromProtectedResource } from "./oauth/discovery";
 import { base64UrlEncode, createPkce, defaultRandomBytes } from "./oauth/pkce";
@@ -395,4 +395,13 @@ export function mcpResourceUri(input: string): string {
   url.search = "";
   if (url.pathname === "/") url.pathname = "";
   return url.toString().replace(/\/$/, "");
+}
+
+/** Open the provider's sign-in page, tracing each opener for sign-in support. */
+function openAuthorizationUrl(url: string): Promise<void> {
+  console.warn("Agentic Chat MCP OAuth browser opener: trying OS default browser.", url);
+  return openSystemUrl(url, {
+    log: (message) => console.warn(`Agentic Chat MCP OAuth browser opener: ${message}`),
+    failureMessage: "Could not open the MCP OAuth authorization URL in a browser.",
+  });
 }

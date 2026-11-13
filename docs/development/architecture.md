@@ -35,9 +35,11 @@ Use these terms:
 ## Active session
 
 Owner: `ObsidianSessionManager` owns `sessionFile`, `sessionGeneration`, the
-entry log, append, and rewrite. `AgentActiveSessionRuntime` owns the cached
-`SessionInfo` snapshot. `AgentSessionActions` owns the only swap queue and the
-`sessionEpoch` token.
+entry log, append, and rewrite. `AgentConversation` (`src/agent/conversation.ts`)
+owns the live parent agent, the cached `SessionInfo` snapshot, and the reset of
+session-local state when a transcript goes live: every swap, rewind,
+compaction, and recovery installs its transcript through it.
+`AgentSessionActions` owns the only swap queue and the `sessionEpoch` token.
 
 Invariants:
 

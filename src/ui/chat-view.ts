@@ -18,7 +18,7 @@ import { ApprovalModal } from "./approval-modal";
 import { isImagePath } from "./image-attachments";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../session/export";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
-import { activeModelId, apiKeyForProvider } from "../settings";
+import { activeModelId, apiKeyForProvider } from "../settings-schema";
 import { listOpenAICompatibleModels, listOpenRouterModels } from "../llm/models";
 import { ModelSuggestModal } from "./model-suggest-modal";
 import { errorMessage } from "../utils/errors";

@@ -12,7 +12,7 @@ import {
   parseSessionEntries,
   type SessionEntry,
 } from "../src/session/jsonl";
-import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 /**

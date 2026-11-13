@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { DEFAULT_SETTINGS } from "../src/settings";
+import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { buildSummaryMessage, estimateContextUsage } from "../src/agent/compaction";
 import {
   compactionCount,

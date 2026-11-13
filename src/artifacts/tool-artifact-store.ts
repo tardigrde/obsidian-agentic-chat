@@ -1,5 +1,6 @@
 import { Platform, type App, type DataAdapter, type Plugin } from "obsidian";
 import { normalizeFolderPath } from "../vault/path";
+import { ensureAdapterFolder, writeFileAtomically } from "../vault/storage";
 
 export interface ToolArtifactMetadata {
   id: string;
@@ -83,7 +84,7 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
   }
 
   async writeArtifact(input: ToolArtifactWriteInput): Promise<ToolArtifactMetadata> {
-    await ensureFolder(this.adapter, this.artifactDir);
+    await ensureAdapterFolder(this.adapter, this.artifactDir);
     const metadata: ToolArtifactMetadata = {
       id: createArtifactId(),
       label: input.label,
@@ -152,7 +153,8 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
     const stat = await this.adapter.stat(this.artifactPath(safeId));
     const metadata = parseMetadata(await this.adapter.read(this.metadataPath(safeId)), safeId, 0, stat?.size ?? 0);
     const next = { ...metadata, pinned };
-    await this.adapter.write(this.metadataPath(safeId), JSON.stringify(next, null, 2));
+    // A rewrite of existing metadata: a torn write would orphan the artifact.
+    await writeFileAtomically(this.adapter, this.metadataPath(safeId), JSON.stringify(next, null, 2));
     return next;
   }
 
@@ -244,16 +246,6 @@ export class ToolArtifactStore implements ToolArtifactStoreLike {
     return artifacts
       .filter((artifact): artifact is ToolArtifactMetadata => artifact !== null)
       .sort((left, right) => timestampOf(right.createdAt) - timestampOf(left.createdAt));
-  }
-}
-
-async function ensureFolder(adapter: DataAdapter, path: string): Promise<void> {
-  let current = "";
-  for (const segment of path.split("/")) {
-    current = current ? `${current}/${segment}` : segment;
-    if (!(await adapter.exists(current))) {
-      await adapter.mkdir(current);
-    }
   }
 }
 

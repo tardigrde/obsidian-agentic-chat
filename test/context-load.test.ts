@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
-import { DEFAULT_SETTINGS } from "../src/settings";
+import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import {
   contextReadout,
   estimateContextLoad,

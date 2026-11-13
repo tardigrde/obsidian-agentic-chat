@@ -1,7 +1,6 @@
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import { apiKeyForProvider, type AgenticChatSettings } from "../settings-schema";
-import type { AgentActiveSessionRuntime } from "./active-session-runtime";
-import type { ParentAgentRuntime, ParentAgentRuntimeConfiguration } from "./parent-agent-runtime";
+import type { AgentConversation, ParentAgentConfiguration } from "./conversation";
 import type { AgentRuntimeResourceState } from "./runtime-resource-state";
 import type { AgentStreamRuntime } from "./stream-runtime";
 import type { AgentSubagentRuntime } from "./subagent-runtime";
@@ -16,7 +15,7 @@ export interface AgentParentConfigurationOptions {
   turns: Pick<AgentTurnConfiguration, "buildModelForTurn" | "getActiveModelId" | "thinkingLevelForTurn">;
   runtimeResources: Pick<
     AgentRuntimeResourceState,
-    "buildParentTools" | "composeSystemPrompt" | "getProfiles" | "reload"
+    "buildParentTools" | "composeSystemPrompt" | "getProfiles"
   >;
   subagents: Pick<AgentSubagentRuntime, "createTool">;
   toolCalls: Pick<
@@ -25,7 +24,7 @@ export interface AgentParentConfigurationOptions {
   >;
   loopGuard: Pick<AgentLoopGuard, "finishTurn">;
   turnCap: Pick<AgentTurnCap, "shouldStopAfterTurn">;
-  sessions: Pick<AgentActiveSessionRuntime, "ensureConfiguration" | "info">;
+  sessions: Pick<AgentConversation, "info">;
   onEvent: (event: AgentEvent) => Promise<void> | void;
 }
 
@@ -36,7 +35,7 @@ export interface AgentParentConfigurationOptions {
 export class AgentParentConfigurationRuntime {
   constructor(private readonly options: AgentParentConfigurationOptions) {}
 
-  build(): ParentAgentRuntimeConfiguration {
+  build(): ParentAgentConfiguration {
     const settings = this.options.getSettings();
     const model = this.options.turns.buildModelForTurn(settings);
     const subagentTool =
@@ -71,12 +70,5 @@ export class AgentParentConfigurationRuntime {
       sessionId: this.options.sessions.info?.id,
       onEvent: (event) => this.options.onEvent(event),
     };
-  }
-
-  async refresh(parentAgent: ParentAgentRuntime): Promise<void> {
-    parentAgent.requireAgent();
-    await this.options.runtimeResources.reload();
-    parentAgent.refreshConfiguration();
-    await this.options.sessions.ensureConfiguration();
   }
 }

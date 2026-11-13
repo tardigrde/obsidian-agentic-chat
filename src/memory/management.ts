@@ -1,4 +1,5 @@
 import type { DataAdapter } from "obsidian";
+import { writeFileAtomically } from "../vault/storage";
 import {
   formatSourceReference,
   parseSourceReference,
@@ -149,8 +150,8 @@ export async function writeMemoryRecords(
   path: string,
   records: readonly MemoryRecord[],
 ): Promise<void> {
-  await ensureParentDirs(adapter, path);
-  await adapter.write(path, memoryRecordsToJsonl(records));
+  // A whole-file rewrite: never truncate the live memory file in place.
+  await writeFileAtomically(adapter, path, memoryRecordsToJsonl(records));
 }
 
 export function memoryRecordsToJsonl(records: readonly MemoryRecord[]): string {
@@ -222,13 +223,4 @@ function uniqueStrings(values: readonly string[]): string[] {
 function formatSource(source: string): string {
   const parsed = parseSourceReference(source);
   return parsed ? formatSourceReference(parsed) : source;
-}
-
-async function ensureParentDirs(adapter: DataAdapter, path: string): Promise<void> {
-  const parts = path.split("/").slice(0, -1);
-  let current = "";
-  for (const part of parts) {
-    current = current ? `${current}/${part}` : part;
-    if (!(await adapter.exists(current))) await adapter.mkdir(current);
-  }
 }

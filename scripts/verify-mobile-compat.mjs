@@ -29,10 +29,18 @@ const desktopOnlyAllowlist = new Map([
     },
   ],
   [
-    "src/mcp/oauth/browser-open.ts",
+    "src/platform/node-runtime.ts",
+    {
+      modules: new Set(),
+      globals: new Set(["require"]),
+      requiredText: [],
+    },
+  ],
+  [
+    "src/platform/system-browser.ts",
     {
       modules: new Set(["electron", "child_process"]),
-      globals: new Set(["process", "require", "window.open"]),
+      globals: new Set(["window.open"]),
       requiredText: [],
     },
   ],
