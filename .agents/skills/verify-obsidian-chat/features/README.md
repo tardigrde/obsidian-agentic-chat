@@ -36,9 +36,10 @@ Each one keeps the same five sections, in this order:
 - Live turns need `AGENTIC_CHAT_API_KEY`, `AGENTIC_CHAT_BASE_URL`, and
   `AGENTIC_CHAT_MODEL`. A live spec skips without them and still exits 0. Read
   the test counts.
-- This audit records source references as `path:line`. The checker rejects a
-  missing file, an out-of-range line, and a blank line. Re-check the semantic
-  anchor when the code moves.
+- This audit records source references as `path:line`. `refs.lock.json` pins the
+  trimmed text of every referenced line, so a ref that drifts to the wrong
+  non-blank line fails. The checker rejects a missing file, an out-of-range
+  line, a blank line, and a line whose text differs from the lock.
 
 ## Proof rules
 
@@ -74,8 +75,21 @@ paths must exist in the repository.
 - Keep one journey as the single place that documents a behavior. Other
   journeys may link to it instead of repeating the proof table.
 - Run `npm run check:feature-map` after any edit. It checks the five sections,
-  the table shape, the status values, and every `path:line`. It runs in `ci` and
+  the table shape, the status values, every `path:line`, and its locked text. It
+  also enumerates the command ids, slash commands, and literal settings rows in
+  the source and fails when one is not named in a proof row. It runs in `ci` and
   `fast`.
+- A drifted ref: run `npm run fix:feature-map`. For each ref whose text no
+  longer matches, it finds the locked text again, first in the same file
+  (nearest exact match), then as a unique exact match under `src/` or `test/`.
+  It rewrites the markdown and the lock key, prints every move, and prints every
+  ref it could not place. Those stay failing. `--fix` never moves a ref whose
+  text still matches.
+- After an intended move, adopt the new lines with
+  `npm run fix:feature-map -- --write-lock`. The merge procedure is: take main's
+  `features/` directory (map and lock), then run `--fix`.
+- An entry point that must stay out of the map goes in the checker's
+  `INVENTORY_ALLOWLIST` with a one-line reason.
 - The checker cannot judge whether a test asserts the user action. A reviewer
   owns that judgment; a wrong `covered` is still a review finding.
 

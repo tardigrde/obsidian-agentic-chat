@@ -71,6 +71,12 @@ await clickMcpAddButton("Add MCP server");
 | Imported MCP servers start disabled | `src/plugins/loader.ts:323` | `test/e2e/specs/settings-ui.e2e.ts:350` | `covered` |
 | Discover and call a remote MCP tool | `src/mcp/tools.ts:102` | `test/e2e/specs/mcp-live.e2e.ts:193` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
 | Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts:620` | `test/mcp-client.test.ts:360` (unit only) | `partial` |
+| MCP server: Server id | `src/settings-mcp-section.ts:326` | no committed check | `NONE` |
+| MCP server: HTTPS endpoint | `src/settings-mcp-section.ts:338` | no committed check | `NONE` |
+| MCP server: Tool approvals | `src/settings-mcp-section.ts:423` | no committed check | `NONE` |
+| MCP server: Authentication | `src/settings-mcp-section.ts:474` | no committed check | `NONE` |
+| MCP server: OAuth status | `src/settings-mcp-section.ts:537` | no committed check | `NONE` |
+| MCP server: OAuth client id | `src/settings-mcp-section.ts:569` | no committed check | `NONE` |
 
 ## Gotchas
 

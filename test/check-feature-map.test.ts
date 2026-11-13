@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { checkFeatureMap } from "../scripts/check-feature-map.mjs";
+import { checkFeatureMap, fixFeatureMap, writeLock } from "../scripts/check-feature-map.mjs";
 
 const FEATURES = path.join(".agents", "skills", "verify-obsidian-chat", "features");
 
@@ -61,6 +61,7 @@ describe("check-feature-map", () => {
       "# Feature map\n\n| Journey | Covers |\n|---|---|\n| [Sample](./sample.md) | one |\n",
     );
     writeFileSync(path.join(features, "sample.md"), journey());
+    writeLock(root);
   });
 
   afterEach(() => {
@@ -97,6 +98,75 @@ describe("check-feature-map", () => {
     expect(checkFeatureMap(root).errors.join("\n")).toContain("outside the file");
   });
 
+  it("fails when the text at a locked ref changes", () => {
+    writeFileSync(path.join(root, "src", "a.ts"), "export const a = 2;\n");
+    const errors = checkFeatureMap(root).errors.join("\n");
+    expect(errors).toContain("src/a.ts:1");
+    expect(errors).toContain('expected "export const a = 1;"');
+    expect(errors).toContain('found "export const a = 2;"');
+  });
+
+  it("fails when a ref has no lock entry", () => {
+    const features = path.join(root, FEATURES);
+    writeFileSync(path.join(root, "src", "b.ts"), "export const b = 1;\n");
+    writeFileSync(path.join(features, "sample.md"), journey(row("src/b.ts:1")));
+    expect(checkFeatureMap(root).errors.join("\n")).toContain("has no lock entry");
+  });
+
+  it("fix moves a ref to the same text lower in the same file", () => {
+    writeFileSync(path.join(root, "src", "a.ts"), "// one\n// two\n// three\nexport const a = 1;\n");
+    const result = fixFeatureMap(root);
+    expect(result.moved).toEqual([{ from: "src/a.ts:1", to: "src/a.ts:4" }]);
+    expect(result.unplaced).toEqual([]);
+    expect(readFileSync(path.join(root, FEATURES, "sample.md"), "utf8")).toContain("`src/a.ts:4`");
+    expect(checkFeatureMap(root).errors).toEqual([]);
+  });
+
+  it("fix moves a ref to a unique match in another source file", () => {
+    writeFileSync(path.join(root, "src", "a.ts"), "export const a = 2;\n");
+    writeFileSync(path.join(root, "src", "b.ts"), "// shifted\nexport const a = 1;\n");
+    const result = fixFeatureMap(root);
+    expect(result.moved).toEqual([{ from: "src/a.ts:1", to: "src/b.ts:2" }]);
+    expect(result.unplaced).toEqual([]);
+    expect(checkFeatureMap(root).errors).toEqual([]);
+  });
+
+  it("fix leaves a ref whose text still matches and reports an unplaceable ref", () => {
+    expect(fixFeatureMap(root).moved).toEqual([]);
+
+    writeFileSync(path.join(root, "src", "a.ts"), "export const a = 2;\n");
+    writeFileSync(path.join(root, "src", "b.ts"), "export const a = 1;\n");
+    writeFileSync(path.join(root, "src", "c.ts"), "export const a = 1;\n");
+    const result = fixFeatureMap(root);
+    expect(result.moved).toEqual([]);
+    expect(result.unplaced.map((entry) => entry.ref)).toEqual(["src/a.ts:1"]);
+    expect(checkFeatureMap(root).ok).toBe(false);
+  });
+
+  it("fails when a known command id has no map row, and passes once the row is added", () => {
+    writeFileSync(
+      path.join(root, "src", "main.ts"),
+      [
+        "export class Plugin {",
+        "  onload() {",
+        "    this.addCommand({",
+        '      id: "open-chat",',
+        '      name: "Open chat",',
+        "    });",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    expect(checkFeatureMap(root).errors.join("\n")).toContain("open-chat");
+
+    const features = path.join(root, FEATURES);
+    const extra = "| Command palette: Open chat | `src/main.ts:4` | no committed check | `NONE` |";
+    writeFileSync(path.join(features, "sample.md"), journey(`${row()}\n${extra}`));
+    writeLock(root);
+    expect(checkFeatureMap(root)).toMatchObject({ ok: true, errors: [] });
+  });
+
   it("rejects covered without a test reference or with partial wording", () => {
     const features = path.join(root, FEATURES);
     writeFileSync(path.join(features, "sample.md"), journey(row("src/a.ts:1", "no committed check")));
@@ -123,6 +193,7 @@ describe("check-feature-map", () => {
       path.join(features, "sample.md"),
       journey(row("src/a.ts:1", "`test/replay.test.ts:1`")),
     );
+    writeLock(root);
     expect(checkFeatureMap(root)).toMatchObject({ ok: true, errors: [] });
   });
 
