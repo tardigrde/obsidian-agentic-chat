@@ -1,4 +1,5 @@
 import type { DataAdapter } from "obsidian";
+import { ensureAdapterParentFolder, renameOver, writeFileAtomically } from "../vault/storage";
 import {
   buildEmbeddingInputs,
   createEmbeddingIndexRecords,
@@ -516,7 +517,7 @@ export async function writeSemanticIndexFile(
   path: string,
   file: SemanticIndexFile,
 ): Promise<void> {
-  await ensureParentDirs(adapter, path);
+  await ensureAdapterParentFolder(adapter, path);
   const serialized = JSON.stringify(file, null, 2);
   const tempPath = semanticIndexTempPath(path);
 
@@ -529,7 +530,9 @@ export async function writeSemanticIndexFile(
   // complete index, so it never overwrites the backup.
   const current = await readCurrentSemanticIndex(adapter, path);
   if (current.kind === "valid" && current.file.state.status.state === "complete") {
-    await writeSemanticIndexBackup(adapter, semanticIndexBackupPath(path), current.file);
+    await writeFileAtomically(adapter, semanticIndexBackupPath(path), JSON.stringify(current.file, null, 2), {
+      tempPath: semanticIndexTempPath(semanticIndexBackupPath(path)),
+    });
   } else if (current.kind === "unreadable" && !(await hasCompleteSemanticIndexBackup(adapter, path))) {
     throw new Error(
       "Refusing to replace an unreadable semantic index without a complete backup.",
@@ -541,38 +544,13 @@ export async function writeSemanticIndexFile(
   const requireBackup =
     current.kind === "unreadable" ||
     (current.kind === "valid" && current.file.state.status.state === "complete");
-  await replaceSemanticIndexFile(adapter, tempPath, path, requireBackup ? path : undefined);
-}
-
-async function writeSemanticIndexBackup(
-  adapter: DataAdapter,
-  backupPath: string,
-  file: SemanticIndexFile,
-): Promise<void> {
-  const tempPath = semanticIndexTempPath(backupPath);
-  await adapter.write(tempPath, JSON.stringify(file, null, 2));
-  await replaceSemanticIndexFile(adapter, tempPath, backupPath);
-}
-
-async function replaceSemanticIndexFile(
-  adapter: DataAdapter,
-  from: string,
-  to: string,
-  requireBackupFor?: string,
-): Promise<void> {
-  try {
-    await adapter.rename(from, to);
-    return;
-  } catch (error) {
-    // Some adapters refuse to rename over an existing file. Remove the target
-    // only when both files exist and the complete index is protected.
-    if (!(await adapter.exists(to)) || !(await adapter.exists(from))) throw error;
-    if (requireBackupFor && !(await hasCompleteSemanticIndexBackup(adapter, requireBackupFor))) {
-      throw error;
+  await renameOver(adapter, tempPath, path, async () => {
+    if (requireBackup && !(await hasCompleteSemanticIndexBackup(adapter, path))) {
+      throw new Error("Refusing to replace the semantic index: its complete backup is missing.");
     }
-  }
-  await adapter.remove(to);
-  await adapter.rename(from, to);
+    await adapter.remove(path);
+    await adapter.rename(tempPath, path);
+  });
 }
 
 function semanticIndexTempPath(path: string): string {
@@ -610,15 +588,4 @@ export function semanticIndexPath(pluginDir: string): string {
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw new Error("semantic indexing cancelled");
-}
-
-async function ensureParentDirs(adapter: DataAdapter, path: string): Promise<void> {
-  const parts = path.split("/");
-  parts.pop();
-  let current = "";
-  for (const part of parts) {
-    if (!part) continue;
-    current = current ? `${current}/${part}` : part;
-    if (!(await adapter.exists(current))) await adapter.mkdir(current);
-  }
 }
