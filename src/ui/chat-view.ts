@@ -51,14 +51,18 @@ import {
   modelProviderLabel,
   toolBudgetNotificationKey,
 } from "./chrome-state";
-import { ComposerHistory } from "./composer-history";
 import { PromptEditState } from "./prompt-edit-state";
-import { freshChatTabState, type ChatTabWorkingState } from "./chat-tab-state";
+import {
+  freshChatTabState,
+  resetChatTabState,
+  stagePromptContext,
+  type ChatTabWorkingState,
+  type StagedPromptContext,
+} from "./chat-tab-state";
 import {
   assemblePrompt,
   buildPromptContext,
   loadImageAttachments as loadContextImageAttachments,
-  PromptContextCache,
 } from "./context-builder";
 import { attachmentBasePath } from "./attachment-ref";
 import {
@@ -85,7 +89,6 @@ import {
   validateModeTransition,
 } from "../agent/modes";
 import {
-  ActiveNoteContextCache,
   type ActiveNoteState,
   autoActiveNotePath,
   effectiveActiveNote,
@@ -145,24 +148,16 @@ interface ObsidianDragManager {
 }
 
 export class ChatView extends ItemView {
-  // Open tabs (independent sessions). The fields below mirror the *active* tab's
-  // working state; switchToTab saves/loads them against `tabs[activeTabIndex].state`.
+  // Open tabs (independent sessions). Each tab owns its working state; the view
+  // reads and writes the active tab's state directly through `this.state`, so a
+  // tab switch only moves the composer draft in and out of the textarea.
   private tabs: ChatTab[] = [];
   private activeTabIndex = 0;
   private tabsEl!: HTMLElement;
-  private attachments: ContextAttachment[] = [];
-  // Active-note-attached-by-default state: the current active note's path and
-  // whether the user dismissed the auto chip (suppressed for the session).
+  // The current active note's path. View-level: it follows the focused leaf,
+  // not the conversation; each tab decides whether it is suppressed.
   private activeNotePath: string | null = null;
-  private activeNoteCache = new ActiveNoteContextCache();
-  private contextCache = new PromptContextCache();
-  private activeNoteSuppressed = false;
   private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
-  private notifiedContext = new Set<number>();
-  private notifiedCost = false;
-  private notifiedToolBudgetKey: string | null = null;
-  // Compaction count last surfaced to the user, so each compaction toasts once.
-  private lastCompactionCount = 0;
   // The service fires onChange synchronously during session transitions; this silences
   // automatic toasts until the new session's notification baseline has been set.
   private muteNotifications = false;
@@ -170,13 +165,9 @@ export class ChatView extends ItemView {
   // Autocomplete state: the active query token and a cached mention candidate list.
   private activeQuery: AcQuery | null = null;
   private mentionCache: MentionCandidate[] | null = null;
-  private queuedPromptArmed = false;
   private flushingQueuedPrompt = false;
   /** Last preview rendered in the pending queue chip; gates no-op chip re-renders while typing. */
   private pendingChipPreview: string | null = null;
-  // Last turn we sent, kept so "retry" re-runs it without re-showing the context preamble.
-  private lastSentPrompt: string | null = null;
-  private lastSentDisplay: string | null = null;
   private editingEl: HTMLElement | null = null;
   private readonly promptEdit = new PromptEditState();
   // Semantic indexing can outlive the command that starts it; keep one
@@ -191,9 +182,6 @@ export class ChatView extends ItemView {
   private inputEl!: HTMLTextAreaElement;
   private modeToggleEl!: HTMLElement;
   private menu!: AutocompleteMenu;
-  // Shell-style command history: every submitted message, newest last. The
-  // helper owns navigation/draft state so ChatView only applies returned values.
-  private readonly composerHistory = new ComposerHistory();
   private sendButton!: HTMLButtonElement;
   private stopButton!: HTMLButtonElement;
   private statusEl!: HTMLElement;
@@ -231,6 +219,11 @@ export class ChatView extends ItemView {
 
   private get activeTab(): ChatTab {
     return this.tabs[this.activeTabIndex];
+  }
+
+  /** The active tab's working state: attachments, caches, queue, notifications, last send. */
+  private get state(): ChatTabWorkingState {
+    return this.activeTab.state;
   }
 
   private isLiveTab(tab: ChatTab): boolean {
@@ -325,51 +318,24 @@ export class ChatView extends ItemView {
     return tab;
   }
 
-  /** Snapshot the active tab's composer/UI state so it survives a switch. */
-  private saveActiveState(): void {
+  /** Park the composer draft on the active tab before another tab takes the textarea. */
+  private parkDraft(): void {
     const tab = this.tabs[this.activeTabIndex];
-    if (!tab) return;
-    tab.state = {
-      attachments: this.attachments,
-      activeNoteCache: this.activeNoteCache,
-      contextCache: this.contextCache,
-      activeNoteSuppressed: this.activeNoteSuppressed,
-      draft: this.inputEl.value,
-      queuedPromptArmed: this.queuedPromptArmed,
-      sentHistory: this.composerHistory.entries(),
-      notifiedContext: this.notifiedContext,
-      notifiedCost: this.notifiedCost,
-      notifiedToolBudgetKey: this.notifiedToolBudgetKey,
-      lastCompactionCount: this.lastCompactionCount,
-      lastSentPrompt: this.lastSentPrompt,
-      lastSentDisplay: this.lastSentDisplay,
-    };
+    if (tab) tab.state.draft = this.inputEl.value;
   }
 
-  /** Restore the active tab's saved composer/UI state into the live fields. */
-  private loadActiveState(): void {
+  /** Put the active tab's parked draft back into the textarea. */
+  private restoreDraft(): void {
     const tab = this.tabs[this.activeTabIndex];
     if (!tab) return;
-    const state = tab.state;
-    this.attachments = state.attachments;
-    this.activeNoteCache = state.activeNoteCache;
-    this.contextCache = state.contextCache;
-    this.activeNoteSuppressed = state.activeNoteSuppressed;
-    this.queuedPromptArmed = state.queuedPromptArmed;
-    this.composerHistory.load(state.sentHistory);
-    this.notifiedContext = state.notifiedContext;
-    this.notifiedCost = state.notifiedCost;
-    this.notifiedToolBudgetKey = state.notifiedToolBudgetKey;
-    this.lastCompactionCount = state.lastCompactionCount;
-    this.lastSentPrompt = state.lastSentPrompt;
-    this.lastSentDisplay = state.lastSentDisplay;
-    this.setComposerValueQuiet(state.draft);
+    tab.state.history.resetNavigation();
+    this.setComposerValueQuiet(tab.state.draft);
   }
 
   /** Re-render the transcript + chrome for the active tab (after a switch/close). */
   private renderActiveTab(): void {
     this.createSessionActivationCoordinator().renderActiveTab();
-    // Chips depend on the tab state just restored by loadActiveState(); the
+    // Chips depend on the newly active tab's state; the
     // coordinator only syncs chrome, so re-render them here or a queued-prompt
     // chip (and context chips) would stay stale/invisible after a tab switch.
     this.renderChips();
@@ -380,9 +346,9 @@ export class ChatView extends ItemView {
     this.cancelAutocomplete();
     this.menu.hide();
     this.endEditing(false);
-    this.saveActiveState();
+    this.parkDraft();
     this.activeTabIndex = index;
-    this.loadActiveState();
+    this.restoreDraft();
     this.renderActiveTab();
   }
 
@@ -390,12 +356,12 @@ export class ChatView extends ItemView {
   private async addTab(): Promise<void> {
     if (this.tabs.length >= MAX_TABS) return;
     this.endEditing(false);
-    this.saveActiveState();
+    this.parkDraft();
     const tab = this.createTab();
     this.tabs.push(tab);
     this.activeTabIndex = this.tabs.length - 1;
-    // Reset the live fields to this fresh tab before any async work renders against them.
-    this.loadActiveState();
+    // Show the fresh tab's empty draft before any async work renders against it.
+    this.restoreDraft();
     await this.createSessionActivationCoordinator().initializeFreshTab(
       // A new tab is always a fresh session, never a continuation of tab 0's.
       () => tab.service.newSession(),
@@ -420,8 +386,8 @@ export class ChatView extends ItemView {
       this.activeTabIndex -= 1;
     } else if (closingActive) {
       this.activeTabIndex = Math.min(this.activeTabIndex, this.tabs.length - 1);
-      // The closed tab was showing; load + render whichever tab took its place.
-      this.loadActiveState();
+      // The closed tab was showing; restore + render whichever tab took its place.
+      this.restoreDraft();
       this.renderActiveTab();
       return;
     }
@@ -704,10 +670,10 @@ export class ChatView extends ItemView {
       // reconciles the state. The listener type is Event, but an `input` event
       // is an InputEvent; use Obsidian's cross-window instanceOf() check.
       const inputEvent = event as UIEvent;
-      if (this.queuedPromptArmed && !(inputEvent.instanceOf(InputEvent) && inputEvent.isComposing)) {
+      if (this.state.queuedPromptArmed && !(inputEvent.instanceOf(InputEvent) && inputEvent.isComposing)) {
         const text = this.inputEl.value.trim();
         if (!text) {
-          this.queuedPromptArmed = false;
+          this.state.queuedPromptArmed = false;
           this.statusEl.setText("");
           this.syncChrome();
           this.renderChips();
@@ -1125,25 +1091,25 @@ export class ChatView extends ItemView {
   private checkUsageNotifications(): void {
     if (this.muteNotifications) return;
     const compactions = this.service.getCompactionCount();
-    if (compactions > this.lastCompactionCount) {
-      this.lastCompactionCount = compactions;
+    if (compactions > this.state.lastCompactionCount) {
+      this.state.lastCompactionCount = compactions;
       // The window just freed up; re-arm the fill warnings for the next climb.
-      this.notifiedContext = new Set<number>();
+      this.state.notifiedContext = new Set<number>();
       this.notifier.notify("contextWindow", "Compacted earlier turns to free up context.");
     }
     const fraction = this.service.getContextFraction();
     if (fraction !== undefined) {
-      const crossed = highestUnnotifiedThreshold(fraction, CONTEXT_THRESHOLDS, this.notifiedContext);
+      const crossed = highestUnnotifiedThreshold(fraction, CONTEXT_THRESHOLDS, this.state.notifiedContext);
       if (crossed !== null) {
-        this.notifiedContext.add(crossed);
+        this.state.notifiedContext.add(crossed);
         this.notifier.notify("contextWindow", `Context window ${Math.round(crossed * 100)}% full — consider /new soon.`);
       }
     }
     const cap = this.plugin.settings.notifications.costAlertUsd;
-    if (cap > 0 && !this.notifiedCost) {
+    if (cap > 0 && !this.state.notifiedCost) {
       const cost = this.service.getSessionUsage().cost?.total ?? 0;
       if (cost >= cap) {
-        this.notifiedCost = true;
+        this.state.notifiedCost = true;
         this.notifier.notify("cost", `This conversation has cost $${cost.toFixed(2)} (alert set at $${cap.toFixed(2)}).`);
       }
     }
@@ -1154,8 +1120,8 @@ export class ChatView extends ItemView {
     const toolBudget = this.service.getRuntimeDiagnostics().toolBudget;
     const key = toolBudgetNotificationKey(toolBudget);
     if (key === null) return;
-    if (key === this.notifiedToolBudgetKey) return;
-    this.notifiedToolBudgetKey = key;
+    if (key === this.state.notifiedToolBudgetKey) return;
+    this.state.notifiedToolBudgetKey = key;
     this.notifier.notify("info", `Agentic chat: ${formatToolBudgetDiagnostic(toolBudget)}.`);
   }
 
@@ -1169,7 +1135,7 @@ export class ChatView extends ItemView {
     this.sendButton.disabled = false;
     let sendLabel: string;
     if (running) {
-      sendLabel = this.queuedPromptArmed ? "Update" : "Queue";
+      sendLabel = this.state.queuedPromptArmed ? "Update" : "Queue";
     } else {
       sendLabel = "Send";
     }
@@ -1253,7 +1219,7 @@ export class ChatView extends ItemView {
   }
 
   private queueComposerPrompt(): void {
-    this.queuedPromptArmed = true;
+    this.state.queuedPromptArmed = true;
     this.statusEl.setText("Queued next.");
     this.renderChips();
     this.syncChrome();
@@ -1264,9 +1230,9 @@ export class ChatView extends ItemView {
     // would send the old draft into the session that is being installed.
     const swapState = this.service.getSessionSwapState();
     if (swapState !== "idle" && swapState !== "live") return;
-    if (!this.queuedPromptArmed || this.flushingQueuedPrompt || this.service.isStreaming()) return;
+    if (!this.state.queuedPromptArmed || this.flushingQueuedPrompt || this.service.isStreaming()) return;
     const text = this.inputEl.value.trim();
-    this.queuedPromptArmed = false;
+    this.state.queuedPromptArmed = false;
     this.renderChips();
     if (!text) {
       this.syncChrome();
@@ -1326,11 +1292,11 @@ export class ChatView extends ItemView {
 
   /** Record a submitted message, skipping consecutive duplicates, then reset navigation. */
   private pushHistory(text: string): void {
-    this.composerHistory.record(text);
+    this.state.history.record(text);
   }
 
   private resetHistoryNav(): void {
-    this.composerHistory.resetNavigation();
+    this.state.history.resetNavigation();
   }
 
   /**
@@ -1341,7 +1307,7 @@ export class ChatView extends ItemView {
    */
   private recallHistory(direction: -1 | 1): boolean {
     if (this.promptEdit.isEditing) return false;
-    const result = this.composerHistory.recall(direction, {
+    const result = this.state.history.recall(direction, {
       value: this.inputEl.value,
       selectionStart: this.inputEl.selectionStart,
       selectionEnd: this.inputEl.selectionEnd,
@@ -1380,182 +1346,104 @@ export class ChatView extends ItemView {
     await this.sendPrompt(text);
   }
 
-  /** Drop staged context without changing the transcript. */
-  private discardPendingSend(
-    activeNoteCache: ActiveNoteContextCache,
-    contextCache: PromptContextCache,
-  ): void {
-    activeNoteCache.discardPending();
-    contextCache.discard();
-  }
-
-  /** Drop the prepared send and show the session-changed error. */
-  private abandonSend(
-    service: AgentService,
-    activeNoteCache: ActiveNoteContextCache,
-    contextCache: PromptContextCache,
-  ): void {
-    this.discardPendingSend(activeNoteCache, contextCache);
-    service.reportSessionChanged();
-    this.showServiceError();
-  }
-
-  /** Build the prompt and images, bound to the session that was active at the start. */
+  /**
+   * Build the prompt and images for `tab`, bound to the session that was active
+   * at the start. Returns null when the tab stopped being the live one or its
+   * session changed during the awaits; the staged context is discarded then.
+   */
   private async preparePromptSend(
     tab: ChatTab,
-    service: AgentService,
-    activeNoteCache: ActiveNoteContextCache,
-    contextCache: PromptContextCache,
-    explicitAttachments: ContextAttachment[],
-    autoPath: string | null,
+    staged: StagedPromptContext,
     text: string,
   ): Promise<{ prompt: string; images: ImageContent[]; sessionToken: string; messageCountBefore: number } | null> {
+    const service = tab.service;
     // A fresh tab has no session yet. Create/continue it before sampling the
     // token, otherwise the token changes during this same send and the guard
     // falsely rejects a valid first prompt.
     await service.initialize();
-    if (!this.isLiveTab(tab)) {
-      this.discardPendingSend(activeNoteCache, contextCache);
-      return null;
-    }
     // Context building and image encoding can take seconds. Bind the send to
     // the session that is active now so a swap during those awaits cannot
     // route the prompt into a different session.
     const sessionToken = service.getSessionToken();
+    const stillBound = (): boolean => {
+      if (!this.isLiveTab(tab)) {
+        staged.discard();
+        return false;
+      }
+      if (service.getSessionToken() !== sessionToken) {
+        staged.discard();
+        service.reportSessionChanged();
+        this.showServiceError();
+        return false;
+      }
+      return true;
+    };
+    if (!stillBound()) return null;
     const messageCountBefore = service.getMessages().length;
-    const context = await this.buildContextFor(service, explicitAttachments, autoPath, activeNoteCache, contextCache);
-    if (!this.isLiveTab(tab)) {
-      this.discardPendingSend(activeNoteCache, contextCache);
-      return null;
-    }
-    if (service.getSessionToken() !== sessionToken) {
-      this.abandonSend(service, activeNoteCache, contextCache);
-      return null;
-    }
+    const context = await buildPromptContext({
+      app: this.app,
+      attachments: staged.attachments,
+      activeNotePath: staged.autoPath,
+      isPathIgnored: (path) => service.isPathIgnored(path),
+      activeNoteCache: staged.activeNoteCache,
+      contextCache: staged.contextCache,
+    });
+    if (!stillBound()) return null;
     const prompt = assemblePrompt(context, text);
     // Image attachments ride as multimodal content parts, not text context.
-    const images = await this.loadImageAttachmentsFor(service, explicitAttachments);
-    if (!this.isLiveTab(tab)) {
-      this.discardPendingSend(activeNoteCache, contextCache);
-      return null;
-    }
-    if (service.getSessionToken() !== sessionToken) {
-      this.abandonSend(service, activeNoteCache, contextCache);
-      return null;
-    }
+    const images = await loadContextImageAttachments({
+      app: this.app,
+      attachments: staged.attachments,
+      supportsImages: service.supportsImages(),
+    });
+    if (!stillBound()) return null;
     return { prompt, images, sessionToken, messageCountBefore };
   }
 
   private async sendPrompt(text: string): Promise<void> {
-    const tab = this.activeTab;
-    const service = tab.service;
-    const activeNoteCache = this.activeNoteCache;
-    const contextCache = this.contextCache;
-    const explicitAttachments = [...this.attachments];
-    this.clearEmptyState();
-    // Show the auto-attached active note alongside explicit attachments in the user bubble.
-    const autoPath = this.effectiveActiveNote();
-    const attachments = [...(autoPath ? [autoPath] : []), ...explicitAttachments];
-    try {
-      const prepared = await this.preparePromptSend(
-        tab,
-        service,
-        activeNoteCache,
-        contextCache,
-        explicitAttachments,
-        autoPath,
-        text,
-      );
-      if (!prepared) return;
-      this.lastSentPrompt = prepared.prompt;
-      this.lastSentDisplay = text;
-      this.renderOutgoingUserMessage(text, attachments, prepared.images);
-      await service.sendPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
-      if (!this.isLiveTab(tab)) {
-        this.discardPendingSend(activeNoteCache, contextCache);
-        return;
-      }
-      this.resolveActiveNoteCacheAfterSend(service, activeNoteCache, prepared.messageCountBefore);
-      this.resolveContextCacheAfterSend(service, contextCache, prepared.messageCountBefore);
-    } catch (error) {
-      this.discardPendingSend(activeNoteCache, contextCache);
-      if (!this.isLiveTab(tab)) return;
-      throw error;
-    }
-    this.showServiceError();
+    await this.dispatchPrompt(text, "send");
   }
 
   private async steerActiveTurn(text: string): Promise<void> {
+    await this.dispatchPrompt(text, "steer");
+  }
+
+  /**
+   * One pipeline for a new turn ("send") and for text queued into the running
+   * turn ("steer"): stage context from the active tab, build the prompt, hand it
+   * to the service, then commit or discard the staged context depending on
+   * whether the transcript grew.
+   */
+  private async dispatchPrompt(text: string, kind: "send" | "steer"): Promise<void> {
     const tab = this.activeTab;
     const service = tab.service;
-    const activeNoteCache = this.activeNoteCache;
-    const contextCache = this.contextCache;
-    const explicitAttachments = [...this.attachments];
-    const autoPath = this.effectiveActiveNote();
+    const staged = stagePromptContext(tab.state, this.effectiveActiveNote());
     this.clearEmptyState();
     try {
-      const prepared = await this.preparePromptSend(
-        tab,
-        service,
-        activeNoteCache,
-        contextCache,
-        explicitAttachments,
-        autoPath,
-        text,
-      );
+      const prepared = await this.preparePromptSend(tab, staged, text);
       if (!prepared) return;
-      this.lastSentPrompt = prepared.prompt;
-      this.lastSentDisplay = text;
-      this.statusEl.setText("Queued for the active turn.");
-      await service.steerPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
+      tab.state.lastSentPrompt = prepared.prompt;
+      tab.state.lastSentDisplay = text;
+      if (kind === "send") {
+        // Show the auto-attached active note alongside explicit attachments in the user bubble.
+        const shown = [...(staged.autoPath ? [staged.autoPath] : []), ...staged.attachments];
+        this.renderOutgoingUserMessage(text, shown, prepared.images);
+        await service.sendPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
+      } else {
+        this.statusEl.setText("Queued for the active turn.");
+        await service.steerPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
+      }
       if (!this.isLiveTab(tab)) {
-        this.discardPendingSend(activeNoteCache, contextCache);
+        staged.discard();
         return;
       }
-      this.resolveActiveNoteCacheAfterSend(service, activeNoteCache, prepared.messageCountBefore);
-      this.resolveContextCacheAfterSend(service, contextCache, prepared.messageCountBefore);
+      staged.settle(service.getMessages().length > prepared.messageCountBefore);
     } catch (error) {
-      this.discardPendingSend(activeNoteCache, contextCache);
+      staged.discard();
       if (!this.isLiveTab(tab)) return;
       throw error;
     }
     this.showServiceError();
-  }
-
-  private resolveActiveNoteCacheAfterSend(
-    service: AgentService,
-    activeNoteCache: ActiveNoteContextCache,
-    messageCountBefore: number,
-  ): void {
-    if (service.getMessages().length > messageCountBefore) {
-      activeNoteCache.commitPending();
-    } else {
-      activeNoteCache.discardPending();
-    }
-  }
-
-  private resolveContextCacheAfterSend(
-    service: AgentService,
-    contextCache: PromptContextCache,
-    messageCountBefore: number,
-  ): void {
-    if (service.getMessages().length > messageCountBefore) {
-      contextCache.commit();
-    } else {
-      contextCache.discard();
-    }
-  }
-
-  /** Encode image attachments as multimodal content parts for the model. */
-  private async loadImageAttachmentsFor(
-    service: AgentService,
-    attachments: ContextAttachment[],
-  ): Promise<ImageContent[]> {
-    return await loadContextImageAttachments({
-      app: this.app,
-      attachments,
-      supportsImages: service.supportsImages(),
-    });
   }
 
   /** Re-run the conversation's last user turn (inline "Ask again" action). */
@@ -1564,12 +1452,12 @@ export class ChatView extends ItemView {
     const service = tab.service;
     if (service.isStreaming()) return;
     const lastTurn = lastUserTurn(service.getMessages());
-    const prompt = this.lastSentPrompt ?? lastTurn?.text;
+    const prompt = this.state.lastSentPrompt ?? lastTurn?.text;
     if (!prompt) return;
     // Pair images with the text they were sent with: a stale lastSentPrompt
     // from a blocked send must not pick up an older turn's images.
     const images = lastTurn?.text === prompt ? lastTurn.images : [];
-    const display = this.lastSentDisplay ?? stripContextPreamble(prompt);
+    const display = this.state.lastSentDisplay ?? stripContextPreamble(prompt);
     // A failed turn is replaced, not repeated: drop it so the model sees the
     // prompt once. Only when it is the turn being resent.
     const failedIndex = failedLastTurnIndex(service.getMessages());
@@ -1708,15 +1596,7 @@ export class ChatView extends ItemView {
   }
 
   private resetSessionUiState(options: SessionUiResetOptions): void {
-    if (options.attachments) this.attachments = [];
-    if (options.activeNoteCache) this.activeNoteCache = new ActiveNoteContextCache();
-    if (options.contextCache) this.contextCache = new PromptContextCache();
-    if (options.activeNoteSuppression) this.activeNoteSuppressed = false;
-    if (options.lastSent) {
-      this.lastSentPrompt = null;
-      this.lastSentDisplay = null;
-    }
-    if (options.history) this.resetHistoryNav();
+    resetChatTabState(this.state, options);
     if (options.editing) this.endEditing(false);
     if (options.bubble) this.transcript.forgetBubble();
     if (options.queuedPrompt) this.clearQueuedPrompt();
@@ -2204,22 +2084,22 @@ export class ChatView extends ItemView {
    * the user is only toasted about *new* crossings, not the loaded-in state.
    */
   private resetUsageNotifications(muteExisting = false): void {
-    this.notifiedContext = new Set<number>();
-    this.notifiedCost = false;
-    this.notifiedToolBudgetKey = null;
-    this.lastCompactionCount = this.service.getCompactionCount();
+    this.state.notifiedContext = new Set<number>();
+    this.state.notifiedCost = false;
+    this.state.notifiedToolBudgetKey = null;
+    this.state.lastCompactionCount = this.service.getCompactionCount();
     if (!muteExisting) return;
     const fraction = this.service.getContextFraction();
     if (fraction !== undefined) {
       for (const threshold of CONTEXT_THRESHOLDS) {
-        if (fraction >= threshold) this.notifiedContext.add(threshold);
+        if (fraction >= threshold) this.state.notifiedContext.add(threshold);
       }
     }
     const cap = this.plugin.settings.notifications.costAlertUsd;
     if (cap > 0 && (this.service.getSessionUsage().cost?.total ?? 0) >= cap) {
-      this.notifiedCost = true;
+      this.state.notifiedCost = true;
     }
-    this.notifiedToolBudgetKey = toolBudgetNotificationKey(this.service.getRuntimeDiagnostics().toolBudget);
+    this.state.notifiedToolBudgetKey = toolBudgetNotificationKey(this.service.getRuntimeDiagnostics().toolBudget);
   }
 
   /** Delete from the history list; only the active session swaps under us. */
@@ -2329,8 +2209,8 @@ export class ChatView extends ItemView {
    * and routes through here, skipping the per-entry guard in addAttachment. */
   private pushAttachment(entry: ContextAttachment): boolean {
     const key = contextAttachmentKey(entry);
-    if (this.attachments.some((existing) => contextAttachmentKey(existing) === key)) return false;
-    this.attachments.push(entry);
+    if (this.state.attachments.some((existing) => contextAttachmentKey(existing) === key)) return false;
+    this.state.attachments.push(entry);
     this.renderChips();
     return true;
   }
@@ -2342,7 +2222,7 @@ export class ChatView extends ItemView {
    */
   private syncActiveNote(): void {
     this.activeNotePath = autoActiveNotePath(this.app.workspace.getActiveFile(), {
-      suppressed: this.activeNoteSuppressed,
+      suppressed: this.state.activeNoteSuppressed,
       isIgnored: (path) => this.service.isPathIgnored(path),
     });
     this.renderChips();
@@ -2357,11 +2237,11 @@ export class ChatView extends ItemView {
   private activeNoteState(): ActiveNoteState {
     return {
       activePath: this.activeNotePath,
-      suppressed: this.activeNoteSuppressed,
-      explicit: this.attachments
+      suppressed: this.state.activeNoteSuppressed,
+      explicit: this.state.attachments
         .filter((entry): entry is string => typeof entry === "string")
         .map((entry) => attachmentBasePath(entry)),
-      selectedTextSources: this.attachments
+      selectedTextSources: this.state.attachments
         .filter(isTextContextAttachment)
         .map((entry) => entry.sourcePath)
         .filter((path): path is string => Boolean(path)),
@@ -2373,22 +2253,22 @@ export class ChatView extends ItemView {
       this.chipsEl,
       {
         activeNotePath: this.effectiveActiveNote(),
-        attachments: this.attachments,
+        attachments: this.state.attachments,
       },
       {
         removeActiveNote: () => {
-          this.activeNoteSuppressed = true;
+          this.state.activeNoteSuppressed = true;
           this.activeNotePath = null;
           this.renderChips();
         },
         removeAttachment: (entry) => {
           const key = contextAttachmentKey(entry);
-          this.attachments = this.attachments.filter((a) => contextAttachmentKey(a) !== key);
+          this.state.attachments = this.state.attachments.filter((a) => contextAttachmentKey(a) !== key);
           this.renderChips();
         },
       },
     );
-    if (this.queuedPromptArmed) {
+    if (this.state.queuedPromptArmed) {
       const text = this.inputEl.value.trim();
       if (text) {
         renderPendingQueueChip(this.chipsEl, { text }, { cancel: () => this.cancelQueuedPrompt() });
@@ -2401,35 +2281,18 @@ export class ChatView extends ItemView {
 
   /** Un-arm a queued prompt, keeping the draft in the composer for editing. */
   private cancelQueuedPrompt(): void {
-    if (!this.queuedPromptArmed) return;
+    if (!this.state.queuedPromptArmed) return;
     this.clearQueuedPrompt();
     this.inputEl.focus();
   }
 
   /** Drop the queued state without moving focus (session changes keep the draft). */
   private clearQueuedPrompt(): void {
-    if (!this.queuedPromptArmed) return;
-    this.queuedPromptArmed = false;
+    if (!this.state.queuedPromptArmed) return;
+    this.state.queuedPromptArmed = false;
     this.statusEl.setText("");
     this.renderChips();
     this.syncChrome();
-  }
-
-  private async buildContextFor(
-    service: AgentService,
-    attachments: ContextAttachment[],
-    activeNotePath: string | null,
-    activeNoteCache: ActiveNoteContextCache,
-    contextCache: PromptContextCache,
-  ): Promise<string> {
-    return await buildPromptContext({
-      app: this.app,
-      attachments,
-      activeNotePath,
-      isPathIgnored: (path) => service.isPathIgnored(path),
-      activeNoteCache,
-      contextCache,
-    });
   }
 
   private handleAgentEvent(event: AgentEvent): void {

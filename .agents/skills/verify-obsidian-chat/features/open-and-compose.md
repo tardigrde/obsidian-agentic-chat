@@ -51,27 +51,27 @@ await $(".agentic-chat-send").click();
 | Ribbon icon | `src/main.ts:103` | no committed check | `NONE` |
 | Command palette: Open chat | `src/main.ts:105` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
 | Command palette: New conversation | `src/main.ts:112` | `test/session-actions.test.ts:153` (unit only) | `partial` |
-| Command palette: Quick Ask inline edit | `src/main.ts:117` | `test/e2e/specs/smoke.e2e.ts:213` | `covered` |
+| Command palette: Quick Ask inline edit | `src/main.ts:117` | `test/e2e/specs/smoke.e2e.ts:214` | `covered` |
 | Editor selection context menu | `src/main.ts:173` | no committed check | `NONE` |
 | File context menu | `src/main.ts:178` | no committed check | `NONE` |
 | Files context menu (multi-select) | `src/main.ts:183` | no committed check | `NONE` |
-| Composer card mounts | `src/ui/chat-view.ts:646` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
-| Empty-state suggestion chips | `src/ui/chat-view.ts:891` | no committed check | `NONE` |
-| Enter sends while idle | `src/ui/chat-view.ts:705` | `test/e2e/specs/composer-paths.e2e.ts:159` | `covered` |
+| Composer card mounts | `src/ui/chat-view.ts:612` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
+| Empty-state suggestion chips | `src/ui/chat-view.ts:857` | no committed check | `NONE` |
+| Enter sends while idle | `src/ui/chat-view.ts:671` | `test/e2e/specs/composer-paths.e2e.ts:159` | `covered` |
 | Enter steers while the agent runs | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:174` | `covered` |
-| Shift+Enter inserts a newline | `src/ui/chat-view.ts:705` | `test/e2e/specs/composer-paths.e2e.ts:275` | `covered` |
-| Send button | `src/ui/chat-view.ts:820` | `test/e2e/specs/approval-deterministic.e2e.ts:319` | `covered` |
-| ArrowUp/ArrowDown recall | `src/ui/chat-view.ts:686` | `test/composer-history.test.ts:16` (unit only) | `partial` |
-| Escape cancels edit | `src/ui/chat-view.ts:681` | `test/prompt-edit-state.test.ts:5` (unit only) | `partial` |
-| Autocomplete menu opens | `src/ui/chat-view.ts:934` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
+| Shift+Enter inserts a newline | `src/ui/chat-view.ts:671` | `test/e2e/specs/composer-paths.e2e.ts:275` | `covered` |
+| Send button | `src/ui/chat-view.ts:786` | `test/e2e/specs/approval-deterministic.e2e.ts:319` | `covered` |
+| ArrowUp/ArrowDown recall | `src/ui/chat-view.ts:652` | `test/composer-history.test.ts:16` (unit only) | `partial` |
+| Escape cancels edit | `src/ui/chat-view.ts:647` | `test/prompt-edit-state.test.ts:5` (unit only) | `partial` |
+| Autocomplete menu opens | `src/ui/chat-view.ts:900` | `test/e2e/specs/autocomplete-dropup.e2e.ts:34` | `covered` |
 | Autocomplete keys | `src/ui/autocomplete-menu.ts:108` | no committed check | `NONE` |
 | `@` mention autocomplete | `src/ui/autocomplete.ts:80` | `test/autocomplete.test.ts:51` (detection only) | `partial` |
-| Drag-and-drop attach | `src/ui/chat-view.ts:828` | `test/drag-drop.test.ts:4` (parser only) | `partial` |
-| Active note auto-chip | `src/ui/chat-view.ts:2351` | `test/e2e/specs/smoke.e2e.ts:99` | `covered` |
+| Drag-and-drop attach | `src/ui/chat-view.ts:794` | `test/drag-drop.test.ts:4` (parser only) | `partial` |
+| Active note auto-chip | `src/ui/chat-view.ts:2231` | `test/e2e/specs/smoke.e2e.ts:100` | `covered` |
 | Ignored active note stays out | `src/ui/active-note.ts:54` | `test/e2e/specs/runtime-behavior.e2e.ts:196` | `covered` |
-| Remove an attachment chip | `src/ui/chat-view.ts:2396` | `test/context-chip-renderer.test.ts:121` (unit only) | `partial` |
-| Image attachment guard | `src/ui/chat-view.ts:2319` | `test/image-attachments.test.ts:4` (encoding only) | `partial` |
-| Quick Ask accept | `src/ui/quick-ask-modal.ts:56` | `test/e2e/specs/smoke.e2e.ts:213` | `covered` |
+| Remove an attachment chip | `src/ui/chat-view.ts:2276` | `test/context-chip-renderer.test.ts:121` (unit only) | `partial` |
+| Image attachment guard | `src/ui/chat-view.ts:2199` | `test/image-attachments.test.ts:4` (encoding only) | `partial` |
+| Quick Ask accept | `src/ui/quick-ask-modal.ts:56` | `test/e2e/specs/smoke.e2e.ts:214` | `covered` |
 | Quick Ask Enter accept | `src/ui/quick-ask-modal.ts:61` | no committed check | `NONE` |
 
 ## Gotchas
@@ -79,7 +79,7 @@ await $(".agentic-chat-send").click();
 - `setValue` alone does not submit. Click `.agentic-chat-send`.
 - `event.isComposing` blocks Enter during IME composition. Do not assert a send
   in the middle of a composition event.
-- The chat view debounces autocomplete by 120 ms in `src/ui/chat-view.ts:919`.
+- The chat view debounces autocomplete by 120 ms in `src/ui/chat-view.ts:885`.
   Wait for `.agentic-chat-autocomplete`, not for a fixed delay.
 - The plugin suppresses the active note chip for ignored notes, non-Markdown
   files, and standing-instruction files such as `AGENTS.md`.
