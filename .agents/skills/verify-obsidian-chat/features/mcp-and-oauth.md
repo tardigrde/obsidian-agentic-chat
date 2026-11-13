@@ -56,14 +56,14 @@ await clickMcpAddButton("Add MCP server");
 | Bearer token auth | `src/settings-mcp-section.ts:471` | no committed check | `NONE` |
 | OAuth settings panel | `src/settings-mcp-section.ts:533` | no committed check | `NONE` |
 | OAuth required banner | `src/settings-mcp-section.ts:273` | `test/e2e/specs/composio-install.e2e.ts:241` (banner and button only) | `partial` |
-| Authenticate & test / PKCE sign-in | `src/settings-mcp-section.ts:698` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
+| Authenticate & test / PKCE sign-in | `src/settings-mcp-section.ts:694` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Desktop loopback callback | `src/mcp/oauth/callback-receivers.ts:16` | `test/mcp-oauth.test.ts:155` (unit only) | `partial` |
 | Mobile Obsidian protocol callback | `src/mcp/oauth/callback-receivers.ts:99` | `test/mcp-oauth.test.ts:58` (unit only) | `partial` |
 | OAuth token refresh | `src/mcp/oauth.ts:214` | `test/mcp-oauth.test.ts:513` (unit only) | `partial` |
 | Concurrent OAuth refresh shares one request | `src/mcp/oauth.ts:214` | `test/mcp-oauth.test.ts:610` | `partial` |
 | Concurrent mobile OAuth callbacks route by state | `src/mcp/oauth/callback-receivers.ts:88` | `test/mcp-oauth.test.ts:121` | `partial` |
 | MCP handshake retries after a failed initialized notification | `src/mcp/client.ts:122` | `test/mcp-client.test.ts:112` | `partial` |
-| Test connection / refresh tools | `src/settings-mcp-section.ts:689` | `test/mcp-tools.test.ts:283` (probe helper only) | `partial` |
+| Test connection / refresh tools | `src/settings-mcp-section.ts:685` | `test/mcp-tools.test.ts:283` (probe helper only) | `partial` |
 | Tool allowlist/denylist | `src/settings-mcp-section.ts:388` | `test/mcp-tools.test.ts:228` (unit only) | `partial` |
 | Per-tool MCP approvals | `src/settings-mcp-section.ts:418` | no committed check | `NONE` |
 | Setup guide / Copy config | `src/settings-mcp-section.ts:188` | `test/e2e/specs/settings-ui.e2e.ts:307` (button existence only) | `partial` |

@@ -14,8 +14,12 @@ export interface McpServerAdminDeps {
   sync(server: McpServerSettings): void;
   /** Transport for the MCP handshake. */
   fetcher: WebFetcher;
-  /** Mobile OAuth callback receiver; undefined uses the loopback receiver. */
-  callbackReceiver?: McpOAuthCallbackReceiver;
+  /**
+   * Creates the mobile OAuth callback receiver; undefined (or a factory that
+   * returns undefined) uses the loopback receiver. Only sign-in calls it: a
+   * receiver stays registered until a callback consumes it.
+   */
+  createCallbackReceiver?: () => McpOAuthCallbackReceiver | undefined;
   /** Progress sink for the OAuth sign-in flow. */
   onProgress?: (event: McpOAuthProgressEvent) => void;
 }
@@ -42,7 +46,7 @@ export async function authenticateAndProbe(
   deps: McpServerAdminDeps,
 ): Promise<McpServerProbeResult> {
   await authenticateMcpServer(server, deps.fetcher, {
-    callbackReceiver: deps.callbackReceiver,
+    callbackReceiver: deps.createCallbackReceiver?.(),
     onProgress: deps.onProgress,
   });
   deps.sync(server);
