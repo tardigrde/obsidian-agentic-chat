@@ -31,27 +31,30 @@ const SESSION_TEMP_MARKER = ".tmp.";
 const SESSION_BACKUP_SUFFIX = ".bak";
 
 /** Temp and backup paths owned by an in-flight rewrite. */
-interface SessionWriteOwnership {
+export interface SessionWriteOwnership {
   temps: Set<string>;
   backups: Set<string>;
 }
 
 /**
- * Owned by ObsidianSessionManager. Every chat tab builds its own manager over
- * the same vault adapter and session folder, so "is this temp/backup mine?"
- * must be answered across all of them, not per instance. Keyed by adapter so
- * separate vaults (and separate test adapters) never share entries.
+ * Shared by every chat tab over one vault. "Is this temp/backup mine?" must be
+ * answered across all managers, not per instance. Keyed by adapter so separate
+ * vaults (and separate test adapters) never share entries.
  */
-const sessionWriteOwnership = new WeakMap<DataAdapter, SessionWriteOwnership>();
+export class SessionWriteRegistry {
+  private readonly ownershipByAdapter = new WeakMap<DataAdapter, SessionWriteOwnership>();
 
-function getSessionWriteOwnership(adapter: DataAdapter): SessionWriteOwnership {
-  let ownership = sessionWriteOwnership.get(adapter);
-  if (!ownership) {
-    ownership = { temps: new Set(), backups: new Set() };
-    sessionWriteOwnership.set(adapter, ownership);
+  ownershipFor(adapter: DataAdapter): SessionWriteOwnership {
+    let ownership = this.ownershipByAdapter.get(adapter);
+    if (!ownership) {
+      ownership = { temps: new Set(), backups: new Set() };
+      this.ownershipByAdapter.set(adapter, ownership);
+    }
+    return ownership;
   }
-  return ownership;
 }
+
+const defaultSessionWriteRegistry = new SessionWriteRegistry();
 
 export interface SessionDefaults {
   provider: string;
@@ -111,20 +114,30 @@ export class ObsidianSessionManager {
    * reads must not restore them. */
   private readonly pendingSessionBackups: Set<string>;
 
-  constructor(adapter: DataAdapter, sessionDir: string, cwd: string) {
+  constructor(
+    adapter: DataAdapter,
+    sessionDir: string,
+    cwd: string,
+    registry: SessionWriteRegistry = defaultSessionWriteRegistry,
+  ) {
     this.adapter = adapter;
     this.sessionDir = normalizeFolderPath(sessionDir, { allowPluginInternals: true });
     this.cwd = cwd;
-    const ownership = getSessionWriteOwnership(adapter);
+    const ownership = registry.ownershipFor(adapter);
     this.pendingSessionTemps = ownership.temps;
     this.pendingSessionBackups = ownership.backups;
   }
 
-  static forPlugin(app: App, plugin: Plugin): ObsidianSessionManager {
+  static forPlugin(
+    app: App,
+    plugin: Plugin,
+    registry: SessionWriteRegistry = defaultSessionWriteRegistry,
+  ): ObsidianSessionManager {
     return new ObsidianSessionManager(
       app.vault.adapter,
       getPluginSessionDir(app, plugin),
       `obsidian-vault:${app.vault.getName()}`,
+      registry,
     );
   }
 

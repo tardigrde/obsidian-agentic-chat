@@ -1,3 +1,4 @@
+import { normalizeLookupPath } from "../vault/path";
 import type {
   LexicalRetrievalSignalMatch,
   LexicalVaultQaResponse,
@@ -150,6 +151,4 @@ function normalizedPathList(paths: readonly string[] | undefined): string[] {
   return (paths ?? []).map(normalizePath);
 }
 
-function normalizePath(path: string): string {
-  return path.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+/g, "/").toLowerCase();
-}
+export const normalizePath = normalizeLookupPath;

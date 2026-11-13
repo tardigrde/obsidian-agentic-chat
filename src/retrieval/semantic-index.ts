@@ -1,31 +1,30 @@
 import type { DataAdapter } from "obsidian";
-import { ensureAdapterParentFolder, renameOver, writeFileAtomically } from "../vault/storage";
 import {
   buildEmbeddingInputs,
   createEmbeddingIndexRecords,
   createEmbeddingIndexSnapshot,
   upsertEmbeddingIndexRecords,
-  type EmbeddingIndexSnapshot,
 } from "./embeddings";
 import {
-  createScopedIndexState,
   estimateEmbeddingIndexCost,
   type EmbeddingIndexCostEstimate,
   type RetrievalDocument,
   type RetrievalEmbedder,
   type RetrievalIndexScope,
   type RetrievalIndexingStatus,
-  type ScopedRetrievalIndexState,
 } from "./policy";
 import { createDefaultSemanticLeaseStore, type SemanticLeaseStore } from "./semantic-index-lease-store";
+import {
+  SEMANTIC_INDEX_VERSION,
+  readValidSemanticIndexFile,
+  semanticIndexBackupPath,
+  semanticIndexFile,
+  semanticIndexPath,
+  writeSemanticIndexFile,
+  type SemanticIndexFile,
+} from "./semantic-index-format";
+import { repairInterruptedIndex } from "./semantic-index-repair";
 import { errorMessage } from "../utils/errors";
-
-export interface SemanticIndexFile {
-  version: 1;
-  updatedAt: number;
-  state: ScopedRetrievalIndexState;
-  snapshot?: EmbeddingIndexSnapshot;
-}
 
 export interface SemanticIndexBootstrapInput {
   adapter: DataAdapter;
@@ -69,8 +68,6 @@ export type SemanticIndexBootstrapResult =
       cancelled: false;
       leaseFailure: SemanticIndexLeaseFailure;
     };
-
-export const SEMANTIC_INDEX_VERSION = 1;
 
 /**
  * A lease expires this long after its last heartbeat. A live writer renews it on
@@ -453,7 +450,9 @@ export async function readSemanticIndexFile(
   const primary = await readValidSemanticIndexFile(adapter, path);
   if (primary) {
     if (primary.state.status.state === "running") {
-      return await repairInterruptedIndex(adapter, path, primary, leaseScope);
+      return await repairInterruptedIndex(adapter, path, primary, (target) =>
+        acquireSemanticIndexWriterLease(semanticIndexLeaseRegistryFor(adapter, leaseScope), target),
+      );
     }
     return primary;
   }
@@ -462,185 +461,13 @@ export async function readSemanticIndexFile(
   return await readValidSemanticIndexFile(adapter, semanticIndexBackupPath(path));
 }
 
-async function readValidSemanticIndexFile(
-  adapter: DataAdapter,
-  path: string,
-): Promise<SemanticIndexFile | null> {
-  if (!(await adapter.exists(path))) return null;
-  try {
-    const parsed = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
-    if (parsed?.version !== SEMANTIC_INDEX_VERSION || !parsed.state?.status) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-type CurrentSemanticIndex =
-  | { kind: "missing" }
-  | { kind: "unreadable" }
-  | { kind: "valid"; file: SemanticIndexFile };
-
-/**
- * A read error is not the same as an absent file. The writer must know the
- * difference before it removes a target it cannot validate.
- */
-async function readCurrentSemanticIndex(
-  adapter: DataAdapter,
-  path: string,
-): Promise<CurrentSemanticIndex> {
-  if (!(await adapter.exists(path))) return { kind: "missing" };
-  try {
-    const parsed = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
-    if (parsed?.version !== SEMANTIC_INDEX_VERSION || !parsed.state?.status) {
-      return { kind: "unreadable" };
-    }
-    return { kind: "valid", file: parsed };
-  } catch {
-    return { kind: "unreadable" };
-  }
-}
-
-async function hasCompleteSemanticIndexBackup(
-  adapter: DataAdapter,
-  path: string,
-): Promise<boolean> {
-  const backup = await readValidSemanticIndexFile(adapter, semanticIndexBackupPath(path));
-  return backup?.state.status.state === "complete";
-}
-
-/**
- * A `running` status on disk can only mean the previous writer stopped before
- * it could record a terminal state. Repair it on read so the status never lies.
- */
-async function repairInterruptedIndex(
-  adapter: DataAdapter,
-  path: string,
-  file: SemanticIndexFile,
-  leaseScope?: SemanticIndexLeaseScope,
-): Promise<SemanticIndexFile> {
-  if (file.state.status.state !== "running") return file;
-  // Hold the same lease a writer uses. Without it, a writer can acquire the
-  // index between the check and the write and lose its file to our repair.
-  let lease: SemanticIndexLease | null;
-  try {
-    lease = await acquireSemanticIndexWriterLease(semanticIndexLeaseRegistryFor(adapter, leaseScope), path);
-  } catch {
-    // A status read must still work when the shared lease store is unavailable.
-    return file;
-  }
-  if (!lease) return file;
-  try {
-    // Re-read before writing: a status read can race a completed run, and the
-    // newer snapshot must win over this stale repair.
-    let latest = file;
-    try {
-      const candidate = JSON.parse(await adapter.read(path)) as SemanticIndexFile;
-      if (candidate?.version === SEMANTIC_INDEX_VERSION && candidate.state?.status) latest = candidate;
-    } catch {
-      return file;
-    }
-    if (latest.updatedAt !== file.updatedAt) return latest;
-    if (latest.state.status.state !== "running") return latest;
-
-    const status = latest.state.status;
-    const repaired: SemanticIndexFile = {
-      ...latest,
-      state: {
-        ...latest.state,
-        status: {
-          state: "failed",
-          scope: status.scope,
-          processedDocuments: status.processedDocuments,
-          totalDocuments: status.totalDocuments,
-          error: "Semantic indexing was interrupted before it finished. Run it again to complete the index.",
-        },
-      },
-    };
-    try {
-      await writeSemanticIndexFile(adapter, path, repaired);
-    } catch {
-      // A read-only adapter still gets the repaired view; persistence is best effort.
-    }
-    return repaired;
-  } finally {
-    await lease.release();
-  }
-}
-
-export async function writeSemanticIndexFile(
-  adapter: DataAdapter,
-  path: string,
-  file: SemanticIndexFile,
-): Promise<void> {
-  await ensureAdapterParentFolder(adapter, path);
-  const serialized = JSON.stringify(file, null, 2);
-  const tempPath = semanticIndexTempPath(path);
-
-  // Never truncate the live index in place. The new bytes land in a temp file
-  // first; only a complete rename makes them the target.
-  await adapter.write(tempPath, serialized);
-
-  // Preserve the current complete index before any replacement, including the
-  // first `running` write of a rebuild. A running or failed target is not a
-  // complete index, so it never overwrites the backup.
-  const current = await readCurrentSemanticIndex(adapter, path);
-  if (current.kind === "valid" && current.file.state.status.state === "complete") {
-    await writeFileAtomically(adapter, semanticIndexBackupPath(path), JSON.stringify(current.file, null, 2), {
-      tempPath: semanticIndexTempPath(semanticIndexBackupPath(path)),
-    });
-  } else if (current.kind === "unreadable" && !(await hasCompleteSemanticIndexBackup(adapter, path))) {
-    throw new Error(
-      "Refusing to replace an unreadable semantic index without a complete backup.",
-    );
-  }
-
-  // A target that is complete, or unreadable and protected by a backup, may be
-  // removed only when a complete backup is still present.
-  const requireBackup =
-    current.kind === "unreadable" ||
-    (current.kind === "valid" && current.file.state.status.state === "complete");
-  await renameOver(adapter, tempPath, path, async () => {
-    if (requireBackup && !(await hasCompleteSemanticIndexBackup(adapter, path))) {
-      throw new Error("Refusing to replace the semantic index: its complete backup is missing.");
-    }
-    await adapter.remove(path);
-    await adapter.rename(tempPath, path);
-  });
-}
-
-function semanticIndexTempPath(path: string): string {
-  return `${path}.tmp`;
-}
-
-function semanticIndexBackupPath(path: string): string {
-  return `${path}.bak`;
-}
-
-export function semanticIndexFile(input: {
-  scope: RetrievalIndexScope;
-  status: RetrievalIndexingStatus;
-  estimate?: EmbeddingIndexCostEstimate;
-  indexedDocumentIds: readonly string[];
-  snapshot?: EmbeddingIndexSnapshot;
-  updatedAt: number;
-}): SemanticIndexFile {
-  return {
-    version: SEMANTIC_INDEX_VERSION,
-    updatedAt: input.updatedAt,
-    state: createScopedIndexState({
-      scope: input.scope,
-      status: input.status,
-      estimate: input.estimate,
-      indexedDocumentIds: input.indexedDocumentIds,
-    }),
-    snapshot: input.snapshot,
-  };
-}
-
-export function semanticIndexPath(pluginDir: string): string {
-  return `${pluginDir.replace(/\/+$/, "")}/semantic-index/index.json`;
-}
+export {
+  SEMANTIC_INDEX_VERSION,
+  semanticIndexFile,
+  semanticIndexPath,
+  writeSemanticIndexFile,
+};
+export type { SemanticIndexFile } from "./semantic-index-format";
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw new Error("semantic indexing cancelled");
