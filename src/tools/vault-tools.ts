@@ -1,8 +1,9 @@
 import { type App, TAbstractFile, TFile, TFolder, MarkdownView, parseYaml } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { applyExactEditsPartial, type EditApplyResult } from "../vault/edit";
-import { getParentPath, normalizeFolderPath, normalizeVaultPath } from "../vault/path";
+import { normalizeFolderPath, normalizeVaultPath } from "../vault/path";
 import type { IgnoreMatcher } from "../vault/ignore";
+import { ensureVaultParentFolder } from "../vault/storage";
 import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../vault/search";
 import { alreadyReadMessage, cachedReadMessage, coveredReadMessage, type ReadMemo, type RequestedWindow } from "../vault/read-memo";
 import {
@@ -326,7 +327,7 @@ function createWriteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): A
     ...vaultToolDefinition("write"),
     execute: async (_id, params) => {
       const path = normalizeVisibleVaultPath(isIgnored, params.path);
-      await ensureParentFolders(app, path);
+      await ensureVaultParentFolder(app, path);
       const existing = app.vault.getAbstractFileByPath(path);
       if (existing instanceof TFolder) {
         throw new TypeError(`Cannot write file because a folder exists at ${path}.`);
@@ -670,7 +671,7 @@ function createRenameTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMemo): 
       if (app.vault.getAbstractFileByPath(newPath)) {
         throw new Error(`Something already exists at ${newPath}.`);
       }
-      await ensureParentFolders(app, newPath);
+      await ensureVaultParentFolder(app, newPath);
       await app.fileManager.renameFile(file, newPath);
       memo?.invalidate(path);
       memo?.invalidate(newPath);
@@ -945,34 +946,6 @@ function assertVisible(isIgnored: IgnoreMatcher, path: string): void {
   if (isIgnored(path)) throw new Error(`File not found: ${path}`);
 }
 
-async function ensureParentFolders(app: App, path: string): Promise<void> {
-  const parentPath = getParentPath(path);
-  if (!parentPath) return;
-  let currentPath = "";
-  for (const segment of parentPath.split("/").filter(Boolean)) {
-    currentPath = currentPath ? `${currentPath}/${segment}` : segment;
-    if (app.vault.getFolderByPath(currentPath)) continue;
-    // The vault tree misses dot-folders (e.g. .agentic-plugins) created
-    // outside the session; trust the adapter or createFolder throws
-    // "Folder already exists." (same guard as PluginService.ensureFolder).
-    // Folder-aware: a file at this path is a real conflict, not a skip.
-    if (await isFolderOnDisk(app, currentPath)) continue;
-    try {
-      await app.vault.createFolder(currentPath);
-    } catch (error) {
-      // Lost a race with an external sync: the folder landed after the probe.
-      // Only folder collisions are safe to absorb — a file at this path is a
-      // real conflict, and the adapter probe is type-blind (true for files).
-      if (isFolderAlreadyExistsError(error) && (await isFolderOnDisk(app, currentPath))) continue;
-      throw error;
-    }
-  }
-}
-
-function isFolderAlreadyExistsError(error: unknown): boolean {
-  return String((error as Error)?.message ?? error ?? "").toLowerCase().includes("folder already exists");
-}
-
 /** Strip edge slashes from adapter entries (loader parity: trimEdges). */
 function trimSlashes(entry: string): string {
   let start = 0;
@@ -980,17 +953,6 @@ function trimSlashes(entry: string): string {
   while (start < end && entry[start] === "/") start += 1;
   while (end > start && entry[end - 1] === "/") end -= 1;
   return entry.slice(start, end);
-}
-
-/** True when the path exists on disk as a folder (tree or adapter). */
-async function isFolderOnDisk(app: App, path: string): Promise<boolean> {
-  if (app.vault.getAbstractFileByPath(path) instanceof TFolder) return true;
-  try {
-    await app.vault.adapter.list(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function getSearchableFiles(app: App, rootPath: string, isIgnored: IgnoreMatcher): TFile[] {
