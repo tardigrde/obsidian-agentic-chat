@@ -181,14 +181,6 @@ export class McpHttpClient {
     throw lastProtocolError instanceof Error ? lastProtocolError : new Error("MCP initialize failed.");
   }
 
-  async openEventStream(signal?: AbortSignal): Promise<WebHttpResponse> {
-    const response = await this.getSseAfter(undefined, signal);
-    if (!/text\/event-stream/i.test(response.headers["content-type"] ?? "")) {
-      throw new Error(`MCP ${this.server.name} SSE stream did not return text/event-stream.`);
-    }
-    return response;
-  }
-
   async listTools(signal?: AbortSignal): Promise<McpToolDefinition[]> {
     await this.ensureInitialized(signal);
     const tools: McpToolDefinition[] = [];
