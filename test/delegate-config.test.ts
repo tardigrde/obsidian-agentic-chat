@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as config from "../scripts/delegate-config.mjs";
 import { decide, delegatePermissions, lastVerdictIsFail, recheckAllowed, wildcardMatch } from "../scripts/delegate-config.mjs";
 
 const main = "/home/u/repo";
@@ -115,3 +116,28 @@ describe("recheckAllowed", () => {
     expect(recheckAllowed([at("PASS"), at("FAIL")], head)).toBe(false);
   });
 });
+
+describe("delegate sandbox: git cannot run worker code", () => {
+  // 2026-11-13: a worker rewrote the worktree `.git` file to point at a fake git
+  // dir whose config set `core.fsmonitor` to its own script, so every allowed
+  // `git status` ran an arbitrary command.
+  it("denies edits to git metadata and npm config for workers and reviewers", () => {
+    for (const rules of [review, work]) {
+      for (const path of [".git", ".git/config", "sub/.git", "sub/.git/config", ".gitmodules", ".gitattributes", ".npmrc", "x/.npmrc"]) {
+        expect(decide(rules, "edit", path), path).toBe("deny");
+      }
+    }
+    expect(decide(work, "edit", ".gitignore")).toBe("allow");
+    expect(decide(work, "edit", "src/git-helpers.ts")).toBe("allow");
+  });
+
+  it("gives every delegate run a git config that turns off fsmonitor and hooks", () => {
+    const env = (config as { gitGuardEnv?: () => Record<string, string> }).gitGuardEnv?.() ?? {};
+    const count = Number(env.GIT_CONFIG_COUNT ?? 0);
+    const pairs = Object.fromEntries(
+      Array.from({ length: count }, (_, i) => [env[`GIT_CONFIG_KEY_${i}`], env[`GIT_CONFIG_VALUE_${i}`]]),
+    );
+    expect(pairs).toMatchObject({ "core.fsmonitor": "false", "core.hooksPath": "/dev/null" });
+  });
+});
+
