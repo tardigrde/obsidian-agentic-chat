@@ -2,7 +2,6 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../skills/skill-prompt";
 import { Type } from "typebox";
 import { SkillLoadRegistry } from "../skills/skill-load-state";
-import { estimateTokensFromChars } from "../agent/tool-budget";
 import { toolResult } from "./result";
 
 const LoadSkillParameters = Type.Object({
@@ -54,7 +53,7 @@ export function createLoadSkillTool(
         });
       }
       registry.load(skill.name);
-      const estTokens = estimateTokensFromChars(skill.content.length);
+      const estTokens = Math.ceil(skill.content.length / 4);
       return toolResult(
         `Loaded skill "${skill.name}" (~${estTokens} tok) — body now in system prompt for subsequent turns.`,
         { name: skill.name, loaded: true, loadedSkills: registry.names() },

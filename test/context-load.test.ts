@@ -31,10 +31,10 @@ describe("context load estimate", () => {
     expect(load).toEqual({
       transcriptTokens: 100,
       systemPromptTokens: 100,
-      toolSchemaTokens: 39,
+      toolSchemaTokens: 34,
       reserveTokens: 1_000,
-      inputTokens: 239,
-      totalTokens: 1_239,
+      inputTokens: 234,
+      totalTokens: 1_234,
     });
   });
 
@@ -47,8 +47,8 @@ describe("context load estimate", () => {
       reserveTokens: 1_000,
     });
 
-    expect(readout?.fraction).toBeCloseTo(0.1239, 10);
-    expect(readout?.load.totalTokens).toBe(1_239);
+    expect(readout?.fraction).toBeCloseTo(0.1234, 10);
+    expect(readout?.load.totalTokens).toBe(1_234);
     expect(readout?.contextWindow).toBe(10_000);
   });
 

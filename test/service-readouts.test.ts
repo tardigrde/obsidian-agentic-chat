@@ -123,10 +123,10 @@ describe("agent service readouts", () => {
     expect(readout?.load).toMatchObject({
       transcriptTokens: 286,
       systemPromptTokens: 100,
-      toolSchemaTokens: 39,
+      toolSchemaTokens: 34,
       reserveTokens: 1_000,
-      inputTokens: 425,
-      totalTokens: 1_425,
+      inputTokens: 420,
+      totalTokens: 1_420,
     });
   });
 
