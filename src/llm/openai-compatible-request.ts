@@ -24,6 +24,7 @@ import {
   backoffDelayMs,
   classifyError,
   classifyHttpResponse,
+  shouldRetryError,
   sleepWithAbort,
   type ClassifiedError,
 } from "../agent/error-classifier";
@@ -237,7 +238,7 @@ async function requestCompletionWithRetries(
   return attemptCompletion(0);
 }
 
-interface RetryDecision {
+export interface RetryDecision {
   classified: ClassifiedError;
   cause: unknown;
 }
@@ -256,22 +257,22 @@ async function performCompletionRequest(
   return response;
 }
 
-function responseRetryDecision(
+export function responseRetryDecision(
   response: OpenAICompatibleResponse,
   attempt: number,
   maxRetries: number,
 ): RetryDecision | undefined {
   const classified = classifyHttpResponse(response.status, response.headers, extractErrorDetail(response) || response.text);
-  if (attempt >= maxRetries || !classified.retryable) return undefined;
+  if (!shouldRetryError(classified, attempt, maxRetries)) return undefined;
   return { classified, cause: classified };
 }
 
-function errorRetryDecision(error: unknown, attempt: number, maxRetries: number): RetryDecision | undefined {
+export function errorRetryDecision(error: unknown, attempt: number, maxRetries: number): RetryDecision | undefined {
   const base = classifyError(error);
   const classified: ClassifiedError = error instanceof RequestTimeoutError
     ? { ...base, retryable: true, class: "transient" }
     : base;
-  if (attempt >= maxRetries || !classified.retryable) return undefined;
+  if (!shouldRetryError(classified, attempt, maxRetries)) return undefined;
   return { classified, cause: error };
 }
 

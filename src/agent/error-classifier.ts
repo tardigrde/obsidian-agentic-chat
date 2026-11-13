@@ -115,6 +115,10 @@ export function classifyError(error: unknown, nowMs = Date.now()): ClassifiedErr
     return { class: "resource", retryable: false, message: errorText(error) };
   }
   const rawMessage = error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
+  const explicitStatus = statusFromError(error);
+  if (explicitStatus !== undefined) {
+    return classifyStatus(explicitStatus, rawMessage, undefined, nowMs);
+  }
 
   if (/content_filter|finish_reason:\s*content_filter/i.test(rawMessage)) {
     return { class: "model", retryable: false, message: rawMessage };
@@ -124,17 +128,39 @@ export function classifyError(error: unknown, nowMs = Date.now()): ClassifiedErr
   return statusClassified ?? classifyFromMessageText(rawMessage);
 }
 
+function statusFromError(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const raw = (error as { status?: unknown; statusCode?: unknown }).status ??
+    (error as { statusCode?: unknown }).statusCode;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  return undefined;
+}
+
 function errorText(error: unknown): string {
   return errorMessage(error);
 }
 
 function classifyFromStatusText(rawMessage: string, nowMs: number): ClassifiedError | undefined {
-  const statusMatch = /(?:http\s+(\d{3})|status\s+(\d{3}))/i.exec(rawMessage);
-  const statusStr = statusMatch?.[1] ?? statusMatch?.[2];
+  const statusMatch = /(?:http\s+(\d{3})|status\s+(?:code\s+)?(\d{3})|(\d{3})\s+status\s+code|^\s*(\d{3})\b)/i.exec(rawMessage);
+  const statusStr = statusMatch?.slice(1).find((value) => value !== undefined);
   if (!statusStr) return undefined;
   const status = Number.parseInt(statusStr, 10);
   if (!Number.isFinite(status)) return undefined;
   return classifyStatus(status, rawMessage, undefined, nowMs);
+}
+
+/** The one retry decision for a classified error; engines add only their own streaming guards. */
+export function shouldRetryError(classified: ClassifiedError, attempt: number, maxRetries: number): boolean {
+  if (!classified.retryable) return false;
+  if (
+    classified.class === "aborted" ||
+    classified.class === "resource" ||
+    classified.class === "model" ||
+    classified.class === "permanent"
+  ) {
+    return false;
+  }
+  return attempt < maxRetries;
 }
 
 function classifyFromMessageText(rawMessage: string): ClassifiedError {
