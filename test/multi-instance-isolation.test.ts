@@ -10,7 +10,10 @@ import type { AgentToolCallController } from "../src/agent/tool-call-controller"
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { ReadMemo } from "../src/vault/read-memo";
 import type { WebFetcher } from "../src/tools/web-fetch";
+import { bootstrapSemanticIndex } from "../src/retrieval/semantic-index";
+import { DeterministicFakeEmbedder, MULTILINGUAL_RETRIEVAL_FIXTURE } from "./helpers/retrieval-fixtures";
 import { FakeApp } from "./helpers/fake-vault";
+import { MemoryAdapter } from "./helpers/memory-adapter";
 
 const PROFILE: AgentRole = {
   name: "researcher",
@@ -163,5 +166,55 @@ describe("multi-instance isolation", () => {
     stateA.clearSessionState();
     expect(stateA.composeSystemPrompt(settings, "model")).not.toContain(markerA);
     expect(stateB.composeSystemPrompt(settings, "model")).toContain(markerB);
+  });
+
+  it("isolates semantic index leases between two vault scopes", async () => {
+    const adapterA = new MemoryAdapter();
+    const adapterB = new MemoryAdapter();
+    const path = "semantic/index.json";
+    const scope = { kind: "folder" as const, label: "Projects", paths: ["Projects"] };
+    let releaseFirst!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const firstEmbedder = new DeterministicFakeEmbedder();
+    const embedBatch = firstEmbedder.embedBatch.bind(firstEmbedder);
+    firstEmbedder.embedBatch = async (inputs, options) => {
+      markStarted();
+      await gate;
+      return embedBatch(inputs, options);
+    };
+
+    const first = bootstrapSemanticIndex({
+      adapter: adapterA.asDataAdapter(),
+      path,
+      scope,
+      documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 1),
+      embedder: firstEmbedder,
+      batchSize: 1,
+      leaseScope: { namespace: "vault-a" },
+    } as never);
+    await started;
+
+    const second = await bootstrapSemanticIndex({
+      adapter: adapterB.asDataAdapter(),
+      path,
+      scope,
+      documents: MULTILINGUAL_RETRIEVAL_FIXTURE.slice(0, 1),
+      embedder: new DeterministicFakeEmbedder(),
+      batchSize: 1,
+      leaseScope: { namespace: "vault-b" },
+    } as never);
+
+    releaseFirst();
+    const firstResult = await first;
+
+    expect(firstResult.completed).toBe(true);
+    expect(second.leaseFailure).toBeUndefined();
+    expect(second.completed).toBe(true);
   });
 });

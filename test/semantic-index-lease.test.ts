@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bootstrapSemanticIndex,
-  semanticIndexLeases,
+  semanticIndexLeaseRegistryFor,
   SemanticIndexLeaseRegistry,
   type SemanticIndexLease,
 } from "../src/retrieval/semantic-index";
@@ -348,14 +348,16 @@ describe("post-216 semantic index workflow", () => {
     await running;
 
     expect(adapter.files.has("semantic/cancel-prepare/index.json")).toBe(false);
-    const lease = semanticIndexLeases.acquire("semantic/cancel-prepare/index.json");
+    const lease = semanticIndexLeaseRegistryFor(adapter.asDataAdapter()).acquire("semantic/cancel-prepare/index.json");
     expect(lease).not.toBeNull();
     void lease?.release();
   });
 
   it("releases the lease when the start renderer throws", async () => {
     const indexPath = "semantic/renderer-throw/index.json";
+    const adapter = new MemoryAdapter();
     const controller = controllerFor({
+      adapter,
       indexPath,
       renderer: {
         ...noopRenderer(),
@@ -367,7 +369,7 @@ describe("post-216 semantic index workflow", () => {
 
     await expect(controller.run("start folder Projects")).rejects.toThrow("render failed");
 
-    const lease = semanticIndexLeases.acquire(indexPath);
+    const lease = semanticIndexLeaseRegistryFor(adapter.asDataAdapter()).acquire(indexPath);
     expect(lease).not.toBeNull();
     void lease?.release();
   });

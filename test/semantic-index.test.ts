@@ -4,8 +4,9 @@ import { DeterministicFakeEmbedder, MULTILINGUAL_RETRIEVAL_FIXTURE } from "./hel
 import {
   bootstrapSemanticIndex,
   readSemanticIndexFile,
-  semanticIndexLeases,
+  semanticIndexLeaseRegistryFor,
   semanticIndexPath,
+  type SemanticIndexLease,
 } from "../src/retrieval/semantic-index";
 
 const scope = { kind: "folder" as const, label: "Projects", paths: ["Projects"] };
@@ -99,7 +100,7 @@ describe("semantic index bootstrap", () => {
         indexedDocumentIds: [],
       },
     });
-    const lease = semanticIndexLeases.acquire(path);
+    const lease = semanticIndexLeaseRegistryFor(adapter.asDataAdapter()).acquire(path);
     expect(lease).not.toBeNull();
     try {
       await adapter.write(path, running);
@@ -119,7 +120,7 @@ describe("semantic index bootstrap", () => {
     expect(persisted.state.status.state).toBe("failed");
 
     // Repair must release its critical-section lease.
-    const next = semanticIndexLeases.acquire(path);
+    const next = semanticIndexLeaseRegistryFor(adapter.asDataAdapter()).acquire(path);
     expect(next).not.toBeNull();
     void next?.release();
   });
@@ -160,7 +161,7 @@ describe("semantic index bootstrap", () => {
     expect(stored?.updatedAt).toBe(2_000);
     expect(adapter.files.get(path)).toBe(complete);
 
-    const next = semanticIndexLeases.acquire(path);
+    const next = semanticIndexLeaseRegistryFor(adapter.asDataAdapter()).acquire(path);
     expect(next).not.toBeNull();
     void next?.release();
   });
@@ -180,12 +181,12 @@ describe("semantic index bootstrap", () => {
     await adapter.write(path, running);
     const originalRead = adapter.read.bind(adapter);
     let reads = 0;
-    let competingLease: ReturnType<typeof semanticIndexLeases.acquire> | undefined;
+    let competingLease: SemanticIndexLease | null | undefined;
     adapter.read = async (target) => {
       const content = await originalRead(target);
       if (target === path) {
         reads += 1;
-        if (reads === 2) competingLease = semanticIndexLeases.acquire(path);
+        if (reads === 2) competingLease = semanticIndexLeaseRegistryFor(adapter.asDataAdapter()).acquire(path);
       }
       return content;
     };
@@ -194,7 +195,7 @@ describe("semantic index bootstrap", () => {
 
     expect(stored?.state.status.state).toBe("failed");
     expect(competingLease).toBeNull();
-    const after = semanticIndexLeases.acquire(path);
+    const after = semanticIndexLeaseRegistryFor(adapter.asDataAdapter()).acquire(path);
     expect(after).not.toBeNull();
     void after?.release();
   });

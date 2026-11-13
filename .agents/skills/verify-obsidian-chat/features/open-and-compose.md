@@ -48,10 +48,10 @@ await $(".agentic-chat-send").click();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Ribbon icon | `src/main.ts:103` | no committed check | `NONE` |
-| Command palette: Open chat | `src/main.ts:105` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
-| Command palette: New conversation | `src/main.ts:112` | `test/session-actions.test.ts:153` (unit only) | `partial` |
-| Command palette: Quick Ask inline edit | `src/main.ts:117` | `test/e2e/specs/smoke.e2e.ts:214` | `covered` |
+| Ribbon icon | `src/main.ts:111` | no committed check | `NONE` |
+| Command palette: Open chat | `src/main.ts:114` | `test/e2e/specs/smoke.e2e.ts:45` | `covered` |
+| Command palette: New conversation | `src/main.ts:120` | `test/session-actions.test.ts:153` (unit only) | `partial` |
+| Command palette: Quick Ask inline edit | `src/main.ts:126` | `test/e2e/specs/smoke.e2e.ts:214` | `covered` |
 | Editor selection context menu | `src/main.ts:173` | no committed check | `NONE` |
 | File context menu | `src/main.ts:178` | no committed check | `NONE` |
 | Files context menu (multi-select) | `src/main.ts:183` | no committed check | `NONE` |
