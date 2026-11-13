@@ -25,10 +25,10 @@ const lanes = {
     step("typecheck", NODE, [TSC7, "-noEmit"]),
     step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
     step("lint", bin("eslint"), ["."]),
-    step("lint:obsidian", bin("eslint"), ["-c", "eslint.config.obsidian.mjs", "--max-warnings", "0", "src"]),
+    step("lint:obsidian", bin("eslint"), ["-c", "config/eslint.obsidian.mjs", "--max-warnings", "0", "src"]),
     step("feature map", NODE, ["scripts/check-feature-map.mjs"]),
     step("unit tests", bin("vitest"), ["run"], { expectTests: true }),
-    step("production bundle", NODE, ["esbuild.config.mjs", "production"]),
+    step("production bundle", NODE, ["scripts/build.mjs", "production"]),
     step("release verification", NODE, ["scripts/verify-release.mjs"]),
     step("mobile compatibility", NODE, ["scripts/verify-mobile-compat.mjs"]),
     step("smoke e2e", NODE, ["--import", "tsx", "scripts/run-e2e.ts", "--spec", SMOKE_SPEC], {
@@ -40,12 +40,12 @@ const lanes = {
   ci: () => [
     step("typecheck", NODE, [TSC7, "-noEmit"]),
     step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
-    step("scripts typecheck", NODE, [TSC7, "-p", "tsconfig.eslint.json", "--noEmit"]),
+    step("scripts typecheck", NODE, [TSC7, "-p", "config/tsconfig.eslint.json", "--noEmit"]),
     step("lint", bin("eslint"), ["."]),
-    step("lint:obsidian", bin("eslint"), ["-c", "eslint.config.obsidian.mjs", "--max-warnings", "0", "src"]),
+    step("lint:obsidian", bin("eslint"), ["-c", "config/eslint.obsidian.mjs", "--max-warnings", "0", "src"]),
     step("feature map", NODE, ["scripts/check-feature-map.mjs"]),
     step("unit tests + coverage report", bin("vitest"), ["run", "--coverage"], { expectTests: true }),
-    step("production bundle", NODE, ["esbuild.config.mjs", "production"]),
+    step("production bundle", NODE, ["scripts/build.mjs", "production"]),
   ],
 
   // Upgrade lane (#290): load each captured release's data.json and sessions
@@ -57,19 +57,19 @@ const lanes = {
   cloud: () => [
     step("typecheck", NODE, [TSC7, "-noEmit"]),
     step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
-    step("scripts typecheck", NODE, [TSC7, "-p", "tsconfig.eslint.json", "--noEmit"]),
+    step("scripts typecheck", NODE, [TSC7, "-p", "config/tsconfig.eslint.json", "--noEmit"]),
     step("lint", bin("eslint"), ["."]),
-    step("lint:obsidian", bin("eslint"), ["-c", "eslint.config.obsidian.mjs", "--max-warnings", "0", "src"]),
+    step("lint:obsidian", bin("eslint"), ["-c", "config/eslint.obsidian.mjs", "--max-warnings", "0", "src"]),
     step("feature map", NODE, ["scripts/check-feature-map.mjs"]),
     step("unit tests", bin("vitest"), ["run"], { expectTests: true }),
-    step("production bundle", NODE, ["esbuild.config.mjs", "production"]),
+    step("production bundle", NODE, ["scripts/build.mjs", "production"]),
     step("release verification", NODE, ["scripts/verify-release.mjs"]),
     step("mobile compatibility", NODE, ["scripts/verify-mobile-compat.mjs"]),
     step("witness self-test", NODE, ["scripts/verify-witness.mjs", "--self-test"]),
   ],
 
   smoke: () => [
-    step("production bundle", NODE, ["esbuild.config.mjs", "production"]),
+    step("production bundle", NODE, ["scripts/build.mjs", "production"]),
     step("smoke e2e", NODE, ["--import", "tsx", "scripts/run-e2e.ts", "--spec", SMOKE_SPEC], {
       expectTests: true,
       explainE2eSandboxFailure: true,

@@ -83,7 +83,7 @@ function watchStaticArtifacts(): void {
 }
 
 async function runEsbuildWatch(): Promise<void> {
-  const child = spawn(process.execPath, ["esbuild.config.mjs"], {
+  const child = spawn(process.execPath, ["scripts/build.mjs"], {
     cwd: root,
     env: { ...process.env, AGENTIC_CHAT_OUTFILE: path.join(pluginDir, "main.js") },
     stdio: "inherit",

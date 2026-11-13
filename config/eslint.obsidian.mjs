@@ -24,7 +24,6 @@ export default defineConfig([
       ".obsidian-cache/**",
       "test/**",
       "scripts/**",
-      "esbuild.config.mjs",
       "src/vendor/**",
     ],
   },

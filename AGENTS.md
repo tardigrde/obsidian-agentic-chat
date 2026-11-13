@@ -107,7 +107,7 @@ possible, and tails session JSONL plus e2e artifacts. Use
 
 ## Worktrees
 
-One task, one branch, one worktree. `worktree-links` names the local-only files
+One task, one branch, one worktree. `config/worktree-links` names the local-only files
 to symlink, so `.env` is never copied.
 
 ```bash

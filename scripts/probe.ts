@@ -263,7 +263,7 @@ async function runProbe(options: Options, ffmpegPath: string, xvfbPath: string |
   try {
     if (!options.noBuild) {
       process.stdout.write(`[probe] building ${options.live ? "production" : "e2e"} bundle\n`);
-      if (options.live) await run(process.execPath, ["esbuild.config.mjs", "production"]);
+      if (options.live) await run(process.execPath, ["scripts/build.mjs", "production"]);
       else await run(process.execPath, ["scripts/build-e2e.mjs"]);
     }
 
@@ -345,7 +345,7 @@ async function finalize(options: Options, result: ProbeRun, ffmpegPath: string):
 
     if (!options.noBuild && !options.live) {
       process.stdout.write("[probe] restoring the production bundle\n");
-      await run(process.execPath, ["esbuild.config.mjs", "production"]).catch(() => undefined);
+      await run(process.execPath, ["scripts/build.mjs", "production"]).catch(() => undefined);
     }
   } finally {
     if (result.xvfb && !options.keepDisplay) await stopProcess(result.xvfb, "SIGTERM");

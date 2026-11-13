@@ -12,7 +12,7 @@ export default tseslint.config(
     ignores: [
       "main.js",
       "node_modules/**",
-      "esbuild.config.mjs",
+      "scripts/build.mjs",
       "docs/.vitepress/cache/**",
       "docs/.vitepress/dist/**",
       "logs/**",
@@ -117,7 +117,7 @@ export default tseslint.config(
     ],
     languageOptions: {
       parserOptions: {
-        project: ["./tsconfig.eslint.json", "./tsconfig.e2e.json"],
+        project: ["./config/tsconfig.eslint.json", "./tsconfig.e2e.json"],
         tsconfigRootDir,
       },
     },
