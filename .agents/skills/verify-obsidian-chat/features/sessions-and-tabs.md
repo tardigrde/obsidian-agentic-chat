@@ -55,7 +55,7 @@ await $(".agentic-chat-session-list").waitForExist();
 | Rename a conversation | `src/ui/session-list-modal.ts:143` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Delete a conversation | `src/ui/session-list-modal.ts:112` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Clear all conversations | `src/ui/session-workflow-controller.ts:20` | `test/session-workflow-controller.test.ts:121` (unit only) | `partial` |
-| `/export` | `src/ui/chat-view.ts:1881` | `test/session-export.test.ts:31` (renderer only) | `partial` |
+| `/export` | `src/ui/chat-view.ts:1981` | `test/session-export.test.ts:31` (renderer only) | `partial` |
 | Reload a persisted session | `src/ui/chat-view.ts:1992` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | Send waits for an in-flight session swap | `src/agent/session-actions.ts:63` | `test/agent-service.test.ts:1133` | `partial` |
 | Failed swap restores the previous session or recovers on next send | `src/agent/session-actions.ts:273` | `test/session-actions.test.ts:242`; `test/session-actions.test.ts:267` | `partial` |

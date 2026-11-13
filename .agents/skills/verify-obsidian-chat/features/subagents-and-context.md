@@ -43,7 +43,7 @@ await $(".agentic-chat-action-list").waitForExist();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| `/agent` with no argument (picker) | `src/ui/chat-view.ts:1877` | no committed check | `NONE` |
+| `/agent` with no argument (picker) | `src/ui/chat-view.ts:1870` | no committed check | `NONE` |
 | `/agent <name> <task>` | `src/ui/chat-view.ts:1851` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
 | Model calls the `subagent` tool | `src/tools/subagent-tool.ts:112` | `test/subagents.test.ts:323` (unit only) | `partial` |
 | Built-in Explorer role | `src/agent/subagents.ts:34` | `test/subagent-runtime.test.ts:147` (unit only) | `partial` |
