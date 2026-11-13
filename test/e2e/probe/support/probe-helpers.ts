@@ -1,5 +1,13 @@
 import { $, browser } from "@wdio/globals";
 import { focusMainWindow, focusSettingsWindow } from "../../support/settings-ui";
+import {
+  installScriptedTurns,
+  waitForScriptedCalls,
+  type ScriptedTurn,
+} from "../../support/scripted-stream";
+
+export { installScriptedTurns, waitForScriptedCalls };
+export type { ScriptedTurn };
 
 export type ProbeSettings = {
   provider?: string;
@@ -12,13 +20,6 @@ export type ProbeSettings = {
   mode?: string;
   approval?: { mutating?: string; perTool?: Record<string, string> };
   web?: { enabled?: boolean };
-};
-
-export type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "length" | "toolUse";
-  delayMs?: number;
 };
 
 export async function openChat(): Promise<void> {
@@ -62,33 +63,6 @@ export async function configurePlugin(patch: ProbeSettings): Promise<void> {
   }, patch);
 
   if (!configured) throw new Error("agentic-chat plugin not found in the test vault");
-}
-
-export async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-  }, turns);
-}
-
-export async function scriptedCallCount(): Promise<number> {
-  return await browser.execute(() => {
-    const target = window as typeof window & { __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[] };
-    return target.__AGENTIC_CHAT_E2E_CALL_LOG__?.length ?? 0;
-  });
-}
-
-export async function waitForScriptedCalls(count: number, timeout = 15_000): Promise<void> {
-  await browser.waitUntil(async () => (await scriptedCallCount()) >= count, {
-    timeout,
-    timeoutMsg: `expected at least ${count} scripted turns, got ${await scriptedCallCount()}`,
-  });
 }
 
 export async function readApprovalPerTool(tool: string): Promise<string | undefined> {

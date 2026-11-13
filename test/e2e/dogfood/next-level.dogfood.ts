@@ -6,6 +6,14 @@ import {
   writeDogfoodRunReport,
   type DogfoodManifest,
 } from "../../../scripts/dogfood-core";
+import {
+  clearScriptedTurns,
+  installScriptedTurns,
+  scriptedCallLabels,
+  textTurn,
+  toolBatch,
+  type ScriptedTurn,
+} from "../support/scripted-stream";
 
 const TURN_TIMEOUT_MS = Number(process.env.DOGFOOD_TURN_TIMEOUT_MS || 120_000);
 const MANIFEST_PATH = process.env.DOGFOOD_FIXTURE_MANIFEST?.trim() ?? "";
@@ -19,30 +27,10 @@ const BATCH_SECOND_ALLOWED_PATH = "Generated/Batch Second.md";
 const NEW_SESSION_CONTINUATION_PATH = "Generated/New Session Continuation.md";
 const EMPTY_FOLDER_DELETE_PATH = "Generated/Empty Folder Delete";
 
-type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "length" | "toolUse" | "error" | "aborted";
-  delayMs?: number;
-  usage?: Record<string, unknown>;
-};
-
 type SettingsPlugin = {
   settings?: Record<string, unknown>;
   saveSettings?: () => Promise<void>;
 };
-
-function textTurn(label: string, text: string): ScriptedTurn {
-  return { label, stopReason: "stop", content: [{ type: "text", text }] };
-}
-
-function toolBatch(label: string, calls: Array<{ id: string; name: string; args: Record<string, unknown> }>): ScriptedTurn {
-  return {
-    label,
-    stopReason: "toolUse",
-    content: calls.map((call) => ({ type: "toolCall", id: call.id, name: call.name, arguments: call.args })),
-  };
-}
 
 function scriptedTurns(): ScriptedTurn[] {
   return [
@@ -231,19 +219,6 @@ function scriptedTurns(): ScriptedTurn[] {
     ]),
     textTurn("new session continuation final", "New session continuation complete."),
   ];
-}
-
-async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-  }, turns);
 }
 
 async function configurePlugin(manifest: DogfoodManifest): Promise<boolean> {
@@ -503,15 +478,6 @@ async function readNote(path: string): Promise<string> {
   }, path);
 }
 
-async function scriptedCallLabels(): Promise<string[]> {
-  return await browser.execute(() => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: Array<{ label?: string }>;
-    };
-    return target.__AGENTIC_CHAT_E2E_CALL_LOG__?.map((call) => call.label ?? "") ?? [];
-  });
-}
-
 describe("agentic-chat next-level dogfood", function () {
   let manifest: DogfoodManifest;
 
@@ -714,15 +680,6 @@ describe("agentic-chat next-level dogfood", function () {
 
   after(async function () {
     await restoreSafeSettings().catch(() => undefined);
-    await browser.execute(() => {
-      const target = window as typeof window & {
-        __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-        __AGENTIC_CHAT_E2E_CALLS__?: number;
-        __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-      };
-      delete target.__AGENTIC_CHAT_E2E_TURNS__;
-      delete target.__AGENTIC_CHAT_E2E_CALLS__;
-      delete target.__AGENTIC_CHAT_E2E_CALL_LOG__;
-    });
+    await clearScriptedTurns();
   });
 });

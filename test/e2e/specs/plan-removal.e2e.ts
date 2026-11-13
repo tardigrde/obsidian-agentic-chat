@@ -1,36 +1,12 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
 import { waitForComposerReady } from "../support/layout";
-
-type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "length" | "toolUse";
-};
-
-function textTurn(label: string, text: string): ScriptedTurn {
-  return { label, stopReason: "stop", content: [{ type: "text", text }] };
-}
+import { installScriptedTurns, releaseScriptedTurns, textTurn } from "../support/scripted-stream";
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
   await $(".agentic-chat-view").waitForExist();
   await waitForComposerReady();
-}
-
-async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-      __AGENTIC_CHAT_E2E_RELEASE__?: boolean;
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-    target.__AGENTIC_CHAT_E2E_RELEASE__ = false;
-  }, turns);
 }
 
 async function configurePlugin(): Promise<boolean> {
@@ -85,10 +61,7 @@ describe("agentic-chat plan mode removal", function () {
   });
 
   after(async function () {
-    await browser.execute(() => {
-      const target = window as typeof window & { __AGENTIC_CHAT_E2E_RELEASE__?: boolean };
-      target.__AGENTIC_CHAT_E2E_RELEASE__ = true;
-    });
+    await releaseScriptedTurns(true);
   });
 
   it("keeps `/plan` out of help and the composer", async function () {

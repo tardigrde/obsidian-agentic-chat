@@ -55,8 +55,8 @@ await $(".agentic-chat-info").waitForExist();
 | `/compact` | `src/ui/commands.ts:36` | `test/e2e/specs/smoke.e2e.ts:73` | `covered` |
 | `/memory` | `src/ui/commands.ts:30` | `test/e2e/specs/smoke.e2e.ts:135` | `covered` |
 | `/status` | `src/ui/commands.ts:29` | `test/e2e/specs/runtime-behavior.e2e.ts:228` | `covered` |
-| `/plan` removed | `src/ui/commands.ts:25` | `test/e2e/specs/plan-removal.e2e.ts:95` | `covered` |
-| `/undo` | `src/ui/commands.ts:38` | `test/e2e/specs/approval-deterministic.e2e.ts:319` | `covered` |
+| `/plan` removed | `src/ui/commands.ts:25` | `test/e2e/specs/plan-removal.e2e.ts:67` | `covered` |
+| `/undo` | `src/ui/commands.ts:38` | `test/e2e/specs/approval-deterministic.e2e.ts:253` | `covered` |
 | `/sessions` | `src/ui/commands.ts:27` | `test/e2e/specs/runtime-behavior.e2e.ts:165` | `covered` |
 | `/new` | `src/ui/commands.ts:26` | `test/session-actions.test.ts:153` (unit only) | `partial` |
 | Alias-free command lookup | `src/ui/commands.ts:56` | `test/commands.test.ts:62` (unit only) | `partial` |

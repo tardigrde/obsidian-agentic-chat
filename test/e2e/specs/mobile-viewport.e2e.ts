@@ -1,6 +1,7 @@
 import { $, browser, expect } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
 import { waitForComposerReady } from "../support/layout";
+import { installScriptedTurns, textTurn, toolTurn } from "../support/scripted-stream";
 import { openAgenticChatSettings, closeAgenticChatSettings, selectSettingsTab, waitForSetting } from "../support/settings-ui";
 
 const VIEW_TYPE_AGENT_CHAT = "agentic-chat-chat-view";
@@ -8,28 +9,6 @@ const MOBILE_WIDTH = Number(process.env.AGENTIC_CHAT_E2E_VIEWPORT_WIDTH || 390);
 const MOBILE_HEIGHT = Number(process.env.AGENTIC_CHAT_E2E_VIEWPORT_HEIGHT || 844);
 const MOBILE_WRITE_PATH = "Mobile/E2E-Mobile-Approval.md";
 const MOBILE_WRITE_BODY = "mobile approval write ok";
-
-type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "length" | "toolUse";
-};
-
-function toolTurn(label: string, id: string, name: string, args: Record<string, unknown>): ScriptedTurn {
-  return {
-    label,
-    stopReason: "toolUse",
-    content: [{ type: "toolCall", id, name, arguments: args }],
-  };
-}
-
-function textTurn(label: string, text: string): ScriptedTurn {
-  return {
-    label,
-    stopReason: "stop",
-    content: [{ type: "text", text }],
-  };
-}
 
 async function setMobileViewport(): Promise<void> {
   const cdpBrowser = browser as typeof browser & {
@@ -78,19 +57,6 @@ async function closeOpenModals(): Promise<void> {
     for (const close of Array.from(document.querySelectorAll<HTMLElement>(".modal-close-button"))) close.click();
     for (const backdrop of Array.from(document.querySelectorAll<HTMLElement>(".modal-bg"))) backdrop.click();
   });
-}
-
-async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-  }, turns);
 }
 
 async function seedMobileState(): Promise<void> {

@@ -1,31 +1,12 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
+import { clearScriptedTurns, installScriptedTurns } from "../support/scripted-stream";
 
 const MULTI_TAB_WRITE_PATH = "E2E-Multi-Tab-Write.md";
-
-type ScriptedTurn = {
-  label?: string;
-  content: Array<Record<string, unknown>>;
-  stopReason?: "stop" | "toolUse";
-  delayMs?: number;
-};
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
   await $(".agentic-chat-view").waitForExist();
-}
-
-async function installScriptedTurns(turns: ScriptedTurn[]): Promise<void> {
-  await browser.execute((scriptedTurns) => {
-    const target = window as typeof window & {
-      __AGENTIC_CHAT_E2E_TURNS__?: ScriptedTurn[];
-      __AGENTIC_CHAT_E2E_CALLS__?: number;
-      __AGENTIC_CHAT_E2E_CALL_LOG__?: unknown[];
-    };
-    target.__AGENTIC_CHAT_E2E_TURNS__ = scriptedTurns;
-    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
-    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
-  }, turns);
 }
 
 async function configureSafe(): Promise<void> {
@@ -199,9 +180,6 @@ describe("multi-tab background approval (effort + notify+label)", function () {
         if (f instanceof obsidian.TFile || f instanceof obsidian.TFolder) await app.vault.trash(f, true);
       }
     }, [MULTI_TAB_WRITE_PATH, "E2E-Multi-Tab-Close.md"]);
-    await browser.execute(() => {
-      const t = window as typeof window & { __AGENTIC_CHAT_E2E_TURNS__?: unknown };
-      delete t.__AGENTIC_CHAT_E2E_TURNS__;
-    });
+    await clearScriptedTurns();
   });
 });
