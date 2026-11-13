@@ -1,6 +1,6 @@
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { formatSourceReference } from "./citations";
-import { formatFrontmatterScalar, parseFrontmatterFields } from "./frontmatter";
+import { formatFrontmatterScalar, parseFrontmatterFields } from "../vault/frontmatter";
 import { legacyStableTextHash, stableTextHash } from "./source-hash";
 import { resolveSourceArtifact, type SourceArtifactCacheValue } from "./source-ingest";
 

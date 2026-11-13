@@ -1,5 +1,5 @@
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
-import { formatFrontmatterScalar, parseFrontmatterFields } from "./frontmatter";
+import { formatFrontmatterScalar, parseFrontmatterFields } from "../vault/frontmatter";
 import { stableTextHash } from "./source-hash";
 import {
   chunkSourceText,
