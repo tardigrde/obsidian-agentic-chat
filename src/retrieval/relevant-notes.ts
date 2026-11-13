@@ -1,5 +1,6 @@
 import type { App, TFile } from "obsidian";
 import type { IgnoreMatcher } from "../vault/ignore";
+import { normalizeLookupPath } from "../vault/path";
 import { splitFrontmatter } from "../vault/frontmatter";
 import type { RetrievalDocument } from "./policy";
 
@@ -132,6 +133,4 @@ function normalizeTag(value: string): string {
   return value.trim().replace(/^#/, "").toLowerCase();
 }
 
-function normalizePath(path: string): string {
-  return path.trim().replaceAll("\\", "/").replace(/^\/+/, "").replace(/\/+/g, "/").toLowerCase();
-}
+export const normalizePath = normalizeLookupPath;

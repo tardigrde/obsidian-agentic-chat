@@ -23,7 +23,7 @@ import {
   McpOAuthObsidianCallbackBridge,
   type McpOAuthCallbackReceiver,
 } from "./mcp/oauth";
-import { ObsidianSessionManager } from "./session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "./session/session-manager";
 import { initPricingCache } from "./llm/pricing-cache";
 import { ApprovalModal } from "./ui/approval-modal";
 import { ChatView } from "./ui/chat-view";
@@ -42,6 +42,7 @@ export default class AgenticChatPlugin extends Plugin {
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
   private lastSyncedMode: AgentMode | null = null;
   private secretStore!: ObsidianSecretStore;
+  private readonly sessionWriteRegistry = new SessionWriteRegistry();
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
   readonly pluginService = new PluginService(
     this.app,
@@ -149,7 +150,7 @@ export default class AgenticChatPlugin extends Plugin {
     askUser?: AskUserHandler;
     confirmToolCall?: (request: ToolApprovalRequest, signal?: AbortSignal) => Promise<UserApprovalChoice>;
   } = {}): AgentService {
-    const sessionManager = ObsidianSessionManager.forPlugin(this.app, this);
+    const sessionManager = ObsidianSessionManager.forPlugin(this.app, this, this.sessionWriteRegistry);
     return new AgentService({
       app: this.app,
       getSettings: () => this.settings,

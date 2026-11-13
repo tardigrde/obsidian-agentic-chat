@@ -170,6 +170,49 @@ const ignore = (...paths: string[]): IgnoreMatcher => {
   return (path) => set.has(path);
 };
 
+describe("vault tool surface", () => {
+  it("pins tool names, order, and parameter keys", () => {
+    const tools = createVaultTools({} as App, undefined, undefined, { surface: "compat" });
+    const shapes = tools.map((tool) => ({
+      name: tool.name,
+      keys: Object.keys((tool.parameters as { properties: Record<string, unknown> }).properties),
+    }));
+
+    expect(shapes).toEqual([
+      { name: "read", keys: ["path", "startLine", "endLine", "offset", "limit"] },
+      {
+        name: "vault_inspect",
+        keys: [
+          "action",
+          "path",
+          "query",
+          "kind",
+          "includeContent",
+          "includeSelection",
+          "caseSensitive",
+          "regex",
+          "maxResults",
+          "maxMatches",
+        ],
+      },
+      { name: "write", keys: ["path", "content"] },
+      { name: "edit", keys: ["path", "edits"] },
+      { name: "ls", keys: ["path"] },
+      { name: "search", keys: ["query", "kind", "path", "caseSensitive", "regex", "maxResults", "maxMatches"] },
+      { name: "find", keys: ["pattern", "maxResults"] },
+      { name: "grep", keys: ["pattern", "path", "caseSensitive", "regex", "maxMatches"] },
+      { name: "get_active_note", keys: ["includeContent", "includeSelection"] },
+      { name: "rename", keys: ["path", "newPath"] },
+      { name: "delete", keys: ["path", "recursive"] },
+      { name: "get_backlinks", keys: ["path"] },
+      { name: "get_links", keys: ["path"] },
+      { name: "local_graph", keys: ["path"] },
+      { name: "get_properties", keys: ["path"] },
+      { name: "set_properties", keys: ["path", "properties"] },
+    ]);
+  });
+});
+
 describe("MUTATING_TOOLS", () => {
   it("includes set_properties but not the read-only graph/property tools", () => {
     expect(MUTATING_TOOLS.has("set_properties")).toBe(true);

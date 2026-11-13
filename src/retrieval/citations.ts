@@ -163,7 +163,7 @@ function normalizeFragment(fragment: string): NoteSourceFragment | null {
   return heading ? { type: "heading", value: heading } : null;
 }
 
-function normalizeNotePath(value: string): string | undefined {
+export function normalizeNotePath(value: string): string | undefined {
   const path = value
     .trim()
     .replaceAll("\\", "/")
