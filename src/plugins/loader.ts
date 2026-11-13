@@ -7,6 +7,7 @@ import {
   type McpServerSettings,
   type McpServerState,
 } from "../mcp/settings";
+import { clearAuthForUrlChange } from "../mcp/server-state";
 import { parseSkillMarkdown } from "../skills/skill-format";
 import { sha256Hex } from "../utils/sha256";
 import {
@@ -349,18 +350,9 @@ export function resolveMcpServers(
     if (state) {
       // mcp.json moved the URL: never replay tokens, tools, or a challenge minted
       // for the old host, even before the settings reconcile persists the clear.
-      const effective =
-        state.lastUrl && state.lastUrl !== server.url
-          ? {
-              ...state,
-              authHeaderValue: "",
-              oauth: { ...state.oauth, accessToken: "", refreshToken: "", expiresAt: 0 },
-              knownTools: [],
-              lastUrl: server.url,
-              pendingOAuthChallenge: undefined,
-              pendingOAuthResourceUrl: undefined,
-            }
-          : state;
+      const urlChanged = Boolean(state.lastUrl && state.lastUrl !== server.url);
+      const effective = urlChanged ? clearAuthForUrlChange({ ...state }) : state;
+      if (urlChanged) effective.lastUrl = server.url;
       const copy: McpServerSettings = { ...server, oauth: { ...server.oauth }, knownTools: [...server.knownTools] };
       applyMcpServerState(copy, effective);
       return copy;

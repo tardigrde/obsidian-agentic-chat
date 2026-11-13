@@ -1,6 +1,7 @@
 import { type App, type DataAdapter, TFolder } from "obsidian";
 import { type AgenticChatSettings } from "../settings-schema";
 import { createMcpServerState, normalizeMcpServerId } from "../mcp/settings";
+import { pruneMcpState } from "../mcp/server-state";
 import { clearMcpPerToolApprovals } from "../agent/approval";
 import { BUILTIN_SKILL_DOCS } from "../skills/builtin-skills";
 import { ensureVaultFolder, ensureVaultParentFolder } from "../vault/storage";
@@ -111,19 +112,11 @@ export class PluginService {
 
   private pruneOrphanPluginSettings(settings: AgenticChatSettings): boolean {
     const aliveIds = new Set(this.cache!.flatMap((p) => p.mcpServers.map((s) => s.id)));
-    // Keep mcpState for ids still owned by a legacy user server — matches
-    // settings.ts reconcile guard (prevents collision over-delete).
+    // Keep mcpState for ids still owned by a legacy user server — one prune
+    // rule with the settings-tab guard (prevents collision over-delete).
     const isLegacyUserId = (id: string): boolean =>
       settings.mcp.servers.some((server) => server.id === id && server.source !== "plugin");
-    const deletedMcpIds = Object.keys(settings.plugins.mcpState).filter((id) => !aliveIds.has(id) && !isLegacyUserId(id));
-    let mutated = deletedMcpIds.length > 0;
-    for (const id of deletedMcpIds) {
-      delete settings.plugins.mcpState[id];
-      clearMcpPerToolApprovals(settings.approval, id);
-    }
-    // Also prune perTool for deleted ids that had no mcpState entry but still have approvals (best-effort)
-    // — use the full deleted set without legacy guard filtered above? No, respect guard.
-    // Already handled for deletedMcpIds above; legacy ids retain their perTool intentionally.
+    let mutated = pruneMcpState(settings, aliveIds, isLegacyUserId);
     const aliveNames = new Set(this.cache!.map((p) => p.name));
     for (const name of Object.keys(settings.plugins.enabled)) {
       if (!aliveNames.has(name)) {
