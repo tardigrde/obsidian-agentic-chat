@@ -223,4 +223,40 @@ describe("ToolArtifactStore", () => {
     await expect(store.listArtifacts()).resolves.toEqual([]);
     expect(await adapter.exists(".obsidian/plugins/agentic-chat/artifacts/orphan.txt")).toBe(false);
   });
+
+  it("keeps adapter calls small across repeated writes and lookups", async () => {
+    const adapter = new MemoryAdapter();
+    let calls = 0;
+    const tracked = new Proxy(adapter.asDataAdapter(), {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver) as unknown;
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          calls += 1;
+          return (value as (...inner: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+    const store = new ToolArtifactStore(tracked, ".obsidian/plugins/agentic-chat/artifacts", {
+      maxArtifactCount: 200,
+    });
+
+    for (let index = 0; index < 10; index += 1) {
+      await store.writeArtifact({
+        label: `artifact ${index}`,
+        sourceToolName: "tool",
+        text: `text ${index}`,
+        dedupKey: `dedupe-${index}`,
+      });
+    }
+    for (let index = 0; index < 10; index += 1) {
+      await expect(store.findArtifactByDedupKey(`dedupe-${index}`)).resolves.toMatchObject({
+        text: `text ${index}`,
+      });
+    }
+    const listed = await store.listArtifacts();
+
+    expect(listed).toHaveLength(10);
+    expect(calls).toBeLessThan(150);
+  });
 });
