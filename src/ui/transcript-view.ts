@@ -157,17 +157,31 @@ export class TranscriptView {
       // stopped subagent dispatch must render red here too, not green.
       if (result) bubble.endStep(call.id, result.text, result.isError, { details: result.details });
     }
+    this.applyAssistantMessage(bubble, message, { canRetry: isLast });
+  }
+
+  /**
+   * One renderer for the settled part of an assistant turn. The live stream and
+   * history replay call this with the same message, so finalize, error, and
+   * usage handling cannot drift. `canRetry` is the caller's policy: history only
+   * offers it on the last turn; the live path always does.
+   */
+  private applyAssistantMessage(
+    bubble: AssistantBubble,
+    message: AgentMessage,
+    options: { canRetry: boolean },
+  ): void {
     const text = messageText(message);
     if (text) {
       void bubble.finalizeText(text, this.host.app, this.host.component);
-      bubble.showActions({ canRetry: isLast });
+      bubble.showActions({ canRetry: options.canRetry });
     } else {
       bubble.finalizeWithoutText();
     }
     const errorMessage = (message as { errorMessage?: string }).errorMessage;
     if (errorMessage) {
       bubble.showError(errorMessage);
-      if (isLast) this.lastBubbleError = errorMessage;
+      if (options.canRetry) this.lastBubbleError = errorMessage;
     }
     const usage = assistantUsage(message);
     if (usage) {
@@ -270,22 +284,7 @@ export class TranscriptView {
   finalizeBubble(message: AgentMessage): void {
     const bubble = this.bubble;
     if (!bubble) return;
-    const text = messageText(message);
-    if (text) {
-      void bubble.finalizeText(text, this.host.app, this.host.component);
-      bubble.showActions({ canRetry: true });
-    } else {
-      bubble.finalizeWithoutText();
-    }
-    const errorMessage = (message as { errorMessage?: string }).errorMessage;
-    if (errorMessage) {
-      bubble.showError(errorMessage);
-      this.lastBubbleError = errorMessage;
-    }
-    const usage = assistantUsage(message);
-    if (usage) {
-      this.lastTurnUsage = usage;
-    }
+    this.applyAssistantMessage(bubble, message, { canRetry: true });
   }
 
   private newBubble(): AssistantBubble {

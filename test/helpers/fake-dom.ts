@@ -210,6 +210,17 @@ export class FakeElement {
     this.listeners.set(name, list);
   }
 
+  /** Stable structural snapshot for equality checks. */
+  snapshot(): string {
+    const attrs = [...this.attributes.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, value]) => `${name}=${JSON.stringify(value)}`)
+      .join(",");
+    const classes = [...this.classes].sort().join(".");
+    const children = this.children.map((child) => child.snapshot()).join("");
+    return `${this.localName}.${classes}[${attrs}](${JSON.stringify(this.ownText)}${children})`;
+  }
+
   focus(): void {
     // Focus is not tracked; tests only need the call to exist.
   }
