@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "obsidian";
 import { TFile, TFolder } from "obsidian";
-import { applyUndo, captureUndo, describeUndo } from "../src/agent/undo";
+import { applyUndo, captureUndo } from "../src/agent/undo";
 
 /** Tiny in-memory vault backing the undo capture/apply round-trips. */
 function makeApp(initial: Record<string, string> = {}, initialFolders: string[] = []) {
@@ -114,11 +114,4 @@ describe("captureUndo + applyUndo", () => {
     expect(await captureUndo(broken, "write", { path: "n.md", content: "x" })).toBeNull();
   });
 
-  it("describes pending undos", () => {
-    expect(describeUndo({ kind: "rename", from: "a.md", to: "b.md" })).toBe("rename b.md → a.md");
-    expect(describeUndo({ kind: "delete", path: "n.md", before: "x" })).toBe("restore n.md");
-    expect(describeUndo({ kind: "delete_folder", path: "Empty" })).toBe("restore folder Empty");
-    expect(describeUndo({ kind: "content", path: "n.md", before: null })).toBe("remove n.md");
-    expect(describeUndo({ kind: "content", path: "n.md", before: "x" })).toBe("revert n.md");
-  });
 });

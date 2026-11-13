@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildRetrievalLanguagePolicy,
   createScopedIndexState,
-  DEFAULT_RETRIEVAL_SIGNALS,
   estimateEmbeddingIndexCost,
   formatRetrievalIndexStatus,
   normalizeLanguageCode,
@@ -20,27 +18,6 @@ const folderScope: RetrievalIndexScope = {
   label: "Projects",
   paths: ["Projects"],
 };
-
-describe("retrieval signal policy", () => {
-  it("keeps semantic retrieval optional while lexical and graph signals work without an index", () => {
-    const semantic = DEFAULT_RETRIEVAL_SIGNALS.find((signal) => signal.kind === "semantic");
-    const nonIndexedSignals = DEFAULT_RETRIEVAL_SIGNALS.filter((signal) => !signal.requiresIndex);
-
-    expect(semantic).toMatchObject({ source: "semantic", requiresIndex: true });
-    expect(nonIndexedSignals.map((signal) => signal.kind)).toEqual([
-      "path",
-      "title",
-      "body",
-      "tag",
-      "frontmatter",
-      "alias",
-      "link",
-      "backlink",
-      "recency",
-      "active-note",
-    ]);
-  });
-});
 
 describe("DeterministicFakeEmbedder", () => {
   it("returns stable vectors without a live embedding provider", async () => {
@@ -78,56 +55,6 @@ describe("retrieval language policy", () => {
     expect(normalizeLanguageCode("english")).toBeUndefined();
   });
 
-  it("treats same-language lexical retrieval as reliable without embeddings", () => {
-    const policy = buildRetrievalLanguagePolicy({
-      queryLanguage: "en-US",
-      documentLanguages: ["en", "en-GB"],
-    });
-
-    expect(policy).toMatchObject({
-      queryLanguage: "en",
-      documentLanguages: ["en"],
-      mode: "same-language",
-      lexicalReliable: true,
-      semanticRecommended: false,
-      multilingualEmbeddingsRequired: false,
-    });
-    expect(policy.limitationMessages).toEqual([]);
-  });
-
-  it("surfaces a limitation message when cross-language retrieval has no semantic support", () => {
-    const policy = buildRetrievalLanguagePolicy({
-      queryLanguage: "hu",
-      documentLanguages: ["en", "hu"],
-      hasMultilingualEmbeddings: false,
-    });
-
-    expect(policy.mode).toBe("cross-language-limited");
-    expect(policy.lexicalReliable).toBe(false);
-    expect(policy.semanticRecommended).toBe(true);
-    expect(policy.multilingualEmbeddingsRequired).toBe(true);
-    expect(policy.limitationMessages).toEqual([
-      "Cross-language retrieval is limited without multilingual embeddings or query expansion.",
-    ]);
-  });
-
-  it("distinguishes multilingual embeddings from query expansion", () => {
-    expect(
-      buildRetrievalLanguagePolicy({
-        queryLanguage: "hu",
-        documentLanguages: ["en"],
-        hasMultilingualEmbeddings: true,
-      }).mode,
-    ).toBe("cross-language-semantic");
-
-    expect(
-      buildRetrievalLanguagePolicy({
-        queryLanguage: "hu",
-        documentLanguages: ["en"],
-        hasQueryExpansion: true,
-      }).mode,
-    ).toBe("cross-language-expanded");
-  });
 });
 
 describe("embedding indexing estimates", () => {

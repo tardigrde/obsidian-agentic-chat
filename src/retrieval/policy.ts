@@ -1,26 +1,3 @@
-export type RetrievalSignalKind =
-  | "path"
-  | "title"
-  | "body"
-  | "tag"
-  | "frontmatter"
-  | "alias"
-  | "link"
-  | "backlink"
-  | "recency"
-  | "active-note"
-  | "semantic";
-
-export type RetrievalSignalSource = "lexical" | "metadata" | "graph" | "temporal" | "scope" | "semantic";
-
-export interface RetrievalSignalDefinition {
-  kind: RetrievalSignalKind;
-  source: RetrievalSignalSource;
-  defaultWeight: number;
-  requiresIndex: boolean;
-  description: string;
-}
-
 export interface RetrievalDocument {
   id: string;
   path: string;
@@ -33,110 +10,6 @@ export interface RetrievalDocument {
   links?: readonly string[];
   backlinks?: readonly string[];
   modifiedTime?: number;
-}
-
-export const DEFAULT_RETRIEVAL_SIGNALS: readonly RetrievalSignalDefinition[] = [
-  {
-    kind: "path",
-    source: "lexical",
-    defaultWeight: 1.4,
-    requiresIndex: false,
-    description: "Vault-relative path or folder match.",
-  },
-  {
-    kind: "title",
-    source: "lexical",
-    defaultWeight: 1.8,
-    requiresIndex: false,
-    description: "Note title or basename match.",
-  },
-  {
-    kind: "body",
-    source: "lexical",
-    defaultWeight: 1,
-    requiresIndex: false,
-    description: "Body text match.",
-  },
-  {
-    kind: "tag",
-    source: "metadata",
-    defaultWeight: 1.3,
-    requiresIndex: false,
-    description: "Tag match.",
-  },
-  {
-    kind: "frontmatter",
-    source: "metadata",
-    defaultWeight: 1.2,
-    requiresIndex: false,
-    description: "Frontmatter property match.",
-  },
-  {
-    kind: "alias",
-    source: "metadata",
-    defaultWeight: 1.5,
-    requiresIndex: false,
-    description: "Alias match.",
-  },
-  {
-    kind: "link",
-    source: "graph",
-    defaultWeight: 1.1,
-    requiresIndex: false,
-    description: "Outgoing link proximity.",
-  },
-  {
-    kind: "backlink",
-    source: "graph",
-    defaultWeight: 1.1,
-    requiresIndex: false,
-    description: "Incoming backlink proximity.",
-  },
-  {
-    kind: "recency",
-    source: "temporal",
-    defaultWeight: 0.6,
-    requiresIndex: false,
-    description: "Recently modified note boost.",
-  },
-  {
-    kind: "active-note",
-    source: "scope",
-    defaultWeight: 1.6,
-    requiresIndex: false,
-    description: "Current note or current workspace scope boost.",
-  },
-  {
-    kind: "semantic",
-    source: "semantic",
-    defaultWeight: 2,
-    requiresIndex: true,
-    description: "Embedding similarity or semantic rerank signal.",
-  },
-];
-
-export type RetrievalLanguageMode =
-  | "unknown"
-  | "same-language"
-  | "cross-language-limited"
-  | "cross-language-expanded"
-  | "cross-language-semantic";
-
-export interface RetrievalLanguagePolicyInput {
-  queryLanguage?: string | null;
-  documentLanguages: readonly (string | null | undefined)[];
-  hasMultilingualEmbeddings?: boolean;
-  hasQueryExpansion?: boolean;
-}
-
-export interface RetrievalLanguagePolicy {
-  queryLanguage?: string;
-  documentLanguages: readonly string[];
-  mode: RetrievalLanguageMode;
-  lexicalReliable: boolean;
-  semanticRecommended: boolean;
-  multilingualEmbeddingsRequired: boolean;
-  limitationMessages: readonly string[];
 }
 
 export type EmbeddingExecutionMode = "remote" | "local-cpu" | "local-gpu";
@@ -244,79 +117,6 @@ export function normalizeLanguageCode(value: string | null | undefined): string 
   return primary && /^[a-z]{2,3}$/.test(primary) ? primary : undefined;
 }
 
-export function buildRetrievalLanguagePolicy(input: RetrievalLanguagePolicyInput): RetrievalLanguagePolicy {
-  const queryLanguage = normalizeLanguageCode(input.queryLanguage);
-  const documentLanguages = uniqueLanguages(input.documentLanguages);
-  const limitationMessages: string[] = [];
-
-  if (!queryLanguage || documentLanguages.length === 0) {
-    limitationMessages.push("Language metadata is incomplete; retrieval quality should be described as unknown.");
-    return {
-      queryLanguage,
-      documentLanguages,
-      mode: "unknown",
-      lexicalReliable: false,
-      semanticRecommended: false,
-      multilingualEmbeddingsRequired: false,
-      limitationMessages,
-    };
-  }
-
-  const crossesLanguages = documentLanguages.some((language) => language !== queryLanguage);
-  if (!crossesLanguages) {
-    return {
-      queryLanguage,
-      documentLanguages,
-      mode: "same-language",
-      lexicalReliable: true,
-      semanticRecommended: false,
-      multilingualEmbeddingsRequired: false,
-      limitationMessages,
-    };
-  }
-
-  if (input.hasMultilingualEmbeddings) {
-    limitationMessages.push(
-      "Cross-language retrieval can use multilingual embeddings; lexical matches may still miss translated concepts.",
-    );
-    return {
-      queryLanguage,
-      documentLanguages,
-      mode: "cross-language-semantic",
-      lexicalReliable: false,
-      semanticRecommended: true,
-      multilingualEmbeddingsRequired: false,
-      limitationMessages,
-    };
-  }
-
-  if (input.hasQueryExpansion) {
-    limitationMessages.push(
-      "Cross-language retrieval can use query expansion, but results should explain that translation quality affects recall.",
-    );
-    return {
-      queryLanguage,
-      documentLanguages,
-      mode: "cross-language-expanded",
-      lexicalReliable: false,
-      semanticRecommended: true,
-      multilingualEmbeddingsRequired: false,
-      limitationMessages,
-    };
-  }
-
-  limitationMessages.push("Cross-language retrieval is limited without multilingual embeddings or query expansion.");
-  return {
-    queryLanguage,
-    documentLanguages,
-    mode: "cross-language-limited",
-    lexicalReliable: false,
-    semanticRecommended: true,
-    multilingualEmbeddingsRequired: true,
-    limitationMessages,
-  };
-}
-
 export function estimateEmbeddingIndexCost(input: EmbeddingIndexEstimateInput): EmbeddingIndexCostEstimate {
   const averageCharsPerToken = input.averageCharsPerToken ?? DEFAULT_AVERAGE_CHARS_PER_TOKEN;
   const batchSize = input.indexingBatchSize ?? DEFAULT_INDEXING_BATCH_SIZE;
@@ -385,15 +185,6 @@ export function formatRetrievalIndexStatus(status: RetrievalIndexingStatus): str
     case "failed":
       return `Indexing failed for ${scope} at ${formatProgress(status.processedDocuments, status.totalDocuments)}: ${status.error}.`;
   }
-}
-
-function uniqueLanguages(values: readonly (string | null | undefined)[]): readonly string[] {
-  const seen = new Set<string>();
-  for (const value of values) {
-    const normalized = normalizeLanguageCode(value);
-    if (normalized) seen.add(normalized);
-  }
-  return [...seen].sort((a, b) => a.localeCompare(b));
 }
 
 function roundUsd(value: number): number {

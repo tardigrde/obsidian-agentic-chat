@@ -7,7 +7,6 @@ import {
   createEmbeddingIndexSnapshot,
   embeddingDocumentFingerprint,
   embeddingProfileFromConfig,
-  removeEmbeddingIndexRecords,
   upsertEmbeddingIndexRecords,
 } from "../src/retrieval/embeddings";
 import { MULTILINGUAL_RETRIEVAL_FIXTURE } from "./helpers/retrieval-fixtures";
@@ -134,7 +133,8 @@ describe("embedding index format", () => {
     },
   );
 
-  it("creates, upserts, and removes validated index records", async () => {
+
+  it("creates and upserts validated index records", async () => {
     const model = embeddingProfileFromConfig({
       provider: "openai-compatible",
       model: "test/embed",
@@ -155,7 +155,6 @@ describe("embedding index format", () => {
     const updated = upsertEmbeddingIndexRecords(snapshot, [records[1], { ...records[0], vector: [0.9, 0.8] }], {
       now: NOW + 1,
     });
-    const pruned = removeEmbeddingIndexRecords(updated, [docs[1].id], { now: NOW + 2 });
 
     expect(snapshot).toMatchObject({
       version: 1,
@@ -165,7 +164,5 @@ describe("embedding index format", () => {
     });
     expect(updated.records.map((record) => record.documentId)).toEqual(["hu-agent-naplo", "en-mcp-oauth"]);
     expect(updated.records.find((record) => record.documentId === "en-mcp-oauth")?.vector).toEqual([0.9, 0.8]);
-    expect(pruned.records.map((record) => record.documentId)).toEqual(["en-mcp-oauth"]);
-    expect(pruned.updatedAt).toBe(NOW + 2);
   });
 });

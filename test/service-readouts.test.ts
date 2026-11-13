@@ -5,7 +5,6 @@ import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { buildSummaryMessage, estimateContextUsage } from "../src/agent/compaction";
 import {
   agentCompactionCount,
-  agentContextFraction,
   agentContextReadout,
   agentNextCostEstimate,
   agentSessionUsage,
@@ -60,6 +59,7 @@ function model(overrides: Partial<Model<Api>> = {}): Model<Api> {
 }
 
 describe("agent service readouts", () => {
+
   it("reports the full context load from the active model window", () => {
     const message = assistant(250, 0, "x".repeat(1_000));
     const estimated = estimateContextUsage([message]);
@@ -81,22 +81,22 @@ describe("agent service readouts", () => {
     });
     expect(readout?.fraction).toBe(1);
     expect(
-      agentContextFraction({
+      agentContextReadout({
         messages: [message],
         model: model({ contextWindow: (estimated + 1_000) * 2 }),
         settings: DEFAULT_SETTINGS,
         systemPrompt: "",
         tools: [],
-      }),
+      })?.fraction,
     ).toBe(0.5);
     expect(
-      agentContextFraction({
+      agentContextReadout({
         messages: [message],
         model: undefined,
         settings: DEFAULT_SETTINGS,
         systemPrompt: "",
         tools: [],
-      }),
+      })?.fraction,
     ).toBeUndefined();
   });
 

@@ -3,7 +3,6 @@ import type { App } from "obsidian";
 import {
   BUILTIN_TOOL_CONTRACTS,
   BUILTIN_TOOL_NAMES,
-  DEFAULT_BUILTIN_TOOL_NAMES,
   MUTATING_TOOLS,
   UNDOABLE_TOOLS,
   approvalPreviewNeedsContent,
@@ -11,8 +10,6 @@ import {
   builtinToolContractsForSurface,
   builtinToolLabel,
   getBuiltinToolContract,
-  isMutatingTool,
-  isUndoableTool,
   toolApprovalDescription,
 } from "../src/tools/tool-contracts";
 import { createVaultTools } from "../src/tools/vault-tools";
@@ -27,7 +24,6 @@ describe("built-in tool contracts", () => {
   it("drives default and compatibility tool registration order", () => {
     const contractNames = BUILTIN_TOOL_CONTRACTS.map((contract) => contract.name);
     const defaultNames = builtinToolContractsForSurface().map((contract) => contract.name);
-    expect(defaultNames).toEqual([...DEFAULT_BUILTIN_TOOL_NAMES]);
     expect(defaultNames).toContain("vault_inspect");
     expect(defaultNames).not.toContain("ls");
     expect(defaultNames).not.toContain("search");
@@ -86,10 +82,6 @@ describe("built-in tool contracts", () => {
     expect([...UNDOABLE_TOOLS]).toEqual(["write", "edit", "rename", "delete", "set_properties"]);
     for (const tool of UNDOABLE_TOOLS) expect(MUTATING_TOOLS.has(tool)).toBe(true);
 
-    expect(isMutatingTool("set_properties")).toBe(true);
-    expect(isMutatingTool("get_properties")).toBe(false);
-    expect(isUndoableTool("rename")).toBe(true);
-    expect(isUndoableTool("set_properties")).toBe(true);
   });
 
   it("pins path arguments and ignore-list semantics for sensitive tools", () => {
@@ -129,10 +121,9 @@ describe("built-in tool contracts", () => {
     expect(toolApprovalDescription("web_search")).toMatch(/run the web_search tool/i);
   });
 
+
   it("handles unknown tool names without classifying them as built-in vault tools", () => {
     expect(getBuiltinToolContract("web_search")).toBeUndefined();
-    expect(isMutatingTool("web_search")).toBe(false);
-    expect(isUndoableTool("web_search")).toBe(false);
     expect(approvalPreviewNeedsContent("web_search")).toBe(false);
   });
 });

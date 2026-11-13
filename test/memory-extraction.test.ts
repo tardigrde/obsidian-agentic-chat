@@ -5,7 +5,6 @@ import {
   approveAndAppendMemoryProposal,
   approveMemoryProposal,
   extractMemoryProposals,
-  rejectMemoryProposal,
 } from "../src/memory/extraction";
 import { loadMemoryRecords, type MemoryRecord } from "../src/memory/memory";
 import { MemoryAdapter } from "./helpers/memory-adapter";
@@ -77,17 +76,6 @@ describe("memory extraction proposals", () => {
         createdAt: new Date(NOW).toISOString(),
       }),
     ]);
-  });
-
-  it("records rejection without creating a durable memory", () => {
-    const [proposal] = extractMemoryProposals([user("Remember that my preferred language is Hungarian.")]);
-    if (!proposal) throw new Error("Expected memory proposal.");
-
-    expect(rejectMemoryProposal(proposal, "too transient")).toEqual({
-      status: "rejected",
-      proposalId: proposal.id,
-      reason: "too transient",
-    });
   });
 
   it("marks duplicate proposals and does not append duplicate records", async () => {

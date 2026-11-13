@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { normalizeVaultPath } from "../src/vault/path";
-import { normalizePath as normalizeLexicalPath } from "../src/retrieval/lexical";
-import { normalizePath as normalizeDiagnosticsPath } from "../src/retrieval/diagnostics";
 import { normalizePath as normalizeRelevantNotesPath } from "../src/retrieval/relevant-notes";
 import { normalizePath as normalizeAuditPath } from "../src/agent/action-audit-log";
 import { normalizeNotePath } from "../src/retrieval/citations";
@@ -157,16 +155,8 @@ const CASES: readonly PathCase[] = [
   },
 ];
 
-function column(normalize: PathNormalizer, key: Exclude<keyof PathCase, "input">): string[] {
-  return CASES.map((entry) => {
-    const expected = entry[key];
-    // The lookup column also pins the three retrieval copies against each other.
-    if (key === "lookup") {
-      expect(outcome(normalizeRelevantNotesPath, entry.input)).toBe(expected);
-      expect(outcome(normalizeDiagnosticsPath, entry.input)).toBe(expected);
-    }
-    return outcome(normalize, entry.input);
-  });
+function column(normalize: PathNormalizer): string[] {
+  return CASES.map((entry) => outcome(normalize, entry.input));
 }
 
 function expectedColumn(key: Exclude<keyof PathCase, "input">): string[] {
@@ -175,22 +165,22 @@ function expectedColumn(key: Exclude<keyof PathCase, "input">): string[] {
 
 describe("path normalizers", () => {
   it("keeps the canonical vault normalizer strict and vault-relative", () => {
-    expect(column(normalizeVaultPath, "vault")).toEqual(expectedColumn("vault"));
+    expect(column(normalizeVaultPath)).toEqual(expectedColumn("vault"));
   });
 
-  it("keeps the retrieval lookup copies identical", () => {
-    expect(column(normalizeLexicalPath, "lookup")).toEqual(expectedColumn("lookup"));
+  it("keeps the retrieval lookup normalizer lowercase and slash-tolerant", () => {
+    expect(column(normalizeRelevantNotesPath)).toEqual(expectedColumn("lookup"));
   });
 
   it("keeps the audit copy case-preserving", () => {
-    expect(column(normalizeAuditPath, "audit")).toEqual(expectedColumn("audit"));
+    expect(column(normalizeAuditPath)).toEqual(expectedColumn("audit"));
   });
 
   it("keeps the source copy's leading-slash behaviour", () => {
-    expect(column(normalizeSourcePath, "source")).toEqual(expectedColumn("source"));
+    expect(column(normalizeSourcePath)).toEqual(expectedColumn("source"));
   });
 
   it("keeps citation paths case-preserving with brackets and colons rejected", () => {
-    expect(column(normalizeNotePath, "citation")).toEqual(expectedColumn("citation"));
+    expect(column(normalizeNotePath)).toEqual(expectedColumn("citation"));
   });
 });

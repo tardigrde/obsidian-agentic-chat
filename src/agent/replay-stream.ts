@@ -114,10 +114,6 @@ export function createReplayStreamController(
   };
 }
 
-export function createReplayStreamFn(turns: readonly ReplayTurn[], options?: ReplayStreamOptions): StreamFn {
-  return createReplayStreamController(turns, options).streamFn;
-}
-
 export function replayTextTurn(text: string, options: Omit<ReplayTurn, "content"> = {}): ReplayTurn {
   return { ...options, content: [textContent(text)], stopReason: options.stopReason ?? "stop" };
 }
