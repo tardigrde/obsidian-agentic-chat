@@ -3,7 +3,7 @@ import { McpHttpClient } from "../src/mcp/client";
 import { McpError, type McpErrorCategory } from "../src/mcp/errors";
 import { categorizeMcpDiagnosticError } from "../src/mcp/tools";
 import { createMcpServerSettings } from "../src/mcp/settings";
-import type { WebFetcher, WebHttpResponse } from "../src/tools/web-fetch";
+import type { WebFetcher } from "../src/tools/web-fetch";
 
 function oauthServer() {
   return createMcpServerSettings({

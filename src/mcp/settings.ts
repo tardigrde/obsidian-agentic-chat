@@ -236,12 +236,15 @@ function buildMcpServer(input: McpServerBuildInput, options: McpServerBuildOptio
     authType: copy
       ? (input.authType as McpAuthType)
       : healAuthType(input.authType as McpAuthType | undefined, options.legacyPreset, input.authHeaderName),
-    authHeaderName: copy ? String(input.authHeaderName ?? "") : stringValue(input.authHeaderName),
+    authHeaderName: copy
+      ? ((input.authHeaderName as string | undefined) ?? "")
+      : stringValue(input.authHeaderName),
     authHeaderValueSecretId:
-      (copy ? String(input.authHeaderValueSecretId ?? "") : stringValue(input.authHeaderValueSecretId)) ||
-      mcpSecretId(options.id, "auth-header-value"),
+      (copy
+        ? ((input.authHeaderValueSecretId as string | undefined) ?? "")
+        : stringValue(input.authHeaderValueSecretId)) || mcpSecretId(options.id, "auth-header-value"),
     authHeaderValue: copy
-      ? String(input.authHeaderValue ?? "")
+      ? ((input.authHeaderValue as string | undefined) ?? "")
       : options.includePlaintext
         ? stringValue(input.authHeaderValue)
         : "",
