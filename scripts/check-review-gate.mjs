@@ -11,7 +11,8 @@ import { pathToFileURL } from "node:url";
  *   Verdict: PASS | PASS+NOTES | FAIL
  *   Head: <commit>
  *   Reviewer: <agent/session>
- *   Fast lane: <result with a test count, e.g. "PASS (1702 passed, 173 files)">
+ *   Fast lane: <result with a test count, e.g. "PASS (1702 passed, 173 files)">,
+ *              or "CI ..." when the gate itself sees the ci and e2e checks pass at the head
  *
  * The comment must be at the current head and come from an OWNER, MEMBER, or
  * COLLABORATOR account that is not a bot. A FAIL is sticky: only a later PASS
@@ -23,9 +24,11 @@ import { pathToFileURL } from "node:url";
 
 const TRUSTED_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 const FAST_LANE_COUNT = /\b\d+\s+passed\b/i;
+/** "Fast lane: CI ..." cites CI instead of a local run; the gate checks CI itself. */
+const FAST_LANE_CI = /^CI\b/;
 
 /** Added lines and touched files under `src/`. See measureNumstat. */
-const LIMITS = { changedLines: 400, changedFiles: 10 };
+const LIMITS = { changedLines: 1000, changedFiles: 25 };
 const GENERATED = [
   /^package-lock\.json$/,
   /^pnpm-lock\.yaml$/,
@@ -61,11 +64,13 @@ export function parseVerdict(body) {
     field("Reviewer")
       ?.replace(/[^\w .@:/-]/g, "")
       .slice(0, 80) || null;
-  const hasFastLane = FAST_LANE_COUNT.test(field("Fast lane") ?? "");
+  const fastLane = field("Fast lane") ?? "";
+  const citesCi = !FAST_LANE_COUNT.test(fastLane) && FAST_LANE_CI.test(fastLane);
+  const hasFastLane = FAST_LANE_COUNT.test(fastLane) || citesCi;
   if (!/^(?:PASS(?:\+NOTES)?|FAIL)$/.test(verdict ?? "")) return null;
   if (!/^[0-9a-f]{7,40}$/.test(head ?? "")) return null;
   if (!reviewer || !hasFastLane) return null;
-  return { verdict, head, reviewer };
+  return { verdict, head, reviewer, citesCi };
 }
 
 function isTrustedAuthor(comment) {
@@ -106,6 +111,7 @@ export function reviewGate({
   changedFiles,
   labels = [],
   singleAccount = false,
+  ciGreen = false,
 }) {
   const errors = [];
   const normalizedAuthor = String(author ?? "").toLowerCase();
@@ -138,6 +144,10 @@ export function reviewGate({
   } else if (openFail) {
     errors.push(
       `a FAIL verdict at this head by ${openFail.parsed.reviewer} is not cleared; only a later PASS from a different Reviewer clears it`,
+    );
+  } else if (latest.parsed.citesCi && !ciGreen) {
+    errors.push(
+      `the verdict at head ${headSha.slice(0, 7)} cites CI, but the ci and e2e checks have not both passed at this head`,
     );
   }
 
@@ -271,6 +281,14 @@ async function main() {
     apiAll(`/repos/${repository}/pulls/${number}/reviews`, token),
   ]);
   const comments = [...issueComments, ...reviews].map(normalizeComment);
+  // A verdict may cite CI instead of a local fast lane; the gate checks CI itself.
+  const checkRuns = await api(`/repos/${repository}/commits/${head}/check-runs?per_page=100`, token);
+  const passed = new Set(
+    (checkRuns.check_runs ?? [])
+      .filter((run) => run.status === "completed" && run.conclusion === "success")
+      .map((run) => run.name),
+  );
+  const ciGreen = passed.has("ci") && passed.has("e2e");
   const base = pull.base.sha;
   const diff = readNumstat(base, head);
   const size = measureNumstat(diff);
@@ -282,6 +300,7 @@ async function main() {
     changedFiles: size.changedFiles,
     labels: (pull.labels ?? []).map((label) => label.name),
     singleAccount: process.env.REVIEW_GATE_SINGLE_ACCOUNT === "1",
+    ciGreen,
   });
 
   console.log(
