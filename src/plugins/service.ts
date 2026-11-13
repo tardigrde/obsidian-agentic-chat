@@ -32,6 +32,16 @@ import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, USER_SKILLS_PACKA
 
 export { FIRST_PARTY_PACKAGE_NAMES, USER_SKILLS_PACKAGE } from "./manifest";
 
+/**
+ * The one plugin catalog players share: the runtime builds skills and MCP tools
+ * from this list, and an install or vault edit invalidates it.
+ */
+export interface PluginCatalog {
+  load(): Promise<LoadedPlugin[]>;
+  /** Returns an unsubscribe function. */
+  onInvalidated(listener: () => void): () => void;
+}
+
 export interface GenerateMcpPackageResult {
   /** Vault path of the generated package directory. */
   rootPath: string;
@@ -52,6 +62,7 @@ export class PluginService {
   /** Serializes install transactions with the recovery sweep. */
   private maintenance: Promise<void> = Promise.resolve();
   private retainedImportBackup = false;
+  private readonly invalidationListeners = new Set<() => void>();
 
   constructor(
     private readonly app: App,
@@ -151,6 +162,7 @@ export class PluginService {
 
   invalidate(): void {
     this.cache = null;
+    this.notifyInvalidated();
   }
 
   /**
@@ -161,7 +173,26 @@ export class PluginService {
     const folder = this.pluginsFolder().replace(/\/+$/, "");
     if (path !== folder && !path.startsWith(`${folder}/`)) return false;
     this.cache = null;
+    this.notifyInvalidated();
     return true;
+  }
+
+  /** Subscribe to invalidations so a runtime can rebuild plugin-derived tools. */
+  onInvalidated(listener: () => void): () => void {
+    this.invalidationListeners.add(listener);
+    return () => {
+      this.invalidationListeners.delete(listener);
+    };
+  }
+
+  private notifyInvalidated(): void {
+    for (const listener of [...this.invalidationListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        console.warn("Agentic chat: plugin invalidation listener failed", error);
+      }
+    }
   }
 
   /** List cached plugins whose folders are missing on disk. */

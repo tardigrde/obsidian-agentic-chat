@@ -158,6 +158,7 @@ export default class AgenticChatPlugin extends Plugin {
       loopGuardDisabled: __AGENTIC_CHAT_ENABLE_E2E_STREAM__,
       saveSettings: () => this.saveSettings(),
       skillScaffolder: this.pluginService,
+      pluginService: this.pluginService,
       artifactStore: ToolArtifactStore.forPlugin(this.app, this, {
         referencedArtifactIds: () => sessionManager.listReferencedArtifactIds(),
       }),

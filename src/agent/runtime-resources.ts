@@ -68,15 +68,20 @@ export async function loadAgentRuntimeResources(
   webFetch?: WebFetcher,
   onSettingsChanged?: () => void | Promise<void>,
   artifactStore?: ToolArtifactStoreLike,
+  loadedPlugins?: LoadedPlugin[],
 ): Promise<AgentRuntimeResources> {
   // S5: FileSystemSandboxPolicy deny-globs — user ignoredGlobs + protected metadata globs
   // (`.obsidian/**`, `.git/**`, `.trash/**` plus the vault's actual configDir) merged via one engine (`glob-pattern.ts`).
   const vaultConfigDir = (app.vault as unknown as { configDir?: string }).configDir;
   const ignoreMatcher = createFileSystemDenyMatcher(settings.ignoredGlobs, vaultConfigDir);
-  const plugins = await loadPlugins(app, {
-    folder: settings.plugins.folder,
-    enabledPlugins: settings.plugins.enabled,
-  });
+  // One plugin catalog: the caller may pass the PluginService cache. Without
+  // it, scan the folder here (the default for probes and minimal harnesses).
+  const plugins =
+    loadedPlugins ??
+    (await loadPlugins(app, {
+      folder: settings.plugins.folder,
+      enabledPlugins: settings.plugins.enabled,
+    }));
   const skills = await loadRuntimeSkills(app, settings, plugins);
   const profiles = loadAgentRoles();
   // Standing instructions (AGENTS.md -> CLAUDE.md -> GEMINI.md at the vault root):
