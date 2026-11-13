@@ -25,7 +25,7 @@ compaction, and the tool surface.
 ## Consequences
 
 - Revisit the vendor/unhook option only if pi's release cadence becomes painful.
-- Keep the pi-ai import allowlist in `esbuild.config.mjs` under review.
+- Keep the pi-ai import allowlist in `scripts/build.mjs` under review.
 - The deferred vendor option is recorded in #182 and the architecture notes.
 
 ## Links

@@ -25,7 +25,7 @@ npm run worktree:cleanup -- --apply
 ```
 
 `new` creates `<repo-parent>/<repo-name>-worktrees/<slug>` on branch
-`wt/<slug>` from `main`, then symlinks each existing `worktree-links` entry.
+`wt/<slug>` from `main`, then symlinks each existing `config/worktree-links` entry.
 Use `--base`, `--path`, `--branch`, and `--json` as needed.
 
 `env` loads `.env` from the current worktree, does not overwrite exported

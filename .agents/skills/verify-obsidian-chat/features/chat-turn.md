@@ -55,36 +55,36 @@ await browser.waitUntil(async () =>
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Send a prompt and render a reply | `src/ui/chat-view.ts:1237` | `test/e2e/specs/composer-paths.e2e.ts:107` | `covered` |
-| Stream text deltas | `src/ui/transcript-view.ts:197` | `test/e2e/specs/beautifului-polish.e2e.ts:148` (synthetic stream) | `partial` |
-| Reasoning section | `src/ui/transcript-view.ts:344` | `test/e2e/specs/beautifului-polish.e2e.ts:148` | `partial` |
-| Markdown rendering | `src/ui/transcript-view.ts:353` | `test/assistant-bubble-rendering.test.ts:218` (unit only) | `partial` |
-| Tool step cards and diffs | `src/ui/transcript-view.ts:202` | `test/e2e/specs/approval-deterministic.e2e.ts:289` | `covered` |
-| Tool-step vault path link | `src/ui/step-card.ts:99` | no committed check | `NONE` |
-| Stop the active turn (toolbar) | `src/ui/chat-view.ts:1211` | `test/e2e/specs/composer-paths.e2e.ts:182` | `covered` |
-| Stop one tab without aborting the other | `src/ui/chat-view.ts:767` | `test/e2e/specs/two-tab-stop.e2e.ts:112` | `covered` |
-| Stop clears queued steering | `src/agent/agent-service.ts:766` | `test/agent-service.test.ts:1598` (unit only) | `partial` |
-| `/compact` skips when the session changed | `src/agent/agent-service.ts:640` | `test/agent-service.test.ts:970` | `partial` |
-| Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts:64` | `test/agent-service.test.ts:1107` | `partial` |
-| Enter sends while idle | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:107` | `covered` |
-| Enter steers after the current model turn | `src/ui/composer-input.ts:22` | `test/e2e/specs/composer-paths.e2e.ts:122` | `covered` |
-| Undelivered steering returns to the composer | `src/ui/chat-view.ts:1949` | `test/agent-service.test.ts:1517`, `test/composer-input.test.ts:29` (unit only) | `partial` |
-| Shift+Enter inserts a newline | `src/ui/chat-view.ts:657` | `test/e2e/specs/composer-paths.e2e.ts:223` | `covered` |
-| Queue holds a draft until the turn ends | `src/ui/chat-view.ts:1217` | `test/e2e/specs/composer-paths.e2e.ts:156` | `covered` |
-| Stop then send replaces the turn | `src/ui/chat-view.ts:1211` | `test/e2e/specs/composer-paths.e2e.ts:182` | `covered` |
-| Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts:63` | `test/agent-service.test.ts:1155` | `partial` |
-| Inline `ask_user` card | `src/ui/chat-view.ts:501` | `test/chat-view-ask-user.test.ts:86` (unit only) | `partial` |
-| Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts:559` | no committed check | `NONE` |
-| Copy response | `src/ui/assistant-bubble.ts:571` | no committed check | `NONE` |
-| Ask again | `src/ui/assistant-bubble.ts:557` | `test/chat-view-retry.test.ts:153` (unit only) | `partial` |
-| Retry keeps image attachments | `src/ui/chat-view.ts:1447` | `test/chat-view-retry.test.ts:153` (unit only) | `partial` |
-| Vault images render inline in replies | `src/ui/assistant-bubble.ts:458` | `test/e2e/specs/inline-images.e2e.ts:55` | `covered` |
-| User bubble image thumbnails; click opens the vault image | `src/ui/transcript-view.ts:215` | `test/e2e/specs/inline-images.e2e.ts:86`, `test/e2e/specs/inline-images.e2e.ts:154` | `covered` |
-| Error banner Retry | `src/ui/assistant-bubble.ts:536` | `test/chat-view-retry.test.ts:153` (unit only) | `partial` |
-| Edit and resend a user turn | `src/ui/chat-view.ts:1927` | `test/prompt-edit-state.test.ts:5` (state only) | `partial` |
-| Context-window bar | `src/ui/chat-view.ts:709` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
-| Usage readout | `src/ui/slash/info.ts:78` | no committed check | `NONE` |
-| Background-tab completion notice | `src/ui/chat-view.ts:1211` | no committed check | `NONE` |
+| Send a prompt and render a reply | `src/ui/chat-view.ts#flushQueuedPromptIfReady` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
+| Stream text deltas | `src/ui/transcript-view.ts#renderTranscript` | `test/e2e/specs/beautifului-polish.e2e.ts#live reasoning settles to Thought with a final elapsed timer once the answer streams` (synthetic stream) | `partial` |
+| Reasoning section | `src/ui/transcript-view.ts#updateScrollPinning` | `test/e2e/specs/beautifului-polish.e2e.ts#live reasoning settles to Thought with a final elapsed timer once the answer streams` | `partial` |
+| Markdown rendering | `src/ui/assistant-bubble.ts#MarkdownRenderer.render` | `test/assistant-bubble-rendering.test.ts#converts Obsidian callout blockquotes when MarkdownRenderer leaves them plain` (unit only) | `partial` |
+| Tool step cards and diffs | `src/ui/transcript-view.ts#renderTranscript` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
+| Tool-step vault path link | `src/ui/step-card.ts#appendPathLink` | no committed check | `NONE` |
+| Stop the active turn (toolbar) | `src/ui/chat-view.ts#stopActiveTurn` | `test/e2e/specs/composer-paths.e2e.ts#stops, then sends the draft as a replacement turn` | `covered` |
+| Stop one tab without aborting the other | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/two-tab-stop.e2e.ts#stopping one tab does not abort the other tab's turn` | `covered` |
+| Stop clears queued steering | `src/agent/agent-service.ts#continueRecentSession` | `test/agent-service.test.ts#clears queued steering when the spend cap stops a run` (unit only) | `partial` |
+| `/compact` skips when the session changed | `src/agent/agent-service.ts#compactNow` | `test/agent-service.test.ts#reloads the persisted transcript when compaction cannot replace the live agent` | `partial` |
+| Compaction recovery stops the next prompt | `src/agent/prompt-turn-runtime.ts#async run(run: PromptTurnRun` | `test/agent-service.test.ts#blocks a prompt when the session changes during turn preparation` | `partial` |
+| Enter sends while idle | `src/ui/composer-input.ts#resolveComposerAction` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
+| Enter steers after the current model turn | `src/ui/composer-input.ts#resolveComposerAction` | `test/e2e/specs/composer-paths.e2e.ts#steers after a successful tool call while the agent is running` | `covered` |
+| Undelivered steering returns to the composer | `src/ui/chat-view.ts#restoreUndeliveredSteers` | `test/agent-service.test.ts#clears queued steering when the user stops the active run`, `test/composer-input.test.ts#strips one leading context preamble for retry display` (unit only) | `partial` |
+| Shift+Enter inserts a newline | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/composer-paths.e2e.ts#inserts a newline with Shift+Enter without sending` | `covered` |
+| Queue holds a draft until the turn ends | `src/ui/chat-view.ts#queueComposerPrompt` | `test/e2e/specs/composer-paths.e2e.ts#holds the Queue action until the active turn ends` | `covered` |
+| Stop then send replaces the turn | `src/ui/chat-view.ts#stopActiveTurn` | `test/e2e/specs/composer-paths.e2e.ts#stops, then sends the draft as a replacement turn` | `covered` |
+| Prompt is blocked when the session changes during preparation | `src/agent/prompt-turn-runtime.ts#async run(run: PromptTurnRun` | `test/agent-service.test.ts#blocks a prompt when the session changes during turn preparation` | `partial` |
+| Inline `ask_user` card | `src/ui/chat-view.ts#renderAskUserPrompt` | `test/chat-view-ask-user.test.ts#ChatView ask_user prompt` (unit only) | `partial` |
+| Ctrl/Cmd+Enter sends an ask-user answer | `src/ui/chat-view.ts#renderAskUserPrompt` | no committed check | `NONE` |
+| Copy response | `src/ui/assistant-bubble.ts#actionButton` | no committed check | `NONE` |
+| Ask again | `src/ui/assistant-bubble.ts#actionButton` | `test/chat-view-retry.test.ts#ChatView retry` (unit only) | `partial` |
+| Retry keeps image attachments | `src/ui/chat-view.ts#retryLast` | `test/chat-view-retry.test.ts#ChatView retry` (unit only) | `partial` |
+| Vault images render inline in replies | `src/ui/assistant-bubble.ts#finalizeText` | `test/e2e/specs/inline-images.e2e.ts#renders vault image embeds in assistant markdown and leaves code untouched` | `covered` |
+| User bubble image thumbnails; click opens the vault image | `src/ui/transcript-view.ts#renderUserMessage` | `test/e2e/specs/inline-images.e2e.ts#shows one thumbnail per attached image on a live send`, `test/e2e/specs/inline-images.e2e.ts#renders a replayed vision block as a thumbnail` | `covered` |
+| Error banner Retry | `src/ui/assistant-bubble.ts#showError` | `test/chat-view-retry.test.ts#ChatView retry` (unit only) | `partial` |
+| Edit and resend a user turn | `src/ui/chat-view.ts#handleAgentEvent` | `test/prompt-edit-state.test.ts#starts editing a prompt and restores the original draft on cancel` (state only) | `partial` |
+| Context-window bar | `src/ui/chat-view.ts#buildLayout` | `test/e2e/probe/scenarios/context-readout.e2e.ts#shows the full-load percentage with a section breakdown` | `covered` |
+| Usage readout | `src/ui/slash/info.ts#showUsage` | no committed check | `NONE` |
+| Background-tab completion notice | `src/ui/chat-view.ts#stopActiveTurn` | no committed check | `NONE` |
 
 ## Gotchas
 

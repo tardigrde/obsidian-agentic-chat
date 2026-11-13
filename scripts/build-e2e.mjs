@@ -16,6 +16,6 @@ function run(command, args, env = {}) {
 }
 
 run(process.execPath, [path.join("node_modules", "typescript", "bin", "tsc"), "-noEmit"]);
-run(process.execPath, ["esbuild.config.mjs", "production"], {
+run(process.execPath, ["scripts/build.mjs", "production"], {
   AGENTIC_CHAT_ENABLE_E2E_STREAM: "1",
 });

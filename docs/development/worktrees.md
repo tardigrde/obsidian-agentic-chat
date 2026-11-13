@@ -14,7 +14,7 @@ This runs `git worktree add -b wt/fix-settings` from `main` at:
 <repo-parent>/<repo-name>-worktrees/fix-settings
 ```
 
-Then it links every existing entry in `worktree-links` from the main checkout.
+Then it links every existing entry in `config/worktree-links` from the main checkout.
 The manifest lists names only:
 
 ```text
@@ -89,7 +89,7 @@ git commit -m "wip: fix settings validation"
 
 ## Secrets
 
-`worktree-links` contains names, not values. `.env` is symlinked from the main
+`config/worktree-links` contains names, not values. `.env` is symlinked from the main
 checkout and is ignored by git. Never copy `.env` into a worktree and never
 commit it.
 

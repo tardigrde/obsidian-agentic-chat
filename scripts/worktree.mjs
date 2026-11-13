@@ -19,7 +19,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { applyEnvFile } from "./live-env.mjs";
 
-const MANIFEST_NAME = "worktree-links";
+const MANIFEST_NAME = "config/worktree-links";
 const RECENT_MS = 3 * 24 * 60 * 60 * 1000;
 
 const USAGE = `Usage:
@@ -636,6 +636,7 @@ function selfTest() {
   try {
     const repo = path.join(tempRoot, "repo");
     mkdirSync(repo);
+    mkdirSync(path.join(repo, "config"));
     gitOrThrow(["init", "-q", "-b", "main"], { cwd: repo });
     gitOrThrow(["config", "user.email", "self-test@example.invalid"], { cwd: repo });
     gitOrThrow(["config", "user.name", "Worktree Self Test"], { cwd: repo });

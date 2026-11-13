@@ -6,4 +6,12 @@ export interface FeatureMapResult {
   refs: number;
 }
 
+export interface EntryPoint {
+  kind: string;
+  name: string;
+  file: string;
+  line: number;
+}
+
+export function entryPoints(root?: string): EntryPoint[];
 export function checkFeatureMap(root?: string): FeatureMapResult;

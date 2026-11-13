@@ -8,10 +8,17 @@ import { pathToFileURL } from "node:url";
 /**
  * Check the committed feature map.
  *
- * The map is an audit index, so a stale `path:line`, an unknown status, or a
- * `covered` row without a committed test makes it lie. This checker validates
- * the structure and every reference. It does not judge whether the cited test
- * asserts the right behavior; the reviewer and the witness gate own that.
+ * The map is an audit index, so a stale ref, an unknown status, or a `covered`
+ * row without a committed test makes it lie. This checker validates the
+ * structure and every reference. A ref is `path#anchor`: the anchor (a symbol,
+ * command id, settings row name, or test title) must still be in that file. A
+ * `path:line` ref is rejected: line numbers drift on every edit.
+ *
+ * It also takes an inventory of entry points (command ids, slash commands,
+ * settings rows) and fails when one is not named in a row's first cell.
+ *
+ * It does not judge whether the cited test asserts the right behavior; the
+ * reviewer and the witness gate own that.
  */
 
 const FEATURES_DIR = path.join(".agents", "skills", "verify-obsidian-chat", "features");
@@ -23,35 +30,46 @@ const SECTIONS = [
   "## Gotchas",
 ];
 const STATUSES = new Set(["covered", "partial", "NONE", "unreachable"]);
-const REF_PATTERN = /`([A-Za-z0-9_./-]+\.(?:ts|mts|mjs|json|md)):(\d+)`/g;
+/** A ref is `path#anchor`: the anchor is a symbol, id, row name, or test title in that file. */
+const REF_PATTERN = /`([A-Za-z0-9_./-]+\.(?:ts|mts|mjs|json|md))#([^`]+)`/g;
+/** The old `path:line` form drifted on every edit; the checker rejects it. */
+const LINE_REF_PATTERN = /`([A-Za-z0-9_./-]+\.(?:ts|mts|mjs|json|md)):(\d+)`/g;
 const COVERED_LIES = ["no committed check", "unit only", "policy only"];
+
+/**
+ * Entry points that must not appear in the map. Keep this empty unless there is
+ * a real reason; every row added here hides a user-reachable control.
+ */
+const INVENTORY_ALLOWLIST = new Map([
+  // Example: ["row:internal-only", "rendered by a unit fixture, not a settings row"],
+]);
 
 function isFile(file) {
   return existsSync(file) && statSync(file).isFile();
 }
 
+function normalizedPath(file) {
+  return file.replaceAll("\\", "/");
+}
+
 function checkRef(root, ref, where, sourceCell) {
   const errors = [];
-  const normalized = ref.path.replaceAll("\\", "/");
+  const normalized = normalizedPath(ref.path);
+  const label = `${ref.path}#${ref.anchor}`;
   if (path.isAbsolute(normalized) || normalized.split("/").includes("..")) {
-    errors.push(`${where}: unsafe reference ${ref.path}:${ref.line}`);
+    errors.push(`${where}: unsafe reference ${label}`);
     return errors;
   }
   const absolute = path.join(root, normalized);
   if (!isFile(absolute)) {
-    errors.push(`${where}: missing file ${ref.path}:${ref.line}`);
+    errors.push(`${where}: missing file ${label}`);
     return errors;
   }
-  const lines = readFileSync(absolute, "utf8").split("\n");
-  if (ref.line < 1 || ref.line > lines.length) {
-    errors.push(`${where}: ${ref.path}:${ref.line} is outside the file (1-${lines.length})`);
-    return errors;
-  }
-  if (!lines[ref.line - 1].trim()) {
-    errors.push(`${where}: ${ref.path}:${ref.line} points at a blank line`);
+  if (!readFileSync(absolute, "utf8").includes(ref.anchor)) {
+    errors.push(`${where}: anchor "${ref.anchor}" is not in ${ref.path}; point the ref at the symbol's new home`);
   }
   if (sourceCell && !normalized.startsWith("src/")) {
-    errors.push(`${where}: source must point under src/, got ${ref.path}:${ref.line}`);
+    errors.push(`${where}: source must point under src/, got ${label}`);
   }
   return errors;
 }
@@ -59,7 +77,7 @@ function checkRef(root, ref, where, sourceCell) {
 function refsIn(cell) {
   const refs = [];
   for (const match of cell.matchAll(REF_PATTERN)) {
-    refs.push({ path: match[1], line: Number(match[2]), raw: match[0] });
+    refs.push({ path: match[1], anchor: match[2].trim(), raw: match[0] });
   }
   return refs;
 }
@@ -75,7 +93,7 @@ const REPLAY_IMPORT =
   /^import\s+(?!type\b)\{[^}]*\brunAgentReplay\b[^}]*\}\s+from\s+["'][^"']*helpers\/agent-replay["']/m;
 
 function isUserActionProof(root, ref) {
-  const file = ref.path.replaceAll("\\", "/");
+  const file = normalizedPath(ref.path);
   if (!/\.(?:test|e2e|dogfood)\.ts$/.test(file)) return false;
   if (file.startsWith("test/e2e/")) {
     const base = file.split("/").pop() ?? "";
@@ -93,7 +111,7 @@ function isUserActionProof(root, ref) {
 }
 
 function stripRefs(cell) {
-  return cell.replace(REF_PATTERN, " ").replace(/[;,\s]+/g, " ").trim();
+  return cell.replace(REF_PATTERN, " ").replace(LINE_REF_PATTERN, " ").replace(/[;,\s]+/g, " ").trim();
 }
 
 function parseProofRows(lines, file) {
@@ -114,6 +132,146 @@ function parseProofRows(lines, file) {
     rows.push({ line: index + 1, text: line, cells, file });
   }
   return rows;
+}
+
+function journeyFiles(root) {
+  const directory = path.join(root, FEATURES_DIR);
+  if (!existsSync(directory) || !statSync(directory).isDirectory()) return null;
+  return readdirSync(directory)
+    .filter((file) => file.endsWith(".md") && file !== "README.md")
+    .sort();
+}
+
+/** Every old-form `path:line` ref in the map, including prose and README: each one is an error. */
+function checkLineRefs(root, files, errors) {
+  for (const file of [...files, "README.md"]) {
+    const absolute = path.join(root, FEATURES_DIR, file);
+    if (!isFile(absolute)) continue;
+    const lines = readFileSync(absolute, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      for (const match of line.matchAll(LINE_REF_PATTERN)) {
+        errors.push(`${file}:${index + 1}: ${match[0]} uses a line number; write \`${match[1]}#<symbol>\` instead`);
+      }
+    });
+  }
+}
+
+function walkFiles(directory) {
+  if (!existsSync(directory) || !statSync(directory).isDirectory()) return [];
+  const files = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkFiles(absolute));
+    } else if (entry.isFile()) {
+      files.push(absolute);
+    }
+  }
+  return files;
+}
+
+function lineNumberAt(text, index) {
+  return text.slice(0, index).split("\n").length;
+}
+
+function commandEntryPoints(root) {
+  const entries = [];
+  for (const absolute of walkFiles(path.join(root, "src"))) {
+    if (!absolute.endsWith(".ts")) continue;
+    const text = readFileSync(absolute, "utf8");
+    const file = normalizedPath(path.relative(root, absolute));
+    for (const match of text.matchAll(/addCommand\s*\(\s*\{[\s\S]*?\bid:\s*"([^"]+)"/g)) {
+      entries.push({
+        kind: "command id",
+        name: match[1],
+        file,
+        line: lineNumberAt(text, match.index),
+      });
+    }
+  }
+  return entries;
+}
+
+function slashEntryPoints(root) {
+  const entries = [];
+  const absolute = path.join(root, "src", "ui", "commands.ts");
+  if (!isFile(absolute)) return entries;
+  const text = readFileSync(absolute, "utf8");
+  const start = text.indexOf("SLASH_COMMANDS = [");
+  if (start < 0) return entries;
+  const close = text.indexOf("] as const", start);
+  const body = text.slice(start, close < 0 ? undefined : close);
+  for (const match of body.matchAll(/\bname:\s*"([^"]+)"/g)) {
+    entries.push({
+      kind: "slash command",
+      name: `/${match[1]}`,
+      file: "src/ui/commands.ts",
+      line: lineNumberAt(text, start + match.index),
+    });
+  }
+  return entries;
+}
+
+function importsSettingsRow(text) {
+  const match = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["'][^"']*settings-definition-kit["']/s.exec(text);
+  if (!match) return false;
+  return match[1].split(",").some((item) => item.trim().split(/\s+as\s+/)[0] === "row");
+}
+
+function settingsEntryPoints(root) {
+  const entries = [];
+  for (const absolute of walkFiles(path.join(root, "src"))) {
+    if (!absolute.endsWith(".ts")) continue;
+    const text = readFileSync(absolute, "utf8");
+    if (!importsSettingsRow(text)) continue;
+    const file = normalizedPath(path.relative(root, absolute));
+    for (const match of text.matchAll(/\brow\(\s*"([^"]*)"/g)) {
+      if (!match[1]) continue;
+      entries.push({
+        kind: "settings row",
+        name: match[1],
+        file,
+        line: lineNumberAt(text, match.index),
+      });
+    }
+  }
+  return entries;
+}
+
+export function entryPoints(root) {
+  return [...commandEntryPoints(root), ...slashEntryPoints(root), ...settingsEntryPoints(root)];
+}
+
+function normalizedWords(text) {
+  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+/**
+ * Match the entry name against the row's first cell only, as one whole segment
+ * (split on `:`, `>`, `,`, `;`, and " / "). So `row("Name")` does not pass on
+ * "`/agent <name> <task>`", `row("Import")` not on "Imported MCP servers ...",
+ * and `row("Model")` not on "Model calls the `subagent` tool".
+ */
+function namesEntryPoint(cell, name) {
+  const needle = normalizedWords(name).join(" ");
+  if (!needle) return false;
+  return cell
+    .split(/[:>,;]|\s\/\s/)
+    .some((part) => normalizedWords(part).join(" ") === needle);
+}
+
+function checkInventory(root, rows, errors) {
+  const entryCells = rows.map((row) => row.cells[0] ?? "");
+  const reported = new Set();
+  for (const entry of entryPoints(root)) {
+    const key = `${entry.kind}:${entry.name}`;
+    if (INVENTORY_ALLOWLIST.has(key) || reported.has(key)) continue;
+    if (entryCells.some((cell) => namesEntryPoint(cell, entry.name))) continue;
+    reported.add(key);
+    errors.push(
+      `${entry.file}:${entry.line}: ${entry.kind} "${entry.name}" is not named in any feature map row`,
+    );
+  }
 }
 
 function checkRow(root, row) {
@@ -137,14 +295,14 @@ function checkRow(root, row) {
   }
 
   const sourceRefs = refsIn(source);
-  if (sourceRefs.length === 0) errors.push(`${where}: source needs a path:line reference`);
+  if (sourceRefs.length === 0) errors.push(`${where}: source needs a path#anchor reference`);
   for (const ref of sourceRefs) errors.push(...checkRef(root, ref, where, true));
 
   const proofRefs = refsIn(proof);
   for (const ref of proofRefs) errors.push(...checkRef(root, ref, where, false));
   for (const ref of proofRefs) {
     if (!ref.path.startsWith("test/") && status !== "unreachable") {
-      errors.push(`${where}: proof must point under test/, got ${ref.path}:${ref.line}`);
+      errors.push(`${where}: proof must point under test/, got ${ref.path}#${ref.anchor}`);
     }
   }
 
@@ -191,14 +349,14 @@ function checkJourney(root, file) {
   return { errors, rows };
 }
 
-function checkReadme(root, journeyFiles) {
+function checkReadme(root, journeyFileList) {
   const errors = [];
   const absolute = path.join(root, FEATURES_DIR, "README.md");
   if (!isFile(absolute)) return [`README.md is missing`];
   const text = readFileSync(absolute, "utf8");
   const links = new Set();
   for (const match of text.matchAll(/\]\(\.\/([A-Za-z0-9_.-]+\.md)\)/g)) links.add(match[1]);
-  for (const file of journeyFiles) {
+  for (const file of journeyFileList) {
     if (!links.has(file)) errors.push(`README.md: journey "${file}" is not linked`);
   }
   for (const link of links) {
@@ -214,26 +372,27 @@ export function checkFeatureMap(root = process.cwd()) {
   if (!existsSync(directory) || !statSync(directory).isDirectory()) {
     return { ok: false, errors: [`feature map directory is missing: ${FEATURES_DIR}`], journeys: 0, rows: 0, refs: 0 };
   }
-  const journeyFiles = readdirSync(directory)
-    .filter((file) => file.endsWith(".md") && file !== "README.md")
-    .sort();
-  const errors = checkReadme(root, journeyFiles);
+  const files = journeyFiles(root);
+  const errors = checkReadme(root, files);
+  const allRows = [];
   let rows = 0;
   let refs = 0;
-  for (const file of journeyFiles) {
+  for (const file of files) {
     const result = checkJourney(root, file);
     errors.push(...result.errors);
+    allRows.push(...result.rows);
     rows += result.rows.length;
     refs += result.rows.reduce(
       (total, row) => total + refsIn(row.cells[1]).length + refsIn(row.cells[2]).length,
       0,
     );
   }
-  return { ok: errors.length === 0, errors, journeys: journeyFiles.length, rows, refs };
+  checkLineRefs(root, files, errors);
+  checkInventory(root, allRows, errors);
+  return { ok: errors.length === 0, errors, journeys: files.length, rows, refs };
 }
 
-function main() {
-  const result = checkFeatureMap(process.cwd());
+function reportCheck(result) {
   if (result.ok) {
     console.log(
       `feature map: PASS (${result.journeys} journeys, ${result.rows} rows, ${result.refs} refs)`,
@@ -242,7 +401,12 @@ function main() {
   }
   console.error(`feature map: FAIL (${result.errors.length} errors)`);
   for (const error of result.errors) console.error(`  ${error}`);
-  process.exitCode = 1;
+}
+
+function main() {
+  const result = checkFeatureMap(process.cwd());
+  reportCheck(result);
+  if (!result.ok) process.exitCode = 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

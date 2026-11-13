@@ -579,7 +579,7 @@ async function main(): Promise<void> {
     try {
       if (!options.noBuild) {
         process.stdout.write(`[chaos] building ${options.live ? "production" : "e2e"} bundle\n`);
-        if (options.live) await run(process.execPath, ["esbuild.config.mjs", "production"]);
+        if (options.live) await run(process.execPath, ["scripts/build.mjs", "production"]);
         else await run(process.execPath, ["scripts/build-e2e.mjs"]);
       }
       await installPlugin(vault);

@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
 
 type PluginEntry = string | [string, Record<string, unknown>];
 
-const releaserc = JSON.parse(readFileSync(".releaserc.json", "utf8")) as { plugins: PluginEntry[] };
+const releaseConfig = (
+  JSON.parse(readFileSync("package.json", "utf8")) as { release: { plugins: PluginEntry[] } }
+).release;
 const manifest = JSON.parse(readFileSync("manifest.json", "utf8")) as { version: string };
 /** Workflow text without `#` comments, so a condition in a comment cannot satisfy a check. */
 function workflowCode(file: string): string {
@@ -22,7 +24,7 @@ const releaseYml = workflowCode(".github/workflows/release.yml");
 const ciYml = workflowCode(".github/workflows/ci.yml");
 
 function pluginOptions(name: string): Record<string, unknown> {
-  const entry = releaserc.plugins.find((p) => (Array.isArray(p) ? p[0] : p) === name);
+  const entry = releaseConfig.plugins.find((p) => (Array.isArray(p) ? p[0] : p) === name);
   expect(entry, `${name} is configured`).toBeDefined();
   return Array.isArray(entry) ? entry[1] : {};
 }

@@ -10,6 +10,7 @@
  * warnings; see docs/development/community-review.md for the two behavior
  * recommendations that are intentional features, not lintable defects.
  */
+import path from "node:path";
 import tsparser from "@typescript-eslint/parser";
 import { defineConfig } from "eslint/config";
 import obsidianmd from "eslint-plugin-obsidianmd";
@@ -24,7 +25,6 @@ export default defineConfig([
       ".obsidian-cache/**",
       "test/**",
       "scripts/**",
-      "esbuild.config.mjs",
       "src/vendor/**",
     ],
   },
@@ -38,7 +38,8 @@ export default defineConfig([
         process: "readonly",
         require: "readonly",
       },
-      parserOptions: { project: "./tsconfig.eslint.json", tsconfigRootDir: import.meta.dirname },
+      // Resolved from this file's folder (config/), not from the cwd.
+      parserOptions: { project: path.join(import.meta.dirname, "tsconfig.eslint.json"), tsconfigRootDir: path.join(import.meta.dirname, "..") },
     },
     rules: {
       // minAppVersion is 1.13.0, so the plugin's recommended no-deprecated

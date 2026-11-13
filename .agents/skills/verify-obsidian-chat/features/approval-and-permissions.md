@@ -40,24 +40,24 @@ await (await modal.$("button=Allow")).click();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Approval modal opens before a write | `src/ui/approval-modal.ts:27` | `test/e2e/specs/approval-deterministic.e2e.ts:271` | `covered` |
-| Stop closes a pending approval | `src/ui/approval-modal.ts:100` | `test/e2e/specs/approval-deterministic.e2e.ts:436` | `covered` |
-| Allow applies the change | `src/ui/approval-modal.ts:126` | `test/e2e/specs/approval-deterministic.e2e.ts:271` | `covered` |
-| Deny is two-step and blocks the change | `src/ui/approval-modal.ts:113` | `test/e2e/specs/approval-deterministic.e2e.ts:339` | `covered` |
-| Diff preview before an edit | `src/ui/approval-modal.ts:51` | `test/e2e/specs/approval-deterministic.e2e.ts:289` | `covered` |
-| Remember a deny for this tool | `src/ui/approval-modal.ts:78` | `test/e2e/specs/approval-deterministic.e2e.ts:397` | `covered` |
-| Skill tools cannot be remembered | `src/ui/approval-modal.ts:67` | `test/approval-memory.test.ts:35` (policy only) | `partial` |
-| Global mutating gate persists | `src/settings-tab-agent.ts:104` | `test/e2e/specs/settings-ui.e2e.ts:261` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
-| Per-tool override through settings | `src/settings-tab-agent.ts:104` | `test/e2e/specs/settings-ui.e2e.ts:261` | `covered` |
-| Per-tool deny flips to allow in a recorded run | `src/settings-tab-agent.ts:104` | `test/e2e/probe/scenarios/settings-gate.e2e.ts:75` | `covered` |
-| Working directories and `/add-dir` are gone | `src/ui/commands.ts:25` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts:51` | `covered` |
-| Safe asks before mutating tools | `src/agent/tool-call-controller.ts:258` | `test/e2e/specs/approval-deterministic.e2e.ts:260` | `covered` |
-| Safe/YOLO toggle | `src/ui/chat-view.ts:686` | `test/e2e/specs/plan-removal.e2e.ts:68` (existence only) | `partial` |
-| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts:686` | `test/e2e/specs/plan-removal.e2e.ts:68` | `covered` |
-| Invalid mode transition is blocked | `src/ui/chat-view.ts:899` | `test/modes.test.ts:63` (unit only) | `partial` |
-| Background-tab approval badge and label | `src/ui/chat-view.ts:437` | `test/e2e/specs/multi-tab-approval.e2e.ts:83` | `covered` |
-| Closing a tab clears its pending approval | `src/ui/chat-view.ts:339` | `test/e2e/specs/multi-tab-approval.e2e.ts:148` | `covered` |
-| Approval modal at phone width | `src/ui/approval-modal.ts:34` | `test/e2e/specs/mobile-viewport.e2e.ts:403` | `covered` |
+| Approval modal opens before a write | `src/ui/approval-modal.ts#ApprovalModal` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
+| Stop closes a pending approval | `src/ui/approval-modal.ts#onOpen` | `test/e2e/specs/approval-deterministic.e2e.ts#closes the approval modal when the user stops the turn` | `covered` |
+| Allow applies the change | `src/ui/approval-modal.ts#onOpen` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
+| Deny is two-step and blocks the change | `src/ui/approval-modal.ts#onOpen` | `test/e2e/specs/approval-deterministic.e2e.ts#captures # composer text into standing instructions through approval` | `covered` |
+| Diff preview before an edit | `src/ui/approval-modal.ts#onOpen` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
+| Remember a deny for this tool | `src/ui/approval-modal.ts#onOpen` | `test/e2e/specs/approval-deterministic.e2e.ts#keeps don't ask again passive and remembers deny after the final choice` | `covered` |
+| Skill tools cannot be remembered | `src/ui/approval-modal.ts#onOpen` | `test/approval-memory.test.ts#never remembers allow for persistent skill tools (injection gate)` (policy only) | `partial` |
+| Global mutating gate persists | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
+| Per-tool override through settings | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
+| Per-tool deny flips to allow in a recorded run | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/probe/scenarios/settings-gate.e2e.ts#records a denied write, flips the override, and records the write succeeding` | `covered` |
+| Working directories and `/add-dir` are gone | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
+| Safe asks before mutating tools | `src/agent/tool-call-controller.ts#beforeToolCall` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted write and undo removes the created note` | `covered` |
+| Safe/YOLO toggle | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` (existence only) | `partial` |
+| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` | `covered` |
+| Invalid mode transition is blocked | `src/ui/chat-view.ts#chooseAutocomplete` | `test/modes.test.ts#validateModeTransition` (unit only) | `partial` |
+| Background-tab approval badge and label | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
+| Closing a tab clears its pending approval | `src/ui/chat-view.ts#switchToTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` | `covered` |
+| Approval modal at phone width | `src/ui/approval-modal.ts#ApprovalModal` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps approval modals visible and touchable at phone width` | `covered` |
 
 ## Gotchas
 
