@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
-import type { AgenticChatSettings } from "../settings-schema";
+import { activeModelId, type AgenticChatSettings } from "../settings-schema";
 import type { WebFetcher } from "../tools/web-fetch";
 import type { ApprovalAuditInput } from "../agent/action-audit-log";
 import { redactText } from "../privacy/redaction";
@@ -167,7 +167,7 @@ export class AgentObservabilityRuntime {
       "langfuse.session.id": stableSessionId(session),
       "langfuse.trace.tags": ["agentic-chat", context.provider],
       "agentic.provider": context.provider,
-      "agentic.model": activeModelIdForSettings(context),
+      "agentic.model": activeModelId(context),
       "agentic.mode": context.mode,
       "agentic.output_style": context.outputStyle,
       "agentic.thinking_level": context.thinkingLevel,
@@ -409,12 +409,6 @@ function messageText(message: AgentMessage): string {
 function stableSessionId(context: ObservabilitySessionContext): string {
   const source = context.sessionId || context.sessionPath || "no-session";
   return `session-${fnv1a(source)}`;
-}
-
-function activeModelIdForSettings(settings: AgenticChatSettings): string {
-  if (settings.provider === "ollama") return settings.ollamaModel;
-  if (settings.provider === "openai-compatible") return settings.openaiCompatibleModel;
-  return settings.openrouterModel;
 }
 
 function shouldSample(sampleRate: number, random: () => number): boolean {
