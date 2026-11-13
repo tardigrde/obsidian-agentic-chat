@@ -4,13 +4,23 @@ import { parseWwwAuthenticate, refreshMcpOAuthToken, shouldRefreshMcpOAuthToken 
 import { DEFAULT_MCP_HTTP_TIMEOUT_MS, fetchWithMcpTimeout } from "./http";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
 import { isPrivateNetworkHost, mcpUrlProblem } from "../utils/host-policy";
-import { asRecord } from "../utils/records";
+import {
+  McpSseResponseIncompleteError,
+  parseJsonRpcResponse,
+  parseTools,
+  type JsonRpcRequest,
+  type JsonRpcResponse,
+  type McpToolDefinition,
+} from "./jsonrpc";
+import { McpError } from "./errors";
 import {
   backoffDelayMs,
   classifyError,
   classifyHttpResponse,
   sleep,
 } from "../agent/error-classifier";
+
+export type { McpToolDefinition } from "./jsonrpc";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
 const MCP_PROTOCOL_VERSION_FALLBACKS = ["2025-06-18", "2024-11-05"] as const;
@@ -29,21 +39,6 @@ function isValidOAuthResourceUrl(url: string): boolean {
   }
 }
 
-export interface McpToolDefinition {
-  name: string;
-  title?: string;
-  description?: string;
-  inputSchema?: Record<string, unknown>;
-  outputSchema?: Record<string, unknown>;
-  annotations?: Record<string, unknown>;
-}
-
-export interface McpCallToolResult {
-  content?: unknown[];
-  structuredContent?: unknown;
-  isError?: boolean;
-}
-
 interface McpInitializeResult {
   protocolVersion?: string;
   serverInfo?: {
@@ -53,29 +48,10 @@ interface McpInitializeResult {
   };
 }
 
-interface JsonRpcSuccess<T> {
-  jsonrpc: typeof JSON_RPC;
-  id: number | string | null;
-  result: T;
-}
-
-interface JsonRpcFailure {
-  jsonrpc: typeof JSON_RPC;
-  id: number | string | null;
-  error: {
-    code?: number;
-    message?: string;
-    data?: unknown;
-  };
-}
-
-type JsonRpcResponse<T> = JsonRpcSuccess<T> | JsonRpcFailure;
-
-interface JsonRpcRequest {
-  jsonrpc: typeof JSON_RPC;
-  id?: number;
-  method: string;
-  params?: Record<string, unknown>;
+export interface McpCallToolResult {
+  content?: unknown[];
+  structuredContent?: unknown;
+  isError?: boolean;
 }
 
 export interface McpHttpClientOptions {
@@ -119,12 +95,6 @@ class McpJsonRpcError extends Error {
   }
 }
 
-class McpSseResponseIncompleteError extends Error {
-  constructor(readonly lastEventId: string | undefined) {
-    super("MCP SSE response ended without a matching JSON-RPC result.");
-  }
-}
-
 export class McpHttpClient {
   private readonly server: McpServerSettings;
   private readonly fetcher: WebFetcher;
@@ -134,6 +104,8 @@ export class McpHttpClient {
   private protocolVersion = MCP_PROTOCOL_VERSION;
   private sessionId: string | undefined;
   private initialized = false;
+  /** The handshake in flight, shared by concurrent calls on one client. */
+  private initializing: Promise<void> | null = null;
 
   constructor(options: McpHttpClientOptions) {
     this.server = options.server;
@@ -181,14 +153,6 @@ export class McpHttpClient {
     throw lastProtocolError instanceof Error ? lastProtocolError : new Error("MCP initialize failed.");
   }
 
-  async openEventStream(signal?: AbortSignal): Promise<WebHttpResponse> {
-    const response = await this.getSseAfter(undefined, signal);
-    if (!/text\/event-stream/i.test(response.headers["content-type"] ?? "")) {
-      throw new Error(`MCP ${this.server.name} SSE stream did not return text/event-stream.`);
-    }
-    return response;
-  }
-
   async listTools(signal?: AbortSignal): Promise<McpToolDefinition[]> {
     await this.ensureInitialized(signal);
     const tools: McpToolDefinition[] = [];
@@ -212,7 +176,15 @@ export class McpHttpClient {
   }
 
   private async ensureInitialized(signal?: AbortSignal): Promise<void> {
-    if (!this.initialized) await this.initialize(signal);
+    if (this.initialized) return;
+    // One client now serves every call to a server, so parallel tool calls
+    // must share one handshake instead of racing on the session id.
+    this.initializing ??= this.initialize(signal)
+      .then(() => undefined)
+      .finally(() => {
+        this.initializing = null;
+      });
+    await this.initializing;
   }
 
   private async request<T>(
@@ -253,12 +225,12 @@ export class McpHttpClient {
   ): Promise<T> {
     if (error instanceof McpOAuthUnauthorizedError) {
       const refreshed = await this.refreshOAuthAfterUnauthorized(signal);
-      if (!refreshed) throw new Error(this.oauthAuthenticationMessage(error.challenge), { cause: error });
+      if (!refreshed) throw new McpError("auth", this.oauthAuthenticationMessage(error.challenge), { cause: error });
       return this.reinitializeAndRetry<T>(method, params, signal);
     }
     if (error instanceof McpOAuthForbiddenError) {
       const refreshed = await this.refreshOAuthForRequiredScope(error.challenge, signal);
-      if (!refreshed) throw new Error(this.oauthForbiddenMessage(error.challenge), { cause: error });
+      if (!refreshed) throw new McpError("auth", this.oauthForbiddenMessage(error.challenge), { cause: error });
       return this.reinitializeAndRetry<T>(method, params, signal);
     }
     if (method !== "initialize" && error instanceof McpSessionTerminatedError) {
@@ -311,7 +283,7 @@ export class McpHttpClient {
       await this.post({ jsonrpc: JSON_RPC, method, params }, signal);
     } catch (error) {
       if (error instanceof McpOAuthUnauthorizedError) {
-        throw new Error(this.oauthAuthenticationMessage(error.challenge), { cause: error });
+        throw new McpError("auth", this.oauthAuthenticationMessage(error.challenge), { cause: error });
       }
       throw error;
     }
@@ -650,67 +622,9 @@ export function normalizeMcpUrl(input: string): string {
   return parsed.toString();
 }
 
-function parseTools(value: unknown): McpToolDefinition[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    const record = asRecord(item);
-    const name = asString(record.name).trim();
-    if (!name) return [];
-    return [
-      {
-        name,
-        title: asString(record.title),
-        description: asString(record.description),
-        inputSchema: asSchema(record.inputSchema),
-        outputSchema: asSchema(record.outputSchema),
-        annotations: asRecord(record.annotations),
-      },
-    ];
-  });
-}
-
-function parseJsonRpcResponse<T>(response: WebHttpResponse, id: number): JsonRpcResponse<T> {
-  const parsed = parseJsonBodyOrSse(response.text, response.headers["content-type"] ?? "", id);
-  const record = asRecord(parsed);
-  if (record.error && typeof record.error === "object") return record as unknown as JsonRpcFailure;
-  if ("result" in record) return record as unknown as JsonRpcSuccess<T>;
-  throw new Error("MCP server returned an invalid JSON-RPC response.");
-}
-
-function parseJsonBodyOrSse(text: string, contentType: string, id: number): unknown {
-  if (!/text\/event-stream/i.test(contentType) && !text.trimStart().startsWith("data:")) {
-    return JSON.parse(text || "{}");
-  }
-  let lastEventId: string | undefined;
-  for (const event of text.split(/\r?\n\r?\n+/)) {
-    const lines = event.split(/\r?\n/);
-    const eventId = lines.find((line) => line.startsWith("id:"))?.slice(3).trimStart();
-    if (eventId) lastEventId = eventId;
-    const data = lines
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trimStart())
-      .join("\n")
-      .trim();
-    if (!data) continue;
-    const parsed: unknown = JSON.parse(data);
-    const record = asRecord(parsed);
-    if (record.id === id || record.id === String(id)) return parsed;
-  }
-  throw new McpSseResponseIncompleteError(lastEventId);
-}
-
 function isProtocolVersionRejection(error: unknown): boolean {
   if (!(error instanceof McpJsonRpcError) || error.method !== "initialize") return false;
   const message = error.message.toLowerCase();
   if (error.code === -32602 && /protocol|version/.test(message)) return true;
   return /protocol\s*version|unsupported.*version|unsupported.*protocol/.test(message);
-}
-
-function asSchema(value: unknown): Record<string, unknown> | undefined {
-  const record = asRecord(value);
-  return Object.keys(record).length > 0 ? record : undefined;
-}
-
-function asString(value: unknown): string {
-  return typeof value === "string" ? value : "";
 }

@@ -859,3 +859,23 @@ describe("McpHttpClient OAuth resource challenge", () => {
     expect(target.pendingOAuthResourceUrl).toBeUndefined();
   });
 });
+
+describe("shared handshake", () => {
+  it("runs one initialize for parallel calls on a fresh client", async () => {
+    const methods: string[] = [];
+    const fetcher: WebFetcher = async (request) => {
+      const body = JSON.parse(request.body ?? "{}") as { id?: number; method?: string };
+      methods.push(body.method ?? "");
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      if (body.method === "initialize") return jsonRpc(body.id ?? 0, { protocolVersion: "2025-11-25" }, { "mcp-session-id": "s1" });
+      if (body.method === "notifications/initialized") return { status: 202, text: "", headers: {} };
+      return jsonRpc(body.id ?? 0, { content: [{ type: "text", text: "ok" }] });
+    };
+    const client = new McpHttpClient({ server: server(), fetcher });
+
+    await Promise.all([client.callTool("a", {}), client.callTool("b", {})]);
+
+    expect(methods.filter((method) => method === "initialize")).toHaveLength(1);
+    expect(methods.filter((method) => method === "tools/call")).toHaveLength(2);
+  });
+});

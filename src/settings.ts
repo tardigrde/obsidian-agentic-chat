@@ -16,12 +16,13 @@ import type AgenticChatPlugin from "./main";
 import { DEFAULT_PLUGINS_FOLDER } from "./plugins/loader";
 import type { LoadedPlugin } from "./plugins/loader";
 import { createMcpServerState } from "./mcp/settings";
+import { clearAuthForUrlChange } from "./mcp/server-state";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OLLAMA_BASE_URL,
   listOpenRouterModels,
 } from "./llm/models";
-import { type ApprovalPolicy, clearMcpPerToolApprovals, setPerToolApproval } from "./agent/approval";
+import { type ApprovalPolicy, setPerToolApproval } from "./agent/approval";
 import { type AgentMode, MODE_ORDER, MODES } from "./agent/modes";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { MUTATING_TOOLS } from "./tools/tool-contracts";
@@ -455,7 +456,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
     // No merge into settings.mcp.servers — the two cannot diverge.
     const pluginServers = plugins.flatMap((plugin) => plugin.mcpServers);
     let mutated = false;
-    const derivedIds = new Set(pluginServers.map((server) => server.id));
     for (const server of pluginServers) {
       const existing = this.plugin.settings.plugins.mcpState[server.id];
       if (!existing) {
@@ -466,31 +466,14 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         });
         mutated = true;
       } else if (existing.lastUrl !== server.url) {
-        if (existing.lastUrl && existing.lastUrl !== server.url) {
-          existing.authHeaderValue = "";
-          existing.oauth = { ...existing.oauth, accessToken: "", refreshToken: "", expiresAt: 0 };
-          existing.knownTools = [];
-          existing.pendingOAuthChallenge = undefined;
-          existing.pendingOAuthResourceUrl = undefined;
-        }
+        if (existing.lastUrl) clearAuthForUrlChange(existing);
         existing.lastUrl = server.url;
         mutated = true;
       }
     }
-    // A retained import backup still owns the state keys of its package. Keep
-    // them until the backup is restored or removed, then prune on a later pass.
-    if (!this.plugin.pluginService.hasRetainedImportBackup()) {
-      for (const id of Object.keys(this.plugin.settings.plugins.mcpState)) {
-        if (!derivedIds.has(id)) {
-          const isLegacyUser = this.plugin.settings.mcp.servers.some((entry) => entry.id === id && entry.source !== "plugin");
-          if (!isLegacyUser) {
-            delete this.plugin.settings.plugins.mcpState[id];
-            clearMcpPerToolApprovals(this.plugin.settings.approval, id);
-            mutated = true;
-          }
-        }
-      }
-    }
+    // Orphaned mcpState (and its per-tool approvals) is pruned by
+    // PluginService.reload(); this tab only creates entries and heals URLs, so
+    // one prune path owns the guard.
     // Prune transient deleted cache entries that have reappeared (recreated outside)
     const alivePaths = new Set(plugins.map((plugin) => plugin.rootPath));
     this.externallyDeletedPlugins = this.externallyDeletedPlugins.filter((plugin) => !alivePaths.has(plugin.rootPath));

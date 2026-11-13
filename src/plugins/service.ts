@@ -1,6 +1,7 @@
 import { type App, type DataAdapter, TFolder } from "obsidian";
 import { type AgenticChatSettings } from "../settings-schema";
 import { createMcpServerState, normalizeMcpServerId } from "../mcp/settings";
+import { pruneMcpState } from "../mcp/server-state";
 import { clearMcpPerToolApprovals } from "../agent/approval";
 import { BUILTIN_SKILL_DOCS } from "../skills/builtin-skills";
 import { ensureVaultFolder, ensureVaultParentFolder } from "../vault/storage";
@@ -31,6 +32,21 @@ import { AGENT_PLUGINS_MCP_SCHEMA_ID, AGENT_PLUGINS_SCHEMA_ID, USER_SKILLS_PACKA
 
 export { FIRST_PARTY_PACKAGE_NAMES, USER_SKILLS_PACKAGE } from "./manifest";
 
+/**
+ * The one plugin catalog players share: the runtime builds skills and MCP tools
+ * from this list, and an install or vault edit invalidates it.
+ */
+export interface PluginCatalog {
+  /**
+   * The cached list, or null when no scan is cached. Read-only: it never runs
+   * the reload, which prunes plugin settings and saves. The runtime scans the
+   * folder itself when this is null.
+   */
+  peekLoaded(): LoadedPlugin[] | null;
+  /** Returns an unsubscribe function. */
+  onInvalidated(listener: () => void): () => void;
+}
+
 export interface GenerateMcpPackageResult {
   /** Vault path of the generated package directory. */
   rootPath: string;
@@ -51,6 +67,7 @@ export class PluginService {
   /** Serializes install transactions with the recovery sweep. */
   private maintenance: Promise<void> = Promise.resolve();
   private retainedImportBackup = false;
+  private readonly invalidationListeners = new Set<() => void>();
 
   constructor(
     private readonly app: App,
@@ -111,19 +128,11 @@ export class PluginService {
 
   private pruneOrphanPluginSettings(settings: AgenticChatSettings): boolean {
     const aliveIds = new Set(this.cache!.flatMap((p) => p.mcpServers.map((s) => s.id)));
-    // Keep mcpState for ids still owned by a legacy user server — matches
-    // settings.ts reconcile guard (prevents collision over-delete).
+    // Keep mcpState for ids still owned by a legacy user server — one prune
+    // rule with the settings-tab guard (prevents collision over-delete).
     const isLegacyUserId = (id: string): boolean =>
       settings.mcp.servers.some((server) => server.id === id && server.source !== "plugin");
-    const deletedMcpIds = Object.keys(settings.plugins.mcpState).filter((id) => !aliveIds.has(id) && !isLegacyUserId(id));
-    let mutated = deletedMcpIds.length > 0;
-    for (const id of deletedMcpIds) {
-      delete settings.plugins.mcpState[id];
-      clearMcpPerToolApprovals(settings.approval, id);
-    }
-    // Also prune perTool for deleted ids that had no mcpState entry but still have approvals (best-effort)
-    // — use the full deleted set without legacy guard filtered above? No, respect guard.
-    // Already handled for deletedMcpIds above; legacy ids retain their perTool intentionally.
+    let mutated = pruneMcpState(settings, aliveIds, isLegacyUserId);
     const aliveNames = new Set(this.cache!.map((p) => p.name));
     for (const name of Object.keys(settings.plugins.enabled)) {
       if (!aliveNames.has(name)) {
@@ -151,6 +160,10 @@ export class PluginService {
     return this.cache ?? [];
   }
 
+  peekLoaded(): LoadedPlugin[] | null {
+    return this.cache;
+  }
+
   /** True while the cache holds a scanned plugin list (valid or empty). */
   hasCache(): boolean {
     return this.cache !== null;
@@ -158,6 +171,7 @@ export class PluginService {
 
   invalidate(): void {
     this.cache = null;
+    this.notifyInvalidated();
   }
 
   /**
@@ -168,7 +182,26 @@ export class PluginService {
     const folder = this.pluginsFolder().replace(/\/+$/, "");
     if (path !== folder && !path.startsWith(`${folder}/`)) return false;
     this.cache = null;
+    this.notifyInvalidated();
     return true;
+  }
+
+  /** Subscribe to invalidations so a runtime can rebuild plugin-derived tools. */
+  onInvalidated(listener: () => void): () => void {
+    this.invalidationListeners.add(listener);
+    return () => {
+      this.invalidationListeners.delete(listener);
+    };
+  }
+
+  private notifyInvalidated(): void {
+    for (const listener of [...this.invalidationListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        console.warn("Agentic chat: plugin invalidation listener failed", error);
+      }
+    }
   }
 
   /** List cached plugins whose folders are missing on disk. */

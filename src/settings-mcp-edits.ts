@@ -2,7 +2,6 @@ import type { App } from "obsidian";
 import { clearMcpPerToolApprovals, setPerToolApproval } from "./agent/approval";
 import {
   createMcpServerState,
-  mcpServerStateFromServer,
   nextUniqueMcpServerId,
   resetMcpCredentials,
   resetMcpServerSecretRefs,
@@ -10,6 +9,7 @@ import {
   type McpServerSettings,
   type McpServerState,
 } from "./mcp/settings";
+import { syncMcpServerState } from "./mcp/server-state";
 import { localMcpToolNames } from "./mcp/tools";
 import { mcpCredentialResourceChanged, mcpEndpointProblem, mcpKnownToolLocalName, mcpSecretIds } from "./settings-mcp-state";
 import type { AgenticChatSettings } from "./settings-schema";
@@ -32,22 +32,7 @@ export function ensureMcpStateEntry(settings: AgenticChatSettings, id: string): 
 export function syncMcpServerToState(settings: AgenticChatSettings, server: McpServerSettings): void {
   if (server.source !== "plugin") return;
   const state = ensureMcpStateEntry(settings, server.id);
-  const next = mcpServerStateFromServer(server);
-  // Preserve secret ids already in state (they are derived from id, but keep if present)
-  state.enabled = next.enabled;
-  state.approval = next.approval;
-  state.authType = next.authType;
-  state.authHeaderName = next.authHeaderName;
-  state.authHeaderValueSecretId = next.authHeaderValueSecretId;
-  state.authHeaderValue = next.authHeaderValue;
-  state.oauth = next.oauth;
-  state.knownTools = next.knownTools;
-  state.enabledTools = [...next.enabledTools];
-  state.disabledTools = [...next.disabledTools];
-  state.pendingOAuthChallenge = next.pendingOAuthChallenge;
-  state.pendingOAuthResourceUrl = next.pendingOAuthResourceUrl;
-  if (next.lastUrl) state.lastUrl = next.lastUrl;
-  else delete state.lastUrl;
+  syncMcpServerState(state, server);
 }
 
 export function nextMcpServerId(
