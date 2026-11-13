@@ -6,36 +6,11 @@ import { buildAgentParentTools } from "../src/agent/runtime-resources";
 import { estimateToolDefinitionTokens } from "../src/agent/tool-budget";
 import { createSubagentTool } from "../src/tools/subagent-tool";
 import { createVaultTools } from "../src/tools/vault-tools";
-import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import type { WebFetcher } from "../src/tools/web-fetch";
 import { ReadMemo } from "../src/vault/read-memo";
+import { noopArtifactStore } from "./support/fake-adapter";
 
 const noopFetcher: WebFetcher = async () => ({ status: 200, text: "", headers: {} });
-const noopArtifactStore: ToolArtifactStoreLike = {
-  async writeArtifact(input) {
-    return {
-      id: "a",
-      label: input.label,
-      sourceToolName: input.sourceToolName,
-      contentType: input.contentType ?? "text/plain",
-      createdAt: "2026-06-24T00:00:00.000Z",
-      charLength: input.text.length,
-    };
-  },
-  async readArtifact() {
-    return {
-      metadata: {
-        id: "a",
-        label: "A",
-        sourceToolName: "t",
-        contentType: "text/plain",
-        createdAt: "2026-06-24T00:00:00.000Z",
-        charLength: 0,
-      },
-      text: "",
-    };
-  },
-};
 
 function parentTools(withScaffolder: boolean): AgentTool[] {
   const subagentTool = createSubagentTool({
