@@ -1537,8 +1537,40 @@ export class ChatView extends ItemView {
   }
 
   /** Narrow view of this view for the slash handler modules. */
+  private slashContext: SlashContext | undefined;
+
   private get slashCtx(): SlashContext {
-    return this as unknown as SlashContext;
+    // A real object (not a cast of `this`), so the compiler checks every member.
+    // State members are accessors: handlers must see and set the live view state.
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- accessors below read live view state
+    const view = this;
+    return (this.slashContext ??= {
+      get service() { return view.service; },
+      get plugin() { return view.plugin; },
+      get app() { return view.app; },
+      get inputEl() { return view.inputEl; },
+      get activeNotePath() { return view.activeNotePath; },
+      get semanticIndexWorkflow() { return view.semanticIndexWorkflow; },
+      set semanticIndexWorkflow(value) { view.semanticIndexWorkflow = value; },
+      clearEmptyState: () => view.clearEmptyState(),
+      renderInfoMessage: (title, entries) => view.renderInfoMessage(title, entries),
+      renderActionList: (title, subtitle, items) => view.renderActionList(title, subtitle, items),
+      renderErrorMessage: (message) => view.renderErrorMessage(message),
+      showServiceError: () => view.showServiceError(),
+      renderOutgoingUserMessage: (text, attachments, images) => view.renderOutgoingUserMessage(text, attachments, images),
+      renderTranscript: (messages) => view.renderTranscript(messages),
+      syncChrome: () => view.syncChrome(),
+      setOutputStyle: (style) => view.setOutputStyle(style),
+      setComposerValue: (text) => view.setComposerValue(text),
+      createSessionWorkflow: () => view.createSessionWorkflow(),
+      createSessionActivationCoordinator: () => view.createSessionActivationCoordinator(),
+      createMemoryWorkflow: () => view.createMemoryWorkflow(),
+      semanticIndexWorkflowController: () => view.semanticIndexWorkflowController(),
+      workflowRenderer: () => view.workflowRenderer(),
+      clearAllSessions: () => view.clearAllSessions(),
+      loadSession: (path) => view.loadSession(path),
+      deleteSessionFromList: (path) => view.deleteSessionFromList(path),
+    });
   }
 
   private runDoctor(): Promise<void> { return runDoctor(this.slashCtx); }
@@ -1643,9 +1675,9 @@ export class ChatView extends ItemView {
     return semanticIndexWorkflowController(this.slashCtx);
   }
 
-  private createMemoryWorkflow(): MemoryWorkflowController { return createMemoryWorkflow(this as unknown as SlashContext); }
+  private createMemoryWorkflow(): MemoryWorkflowController { return createMemoryWorkflow(this.slashCtx); }
 
-  private workflowRenderer(): WorkflowRenderer { return createWorkflowRenderer(this as unknown as SlashContext); }
+  private workflowRenderer(): WorkflowRenderer { return createWorkflowRenderer(this.slashCtx); }
 
   private showStatus(): void { showStatus(this.slashCtx); }
 

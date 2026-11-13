@@ -43,13 +43,13 @@ await $(".agentic-chat-action-list").waitForExist();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| `/agent` with no argument (picker) | `src/ui/slash/agents.ts:47` | no committed check | `NONE` |
-| `/agent <name> <task>` | `src/ui/chat-view.ts:1546` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
+| `/agent` with no argument (picker) | `src/ui/slash/agents.ts:58` | no committed check | `NONE` |
+| `/agent <name> <task>` | `src/ui/slash/agents.ts:39` | `test/command-dispatcher.test.ts:54` (unit only) | `partial` |
 | Model calls the `subagent` tool | `src/tools/subagent-tool.ts:112` | `test/subagents.test.ts:323` (unit only) | `partial` |
 | Built-in Explorer role | `src/agent/subagents.ts:34` | `test/subagent-runtime.test.ts:147` (unit only) | `partial` |
 | Parallel cap of ten and queueing | `src/tools/subagent-tool.ts:14` | `test/subagents.test.ts:505` (unit only) | `partial` |
 | Live child status tree | `src/ui/assistant-bubble.ts:337` | `test/e2e/specs/design-audit.e2e.ts:57` (disabled unless `AGENTIC_CHAT_DESIGN_AUDIT=1`) | `partial` |
-| Per-child Stop button | `src/ui/assistant-bubble.ts:385` | `test/subagents.test.ts:363` (abort path only, no button click) | `partial` |
+| Per-child Stop button | `src/ui/subagent-tree.ts:135` | `test/subagents.test.ts:363` (abort path only, no button click) | `partial` |
 | Replay a done dispatch | `src/ui/assistant-bubble.ts:367` | `test/e2e/specs/subagent-replay.e2e.ts:90` | `covered` |
 | Replay a stopped dispatch | `src/ui/assistant-bubble.ts:367` | `test/e2e/specs/subagent-replay.e2e.ts:128` | `covered` |
 | Replay a failed dispatch | `src/ui/assistant-bubble.ts:367` | `test/e2e/specs/subagent-replay.e2e.ts:146` | `covered` |
@@ -59,7 +59,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Ignore-list withholding | `src/ui/attachments.ts:39` | `test/attachments.test.ts:37` (unit only) | `partial` |
 | Context chips order and removal | `src/ui/context-chip-renderer.ts:21` | `test/context-chip-renderer.test.ts:85` (unit only) | `partial` |
 | Source chips and note open | `src/ui/assistant-bubble.ts:495` | `test/e2e/specs/beautifului-polish.e2e.ts:198` | `covered` |
-| Context-window bar | `src/ui/chat-view.ts:702` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
+| Context-window bar | `src/ui/chat-view.ts:709` | `test/e2e/probe/scenarios/context-readout.e2e.ts:47` | `covered` |
 
 ## Gotchas
 
