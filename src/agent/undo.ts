@@ -1,5 +1,6 @@
 import { type App, TFile, TFolder, type TAbstractFile } from "obsidian";
 import { normalizeVaultPath } from "../vault/path";
+import { fnv1a32 } from "../utils/hash";
 import { ensureVaultFolder, ensureVaultParentFolder } from "../vault/storage";
 export { UNDOABLE_TOOLS } from "../tools/tool-contracts";
 
@@ -24,12 +25,7 @@ export type UndoEntry =
 /** FNV-1a 32-bit hash, base-36. Used as a stable fingerprint for file
  * bodies; collision risk is acceptable for log-slimming diff detection. */
 function fnv1a(body: string): string {
-  let hash = 0x811c9dc5;
-  for (const char of body) {
-    hash ^= char.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(36);
+  return fnv1a32(body, { codePoints: true }).toString(36);
 }
 
 /** Compute a body summary (hash + length) for log storage. */

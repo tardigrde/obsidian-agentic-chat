@@ -11,6 +11,7 @@ import {
 import { isHostAllowedByAllowlist } from "./web-allowlist";
 import { wrapToolOutputTruncated } from "./tool-output-wrapper";
 import { errorMessage } from "../utils/errors";
+import { isPrivateNetworkHost } from "../utils/host-policy";
 export { isHostAllowedByAllowlist, normalizeAllowedHosts } from "./web-allowlist";
 
 /** A minimal HTTP request the web tools issue. */
@@ -382,68 +383,10 @@ export function normalizeWebUrl(input: string): string {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(`Only http(s) URLs can be fetched: ${input}`);
   }
-  if (isBlockedHost(parsed.hostname)) {
+  if (isPrivateNetworkHost(parsed.hostname)) {
     throw new Error(`Refusing to fetch a local or private address: ${parsed.hostname}`);
   }
   return parsed.toString();
-}
-
-function isBlockedHost(hostname: string): boolean {
-  const host = unmapMappedIpv4(hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, ""));
-  if (isBlockedLocalHostname(host)) return true;
-  const ipv4 = ipv4Octets(host);
-  if (ipv4) return isBlockedIpv4(ipv4[0], ipv4[1]);
-  return isBlockedIpv6(host);
-}
-
-/**
- * IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) would otherwise slip past the IPv4
- * checks. The WHATWG URL parser serializes these to hex (::ffff:7f00:1), so
- * accept both forms and re-check the embedded IPv4 address.
- */
-function unmapMappedIpv4(host: string): string {
-  const mapped = /^(?:0*:)*ffff:(.+)$/.exec(host);
-  if (!mapped) return host;
-  return mappedToIpv4(mapped[1]) ?? host;
-}
-
-function isBlockedLocalHostname(host: string): boolean {
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
-  return host === "" || host === "0.0.0.0" || host === "::" || host === "::1";
-}
-
-/** Parse a dotted-quad IPv4 literal; returns undefined for anything else. */
-function ipv4Octets(host: string): [number, number] | undefined {
-  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  if (!match) return undefined;
-  return [Number(match[1]), Number(match[2])];
-}
-
-function isBlockedIpv4(a: number, b: number): boolean {
-  if (a === 0 || a === 127 || a === 10) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  return a === 169 && b === 254;
-}
-
-/** IPv6 unique-local (fc00::/7) and link-local (fe80::/10). */
-function isBlockedIpv6(host: string): boolean {
-  if (/^f[cd][0-9a-f]*:/.test(host)) return true;
-  return /^fe[89ab][0-9a-f]*:/.test(host);
-}
-
-/**
- * Convert the tail of an IPv4-mapped IPv6 address to dotted IPv4, accepting both
- * the dotted form (`127.0.0.1`) and the two-hextet form (`7f00:1`) the URL
- * parser normalizes to. Returns undefined when it isn't a recognizable IPv4.
- */
-function mappedToIpv4(tail: string): string | undefined {
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(tail)) return tail;
-  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(tail);
-  if (!hex) return undefined;
-  const high = Number.parseInt(hex[1], 16);
-  const low = Number.parseInt(hex[2], 16);
-  return [(high >> 8) & 255, high & 255, (low >> 8) & 255, low & 255].join(".");
 }
 
 /** Cap returned characters between a sane floor and the configured default. */

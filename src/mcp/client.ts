@@ -3,7 +3,7 @@ import type { McpServerSettings } from "./settings";
 import { parseWwwAuthenticate, refreshMcpOAuthToken, shouldRefreshMcpOAuthToken } from "./oauth";
 import { DEFAULT_MCP_HTTP_TIMEOUT_MS, fetchWithMcpTimeout } from "./http";
 import { assertValidHttpHeaderName, assertValidHttpHeaderValue } from "./http-headers";
-import { mcpUrlProblem } from "../utils/host-policy";
+import { isPrivateNetworkHost, mcpUrlProblem } from "../utils/host-policy";
 import { asRecord } from "../utils/records";
 import {
   backoffDelayMs,
@@ -19,16 +19,11 @@ const JSON_RPC = "2.0";
 const ACCEPT = "application/json, text/event-stream";
 const MAX_SESSION_ID_LENGTH = 1024;
 
+/** Resource metadata a server names in its challenge must be https and not on a private network. */
 function isValidOAuthResourceUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== "https:") return false;
-    const host = parsed.hostname.toLowerCase();
-    // Block private / loopback / link-local
-    if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".localhost")) return false;
-    if (host.startsWith("10.") || host.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) return false;
-    if (host.startsWith("169.254.") || host.startsWith("0.")) return false;
-    return true;
+    return parsed.protocol === "https:" && !isPrivateNetworkHost(parsed.hostname);
   } catch {
     return false;
   }

@@ -2,6 +2,7 @@ import { type Model, type OpenAICompletionsCompat, type OpenRouterRouting } from
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { requestUrl } from "obsidian";
 import { resolveModelInfoSync, resolveModelPricingSync } from "./pricing-cache";
+import { withTimeout } from "../utils/async";
 export { initPricingCache } from "./pricing-cache";
 
 /** Canonical reasoning-effort ladder, lowest → highest, in UI order. */
@@ -281,6 +282,7 @@ async function fetchModelListCatalog(
           throw: false,
         }),
         timeoutMs,
+        () => new RequestTimeoutError(),
       );
       status = response.status;
       payload = response.json as typeof payload;
@@ -391,20 +393,6 @@ function modelSupportsReasoning(model: ModelListItem): boolean {
   if (typeof model.supports_reasoning === "boolean") return model.supports_reasoning;
   if (model.reasoning && typeof model.reasoning === "object") return true;
   return (model.supported_parameters ?? []).includes("reasoning");
-}
-
-async function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> {
-  let timer: number | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = window.setTimeout(() => reject(new RequestTimeoutError()), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer !== undefined) window.clearTimeout(timer);
-  }
 }
 
 // Keep the OpenAICompletionsCompat type referenced so downstream imports resolve.

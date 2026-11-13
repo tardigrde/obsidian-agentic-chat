@@ -20,6 +20,7 @@ import {
   type RetrievalIndexScope,
 } from "./policy";
 import { stableTextHash } from "./source-hash";
+import { isLoopbackHost } from "../utils/host-policy";
 
 /** Embeddings ride the same provider set as chat; alias kept for the embedding-specific settings surface. */
 export type EmbeddingProviderId = ProviderId;
@@ -481,8 +482,7 @@ function normalizeBaseUrl(value: string | undefined, fallback: string): string {
 
 function isLocalBaseUrl(value: string): boolean {
   try {
-    const hostname = new URL(value).hostname.toLowerCase();
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+    return isLoopbackHost(new URL(value).hostname);
   } catch {
     return false;
   }

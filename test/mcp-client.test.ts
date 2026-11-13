@@ -825,3 +825,37 @@ describe("McpHttpClient", () => {
     expect(callCount).toBe(1);
   });
 });
+
+describe("McpHttpClient OAuth resource challenge", () => {
+  function challenge(resourceMetadata: string): WebHttpResponse {
+    return {
+      status: 401,
+      text: "",
+      headers: { "www-authenticate": `Bearer resource_metadata="${resourceMetadata}"` },
+    };
+  }
+
+  it("records an https resource on a public host as a pending OAuth challenge", async () => {
+    const target = server();
+    const client = new McpHttpClient({ server: target, fetcher: queuedFetcher([challenge("https://auth.example.com/.well-known/oauth-protected-resource")]) });
+
+    await expect(client.listTools()).rejects.toThrow();
+    expect(target.pendingOAuthResourceUrl).toBe("https://auth.example.com/.well-known/oauth-protected-resource");
+  });
+
+  it.each([
+    "https://[::1]/.well-known/oauth-protected-resource",
+    "https://127.0.0.2/.well-known/oauth-protected-resource",
+    "https://[::ffff:127.0.0.1]/.well-known/oauth-protected-resource",
+    "https://[::ffff:169.254.169.254]/.well-known/oauth-protected-resource",
+    "https://[fd00::1]/.well-known/oauth-protected-resource",
+    "https://[fe80::1]/.well-known/oauth-protected-resource",
+    "https://metadata.localhost/.well-known/oauth-protected-resource",
+  ])("ignores a challenge whose resource metadata points at a private host: %s", async (resource) => {
+    const target = server();
+    const client = new McpHttpClient({ server: target, fetcher: queuedFetcher([challenge(resource)]) });
+
+    await expect(client.listTools()).rejects.toThrow();
+    expect(target.pendingOAuthResourceUrl).toBeUndefined();
+  });
+});
