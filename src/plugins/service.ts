@@ -3,6 +3,7 @@ import { type AgenticChatSettings } from "../settings-schema";
 import { createMcpServerState, normalizeMcpServerId } from "../mcp/settings";
 import { clearMcpPerToolApprovals } from "../agent/approval";
 import { BUILTIN_SKILL_DOCS } from "../skills/builtin-skills";
+import { ensureVaultFolder, ensureVaultParentFolder } from "../vault/storage";
 import type { FileTree } from "./import/archive";
 import { convertToAgentPlugin } from "./import/convert";
 import {
@@ -197,7 +198,7 @@ export class PluginService {
     const pluginName = await this.nextAvailablePluginName(input.serverName);
     const rootPath = `${this.pluginsFolder()}/${pluginName}`;
     const serverKey = normalizeMcpServerId(input.serverName) || "mcp";
-    await this.ensureFolder(rootPath);
+    await ensureVaultFolder(this.app, rootPath);
     await this.app.vault.create(
       `${rootPath}/plugin.json`,
       `${JSON.stringify(
@@ -761,10 +762,9 @@ export class PluginService {
   private vaultWriter(): PackageWriter {
     const app = this.app;
     return {
-      ensureFolder: async (path) => this.ensureFolder(path),
+      ensureFolder: async (path) => ensureVaultFolder(this.app, path),
       writeFile: async (path, content) => {
-        const segments = path.split("/");
-        await this.ensureFolder(segments.slice(0, -1).join("/"));
+        await ensureVaultParentFolder(this.app, path);
         if (typeof content === "string") {
           await app.vault.create(path, content);
           return;
@@ -838,38 +838,6 @@ export class PluginService {
     return true;
   }
 
-  /** Create every missing segment of a vault folder path. */
-  private async ensureFolder(path: string): Promise<void> {
-    const segments = path.split("/").filter(Boolean);
-    let current = "";
-    for (const segment of segments) {
-      current = current ? `${current}/${segment}` : segment;
-      if (this.app.vault.getAbstractFileByPath(current) instanceof TFolder) continue;
-      // The vault's live tree does not index dot-folders (e.g. .agentic-plugins)
-      // created outside the session; trust the adapter when the folder is on
-      // disk, or vault.createFolder throws "Folder already exists.". Folder-aware:
-      // a file at this path is a real conflict, not a skip.
-      if (await this.isFolderOnDisk(current)) continue;
-      try {
-        await this.app.vault.createFolder(current);
-      } catch (error) {
-        // Lost a race with an external sync — folder landed after the probe.
-        if (isFolderCollision(error) && (await this.isFolderOnDisk(current))) continue;
-        throw error;
-      }
-    }
-  }
-
-  /** True when the path exists on disk as a folder (single list probe). */
-  private async isFolderOnDisk(path: string): Promise<boolean> {
-    try {
-      await this.app.vault.adapter.list(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   private async nextAvailablePluginName(seed: string): Promise<string> {
     const base = slugifyPluginName(seed);
     const root = this.app.vault.getAbstractFileByPath(this.pluginsFolder());
@@ -881,11 +849,6 @@ export class PluginService {
     }
     return `${base}-${Date.now()}`;
   }
-}
-
-/** True for "Folder already exists" races (narrow: file collisions must not match). */
-function isFolderCollision(error: unknown): boolean {
-  return String((error as Error)?.message ?? error ?? "").toLowerCase().includes("folder already exists");
 }
 
 /** Drop a folder from the vault file tree after an adapter-level removal. */

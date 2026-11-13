@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import { AgentParentConfigurationRuntime } from "../src/agent/parent-agent-configuration";
-import type { ParentAgentRuntime } from "../src/agent/parent-agent-runtime";
-import { EMPTY_AGENT_RUNTIME_RESOURCES } from "../src/agent/runtime-resources";
 import type { AgentRole } from "../src/agent/subagents";
 import type { SessionInfo } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
@@ -45,7 +43,6 @@ describe("AgentParentConfigurationRuntime", () => {
           receivedContextWindow = options?.contextWindow;
           return [readTool, suppliedSubagentTool].filter(Boolean) as AgentTool[];
         },
-        reload: async () => EMPTY_AGENT_RUNTIME_RESOURCES,
       },
       subagents: { createTool: () => subagentTool },
       toolCalls: {
@@ -55,10 +52,7 @@ describe("AgentParentConfigurationRuntime", () => {
       },
       loopGuard: { finishTurn: () => undefined },
       turnCap: { shouldStopAfterTurn: () => false },
-      sessions: {
-        info: session,
-        ensureConfiguration: async () => session,
-      },
+      sessions: { info: session },
       onEvent: () => undefined,
     });
 
@@ -89,7 +83,6 @@ describe("AgentParentConfigurationRuntime", () => {
         getProfiles: () => [],
         composeSystemPrompt: () => "",
         buildParentTools: () => [],
-        reload: async () => EMPTY_AGENT_RUNTIME_RESOURCES,
       },
       subagents: { createTool: () => ({ name: "subagent" }) as AgentTool },
       toolCalls: {
@@ -104,10 +97,7 @@ describe("AgentParentConfigurationRuntime", () => {
         },
       },
       turnCap: { shouldStopAfterTurn: () => false },
-      sessions: {
-        info: session,
-        ensureConfiguration: async () => session,
-      },
+      sessions: { info: session },
       onEvent: () => undefined,
     });
 
@@ -117,61 +107,4 @@ describe("AgentParentConfigurationRuntime", () => {
     expect(loopCalls).toBe(0);
   });
 
-  it("reloads resources before refreshing the live parent agent and session config", async () => {
-    const events: string[] = [];
-    const session = { id: "session-1" } as SessionInfo;
-    const runtime = new AgentParentConfigurationRuntime({
-      getSettings: () => DEFAULT_SETTINGS,
-      streams: { buildStreamFn: () => (() => undefined) as unknown as StreamFn },
-      turns: {
-        getActiveModelId: () => "model-a",
-        buildModelForTurn: () => ({}) as Model<"openai-completions">,
-        thinkingLevelForTurn: () => "off",
-      },
-      runtimeResources: {
-        getProfiles: () => [],
-        composeSystemPrompt: () => "",
-        buildParentTools: () => [],
-        reload: async () => {
-          events.push("reload-resources");
-          return EMPTY_AGENT_RUNTIME_RESOURCES;
-        },
-      },
-      subagents: { createTool: () => ({ name: "subagent" }) as AgentTool },
-      toolCalls: {
-        beforeToolCall: async () => undefined,
-        afterToolCall: async () => undefined,
-        consumeStopRequested: () => false,
-      },
-      loopGuard: { finishTurn: () => undefined },
-      turnCap: { shouldStopAfterTurn: () => false },
-      sessions: {
-        info: session,
-        ensureConfiguration: async () => {
-          events.push("ensure-session-config");
-          return session;
-        },
-      },
-      onEvent: () => undefined,
-    });
-    const parentAgent = {
-      requireAgent: () => {
-        events.push("require-agent");
-        return {};
-      },
-      refreshConfiguration: () => {
-        events.push("refresh-agent");
-        return {};
-      },
-    } as unknown as ParentAgentRuntime;
-
-    await runtime.refresh(parentAgent);
-
-    expect(events).toEqual([
-      "require-agent",
-      "reload-resources",
-      "refresh-agent",
-      "ensure-session-config",
-    ]);
-  });
 });

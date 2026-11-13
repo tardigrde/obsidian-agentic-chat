@@ -28,30 +28,34 @@ function harness(overrides: {
   const events: string[] = [];
   const agent = { state: { isStreaming: overrides.isStreaming ?? false } } as Agent;
   const runtime = new AgentPromptTurnRuntime({
-    requireAgent: () => agent,
+    conversation: {
+      requireAgent: () => agent,
+      refreshConfiguration: async () => {
+        if (overrides.refreshConfiguration) {
+          await overrides.refreshConfiguration();
+          return;
+        }
+        events.push("refresh");
+      },
+    },
+    errors: {
+      clearError: () => {
+        events.push("clear-error");
+      },
+      setError: (error) => {
+        events.push(`set-error:${error instanceof Error ? error.message : String(error)}`);
+      },
+      setErrorMessage: (message) => {
+        events.push(`set-error-message:${message}`);
+      },
+    },
     getSettings: () => settings,
     hasApiKey: () => overrides.hasApiKey ?? true,
     getSessionCostUsd: () => overrides.sessionCostUsd ?? 0,
-    refreshConfiguration: async () => {
-      if (overrides.refreshConfiguration) {
-        await overrides.refreshConfiguration();
-        return;
-      }
-      events.push("refresh");
-    },
     maybeCompact: async () => {
       events.push("compact");
     },
     onTurnStart: overrides.onTurnStart,
-    clearError: () => {
-      events.push("clear-error");
-    },
-    setError: (error) => {
-      events.push(`set-error:${error instanceof Error ? error.message : String(error)}`);
-    },
-    setErrorMessage: (message) => {
-      events.push(`set-error-message:${message}`);
-    },
     consumeOverrides: () => {
       events.push("consume-overrides");
     },

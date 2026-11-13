@@ -33,17 +33,21 @@ import {
 import { CachedContextOverheadCounter, type ContextReadout } from "./readouts";
 import { normalizeSteeringText, spendCapAbortReason } from "./turn-control";
 import { AgentTurnConfiguration } from "./turn-configuration";
-import { AgentActiveSessionRuntime } from "./active-session-runtime";
-import { ParentAgentRuntime } from "./parent-agent-runtime";
+import { AgentConversation } from "./conversation";
 import { AgentParentConfigurationRuntime } from "./parent-agent-configuration";
 import { AgentSessionLocalState } from "./session-local-state";
 import { AgentToolCallController, type ToolApprovalRequest, type UserApprovalChoice } from "./tool-call-controller";
 import { AgentSessionEventRecorder } from "./session-event-recorder";
 import { AgentActionAuditRecorder } from "./action-audit-log";
 import { AgentFileCheckpointRecorder } from "./file-checkpoints";
-import { AgentSessionActivation } from "./session-activation";
 import { AgentSessionActions } from "./session-actions";
-import { AgentCommandInvocationRuntime } from "./command-invocation";
+import {
+  type AgentCommandPlan,
+  resolveAgentCommand,
+  resolveInitCommand,
+  resolveInstructionCommand,
+  resolveSkillCommand,
+} from "./command-dispatcher";
 import { AgentCompactionRuntime, type AgentCompactionRunResult, type SummarizeFn } from "./compaction-runtime";
 import { maybeCompactAgentTranscript } from "./compaction-orchestrator";
 import { estimateContextUsage } from "./compaction";
@@ -118,7 +122,7 @@ export class AgentService {
   private readonly app: App;
   private readonly getSettings: () => AgenticChatSettings;
   private readonly webFetch: WebFetcher;
-  private readonly sessions: AgentActiveSessionRuntime;
+  private readonly conversation: AgentConversation;
   private readonly streams: AgentStreamRuntime;
   private readonly toolCalls: AgentToolCallController;
   private readonly subagents: AgentSubagentRuntime;
@@ -126,21 +130,18 @@ export class AgentService {
   private readonly actionAudit: AgentActionAuditRecorder;
   private readonly observability: AgentObservabilityRuntime;
   private readonly fileCheckpoints: AgentFileCheckpointRecorder;
-  private readonly sessionActivation: AgentSessionActivation;
   private readonly sessionActions: AgentSessionActions;
   private readonly compaction: AgentCompactionRuntime;
   private readonly artifactStore?: ToolArtifactStoreLike;
   private readonly turns: AgentTurnConfiguration;
   private readonly runtimeResources: AgentRuntimeResourceState;
   private readonly parentConfiguration: AgentParentConfigurationRuntime;
-  private readonly parentAgent: ParentAgentRuntime;
   private readonly sessionState = new AgentSessionLocalState();
   private readonly listeners = new AgentServiceListeners();
   private readonly loopGuard = new AgentLoopGuard();
   private readonly turnCap = new AgentTurnCap({ maxTurns: () => this.getSettings().maxTurnsPerPrompt });
   private readonly recentEvents: string[] = [];
   private readonly promptTurns: AgentPromptTurnRuntime;
-  private readonly commandInvocations: AgentCommandInvocationRuntime;
 
   private initialization: Promise<void> | null = null;
   /** Set when a compaction rewrite landed but the live transcript is stale. */
@@ -157,15 +158,14 @@ export class AgentService {
     const sessionManager = options.sessionManager;
     this.artifactStore = options.artifactStore;
     this.webFetch = options.webFetch ?? createDynamicProxiedFetcher(() => this.getSettings().network, createObsidianFetcher());
-    this.sessions = new AgentActiveSessionRuntime(sessionManager, () => this.sessionDefaults());
     this.observability = new AgentObservabilityRuntime({
       getSettings: this.getSettings,
       fetcher:
         options.observabilityFetch ??
         createDynamicProxiedFetcher(() => this.effectiveObservabilityProxySettings(), createObsidianFetcher()),
       getSessionContext: () => ({
-        sessionId: this.sessions.info?.id,
-        sessionPath: this.sessions.activePath,
+        sessionId: this.conversation.info?.id,
+        sessionPath: this.conversation.activePath,
       }),
     });
     this.streams = new AgentStreamRuntime({
@@ -234,6 +234,16 @@ export class AgentService {
       recordFileCheckpoint: (checkpoint) => this.fileCheckpoints.record(checkpoint),
       subagentRegistry: this.subagents.registry,
     });
+    this.conversation = new AgentConversation({
+      sessionManager,
+      getDefaults: () => this.sessionDefaults(),
+      // Deferred: the configuration runtime is constructed next and reads this conversation's session id.
+      buildConfiguration: () => this.parentConfiguration.build(),
+      sessionEvents: this.sessionEvents,
+      sessionState: this.sessionState,
+      toolCalls: this.toolCalls,
+      runtimeResources: this.runtimeResources,
+    });
     this.parentConfiguration = new AgentParentConfigurationRuntime({
       getSettings: this.getSettings,
       streams: this.streams,
@@ -243,43 +253,27 @@ export class AgentService {
       toolCalls: this.toolCalls,
       loopGuard: options.loopGuardDisabled ? DISABLED_LOOP_GUARD : this.loopGuard,
       turnCap: this.turnCap,
-      sessions: this.sessions,
+      sessions: this.conversation,
       onEvent: (event) => this.handleAgentEvent(event),
     });
-    this.parentAgent = new ParentAgentRuntime(() => this.parentConfiguration.build());
-    this.sessionActivation = new AgentSessionActivation({
-      parentAgent: this.parentAgent,
-      sessionEvents: this.sessionEvents,
-      sessionState: this.sessionState,
-      toolCalls: this.toolCalls,
-      runtimeResources: this.runtimeResources,
-    });
     this.sessionActions = new AgentSessionActions({
-      sessions: this.sessions,
-      activation: this.sessionActivation,
+      sessions: this.conversation,
+      activation: this.conversation,
       notifyChange: () => this.notifyChange(),
       afterDelete: () => this.cleanupArtifactsAfterSessionDelete(),
     });
     this.promptTurns = new AgentPromptTurnRuntime({
-      requireAgent: () => this.requireAgent(),
+      conversation: this.conversation,
+      errors: this.sessionState,
       getSettings: this.getSettings,
       hasApiKey: () => this.hasApiKey(),
       getSessionCostUsd: () => this.getSessionUsage().cost?.total ?? 0,
-      refreshConfiguration: () => this.parentConfiguration.refresh(this.parentAgent),
       maybeCompact: () => this.maybeCompact(),
       afterCompaction: () => this.compactionRecoveryError,
       sessionToken: () => this.sessionActions.getSessionToken(),
       onTurnStart: () => this.toolCalls.clearStopRequested(),
-      clearError: () => this.sessionState.clearError(),
-      setError: (error) => this.sessionState.setError(error),
-      setErrorMessage: (message) => this.sessionState.setErrorMessage(message),
       consumeOverrides: () => this.turns.consumeOverrides(),
       notifyChange: () => this.notifyChange(),
-    });
-    this.commandInvocations = new AgentCommandInvocationRuntime({
-      getResources: () => this.runtimeResources.current,
-      runPrompt: (prompt) => this.runPrompt((agent) => agent.prompt(prompt)),
-      setError: (message) => this.setError(message),
     });
     // External edits change a file's contents out from under the agent; drop any
     // memoized read of it so the next read serves fresh content instead of a
@@ -290,7 +284,7 @@ export class AgentService {
   }
 
   private get agent(): Agent | null {
-    return this.parentAgent.current;
+    return this.conversation.currentAgent;
   }
 
   onEvent(listener: AgentServiceEventListener): () => void {
@@ -332,7 +326,7 @@ export class AgentService {
   }
 
   getSessionInfo(): SessionInfo | undefined {
-    return this.sessions.info;
+    return this.conversation.info;
   }
 
   getSkills(): Skill[] {
@@ -450,8 +444,8 @@ export class AgentService {
     const settings = this.getSettings();
     return buildRuntimeDiagnostics({
       settings,
-      sessionInfo: this.sessions.info,
-      sessionPath: this.sessions.activePath,
+      sessionInfo: this.conversation.info,
+      sessionPath: this.conversation.activePath,
       tools: this.agent?.state.tools ?? [],
       resources: this.runtimeResources.current,
       resourcesReloadedAt: this.runtimeResources.lastReloadAt,
@@ -554,8 +548,7 @@ export class AgentService {
     const message = createUserMessage(text, attached);
     this.sessionState.clearError();
     // Steering is user input too: user-provided info ends any running streak.
-    this.loopGuard.reset();
-    this.turnCap.reset();
+    this.resetTurnGuards();
     agent.steer(message);
     this.notifyChange();
   }
@@ -576,7 +569,7 @@ export class AgentService {
   }
 
   async invokeSkill(name: string, args?: string): Promise<void> {
-    return this.commandInvocations.invokeSkill(name, args);
+    return this.runCommandPlan(resolveSkillCommand(this.runtimeResources.current, name, args));
   }
 
   private async cleanupArtifactsAfterSessionDelete(): Promise<void> {
@@ -593,7 +586,7 @@ export class AgentService {
 
   /** User-driven dispatch: ask the model to delegate a task to a named subagent. */
   async invokeAgent(name: string, task: string): Promise<void> {
-    return this.commandInvocations.invokeAgent(name, task);
+    return this.runCommandPlan(resolveAgentCommand(this.runtimeResources.current, name, task));
   }
 
   /**
@@ -604,12 +597,12 @@ export class AgentService {
    * create the file when none exists.
    */
   async invokeInit(instructions?: string): Promise<void> {
-    return this.commandInvocations.invokeInit(instructions);
+    return this.runCommandPlan(resolveInitCommand(instructions));
   }
 
   /** Persist a user-authored standing instruction through the normal tool/approval path. */
   async invokeInstruction(instruction: string): Promise<void> {
-    return this.commandInvocations.invokeInstruction(instruction);
+    return this.runCommandPlan(resolveInstructionCommand(instruction));
   }
 
   /** User-triggered compaction, optionally guided by instructions after `/compact`. */
@@ -626,8 +619,8 @@ export class AgentService {
     // and the replacement agent re-seeds it from the current system prompt.
     const messages = conversationMessages(agent.state.messages);
     const sessionToken = this.sessionActions.getSessionToken();
-    const expectedPath = this.sessions.activePath;
-    const expectedGeneration = this.sessions.generation;
+    const expectedPath = this.conversation.activePath;
+    const expectedGeneration = this.conversation.generation;
     const contextWindow = agent.state.model?.contextWindow ?? 0;
     const overheadTokens = this.getContextOverheadTokens();
     const stats = {
@@ -693,8 +686,7 @@ export class AgentService {
     // The saved session is already rewritten at this point. If the live agent
     // cannot be replaced, report it instead of pretending compaction succeeded.
     try {
-      this.sessionEvents.markPersistedMessages(result.messages);
-      this.parentAgent.replace(result.messages);
+      this.installCompactedTranscript(result.messages);
     } catch (error) {
       if (!(await this.recoverCompactedSession())) {
         const detail = errorMessage(error);
@@ -705,8 +697,6 @@ export class AgentService {
         return { compacted: false, message };
       }
     }
-    this.sessions.refreshInfoIfActive();
-    this.notifyChange();
     // A successful compaction rewrites the session file, which drops audit
     // entries written before the rewrite. Re-record start so the final JSONL
     // still shows a complete start/end pair for the manual attempt.
@@ -747,8 +737,7 @@ export class AgentService {
   }
 
   async newSession(): Promise<void> {
-    this.loopGuard.reset();
-    this.turnCap.reset();
+    this.resetTurnGuards();
     return this.sessionActions.newSession();
   }
 
@@ -761,8 +750,7 @@ export class AgentService {
   }
 
   async loadSession(path: string): Promise<void> {
-    this.loopGuard.reset();
-    this.turnCap.reset();
+    this.resetTurnGuards();
     return this.sessionActions.loadSession(path);
   }
 
@@ -789,16 +777,15 @@ export class AgentService {
    * resend an edited prompt as a fresh branch.
    */
   async truncateMessages(index: number): Promise<void> {
-    this.loopGuard.reset();
-    this.turnCap.reset();
+    this.resetTurnGuards();
     return this.sessionActions.truncateMessages(index);
   }
 
   dispose(): void {
-    if (this.parentAgent.isDisposed) return;
+    if (this.conversation.isDisposed) return;
     if (this.vaultModifyRef) this.app.vault.offref(this.vaultModifyRef);
     this.vaultModifyRef = undefined;
-    this.parentAgent.dispose();
+    this.conversation.dispose();
     this.listeners.clear();
   }
 
@@ -807,8 +794,7 @@ export class AgentService {
     await this.initialize();
     // A fresh prompt starts a new epoch: neither the identical-batch streak nor
     // the turn budget from a previous user turn carries into this one.
-    this.loopGuard.reset();
-    this.turnCap.reset();
+    this.resetTurnGuards();
     await this.promptTurns.run(this.settlingQueues(run), expectedSessionToken);
   }
 
@@ -831,8 +817,8 @@ export class AgentService {
       enforceSpendCap: () => this.enforceSpendCap(),
       setError: (error) => this.sessionState.setError(error),
       emitEvent: (agentEvent) => this.listeners.emitEvent(agentEvent),
-      hasActiveSession: () => this.sessions.activePath !== null,
-      refreshActiveSessionInfo: () => this.sessions.refreshInfoIfActive(),
+      hasActiveSession: () => this.conversation.activePath !== null,
+      refreshActiveSessionInfo: () => this.conversation.refreshInfoIfActive(),
       notifyChange: () => this.notifyChange(),
     });
   }
@@ -901,10 +887,7 @@ export class AgentService {
       },
       compact: (messages, contextWindow, overheadTokens) =>
         this.compaction.compact(messages, contextWindow, { overheadTokens }),
-      markPersistedMessages: (messages) => this.sessionEvents.markPersistedMessages(messages),
-      replaceAgent: (messages) => this.parentAgent.replace(messages),
-      refreshActiveSessionInfo: () => this.sessions.refreshInfoIfActive(),
-      notifyChange: () => this.notifyChange(),
+      install: (messages) => this.installCompactedTranscript(messages),
       recoverAfterReplaceFailure: () => this.recoverCompactedSession(),
       onCompactionFailure: (_error, persisted) => {
         if (!persisted) return;
@@ -922,20 +905,17 @@ export class AgentService {
    * instead of a stale in-memory transcript.
    */
   private async recoverCompactedSession(): Promise<boolean> {
-    const path = this.sessions.activePath;
-    const expectedGeneration = this.sessions.generation;
+    const path = this.conversation.activePath;
+    const expectedGeneration = this.conversation.generation;
     if (!path) return false;
     try {
       // Bind the reload to the session that failed to replace. A user switch
       // during the read must win instead of being overwritten by recovery.
-      const snapshot = await this.sessions.load(path, {
+      const snapshot = await this.conversation.load(path, {
         expectedPath: path,
         expectedGeneration,
       });
-      this.sessionEvents.markPersistedMessages(snapshot.messages);
-      this.parentAgent.replace(snapshot.messages);
-      this.sessions.refreshInfoIfActive();
-      this.notifyChange();
+      this.installCompactedTranscript(snapshot.messages);
       return true;
     } catch {
       return false;
@@ -968,7 +948,31 @@ export class AgentService {
   }
 
   private requireAgent(): Agent {
-    return this.parentAgent.requireAgent();
+    return this.conversation.requireAgent();
+  }
+
+  /**
+   * Install a transcript the session file already holds (a compaction rewrite
+   * or a reload after one), then publish the new session info.
+   */
+  private installCompactedTranscript(messages: AgentMessage[]): void {
+    this.conversation.installTranscript(messages);
+    this.conversation.refreshInfoIfActive();
+    this.notifyChange();
+  }
+
+  /** Neither the identical-batch streak nor the turn budget survives new user input or a session change. */
+  private resetTurnGuards(): void {
+    this.loopGuard.reset();
+    this.turnCap.reset();
+  }
+
+  private async runCommandPlan(plan: AgentCommandPlan): Promise<void> {
+    if (plan.type === "error") {
+      this.setError(plan.message);
+      return;
+    }
+    await this.runPrompt((agent) => agent.prompt(plan.prompt));
   }
 
   private setError(message: string): void {

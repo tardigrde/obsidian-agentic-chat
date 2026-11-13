@@ -161,3 +161,29 @@ describe("memory management", () => {
     expect(await adapter.exists(MEMORY_PATH)).toBe(false);
   });
 });
+
+describe("writeMemoryRecords", () => {
+  it("does not truncate the live memory file when a rewrite fails mid-write", async () => {
+    const adapter = new MemoryAdapter();
+    const before = memoryRecordsToJsonl([record()]);
+    adapter.files.set(MEMORY_PATH, before);
+    // Tear whichever file the rewrite writes first: the live file in place
+    // (old behavior) or a staged temp file.
+    const original = adapter.write.bind(adapter);
+    let torn = false;
+    adapter.write = async (target, data) => {
+      if (!torn) {
+        torn = true;
+        adapter.files.set(target, data.slice(0, 5));
+        throw new Error("disk full");
+      }
+      return original(target, data);
+    };
+
+    await expect(
+      writeMemoryRecords(adapter.asDataAdapter(), MEMORY_PATH, [record(), record({ id: "mem-2", text: "Second." })]),
+    ).rejects.toThrow("disk full");
+
+    expect(adapter.files.get(MEMORY_PATH)).toBe(before);
+  });
+});

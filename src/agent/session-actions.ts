@@ -1,7 +1,6 @@
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { SessionInfo } from "../session/session-manager";
-import type { ActiveSessionSnapshot } from "./active-session-runtime";
-import type { ActivateSessionOptions } from "./session-activation";
+import type { ActivateSessionOptions, ActiveSessionSnapshot } from "./conversation";
 import { conversationMessages } from "./conversation-messages";
 import { AgentSessionSwapQueue, type AgentSessionSwapState } from "./session-swap-queue";
 

@@ -1,5 +1,6 @@
 import { type App, TFile, TFolder, type TAbstractFile } from "obsidian";
-import { getParentPath, normalizeVaultPath } from "../vault/path";
+import { normalizeVaultPath } from "../vault/path";
+import { ensureVaultFolder, ensureVaultParentFolder } from "../vault/storage";
 export { UNDOABLE_TOOLS } from "../tools/tool-contracts";
 
 /** Compact fingerprint of a file body for log slimming. The hash is FNV-1a —
@@ -135,31 +136,15 @@ async function applyRenameUndo(app: App, entry: Extract<UndoEntry, { kind: "rena
 }
 
 async function applyDeleteUndo(app: App, entry: Extract<UndoEntry, { kind: "delete" }>): Promise<string> {
-  await ensureParentFolders(app, entry.path);
+  await ensureVaultParentFolder(app, entry.path);
   await app.vault.create(entry.path, entry.before);
   return `Restored ${entry.path}.`;
 }
 
 async function applyDeleteFolderUndo(app: App, entry: Extract<UndoEntry, { kind: "delete_folder" }>): Promise<string> {
-  await ensureParentFolders(app, entry.path);
-  if (!(await folderExists(app, entry.path))) {
-    await createFolderToleratingCollision(app, entry.path);
-  }
+  // A concurrent undo of the same folder is absorbed as already restored.
+  await ensureVaultFolder(app, entry.path);
   return `Restored folder ${entry.path}.`;
-}
-
-async function folderExists(app: App, path: string): Promise<boolean> {
-  return app.vault.getAbstractFileByPath(path) instanceof TFolder || (await existsOnDisk(app, path));
-}
-
-async function createFolderToleratingCollision(app: App, path: string): Promise<void> {
-  try {
-    await app.vault.createFolder(path);
-  } catch (error) {
-    // Concurrent undo of the same folder — already restored, nothing to do.
-    if (isFolderCollision(error) && (await existsOnDisk(app, path))) return;
-    throw error;
-  }
 }
 
 async function applyContentUndo(app: App, entry: Extract<UndoEntry, { kind: "content" }>): Promise<string> {
@@ -174,7 +159,7 @@ async function applyContentUndo(app: App, entry: Extract<UndoEntry, { kind: "con
   if (existing instanceof TFile) {
     await app.vault.process(existing, () => entry.before ?? "");
   } else {
-    await ensureParentFolders(app, entry.path);
+    await ensureVaultParentFolder(app, entry.path);
     await app.vault.create(entry.path, entry.before);
   }
   return `Reverted ${entry.path}.`;
@@ -186,53 +171,4 @@ export function describeUndo(entry: UndoEntry): string {
   if (entry.kind === "delete") return `restore ${entry.path}`;
   if (entry.kind === "delete_folder") return `restore folder ${entry.path}`;
   return entry.before === null ? `remove ${entry.path}` : `revert ${entry.path}`;
-}
-
-async function ensureParentFolders(app: App, path: string): Promise<void> {
-  const parent = getParentPath(path);
-  if (!parent) return;
-  // Drop empty segments (leading/trailing/consecutive slashes) so we never try
-  // to create a folder with an empty name.
-  await ensureFolderChain(app, parent.split("/").filter(Boolean), 0, "");
-}
-
-async function ensureFolderChain(
-  app: App,
-  segments: string[],
-  index: number,
-  prefix: string,
-): Promise<void> {
-  const segment = segments[index];
-  if (segment === undefined) return;
-  const current = prefix ? `${prefix}/${segment}` : segment;
-  await ensureFolder(app, current);
-  await ensureFolderChain(app, segments, index + 1, current);
-}
-
-async function ensureFolder(app: App, path: string): Promise<void> {
-  if (app.vault.getFolderByPath(path)) return;
-  // Same stale-tree guard as the vault tools: dot-folders on disk but
-  // missing from the vault index must not trigger "Folder already exists."
-  if (await existsOnDisk(app, path)) return;
-  try {
-    await app.vault.createFolder(path);
-  } catch (error) {
-    // Lost a race with an external sync — folder landed after the probe.
-    if (isFolderCollision(error) && (await existsOnDisk(app, path))) return;
-    throw error;
-  }
-}
-
-/** True when the path exists on disk as a folder (single list probe). */
-async function existsOnDisk(app: App, path: string): Promise<boolean> {
-  try {
-    await app.vault.adapter.list(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isFolderCollision(error: unknown): boolean {
-  return String((error as Error)?.message ?? error ?? "").toLowerCase().includes("folder already exists");
 }
