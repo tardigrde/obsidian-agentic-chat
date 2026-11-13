@@ -5,6 +5,7 @@ import process from "node:process";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import ObsidianLauncher from "obsidian-launcher";
+import { driverStartedOn, isPortFree } from "./e2e-ports";
 import { parseObsidianVersions } from "wdio-obsidian-service";
 
 const cacheDir = path.resolve(".obsidian-cache");
@@ -87,6 +88,12 @@ async function startChromedriver(binary: string): Promise<{ process: DriverProce
   const failures: string[] = [];
 
   for (const port of driverPorts) {
+    // A busy port may belong to another e2e run. Connecting to it would drive
+    // that run's browser, so skip it before we spawn anything.
+    if (!(await isPortFree(port))) {
+      failures.push(`:${port} busy (another e2e run?)`);
+      continue;
+    }
     const child = spawn(binary, [`--port=${port}`, "--allowed-origins=*", "--allowed-ips="], {
       env: localDriverEnv(),
       stdio: ["ignore", "pipe", "pipe"],
@@ -94,7 +101,7 @@ async function startChromedriver(binary: string): Promise<{ process: DriverProce
     const output = captureOutput(child);
 
     try {
-      await waitForPort(child, port);
+      await waitForPort(child, port, output);
       return { process: child, port };
     } catch (error) {
       child.kill();
@@ -117,11 +124,13 @@ function captureOutput(child: DriverProcess): () => string {
   return () => output.trim();
 }
 
-async function waitForPort(child: DriverProcess, port: number): Promise<void> {
+async function waitForPort(child: DriverProcess, port: number, output: () => string): Promise<void> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`exited with code ${child.exitCode}`);
-    if (await canConnect(port)) return;
+    // Our own driver must say it listens on this port; a bare connect could
+    // reach another run's driver that took the port first.
+    if (driverStartedOn(output(), port) && (await canConnect(port))) return;
     await sleep(100);
   }
   throw new Error("timed out waiting for driver port");

@@ -16,6 +16,37 @@ import { parseVerdict } from "./check-review-gate.mjs";
 
 const SECRET_PATHS = ["*.env", "*.env.*", "*auth.json"];
 
+/**
+ * Files that make git or npm run code. A worker that could edit `.git` (a file
+ * in a worktree) pointed it at a fake git dir with `core.fsmonitor` set to its
+ * own script, so every allowed `git status` ran any command (2026-11-13).
+ * These denies come after the edit allow, so they win.
+ */
+const EXEC_CONFIG_PATHS = [
+  ".git", "*/.git", ".git/*", "*/.git/*",
+  ".gitmodules", "*/.gitmodules", ".gitattributes", "*/.gitattributes",
+  ".npmrc", "*/.npmrc",
+  // node_modules is a link to the main checkout: an edit there runs in every lane.
+  "node_modules/*", "*/node_modules/*",
+];
+
+/**
+ * Command-line git config for every delegate run (`GIT_CONFIG_COUNT` beats the
+ * repository config): no fsmonitor hook and no repository hooks.
+ */
+export function gitGuardEnv() {
+  const pairs = [
+    ["core.fsmonitor", "false"],
+    ["core.hooksPath", "/dev/null"],
+  ];
+  const env = { GIT_CONFIG_COUNT: String(pairs.length) };
+  pairs.forEach(([key, value], index) => {
+    env[`GIT_CONFIG_KEY_${index}`] = key;
+    env[`GIT_CONFIG_VALUE_${index}`] = value;
+  });
+  return env;
+}
+
 /** Read-only shell commands. None of them can print an untracked file. */
 const READ_SHELL = [
   "git status *",
@@ -60,6 +91,7 @@ export function delegatePermissions({ mode, main, edit }) {
   rules.push(rule("external_directory", `${main}/node_modules/*`, "allow"));
   rules.push(rule("external_directory", `${main}/.obsidian-cache/*`, "allow"));
   rules.push(rule("edit", edit, "allow"));
+  for (const path of EXEC_CONFIG_PATHS) rules.push(rule("edit", path, "deny"));
   for (const command of mode === "work" ? [...READ_SHELL, ...WORK_SHELL] : READ_SHELL) rules.push(rule("shell", command, "allow"));
   for (const pattern of mode === "work" ? SHELL_DENY : [...SHELL_DENY, ...REVIEW_SHELL_DENY]) rules.push(rule("shell", pattern, "deny"));
   return rules;
@@ -107,6 +139,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const [mode, main, edit] = args;
     if (mode !== "work" && mode !== "review") throw new Error("mode must be work or review");
     console.log(JSON.stringify({ permissions: delegatePermissions({ mode, main, edit }) }));
+  } else if (command === "git-env") {
+    // Shell `export` lines for scripts/delegate.sh.
+    for (const [key, value] of Object.entries(gitGuardEnv())) console.log(`export ${key}=${JSON.stringify(value)}`);
   } else if (command === "recheck") {
     // stdin: JSON array of comment bodies, oldest first; argv: the reviewed head.
     // Exit 0: a re-check is allowed. 1: it is not. 2: the input is unreadable.
@@ -125,6 +160,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exit(/^[0-9a-f]{40}$/.test(reviewedHead ?? "") && recheckAllowed(bodies.map(String), reviewedHead) ? 0 : 1);
     });
   } else {
-    throw new Error("usage: delegate-config.mjs permissions <work|review> <main> <edit> | recheck <reviewed-head> < bodies.json");
+    throw new Error("usage: delegate-config.mjs permissions <work|review> <main> <edit> | git-env | recheck <reviewed-head> < bodies.json");
   }
 }

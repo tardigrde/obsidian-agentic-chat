@@ -188,11 +188,24 @@ describe("check-review-gate", () => {
   });
 
   it("enforces the size limit and allows the large-pr override", () => {
-    expect(sizeErrors({ changedLines: 401, changedFiles: 3 })).toHaveLength(1);
-    expect(sizeErrors({ changedLines: 20, changedFiles: 11 })).toHaveLength(1);
-    expect(sizeErrors({ changedLines: 20, changedFiles: 11, labels: ["large-pr"] })).toEqual([]);
-    expect(gate({ changedLines: 401 }).ok).toBe(false);
-    expect(gate({ changedLines: 401, labels: ["large-pr"] }).ok).toBe(true);
+    // The owner prefers few batched PRs (2026-11-13): 25 files or 1000 added lines.
+    expect(sizeErrors({ changedLines: 1000, changedFiles: 25 })).toEqual([]);
+    expect(sizeErrors({ changedLines: 1001, changedFiles: 3 })).toHaveLength(1);
+    expect(sizeErrors({ changedLines: 20, changedFiles: 26 })).toHaveLength(1);
+    expect(sizeErrors({ changedLines: 20, changedFiles: 26, labels: ["large-pr"] })).toEqual([]);
+    expect(gate({ changedLines: 1001 }).ok).toBe(false);
+    expect(gate({ changedLines: 1001, labels: ["large-pr"] }).ok).toBe(true);
+  });
+
+  it("accepts a verdict that cites CI only when ci and e2e are green at the head", () => {
+    const ciBody = verdictBody().replace(/^Fast lane:.*$/m, "Fast lane: CI (ci + e2e green at this head)");
+    expect(parseVerdict(ciBody)).not.toBeNull();
+    const ciComments = [comment("reviewer", ciBody)];
+    expect(gate({ comments: ciComments, ciGreen: true }).ok).toBe(true);
+    expect(gate({ comments: ciComments, ciGreen: false }).ok).toBe(false);
+    expect(gate({ comments: ciComments }).ok).toBe(false);
+    // A verdict with its own counts does not depend on CI.
+    expect(gate({ ciGreen: false }).ok).toBe(true);
   });
 
   it("exposes the src/ budget helpers (#288)", () => {

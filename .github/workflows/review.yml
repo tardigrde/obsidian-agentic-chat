@@ -4,6 +4,8 @@ permissions:
   contents: read
   issues: read
   pull-requests: read
+  # The gate reads the ci and e2e check runs when a verdict cites CI.
+  checks: read
 
 on:
   pull_request:
