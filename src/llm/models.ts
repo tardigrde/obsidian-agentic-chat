@@ -282,6 +282,7 @@ async function fetchModelListCatalog(
           throw: false,
         }),
         timeoutMs,
+        () => new RequestTimeoutError(),
       );
       status = response.status;
       payload = response.json as typeof payload;
