@@ -159,8 +159,3 @@ export function failedLastTurnIndex(messages: AgentMessage[]): number | undefine
   if (index < 0 || index === messages.length - 1 || messages[index].role !== "user") return undefined;
   return index;
 }
-
-/** Text of the most recent user turn. */
-export function lastUserText(messages: AgentMessage[]): string | undefined {
-  return lastUserTurn(messages)?.text;
-}

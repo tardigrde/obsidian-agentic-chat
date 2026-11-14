@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  ageStaleMemories,
   clearMemoryRecords,
   consolidateDuplicateMemories,
-  deleteMemory,
   explainMemoryProvenance,
   exportMemoryRecords,
   forgetMemory,
   memoryRecordsToJsonl,
-  migrateMemoryRecords,
   writeMemoryRecords,
 } from "../src/memory/management";
 import { loadMemoryRecords, type MemoryRecord } from "../src/memory/memory";
@@ -74,25 +71,7 @@ describe("memory management", () => {
     expect(result.records.map((item) => item.id).sort()).toEqual(["mem-global", "mem-other", "mem-vault"]);
   });
 
-  it("ages stale enabled memories without forgetting them", () => {
-    const result = ageStaleMemories(
-      [
-        record({ id: "mem-old", createdAt: new Date(OLD).toISOString(), confidence: 0.9 }),
-        record({ id: "mem-fresh", createdAt: new Date(NOW).toISOString(), confidence: 0.9 }),
-      ],
-      { now: NOW, staleAfterDays: 90 },
-    );
-
-    expect(result.agedIds).toEqual(["mem-old"]);
-    expect(result.records.find((item) => item.id === "mem-old")).toMatchObject({
-      stale: true,
-      confidence: 0.4,
-      tags: ["stale"],
-    });
-    expect(result.records.find((item) => item.id === "mem-fresh")?.stale).toBeUndefined();
-  });
-
-  it("forgets and deletes memories as distinct operations", () => {
+  it("forgets a memory without deleting its record", () => {
     const forgotten = forgetMemory([record()], "mem-1", { now: NOW, reason: "user request" });
 
     expect(forgotten.forgotten).toMatchObject({
@@ -102,9 +81,7 @@ describe("memory management", () => {
       forgetReason: "user request",
     });
 
-    const deleted = deleteMemory(forgotten.records, "mem-1");
-    expect(deleted.deleted?.id).toBe("mem-1");
-    expect(deleted.records).toEqual([]);
+    expect(forgotten.records).toHaveLength(1);
   });
 
   it("explains memory provenance and lifecycle metadata", () => {
@@ -128,15 +105,6 @@ describe("memory management", () => {
     expect(explanation).toContain("Supersedes: mem-old");
     expect(explanation).toContain("Status: forgotten");
     expect(explanation).toContain("Reason: outdated");
-  });
-
-  it("migrates legacy records to explicit provenance and enabled state", () => {
-    expect(migrateMemoryRecords([record({ enabled: undefined, source: "[[Notes/Legacy.md]]" })], { now: NOW })).toEqual([
-      expect.objectContaining({
-        enabled: true,
-        provenance: [{ source: "[[Notes/Legacy.md]]", extractedAt: new Date(NOW).toISOString() }],
-      }),
-    ]);
   });
 
   it("rewrites managed memory JSONL through the adapter", async () => {

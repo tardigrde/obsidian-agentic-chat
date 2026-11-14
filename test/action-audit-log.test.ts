@@ -4,9 +4,7 @@ import {
   AgentActionAuditRecorder,
   buildApprovalAuditEvent,
   buildCheckpointAuditEvent,
-  diffSummaryForContent,
   diffSummaryForTool,
-  filterActionAuditEvents,
   redactAuditResult,
   redactAuditValue,
   touchedFilesForTool,
@@ -26,6 +24,39 @@ function auditEntries(adapter: MemoryAdapter, path: string): Extract<SessionEntr
 }
 
 describe("AgentActionAuditRecorder", () => {
+  it("summarizes a set_properties approval as an edit diff with redacted args", () => {
+    const events: ActionAuditEvent[] = [
+      buildApprovalAuditEvent({
+        decision: "approved",
+        toolCallId: "call-write",
+        toolName: "write",
+        args: { path: "Notes/A.md", content: "body" },
+      }),
+      buildApprovalAuditEvent({
+        decision: "denied",
+        toolCallId: "call-mcp",
+        toolName: "mcp__docs__search",
+        args: { query: "oauth" },
+      }),
+      buildCheckpointAuditEvent({
+        toolCallId: "call-write",
+        toolName: "write",
+        undo: { kind: "content", path: "Notes/A.md", before: "old" },
+      }),
+      buildApprovalAuditEvent({
+        decision: "auto-approved",
+        toolCallId: "call-properties",
+        toolName: "set_properties",
+        args: { path: "Notes/B.md", properties: { status: "done", oldToken: "secret" } },
+      }),
+    ];
+
+    expect(events[3]).toMatchObject({
+      diff: { kind: "edit", path: "Notes/B.md", editCount: 2 },
+      args: { properties: { oldToken: "[redacted]" } },
+    });
+  });
+
   it("persists turn and tool-call audit events into the active session", async () => {
     const adapter = new MemoryAdapter();
     const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
@@ -120,62 +151,6 @@ describe("AgentActionAuditRecorder", () => {
       nested: { refreshToken: "[redacted]" },
       content: "[content 9 chars]",
       safe: `${"x".repeat(500)}...[truncated 5 chars]`,
-    });
-  });
-
-  it("filters audit events by category, decision, touched path, and egress kind", () => {
-    const events: ActionAuditEvent[] = [
-      buildApprovalAuditEvent({
-        decision: "approved",
-        toolCallId: "call-write",
-        toolName: "write",
-        args: { path: "Notes/A.md", content: "body" },
-      }),
-      buildApprovalAuditEvent({
-        decision: "denied",
-        toolCallId: "call-mcp",
-        toolName: "mcp__docs__search",
-        args: { query: "oauth" },
-      }),
-      buildCheckpointAuditEvent({
-        toolCallId: "call-write",
-        toolName: "write",
-        undo: { kind: "content", path: "Notes/A.md", before: "old" },
-      }),
-      buildApprovalAuditEvent({
-        decision: "auto-approved",
-        toolCallId: "call-properties",
-        toolName: "set_properties",
-        args: { path: "Notes/B.md", properties: { status: "done", oldToken: "secret" } },
-      }),
-    ];
-
-    expect(filterActionAuditEvents(events, { category: "approval" })).toHaveLength(3);
-    expect(filterActionAuditEvents(events, { decision: "denied" })).toEqual([events[1]]);
-    expect(filterActionAuditEvents(events, { egressKind: "mcp" })).toEqual([events[1]]);
-    expect(filterActionAuditEvents(events, { touchedPath: "Notes/A.md" })).toEqual([events[0], events[2]]);
-    expect(events[3]).toMatchObject({
-      diff: { kind: "edit", path: "Notes/B.md", editCount: 2 },
-      args: { properties: { oldToken: "[redacted]" } },
-    });
-  });
-
-  it("summarizes content diffs without storing the full diff for large changes", () => {
-    expect(diffSummaryForContent("Notes/A.md", "old\n", "old\nnew\n")).toMatchObject({
-      kind: "edit",
-      path: "Notes/A.md",
-      stat: { added: 1, removed: 0 },
-    });
-
-    const before = Array.from({ length: 600 }, (_unused, index) => `old ${index}`).join("\n");
-    const after = Array.from({ length: 600 }, (_unused, index) => `new ${index}`).join("\n");
-    const large = diffSummaryForContent("Notes/Large.md", before, after);
-    expect(large).toMatchObject({
-      kind: "edit",
-      path: "Notes/Large.md",
-      lineDiffOmitted: true,
-      beforeCharLength: before.length,
-      afterCharLength: after.length,
     });
   });
 

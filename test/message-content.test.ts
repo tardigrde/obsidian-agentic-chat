@@ -4,7 +4,6 @@ import {
   assistantUsage,
   collectToolResults,
   failedLastTurnIndex,
-  lastUserText,
   lastUserTurn,
   messageImages,
   messageText,
@@ -173,28 +172,6 @@ describe("messageImages", () => {
   it("returns [] for string content or no images", () => {
     expect(messageImages(msg({ role: "user", content: "hello" }))).toEqual([]);
     expect(messageImages(msg({ role: "user", content: [{ type: "text", text: "hi" }] }))).toEqual([]);
-  });
-});
-
-describe("lastUserText", () => {
-  it("returns the most recent non-empty user message", () => {
-    const messages = [
-      msg({ role: "user", content: "first" }),
-      msg({ role: "assistant", content: [{ type: "text", text: "reply" }] }),
-      msg({ role: "user", content: "second" }),
-      msg({ role: "assistant", content: [{ type: "text", text: "reply2" }] }),
-    ];
-    expect(lastUserText(messages)).toBe("second");
-  });
-  it("skips blank user turns", () => {
-    const messages = [
-      msg({ role: "user", content: "real" }),
-      msg({ role: "user", content: "   " }),
-    ];
-    expect(lastUserText(messages)).toBe("real");
-  });
-  it("returns undefined when there is no user turn", () => {
-    expect(lastUserText([msg({ role: "assistant", content: [] })])).toBeUndefined();
   });
 });
 

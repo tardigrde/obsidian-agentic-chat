@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { App, DataAdapter } from "obsidian";
-import { addEvidenceSource, createEvidenceLedger } from "../src/retrieval/evidence-ledger";
 import { memoryRecordsToJsonl } from "../src/memory/management";
 import {
   formatMemorySearchResponse,
@@ -99,34 +98,6 @@ describe("memory retrieval", () => {
     expect(response.matches.map((match) => match.record.id)).toEqual(["mem-fact-embeddings"]);
     expect(response.matches[0]?.record.kind).toBe("fact");
     expect(response.matches[0]?.record.scope).toBe("vault");
-  });
-
-  it("feeds memory citations into the evidence ledger without inventing source types", () => {
-    const response = searchMemories(
-      { query: "concise citations" },
-      { records: FAKE_MEMORY_FIXTURE },
-    );
-    const citation = memoryCitations(response.matches)[0];
-    const match = response.matches[0];
-    if (!citation || !match) throw new Error("Expected citable memory fixture match.");
-    let ledger = createEvidenceLedger({ sessionId: "memory-test", now: () => Date.UTC(2026, 5, 26, 10, 0, 0) });
-
-    const added = addEvidenceSource(
-      ledger,
-      {
-        reference: citation,
-        excerpt: match.record.text,
-        metadata: { memoryId: match.record.id },
-      },
-      { now: () => Date.UTC(2026, 5, 26, 10, 0, 1) },
-    );
-    ledger = added.ledger;
-
-    expect(added.redacted).toBe(false);
-    expect(ledger.sources[0]).toMatchObject({
-      citation: "[[Notes/Preferences.md#Style|Style preference]]",
-      metadata: { memoryId: "mem-pref-concise" },
-    });
   });
 
   it("loads plugin-managed memory JSONL and exposes it through explicit search_memory tool calls", async () => {

@@ -1351,7 +1351,7 @@ export class ChatView extends ItemView {
     tab: ChatTab,
     staged: StagedPromptContext,
     text: string,
-  ): Promise<{ prompt: string; images: ImageContent[]; sessionToken: string; messageCountBefore: number } | null> {
+  ): Promise<{ prompt: string; images: ImageContent[]; sessionToken: number; messageCountBefore: number } | null> {
     const service = tab.service;
     // A fresh tab has no session yet. Create/continue it before sampling the
     // token, otherwise the token changes during this same send and the guard
@@ -1463,21 +1463,16 @@ export class ChatView extends ItemView {
     const failedIndex = failedLastTurnIndex(service.getMessages());
     if (failedIndex !== undefined && lastTurn?.text === prompt) {
       try {
-        await service.truncateMessages(failedIndex);
+        // The rewind starts a new conversation token; bind the resend to it.
+        sessionToken = await service.truncateMessages(failedIndex);
       } catch (error) {
         this.renderErrorMessage(errorMessage(error));
         return;
       }
       if (service.getSessionToken() !== sessionToken) {
-        const currentToken = service.getSessionToken();
-        // A rewind advances the same session's epoch, so a bare token inequality
-        // is expected after truncate. Only a different conversation is a swap.
-        if (sessionIdentity(currentToken) !== sessionIdentity(sessionToken)) {
-          service.reportSessionChanged();
-          this.showServiceError();
-          return;
-        }
-        sessionToken = currentToken;
+        service.reportSessionChanged();
+        this.showServiceError();
+        return;
       }
       if (this.isLiveTab(tab)) {
         this.renderTranscript(service.getMessages());
@@ -1972,9 +1967,4 @@ export class ChatView extends ItemView {
     this.renderInfoMessage("Removed command", [[`/${word.toLowerCase()}`, hint]]);
     return true;
   }
-}
-
-/** The conversation part of a service session token, without its epoch suffix. */
-function sessionIdentity(token: string): string {
-  return token.replace(/:\d+$/, "");
 }

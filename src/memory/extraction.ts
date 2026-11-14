@@ -108,14 +108,6 @@ export function approveMemoryProposal(
   };
 }
 
-export function rejectMemoryProposal(proposal: MemoryExtractionProposal, reason?: string): MemoryProposalDecision {
-  return {
-    status: "rejected",
-    proposalId: proposal.id,
-    reason: reason?.trim() || undefined,
-  };
-}
-
 export async function appendApprovedMemoryRecord(
   adapter: DataAdapter,
   path: string,

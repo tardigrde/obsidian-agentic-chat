@@ -1,15 +1,20 @@
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
-import type { SessionInfo } from "../session/session-manager";
+import type { LoadSessionOptions, SessionInfo } from "../session/session-manager";
 import type { ActivateSessionOptions, ActiveSessionSnapshot } from "./conversation";
 import { conversationMessages } from "./conversation-messages";
 import { AgentSessionSwapQueue, type AgentSessionSwapState } from "./session-swap-queue";
 
 export interface AgentSessionActionsRuntime {
   readonly activePath: string | null;
+  /** Advances on every transcript discontinuity; a rewrite must still match it. */
   readonly generation: number;
+  /** The generation the current conversation began at; a send must still match it. */
+  readonly conversationGeneration: number;
+  /** Commit a swap or rewind: every older token is stale from here on. */
+  beginConversation(): number;
   continueRecent(): Promise<ActiveSessionSnapshot>;
   create(): Promise<ActiveSessionSnapshot>;
-  load(path: string): Promise<ActiveSessionSnapshot>;
+  load(path: string, options?: LoadSessionOptions): Promise<ActiveSessionSnapshot>;
   list(): Promise<SessionInfo[]>;
   delete(path: string): Promise<void>;
   rename(path: string, name: string): Promise<void>;
@@ -25,6 +30,25 @@ export interface AgentSessionActivationRuntime {
   prepareResources(): Promise<void>;
   detachAgent(): void;
   activate(messages: AgentMessage[], options?: ActivateSessionOptions): Promise<void>;
+  /** Put a transcript the session file already holds on a fresh agent. */
+  installTranscript(messages: AgentMessage[]): unknown;
+}
+
+/** The session and generation a caller captured together with its transcript. */
+export interface SessionBinding {
+  expectedPath: string | null;
+  expectedGeneration: number;
+}
+
+/**
+ * The session file holds the compacted transcript, but neither the install nor
+ * a reload could put it on the live agent.
+ */
+export class CompactionNotLiveError extends Error {
+  constructor(cause: unknown) {
+    super("The compacted transcript is saved, but the live conversation could not be replaced.", { cause });
+    this.name = "CompactionNotLiveError";
+  }
 }
 
 export interface AgentSessionActionsOptions {
@@ -34,10 +58,13 @@ export interface AgentSessionActionsOptions {
   afterDelete?: () => void | Promise<void>;
 }
 
+/**
+ * The only sequencer for the live session. Every operation that moves the
+ * session pointer, rewrites the transcript, or replaces the live agent runs as
+ * one step of this queue, so no two of them interleave.
+ */
 export class AgentSessionActions {
   private readonly sessionSwaps = new AgentSessionSwapQueue();
-  /** Increments only for explicit session-changing operations, not reloads. */
-  private sessionEpoch = 0;
 
   constructor(private readonly options: AgentSessionActionsOptions) {}
 
@@ -49,9 +76,20 @@ export class AgentSessionActions {
     return state === "failed" && this.options.activation.currentAgent ? "live" : state;
   }
 
-  /** Path + explicit epoch of the session a turn started against. */
-  getSessionToken(): string {
-    return `${this.options.sessions.activePath ?? ""}:${this.sessionEpoch}`;
+  /**
+   * The conversation a send binds to. It changes when a swap or rewind commits
+   * and survives compaction.
+   */
+  getSessionToken(): number {
+    return this.options.sessions.conversationGeneration;
+  }
+
+  /** The session and generation a rewrite must still match when it lands. */
+  getBinding(): SessionBinding {
+    return {
+      expectedPath: this.options.sessions.activePath,
+      expectedGeneration: this.options.sessions.generation,
+    };
   }
 
   /**
@@ -59,8 +97,8 @@ export class AgentSessionActions {
    * A failure before this point leaves the old session live, so a prompt
    * prepared against it must still be accepted.
    */
-  private commitSessionChange(): void {
-    this.sessionEpoch += 1;
+  private commitSessionChange(): number {
+    return this.options.sessions.beginConversation();
   }
 
   /**
@@ -200,41 +238,79 @@ export class AgentSessionActions {
     this.options.notifyChange();
   }
 
-  async truncateMessages(index: number): Promise<void> {
+  /**
+   * Rewind the transcript to just before conversation message `index`. Resolves
+   * with the session token of the rewound conversation, so the caller can bind
+   * its resend to it.
+   */
+  async truncateMessages(index: number): Promise<number> {
     // Captured at click time: a queued swap or a concurrent rewrite must fail
     // this rewind instead of applying it to a different transcript.
-    const expectedToken = this.getSessionToken();
-    const expectedPath = this.options.sessions.activePath;
-    const expectedGeneration = this.options.sessions.generation;
+    const { expectedPath, expectedGeneration } = this.getBinding();
+    const stale = (): boolean =>
+      this.options.sessions.activePath !== expectedPath || this.options.sessions.generation !== expectedGeneration;
     return this.sessionSwaps.enqueue(async (setPhase) => {
-      if (this.getSessionToken() !== expectedToken) {
-        throw new Error("The session changed before the transcript could be rewound.");
-      }
+      if (stale()) throw new Error("The session changed before the transcript could be rewound.");
       const agent = this.options.activation.currentAgent;
-      if (!agent || agent.state.isStreaming) return;
+      if (!agent || agent.state.isStreaming) return this.getSessionToken();
       // `index` addresses the conversation transcript the UI renders, which excludes
       // pi's system-context message. Rewind the persisted conversation to that
       // index; the replacement agent re-seeds its own system message from the
       // current system prompt.
       const conversation = conversationMessages(agent.state.messages).slice(0, Math.max(0, index));
       await this.options.activation.prepareResources();
-      if (
-        this.options.sessions.activePath !== expectedPath ||
-        this.options.sessions.generation !== expectedGeneration
-      ) {
-        throw new Error("The session changed before the transcript could be rewound.");
-      }
-      this.commitSessionChange();
+      if (stale()) throw new Error("The session changed before the transcript could be rewound.");
+      const committed = this.commitSessionChange();
       setPhase("loading");
       const snapshot = await this.options.sessions.rewriteMessages(conversation, {
         expectedPath,
-        expectedGeneration,
+        expectedGeneration: committed,
       });
       setPhase("activating");
       this.options.activation.detachAgent();
       await this.options.activation.activate(snapshot.messages, { reloadResources: false });
       this.options.notifyChange();
+      return committed;
     });
+  }
+
+  /**
+   * Land a compacted transcript: persist it, then put it on the live agent.
+   * Both steps are one queue operation, so a swap cannot slip between the
+   * rewrite and the install. `binding` is the session the transcript was read
+   * from; a swap, rewind, or other rewrite since then fails the commit before
+   * it writes.
+   *
+   * When the install fails after the rewrite landed, the persisted transcript
+   * is reloaded so the next turn does not continue from the stale one. If that
+   * fails too, the commit rejects with {@link CompactionNotLiveError}.
+   */
+  async commitCompaction(messages: AgentMessage[], binding: SessionBinding): Promise<void> {
+    await this.sessionSwaps.enqueue(async () => {
+      await this.options.sessions.rewriteMessages(messages, binding);
+      try {
+        this.options.activation.installTranscript(messages);
+      } catch (error) {
+        if (!(await this.reloadPersistedTranscript())) throw new CompactionNotLiveError(error);
+      }
+      this.options.sessions.refreshInfoIfActive();
+    });
+    // Notify once the queue reports live again: a listener that reads the swap
+    // state during the operation would see it as still loading.
+    this.options.notifyChange();
+  }
+
+  /** Re-read the active session file onto a fresh agent. Runs inside a queue operation. */
+  private async reloadPersistedTranscript(): Promise<boolean> {
+    const { expectedPath, expectedGeneration } = this.getBinding();
+    if (!expectedPath) return false;
+    try {
+      const snapshot = await this.options.sessions.load(expectedPath, { expectedPath, expectedGeneration });
+      this.options.activation.installTranscript(snapshot.messages);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

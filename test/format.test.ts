@@ -10,7 +10,6 @@ import {
   formatDetailedUsage,
   formatElapsed,
   formatUsage,
-  formatUsageDelta,
   safeJson,
   shortModelLabel,
   truncateText,
@@ -220,15 +219,6 @@ describe("formatUsage", () => {
         usage({ totalTokens: 1000, input: 100, cacheRead: 900, cost: { total: 0.02 } as Usage["cost"] }),
       ),
     ).toBe("1,000 tokens · 90% cache · $0.02");
-  });
-});
-
-describe("formatUsageDelta", () => {
-  const usage = (over: Partial<Usage>): Usage => ({ totalTokens: 0, ...over }) as Usage;
-
-  it("delegates to formatUsage (usage is per-response, not cumulative)", () => {
-    expect(formatUsageDelta(usage({ totalTokens: 120 }))).toBe("120 tokens");
-    expect(formatUsageDelta(usage({ totalTokens: 50, cacheRead: 50 }), usage({ totalTokens: 100 }))).toBe("50 tokens · 100% cache");
   });
 });
 

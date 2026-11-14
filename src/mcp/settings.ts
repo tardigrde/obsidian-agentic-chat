@@ -184,21 +184,6 @@ function isMcpServer(server: McpServerSettings | null): server is McpServerSetti
   return server !== null;
 }
 
-/** Defaults for the client-owned fields both shapes share. Fresh arrays per call. */
-function mcpServerOwnedDefaults(): Omit<McpServerOwnedFields, "oauth"> {
-  return {
-    enabled: false,
-    approval: "ask",
-    authType: "none",
-    authHeaderName: "",
-    authHeaderValueSecretId: "",
-    authHeaderValue: "",
-    knownTools: [],
-    enabledTools: [],
-    disabledTools: [],
-  };
-}
-
 /** `heal` normalizes persisted/raw input; `copy` mirrors a live record unchanged. */
 type McpServerBuildMode = "heal" | "copy";
 
@@ -328,11 +313,6 @@ function healMcpServer(server: Partial<McpServerSettings> | null | undefined): M
     ...(typeof server.pluginRoot === "string" && server.pluginRoot.trim() ? { pluginRoot: server.pluginRoot.trim() } : {}),
   };
 }
-
-export const DEFAULT_MCP_SERVER_STATE: McpServerState = {
-  ...mcpServerOwnedDefaults(),
-  oauth: { ...DEFAULT_MCP_OAUTH_SETTINGS },
-};
 
 export function healMcpServerState(
   stored: Partial<McpServerState> | null | undefined,

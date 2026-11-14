@@ -5,9 +5,6 @@ import { fnv1a32 } from "../utils/hash";
 /** Default streak of consecutive identical tool batches that triggers the guard. */
 export const LOOP_GUARD_DEFAULT_MAX_IDENTICAL_BATCHES = 4;
 
-/** Static prefix kept for tests/grep; fired notices append batch detail. */
-export const LOOP_GUARD_NOTICE_TEXT = "Loop guard: the same tool batch repeated with identical results.";
-
 /**
  * Build the fired notice. Names the repeated tools so the user sees the cause
  * at a glance; denial loops (all results are errors) get an approval hint.

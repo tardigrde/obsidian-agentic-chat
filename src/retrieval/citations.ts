@@ -41,12 +41,6 @@ export function parseSourceReference(input: string): SourceReference | null {
   return parseSourceTarget(trimmed);
 }
 
-export function parseSourceReferences(values: readonly string[]): SourceReference[] {
-  return values
-    .map((value) => parseSourceReference(value))
-    .filter((value): value is SourceReference => value !== null);
-}
-
 export function sourceReferenceTarget(reference: SourceReference): string {
   switch (reference.type) {
     case "note":
@@ -85,11 +79,6 @@ export function sourceReferenceKey(reference: SourceReference): string {
     case "artifact":
       return `artifact:${reference.artifactId}`;
   }
-}
-
-export function normalizeObsidianLinkTarget(target: string): string | null {
-  const reference = parseNoteTarget(target);
-  return reference ? noteTarget(reference) : null;
 }
 
 function parseSourceTarget(target: string): SourceReference | null {

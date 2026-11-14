@@ -45,13 +45,6 @@ export function agentContextReadout(
   }, counter);
 }
 
-export function agentContextFraction(
-  input: AgentContextReadoutInput,
-  counter?: ContextOverheadCounter,
-): number | undefined {
-  return agentContextReadout(input, counter)?.fraction;
-}
-
 /** Non-transcript load the compaction threshold adds, measured exactly as the readout does. */
 export function agentContextOverheadTokens(
   input: Pick<AgentServiceReadoutInput, "settings" | "systemPrompt" | "tools">,

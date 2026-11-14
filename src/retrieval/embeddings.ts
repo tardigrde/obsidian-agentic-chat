@@ -334,19 +334,6 @@ export function upsertEmbeddingIndexRecords(
   };
 }
 
-export function removeEmbeddingIndexRecords(
-  snapshot: EmbeddingIndexSnapshot,
-  documentIds: readonly string[],
-  options: { now?: number } = {},
-): EmbeddingIndexSnapshot {
-  const remove = new Set(documentIds);
-  return {
-    ...snapshot,
-    updatedAt: options.now ?? Date.now(),
-    records: snapshot.records.filter((record) => !remove.has(record.documentId)),
-  };
-}
-
 export function embeddingDocumentFingerprint(document: RetrievalDocument): Promise<string> {
   return stableTextHash(
     JSON.stringify({

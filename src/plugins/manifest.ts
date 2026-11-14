@@ -35,7 +35,6 @@ export const AGENT_PLUGINS_VERSION = "1.0.0";
 
 /** Transports this client can actually connect to. Others are skipped + reported. */
 export const SUPPORTED_MCP_TRANSPORTS = ["streamable-http"] as const;
-export type SupportedMcpTransport = (typeof SUPPORTED_MCP_TRANSPORTS)[number];
 
 export type McpTransport = "stdio" | "streamable-http" | "sse";
 
