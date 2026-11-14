@@ -5,6 +5,7 @@ import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import {
   SourceArtifactDeduper,
   extractReadableSource,
+  looksLikeHtml,
   type SourceImportKind,
   type SourceTextExtractor,
 } from "../retrieval/source-artifacts";
@@ -234,7 +235,7 @@ interface RenderedPage {
 const MAX_RAW_CHARS = 500_000;
 
 function renderFetched(url: string, raw: string, contentType: string, limit: number, offset: number): RenderedPage {
-  const html = /html|xml/i.test(contentType) || (!contentType && looksLikeHtml(raw));
+  const html = looksLikeHtml(raw, contentType);
   // Don't dump decoded binary (images, archives, PDFs) at the model — wasteful and unreadable.
   if (!html && contentType && !isTextContentType(contentType)) {
     return {
@@ -351,20 +352,6 @@ function normalizeTranscriptText(raw: string): string {
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function looksLikeHtml(text: string): boolean {
-  return /<(!doctype html|html|head|body|p|div|a|span|h[1-6])\b/i.test(text.slice(0, 2000));
-}
-
-/**
- * Extract a page title and readable body text from raw HTML, deterministically
- * and without a DOM (works in tests and on mobile). Best-effort: strips
- * scripts/styles/markup, decodes common entities, and collapses whitespace.
- */
-export function extractReadableText(html: string): { title: string; text: string } {
-  const extracted = extractReadableSource(html, "text/html");
-  return { title: extracted.title, text: extracted.text };
 }
 
 /**

@@ -53,6 +53,8 @@ export interface SplitFrontmatterOptions {
 }
 
 export interface SplitFrontmatterResult {
+  /** True when the content starts with a `---` frontmatter block. */
+  found: boolean;
   data: Record<string, unknown>;
   body: string;
   /** Set when frontmatter exists but failed to parse as YAML. */
@@ -62,9 +64,10 @@ export interface SplitFrontmatterResult {
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 /**
- * Split a frontmatter block from a note. The options keep the four historical
- * call sites explicit where they differ: delimiter newlines, body whitespace,
- * and how a YAML parse failure or scalar value is handled.
+ * Split a frontmatter block from a note. The one frontmatter splitter: skills,
+ * the plugin importer, graph tools, and retrieval call it. The options keep
+ * the call sites explicit where they differ: delimiter newlines, body
+ * whitespace, and how a YAML parse failure or scalar value is handled.
  */
 export function splitFrontmatter(
   content: string,
@@ -72,7 +75,7 @@ export function splitFrontmatter(
 ): SplitFrontmatterResult {
   const normalized = options.normalizeNewlines ? content.replace(/\r\n?/g, "\n") : content;
   const match = FRONTMATTER.exec(normalized);
-  if (!match) return { data: {}, body: normalized };
+  if (!match) return { found: false, data: {}, body: normalized };
 
   const bodyStart = match[0].length;
   const body =
@@ -83,22 +86,23 @@ export function splitFrontmatter(
         : normalized.slice(bodyStart);
 
   if ((options.flavor ?? "yaml") === "simple") {
-    return { data: parseSimpleYaml(match[1]), body };
+    return { found: true, data: parseSimpleYaml(match[1]), body };
   }
 
   try {
     const parsed = parseYaml(match[1]) as unknown;
     if (options.objectOnly === false) {
-      return { data: (parsed ?? {}) as Record<string, unknown>, body };
+      return { found: true, data: (parsed ?? {}) as Record<string, unknown>, body };
     }
     return {
+      found: true,
       data: parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {},
       body,
     };
   } catch (error) {
     if (options.reportParseProblem === false) throw error;
     const detail = error instanceof Error && error.message ? ` (${error.message})` : "";
-    return { data: {}, body, parseProblem: `frontmatter is not valid YAML${detail}` };
+    return { found: true, data: {}, body, parseProblem: `frontmatter is not valid YAML${detail}` };
   }
 }
 

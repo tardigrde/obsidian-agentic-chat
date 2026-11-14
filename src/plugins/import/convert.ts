@@ -1,4 +1,4 @@
-import { parseYaml } from "obsidian";
+import { splitFrontmatter } from "../../vault/frontmatter";
 import type { FileTree } from "./archive";
 import type { SniffedCandidate } from "./sniff";
 import { parseJson, skillNameFromDoc } from "./shared";
@@ -177,29 +177,18 @@ function convertSkills(tree: FileTree, prefix: string, warnings: string[]): Conv
  * directory name the loader requires.
  */
 export function sanitizeSkillDoc(doc: string, dirName: string, warnings: string[]): string {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(doc);
-  if (!match) {
+  const { found, data, body, parseProblem } = splitFrontmatter(doc, { body: "trimStart" });
+  if (!found) {
     return `---\nname: ${dirName}\ndescription: ${dirName} skill.\n---\n\n${doc.trimStart()}`;
   }
-  const frontmatter = parseSkillFrontmatter(match[1], dirName, warnings);
-  const kept = allowedFrontmatterLines(frontmatter, dirName, warnings);
+  if (parseProblem) {
+    warnings.push(`skills/${dirName}/SKILL.md frontmatter is not valid YAML; rewrote it to name + description only.`);
+  }
+  const kept = allowedFrontmatterLines(data, dirName, warnings);
   if (!kept.some((line) => line.startsWith("name:"))) {
     kept.unshift(`name: ${yamlScalar(dirName)}`);
   }
-  const body = doc.slice(match[0].length).replace(/^\r?\n/, "");
-  return `---\n${kept.join("\n")}\n---\n\n${body.trimStart()}`;
-}
-
-/** Parse the frontmatter block; invalid YAML warns and falls back to an empty object. */
-function parseSkillFrontmatter(yaml: string, dirName: string, warnings: string[]): Record<string, unknown> {
-  try {
-    // Obsidian's parseYaml (js-yaml) is the same parser the plugin uses for skills.
-    const parsed = parseYaml(yaml) as unknown;
-    if (parsed !== null && typeof parsed === "object") return parsed as Record<string, unknown>;
-  } catch {
-    warnings.push(`skills/${dirName}/SKILL.md frontmatter is not valid YAML; rewrote it to name + description only.`);
-  }
-  return {};
+  return `---\n${kept.join("\n")}\n---\n\n${body}`;
 }
 
 /** Serialize the allowed frontmatter keys, forcing `name` to the directory name. */

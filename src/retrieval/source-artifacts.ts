@@ -1,8 +1,7 @@
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { formatSourceReference } from "./citations";
 import { formatFrontmatterScalar, parseFrontmatterFields } from "../vault/frontmatter";
-import { legacyStableTextHash, stableTextHash } from "./source-hash";
-import { resolveSourceArtifact, type SourceArtifactCacheValue } from "./source-ingest";
+import { SourceArtifactCache, sourceDedupKeys } from "./source-ingest";
 
 export const SOURCE_IMPORT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 export const SOURCE_IMPORT_SOURCE_TOOL = "agentic-chat.source-import";
@@ -54,8 +53,6 @@ export interface SourceImportWriteResult {
   duplicate: boolean;
   text: string;
 }
-
-type CachedSourceImport = SourceArtifactCacheValue<SourceImportProvenance, undefined>;
 
 const CANDIDATE_TAGS = ["article", "main"];
 const CANDIDATE_ATTRS = /\b(?:role\s*=\s*["']main["']|id\s*=\s*["'][^"']*(?:article|content|entry|main|post)[^"']*["']|class\s*=\s*["'][^"']*(?:article|content|entry|main|post)[^"']*["'])/i;
@@ -173,19 +170,30 @@ export function parseSourceImportProvenance(text: string): SourceImportProvenanc
 }
 
 export class SourceArtifactDeduper {
-  private readonly byKey = new Map<string, CachedSourceImport>();
+  private readonly artifacts = new SourceArtifactCache<SourceImportProvenance, undefined>();
 
   async write(store: ToolArtifactStoreLike, input: SourceImportWriteInput): Promise<SourceImportWriteResult> {
-    const provenance = await createSourceImportProvenance(input);
-    const resolved = await resolveSourceArtifact({
-      store,
-      cache: this.byKey,
+    const keys = await sourceDedupKeys(`source:${normalizeSourceUrl(input.finalUrl ?? input.url)}`, input.text);
+    const provenance: SourceImportProvenance = {
+      url: input.url,
+      finalUrl: input.finalUrl,
+      title: input.title,
+      contentType: input.contentType,
+      extractor: input.extractor,
+      sourceKind: input.sourceKind ?? "web",
+      mediaUrl: input.mediaUrl,
+      transcriptFormat: input.transcriptFormat,
+      importedAt: input.importedAt ?? new Date().toISOString(),
+      dedupKey: keys.dedupKey,
+      textHash: keys.textHash,
+      sourceTextChars: keys.trimmedText.length,
+    };
+    const resolved = await this.artifacts.resolve(store, {
       provenance,
       chunks: [],
       extraction: undefined,
       citationLabel: input.title || input.finalUrl || input.url,
-      legacyDedupKeys: [legacySourceDedupKey(input)],
-      legacyTextHashes: [legacySourceTextHash(input.text)],
+      keys,
       artifactLabel: sourceArtifactLabel(input.title, input.finalUrl ?? input.url),
       sourceToolName: SOURCE_IMPORT_SOURCE_TOOL,
       contentType: SOURCE_IMPORT_CONTENT_TYPE,
@@ -208,34 +216,6 @@ export class SourceArtifactDeduper {
       text: resolved.text,
     };
   }
-}
-
-export async function createSourceImportProvenance(input: SourceImportWriteInput): Promise<SourceImportProvenance> {
-  const normalizedSource = normalizeSourceUrl(input.finalUrl ?? input.url);
-  const text = input.text.trim();
-  const textHash = await stableTextHash(text);
-  return {
-    url: input.url,
-    finalUrl: input.finalUrl,
-    title: input.title,
-    contentType: input.contentType,
-    extractor: input.extractor,
-    sourceKind: input.sourceKind ?? "web",
-    mediaUrl: input.mediaUrl,
-    transcriptFormat: input.transcriptFormat,
-    importedAt: input.importedAt ?? new Date().toISOString(),
-    dedupKey: `source:${normalizedSource}:${textHash}`,
-    textHash,
-    sourceTextChars: text.length,
-  };
-}
-
-function legacySourceDedupKey(input: SourceImportWriteInput): string {
-  return `source:${normalizeSourceUrl(input.finalUrl ?? input.url)}:${legacySourceTextHash(input.text)}`;
-}
-
-function legacySourceTextHash(text: string): string {
-  return legacyStableTextHash(text.trim());
 }
 
 function extractTitle(html: string): string {
@@ -309,7 +289,8 @@ function normalizeText(text: string): string {
     .trim();
 }
 
-function looksLikeHtml(text: string, contentType: string): boolean {
+/** True when a fetched body should go through the HTML extractor. */
+export function looksLikeHtml(text: string, contentType: string): boolean {
   return /html|xml/i.test(contentType) || (!contentType && /<(!doctype html|html|head|body|p|div|a|span|h[1-6])\b/i.test(text.slice(0, 2000)));
 }
 

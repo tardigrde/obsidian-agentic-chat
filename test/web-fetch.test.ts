@@ -4,7 +4,6 @@ import type { ToolArtifactMetadata, ToolArtifactStoreLike, ToolArtifactWriteInpu
 import { parseSourceReference } from "../src/retrieval/citations";
 import {
   createWebFetchTool,
-  extractReadableText,
   isHostAllowedByAllowlist,
   normalizeAllowedHosts,
   normalizeWebUrl,
@@ -12,6 +11,7 @@ import {
   type WebHttpRequest,
   type WebHttpResponse,
 } from "../src/tools/web-fetch";
+import { extractReadableSource } from "../src/retrieval/source-artifacts";
 
 const FIXED_CREATED_AT = "2026-06-26T08:00:00.000Z";
 
@@ -69,12 +69,12 @@ async function run(tool: AgentTool, params: unknown): Promise<{ text: string; de
   return { text, details: (result.details ?? {}) as Record<string, unknown> };
 }
 
-describe("extractReadableText", () => {
+describe("extractReadableSource", () => {
   it("pulls the title and strips scripts, styles, and markup", () => {
     const html = `<!doctype html><html><head><title>Hello &amp; World</title>
       <style>.a{color:red}</style><script>alert(1)</script></head>
       <body><h1>Heading</h1><p>First para.</p><p>Second &mdash; para.</p></body></html>`;
-    const { title, text } = extractReadableText(html);
+    const { title, text } = extractReadableSource(html, "text/html");
     expect(title).toBe("Hello & World");
     expect(text).toContain("Heading");
     expect(text).toContain("First para.");
@@ -84,7 +84,7 @@ describe("extractReadableText", () => {
   });
 
   it("decodes numeric and hex entities and collapses whitespace", () => {
-    const { text } = extractReadableText("<p>A&#65;&#x42;   spaced\t\tout</p>");
+    const { text } = extractReadableSource("<p>A&#65;&#x42;   spaced\t\tout</p>", "text/html");
     expect(text).toBe("AAB spaced out");
   });
 });
