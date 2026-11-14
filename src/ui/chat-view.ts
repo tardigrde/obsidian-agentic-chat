@@ -39,7 +39,6 @@ import {
   resolveModeTransition,
   validateModeTransition,
 } from "../agent/modes";
-import type { OutputStyle } from "../agent/output-styles";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
 import {
@@ -683,15 +682,6 @@ export class ChatView extends ItemView {
     this.syncChrome();
   }
 
-  private async setOutputStyle(style: OutputStyle): Promise<void> {
-    if (this.service.isStreaming()) return;
-    if (this.plugin.settings.outputStyle === style) return;
-    await this.plugin.settingsStore.update((settings) => {
-      settings.outputStyle = style;
-    });
-    this.syncControls();
-  }
-
   /**
    * Reflect settings (e.g. changed via the settings tab) back into the composer
    * toggle, and disable it while the agent is streaming so the posture can't
@@ -782,7 +772,6 @@ export class ChatView extends ItemView {
       renderOutgoingUserMessage: (text, attachments, images) => view.renderOutgoingUserMessage(text, attachments, images),
       renderTranscript: (messages) => view.renderTranscript(messages),
       syncChrome: () => view.syncChrome(),
-      setOutputStyle: (style) => view.setOutputStyle(style),
       setComposerValue: (text) => view.setComposerValue(text),
       createSessionWorkflow: () => view.actions.createSessionWorkflow(),
       createSessionActivationCoordinator: () => view.createSessionActivationCoordinator(),

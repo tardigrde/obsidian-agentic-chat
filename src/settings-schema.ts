@@ -10,7 +10,6 @@ import {
 } from "./llm/models";
 import { healPerToolMap, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
 import { type AgentMode, DEFAULT_MODE, healMode } from "./agent/modes";
-import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { isRecord } from "./utils/records";
 import { DEFAULT_PLUGIN_SETTINGS, healPluginMcpState, type PluginSettings } from "./plugins/settings";
@@ -87,8 +86,6 @@ export interface AgenticChatSettings {
    * mutating tools.
    */
   mode: AgentMode;
-  /** How the assistant talks: a built-in system-prompt overlay. */
-  outputStyle: OutputStyle;
   privacy: PrivacySettings;
   approval: ApprovalSettings;
   /** Agent Plugins packages loaded from a vault folder. */
@@ -189,7 +186,6 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   maxTurnsPerPrompt: PARENT_TURN_CAP,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   mode: DEFAULT_MODE,
-  outputStyle: DEFAULT_OUTPUT_STYLE,
   // Strongest privacy out of the box: zero data retention, no prompt
   // logging/training, and any fallback provider must also satisfy both.
   privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
@@ -261,8 +257,6 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     ),
     mode: healMode(stored?.mode),
     openaiCompatibleContextWindow: healContextWindow(stored?.openaiCompatibleContextWindow),
-    outputStyle:
-      stored?.outputStyle && stored.outputStyle in OUTPUT_STYLES ? stored.outputStyle : DEFAULT_OUTPUT_STYLE,
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
     approval: healApprovalSettings(stored?.approval),
     notifications: { ...DEFAULT_SETTINGS.notifications, ...stored?.notifications },
@@ -384,7 +378,7 @@ function migrateLegacyPluginServers(healedMcp: McpSettings, healedPlugins: Plugi
 }
 
 /** Retired feature keys removed from persisted data.json on load. */
-const RETIRED_SETTING_KEYS = ["projects", "agentsFolder", "enableBuiltinAgents"] as const;
+const RETIRED_SETTING_KEYS = ["projects", "agentsFolder", "enableBuiltinAgents", "outputStyle"] as const;
 
 /**
  * Merge the stored approval policy over the defaults. Unknown legacy keys such as

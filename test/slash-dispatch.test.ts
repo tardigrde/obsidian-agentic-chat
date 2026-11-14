@@ -30,7 +30,6 @@ function makeView(skills: Array<{ name: string }> = []) {
   });
   const stubs: Stubs = {
     newSession: vi.spyOn(actions, "newSession").mockResolvedValue(),
-    runStyle: vi.spyOn(actions, "runStyle").mockResolvedValue(),
     runEffort: vi.spyOn(actions, "runEffort").mockReturnValue(undefined),
     switchModel: vi.spyOn(actions, "switchModel").mockResolvedValue(),
     showStatus: vi.spyOn(actions, "showStatus").mockReturnValue(undefined),
@@ -56,7 +55,6 @@ function makeView(skills: Array<{ name: string }> = []) {
 // Command name -> [handler key, expected arguments] for the input `/<name> a b`.
 const ROUTES: Record<string, [string, unknown[]]> = {
   new: ["newSession", []],
-  style: ["runStyle", ["a b"]],
   effort: ["runEffort", ["a b"]],
   sessions: ["sessionsRun", ["a b"]],
   model: ["switchModel", []],

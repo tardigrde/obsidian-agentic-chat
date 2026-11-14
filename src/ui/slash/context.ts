@@ -3,7 +3,6 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../../main";
 import type { AgentService } from "../../agent/agent-service";
-import type { OutputStyle } from "../../agent/output-styles";
 import type { ContextAttachment } from "../context-attachments";
 import type { ActionRow, WorkflowRenderer } from "../workflow-renderer";
 import type { SessionWorkflowController } from "../session-workflow-controller";
@@ -28,7 +27,6 @@ export interface SlashContext {
   renderOutgoingUserMessage(text: string, attachments: ContextAttachment[], images?: ImageContent[]): void;
   renderTranscript(messages: AgentMessage[]): void;
   syncChrome(): void;
-  setOutputStyle(style: OutputStyle): Promise<void>;
   setComposerValue(text: string): void;
   inputEl: HTMLTextAreaElement;
   createSessionWorkflow(): SessionWorkflowController;

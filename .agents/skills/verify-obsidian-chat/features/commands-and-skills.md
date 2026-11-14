@@ -61,7 +61,7 @@ await $(".agentic-chat-info").waitForExist();
 | `/new` | `src/ui/commands.ts#name: "new"` | `test/session-actions.test.ts#makeActions` (unit only) | `partial` |
 | Alias-free command lookup | `src/ui/commands.ts#resolveCommand` | `test/commands.test.ts#does not resolve the removed working-directory commands or their aliases` (unit only) | `partial` |
 | `/model` | `src/ui/commands.ts#name: "model"` | no committed check | `NONE` |
-| `/style` | `src/ui/commands.ts#name: "style"` | no committed check | `NONE` |
+| `/style` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /style and shows a retired hint` (unit only) | `partial` |
 | `/effort` | `src/ui/commands.ts#name: "effort"` | no committed check | `NONE` |
 | `/usage` | `src/ui/commands.ts#name: "usage"` | no committed check | `NONE` |
 | `/export` | `src/ui/commands.ts#name: "export"` | `test/session-export.test.ts#session export` (renderer only) | `partial` |

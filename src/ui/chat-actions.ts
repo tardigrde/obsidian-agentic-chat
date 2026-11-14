@@ -16,7 +16,7 @@ import {
   runSemanticIndex,
   semanticIndexWorkflowController,
 } from "./slash/index-commands";
-import { runEffort, runStyle, switchModel } from "./slash/model";
+import { runEffort, switchModel } from "./slash/model";
 import { createWorkflowRenderer } from "./slash/renderer";
 import { createSessionWorkflow, exportSession, newSession, runCompact, runSessions, runUndo } from "./slash/session";
 import type { MemoryWorkflowController } from "./memory-workflow-controller";
@@ -71,7 +71,6 @@ export class ChatActions {
     const { argString } = input;
     return {
       new: () => this.newSession(),
-      style: () => this.runStyle(argString),
       effort: () => this.runEffort(argString),
       sessions: () => this.runSessions(argString),
       model: () => this.switchModel(),
@@ -110,7 +109,6 @@ export class ChatActions {
 
   runCompact(instructions = ""): Promise<void> { return runCompact(this.deps.slashCtx(), instructions); }
 
-  runStyle(arg: string): Promise<void> { return runStyle(this.deps.slashCtx(), arg); }
 
   runEffort(arg: string): void { runEffort(this.deps.slashCtx(), arg); }
 

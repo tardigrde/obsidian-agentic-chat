@@ -24,7 +24,6 @@ const REMOVED_ALIASES = [
 const SUPPORTED_COMMANDS = [
   "usage",
   "doctor",
-  "style",
   "sessions",
   "semantic-index",
   "effort",

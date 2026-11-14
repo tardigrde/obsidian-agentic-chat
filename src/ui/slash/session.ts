@@ -1,5 +1,4 @@
 import { Notice } from "obsidian";
-import { DEFAULT_OUTPUT_STYLE } from "../../agent/output-styles";
 import { formatCompactionSummary } from "../../agent/compaction";
 import { EXPORT_FOLDER, exportFileName, hasExportableTurns, sessionToMarkdown } from "../../session/export";
 import { writeVaultFile } from "../../vault/storage";
@@ -33,12 +32,6 @@ export async function newSession(ctx: SlashContext): Promise<void> {
     await coordinator.startNewConversation(() => ctx.service.newSession());
   } catch (error) {
     ctx.renderErrorMessage(errorMessage(error));
-  } finally {
-    // A new conversation starts in the default (normal) output style.
-    await ctx.plugin.settingsStore.update((settings) => {
-      if (settings.outputStyle === DEFAULT_OUTPUT_STYLE) return false;
-      settings.outputStyle = DEFAULT_OUTPUT_STYLE;
-    });
   }
 }
 

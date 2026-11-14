@@ -26,7 +26,6 @@ export interface AgentRuntimeDiagnostics {
   contextWindow: number | null;
   thinkingLevel: ThinkingLevel;
   mode: string;
-  outputStyle: string;
   approval: {
     mutating: string;
     perToolOverrides: number;
@@ -96,7 +95,6 @@ export function buildRuntimeDiagnostics(options: BuildRuntimeDiagnosticsOptions)
     contextWindow: options.contextWindow,
     thinkingLevel: options.thinkingLevel,
     mode: settings.mode,
-    outputStyle: settings.outputStyle,
     approval: {
       mutating: settings.approval.mutating,
       perToolOverrides: Object.keys(settings.approval.perTool).length,
@@ -165,7 +163,6 @@ export function formatRuntimeDiagnosticsRows(diagnostics: AgentRuntimeDiagnostic
     ["Model", diagnostics.modelOverride ? `${diagnostics.model} (next message only)` : diagnostics.model],
     ["Thinking", diagnostics.thinkingLevel],
     ["Mode", diagnostics.mode],
-    ["Output style", diagnostics.outputStyle],
     ["Tools", formatList(diagnostics.tools)],
     ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],
     ["Approval", formatApproval(diagnostics)],

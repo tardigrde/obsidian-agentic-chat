@@ -1,7 +1,6 @@
 import { formatPluginAudit, type LoadedPlugin } from "../../plugins/loader";
 import { activeModelId } from "../../settings-schema";
 import { MODES } from "../../agent/modes";
-import { OUTPUT_STYLES } from "../../agent/output-styles";
 import {
   formatMcpDiagnosticRows,
   formatMcpDiagnosticSummary,
@@ -63,7 +62,6 @@ export function showStatus(ctx: SlashContext): void {
     ["Provider", settings.provider],
     ["Model", override ? `${override} (next message only)` : activeModelId(settings)],
     ["Mode", MODES[settings.mode].label],
-    ["Output style", OUTPUT_STYLES[settings.outputStyle].label],
     // The active level, i.e. the configured level clamped to what the model
     // actually supports — the raw setting alone can overstate the next turn.
     ["Thinking", ctx.service.getActiveThinkingLevel()],

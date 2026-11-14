@@ -2,7 +2,7 @@ import { type ApprovalPolicy, type ApprovalSettings, resolvePolicy } from "./app
 
 /**
  * What the agent is *allowed to do* this turn — a preset over the approval system.
- * Distinct from output styles (how it talks) and from skills (reusable capabilities).
+ * Distinct from skills (reusable capabilities).
  *
  * - `safe`  — honor the configured approval policy (per-tool overrides + `approval.mutating`).
  * - `yolo`  — session master auto-approve: force `mutating: "allow"`, but an explicit

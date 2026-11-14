@@ -10,12 +10,11 @@ Slash commands run locally and are not sent to the model.
 | `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists across messages. |
 | `/compact [instructions]` | Summarize older turns now. Optional instructions are passed to the compaction request. |
 | `/init [instructions]` | Create or update the vault standing-instructions file (`AGENTS.md`, falling back to `CLAUDE.md` or `GEMINI.md` at the vault root). Optional text guides the update. |
-| `/style [name]` | Switch output style. |
 | `/skill [name] [args]` | Run a vault skill. |
 | `/<skill-name>` | Run a skill directly when no built-in command has that name. |
 | `/agent [name] [task]` | Delegate a task to a subagent. Without arguments, opens a picker. |
 | `/undo` | Undo the last vault change made by the agent. |
-| `/status` | Show provider, model, mode, output style, session, MCP servers, and tools. |
+| `/status` | Show provider, model, mode, session, MCP servers, and tools. |
 | `/usage` | Show token and cost totals. |
 | `/memory [add\|review\|manage\|export\|clear]` | Add, review, export, or clear stored long-term memories. |
 | `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. |

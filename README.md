@@ -52,7 +52,6 @@ Privacy controls are on by default.
 - **Observability (opt-in).** Send OTLP/HTTP traces to Langfuse or a generic OTLP endpoint. Metadata mode is the default and excludes prompts, note bodies, tool args, and tool results. See [Observability](#observability).
 - **Subagents.** The agent can delegate a focused task to a child with its own context window, model, and tool subset. The only built-in role is Explorer (read-only recon). Custom roles need a code change. Run `/agent <name> <task>`. See [Subagents](#subagents).
 - **Skills.** Agent plugin packages in `.agentic-plugins/` provide `SKILL.md` skills, next to built-in skills. The model sees only name and description until a skill is invoked. Run `/skill <name>` or `/<name>`. A body can use `$ARGUMENTS` or `$1`. `/doctor` audits plugin packages. See [Skills](#skills).
-- **Output styles.** `/style` switches the assistant style: default, brainstorm, or learning.
 - **Standing instructions.** The agent loads `AGENTS.md` from the vault root on every turn, or `CLAUDE.md` / `GEMINI.md` if absent. Use `/init [instructions]` to curate the file. See [Standing instructions](#standing-instructions-agentsmd).
 - **Web access (opt-in).** Off by default. When enabled, it adds `web_search` (Tavily, Brave, or SearXNG), `fetch_url`, and `/deep-research`. While it is off, the tools are not registered and no web-access request is made. The plugin still refreshes its OpenRouter pricing cache when that cache is missing or older than three days. See [Web access & research](#web-access--research).
 - **MCP tools (opt-in).** Add HTTPS Streamable HTTP MCP servers, plus plain HTTP for loopback servers. Bearer, static-header, and OAuth auth are supported. Tools appear as `mcp__server__tool` and pass through the approval gate. No stdio transport. See [MCP tools](#mcp-tools).
@@ -218,12 +217,11 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/effort [level]` | Set reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). The level persists. |
 | `/compact [instructions]` | Summarize older turns now. Optional text guides the summary. |
 | `/init [instructions]` | Curate the vault standing-instructions file. Optional text guides the update. |
-| `/style [name]` | Switch output style. |
 | `/skill [name] [args]` | Run a vault skill. |
 | `/<skill-name>` | Run a skill directly when no built-in command has that name. |
 | `/agent [name] [task]` | Delegate a task to a subagent. Without arguments, opens a picker. |
 | `/undo` | Undo the last vault change the agent made. |
-| `/status` | Show provider, model, mode, output style, session, MCP servers, and tools. |
+| `/status` | Show provider, model, mode, session, MCP servers, and tools. |
 | `/usage` | Show token and cost totals. |
 | `/memory [add\|review\|manage\|export\|clear]` | Add, review, export, or clear stored long-term memories. |
 | `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. |
