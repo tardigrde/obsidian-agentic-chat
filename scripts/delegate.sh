@@ -273,7 +273,9 @@ case "$cmd" in
     # The script pushes, never the worker: the worker sandbox has no push rule.
     git -C "$W" push -q -u origin HEAD
     { cat "$W/logs/delegate/pr-body.md"; printf '\nDo not merge this PR without an explicit "merge" from the repository owner.\n'; } > "$W/logs/delegate/pr-body.final.md"
-    PR=$(gh pr create --title "$3" --body-file "$W/logs/delegate/pr-body.final.md" | grep -o '[0-9]*$')
+    # gh infers the head from the current directory, which is the main checkout here.
+    PR=$(gh pr create --head "$(git -C "$W" branch --show-current)" --base main \
+      --title "$3" --body-file "$W/logs/delegate/pr-body.final.md" | grep -o '[0-9]*$')
     echo "opened #$PR"
     do_review "$PR" "$1" "$4"
     ;;

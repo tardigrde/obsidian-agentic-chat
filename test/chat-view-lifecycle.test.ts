@@ -7,7 +7,6 @@ describe("ChatView async lifecycle", () => {
     const sendPrompt = vi.fn(async () => {});
     const view = chatViewHarness({
       state: { queuedPromptArmed: true },
-      flushingQueuedPrompt: false,
       inputEl: { value: "stale queued draft" },
       service: { isStreaming: () => false, getSessionSwapState: () => "live", sendPrompt },
       activeTabIndex: 0,
@@ -51,7 +50,6 @@ describe("ChatView async lifecycle", () => {
     const sendPrompt = vi.fn(async () => {});
     const view = chatViewHarness({
       state: { queuedPromptArmed: true },
-      flushingQueuedPrompt: false,
       inputEl: { value: "stale queued draft" },
       service: {
         isStreaming: () => false,
@@ -76,7 +74,6 @@ describe("ChatView async lifecycle", () => {
     const sendPrompt = vi.fn(async () => {});
     const view = chatViewHarness({
       state: { queuedPromptArmed: true },
-      flushingQueuedPrompt: false,
       inputEl: { value: "queued draft" },
       service: {
         isStreaming: () => false,

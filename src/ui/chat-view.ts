@@ -529,12 +529,12 @@ export class ChatView extends ItemView {
     });
   }
 
-  /** Public entry for the "New conversation" command: fresh session in the active tab. */
   /** Close a tab by index, as its `×` does. The e2e specs drive it on the view. */
   closeTab(index: number): void {
     this.chatTabs.closeTab(index);
   }
 
+  /** Public entry for the "New conversation" command: fresh session in the active tab. */
   async startNewConversation(): Promise<void> {
     await this.newSession();
   }
