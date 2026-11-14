@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
+import { AgentActionAuditRecorder } from "../src/agent/action-audit-log";
 import { AgentConversationCompaction } from "../src/agent/conversation-compaction";
 import type { AgentCompactionRunResult } from "../src/agent/compaction-runtime";
 import { CompactionNotLiveError } from "../src/agent/session-actions";
+import { parseSessionEntries, type SessionEntry } from "../src/session/jsonl";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
+import { MemoryAdapter } from "./helpers/memory-adapter";
 
 function userMessage(text: string): AgentMessage {
   return { role: "user", content: [{ type: "text", text }], timestamp: 1 } as AgentMessage;
@@ -10,6 +14,12 @@ function userMessage(text: string): AgentMessage {
 
 function agentWith(messages: AgentMessage[]): Agent {
   return { state: { messages, model: { contextWindow: 1_000 } } } as unknown as Agent;
+}
+
+function auditActions(adapter: MemoryAdapter, path: string): string[] {
+  return parseSessionEntries(adapter.files.get(path) ?? "")
+    .filter((entry): entry is Extract<SessionEntry, { type: "action_audit" }> => entry.type === "action_audit")
+    .map((entry) => entry.event.action);
 }
 
 interface Harness {
@@ -129,6 +139,79 @@ describe("AgentConversationCompaction", () => {
         message: "Nothing compacted. The active session changed before compaction started.",
       });
       expect(events).toEqual(["audit:compaction:start"]);
+    });
+
+    it("keeps the start audit in the session that began the pass when a swap lands during its write", async () => {
+      const adapter = new MemoryAdapter();
+      const manager = new ObsidianSessionManager(
+        adapter.asDataAdapter(),
+        "sessions",
+        "vault:test",
+        new SessionWriteRegistry(),
+      );
+      const first = await manager.createSession({ provider: "openrouter", modelId: "x/y", thinkingLevel: "off" });
+      await manager.appendMessage(userMessage("one"));
+      const second = await manager.createSession({ provider: "openrouter", modelId: "x/y", thinkingLevel: "off" });
+      await manager.loadSession(first.path);
+
+      const originalAppend = adapter.append.bind(adapter);
+      let started!: () => void;
+      let release!: () => void;
+      const startedPromise = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let gated = false;
+      adapter.append = async (path, data) => {
+        if (!gated && data.includes('"category":"compaction"') && data.includes('"action":"start"')) {
+          gated = true;
+          started();
+          await gate;
+        }
+        return originalAppend(path, data);
+      };
+
+      const audit = new AgentActionAuditRecorder({
+        sessionManager: manager,
+        getContext: () => ({}),
+      });
+      let compacted = false;
+      const compaction = new AgentConversationCompaction({
+        getAgent: () => agentWith([userMessage("one"), userMessage("two")]),
+        session: {
+          getSessionToken: () => manager.getConversationGeneration(),
+          getBinding: () => ({
+            expectedPath: manager.getActiveSessionPath(),
+            expectedGeneration: manager.getActiveSessionGeneration(),
+          }),
+        },
+        runtime: {
+          compact: async () => [],
+          compactWithResult: async () => {
+            compacted = true;
+            return { status: "compacted", messages: [userMessage("summary")] };
+          },
+        },
+        audit,
+        getOverheadTokens: () => 0,
+        setError: () => {},
+      });
+
+      const run = compaction.runManual();
+      await startedPromise;
+      // The swap commits while the start entry is being written.
+      await manager.loadSession(second.path);
+      release();
+      await expect(run).resolves.toEqual({
+        compacted: false,
+        message: "Nothing compacted. The active session changed before compaction started.",
+      });
+
+      expect(compacted).toBe(false);
+      expect(auditActions(adapter, first.path)).toEqual(["start"]);
+      expect(auditActions(adapter, second.path)).toEqual([]);
     });
 
     it("reports a refused commit as a normal result", async () => {
