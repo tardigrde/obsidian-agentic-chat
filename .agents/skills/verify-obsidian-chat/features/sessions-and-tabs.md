@@ -46,7 +46,7 @@ await $(".agentic-chat-session-list").waitForExist();
 | Busy dot on a streaming tab | `src/ui/chat-view.ts#tabLabel` | no committed check | `NONE` |
 | Needs-approval tab badge | `src/ui/chat-view.ts#tabLabel` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
 | `x` closes a tab | `src/ui/chat-tabs.ts#onActivate` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` (calls `closeTab`, does not click `x`) | `partial` |
-| Closing the last tab starts a new conversation | `src/ui/chat-view.ts#switchToTab` | no committed check | `NONE` |
+| Closing the last tab starts a new conversation | `src/ui/chat-tabs.ts#closeTab` | `test/chat-view-tabs.test.ts#starts a new conversation instead of closing the only tab` (unit only) | `partial` |
 | Header New chat button | `src/ui/chat-view.ts#startNewConversation` | no committed check | `NONE` |
 | Header history button | `src/ui/chat-view.ts#buildLayout` | no committed check | `NONE` |
 | `/new` | `src/ui/chat-turn.ts#dispatchPrompt` | `test/session-actions.test.ts#makeActions` (unit only) | `partial` |
