@@ -318,6 +318,34 @@ npm run analyze:session -- --compare <before-dir> <after-dir> --format markdown
 Markdown output is for human triage and highlights token use, cache hits, active
 note context, duplicate tool calls, approval denials, and tool errors.
 
+## Tool-use evals
+
+The `tool-use` suite measures tool choice and the vault state that the model
+leaves behind. Code grades the run; no judge model is used. Checks cover the
+answer, the tool calls, the files, the frontmatter, and unchanged seed notes.
+
+```bash
+npm run eval:tool-use -- --env-file .env
+npm run eval:tool-use -- --case read.answer-from-note --runs 2
+npm run eval:tool-use -- --dry-run
+npm run eval:tool-use -- --write-baseline
+npm run eval:tool-use -- --compare logs/eval-runs/base/summary.json logs/eval-runs/head/summary.json
+```
+
+`--case` takes one id or a comma list. `--runs` overrides the run count in the
+suite. `--compare` shows the pass rate, mean tokens, and mean USD for each case.
+`--write-baseline` writes `test/evals/baselines/tool-use.json`. Do not write a
+baseline when a run was skipped or had a harness error.
+
+The suite caps the cost with `maxUsd`, `maxModelCalls`, and `maxTokens`. Each
+case also has a `max_tool_calls` check. The suite names the model
+(`deepseek/deepseek-v4.1-flash`). A run needs `AGENTIC_CHAT_API_KEY` and a
+display. It runs locally only; CI does not run it.
+
+The eval vault sets `alwaysUpdateLinks: true`, so a rename updates links without
+a prompt. `seed.files` writes text notes. `seed.binaryFiles` writes base64 bytes,
+for example a PDF. The `unchanged` check covers text seeds only.
+
 ## CI
 
 `ci` runs `npm run verify -- ci` on Node 24: app, e2e, and scripts typechecks;
