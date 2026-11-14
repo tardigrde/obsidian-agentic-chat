@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
 import {
   AgentSessionActions,
+  CompactionNotLiveError,
   type AgentSessionActionsRuntime,
   type AgentSessionActivationRuntime,
 } from "../src/agent/session-actions";
@@ -35,7 +36,19 @@ class FakeSessionRuntime implements AgentSessionActionsRuntime {
   events: string[] = [];
   private revision = 0;
 
+  private conversation = 0;
+
   get generation(): number {
+    return this.revision;
+  }
+
+  get conversationGeneration(): number {
+    return this.conversation;
+  }
+
+  beginConversation(): number {
+    this.revision += 1;
+    this.conversation = this.revision;
     return this.revision;
   }
 
@@ -144,6 +157,18 @@ class FakeActivationRuntime implements AgentSessionActivationRuntime {
 
   async activate(messages: AgentMessage[], options: ActivateSessionOptions = {}): Promise<void> {
     this.events.push(`activate:${messages.length}:${options.reloadResources === false ? "no-reload" : "reload"}`);
+    this.currentAgent = agentWith(messages);
+  }
+
+  failInstalls = 0;
+
+  installTranscript(messages: AgentMessage[]): void {
+    if (this.failInstalls > 0) {
+      this.failInstalls -= 1;
+      this.events.push("install-failed");
+      throw new Error("install failed");
+    }
+    this.events.push(`install:${messages.length}`);
     this.currentAgent = agentWith(messages);
   }
 }
@@ -583,5 +608,94 @@ describe("AgentSessionActions", () => {
 
     expect(sessions.rewrites).toEqual([]);
     expect(events).toEqual([]);
+  });
+  describe("commitCompaction", () => {
+    async function compactable(): Promise<ReturnType<typeof makeActions>> {
+      const sessions = new FakeSessionRuntime();
+      await sessions.create();
+      const made = makeActions({ sessions, agent: agentWith([userMessage("one"), userMessage("two")]) });
+      made.events.length = 0;
+      return made;
+    }
+
+    it("persists the transcript, installs it, and notifies once the queue is live again", async () => {
+      const { actions, sessions, activation, events } = await compactable();
+      const states: string[] = [];
+      const summary = [userMessage("summary")];
+      const original = activation.installTranscript.bind(activation);
+      activation.installTranscript = (messages) => {
+        states.push(actions.getSwapState());
+        original(messages);
+      };
+
+      await actions.commitCompaction(summary, actions.getBinding());
+
+      expect(sessions.rewrites).toEqual([summary]);
+      expect(events).toEqual(["rewrite", "install:1", "notify"]);
+      // The install ran inside the queue operation; listeners heard about it after.
+      expect(states).toEqual(["loading"]);
+      expect(actions.getSwapState()).toBe("live");
+      expect(sessions.refreshed).toBe(1);
+    });
+
+    it("keeps the conversation token, so a send prepared before the compaction is still valid", async () => {
+      const { actions } = await compactable();
+      const before = actions.getSessionToken();
+
+      await actions.commitCompaction([userMessage("summary")], actions.getBinding());
+
+      expect(actions.getSessionToken()).toBe(before);
+    });
+
+    it("reloads the persisted transcript when the install fails after the rewrite", async () => {
+      const { actions, activation, events } = await compactable();
+      activation.failInstalls = 1;
+
+      await actions.commitCompaction([userMessage("summary")], actions.getBinding());
+
+      expect(events).toEqual(["rewrite", "install-failed", "load", "install:1", "notify"]);
+      expect(activation.currentAgent?.state.messages).toHaveLength(1);
+    });
+
+    it("rejects with CompactionNotLiveError when the reload fails too", async () => {
+      const { actions, activation, events } = await compactable();
+      activation.failInstalls = 2;
+
+      await expect(actions.commitCompaction([userMessage("summary")], actions.getBinding())).rejects.toBeInstanceOf(
+        CompactionNotLiveError,
+      );
+
+      // No change notification: the live transcript did not change.
+      expect(events).toEqual(["rewrite", "install-failed", "load", "install-failed"]);
+    });
+
+    it("does not install anything when the rewrite is refused", async () => {
+      const { actions, sessions, events } = await compactable();
+      sessions.rewriteMessages = async () => {
+        throw new Error("Session changed before the transcript rewrite could start.");
+      };
+
+      await expect(actions.commitCompaction([userMessage("summary")], actions.getBinding())).rejects.toThrow(
+        /session changed/i,
+      );
+
+      expect(events).toEqual([]);
+    });
+
+    it("waits for a swap that is already running instead of interleaving with it", async () => {
+      const sessions = new FakeSessionRuntime();
+      sessions.seed("sessions/old.jsonl", [userMessage("old")]);
+      await sessions.load("sessions/old.jsonl");
+      const { actions, events } = makeActions({ sessions, agent: agentWith([userMessage("old")]) });
+      events.length = 0;
+      const binding = actions.getBinding();
+
+      const swap = actions.newSession();
+      const commit = actions.commitCompaction([userMessage("summary")], binding);
+      await Promise.all([swap, commit]);
+
+      const rewriteAt = events.indexOf("rewrite");
+      expect(rewriteAt).toBeGreaterThan(events.indexOf("activate:0:no-reload"));
+    });
   });
 });

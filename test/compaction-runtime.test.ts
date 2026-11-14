@@ -14,6 +14,7 @@ import { ObsidianSessionManager } from "../src/session/session-manager";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
+import { managerCompactionTarget } from "./helpers/compaction-target";
 
 const DEFAULTS = { provider: "openrouter", modelId: "test/model", thinkingLevel: "off" as const };
 
@@ -64,7 +65,7 @@ async function setup(
   const info = await manager.createSession(DEFAULTS);
   const runtime = new AgentCompactionRuntime({
     getSettings: () => options.settings ?? settings(),
-    sessionManager: manager,
+    session: managerCompactionTarget(manager),
     buildStreamFn: options.buildStreamFn,
     summarize: options.summarize === null ? undefined : options.summarize ?? (async () => "Summary of earlier turns."),
   });

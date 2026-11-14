@@ -16,9 +16,6 @@ export function healMaxTurns(value: unknown): number {
   return Math.min(Math.max(MIN_TURN_CAP, Math.trunc(value)), MAX_TURN_CAP);
 }
 
-/** Static prefix kept for tests/grep; fired notices append the limit. */
-export const TURN_CAP_NOTICE_TEXT = "Turn cap: stopped after the assistant turn limit.";
-
 /** Build the fired notice shown in the transcript and as a transient Notice. */
 export function buildTurnCapNotice(maxTurns: number): string {
   return `Turn cap: stopped after ${maxTurns} assistant turns. Send another message to continue.`;

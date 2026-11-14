@@ -84,7 +84,11 @@ export interface RewriteMessagesOptions {
 }
 
 export interface LoadSessionOptions {
-  /** Session file the caller expects to still be active when the read lands. */
+  /**
+   * Session file the caller expects to still be active when the read lands.
+   * A load bound to the path it loads is a reload of the same conversation
+   * (compaction recovery): the generation advances, the conversation does not.
+   */
   expectedPath?: string | null;
   /** Generation captured with {@link ObsidianSessionManager.getActiveSessionGeneration}. */
   expectedGeneration?: number;
@@ -101,8 +105,18 @@ export class ObsidianSessionManager {
   private sessionFile: string | null = null;
   private entries: SessionEntry[] = [];
   private leafId: string | null = null;
-  /** Bumped whenever the active session changes; guards awaits against swaps. */
+  /**
+   * The one staleness counter. It advances on every transcript discontinuity:
+   * a committed swap, a pointer move, a rewrite, a reload. A caller that
+   * captured it and finds it changed must not write.
+   */
   private sessionGeneration = 0;
+  /**
+   * The generation at which the current conversation began. A swap or a rewind
+   * starts a new conversation; an in-place rewrite (compaction) or a reload
+   * does not, so a send prepared before a compaction is still deliverable.
+   */
+  private conversationGeneration = 0;
   /** Paths whose first full-body checkpoint has already been written this
    * session. Subsequent checkpoints for the same path are slimmed to
    * `beforeSummary` to keep the JSONL bounded for long editing sessions. */
@@ -147,7 +161,7 @@ export class ObsidianSessionManager {
     const timestamp = new Date().toISOString();
     const fileTimestamp = timestamp.replace(/[:.]/g, "-");
     this.sessionFile = `${this.sessionDir}/${fileTimestamp}_${sessionId}.jsonl`;
-    this.sessionGeneration += 1;
+    this.beginConversation();
     this.entries = [createSessionHeader(sessionId, this.cwd, timestamp)];
     this.leafId = null;
     this.fullCheckpointPaths = new Set();
@@ -180,8 +194,10 @@ export class ObsidianSessionManager {
     ) {
       throw new Error("Session changed before it could be loaded.");
     }
+    const reload = options.expectedPath === sessionPath;
     this.sessionFile = sessionPath;
-    this.sessionGeneration += 1;
+    if (reload) this.sessionGeneration += 1;
+    else this.beginConversation();
     this.entries = entries;
     this.leafId = getLastLeafId(entries);
     this.fullCheckpointPaths = new Set();
@@ -207,7 +223,7 @@ export class ObsidianSessionManager {
     await removeIfExists(this.adapter, `${sessionPath}${SESSION_BACKUP_SUFFIX}`);
     if (this.sessionFile === sessionPath) {
       this.sessionFile = null;
-      this.sessionGeneration += 1;
+      this.beginConversation();
       this.entries = [];
       this.leafId = null;
     }
@@ -419,8 +435,25 @@ export class ObsidianSessionManager {
     return this.sessionFile;
   }
 
-  /** Bumped on every create/load/delete of the active session. */
+  /** The current generation: the token a rewrite or reload must still match. */
   getActiveSessionGeneration(): number {
+    return this.sessionGeneration;
+  }
+
+  /** The token a send must still match: it survives compaction, not a swap or rewind. */
+  getConversationGeneration(): number {
+    return this.conversationGeneration;
+  }
+
+  /**
+   * Start a new conversation at a fresh generation and return it. A swap calls
+   * this when it commits, before the old agent detaches and before the pointer
+   * moves; a rewind calls it before its rewrite. Every holder of an older token
+   * is stale from here on, even while the swap is still loading.
+   */
+  beginConversation(): number {
+    this.sessionGeneration += 1;
+    this.conversationGeneration = this.sessionGeneration;
     return this.sessionGeneration;
   }
 

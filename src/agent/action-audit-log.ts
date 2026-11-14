@@ -2,7 +2,7 @@ import type { AgentEvent, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ObsidianSessionManager } from "../session/session-manager";
 import { redactValue } from "../privacy/redaction";
 import { slugifyPluginName } from "../plugins/manifest";
-import { diffLines, diffStat, diffTooLarge, type DiffStat } from "../vault/diff";
+import type { DiffStat } from "../vault/diff";
 import type { UndoEntry } from "./undo";
 
 export type ActionAuditCategory = "turn" | "tool_call" | "approval" | "checkpoint" | "compaction";
@@ -127,14 +127,6 @@ export interface CheckpointAuditInput {
   undo: UndoEntry;
 }
 
-export interface ActionAuditFilter {
-  category?: ActionAuditCategory;
-  toolName?: string;
-  decision?: ActionAuditDecision;
-  egressKind?: ActionAuditEgressKind;
-  touchedPath?: string;
-}
-
 const MAX_AUDIT_STRING_LENGTH = 500;
 const MAX_AUDIT_ARRAY_LENGTH = 20;
 const MAX_AUDIT_OBJECT_KEYS = 30;
@@ -252,20 +244,6 @@ export function buildCheckpointAuditEvent(
   };
 }
 
-export function filterActionAuditEvents(
-  events: readonly ActionAuditEvent[],
-  filter: ActionAuditFilter,
-): ActionAuditEvent[] {
-  return events.filter((event) => {
-    if (filter.category && event.category !== filter.category) return false;
-    if (filter.toolName && !("toolName" in event && event.toolName === filter.toolName)) return false;
-    if (filter.decision && !(event.category === "approval" && event.decision === filter.decision)) return false;
-    if (filter.egressKind && !("egress" in event && event.egress?.kind === filter.egressKind)) return false;
-    if (filter.touchedPath && !("touchedFiles" in event && event.touchedFiles.includes(filter.touchedPath))) return false;
-    return true;
-  });
-}
-
 export function redactAuditValue(value: unknown): unknown {
   return redactValue(value, {
     maxLength: MAX_AUDIT_STRING_LENGTH,
@@ -354,25 +332,6 @@ function diffSummaryForRename(raw: Record<string, unknown>, path: string | undef
     kind: "rename",
     from: path,
     to: typeof raw.newPath === "string" ? normalizePath(raw.newPath) : undefined,
-  };
-}
-
-export function diffSummaryForContent(path: string, before: string, after: string): ActionAuditDiffSummary {
-  if (diffTooLarge(before, after)) {
-    return {
-      kind: "edit",
-      path: normalizePath(path),
-      beforeCharLength: before.length,
-      afterCharLength: after.length,
-      lineDiffOmitted: true,
-    };
-  }
-  return {
-    kind: "edit",
-    path: normalizePath(path),
-    beforeCharLength: before.length,
-    afterCharLength: after.length,
-    stat: diffStat(diffLines(before, after)),
   };
 }
 

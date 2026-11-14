@@ -18,11 +18,14 @@ export interface AgentPromptTurnRuntimeOptions {
   getSettings: () => AgenticChatSettings;
   hasApiKey: () => boolean;
   getSessionCostUsd: () => number;
-  maybeCompact: () => Promise<void>;
-  /** Return a message when compaction left the transcript unusable. */
-  afterCompaction?: () => string | undefined;
-  /** Active session path + generation, sampled before turn preparation. */
-  sessionToken?: () => string;
+  /**
+   * Compact the transcript when it is due. Resolves with a message when the
+   * saved transcript was compacted but the live one could not follow, so the
+   * turn must not run on it.
+   */
+  maybeCompact: () => Promise<string | undefined | void>;
+  /** The conversation token, sampled before turn preparation. */
+  sessionToken?: () => number;
   /** Called once an accepted turn starts, after the synchronous in-flight guard. */
   onTurnStart?: () => void;
   consumeOverrides: () => void;
@@ -50,7 +53,7 @@ export class AgentPromptTurnRuntime {
     await new Promise<void>((resolve) => this.idleWaiters.push(resolve));
   }
 
-  async run(run: PromptTurnRun, expectedSessionToken?: string): Promise<void> {
+  async run(run: PromptTurnRun, expectedSessionToken?: number): Promise<void> {
     const blockReason = this.blockReason();
     if (blockReason) {
       this.options.errors.setErrorMessage(blockReason);
@@ -79,12 +82,11 @@ export class AgentPromptTurnRuntime {
         return;
       }
       await this.options.conversation.refreshConfiguration();
-      await this.options.maybeCompact();
+      const compactionError = await this.options.maybeCompact();
       if (sessionToken !== undefined && this.options.sessionToken?.() !== sessionToken) {
         this.sessionChanged();
         return;
       }
-      const compactionError = this.options.afterCompaction?.();
       if (compactionError) {
         this.options.errors.setErrorMessage(compactionError);
         this.options.notifyChange();

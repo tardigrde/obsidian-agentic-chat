@@ -160,11 +160,3 @@ async function applyContentUndo(app: App, entry: Extract<UndoEntry, { kind: "con
   }
   return `Reverted ${entry.path}.`;
 }
-
-/** One-line description of what undoing an entry will do. */
-export function describeUndo(entry: UndoEntry): string {
-  if (entry.kind === "rename") return `rename ${entry.to} → ${entry.from}`;
-  if (entry.kind === "delete") return `restore ${entry.path}`;
-  if (entry.kind === "delete_folder") return `restore folder ${entry.path}`;
-  return entry.before === null ? `remove ${entry.path}` : `revert ${entry.path}`;
-}

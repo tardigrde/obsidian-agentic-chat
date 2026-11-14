@@ -210,15 +210,6 @@ export function formatTokenInteger(value: number): string {
 }
 
 /**
- * Format a single assistant turn's usage directly. Each message carries its own
- * per-response usage from the provider; there is no cumulative baseline to
- * subtract.
- */
-export function formatUsageDelta(current: Usage, _previous?: Usage): string {
-  return formatUsage(current);
-}
-
-/**
  * Human-readable elapsed time for a tool step: sub-second in ms, then seconds
  * with one decimal, then minutes+seconds. Negative/non-finite collapses to 0ms.
  */

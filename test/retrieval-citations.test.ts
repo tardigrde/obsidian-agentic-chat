@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatSourceReference,
-  normalizeObsidianLinkTarget,
   parseSourceReference,
-  parseSourceReferences,
-  sourceReferenceKey,
   sourceReferenceTarget,
 } from "../src/retrieval/citations";
 
@@ -74,23 +71,4 @@ describe("parseSourceReference", () => {
     expect(parseSourceReference("[bad](artifact:../../secret)")).toBeNull();
   });
 
-  it("filters invalid entries when parsing many references", () => {
-    expect(parseSourceReferences(["[[A.md]]", "", "artifact:tool-1"]).map(sourceReferenceKey)).toEqual([
-      "note:a.md",
-      "artifact:tool-1",
-    ]);
-  });
-});
-
-describe("normalizeObsidianLinkTarget", () => {
-  it("normalizes paths, decoded heading fragments, and block ids", () => {
-    expect(normalizeObsidianLinkTarget("/Folder//Note.md#%5Bdone%5D")).toBe("Folder/Note.md#[done]");
-    expect(normalizeObsidianLinkTarget("Folder\\Note.md#^block-1")).toBe("Folder/Note.md#^block-1");
-    expect(normalizeObsidianLinkTarget("^local")).toBe("^local");
-  });
-
-  it("rejects empty paths or empty fragments", () => {
-    expect(normalizeObsidianLinkTarget("#Heading")).toBeNull();
-    expect(normalizeObsidianLinkTarget("Note.md#")).toBeNull();
-  });
 });

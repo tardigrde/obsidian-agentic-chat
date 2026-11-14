@@ -20,119 +20,124 @@ Use these terms:
 
 | State | Owner | Stored in |
 |---|---|---|
-| Active session pointer, transcript, generation | `ObsidianSessionManager` | session JSONL; generation in memory |
-| Session swap sequence | `AgentSessionSwapQueue` in `AgentSessionActions` | memory |
-| Session-local service state | `AgentSessionLocalState` | memory |
+| Active session pointer, transcript, the one staleness counter | `ObsidianSessionManager` | session JSONL; counters in memory |
+| Order of every live-session change (swap, rewind, compaction commit) | `AgentSessionActions` (its `AgentSessionSwapQueue`) | memory |
+| Live parent agent, session-local state reset | `AgentConversation` | memory |
 | One prompt turn | `AgentPromptTurnRuntime` plus pi `Agent` | memory |
-| Redirect delivery | `AgentService.pendingRedirects` | memory |
-| Compaction pass | `AgentCompactionRuntime.inFlight` | memory plus session JSONL |
+| Steering queue, undelivered steers, the stop policy | `AgentSteeringQueue` | memory |
+| Compaction pass (single-flight, summarize) | `AgentCompactionRuntime` | memory |
+| Manual and automatic compaction flow, its audit pair | `AgentConversationCompaction` | session JSONL (audit) |
 | Approval decision and stop flag | `AgentToolCallController` | memory, plus settings for remembered choices |
 | MCP connection state | `McpHttpClient` per request | memory |
 | MCP OAuth refresh | `refreshFlights` in `src/mcp/oauth.ts` | memory plus `McpServerSettings.oauth` |
 | Semantic index writer | `SemanticIndexLeaseRegistry` and `SemanticIndexWorkflowController` | `index.json`, `index.json.bak` |
 | Plugin install | `installPackage` transaction | vault folders |
 
+Dependencies point one way: `ui/` calls `AgentService`; `AgentService` wires
+the agent runtimes; the runtimes call `AgentSessionActions` for anything that
+changes the live session; only `AgentSessionActions` calls the mutating
+methods of `AgentConversation`, and only `AgentConversation` calls
+`ObsidianSessionManager`.
+
 ## Active session
 
-Owner: `ObsidianSessionManager` owns `sessionFile`, `sessionGeneration`, the
-entry log, append, and rewrite. `AgentConversation` (`src/agent/conversation.ts`)
-owns the live parent agent, the cached `SessionInfo` snapshot, and the reset of
-session-local state when a transcript goes live: every swap, rewind,
-compaction, and recovery installs its transcript through it.
-`AgentSessionActions` owns the only swap queue and the `sessionEpoch` token.
+Owner: `ObsidianSessionManager` owns `sessionFile`, the entry log, append,
+rewrite, and the two counters below. `AgentConversation`
+(`src/agent/conversation.ts`) owns the live parent agent, the cached
+`SessionInfo` snapshot, and the reset of session-local state when a transcript
+goes live. `AgentSessionActions` is the only sequencer: every swap, rewind, and
+compaction commit is one operation of its queue.
+
+### One staleness counter
+
+There is one counter, `sessionGeneration`, owned by the session manager. It
+advances on every transcript discontinuity: a committed swap, a pointer move, a
+rewrite, a reload. A second value, `conversationGeneration`, is not a second
+counter: it is the generation at which the current conversation began.
+
+| Token | Read with | Changes on | Used by |
+|---|---|---|---|
+| generation | `getActiveSessionGeneration()` / `getBinding()` | swap, rewind, compaction rewrite, reload | every rewrite and reload (`expectedPath` + `expectedGeneration`) |
+| conversation | `getConversationGeneration()` / `AgentService.getSessionToken()` | swap commit, rewind commit | every UI send, steer, retry, `/compact` audit pair |
+
+A send survives a compaction (same conversation, shorter transcript) but not a
+swap or a rewind. A rewind resolves with the token of the conversation it
+produced, so a retry binds its resend to it; the UI never parses a token.
+
+### Swap lifecycle
+
+1. Enqueue on the swap queue. Every later send waits for it (`waitForLive`).
+2. Reload vault resources. A failure here leaves the old session live and its
+   token valid.
+3. Commit: `beginConversation()` advances both counters. Every older token is
+   stale from here on.
+4. Detach the old agent (unsubscribe first, then abort), so a late event from
+   it cannot land in the new file.
+5. Move the pointer (create, load, delete, clear), then activate the new
+   transcript and reset session-local state.
+6. On failure after the commit, restore the previous session, then the most
+   recent one, then a fresh one. Never two live agents.
 
 Invariants:
 
-- Only `AgentSessionActions` moves the active pointer, and only inside the swap
-  queue.
-- Every guarded rewrite carries `expectedPath` and `expectedGeneration`. A
-  stale rewrite fails; it never writes into another session.
+- Only `AgentSessionActions` moves the active pointer or replaces the live
+  agent, and only inside its queue.
+- Every rewrite carries `expectedPath` and `expectedGeneration`. A stale rewrite
+  fails before it writes; it never writes into another session.
 - An append captures the active file before it writes. After a swap, the append
-  lands in that old file and never in the new one. It does not throw.
-- The service prepares resources before it detaches the agent, and detaches
-  before the pointer moves. A late event from the old agent must not land in the
-  new file.
-- A failed swap leaves the previous live agent, or a recoverable session. It
-  never leaves two live agents.
-- A UI send carries `path:epoch`. A send whose token changed must fail.
-
-Gaps:
-
-- Two staleness guards exist: `sessionEpoch` in `AgentSessionActions` and
-  `sessionGeneration` in `ObsidianSessionManager`.
-- An append writes to the captured old file without an error. Only a rewrite
-  rejects a stale target, so a caller cannot tell that an append missed the new
-  session.
-- `AgentService.recoverCompactedSession` loads a session outside the swap queue.
-- `AgentService.compactNow` and `maybeCompact` guard with tokens but do not queue
-  behind a swap.
-- The composer's queued-prompt reset lives in `SessionActivationCoordinator`, not
-  in the session runtime that owns the swap.
-
-Fixed by #229: a failed resource reload no longer invalidates the token before
-the swap commits.
-
-Next: one runtime owns path, generation, agent, swap queue, and the queued-prompt
-reset. Duplicate path and epoch checks are removed only after the owner covers
-every caller.
+  lands in that old file and never in the new one.
+- A UI send carries the conversation token. A send whose token changed fails
+  with the shared "session changed" message.
 
 ## Turn
 
 Owner: `AgentPromptTurnRuntime` owns `inFlight` and the idle waiters. The pi
-`Agent` owns `isStreaming` and its steering queue.
+`Agent` owns `isStreaming`. `AgentSteeringQueue` owns the steering and
+follow-up drain, the undelivered text, and the stop policy.
+
+Lifecycle: block check (streaming, key, spend cap) -> synchronous in-flight
+latch -> token check -> refresh configuration -> automatic compaction -> token
+check -> drain queues -> run -> drain queues -> consume one-shot overrides.
 
 Invariants:
 
 - One turn can start at a time per service.
-- Stop clears the steering queue before it aborts. A queued message must not
-  drain into the next run.
+- Stop drains the queues before it aborts (`AgentSteeringQueue.stop`). Every
+  path that ends a run early (toolbar Stop, approval Stop, spend cap) uses it,
+  so a queued message never drains into the next run.
 - Steering re-checks the session token before it enqueues a message.
 - A stale token never starts a turn and never appends to the new transcript.
-- Starting a session swap disarms the composer's queued prompt before the swap
-  begins.
-- Replacing a turn is Stop then send: Stop ends the run and clears its queues,
-  then the next send starts a new turn in the same conversation.
-
-Fixed by #239: an e2e starts a turn in two tabs, stops one, and proves the other
-still finishes.
-
-Gaps:
-
-- Stop policy is spread across `AgentService.abort`, `stopAgent`, the spend cap,
-  and the approval controller's `onStopRequested`.
-- `stopRequested` in `AgentToolCallController` is a service-global boolean, not
-  tied to a turn id.
-- `compactionRecoveryError` is a service field, not tied to a session.
-
-Next: one runtime owns stop, steer, and turn recovery.
+- A turn does not run when compaction rewrote the saved session but the live
+  transcript could not follow; `maybeCompact` returns that message instead of a
+  service field holding it between turns.
 
 ## Compaction
 
-Owner: `AgentCompactionRuntime` owns the single in-flight pass.
-`maybeCompactAgentTranscript` owns the order persist then replace.
-`ObsidianSessionManager.rewriteMessages` owns the guarded rewrite. The caller
-owns replacement of the live agent and recovery.
+Owner: `AgentCompactionRuntime` owns the single in-flight pass and summarizes.
+`AgentConversationCompaction` owns the two flows (manual `/compact` with its
+audit pair, automatic before a turn). `AgentSessionActions.commitCompaction`
+lands the result.
+
+Lifecycle: read the live transcript and capture the binding (path +
+generation) -> summarize (no lock held) -> `commitCompaction` enqueues one
+operation: guarded rewrite, install on the live agent, reload the persisted
+transcript if the install fails -> notify.
 
 Invariants:
 
-- Persist first; replace the live agent second.
-- The rewrite carries the path and generation captured before summarization.
-- A rewrite stages a same-folder temp file and renames it over the session, so a
-  crash leaves the old transcript or the new one, never a truncated file.
+- Persist first; replace the live agent second; both inside one queue
+  operation, so no swap or rewind can slip between them.
+- A swap, rewind, or other rewrite after the binding was captured fails the
+  commit before it writes.
 - A failed compaction never loses the pending prompt.
-- One compaction pass runs at a time.
+- One pass at a time; a manual pass never joins an automatic one (`busy`).
+- The manual audit end event is recorded only when the conversation token is
+  unchanged, so the pair stays in one session.
 
-Fixed by #230: a forced/manual caller no longer joins an automatic pass. It
-returns `busy` instead of silently dropping its instructions.
-
-Gaps:
-
-- `compactNow` records the audit `start` before it checks the session token. A
-  swap during that write can put the start event in a different session.
-- `recoverCompactedSession` replaces the agent outside the swap queue.
-
-Next: compaction becomes a phase of the turn runtime, with one owner for the
-pass, the audit pair, and recovery.
+Closed in this round: the two staleness tokens (`sessionEpoch` and
+`sessionGeneration`) are one; compaction recovery no longer loads outside the
+swap queue; the compaction rewrite and install can no longer interleave with a
+swap; `compactionRecoveryError` is gone.
 
 ## Approval
 
@@ -238,9 +243,25 @@ Next: define cleanup for stale `.tmp` and `.bak` files.
 
 ## Plugin install
 
-Owner: `installPackage` owns the stage, backup, and rename transaction.
-`PluginService` owns the cache, the startup sweep, and the retained-backup flag.
-The loader skips every `.importing-*` folder.
+Owner: `PluginService` (`src/plugins/service.ts`) owns the catalog cache, its
+invalidation listeners, the single-flight reload, the retained-backup flag, and
+the one lock that orders install transactions and the recovery sweep. It
+delegates and holds no other state:
+
+| Concern | Module | State |
+|---|---|---|
+| Vault I/O confined to the plugins folder | `PluginVault` (`plugin-vault.ts`) | none |
+| Stage, backup, and rename transaction | `installPackage` (`import/install.ts`) | vault folders |
+| Crash recovery of `.importing-*` folders | `sweepImportStages` (`import-sweep.ts`) | none; returns the retained-backup outcome |
+| Packages the plugin writes (builtins, my-skills, legacy-skills, MCP package, scaffolded skill) | `materialize.ts` | none |
+| Plugin-owned settings (`plugins.enabled`, `plugins.sources`, `plugins.mcpState`, plugin `mcp.servers`) | `plugin-settings-records.ts` | none; mutates settings, the service saves |
+
+Lifecycle of a reload: take the lock -> sweep -> release -> scan -> prune
+orphan settings unless a backup is retained -> save if pruned.
+
+Lifecycle of an install: validate native files -> take the lock -> stage,
+back up, rename -> release -> record source and MCP state -> save once ->
+invalidate.
 
 Invariants:
 
@@ -250,20 +271,16 @@ Invariants:
 - A backup restores when the target is missing, or replaces an empty target.
 - A target with a readable manifest owns its name; the backup is then removable.
 - A failed rename restores the backup.
-
-Fixed by #232: `PluginService.reload` is single-flight, so concurrent reloads
-share one import sweep and one load. A rejected reload clears the in-flight
-promise for the next call.
-
-Fixed by #236: install transactions and the recovery sweep share one maintenance
-lock. A sweep waits for an in-flight install, and two installs cannot move the
-same backup. A rejected operation clears the chain for the next one.
+- The writer never removes a path outside the plugins folder.
+- A sweep waits for an in-flight install; two installs cannot move the same
+  backup. A rejected operation clears the chain for the next one.
+- Reload is single-flight; a rejected reload clears the in-flight promise.
+- An install saves settings exactly once, so a changed source label persists
+  even when every MCP server state already existed.
 
 Gap:
 
 - Settings prune runs after the sweep and depends on the retained-backup flag.
-
-Next: define the order between sweep, install, and settings prune.
 
 ## Source import and frontmatter
 
@@ -302,7 +319,6 @@ writer.
 |---|---|---|
 | Approval stop reason | A deny with the stop text stops the turn | Unowned follow-up |
 | Compaction audit start after swap | Audit entries land in the wrong session | Unowned follow-up |
-| Compaction recovery outside swap queue | Recovery can overwrite a newer session | Unowned follow-up |
 | Plugin sweep vs install race | A sweep and an install move the same stage | Unowned follow-up |
 
 ## Order and reason
