@@ -402,6 +402,59 @@ describe("tool-use eval core", () => {
     expect(result.stderr).toContain("run id already used; pick a new --run-id");
   });
 
+  it("flags tool results and audit end events that report errors", async () => {
+    const analyzer = (await import(
+      pathToFileURL(path.join(process.cwd(), "scripts/analyze-session-trace.mjs")).href
+    )) as {
+      analyzeSessionText: (text: string) => {
+        files: Array<{ toolCalls: Array<{ name: string; isError: boolean }> }>;
+      };
+    };
+    const text = [
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "toolCall", id: "call-edit", name: "edit", arguments: {} },
+            { type: "toolCall", id: "call-write", name: "write", arguments: {} },
+          ],
+        },
+      },
+      {
+        type: "message",
+        message: {
+          role: "toolResult",
+          toolCallId: "call-edit",
+          toolName: "edit",
+          isError: true,
+          content: [{ type: "text", text: "edit failed" }],
+        },
+      },
+      {
+        type: "action_audit",
+        event: {
+          category: "tool_call",
+          action: "end",
+          isError: true,
+          toolName: "write",
+          toolCallId: "call-write",
+        },
+      },
+      { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Failed." }] } },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n");
+
+    const calls = analyzer.analyzeSessionText(text).files[0].toolCalls;
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "edit", isError: true }),
+        expect.objectContaining({ name: "write", isError: true }),
+      ]),
+    );
+  });
+
   it("prints a dry-run plan without network or output files", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "tool-use-dry-"));
     tempRoots.push(root);
