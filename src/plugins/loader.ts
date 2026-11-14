@@ -432,3 +432,29 @@ async function readVaultFile(app: App, path: string): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Human-readable audit of all packages, used by /doctor. Errors and skips
+ * become one line each after the package summary line.
+ */
+export function formatPluginAudit(plugins: LoadedPlugin[]): string {
+  const lines: string[] = [];
+  for (const plugin of plugins) {
+    const components = [
+      `${plugin.skills.length} skill${plugin.skills.length === 1 ? "" : "s"}`,
+      `${plugin.mcpServers.length} MCP server${plugin.mcpServers.length === 1 ? "" : "s"}`,
+    ];
+    const state = plugin.enabled ? "enabled" : "disabled";
+    lines.push(
+      `- **${plugin.name}** (${plugin.rootPath}) — ${plugin.auditStatus}, ${state}: ${components.join(", ")}` +
+        (plugin.version ? `, v${plugin.version}` : ""),
+    );
+    if (plugin.manifestProblem) {
+      lines.push(`  - Fatal: ${plugin.manifestProblem}`);
+    }
+    for (const report of plugin.reports) {
+      lines.push(`  - ${report.message}`);
+    }
+  }
+  return lines.join("\n");
+}

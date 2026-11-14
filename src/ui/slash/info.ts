@@ -1,4 +1,4 @@
-import type { LoadedPlugin } from "../../plugins/loader";
+import { formatPluginAudit, type LoadedPlugin } from "../../plugins/loader";
 import { activeModelId } from "../../settings-schema";
 import { MODES } from "../../agent/modes";
 import { OUTPUT_STYLES } from "../../agent/output-styles";
@@ -35,7 +35,7 @@ export async function runDoctor(ctx: SlashContext): Promise<void> {
   const pluginAudit =
     plugins.length === 0
       ? `No plugin packages found in ${folder}. Generate one from the MCP settings tab.`
-      : service.auditText(plugins);
+      : formatPluginAudit(plugins);
   const diagnostics = ctx.service.getRuntimeDiagnostics();
   const issues: string[] = [];
   const failedPlugins = plugins.filter((plugin) => plugin.auditStatus === "failed").length;
