@@ -60,10 +60,10 @@ await $(".agentic-chat-send").click();
 | Enter sends while idle | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
 | Enter steers while the agent runs | `src/ui/composer-input.ts#resolveComposerAction` | `test/e2e/specs/composer-paths.e2e.ts#steers after a successful tool call while the agent is running` | `covered` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/composer-paths.e2e.ts#inserts a newline with Shift+Enter without sending` | `covered` |
-| Send button | `src/ui/chat-view.ts#cls: ["agentic-chat-send", "mod-cta"]` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
+| Send button | `src/ui/chat-layout.ts#cls: ["agentic-chat-send", "mod-cta"]` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
 | ArrowUp/ArrowDown recall | `src/ui/chat-view.ts#buildLayout` | `test/composer-history.test.ts#recalls older entries with Up and swallows Up at the oldest entry without wrapping` (unit only) | `partial` |
 | Escape cancels edit | `src/ui/chat-view.ts#buildLayout` | `test/prompt-edit-state.test.ts#starts editing a prompt and restores the original draft on cancel` (unit only) | `partial` |
-| Autocomplete menu opens | `src/ui/chat-view.ts#updateAutocomplete` | `test/e2e/specs/autocomplete-dropup.e2e.ts#renders the /sta menu above the input card, fully visible` | `covered` |
+| Autocomplete menu opens | `src/ui/composer-controller.ts#updateAutocomplete` | `test/e2e/specs/autocomplete-dropup.e2e.ts#renders the /sta menu above the input card, fully visible` | `covered` |
 | Autocomplete keys | `src/ui/autocomplete-menu.ts#handleKey` | no committed check | `NONE` |
 | `@` mention autocomplete | `src/ui/autocomplete.ts#detectQuery` | `test/autocomplete.test.ts#detects a mention after whitespace mid-message` (detection only) | `partial` |
 | Drag-and-drop attach | `src/ui/chat-view.ts#handleDrop` | `test/drag-drop.test.ts#parseDroppedVaultPath` (parser only) | `partial` |

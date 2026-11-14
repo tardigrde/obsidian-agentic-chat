@@ -68,7 +68,7 @@ await browser.waitUntil(async () =>
 | Compaction recovery stops the next prompt | `src/agent/conversation-compaction.ts#runAutomatic` | `test/agent-service.test.ts#blocks a prompt when the session changes during turn preparation` | `partial` |
 | Enter sends while idle | `src/ui/composer-input.ts#resolveComposerAction` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
 | Enter steers after the current model turn | `src/ui/composer-input.ts#resolveComposerAction` | `test/e2e/specs/composer-paths.e2e.ts#steers after a successful tool call while the agent is running` | `covered` |
-| Undelivered steering returns to the composer | `src/ui/chat-view.ts#restoreUndeliveredSteers` | `test/agent-service.test.ts#clears queued steering when the user stops the active run`, `test/composer-input.test.ts#strips one leading context preamble for retry display` (unit only) | `partial` |
+| Undelivered steering returns to the composer | `src/ui/chat-tabs.ts#restoreUndeliveredSteers` | `test/agent-service.test.ts#clears queued steering when the user stops the active run`, `test/composer-input.test.ts#strips one leading context preamble for retry display` (unit only) | `partial` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/composer-paths.e2e.ts#inserts a newline with Shift+Enter without sending` | `covered` |
 | Queue holds a draft until the turn ends | `src/ui/chat-view.ts#queueComposerPrompt` | `test/e2e/specs/composer-paths.e2e.ts#holds the Queue action until the active turn ends` | `covered` |
 | Stop then send replaces the turn | `src/ui/chat-view.ts#stopActiveTurn` | `test/e2e/specs/composer-paths.e2e.ts#stops, then sends the draft as a replacement turn` | `covered` |

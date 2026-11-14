@@ -10,152 +10,60 @@ import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type AgenticChatPlugin from "../main";
 import type { AgentService } from "../agent/agent-service";
-import type { ContextReadout } from "../agent/readouts";
 import type { AskUserRequest } from "../tools/ask-user-tool";
 import type { ToolApprovalRequest, UserApprovalChoice } from "../agent/tool-call-controller";
 import { applyRememberedApprovalChoice } from "../agent/approval-memory";
 import { ApprovalModal } from "./approval-modal";
-import { isImagePath } from "./image-attachments";
 import { VIEW_TYPE_AGENT_CHAT } from "../constants";
-import { activeModelId } from "../settings-schema";
 import { errorMessage } from "../utils/errors";
-import { highestUnnotifiedThreshold, Notifier } from "./notifications";
-import { formatUsage, safeJson } from "./format";
-import { contextLevel, contextPercent, formatContextReadoutTitle } from "./context-bar";
-import { failedLastTurnIndex, lastUserTurn, toolResultText } from "./message-content";
-import {
-  type AcItem,
-  type AcQuery,
-  detectQuery,
-  FOLDER_PREFIX,
-  type MentionCandidate,
-  resolve,
-  suggest,
-} from "./autocomplete";
+import { Notifier } from "./notifications";
+import { type AcItem, FOLDER_PREFIX } from "./autocomplete";
 import { AutocompleteMenu } from "./autocomplete-menu";
-import { parseDroppedVaultPath } from "./drag-drop";
+import type { ComposerSubmitSource } from "./composer-input";
 import {
-  parseInlineInstruction,
-  resolveComposerAction,
-  stripContextPreamble,
-  type ComposerSubmitSource, restoreUndeliveredText, UNDELIVERED_STEER_STATUS,
-} from "./composer-input";
-import {
-  buildModelPillState,
-  buildTurnUsageChromeParts,
-  toolBudgetNotificationKey,
-} from "./chrome-state";
-import { PromptEditState } from "./prompt-edit-state";
-import {
-  freshChatTabState,
   resetChatTabState,
-  stagePromptContext,
   type ChatTabWorkingState,
-  type StagedPromptContext,
 } from "./chat-tab-state";
+import { ChatTabs, type ChatTab } from "./chat-tabs";
+import { ChatComposer } from "./composer-controller";
+import { ChatChrome } from "./chat-chrome";
+import { ChatTurn } from "./chat-turn";
+import { ChatActions } from "./chat-actions";
+import { buildLayout as buildChatLayout } from "./chat-layout";
 import {
-  assemblePrompt,
-  buildPromptContext,
-  loadImageAttachments as loadContextImageAttachments,
-} from "./context-builder";
-import { attachmentBasePath } from "./attachment-ref";
-import {
-  contextAttachmentKey,
   createTextContextAttachment,
-  isTextContextAttachment,
   type ContextAttachment,
 } from "./context-attachments";
-import {
-  parseSlashInput,
-  retiredCommandHint,
-  slashInputTailAfterFirst,
-  visibleCommands,
-  type ParsedSlashInput,
-  type SlashCommandName,
-} from "./commands";
-import { isInstructionFilePath } from "../agent/instructions";
 import {
   type AgentMode,
   resolveModeTransition,
   validateModeTransition,
 } from "../agent/modes";
-import {
-  type ActiveNoteState,
-  autoActiveNotePath,
-  effectiveActiveNote,
-} from "./active-note";
 import type { OutputStyle } from "../agent/output-styles";
-import { formatToolBudgetDiagnostic } from "../agent/diagnostics";
-import { MemoryWorkflowController } from "./memory-workflow-controller";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
-import { SessionWorkflowController } from "./session-workflow-controller";
 import {
   renderActionPanel,
   renderErrorPanel,
   renderInfoPanel,
 } from "./info-panel-renderer";
-import { renderContextChips, renderPendingQueueChip } from "./context-chip-renderer";
-import type { ActionRow, WorkflowRenderer } from "./workflow-renderer";
+import type { ActionRow } from "./workflow-renderer";
 import { TranscriptView } from "./transcript-view";
-import { runAgent, runInit, runSkill } from "./slash/agents";
 import type { SlashContext } from "./slash/context";
-import { runDoctor, showHelp, showStatus, showUsage } from "./slash/info";
-import {
-  createMemoryWorkflow,
-  runMemory,
-  runSemanticIndex,
-  semanticIndexWorkflowController,
-} from "./slash/index-commands";
-import { persistEffortLevel, runEffort, runStyle, switchModel } from "./slash/model";
-import { createWorkflowRenderer } from "./slash/renderer";
-import { createSessionWorkflow, exportSession, newSession, runCompact, runSessions, runUndo } from "./slash/session";
+import { persistEffortLevel } from "./slash/model";
 
 export { VIEW_TYPE_AGENT_CHAT };
 
-/** Context-window fill fractions that trigger a background notification, once each. */
-const CONTEXT_THRESHOLDS = [0.75, 0.9] as const;
-
-/** Maximum independent sessions ("tabs") in one chat leaf. */
-const MAX_TABS = 3;
-
-/** One open conversation in the leaf: its own agent service + saved UI state. */
-interface ChatTab {
-  service: AgentService;
-  unsubscribe: () => void;
-  state: ChatTabWorkingState;
-  needsApproval?: boolean;
-  pendingApprovalModal?: ApprovalModal;
-}
-
-/** Minimal shape of Obsidian's internal (undocumented) drag manager. */
-interface ObsidianDragManager {
-  draggable?: { file?: unknown; files?: unknown[] } | null;
-}
-
 export class ChatView extends ItemView {
-  // Open tabs (independent sessions). Each tab owns its working state; the view
-  // reads and writes the active tab's state directly through `this.state`, so a
-  // tab switch only moves the composer draft in and out of the textarea.
-  private tabs: ChatTab[] = [];
-  private activeTabIndex = 0;
+  private chatTabsOwner?: ChatTabs;
+  private composerOwner?: ChatComposer;
+  private chromeOwner?: ChatChrome;
+  private turnOwner?: ChatTurn;
+  private actionsOwner?: ChatActions;
   private tabsEl!: HTMLElement;
   // The current active note's path. View-level: it follows the focused leaf,
   // not the conversation; each tab decides whether it is suppressed.
   private activeNotePath: string | null = null;
-  private readonly notifier = new Notifier(() => this.plugin.settings.notifications.enabled);
-  // The service fires onChange synchronously during session transitions; this silences
-  // automatic toasts until the new session's notification baseline has been set.
-  private muteNotifications = false;
-
-  // Autocomplete state: the active query token and a cached mention candidate list.
-  private activeQuery: AcQuery | null = null;
-  private mentionCache: MentionCandidate[] | null = null;
-  private flushingQueuedPrompt = false;
-  /** Last preview rendered in the pending queue chip; gates no-op chip re-renders while typing. */
-  private pendingChipPreview: string | null = null;
-  private editingEl: HTMLElement | null = null;
-  private readonly promptEdit = new PromptEditState();
   // Semantic indexing can outlive the command that starts it; keep one
   // controller so cancel/running-state checks see the active AbortController.
   private semanticIndexWorkflow: SemanticIndexWorkflowController | null = null;
@@ -198,13 +106,220 @@ export class ChatView extends ItemView {
     return "messages-square";
   }
 
+  private get chatTabs(): ChatTabs {
+    return (this.chatTabsOwner ??= new ChatTabs({
+      createService: (handlers) => this.plugin.createAgentService(handlers),
+      askUser: (tab, request, signal) => this.askUserForTab(tab, request, signal),
+      confirmToolCall: (tab, request, signal) => this.confirmToolCallForTab(tab, request, signal),
+      onActiveEvent: (event) => this.handleAgentEvent(event),
+      onBackgroundFinished: (tabNumber) => {
+        this.notifier.notify("agentFinished", `Tab ${tabNumber} finished responding.`);
+      },
+      isViewClosed: () => this.closed,
+      container: () => this.tabsEl,
+      composerValue: () => this.inputEl.value,
+      setComposerValueQuiet: (value) => this.setComposerValueQuiet(value),
+      setStatus: (text) => this.statusEl.setText(text),
+      prepareSwitch: () => {
+        this.cancelAutocomplete();
+        this.menu.hide();
+        this.endEditing(false);
+      },
+      endEditing: () => this.endEditing(false),
+      renderChips: () => this.renderChips(),
+      syncChrome: () => this.syncChrome(),
+      flushQueuedPromptIfReady: () => this.flushQueuedPromptIfReady(),
+      renderActiveTab: () => this.renderActiveTab(),
+      initializeFreshTab: (tab) => this.initializeFreshTab(tab),
+      startNewConversation: () => this.startNewConversation(),
+    }));
+  }
+
+  private get composer(): ChatComposer {
+    return (this.composerOwner ??= new ChatComposer({
+      app: this.app,
+      service: () => this.service,
+      state: () => this.state,
+      inputEl: () => this.inputEl,
+      menu: () => this.menu,
+      chipsEl: () => this.chipsEl,
+      statusEl: () => this.statusEl,
+      activeNotePath: () => this.activeNotePath,
+      setActiveNotePath: (path) => {
+        this.activeNotePath = path;
+      },
+      renderChips: () => this.renderChips(),
+      syncChrome: () => this.syncChrome(),
+    }));
+  }
+
+  private get chrome(): ChatChrome {
+    return (this.chromeOwner ??= new ChatChrome({
+      app: this.app,
+      plugin: this.plugin,
+      service: () => this.service,
+      state: () => this.state,
+      transcript: () => this.transcript,
+      elements: {
+        effortKnobEl: () => this.effortKnobEl,
+        modelPillEl: () => this.modelPillEl,
+        usageEl: () => this.usageEl,
+        contextBarEl: () => this.contextBarEl,
+        contextPercentEl: () => this.contextPercentEl,
+        sendButton: () => this.sendButton,
+        stopButton: () => this.stopButton,
+        workingEl: () => this.workingEl,
+        statusEl: () => this.statusEl,
+      },
+      isAnyTabStreaming: () => this.isAnyTabStreaming(),
+      isViewFocused: () => this.app.workspace.getActiveViewOfType(ChatView) === this,
+      syncControls: () => this.syncControls(),
+    }, new Notifier(() => this.plugin.settings.notifications.enabled)));
+  }
+
+  private get turn(): ChatTurn {
+    return (this.turnOwner ??= new ChatTurn({
+      app: this.app,
+      service: () => this.service,
+      activeTab: () => this.activeTab,
+      state: () => this.state,
+      isLiveTab: (tab) => this.isLiveTab(tab),
+      inputEl: () => this.inputEl,
+      statusEl: () => this.statusEl,
+      transcript: () => this.transcript,
+      chrome: () => this.chrome,
+      composer: () => this.composer,
+      clearEmptyState: () => this.clearEmptyState(),
+      effectiveActiveNote: () => this.effectiveActiveNote(),
+      handleSlashCommand: (raw) => this.actions.handleSlashCommand(raw),
+      sendPrompt: (text) => this.sendPrompt(text),
+      renderErrorMessage: (message) => this.renderErrorMessage(message),
+      renderOutgoingUserMessage: (text, attachments, images) => this.renderOutgoingUserMessage(text, attachments, images),
+      renderTranscript: (messages) => this.renderTranscript(messages),
+      showServiceError: () => this.showServiceError(),
+      scrollToBottom: (options) => this.scrollToBottom(options),
+      renderChips: () => this.renderChips(),
+      syncChrome: () => this.syncChrome(),
+    }));
+  }
+
+  private get actions(): ChatActions {
+    return (this.actionsOwner ??= new ChatActions({
+      slashCtx: () => this.slashCtx,
+      service: () => this.service,
+      tabs: () => this.chatTabs,
+      switchToTab: (index) => this.switchToTab(index),
+      loadConversation: (load) => this.createSessionActivationCoordinator().loadConversation(load),
+      clearQueuedPrompt: () => this.composer.clearQueuedPrompt(),
+      clearEmptyState: () => this.clearEmptyState(),
+      renderErrorMessage: (message) => this.renderErrorMessage(message),
+      renderInfoMessage: (title, entries) => this.renderInfoMessage(title, entries),
+    }));
+  }
+
+  private get notifier(): Notifier {
+    return this.chrome.notifier;
+  }
+
+  private addAttachment(entry: ContextAttachment): void {
+    this.composer.addAttachment(entry);
+  }
+
+  private pushAttachment(entry: ContextAttachment): boolean {
+    return this.composer.pushAttachment(entry);
+  }
+
+  private renderChips(): void {
+    this.composer.renderChips();
+  }
+
+  private syncActiveNote(): void {
+    this.composer.syncActiveNote();
+  }
+
+  private effectiveActiveNote(): string | null {
+    return this.composer.effectiveActiveNote();
+  }
+
+  private beginEdit(index: number, displayText: string, el: HTMLElement): void {
+    this.composer.beginEdit(index, displayText, el);
+  }
+
+  private cancelEditing(): void {
+    this.composer.cancelEditing();
+  }
+
+  private endEditing(restoreDraft: boolean): void {
+    this.composer.endEditing(restoreDraft);
+  }
+
+  private setComposerValue(value: string): void {
+    this.composer.setComposerValue(value);
+  }
+
+  private setComposerValueQuiet(value: string): void {
+    this.composer.setComposerValueQuiet(value);
+  }
+
+  private pushHistory(text: string): void {
+    this.composer.pushHistory(text);
+  }
+
+  private resetHistoryNav(): void {
+    this.composer.resetHistoryNav();
+  }
+
+  private recallHistory(direction: -1 | 1): boolean {
+    return this.composer.recallHistory(direction);
+  }
+
+  private scheduleAutocomplete(): void {
+    this.composer.scheduleAutocomplete();
+  }
+
+  private cancelAutocomplete(): void {
+    this.composer.cancelAutocomplete();
+  }
+
+  private chooseAutocomplete(item: AcItem): void {
+    this.composer.chooseAutocomplete(item);
+  }
+
+  private handleDrop(event: DragEvent): void {
+    this.composer.handleDrop(event);
+  }
+
+  private queueComposerPrompt(): void {
+    this.composer.queueComposerPrompt();
+  }
+
+  private clearQueuedPrompt(): void {
+    this.composer.clearQueuedPrompt();
+  }
+
+  private get tabs(): ChatTab[] {
+    return this.chatTabs.allTabs();
+  }
+
+  private set tabs(value: ChatTab[]) {
+    this.chatTabs.setTabs(value);
+  }
+
+  private get activeTabIndex(): number {
+    return this.chatTabs.activeIndexValue;
+  }
+
+  private set activeTabIndex(value: number) {
+    this.chatTabs.setActiveIndex(value);
+  }
+
   /** The active tab's agent service. Tabs are created before any service access. */
   private get service(): AgentService {
-    return this.tabs[this.activeTabIndex].service;
+    return this.chatTabs.service;
   }
 
   private get activeTab(): ChatTab {
-    return this.tabs[this.activeTabIndex];
+    return this.chatTabs.activeTab;
   }
 
   /** The active tab's working state: attachments, caches, queue, notifications, last send. */
@@ -213,7 +328,27 @@ export class ChatView extends ItemView {
   }
 
   private isLiveTab(tab: ChatTab): boolean {
-    return !this.closed && this.tabs[this.activeTabIndex] === tab;
+    return this.chatTabs.isLiveTab(tab);
+  }
+
+  private switchToTab(index: number): Promise<void> {
+    return this.chatTabs.switchToTab(index);
+  }
+
+  private tabLabel(tab: ChatTab): string {
+    return this.chatTabs.tabLabel(tab);
+  }
+
+  private syncTabStrip(): void {
+    this.chatTabs.syncTabStrip();
+  }
+
+  private async initializeFreshTab(tab: ChatTab): Promise<void> {
+    await this.createSessionActivationCoordinator().initializeFreshTab(
+      // A new tab is always a fresh session, never a continuation of tab 0's.
+      () => tab.service.newSession(),
+      (error) => new Notice(`Agentic chat: ${errorMessage(error)}`),
+    );
   }
 
   async onOpen(): Promise<void> {
@@ -221,11 +356,10 @@ export class ChatView extends ItemView {
     this.buildLayout();
     // First tab continues the most-recent session (initialize); later tabs each
     // start a fresh session. Each tab's service has its own event subscription.
-    this.tabs = [this.createTab()];
-    this.activeTabIndex = 0;
+    this.chatTabs.setTabs([this.chatTabs.createTab()]);
     // The mention list is cached; drop it whenever the vault's file set changes.
     const invalidate = () => {
-      this.mentionCache = null;
+      this.composer.invalidateMentionCache();
     };
     this.registerEvent(this.app.vault.on("create", invalidate));
     this.registerEvent(this.app.vault.on("delete", invalidate));
@@ -278,46 +412,6 @@ export class ChatView extends ItemView {
     this.inputEl.focus();
   }
 
-  // --- tabs (independent sessions in one leaf) ---
-
-  /** Build a tab with its own agent service and a tab-aware event subscription. */
-  private createTab(): ChatTab {
-    const tabRef: { current?: ChatTab } = {};
-    const service = this.plugin.createAgentService({
-      askUser: (request, signal) => {
-        if (!tabRef.current) throw new Error("The chat tab is not ready to ask the user.");
-        return this.askUserForTab(tabRef.current, request, signal);
-      },
-      confirmToolCall: (request, signal) => {
-        if (!tabRef.current) throw new Error("The chat tab is not ready for approval.");
-        return this.confirmToolCallForTab(tabRef.current, request, signal);
-      },
-    });
-    const tab: ChatTab = { service, unsubscribe: () => {}, state: freshChatTabState() };
-    tabRef.current = tab;
-    const offEvent = service.onEvent((event) => this.handleTabEvent(tab, event));
-    const offChange = service.onChange(() => this.handleTabChange(tab));
-    tab.unsubscribe = () => {
-      offEvent();
-      offChange();
-    };
-    return tab;
-  }
-
-  /** Park the composer draft on the active tab before another tab takes the textarea. */
-  private parkDraft(): void {
-    const tab = this.tabs[this.activeTabIndex];
-    if (tab) tab.state.draft = this.inputEl.value;
-  }
-
-  /** Put the active tab's parked draft back into the textarea. */
-  private restoreDraft(): void {
-    const tab = this.tabs[this.activeTabIndex];
-    if (!tab) return;
-    tab.state.history.resetNavigation();
-    this.setComposerValueQuiet(tab.state.draft);
-  }
-
   /** Re-render the transcript + chrome for the active tab (after a switch/close). */
   private renderActiveTab(): void {
     this.createSessionActivationCoordinator().renderActiveTab();
@@ -325,135 +419,6 @@ export class ChatView extends ItemView {
     // coordinator only syncs chrome, so re-render them here or a queued-prompt
     // chip (and context chips) would stay stale/invisible after a tab switch.
     this.renderChips();
-  }
-
-  private async switchToTab(index: number): Promise<void> {
-    if (index === this.activeTabIndex || index < 0 || index >= this.tabs.length) return;
-    this.cancelAutocomplete();
-    this.menu.hide();
-    this.endEditing(false);
-    this.parkDraft();
-    this.activeTabIndex = index;
-    this.restoreDraft();
-    this.renderActiveTab();
-  }
-
-  /** `+`: open a new tab on a fresh session and switch to it (capped at MAX_TABS). */
-  private async addTab(): Promise<void> {
-    if (this.tabs.length >= MAX_TABS) return;
-    this.endEditing(false);
-    this.parkDraft();
-    const tab = this.createTab();
-    this.tabs.push(tab);
-    this.activeTabIndex = this.tabs.length - 1;
-    // Show the fresh tab's empty draft before any async work renders against it.
-    this.restoreDraft();
-    await this.createSessionActivationCoordinator().initializeFreshTab(
-      // A new tab is always a fresh session, never a continuation of tab 0's.
-      () => tab.service.newSession(),
-      (error) => new Notice(`Agentic chat: ${errorMessage(error)}`),
-    );
-  }
-
-  /** `×`: close a tab, disposing its session. Closing the only tab resets it instead. */
-  private closeTab(index: number): void {
-    if (index < 0 || index >= this.tabs.length) return;
-    if (this.tabs.length <= 1) {
-      void this.startNewConversation();
-      return;
-    }
-    const closingActive = index === this.activeTabIndex;
-    if (closingActive) this.endEditing(false);
-    const [tab] = this.tabs.splice(index, 1);
-    tab.unsubscribe();
-    tab.pendingApprovalModal?.close();
-    tab.service.dispose();
-    if (index < this.activeTabIndex) {
-      this.activeTabIndex -= 1;
-    } else if (closingActive) {
-      this.activeTabIndex = Math.min(this.activeTabIndex, this.tabs.length - 1);
-      // The closed tab was showing; restore + render whichever tab took its place.
-      this.restoreDraft();
-      this.renderActiveTab();
-      return;
-    }
-    this.syncTabStrip();
-  }
-
-  private tabLabel(tab: ChatTab): string {
-    const info = tab.service.getSessionInfo();
-    return info?.name?.trim() || "New chat";
-  }
-
-  /** Activate `el` on click and on Enter/Space, so non-button controls are keyboard-usable. */
-  private onActivate(el: HTMLElement, handler: () => void, stopPropagation = false): void {
-    el.addEventListener("click", (event) => {
-      if (stopPropagation) event.stopPropagation();
-      handler();
-    });
-    el.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      if (stopPropagation) event.stopPropagation();
-      handler();
-    });
-  }
-
-  /** Render the tab pills + add button, reflecting active/busy state. */
-  private syncTabStrip(): void {
-    if (!this.tabsEl) return;
-    this.tabsEl.empty();
-    this.tabs.forEach((tab, index) => {
-      const active = index === this.activeTabIndex;
-      const pill = this.tabsEl.createDiv({
-        cls: "agentic-chat-tab",
-        attr: { role: "tab", tabindex: "0", "aria-selected": String(active), "aria-label": this.tabLabel(tab), title: this.tabLabel(tab) },
-      });
-      pill.toggleClass("is-active", active);
-      pill.createSpan({ cls: "agentic-chat-tab-num", text: String(index + 1) });
-      if (tab.service.isStreaming()) pill.createSpan({ cls: "agentic-chat-tab-busy", attr: { "aria-hidden": "true" } });
-      if (tab.needsApproval) {
-        pill.addClass("is-needs-approval");
-        pill.setAttr("title", `${this.tabLabel(tab)} — needs approval: click to review`);
-      }
-      this.onActivate(pill, () => void this.switchToTab(index));
-      if (this.tabs.length > 1) {
-        const close = pill.createSpan({
-          cls: "agentic-chat-tab-close",
-          attr: { role: "button", tabindex: "0", "aria-label": "Close tab" },
-        });
-        setIcon(close, "x");
-        this.onActivate(close, () => this.closeTab(index), true);
-      }
-    });
-    if (this.tabs.length < MAX_TABS) {
-      const add = this.tabsEl.createDiv({
-        cls: "agentic-chat-tab-add",
-        attr: { role: "button", tabindex: "0", "aria-label": "New tab", title: "New tab" },
-      });
-      setIcon(add, "plus");
-      this.onActivate(add, () => void this.addTab());
-    }
-  }
-
-  private handleTabEvent(tab: ChatTab, event: AgentEvent): void {
-    if (tab === this.activeTab) {
-      this.handleAgentEvent(event);
-      return;
-    }
-    // A background tab finishing while you're viewing another: surface it.
-    if (event.type === "agent_end") {
-      this.notifier.notify("agentFinished", `Tab ${this.tabs.indexOf(tab) + 1} finished responding.`);
-    }
-    this.syncTabStrip();
-  }
-
-  private handleTabChange(tab: ChatTab): void {
-    this.syncTabStrip();
-    if (tab === this.activeTab) this.syncChrome();
-    // After syncChrome, so the restored-draft status line is not cleared.
-    this.restoreUndeliveredSteers(tab);
-    if (tab === this.activeTab) void this.flushQueuedPromptIfReady();
   }
 
   private async askUserForTab(tab: ChatTab, request: AskUserRequest, signal?: AbortSignal): Promise<string> {
@@ -565,258 +530,83 @@ export class ChatView extends ItemView {
   }
 
   /** Public entry for the "New conversation" command: fresh session in the active tab. */
+  /** Close a tab by index, as its `×` does. The e2e specs drive it on the view. */
+  closeTab(index: number): void {
+    this.chatTabs.closeTab(index);
+  }
+
   async startNewConversation(): Promise<void> {
     await this.newSession();
   }
 
   private buildLayout(): void {
-    const root = this.contentEl;
-    root.empty();
-    root.addClass("agentic-chat-view");
-
-    this.messagesEl = root.createDiv({ cls: "agentic-chat-messages" });
-    this.transcript = new TranscriptView(this.messagesEl, {
+    const layout = buildChatLayout({
       app: this.app,
       component: this,
-      renderEmptyState: () => this.renderEmptyState(),
-      beginEdit: (index, text, el) => this.beginEdit(index, text, el),
-      retryLast: () => void this.retryLast(),
-      abortSubagentChild: (id) => this.service.abortSubagentChild(id),
+      contentEl: this.contentEl,
+      registerDomEvent: (el, type, handler) => this.registerDomEvent(el, type, handler),
+      callbacks: {
+        renderEmptyState: () => this.renderEmptyState(),
+        beginEdit: (index, text, el) => this.beginEdit(index, text, el),
+        retryLast: () => void this.retryLast(),
+        abortSubagentChild: (id) => this.service.abortSubagentChild(id),
+        chooseAutocomplete: (item) => this.chooseAutocomplete(item),
+        submit: (source) => void this.submit(source),
+        stopActiveTurn: () => this.stopActiveTurn(),
+        cancelEditing: () => this.cancelEditing(),
+        recallHistory: (direction) => this.recallHistory(direction),
+        resetHistoryNav: () => this.resetHistoryNav(),
+        scheduleAutocomplete: () => this.scheduleAutocomplete(),
+        cancelAutocomplete: () => this.cancelAutocomplete(),
+        handleDrop: (event) => this.handleDrop(event),
+        cycleEffort: () => void this.cycleEffort(),
+        toggleMode: () => this.toggleMode(),
+        switchModel: () => void this.switchModel(),
+        newSession: () => void this.newSession(),
+        openHistory: () => void this.actions.createSessionWorkflow().run(""),
+        isEditing: () => this.composer.isEditing,
+        reconcileQueuedInput: (value, event) => this.reconcileQueuedInput(value, event),
+      },
     });
-    const transcript = this.transcript;
-    this.registerDomEvent(this.messagesEl, "wheel", () => transcript.markUserScrollIntent());
-    this.registerDomEvent(this.messagesEl, "touchmove", () => transcript.markUserScrollIntent());
-    this.registerDomEvent(this.messagesEl, "pointerdown", () => transcript.markUserScrollIntent());
-    this.registerDomEvent(this.messagesEl, "keydown", () => transcript.markUserScrollIntent());
-    this.registerDomEvent(this.messagesEl, "scroll", () => transcript.updateScrollPinning());
+    this.messagesEl = layout.messagesEl;
+    // The empty state renders into messagesEl, so it needs the field set first.
     this.renderEmptyState();
-
-    const composer = root.createDiv({ cls: "agentic-chat-composer" });
-
-    // Nav row above the input card: tab pills on the left (switch between up to
-    // MAX_TABS independent sessions), header actions on the right (C4 / design ref).
-    const tabsRow = composer.createDiv({ cls: "agentic-chat-tabs-row" });
-    this.tabsEl = tabsRow.createDiv({ cls: "agentic-chat-tabs", attr: { role: "tablist" } });
-    const headerActions = tabsRow.createDiv({ cls: "agentic-chat-tab-actions" });
-    const newChatButton = headerActions.createEl("button", {
-      cls: "clickable-icon",
-      attr: { "aria-label": "New chat" },
-    });
-    setIcon(newChatButton, "square-pen");
-    newChatButton.addEventListener("click", () => void this.newSession());
-    const historyButton = headerActions.createEl("button", {
-      cls: "clickable-icon",
-      attr: { "aria-label": "Conversation history" },
-    });
-    setIcon(historyButton, "history");
-    historyButton.addEventListener("click", () => void this.createSessionWorkflow().run(""));
-
-    // The single bordered input card: context row (chips) + textarea + bottom toolbar
-    // all live *inside* one rectangle, instead of stacked around a bordered textarea.
-    const field = composer.createDiv({ cls: "agentic-chat-field" });
-    this.fieldEl = field;
-    this.chipsEl = field.createDiv({ cls: "agentic-chat-chips" });
-
-    const inputWrap = field.createDiv({ cls: "agentic-chat-input-wrap" });
-    this.inputEl = inputWrap.createEl("textarea", {
-      cls: "agentic-chat-input",
-      attr: { rows: "3", placeholder: "Ask about your vault — / for commands, @ to attach a note… (Enter to send)" },
-    });
-    this.menu = new AutocompleteMenu(
-      composer,
-      (item) => this.chooseAutocomplete(item),
-      () => this.fieldEl,
-    );
-    this.inputEl.addEventListener("keydown", (event) => {
-      if (this.menu.handleKey(event)) return;
-      if (event.key === "Escape" && this.promptEdit.isEditing) {
-        event.preventDefault();
-        this.cancelEditing();
-        return;
-      }
-      if (event.key === "ArrowUp" && this.recallHistory(-1)) {
-        event.preventDefault();
-        return;
-      }
-      if (event.key === "ArrowDown" && this.recallHistory(1)) {
-        event.preventDefault();
-        return;
-      }
-      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-        event.preventDefault();
-        void this.submit("enter");
-      }
-    });
-    // Real user typing both refreshes autocomplete and abandons history navigation.
-    // Programmatic value changes (recall) set `.value` directly without an input event.
-    this.inputEl.addEventListener("input", (event) => {
-      this.resetHistoryNav();
-      // Composition (IME) inputs may briefly leave the value empty; don't drop a
-      // queued prompt mid-composition — the trailing non-composing input event
-      // reconciles the state. The listener type is Event, but an `input` event
-      // is an InputEvent; use Obsidian's cross-window instanceOf() check.
-      const inputEvent = event as UIEvent;
-      if (this.state.queuedPromptArmed && !(inputEvent.instanceOf(InputEvent) && inputEvent.isComposing)) {
-        const text = this.inputEl.value.trim();
-        if (!text) {
-          this.state.queuedPromptArmed = false;
-          this.statusEl.setText("");
-          this.syncChrome();
-          this.renderChips();
-        } else if (text !== this.pendingChipPreview) {
-          this.renderChips();
-        }
-      }
-      this.scheduleAutocomplete();
-    });
-    this.inputEl.addEventListener("click", () => this.scheduleAutocomplete());
-    this.inputEl.addEventListener("keyup", (event) => {
-      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) this.scheduleAutocomplete();
-    });
-    this.inputEl.addEventListener("blur", () => {
-      this.cancelAutocomplete();
-      this.menu.hide();
-    });
-
-    // Bottom toolbar (in-card): model+effort pill · context on the left; the
-    // Safe ↔ YOLO segmented toggle on the right — design ref.
-    const toolbar = field.createDiv({ cls: "agentic-chat-toolbar" });
-    const toolbarLeft = toolbar.createDiv({ cls: "agentic-chat-toolbar-left" });
-
-    // Model + reasoning effort share ONE two-sided pill: model on the left, the
-    // effort level value on the right (no "Effort" label — the value is enough).
-    const modelGroup = toolbarLeft.createDiv({ cls: "agentic-chat-model" });
-    this.modelPillEl = modelGroup.createDiv({
-      cls: "agentic-chat-model-pill",
-      attr: { "aria-label": "Switch model" },
-    });
-    this.modelPillEl.addEventListener("click", () => void this.switchModel());
-    modelGroup.createSpan({ cls: "agentic-chat-model-divider", attr: { "aria-hidden": "true" } });
-
-    // Effort knob: click cycles the persisted reasoning level.
-    this.effortKnobEl = modelGroup.createDiv({
-      cls: "agentic-chat-effort",
-      attr: { role: "button", tabindex: "0" },
-    });
-    this.effortKnobEl.addEventListener("click", () => void this.cycleEffort());
-    this.effortKnobEl.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        void this.cycleEffort();
-      }
-    });
-
-    this.contextBarEl = toolbarLeft.createEl("progress", {
-      cls: "agentic-chat-ctx-bar",
-      attr: { "aria-label": "Context window used", max: "100", value: "0" },
-    });
-    this.contextPercentEl = toolbarLeft.createSpan({ cls: "agentic-chat-ctx-percent" });
-    this.contextBarEl.hide();
-    this.contextPercentEl.hide();
-
-    const toolbarRight = toolbar.createDiv({ cls: "agentic-chat-toolbar-right" });
-
-    // Single Safe ↔ YOLO permission toggle as a segmented pill (beautifului
-    // Prompt Bar pattern); the ask/plan/agent dropdown is retired.
-    this.modeToggleEl = toolbarRight.createDiv({
-      cls: "agentic-chat-mode-toggle",
-      attr: { role: "switch", tabindex: "0", "aria-label": "Permission mode: Safe", "aria-checked": "false" },
-    });
-    this.modeToggleEl.createSpan({ cls: "agentic-chat-mode-seg", text: "Safe" });
-    this.modeToggleEl.createSpan({ cls: "agentic-chat-mode-seg", text: "YOLO" });
-    this.modeToggleEl.setAttr(
-      "title",
-      "Safe: ask before every edit and action. YOLO: run without asking (for trusted vaults).",
-    );
-    const toggleMode = () => {
-      // setMode is the single gate: it refuses while streaming. The toggle
-      // itself must not silently swallow clicks.
-      const target = this.plugin.settings.mode === "yolo" ? "safe" : "yolo";
-      void this.setMode(target);
-    };
-    this.modeToggleEl.addEventListener("click", toggleMode);
-    this.modeToggleEl.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        toggleMode();
-      }
-    });
-
-    this.workingEl = toolbarRight.createDiv({ cls: "agentic-chat-working", attr: { "aria-hidden": "true" } });
-    this.workingEl.hide();
-    this.statusEl = toolbarRight.createDiv({ cls: "agentic-chat-status" });
-    this.stopButton = toolbarRight.createEl("button", { cls: ["agentic-chat-stop", "mod-warning"], text: "Stop" });
-    this.stopButton.hide();
-    this.stopButton.addEventListener("click", () => this.stopActiveTurn());
-    this.sendButton = toolbarRight.createEl("button", { cls: ["agentic-chat-send", "mod-cta"], text: "Send" });
-    this.sendButton.addEventListener("click", () => void this.submit("button"));
-
-    // Token/cost readout on its own muted line; hidden until there's usage.
-    this.usageEl = composer.createDiv({ cls: "agentic-chat-usage" });
-
-    // Dragging a note onto the composer should attach it as context, not open it.
-    this.registerDomEvent(composer, "dragover", (event) => {
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
-    });
-    this.registerDomEvent(composer, "drop", (event) => this.handleDrop(event));
+    this.transcript = layout.transcript;
+    this.tabsEl = layout.tabsEl;
+    this.chipsEl = layout.chipsEl;
+    this.fieldEl = layout.fieldEl;
+    this.inputEl = layout.inputEl;
+    this.modeToggleEl = layout.modeToggleEl;
+    this.menu = layout.menu;
+    this.sendButton = layout.sendButton;
+    this.stopButton = layout.stopButton;
+    this.statusEl = layout.statusEl;
+    this.modelPillEl = layout.modelPillEl;
+    this.effortKnobEl = layout.effortKnobEl;
+    this.usageEl = layout.usageEl;
+    this.contextBarEl = layout.contextBarEl;
+    this.contextPercentEl = layout.contextPercentEl;
+    this.workingEl = layout.workingEl;
   }
 
-  /**
-   * Turn dropped notes/folders into context attachments instead of opening them.
-   * Multi-select drops are supported — every dragged entry attaches at once. Only
-   * real vault entries are intercepted; otherwise the drop falls through to Obsidian.
-   */
-  private handleDrop(event: DragEvent): void {
-    const entries = this.resolveDroppedEntries(event);
-    if (!entries.length) return;
-    event.preventDefault();
-    event.stopPropagation();
-    // Count vision-blocked images across the whole batch so we post one aggregated
-    // notice instead of one toast per file (the single-entry addAttachment path
-    // still self-notifies for non-drop attachers).
-    let skippedImages = 0;
-    for (const entry of entries) {
-      const path = entry instanceof TFolder ? `${FOLDER_PREFIX}${entry.path}` : entry.path;
-      if (isImagePath(path) && !this.service.supportsImages()) {
-        skippedImages++;
-        continue;
-      }
-      this.pushAttachment(path);
-    }
-    if (skippedImages > 0) {
-      new Notice(
-        skippedImages === 1
-          ? "This model can't read images. Switch to a vision model to attach images."
-          : `${skippedImages} images skipped — this model can't read images. Switch to a vision model.`,
-      );
+  /** Keep the queued-prompt chip in step with real typing, but not IME composition. */
+  private reconcileQueuedInput(value: string, inputEvent: UIEvent): void {
+    if (!this.state.queuedPromptArmed || (inputEvent.instanceOf(InputEvent) && inputEvent.isComposing)) return;
+    const text = value.trim();
+    if (!text) {
+      this.state.queuedPromptArmed = false;
+      this.statusEl.setText("");
+      this.syncChrome();
+      this.renderChips();
+    } else if (text !== this.composer.pendingChipPreview) {
+      this.renderChips();
     }
   }
 
-  /**
-   * Resolve a drop to the vault files/folders it carries. Obsidian's file-explorer
-   * and editor drags no longer put an `obsidian://` URL on the dataTransfer, so we
-   * first ask the internal drag manager for the entries being dragged (a single
-   * `file` or a multi-select `files` array), then fall back to parsing a path/URL
-   * out of the drop payload (external or older drags, single entry only).
-   */
-  private resolveDroppedEntries(event: DragEvent): Array<TFile | TFolder> {
-    const dragManager = (this.app as unknown as { dragManager?: ObsidianDragManager }).dragManager;
-    const dragged = dragManager?.draggable;
-    const candidates: unknown[] = [];
-    if (dragged?.file) candidates.push(dragged.file);
-    if (Array.isArray(dragged?.files)) candidates.push(...dragged.files);
-    const fromDrag = candidates.filter(
-      (entry): entry is TFile | TFolder => entry instanceof TFile || entry instanceof TFolder,
-    );
-    if (fromDrag.length) return fromDrag;
-
-    const data =
-      event.dataTransfer?.getData("text/plain") || event.dataTransfer?.getData("text/uri-list") || "";
-    const path = parseDroppedVaultPath(data, this.app.vault.getName());
-    if (!path) return [];
-    const file = this.app.vault.getAbstractFileByPath(path);
-    return file instanceof TFile || file instanceof TFolder ? [file] : [];
+  /** The one gate for the Safe <-> YOLO toggle; `setMode` refuses while streaming. */
+  private toggleMode(): void {
+    const target = this.plugin.settings.mode === "yolo" ? "safe" : "yolo";
+    void this.setMode(target);
   }
 
   private renderEmptyState(): void {
@@ -847,80 +637,6 @@ export class ChatView extends ItemView {
   private clearEmptyState(): void {
     this.emptyStateEl?.detach();
     this.emptyStateEl = null;
-  }
-
-  // --- autocomplete (slash commands, skills, @-mentions) ---
-
-  private autocompleteTimer: number | null = null;
-
-  /**
-   * Debounced recompute for typing/caret events, so a fast typist (or a large
-   * vault's mention scan) doesn't re-filter on every keystroke. Picking an item
-   * calls {@link updateAutocomplete} directly for an instant reopen.
-   */
-  private scheduleAutocomplete(): void {
-    this.cancelAutocomplete();
-    this.autocompleteTimer = window.setTimeout(() => {
-      this.autocompleteTimer = null;
-      this.updateAutocomplete();
-    }, 120);
-  }
-
-  private cancelAutocomplete(): void {
-    if (this.autocompleteTimer !== null) {
-      window.clearTimeout(this.autocompleteTimer);
-      this.autocompleteTimer = null;
-    }
-  }
-
-  private updateAutocomplete(): void {
-    if (this.service.isStreaming()) {
-      this.menu.hide();
-      return;
-    }
-    const text = this.inputEl.value;
-    const caret = this.inputEl.selectionStart ?? text.length;
-    const query = detectQuery(text, caret);
-    if (!query) {
-      this.activeQuery = null;
-      this.menu.hide();
-      return;
-    }
-    this.activeQuery = query;
-    this.menu.show(
-      suggest(query, {
-        commands: visibleCommands(),
-        skills: this.service.getSkills(),
-        files: query.kind === "mention" ? this.mentionCandidates() : [],
-      }),
-    );
-  }
-
-  private chooseAutocomplete(item: AcItem): void {
-    if (!this.activeQuery) return;
-    const result = resolve(this.inputEl.value, this.activeQuery, item);
-    this.inputEl.value = result.text;
-    this.inputEl.setSelectionRange(result.caret, result.caret);
-    this.inputEl.focus();
-    if (result.attach) this.addAttachment(result.attach);
-    this.activeQuery = null;
-    // Re-evaluate so e.g. completing "/skill " immediately offers the skill list.
-    this.updateAutocomplete();
-  }
-
-  /** All notes and folders as mention candidates, cached until the vault changes. */
-  private mentionCandidates(): MentionCandidate[] {
-    if (this.mentionCache) return this.mentionCache;
-    const candidates: MentionCandidate[] = [];
-    for (const file of this.app.vault.getAllLoadedFiles()) {
-      if (file instanceof TFolder) {
-        if (file.path && file.path !== "/") candidates.push({ path: file.path, type: "folder" });
-      } else if (file instanceof TFile) {
-        candidates.push({ path: file.path, type: "file", name: file.basename });
-      }
-    }
-    this.mentionCache = candidates;
-    return candidates;
   }
 
   // --- composer controls (Safe ↔ YOLO toggle) ---
@@ -959,10 +675,7 @@ export class ChatView extends ItemView {
 
   /** Whether any tab in this leaf is streaming — covers background tabs for the settings gate. */
   private isAnyTabStreaming(): boolean {
-    for (const tab of this.tabs) {
-      if (tab.service.isStreaming()) return true;
-    }
-    return false;
+    return this.chatTabs.isAnyTabStreaming();
   }
 
   /** S4: called by the plugin after any persisted mode change (e.g. settings tab) so every leaf reflects the single source atomically. */
@@ -999,153 +712,11 @@ export class ChatView extends ItemView {
   // --- chrome (header pill, usage, running state) ---
 
   private syncChrome(): void {
-    this.syncControls();
-    this.renderModelPill();
-    this.syncEffortKnob();
-
-    const readout = this.service.getContextReadout();
-    this.renderUsageChrome();
-    this.syncContextBar(readout);
-
-    this.renderRunning();
-    this.checkUsageNotifications();
+    this.chrome.syncChrome();
   }
 
-  /** Header model pill: provider/model label plus the one-shot override state. */
-  private renderModelPill(): void {
-    const { settings } = this.plugin;
-    this.modelPillEl.empty();
-    const modelPill = buildModelPillState({
-      provider: settings.provider,
-      activeModelId: activeModelId(settings),
-      overrideModelId: this.service.getModelOverride(),
-    });
-    this.modelPillEl.toggleClass("is-override", modelPill.isOverride);
-    // Full slug in the tooltip; the pill shows a short label since OpenRouter ids are long.
-    this.modelPillEl.setAttr("title", modelPill.title);
-    if (modelPill.isOverride) this.modelPillEl.createSpan({ cls: "agentic-chat-model-provider", text: modelPill.providerLabel });
-    this.modelPillEl.createSpan({ cls: "agentic-chat-model-name", text: modelPill.shortModel });
-  }
-
-  /** Toolbar running state: queue/send label, stop button, and stale status clear. */
-  private renderRunning(): void {
-    const error = this.service.getError();
-    this.setRunning(this.service.isStreaming());
-    if (error && !this.service.isStreaming()) this.statusEl.setText("");
-  }
-
-  /**
-   * Render the bottom usage line for the CURRENT turn only (Claude Code style):
-   * collapsed `5.7k tokens · 86% cache · $0.17`, with the full per-turn detail in
-   * the hover tooltip. Session-wide cumulative totals are dropped from the chrome
-   * line (they still drive the cost/context notifications).
-   */
-  private renderUsageChrome(): void {
-    const el = this.usageEl;
-    el.empty();
-    const turn = this.transcript.lastTurnUsage;
-    const session = this.service.getSessionUsage();
-    if (!turn || session.totalTokens === 0) {
-      el.hide();
-      return;
-    }
-    el.show();
-    el.setAttr("title", `${formatUsage(turn)} · current turn`);
-    const parts = buildTurnUsageChromeParts(turn);
-    parts.forEach((part, index) => {
-      if (index > 0) el.createSpan({ text: " · " });
-      const span = el.createSpan({ text: part.text });
-      if (part.cls) for (const cls of part.cls.split(" ")) if (cls) span.addClass(cls);
-    });
-  }
-
-  /** Glanceable color-coded context-window fill bar; hidden until usage is known. */
-  private syncContextBar(readout: ContextReadout | undefined): void {
-    if (readout === undefined) {
-      this.contextBarEl.hide();
-      this.contextPercentEl.hide();
-      return;
-    }
-    const fraction = readout.fraction;
-    const percent = contextPercent(fraction);
-    const title = formatContextReadoutTitle(readout);
-    this.contextBarEl.show();
-    this.contextPercentEl.show();
-    this.contextBarEl.setAttr("aria-label", `Context window ${percent}% used`);
-    this.contextBarEl.setAttr("title", title);
-    this.contextBarEl.value = percent;
-    // Drive the CSS arc/gauge fill (conic-gradient ring) off the same percent
-    // the helpers already compute — no new logic, just expose it to the style.
-    this.contextBarEl.style.setProperty("--ctx-pct", String(percent));
-    this.contextBarEl.removeClasses(["is-ok", "is-warn", "is-high"]);
-    this.contextBarEl.addClass(`is-${contextLevel(fraction)}`);
-    this.contextPercentEl.setText(`${percent}%`);
-    this.contextPercentEl.setAttr("title", title);
-    this.contextPercentEl.removeClasses(["is-ok", "is-warn", "is-high"]);
-    this.contextPercentEl.addClass(`is-${contextLevel(fraction)}`);
-  }
-
-  /** Fire one-shot background toasts as the context window fills or cost crosses the cap. */
-  private checkUsageNotifications(): void {
-    if (this.muteNotifications) return;
-    const compactions = this.service.getCompactionCount();
-    if (compactions > this.state.lastCompactionCount) {
-      this.state.lastCompactionCount = compactions;
-      // The window just freed up; re-arm the fill warnings for the next climb.
-      this.state.notifiedContext = new Set<number>();
-      this.notifier.notify("contextWindow", "Compacted earlier turns to free up context.");
-    }
-    const fraction = this.service.getContextFraction();
-    if (fraction !== undefined) {
-      const crossed = highestUnnotifiedThreshold(fraction, CONTEXT_THRESHOLDS, this.state.notifiedContext);
-      if (crossed !== null) {
-        this.state.notifiedContext.add(crossed);
-        this.notifier.notify("contextWindow", `Context window ${Math.round(crossed * 100)}% full — consider /new soon.`);
-      }
-    }
-    const cap = this.plugin.settings.notifications.costAlertUsd;
-    if (cap > 0 && !this.state.notifiedCost) {
-      const cost = this.service.getSessionUsage().cost?.total ?? 0;
-      if (cost >= cap) {
-        this.state.notifiedCost = true;
-        this.notifier.notify("cost", `This conversation has cost $${cost.toFixed(2)} (alert set at $${cap.toFixed(2)}).`);
-      }
-    }
-    this.checkToolBudgetNotification();
-  }
-
-  private checkToolBudgetNotification(): void {
-    const toolBudget = this.service.getRuntimeDiagnostics().toolBudget;
-    const key = toolBudgetNotificationKey(toolBudget);
-    if (key === null) return;
-    if (key === this.state.notifiedToolBudgetKey) return;
-    this.state.notifiedToolBudgetKey = key;
-    this.notifier.notify("info", `Agentic chat: ${formatToolBudgetDiagnostic(toolBudget)}.`);
-  }
-
-  /** Notify when a turn finishes while the user is working elsewhere. */
-  private notifyTurnComplete(): void {
-    if (this.app.workspace.getActiveViewOfType(ChatView) === this) return;
-    this.notifier.notify("agentFinished", "Agentic chat finished responding.");
-  }
-
-  private setRunning(running: boolean): void {
-    this.sendButton.disabled = false;
-    let sendLabel: string;
-    if (running) {
-      sendLabel = this.state.queuedPromptArmed ? "Update" : "Queue";
-    } else {
-      sendLabel = "Send";
-    }
-    this.sendButton.setText(sendLabel);
-    if (running) {
-      this.stopButton.show();
-      this.workingEl.show();
-    } else {
-      this.stopButton.hide();
-      this.workingEl.hide();
-      this.statusEl.setText("");
-    }
+  private syncEffortKnob(): void {
+    this.chrome.syncEffortKnob();
   }
 
   // --- submission + slash commands ---
@@ -1153,384 +724,38 @@ export class ChatView extends ItemView {
   private async submit(source: ComposerSubmitSource): Promise<void> {
     this.cancelAutocomplete();
     this.menu.hide();
-    const text = this.inputEl.value.trim();
-    if (!text) return;
-
-    // One decision for Enter, the toolbar button, the queue action, and steering.
-    switch (resolveComposerAction(source, this.service.isStreaming())) {
-      case "queue":
-        this.queueComposerPrompt();
-        return;
-      case "steer":
-        if (text.startsWith("#")) {
-          this.renderErrorMessage("Wait for the agent to finish before saving a standing instruction.");
-          return;
-        }
-        if (text.startsWith("/")) {
-          this.renderErrorMessage(retiredCommandHint(parseSlashInput(text).word) ?? "Wait for the agent to finish before running a slash command.");
-          return;
-        }
-        this.pushHistory(text);
-        this.inputEl.value = "";
-        await this.steerActiveTurn(text);
-        return;
-      case "send":
-        break;
-    }
-
-    const editIndex = this.promptEdit.index;
-    this.endEditing(false);
-
-    // The guard closes the window between "not streaming" and "prompt started".
-    if (this.service.isTurnInFlight()) {
-      this.statusEl.setText("A turn is already starting — wait for it to finish, then send again.");
-      return;
-    }
-
-    this.pushHistory(text);
-    if (text.startsWith("#")) {
-      this.inputEl.value = "";
-      await this.captureInlineInstruction(text);
-      return;
-    }
-    if (text.startsWith("/")) {
-      this.inputEl.value = "";
-      const handled = await this.handleSlashCommand(text);
-      if (handled) {
-        return;
-      }
-    }
-    this.inputEl.value = "";
-    if (editIndex !== null) {
-      await this.editAndResend(editIndex, text);
-      return;
-    }
-    await this.sendPrompt(text);
+    await this.turn.submit(source);
   }
 
   /** Stop the turn and cancel the composer hold, keeping the draft for a new send. */
   private stopActiveTurn(): void {
-    // A held draft must not auto-send after a stop. The text stays in the
-    // composer so the next Enter sends it as a replacement turn.
-    this.clearQueuedPrompt();
-    this.service.abort();
-  }
-
-  private queueComposerPrompt(): void {
-    this.state.queuedPromptArmed = true;
-    this.statusEl.setText("Queued next.");
-    this.renderChips();
-    this.syncChrome();
+    this.turn.stopActiveTurn();
   }
 
   private async flushQueuedPromptIfReady(): Promise<void> {
-    // A swap may notify listeners while it is still activating. Flushing then
-    // would send the old draft into the session that is being installed.
-    const swapState = this.service.getSessionSwapState();
-    if (swapState !== "idle" && swapState !== "live") return;
-    if (!this.state.queuedPromptArmed || this.flushingQueuedPrompt || this.service.isStreaming()) return;
-    const text = this.inputEl.value.trim();
-    this.state.queuedPromptArmed = false;
-    this.renderChips();
-    if (!text) {
-      this.syncChrome();
-      return;
-    }
-    this.flushingQueuedPrompt = true;
-    try {
-      this.pushHistory(text);
-      this.inputEl.value = "";
-      await this.sendPrompt(text);
-    } finally {
-      this.flushingQueuedPrompt = false;
-      this.renderChips();
-      this.syncChrome();
-    }
-  }
-
-  // --- prompt editing (rewrite a sent user turn) ---
-
-  /** Load a sent prompt back into the composer for rewriting. */
-  private beginEdit(index: number, displayText: string, el: HTMLElement): void {
-    if (this.service.isStreaming()) return;
-    // Re-clicking the turn already being edited must not reset the composer and
-    // discard the user's in-progress changes.
-    const edit = this.promptEdit.begin(index, this.inputEl.value);
-    if (!edit.started) return;
-    this.clearEditingHighlight();
-    this.editingEl = el;
-    el.addClass("is-editing");
-    this.setComposerValue(displayText);
-    this.inputEl.focus();
-    this.inputEl.setSelectionRange(displayText.length, displayText.length);
-    this.statusEl.setText("Editing — Enter to resend, Esc to cancel");
-  }
-
-  /** Cancel an in-progress edit, restoring the draft the user had before editing. */
-  private cancelEditing(): void {
-    this.endEditing(true);
-  }
-
-  /** Clear editing state. `restoreDraft` puts back the pre-edit composer draft. */
-  private endEditing(restoreDraft: boolean): void {
-    const edit = this.promptEdit.end(restoreDraft);
-    if (!edit.ended) return;
-    this.clearEditingHighlight();
-    if (edit.draftToRestore !== null) this.setComposerValue(edit.draftToRestore);
-    this.statusEl.setText("");
-  }
-
-  /** Set the composer text and notify input listeners (autocomplete) of the change. */
-  private setComposerValue(value: string): void {
-    this.inputEl.value = value;
-    this.inputEl.dispatchEvent(new Event("input"));
-  }
-
-  // --- command history (shell-style up/down recall) ---
-
-  /** Record a submitted message, skipping consecutive duplicates, then reset navigation. */
-  private pushHistory(text: string): void {
-    this.state.history.record(text);
-  }
-
-  private resetHistoryNav(): void {
-    this.state.history.resetNavigation();
-  }
-
-  /**
-   * Cycle the composer through sent-message history. `direction` is -1 (older,
-   * ArrowUp) or +1 (newer, ArrowDown). Only acts when the caret is on the edge
-   * line in that direction, so arrow keys still move within a multi-line draft.
-   * Returns true when it consumed the key.
-   */
-  private recallHistory(direction: -1 | 1): boolean {
-    if (this.promptEdit.isEditing) return false;
-    const result = this.state.history.recall(direction, {
-      value: this.inputEl.value,
-      selectionStart: this.inputEl.selectionStart,
-      selectionEnd: this.inputEl.selectionEnd,
-    });
-    if (!result.handled) return false;
-    if (result.value !== undefined) this.setComposerValueQuiet(result.value);
-    return true;
-  }
-
-  /**
-   * Set the composer value WITHOUT dispatching an input event, so history recall
-   * doesn't reset its own navigation state. Places the caret at the end and hides
-   * the autocomplete menu.
-   */
-  private setComposerValueQuiet(value: string): void {
-    this.inputEl.value = value;
-    this.inputEl.setSelectionRange(value.length, value.length);
-    this.menu.hide();
-  }
-
-  private clearEditingHighlight(): void {
-    this.editingEl?.removeClass("is-editing");
-    this.editingEl = null;
+    await this.turn.flushQueuedPromptIfReady();
   }
 
   /** Rewind to `index`, drop that turn and everything after, then send the edit. */
   private async editAndResend(index: number, text: string): Promise<void> {
-    try {
-      await this.service.truncateMessages(index);
-    } catch (error) {
-      // A failed session rewrite must not silently swallow the edit.
-      this.renderErrorMessage(errorMessage(error));
-      return;
-    }
-    this.renderTranscript(this.service.getMessages());
-    await this.sendPrompt(text);
-  }
-
-  /**
-   * Build the prompt and images for `tab`, bound to the session that was active
-   * at the start. Returns null when the tab stopped being the live one or its
-   * session changed during the awaits; the staged context is discarded then.
-   */
-  private async preparePromptSend(
-    tab: ChatTab,
-    staged: StagedPromptContext,
-    text: string,
-  ): Promise<{ prompt: string; images: ImageContent[]; sessionToken: number; messageCountBefore: number } | null> {
-    const service = tab.service;
-    // A fresh tab has no session yet. Create/continue it before sampling the
-    // token, otherwise the token changes during this same send and the guard
-    // falsely rejects a valid first prompt.
-    await service.initialize();
-    // Context building and image encoding can take seconds. Bind the send to
-    // the session that is active now so a swap during those awaits cannot
-    // route the prompt into a different session.
-    const sessionToken = service.getSessionToken();
-    const stillBound = (): boolean => {
-      if (!this.isLiveTab(tab)) {
-        staged.discard();
-        return false;
-      }
-      if (service.getSessionToken() !== sessionToken) {
-        staged.discard();
-        service.reportSessionChanged();
-        this.showServiceError();
-        return false;
-      }
-      return true;
-    };
-    if (!stillBound()) return null;
-    const messageCountBefore = service.getMessages().length;
-    const context = await buildPromptContext({
-      app: this.app,
-      attachments: staged.attachments,
-      activeNotePath: staged.autoPath,
-      isPathIgnored: (path) => service.isPathIgnored(path),
-      activeNoteCache: staged.activeNoteCache,
-      contextCache: staged.contextCache,
-    });
-    if (!stillBound()) return null;
-    const prompt = assemblePrompt(context, text);
-    // Image attachments ride as multimodal content parts, not text context.
-    const images = await loadContextImageAttachments({
-      app: this.app,
-      attachments: staged.attachments,
-      supportsImages: service.supportsImages(),
-    });
-    if (!stillBound()) return null;
-    return { prompt, images, sessionToken, messageCountBefore };
+    await this.turn.editAndResend(index, text);
   }
 
   private async sendPrompt(text: string): Promise<void> {
-    await this.dispatchPrompt(text, "send");
+    await this.turn.sendPrompt(text);
   }
 
   private async steerActiveTurn(text: string): Promise<void> {
-    await this.dispatchPrompt(text, "steer");
-  }
-
-  /**
-   * One pipeline for a new turn ("send") and for text queued into the running
-   * turn ("steer"): stage context from the active tab, build the prompt, hand it
-   * to the service, then commit or discard the staged context depending on
-   * whether the transcript grew.
-   */
-  private async dispatchPrompt(text: string, kind: "send" | "steer"): Promise<void> {
-    const tab = this.activeTab;
-    const service = tab.service;
-    const staged = stagePromptContext(tab.state, this.effectiveActiveNote());
-    this.clearEmptyState();
-    try {
-      const prepared = await this.preparePromptSend(tab, staged, text);
-      if (!prepared) return;
-      tab.state.lastSentPrompt = prepared.prompt;
-      tab.state.lastSentDisplay = text;
-      if (kind === "send") {
-        // Show the auto-attached active note alongside explicit attachments in the user bubble.
-        const shown = [...(staged.autoPath ? [staged.autoPath] : []), ...staged.attachments];
-        this.renderOutgoingUserMessage(text, shown, prepared.images);
-        await service.sendPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
-      } else {
-        this.statusEl.setText("Queued for the active turn.");
-        await service.steerPrompt(prepared.prompt, prepared.images, prepared.sessionToken);
-      }
-      if (!this.isLiveTab(tab)) {
-        staged.discard();
-        return;
-      }
-      staged.settle(service.getMessages().length > prepared.messageCountBefore);
-    } catch (error) {
-      staged.discard();
-      if (!this.isLiveTab(tab)) return;
-      throw error;
-    }
-    this.showServiceError();
+    await this.turn.steerActiveTurn(text);
   }
 
   /** Re-run the conversation's last user turn (inline "Ask again" action). */
   private async retryLast(): Promise<void> {
-    const tab = this.activeTab;
-    const service = tab.service;
-    if (service.isStreaming()) return;
-    // Bind the retry to the session that is active now: the transcript rewrite
-    // below can await, and a same-tab session load during that await must not
-    // receive this prompt.
-    let sessionToken = service.getSessionToken();
-    const lastTurn = lastUserTurn(service.getMessages());
-    const prompt = this.state.lastSentPrompt ?? lastTurn?.text;
-    if (!prompt) return;
-    // Pair images with the text they were sent with: a stale lastSentPrompt
-    // from a blocked send must not pick up an older turn's images.
-    const images = lastTurn?.text === prompt ? lastTurn.images : [];
-    const display = this.state.lastSentDisplay ?? stripContextPreamble(prompt);
-    // A failed turn is replaced, not repeated: drop it so the model sees the
-    // prompt once. Only when it is the turn being resent.
-    const failedIndex = failedLastTurnIndex(service.getMessages());
-    if (failedIndex !== undefined && lastTurn?.text === prompt) {
-      try {
-        // The rewind starts a new conversation token; bind the resend to it.
-        sessionToken = await service.truncateMessages(failedIndex);
-      } catch (error) {
-        this.renderErrorMessage(errorMessage(error));
-        return;
-      }
-      if (service.getSessionToken() !== sessionToken) {
-        service.reportSessionChanged();
-        this.showServiceError();
-        return;
-      }
-      if (this.isLiveTab(tab)) {
-        this.renderTranscript(service.getMessages());
-      }
-    }
-    this.clearEmptyState();
-    // A retried image turn shows the same thumbnails it sends (#250).
-    this.renderOutgoingUserMessage(display, [], images);
-    await service.sendPrompt(prompt, images, sessionToken);
-    if (!this.isLiveTab(tab)) return;
-    this.showServiceError();
+    await this.turn.retryLast();
   }
 
   private async handleSlashCommand(raw: string): Promise<boolean> {
-    const input = parseSlashInput(raw);
-    const { word, argString, command } = input;
-    if (!command) {
-      // A bare /<skill-name> runs that skill directly (built-in commands take
-      // precedence — a shadowed skill stays reachable via /skill <name>).
-      const skill = this.service.getSkills().find((item) => item.name.toLowerCase() === word.toLowerCase());
-      if (skill) {
-        const argPart = argString ? ` ${argString}` : "";
-        await this.runSkill(skill.name, argString, `/${word}${argPart}`);
-        return true;
-      }
-      return this.showRetiredCommandHint(word);
-    }
-    await this.slashHandlers(input)[command.name]();
-    return true;
-  }
-
-  /**
-   * One handler per built-in command. The `Record` type makes the compiler
-   * reject a command in `SLASH_COMMANDS` that has no handler here.
-   */
-  private slashHandlers(input: ParsedSlashInput): Record<SlashCommandName, () => unknown> {
-    const { argString } = input;
-    return {
-      new: () => this.newSession(),
-      style: () => this.runStyle(argString),
-      effort: () => this.runEffort(argString),
-      sessions: () => runSessions(this.slashCtx, argString),
-      model: () => this.switchModel(),
-      status: () => this.showStatus(),
-      memory: () => runMemory(this.slashCtx, argString),
-      "semantic-index": () => this.runSemanticIndex(argString),
-      doctor: () => this.runDoctor(),
-      usage: () => this.showUsage(),
-      compact: () => this.runCompact(argString),
-      export: () => this.exportSession(),
-      undo: () => this.runUndo(),
-      skill: () => this.runSkill(input.args[0], slashInputTailAfterFirst(input)),
-      agent: () => this.runAgent(input.args[0], slashInputTailAfterFirst(input)),
-      init: () => this.runInit(argString),
-      help: () => this.showHelp(),
-    };
+    return this.actions.handleSlashCommand(raw);
   }
 
   /** Narrow view of this view for the slash handler modules. */
@@ -1559,27 +784,23 @@ export class ChatView extends ItemView {
       syncChrome: () => view.syncChrome(),
       setOutputStyle: (style) => view.setOutputStyle(style),
       setComposerValue: (text) => view.setComposerValue(text),
-      createSessionWorkflow: () => view.createSessionWorkflow(),
+      createSessionWorkflow: () => view.actions.createSessionWorkflow(),
       createSessionActivationCoordinator: () => view.createSessionActivationCoordinator(),
-      createMemoryWorkflow: () => view.createMemoryWorkflow(),
-      semanticIndexWorkflowController: () => view.semanticIndexWorkflowController(),
-      workflowRenderer: () => view.workflowRenderer(),
-      clearAllSessions: () => view.clearAllSessions(),
-      loadSession: (path) => view.loadSession(path),
-      deleteSessionFromList: (path) => view.deleteSessionFromList(path),
+      createMemoryWorkflow: () => view.actions.createMemoryWorkflow(),
+      semanticIndexWorkflowController: () => view.actions.semanticIndexWorkflowController(),
+      workflowRenderer: () => view.actions.workflowRenderer(),
+      clearAllSessions: () => view.actions.clearAllSessions(),
+      loadSession: (path) => view.actions.loadSession(path),
+      deleteSessionFromList: (path) => view.actions.deleteSessionFromList(path),
     });
   }
-
-  private runDoctor(): Promise<void> { return runDoctor(this.slashCtx); }
-
-  private createSessionWorkflow(): SessionWorkflowController { return createSessionWorkflow(this.slashCtx); }
 
   private createSessionActivationCoordinator(): SessionActivationCoordinator {
     return new SessionActivationCoordinator({
       setMuteNotifications: (muted) => {
-        this.muteNotifications = muted;
+        this.chrome.setMuteNotifications(muted);
       },
-      resetUsageNotifications: (muteExisting) => this.resetUsageNotifications(muteExisting),
+      resetUsageNotifications: (muteExisting) => this.chrome.resetUsageNotifications(muteExisting),
       resetUiState: (options) => this.resetSessionUiState(options),
       messages: () => this.service.getMessages(),
       renderTranscript: (messages) => this.renderTranscript(messages),
@@ -1596,28 +817,6 @@ export class ChatView extends ItemView {
     if (options.bubble) this.transcript.forgetBubble();
     if (options.queuedPrompt) this.clearQueuedPrompt();
   }
-
-  private async captureInlineInstruction(raw: string): Promise<void> {
-    const instruction = parseInlineInstruction(raw);
-    if (!instruction) {
-      this.renderErrorMessage("Add instruction text after #.");
-      return;
-    }
-    this.clearEmptyState();
-    this.renderOutgoingUserMessage(`# ${instruction}`, []);
-    await this.service.invokeInstruction(instruction);
-    this.showServiceError();
-  }
-
-  private runSkill(name: string | undefined, extra: string, display?: string): Promise<void> { return runSkill(this.slashCtx, name, extra, display); }
-
-  private runInit(instructions = ""): Promise<void> { return runInit(this.slashCtx, instructions); }
-
-  private runCompact(instructions = ""): Promise<void> { return runCompact(this.slashCtx, instructions); }
-
-  private runStyle(arg: string): Promise<void> { return runStyle(this.slashCtx, arg); }
-
-  private runEffort(arg: string): void { runEffort(this.slashCtx, arg); }
 
   /** Composer effort knob: cycle to the next supported reasoning level. */
   private async cycleEffort(): Promise<void> {
@@ -1639,52 +838,7 @@ export class ChatView extends ItemView {
     }
   }
 
-  /** Render the composer effort knob from the level the next message will use. */
-  private syncEffortKnob(): void {
-    if (!this.effortKnobEl) return;
-    const level = this.service.getActiveThinkingLevel();
-    const levels = this.service.getActiveThinkingLevels();
-    const canChange = levels.length > 1;
-    this.effortKnobEl.empty();
-    this.effortKnobEl.createSpan({ cls: "agentic-chat-effort-value", text: level });
-    this.effortKnobEl.toggleClass("is-unavailable", !canChange);
-    this.effortKnobEl.setAttr("aria-disabled", canChange ? "false" : "true");
-    // Position on the model's supported ladder (0..1) so the knob reads as a
-    // low→max scale, uniformly colored per step — no override split.
-    const index = Math.max(0, levels.indexOf(level));
-    const step = levels.length > 1 ? index / (levels.length - 1) : 0;
-    this.effortKnobEl.style.setProperty("--effort-step", String(step));
-    const hint = canChange
-      ? `Reasoning effort for your messages: ${level}. Click to change. ` +
-        "Switching effort re-processes the prompt once (a cache miss) — affects cost."
-      : "Reasoning effort is off. The active model does not expose alternate reasoning effort levels.";
-    this.effortKnobEl.setAttr("title", hint);
-    this.effortKnobEl.setAttr("aria-label", hint);
-  }
-
-  private runAgent(name: string | undefined, task: string): Promise<void> {
-    return runAgent(this.slashCtx, name, task);
-  }
-
-  private runSemanticIndex(arg: string): Promise<void> { return runSemanticIndex(this.slashCtx, arg); }
-
-  private semanticIndexWorkflowController(): SemanticIndexWorkflowController {
-    return semanticIndexWorkflowController(this.slashCtx);
-  }
-
-  private createMemoryWorkflow(): MemoryWorkflowController { return createMemoryWorkflow(this.slashCtx); }
-
-  private workflowRenderer(): WorkflowRenderer { return createWorkflowRenderer(this.slashCtx); }
-
-  private showStatus(): void { showStatus(this.slashCtx); }
-
-  private runUndo(): Promise<void> { return runUndo(this.slashCtx); }
-
-  private showUsage(): void { showUsage(this.slashCtx); }
-
-  private exportSession(): Promise<void> { return exportSession(this.slashCtx); }
-
-  private showHelp(): void { showHelp(this.slashCtx); }
+  private runSemanticIndex(arg: string): Promise<void> { return this.actions.runSemanticIndex(arg); }
 
   /** Render a collapsible info block in the transcript (not sent to the model). */
   private renderInfoMessage(title: string, entries: Array<[string, string]>): void {
@@ -1714,39 +868,10 @@ export class ChatView extends ItemView {
 
   // --- session + model actions ---
 
-  private newSession(): Promise<void> { return newSession(this.slashCtx); }
-
-  /**
-   * Clear one-shot notification state. When `muteExisting` is set (loading a
-   * session that may already be past a threshold), pre-mark crossed thresholds so
-   * the user is only toasted about *new* crossings, not the loaded-in state.
-   */
-  private resetUsageNotifications(muteExisting = false): void {
-    this.state.notifiedContext = new Set<number>();
-    this.state.notifiedCost = false;
-    this.state.notifiedToolBudgetKey = null;
-    this.state.lastCompactionCount = this.service.getCompactionCount();
-    if (!muteExisting) return;
-    const fraction = this.service.getContextFraction();
-    if (fraction !== undefined) {
-      for (const threshold of CONTEXT_THRESHOLDS) {
-        if (fraction >= threshold) this.state.notifiedContext.add(threshold);
-      }
-    }
-    const cap = this.plugin.settings.notifications.costAlertUsd;
-    if (cap > 0 && (this.service.getSessionUsage().cost?.total ?? 0) >= cap) {
-      this.state.notifiedCost = true;
-    }
-    this.state.notifiedToolBudgetKey = toolBudgetNotificationKey(this.service.getRuntimeDiagnostics().toolBudget);
-  }
+  private newSession(): Promise<void> { return this.actions.newSession(); }
 
   /** Delete from the history list; only the active session swaps under us. */
-  private async deleteSessionFromList(path: string): Promise<void> {
-    if (this.service.getSessionInfo()?.path === path) this.clearQueuedPrompt();
-    // Let the history modal restore its optimistically removed row and show
-    // the delete failure. Swallowing the rejection would leave the row gone.
-    await this.service.deleteSession(path);
-  }
+  private deleteSessionFromList(path: string): Promise<void> { return this.actions.deleteSessionFromList(path); }
 
   /**
    * Clear all conversations; the active session is replaced afterwards.
@@ -1754,178 +879,17 @@ export class ChatView extends ItemView {
    * transcript after a failed clear.
    */
   private async clearAllSessions(): Promise<number> {
-    this.clearQueuedPrompt();
-    try {
-      return await this.service.clearSessions();
-    } catch (error) {
-      this.renderErrorMessage(errorMessage(error));
-      return -1;
-    }
+    return this.actions.clearAllSessions();
   }
 
   private async loadSession(path: string): Promise<void> {
-    // A session must not be open in two tabs at once (both would write the same
-    // file). If another tab already has it, just switch there.
-    const openIn = this.tabs.findIndex(
-      (tab, index) => index !== this.activeTabIndex && tab.service.getSessionInfo()?.path === path,
-    );
-    if (openIn >= 0) {
-      await this.switchToTab(openIn);
-      return;
-    }
-    try {
-      await this.createSessionActivationCoordinator().loadConversation(() => this.service.loadSession(path));
-    } catch (error) {
-      this.renderErrorMessage(errorMessage(error));
-    }
+    await this.actions.loadSession(path);
   }
 
-  private switchModel(): Promise<void> { return switchModel(this.slashCtx); }
-
-  // --- attachments ---
-
-  private addAttachment(entry: ContextAttachment): void {
-    // Image attachments only make sense for a vision-capable model.
-    if (typeof entry === "string" && isImagePath(entry) && !this.service.supportsImages()) {
-      new Notice("This model can't read images. Switch to a vision model to attach images.");
-      return;
-    }
-    this.pushAttachment(entry);
-  }
-
-  /** Dedup-aware push; returns true when the attachment was newly added. The
-   * multi-file drop path checks vision support itself (to aggregate the notice)
-   * and routes through here, skipping the per-entry guard in addAttachment. */
-  private pushAttachment(entry: ContextAttachment): boolean {
-    const key = contextAttachmentKey(entry);
-    if (this.state.attachments.some((existing) => contextAttachmentKey(existing) === key)) return false;
-    this.state.attachments.push(entry);
-    this.renderChips();
-    return true;
-  }
-
-  /**
-   * Recompute the auto-attached active note from the focused leaf, honoring suppression.
-   * Limited to Markdown notes — the active leaf can be an image/PDF/canvas, which would
-   * be read as garbage UTF-8 and injected into the prompt.
-   */
-  private syncActiveNote(): void {
-    this.activeNotePath = autoActiveNotePath(this.app.workspace.getActiveFile(), {
-      suppressed: this.state.activeNoteSuppressed,
-      isIgnored: (path) => this.service.isPathIgnored(path),
-    });
-    this.renderChips();
-  }
-
-  /** The active note auto-attached this turn, or null (suppressed / none / already explicit). */
-  private effectiveActiveNote(): string | null {
-    const active = effectiveActiveNote(this.activeNoteState());
-    return active && isInstructionFilePath(active) ? null : active;
-  }
-
-  private activeNoteState(): ActiveNoteState {
-    return {
-      activePath: this.activeNotePath,
-      suppressed: this.state.activeNoteSuppressed,
-      explicit: this.state.attachments
-        .filter((entry): entry is string => typeof entry === "string")
-        .map((entry) => attachmentBasePath(entry)),
-      selectedTextSources: this.state.attachments
-        .filter(isTextContextAttachment)
-        .map((entry) => entry.sourcePath)
-        .filter((path): path is string => Boolean(path)),
-    };
-  }
-
-  private renderChips(): void {
-    renderContextChips(
-      this.chipsEl,
-      {
-        activeNotePath: this.effectiveActiveNote(),
-        attachments: this.state.attachments,
-      },
-      {
-        removeActiveNote: () => {
-          this.state.activeNoteSuppressed = true;
-          this.activeNotePath = null;
-          this.renderChips();
-        },
-        removeAttachment: (entry) => {
-          const key = contextAttachmentKey(entry);
-          this.state.attachments = this.state.attachments.filter((a) => contextAttachmentKey(a) !== key);
-          this.renderChips();
-        },
-      },
-    );
-    if (this.state.queuedPromptArmed) {
-      const text = this.inputEl.value.trim();
-      if (text) {
-        renderPendingQueueChip(this.chipsEl, { text }, { cancel: () => this.cancelQueuedPrompt() });
-      }
-      this.pendingChipPreview = text || null;
-    } else {
-      this.pendingChipPreview = null;
-    }
-  }
-
-  /** Un-arm a queued prompt, keeping the draft in the composer for editing. */
-  private cancelQueuedPrompt(): void {
-    if (!this.state.queuedPromptArmed) return;
-    this.clearQueuedPrompt();
-    this.inputEl.focus();
-  }
-
-  /** Drop the queued state without moving focus (session changes keep the draft). */
-  private clearQueuedPrompt(): void {
-    if (!this.state.queuedPromptArmed) return;
-    this.state.queuedPromptArmed = false;
-    this.statusEl.setText("");
-    this.renderChips();
-    this.syncChrome();
-  }
+  private switchModel(): Promise<void> { return this.actions.switchModel(); }
 
   private handleAgentEvent(event: AgentEvent): void {
-    switch (event.type) {
-      case "agent_start":
-        this.clearEmptyState();
-        this.transcript.beginRun();
-        this.setRunning(true);
-        break;
-      case "message_start":
-        if (event.message.role === "assistant") this.transcript.beginAssistantMessage();
-        break;
-      case "message_update":
-        this.transcript.applyStreamDelta(event.assistantMessageEvent);
-        break;
-      case "message_end":
-        if (event.message.role === "user") this.transcript.endUserMessage(event.message);
-        if (event.message.role === "assistant") this.transcript.finalizeBubble(event.message);
-        break;
-      case "tool_execution_start":
-        this.transcript.ensureBubble().startStep(event.toolCallId, event.toolName, safeJson(event.args));
-        break;
-      case "tool_execution_update":
-        this.transcript.ensureBubble().updateStep(event.toolCallId, event.partialResult);
-        break;
-      case "tool_execution_end":
-        this.transcript.ensureBubble().endStep(
-          event.toolCallId,
-          toolResultText(event.result),
-          event.isError,
-          event.result,
-        );
-        break;
-      case "agent_end":
-        this.transcript.endRun();
-        this.setRunning(false);
-        this.statusEl.setText("");
-        this.syncChrome();
-        this.notifyTurnComplete();
-        break;
-      default:
-        break;
-    }
-    this.scrollToBottom();
+    this.turn.handleAgentEvent(event);
   }
 
   // --- transcript entry points (the TranscriptView owns the pane) ---
@@ -1940,33 +904,5 @@ export class ChatView extends ItemView {
 
   private scrollToBottom(options: { force?: boolean } = {}): void {
     this.transcript.scrollToBottom(options);
-  }
-
-
-  /** Steered text the run never delivered goes back into that tab's composer draft. */
-  private restoreUndeliveredSteers(tab: ChatTab): void {
-    const texts = tab.service.takeUndeliveredSteers();
-    if (texts.length === 0) return;
-    const isActive = tab === this.activeTab;
-    const value = restoreUndeliveredText(isActive ? this.inputEl.value : tab.state.draft, texts);
-    if (value === null) return;
-    if (!isActive) {
-      tab.state.draft = value;
-      return;
-    }
-    this.setComposerValueQuiet(value);
-    this.statusEl.setText(UNDELIVERED_STEER_STATUS);
-  }
-
-  /**
-   * A removed command (or alias) names its replacement instead of reaching the
-   * model as a literal prompt. Returns false for words that were never commands.
-   */
-  private showRetiredCommandHint(word: string): boolean {
-    const hint = retiredCommandHint(word);
-    if (!hint) return false;
-    this.clearEmptyState();
-    this.renderInfoMessage("Removed command", [[`/${word.toLowerCase()}`, hint]]);
-    return true;
   }
 }

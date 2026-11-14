@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { ChatView } from "../src/ui/chat-view";
+import { ChatActions } from "../src/ui/chat-actions";
+import type { AgentService } from "../src/agent/agent-service";
+import type { ChatTabs } from "../src/ui/chat-tabs";
+import type { SlashContext } from "../src/ui/slash/context";
 import { SLASH_COMMANDS } from "../src/ui/commands";
 
 type Stubs = Record<string, ReturnType<typeof vi.fn>>;
@@ -7,37 +11,45 @@ type Dispatcher = { handleSlashCommand: (raw: string) => Promise<boolean> };
 
 /**
  * Pins slash-command routing: each command name reaches its handler with the
- * same arguments. ChatView is built from its prototype with every handler
- * stubbed, so only the dispatch is under test.
+ * same arguments. ChatView is built from its prototype with a `ChatActions`
+ * owner whose handlers are stubbed, so only the dispatch is under test.
  */
 function makeView(skills: Array<{ name: string }> = []) {
   const sessionsRun = vi.fn();
   const memoryRun = vi.fn();
+  const actions = new ChatActions({
+    slashCtx: () => ({}) as SlashContext,
+    service: () => ({ getSkills: () => skills }) as unknown as AgentService,
+    tabs: () => ({}) as ChatTabs,
+    switchToTab: vi.fn(),
+    loadConversation: vi.fn(),
+    clearQueuedPrompt: vi.fn(),
+    clearEmptyState: vi.fn(),
+    renderErrorMessage: vi.fn(),
+    renderInfoMessage: vi.fn(),
+  });
   const stubs: Stubs = {
-    newSession: vi.fn(),
-    runStyle: vi.fn(),
-    runEffort: vi.fn(),
-    switchModel: vi.fn(),
-    showStatus: vi.fn(),
-    runSemanticIndex: vi.fn(),
-    runDoctor: vi.fn(),
-    showUsage: vi.fn(),
-    runCompact: vi.fn(),
-    exportSession: vi.fn(),
-    runUndo: vi.fn(),
-    runSkill: vi.fn(),
-    runAgent: vi.fn(),
-    runInit: vi.fn(),
-    showHelp: vi.fn(),
-    showRetiredCommandHint: vi.fn(() => false),
+    newSession: vi.spyOn(actions, "newSession").mockResolvedValue(),
+    runStyle: vi.spyOn(actions, "runStyle").mockResolvedValue(),
+    runEffort: vi.spyOn(actions, "runEffort").mockReturnValue(undefined),
+    switchModel: vi.spyOn(actions, "switchModel").mockResolvedValue(),
+    showStatus: vi.spyOn(actions, "showStatus").mockReturnValue(undefined),
+    runSemanticIndex: vi.spyOn(actions, "runSemanticIndex").mockResolvedValue(),
+    runDoctor: vi.spyOn(actions, "runDoctor").mockResolvedValue(),
+    showUsage: vi.spyOn(actions, "showUsage").mockReturnValue(undefined),
+    runCompact: vi.spyOn(actions, "runCompact").mockResolvedValue(),
+    exportSession: vi.spyOn(actions, "exportSession").mockResolvedValue(),
+    runUndo: vi.spyOn(actions, "runUndo").mockResolvedValue(),
+    runSkill: vi.spyOn(actions, "runSkill").mockResolvedValue(),
+    runAgent: vi.spyOn(actions, "runAgent").mockResolvedValue(),
+    runInit: vi.spyOn(actions, "runInit").mockResolvedValue(),
+    showHelp: vi.spyOn(actions, "showHelp").mockReturnValue(undefined),
+    showRetiredCommandHint: vi.spyOn(actions, "showRetiredCommandHint").mockReturnValue(false),
   };
-  const view = Object.assign(Object.create(ChatView.prototype), {
-    ...stubs,
-    createSessionWorkflow: () => ({ run: sessionsRun }),
-    createMemoryWorkflow: () => ({ run: memoryRun }),
-  }) as Dispatcher;
-  // `service` is a getter on ChatView; shadow it on the instance.
-  Object.defineProperty(view, "service", { value: { getSkills: () => skills } });
+  vi.spyOn(actions, "runSessions").mockImplementation((arg) => sessionsRun(arg));
+  vi.spyOn(actions, "runMemory").mockImplementation((arg) => memoryRun(arg));
+  const view = Object.assign(Object.create(ChatView.prototype), {}) as Dispatcher;
+  Object.defineProperty(view, "actions", { value: actions });
   return { view, stubs, sessionsRun, memoryRun };
 }
 
