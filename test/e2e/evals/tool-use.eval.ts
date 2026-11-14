@@ -10,7 +10,7 @@ import {
   type ToolUseBudgetCaps,
   type ToolUseCheckResult,
 } from "../../../scripts/eval/tool-use-core";
-import { sendPrompt, waitForTurnEnd } from "../dogfood/dogfood-helpers";
+import { sendPrompt } from "../dogfood/dogfood-helpers";
 
 const PLAN_PATH = process.env.TOOL_USE_PLAN?.trim() ?? "";
 const RESULTS_DIR = process.env.TOOL_USE_RESULTS_DIR?.trim() ?? "";
@@ -19,7 +19,7 @@ const PLUGIN_ID = "agentic-chat";
 interface EvalCasePlan {
   id: string;
   prompt: string;
-  seed: { files: Record<string, string> };
+  seed: { files: Record<string, string>; binaryFiles?: Record<string, string> };
   settings?: Record<string, string | number | boolean>;
   checks: unknown[];
 }
@@ -48,6 +48,7 @@ interface RunResult extends ObservedSession {
   files: Record<string, string>;
   frontmatter: Record<string, Record<string, unknown>>;
   links: Record<string, string[]>;
+  unresolvedLinks: Record<string, string[]>;
   ms: number;
   status?: string;
   error?: string;
@@ -101,6 +102,7 @@ describe("tool-use eval", function () {
           files: {},
           frontmatter: {},
           links: {},
+          unresolvedLinks: {},
           toolCalls: [],
           answer: "",
           usage: {},
@@ -115,7 +117,7 @@ describe("tool-use eval", function () {
       const startedAt = Date.now();
       let sessionBaseline: string[] | undefined;
       try {
-        await prepareVault(evalCase.seed.files);
+        await prepareVault(evalCase.seed.files, evalCase.seed.binaryFiles ?? {});
         await applyCaseSettings(evalCase.settings ?? {});
         // The command callback is fire-and-forget, so take the set before it
         // starts. The new session file is the only one that may appear.
@@ -126,20 +128,33 @@ describe("tool-use eval", function () {
         // waitForTurnEnd passes while Stop is still hidden, so first wait for this
         // run's assistant bubble (the transcript was empty after new-conversation).
         await $(".agentic-chat-assistant").waitForExist({ timeout: 30_000 });
-        await waitForTurnEnd(plan.turn.timeoutMs);
+        // An open ask-user card means the turn waits for a human. Treat it as
+        // the end for this run, then stop the turn so the next run starts clean.
+        await waitForTurnOrAskUser(plan.turn.timeoutMs);
+        await stopIfRunning();
 
         const ms = Date.now() - startedAt;
         const files = await readVaultMarkdown();
         const frontmatter = await readVaultFrontmatter();
-        const links = await readVaultLinks();
+        const { links, unresolvedLinks } = await readVaultLinks();
         const observation = await readObservation(sessionBaseline);
-        writeResult({ caseId: evalCase.id, run: planned.run, files, frontmatter, links, ...observation, ms });
+        writeResult({
+          caseId: evalCase.id,
+          run: planned.run,
+          files,
+          frontmatter,
+          links,
+          unresolvedLinks,
+          ...observation,
+          ms,
+        });
       } catch (error) {
         const ms = Date.now() - startedAt;
         await stopIfRunning();
         let files: Record<string, string> = {};
         const frontmatter: Record<string, Record<string, unknown>> = {};
         let links: Record<string, string[]> = {};
+        let unresolvedLinks: Record<string, string[]> = {};
         let observation = emptyObservation();
         try {
           files = await readVaultMarkdown();
@@ -147,9 +162,9 @@ describe("tool-use eval", function () {
           // Keep the empty map; the runner will fail the checks.
         }
         try {
-          links = await readVaultLinks();
+          ({ links, unresolvedLinks } = await readVaultLinks());
         } catch {
-          // Keep the empty map; the runner will fail the checks.
+          // Keep the empty maps; the runner will fail the checks.
         }
         if (sessionBaseline) {
           try {
@@ -164,6 +179,7 @@ describe("tool-use eval", function () {
           files,
           frontmatter,
           links,
+          unresolvedLinks,
           ...observation,
           ms,
           error: errorMessage(error),
@@ -251,25 +267,32 @@ async function applyCaseSettings(settings: Record<string, string | number | bool
   }, { base: baseCaseSettings, caseSettings: settings });
 }
 
-async function prepareVault(seedFiles: Record<string, string>): Promise<void> {
-  await browser.executeObsidian(async ({ app }, files) => {
+async function prepareVault(
+  seedFiles: Record<string, string>,
+  binaryFiles: Record<string, string>,
+): Promise<void> {
+  await browser.executeObsidian(async ({ app }, seed) => {
     for (const child of [...app.vault.getRoot().children]) {
       if (child.path === app.vault.configDir) continue;
       await app.vault.delete(child, true);
     }
 
     const folders = new Set<string>();
-    for (const filePath of Object.keys(files)) {
+    for (const filePath of [...Object.keys(seed.files), ...Object.keys(seed.binaryFiles)]) {
       const parts = filePath.split("/");
       for (let index = 1; index < parts.length; index += 1) folders.add(parts.slice(0, index).join("/"));
     }
     for (const folder of [...folders].sort((left, right) => left.length - right.length)) {
       if (!app.vault.getAbstractFileByPath(folder)) await app.vault.createFolder(folder);
     }
-    for (const [filePath, content] of Object.entries(files)) {
+    for (const [filePath, content] of Object.entries(seed.files)) {
       await app.vault.create(filePath, content);
     }
-  }, seedFiles);
+    for (const [filePath, base64] of Object.entries(seed.binaryFiles)) {
+      const bytes = Uint8Array.from(atob(base64.replace(/\s+/g, "")), (char) => char.charCodeAt(0));
+      await app.vault.createBinary(filePath, bytes.buffer);
+    }
+  }, { files: seedFiles, binaryFiles });
 }
 
 async function readVaultMarkdown(): Promise<Record<string, string>> {
@@ -303,20 +326,40 @@ async function readVaultFrontmatter(): Promise<Record<string, Record<string, unk
   });
 }
 
-async function readVaultLinks(): Promise<Record<string, string[]>> {
+async function readVaultLinks(): Promise<{
+  links: Record<string, string[]>;
+  unresolvedLinks: Record<string, string[]>;
+}> {
   return await browser.executeObsidian(async ({ app }) => {
     const files = app.vault.getMarkdownFiles();
-    // Use the same metadata-cache wait as readVaultFrontmatter so links are
-    // not read before Obsidian resolves them.
-    const deadline = Date.now() + 5_000;
-    while (Date.now() < deadline && !files.every((file) => app.metadataCache.getFileCache(file))) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    const readSnapshot = () => {
+      const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+      const unresolvedBySource = app.metadataCache.unresolvedLinks as Record<string, Record<string, number>>;
+      const ready = files.every((file) => app.metadataCache.getFileCache(file));
+      const links: Record<string, string[]> = {};
+      const unresolvedLinks: Record<string, string[]> = {};
+      for (const file of files) {
+        links[file.path] = Object.keys(resolvedLinks[file.path] ?? {});
+        const targets = Object.keys(unresolvedBySource[file.path] ?? {});
+        if (targets.length > 0) unresolvedLinks[file.path] = targets;
+      }
+      return { ready, links, unresolvedLinks, key: JSON.stringify({ links, unresolvedLinks }) };
+    };
 
-    const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
-    const links: Record<string, string[]> = {};
-    for (const file of files) links[file.path] = Object.keys(resolvedLinks[file.path] ?? {});
-    return links;
+    // Obsidian resolves links after the turn, so a single read can catch a
+    // partial cache. Accept only a ready snapshot that equals the previous
+    // read, and fall back to the last read after 5 s.
+    const deadline = Date.now() + 5_000;
+    let previousKey: string | undefined;
+    let last = readSnapshot();
+    while (true) {
+      if (last.ready && previousKey === last.key) break;
+      if (Date.now() >= deadline) break;
+      previousKey = last.ready ? last.key : undefined;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      last = readSnapshot();
+    }
+    return { links: last.links, unresolvedLinks: last.unresolvedLinks };
   });
 }
 
@@ -427,6 +470,21 @@ function writeResult(result: RunResult): void {
   const caseDir = path.join(RESULTS_DIR, result.caseId);
   mkdirSync(caseDir, { recursive: true });
   writeFileSync(path.join(caseDir, `${result.run}.json`), `${JSON.stringify(result, null, 2)}\n`);
+}
+
+/**
+ * `waitForTurnEnd` waits for an open ask-user card to close, but an eval run
+ * cannot answer it. Stop at the card and let the checks grade the tool call.
+ */
+async function waitForTurnOrAskUser(timeoutMs: number): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const stopVisible = await $(".agentic-chat-stop").isDisplayed().catch(() => false);
+      const askUserOpen = await $(".agentic-chat-ask-user").isExisting().catch(() => false);
+      return askUserOpen || !stopVisible;
+    },
+    { timeout: timeoutMs, timeoutMsg: "turn did not finish" },
+  );
 }
 
 async function stopIfRunning(): Promise<void> {

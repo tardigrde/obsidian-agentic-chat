@@ -16,9 +16,26 @@ import {
   type ToolUseCheck,
   type ToolUseSuite,
 } from "../scripts/eval/tool-use-core";
+import { extractPdfText } from "../src/retrieval/pdf-ingest";
 import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
 
 const SUITE_PATH = path.join(process.cwd(), "test/evals/tool-use/tool-use.eval.json");
+const CASE_IDS = [
+  "none.arithmetic",
+  "edit.find-and-edit",
+  "rename.keep-links",
+  "read.answer-from-note",
+  "search.list-mentions",
+  "write.create-from-inbox",
+  "properties.set-status-and-tag",
+  "delete.only-the-empty-one",
+  "edit.append-under-heading",
+  "ask.ambiguous-cleanup",
+  "ignore.private-folder",
+  "rename.move-tagged",
+  "import.pdf-answer",
+  "none.general-knowledge",
+];
 const tempRoots: string[] = [];
 
 afterEach(async () => {
@@ -39,7 +56,7 @@ function makeCase(
   checks: ToolUseCheck[],
   seedFiles: Record<string, string> = {},
 ): ToolUseCase {
-  return { id: "test.case", prompt: "Do the task.", seed: { files: seedFiles }, checks };
+  return { id: "test.case", prompt: "Do the task.", seed: { files: seedFiles, binaryFiles: {} }, checks };
 }
 
 async function grade(
@@ -48,6 +65,7 @@ async function grade(
     files?: Record<string, string>;
     frontmatter?: Record<string, Record<string, unknown>>;
     links?: Record<string, string[]>;
+    unresolvedLinks?: Record<string, string[]>;
     toolCalls?: Array<{ name: string; isError?: boolean }>;
     answer?: string;
   },
@@ -57,6 +75,7 @@ async function grade(
     files: observed.files ?? {},
     frontmatter: observed.frontmatter ?? {},
     links: observed.links ?? {},
+    unresolvedLinks: observed.unresolvedLinks ?? {},
     toolCalls: observed.toolCalls ?? [],
     answer: observed.answer ?? "",
   });
@@ -72,11 +91,7 @@ describe("tool-use eval core", () => {
   it("accepts the committed suite", () => {
     const suite = loadSuite();
     expect(suite.name).toBe("tool-use");
-    expect(suite.cases.map((entry) => entry.id)).toEqual([
-      "none.arithmetic",
-      "edit.find-and-edit",
-      "rename.keep-links",
-    ]);
+    expect(suite.cases.map((entry) => entry.id)).toEqual(CASE_IDS);
   });
 
   it("reports each suite validation problem", () => {
@@ -170,6 +185,57 @@ describe("tool-use eval core", () => {
       entry.mutate(suite);
       expect(() => validateToolUseSuite(suite)).toThrow(entry.pattern);
     }
+  });
+
+  it("accepts binary seed files and keeps them off the text seed", () => {
+    const suite = cloneSuite();
+    const entries = suite.cases as Array<Record<string, unknown>>;
+    (entries[0].seed as Record<string, unknown>).binaryFiles = { "Docs/a.pdf": "JVBE" };
+
+    const parsed = validateToolUseSuite(suite);
+
+    expect(parsed.cases[0].seed.binaryFiles).toEqual({ "Docs/a.pdf": "JVBE" });
+    expect(parsed.cases[0].seed.files).toEqual({});
+    expect(loadSuite().cases[0].seed.binaryFiles).toEqual({});
+  });
+
+  it("rejects a seed path that is both text and binary", () => {
+    const suite = cloneSuite();
+    const entries = suite.cases as Array<Record<string, unknown>>;
+    const seed = entries[0].seed as Record<string, unknown>;
+    seed.files = { "Docs/a.pdf": "x" };
+    seed.binaryFiles = { "Docs/a.pdf": "JVBE" };
+
+    expect(() => validateToolUseSuite(suite)).toThrow(/is also a seed\.files entry/);
+  });
+
+  it("applies the seed path rules to binary files", () => {
+    const cases: Array<{ binaryFiles: Record<string, unknown>; pattern: RegExp }> = [
+      { binaryFiles: { "../escape.pdf": "JVBE" }, pattern: /seed\.binaryFiles\..* must be a vault-relative path/ },
+      { binaryFiles: { "/absolute.pdf": "JVBE" }, pattern: /seed\.binaryFiles\..* must be a vault-relative path/ },
+      { binaryFiles: { ".obsidian/a.pdf": "JVBE" }, pattern: /seed\.binaryFiles\..* must be a vault-relative path/ },
+      { binaryFiles: { "a.pdf": 42 }, pattern: /must be a base64 string/ },
+    ];
+
+    for (const entry of cases) {
+      const suite = cloneSuite();
+      const seed = (suite.cases as Array<Record<string, unknown>>)[0].seed as Record<string, unknown>;
+      seed.binaryFiles = entry.binaryFiles;
+      expect(() => validateToolUseSuite(suite)).toThrow(entry.pattern);
+    }
+  });
+
+  it("reads the seeded invoice PDF from base64", () => {
+    const pdfCase = loadSuite().cases.find((entry) => entry.id === "import.pdf-answer");
+    if (!pdfCase) throw new Error("missing import.pdf-answer");
+    const base64 = pdfCase.seed.binaryFiles["Docs/invoice.pdf"];
+    expect(base64).toBeTruthy();
+
+    const bytes = Buffer.from(base64.replace(/\s+/g, ""), "base64");
+    const extracted = extractPdfText(new Uint8Array(bytes));
+
+    expect(extracted.text).toContain("Invoice total: 4,210 EUR");
+    expect(extracted.pageCount).toBe(1);
   });
 
   it("grades file_exists and file_absent", async () => {
@@ -270,6 +336,27 @@ describe("tool-use eval core", () => {
     expect(result.checks.map((check) => check.ok)).toEqual([true, false, false]);
   });
 
+  it("accepts a no_unresolved_links check", () => {
+    const suite = cloneSuite();
+    const checks = (suite.cases as Array<Record<string, unknown>>)[0].checks as Array<Record<string, unknown>>;
+    checks.push({ type: "no_unresolved_links", path: "Index.md" });
+
+    expect(() => validateToolUseSuite(suite)).not.toThrow();
+  });
+
+  it("grades no_unresolved_links against the observed unresolved links", async () => {
+    const result = await grade(
+      [
+        { type: "no_unresolved_links", path: "Index.md" },
+        { type: "no_unresolved_links", path: "Weekly.md" },
+        { type: "no_unresolved_links", path: "Broken.md" },
+      ],
+      { unresolvedLinks: { "Weekly.md": ["Missing"], "Broken.md": ["Missing"] } },
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, false, false]);
+  });
+
   it("grades tool_called, tool_not_called, and the mutating wildcard", async () => {
     const toolCalls = [{ name: "edit" }, { name: "read" }, { name: "edit" }];
     const result = await grade(
@@ -338,11 +425,18 @@ describe("tool-use eval core", () => {
     const arithmetic = suite.cases.find((entry) => entry.id === "none.arithmetic");
     if (!arithmetic) throw new Error("missing none.arithmetic case");
     const gradeAnswer = (answer: string) =>
-      gradeRun(arithmetic, { files: {}, frontmatter: {}, links: {}, toolCalls: [], answer });
+      gradeRun(arithmetic, { files: {}, frontmatter: {}, links: {}, unresolvedLinks: {}, toolCalls: [], answer });
 
-    expect(gradeAnswer("151").ok).toBe(false);
+    expect(gradeAnswer("51").ok).toBe(true);
     expect(gradeAnswer("51.").ok).toBe(true);
     expect(gradeAnswer("The answer is 51").ok).toBe(true);
+    // The prompt asks for the number only, so no other digits may follow.
+    expect(gradeAnswer("51 (17 x 3)").ok).toBe(false);
+    expect(gradeAnswer("51? No, 102.").ok).toBe(false);
+    expect(gradeAnswer("151").ok).toBe(false);
+    expect(gradeAnswer("-51").ok).toBe(false);
+    expect(gradeAnswer("—51").ok).toBe(false);
+    expect(gradeAnswer("510").ok).toBe(false);
   });
 
   it("grades the rename case by resolved links, not link text", () => {
@@ -363,6 +457,7 @@ describe("tool-use eval core", () => {
         "Index.md": ["Wrong/Atlas Launch.md"],
         "Weekly.md": ["Wrong/Atlas Launch.md"],
       },
+      unresolvedLinks: {},
     };
 
     expect(gradeRun(rename, observed).ok).toBe(false);
@@ -375,6 +470,55 @@ describe("tool-use eval core", () => {
         },
       }).ok,
     ).toBe(true);
+  });
+
+  it("accepts a clarifying question in plain text or through ask_user for the ambiguous cleanup", () => {
+    const suite = loadSuite();
+    const ask = suite.cases.find((entry) => entry.id === "ask.ambiguous-cleanup");
+    if (!ask) throw new Error("missing ask.ambiguous-cleanup case");
+    const files = ask.seed.files;
+    const reads = [{ name: "vault_inspect" }, { name: "read" }];
+    const run = (answer: string, toolCalls: Array<{ name: string }>) =>
+      gradeRun(ask, { files, frontmatter: {}, links: {}, unresolvedLinks: {}, toolCalls, answer });
+
+    expect(run("Here are some options.\n\nWhich direction do you want?", reads).ok).toBe(true);
+    expect(run("Which direction do you want? I will wait for your answer.", reads).ok).toBe(true);
+    expect(run("I don't want to guess.", [...reads, { name: "ask_user" }]).ok).toBe(true);
+    expect(run("I will merge the meeting notes.", reads).ok).toBe(false);
+    expect(run("Which one?", [...reads, { name: "delete" }]).ok).toBe(false);
+    // A new plan note is a mutation too, even when every seed note is unchanged.
+    expect(run("Which notes should I clean up?", [...reads, { name: "write" }]).ok).toBe(false);
+  });
+
+  it("rejects an any_of check with fewer than two inner checks", () => {
+    const suite = cloneSuite();
+    const checks = (suite.cases as Array<Record<string, unknown>>)[0].checks as Array<Record<string, unknown>>;
+    checks.push({ type: "any_of", checks: [{ type: "no_tool_errors" }] });
+
+    expect(() => validateToolUseSuite(suite)).toThrow(/at least 2 checks/);
+  });
+
+  it("uses regex flags for answer and file checks", async () => {
+    const result = await grade(
+      [
+        { type: "answer_contains", text: "VENDOR", regex: true, flags: "i" },
+        { type: "answer_contains", text: "VENDOR", regex: true },
+        { type: "answer_not_contains", text: "VENDOR", regex: true, flags: "i" },
+        { type: "file_contains", path: "Note.md", text: "ALPHA", regex: true, flags: "i" },
+        { type: "file_not_contains", path: "Note.md", text: "ALPHA", regex: true, flags: "i" },
+      ],
+      { answer: "The vendor may slip.", files: { "Note.md": "alpha beta" } },
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, false, false, true, false]);
+  });
+
+  it("reports invalid regex flags", () => {
+    const suite = cloneSuite();
+    const checks = (suite.cases as Array<Record<string, unknown>>)[0].checks as Array<Record<string, unknown>>;
+    checks.push({ type: "answer_contains", text: "x", regex: true, flags: "zz" });
+
+    expect(() => validateToolUseSuite(suite)).toThrow(/flags is not a valid regular expression flag set/);
   });
 
   it("fails the whole run when any check fails", async () => {
@@ -648,7 +792,8 @@ describe("tool-use eval core", () => {
     );
 
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain("3 case(s) x 3 run(s)");
+    expect(result.stdout).toContain("14 case(s) x 3 run(s)");
+    for (const id of CASE_IDS) expect(result.stdout).toContain(`- ${id}:`);
     expect(result.stdout).toContain("prices: not fetched (dry run)");
     expect(result.stdout).toContain("estimated cost");
     expect(result.stdout).toContain("15k tokens/run");

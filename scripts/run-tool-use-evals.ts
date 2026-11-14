@@ -52,6 +52,7 @@ interface RunFile {
   files: Record<string, string>;
   frontmatter: Record<string, Record<string, unknown>>;
   links: Record<string, string[]>;
+  unresolvedLinks: Record<string, string[]>;
   toolCalls: Array<{ name: string; isError?: boolean }>;
   answer: string;
   usage: RunUsage;
@@ -263,6 +264,7 @@ function gradeRunFile(
     files: runFile.files,
     frontmatter: runFile.frontmatter,
     links: runFile.links,
+    unresolvedLinks: runFile.unresolvedLinks,
     toolCalls: runFile.toolCalls,
     answer: runFile.answer,
   });
@@ -291,6 +293,7 @@ function parseRunFile(input: unknown, at: string): RunFile {
     files: stringRecord(input.files),
     frontmatter: frontmatterValue(input.frontmatter),
     links: linksValue(input.links),
+    unresolvedLinks: linksValue(input.unresolvedLinks),
     toolCalls: toolCallsValue(input.toolCalls),
     answer: typeof input.answer === "string" ? input.answer : "",
     usage: usageValue(input.usage),
@@ -537,7 +540,7 @@ function formatComparison(baseline: unknown, candidate: unknown): string {
     const left = before.get(id) ?? {};
     const right = after.get(id) ?? {};
     lines.push(
-      `| ${id} | ${formatDelta(left.passRate, right.passRate)} | ${formatDelta(left.meanTokens, right.meanTokens)} | ${formatDelta(left.meanUsd, right.meanUsd)} |`,
+      `| ${id} | ${formatDelta(left.passRate, right.passRate, percent)} | ${formatDelta(left.meanTokens, right.meanTokens, whole)} | ${formatDelta(left.meanUsd, right.meanUsd, usd)} |`,
     );
   }
   return `${lines.join("\n")}\n`;
@@ -557,13 +560,17 @@ function summaryCases(input: unknown): Map<string, { passRate?: number; meanToke
   return output;
 }
 
-function formatDelta(before: number | undefined, after: number | undefined): string {
+const percent = (value: number): string => `${Math.round(value * 100)}%`;
+const whole = (value: number): string => String(Math.round(value));
+const usd = (value: number): string => `$${value.toFixed(6)}`;
+
+function formatDelta(before: number | undefined, after: number | undefined, format: (value: number) => string): string {
   if (before === undefined && after === undefined) return "(missing)";
   const left = before ?? 0;
   const right = after ?? 0;
   const delta = right - left;
-  const sign = delta > 0 ? "+" : "";
-  return `${left} -> ${right} (${sign}${Number(delta.toFixed(6))})`;
+  const sign = delta > 0 ? "+" : delta < 0 ? "-" : "";
+  return `${format(left)} -> ${format(right)} (${sign}${format(Math.abs(delta))})`;
 }
 
 function runE2e(options: {
