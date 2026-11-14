@@ -88,6 +88,8 @@ describe("tool-use eval", function () {
       const evalCase = plan.cases.find((entry) => entry.id === planned.caseId);
       if (!evalCase) throw new Error(`Plan refers to an unknown case: ${planned.caseId}`);
 
+      // A turn that will not stop must fail the spec: seeding the next vault
+      // under a live turn lets the model write into the next run.
       await stopIfRunning();
       await closeModals();
       const exceeded = budgetExceeded();
@@ -418,13 +420,19 @@ function writeResult(result: RunResult): void {
 async function stopIfRunning(): Promise<void> {
   const stop = await $(".agentic-chat-stop");
   if (!(await stop.isDisplayed().catch(() => false))) return;
-  await stop.click().catch(() => undefined);
-  await browser
-    .waitUntil(async () => !(await stop.isDisplayed().catch(() => false)), {
+  try {
+    await stop.click();
+  } catch (error) {
+    throw new Error(`tool-use turn did not stop: the stop button click failed (${errorMessage(error)})`);
+  }
+  try {
+    await browser.waitUntil(async () => !(await stop.isDisplayed().catch(() => false)), {
       timeout: 10_000,
       timeoutMsg: "tool-use turn did not stop",
-    })
-    .catch(() => undefined);
+    });
+  } catch (error) {
+    throw new Error(`tool-use turn did not stop within 10 s (${errorMessage(error)})`);
+  }
 }
 
 /** A modal left open by a run (for example a confirm dialog) blocks the next one. */
