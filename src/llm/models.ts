@@ -63,12 +63,11 @@ export interface PrivacySettings {
 
 export type ProviderId = "openrouter" | "ollama" | "openai-compatible";
 
-/** Every provider id, in canonical order. Single source shared by chat and embeddings. */
+/** Every provider id, in canonical order. */
 export const PROVIDERS: ProviderId[] = ["openrouter", "ollama", "openai-compatible"];
 
 /**
- * Heal an unknown persisted provider id to the fallback. Chat defaults to
- * OpenRouter; embeddings pass their own default explicitly.
+ * Heal an unknown persisted provider id to the fallback (OpenRouter by default).
  */
 export function healProviderId(value: unknown, fallback: ProviderId = "openrouter"): ProviderId {
   return typeof value === "string" && (PROVIDERS as readonly string[]).includes(value)
