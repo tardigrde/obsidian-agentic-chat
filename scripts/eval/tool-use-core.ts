@@ -438,8 +438,8 @@ export function summarizeCase(
 
 /**
  * Aggregate the per-case summaries into the `overall` object. Cost, tokens,
- * calls, and cost are weighted by executed runs; the rate columns weigh each
- * case once, so a case with a skipped run does not skew the pass numbers.
+ * and calls are weighted by executed runs; the rate columns weigh each case
+ * once, so a case with a skipped run does not skew the pass numbers.
  */
 export function summarizeOverall(
   cases: Array<CaseSummary & { runResults: CaseRunSummaryInput[] }>,
@@ -652,18 +652,14 @@ function validateSeedVault(
   if (input === undefined) return undefined;
   const record = asRecord(input, at, problems);
   if (!record) return undefined;
-  const size = record.size;
-  if (size !== "S" && size !== "M") {
-    problems.push(`${at}.size must be "S" or "M".`);
-  }
-  const seed = record.seed;
-  if (typeof seed !== "number" || !Number.isInteger(seed) || seed < 0) {
-    problems.push(`${at}.seed must be a non-negative integer.`);
-  }
-  return {
-    size: size as VaultSize,
-    seed: typeof seed === "number" ? seed : 0,
-  };
+  const size = record.size === "S" || record.size === "M" ? record.size : undefined;
+  if (size === undefined) problems.push(`${at}.size must be "S" or "M".`);
+  const seed =
+    typeof record.seed === "number" && Number.isInteger(record.seed) && record.seed >= 0
+      ? record.seed
+      : undefined;
+  if (seed === undefined) problems.push(`${at}.seed must be a non-negative integer.`);
+  return { size: size ?? "S", seed: seed ?? 0 };
 }
 
 function validateExpected(
@@ -674,12 +670,16 @@ function validateExpected(
   if (input === undefined) return undefined;
   const record = asRecord(input, at, problems);
   if (!record) return undefined;
-  const maxToolCalls = record.maxToolCalls;
-  if (maxToolCalls === undefined) return {};
-  if (typeof maxToolCalls !== "number" || !Number.isInteger(maxToolCalls) || maxToolCalls < 1) {
+  const maxToolCalls =
+    typeof record.maxToolCalls === "number" &&
+    Number.isInteger(record.maxToolCalls) &&
+    record.maxToolCalls > 0
+      ? record.maxToolCalls
+      : undefined;
+  if (record.maxToolCalls !== undefined && maxToolCalls === undefined) {
     problems.push(`${at}.maxToolCalls must be a positive integer.`);
   }
-  return { maxToolCalls: typeof maxToolCalls === "number" ? maxToolCalls : undefined };
+  return { maxToolCalls };
 }
 
 function validateSettings(
