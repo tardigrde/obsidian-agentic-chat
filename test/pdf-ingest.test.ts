@@ -189,12 +189,12 @@ describe("PDF source ingestion", () => {
     ]);
   });
 
-  it("rejects non-PDF vault paths before reading unsupported files", async () => {
+  it("rejects unsupported vault paths before reading the file", async () => {
     const adapter = new MemoryAdapter();
     await adapter.write("Research/source.txt", "not a pdf");
     const { store } = memoryArtifactStore();
     const [tool] = createDocumentTools({ vault: { adapter: adapter.asDataAdapter() } } as unknown as App, store);
 
-    await expect(tool.execute("call-1", { path: "Research/source.txt" })).rejects.toThrow(/only supports \.pdf/i);
+    await expect(tool.execute("call-1", { path: "Research/source.txt" })).rejects.toThrow(/Unsupported document format/);
   });
 });

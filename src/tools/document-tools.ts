@@ -11,12 +11,6 @@ import { PdfArtifactDeduper } from "../retrieval/pdf-ingest";
 import { normalizeVaultPath } from "../vault/path";
 import { toolResult } from "./result";
 
-const ImportPdfParameters = Type.Object({
-  path: Type.String({ description: "vault-relative PDF path" }),
-  title: Type.Optional(Type.String({ description: "artifact title" })),
-  maxChunkChars: Type.Optional(Type.Number({ description: "chunk size (default 8000)" })),
-});
-
 const ImportDocumentParameters = Type.Object({
   path: Type.String({ description: "vault-relative source file" }),
   title: Type.Optional(Type.String({ description: "artifact title" })),
@@ -28,33 +22,8 @@ export function createDocumentTools(app: App, artifactStore: ToolArtifactStoreLi
   const pdfArtifacts = new PdfArtifactDeduper();
   const documentArtifacts = new DocumentArtifactDeduper();
   return [
-    createImportPdfTool(app.vault.adapter, artifactStore, pdfArtifacts),
     createImportDocumentTool(app.vault.adapter, artifactStore, pdfArtifacts, documentArtifacts),
   ];
-}
-
-function createImportPdfTool(
-  adapter: DataAdapter | undefined,
-  artifactStore: ToolArtifactStoreLike,
-  pdfArtifacts: PdfArtifactDeduper,
-): AgentTool<typeof ImportPdfParameters> {
-  return {
-    name: "import_pdf",
-    label: "Import PDF",
-    description:
-      "Extract text from a vault PDF into an artifact with citation anchors; " +
-      "returns the artifact citation, not the full text.",
-    parameters: ImportPdfParameters,
-    execute: async (_id, params) => {
-      if (!adapter) throw new Error("Vault adapter is unavailable.");
-      const path = normalizePdfPath(String(params.path ?? ""));
-      const result = await importPdf(adapter, artifactStore, pdfArtifacts, path, params);
-      return toolResult(formatImportPdfResult(result), {
-        ...sourceArtifactDetails(path, result),
-        pageCount: result.provenance.pageCount,
-      });
-    },
-  };
 }
 
 function createImportDocumentTool(
@@ -95,7 +64,7 @@ function createImportDocumentTool(
 
 type PdfImportResult = Awaited<ReturnType<PdfArtifactDeduper["write"]>>;
 
-/** The one PDF import path behind `import_pdf` and `import_document`. */
+/** The PDF import path of `import_document`. */
 async function importPdf(
   adapter: DataAdapter,
   artifactStore: ToolArtifactStoreLike,
@@ -109,13 +78,6 @@ async function importPdf(
     maxChunkChars: normalizeMaxChunkChars(params.maxChunkChars),
     data: await readSourceData(adapter, path),
   });
-}
-
-function normalizePdfPath(value: string): string {
-  const path = normalizeVaultPath(value);
-  if (!path) throw new Error("path is required.");
-  if (!path.toLowerCase().endsWith(".pdf")) throw new Error("import_pdf only supports .pdf files.");
-  return path;
 }
 
 function normalizeDocumentPath(value: string): string {

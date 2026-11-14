@@ -44,4 +44,4 @@ Observability sends trace data to the OTLP or Langfuse endpoint you configure. M
 
 ## Document import privacy
 
-The `import_pdf` and `import_document` tools extract text from vault files into plugin-managed source artifacts. The plugin stores the extracted text locally in the artifact system and sends it to the model only when the agent reads the artifact.
+The `import_document` tool extracts text from vault files into plugin-managed source artifacts. The plugin stores the extracted text locally in the artifact system and sends it to the model only when the agent reads the artifact.

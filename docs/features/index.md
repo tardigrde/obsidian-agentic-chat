@@ -35,7 +35,7 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 ## Document import
 
 - Import PDF, EPUB, DOCX, PPTX, and XLSX files into plugin-managed source artifacts.
-- `import_pdf` and `import_document` tools extract text with provenance and citation anchors.
+- The `import_document` tool extracts text with provenance and citation anchors.
 - Artifact chunks are inspectable with `read_artifact` and `search_artifact`.
 
 ## Extensibility

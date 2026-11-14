@@ -65,6 +65,7 @@ await $(".agentic-chat-info").waitForExist();
 | `/effort` | `src/ui/commands.ts#name: "effort"` | no committed check | `NONE` |
 | `/usage` | `src/ui/commands.ts#name: "usage"` | no committed check | `NONE` |
 | `/export` | `src/ui/commands.ts#name: "export"` | `test/session-export.test.ts#session export` (renderer only) | `partial` |
+| `import_pdf` tool removed | `src/tools/document-tools.ts#createDocumentTools` | `test/feature-cut-2026-11.test.ts#does not give the model the import_pdf alias` (unit only) | `partial` |
 | `/semantic-index` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /semantic-index and shows a retired hint` (unit only) | `partial` |
 | `/doctor` | `src/ui/commands.ts#name: "doctor"` | `test/runtime-diagnostics.test.ts#runtime diagnostics` (diagnostics only) | `partial` |
 | `/add-dir` and `/dirs` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |

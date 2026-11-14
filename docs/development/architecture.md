@@ -359,8 +359,8 @@ Invariants:
 
 - A persisted artifact keeps deduping: the current and legacy keys are derived
   the same way for every importer and every release.
-- `import_pdf` and `import_document` share one PDF import path and one cache,
-  so the same PDF imported through either tool is one artifact.
+- `import_document` has one PDF import path and one cache, so the same PDF
+  imported two times is one artifact.
 
 Gap:
 

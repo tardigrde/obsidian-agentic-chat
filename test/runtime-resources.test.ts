@@ -184,7 +184,6 @@ describe("agent runtime resources", () => {
         "vault_inspect",
         "write",
         "ask_user",
-        "import_pdf",
         "web_search",
         "fetch_url",
         "read_artifact",

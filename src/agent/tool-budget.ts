@@ -104,7 +104,7 @@ export function toolBudgetDropReason(toolName: string): string | null {
   if (WEB_TOOL_NAMES.has(toolName)) return "web egress";
   if (toolName.startsWith("mcp__")) return "remote MCP";
   if (toolName === "subagent") return "subagent delegation";
-  if (toolName === "import_pdf" || toolName === "import_document") return "document import";
+  if (toolName === "import_document") return "document import";
   if (ARTIFACT_TOOL_NAMES.has(toolName)) return "artifact lookup";
   return null;
 }

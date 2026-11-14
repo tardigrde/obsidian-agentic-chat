@@ -40,7 +40,6 @@ describe("tool budget", () => {
         "write",
         "ask_user",
         "get_active_note",
-        "import_pdf",
         "import_document",
         "web_search",
         "fetch_url",
@@ -66,7 +65,6 @@ describe("tool budget", () => {
       active: true,
       contextWindow: 500,
       droppedTools: [
-        { name: "import_pdf", reason: "document import" },
         { name: "import_document", reason: "document import" },
         { name: "web_search", reason: "web egress" },
         { name: "fetch_url", reason: "web egress" },

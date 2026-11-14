@@ -93,3 +93,11 @@ describe("feature cut 2026-11: semantic index", () => {
     expect(SETTINGS_SECTION_IDS).toContain("ignored-files");
   });
 });
+
+describe("feature cut 2026-11: document import", () => {
+  it("does not give the model the import_pdf alias", () => {
+    const names = parentToolNames();
+    expect(names).not.toContain("import_pdf");
+    expect(names).toContain("import_document");
+  });
+});
