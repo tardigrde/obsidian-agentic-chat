@@ -63,13 +63,3 @@ On desktop, **Models > Network proxy > HTTP proxy** lets plugin-owned model, mod
 
 On mobile, leave the plugin proxy fields empty and use the device, VPN, or network proxy.
 
-## Semantic retrieval setup
-
-If you want vector-based note search, enable **Settings > Agentic Chat > Advanced > Semantic retrieval**:
-
-1. Choose an embedding provider (OpenRouter, Ollama, or OpenAI-compatible).
-2. Enter the embedding model id.
-3. Set vector dimensions to match the model (default 1536).
-4. Use Ollama for fully local embeddings if you do not want note content sent to a remote provider.
-
-After setup, run `/semantic-index estimate` to preview note and token counts, then `/semantic-index start` to build the index for your current scope.

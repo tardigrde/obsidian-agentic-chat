@@ -9,7 +9,7 @@
 - Agent: permission mode, sampling, timeout, retries, system prompt, compaction,
   tool budget, approval gates, per-tool overrides.
 - Advanced: web access, MCP, observability, notifications, agent plugins,
-  subagents, semantic retrieval, ignored files.
+  subagents, ignored files.
 - The plugin stores secrets in Obsidian secret storage, not in `data.json`.
 
 ## How to get to it (user view)
@@ -20,8 +20,7 @@
   command opens the settings window. Then select the Agentic Chat tab.
 - On Obsidian 1.13 and later, the tab opens in a popout window.
 - Advanced renders its sections on one page in this order: web access, MCP,
-  observability, notifications, agent plugins, subagents, semantic retrieval,
-  ignored files.
+  observability, notifications, agent plugins, subagents, ignored files.
 
 ## Driving it with the probe harness
 
@@ -71,18 +70,14 @@ await closeAgenticChatSettings();
 | Agent plugins: Repair built-ins | `src/settings-tab-plugins.ts#pluginDefinitions` | no committed check | `NONE` |
 | Agent plugins: Plugins folder | `src/settings-tab-plugins.ts#row("Plugins folder"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
 | Agent plugins: plugin row toggle/open/remove | `src/settings-tab-plugins.ts#pluginRowDefinition` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` (row renders only) | `partial` |
-| Semantic retrieval: embedding controls | `src/settings-tab-retrieval.ts#retrievalDefinitions` | no committed check | `NONE` |
+| Semantic retrieval section removed | `src/settings-tabs.ts#SETTINGS_SECTION_IDS` | `test/feature-cut-2026-11.test.ts#has no semantic retrieval settings section` (unit only) | `partial` |
 | Settings at phone width | `src/settings.ts#sectionDefinition` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps the settings tab UI usable at phone width` | `covered` |
 | `getSettingDefinitions()` | `src/settings.ts#getSettingDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#agentic-chat settings UI` (three named pages render) | `covered` |
 | Settings: Request timeout (seconds) | `src/settings-tab-agent.ts#row("Request timeout (seconds)"` | `test/e2e/chaos/chaos-monkey.e2e.ts#applyPersistedSettings` (chaos run only) | `partial` |
 | Settings: System prompt | `src/settings-tab-agent.ts#row("System prompt"` | `test/settings-definitions.test.ts#puts the expected surrounding rows in each section group` (definition only) | `partial` |
 | Models: Gateway preset | `src/settings-tab-models.ts#row("Gateway preset"` | no committed check | `NONE` |
 | Models: Context window (tokens) | `src/settings-tab-models.ts#row("Context window (tokens)"` | no committed check | `NONE` |
-| Semantic retrieval: Embedding model | `src/settings-tab-retrieval.ts#row("Embedding model"` | no committed check | `NONE` |
-| Semantic retrieval: Vector dimensions | `src/settings-tab-retrieval.ts#row("Vector dimensions"` | no committed check | `NONE` |
-| Semantic retrieval: Batch size | `src/settings-tab-retrieval.ts#row("Batch size"` | no committed check | `NONE` |
-| Semantic retrieval: Max indexed characters per note | `src/settings-tab-retrieval.ts#row("Max indexed characters per note"` | no committed check | `NONE` |
-| Semantic retrieval: Ignore list | `src/settings-tab-retrieval.ts#row("Ignore list"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
+| Ignored files: Ignore list | `src/settings-tab-ignored-files.ts#row("Ignore list"` | `test/e2e/specs/settings-ui.e2e.ts#persists plugin folder and ignored globs through the Advanced tab` | `covered` |
 | Web: Fetched page character limit | `src/settings-tab-web.ts#row("Fetched page character limit"` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
 
 ## Gotchas

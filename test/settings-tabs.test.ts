@@ -11,7 +11,7 @@ describe("settings tab groups", () => {
     expect(SETTINGS_TABS.find((tab) => tab.id === "agent")?.sections).toEqual(["agent", "approval"]);
   });
 
-  it("groups MCP, web, observability, plugins, subagents, retrieval, and notifications under Advanced", () => {
+  it("groups MCP, web, observability, plugins, subagents, and notifications under Advanced", () => {
     const advanced = SETTINGS_TABS.find((tab) => tab.id === "advanced");
     expect(advanced?.sections).toEqual([
       "web",
@@ -20,7 +20,6 @@ describe("settings tab groups", () => {
       "notifications",
       "plugins",
       "subagents",
-      "retrieval",
       "ignored-files",
     ]);
   });

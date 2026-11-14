@@ -30,11 +30,10 @@ If something fails, find the symptom below. Run `/doctor` first for configuratio
 | Old turns disappear | Auto-compaction summarizes them at 80% context fill by default. Reopen large outputs through artifact references, or run `/compact [instructions]` to control what the summary keeps. |
 | Unknown context window disables compaction | The plugin could not match the model slug in the OpenRouter catalog. Set **Context window (tokens)** explicitly (`0` means auto-detect). |
 
-## Indexing and memory
+## Skills
 
 | Symptom | Fix |
 | --- | --- |
-| Semantic index build fails | Check that the embedding model id and vector dimensions match (default 1536). For a remote provider, check that its key is set. Embeddings reuse the **Models** tab secrets. See `/semantic-index status`. |
 | Edited skill files are not picked up | Restart Obsidian to rebuild the vault index. Dot-folders created outside Obsidian can be stale. **Repair built-ins** refreshes only the `builtins` package and restores `my-skills` if it is missing. |
 
 If these steps do not help, run `/status` (provider, model, mode, session, MCP) and include its output in the report.

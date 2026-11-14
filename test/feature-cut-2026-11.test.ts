@@ -6,6 +6,7 @@ import { createSubagentTool } from "../src/tools/subagent-tool";
 import { ReadMemo } from "../src/vault/read-memo";
 import { noopArtifactStore } from "./support/fake-adapter";
 import { DEFAULT_SETTINGS, mergeSettings } from "../src/settings-schema";
+import { SETTINGS_SECTION_IDS } from "../src/settings-tabs";
 import { resolveCommand, retiredCommandHint, SLASH_COMMANDS } from "../src/ui/commands";
 
 /**
@@ -72,5 +73,23 @@ describe("feature cut 2026-11: memory", () => {
 
   it("does not give the model the search_memory tool", () => {
     expect(parentToolNames()).not.toContain("search_memory");
+  });
+});
+
+describe("feature cut 2026-11: semantic index", () => {
+  it("does not register /semantic-index and shows a retired hint", () => {
+    expect(commandNames()).not.toContain("semantic-index");
+    expect(resolveCommand("semantic-index")).toBeUndefined();
+    expect(retiredCommandHint("semantic-index")).toContain("/semantic-index was removed");
+  });
+
+  it("drops the embeddings settings on load", () => {
+    expect(Object.keys(DEFAULT_SETTINGS)).not.toContain("embeddings");
+    expect(mergedKeys({ embeddings: { enabled: true, provider: "ollama" } })).not.toContain("embeddings");
+  });
+
+  it("has no semantic retrieval settings section", () => {
+    expect(SETTINGS_SECTION_IDS).not.toContain("retrieval");
+    expect(SETTINGS_SECTION_IDS).toContain("ignored-files");
   });
 });

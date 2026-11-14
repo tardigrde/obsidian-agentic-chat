@@ -45,7 +45,6 @@ Privacy controls are on by default.
 - **Ignore list.** Gitignore-style globs such as `Private/`, `*.secret.md`, and `**/diary/**` hide notes from the agent. Matching files report as not found to every tool, so the agent cannot read, list, search, or edit them.
 - **Sessions.** Each chat is stored as JSONL in the plugin folder and resumes on reload. Browse, search, reopen, rename, delete, export, or clear sessions. Titles come from the first prompt. Sessions work on mobile without SQLite or Node `fs`.
 - **Token and cost control.** Per-message and per-session token and USD usage (`/usage`, `/status`), a next-request cost estimate, a cost alert, a spend cap that blocks or aborts at the limit, and a context-window bar. Long sessions compact older turns into a summary before overflow; `/compact [instructions]` runs compaction on demand.
-- **Semantic search (opt-in).** A scoped vector index over notes, with OpenRouter, Ollama, or OpenAI-compatible embeddings. `/semantic-index` estimates, starts, cancels, or reports the index. A full-vault build requires `/semantic-index start vault --confirm-vault`.
 - **Document import.** `import_pdf` and `import_document` extract text from PDF, EPUB, DOCX, PPTX, and XLSX files into source artifacts with citation anchors. `read_artifact` and `search_artifact` inspect the chunks.
 - **Composer paths.** While the agent is idle, Enter sends. While it responds, Enter steers the turn (the text arrives after the current model turn finishes, or comes back to the composer if the run ends first), Shift+Enter inserts a newline, **Queue** holds the draft until the turn ends, and **Stop** then send replaces the turn. `/effort` sets reasoning effort.
 - **Observability (opt-in).** Send OTLP/HTTP traces to Langfuse or a generic OTLP endpoint. Metadata mode is the default and excludes prompts, note bodies, tool args, and tool results. See [Observability](#observability).
@@ -189,7 +188,7 @@ Use [BRAT](https://github.com/TfTHacker/obsidian42-brat) for pre-release builds 
 
 For any OpenAI-compatible gateway, set the provider to **OpenAI-compatible**. The **Gateway preset** shortcut fills common base URLs for OpenWebUI, LM Studio, vLLM, llama.cpp, Chutes, and Venice.ai. The transport stays generic, so other gateways work when you edit the Base URL and Model fields.
 
-The settings page has three tabs: Models, Agent, and Advanced. Advanced holds web access, MCP, observability, notifications, plugins, subagents, semantic retrieval, and the ignore list.
+The settings page has three tabs: Models, Agent, and Advanced. Advanced holds web access, MCP, observability, notifications, plugins, subagents, and the ignore list.
 
 On desktop behind a corporate proxy, set **Models → Network proxy → HTTP proxy** to a URL such as `http://host:port`. Plugin-owned OpenRouter/OpenAI-compatible chat requests, model browsing, web tools, MCP, and observability use it. The MCP and observability sections on the Advanced tab have optional overrides; leave them empty unless a server needs different routing. On mobile, keep the plugin proxy fields empty and use the device/VPN/network-level proxy path.
 
@@ -222,7 +221,6 @@ Then click the chat ribbon icon, or run *Agentic Chat: Open chat*.
 | `/undo` | Undo the last vault change the agent made. |
 | `/status` | Show provider, model, mode, session, MCP servers, and tools. |
 | `/usage` | Show token and cost totals. |
-| `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. |
 | `/export` | Save this conversation as a Markdown note. |
 | `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List commands. |

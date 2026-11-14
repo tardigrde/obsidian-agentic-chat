@@ -31,7 +31,6 @@ Use these terms:
 | MCP connection state | `McpHttpClient` per request | memory |
 | MCP OAuth refresh | `refreshFlights` in `src/mcp/oauth.ts` | memory plus `McpServerSettings.oauth` |
 | Plugin settings, save order, change listeners | `SettingsStore` | `data.json`; secrets in Obsidian secretStorage |
-| Semantic index writer | `SemanticIndexLeaseRegistry` and `SemanticIndexWorkflowController` | `index.json`, `index.json.bak` |
 | Plugin install | `installPackage` transaction | vault folders |
 | Open chat tabs, active index, tab strip | `ChatTabs` | memory |
 | Composer text, autocomplete, attachments, queued prompt | `ChatComposer` | per-tab working state |
@@ -208,7 +207,7 @@ event order in one place.
 
 Lifecycle: `onOpen` -> `buildLayout` -> one `ChatTabs` tab -> `initialize` the
 active session -> `onClose` disposes the autocomplete timer, menu, transcript,
-semantic index run, and every tab service. A tab switch parks the composer draft
+and every tab service. A tab switch parks the composer draft
 on the old tab, restores the new tab's draft, and re-renders transcript, chips,
 and chrome.
 
@@ -293,50 +292,6 @@ Invariants:
 - `plugin.settings` and the owner hold the same object; a load swaps both.
 - `mcp.json` owns plugin server shape; settings own client state. A refresh
   writes the changed state back through the owner.
-
-## Semantic index writer
-
-Owner: `bootstrapSemanticIndex` owns the write and its lease.
-`SemanticIndexWorkflowController` owns the run and its abort controller.
-`SemanticIndexLeaseRegistry` is the per-path arbiter; its
-`IndexedDbSemanticLeaseStore` is the cross-window arbiter.
-`bootstrapSemanticIndex` writes through `.tmp` and keeps `.bak`.
-`readSemanticIndexFile` serves the backup and repairs a stale `running` status
-on read.
-
-Invariants:
-
-- One writer per index path.
-- The writer acquires the lease before its first write and releases it in
-  `finally`.
-- Every persisted batch checks that the lease is still owned and renews it.
-- The lease TTL is 2 minutes. A live writer renews it on a timer every 30 s
-  and clears the timer on release. A crashed or reloaded owner's lease lapses
-  within the TTL, and a refused start reports the holder's age and the wait.
-- A complete target is backed up before any replacement.
-- An unreadable target is not replaced unless a complete backup exists.
-- A read serves the last complete index when the target is missing or corrupt.
-- A stale `running` status is reported as failed, not as a live run.
-
-Fixed by #232: closing the view aborts its index run.
-
-Fixed by #237: a shared IndexedDB lease serializes one path across windows. Keys
-use the vault base path on desktop (identical in every window) and a stable
-generated vault id on mobile, so two same-named vaults do not block each other. A crashed owner is recoverable after the TTL, and a lost renewal
-flips `isOwned` to false before the next persisted batch. If the shared store is
-unavailable, indexing fails closed instead of falling back to a single-window
-writer.
-
-Fixed by #249: `bootstrapSemanticIndex` acquires the lease itself and returns a
-lease result the UI can render. The UI no longer acquires the lease, so a direct
-caller cannot write without it.
-
-Gaps:
-
-- The plugin folder can hold `index.json`, `index.json.bak`, and
-  `index.json.tmp` at the same time.
-
-Next: define cleanup for stale `.tmp` and `.bak` files.
 
 ## Plugin install
 

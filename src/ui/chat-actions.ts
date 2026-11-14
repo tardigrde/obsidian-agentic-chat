@@ -10,15 +10,10 @@ import {
 import { runAgent, runInit, runSkill } from "./slash/agents";
 import type { SlashContext } from "./slash/context";
 import { runDoctor, showHelp, showStatus, showUsage } from "./slash/info";
-import {
-  runSemanticIndex,
-  semanticIndexWorkflowController,
-} from "./slash/index-commands";
 import { runEffort, switchModel } from "./slash/model";
 import { createWorkflowRenderer } from "./slash/renderer";
 import { createSessionWorkflow, exportSession, newSession, runCompact, runSessions, runUndo } from "./slash/session";
 import type { SessionWorkflowController } from "./session-workflow-controller";
-import type { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import type { WorkflowRenderer } from "./workflow-renderer";
 import { errorMessage } from "../utils/errors";
 
@@ -72,7 +67,6 @@ export class ChatActions {
       sessions: () => this.runSessions(argString),
       model: () => this.switchModel(),
       status: () => this.showStatus(),
-      "semantic-index": () => this.runSemanticIndex(argString),
       doctor: () => this.runDoctor(),
       usage: () => this.showUsage(),
       compact: () => this.runCompact(argString),
@@ -108,12 +102,6 @@ export class ChatActions {
 
   runAgent(name: string | undefined, task: string): Promise<void> {
     return runAgent(this.deps.slashCtx(), name, task);
-  }
-
-  runSemanticIndex(arg: string): Promise<void> { return runSemanticIndex(this.deps.slashCtx(), arg); }
-
-  semanticIndexWorkflowController(): SemanticIndexWorkflowController {
-    return semanticIndexWorkflowController(this.deps.slashCtx());
   }
 
   workflowRenderer(): WorkflowRenderer { return createWorkflowRenderer(this.deps.slashCtx()); }

@@ -34,12 +34,6 @@ import {
   healObservabilitySettings,
   type ObservabilitySettings,
 } from "./observability/settings";
-import {
-  DEFAULT_EMBEDDING_SETTINGS,
-  healEmbeddingSettings,
-  type EmbeddingProviderId,
-  type EmbeddingSettings,
-} from "./retrieval/embeddings";
 
 export interface AgenticChatSettings {
   provider: ProviderId;
@@ -109,8 +103,6 @@ export interface AgenticChatSettings {
   web: WebSettings;
   /** Remote MCP tools over HTTPS Streamable HTTP. Off by default — sends data off-device. */
   mcp: McpSettings;
-  /** Optional semantic retrieval index configuration. Uses existing provider secrets. */
-  embeddings: EmbeddingSettings;
   /** Optional opt-in OTLP/Langfuse observability export. */
   observability: ObservabilitySettings;
 }
@@ -212,14 +204,13 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
     ...DEFAULT_PROXY_SETTINGS,
     servers: [],
   },
-  embeddings: DEFAULT_EMBEDDING_SETTINGS,
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
 };
 
 /**
  * Numeric leaves the settings UI bounds. A persisted value outside its range is
  * treated like a wrong type and falls back to the default. Fields with a
- * dedicated heal (turn cap, embeddings, sampling) keep their own policy.
+ * dedicated heal (turn cap, sampling) keep their own policy.
  */
 const SETTING_NUMBER_RANGES: Readonly<Record<string, readonly [number, number]>> = {
   temperature: [0, 2],
@@ -278,7 +269,6 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     plugins: healedPlugins,
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     maxTurnsPerPrompt: healMaxTurns(stored?.maxTurnsPerPrompt),
-    embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(sanitizeProxyLeaves(stored?.observability)),
   };
   // Last pass: a persisted leaf whose type (or UI-bounded number) is invalid
@@ -378,7 +368,7 @@ function migrateLegacyPluginServers(healedMcp: McpSettings, healedPlugins: Plugi
 }
 
 /** Retired feature keys removed from persisted data.json on load. */
-const RETIRED_SETTING_KEYS = ["projects", "agentsFolder", "enableBuiltinAgents", "outputStyle"] as const;
+const RETIRED_SETTING_KEYS = ["projects", "agentsFolder", "enableBuiltinAgents", "outputStyle", "embeddings"] as const;
 
 /**
  * Merge the stored approval policy over the defaults. Unknown legacy keys such as
@@ -497,12 +487,6 @@ function healPluginsFolder(raw: unknown): string {
 
 function healProvider(stored: ProviderId | undefined): ProviderId {
   return healProviderId(stored, DEFAULT_SETTINGS.provider);
-}
-
-export function embeddingModelPlaceholder(provider: EmbeddingProviderId): string {
-  if (provider === "ollama") return DEFAULT_EMBEDDING_SETTINGS.ollamaModel;
-  if (provider === "openai-compatible") return "text-embedding-model";
-  return DEFAULT_EMBEDDING_SETTINGS.openrouterModel;
 }
 
 /** The model id used for the active provider. */

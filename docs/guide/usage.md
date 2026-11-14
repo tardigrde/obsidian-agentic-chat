@@ -29,11 +29,6 @@ Mutating calls follow the approval policy. When a call is set to **ask**, the pl
 
 Run `/compact [instructions]` to summarize older turns on demand. The optional instructions are passed to the compaction request, so important details survive the summary.
 
-## Semantic indexing
-
-Run `/semantic-index start` to build a vector index over your current scope (vault, folder, tag, or the active note's folder). A full-vault build requires `/semantic-index start vault --confirm-vault`. Check status with `/semantic-index status` and estimate cost with `/semantic-index estimate`.
-
-Cancel an in-progress build with `/semantic-index cancel`.
 
 ## Real-time controls
 

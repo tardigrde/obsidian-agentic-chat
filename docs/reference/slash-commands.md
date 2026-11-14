@@ -16,7 +16,6 @@ Slash commands run locally and are not sent to the model.
 | `/undo` | Undo the last vault change made by the agent. |
 | `/status` | Show provider, model, mode, session, MCP servers, and tools. |
 | `/usage` | Show token and cost totals. |
-| `/semantic-index [status\|estimate\|start\|cancel]` | Manage scoped semantic indexing. |
 | `/export` | Save this conversation as a Markdown note in the vault. |
 | `/doctor` | Audit runtime health, agent plugins, and MCP configs. |
 | `/help` | List available commands. |

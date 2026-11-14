@@ -65,9 +65,7 @@ await $(".agentic-chat-info").waitForExist();
 | `/effort` | `src/ui/commands.ts#name: "effort"` | no committed check | `NONE` |
 | `/usage` | `src/ui/commands.ts#name: "usage"` | no committed check | `NONE` |
 | `/export` | `src/ui/commands.ts#name: "export"` | `test/session-export.test.ts#session export` (renderer only) | `partial` |
-| `/semantic-index` | `src/ui/commands.ts#name: "semantic-index"` | `test/semantic-index-workflow-controller.test.ts#SemanticIndexWorkflowController` (workflow unit) | `partial` |
-| Repair a stale semantic index on read | `src/retrieval/semantic-index.ts#readSemanticIndexFile` | `test/semantic-index.test.ts#repairs a stale running state on load` | `partial` |
-| One semantic index writer across tabs | `src/retrieval/semantic-index.ts#acquireDurable` | `test/semantic-index-lease.test.ts#blocks a direct bootstrap call while another registry owns the path` | `partial` |
+| `/semantic-index` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /semantic-index and shows a retired hint` (unit only) | `partial` |
 | `/doctor` | `src/ui/commands.ts#name: "doctor"` | `test/runtime-diagnostics.test.ts#runtime diagnostics` (diagnostics only) | `partial` |
 | `/add-dir` and `/dirs` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
 | `/agent` | `src/ui/commands.ts#name: "agent"` | `test/command-dispatcher.test.ts#resolves a named subagent with the trimmed task` (unit only) | `partial` |

@@ -39,7 +39,6 @@ export default defineConfig({
           { text: "Context and control", link: "/features/context-and-control" },
           { text: "Agent plugins", link: "/features/agent-plugins" },
           { text: "Web, MCP, and observability", link: "/features/web-mcp-observability" },
-          { text: "Semantic retrieval", link: "/features/semantic-retrieval" },
         ],
       },
       {

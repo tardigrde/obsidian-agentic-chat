@@ -68,8 +68,7 @@ regression test.
 Run the focused fault and state-machine set on demand:
 
 ```bash
-npm test -- test/semantic-index.test.ts test/semantic-index-lease.test.ts \
-  test/session-swap-queue.test.ts test/session-manager.test.ts \
+npm test -- test/session-swap-queue.test.ts test/session-manager.test.ts \
   test/session-invariants.test.ts test/session-actions.test.ts \
   test/agent-service.test.ts
 ```

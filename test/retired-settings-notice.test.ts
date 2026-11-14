@@ -64,7 +64,7 @@ describe("retiredCommandHint", () => {
     expect(retiredCommandHint("followup")).toMatch(/Queue/);
     expect(retiredCommandHint("redirect")).toMatch(/Stop/);
     expect(retiredCommandHint("history")).toMatch(/\/sessions/);
-    expect(retiredCommandHint("semindex")).toMatch(/\/semantic-index/);
+    expect(retiredCommandHint("semindex")).toMatch(/semantic index is gone/);
     expect(retiredCommandHint("thinking")).toMatch(/\/effort/);
     expect(retiredCommandHint("add-dir")).toMatch(/Ignored files/);
   });
@@ -82,7 +82,7 @@ describe("retiredCommandHint", () => {
   });
 
   it("returns nothing for live commands, unknown words, and /plan (still a plain prompt)", () => {
-    for (const word of ["new", "sessions", "effort", "semantic-index", "help", "my-skill", "", "constructor", "plan"]) {
+    for (const word of ["new", "sessions", "effort", "help", "my-skill", "", "constructor", "plan"]) {
       expect(retiredCommandHint(word)).toBeUndefined();
     }
   });
