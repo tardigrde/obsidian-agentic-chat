@@ -84,7 +84,7 @@ export class ChatTabs {
   }
 
   findIndex(predicate: (tab: ChatTab, index: number) => boolean): number {
-    return this.tabs.findIndex(predicate);
+    return this.tabs.findIndex((tab, index) => predicate(tab, index));
   }
 
   /** Build a tab with its own agent service and a tab-aware event subscription. */
