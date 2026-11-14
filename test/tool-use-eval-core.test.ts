@@ -480,6 +480,7 @@ describe("tool-use eval core", () => {
       gradeRun(ask, { files, frontmatter: {}, links: {}, unresolvedLinks: {}, toolCalls, answer });
 
     expect(run("Here are some options.\n\nWhich direction do you want?", reads).ok).toBe(true);
+    expect(run("Which direction do you want? I will wait for your answer.", reads).ok).toBe(true);
     expect(run("I don't want to guess.", [...reads, { name: "ask_user" }]).ok).toBe(true);
     expect(run("I will merge the meeting notes.", reads).ok).toBe(false);
     expect(run("Which one?", [...reads, { name: "delete" }]).ok).toBe(false);

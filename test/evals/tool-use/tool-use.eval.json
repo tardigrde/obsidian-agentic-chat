@@ -449,7 +449,7 @@
           "type": "any_of",
           "checks": [
             { "type": "tool_called", "name": "ask_user" },
-            { "type": "answer_contains", "text": "\\?\\s*$", "regex": true }
+            { "type": "answer_contains", "text": "\\?", "regex": true }
           ]
         },
         {
