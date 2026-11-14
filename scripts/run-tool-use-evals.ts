@@ -7,6 +7,7 @@ import { applyEnvFile } from "./live-env.mjs";
 import { generateVault } from "./eval/vault-generator";
 import type {
   CaseSummary,
+  OverallSummary,
   RunPricing,
   RunUsage,
   ToolUseBudgetCaps,
@@ -69,6 +70,9 @@ interface CaseRunEntry {
   ms: number;
   usage: RunUsage;
   modelCalls: number;
+  toolCalls: number;
+  /** Share of checks that passed; a run with no checks scores 0. */
+  partialScore: number;
   usd: number;
   checks: ToolUseCheckResult[];
   error?: string;
@@ -89,6 +93,7 @@ interface ToolUseSummary {
   durationMs: number;
   prices: RunPricing;
   budget: { caps: ToolUseBudgetCaps; used: { usd: number; modelCalls: number; tokens: number }; exceeded: string | null };
+  overall: OverallSummary;
   cases: CaseSummaryWithRuns[];
 }
 
@@ -201,12 +206,18 @@ async function main(): Promise<void> {
 
   const caseSummaries: CaseSummaryWithRuns[] = cases.map((evalCase) => {
     const runs = caseEntries.get(evalCase.id) ?? [];
-    const summary = core.summarizeCase(runs.map((run) => ({
-      status: run.status,
-      usage: run.usage,
-      usd: run.usd,
-      ms: run.ms,
-    })));
+    const summary = core.summarizeCase(
+      runs.map((run) => ({
+        status: run.status,
+        usage: run.usage,
+        usd: run.usd,
+        ms: run.ms,
+        modelCalls: run.modelCalls,
+        toolCalls: run.toolCalls,
+        partialScore: run.partialScore,
+      })),
+      { maxToolCalls: evalCase.expected?.maxToolCalls },
+    );
     return { id: evalCase.id, ...summary, runResults: runs };
   });
 
@@ -225,6 +236,7 @@ async function main(): Promise<void> {
     durationMs: finishedAt.getTime() - startedAt.getTime(),
     prices,
     budget: { caps: budget, used: tracker.totals(), exceeded: tracker.exceeded() },
+    overall: core.summarizeOverall(caseSummaries),
     cases: caseSummaries,
   };
 
@@ -256,6 +268,8 @@ function gradeRunFile(
       ms: 0,
       usage: {},
       modelCalls: 0,
+      toolCalls: 0,
+      partialScore: 0,
       usd: 0,
       checks: [],
       error: runFile.error,
@@ -278,6 +292,8 @@ function gradeRunFile(
     ms: runFile.ms,
     usage: runFile.usage,
     modelCalls: runFile.modelCalls,
+    toolCalls: runFile.toolCalls.length,
+    partialScore: grade.checks.length > 0 ? grade.checks.filter((check) => check.ok).length / grade.checks.length : 0,
     usd,
     checks: grade.checks,
     error: runFile.error,
@@ -456,6 +472,7 @@ function printDryRun(options: {
 }
 
 function formatReport(summary: ToolUseSummary): string {
+  const overall = summary.overall;
   const lines = [
     `# Tool-use eval ${summary.runId}`,
     "",
@@ -465,12 +482,21 @@ function formatReport(summary: ToolUseSummary): string {
     `Budget used: $${summary.budget.used.usd.toFixed(6)}, ${summary.budget.used.modelCalls} model call(s), ${summary.budget.used.tokens} token(s)`,
     `Budget exceeded: ${summary.budget.exceeded ?? "no"}`,
     "",
-    "| Case | Pass rate | Mean tokens | USD | Mean seconds |",
-    "|---|---|---|---|---|",
+    "## Overall",
+    "",
+    `- Cases: ${overall.cases}; executed runs: ${overall.runs}`,
+    `- pass^K: ${percent(overall.passAtK)}; mean pass@1: ${percent(overall.meanPassAt1)}; partial score: ${overall.partialScore.toFixed(3)}`,
+    `- Cost: $${overall.totalUsd.toFixed(6)} total, $${overall.meanUsd.toFixed(6)} per run`,
+    `- Tokens: ${Math.round(overall.meanTokens)} per run`,
+    `- Calls: ${overall.meanModelCalls.toFixed(1)} model, ${overall.meanToolCalls.toFixed(1)} tool per run`,
+    `- Median case time: ${(overall.medianCaseMs / 1000).toFixed(1)}s`,
+    "",
+    "| Case | Pass rate | pass^K | Partial score | Mean model calls | Mean tool calls | Over budget | Median seconds | Mean seconds | Mean tokens | USD |",
+    "|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   for (const entry of summary.cases) {
     lines.push(
-      `| ${entry.id} | ${entry.passed}/${entry.executed} | ${Math.round(entry.meanTokens)} | $${entry.totalUsd.toFixed(6)} | ${(entry.meanMs / 1000).toFixed(1)} |`,
+      `| ${entry.id} | ${entry.passed}/${entry.executed} | ${entry.passAtK} | ${entry.partialScore.toFixed(3)} | ${entry.meanModelCalls.toFixed(1)} | ${entry.meanToolCalls.toFixed(1)} | ${entry.overBudgetRuns} | ${(entry.medianMs / 1000).toFixed(1)} | ${(entry.meanMs / 1000).toFixed(1)} | ${Math.round(entry.meanTokens)} | $${entry.totalUsd.toFixed(6)} |`,
     );
   }
   lines.push("", "## Per-run check failures", "");
@@ -491,17 +517,19 @@ function formatReport(summary: ToolUseSummary): string {
 }
 
 function formatConsoleSummary(summary: ToolUseSummary, summaryPath: string, reportPath: string): string {
-  const passed = summary.cases.reduce((total, entry) => total + entry.passed, 0);
-  const executed = summary.cases.reduce((total, entry) => total + entry.executed, 0);
+  const overall = summary.overall;
   const lines = [
     `Tool-use eval: ${summary.runId}`,
-    `Cases: ${summary.cases.length}; runs: ${executed} executed; passed: ${passed}/${executed}`,
+    `Cases: ${summary.cases.length}; runs: ${overall.runs} executed; pass^K: ${percent(overall.passAtK)}; mean pass@1: ${percent(overall.meanPassAt1)}`,
   ];
   for (const entry of summary.cases) {
-    lines.push(`- ${entry.id}: ${entry.passed}/${entry.executed} (mean ${Math.round(entry.meanTokens)} tokens, $${entry.totalUsd.toFixed(6)}, ${(entry.meanMs / 1000).toFixed(1)}s)`);
+    lines.push(
+      `- ${entry.id}: ${entry.passed}/${entry.executed} (pass^K ${entry.passAtK}, partial ${entry.partialScore.toFixed(2)}, ${entry.meanModelCalls.toFixed(1)} model calls, ${entry.meanToolCalls.toFixed(1)} tool calls, ${(entry.medianMs / 1000).toFixed(1)}s median, ${Math.round(entry.meanTokens)} tokens, $${entry.totalUsd.toFixed(6)})`,
+    );
   }
   lines.push(
     `Totals: $${summary.budget.used.usd.toFixed(6)}, ${summary.budget.used.modelCalls} model call(s), ${summary.budget.used.tokens} token(s)`,
+    `Overall: $${overall.meanUsd.toFixed(6)}/run, ${Math.round(overall.meanTokens)} tokens/run, ${overall.meanModelCalls.toFixed(1)} model calls/run, ${overall.meanToolCalls.toFixed(1)} tool calls/run, ${(overall.medianCaseMs / 1000).toFixed(1)}s median case`,
     `Summary: ${summaryPath}`,
     `Report: ${reportPath}`,
   );
@@ -550,6 +578,29 @@ async function compareCommand(input: [string, string]): Promise<void> {
   process.stdout.write(formatComparison(baseline, candidate));
 }
 
+interface CaseComparison {
+  passRate?: number;
+  passAtK?: number;
+  partialScore?: number;
+  meanTokens?: number;
+  meanUsd?: number;
+  meanModelCalls?: number;
+  meanToolCalls?: number;
+  medianMs?: number;
+}
+
+interface OverallComparison {
+  passAtK?: number;
+  meanPassAt1?: number;
+  partialScore?: number;
+  totalUsd?: number;
+  meanUsd?: number;
+  meanTokens?: number;
+  meanModelCalls?: number;
+  meanToolCalls?: number;
+  medianCaseMs?: number;
+}
+
 function formatComparison(baseline: unknown, candidate: unknown): string {
   const before = summaryCases(baseline);
   const after = summaryCases(candidate);
@@ -557,36 +608,117 @@ function formatComparison(baseline: unknown, candidate: unknown): string {
   const lines = [
     "# Tool-use eval comparison",
     "",
-    "| Case | Pass rate | Mean tokens | Mean USD |",
+    "## Overall",
+    "",
+    "| Metric | Baseline | Candidate | Change |",
     "|---|---|---|---|",
+    ...overallRows(overallSummary(baseline), overallSummary(candidate)),
+    "",
+    "## Cases",
+    "",
+    "| Case | Pass rate | pass^K | Partial score | Median s | Mean tokens | Mean USD | Flags |",
+    "|---|---|---|---|---|---|---|---|",
   ];
   for (const id of ids) {
     const left = before.get(id) ?? {};
     const right = after.get(id) ?? {};
     lines.push(
-      `| ${id} | ${formatDelta(left.passRate, right.passRate, percent)} | ${formatDelta(left.meanTokens, right.meanTokens, whole)} | ${formatDelta(left.meanUsd, right.meanUsd, usd)} |`,
+      `| ${id} | ${formatDelta(left.passRate, right.passRate, percent)} | ${formatDelta(left.passAtK, right.passAtK, whole)} | ${formatDelta(left.partialScore, right.partialScore, ratio)} | ${formatDelta(left.medianMs, right.medianMs, seconds)} | ${formatDelta(left.meanTokens, right.meanTokens, whole)} | ${formatDelta(left.meanUsd, right.meanUsd, usd)} | ${caseFlags(left, right)} |`,
     );
   }
   return `${lines.join("\n")}\n`;
 }
 
-function summaryCases(input: unknown): Map<string, { passRate?: number; meanTokens?: number; meanUsd?: number }> {
-  const output = new Map<string, { passRate?: number; meanTokens?: number; meanUsd?: number }>();
+function overallRows(before: OverallComparison, after: OverallComparison): string[] {
+  const rows: Array<[string, number | undefined, number | undefined, (value: number) => string]> = [
+    ["pass^K", before.passAtK, after.passAtK, percent],
+    ["mean pass@1", before.meanPassAt1, after.meanPassAt1, percent],
+    ["partial score", before.partialScore, after.partialScore, ratio],
+    ["total cost", before.totalUsd, after.totalUsd, usd],
+    ["mean cost", before.meanUsd, after.meanUsd, usd],
+    ["mean tokens", before.meanTokens, after.meanTokens, whole],
+    ["mean model calls", before.meanModelCalls, after.meanModelCalls, oneDecimal],
+    ["mean tool calls", before.meanToolCalls, after.meanToolCalls, oneDecimal],
+    ["median time", before.medianCaseMs, after.medianCaseMs, seconds],
+  ];
+  return rows.map(
+    ([label, left, right, format]) =>
+      `| ${label} | ${left === undefined ? "(missing)" : format(left)} | ${right === undefined ? "(missing)" : format(right)} | ${formatChange(left, right, format)} |`,
+  );
+}
+
+function formatChange(
+  before: number | undefined,
+  after: number | undefined,
+  format: (value: number) => string,
+): string {
+  if (before === undefined || after === undefined) return "(missing)";
+  const delta = after - before;
+  if (delta === 0) return "0";
+  return `${delta > 0 ? "+" : "-"}${format(Math.abs(delta))}`;
+}
+
+/**
+ * A flag is a warning, not a verdict: cost and time regressions over 20% and a
+ * drop in the pass rate. The command stays read-only and always exits 0.
+ */
+function caseFlags(before: CaseComparison, after: CaseComparison): string {
+  const flags: string[] = [];
+  if (before.meanUsd !== undefined && before.meanUsd > 0 && after.meanUsd !== undefined) {
+    const growth = (after.meanUsd - before.meanUsd) / before.meanUsd;
+    if (growth > 0.2) flags.push(`cost +${Math.round(growth * 100)}%`);
+  }
+  if (before.medianMs !== undefined && before.medianMs > 0 && after.medianMs !== undefined) {
+    const growth = (after.medianMs - before.medianMs) / before.medianMs;
+    if (growth > 0.2) flags.push(`time +${Math.round(growth * 100)}%`);
+  }
+  if (before.passRate !== undefined && after.passRate !== undefined && after.passRate < before.passRate) {
+    flags.push(`pass -${Math.round((before.passRate - after.passRate) * 100)}`);
+  }
+  return flags.length > 0 ? flags.join("; ") : "-";
+}
+
+function summaryCases(input: unknown): Map<string, CaseComparison> {
+  const output = new Map<string, CaseComparison>();
   if (!isRecord(input) || !Array.isArray(input.cases)) return output;
   for (const entry of input.cases) {
     if (!isRecord(entry) || typeof entry.id !== "string") continue;
     output.set(entry.id, {
       passRate: numberValue(entry.passRate),
+      passAtK: numberValue(entry.passAtK),
+      partialScore: numberValue(entry.partialScore),
       meanTokens: numberValue(entry.meanTokens),
       meanUsd: numberValue(entry.meanUsd),
+      meanModelCalls: numberValue(entry.meanModelCalls),
+      meanToolCalls: numberValue(entry.meanToolCalls),
+      medianMs: numberValue(entry.medianMs),
     });
   }
   return output;
 }
 
+function overallSummary(input: unknown): OverallComparison {
+  if (!isRecord(input) || !isRecord(input.overall)) return {};
+  const overall = input.overall;
+  return {
+    passAtK: numberValue(overall.passAtK),
+    meanPassAt1: numberValue(overall.meanPassAt1),
+    partialScore: numberValue(overall.partialScore),
+    totalUsd: numberValue(overall.totalUsd),
+    meanUsd: numberValue(overall.meanUsd),
+    meanTokens: numberValue(overall.meanTokens),
+    meanModelCalls: numberValue(overall.meanModelCalls),
+    meanToolCalls: numberValue(overall.meanToolCalls),
+    medianCaseMs: numberValue(overall.medianCaseMs),
+  };
+}
+
 const percent = (value: number): string => `${Math.round(value * 100)}%`;
 const whole = (value: number): string => String(Math.round(value));
 const usd = (value: number): string => `$${value.toFixed(6)}`;
+const ratio = (value: number): string => value.toFixed(3);
+const oneDecimal = (value: number): string => value.toFixed(1);
+const seconds = (value: number): string => `${(value / 1000).toFixed(1)}s`;
 
 function formatDelta(before: number | undefined, after: number | undefined, format: (value: number) => string): string {
   if (before === undefined && after === undefined) return "(missing)";
