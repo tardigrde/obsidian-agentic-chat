@@ -18,6 +18,7 @@
     "worktree:cleanup": "node scripts/worktree.mjs cleanup",
     "test:e2e:dogfood": "node --import tsx scripts/run-dogfood-e2e.ts",
     "eval:agentic": "node --import tsx scripts/run-agentic-evals.ts",
+    "eval:tool-use": "node --import tsx scripts/run-tool-use-evals.ts",
     "eval:agentic:dogfood": "node --import tsx scripts/run-agentic-evals.ts --run-scripted",
     "eval:agentic:judge": "node --import tsx scripts/run-agentic-evals.ts --suite test/evals/agentic-chat/judge.eval.json --run-judge",
     "eval:agentic:compare": "node --import tsx scripts/compare-agentic-evals.ts",

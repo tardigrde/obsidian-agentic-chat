@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "name": "tool-use",
+  "description": "Live tool-choice and vault-state evals graded by code, not by a judge model.",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "runsPerCase": 3,
+  "budget": {
+    "maxUsd": 1.0,
+    "maxModelCalls": 300,
+    "maxTokens": 3000000
+  },
+  "turn": {
+    "timeoutMs": 180000,
+    "maxTurnsPerPrompt": 15
+  },
+  "cases": [
+    {
+      "id": "none.arithmetic",
+      "prompt": "What is 17 times 3? Answer with the number only.",
+      "seed": {
+        "files": {}
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "answer_contains",
+          "text": "^\\D*51\\D*$",
+          "regex": true
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 0
+        }
+      ]
+    },
+    {
+      "id": "edit.find-and-edit",
+      "prompt": "The Atlas project deadline moved to March 10. Update my note.",
+      "seed": {
+        "files": {
+          "Projects/Atlas.md": "# Atlas\n\nProject note for Atlas.\n\nDeadline: March 3\n\nOwner: Ada\n",
+          "Projects/Borealis.md": "# Borealis\n\nProject note for Borealis.\n\nDeadline: April 9\n\nOwner: Ben\n",
+          "Inbox.md": "# Inbox\n\n- Review notes\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "file_contains",
+          "path": "Projects/Atlas.md",
+          "text": "March 10"
+        },
+        {
+          "type": "file_not_contains",
+          "path": "Projects/Atlas.md",
+          "text": "March 3"
+        },
+        {
+          "type": "unchanged",
+          "path": "Projects/Borealis.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Inbox.md"
+        },
+        {
+          "type": "tool_called",
+          "name": "edit"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "write"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "delete"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 6
+        }
+      ]
+    },
+    {
+      "id": "rename.keep-links",
+      "prompt": "Rename my Atlas project note to Atlas Launch, and keep every link to it working.",
+      "seed": {
+        "files": {
+          "Projects/Atlas.md": "# Atlas\n\nProject note for Atlas.\n\nDeadline: March 3\n",
+          "Index.md": "# Index\n\n- [[Atlas]]\n",
+          "Weekly.md": "# Weekly\n\nSee [[Projects/Atlas|the Atlas project]].\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "file_exists",
+          "path": "Projects/Atlas Launch.md"
+        },
+        {
+          "type": "file_absent",
+          "path": "Projects/Atlas.md"
+        },
+        {
+          "type": "link_resolves",
+          "from": "Index.md",
+          "to": "Projects/Atlas Launch.md"
+        },
+        {
+          "type": "link_resolves",
+          "from": "Weekly.md",
+          "to": "Projects/Atlas Launch.md"
+        },
+        {
+          "type": "tool_called",
+          "name": "rename"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "write"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "delete"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 6
+        }
+      ]
+    }
+  ]
+}
