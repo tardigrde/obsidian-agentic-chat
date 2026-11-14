@@ -41,7 +41,6 @@ function scriptedTurns(): ScriptedTurn[] {
       { id: "o-props", name: "vault_inspect", args: { action: "properties", path: "Messy/Home.md" } },
       { id: "o-read", name: "read", args: { path: "Odd Files/Invalid Frontmatter.md" } },
       { id: "o-read-range", name: "read", args: { path: "Odd Files/Invalid Frontmatter.md", startLine: 1, endLine: 3 } },
-      { id: "o-memory", name: "search_memory", args: { query: "DevOps knowledge-base", scope: "vault", maxResults: 3 } },
       {
         id: "o-write",
         name: "write",

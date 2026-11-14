@@ -30,7 +30,6 @@ Mutating tools follow the approval policy. `/undo` reverts the latest undoable v
 | Tool | What it does |
 | --- | --- |
 | `ask_user` | Inline clarification prompt. The answer steers the run. |
-| `search_memory` | Explicit long-term memory lookup. Never automatic. See [Memory](../features/memory.md). |
 | `subagent` | Delegates recon to the read-only Explorer, one level deep. |
 | `load_skill` / `unload_skill` / `read_skill` | Load a skill body only when the agent needs it. |
 | `create_skill` | Create a skill package. Defaults to ask. YOLO does not auto-approve it. `/undo` cannot revert it. |

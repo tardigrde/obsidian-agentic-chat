@@ -10,7 +10,6 @@ import {
 } from "../plugins/loader";
 import { createVaultTools } from "../tools/vault-tools";
 import { createWebTools } from "../tools/web-tools";
-import { createMemoryTools } from "../tools/memory-tools";
 import { createDocumentTools } from "../tools/document-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
@@ -224,7 +223,6 @@ export function buildAgentParentTools(options: {
   const tools = [
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
     ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
-    ...createMemoryTools(options.app),
     ...createDocumentTools(options.app, options.artifactStore),
     ...createWebTools(options.settings.web, options.webFetch, options.artifactStore),
     ...createToolArtifactTools(options.artifactStore),

@@ -16,7 +16,6 @@ type Dispatcher = { handleSlashCommand: (raw: string) => Promise<boolean> };
  */
 function makeView(skills: Array<{ name: string }> = []) {
   const sessionsRun = vi.fn();
-  const memoryRun = vi.fn();
   const actions = new ChatActions({
     slashCtx: () => ({}) as SlashContext,
     service: () => ({ getSkills: () => skills }) as unknown as AgentService,
@@ -46,10 +45,9 @@ function makeView(skills: Array<{ name: string }> = []) {
     showRetiredCommandHint: vi.spyOn(actions, "showRetiredCommandHint").mockReturnValue(false),
   };
   vi.spyOn(actions, "runSessions").mockImplementation((arg) => sessionsRun(arg));
-  vi.spyOn(actions, "runMemory").mockImplementation((arg) => memoryRun(arg));
   const view = Object.assign(Object.create(ChatView.prototype), {}) as Dispatcher;
   Object.defineProperty(view, "actions", { value: actions });
-  return { view, stubs, sessionsRun, memoryRun };
+  return { view, stubs, sessionsRun };
 }
 
 // Command name -> [handler key, expected arguments] for the input `/<name> a b`.
@@ -59,7 +57,6 @@ const ROUTES: Record<string, [string, unknown[]]> = {
   sessions: ["sessionsRun", ["a b"]],
   model: ["switchModel", []],
   status: ["showStatus", []],
-  memory: ["memoryRun", ["a b"]],
   "semantic-index": ["runSemanticIndex", ["a b"]],
   doctor: ["runDoctor", []],
   usage: ["showUsage", []],
@@ -79,8 +76,8 @@ describe("slash command dispatch", () => {
 
   for (const [name, [handler, args]] of Object.entries(ROUTES)) {
     it(`/${name} reaches ${handler}`, async () => {
-      const { view, stubs, sessionsRun, memoryRun } = makeView();
-      const all: Stubs = { ...stubs, sessionsRun, memoryRun };
+      const { view, stubs, sessionsRun } = makeView();
+      const all: Stubs = { ...stubs, sessionsRun };
       await expect(view.handleSlashCommand(`/${name} a b`)).resolves.toBe(true);
       expect(all[handler]).toHaveBeenCalledTimes(1);
       expect(all[handler]).toHaveBeenCalledWith(...args);

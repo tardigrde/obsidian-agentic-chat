@@ -32,14 +32,6 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 - Real-time composer control: Enter steers the active turn, **Queue** holds a draft until the turn ends, and **Stop** then send replaces the turn.
 - Reasoning effort control through `/effort`.
 
-## Memory
-
-- Long-term memory with kinds: preference, fact, instruction, summary.
-- Scopes: global, vault.
-- Add memories with `/memory add`.
-- Search memories with the `search_memory` tool.
-- Export or clear memory stores.
-
 ## Semantic retrieval
 
 - Opt-in semantic index over vault notes.

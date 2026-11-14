@@ -94,11 +94,6 @@
           "severity": "error"
         },
         {
-          "type": "required_tool_started",
-          "name": "search_memory",
-          "severity": "error"
-        },
-        {
           "type": "max_user_message_chars",
           "max": 2500,
           "severity": "error"

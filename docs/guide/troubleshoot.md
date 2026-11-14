@@ -34,7 +34,6 @@ If something fails, find the symptom below. Run `/doctor` first for configuratio
 
 | Symptom | Fix |
 | --- | --- |
-| The agent does not recall a stored memory | The plugin never injects memories automatically. The agent must call `search_memory`. Ask directly ("What do you remember about...") or check `/memory review`. |
 | Semantic index build fails | Check that the embedding model id and vector dimensions match (default 1536). For a remote provider, check that its key is set. Embeddings reuse the **Models** tab secrets. See `/semantic-index status`. |
 | Edited skill files are not picked up | Restart Obsidian to rebuild the vault index. Dot-folders created outside Obsidian can be stale. **Repair built-ins** refreshes only the `builtins` package and restores `my-skills` if it is missing. |
 

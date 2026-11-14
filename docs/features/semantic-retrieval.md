@@ -17,7 +17,6 @@ A full-vault index requires `/semantic-index start vault --confirm-vault`. The p
 | Exact names, links, frontmatter | `vault_inspect` keyword search (free, always on) |
 | "Notes about X" phrased differently than the notes | Semantic index (uses embedding calls) |
 | Standing rules the agent must always follow | `AGENTS.md` through `/init` (loaded every turn) |
-| Facts across sessions | `/memory add` (explicit recall only) |
 
 ## Setup
 

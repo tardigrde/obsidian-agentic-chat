@@ -11,15 +11,12 @@ import { runAgent, runInit, runSkill } from "./slash/agents";
 import type { SlashContext } from "./slash/context";
 import { runDoctor, showHelp, showStatus, showUsage } from "./slash/info";
 import {
-  createMemoryWorkflow,
-  runMemory,
   runSemanticIndex,
   semanticIndexWorkflowController,
 } from "./slash/index-commands";
 import { runEffort, switchModel } from "./slash/model";
 import { createWorkflowRenderer } from "./slash/renderer";
 import { createSessionWorkflow, exportSession, newSession, runCompact, runSessions, runUndo } from "./slash/session";
-import type { MemoryWorkflowController } from "./memory-workflow-controller";
 import type { SessionWorkflowController } from "./session-workflow-controller";
 import type { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import type { WorkflowRenderer } from "./workflow-renderer";
@@ -75,7 +72,6 @@ export class ChatActions {
       sessions: () => this.runSessions(argString),
       model: () => this.switchModel(),
       status: () => this.showStatus(),
-      memory: () => this.runMemory(argString),
       "semantic-index": () => this.runSemanticIndex(argString),
       doctor: () => this.runDoctor(),
       usage: () => this.showUsage(),
@@ -92,8 +88,6 @@ export class ChatActions {
   newSession(): Promise<void> { return newSession(this.deps.slashCtx()); }
 
   runSessions(arg: string): unknown { return runSessions(this.deps.slashCtx(), arg); }
-
-  runMemory(arg: string): unknown { return runMemory(this.deps.slashCtx(), arg); }
 
   switchModel(): Promise<void> { return switchModel(this.deps.slashCtx()); }
 
@@ -121,8 +115,6 @@ export class ChatActions {
   semanticIndexWorkflowController(): SemanticIndexWorkflowController {
     return semanticIndexWorkflowController(this.deps.slashCtx());
   }
-
-  createMemoryWorkflow(): MemoryWorkflowController { return createMemoryWorkflow(this.deps.slashCtx()); }
 
   workflowRenderer(): WorkflowRenderer { return createWorkflowRenderer(this.deps.slashCtx()); }
 

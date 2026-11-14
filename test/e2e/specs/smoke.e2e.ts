@@ -126,53 +126,6 @@ describe("agentic-chat smoke", function () {
     );
   });
 
-  it("forgets a saved memory through the memory manager", async function () {
-    await browser.executeObsidian(async ({ app }) => {
-      const adapter = app.vault.adapter as unknown as {
-        exists: (path: string) => Promise<boolean>;
-        mkdir: (path: string) => Promise<void>;
-        write: (path: string, data: string) => Promise<void>;
-      };
-      const memoryDir = `${app.vault.configDir}/plugins/agentic-chat/memory`;
-      if (!(await adapter.exists(memoryDir))) await adapter.mkdir(memoryDir);
-      const memoryPath = `${memoryDir}/memories.jsonl`;
-      await adapter.write(
-        memoryPath,
-        `${JSON.stringify({
-          id: "mem-e2e",
-          kind: "preference",
-          scope: "vault",
-          text: "The user prefers concise answers in e2e.",
-          enabled: true,
-          createdAt: "2026-06-26T00:00:00.000Z",
-        })}\n`,
-      );
-    });
-
-    await runSlashCommand("/memory manage");
-    await $(".agentic-chat-action-list").waitForExist();
-    await browser.execute(() => {
-      const row = Array.from(document.querySelectorAll<HTMLButtonElement>(".agentic-chat-action-row")).find((item) =>
-        item.innerText.includes("The user prefers concise answers in e2e."),
-      );
-      if (!row) throw new Error("memory row not found");
-      row.click();
-    });
-    await browser.waitUntil(async () => (await latestInfoText()).includes("Forgotten"), {
-      timeout: 5_000,
-      timeoutMsg: "memory forget confirmation did not render",
-    });
-
-    const saved = await browser.executeObsidian(async ({ app }) => {
-      const raw = await app.vault.adapter.read(
-        `${app.vault.configDir}/plugins/agentic-chat/memory/memories.jsonl`,
-      );
-      return JSON.parse(raw.trim()) as { enabled?: boolean; forgottenAt?: string };
-    });
-    expect(saved.enabled).toBe(false);
-    expect(saved.forgottenAt).toBeTruthy();
-  });
-
   it("renders the context-window arc gauge in the toolbar (NB1)", async function () {
     // The fill element stays a <progress> (.agentic-chat-ctx-bar); its arc look is
     // pure CSS. It exists in the toolbar from first render (hidden until a fill is

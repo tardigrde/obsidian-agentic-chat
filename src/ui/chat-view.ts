@@ -775,7 +775,6 @@ export class ChatView extends ItemView {
       setComposerValue: (text) => view.setComposerValue(text),
       createSessionWorkflow: () => view.actions.createSessionWorkflow(),
       createSessionActivationCoordinator: () => view.createSessionActivationCoordinator(),
-      createMemoryWorkflow: () => view.actions.createMemoryWorkflow(),
       semanticIndexWorkflowController: () => view.actions.semanticIndexWorkflowController(),
       workflowRenderer: () => view.actions.workflowRenderer(),
       clearAllSessions: () => view.actions.clearAllSessions(),

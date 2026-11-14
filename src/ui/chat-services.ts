@@ -1,4 +1,3 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { App } from "obsidian";
 import { createProxiedFetcher } from "../mcp/fetcher";
 import { loadVaultRetrievalDocuments } from "../retrieval/relevant-notes";
@@ -8,19 +7,13 @@ import {
   embeddingConfigFromSettings,
 } from "../retrieval/embeddings";
 import { semanticIndexPath } from "../retrieval/semantic-index";
-import { EXPORT_FOLDER } from "../session/export";
-import type { SessionInfo } from "../session/session-manager";
 import type { AgenticChatSettings } from "../settings-schema";
-import { memoryPathForApp } from "../tools/memory-tools";
-import { writeVaultFile } from "../vault/storage";
-import { MemoryWorkflowController } from "./memory-workflow-controller";
 import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import type { WorkflowRenderer } from "./workflow-renderer";
 
 /**
- * Builds the retrieval and memory workflows the chat view runs. The view owns
- * their lifetimes; this module owns how they reach the vault, providers, and
- * export folder.
+ * Builds the retrieval workflow the chat view runs. The view owns its
+ * lifetime; this module owns how it reaches the vault and the providers.
  */
 
 export interface SemanticIndexWorkflowHost {
@@ -62,30 +55,5 @@ export function createSemanticIndexWorkflowController(
     createEmbedder: () =>
       new OpenAICompatibleEmbeddingProvider(embeddingConfig(), createProxiedFetcher(host.settings.network)),
     renderer: host.renderer,
-  });
-}
-
-export interface MemoryWorkflowHost {
-  readonly app: App;
-  messages(): readonly AgentMessage[];
-  sessionInfo(): SessionInfo | undefined;
-  readonly renderer: WorkflowRenderer;
-}
-
-export function createMemoryWorkflowController(host: MemoryWorkflowHost): MemoryWorkflowController {
-  return new MemoryWorkflowController({
-    adapter: host.app.vault.adapter,
-    memoryPath: () => memoryPathForApp(host.app),
-    messages: () => host.messages(),
-    defaultScope: () => "vault",
-    sessionSource: () => {
-      const session = host.sessionInfo();
-      return session ? `[[Agentic Chat Sessions/${session.id}|Chat session]]` : undefined;
-    },
-    renderer: host.renderer,
-    writeExport: async (filename, contents) => {
-      const file = await writeVaultFile(host.app, `${EXPORT_FOLDER}/${filename}`, contents);
-      return file.path;
-    },
   });
 }

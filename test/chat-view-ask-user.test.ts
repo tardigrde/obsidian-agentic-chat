@@ -1,14 +1,6 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { TFolder } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { AskUserRequest } from "../src/tools/ask-user-tool";
 import { ChatView } from "../src/ui/chat-view";
-import { writeMemoryRecords } from "../src/memory/management";
-import type { MemoryRecord } from "../src/memory/memory";
-import { MemoryAdapter } from "./helpers/memory-adapter";
-import type { SlashContext } from "../src/ui/slash/context";
-import { createMemoryWorkflow } from "../src/ui/slash/index-commands";
-import { createWorkflowRenderer } from "../src/ui/slash/renderer";
 
 class FakeElement {
   readonly children: FakeElement[] = [];
@@ -109,57 +101,5 @@ describe("ChatView ask_user prompt", () => {
 
     await expect(answer).resolves.toBe("Projects");
     expect(messagesEl.findByClass("agentic-chat-ask-user")).toBeUndefined();
-  });
-
-  it("exports memory JSONL without opening the export as the active file", async () => {
-    const memoryPath = ".obsidian/plugins/agentic-chat/memory/memories.jsonl";
-    const adapter = new MemoryAdapter();
-    const record: MemoryRecord = {
-      id: "mem-export",
-      kind: "fact",
-      scope: "vault",
-      text: "Dogfood memory export should save quietly.",
-      enabled: true,
-      createdAt: "2026-07-01T00:00:00.000Z",
-    };
-    await writeMemoryRecords(adapter.asDataAdapter(), memoryPath, [record]);
-
-    const openFile = vi.fn();
-    const getLeaf = vi.fn(() => ({ openFile }));
-    const create = vi.fn(async (path: string, contents: string) => {
-      await adapter.asDataAdapter().write(path, contents);
-      return { path };
-    });
-    const renderInfoMessage = vi.fn();
-    const fakeView = {
-      app: {
-        vault: {
-          configDir: ".obsidian",
-          adapter: adapter.asDataAdapter(),
-          getAbstractFileByPath: () => new TFolder(),
-          create,
-        },
-        workspace: { getLeaf },
-      },
-      plugin: { settings: {} },
-      service: {
-        getMessages: (): AgentMessage[] => [],
-        getSessionInfo: () => ({ id: "session-1" }),
-      },
-      workflowRenderer: () => createWorkflowRenderer(fakeView as unknown as SlashContext),
-      clearEmptyState: vi.fn(),
-      renderInfoMessage,
-      renderErrorMessage: vi.fn(),
-      renderActionList: vi.fn(),
-    };
-    const controller = createMemoryWorkflow(fakeView as unknown as SlashContext);
-    await controller.run("export");
-
-    expect(create).toHaveBeenCalledWith(expect.stringMatching(/^Agentic Chat Exports\/Agentic chat memories .*\.jsonl$/), expect.any(String));
-    expect(getLeaf).not.toHaveBeenCalled();
-    expect(openFile).not.toHaveBeenCalled();
-    expect(renderInfoMessage).toHaveBeenCalledWith("Memory", [
-      ["Exported", expect.stringMatching(/^1 memories to Agentic Chat Exports\/Agentic chat memories .*\.jsonl\.$/)],
-    ]);
   });
 });
