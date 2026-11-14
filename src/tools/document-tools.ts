@@ -48,13 +48,7 @@ function createImportPdfTool(
     execute: async (_id, params) => {
       if (!adapter) throw new Error("Vault adapter is unavailable.");
       const path = normalizePdfPath(String(params.path ?? ""));
-      const data = await readSourceData(adapter, path);
-      const result = await pdfArtifacts.write(artifactStore, {
-        sourcePath: path,
-        title: normalizeOptionalString(params.title),
-        maxChunkChars: normalizeMaxChunkChars(params.maxChunkChars),
-        data,
-      });
+      const result = await importPdf(adapter, artifactStore, pdfArtifacts, path, params);
       return toolResult(formatImportPdfResult(result), {
         ...sourceArtifactDetails(path, result),
         pageCount: result.provenance.pageCount,
@@ -79,33 +73,42 @@ function createImportDocumentTool(
     execute: async (_id, params) => {
       if (!adapter) throw new Error("Vault adapter is unavailable.");
       const path = normalizeDocumentPath(String(params.path ?? ""));
-      const title = normalizeOptionalString(params.title);
-      const maxChunkChars = normalizeMaxChunkChars(params.maxChunkChars);
       if (path.toLowerCase().endsWith(".pdf")) {
-        const data = await readSourceData(adapter, path);
-        const result = await pdfArtifacts.write(artifactStore, {
-          sourcePath: path,
-          title,
-          maxChunkChars,
-          data,
-        });
+        const result = await importPdf(adapter, artifactStore, pdfArtifacts, path, params);
         return toolResult(formatImportPdfResult(result), pdfImportDetails(path, result));
       }
 
-      documentKindFromPath(path);
       const data = await readSourceData(adapter, path);
       // Bound explicitly to avoid the Obsidian scan treating this artifact writer
       // as a DOM document.write sink.
       const writeDocumentArtifact = documentArtifacts.write.bind(documentArtifacts);
       const result = await writeDocumentArtifact(artifactStore, {
         sourcePath: path,
-        title,
-        maxChunkChars,
+        title: normalizeOptionalString(params.title),
+        maxChunkChars: normalizeMaxChunkChars(params.maxChunkChars),
         data,
       });
       return toolResult(formatImportDocumentResult(result), documentImportDetails(path, result));
     },
   };
+}
+
+type PdfImportResult = Awaited<ReturnType<PdfArtifactDeduper["write"]>>;
+
+/** The one PDF import path behind `import_pdf` and `import_document`. */
+async function importPdf(
+  adapter: DataAdapter,
+  artifactStore: ToolArtifactStoreLike,
+  pdfArtifacts: PdfArtifactDeduper,
+  path: string,
+  params: { title?: string; maxChunkChars?: number },
+): Promise<PdfImportResult> {
+  return pdfArtifacts.write(artifactStore, {
+    sourcePath: path,
+    title: normalizeOptionalString(params.title),
+    maxChunkChars: normalizeMaxChunkChars(params.maxChunkChars),
+    data: await readSourceData(adapter, path),
+  });
 }
 
 function normalizePdfPath(value: string): string {
@@ -140,7 +143,7 @@ function normalizeMaxChunkChars(value: number | undefined): number | undefined {
   return Math.trunc(value);
 }
 
-function formatImportPdfResult(result: Awaited<ReturnType<PdfArtifactDeduper["write"]>>): string {
+function formatImportPdfResult(result: PdfImportResult): string {
   const duplicate = result.duplicate ? " (already imported)" : "";
   const pageCount = result.provenance.pageCount === null ? "unknown pages" : `${result.provenance.pageCount} page(s)`;
   return [
@@ -187,7 +190,7 @@ function sourceArtifactDetails(path: string, result: SourceArtifactDetailsInput)
   };
 }
 
-function pdfImportDetails(path: string, result: Awaited<ReturnType<PdfArtifactDeduper["write"]>>): Record<string, unknown> {
+function pdfImportDetails(path: string, result: PdfImportResult): Record<string, unknown> {
   return {
     ...sourceArtifactDetails(path, result),
     sourceKind: "pdf",

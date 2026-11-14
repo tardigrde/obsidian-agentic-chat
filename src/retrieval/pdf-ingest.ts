@@ -1,14 +1,12 @@
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { formatFrontmatterScalar, parseFrontmatterFields } from "../vault/frontmatter";
-import { stableTextHash } from "./source-hash";
 import {
+  SourceArtifactCache,
   chunkSourceText,
   formatSourceArtifactChunkBody,
-  legacyTrimmedTextHash,
   normalizeSourcePath,
   normalizeSourceText,
-  resolveSourceArtifact,
-  type SourceArtifactCacheValue,
+  sourceDedupKeys,
   type SourceTextChunk,
 } from "./source-ingest";
 
@@ -57,8 +55,6 @@ export interface PdfImportWriteResult {
   chunks: PdfTextChunk[];
   extraction: PdfExtractionResult;
 }
-
-type CachedPdfImport = SourceArtifactCacheValue<PdfImportProvenance, PdfExtractionResult>;
 
 const PDF_HEADER_SEARCH_CHARS = 1024;
 
@@ -158,21 +154,29 @@ export function parsePdfImportProvenance(text: string): PdfImportProvenance | nu
 }
 
 export class PdfArtifactDeduper {
-  private readonly byKey = new Map<string, CachedPdfImport>();
+  private readonly artifacts = new SourceArtifactCache<PdfImportProvenance, PdfExtractionResult>();
 
   async write(store: ToolArtifactStoreLike, input: PdfImportWriteInput): Promise<PdfImportWriteResult> {
     const extraction = extractPdfText(input.data);
     const chunks = chunkPdfText(extraction.text, { maxChars: input.maxChunkChars });
-    const provenance = await createPdfImportProvenance(input, extraction, chunks);
-    return resolveSourceArtifact({
-      store,
-      cache: this.byKey,
+    const keys = await sourceDedupKeys(`pdf:${normalizeSourcePath(input.sourcePath)}`, extraction.text);
+    const provenance: PdfImportProvenance = {
+      sourcePath: input.sourcePath,
+      title: input.title,
+      extractor: extraction.extractor,
+      importedAt: input.importedAt ?? new Date().toISOString(),
+      dedupKey: keys.dedupKey,
+      textHash: keys.textHash,
+      sourceTextChars: keys.trimmedText.length,
+      pageCount: extraction.pageCount,
+      chunkCount: chunks.length,
+    };
+    return this.artifacts.resolve(store, {
       provenance,
       chunks,
       extraction,
       citationLabel: input.title || input.sourcePath,
-      legacyDedupKeys: [legacyPdfDedupKey(input, extraction)],
-      legacyTextHashes: [legacyPdfTextHash(extraction.text)],
+      keys,
       artifactLabel: pdfArtifactLabel(input.title, input.sourcePath),
       sourceToolName: PDF_IMPORT_SOURCE_TOOL,
       contentType: PDF_IMPORT_CONTENT_TYPE,
@@ -181,34 +185,6 @@ export class PdfArtifactDeduper {
       parseProvenance: parsePdfImportProvenance,
     });
   }
-}
-
-async function createPdfImportProvenance(
-  input: PdfImportWriteInput,
-  extraction: PdfExtractionResult,
-  chunks: readonly PdfTextChunk[],
-): Promise<PdfImportProvenance> {
-  const text = extraction.text.trim();
-  const textHash = await stableTextHash(text);
-  return {
-    sourcePath: input.sourcePath,
-    title: input.title,
-    extractor: extraction.extractor,
-    importedAt: input.importedAt ?? new Date().toISOString(),
-    dedupKey: `pdf:${normalizeSourcePath(input.sourcePath)}:${textHash}`,
-    textHash,
-    sourceTextChars: text.length,
-    pageCount: extraction.pageCount,
-    chunkCount: chunks.length,
-  };
-}
-
-function legacyPdfDedupKey(input: PdfImportWriteInput, extraction: PdfExtractionResult): string {
-  return `pdf:${normalizeSourcePath(input.sourcePath)}:${legacyPdfTextHash(extraction.text)}`;
-}
-
-function legacyPdfTextHash(text: string): string {
-  return legacyTrimmedTextHash(text);
 }
 
 function extractLiteralStrings(input: string): string[] {

@@ -265,6 +265,34 @@ Gap:
 
 Next: define the order between sweep, install, and settings prune.
 
+## Source import and frontmatter
+
+Owner: `SourceArtifactCache` (`src/retrieval/source-ingest.ts`) owns one
+importer's in-memory artifacts by dedup key, the lookup of an artifact an
+earlier session persisted, and the write. `sourceDedupKeys` is the only place
+that derives dedup keys, current (SHA-256) and legacy (FNV-1a), from
+`${kind}:${normalized source}` and the trimmed text. The web
+(`source-artifacts.ts`), PDF (`pdf-ingest.ts`), and document
+(`document-ingest.ts`) importers own only extraction and their provenance
+frontmatter.
+
+`splitFrontmatter` (`src/vault/frontmatter.ts`) is the one frontmatter
+splitter for skills, the plugin importer, graph tools, and retrieval. The flat
+`parseFrontmatterFields` reads the provenance block of source artifacts.
+
+Invariants:
+
+- A persisted artifact keeps deduping: the current and legacy keys are derived
+  the same way for every importer and every release.
+- `import_pdf` and `import_document` share one PDF import path and one cache,
+  so the same PDF imported through either tool is one artifact.
+
+Gap:
+
+- `skillNameFromDoc` (`src/plugins/import/shared.ts`) still reads `name:` with
+  its own regex. It strips every quote character, so moving it to the shared
+  splitter would change results for quoted names.
+
 ## Unowned today
 
 These items have no single owner. Do not add a new check for them; move the

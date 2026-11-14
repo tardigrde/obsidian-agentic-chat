@@ -1,12 +1,11 @@
-// Shared building blocks for the PDF and document (EPUB/OOXML) importers
-// (src/retrieval/pdf-ingest.ts and src/retrieval/document-ingest.ts). Both
-// importers extract text, chunk it identically, and dedupe/persist the result
-// through the tool artifact store; this module holds the pieces that would
-// otherwise be copied between them.
+// The one import flow for source artifacts. The web (`source-artifacts.ts`),
+// PDF (`pdf-ingest.ts`), and document (`document-ingest.ts`) importers own
+// only extraction and their provenance frontmatter; chunking, dedup keys, the
+// per-importer cache, the existing-artifact lookup, and the write live here.
 
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { formatSourceReference } from "./citations";
-import { legacyStableTextHash } from "./source-hash";
+import { legacyStableTextHash, stableTextHash } from "./source-hash";
 import { findExistingSourceArtifact } from "./source-artifact-dedupe";
 
 const DEFAULT_MAX_CHUNK_CHARS = 8_000;
@@ -38,8 +37,34 @@ export function normalizeSourcePath(value: string): string {
   return value.trim().replaceAll("\\", "/").replace(/\/+/g, "/").toLowerCase();
 }
 
-export function legacyTrimmedTextHash(text: string): string {
-  return legacyStableTextHash(text.trim());
+/** Dedup keys of an imported text, current and legacy. */
+export interface SourceDedupKeys {
+  /** The text the hashes cover. */
+  trimmedText: string;
+  textHash: string;
+  /** `${scope}:${textHash}`. */
+  dedupKey: string;
+  /** The FNV-1a hash earlier releases wrote; still matched so old artifacts dedupe. */
+  legacyTextHash: string;
+  legacyDedupKey: string;
+}
+
+/**
+ * Dedup keys for `text` under `scope` (the importer kind plus the normalized
+ * source, such as `pdf:notes/a.pdf`). Every importer derives its keys here, so
+ * a persisted artifact from any release keeps deduping.
+ */
+export async function sourceDedupKeys(scope: string, text: string): Promise<SourceDedupKeys> {
+  const trimmedText = text.trim();
+  const textHash = await stableTextHash(trimmedText);
+  const legacyTextHash = legacyStableTextHash(trimmedText);
+  return {
+    trimmedText,
+    textHash,
+    dedupKey: `${scope}:${textHash}`,
+    legacyTextHash,
+    legacyDedupKey: `${scope}:${legacyTextHash}`,
+  };
 }
 
 /**
@@ -119,15 +144,12 @@ export interface SourceArtifactCacheValue<Provenance, Extraction> {
 }
 
 export interface ResolveSourceArtifactConfig<Provenance extends { dedupKey: string; textHash: string }, Extraction> {
-  store: ToolArtifactStoreLike;
-  cache: Map<string, SourceArtifactCacheValue<Provenance, Extraction>>;
   provenance: Provenance;
   chunks: SourceTextChunk[];
   extraction: Extraction;
   /** Human-readable label used for the returned citation. */
   citationLabel: string;
-  legacyDedupKeys: string[];
-  legacyTextHashes: string[];
+  keys: SourceDedupKeys;
   artifactLabel: string;
   sourceToolName: string;
   contentType: string;
@@ -136,67 +158,77 @@ export interface ResolveSourceArtifactConfig<Provenance extends { dedupKey: stri
   parseProvenance: (text: string) => Provenance | null;
 }
 
+export type ResolvedSourceArtifact<Provenance, Extraction> = SourceArtifactCacheValue<Provenance, Extraction> & {
+  duplicate: boolean;
+};
+
 /**
- * Shared cache lookup + existing-artifact dedupe + write path for source
- * importers. Callers own extraction, chunking and provenance construction and
- * hand the results here to persist or reuse an artifact.
+ * One importer's artifacts: the in-memory cache by dedup key, the lookup of an
+ * artifact an earlier session persisted, and the write. Importers own
+ * extraction, chunking, and provenance, and hand the results here to persist
+ * or reuse an artifact.
  */
-export async function resolveSourceArtifact<Provenance extends { dedupKey: string; textHash: string }, Extraction>(
-  config: ResolveSourceArtifactConfig<Provenance, Extraction>,
-): Promise<SourceArtifactCacheValue<Provenance, Extraction> & { duplicate: boolean }> {
-  const { store, cache, provenance, chunks, extraction, citationLabel } = config;
+export class SourceArtifactCache<Provenance extends { dedupKey: string; textHash: string }, Extraction> {
+  private readonly byKey = new Map<string, SourceArtifactCacheValue<Provenance, Extraction>>();
 
-  const cached = cache.get(provenance.dedupKey);
-  if (cached) return { ...cached, duplicate: true };
+  async resolve(
+    store: ToolArtifactStoreLike,
+    config: ResolveSourceArtifactConfig<Provenance, Extraction>,
+  ): Promise<ResolvedSourceArtifact<Provenance, Extraction>> {
+    const { provenance, chunks, extraction, citationLabel } = config;
 
-  const existing = await findExistingSourceArtifact(store, {
-    dedupKey: provenance.dedupKey,
-    textHash: provenance.textHash,
-    legacyDedupKeys: config.legacyDedupKeys,
-    legacyTextHashes: config.legacyTextHashes,
-  });
-  if (existing) {
+    const cached = this.byKey.get(provenance.dedupKey);
+    if (cached) return { ...cached, duplicate: true };
+
+    const existing = await findExistingSourceArtifact(store, {
+      dedupKey: provenance.dedupKey,
+      textHash: provenance.textHash,
+      legacyDedupKeys: [config.keys.legacyDedupKey],
+      legacyTextHashes: [config.keys.legacyTextHash],
+    });
+    if (existing) {
+      const artifactCitation = formatSourceReference({
+        type: "artifact",
+        artifactId: existing.artifact.metadata.id,
+        label: citationLabel,
+      });
+      const persistedProvenance = config.parseProvenance(existing.artifact.text) ?? provenance;
+      const value: SourceArtifactCacheValue<Provenance, Extraction> = {
+        metadata: existing.artifact.metadata,
+        provenance: persistedProvenance,
+        artifactCitation,
+        text: existing.artifact.text,
+        chunks,
+        extraction,
+      };
+      this.byKey.set(provenance.dedupKey, value);
+      return { ...value, duplicate: true };
+    }
+
+    const text = config.formatArtifactText(provenance, chunks);
+    const metadata = await store.writeArtifact({
+      label: config.artifactLabel,
+      sourceToolName: config.sourceToolName,
+      contentType: config.contentType,
+      dedupKey: provenance.dedupKey,
+      sourceKind: config.sourceKind,
+      sourceTextHash: provenance.textHash,
+      text,
+    });
     const artifactCitation = formatSourceReference({
       type: "artifact",
-      artifactId: existing.artifact.metadata.id,
+      artifactId: metadata.id,
       label: citationLabel,
     });
-    const persistedProvenance = config.parseProvenance(existing.artifact.text) ?? provenance;
     const value: SourceArtifactCacheValue<Provenance, Extraction> = {
-      metadata: existing.artifact.metadata,
-      provenance: persistedProvenance,
+      metadata,
+      provenance,
       artifactCitation,
-      text: existing.artifact.text,
+      text,
       chunks,
       extraction,
     };
-    cache.set(provenance.dedupKey, value);
-    return { ...value, duplicate: true };
+    this.byKey.set(provenance.dedupKey, value);
+    return { ...value, duplicate: false };
   }
-
-  const text = config.formatArtifactText(provenance, chunks);
-  const metadata = await store.writeArtifact({
-    label: config.artifactLabel,
-    sourceToolName: config.sourceToolName,
-    contentType: config.contentType,
-    dedupKey: provenance.dedupKey,
-    sourceKind: config.sourceKind,
-    sourceTextHash: provenance.textHash,
-    text,
-  });
-  const artifactCitation = formatSourceReference({
-    type: "artifact",
-    artifactId: metadata.id,
-    label: citationLabel,
-  });
-  const value: SourceArtifactCacheValue<Provenance, Extraction> = {
-    metadata,
-    provenance,
-    artifactCitation,
-    text,
-    chunks,
-    extraction,
-  };
-  cache.set(provenance.dedupKey, value);
-  return { ...value, duplicate: false };
 }

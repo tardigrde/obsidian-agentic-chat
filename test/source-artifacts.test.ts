@@ -6,7 +6,6 @@ import {
   SOURCE_IMPORT_CONTENT_TYPE,
   SOURCE_IMPORT_SOURCE_TOOL,
   SourceArtifactDeduper,
-  createSourceImportProvenance,
   extractReadableSource,
   formatSourceImportArtifact,
   parseSourceImportProvenance,
@@ -109,7 +108,7 @@ describe("source import artifacts", () => {
   });
 
   it("formats and parses durable provenance for source artifacts", async () => {
-    const provenance = await createSourceImportProvenance({
+    const { provenance } = await new SourceArtifactDeduper().write(memoryArtifactStore().store, {
       url: "https://example.com/research?b=2&a=1#section",
       finalUrl: "https://example.com/research?a=1&b=2",
       title: "Multilingual Q&A",
@@ -123,6 +122,7 @@ describe("source import artifacts", () => {
     expect(artifact).toContain("agentic_chat_source: 1");
     expect(artifact).toContain('title: "Multilingual Q&A"');
     expect(provenance.textHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(provenance.dedupKey).toBe(`source:https://example.com/research?a=1&b=2:${provenance.textHash}`);
     expect(artifact).toContain("Source: [Multilingual Q&A](https://example.com/research?a=1&b=2)");
     expect(artifact).toContain("## Extracted source text");
     expect(parseSourceImportProvenance(artifact)).toEqual(provenance);

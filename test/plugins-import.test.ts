@@ -313,6 +313,22 @@ Body text
     expect(warnings.some((w) => w.includes("renamed to the directory name"))).toBe(true);
   });
 
+  it("warns on invalid YAML and keeps only the forced name, with CRLF delimiters and the body trimmed", () => {
+    const warnings: string[] = [];
+    const out = sanitizeSkillDoc("---\r\nname: tab\tbroken\r\n---\r\n\r\n\n  Body after blank lines\n", "broken", warnings);
+    expect(out).toBe('---\nname: "broken"\n---\n\nBody after blank lines\n');
+    expect(warnings).toEqual([
+      "skills/broken/SKILL.md frontmatter is not valid YAML; rewrote it to name + description only.",
+    ]);
+  });
+
+  it("treats frontmatter without keys as empty without a warning", () => {
+    const warnings: string[] = [];
+    const out = sanitizeSkillDoc("---\njust a string\n---\nBody\n", "scalar", warnings);
+    expect(out).toBe('---\nname: "scalar"\n---\n\nBody\n');
+    expect(warnings).toEqual([]);
+  });
+
   it("synthesizes a frontmatter block for documents without one", () => {
     const warnings: string[] = [];
     const out = sanitizeSkillDoc("# No frontmatter\n", "plain", warnings);

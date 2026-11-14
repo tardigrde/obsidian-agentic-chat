@@ -1,14 +1,12 @@
 import type { ToolArtifactMetadata, ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { formatFrontmatterScalar, parseFrontmatterFields } from "../vault/frontmatter";
-import { stableTextHash } from "./source-hash";
 import {
+  SourceArtifactCache,
   chunkSourceText,
   formatSourceArtifactChunkBody,
-  legacyTrimmedTextHash,
   normalizeSourcePath,
   normalizeSourceText,
-  resolveSourceArtifact,
-  type SourceArtifactCacheValue,
+  sourceDedupKeys,
   type SourceTextChunk,
 } from "./source-ingest";
 
@@ -59,8 +57,6 @@ export interface DocumentImportWriteResult {
   chunks: DocumentTextChunk[];
   extraction: DocumentExtractionResult;
 }
-
-type CachedDocumentImport = SourceArtifactCacheValue<DocumentImportProvenance, DocumentExtractionResult>;
 
 interface ZipEntry {
   name: string;
@@ -184,21 +180,30 @@ export function parseDocumentImportProvenance(text: string): DocumentImportProve
 }
 
 export class DocumentArtifactDeduper {
-  private readonly byKey = new Map<string, CachedDocumentImport>();
+  private readonly artifacts = new SourceArtifactCache<DocumentImportProvenance, DocumentExtractionResult>();
 
   async write(store: ToolArtifactStoreLike, input: DocumentImportWriteInput): Promise<DocumentImportWriteResult> {
     const extraction = await extractDocumentText(input.data, input.sourcePath);
     const chunks = chunkDocumentText(extraction.text, { maxChars: input.maxChunkChars });
-    const provenance = await createDocumentImportProvenance(input, extraction, chunks);
-    return resolveSourceArtifact({
-      store,
-      cache: this.byKey,
+    const keys = await sourceDedupKeys(`${extraction.kind}:${normalizeSourcePath(input.sourcePath)}`, extraction.text);
+    const provenance: DocumentImportProvenance = {
+      sourcePath: input.sourcePath,
+      title: input.title,
+      kind: extraction.kind,
+      extractor: extraction.extractor,
+      importedAt: input.importedAt ?? new Date().toISOString(),
+      dedupKey: keys.dedupKey,
+      textHash: keys.textHash,
+      sourceTextChars: keys.trimmedText.length,
+      itemCount: extraction.itemCount,
+      chunkCount: chunks.length,
+    };
+    return this.artifacts.resolve(store, {
       provenance,
       chunks,
       extraction,
       citationLabel: input.title || input.sourcePath,
-      legacyDedupKeys: [legacyDocumentDedupKey(input, extraction)],
-      legacyTextHashes: [legacyDocumentTextHash(extraction.text)],
+      keys,
       artifactLabel: documentArtifactLabel(input.title, input.sourcePath, extraction.kind),
       sourceToolName: DOCUMENT_IMPORT_SOURCE_TOOL,
       contentType: DOCUMENT_IMPORT_CONTENT_TYPE,
@@ -207,35 +212,6 @@ export class DocumentArtifactDeduper {
       parseProvenance: parseDocumentImportProvenance,
     });
   }
-}
-
-async function createDocumentImportProvenance(
-  input: DocumentImportWriteInput,
-  extraction: DocumentExtractionResult,
-  chunks: readonly DocumentTextChunk[],
-): Promise<DocumentImportProvenance> {
-  const text = extraction.text.trim();
-  const textHash = await stableTextHash(text);
-  return {
-    sourcePath: input.sourcePath,
-    title: input.title,
-    kind: extraction.kind,
-    extractor: extraction.extractor,
-    importedAt: input.importedAt ?? new Date().toISOString(),
-    dedupKey: `${extraction.kind}:${normalizeSourcePath(input.sourcePath)}:${textHash}`,
-    textHash,
-    sourceTextChars: text.length,
-    itemCount: extraction.itemCount,
-    chunkCount: chunks.length,
-  };
-}
-
-function legacyDocumentDedupKey(input: DocumentImportWriteInput, extraction: DocumentExtractionResult): string {
-  return `${extraction.kind}:${normalizeSourcePath(input.sourcePath)}:${legacyDocumentTextHash(extraction.text)}`;
-}
-
-function legacyDocumentTextHash(text: string): string {
-  return legacyTrimmedTextHash(text);
 }
 
 async function extractEpubText(entries: readonly ZipEntry[], budget: ZipInflationBudget): Promise<DocumentExtractionResult> {
