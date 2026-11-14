@@ -35,10 +35,10 @@ export async function newSession(ctx: SlashContext): Promise<void> {
     ctx.renderErrorMessage(errorMessage(error));
   } finally {
     // A new conversation starts in the default (normal) output style.
-    if (ctx.plugin.settings.outputStyle !== DEFAULT_OUTPUT_STYLE) {
-      ctx.plugin.settings.outputStyle = DEFAULT_OUTPUT_STYLE;
-      await ctx.plugin.saveSettings();
-    }
+    await ctx.plugin.settingsStore.update((settings) => {
+      if (settings.outputStyle === DEFAULT_OUTPUT_STYLE) return false;
+      settings.outputStyle = DEFAULT_OUTPUT_STYLE;
+    });
   }
 }
 

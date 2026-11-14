@@ -11,6 +11,13 @@ function makeHarness(mutate?: (settings: Settings) => void) {
   mutate?.(settings);
   const plugin = {
     settings,
+    settingsStore: {
+      save: async () => undefined,
+      update: async (mutator: (current: Settings) => boolean | void) => {
+        if (mutator(settings) === false) return false;
+        return true;
+      },
+    },
     saveSettings: async () => undefined,
     requestModeChange: async () => true,
     pluginService: {

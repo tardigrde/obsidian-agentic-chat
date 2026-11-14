@@ -95,7 +95,7 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   private readonly host: SettingsTabHost;
 
   private async save(): Promise<void> {
-    await this.plugin.saveSettings();
+    await this.plugin.settingsStore.save();
   }
 
   private refresh(): void {
@@ -141,20 +141,20 @@ export class AgenticChatSettingTab extends PluginSettingTab {
   }
 
   async setControlValue(key: string, value: unknown): Promise<void> {
-    const settings = this.plugin.settings;
     // One gate for every key (#286): trim text, reject unknown enums and wrong types, clamp numbers.
     const next = normalizeControlValue(this.controlFor(key), value, this.getControlValue(key));
-    switch (key) {
-      case "openaiCompatibleBaseUrl":
-        settings.openaiCompatibleBaseUrl = controlText(next).trim() || DEFAULT_OPENAI_COMPATIBLE_BASE_URL;
-        break;
-      case "ollamaBaseUrl":
-        settings.ollamaBaseUrl = controlText(next).trim() || DEFAULT_OLLAMA_BASE_URL;
-        break;
-      default:
-        this.writeControlValue(settings, key, next);
-    }
-    await this.save();
+    await this.plugin.settingsStore.update((settings) => {
+      switch (key) {
+        case "openaiCompatibleBaseUrl":
+          settings.openaiCompatibleBaseUrl = controlText(next).trim() || DEFAULT_OPENAI_COMPATIBLE_BASE_URL;
+          break;
+        case "ollamaBaseUrl":
+          settings.ollamaBaseUrl = controlText(next).trim() || DEFAULT_OLLAMA_BASE_URL;
+          break;
+        default:
+          this.writeControlValue(settings, key, next);
+      }
+    });
     if (CONTROL_KEYS_THAT_REDRAW.has(key)) this.redraw();
   }
 

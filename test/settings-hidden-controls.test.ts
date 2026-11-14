@@ -16,6 +16,13 @@ function pluginRecordingSettingsWrites() {
     set settings(next: unknown) {
       reassignments.push(next);
     },
+    settingsStore: {
+      save: async () => undefined,
+      update: async (mutator: (current: typeof live) => boolean | void) => {
+        if (mutator(live) === false) return false;
+        return true;
+      },
+    },
     saveSettings: async () => undefined,
     pluginService: {
       hasCache: () => false,

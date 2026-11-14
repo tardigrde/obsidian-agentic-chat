@@ -35,15 +35,18 @@ import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
 import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
 import { setSemanticIndexLeaseScope } from "./retrieval/semantic-index";
+import { SettingsStore } from "./settings-store";
 
 declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
 
 export default class AgenticChatPlugin extends Plugin {
+  /** The same object the settings store owns; both change only through the store. */
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
   private lastSyncedMode: AgentMode | null = null;
   private secretStore!: ObsidianSecretStore;
   private readonly sessionWriteRegistry = new SessionWriteRegistry();
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
+  readonly settingsStore = new SettingsStore(DEFAULT_SETTINGS, (settings) => this.persistSettings(settings));
   readonly pluginService = new PluginService(
     this.app,
     () => this.settings,
@@ -52,20 +55,23 @@ export default class AgenticChatPlugin extends Plugin {
 
   async onload(): Promise<void> {
     this.secretStore = new ObsidianSecretStore(this.app);
+    // The mode broadcast is a listener of the owner, not a special case inside save.
+    this.settingsStore.onChange(() => this.broadcastModeChange());
     await this.loadSettings();
     // Scope the cross-window lease to this vault. Desktop uses the absolute
     // base path, which is identical in every window and avoids a first-load id
     // race. Mobile has one window; the generated id keeps same-named vaults
     // apart.
     if (!this.settings.embeddings.leaseId) {
-      this.settings.embeddings.leaseId =
-        typeof crypto.randomUUID === "function"
-          ? crypto.randomUUID()
-          : `vault-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
       // A refusing secret store makes every save throw (#285). The lease id is
       // usable in memory; it is persisted by the next successful save.
       try {
-        await this.saveSettings();
+        await this.settingsStore.update((settings) => {
+          settings.embeddings.leaseId =
+            typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : `vault-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        });
       } catch (error: unknown) {
         console.warn("Agentic chat: could not persist the semantic lease id", error);
       }
@@ -243,9 +249,7 @@ export default class AgenticChatPlugin extends Plugin {
   /** Show the approval dialog and persist a remembered allow/deny choice after the user decides. */
   private async confirmToolCall(request: ToolApprovalRequest, signal?: AbortSignal): Promise<UserApprovalChoice> {
     const choice = await new ApprovalModal(this.app, request).ask(signal);
-    if (applyRememberedApprovalChoice(this.settings, request.toolName, choice)) {
-      await this.saveSettings();
-    }
+    await this.settingsStore.update((settings) => applyRememberedApprovalChoice(settings, request.toolName, choice));
     return choice;
   }
 
@@ -282,6 +286,7 @@ export default class AgenticChatPlugin extends Plugin {
     // the user learns which retired settings changed behaviour on upgrade.
     const retiredNotices = retiredSettingsNotices(stored);
     this.settings = mergeSettings(stored);
+    this.settingsStore.replace(this.settings);
     hydrateSettingsSecrets(this.settings, withUnmigratedSecrets(this.secretStore, unmigrated));
     // S4: remember mode for the broadcast guard.
     this.lastSyncedMode = this.settings.mode;
@@ -327,12 +332,18 @@ export default class AgenticChatPlugin extends Plugin {
   }
 
   async saveSettings(): Promise<void> {
-    await this.saveData(settingsForStorage(this.settings, this.secretStore));
-    // Only broadcast when mode actually changed — avoids repaint + notification side-effects on unrelated saves.
-    if (this.lastSyncedMode !== this.settings.mode) {
-      this.lastSyncedMode = this.settings.mode;
-      this.syncModeToViews();
-    }
+    await this.settingsStore.save();
+  }
+
+  private async persistSettings(settings: AgenticChatSettings): Promise<void> {
+    await this.saveData(settingsForStorage(settings, this.secretStore));
+  }
+
+  /** Only broadcast when mode actually changed — avoids repaint + notification side-effects on unrelated saves. */
+  private broadcastModeChange(): void {
+    if (this.lastSyncedMode === this.settings.mode) return;
+    this.lastSyncedMode = this.settings.mode;
+    this.syncModeToViews();
   }
 
   /** S4: single-source mode — after any persisted mode change, push chrome to every chat leaf atomically (Codex ThreadSettingsOverrides pattern). */
@@ -370,8 +381,9 @@ export default class AgenticChatPlugin extends Plugin {
     if (this.settings.mode === target) return false;
     const transition = resolveModeTransition(this.settings.mode, target);
     if (!transition) return false;
-    this.settings.mode = transition.nextMode;
-    await this.saveSettings();
+    await this.settingsStore.update((settings) => {
+      settings.mode = transition.nextMode;
+    });
     return true;
   }
 }
