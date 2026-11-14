@@ -30,6 +30,7 @@ Use these terms:
 | Approval decision and stop flag | `AgentToolCallController` | memory, plus settings for remembered choices |
 | MCP connection state | `McpHttpClient` per request | memory |
 | MCP OAuth refresh | `refreshFlights` in `src/mcp/oauth.ts` | memory plus `McpServerSettings.oauth` |
+| Plugin settings, save order, change listeners | `SettingsStore` | `data.json`; secrets in Obsidian secretStorage |
 | Semantic index writer | `SemanticIndexLeaseRegistry` and `SemanticIndexWorkflowController` | `index.json`, `index.json.bak` |
 | Plugin install | `installPackage` transaction | vault folders |
 
@@ -196,6 +197,56 @@ Gap:
 
 Next: keep the per-request client. Make the stable server id the single owner for
 token refresh and callback lifecycle.
+
+## Settings
+
+Owner: `SettingsStore` (`src/settings-store.ts`) holds the live
+`AgenticChatSettings` object, serializes saves, and fans out change listeners.
+`src/main.ts` keeps `plugin.settings` pointing at the same object and supplies
+the persist callback (`saveData(settingsForStorage(...))`).
+
+Write path: a caller either calls `settingsStore.update(mutator)` (mutate and
+save once; return `false` to skip the save) or mutates an existing value and
+calls `settingsStore.save()`. `plugin.saveSettings()` delegates to the owner, so
+the injected callbacks in `agent/` and `plugins/` use the same path. The UI entry
+points (`chat-view`, `slash/model`, `slash/session`, the settings tab) call the
+owner. A refusing secret store makes the save throw; callers that catch that
+today still catch it.
+
+Change listeners: `settingsStore.onChange` runs only after a successful save,
+never after a failed one. The mode broadcast is one listener
+(`main.ts` `broadcastModeChange`): it repaints chat chrome only when
+`settings.mode` changed since the last load or broadcast.
+
+Secret slots: `SETTINGS_SECRET_SLOTS` names every top-level slot;
+`MCP_SECRET_SLOTS` names the four MCP slots once, for both user servers and
+plugin-owned state. One implementation hydrates from the secret store, writes to
+it and strips plaintext from `data.json`, and migrates legacy plaintext. MCP
+secret ids use `agentic-chat-mcp-<id>-<kind>`; ids are normalized (lowercase,
+non-alphanumerics to `-`, long ids hashed to 64 chars).
+
+| Slot | Runtime field | Secret id | Legacy plaintext | Stripped from data.json |
+|---|---|---|---|---|
+| OpenRouter API key | `openrouterApiKey` | `agentic-chat-openrouter-api-key` | `openrouterApiKey` | yes |
+| OpenAI-compatible API key | `openaiCompatibleApiKey` | `agentic-chat-openai-compatible-api-key` | `openaiCompatibleApiKey` | yes |
+| Web search key | `web.searchApiKey` | `agentic-chat-web-search-api-key` | `web.searchApiKey` | yes |
+| Langfuse public key | `observability.langfusePublicKey` | `agentic-chat-langfuse-public-key` | `observability.langfusePublicKey` | yes |
+| Langfuse secret key | `observability.langfuseSecretKey` | `agentic-chat-langfuse-secret-key` | `observability.langfuseSecretKey` | yes |
+| Observability auth header | `observability.authHeaderValue` | `agentic-chat-observability-auth-header-value` | `observability.authHeaderValue` | yes |
+| MCP auth header | `authHeaderValue` | `agentic-chat-mcp-<id>-auth-header-value` | `authHeaderValue` | yes |
+| MCP OAuth client secret | `oauth.clientSecret` | `agentic-chat-mcp-<id>-oauth-client-secret` | `oauth.clientSecret` | yes |
+| MCP OAuth access token | `oauth.accessToken` | `agentic-chat-mcp-<id>-oauth-access-token` | `oauth.accessToken` | yes |
+| MCP OAuth refresh token | `oauth.refreshToken` | `agentic-chat-mcp-<id>-oauth-refresh-token` | `oauth.refreshToken` | yes |
+
+Invariants:
+
+- One save path. Every persisted read, write, strip, and migration uses the slot
+  tables, so `data.json` and the secret-store keys keep their existing shape.
+- A plaintext secret key is omitted from `data.json`, never written as `""`.
+- A failed save does not notify listeners and does not broadcast the mode.
+- `plugin.settings` and the owner hold the same object; a load swaps both.
+- `mcp.json` owns plugin server shape; settings own client state. A refresh
+  writes the changed state back through the owner.
 
 ## Semantic index writer
 
