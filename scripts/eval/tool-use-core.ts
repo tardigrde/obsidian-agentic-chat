@@ -280,6 +280,53 @@ export function gradeRun(caseDef: ToolUseCase, observed: ObservedRun): GradeResu
   return { ok: checks.every((check) => check.ok), checks };
 }
 
+export interface BaselineRefusalSummary {
+  budget: { exceeded: string | null };
+  cases: Array<{
+    id: string;
+    runResults: Array<{ status: string; error?: string }>;
+  }>;
+}
+
+export interface BaselineRefusalSuite {
+  runsPerCase: number;
+  cases: Array<{ id: string }>;
+}
+
+/** Failing checks may enter a baseline; incomplete or errored runs may not. */
+export function baselineRefusal(
+  summary: BaselineRefusalSummary,
+  plannedRunCount: number,
+  suite: BaselineRefusalSuite,
+): string | null {
+  const runs = summary.cases.flatMap((entry) => entry.runResults);
+  const skipped = runs.filter((run) => run.status === "skipped-budget");
+  if (skipped.length > 0) {
+    return `${skipped.length} run(s) were skipped by the budget; rerun with a higher cap.`;
+  }
+  const errored = runs.filter((run) => typeof run.error === "string" && run.error.length > 0);
+  if (errored.length > 0) {
+    return `${errored.length} run(s) have a harness error; inspect the report.`;
+  }
+  const executed = summary.cases.reduce((total, entry) => total + entry.runResults.length, 0);
+  if (executed !== plannedRunCount) {
+    return `only ${executed} of ${plannedRunCount} planned run(s) executed.`;
+  }
+  if (summary.budget.exceeded) {
+    return `the budget was exceeded (${summary.budget.exceeded}); rerun with a higher cap.`;
+  }
+  const covered = new Set(summary.cases.map((entry) => entry.id));
+  const missing = suite.cases.filter((entry) => !covered.has(entry.id));
+  if (missing.length > 0) {
+    return `did not cover every suite case; missing ${missing.map((entry) => entry.id).join(", ")}.`;
+  }
+  const expected = suite.cases.length * suite.runsPerCase;
+  if (plannedRunCount !== expected) {
+    return `baseline needs every ${suite.cases.length} case(s) at runsPerCase ${suite.runsPerCase} = ${expected} run(s); planned ${plannedRunCount}.`;
+  }
+  return null;
+}
+
 export function summarizeCase(runs: CaseRunSummaryInput[]): CaseSummary {
   const skipped = runs.filter((run) => run.status === "skipped-budget").length;
   const executed = runs.filter((run) => run.status !== "skipped-budget");

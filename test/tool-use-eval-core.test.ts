@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BudgetTracker,
+  baselineRefusal,
   costUsd,
   gradeRun,
   summarizeCase,
@@ -444,6 +445,62 @@ describe("tool-use eval core", () => {
       totalUsd: 0.03,
       meanUsd: 0.015,
       meanMs: 2_000,
+    });
+  });
+
+  describe("baseline refusal", () => {
+    const suite = { runsPerCase: 2, cases: [{ id: "case.one" }] };
+    const summary = (
+      runs: Array<{ status: string; error?: string }>,
+      options: { budgetExceeded?: string | null; caseId?: string } = {},
+    ) => ({
+      budget: { exceeded: options.budgetExceeded ?? null },
+      cases: [{ id: options.caseId ?? "case.one", runResults: runs }],
+    });
+    const refusal = (
+      input: ReturnType<typeof summary>,
+      plannedRunCount: number,
+      activeSuite: typeof suite = suite,
+    ) => baselineRefusal(input, plannedRunCount, activeSuite) ?? "";
+
+    it("refuses a run skipped by the budget", () => {
+      const input = summary([{ status: "pass" }, { status: "skipped-budget" }]);
+      expect(refusal(input, 2)).toMatch(/skipped by the budget/);
+    });
+
+    it("refuses a run with a harness error", () => {
+      const input = summary([{ status: "pass" }, { status: "fail", error: "boom" }]);
+      expect(refusal(input, 2)).toMatch(/harness error/);
+    });
+
+    it("refuses a missing planned run", () => {
+      const input = summary([{ status: "pass" }]);
+      expect(refusal(input, 2)).toMatch(/planned run/);
+    });
+
+    it("refuses a run that exceeded the budget", () => {
+      const input = summary([{ status: "pass" }, { status: "fail" }], {
+        budgetExceeded: "maxUsd (spent, cap)",
+      });
+      expect(refusal(input, 2)).toMatch(/budget was exceeded/);
+    });
+
+    it("refuses a run that does not cover every case at runsPerCase", () => {
+      const partial = summary([{ status: "pass" }]);
+      expect(refusal(partial, 1)).toMatch(/baseline needs every/);
+
+      const subset = summary([{ status: "pass" }, { status: "pass" }]);
+      expect(
+        refusal(subset, 2, {
+          runsPerCase: 2,
+          cases: [{ id: "case.one" }, { id: "case.two" }],
+        }),
+      ).toMatch(/did not cover every suite case/);
+    });
+
+    it("accepts a complete run even when checks failed", () => {
+      const input = summary([{ status: "pass" }, { status: "fail" }]);
+      expect(baselineRefusal(input, 2, suite)).toBeNull();
     });
   });
 
