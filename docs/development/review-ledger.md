@@ -13,11 +13,11 @@ Status values: `open`, `fixed`, `deferred`, `rejected`.
 | Semantic | In-place `index.json` write can truncate the last complete index | `fixed` | #227 writes through `.tmp`, keeps `.bak`, and serves the backup on read |
 | Semantic | Cross-window lease is in-memory; separate windows are not covered | `fixed` | #237 adds a vault-scoped IndexedDB lease; a store failure fails closed |
 | Semantic | Closing the view orphans a running index | `fixed` | #232 disposes the controller in `ChatView.onClose` |
-| Compaction | Manual `/compact` audit `start` can land in a new session during a swap | `deferred` | Unowned follow-up |
+| Compaction | Manual `/compact` audit `start` can land in a new session during a swap | `fixed` | #361 keeps the audit pair in the session that began the pass; #365 pins it in `test/conversation-compaction.test.ts` |
 | Compaction | `/compact` instructions are ignored when it joins an auto run | `fixed` | #230 returns `busy` instead of joining with different instructions |
-| Compaction | Recovery loads outside the swap queue | `deferred` | Unowned follow-up |
+| Compaction | Recovery loads outside the swap queue | `fixed` | #361 runs the rewrite, install, and recovery reload as one `commitCompaction` queue operation |
 | Approval | A deny reason equal to `STOPPED_APPROVAL_REASON` triggers the stop path | `fixed` | #235 uses an explicit `stopped` flag |
-| Approval | `stopRequested` and the approval request are not tied to a turn or session token | `deferred` | Unowned follow-up |
+| Approval | `stopRequested` and the approval request are not tied to a turn or session token | `fixed` | #358 scopes the stop latch to its turn; a swap aborts the turn signal, which settles the modal as a stopped denial; #365 pins it in `test/approval-modal.test.ts` |
 | Plugins | Concurrent install sweeps are not single-flight | `fixed` | #232 shares one in-flight reload |
 | Plugins | A sweep and an install can race on the same stage or backup | `fixed` | #236 serializes both with one maintenance lock |
 | Tests | Two-tab Stop aborting only the active tab has no e2e | `fixed` | #239 adds a two-tab Stop e2e |
