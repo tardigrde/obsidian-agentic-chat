@@ -632,8 +632,8 @@ function matchingToolCalls(calls: ObservedToolCall[], name: string): ObservedToo
 /** Compare string arrays as multisets: same items, in any order. */
 function sameStringItems(expected: string[], actual: string[]): boolean {
   if (expected.length !== actual.length) return false;
-  const sortedExpected = [...expected].sort();
-  const sortedActual = [...actual].sort();
+  const sortedExpected = [...expected].sort((left, right) => left.localeCompare(right));
+  const sortedActual = [...actual].sort((left, right) => left.localeCompare(right));
   return sortedExpected.every((item, index) => item === sortedActual[index]);
 }
 
