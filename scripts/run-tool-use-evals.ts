@@ -352,7 +352,12 @@ async function fetchPricing(model: string): Promise<RunPricing> {
   if (input === undefined || output === undefined) {
     throw new Error(`Model ${model} has no usable prompt/completion pricing.`);
   }
-  return { input, output, cacheRead: priceValue(pricing.input_cache_read) ?? 0 };
+  return {
+    input,
+    output,
+    cacheRead: priceValue(pricing.input_cache_read) ?? 0,
+    cacheWrite: priceValue(pricing.input_cache_write) ?? 0,
+  };
 }
 
 function priceValue(input: unknown): number | undefined {
@@ -414,7 +419,7 @@ function formatReport(summary: ToolUseSummary): string {
     "",
     `Suite: ${summary.suite.name}`,
     `Model: ${summary.model}`,
-    `Prices (USD/token): input ${summary.prices.input}, output ${summary.prices.output}, cache-read ${summary.prices.cacheRead}`,
+    `Prices (USD/token): input ${summary.prices.input}, output ${summary.prices.output}, cache-read ${summary.prices.cacheRead}, cache-write ${summary.prices.cacheWrite ?? 0}`,
     `Budget used: $${summary.budget.used.usd.toFixed(6)}, ${summary.budget.used.modelCalls} model call(s), ${summary.budget.used.tokens} token(s)`,
     `Budget exceeded: ${summary.budget.exceeded ?? "no"}`,
     "",

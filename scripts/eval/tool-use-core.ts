@@ -177,6 +177,8 @@ export interface RunPricing {
   output: number;
   /** USD per cache-read token. */
   cacheRead: number;
+  /** USD per cache-write token. Missing or absent prices cost 0. */
+  cacheWrite?: number;
 }
 
 export interface CaseRunSummaryInput {
@@ -292,7 +294,8 @@ export function costUsd(usage: RunUsage, pricing: RunPricing): number {
   return (
     finite(usage.input) * finite(pricing.input) +
     finite(usage.output) * finite(pricing.output) +
-    finite(usage.cacheRead) * finite(pricing.cacheRead)
+    finite(usage.cacheRead) * finite(pricing.cacheRead) +
+    finite(usage.cacheWrite) * finite(pricing.cacheWrite)
   );
 }
 

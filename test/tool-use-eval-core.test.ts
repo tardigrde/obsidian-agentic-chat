@@ -290,6 +290,14 @@ describe("tool-use eval core", () => {
     expect(usd).toBeCloseTo(0.0021, 10);
   });
 
+  it("includes cache-write tokens in cost", () => {
+    const usd = costUsd(
+      { input: 1_000, output: 500, cacheRead: 200, cacheWrite: 100 },
+      { input: 0.000001, output: 0.000002, cacheRead: 0.0000005, cacheWrite: 0.0000002 },
+    );
+    expect(usd).toBeCloseTo(0.00212, 10);
+  });
+
   it("stops on each budget cap", () => {
     const pricing = { input: 1, output: 0, cacheRead: 0 };
 
