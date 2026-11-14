@@ -69,6 +69,7 @@ interface AnalyzerModule {
 
 let plan: EvalPlan;
 let analyzer: AnalyzerModule;
+let baseCaseSettings: Record<string, unknown> = {};
 
 describe("tool-use eval", function () {
   before(async function () {
@@ -180,6 +181,7 @@ async function openChat(): Promise<void> {
 async function configurePlugin(): Promise<void> {
   const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
   if (!apiKey) throw new Error("AGENTIC_CHAT_API_KEY is missing for the tool-use eval spec");
+  const settingKeys = [...new Set(plan.cases.flatMap((entry) => Object.keys(entry.settings ?? {})))];
   const configured = await browser.executeObsidian(async ({ app }, config) => {
     const plugin = (app as unknown as {
       plugins?: {
@@ -189,7 +191,7 @@ async function configurePlugin(): Promise<void> {
         >;
       };
     }).plugins?.plugins?.[config.pluginId];
-    if (!plugin?.settings) return false;
+    if (!plugin?.settings) return null;
     const settings = plugin.settings as {
       provider: string;
       openrouterApiKey: string;
@@ -215,14 +217,24 @@ async function configurePlugin(): Promise<void> {
     settings.toolBudget.enabled = false;
     settings.maxTurnsPerPrompt = config.maxTurnsPerPrompt;
     settings.ignoredGlobs = "";
+    const settingsRecord = settings as unknown as Record<string, unknown>;
+    const base: Record<string, unknown> = {};
+    for (const key of config.settingKeys) base[key] = settingsRecord[key];
     await plugin.saveSettings?.();
-    return true;
-  }, { pluginId: PLUGIN_ID, apiKey, model: plan.model, maxTurnsPerPrompt: plan.turn.maxTurnsPerPrompt });
+    return { base };
+  }, {
+    pluginId: PLUGIN_ID,
+    apiKey,
+    model: plan.model,
+    maxTurnsPerPrompt: plan.turn.maxTurnsPerPrompt,
+    settingKeys,
+  });
   if (!configured) throw new Error("agentic-chat plugin not found in the tool-use vault");
+  baseCaseSettings = configured.base;
 }
 
 async function applyCaseSettings(settings: Record<string, string | number | boolean>): Promise<void> {
-  await browser.executeObsidian(async ({ app }, caseSettings) => {
+  await browser.executeObsidian(async ({ app }, payload) => {
     const plugin = (app as unknown as {
       plugins?: {
         plugins?: Record<
@@ -232,11 +244,11 @@ async function applyCaseSettings(settings: Record<string, string | number | bool
       };
     }).plugins?.plugins?.["agentic-chat"];
     if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
-    const settings = plugin.settings;
-    settings.ignoredGlobs = "";
-    for (const [key, value] of Object.entries(caseSettings)) settings[key] = value;
+    const current = plugin.settings;
+    for (const [key, value] of Object.entries(payload.base)) current[key] = value;
+    for (const [key, value] of Object.entries(payload.caseSettings)) current[key] = value;
     await plugin.saveSettings?.();
-  }, settings);
+  }, { base: baseCaseSettings, caseSettings: settings });
 }
 
 async function prepareVault(seedFiles: Record<string, string>): Promise<void> {
