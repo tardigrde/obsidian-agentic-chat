@@ -48,9 +48,9 @@ await $(".agentic-chat-session-list").waitForExist();
 | `x` closes a tab | `src/ui/chat-tabs.ts#onActivate` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` (calls `closeTab`, does not click `x`) | `partial` |
 | Closing the last tab starts a new conversation | `src/ui/chat-tabs.ts#switchToTab` | no committed check | `NONE` |
 | Header New chat button | `src/ui/chat-view.ts#startNewConversation` | no committed check | `NONE` |
-| Header history button | `src/ui/chat-view.ts#buildLayout` | no committed check | `NONE` |
-| `/new` | `src/ui/chat-view.ts#dispatchPrompt` | `test/session-actions.test.ts#makeActions` (unit only) | `partial` |
-| `/sessions` opens history | `src/ui/chat-view.ts#dispatchPrompt` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |
+| Header history button | `src/ui/chat-layout.ts#buildLayout` | no committed check | `NONE` |
+| `/new` | `src/ui/chat-turn.ts#dispatchPrompt` | `test/session-actions.test.ts#makeActions` (unit only) | `partial` |
+| `/sessions` opens history | `src/ui/chat-turn.ts#dispatchPrompt` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |
 | Search conversations | `src/ui/session-list-modal.ts#onOpen` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |
 | Rename a conversation | `src/ui/session-list-modal.ts#beginRename` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |
 | Delete a conversation | `src/ui/session-list-modal.ts#renderList` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |
@@ -59,8 +59,8 @@ await $(".agentic-chat-session-list").waitForExist();
 | Reload a persisted session | `src/ui/slash/session.ts#exportSession` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |
 | Send waits for an in-flight session swap | `src/agent/session-actions.ts#commitSessionChange` | `test/agent-service.test.ts#blocks a prompt when the session changes during turn preparation` | `partial` |
 | Failed swap restores the previous session or recovers on next send | `src/agent/session-actions.ts#recoverLiveSession` | `test/session-actions.test.ts#name: "new session"`; `test/session-actions.test.ts#restores the previous session when the targeted load fails after detach` | `partial` |
-| A queued prompt is dropped on session change | `src/ui/session-activation-coordinator.ts#startNewConversation`; `src/ui/chat-view.ts#handleSlashCommand` | `test/chat-view-lifecycle.test.ts#clears an armed queued prompt when the session changes`; `test/chat-view-lifecycle.test.ts#clears a queued prompt before deleting the active session` | `partial` |
-| A queued prompt flushes once the swap is live | `src/ui/chat-view.ts#submit` | `test/chat-view-lifecycle.test.ts#does not flush a queued prompt while the session swap is not live` | `partial` |
+| A queued prompt is dropped on session change | `src/ui/session-activation-coordinator.ts#startNewConversation`; `src/ui/chat-actions.ts#handleSlashCommand` | `test/chat-view-lifecycle.test.ts#clears an armed queued prompt when the session changes`; `test/chat-view-lifecycle.test.ts#clears a queued prompt before deleting the active session` | `partial` |
+| A queued prompt flushes once the swap is live | `src/ui/chat-turn.ts#submit` | `test/chat-view-lifecycle.test.ts#does not flush a queued prompt while the session swap is not live` | `partial` |
 | Compaction rewrite rejects a changed session | `src/agent/compaction-runtime.ts#AgentCompactionRuntime` | `test/compaction-runtime.test.ts#keeps guard stop notices out of the summary prompt (#283)`; `test/session-invariants.test.ts#rejects a rewrite bound to a session that changed during the write` | `partial` |
 | A crash during rewrite keeps the old transcript or the new one | `src/session/session-manager.ts#replaceSessionFile` | `test/session-rewrite-atomic.test.ts#keeps the original session when the rewrite write is torn` (unit only) | `partial` |
 | A slow append stays in its original session file | `src/session/session-manager.ts#appendEntry` | `test/session-invariants.test.ts#does not append a slow entry to the new session after a swap` | `partial` |

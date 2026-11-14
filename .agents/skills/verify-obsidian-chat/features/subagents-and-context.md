@@ -59,7 +59,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Ignore-list withholding | `src/ui/attachments.ts#buildAttachmentSection` | `test/attachments.test.ts#never inlines content for a restricted (ignore-listed) path` (unit only) | `partial` |
 | Context chips order and removal | `src/ui/context-chip-renderer.ts#renderContextChips` | `test/context-chip-renderer.test.ts#renders the active note and explicit attachments in a stable order` (unit only) | `partial` |
 | Source chips and note open | `src/ui/assistant-bubble.ts#renderSourceChips` | `test/e2e/specs/beautifului-polish.e2e.ts#renders deduped source chips only for read-style tools and opens the note on click` | `covered` |
-| Context-window bar | `src/ui/chat-view.ts#buildLayout` | `test/e2e/probe/scenarios/context-readout.e2e.ts#shows the full-load percentage with a section breakdown` | `covered` |
+| Context-window bar | `src/ui/chat-layout.ts#buildLayout` | `test/e2e/probe/scenarios/context-readout.e2e.ts#shows the full-load percentage with a section breakdown` | `covered` |
 
 ## Gotchas
 
