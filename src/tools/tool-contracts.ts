@@ -306,10 +306,6 @@ export const DEFAULT_BUILTIN_TOOL_CONTRACTS: readonly BuiltinToolContract[] = BU
   (contract) => contract.defaultEnabled !== false,
 );
 
-export const DEFAULT_BUILTIN_TOOL_NAMES: readonly BuiltinToolName[] = DEFAULT_BUILTIN_TOOL_CONTRACTS.map(
-  (contract) => contract.name,
-);
-
 export function builtinToolContractsForSurface(
   surface: BuiltinToolSurface = "default",
 ): readonly BuiltinToolContract[] {
@@ -344,14 +340,6 @@ export function builtinToolLabel(name: BuiltinToolName): string {
 
 export function builtinToolExecutionMode(name: BuiltinToolName): "sequential" | undefined {
   return builtinToolContract(name).executionMode === "sequential" ? "sequential" : undefined;
-}
-
-export function isMutatingTool(name: string): boolean {
-  return MUTATING_TOOLS.has(name);
-}
-
-export function isUndoableTool(name: string): boolean {
-  return UNDOABLE_TOOLS.has(name);
 }
 
 export function approvalPreviewNeedsContent(name: string): boolean {

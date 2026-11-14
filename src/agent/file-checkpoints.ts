@@ -83,15 +83,6 @@ export async function restoreFileCheckpoint(app: App, checkpoint: FileCheckpoint
   };
 }
 
-export function fileCheckpointTouchedPaths(checkpoint: FileCheckpoint): readonly string[] {
-  return [...new Set(checkpoint.entries.flatMap(touchedPathsForUndo))];
-}
-
-function touchedPathsForUndo(entry: UndoEntry): readonly string[] {
-  if (entry.kind === "rename") return [entry.from, entry.to];
-  return [entry.path];
-}
-
 function restoreSummary(restored: readonly string[], failed: readonly FileCheckpointRestoreFailure[]): string {
   if (failed.length === 0) {
     if (restored.length === 1) return restored[0] ?? "Checkpoint restored.";

@@ -1,8 +1,5 @@
 import type { WebFetcher } from "../tools/web-fetch";
-import {
-  DEFAULT_MCP_OAUTH_SETTINGS,
-  type McpServerSettings,
-} from "./settings";
+import type { McpServerSettings } from "./settings";
 import { DEFAULT_MCP_HTTP_TIMEOUT_MS, fetchWithMcpTimeout } from "./http";
 import { openSystemUrl } from "../platform/system-browser";
 import { createLoopbackOAuthCallbackReceiver } from "./oauth/callback-receivers";
@@ -369,13 +366,6 @@ export function shouldRefreshMcpOAuthToken(server: McpServerSettings, now: numbe
 export function hasMcpOAuthAccess(server: McpServerSettings, now: number = Date.now()): boolean {
   if (server.authType !== "oauth" || !server.oauth.accessToken) return false;
   return server.oauth.expiresAt === 0 || server.oauth.expiresAt > now + TOKEN_EXPIRY_SKEW_MS;
-}
-
-export function clearMcpOAuth(server: McpServerSettings): void {
-  const { clientSecretSecretId, accessTokenSecretId, refreshTokenSecretId } = server.oauth;
-  server.oauth = { ...DEFAULT_MCP_OAUTH_SETTINGS, clientSecretSecretId, accessTokenSecretId, refreshTokenSecretId };
-  if (server.authType === "oauth") return;
-  server.authType = "oauth";
 }
 
 export function forgetMcpOAuthTokens(server: McpServerSettings): void {

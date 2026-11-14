@@ -64,11 +64,6 @@ export function isCostCapError(error: unknown): boolean {
   return /spend cap|cost cap|costcap/i.test(msg);
 }
 
-export function isTimeoutError(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return /timed out|timeout/i.test(msg) && !isAbortedError(error);
-}
-
 function classifyStatus(
   status: number,
   bodyText?: string,

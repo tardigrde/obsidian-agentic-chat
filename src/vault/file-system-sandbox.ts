@@ -6,7 +6,6 @@
 //   - MCP enabled/disabled_tools -> McpServerConfig.enabled_tools/disabled_tools (ordered allow-then-deny)
 // Each is implemented via its Codex lattice.
 
-import { compileGitignorePatternSource } from "./glob-pattern";
 import { createIgnoreMatcher, parseIgnorePatterns, type IgnoreMatcher } from "./ignore";
 
 /**
@@ -61,18 +60,4 @@ export interface FileSystemSandboxPolicy {
   userGlobs: string;
   /** Effective deny globs (user + protected) as parsed patterns that actually compile. */
   effectivePatterns: string[];
-}
-
-export function createFileSystemSandboxPolicy(userGlobs: string, configDir?: string): FileSystemSandboxPolicy {
-  const userPatterns = parseIgnorePatterns(userGlobs);
-  const extraProtected =
-    configDir && configDir !== DEFAULT_OBSIDIAN_DIR && configDir.trim() ? [configDir.trim()] : [];
-  const protectedCount = PROTECTED_DENY_GLOBS.length + extraProtected.length;
-  const maxUser = Math.max(0, 200 - protectedCount);
-  const cappedUser = userPatterns.slice(0, maxUser);
-  const rawEffective = [...cappedUser, ...PROTECTED_DENY_GLOBS, ...extraProtected];
-  // Filter to patterns that actually compile so UI/diagnostics don't lie about enforcement.
-  const effectivePatterns = rawEffective.filter((pattern) => compileGitignorePatternSource(pattern) !== null);
-  const isDenied = createIgnoreMatcher(rawEffective);
-  return { isDenied, userGlobs, effectivePatterns };
 }

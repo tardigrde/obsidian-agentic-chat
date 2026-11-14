@@ -4,7 +4,6 @@ import { captureUndo, summarizeFileBody } from "../src/agent/undo";
 import {
   createFileCheckpoint,
   createFileCheckpointFromUndo,
-  fileCheckpointTouchedPaths,
   restoreFileCheckpoint,
 } from "../src/agent/file-checkpoints";
 import { ObsidianSessionManager } from "../src/session/session-manager";
@@ -317,18 +316,4 @@ describe("file checkpoints", () => {
     expect(files.get("B.md")).toBe("old b");
   });
 
-  it("reports touched paths for checkpoint filtering and display", () => {
-    const checkpoint = createFileCheckpoint({
-      toolCallId: "call-paths",
-      toolName: "batch",
-      entries: [
-        { kind: "rename", from: "A.md", to: "B.md" },
-        { kind: "delete", path: "C.md", before: "c" },
-        { kind: "delete_folder", path: "Empty" },
-      ],
-      now: () => FIXED_NOW,
-    });
-
-    expect(fileCheckpointTouchedPaths(checkpoint)).toEqual(["A.md", "B.md", "C.md", "Empty"]);
-  });
 });

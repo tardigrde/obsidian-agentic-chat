@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   createFileSystemDenyMatcher,
-  createFileSystemSandboxPolicy,
   PROTECTED_DENY_GLOBS,
 } from "../src/vault/file-system-sandbox";
 import { createIgnoreMatcher, parseIgnorePatterns } from "../src/vault/ignore";
@@ -59,15 +58,6 @@ describe("file-system-sandbox", () => {
     expect(isDenied("private/note.md")).toBe(true);
     expect(isDenied("PRIVATE/NOTE.MD")).toBe(true);
     expect(isDenied(".OBSIDIAN/app.json")).toBe(true);
-  });
-
-  it("policy exposes effective patterns", () => {
-    const policy = createFileSystemSandboxPolicy("Private/**");
-    expect(policy.userGlobs).toBe("Private/**");
-    expect(policy.effectivePatterns).toContain("Private/**");
-    expect(policy.effectivePatterns).toContain(".obsidian");
-    expect(policy.isDenied("Private/x.md")).toBe(true);
-    expect(policy.isDenied(".git/config")).toBe(true);
   });
 
   it("user globs with trailing slash and leading slash behave like ignore", () => {

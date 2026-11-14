@@ -16,19 +16,9 @@ export interface MemoryConsolidationResult {
   consolidations: readonly MemoryConsolidation[];
 }
 
-export interface StaleMemoryAgingResult {
-  records: MemoryRecord[];
-  agedIds: readonly string[];
-}
-
 export interface ForgetMemoryResult {
   records: MemoryRecord[];
   forgotten?: MemoryRecord;
-}
-
-export interface DeleteMemoryResult {
-  records: MemoryRecord[];
-  deleted?: MemoryRecord;
 }
 
 export interface MemoryExport {
@@ -60,28 +50,6 @@ export function consolidateDuplicateMemories(records: readonly MemoryRecord[]): 
   return { records: sorted, consolidations };
 }
 
-export function ageStaleMemories(
-  records: readonly MemoryRecord[],
-  options: { now: number; staleAfterDays: number },
-): StaleMemoryAgingResult {
-  const agedIds: string[] = [];
-  const thresholdMs = options.staleAfterDays * 24 * 60 * 60 * 1000;
-  const updated = records.map((record) => {
-    if (record.enabled === false || record.stale) return record;
-    const timestamp = Date.parse(record.updatedAt ?? record.createdAt ?? "");
-    if (!Number.isFinite(timestamp) || options.now - timestamp < thresholdMs) return record;
-    agedIds.push(record.id);
-    return {
-      ...record,
-      stale: true,
-      updatedAt: new Date(options.now).toISOString(),
-      confidence: Math.min(record.confidence ?? 0.5, 0.4),
-      tags: uniqueStrings([...(record.tags ?? []), "stale"]),
-    };
-  });
-  return { records: updated, agedIds };
-}
-
 export function forgetMemory(
   records: readonly MemoryRecord[],
   id: string,
@@ -100,30 +68,6 @@ export function forgetMemory(
     return forgotten;
   });
   return { records: updated, forgotten };
-}
-
-export function deleteMemory(records: readonly MemoryRecord[], id: string): DeleteMemoryResult {
-  const deleted = records.find((record) => record.id === id);
-  return {
-    records: records.filter((record) => record.id !== id),
-    deleted,
-  };
-}
-
-export function migrateMemoryRecords(records: readonly MemoryRecord[], options: { now: number }): MemoryRecord[] {
-  return records.map((record) => {
-    let provenance: typeof record.provenance | undefined;
-    if (record.provenance?.length) {
-      provenance = record.provenance;
-    } else if (record.source) {
-      provenance = [{ source: record.source, extractedAt: record.createdAt ?? new Date(options.now).toISOString() }];
-    }
-    return {
-      ...record,
-      enabled: record.enabled ?? true,
-      provenance,
-    };
-  });
 }
 
 export function explainMemoryProvenance(record: MemoryRecord): string {

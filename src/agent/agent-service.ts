@@ -48,9 +48,9 @@ import {
   resolveInstructionCommand,
   resolveSkillCommand,
 } from "./command-dispatcher";
-import { AgentCompactionRuntime, type AgentCompactionRunResult, type SummarizeFn } from "./compaction-runtime";
-import { maybeCompactAgentTranscript } from "./compaction-orchestrator";
-import { estimateContextUsage } from "./compaction";
+import { AgentCompactionRuntime, type SummarizeFn } from "./compaction-runtime";
+import { AgentConversationCompaction, type ManualCompactionResult } from "./conversation-compaction";
+import { AgentSteeringQueue } from "./steering-queue";
 import { conversationMessages } from "./conversation-messages";
 import {
   AgentServiceListeners,
@@ -111,9 +111,7 @@ export interface AgentServiceOptions {
   pluginService?: PluginCatalog;
 }
 
-export type ManualCompactionResult =
-  | { compacted: true; beforeTokens: number; afterTokens: number; contextWindow: number }
-  | { compacted: false; message: string };
+export type { ManualCompactionResult } from "./conversation-compaction";
 
 /**
  * Owns the pi Agent for the chat view: model/tool/skill wiring, approval gates,
@@ -138,6 +136,8 @@ export class AgentService {
   private readonly fileCheckpoints: AgentFileCheckpointRecorder;
   private readonly sessionActions: AgentSessionActions;
   private readonly compaction: AgentCompactionRuntime;
+  private readonly conversationCompaction: AgentConversationCompaction;
+  private readonly steering = new AgentSteeringQueue();
   private readonly artifactStore?: ToolArtifactStoreLike;
   private readonly turns: AgentTurnConfiguration;
   private readonly runtimeResources: AgentRuntimeResourceState;
@@ -150,8 +150,6 @@ export class AgentService {
   private readonly promptTurns: AgentPromptTurnRuntime;
 
   private initialization: Promise<void> | null = null;
-  /** Set when a compaction rewrite landed but the live transcript is stale. */
-  private compactionRecoveryError: string | undefined;
   /** Drops the plugin-invalidation subscription on dispose. */
   private unsubscribePluginInvalidation?: () => void;
   private pluginReloadTimer: number | undefined;
@@ -192,12 +190,6 @@ export class AgentService {
       }),
     });
     this.fileCheckpoints = new AgentFileCheckpointRecorder({ sessionManager });
-    this.compaction = new AgentCompactionRuntime({
-      getSettings: this.getSettings,
-      sessionManager,
-      buildStreamFn: () => this.streams.buildStreamFn(),
-      summarize: options.summarize,
-    });
     this.runtimeResources = new AgentRuntimeResourceState({
       app: this.app,
       getSettings: this.getSettings,
@@ -286,14 +278,27 @@ export class AgentService {
       notifyChange: () => this.notifyChange(),
       afterDelete: () => this.cleanupArtifactsAfterSessionDelete(),
     });
+    this.compaction = new AgentCompactionRuntime({
+      getSettings: this.getSettings,
+      session: this.sessionActions,
+      buildStreamFn: () => this.streams.buildStreamFn(),
+      summarize: options.summarize,
+    });
+    this.conversationCompaction = new AgentConversationCompaction({
+      getAgent: () => this.agent,
+      session: this.sessionActions,
+      runtime: this.compaction,
+      audit: this.actionAudit,
+      getOverheadTokens: () => this.getContextOverheadTokens(),
+      setError: (message) => this.setError(message),
+    });
     this.promptTurns = new AgentPromptTurnRuntime({
       conversation: this.conversation,
       errors: this.sessionState,
       getSettings: this.getSettings,
       hasApiKey: () => this.hasApiKey(),
       getSessionCostUsd: () => this.getSessionUsage().cost?.total ?? 0,
-      maybeCompact: () => this.maybeCompact(),
-      afterCompaction: () => this.compactionRecoveryError,
+      maybeCompact: () => this.conversationCompaction.runAutomatic(),
       sessionToken: () => this.sessionActions.getSessionToken(),
       onTurnStart: () => this.toolCalls.beginTurn(),
       consumeOverrides: () => this.turns.consumeOverrides(),
@@ -532,15 +537,18 @@ export class AgentService {
     }
   }
 
-  async sendPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
+  async sendPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: number): Promise<void> {
     const trimmed = prompt.trim();
     if (!trimmed) return;
     const attached = images && images.length > 0 ? images : undefined;
     await this.runPrompt((agent) => agent.prompt(trimmed, attached), expectedSessionToken);
   }
 
-  /** Session path + explicit operation epoch, for stale-send guards. */
-  getSessionToken(): string {
+  /**
+   * The conversation a send binds to. It changes when a session swap or a
+   * rewind commits, and survives compaction.
+   */
+  getSessionToken(): number {
     return this.sessionActions.getSessionToken();
   }
 
@@ -554,7 +562,7 @@ export class AgentService {
    * current model turn, or the run ends and takeUndeliveredSteers returns it.
    * When the agent is idle, the same call sends the text as a normal prompt.
    */
-  async steerPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: string): Promise<void> {
+  async steerPrompt(prompt: string, images?: ImageContent[], expectedSessionToken?: number): Promise<void> {
     const text = normalizeSteeringText(prompt);
     if (!text) return;
     await this.initialize();
@@ -637,134 +645,19 @@ export class AgentService {
       this.setError(message);
       return { compacted: false, message };
     }
-    const agent = this.agent;
-    if (!agent) return { compacted: false, message: "Nothing compacted. No active conversation is loaded." };
-    // Compact the conversation only. pi's system message stays as agent state,
-    // and the replacement agent re-seeds it from the current system prompt.
-    const messages = conversationMessages(agent.state.messages);
-    const sessionToken = this.sessionActions.getSessionToken();
-    const expectedPath = this.conversation.activePath;
-    const expectedGeneration = this.conversation.generation;
-    const contextWindow = agent.state.model?.contextWindow ?? 0;
-    const overheadTokens = this.getContextOverheadTokens();
-    const stats = {
-      messageCount: messages.length,
-      userTurns: messages.filter((message) => message.role === "user").length,
-      estimatedTokens: estimateContextUsage(messages),
-      contextWindow,
-      hasInstructions: Boolean(customInstructions?.trim()),
-    };
-    const startEvent = {
-      category: "compaction" as const,
-      action: "start" as const,
-      trigger: "manual" as const,
-      timestamp: new Date().toISOString(),
-      ...stats,
-    };
-    await this.actionAudit.record(startEvent);
-    if (this.sessionActions.getSessionToken() !== sessionToken) {
-      return {
-        compacted: false,
-        message: "Nothing compacted. The active session changed before compaction started.",
-      };
-    }
-    let result: AgentCompactionRunResult;
-    try {
-      result = await this.compaction.compactWithResult(messages, contextWindow, {
-        force: true,
-        overheadTokens,
-        customInstructions: customInstructions?.trim() || undefined,
-        expectedPath,
-        expectedGeneration,
-      });
-    } catch (error) {
-      // A session change during summarization cancels the rewrite. Report it as
-      // a normal manual-compaction result so `/compact` does not throw.
-      const message =
-        `Nothing compacted. The active session changed while compacting: ${
-          errorMessage(error)
-        }`;
-      return { compacted: false, message };
-    }
-    if (result.status === "skipped") {
-      await this.actionAudit.record({
-        category: "compaction",
-        action: "end",
-        trigger: "manual",
-        timestamp: new Date().toISOString(),
-        status: "skipped",
-        reason: result.reason,
-        message: result.message,
-        ...stats,
-      });
-      return { compacted: false, message: result.message };
-    }
-    // The audit await above (and summarization) can outlive the session. Never
-    // install a transcript from A into the agent that now holds B.
-    if (this.sessionActions.getSessionToken() !== sessionToken) {
-      return {
-        compacted: false,
-        message: "Nothing compacted. The active session changed while compacting.",
-      };
-    }
-    // The saved session is already rewritten at this point. If the live agent
-    // cannot be replaced, report it instead of pretending compaction succeeded.
-    try {
-      this.installCompactedTranscript(result.messages);
-    } catch (error) {
-      if (!(await this.recoverCompactedSession())) {
-        const detail = errorMessage(error);
-        const message =
-          `Compaction rewrote the saved session, but the live conversation could not be replaced: ${detail}. ` +
-          "Reload the session to continue from the compacted transcript.";
-        this.setError(message);
-        return { compacted: false, message };
-      }
-    }
-    // The rewrite carries existing audit entries over, so the start event
-    // recorded above survives; record only the matching end event.
-    await this.actionAudit.record({
-      category: "compaction",
-      action: "end",
-      trigger: "manual",
-      timestamp: new Date().toISOString(),
-      status: "compacted",
-      replacementMessageCount: result.messages.length,
-      ...stats,
-    });
-    return {
-      compacted: true,
-      // Report the same load the context bar shows: transcript plus overhead.
-      beforeTokens: stats.estimatedTokens + overheadTokens,
-      afterTokens: estimateContextUsage(result.messages) + overheadTokens,
-      contextWindow,
-    };
+    return this.conversationCompaction.runManual(customInstructions);
   }
 
   abort(): void {
     const agent = this.agent;
     if (!agent) return;
-    this.stopAgent(agent);
+    this.steering.stop(agent);
     void agent.waitForIdle().then(() => this.notifyChange());
-  }
-
-  /**
-   * One stop policy for every path that ends a turn early: clear the queues
-   * first, then abort, so a queued message cannot drain into the next run. The
-   * cleared text goes back to the composer, which emptied it on steer.
-   */
-  private stopAgent(agent: Agent): void {
-    this.takeQueuedMessages(agent);
-    agent.abort();
   }
 
   async newSession(): Promise<void> {
     this.resetTurnGuards();
     return this.sessionActions.newSession();
-  }
-
-  async continueRecentSession(): Promise<void> {
-    return this.sessionActions.continueRecentSession();
   }
 
   async listSessions(): Promise<SessionInfo[]> {
@@ -796,9 +689,10 @@ export class AgentService {
   /**
    * Rewind the conversation to just before message `index` (prompt editing): drop
    * that turn and everything after it, in memory and on disk, so the caller can
-   * resend an edited prompt as a fresh branch.
+   * resend an edited prompt as a fresh branch. Resolves with the session token
+   * of the rewound conversation.
    */
-  async truncateMessages(index: number): Promise<void> {
+  async truncateMessages(index: number): Promise<number> {
     this.resetTurnGuards();
     return this.sessionActions.truncateMessages(index);
   }
@@ -815,13 +709,12 @@ export class AgentService {
     this.listeners.clear();
   }
 
-  private async runPrompt(run: PromptTurnRun, expectedSessionToken?: string): Promise<void> {
-    this.compactionRecoveryError = undefined;
+  private async runPrompt(run: PromptTurnRun, expectedSessionToken?: number): Promise<void> {
     await this.initialize();
     // A fresh prompt starts a new epoch: neither the identical-batch streak nor
     // the turn budget from a previous user turn carries into this one.
     this.resetTurnGuards();
-    await this.promptTurns.run(this.settlingQueues(run), expectedSessionToken);
+    await this.promptTurns.run(this.steering.settling(run), expectedSessionToken);
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
@@ -863,7 +756,7 @@ export class AgentService {
     });
     if (!reason) return;
     this.sessionState.setErrorMessage(reason);
-    if (agent) this.stopAgent(agent);
+    if (agent) this.steering.stop(agent);
   }
 
   /**
@@ -889,62 +782,6 @@ export class AgentService {
       new Notice(text);
     } catch {
       // Headless tests / no DOM — chat bubble above already carries the note.
-    }
-  }
-
-  /**
-   * Auto-compaction: when the transcript fills past the configured threshold,
-   * summarize the older turns into a single message and keep the recent ones, in
-   * memory and on disk. Best-effort — any failure (no key, summary error, write
-   * error) leaves the transcript untouched so a prompt is never lost.
-   */
-  private async maybeCompact(): Promise<void> {
-    await maybeCompactAgentTranscript({
-      getTranscript: () => {
-        const agent = this.agent;
-        if (!agent) return null;
-        // Compact the conversation only; pi's system message is agent state and
-        // is re-seeded from the current prompt when the agent is replaced.
-        return {
-          messages: conversationMessages(agent.state.messages),
-          contextWindow: agent.state.model?.contextWindow ?? 0,
-          overheadTokens: this.getContextOverheadTokens(),
-        };
-      },
-      compact: (messages, contextWindow, overheadTokens) =>
-        this.compaction.compact(messages, contextWindow, { overheadTokens }),
-      install: (messages) => this.installCompactedTranscript(messages),
-      recoverAfterReplaceFailure: () => this.recoverCompactedSession(),
-      onCompactionFailure: (_error, persisted) => {
-        if (!persisted) return;
-        this.compactionRecoveryError =
-          "Compaction rewrote the saved session, but the live conversation could not be replaced. " +
-          "Reload the session to continue from the compacted transcript.";
-        this.setError(this.compactionRecoveryError);
-      },
-    });
-  }
-
-  /**
-   * Re-read the active session after a successful compaction rewrite whose live
-   * replacement failed, so the next turn continues from the persisted summary
-   * instead of a stale in-memory transcript.
-   */
-  private async recoverCompactedSession(): Promise<boolean> {
-    const path = this.conversation.activePath;
-    const expectedGeneration = this.conversation.generation;
-    if (!path) return false;
-    try {
-      // Bind the reload to the session that failed to replace. A user switch
-      // during the read must win instead of being overwritten by recovery.
-      const snapshot = await this.conversation.load(path, {
-        expectedPath: path,
-        expectedGeneration,
-      });
-      this.installCompactedTranscript(snapshot.messages);
-      return true;
-    } catch {
-      return false;
     }
   }
 
@@ -977,16 +814,6 @@ export class AgentService {
     return this.conversation.requireAgent();
   }
 
-  /**
-   * Install a transcript the session file already holds (a compaction rewrite
-   * or a reload after one), then publish the new session info.
-   */
-  private installCompactedTranscript(messages: AgentMessage[]): void {
-    this.conversation.installTranscript(messages);
-    this.conversation.refreshInfoIfActive();
-    this.notifyChange();
-  }
-
   /** Neither the identical-batch streak nor the turn budget survives new user input or a session change. */
   private resetTurnGuards(): void {
     this.loopGuard.reset();
@@ -1010,67 +837,13 @@ export class AgentService {
     this.listeners.notifyChange();
   }
 
-  /** Steered text pi never delivered; the composer takes it back. */
-  private readonly undeliveredSteers: string[] = [];
-
   /**
    * Steered text that never reached the model because the run ended or was
    * stopped first. Each text is returned once; the UI puts it back in the composer.
    */
   takeUndeliveredSteers(): string[] {
-    return this.undeliveredSteers.splice(0);
+    return this.steering.takeUndelivered();
   }
-
-  /**
-   * pi polls its queues only between turns, so a run that ends early (turn cap,
-   * loop guard) or a steer that lands after the last poll leaves messages
-   * queued, and the next prompt would deliver them as new. Drain them on the
-   * idle agent before and after every run, inside the prompt turn so the UI
-   * sees them on the run's settle notification.
-   */
-  private settlingQueues(run: PromptTurnRun): PromptTurnRun {
-    return async (agent) => {
-      this.takeQueuedMessages(agent);
-      try {
-        await run(agent);
-      } finally {
-        if (!agent.state.isStreaming) this.takeQueuedMessages(agent);
-      }
-    };
-  }
-
-  /** Empty both queues and keep the user text they carried as undelivered. */
-  private takeQueuedMessages(agent: Agent): void {
-    if (!agent.hasQueuedMessages()) return;
-    const { steeringMode, followUpMode } = agent;
-    // "all" makes peek return the whole queue, not just its head.
-    agent.steeringMode = "all";
-    agent.followUpMode = "all";
-    try {
-      const steering = agent.peekQueuedMessages();
-      agent.clearSteeringQueue();
-      // With an empty steering queue both peeks return the follow-ups.
-      const queued = new Set([...steering, ...agent.peekQueuedMessages()]);
-      agent.clearAllQueues();
-      for (const message of queued) {
-        const text = queuedUserText(message);
-        if (text) this.undeliveredSteers.push(text);
-      }
-    } finally {
-      agent.steeringMode = steeringMode;
-      agent.followUpMode = followUpMode;
-    }
-  }
-}
-
-function queuedUserText(message: AgentMessage): string {
-  if (message.role !== "user") return "";
-  if (typeof message.content === "string") return message.content.trim();
-  return message.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("\n")
-    .trim();
 }
 
 function createUserMessage(text: string, images?: ImageContent[]): UserMessage {
