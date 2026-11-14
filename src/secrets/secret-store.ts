@@ -119,6 +119,42 @@ export function mcpSecretId(serverId: string, kind: string): string {
   return normalizeSecretId(`agentic-chat-mcp-${serverId}-${kind}`);
 }
 
+type McpSecretSlot = {
+  /** `server` is the MCP record itself; `oauth` is its `oauth` member. */
+  readonly scope: "server" | "oauth";
+  readonly valueKey: string;
+  readonly secretIdKey: string;
+  readonly secretKind: string;
+};
+
+/** Every secret-backed MCP field, for hydration, storage, and legacy migration. */
+export const MCP_SECRET_SLOTS: readonly McpSecretSlot[] = [
+  {
+    scope: "server",
+    valueKey: "authHeaderValue",
+    secretIdKey: "authHeaderValueSecretId",
+    secretKind: "auth-header-value",
+  },
+  {
+    scope: "oauth",
+    valueKey: "clientSecret",
+    secretIdKey: "clientSecretSecretId",
+    secretKind: "oauth-client-secret",
+  },
+  {
+    scope: "oauth",
+    valueKey: "accessToken",
+    secretIdKey: "accessTokenSecretId",
+    secretKind: "oauth-access-token",
+  },
+  {
+    scope: "oauth",
+    valueKey: "refreshToken",
+    secretIdKey: "refreshTokenSecretId",
+    secretKind: "oauth-refresh-token",
+  },
+];
+
 /** Omit plaintext secret keys from a settings shape; persisted JSON must never carry them. */
 type WithoutPlaintext<T, K extends keyof T> = Omit<T, K>;
 
@@ -182,8 +218,8 @@ export function legacySecretId(input: string): string {
 export function hydrateSettingsSecrets(settings: AgenticChatSettings, store: SecretStore): void {
   ensureSecretRefs(settings);
   for (const slot of SETTINGS_SECRET_SLOTS) hydrateSettingsSecretSlot(settings, slot, store);
-  for (const server of settings.mcp.servers) hydrateMcpServerSecrets(server, store);
-  for (const [id, state] of Object.entries(settings.plugins.mcpState ?? {})) hydrateMcpStateSecrets(id, state, store);
+  for (const server of settings.mcp.servers) hydrateMcpRecordSecrets(server.id, server, store);
+  for (const [id, state] of Object.entries(settings.plugins.mcpState ?? {})) hydrateMcpRecordSecrets(id, state, store);
 }
 
 export function settingsForStorage(settings: AgenticChatSettings, store: SecretStore): PersistedSettings {
@@ -193,11 +229,12 @@ export function settingsForStorage(settings: AgenticChatSettings, store: SecretS
   const stored: AgenticChatSettings = cloneSettings(settings);
   for (const slot of SETTINGS_SECRET_SLOTS) storeSettingsSecretSlot(settings, stored, slot, store);
   for (let index = 0; index < settings.mcp.servers.length; index += 1) {
-    storeMcpServerSecrets(settings.mcp.servers[index], stored.mcp.servers[index], store);
+    const server = settings.mcp.servers[index];
+    storeMcpRecordSecrets(server.id, server, stored.mcp.servers[index], store);
   }
   for (const [id, state] of Object.entries(settings.plugins.mcpState ?? {})) {
     const storedState = stored.plugins.mcpState?.[id];
-    if (storedState) storeMcpStateSecrets(id, state, storedState, store);
+    if (storedState) storeMcpRecordSecrets(id, state, storedState, store);
   }
   return stored;
 }
@@ -211,73 +248,76 @@ export function ensureSecretRefs(settings: AgenticChatSettings): void {
 }
 
 export function ensureMcpServerSecretRefs(server: McpServerSettings): void {
-  server.authHeaderValueSecretId ||= mcpSecretId(server.id, "auth-header-value");
-  ensureMcpOAuthSecretRefs(server.id, server.oauth);
+  ensureMcpRecordSecretRefs(server.id, server);
 }
 
 export function ensureMcpOAuthSecretRefs(serverId: string, oauth: McpOAuthSettings): void {
-  oauth.clientSecretSecretId ||= mcpSecretId(serverId, "oauth-client-secret");
-  oauth.accessTokenSecretId ||= mcpSecretId(serverId, "oauth-access-token");
-  oauth.refreshTokenSecretId ||= mcpSecretId(serverId, "oauth-refresh-token");
+  ensureMcpScopeRefs(serverId, oauth, "oauth");
 }
 
 export function ensureMcpStateSecretRefs(id: string, state: McpServerState): void {
-  state.authHeaderValueSecretId ||= mcpSecretId(id, "auth-header-value");
-  ensureMcpOAuthSecretRefs(id, state.oauth);
+  ensureMcpRecordSecretRefs(id, state);
 }
 
-function hydrateMcpServerSecrets(server: McpServerSettings, store: SecretStore): void {
-  ensureMcpServerSecretRefs(server);
-  hydrateSecretSlot(server, "authHeaderValue", server.authHeaderValueSecretId, store);
-  hydrateSecretSlot(server.oauth, "clientSecret", server.oauth.clientSecretSecretId, store);
-  hydrateSecretSlot(server.oauth, "accessToken", server.oauth.accessTokenSecretId, store);
-  hydrateSecretSlot(server.oauth, "refreshToken", server.oauth.refreshTokenSecretId, store);
+function ensureMcpRecordSecretRefs(id: string, record: McpServerSettings | McpServerState): void {
+  ensureMcpScopeRefs(id, record, "server");
+  ensureMcpOAuthSecretRefs(id, record.oauth);
 }
 
-function storeMcpServerSecrets(
-  runtime: McpServerSettings,
-  stored: PersistedMcpServerSettings,
-  store: SecretStore,
-): void {
-  ensureMcpServerSecretRefs(runtime);
-  stored.authHeaderValueSecretId = runtime.authHeaderValueSecretId;
-  storeSecretSlot(runtime, stored, "authHeaderValue", runtime.authHeaderValueSecretId, store);
-  storeMcpOAuthSecrets(runtime.id, runtime.oauth, stored.oauth, store);
+function ensureMcpScopeRefs(serverId: string, record: McpOAuthSettings | McpServerSettings | McpServerState, scope: "server" | "oauth"): void {
+  const target = record as unknown as Record<string, string>;
+  for (const slot of MCP_SECRET_SLOTS) {
+    if (slot.scope !== scope) continue;
+    target[slot.secretIdKey] ||= mcpSecretId(serverId, slot.secretKind);
+  }
 }
 
-function storeMcpOAuthSecrets(
-  serverId: string,
-  runtime: McpOAuthSettings,
-  stored: PersistedMcpOAuthSettings,
-  store: SecretStore,
-): void {
-  ensureMcpOAuthSecretRefs(serverId, runtime);
-  stored.clientSecretSecretId = runtime.clientSecretSecretId;
-  stored.accessTokenSecretId = runtime.accessTokenSecretId;
-  stored.refreshTokenSecretId = runtime.refreshTokenSecretId;
-  storeSecretSlot(runtime, stored, "clientSecret", runtime.clientSecretSecretId, store);
-  storeSecretSlot(runtime, stored, "accessToken", runtime.accessTokenSecretId, store);
-  storeSecretSlot(runtime, stored, "refreshToken", runtime.refreshTokenSecretId, store);
-}
-
-function hydrateMcpStateSecrets(id: string, state: McpServerState, store: SecretStore): void {
-  ensureMcpStateSecretRefs(id, state);
-  hydrateSecretSlot(state, "authHeaderValue", state.authHeaderValueSecretId, store);
-  hydrateSecretSlot(state.oauth, "clientSecret", state.oauth.clientSecretSecretId, store);
-  hydrateSecretSlot(state.oauth, "accessToken", state.oauth.accessTokenSecretId, store);
-  hydrateSecretSlot(state.oauth, "refreshToken", state.oauth.refreshTokenSecretId, store);
-}
-
-function storeMcpStateSecrets(
+function hydrateMcpRecordSecrets(
   id: string,
-  runtime: McpServerState,
-  stored: PersistedMcpServerState,
+  record: McpServerSettings | McpServerState,
   store: SecretStore,
 ): void {
-  ensureMcpStateSecretRefs(id, runtime);
-  stored.authHeaderValueSecretId = runtime.authHeaderValueSecretId;
-  storeSecretSlot(runtime, stored, "authHeaderValue", runtime.authHeaderValueSecretId, store);
-  storeMcpOAuthSecrets(id, runtime.oauth, stored.oauth, store);
+  ensureMcpRecordSecretRefs(id, record);
+  hydrateMcpScopeSecrets(record, "server", store);
+  hydrateMcpScopeSecrets(record.oauth, "oauth", store);
+}
+
+function hydrateMcpScopeSecrets(
+  record: McpOAuthSettings | McpServerSettings | McpServerState,
+  scope: "server" | "oauth",
+  store: SecretStore,
+): void {
+  const target = record as unknown as Record<string, string>;
+  for (const slot of MCP_SECRET_SLOTS) {
+    if (slot.scope !== scope) continue;
+    hydrateSecretSlot(target, slot.valueKey, target[slot.secretIdKey], store);
+  }
+}
+
+function storeMcpRecordSecrets(
+  id: string,
+  runtime: McpServerSettings | McpServerState,
+  stored: PersistedMcpServerSettings | PersistedMcpServerState,
+  store: SecretStore,
+): void {
+  ensureMcpRecordSecretRefs(id, runtime);
+  storeMcpScopeSecrets(runtime, stored, "server", store);
+  storeMcpScopeSecrets(runtime.oauth, stored.oauth, "oauth", store);
+}
+
+function storeMcpScopeSecrets(
+  runtime: McpOAuthSettings | McpServerSettings | McpServerState,
+  stored: PersistedMcpOAuthSettings | PersistedMcpServerSettings | PersistedMcpServerState,
+  scope: "server" | "oauth",
+  store: SecretStore,
+): void {
+  const target = runtime as unknown as Record<string, string>;
+  const output = stored as unknown as Record<string, unknown>;
+  for (const slot of MCP_SECRET_SLOTS) {
+    if (slot.scope !== scope) continue;
+    output[slot.secretIdKey] = target[slot.secretIdKey];
+    storeSecretSlot(target, output, slot.valueKey, target[slot.secretIdKey], store);
+  }
 }
 
 function hydrateSecretSlot<T extends Record<K, string>, K extends string>(

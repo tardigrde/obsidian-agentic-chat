@@ -1,14 +1,8 @@
 import {
-  OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID,
-  OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
-  OBSERVABILITY_LANGFUSE_SECRET_KEY_SECRET_ID,
-} from "../observability/settings";
-import {
+  MCP_SECRET_SLOTS,
+  SETTINGS_SECRET_SLOTS,
   mcpSecretId,
   normalizeSecretId,
-  OPENAI_COMPATIBLE_API_KEY_SECRET_ID,
-  OPENROUTER_API_KEY_SECRET_ID,
-  WEB_SEARCH_API_KEY_SECRET_ID,
   type SecretStore,
 } from "./secret-store";
 
@@ -49,27 +43,10 @@ export function migrateLegacyPlaintextSecrets(stored: unknown, store: SecretStor
   const takeSecret: TakeSecret = (record, valueKey, secretIdKey, defaultSecretId) =>
     takeSecretInto(record, valueKey, secretIdKey, defaultSecretId, store, failures);
 
-  takeSecret(root, "openrouterApiKey", "openrouterApiKeySecretId", OPENROUTER_API_KEY_SECRET_ID);
-  takeSecret(root, "openaiCompatibleApiKey", "openaiCompatibleApiKeySecretId", OPENAI_COMPATIBLE_API_KEY_SECRET_ID);
-
-  const web = asRecord(root.web);
-  if (web) takeSecret(web, "searchApiKey", "searchApiKeySecretId", WEB_SEARCH_API_KEY_SECRET_ID);
-
-  const observability = asRecord(root.observability);
-  if (observability) {
-    takeSecret(
-      observability,
-      "langfusePublicKey",
-      "langfusePublicKeySecretId",
-      OBSERVABILITY_LANGFUSE_PUBLIC_KEY_SECRET_ID,
-    );
-    takeSecret(
-      observability,
-      "langfuseSecretKey",
-      "langfuseSecretKeySecretId",
-      OBSERVABILITY_LANGFUSE_SECRET_KEY_SECRET_ID,
-    );
-    takeSecret(observability, "authHeaderValue", "authHeaderValueSecretId", OBSERVABILITY_AUTH_HEADER_VALUE_SECRET_ID);
+  for (const slot of SETTINGS_SECRET_SLOTS) {
+    const parent = recordAt(root, slot.valuePath.slice(0, -1));
+    if (!parent) continue;
+    takeSecret(parent, lastSegment(slot.valuePath), lastSegment(slot.secretIdPath), slot.defaultSecretId);
   }
 
   // Id-less servers get a distinct index-based fallback so their secrets do
@@ -108,12 +85,17 @@ export function withUnmigratedSecrets(
 }
 
 function migrateMcpRecord(record: Record<string, unknown>, serverId: string, takeSecret: TakeSecret): void {
-  takeSecret(record, "authHeaderValue", "authHeaderValueSecretId", mcpSecretId(serverId, "auth-header-value"));
+  const takeSlot = (target: Record<string, unknown>, slot: (typeof MCP_SECRET_SLOTS)[number]): void => {
+    takeSecret(target, slot.valueKey, slot.secretIdKey, mcpSecretId(serverId, slot.secretKind));
+  };
+  for (const slot of MCP_SECRET_SLOTS) {
+    if (slot.scope === "server") takeSlot(record, slot);
+  }
   const oauth = asRecord(record.oauth);
   if (!oauth) return;
-  takeSecret(oauth, "clientSecret", "clientSecretSecretId", mcpSecretId(serverId, "oauth-client-secret"));
-  takeSecret(oauth, "accessToken", "accessTokenSecretId", mcpSecretId(serverId, "oauth-access-token"));
-  takeSecret(oauth, "refreshToken", "refreshTokenSecretId", mcpSecretId(serverId, "oauth-refresh-token"));
+  for (const slot of MCP_SECRET_SLOTS) {
+    if (slot.scope === "oauth") takeSlot(oauth, slot);
+  }
 }
 
 /**
@@ -155,6 +137,20 @@ function takeSecretInto(
 function keepSecret(store: SecretStore, id: string, value: string): void {
   if (store.getSecret(id).trim()) return;
   store.setSecret(id, value);
+}
+
+function recordAt(root: Record<string, unknown>, path: readonly string[]): Record<string, unknown> | undefined {
+  let current = root;
+  for (const segment of path) {
+    const next = asRecord(current[segment]);
+    if (!next) return undefined;
+    current = next;
+  }
+  return current;
+}
+
+function lastSegment(path: readonly string[]): string {
+  return path[path.length - 1];
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
