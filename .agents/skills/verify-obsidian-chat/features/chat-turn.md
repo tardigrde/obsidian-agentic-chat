@@ -55,7 +55,7 @@ await browser.waitUntil(async () =>
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Send a prompt and render a reply | `src/ui/chat-view.ts#flushQueuedPromptIfReady` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
+| Send a prompt and render a reply | `src/ui/chat-turn.ts#submit` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
 | Stream text deltas | `src/ui/transcript-view.ts#renderTranscript` | `test/e2e/specs/beautifului-polish.e2e.ts#live reasoning settles to Thought with a final elapsed timer once the answer streams` (synthetic stream) | `partial` |
 | Reasoning section | `src/ui/transcript-view.ts#updateScrollPinning` | `test/e2e/specs/beautifului-polish.e2e.ts#live reasoning settles to Thought with a final elapsed timer once the answer streams` | `partial` |
 | Markdown rendering | `src/ui/assistant-bubble.ts#MarkdownRenderer.render` | `test/assistant-bubble-rendering.test.ts#converts Obsidian callout blockquotes when MarkdownRenderer leaves them plain` (unit only) | `partial` |
@@ -81,10 +81,10 @@ await browser.waitUntil(async () =>
 | Vault images render inline in replies | `src/ui/assistant-bubble.ts#finalizeText` | `test/e2e/specs/inline-images.e2e.ts#renders vault image embeds in assistant markdown and leaves code untouched` | `covered` |
 | User bubble image thumbnails; click opens the vault image | `src/ui/transcript-view.ts#renderUserMessage` | `test/e2e/specs/inline-images.e2e.ts#shows one thumbnail per attached image on a live send`, `test/e2e/specs/inline-images.e2e.ts#renders a replayed vision block as a thumbnail` | `covered` |
 | Error banner Retry | `src/ui/assistant-bubble.ts#showError` | `test/chat-view-retry.test.ts#ChatView retry` (unit only) | `partial` |
-| Edit and resend a user turn | `src/ui/chat-view.ts#handleAgentEvent` | `test/prompt-edit-state.test.ts#starts editing a prompt and restores the original draft on cancel` (state only) | `partial` |
+| Edit and resend a user turn | `src/ui/chat-turn.ts#editAndResend` | `test/prompt-edit-state.test.ts#starts editing a prompt and restores the original draft on cancel` (state only) | `partial` |
 | Context-window bar | `src/ui/chat-view.ts#buildLayout` | `test/e2e/probe/scenarios/context-readout.e2e.ts#shows the full-load percentage with a section breakdown` | `covered` |
 | Usage readout | `src/ui/slash/info.ts#showUsage` | no committed check | `NONE` |
-| Background-tab completion notice | `src/ui/chat-view.ts#stopActiveTurn` | no committed check | `NONE` |
+| Background-tab completion notice | `src/ui/chat-tabs.ts#handleTabEvent` | no committed check | `NONE` |
 
 ## Gotchas
 
