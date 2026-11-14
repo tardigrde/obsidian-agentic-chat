@@ -10,7 +10,7 @@ import {
   type ToolUseBudgetCaps,
   type ToolUseCheckResult,
 } from "../../../scripts/eval/tool-use-core";
-import { sendPrompt, waitForTurnEnd } from "../dogfood/dogfood-helpers";
+import { sendPrompt } from "../dogfood/dogfood-helpers";
 
 const PLAN_PATH = process.env.TOOL_USE_PLAN?.trim() ?? "";
 const RESULTS_DIR = process.env.TOOL_USE_RESULTS_DIR?.trim() ?? "";
@@ -19,7 +19,7 @@ const PLUGIN_ID = "agentic-chat";
 interface EvalCasePlan {
   id: string;
   prompt: string;
-  seed: { files: Record<string, string> };
+  seed: { files: Record<string, string>; binaryFiles?: Record<string, string> };
   settings?: Record<string, string | number | boolean>;
   checks: unknown[];
 }
@@ -115,7 +115,7 @@ describe("tool-use eval", function () {
       const startedAt = Date.now();
       let sessionBaseline: string[] | undefined;
       try {
-        await prepareVault(evalCase.seed.files);
+        await prepareVault(evalCase.seed.files, evalCase.seed.binaryFiles ?? {});
         await applyCaseSettings(evalCase.settings ?? {});
         // The command callback is fire-and-forget, so take the set before it
         // starts. The new session file is the only one that may appear.
@@ -126,7 +126,10 @@ describe("tool-use eval", function () {
         // waitForTurnEnd passes while Stop is still hidden, so first wait for this
         // run's assistant bubble (the transcript was empty after new-conversation).
         await $(".agentic-chat-assistant").waitForExist({ timeout: 30_000 });
-        await waitForTurnEnd(plan.turn.timeoutMs);
+        // An open ask-user card means the turn waits for a human. Treat it as
+        // the end for this run, then stop the turn so the next run starts clean.
+        await waitForTurnOrAskUser(plan.turn.timeoutMs);
+        await stopIfRunning();
 
         const ms = Date.now() - startedAt;
         const files = await readVaultMarkdown();
@@ -251,25 +254,32 @@ async function applyCaseSettings(settings: Record<string, string | number | bool
   }, { base: baseCaseSettings, caseSettings: settings });
 }
 
-async function prepareVault(seedFiles: Record<string, string>): Promise<void> {
-  await browser.executeObsidian(async ({ app }, files) => {
+async function prepareVault(
+  seedFiles: Record<string, string>,
+  binaryFiles: Record<string, string>,
+): Promise<void> {
+  await browser.executeObsidian(async ({ app }, seed) => {
     for (const child of [...app.vault.getRoot().children]) {
       if (child.path === app.vault.configDir) continue;
       await app.vault.delete(child, true);
     }
 
     const folders = new Set<string>();
-    for (const filePath of Object.keys(files)) {
+    for (const filePath of [...Object.keys(seed.files), ...Object.keys(seed.binaryFiles)]) {
       const parts = filePath.split("/");
       for (let index = 1; index < parts.length; index += 1) folders.add(parts.slice(0, index).join("/"));
     }
     for (const folder of [...folders].sort((left, right) => left.length - right.length)) {
       if (!app.vault.getAbstractFileByPath(folder)) await app.vault.createFolder(folder);
     }
-    for (const [filePath, content] of Object.entries(files)) {
+    for (const [filePath, content] of Object.entries(seed.files)) {
       await app.vault.create(filePath, content);
     }
-  }, seedFiles);
+    for (const [filePath, base64] of Object.entries(seed.binaryFiles)) {
+      const bytes = Uint8Array.from(atob(base64.replace(/\s+/g, "")), (char) => char.charCodeAt(0));
+      await app.vault.createBinary(filePath, bytes.buffer);
+    }
+  }, { files: seedFiles, binaryFiles });
 }
 
 async function readVaultMarkdown(): Promise<Record<string, string>> {
@@ -427,6 +437,21 @@ function writeResult(result: RunResult): void {
   const caseDir = path.join(RESULTS_DIR, result.caseId);
   mkdirSync(caseDir, { recursive: true });
   writeFileSync(path.join(caseDir, `${result.run}.json`), `${JSON.stringify(result, null, 2)}\n`);
+}
+
+/**
+ * `waitForTurnEnd` waits for an open ask-user card to close, but an eval run
+ * cannot answer it. Stop at the card and let the checks grade the tool call.
+ */
+async function waitForTurnOrAskUser(timeoutMs: number): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const stopVisible = await $(".agentic-chat-stop").isDisplayed().catch(() => false);
+      const askUserOpen = await $(".agentic-chat-ask-user").isExisting().catch(() => false);
+      return askUserOpen || !stopVisible;
+    },
+    { timeout: timeoutMs, timeoutMsg: "turn did not finish" },
+  );
 }
 
 async function stopIfRunning(): Promise<void> {

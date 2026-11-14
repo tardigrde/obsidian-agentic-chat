@@ -26,6 +26,8 @@ export interface ToolUseTurnLimits {
 
 export interface ToolUseSeed {
   files: Record<string, string>;
+  /** Vault-relative path to base64 file bytes. Whitespace in the value is ignored. */
+  binaryFiles: Record<string, string>;
 }
 
 export type ToolUseSettingValue = string | number | boolean;
@@ -64,6 +66,8 @@ export interface FileContainsCheck {
   path: string;
   text: string;
   regex?: boolean;
+  /** RegExp flags, for example "i". Defaults to "". */
+  flags?: string;
 }
 
 export interface FileNotContainsCheck {
@@ -71,6 +75,8 @@ export interface FileNotContainsCheck {
   path: string;
   text: string;
   regex?: boolean;
+  /** RegExp flags, for example "i". Defaults to "". */
+  flags?: string;
 }
 
 export interface FrontmatterEqualsCheck {
@@ -122,12 +128,16 @@ export interface AnswerContainsCheck {
   type: "answer_contains";
   text: string;
   regex?: boolean;
+  /** RegExp flags, for example "i". Defaults to "". */
+  flags?: string;
 }
 
 export interface AnswerNotContainsCheck {
   type: "answer_not_contains";
   text: string;
   regex?: boolean;
+  /** RegExp flags, for example "i". Defaults to "". */
+  flags?: string;
 }
 
 export interface NoToolErrorsCheck {
@@ -454,6 +464,9 @@ function validateCase(input: unknown, index: number, problems: string[]): ToolUs
 
   const seedRecord = asRecord(evalCase.seed, `${at}.seed`, problems);
   const filesRecord = seedRecord ? asRecord(seedRecord.files, `${at}.seed.files`, problems) : undefined;
+  const binaryRecord = seedRecord
+    ? asRecord(seedRecord.binaryFiles ?? {}, `${at}.seed.binaryFiles`, problems)
+    : undefined;
   const files: Record<string, string> = {};
   if (filesRecord) {
     for (const [filePath, content] of Object.entries(filesRecord)) {
@@ -469,6 +482,25 @@ function validateCase(input: unknown, index: number, problems: string[]): ToolUs
       files[filePath] = content;
     }
   }
+  const binaryFiles: Record<string, string> = {};
+  if (binaryRecord) {
+    for (const [filePath, content] of Object.entries(binaryRecord)) {
+      const pathProblem = seedPathProblem(filePath);
+      if (pathProblem) {
+        problems.push(`${at}.seed.binaryFiles.${filePath} ${pathProblem}`);
+        continue;
+      }
+      if (typeof content !== "string") {
+        problems.push(`${at}.seed.binaryFiles.${filePath} must be a base64 string.`);
+        continue;
+      }
+      if (hasOwn(files, filePath)) {
+        problems.push(`${at}.seed.binaryFiles.${filePath} is also a seed.files entry.`);
+        continue;
+      }
+      binaryFiles[filePath] = content;
+    }
+  }
 
   const settings = validateSettings(evalCase.settings, `${at}.settings`, problems);
   const checksRaw = asArray(evalCase.checks, `${at}.checks`, problems) ?? [];
@@ -477,7 +509,7 @@ function validateCase(input: unknown, index: number, problems: string[]): ToolUs
     .map((entry, checkIndex) => validateCheck(entry, `${at}.checks[${checkIndex}]`, problems))
     .filter((check): check is ToolUseCheck => check !== undefined);
 
-  return { id, prompt, seed: { files }, settings, checks };
+  return { id, prompt, seed: { files, binaryFiles }, settings, checks };
 }
 
 function validateSettings(
@@ -512,15 +544,17 @@ function validateCheck(input: unknown, at: string, problems: string[]): ToolUseC
       return { type, path: readString(check.path, `${at}.path`, problems) };
     case "file_contains": {
       const regex = readOptionalBoolean(check.regex, `${at}.regex`, problems);
+      const flags = readOptionalString(check.flags, `${at}.flags`, problems);
       const text = readString(check.text, `${at}.text`, problems);
-      validateRegex(text, regex, `${at}.text`, problems);
-      return { type, path: readString(check.path, `${at}.path`, problems), text, regex };
+      validateRegex(text, regex, flags, `${at}.text`, problems);
+      return { type, path: readString(check.path, `${at}.path`, problems), text, regex, flags };
     }
     case "file_not_contains": {
       const regex = readOptionalBoolean(check.regex, `${at}.regex`, problems);
+      const flags = readOptionalString(check.flags, `${at}.flags`, problems);
       const text = readString(check.text, `${at}.text`, problems);
-      validateRegex(text, regex, `${at}.text`, problems);
-      return { type, path: readString(check.path, `${at}.path`, problems), text, regex };
+      validateRegex(text, regex, flags, `${at}.text`, problems);
+      return { type, path: readString(check.path, `${at}.path`, problems), text, regex, flags };
     }
     case "frontmatter_equals": {
       const value = check.value;
@@ -562,15 +596,17 @@ function validateCheck(input: unknown, at: string, problems: string[]): ToolUseC
     }
     case "answer_contains": {
       const regex = readOptionalBoolean(check.regex, `${at}.regex`, problems);
+      const flags = readOptionalString(check.flags, `${at}.flags`, problems);
       const text = readString(check.text, `${at}.text`, problems);
-      validateRegex(text, regex, `${at}.text`, problems);
-      return { type, text, regex };
+      validateRegex(text, regex, flags, `${at}.text`, problems);
+      return { type, text, regex, flags };
     }
     case "answer_not_contains": {
       const regex = readOptionalBoolean(check.regex, `${at}.regex`, problems);
+      const flags = readOptionalString(check.flags, `${at}.flags`, problems);
       const text = readString(check.text, `${at}.text`, problems);
-      validateRegex(text, regex, `${at}.text`, problems);
-      return { type, text, regex };
+      validateRegex(text, regex, flags, `${at}.text`, problems);
+      return { type, text, regex, flags };
     }
     case "no_tool_errors":
       return { type };
@@ -601,7 +637,7 @@ function evaluateCheck(
         const ok = check.type === "file_not_contains";
         return result(check, ok, `missing ${check.path}`);
       }
-      const matches = matchesText(content, check.text, check.regex === true);
+      const matches = matchesText(content, check.text, check.regex === true, check.flags);
       const ok = check.type === "file_contains" ? matches : !matches;
       return result(
         check,
@@ -645,7 +681,7 @@ function evaluateCheck(
     }
     case "unchanged": {
       const seedContent = caseDef.seed.files[check.path];
-      if (seedContent === undefined) return result(check, false, `${check.path} is not a seeded file`);
+      if (seedContent === undefined) return result(check, false, `${check.path} is not a text seed file`);
       const content = observed.files[check.path];
       const ok = content === seedContent;
       return result(check, ok, ok ? `${check.path} is unchanged` : `${check.path} changed`);
@@ -677,11 +713,11 @@ function evaluateCheck(
         `${observed.toolCalls.length} tool call(s), limit ${check.max}`,
       );
     case "answer_contains": {
-      const matches = matchesText(observed.answer, check.text, check.regex === true);
+      const matches = matchesText(observed.answer, check.text, check.regex === true, check.flags);
       return result(check, matches, `answer ${matches ? "contains" : "does not contain"} ${JSON.stringify(check.text)}`);
     }
     case "answer_not_contains": {
-      const matches = matchesText(observed.answer, check.text, check.regex === true);
+      const matches = matchesText(observed.answer, check.text, check.regex === true, check.flags);
       return result(check, !matches, `answer ${matches ? "contains" : "does not contain"} ${JSON.stringify(check.text)}`);
     }
     case "no_tool_errors": {
@@ -712,10 +748,10 @@ function sameStringItems(expected: string[], actual: string[]): boolean {
   return sortedExpected.every((item, index) => item === sortedActual[index]);
 }
 
-function matchesText(text: string, pattern: string, regex: boolean): boolean {
+function matchesText(text: string, pattern: string, regex: boolean, flags?: string): boolean {
   if (!regex) return text.includes(pattern);
   try {
-    return new RegExp(pattern).test(text);
+    return new RegExp(pattern, flags ?? "").test(text);
   } catch {
     return false;
   }
@@ -782,6 +818,15 @@ function readNonNegativeNumber(input: unknown, at: string, problems: string[]): 
   return value;
 }
 
+function readOptionalString(input: unknown, at: string, problems: string[]): string | undefined {
+  if (input === undefined) return undefined;
+  if (typeof input !== "string") {
+    problems.push(`${at} must be a string.`);
+    return undefined;
+  }
+  return input;
+}
+
 function readOptionalBoolean(input: unknown, at: string, problems: string[]): boolean | undefined {
   if (input === undefined) return undefined;
   if (typeof input !== "boolean") {
@@ -791,10 +836,26 @@ function readOptionalBoolean(input: unknown, at: string, problems: string[]): bo
   return input;
 }
 
-function validateRegex(text: string, regex: boolean | undefined, at: string, problems: string[]): void {
+function validateRegex(
+  text: string,
+  regex: boolean | undefined,
+  flags: string | undefined,
+  at: string,
+  problems: string[],
+): void {
+  if (flags !== undefined) {
+    try {
+      new RegExp("", flags);
+    } catch (error) {
+      problems.push(
+        `${at}.flags is not a valid regular expression flag set: ${error instanceof Error ? error.message : String(error)}.`,
+      );
+      return;
+    }
+  }
   if (!regex || !text) return;
   try {
-    new RegExp(text);
+    new RegExp(text, flags ?? "");
   } catch (error) {
     problems.push(`${at} is not a valid regular expression: ${error instanceof Error ? error.message : String(error)}.`);
   }
