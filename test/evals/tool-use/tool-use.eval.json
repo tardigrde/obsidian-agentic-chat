@@ -26,7 +26,7 @@
       "checks": [
         {
           "type": "answer_contains",
-          "text": "^\\D*51\\D*$",
+          "text": "^[^\\d\\-−—]*51(?!\\d)[\\s\\S]*$",
           "regex": true
         },
         {

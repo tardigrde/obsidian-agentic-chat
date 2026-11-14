@@ -404,9 +404,14 @@ describe("tool-use eval core", () => {
     const gradeAnswer = (answer: string) =>
       gradeRun(arithmetic, { files: {}, frontmatter: {}, links: {}, toolCalls: [], answer });
 
-    expect(gradeAnswer("151").ok).toBe(false);
+    expect(gradeAnswer("51").ok).toBe(true);
     expect(gradeAnswer("51.").ok).toBe(true);
     expect(gradeAnswer("The answer is 51").ok).toBe(true);
+    expect(gradeAnswer("51 (17 x 3)").ok).toBe(true);
+    expect(gradeAnswer("151").ok).toBe(false);
+    expect(gradeAnswer("-51").ok).toBe(false);
+    expect(gradeAnswer("—51").ok).toBe(false);
+    expect(gradeAnswer("510").ok).toBe(false);
   });
 
   it("grades the rename case by resolved links, not link text", () => {
