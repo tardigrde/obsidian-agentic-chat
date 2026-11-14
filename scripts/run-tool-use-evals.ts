@@ -230,6 +230,8 @@ async function main(): Promise<void> {
   await writeFile(reportPath, formatReport(summary), "utf8");
 
   if (args.writeBaseline) {
+    const refusal = baselineRefusal(summary, plannedRuns.length);
+    if (refusal) throw new Error(`Refusing to write baseline: ${refusal}`);
     const baselinePath = await writeBaseline(summary);
     console.log(`Baseline: ${baselinePath}`);
   }
@@ -457,6 +459,24 @@ function formatConsoleSummary(summary: ToolUseSummary, summaryPath: string, repo
     `Report: ${reportPath}`,
   );
   return `${lines.join("\n")}\n`;
+}
+
+/** Failing checks may enter a baseline; incomplete or errored runs may not. */
+function baselineRefusal(summary: ToolUseSummary, plannedRunCount: number): string | null {
+  const runs = summary.cases.flatMap((entry) => entry.runResults);
+  const skipped = runs.filter((run) => run.status === "skipped-budget");
+  if (skipped.length > 0) {
+    return `${skipped.length} run(s) were skipped by the budget; rerun with a higher cap.`;
+  }
+  const errored = runs.filter((run) => typeof run.error === "string" && run.error.length > 0);
+  if (errored.length > 0) {
+    return `${errored.length} run(s) have a harness error; inspect the report.`;
+  }
+  const executed = summary.cases.reduce((total, entry) => total + entry.executed, 0);
+  if (executed !== plannedRunCount) {
+    return `only ${executed} of ${plannedRunCount} planned run(s) executed.`;
+  }
+  return null;
 }
 
 async function assertFreshResultsDir(resultsDir: string): Promise<void> {
