@@ -46,6 +46,7 @@ interface RunResult extends ObservedSession {
   caseId: string;
   run: number;
   files: Record<string, string>;
+  frontmatter: Record<string, Record<string, unknown>>;
   ms: number;
   status?: string;
   error?: string;
@@ -93,6 +94,7 @@ describe("tool-use eval", function () {
           caseId: evalCase.id,
           run: planned.run,
           files: {},
+          frontmatter: {},
           toolCalls: [],
           answer: "",
           usage: {},
@@ -115,12 +117,14 @@ describe("tool-use eval", function () {
 
         const ms = Date.now() - startedAt;
         const files = await readVaultMarkdown();
+        const frontmatter = await readVaultFrontmatter();
         const observation = await readObservation();
-        writeResult({ caseId: evalCase.id, run: planned.run, files, ...observation, ms });
+        writeResult({ caseId: evalCase.id, run: planned.run, files, frontmatter, ...observation, ms });
       } catch (error) {
         const ms = Date.now() - startedAt;
         await stopIfRunning();
         let files: Record<string, string> = {};
+        const frontmatter: Record<string, Record<string, unknown>> = {};
         let observation = emptyObservation();
         try {
           files = await readVaultMarkdown();
@@ -136,6 +140,7 @@ describe("tool-use eval", function () {
           caseId: evalCase.id,
           run: planned.run,
           files,
+          frontmatter,
           ...observation,
           ms,
           error: errorMessage(error),
@@ -238,6 +243,29 @@ async function readVaultMarkdown(): Promise<Record<string, string>> {
     const files: Record<string, string> = {};
     for (const file of app.vault.getMarkdownFiles()) files[file.path] = await app.vault.read(file);
     return files;
+  });
+}
+
+async function readVaultFrontmatter(): Promise<Record<string, Record<string, unknown>>> {
+  return await browser.executeObsidian(async ({ app }) => {
+    const files = app.vault.getMarkdownFiles();
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline && !files.every((file) => app.metadataCache.getFileCache(file))) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    const frontmatter: Record<string, Record<string, unknown>> = {};
+    for (const file of files) {
+      const entry = app.metadataCache.getFileCache(file)?.frontmatter;
+      if (!entry) continue;
+      const copy: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(entry)) {
+        if (key === "position") continue;
+        copy[key] = value;
+      }
+      frontmatter[file.path] = copy;
+    }
+    return frontmatter;
   });
 }
 

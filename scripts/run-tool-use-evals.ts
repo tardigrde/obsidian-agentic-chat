@@ -1,10 +1,8 @@
 import { execFileSync, spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { registerHooks } from "node:module";
 import * as path from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
 import { applyEnvFile } from "./live-env.mjs";
 import type {
   CaseSummary,
@@ -52,6 +50,7 @@ interface RunFile {
   caseId: string;
   run: number;
   files: Record<string, string>;
+  frontmatter: Record<string, Record<string, unknown>>;
   toolCalls: Array<{ name: string; isError?: boolean }>;
   answer: string;
   usage: RunUsage;
@@ -102,7 +101,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  registerObsidianRuntime();
   const core = await import("./eval/tool-use-core");
   const suitePath = path.resolve(args.suite ?? DEFAULT_SUITE);
   const suite = core.validateToolUseSuite(JSON.parse(await readFile(suitePath, "utf8")) as unknown);
@@ -188,7 +186,7 @@ async function main(): Promise<void> {
       throw new Error(`Missing tool-use result: ${resultPath}`);
     }
     const runFile = parseRunFile(JSON.parse(await readFile(resultPath, "utf8")) as unknown, resultPath);
-    const entry = await gradeRunFile(core, evalCase, runFile, prices);
+    const entry = gradeRunFile(core, evalCase, runFile, prices);
     caseEntries.get(evalCase.id)?.push(entry);
   }
 
@@ -234,25 +232,12 @@ async function main(): Promise<void> {
   console.log(formatConsoleSummary(summary, summaryPath, reportPath));
 }
 
-function registerObsidianRuntime(): void {
-  // `obsidian` ships type declarations only. The runner grades frontmatter
-  // through the shared src splitter, so map the bare specifier to the repo mock,
-  // which exposes a real parseYaml implementation.
-  const mockUrl = pathToFileURL(path.resolve("test/mocks/obsidian.ts")).href;
-  registerHooks({
-    resolve(specifier, context, nextResolve) {
-      if (specifier === "obsidian") return { url: mockUrl, shortCircuit: true };
-      return nextResolve(specifier, context);
-    },
-  });
-}
-
-async function gradeRunFile(
+function gradeRunFile(
   core: typeof import("./eval/tool-use-core"),
   evalCase: ToolUseCase,
   runFile: RunFile,
   prices: RunPricing,
-): Promise<CaseRunEntry> {
+): CaseRunEntry {
   if (runFile.status === "skipped-budget") {
     return {
       run: runFile.run,
@@ -266,8 +251,9 @@ async function gradeRunFile(
     };
   }
 
-  const grade = await core.gradeRun(evalCase, {
+  const grade = core.gradeRun(evalCase, {
     files: runFile.files,
+    frontmatter: runFile.frontmatter,
     toolCalls: runFile.toolCalls,
     answer: runFile.answer,
   });
@@ -294,6 +280,7 @@ function parseRunFile(input: unknown, at: string): RunFile {
     caseId,
     run,
     files: stringRecord(input.files),
+    frontmatter: frontmatterValue(input.frontmatter),
     toolCalls: toolCallsValue(input.toolCalls),
     answer: typeof input.answer === "string" ? input.answer : "",
     usage: usageValue(input.usage),
@@ -309,6 +296,15 @@ function stringRecord(input: unknown): Record<string, string> {
   const output: Record<string, string> = {};
   for (const [key, value] of Object.entries(input)) {
     if (typeof value === "string") output[key] = value;
+  }
+  return output;
+}
+
+function frontmatterValue(input: unknown): Record<string, Record<string, unknown>> {
+  if (!isRecord(input)) return {};
+  const output: Record<string, Record<string, unknown>> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (isRecord(value)) output[key] = value;
   }
   return output;
 }

@@ -1,8 +1,8 @@
 /**
  * Pure grading, validation, cost, and budget logic for the `tool-use` eval
  * suite. The runner and the WDIO spec both import this module, so it must not
- * load Obsidian at module scope. The shared frontmatter splitter is loaded only
- * when a `frontmatter_equals` check actually runs.
+ * load Obsidian at module scope. Frontmatter comes from the evaluator's real
+ * Obsidian metadata cache, so grading is synchronous and parser-free.
  */
 
 export const TOOL_USE_SUITE_VERSION = 1;
@@ -135,6 +135,7 @@ export interface ObservedToolCall {
 
 export interface ObservedRun {
   files: Record<string, string>;
+  frontmatter: Record<string, Record<string, unknown>>;
   toolCalls: ObservedToolCall[];
   answer: string;
 }
@@ -196,15 +197,6 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
   "create_skill",
 ]);
 
-type FrontmatterSplitter = typeof import("../../src/vault/frontmatter").splitFrontmatter;
-
-let frontmatterPromise: Promise<FrontmatterSplitter> | undefined;
-
-function loadFrontmatterSplitter(): Promise<FrontmatterSplitter> {
-  frontmatterPromise ??= import("../../src/vault/frontmatter").then((module) => module.splitFrontmatter);
-  return frontmatterPromise;
-}
-
 export function validateToolUseSuite(input: unknown): ToolUseSuite {
   const problems: string[] = [];
   const suite = asRecord(input, "suite", problems);
@@ -255,10 +247,8 @@ export function validateToolUseSuite(input: unknown): ToolUseSuite {
   };
 }
 
-export async function gradeRun(caseDef: ToolUseCase, observed: ObservedRun): Promise<GradeResult> {
-  const needsFrontmatter = caseDef.checks.some((check) => check.type === "frontmatter_equals");
-  const splitFrontmatter = needsFrontmatter ? await loadFrontmatterSplitter() : undefined;
-  const checks = caseDef.checks.map((check) => evaluateCheck(check, caseDef, observed, splitFrontmatter));
+export function gradeRun(caseDef: ToolUseCase, observed: ObservedRun): GradeResult {
+  const checks = caseDef.checks.map((check) => evaluateCheck(check, caseDef, observed));
   return { ok: checks.every((check) => check.ok), checks };
 }
 
@@ -488,7 +478,6 @@ function evaluateCheck(
   check: ToolUseCheck,
   caseDef: ToolUseCase,
   observed: ObservedRun,
-  splitFrontmatter: FrontmatterSplitter | undefined,
 ): ToolUseCheckResult {
   switch (check.type) {
     case "file_exists": {
@@ -515,15 +504,12 @@ function evaluateCheck(
       );
     }
     case "frontmatter_equals": {
-      const content = observed.files[check.path];
-      if (content === undefined) return result(check, false, `missing ${check.path}`);
-      if (!splitFrontmatter) return result(check, false, "frontmatter splitter is not available");
-      const parsed = splitFrontmatter(content, { flavor: "yaml", objectOnly: true, normalizeNewlines: true });
-      if (!parsed.found) return result(check, false, `${check.path} has no frontmatter`);
-      if (!hasOwn(parsed.data, check.key)) {
+      const frontmatter = observed.frontmatter[check.path];
+      if (!frontmatter) return result(check, false, `${check.path} has no frontmatter`);
+      if (!hasOwn(frontmatter, check.key)) {
         return result(check, false, `${check.path} has no frontmatter key ${check.key}`);
       }
-      const actual = parsed.data[check.key];
+      const actual = frontmatter[check.key];
       if (Array.isArray(check.value)) {
         if (!Array.isArray(actual)) {
           return result(check, false, `${check.key} is not an array: ${JSON.stringify(actual)}`);

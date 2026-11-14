@@ -42,11 +42,17 @@ function makeCase(
 
 async function grade(
   checks: ToolUseCheck[],
-  observed: { files?: Record<string, string>; toolCalls?: Array<{ name: string; isError?: boolean }>; answer?: string },
+  observed: {
+    files?: Record<string, string>;
+    frontmatter?: Record<string, Record<string, unknown>>;
+    toolCalls?: Array<{ name: string; isError?: boolean }>;
+    answer?: string;
+  },
   seedFiles: Record<string, string> = {},
 ) {
   return gradeRun(makeCase(checks, seedFiles), {
     files: observed.files ?? {},
+    frontmatter: observed.frontmatter ?? {},
     toolCalls: observed.toolCalls ?? [],
     answer: observed.answer ?? "",
   });
@@ -148,8 +154,7 @@ describe("tool-use eval core", () => {
     expect(result.checks.map((check) => check.ok)).toEqual([true, false, true, true, false, true]);
   });
 
-  it("grades frontmatter scalars and arrays with the shared splitter", async () => {
-    const content = "---\ntags: [alpha, beta]\ncount: 3\npublished: true\nname: Atlas\n---\nBody\n";
+  it("grades frontmatter scalars and arrays from the observed cache", async () => {
     const result = await grade(
       [
         { type: "frontmatter_equals", path: "Note.md", key: "tags", value: ["alpha"] },
@@ -160,7 +165,11 @@ describe("tool-use eval core", () => {
         { type: "frontmatter_equals", path: "Note.md", key: "name", value: "Atlas" },
         { type: "frontmatter_equals", path: "Note.md", key: "missing", value: "x" },
       ],
-      { files: { "Note.md": content } },
+      {
+        frontmatter: {
+          "Note.md": { tags: ["alpha", "beta"], count: 3, published: true, name: "Atlas" },
+        },
+      },
     );
 
     expect(result.checks.map((check) => check.ok)).toEqual([true, true, false, true, true, true, false]);
@@ -337,35 +346,6 @@ describe("tool-use eval core", () => {
     expect(result.files[0].toolCalls).toEqual([{ name: "edit", isError: false, toolCallId: "call-1" }]);
     expect(result.files[0].finalAssistantText).toBe("Done.");
     expect(result.aggregate.usage.totalTokens).toBe(30);
-  });
-
-  it("grades frontmatter through the Node runner's obsidian shim", () => {
-    const script = [
-      'import { registerHooks } from "node:module";',
-      'import { pathToFileURL } from "node:url";',
-      'import path from "node:path";',
-      'const mockUrl = pathToFileURL(path.resolve("test/mocks/obsidian.ts")).href;',
-      "registerHooks({",
-      "  resolve(specifier, context, nextResolve) {",
-      '    if (specifier === "obsidian") return { url: mockUrl, shortCircuit: true };',
-      "    return nextResolve(specifier, context);",
-      "  },",
-      "});",
-      'const core = await import("./scripts/eval/tool-use-core.ts");',
-      "const result = await core.gradeRun(",
-      '  { id: "shim", prompt: "p", seed: { files: {} }, checks: [{ type: "frontmatter_equals", path: "Note.md", key: "tags", value: ["a"] }] },',
-      '  { files: { "Note.md": "---\\ntags: [a]\\n---\\nBody" }, toolCalls: [], answer: "" },',
-      ");",
-      "console.log(JSON.stringify(result));",
-    ].join("\n");
-    const result = spawnSync(
-      process.execPath,
-      ["--import", "tsx", "--input-type=module", "--eval", script],
-      { cwd: process.cwd(), encoding: "utf8" },
-    );
-
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('"ok":true');
   });
 
   it("prints a dry-run plan without network or output files", async () => {
