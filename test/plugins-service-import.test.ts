@@ -525,3 +525,19 @@ function makeTar(files: Record<string, string>): Uint8Array {
   blocks.push(new Array(512).fill(0), new Array(512).fill(0));
   return new Uint8Array(blocks.flat());
 }
+describe("PluginService install persistence", () => {
+  it("saves the new source label when reinstalling a package whose MCP state already exists", async () => {
+    const { app } = await seed();
+    const current = settings();
+    const persisted: Array<Record<string, string>> = [];
+    const service = serviceFor(app, current, () => {
+      persisted.push({ ...current.plugins.sources });
+    });
+
+    await service.installFromTree(claudePluginTree(), "github:example/docs-helper");
+    // The second install keeps the existing MCP state, so only the label changes.
+    await service.installFromTree(claudePluginTree(), "https://example.com/docs-helper.zip");
+
+    expect(persisted.at(-1)).toEqual({ "docs-helper": "https://example.com/docs-helper.zip" });
+  });
+});

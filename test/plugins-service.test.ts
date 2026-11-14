@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TFolder, type App } from "obsidian";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { PluginService } from "../src/plugins/service";
-import { pluginMcpServerId } from "../src/plugins/loader";
+import { formatPluginAudit, pluginMcpServerId } from "../src/plugins/loader";
 import { AGENT_PLUGINS_SCHEMA_ID } from "../src/plugins/manifest";
 import { FakeApp } from "./helpers/fake-vault";
 
@@ -77,7 +77,7 @@ describe("PluginService.generateMcpServerPackage", () => {
   });
 });
 
-describe("PluginService.auditText", () => {
+describe("formatPluginAudit", () => {
   it("summarizes every package with counts and reports", async () => {
     const app = await seed();
     await serviceFor(app, settings()).generateMcpServerPackage({
@@ -88,7 +88,7 @@ describe("PluginService.auditText", () => {
     const service = serviceFor(app, current);
     const plugins = await service.reload();
 
-    const text = service.auditText(plugins);
+    const text = formatPluginAudit(plugins);
     expect(text).toContain("**docs** (.agentic-plugins/docs)");
     expect(text).toContain("0 skills, 1 MCP server");
     expect(text).toContain("enabled");

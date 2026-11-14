@@ -238,9 +238,25 @@ Next: define cleanup for stale `.tmp` and `.bak` files.
 
 ## Plugin install
 
-Owner: `installPackage` owns the stage, backup, and rename transaction.
-`PluginService` owns the cache, the startup sweep, and the retained-backup flag.
-The loader skips every `.importing-*` folder.
+Owner: `PluginService` (`src/plugins/service.ts`) owns the catalog cache, its
+invalidation listeners, the single-flight reload, the retained-backup flag, and
+the one lock that orders install transactions and the recovery sweep. It
+delegates and holds no other state:
+
+| Concern | Module | State |
+|---|---|---|
+| Vault I/O confined to the plugins folder | `PluginVault` (`plugin-vault.ts`) | none |
+| Stage, backup, and rename transaction | `installPackage` (`import/install.ts`) | vault folders |
+| Crash recovery of `.importing-*` folders | `sweepImportStages` (`import-sweep.ts`) | none; returns the retained-backup outcome |
+| Packages the plugin writes (builtins, my-skills, legacy-skills, MCP package, scaffolded skill) | `materialize.ts` | none |
+| Plugin-owned settings (`plugins.enabled`, `plugins.sources`, `plugins.mcpState`, plugin `mcp.servers`) | `plugin-settings-records.ts` | none; mutates settings, the service saves |
+
+Lifecycle of a reload: take the lock -> sweep -> release -> scan -> prune
+orphan settings unless a backup is retained -> save if pruned.
+
+Lifecycle of an install: validate native files -> take the lock -> stage,
+back up, rename -> release -> record source and MCP state -> save once ->
+invalidate.
 
 Invariants:
 
@@ -250,20 +266,16 @@ Invariants:
 - A backup restores when the target is missing, or replaces an empty target.
 - A target with a readable manifest owns its name; the backup is then removable.
 - A failed rename restores the backup.
-
-Fixed by #232: `PluginService.reload` is single-flight, so concurrent reloads
-share one import sweep and one load. A rejected reload clears the in-flight
-promise for the next call.
-
-Fixed by #236: install transactions and the recovery sweep share one maintenance
-lock. A sweep waits for an in-flight install, and two installs cannot move the
-same backup. A rejected operation clears the chain for the next one.
+- The writer never removes a path outside the plugins folder.
+- A sweep waits for an in-flight install; two installs cannot move the same
+  backup. A rejected operation clears the chain for the next one.
+- Reload is single-flight; a rejected reload clears the in-flight promise.
+- An install saves settings exactly once, so a changed source label persists
+  even when every MCP server state already existed.
 
 Gap:
 
 - Settings prune runs after the sweep and depends on the retained-backup flag.
-
-Next: define the order between sweep, install, and settings prune.
 
 ## Unowned today
 
