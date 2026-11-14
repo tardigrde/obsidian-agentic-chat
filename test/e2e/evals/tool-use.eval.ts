@@ -305,7 +305,7 @@ function budgetExceeded(): string | null {
   const tracker = new BudgetTracker(plan.budget, plan.prices);
   for (const result of existingResults()) {
     if (result.status === "skipped-budget") continue;
-    tracker.add({ usage: result.usage ?? {}, modelCalls: result.modelCalls ?? 1 });
+    tracker.add({ usage: result.usage ?? {}, modelCalls: result.modelCalls ?? 0 });
   }
   return tracker.exceeded();
 }

@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
@@ -109,6 +109,7 @@ async function main(): Promise<void> {
   const plannedRuns = planRuns(cases, runsPerCase);
   const runId = args.runId ?? timestampRunId();
   const outDir = path.resolve(args.outDir ?? path.join(DEFAULT_OUT_ROOT, runId));
+  const resultsDir = path.join(outDir, "results");
   const budget: ToolUseBudgetCaps =
     args.maxUsd === undefined ? suite.budget : { ...suite.budget, maxUsd: nonNegativeNumber(args.maxUsd, "--max-usd") };
 
@@ -125,6 +126,8 @@ async function main(): Promise<void> {
     return;
   }
 
+  await assertFreshResultsDir(resultsDir);
+
   if (args.envFile) {
     if (!existsSync(args.envFile)) throw new Error(`--env-file does not exist: ${args.envFile}`);
     applyEnvFile(args.envFile);
@@ -137,7 +140,6 @@ async function main(): Promise<void> {
   const startedAt = new Date();
   const prices = await fetchPricing(suite.model);
   const vaultPath = path.join(outDir, "vault");
-  const resultsDir = path.join(outDir, "results");
   await mkdir(vaultPath, { recursive: true });
   await mkdir(path.join(vaultPath, ".obsidian"), { recursive: true });
   // Keep links working on rename without Obsidian's "Update links?" prompt; a
@@ -455,6 +457,21 @@ function formatConsoleSummary(summary: ToolUseSummary, summaryPath: string, repo
     `Report: ${reportPath}`,
   );
   return `${lines.join("\n")}\n`;
+}
+
+async function assertFreshResultsDir(resultsDir: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await readdir(resultsDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (entries.length > 0) {
+    throw new Error(
+      `run id already used; pick a new --run-id (results directory is not empty: ${resultsDir})`,
+    );
+  }
 }
 
 async function writeBaseline(summary: ToolUseSummary): Promise<string> {

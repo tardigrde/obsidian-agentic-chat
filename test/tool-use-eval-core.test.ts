@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -372,6 +372,34 @@ describe("tool-use eval core", () => {
     expect(result.files[0].toolCalls).toEqual([{ name: "edit", isError: false, toolCallId: "call-1" }]);
     expect(result.files[0].finalAssistantText).toBe("Done.");
     expect(result.aggregate.usage.totalTokens).toBe(30);
+  });
+
+  it("refuses to reuse a results directory", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "tool-use-reuse-"));
+    tempRoots.push(root);
+    const caseDir = path.join(root, "results", "none.arithmetic");
+    await mkdir(caseDir, { recursive: true });
+    await writeFile(path.join(caseDir, "1.json"), "{}\n");
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/run-tool-use-evals.ts",
+        "--run-id",
+        "reused",
+        "--out-dir",
+        root,
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: { ...process.env, AGENTIC_CHAT_API_KEY: "" },
+      },
+    );
+
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain("run id already used; pick a new --run-id");
   });
 
   it("prints a dry-run plan without network or output files", async () => {
