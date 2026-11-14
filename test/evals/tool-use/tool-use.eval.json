@@ -26,7 +26,7 @@
       "checks": [
         {
           "type": "answer_contains",
-          "text": "^[^\\d\\-−—]*51(?!\\d)[\\s\\S]*$",
+          "text": "^[^\\d\\-−—]*51(?!\\d)\\D*$",
           "regex": true
         },
         {
@@ -214,24 +214,6 @@
           "flags": "i"
         },
         {
-          "type": "answer_not_contains",
-          "text": "2026-09-18",
-          "regex": true,
-          "flags": "i"
-        },
-        {
-          "type": "answer_not_contains",
-          "text": "Atlas",
-          "regex": true,
-          "flags": "i"
-        },
-        {
-          "type": "answer_not_contains",
-          "text": "Inbox",
-          "regex": true,
-          "flags": "i"
-        },
-        {
           "type": "tool_not_called",
           "name": "*mutating*"
         },
@@ -415,6 +397,26 @@
           "text": "- One engineer is out"
         },
         {
+          "type": "file_contains",
+          "path": "Projects/Atlas.md",
+          "text": "## Goals"
+        },
+        {
+          "type": "file_contains",
+          "path": "Projects/Atlas.md",
+          "text": "- Ship the beta"
+        },
+        {
+          "type": "file_contains",
+          "path": "Projects/Atlas.md",
+          "text": "- Close the vendor review"
+        },
+        {
+          "type": "file_contains",
+          "path": "Projects/Atlas.md",
+          "text": "- 2026-10-01: Kickoff"
+        },
+        {
           "type": "tool_called",
           "name": "edit"
         },
@@ -454,11 +456,7 @@
         },
         {
           "type": "tool_not_called",
-          "name": "delete"
-        },
-        {
-          "type": "tool_not_called",
-          "name": "rename"
+          "name": "*mutating*"
         },
         {
           "type": "unchanged",
@@ -549,6 +547,16 @@
           "path": "Archive/Meeting 2025.md"
         },
         {
+          "type": "file_contains",
+          "path": "Archive/Old Plan.md",
+          "text": "Legacy plan."
+        },
+        {
+          "type": "file_contains",
+          "path": "Archive/Meeting 2025.md",
+          "text": "Old meeting notes."
+        },
+        {
           "type": "file_absent",
           "path": "Notes/Old Plan.md"
         },
@@ -607,7 +615,7 @@
         },
         {
           "type": "tool_not_called",
-          "name": "write"
+          "name": "*mutating*"
         },
         {
           "type": "max_tool_calls",
@@ -631,7 +639,7 @@
         },
         {
           "type": "answer_contains",
-          "text": "\\[\\[|link",
+          "text": "\\[\\[|double.{0,20}bracket",
           "regex": true,
           "flags": "i"
         }

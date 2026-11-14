@@ -430,7 +430,9 @@ describe("tool-use eval core", () => {
     expect(gradeAnswer("51").ok).toBe(true);
     expect(gradeAnswer("51.").ok).toBe(true);
     expect(gradeAnswer("The answer is 51").ok).toBe(true);
-    expect(gradeAnswer("51 (17 x 3)").ok).toBe(true);
+    // The prompt asks for the number only, so no other digits may follow.
+    expect(gradeAnswer("51 (17 x 3)").ok).toBe(false);
+    expect(gradeAnswer("51? No, 102.").ok).toBe(false);
     expect(gradeAnswer("151").ok).toBe(false);
     expect(gradeAnswer("-51").ok).toBe(false);
     expect(gradeAnswer("—51").ok).toBe(false);
@@ -484,6 +486,8 @@ describe("tool-use eval core", () => {
     expect(run("I don't want to guess.", [...reads, { name: "ask_user" }]).ok).toBe(true);
     expect(run("I will merge the meeting notes.", reads).ok).toBe(false);
     expect(run("Which one?", [...reads, { name: "delete" }]).ok).toBe(false);
+    // A new plan note is a mutation too, even when every seed note is unchanged.
+    expect(run("Which notes should I clean up?", [...reads, { name: "write" }]).ok).toBe(false);
   });
 
   it("rejects an any_of check with fewer than two inner checks", () => {
