@@ -9,6 +9,7 @@ export class FakeVault {
   private readonly diskOnlyFiles = new Map<string, string>();
   private readonly adapterExistsOverrides = new Map<string, boolean>();
   private readonly rmdirErrors = new Map<string, { code?: string; message?: string }>();
+  private readonly config = new Map<string, unknown>();
 
   constructor() {
     this.root.path = "/";
@@ -98,6 +99,22 @@ export class FakeVault {
     return [...this.files.values()]
       .filter((entry) => entry.file.extension === "md")
       .map((entry) => entry.file);
+  }
+
+  getFiles(): TFile[] {
+    return [...this.files.values()].map((entry) => entry.file);
+  }
+
+  getAllLoadedFiles(): Array<TFile | TFolder> {
+    return [...this.folders.values(), ...this.getFiles()];
+  }
+
+  getConfig(key: string): unknown {
+    return this.config.get(key);
+  }
+
+  setConfig(key: string, value: unknown): void {
+    this.config.set(key, value);
   }
 
   async cachedRead(file: TFile): Promise<string> {
