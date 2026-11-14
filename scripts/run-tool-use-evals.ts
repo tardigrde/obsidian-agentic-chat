@@ -51,6 +51,7 @@ interface RunFile {
   run: number;
   files: Record<string, string>;
   frontmatter: Record<string, Record<string, unknown>>;
+  links: Record<string, string[]>;
   toolCalls: Array<{ name: string; isError?: boolean }>;
   answer: string;
   usage: RunUsage;
@@ -261,6 +262,7 @@ function gradeRunFile(
   const grade = core.gradeRun(evalCase, {
     files: runFile.files,
     frontmatter: runFile.frontmatter,
+    links: runFile.links,
     toolCalls: runFile.toolCalls,
     answer: runFile.answer,
   });
@@ -288,6 +290,7 @@ function parseRunFile(input: unknown, at: string): RunFile {
     run,
     files: stringRecord(input.files),
     frontmatter: frontmatterValue(input.frontmatter),
+    links: linksValue(input.links),
     toolCalls: toolCallsValue(input.toolCalls),
     answer: typeof input.answer === "string" ? input.answer : "",
     usage: usageValue(input.usage),
@@ -312,6 +315,16 @@ function frontmatterValue(input: unknown): Record<string, Record<string, unknown
   const output: Record<string, Record<string, unknown>> = {};
   for (const [key, value] of Object.entries(input)) {
     if (isRecord(value)) output[key] = value;
+  }
+  return output;
+}
+
+function linksValue(input: unknown): Record<string, string[]> {
+  if (!isRecord(input)) return {};
+  const output: Record<string, string[]> = {};
+  for (const [from, targets] of Object.entries(input)) {
+    if (!Array.isArray(targets)) continue;
+    output[from] = targets.filter((target): target is string => typeof target === "string");
   }
   return output;
 }

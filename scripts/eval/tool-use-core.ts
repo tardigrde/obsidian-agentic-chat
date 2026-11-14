@@ -94,6 +94,14 @@ export interface UnchangedCheck {
   path: string;
 }
 
+export interface LinkResolvesCheck {
+  type: "link_resolves";
+  /** The note that contains the link. */
+  from: string;
+  /** The file path that Obsidian resolved the link to. */
+  to: string;
+}
+
 export interface ToolCalledCheck {
   type: "tool_called";
   name: string;
@@ -133,6 +141,7 @@ export type ToolUseCheck =
   | FileNotContainsCheck
   | FrontmatterEqualsCheck
   | UnchangedCheck
+  | LinkResolvesCheck
   | ToolCalledCheck
   | ToolNotCalledCheck
   | MaxToolCallsCheck
@@ -148,6 +157,8 @@ export interface ObservedToolCall {
 export interface ObservedRun {
   files: Record<string, string>;
   frontmatter: Record<string, Record<string, unknown>>;
+  /** Source note path to the file paths Obsidian resolved its links to. */
+  links: Record<string, string[]>;
   toolCalls: ObservedToolCall[];
   answer: string;
 }
@@ -480,6 +491,12 @@ function validateCheck(input: unknown, at: string, problems: string[]): ToolUseC
     }
     case "unchanged":
       return { type, path: readString(check.path, `${at}.path`, problems) };
+    case "link_resolves":
+      return {
+        type,
+        from: readString(check.from, `${at}.from`, problems),
+        to: readString(check.to, `${at}.to`, problems),
+      };
     case "tool_called": {
       const min = check.min === undefined ? undefined : readNumber(check.min, `${at}.min`, problems);
       if (min !== undefined && (!Number.isInteger(min) || min < 1)) {
@@ -585,6 +602,17 @@ function evaluateCheck(
       const content = observed.files[check.path];
       const ok = content === seedContent;
       return result(check, ok, ok ? `${check.path} is unchanged` : `${check.path} changed`);
+    }
+    case "link_resolves": {
+      const targets = observed.links[check.from] ?? [];
+      const ok = targets.includes(check.to);
+      return result(
+        check,
+        ok,
+        ok
+          ? `${check.from} resolves a link to ${check.to}`
+          : `${check.from} does not resolve a link to ${check.to}; resolved ${JSON.stringify(targets)}`,
+      );
     }
     case "tool_called": {
       const count = matchingToolCalls(observed.toolCalls, check.name).length;

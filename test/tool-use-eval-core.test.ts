@@ -46,6 +46,7 @@ async function grade(
   observed: {
     files?: Record<string, string>;
     frontmatter?: Record<string, Record<string, unknown>>;
+    links?: Record<string, string[]>;
     toolCalls?: Array<{ name: string; isError?: boolean }>;
     answer?: string;
   },
@@ -54,6 +55,7 @@ async function grade(
   return gradeRun(makeCase(checks, seedFiles), {
     files: observed.files ?? {},
     frontmatter: observed.frontmatter ?? {},
+    links: observed.links ?? {},
     toolCalls: observed.toolCalls ?? [],
     answer: observed.answer ?? "",
   });
@@ -254,6 +256,19 @@ describe("tool-use eval core", () => {
     expect(result.checks.map((check) => check.ok)).toEqual([true, false, false]);
   });
 
+  it("grades link_resolves against the resolved link targets", async () => {
+    const result = await grade(
+      [
+        { type: "link_resolves", from: "Index.md", to: "Projects/Atlas Launch.md" },
+        { type: "link_resolves", from: "Missing.md", to: "Projects/Atlas Launch.md" },
+        { type: "link_resolves", from: "Index.md", to: "Projects/Other.md" },
+      ],
+      { links: { "Index.md": ["Projects/Atlas Launch.md", "Projects/Borealis.md"] } },
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, false, false]);
+  });
+
   it("grades tool_called, tool_not_called, and the mutating wildcard", async () => {
     const toolCalls = [{ name: "edit" }, { name: "read" }, { name: "edit" }];
     const result = await grade(
@@ -322,11 +337,43 @@ describe("tool-use eval core", () => {
     const arithmetic = suite.cases.find((entry) => entry.id === "none.arithmetic");
     if (!arithmetic) throw new Error("missing none.arithmetic case");
     const gradeAnswer = (answer: string) =>
-      gradeRun(arithmetic, { files: {}, frontmatter: {}, toolCalls: [], answer });
+      gradeRun(arithmetic, { files: {}, frontmatter: {}, links: {}, toolCalls: [], answer });
 
     expect(gradeAnswer("151").ok).toBe(false);
     expect(gradeAnswer("51.").ok).toBe(true);
     expect(gradeAnswer("The answer is 51").ok).toBe(true);
+  });
+
+  it("grades the rename case by resolved links, not link text", () => {
+    const suite = loadSuite();
+    const rename = suite.cases.find((entry) => entry.id === "rename.keep-links");
+    if (!rename) throw new Error("missing rename.keep-links case");
+    const files = {
+      "Projects/Atlas Launch.md": "# Atlas\n",
+      "Index.md": "# Index\n\n- [[Wrong/Atlas Launch]]\n",
+      "Weekly.md": "# Weekly\n\nSee [[Wrong/Atlas Launch|the Atlas project]].\n",
+    };
+    const observed = {
+      files,
+      frontmatter: {},
+      toolCalls: [{ name: "rename" }],
+      answer: "",
+      links: {
+        "Index.md": ["Wrong/Atlas Launch.md"],
+        "Weekly.md": ["Wrong/Atlas Launch.md"],
+      },
+    };
+
+    expect(gradeRun(rename, observed).ok).toBe(false);
+    expect(
+      gradeRun(rename, {
+        ...observed,
+        links: {
+          "Index.md": ["Projects/Atlas Launch.md"],
+          "Weekly.md": ["Projects/Atlas Launch.md"],
+        },
+      }).ok,
+    ).toBe(true);
   });
 
   it("fails the whole run when any check fails", async () => {

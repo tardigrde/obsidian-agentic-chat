@@ -108,14 +108,14 @@
           "path": "Projects/Atlas.md"
         },
         {
-          "type": "file_contains",
-          "path": "Index.md",
-          "text": "Atlas Launch"
+          "type": "link_resolves",
+          "from": "Index.md",
+          "to": "Projects/Atlas Launch.md"
         },
         {
-          "type": "file_contains",
-          "path": "Weekly.md",
-          "text": "Atlas Launch"
+          "type": "link_resolves",
+          "from": "Weekly.md",
+          "to": "Projects/Atlas Launch.md"
         },
         {
           "type": "tool_called",

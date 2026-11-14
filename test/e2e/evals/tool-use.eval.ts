@@ -47,6 +47,7 @@ interface RunResult extends ObservedSession {
   run: number;
   files: Record<string, string>;
   frontmatter: Record<string, Record<string, unknown>>;
+  links: Record<string, string[]>;
   ms: number;
   status?: string;
   error?: string;
@@ -96,6 +97,7 @@ describe("tool-use eval", function () {
           run: planned.run,
           files: {},
           frontmatter: {},
+          links: {},
           toolCalls: [],
           answer: "",
           usage: {},
@@ -126,16 +128,23 @@ describe("tool-use eval", function () {
         const ms = Date.now() - startedAt;
         const files = await readVaultMarkdown();
         const frontmatter = await readVaultFrontmatter();
+        const links = await readVaultLinks();
         const observation = await readObservation(sessionBaseline);
-        writeResult({ caseId: evalCase.id, run: planned.run, files, frontmatter, ...observation, ms });
+        writeResult({ caseId: evalCase.id, run: planned.run, files, frontmatter, links, ...observation, ms });
       } catch (error) {
         const ms = Date.now() - startedAt;
         await stopIfRunning();
         let files: Record<string, string> = {};
         const frontmatter: Record<string, Record<string, unknown>> = {};
+        let links: Record<string, string[]> = {};
         let observation = emptyObservation();
         try {
           files = await readVaultMarkdown();
+        } catch {
+          // Keep the empty map; the runner will fail the checks.
+        }
+        try {
+          links = await readVaultLinks();
         } catch {
           // Keep the empty map; the runner will fail the checks.
         }
@@ -151,6 +160,7 @@ describe("tool-use eval", function () {
           run: planned.run,
           files,
           frontmatter,
+          links,
           ...observation,
           ms,
           error: errorMessage(error),
@@ -276,6 +286,23 @@ async function readVaultFrontmatter(): Promise<Record<string, Record<string, unk
       frontmatter[file.path] = copy;
     }
     return frontmatter;
+  });
+}
+
+async function readVaultLinks(): Promise<Record<string, string[]>> {
+  return await browser.executeObsidian(async ({ app }) => {
+    const files = app.vault.getMarkdownFiles();
+    // Use the same metadata-cache wait as readVaultFrontmatter so links are
+    // not read before Obsidian resolves them.
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline && !files.every((file) => app.metadataCache.getFileCache(file))) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+    const links: Record<string, string[]> = {};
+    for (const file of files) links[file.path] = Object.keys(resolvedLinks[file.path] ?? {});
+    return links;
   });
 }
 
