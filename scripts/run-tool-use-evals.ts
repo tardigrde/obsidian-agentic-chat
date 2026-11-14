@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
 import { applyEnvFile } from "./live-env.mjs";
+import { generateVault } from "./eval/vault-generator";
 import type {
   CaseSummary,
   RunPricing,
@@ -107,7 +108,7 @@ async function main(): Promise<void> {
   const suitePath = path.resolve(args.suite ?? DEFAULT_SUITE);
   const suite = core.validateToolUseSuite(JSON.parse(await readFile(suitePath, "utf8")) as unknown);
   const runsPerCase = args.runs === undefined ? suite.runsPerCase : positiveInteger(args.runs, "--runs");
-  const cases = selectCases(suite, args.cases);
+  const cases = selectCases(suite, args.cases).map(expandCaseSeed);
   const plannedRuns = planRuns(cases, runsPerCase);
   const runId = args.runId ?? timestampRunId();
   const outDir = path.resolve(args.outDir ?? path.join(DEFAULT_OUT_ROOT, runId));
@@ -164,6 +165,7 @@ async function main(): Promise<void> {
       seed: evalCase.seed,
       settings: evalCase.settings ?? {},
       checks: evalCase.checks,
+      ...(evalCase.expected ? { expected: evalCase.expected } : {}),
     })),
     runs: plannedRuns,
   };
@@ -399,6 +401,25 @@ function selectCases(suite: ToolUseSuite, requested: string[] | undefined): Tool
   return [...new Map(selected.map((entry) => [entry.id, entry])).values()];
 }
 
+/**
+ * Expand `seed.vault` into concrete notes before the plan is written. Case
+ * `seed.files` win over the generated base, so a case can add or replace
+ * needles. Grading uses the same expanded case, so `unchanged` sees the real
+ * seed instead of only the hand-written files.
+ */
+function expandCaseSeed(evalCase: ToolUseCase): ToolUseCase {
+  const vaultSeed = evalCase.seed.vault;
+  if (!vaultSeed) return evalCase;
+  const generated = generateVault(vaultSeed.size, vaultSeed.seed);
+  return {
+    ...evalCase,
+    seed: {
+      files: { ...generated.files, ...evalCase.seed.files },
+      binaryFiles: evalCase.seed.binaryFiles,
+    },
+  };
+}
+
 function printDryRun(options: {
   suite: ToolUseSuite;
   suitePath: string;
@@ -420,7 +441,10 @@ function printDryRun(options: {
     `Model: ${options.suite.model}`,
     `Cases: ${options.cases.length}; ${options.cases.length} case(s) x ${options.runsPerCase} run(s) = ${options.plannedRuns.length} run(s)`,
   ];
-  for (const evalCase of options.cases) lines.push(`- ${evalCase.id}: ${options.runsPerCase} run(s)`);
+  for (const evalCase of options.cases) {
+    const seedFiles = Object.keys(evalCase.seed.files).length;
+    lines.push(`- ${evalCase.id}: ${options.runsPerCase} run(s), ${seedFiles} seed file(s)`);
+  }
   lines.push(
     `Budget: maxUsd ${options.budget.maxUsd}, maxModelCalls ${options.budget.maxModelCalls}, maxTokens ${options.budget.maxTokens}`,
     `Turn: timeoutMs ${options.suite.turn.timeoutMs}, maxTurnsPerPrompt ${options.suite.turn.maxTurnsPerPrompt}`,

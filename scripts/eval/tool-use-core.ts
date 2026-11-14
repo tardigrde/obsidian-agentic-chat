@@ -6,6 +6,7 @@
  */
 
 import { MUTATING_TOOLS } from "../../src/tools/tool-contracts";
+import type { VaultSize } from "./vault-generator";
 
 export const TOOL_USE_SUITE_VERSION = 1;
 export const TOOL_USE_ALLOWED_MODELS = ["deepseek/deepseek-v4.1-flash"] as const;
@@ -24,10 +25,24 @@ export interface ToolUseTurnLimits {
   maxTurnsPerPrompt: number;
 }
 
+export interface ToolUseSeedVault {
+  /** `S` has 50 notes, `M` has 500. The runner expands them into `seed.files`. */
+  size: VaultSize;
+  /** Non-negative PRNG seed. The same pair always gives the same bytes. */
+  seed: number;
+}
+
 export interface ToolUseSeed {
   files: Record<string, string>;
   /** Vault-relative path to base64 file bytes. Whitespace in the value is ignored. */
   binaryFiles: Record<string, string>;
+  /** Optional generated base vault. Case `files` win over the generated ones. */
+  vault?: ToolUseSeedVault;
+}
+
+/** Reporting budgets. They never fail a check. */
+export interface ToolUseExpected {
+  maxToolCalls?: number;
 }
 
 export type ToolUseSettingValue = string | number | boolean;
@@ -38,6 +53,7 @@ export interface ToolUseCase {
   seed: ToolUseSeed;
   settings?: Record<string, ToolUseSettingValue>;
   checks: ToolUseCheck[];
+  expected?: ToolUseExpected;
 }
 
 export interface ToolUseSuite {
@@ -519,13 +535,66 @@ function validateCase(input: unknown, index: number, problems: string[]): ToolUs
   }
 
   const settings = validateSettings(evalCase.settings, `${at}.settings`, problems);
+  const expected = validateExpected(evalCase.expected, `${at}.expected`, problems);
   const checksRaw = asArray(evalCase.checks, `${at}.checks`, problems) ?? [];
   if (checksRaw.length === 0) problems.push(`${at}.checks must contain at least one check.`);
   const checks = checksRaw
     .map((entry, checkIndex) => validateCheck(entry, `${at}.checks[${checkIndex}]`, problems))
     .filter((check): check is ToolUseCheck => check !== undefined);
 
-  return { id, prompt, seed: { files, binaryFiles }, settings, checks };
+  const vault = seedRecord
+    ? validateSeedVault(seedRecord.vault, `${at}.seed.vault`, problems)
+    : undefined;
+  return {
+    id,
+    prompt,
+    seed: {
+      files,
+      binaryFiles,
+      ...(vault ? { vault } : {}),
+    },
+    settings,
+    checks,
+    ...(expected ? { expected } : {}),
+  };
+}
+
+function validateSeedVault(
+  input: unknown,
+  at: string,
+  problems: string[],
+): ToolUseSeedVault | undefined {
+  if (input === undefined) return undefined;
+  const record = asRecord(input, at, problems);
+  if (!record) return undefined;
+  const size = record.size;
+  if (size !== "S" && size !== "M") {
+    problems.push(`${at}.size must be "S" or "M".`);
+  }
+  const seed = record.seed;
+  if (typeof seed !== "number" || !Number.isInteger(seed) || seed < 0) {
+    problems.push(`${at}.seed must be a non-negative integer.`);
+  }
+  return {
+    size: size as VaultSize,
+    seed: typeof seed === "number" ? seed : 0,
+  };
+}
+
+function validateExpected(
+  input: unknown,
+  at: string,
+  problems: string[],
+): ToolUseExpected | undefined {
+  if (input === undefined) return undefined;
+  const record = asRecord(input, at, problems);
+  if (!record) return undefined;
+  const maxToolCalls = record.maxToolCalls;
+  if (maxToolCalls === undefined) return {};
+  if (typeof maxToolCalls !== "number" || !Number.isInteger(maxToolCalls) || maxToolCalls < 1) {
+    problems.push(`${at}.maxToolCalls must be a positive integer.`);
+  }
+  return { maxToolCalls: typeof maxToolCalls === "number" ? maxToolCalls : undefined };
 }
 
 function validateSettings(
