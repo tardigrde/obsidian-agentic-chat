@@ -287,12 +287,14 @@ export class ChatTurn {
     // from a blocked send must not pick up an older turn's images.
     const images = lastTurn?.text === prompt ? lastTurn.images : [];
     const display = state.lastSentDisplay ?? stripContextPreamble(prompt);
-    // A failed turn is replaced, not repeated: drop it so the model sees the
-    // prompt once. Only when it is the turn being resent.
+    // A failed turn is replaced, not repeated: drop only the failed assistant
+    // reply and continue from the kept user message and tool results, so the
+    // model sees the prompt once. Only when it is the turn being retried.
     const failedIndex = failedLastTurnIndex(service.getMessages());
     if (failedIndex !== undefined && lastTurn?.text === prompt) {
+      this.deps.clearEmptyState();
       try {
-        // The rewind starts a new conversation token; bind the resend to it.
+        // The rewind starts a new conversation token; bind the continuation to it.
         sessionToken = await service.truncateMessages(failedIndex);
       } catch (error) {
         this.deps.renderErrorMessage(errorMessage(error));
@@ -306,6 +308,10 @@ export class ChatTurn {
       if (this.deps.isLiveTab(tab)) {
         this.deps.renderTranscript(service.getMessages());
       }
+      await service.continueTurn(sessionToken);
+      if (!this.deps.isLiveTab(tab)) return;
+      this.deps.showServiceError();
+      return;
     }
     this.deps.clearEmptyState();
     // A retried image turn shows the same thumbnails it sends (#250).

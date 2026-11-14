@@ -181,14 +181,25 @@ describe("failedLastTurnIndex", () => {
     ({ role: "assistant", content: text ? [{ type: "text", text }] : [], stopReason, timestamp: 2 }) as unknown as AgentMessage;
   const toolResult = { role: "toolResult", content: [], timestamp: 3 } as unknown as AgentMessage;
 
-  it("returns the last user index when every later reply failed", () => {
-    expect(failedLastTurnIndex([user("a"), reply("stop", "ok"), user("b"), reply("aborted")])).toBe(2);
-    expect(failedLastTurnIndex([user("b"), reply("error"), reply("error", "partial")])).toBe(0);
+  it("returns the failed reply index after a plain user turn", () => {
+    expect(failedLastTurnIndex([user("a"), reply("error")])).toBe(1);
+    expect(failedLastTurnIndex([user("a"), reply("aborted")])).toBe(1);
+    expect(failedLastTurnIndex([user("a"), reply("stop", "ok"), user("b"), reply("aborted")])).toBe(3);
   });
 
-  it("keeps answered turns, turns that ran tools, and turns with no reply", () => {
+  it("returns the failed reply index after a tool result, keeping the user turn and tool result", () => {
+    expect(failedLastTurnIndex([user("a"), reply("toolUse"), toolResult, reply("error")])).toBe(3);
+    expect(failedLastTurnIndex([user("a"), reply("toolUse"), toolResult, reply("aborted")])).toBe(3);
+  });
+
+  it("returns the first failed reply of a trailing failed run", () => {
+    expect(failedLastTurnIndex([user("a"), reply("error"), reply("error", "partial")])).toBe(1);
+  });
+
+  it("keeps answered turns, turns without a failure, and turns with no reply", () => {
     expect(failedLastTurnIndex([user("a"), reply("stop", "ok")])).toBeUndefined();
-    expect(failedLastTurnIndex([user("a"), reply("toolUse"), toolResult, reply("error")])).toBeUndefined();
+    expect(failedLastTurnIndex([user("a"), reply("toolUse"), toolResult, reply("stop", "ok")])).toBeUndefined();
+    expect(failedLastTurnIndex([user("a"), toolResult])).toBeUndefined();
     expect(failedLastTurnIndex([user("a")])).toBeUndefined();
     expect(failedLastTurnIndex([reply("error")])).toBeUndefined();
     expect(failedLastTurnIndex([])).toBeUndefined();

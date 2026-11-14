@@ -144,10 +144,12 @@ export function lastUserTurn(messages: AgentMessage[]): LastUserTurn | undefined
 }
 
 /**
- * Index of the last user message when its turn failed: every message after it
- * is an assistant reply that ended in an error or an abort. Retry drops that
- * turn before it resends, so the model does not get the same prompt twice.
- * A turn that ran a tool (a toolResult follows) or answered is kept.
+ * Index to truncate the transcript at before retrying a failed turn: the first
+ * message of the trailing run of failed assistant replies (`stopReason` is
+ * `error` or `aborted`). Everything before it — the user message and any
+ * `toolResult` — stays, so a retry continues the turn without sending the same
+ * prompt again. Returns undefined when the trailing reply did not fail, or when
+ * the last user turn has no assistant reply yet.
  */
 export function failedLastTurnIndex(messages: AgentMessage[]): number | undefined {
   let index = messages.length - 1;
@@ -156,6 +158,8 @@ export function failedLastTurnIndex(messages: AgentMessage[]): number | undefine
     if (stopReason !== "error" && stopReason !== "aborted") return undefined;
     index--;
   }
-  if (index < 0 || index === messages.length - 1 || messages[index].role !== "user") return undefined;
-  return index;
+  if (index < 0 || index === messages.length - 1) return undefined;
+  const previous = messages[index].role;
+  if (previous !== "user" && previous !== "toolResult") return undefined;
+  return index + 1;
 }
