@@ -697,7 +697,12 @@ function timestampRunId(): string {
 
 function gitHead(): string {
   try {
-    return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const output = execFileSync(
+      "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH like the other scripts.
+      ["rev-parse", "HEAD"],
+      { encoding: "utf8" },
+    );
+    return output.trim();
   } catch {
     return "unknown";
   }
