@@ -55,8 +55,8 @@ await (await modal.$("button=Allow")).click();
 | Safe/YOLO toggle | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` (existence only) | `partial` |
 | `/plan` and the Plan badge are gone | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` | `covered` |
 | Invalid mode transition is blocked | `src/ui/chat-view.ts#chooseAutocomplete` | `test/modes.test.ts#validateModeTransition` (unit only) | `partial` |
-| Background-tab approval badge and label | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
-| Closing a tab clears its pending approval | `src/ui/chat-view.ts#switchToTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` | `covered` |
+| Background-tab approval badge and label | `src/ui/chat-tabs.ts#syncTabStrip` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
+| Closing a tab clears its pending approval | `src/ui/chat-tabs.ts#switchToTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` | `covered` |
 | Approval modal at phone width | `src/ui/approval-modal.ts#ApprovalModal` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps approval modals visible and touchable at phone width` | `covered` |
 
 ## Gotchas

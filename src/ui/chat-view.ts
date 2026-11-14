@@ -38,7 +38,7 @@ import {
   parseInlineInstruction,
   resolveComposerAction,
   stripContextPreamble,
-  type ComposerSubmitSource, restoreUndeliveredText, UNDELIVERED_STEER_STATUS,
+  type ComposerSubmitSource,
 } from "./composer-input";
 import {
   buildModelPillState,
@@ -47,12 +47,12 @@ import {
 } from "./chrome-state";
 import { PromptEditState } from "./prompt-edit-state";
 import {
-  freshChatTabState,
   resetChatTabState,
   stagePromptContext,
   type ChatTabWorkingState,
   type StagedPromptContext,
 } from "./chat-tab-state";
+import { ChatTabs, type ChatTab } from "./chat-tabs";
 import {
   assemblePrompt,
   buildPromptContext,
@@ -116,29 +116,13 @@ export { VIEW_TYPE_AGENT_CHAT };
 /** Context-window fill fractions that trigger a background notification, once each. */
 const CONTEXT_THRESHOLDS = [0.75, 0.9] as const;
 
-/** Maximum independent sessions ("tabs") in one chat leaf. */
-const MAX_TABS = 3;
-
-/** One open conversation in the leaf: its own agent service + saved UI state. */
-interface ChatTab {
-  service: AgentService;
-  unsubscribe: () => void;
-  state: ChatTabWorkingState;
-  needsApproval?: boolean;
-  pendingApprovalModal?: ApprovalModal;
-}
-
 /** Minimal shape of Obsidian's internal (undocumented) drag manager. */
 interface ObsidianDragManager {
   draggable?: { file?: unknown; files?: unknown[] } | null;
 }
 
 export class ChatView extends ItemView {
-  // Open tabs (independent sessions). Each tab owns its working state; the view
-  // reads and writes the active tab's state directly through `this.state`, so a
-  // tab switch only moves the composer draft in and out of the textarea.
-  private tabs: ChatTab[] = [];
-  private activeTabIndex = 0;
+  private chatTabsOwner?: ChatTabs;
   private tabsEl!: HTMLElement;
   // The current active note's path. View-level: it follows the focused leaf,
   // not the conversation; each tab decides whether it is suppressed.
@@ -198,13 +182,58 @@ export class ChatView extends ItemView {
     return "messages-square";
   }
 
+  private get chatTabs(): ChatTabs {
+    return (this.chatTabsOwner ??= new ChatTabs({
+      createService: (handlers) => this.plugin.createAgentService(handlers),
+      askUser: (tab, request, signal) => this.askUserForTab(tab, request, signal),
+      confirmToolCall: (tab, request, signal) => this.confirmToolCallForTab(tab, request, signal),
+      onActiveEvent: (event) => this.handleAgentEvent(event),
+      onBackgroundFinished: (tabNumber) => {
+        this.notifier.notify("agentFinished", `Tab ${tabNumber} finished responding.`);
+      },
+      isViewClosed: () => this.closed,
+      container: () => this.tabsEl,
+      composerValue: () => this.inputEl.value,
+      setComposerValueQuiet: (value) => this.setComposerValueQuiet(value),
+      setStatus: (text) => this.statusEl.setText(text),
+      prepareSwitch: () => {
+        this.cancelAutocomplete();
+        this.menu.hide();
+        this.endEditing(false);
+      },
+      endEditing: () => this.endEditing(false),
+      renderChips: () => this.renderChips(),
+      syncChrome: () => this.syncChrome(),
+      flushQueuedPromptIfReady: () => this.flushQueuedPromptIfReady(),
+      renderActiveTab: () => this.renderActiveTab(),
+      initializeFreshTab: (tab) => this.initializeFreshTab(tab),
+      startNewConversation: () => this.startNewConversation(),
+    }));
+  }
+
+  private get tabs(): ChatTab[] {
+    return this.chatTabs.allTabs();
+  }
+
+  private set tabs(value: ChatTab[]) {
+    this.chatTabs.setTabs(value);
+  }
+
+  private get activeTabIndex(): number {
+    return this.chatTabs.activeIndexValue;
+  }
+
+  private set activeTabIndex(value: number) {
+    this.chatTabs.setActiveIndex(value);
+  }
+
   /** The active tab's agent service. Tabs are created before any service access. */
   private get service(): AgentService {
-    return this.tabs[this.activeTabIndex].service;
+    return this.chatTabs.service;
   }
 
   private get activeTab(): ChatTab {
-    return this.tabs[this.activeTabIndex];
+    return this.chatTabs.activeTab;
   }
 
   /** The active tab's working state: attachments, caches, queue, notifications, last send. */
@@ -213,7 +242,27 @@ export class ChatView extends ItemView {
   }
 
   private isLiveTab(tab: ChatTab): boolean {
-    return !this.closed && this.tabs[this.activeTabIndex] === tab;
+    return this.chatTabs.isLiveTab(tab);
+  }
+
+  private switchToTab(index: number): Promise<void> {
+    return this.chatTabs.switchToTab(index);
+  }
+
+  private tabLabel(tab: ChatTab): string {
+    return this.chatTabs.tabLabel(tab);
+  }
+
+  private syncTabStrip(): void {
+    this.chatTabs.syncTabStrip();
+  }
+
+  private async initializeFreshTab(tab: ChatTab): Promise<void> {
+    await this.createSessionActivationCoordinator().initializeFreshTab(
+      // A new tab is always a fresh session, never a continuation of tab 0's.
+      () => tab.service.newSession(),
+      (error) => new Notice(`Agentic chat: ${errorMessage(error)}`),
+    );
   }
 
   async onOpen(): Promise<void> {
@@ -221,8 +270,7 @@ export class ChatView extends ItemView {
     this.buildLayout();
     // First tab continues the most-recent session (initialize); later tabs each
     // start a fresh session. Each tab's service has its own event subscription.
-    this.tabs = [this.createTab()];
-    this.activeTabIndex = 0;
+    this.chatTabs.setTabs([this.chatTabs.createTab()]);
     // The mention list is cached; drop it whenever the vault's file set changes.
     const invalidate = () => {
       this.mentionCache = null;
@@ -278,46 +326,6 @@ export class ChatView extends ItemView {
     this.inputEl.focus();
   }
 
-  // --- tabs (independent sessions in one leaf) ---
-
-  /** Build a tab with its own agent service and a tab-aware event subscription. */
-  private createTab(): ChatTab {
-    const tabRef: { current?: ChatTab } = {};
-    const service = this.plugin.createAgentService({
-      askUser: (request, signal) => {
-        if (!tabRef.current) throw new Error("The chat tab is not ready to ask the user.");
-        return this.askUserForTab(tabRef.current, request, signal);
-      },
-      confirmToolCall: (request, signal) => {
-        if (!tabRef.current) throw new Error("The chat tab is not ready for approval.");
-        return this.confirmToolCallForTab(tabRef.current, request, signal);
-      },
-    });
-    const tab: ChatTab = { service, unsubscribe: () => {}, state: freshChatTabState() };
-    tabRef.current = tab;
-    const offEvent = service.onEvent((event) => this.handleTabEvent(tab, event));
-    const offChange = service.onChange(() => this.handleTabChange(tab));
-    tab.unsubscribe = () => {
-      offEvent();
-      offChange();
-    };
-    return tab;
-  }
-
-  /** Park the composer draft on the active tab before another tab takes the textarea. */
-  private parkDraft(): void {
-    const tab = this.tabs[this.activeTabIndex];
-    if (tab) tab.state.draft = this.inputEl.value;
-  }
-
-  /** Put the active tab's parked draft back into the textarea. */
-  private restoreDraft(): void {
-    const tab = this.tabs[this.activeTabIndex];
-    if (!tab) return;
-    tab.state.history.resetNavigation();
-    this.setComposerValueQuiet(tab.state.draft);
-  }
-
   /** Re-render the transcript + chrome for the active tab (after a switch/close). */
   private renderActiveTab(): void {
     this.createSessionActivationCoordinator().renderActiveTab();
@@ -325,135 +333,6 @@ export class ChatView extends ItemView {
     // coordinator only syncs chrome, so re-render them here or a queued-prompt
     // chip (and context chips) would stay stale/invisible after a tab switch.
     this.renderChips();
-  }
-
-  private async switchToTab(index: number): Promise<void> {
-    if (index === this.activeTabIndex || index < 0 || index >= this.tabs.length) return;
-    this.cancelAutocomplete();
-    this.menu.hide();
-    this.endEditing(false);
-    this.parkDraft();
-    this.activeTabIndex = index;
-    this.restoreDraft();
-    this.renderActiveTab();
-  }
-
-  /** `+`: open a new tab on a fresh session and switch to it (capped at MAX_TABS). */
-  private async addTab(): Promise<void> {
-    if (this.tabs.length >= MAX_TABS) return;
-    this.endEditing(false);
-    this.parkDraft();
-    const tab = this.createTab();
-    this.tabs.push(tab);
-    this.activeTabIndex = this.tabs.length - 1;
-    // Show the fresh tab's empty draft before any async work renders against it.
-    this.restoreDraft();
-    await this.createSessionActivationCoordinator().initializeFreshTab(
-      // A new tab is always a fresh session, never a continuation of tab 0's.
-      () => tab.service.newSession(),
-      (error) => new Notice(`Agentic chat: ${errorMessage(error)}`),
-    );
-  }
-
-  /** `×`: close a tab, disposing its session. Closing the only tab resets it instead. */
-  private closeTab(index: number): void {
-    if (index < 0 || index >= this.tabs.length) return;
-    if (this.tabs.length <= 1) {
-      void this.startNewConversation();
-      return;
-    }
-    const closingActive = index === this.activeTabIndex;
-    if (closingActive) this.endEditing(false);
-    const [tab] = this.tabs.splice(index, 1);
-    tab.unsubscribe();
-    tab.pendingApprovalModal?.close();
-    tab.service.dispose();
-    if (index < this.activeTabIndex) {
-      this.activeTabIndex -= 1;
-    } else if (closingActive) {
-      this.activeTabIndex = Math.min(this.activeTabIndex, this.tabs.length - 1);
-      // The closed tab was showing; restore + render whichever tab took its place.
-      this.restoreDraft();
-      this.renderActiveTab();
-      return;
-    }
-    this.syncTabStrip();
-  }
-
-  private tabLabel(tab: ChatTab): string {
-    const info = tab.service.getSessionInfo();
-    return info?.name?.trim() || "New chat";
-  }
-
-  /** Activate `el` on click and on Enter/Space, so non-button controls are keyboard-usable. */
-  private onActivate(el: HTMLElement, handler: () => void, stopPropagation = false): void {
-    el.addEventListener("click", (event) => {
-      if (stopPropagation) event.stopPropagation();
-      handler();
-    });
-    el.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      if (stopPropagation) event.stopPropagation();
-      handler();
-    });
-  }
-
-  /** Render the tab pills + add button, reflecting active/busy state. */
-  private syncTabStrip(): void {
-    if (!this.tabsEl) return;
-    this.tabsEl.empty();
-    this.tabs.forEach((tab, index) => {
-      const active = index === this.activeTabIndex;
-      const pill = this.tabsEl.createDiv({
-        cls: "agentic-chat-tab",
-        attr: { role: "tab", tabindex: "0", "aria-selected": String(active), "aria-label": this.tabLabel(tab), title: this.tabLabel(tab) },
-      });
-      pill.toggleClass("is-active", active);
-      pill.createSpan({ cls: "agentic-chat-tab-num", text: String(index + 1) });
-      if (tab.service.isStreaming()) pill.createSpan({ cls: "agentic-chat-tab-busy", attr: { "aria-hidden": "true" } });
-      if (tab.needsApproval) {
-        pill.addClass("is-needs-approval");
-        pill.setAttr("title", `${this.tabLabel(tab)} — needs approval: click to review`);
-      }
-      this.onActivate(pill, () => void this.switchToTab(index));
-      if (this.tabs.length > 1) {
-        const close = pill.createSpan({
-          cls: "agentic-chat-tab-close",
-          attr: { role: "button", tabindex: "0", "aria-label": "Close tab" },
-        });
-        setIcon(close, "x");
-        this.onActivate(close, () => this.closeTab(index), true);
-      }
-    });
-    if (this.tabs.length < MAX_TABS) {
-      const add = this.tabsEl.createDiv({
-        cls: "agentic-chat-tab-add",
-        attr: { role: "button", tabindex: "0", "aria-label": "New tab", title: "New tab" },
-      });
-      setIcon(add, "plus");
-      this.onActivate(add, () => void this.addTab());
-    }
-  }
-
-  private handleTabEvent(tab: ChatTab, event: AgentEvent): void {
-    if (tab === this.activeTab) {
-      this.handleAgentEvent(event);
-      return;
-    }
-    // A background tab finishing while you're viewing another: surface it.
-    if (event.type === "agent_end") {
-      this.notifier.notify("agentFinished", `Tab ${this.tabs.indexOf(tab) + 1} finished responding.`);
-    }
-    this.syncTabStrip();
-  }
-
-  private handleTabChange(tab: ChatTab): void {
-    this.syncTabStrip();
-    if (tab === this.activeTab) this.syncChrome();
-    // After syncChrome, so the restored-draft status line is not cleared.
-    this.restoreUndeliveredSteers(tab);
-    if (tab === this.activeTab) void this.flushQueuedPromptIfReady();
   }
 
   private async askUserForTab(tab: ChatTab, request: AskUserRequest, signal?: AbortSignal): Promise<string> {
@@ -958,10 +837,7 @@ export class ChatView extends ItemView {
 
   /** Whether any tab in this leaf is streaming — covers background tabs for the settings gate. */
   private isAnyTabStreaming(): boolean {
-    for (const tab of this.tabs) {
-      if (tab.service.isStreaming()) return true;
-    }
-    return false;
+    return this.chatTabs.isAnyTabStreaming();
   }
 
   /** S4: called by the plugin after any persisted mode change (e.g. settings tab) so every leaf reflects the single source atomically. */
@@ -1940,21 +1816,6 @@ export class ChatView extends ItemView {
     this.transcript.scrollToBottom(options);
   }
 
-
-  /** Steered text the run never delivered goes back into that tab's composer draft. */
-  private restoreUndeliveredSteers(tab: ChatTab): void {
-    const texts = tab.service.takeUndeliveredSteers();
-    if (texts.length === 0) return;
-    const isActive = tab === this.activeTab;
-    const value = restoreUndeliveredText(isActive ? this.inputEl.value : tab.state.draft, texts);
-    if (value === null) return;
-    if (!isActive) {
-      tab.state.draft = value;
-      return;
-    }
-    this.setComposerValueQuiet(value);
-    this.statusEl.setText(UNDELIVERED_STEER_STATUS);
-  }
 
   /**
    * A removed command (or alias) names its replacement instead of reaching the
