@@ -428,6 +428,19 @@ describe("PluginService.removePackage", () => {
 });
 
 describe("PluginService.scaffoldSkill", () => {
+  it("persists the recorded source label when it scaffolds a skill", async () => {
+    const { app } = await seed();
+    const current = settings();
+    let saves = 0;
+    const service = serviceFor(app, current, () => {
+      saves += 1;
+    });
+    await service.scaffoldSkill({ name: "Release Notes", description: "", body: "# x\n" });
+
+    expect(current.plugins.sources["release-notes"]).toBe("New skill wizard");
+    expect(saves).toBe(1);
+  });
+
   it("creates a spec-valid single-skill package", async () => {
     const { app } = await seed();
     const service = serviceFor(app, settings());

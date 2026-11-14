@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { AgentSessionEventRecorder } from "../src/agent/session-event-recorder";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { parseSessionEntries, type SessionEntry } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
@@ -27,7 +27,7 @@ async function setup(): Promise<{
   path: string;
 }> {
   const adapter = new MemoryAdapter();
-  const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+  const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   const info = await manager.createSession(DEFAULTS);
   return { adapter, manager, recorder: new AgentSessionEventRecorder(manager), path: info.path };
 }

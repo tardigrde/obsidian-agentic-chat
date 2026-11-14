@@ -52,11 +52,11 @@ await (await modal.$("button=Allow")).click();
 | Per-tool deny flips to allow in a recorded run | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/probe/scenarios/settings-gate.e2e.ts#records a denied write, flips the override, and records the write succeeding` | `covered` |
 | Working directories and `/add-dir` are gone | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
 | Safe asks before mutating tools | `src/agent/tool-call-controller.ts#beforeToolCall` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted write and undo removes the created note` | `covered` |
-| Safe/YOLO toggle | `src/ui/chat-layout.ts#buildLayout` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` (existence only) | `partial` |
-| `/plan` and the Plan badge are gone | `src/ui/chat-layout.ts#buildLayout` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` | `covered` |
-| Invalid mode transition is blocked | `src/ui/composer-controller.ts#chooseAutocomplete` | `test/modes.test.ts#validateModeTransition` (unit only) | `partial` |
-| Background-tab approval badge and label | `src/ui/chat-tabs.ts#syncTabStrip` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
-| Closing a tab clears its pending approval | `src/ui/chat-tabs.ts#switchToTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` | `covered` |
+| Safe/YOLO toggle | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` (existence only) | `partial` |
+| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` | `covered` |
+| Invalid mode transition is blocked | `src/ui/chat-view.ts#chooseAutocomplete` | `test/modes.test.ts#validateModeTransition` (unit only) | `partial` |
+| Background-tab approval badge and label | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
+| Closing a tab clears its pending approval | `src/ui/chat-view.ts#switchToTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` | `covered` |
 | Approval modal at phone width | `src/ui/approval-modal.ts#ApprovalModal` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps approval modals visible and touchable at phone width` | `covered` |
 
 ## Gotchas

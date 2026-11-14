@@ -317,6 +317,7 @@ export class PluginService {
       installPackage(this.vault.writer(), { converted, pluginsFolder: this.vault.folder() }),
     );
     recordPluginSource(this.getSettings(), result.name, options.source ?? "New skill wizard");
+    await this.saveSettings?.();
     this.invalidate();
     return result;
   }

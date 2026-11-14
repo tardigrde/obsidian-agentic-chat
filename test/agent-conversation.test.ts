@@ -4,7 +4,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { buildModel } from "../src/llm/models";
 import { AgentConversation, type ParentAgentConfiguration } from "../src/agent/conversation";
 import type { ParentAgentHandle } from "../src/agent/parent-agent";
-import { ObsidianSessionManager, type SessionDefaults } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry, type SessionDefaults } from "../src/session/session-manager";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 const DEFAULTS: SessionDefaults = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" };
@@ -71,7 +71,7 @@ function makeConversation(
 ) {
   const events: string[] = [];
   const adapter = new MemoryAdapter();
-  const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+  const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   const conversation = new AgentConversation({
     sessionManager: manager,
     getDefaults: options.getDefaults ?? (() => DEFAULTS),

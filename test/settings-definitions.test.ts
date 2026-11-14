@@ -11,6 +11,16 @@ function makeHarness(mutate?: (settings: typeof DEFAULT_SETTINGS) => void) {
   const calls = { saves: 0, invalidations: 0 };
   const plugin = {
     settings,
+    settingsStore: {
+      save: async () => {
+        calls.saves += 1;
+      },
+      update: async (mutator: (current: typeof settings) => boolean | void) => {
+        if (mutator(settings) === false) return false;
+        calls.saves += 1;
+        return true;
+      },
+    },
     saveSettings: async () => {
       calls.saves += 1;
     },

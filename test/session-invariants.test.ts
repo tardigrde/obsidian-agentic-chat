@@ -9,7 +9,7 @@ import {
 } from "../src/session/jsonl";
 import { emptyUsage } from "../src/agent/usage";
 import { sumSessionUsage } from "../src/agent/session-usage";
-import { ObsidianSessionManager, type SessionDefaults } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry, type SessionDefaults } from "../src/session/session-manager";
 import { replayTextTurn, replayToolCallTurn } from "../src/agent/replay-stream";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 import { runAgentReplay } from "./helpers/agent-replay";
@@ -44,7 +44,7 @@ describe("session/event-log invariants", () => {
     expect(buildSessionContext(entries).model).toEqual({ provider: "openrouter", modelId: "changed/model" });
     expect(buildSessionContext(entries).thinkingLevel).toBe("high");
 
-    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     await reloaded.loadSession(info.path);
     expect(reloaded.getActiveSessionInfo()).toMatchObject({ name: "Important chat", messageCount: 3 });
     expect(reloaded.buildSessionContext().messages.map(messageText)).toEqual([
@@ -61,7 +61,7 @@ describe("session/event-log invariants", () => {
     await manager.appendMessage(assistantMessage("still valid", 2));
     await adapter.append(info.path, "{ not valid json");
 
-    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     await reloaded.loadSession(info.path);
 
     expect(reloaded.buildSessionContext().messages.map(messageText)).toEqual(["before corrupt line", "still valid"]);
@@ -259,7 +259,7 @@ describe("session/event-log invariants", () => {
     const serializedMessages = messages.map((entry) => JSON.stringify(entry.message));
     expect(new Set(serializedMessages).size).toBe(serializedMessages.length);
 
-    const reloaded = new ObsidianSessionManager(replay.adapter.asDataAdapter(), "sessions", "vault:test");
+    const reloaded = new ObsidianSessionManager(replay.adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     await reloaded.loadSession(sessionPath);
     expect(reloaded.buildSessionContext().messages.map((message) => message.role)).toEqual([
       "user",
@@ -274,7 +274,7 @@ describe("session/event-log invariants", () => {
 function makeManager(): { manager: ObsidianSessionManager; adapter: MemoryAdapter } {
   const adapter = new MemoryAdapter();
   return {
-    manager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test"),
+    manager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry()),
     adapter,
   };
 }

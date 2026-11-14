@@ -20,7 +20,7 @@ Use these terms:
 
 | State | Owner | Stored in |
 |---|---|---|
-| Active session pointer, transcript, the one staleness counter | `ObsidianSessionManager` | session JSONL; counters in memory |
+| Active session pointer, transcript, the one staleness counter, and temp/backup ownership | `ObsidianSessionManager` with the plugin-owned `SessionWriteRegistry` | session JSONL; counters and write ownership in memory |
 | Order of every live-session change (swap, rewind, compaction commit) | `AgentSessionActions` (its `AgentSessionSwapQueue`) | memory |
 | Live parent agent, session-local state reset | `AgentConversation` | memory |
 | One prompt turn | `AgentPromptTurnRuntime` plus pi `Agent` | memory |
@@ -30,6 +30,7 @@ Use these terms:
 | Approval decision and stop flag | `AgentToolCallController` | memory, plus settings for remembered choices |
 | MCP connection state | `McpHttpClient` per request | memory |
 | MCP OAuth refresh | `refreshFlights` in `src/mcp/oauth.ts` | memory plus `McpServerSettings.oauth` |
+| Plugin settings, save order, change listeners | `SettingsStore` | `data.json`; secrets in Obsidian secretStorage |
 | Semantic index writer | `SemanticIndexLeaseRegistry` and `SemanticIndexWorkflowController` | `index.json`, `index.json.bak` |
 | Plugin install | `installPackage` transaction | vault folders |
 | Open chat tabs, active index, tab strip | `ChatTabs` | memory |
@@ -139,6 +140,11 @@ Invariants:
 - One pass at a time; a manual pass never joins an automatic one (`busy`).
 - The manual audit end event is recorded only when the conversation token is
   unchanged, so the pair stays in one session.
+- The manual audit start event is captured against the session that began the
+  pass. The append binds that file before it writes, so a swap during the write
+  cannot land the start in the new session; the token check then refuses to run
+  the pass. Pinned by `test/conversation-compaction.test.ts` (`keeps the start
+  audit in the session that began the pass when a swap lands during its write`).
 
 Closed in this round: the two staleness tokens (`sessionEpoch` and
 `sessionGeneration`) are one; compaction recovery no longer loads outside the
@@ -147,9 +153,10 @@ swap; `compactionRecoveryError` is gone.
 
 ## Approval
 
-Owner: `AgentToolCallController` owns `stopRequested`, the pending undo map, and
-the undo stack. `approval.ts` is the single writer for the per-tool policy map.
-The approval modal owns one request in the UI.
+Owner: `AgentToolCallController` owns the turn-scoped stop latch (`stopTurn` /
+`currentTurn`), the pending undo map, and the undo stack. `approval.ts` is the
+single writer for the per-tool policy map. The approval modal owns one request in
+the UI.
 
 Invariants:
 
@@ -160,16 +167,24 @@ Invariants:
 - An approval that belongs to session A cannot apply to session B.
 
 Fixed by #235: Stop is an explicit `stopped` flag on `UserApprovalChoice`. A deny
-reason that matches the stop text no longer takes the stop path.
+reason that matches the stop text no longer takes the stop path. Pinned by
+`test/tool-call-controller.test.ts` (`does not stop the turn when a deny reuses
+the stop text as its reason`).
 
-Gaps:
+Fixed: the stop latch is turn-scoped, not service-global. `stopTurn` names the
+turn that was stopped, and `consumeStopRequested` returns true only while
+`stopTurn === currentTurn`; `beginTurn` clears the old turn. Pinned by
+`test/tool-call-controller.test.ts` (`latches a stopped approval once for the
+turn`, `blocks sibling calls in the same batch after a stopped approval`, `does
+not block the next turn after an unconsumed stop`).
 
-- `stopRequested` is service-global and cleared at the next turn start. It is not
-  tied to the request or turn that set it.
-- `ToolApprovalRequest` carries a display label, not a session token. A modal can
-  outlive the session it belongs to.
-
-Next: tie the stop latch and the approval request to the turn and session token.
+Fixed: an approval is bound to its turn's abort signal. A session swap detaches
+the old agent and aborts that signal, so the modal settles as a stopped denial;
+closing the tab closes the modal and settles it as a denial. A decision that
+arrives after the modal settled is ignored. Pinned by
+`test/approval-modal.test.ts` (`closes and settles with a denial when the turn
+aborts`, `ignores a late answer after its turn was aborted`, `settles as denied
+when its tab closes`).
 
 ## Chat view
 
@@ -228,6 +243,56 @@ Gap:
 
 Next: keep the per-request client. Make the stable server id the single owner for
 token refresh and callback lifecycle.
+
+## Settings
+
+Owner: `SettingsStore` (`src/settings-store.ts`) holds the live
+`AgenticChatSettings` object, serializes saves, and fans out change listeners.
+`src/main.ts` keeps `plugin.settings` pointing at the same object and supplies
+the persist callback (`saveData(settingsForStorage(...))`).
+
+Write path: a caller either calls `settingsStore.update(mutator)` (mutate and
+save once; return `false` to skip the save) or mutates an existing value and
+calls `settingsStore.save()`. `plugin.saveSettings()` delegates to the owner, so
+the injected callbacks in `agent/` and `plugins/` use the same path. The UI entry
+points (`chat-view`, `slash/model`, `slash/session`, the settings tab) call the
+owner. A refusing secret store makes the save throw; callers that catch that
+today still catch it.
+
+Change listeners: `settingsStore.onChange` runs only after a successful save,
+never after a failed one. The mode broadcast is one listener
+(`main.ts` `broadcastModeChange`): it repaints chat chrome only when
+`settings.mode` changed since the last load or broadcast.
+
+Secret slots: `SETTINGS_SECRET_SLOTS` names every top-level slot;
+`MCP_SECRET_SLOTS` names the four MCP slots once, for both user servers and
+plugin-owned state. One implementation hydrates from the secret store, writes to
+it and strips plaintext from `data.json`, and migrates legacy plaintext. MCP
+secret ids use `agentic-chat-mcp-<id>-<kind>`; ids are normalized (lowercase,
+non-alphanumerics to `-`, long ids hashed to 64 chars).
+
+| Slot | Runtime field | Secret id | Legacy plaintext | Stripped from data.json |
+|---|---|---|---|---|
+| OpenRouter API key | `openrouterApiKey` | `agentic-chat-openrouter-api-key` | `openrouterApiKey` | yes |
+| OpenAI-compatible API key | `openaiCompatibleApiKey` | `agentic-chat-openai-compatible-api-key` | `openaiCompatibleApiKey` | yes |
+| Web search key | `web.searchApiKey` | `agentic-chat-web-search-api-key` | `web.searchApiKey` | yes |
+| Langfuse public key | `observability.langfusePublicKey` | `agentic-chat-langfuse-public-key` | `observability.langfusePublicKey` | yes |
+| Langfuse secret key | `observability.langfuseSecretKey` | `agentic-chat-langfuse-secret-key` | `observability.langfuseSecretKey` | yes |
+| Observability auth header | `observability.authHeaderValue` | `agentic-chat-observability-auth-header-value` | `observability.authHeaderValue` | yes |
+| MCP auth header | `authHeaderValue` | `agentic-chat-mcp-<id>-auth-header-value` | `authHeaderValue` | yes |
+| MCP OAuth client secret | `oauth.clientSecret` | `agentic-chat-mcp-<id>-oauth-client-secret` | `oauth.clientSecret` | yes |
+| MCP OAuth access token | `oauth.accessToken` | `agentic-chat-mcp-<id>-oauth-access-token` | `oauth.accessToken` | yes |
+| MCP OAuth refresh token | `oauth.refreshToken` | `agentic-chat-mcp-<id>-oauth-refresh-token` | `oauth.refreshToken` | yes |
+
+Invariants:
+
+- One save path. Every persisted read, write, strip, and migration uses the slot
+  tables, so `data.json` and the secret-store keys keep their existing shape.
+- A plaintext secret key is omitted from `data.json`, never written as `""`.
+- A failed save does not notify listeners and does not broadcast the mode.
+- `plugin.settings` and the owner hold the same object; a load swaps both.
+- `mcp.json` owns plugin server shape; settings own client state. A refresh
+  writes the changed state back through the owner.
 
 ## Semantic index writer
 
@@ -310,6 +375,12 @@ Invariants:
 - An install saves settings exactly once, so a changed source label persists
   even when every MCP server state already existed.
 
+Pinned: `test/plugins-service-import.test.ts` (`does not sweep the stage of an
+in-flight install`, `runs a later install after a rejected install`) proves the
+shared lock and the cleared chain. `test/plugins-service.test.ts` (`runs one
+import sweep for concurrent reloads`, `retries after a failed reload instead of
+leaving it in flight`) proves the single-flight reload.
+
 Gap:
 
 - Settings prune runs after the sweep and depends on the retained-backup flag.
@@ -341,17 +412,6 @@ Gap:
 - `skillNameFromDoc` (`src/plugins/import/shared.ts`) still reads `name:` with
   its own regex. It strips every quote character, so moving it to the shared
   splitter would change results for quoted names.
-
-## Unowned today
-
-These items have no single owner. Do not add a new check for them; move the
-writer.
-
-| Item | Risk | Target |
-|---|---|---|
-| Approval stop reason | A deny with the stop text stops the turn | Unowned follow-up |
-| Compaction audit start after swap | Audit entries land in the wrong session | Unowned follow-up |
-| Plugin sweep vs install race | A sweep and an install move the same stage | Unowned follow-up |
 
 ## Order and reason
 

@@ -47,10 +47,11 @@ export async function switchModel(ctx: SlashContext): Promise<void> {
         // Per-request override: use this model for the next prompt only, then revert.
         ctx.service.setModelOverride(model.id);
       } else {
-        if (settings.provider === "openrouter") settings.openrouterModel = model.id;
-        else settings.openaiCompatibleModel = model.id;
+        void ctx.plugin.settingsStore.update((current) => {
+          if (current.provider === "openrouter") current.openrouterModel = model.id;
+          else current.openaiCompatibleModel = model.id;
+        });
         ctx.service.setModelOverride(null);
-        void ctx.plugin.saveSettings();
       }
       ctx.syncChrome();
     }, `${modelProviderLabel(settings.provider)} model`).open();
@@ -161,11 +162,12 @@ export async function chooseEffort(ctx: SlashContext, level: ThinkingLevel): Pro
 export async function persistEffortLevel(ctx: SlashContext, level: ThinkingLevel): Promise<void> {
   const previous = ctx.plugin.settings.thinkingLevel;
   if (previous === level) return;
-  ctx.plugin.settings.thinkingLevel = level;
-  // Repaint instantly; persistence lands in the background.
-  ctx.syncChrome();
   try {
-    await ctx.plugin.saveSettings();
+    await ctx.plugin.settingsStore.update((settings) => {
+      settings.thinkingLevel = level;
+      // Repaint instantly; persistence lands in the background.
+      ctx.syncChrome();
+    });
   } catch (error) {
     ctx.plugin.settings.thinkingLevel = previous;
     ctx.syncChrome();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
@@ -12,7 +12,7 @@ function userMessage(text: string): AgentMessage {
 
 function manager(): { sm: ObsidianSessionManager; adapter: MemoryAdapter } {
   const adapter = new MemoryAdapter();
-  const sm = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+  const sm = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   return { sm, adapter };
 }
 
@@ -74,7 +74,7 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
     expect(sm.getActiveSessionGeneration()).toBe(beforeGeneration);
     expect(sessionArtifacts(adapter, path)).toEqual([]);
 
-    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     await reloaded.loadSession(path);
     expect(messageTexts(reloaded)).toEqual(beforeMessages);
   });
@@ -101,7 +101,7 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
     expect(sm.getActiveSessionGeneration()).toBe(beforeGeneration);
     expect(sessionArtifacts(adapter, path)).toEqual([]);
 
-    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     await reloaded.loadSession(path);
     expect(messageTexts(reloaded)).toEqual(beforeMessages);
   });
@@ -126,7 +126,7 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
     expect(messageTexts(sm)).toEqual(["rewound"]);
     expect(sessionArtifacts(adapter, path)).toEqual([]);
 
-    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     await reloaded.loadSession(path);
     expect(messageTexts(reloaded)).toEqual(["rewound"]);
   });
@@ -151,7 +151,7 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
     expect(messageTexts(sm)).toEqual(beforeMessages);
     expect(sessionArtifacts(adapter, path)).toEqual([]);
 
-    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     await reloaded.loadSession(path);
     expect(messageTexts(reloaded)).toEqual(beforeMessages);
   });
@@ -227,7 +227,7 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
     const { adapter, path } = await seeded();
     adapter.files.set(`${path}.bak`, "older transcript");
 
-    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     await reloaded.loadSession(path);
 
     expect(messageTexts(reloaded)).toEqual(["first", "second", "third"]);
@@ -249,7 +249,7 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
     adapter.files.set(`${path}.bak`, original);
     adapter.files.set(path, original.slice(0, 24));
 
-    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     await reloaded.loadSession(path);
 
     expect(messageTexts(reloaded)).toEqual(["first", "second", "third"]);
@@ -259,8 +259,9 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
   it("a second tab's createSession must not delete the first tab's in-flight rewrite temp", async () => {
     const adapter = new MemoryAdapter();
     const data = adapter.asDataAdapter();
-    const tabA = new ObsidianSessionManager(data, "sessions", "vault:test");
-    const tabB = new ObsidianSessionManager(data, "sessions", "vault:test");
+    const registry = new SessionWriteRegistry();
+    const tabA = new ObsidianSessionManager(data, "sessions", "vault:test", registry);
+    const tabB = new ObsidianSessionManager(data, "sessions", "vault:test", registry);
     await tabA.createSession(DEFAULTS);
     await tabA.appendMessage(userMessage("first"));
     const originalWrite = adapter.write.bind(adapter);
@@ -280,8 +281,9 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
   it("a second tab's read must not restore the first tab's in-flight backup", async () => {
     const adapter = new MemoryAdapter();
     const data = adapter.asDataAdapter();
-    const tabA = new ObsidianSessionManager(data, "sessions", "vault:test");
-    const tabB = new ObsidianSessionManager(data, "sessions", "vault:test");
+    const registry = new SessionWriteRegistry();
+    const tabA = new ObsidianSessionManager(data, "sessions", "vault:test", registry);
+    const tabB = new ObsidianSessionManager(data, "sessions", "vault:test", registry);
     const info = await tabA.createSession(DEFAULTS);
     await tabA.appendMessage(userMessage("first"));
     await tabA.appendMessage(userMessage("second"));
@@ -316,7 +318,7 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
   it("does not share temp ownership between separate adapters", async () => {
     const left = new MemoryAdapter();
     const right = new MemoryAdapter();
-    const owner = new ObsidianSessionManager(left.asDataAdapter(), "sessions", "vault:test");
+    const owner = new ObsidianSessionManager(left.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const info = await owner.createSession(DEFAULTS);
     const tempPath = `${info.path}.tmp.inflight`;
     const originalWrite = left.write.bind(left);
@@ -328,7 +330,7 @@ describe("ObsidianSessionManager.rewriteMessages atomicity", () => {
         const ownedTemp = target;
         right.files.set(ownedTemp, "orphan");
         right.files.set(tempPath, "orphan");
-        await new ObsidianSessionManager(right.asDataAdapter(), "sessions", "vault:test").listSessions();
+        await new ObsidianSessionManager(right.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry()).listSessions();
         expect(right.files.has(ownedTemp)).toBe(false);
         expect(right.files.has(tempPath)).toBe(false);
       }

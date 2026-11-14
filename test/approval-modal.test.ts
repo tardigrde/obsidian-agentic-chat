@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { App } from "obsidian";
+import type { UserApprovalChoice } from "../src/agent/tool-call-controller";
 import { ApprovalModal, approvalTitle } from "../src/ui/approval-modal";
 
 interface ModalHarness {
@@ -69,6 +70,35 @@ describe("ApprovalModal", () => {
     await expect(modal.ask(abort.signal)).resolves.toMatchObject({ approved: false });
     expect(harness.open).not.toHaveBeenCalled();
     expect(harness.close).not.toHaveBeenCalled();
+  });
+
+  it("ignores a late answer after its turn was aborted", async () => {
+    const { modal } = makeModal();
+    const abort = new AbortController();
+    const decision = modal.ask(abort.signal);
+
+    // A swap detaches the old agent, which aborts the turn and settles the modal.
+    abort.abort();
+    const decide = (modal as unknown as { decide: (choice: UserApprovalChoice) => void }).decide.bind(modal);
+    decide({ approved: true, remember: false });
+
+    await expect(decision).resolves.toEqual({
+      approved: false,
+      remember: false,
+      reason: "The turn was stopped before approval.",
+      stopped: true,
+    });
+  });
+
+  it("settles as denied when its tab closes", async () => {
+    const { modal } = makeModal();
+    (modal as unknown as { contentEl: { empty: () => void } }).contentEl = { empty: () => {} };
+    const decision = modal.ask();
+
+    // Closing the tab closes the modal; a background approval must not stay live.
+    modal.onClose();
+
+    await expect(decision).resolves.toEqual({ approved: false, remember: false });
   });
 });
 

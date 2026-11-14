@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
 import { chatViewHarness } from "./helpers/chat-view-harness";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
@@ -144,7 +144,7 @@ function realService(streamFn: StreamFn): AgentService {
   return new AgentService({
     app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
     getSettings: () => settings,
-    sessionManager: new ObsidianSessionManager(new MemoryAdapter().asDataAdapter(), "sessions", "vault:test"),
+    sessionManager: new ObsidianSessionManager(new MemoryAdapter().asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry()),
     confirmToolCall: async () => ({ approved: true, remember: false }),
     streamFn,
   });

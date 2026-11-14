@@ -50,7 +50,13 @@ it("captures data.json and a session JSONL", async () => {
 
   // One session with every entry type this release can write.
   const adapter = new MemoryAdapter();
-  const manager = new sessions.ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:fixture");
+  const manager = new sessions.ObsidianSessionManager(
+    adapter.asDataAdapter(),
+    "sessions",
+    "vault:fixture",
+    // Releases after #365 require a registry; older ones default the fourth argument.
+    (sessions.SessionWriteRegistry ? new sessions.SessionWriteRegistry() : undefined) as never,
+  );
   await manager.createSession({ provider: "openrouter", modelId: "openai/gpt-4o-mini", thinkingLevel: "off" });
   await manager.appendMessage({ role: "user", content: [{ type: "text", text: "Summarize Projects/plan.md" }], timestamp: 1 } as never);
   await manager.appendMessage({
