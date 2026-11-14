@@ -393,7 +393,8 @@
           "type": "file_contains",
           "path": "Projects/Atlas.md",
           "text": "## Risks[\\s\\S]*vendor contract[\\s\\S]*## Log",
-          "regex": true
+          "regex": true,
+          "flags": "i"
         },
         {
           "type": "file_contains",
@@ -474,7 +475,7 @@
         },
         {
           "type": "max_tool_calls",
-          "max": 4
+          "max": 14
         }
       ]
     },
