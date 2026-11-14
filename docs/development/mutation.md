@@ -17,8 +17,10 @@ Narrow the matrix locally:
 STRYKER_MUTATE=src/agent/session-swap-queue.ts npm run mutation
 ```
 
-Run the full matrix on demand with `npm run mutation`. The matrix is not a
-scheduled job.
+Run the full matrix on demand with `npm run mutation`. The `Nightly` workflow
+also runs it every night on `main`, plus a report-only run
+(`STRYKER_REPORT_ONLY=1`) on up to three source files changed in the last 24
+hours. A failed lane opens or updates the issue labelled `nightly`.
 
 ## Matrix
 

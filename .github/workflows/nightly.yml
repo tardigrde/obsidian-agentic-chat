@@ -1,0 +1,184 @@
+name: Nightly
+
+# Slow lanes that do not gate a PR (#290): the full e2e suite and the mobile
+# lane on the latest main, a dry chaos run, and the mutation matrix. A failure
+# opens or updates one issue labelled `nightly`, so a red night is not missed.
+# A pull request that edits this file runs it once (without the issue step) to
+# prove the workflow itself.
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    # Above the sum of the lane caps (45+15+15+30+30) plus install, so the
+    # Summarize and Verdict steps always run.
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    outputs:
+      failed: ${{ steps.verdict.outputs.failed }}
+      summary: ${{ steps.verdict.outputs.summary }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Electron, Xvfb and ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb ffmpeg libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libxss1 libxtst6 libxrandr2 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libdrm2 libsecret-1-0 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64
+
+      - name: Cache Obsidian runtime
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .obsidian-cache
+          key: e2e-obsidian-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            e2e-obsidian-${{ runner.os }}-
+
+      # Each lane runs even when an earlier one failed; the report step reads
+      # every outcome.
+      - name: Full e2e suite
+        id: e2e
+        continue-on-error: true
+        timeout-minutes: 45
+        run: xvfb-run -a npm run verify -- e2e
+
+      - name: Mobile two-tab lane
+        id: mobile
+        continue-on-error: true
+        timeout-minutes: 15
+        run: xvfb-run -a npm run test:e2e:mobile -- --spec test/e2e/specs/multi-tab-approval.e2e.ts
+
+      - name: Chaos monkey (generic, dry, no model calls)
+        id: chaos
+        continue-on-error: true
+        timeout-minutes: 15
+        run: npm run chaos -- --mode generic --max-steps 6
+
+      - name: Mutation matrix
+        id: mutation
+        continue-on-error: true
+        timeout-minutes: 30
+        run: npm run mutation
+
+      # Report-only: files changed in the last 24 hours that are not in the
+      # matrix. A low score here is a signal, not a failure.
+      - name: Mutation on files changed in the last 24 hours (report only)
+        id: changed_mutation
+        continue-on-error: true
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -o pipefail
+          # `-- src` (not 'src/**/*.ts'): the glob form misses top-level src/*.ts files.
+          # The matrix files already run in the step above.
+          files=$(git log --since="24 hours ago" --name-only --format= -- src)
+          changed=$(printf '%s\n' "$files" | grep '\.ts$' | grep -v '\.d\.ts$' \
+            | grep -v -x -e 'src/agent/loop-guard.ts' -e 'src/agent/session-swap-queue.ts' \
+            | sort -u | while read -r f; do [ -f "$f" ] && echo "$f"; done | head -n 3 | paste -sd, - || true)
+          if [ -z "$changed" ]; then
+            echo "No source file changed in the last 24 hours."
+            exit 0
+          fi
+          echo "Mutating: $changed"
+          STRYKER_MUTATE="$changed" STRYKER_REPORT_ONLY=1 npm run mutation
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-artifacts
+          path: |
+            logs/e2e-artifacts/
+            logs/chaos/
+            reports/mutation/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Summarize
+        if: always()
+        env:
+          E2E: ${{ steps.e2e.outcome }}
+          MOBILE: ${{ steps.mobile.outcome }}
+          CHAOS: ${{ steps.chaos.outcome }}
+          MUTATION: ${{ steps.mutation.outcome }}
+          CHANGED: ${{ steps.changed_mutation.outcome }}
+        run: |
+          {
+            echo "| lane | outcome |"
+            echo "|---|---|"
+            echo "| full e2e | $E2E |"
+            echo "| mobile lane | $MOBILE |"
+            echo "| chaos (dry) | $CHAOS |"
+            echo "| mutation matrix | $MUTATION |"
+            echo "| mutation, changed files (report only) | $CHANGED |"
+          } | tee -a "$GITHUB_STEP_SUMMARY" > nightly-summary.md
+
+      - name: Verdict
+        id: verdict
+        if: always()
+        env:
+          FAILED: ${{ steps.e2e.outcome == 'failure' || steps.mobile.outcome == 'failure' || steps.chaos.outcome == 'failure' || steps.mutation.outcome == 'failure' }}
+        run: |
+          echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
+          {
+            echo "summary<<NIGHTLY_EOF"
+            cat nightly-summary.md
+            echo "NIGHTLY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fail the run when a lane failed
+        if: always() && steps.verdict.outputs.failed == 'true'
+        run: |
+          cat nightly-summary.md
+          exit 1
+
+  # Separate job: only this one can write issues, and it never runs for a
+  # pull_request, so PR-head workflow code never holds an issues token.
+  report:
+    needs: nightly
+    if: always() && github.event_name != 'pull_request' && needs.nightly.outputs.failed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the nightly issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SUMMARY: ${{ needs.nightly.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create nightly --color B60205 --description "Nightly lane failure" 2>/dev/null || true
+          body="$(printf 'Nightly run failed on %s: %s\n\n%s\n' "${GITHUB_SHA::7}" "$RUN_URL" "$SUMMARY")"
+          issue=$(gh issue list --label nightly --state open --json number --jq '.[0].number // empty')
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "$body"
+          else
+            gh issue create --title "Nightly lanes failing on main" --label nightly --body "$body"
+          fi
