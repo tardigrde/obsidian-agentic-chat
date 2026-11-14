@@ -535,6 +535,7 @@ describe("tool-use eval core", () => {
     expect(result.stdout).toContain("3 case(s) x 3 run(s)");
     expect(result.stdout).toContain("prices: not fetched (dry run)");
     expect(result.stdout).toContain("estimated cost");
+    expect(result.stdout).toContain("15k tokens/run");
     expect(existsSync(outputDir)).toBe(false);
   });
 });

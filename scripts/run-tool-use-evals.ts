@@ -19,13 +19,13 @@ const DEFAULT_OUT_ROOT = "logs/eval-runs";
 const BASELINE_PATH = "test/evals/baselines/tool-use.json";
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 
-// The dry run must not touch the network. These rough per-token assumptions only
-// make the plan readable; the live run replaces them with fetched prices.
+// The dry run must not touch the network. This fixed assumption only makes the
+// plan readable; the live run replaces it with fetched prices.
 const DRY_RUN_ESTIMATE = {
-  inputTokensPerRun: 4_000,
-  outputTokensPerRun: 800,
-  inputUsdPerToken: 0.00000028,
-  outputUsdPerToken: 0.0000011,
+  tokensPerRun: 15_000,
+  inputShare: 0.8,
+  inputUsdPerToken: 0.05 / 1_000_000,
+  outputUsdPerToken: 0.2 / 1_000_000,
 };
 
 interface CliArgs {
@@ -392,10 +392,12 @@ function printDryRun(options: {
   budget: ToolUseBudgetCaps;
   outDir: string;
 }): void {
+  const inputTokens = DRY_RUN_ESTIMATE.tokensPerRun * DRY_RUN_ESTIMATE.inputShare;
+  const outputTokens = DRY_RUN_ESTIMATE.tokensPerRun * (1 - DRY_RUN_ESTIMATE.inputShare);
   const estimatedUsd =
     options.plannedRuns.length *
-    (DRY_RUN_ESTIMATE.inputTokensPerRun * DRY_RUN_ESTIMATE.inputUsdPerToken +
-      DRY_RUN_ESTIMATE.outputTokensPerRun * DRY_RUN_ESTIMATE.outputUsdPerToken);
+    (inputTokens * DRY_RUN_ESTIMATE.inputUsdPerToken +
+      outputTokens * DRY_RUN_ESTIMATE.outputUsdPerToken);
   const lines = [
     `Tool-use eval plan: ${options.suite.name}`,
     `Suite: ${options.suitePath}`,
@@ -408,7 +410,7 @@ function printDryRun(options: {
     `Turn: timeoutMs ${options.suite.turn.timeoutMs}, maxTurnsPerPrompt ${options.suite.turn.maxTurnsPerPrompt}`,
     `Results: ${options.outDir}`,
     "prices: not fetched (dry run)",
-    `estimated cost: $${estimatedUsd.toFixed(4)} (rough; assumed per-token prices)`,
+    `estimated cost: $${estimatedUsd.toFixed(4)} (fixed assumption: 15k tokens/run, 80% input at $0.05/M and 20% output at $0.20/M)`,
   );
   process.stdout.write(`${lines.join("\n")}\n`);
 }
