@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "suite": "tool-use",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "prices": {
+    "input": 5.07e-8,
+    "output": 2.028e-7,
+    "cacheRead": 1.014e-9,
+    "cacheWrite": 0
+  },
+  "date": "2026-11-14T19:49:28.623Z",
+  "gitHead": "ed35951d649c55197ca5db2540ee39451a188fec",
+  "cases": [
+    {
+      "id": "none.arithmetic",
+      "passRate": 1,
+      "meanTokens": 3887.6666666666665,
+      "meanUsd": 0.000008734596
+    },
+    {
+      "id": "edit.find-and-edit",
+      "passRate": 1,
+      "meanTokens": 17007,
+      "meanUsd": 0.00008275456800000001
+    },
+    {
+      "id": "rename.keep-links",
+      "passRate": 1,
+      "meanTokens": 20887.666666666668,
+      "meanUsd": 0.0001556828
+    },
+    {
+      "id": "read.answer-from-note",
+      "passRate": 1,
+      "meanTokens": 8322.333333333334,
+      "meanUsd": 0.000067091648
+    },
+    {
+      "id": "search.list-mentions",
+      "passRate": 1,
+      "meanTokens": 8113,
+      "meanUsd": 0.00005227981199999999
+    },
+    {
+      "id": "write.create-from-inbox",
+      "passRate": 1,
+      "meanTokens": 16913,
+      "meanUsd": 0.000115513528
+    },
+    {
+      "id": "properties.set-status-and-tag",
+      "passRate": 1,
+      "meanTokens": 16504.666666666668,
+      "meanUsd": 0.00011526611199999999
+    },
+    {
+      "id": "delete.only-the-empty-one",
+      "passRate": 1,
+      "meanTokens": 16699,
+      "meanUsd": 0.00016828749599999998
+    },
+    {
+      "id": "edit.append-under-heading",
+      "passRate": 1,
+      "meanTokens": 16458.666666666668,
+      "meanUsd": 0.00012105875599999998
+    },
+    {
+      "id": "ask.ambiguous-cleanup",
+      "passRate": 1,
+      "meanTokens": 17907.333333333332,
+      "meanUsd": 0.00023595239199999997
+    },
+    {
+      "id": "ignore.private-folder",
+      "passRate": 1,
+      "meanTokens": 4030.6666666666665,
+      "meanUsd": 0.000026894659999999996
+    },
+    {
+      "id": "rename.move-tagged",
+      "passRate": 1,
+      "meanTokens": 17406.333333333332,
+      "meanUsd": 0.00012053012399999998
+    },
+    {
+      "id": "import.pdf-answer",
+      "passRate": 1,
+      "meanTokens": 16812.333333333332,
+      "meanUsd": 0.000091216736
+    },
+    {
+      "id": "none.general-knowledge",
+      "passRate": 1,
+      "meanTokens": 3935.6666666666665,
+      "meanUsd": 0.000018621096
+    }
+  ]
+}
