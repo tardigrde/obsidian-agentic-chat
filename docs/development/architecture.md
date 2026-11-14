@@ -32,6 +32,12 @@ Use these terms:
 | MCP OAuth refresh | `refreshFlights` in `src/mcp/oauth.ts` | memory plus `McpServerSettings.oauth` |
 | Semantic index writer | `SemanticIndexLeaseRegistry` and `SemanticIndexWorkflowController` | `index.json`, `index.json.bak` |
 | Plugin install | `installPackage` transaction | vault folders |
+| Open chat tabs, active index, tab strip | `ChatTabs` | memory |
+| Composer text, autocomplete, attachments, queued prompt | `ChatComposer` | per-tab working state |
+| Model pill, usage line, context bar, one-shot notifications | `ChatChrome` | memory plus per-tab notification state |
+| Prompt turn, retry, and the agent event switch | `ChatTurn` | memory |
+| Slash dispatch and session/model actions | `ChatActions` | memory |
+| Chat DOM layout | `buildLayout` in `chat-layout.ts` | DOM |
 
 Dependencies point one way: `ui/` calls `AgentService`; `AgentService` wires
 the agent runtimes; the runtimes call `AgentSessionActions` for anything that
@@ -164,6 +170,32 @@ Gaps:
   outlive the session it belongs to.
 
 Next: tie the stop latch and the approval request to the turn and session token.
+
+## Chat view
+
+Owner: `ChatView` (`src/ui/chat-view.ts`) is a thin Obsidian `ItemView`. It owns
+the leaf, the DOM element handles, view lifecycle, and the small set of
+collaborators below. Each collaborator owns one part of the chat surface and
+takes its dependencies through a constructor interface, so no collaborator
+imports `chat-view.ts`.
+
+| Owner | State | File |
+|---|---|---|
+| `ChatTabs` | Tab array, active index, parked drafts, tab strip | `src/ui/chat-tabs.ts` |
+| `ChatComposer` | Active autocomplete query, mention cache, editing target, attachments, queued prompt | `src/ui/composer-controller.ts` |
+| `ChatChrome` | Notifier, muted notifications, model pill, usage line, context bar, running state | `src/ui/chat-chrome.ts` |
+| `ChatTurn` | Submit path, staged prompt context, send/steer, retry, edit-and-resend, agent event switch | `src/ui/chat-turn.ts` |
+| `ChatActions` | Slash dispatch and the session/model actions commands share | `src/ui/chat-actions.ts` |
+
+The layout builder `buildLayout` (`src/ui/chat-layout.ts`) creates the DOM once
+and returns the element handles. It keeps the DOM structure, CSS classes, and
+event order in one place.
+
+Lifecycle: `onOpen` -> `buildLayout` -> one `ChatTabs` tab -> `initialize` the
+active session -> `onClose` disposes the autocomplete timer, menu, transcript,
+semantic index run, and every tab service. A tab switch parks the composer draft
+on the old tab, restores the new tab's draft, and re-renders transcript, chips,
+and chrome.
 
 ## MCP connection and auth
 
