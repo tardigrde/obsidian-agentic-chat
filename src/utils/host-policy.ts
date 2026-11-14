@@ -1,7 +1,7 @@
 /**
  * Shared URL/host policies for every outbound request the plugin validates:
  * MCP endpoints, MCP OAuth resource metadata, the model-driven `fetch_url`
- * tool, and local embedding endpoints.
+ * tool, and agent plugin manifests.
  *
  * Every policy reads a hostname through `canonicalHost`, so the IPv6 bracket
  * form `URL.hostname` returns (`[::1]`) and IPv4-mapped IPv6 literals

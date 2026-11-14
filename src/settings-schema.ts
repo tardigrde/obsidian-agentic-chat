@@ -415,6 +415,15 @@ export function retiredSettingsNotices(stored: unknown): string[] {
   if (typeof mode === "string" && Object.prototype.hasOwnProperty.call(RETIRED_MODE_LABELS, mode)) {
     notices.push(`${RETIRED_MODE_LABELS[mode]} mode was removed in this version. Agentic Chat now starts in Safe mode.`);
   }
+  const style = stored.outputStyle;
+  if (typeof style === "string" && style !== "default") {
+    notices.push(
+      `Output styles were removed in this version. Your "${style}" style no longer applies. Put the style you want in AGENTS.md or in your message.`,
+    );
+  }
+  if (isRecord(stored.embeddings) && stored.embeddings.enabled === true) {
+    notices.push("The semantic index was removed in this version. No tool read it. The agent uses vault search.");
+  }
   return notices;
 }
 

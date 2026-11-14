@@ -89,7 +89,7 @@ export function createIgnoreMatcher(patterns: string[]): IgnoreMatcher {
 
 function canonicalizeVaultPathForIgnore(path: string): string {
   // Defense-in-depth: callers should already normalize via normalizeVaultPath,
-  // but the matcher is also used via runtime-resource-state & lexical paths.
+  // but the matcher is also used via runtime-resource-state.
   // Canonicalize slashes, collapse `.` segments, strip leading `/`, NFC-normalize.
   const withForwardSlashes = path.replaceAll("\\", "/");
   const segments: string[] = [];
