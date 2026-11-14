@@ -3,6 +3,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { applyExactEditsPartial, type EditApplyResult } from "../../vault/edit";
 import type { IgnoreMatcher } from "../../vault/ignore";
 import type { ReadMemo } from "../../vault/read-memo";
+import { renameVaultEntry } from "../../vault/rename";
 import { ensureVaultParentFolder } from "../../vault/storage";
 import {
   DeleteParameters,
@@ -135,7 +136,7 @@ export function createRenameTool(app: App, isIgnored: IgnoreMatcher, memo?: Read
         throw new Error(`Something already exists at ${newPath}.`);
       }
       await ensureVaultParentFolder(app, newPath);
-      await app.fileManager.renameFile(file, newPath);
+      await renameVaultEntry(app, file, newPath);
       memo?.invalidate(path);
       memo?.invalidate(newPath);
       return textResult(`Renamed ${path} to ${newPath}.`, { path, newPath });
