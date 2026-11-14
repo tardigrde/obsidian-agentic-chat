@@ -366,6 +366,44 @@ describe("ChatView retry", () => {
     },
   );
 
+  it("continues from the kept tool results when a stopped turn has no failed reply", async () => {
+    const messages = [
+      userMessage("read two files"),
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "a.md" } }],
+        stopReason: "toolUse",
+        timestamp: 2,
+      } as unknown as AgentMessage,
+      { role: "toolResult", content: [{ type: "text", text: "ok" }], timestamp: 3 } as unknown as AgentMessage,
+    ];
+    const continueTurn = vi.fn(async () => {});
+    const sendPrompt = vi.fn(async () => {});
+    const truncateMessages = vi.fn(async () => 1);
+    const view = chatViewHarness<RetryHarness>({
+      service: {
+        isStreaming: () => false,
+        getMessages: () => messages,
+        getSessionToken: () => "session-a",
+        continueTurn,
+        sendPrompt,
+        truncateMessages,
+        getError: () => undefined,
+      },
+      state: { lastSentPrompt: null, lastSentDisplay: null },
+      clearEmptyState: vi.fn(),
+      renderTranscript: vi.fn(),
+      renderOutgoingUserMessage: vi.fn(),
+      showServiceError: vi.fn(),
+    });
+
+    await view.retryLast();
+
+    expect(continueTurn).toHaveBeenCalledWith("session-a");
+    expect(truncateMessages).not.toHaveBeenCalled();
+    expect(sendPrompt).not.toHaveBeenCalled();
+  });
+
   it("keeps a successful turn when Ask again re-runs it", async () => {
     const { streamFn, contexts } = capturingStreamFn();
     const service = realService(streamFn);

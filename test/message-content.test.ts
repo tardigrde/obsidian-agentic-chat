@@ -192,6 +192,15 @@ describe("failedLastTurnIndex", () => {
     expect(failedLastTurnIndex([user("a"), reply("toolUse"), toolResult, reply("aborted")])).toBe(3);
   });
 
+  it("returns the transcript length when the last user turn ends in tool results", () => {
+    expect(failedLastTurnIndex([user("a"), reply("toolUse"), toolResult])).toBe(3);
+    expect(failedLastTurnIndex([user("a"), reply("toolUse"), toolResult, toolResult])).toBe(4);
+  });
+
+  it("does not treat a tool result without an assistant tool call as a stopped turn", () => {
+    expect(failedLastTurnIndex([user("a"), toolResult])).toBeUndefined();
+  });
+
   it("returns the first failed reply of a trailing failed run", () => {
     expect(failedLastTurnIndex([user("a"), reply("error"), reply("error", "partial")])).toBe(1);
   });
@@ -199,7 +208,6 @@ describe("failedLastTurnIndex", () => {
   it("keeps answered turns, turns without a failure, and turns with no reply", () => {
     expect(failedLastTurnIndex([user("a"), reply("stop", "ok")])).toBeUndefined();
     expect(failedLastTurnIndex([user("a"), reply("toolUse"), toolResult, reply("stop", "ok")])).toBeUndefined();
-    expect(failedLastTurnIndex([user("a"), toolResult])).toBeUndefined();
     expect(failedLastTurnIndex([user("a")])).toBeUndefined();
     expect(failedLastTurnIndex([reply("error")])).toBeUndefined();
     expect(failedLastTurnIndex([])).toBeUndefined();
