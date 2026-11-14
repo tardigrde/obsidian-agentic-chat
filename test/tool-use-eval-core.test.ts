@@ -111,6 +111,55 @@ describe("tool-use eval core", () => {
         },
         pattern: /checks\[0\]\.text must be a non-empty string/,
       },
+      {
+        mutate: (suite) => {
+          const entries = suite.cases as Array<Record<string, unknown>>;
+          entries[0].id = ".";
+        },
+        pattern: /cases\[0\]\.id must match/,
+      },
+      {
+        mutate: (suite) => {
+          const entries = suite.cases as Array<Record<string, unknown>>;
+          entries[0].id = "..";
+        },
+        pattern: /cases\[0\]\.id must match/,
+      },
+      {
+        mutate: (suite) => {
+          const entries = suite.cases as Array<Record<string, unknown>>;
+          entries[0].id = "Upper.Case";
+        },
+        pattern: /cases\[0\]\.id must match/,
+      },
+      {
+        mutate: (suite) => {
+          const entries = suite.cases as Array<Record<string, unknown>>;
+          (entries[0].seed as { files: Record<string, string> }).files = { "../../escape.md": "x" };
+        },
+        pattern: /seed\.files\..* must be a vault-relative path/,
+      },
+      {
+        mutate: (suite) => {
+          const entries = suite.cases as Array<Record<string, unknown>>;
+          (entries[0].seed as { files: Record<string, string> }).files = { "/absolute.md": "x" };
+        },
+        pattern: /seed\.files\..* must be a vault-relative path/,
+      },
+      {
+        mutate: (suite) => {
+          const entries = suite.cases as Array<Record<string, unknown>>;
+          (entries[0].seed as { files: Record<string, string> }).files = { ".obsidian/app.json": "{}" };
+        },
+        pattern: /seed\.files\..* must be a vault-relative path/,
+      },
+      {
+        mutate: (suite) => {
+          const entries = suite.cases as Array<Record<string, unknown>>;
+          (entries[0].seed as { files: Record<string, string> }).files = { "a\\b.md": "x" };
+        },
+        pattern: /seed\.files\..* must be a vault-relative path/,
+      },
     ];
 
     for (const entry of cases) {

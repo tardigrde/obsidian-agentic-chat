@@ -9,6 +9,7 @@ import { MUTATING_TOOLS } from "../../src/tools/tool-contracts";
 
 export const TOOL_USE_SUITE_VERSION = 1;
 export const TOOL_USE_ALLOWED_MODELS = ["deepseek/deepseek-v4.1-flash"] as const;
+const CASE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 
 export type ToolUseModel = (typeof TOOL_USE_ALLOWED_MODELS)[number];
 
@@ -367,12 +368,30 @@ function validateTurn(input: unknown, problems: string[]): ToolUseTurnLimits | u
   };
 }
 
+function seedPathProblem(filePath: string): string | undefined {
+  if (filePath.includes("\\")) {
+    return "must be a vault-relative path (backslashes are not allowed).";
+  }
+  if (filePath.startsWith("/") || /^[A-Za-z]:\//.test(filePath)) {
+    return "must be a vault-relative path (absolute paths are not allowed).";
+  }
+  if (filePath.split("/").some((segment) => segment === "..")) {
+    return 'must be a vault-relative path (no ".." segments).';
+  }
+  if (filePath === ".obsidian" || filePath.startsWith(".obsidian/")) {
+    return "must be a vault-relative path (not under .obsidian/).";
+  }
+  return undefined;
+}
+
 function validateCase(input: unknown, index: number, problems: string[]): ToolUseCase | undefined {
   const at = `suite.cases[${index}]`;
   const evalCase = asRecord(input, at, problems);
   if (!evalCase) return undefined;
   const id = readString(evalCase.id, `${at}.id`, problems);
-  if (id.includes("/") || id.includes("\\")) problems.push(`${at}.id must not contain a path separator.`);
+  if (id && !CASE_ID_PATTERN.test(id)) {
+    problems.push(`${at}.id must match ${CASE_ID_PATTERN.source} and must not be "." or "..".`);
+  }
   const prompt = readString(evalCase.prompt, `${at}.prompt`, problems);
 
   const seedRecord = asRecord(evalCase.seed, `${at}.seed`, problems);
@@ -380,6 +399,11 @@ function validateCase(input: unknown, index: number, problems: string[]): ToolUs
   const files: Record<string, string> = {};
   if (filesRecord) {
     for (const [filePath, content] of Object.entries(filesRecord)) {
+      const pathProblem = seedPathProblem(filePath);
+      if (pathProblem) {
+        problems.push(`${at}.seed.files.${filePath} ${pathProblem}`);
+        continue;
+      }
       if (typeof content !== "string") {
         problems.push(`${at}.seed.files.${filePath} must be a string.`);
         continue;
