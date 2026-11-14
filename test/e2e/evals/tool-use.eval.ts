@@ -332,23 +332,34 @@ async function readVaultLinks(): Promise<{
 }> {
   return await browser.executeObsidian(async ({ app }) => {
     const files = app.vault.getMarkdownFiles();
-    // Use the same metadata-cache wait as readVaultFrontmatter so links are
-    // not read before Obsidian resolves them.
-    const deadline = Date.now() + 5_000;
-    while (Date.now() < deadline && !files.every((file) => app.metadataCache.getFileCache(file))) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+    const readSnapshot = () => {
+      const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+      const unresolvedBySource = app.metadataCache.unresolvedLinks as Record<string, Record<string, number>>;
+      const ready = files.every((file) => app.metadataCache.getFileCache(file));
+      const links: Record<string, string[]> = {};
+      const unresolvedLinks: Record<string, string[]> = {};
+      for (const file of files) {
+        links[file.path] = Object.keys(resolvedLinks[file.path] ?? {});
+        const targets = Object.keys(unresolvedBySource[file.path] ?? {});
+        if (targets.length > 0) unresolvedLinks[file.path] = targets;
+      }
+      return { ready, links, unresolvedLinks, key: JSON.stringify({ links, unresolvedLinks }) };
+    };
 
-    const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
-    const unresolvedBySource = app.metadataCache.unresolvedLinks as Record<string, Record<string, number>>;
-    const links: Record<string, string[]> = {};
-    const unresolvedLinks: Record<string, string[]> = {};
-    for (const file of files) {
-      links[file.path] = Object.keys(resolvedLinks[file.path] ?? {});
-      const targets = Object.keys(unresolvedBySource[file.path] ?? {});
-      if (targets.length > 0) unresolvedLinks[file.path] = targets;
+    // Obsidian resolves links after the turn, so a single read can catch a
+    // partial cache. Accept only a ready snapshot that equals the previous
+    // read, and fall back to the last read after 5 s.
+    const deadline = Date.now() + 5_000;
+    let previousKey: string | undefined;
+    let last = readSnapshot();
+    while (true) {
+      if (last.ready && previousKey === last.key) break;
+      if (Date.now() >= deadline) break;
+      previousKey = last.ready ? last.key : undefined;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      last = readSnapshot();
     }
-    return { links, unresolvedLinks };
+    return { links: last.links, unresolvedLinks: last.unresolvedLinks };
   });
 }
 
