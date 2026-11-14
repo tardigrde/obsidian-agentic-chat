@@ -54,3 +54,60 @@ describe("ChatView tabs", () => {
     expect(view.tabs[1].state.attachments).toEqual(["Notes/B.md"]);
   });
 });
+
+describe("ChatView.closeTab", () => {
+  function closableTab() {
+    const service = { isPathIgnored: () => false, dispose: vi.fn() };
+    const tab = { ...chatTab(service), unsubscribe: vi.fn(), pendingApprovalModal: { close: vi.fn() } };
+    return { tab, service };
+  }
+
+  function viewWith(tabs: unknown[], activeTabIndex: number) {
+    return chatViewHarness<{
+      tabs: unknown[];
+      activeTabIndex: number;
+      closeTab: (index: number) => void;
+    }>({ tabs, activeTabIndex, startNewConversation: vi.fn(async () => {}) });
+  }
+
+  it("closes a background tab's pending approval and disposes its session", () => {
+    const active = closableTab();
+    const background = closableTab();
+    const view = viewWith([active.tab, background.tab], 0);
+
+    view.closeTab(1);
+
+    expect(background.tab.pendingApprovalModal.close).toHaveBeenCalledTimes(1);
+    expect(background.tab.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(background.service.dispose).toHaveBeenCalledTimes(1);
+    expect(view.tabs).toEqual([active.tab]);
+    expect(view.activeTabIndex).toBe(0);
+    expect(active.service.dispose).not.toHaveBeenCalled();
+  });
+
+  it("keeps the same tab active when a tab before it closes", () => {
+    const first = closableTab();
+    const second = closableTab();
+    const view = viewWith([first.tab, second.tab], 1);
+
+    view.closeTab(0);
+
+    expect(view.tabs).toEqual([second.tab]);
+    expect(view.activeTabIndex).toBe(0);
+  });
+
+  it("starts a new conversation instead of closing the only tab", () => {
+    const only = closableTab();
+    const view = viewWith([only.tab], 0) as unknown as {
+      closeTab: (index: number) => void;
+      tabs: unknown[];
+      startNewConversation: ReturnType<typeof vi.fn>;
+    };
+
+    view.closeTab(0);
+
+    expect(view.startNewConversation).toHaveBeenCalledTimes(1);
+    expect(only.service.dispose).not.toHaveBeenCalled();
+    expect(view.tabs).toHaveLength(1);
+  });
+});
