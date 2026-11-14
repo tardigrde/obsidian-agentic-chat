@@ -54,8 +54,6 @@ export class SessionWriteRegistry {
   }
 }
 
-const defaultSessionWriteRegistry = new SessionWriteRegistry();
-
 export interface SessionDefaults {
   provider: string;
   modelId: string;
@@ -132,7 +130,7 @@ export class ObsidianSessionManager {
     adapter: DataAdapter,
     sessionDir: string,
     cwd: string,
-    registry: SessionWriteRegistry = defaultSessionWriteRegistry,
+    registry: SessionWriteRegistry,
   ) {
     this.adapter = adapter;
     this.sessionDir = normalizeFolderPath(sessionDir, { allowPluginInternals: true });
@@ -145,7 +143,7 @@ export class ObsidianSessionManager {
   static forPlugin(
     app: App,
     plugin: Plugin,
-    registry: SessionWriteRegistry = defaultSessionWriteRegistry,
+    registry: SessionWriteRegistry,
   ): ObsidianSessionManager {
     return new ObsidianSessionManager(
       app.vault.adapter,

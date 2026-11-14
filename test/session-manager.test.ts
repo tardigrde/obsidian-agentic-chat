@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { deriveAutoName } from "../src/session/session-title";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
@@ -14,7 +14,7 @@ function userMessage(text: string): AgentMessage {
 
 function manager(): { sm: ObsidianSessionManager; adapter: MemoryAdapter } {
   const adapter = new MemoryAdapter();
-  const sm = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+  const sm = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   return { sm, adapter };
 }
 
@@ -158,7 +158,7 @@ describe("session fault recovery", () => {
     expect(adapter.files.get(info.path)).not.toContain("lost");
     expect(sm.getActiveSessionInfo()?.messageCount).toBe(1);
 
-    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const reloaded = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     await reloaded.loadSession(info.path);
     expect(reloaded.getActiveSessionInfo()?.messageCount).toBe(1);
   });

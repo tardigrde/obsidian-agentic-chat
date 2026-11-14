@@ -6,7 +6,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
 import { isSummaryMessage } from "../src/agent/compaction";
 import { parseSessionEntries } from "../src/session/jsonl";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
@@ -76,7 +76,7 @@ function makeService(summarize?: () => Promise<string>): { service: AgentService
   const service = new AgentService({
     app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
     getSettings: () => settings,
-    sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test"),
+    sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry()),
     confirmToolCall: async () => ({ approved: true, remember: false }),
     streamFn: cannedStreamFn("ok"),
     summarize: summarize ?? (async () => "Summary of earlier turns."),

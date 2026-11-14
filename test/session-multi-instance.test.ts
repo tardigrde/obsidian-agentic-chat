@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 import { interleaveAdapter, seeds } from "./helpers/interleave";
@@ -50,8 +50,9 @@ async function twoTabs(seed: number, overwrite: boolean) {
   const adapter = new MemoryAdapter();
   if (!overwrite) refuseOverwrite(adapter);
   const data = adapter.asDataAdapter();
-  const tabA = new ObsidianSessionManager(data, "sessions", "vault:test");
-  const tabB = new ObsidianSessionManager(data, "sessions", "vault:test");
+  const registry = new SessionWriteRegistry();
+  const tabA = new ObsidianSessionManager(data, "sessions", "vault:test", registry);
+  const tabB = new ObsidianSessionManager(data, "sessions", "vault:test", registry);
   const info = await tabA.createSession(DEFAULTS);
   await tabA.appendMessage(userMessage("first"));
   await tabA.appendMessage(userMessage("second"));

@@ -5,7 +5,7 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import {
   buildSessionContext,
   getLastLeafId,
@@ -46,7 +46,7 @@ function assistantMessage(text: string, provider = "openrouter", model = "x/y"):
 
 function manager(): { sm: ObsidianSessionManager; adapter: MemoryAdapter } {
   const adapter = new MemoryAdapter();
-  const sm = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+  const sm = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   return { sm, adapter };
 }
 
@@ -211,7 +211,7 @@ describe("exact-once persistence (WeakSet de-dupe)", () => {
       approval: { ...DEFAULT_SETTINGS.approval, mutating: "allow", perTool: { write: "deny" } },
     };
     const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const service = new AgentService({
       app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
       getSettings: () => settings,

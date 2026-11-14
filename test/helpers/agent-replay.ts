@@ -7,7 +7,7 @@ import {
   type ReplayStreamCall,
   type ReplayTurn,
 } from "../../src/agent/replay-stream";
-import { ObsidianSessionManager } from "../../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../../src/settings-schema";
 import { MemoryAdapter } from "./memory-adapter";
 
@@ -39,7 +39,7 @@ export async function runAgentReplay(options: AgentReplayOptions): Promise<Agent
     toolBudget: { ...DEFAULT_SETTINGS.toolBudget, ...(options.settings?.toolBudget ?? {}) },
   };
   const adapter = new MemoryAdapter();
-  const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+  const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   const replay = createReplayStreamController(options.turns, { missingTurn: "error" });
   const service = new AgentService({
     app: options.app ?? minimalApp(),
