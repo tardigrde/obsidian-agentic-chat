@@ -16,9 +16,26 @@ import {
   type ToolUseCheck,
   type ToolUseSuite,
 } from "../scripts/eval/tool-use-core";
+import { extractPdfText } from "../src/retrieval/pdf-ingest";
 import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
 
 const SUITE_PATH = path.join(process.cwd(), "test/evals/tool-use/tool-use.eval.json");
+const CASE_IDS = [
+  "none.arithmetic",
+  "edit.find-and-edit",
+  "rename.keep-links",
+  "read.answer-from-note",
+  "search.list-mentions",
+  "write.create-from-inbox",
+  "properties.set-status-and-tag",
+  "delete.only-the-empty-one",
+  "edit.append-under-heading",
+  "ask.ambiguous-cleanup",
+  "ignore.private-folder",
+  "rename.move-tagged",
+  "import.pdf-answer",
+  "none.general-knowledge",
+];
 const tempRoots: string[] = [];
 
 afterEach(async () => {
@@ -39,7 +56,7 @@ function makeCase(
   checks: ToolUseCheck[],
   seedFiles: Record<string, string> = {},
 ): ToolUseCase {
-  return { id: "test.case", prompt: "Do the task.", seed: { files: seedFiles }, checks };
+  return { id: "test.case", prompt: "Do the task.", seed: { files: seedFiles, binaryFiles: {} }, checks };
 }
 
 async function grade(
@@ -72,11 +89,7 @@ describe("tool-use eval core", () => {
   it("accepts the committed suite", () => {
     const suite = loadSuite();
     expect(suite.name).toBe("tool-use");
-    expect(suite.cases.map((entry) => entry.id)).toEqual([
-      "none.arithmetic",
-      "edit.find-and-edit",
-      "rename.keep-links",
-    ]);
+    expect(suite.cases.map((entry) => entry.id)).toEqual(CASE_IDS);
   });
 
   it("reports each suite validation problem", () => {
@@ -170,6 +183,57 @@ describe("tool-use eval core", () => {
       entry.mutate(suite);
       expect(() => validateToolUseSuite(suite)).toThrow(entry.pattern);
     }
+  });
+
+  it("accepts binary seed files and keeps them off the text seed", () => {
+    const suite = cloneSuite();
+    const entries = suite.cases as Array<Record<string, unknown>>;
+    (entries[0].seed as Record<string, unknown>).binaryFiles = { "Docs/a.pdf": "JVBE" };
+
+    const parsed = validateToolUseSuite(suite);
+
+    expect(parsed.cases[0].seed.binaryFiles).toEqual({ "Docs/a.pdf": "JVBE" });
+    expect(parsed.cases[0].seed.files).toEqual({});
+    expect(loadSuite().cases[0].seed.binaryFiles).toEqual({});
+  });
+
+  it("rejects a seed path that is both text and binary", () => {
+    const suite = cloneSuite();
+    const entries = suite.cases as Array<Record<string, unknown>>;
+    const seed = entries[0].seed as Record<string, unknown>;
+    seed.files = { "Docs/a.pdf": "x" };
+    seed.binaryFiles = { "Docs/a.pdf": "JVBE" };
+
+    expect(() => validateToolUseSuite(suite)).toThrow(/is also a seed\.files entry/);
+  });
+
+  it("applies the seed path rules to binary files", () => {
+    const cases: Array<{ binaryFiles: Record<string, unknown>; pattern: RegExp }> = [
+      { binaryFiles: { "../escape.pdf": "JVBE" }, pattern: /seed\.binaryFiles\..* must be a vault-relative path/ },
+      { binaryFiles: { "/absolute.pdf": "JVBE" }, pattern: /seed\.binaryFiles\..* must be a vault-relative path/ },
+      { binaryFiles: { ".obsidian/a.pdf": "JVBE" }, pattern: /seed\.binaryFiles\..* must be a vault-relative path/ },
+      { binaryFiles: { "a.pdf": 42 }, pattern: /must be a base64 string/ },
+    ];
+
+    for (const entry of cases) {
+      const suite = cloneSuite();
+      const seed = (suite.cases as Array<Record<string, unknown>>)[0].seed as Record<string, unknown>;
+      seed.binaryFiles = entry.binaryFiles;
+      expect(() => validateToolUseSuite(suite)).toThrow(entry.pattern);
+    }
+  });
+
+  it("reads the seeded invoice PDF from base64", () => {
+    const pdfCase = loadSuite().cases.find((entry) => entry.id === "import.pdf-answer");
+    if (!pdfCase) throw new Error("missing import.pdf-answer");
+    const base64 = pdfCase.seed.binaryFiles["Docs/invoice.pdf"];
+    expect(base64).toBeTruthy();
+
+    const bytes = Buffer.from(base64.replace(/\s+/g, ""), "base64");
+    const extracted = extractPdfText(new Uint8Array(bytes));
+
+    expect(extracted.text).toContain("Invoice total: 4,210 EUR");
+    expect(extracted.pageCount).toBe(1);
   });
 
   it("grades file_exists and file_absent", async () => {
@@ -375,6 +439,29 @@ describe("tool-use eval core", () => {
         },
       }).ok,
     ).toBe(true);
+  });
+
+  it("uses regex flags for answer and file checks", async () => {
+    const result = await grade(
+      [
+        { type: "answer_contains", text: "VENDOR", regex: true, flags: "i" },
+        { type: "answer_contains", text: "VENDOR", regex: true },
+        { type: "answer_not_contains", text: "VENDOR", regex: true, flags: "i" },
+        { type: "file_contains", path: "Note.md", text: "ALPHA", regex: true, flags: "i" },
+        { type: "file_not_contains", path: "Note.md", text: "ALPHA", regex: true, flags: "i" },
+      ],
+      { answer: "The vendor may slip.", files: { "Note.md": "alpha beta" } },
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, false, false, true, false]);
+  });
+
+  it("reports invalid regex flags", () => {
+    const suite = cloneSuite();
+    const checks = (suite.cases as Array<Record<string, unknown>>)[0].checks as Array<Record<string, unknown>>;
+    checks.push({ type: "answer_contains", text: "x", regex: true, flags: "zz" });
+
+    expect(() => validateToolUseSuite(suite)).toThrow(/flags is not a valid regular expression flag set/);
   });
 
   it("fails the whole run when any check fails", async () => {
@@ -648,7 +735,8 @@ describe("tool-use eval core", () => {
     );
 
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain("3 case(s) x 3 run(s)");
+    expect(result.stdout).toContain("14 case(s) x 3 run(s)");
+    for (const id of CASE_IDS) expect(result.stdout).toContain(`- ${id}:`);
     expect(result.stdout).toContain("prices: not fetched (dry run)");
     expect(result.stdout).toContain("estimated cost");
     expect(result.stdout).toContain("15k tokens/run");

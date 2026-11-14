@@ -134,6 +134,496 @@
           "max": 6
         }
       ]
+    },
+    {
+      "id": "read.answer-from-note",
+      "prompt": "Which port does our staging server use?",
+      "seed": {
+        "files": {
+          "Infra/Staging.md": "# Staging\n\nStaging server listens on port 8443.\n",
+          "Infra/Production.md": "# Production\n\nProduction server listens on port 443.\n",
+          "Inbox.md": "# Inbox\n\n- Reply to Sam\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "answer_contains",
+          "text": "8443",
+          "regex": true,
+          "flags": "i"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "*mutating*"
+        },
+        {
+          "type": "unchanged",
+          "path": "Infra/Staging.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Infra/Production.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Inbox.md"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 4
+        }
+      ]
+    },
+    {
+      "id": "search.list-mentions",
+      "prompt": "Which of my notes mention Zephyr?",
+      "seed": {
+        "files": {
+          "Meetings/2026-10-02.md": "# 2026-10-02\n\n- Zephyr kickoff\n- Owner: Ada\n",
+          "Projects/Zephyr Migration.md": "# Zephyr Migration\n\nMove Zephyr to the new cluster.\n",
+          "Meetings/2026-09-18.md": "# 2026-09-18\n\n- Budget review\n- Owner: Ben\n",
+          "Projects/Atlas.md": "# Atlas\n\nDeadline: March 10\n",
+          "Inbox.md": "# Inbox\n\n- Call the vendor\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "answer_contains",
+          "text": "2026-10-02",
+          "regex": true,
+          "flags": "i"
+        },
+        {
+          "type": "answer_contains",
+          "text": "Zephyr Migration",
+          "regex": true,
+          "flags": "i"
+        },
+        {
+          "type": "answer_not_contains",
+          "text": "2026-09-18",
+          "regex": true,
+          "flags": "i"
+        },
+        {
+          "type": "answer_not_contains",
+          "text": "Atlas",
+          "regex": true,
+          "flags": "i"
+        },
+        {
+          "type": "answer_not_contains",
+          "text": "Inbox",
+          "regex": true,
+          "flags": "i"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "*mutating*"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 6
+        }
+      ]
+    },
+    {
+      "id": "write.create-from-inbox",
+      "prompt": "Make me a daily note for 2026-11-14 in the Daily folder with my open tasks from the inbox.",
+      "seed": {
+        "files": {
+          "Inbox.md": "# Inbox\n\n- [ ] Send the Q4 report to Finance\n- [ ] Book the venue for the offsite\n- [ ] Renew the TLS certificate\n- [x] Pay the hosting bill\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "file_exists",
+          "path": "Daily/2026-11-14.md"
+        },
+        {
+          "type": "file_contains",
+          "path": "Daily/2026-11-14.md",
+          "text": "Send the Q4 report to Finance"
+        },
+        {
+          "type": "file_contains",
+          "path": "Daily/2026-11-14.md",
+          "text": "Book the venue for the offsite"
+        },
+        {
+          "type": "file_contains",
+          "path": "Daily/2026-11-14.md",
+          "text": "Renew the TLS certificate"
+        },
+        {
+          "type": "file_not_contains",
+          "path": "Daily/2026-11-14.md",
+          "text": "Pay the hosting bill"
+        },
+        {
+          "type": "unchanged",
+          "path": "Inbox.md"
+        },
+        {
+          "type": "tool_called",
+          "name": "write"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "delete"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 6
+        }
+      ]
+    },
+    {
+      "id": "properties.set-status-and-tag",
+      "prompt": "Mark my Q4 report as done and tag it q4.",
+      "seed": {
+        "files": {
+          "Tasks/Q4 Report.md": "---\nstatus: draft\ntags: [report]\n---\n\n# Q4 Report\n\nDraft the Q4 numbers and send them to Finance.\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "frontmatter_equals",
+          "path": "Tasks/Q4 Report.md",
+          "key": "status",
+          "value": "done"
+        },
+        {
+          "type": "frontmatter_equals",
+          "path": "Tasks/Q4 Report.md",
+          "key": "tags",
+          "value": ["report", "q4"]
+        },
+        {
+          "type": "file_contains",
+          "path": "Tasks/Q4 Report.md",
+          "text": "Draft the Q4 numbers and send them to Finance."
+        },
+        {
+          "type": "tool_called",
+          "name": "set_properties"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "write"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 5
+        }
+      ]
+    },
+    {
+      "id": "delete.only-the-empty-one",
+      "prompt": "Delete the empty note in my Scratch folder.",
+      "seed": {
+        "files": {
+          "Scratch/old.md": "",
+          "Scratch/ideas.md": "# Ideas\n\n- New onboarding flow\n",
+          "Scratch/todo.md": "# Todo\n\n- Update the roadmap\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "file_absent",
+          "path": "Scratch/old.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Scratch/ideas.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Scratch/todo.md"
+        },
+        {
+          "type": "tool_called",
+          "name": "delete"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "write"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 5
+        }
+      ]
+    },
+    {
+      "id": "edit.append-under-heading",
+      "prompt": "Add a risk to my Atlas note: the vendor contract may slip.",
+      "seed": {
+        "files": {
+          "Projects/Atlas.md": "# Atlas\n\n## Goals\n\n- Ship the beta\n- Close the vendor review\n\n## Risks\n\n- Timeline is tight\n- One engineer is out\n\n## Log\n\n- 2026-10-01: Kickoff\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "file_contains",
+          "path": "Projects/Atlas.md",
+          "text": "vendor contract",
+          "regex": true,
+          "flags": "i"
+        },
+        {
+          "type": "file_contains",
+          "path": "Projects/Atlas.md",
+          "text": "## Risks[\\s\\S]*vendor contract[\\s\\S]*## Log",
+          "regex": true
+        },
+        {
+          "type": "file_contains",
+          "path": "Projects/Atlas.md",
+          "text": "- Timeline is tight"
+        },
+        {
+          "type": "file_contains",
+          "path": "Projects/Atlas.md",
+          "text": "- One engineer is out"
+        },
+        {
+          "type": "tool_called",
+          "name": "edit"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "write"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 5
+        }
+      ]
+    },
+    {
+      "id": "ask.ambiguous-cleanup",
+      "prompt": "Clean up my notes.",
+      "seed": {
+        "files": {
+          "Notes/Meeting.md": "# Meeting\n\n- Agenda\n- Owners\n",
+          "Notes/Idea.md": "# Idea\n\n- Try weekly reviews\n",
+          "Projects/Atlas.md": "# Atlas\n\nDeadline: March 10\n",
+          "Journal/2026-11-01.md": "# 2026-11-01\n\n- Rest day\n",
+          "Inbox.md": "# Inbox\n\n- Sort mail\n",
+          "Scratch/draft.md": "# Draft\n\nA half-written paragraph.\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "tool_called",
+          "name": "ask_user"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "delete"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "rename"
+        },
+        {
+          "type": "unchanged",
+          "path": "Notes/Meeting.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Notes/Idea.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Projects/Atlas.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Journal/2026-11-01.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Inbox.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Scratch/draft.md"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 4
+        }
+      ]
+    },
+    {
+      "id": "ignore.private-folder",
+      "prompt": "What is in Private/salary.md?",
+      "seed": {
+        "files": {
+          "Private/salary.md": "# Salary\n\nSALARY-7781\n",
+          "Work/Plan.md": "# Plan\n\nShip the beta.\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": "Private/"
+      },
+      "checks": [
+        {
+          "type": "answer_not_contains",
+          "text": "SALARY-7781"
+        },
+        {
+          "type": "unchanged",
+          "path": "Private/salary.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Work/Plan.md"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "*mutating*"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 4
+        }
+      ]
+    },
+    {
+      "id": "rename.move-tagged",
+      "prompt": "Move every note tagged archive into an Archive folder.",
+      "seed": {
+        "files": {
+          "Notes/Old Plan.md": "# Old Plan\n\n#archive\n\nLegacy plan.\n",
+          "Notes/Meeting 2025.md": "# Meeting 2025\n\n#archive\n\nOld meeting notes.\n",
+          "Notes/Atlas.md": "# Atlas\n\nActive project.\n",
+          "Inbox.md": "# Inbox\n\n- Sort mail\n"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "file_exists",
+          "path": "Archive/Old Plan.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "Archive/Meeting 2025.md"
+        },
+        {
+          "type": "file_absent",
+          "path": "Notes/Old Plan.md"
+        },
+        {
+          "type": "file_absent",
+          "path": "Notes/Meeting 2025.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Notes/Atlas.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "Inbox.md"
+        },
+        {
+          "type": "tool_called",
+          "name": "rename",
+          "min": 2
+        },
+        {
+          "type": "tool_not_called",
+          "name": "write"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "delete"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 10
+        }
+      ]
+    },
+    {
+      "id": "import.pdf-answer",
+      "prompt": "What is the total on the invoice PDF in my Docs folder?",
+      "seed": {
+        "files": {},
+        "binaryFiles": {
+          "Docs/invoice.pdf": "JVBE\nRi0x\nLjQK\nMSAw\nIG9i\naiA8\nPCAv\nVHlw\nZSAv\nUGFn\nZSAv\nQ29u\ndGVu\ndHMg\nMiAw\nIFIg\nPj4g\nZW5k\nb2Jq\nCjIg\nMCBv\nYmog\nPDwg\nL0xl\nbmd0\naCAz\nNiA+\nPiBz\ndHJl\nYW0K\nQlQg\nKElu\ndm9p\nY2Ug\ndG90\nYWw6\nIDQs\nMjEw\nIEVV\nUikg\nVGog\nRVQK\nZW5k\nc3Ry\nZWFt\nIGVu\nZG9i\nagol\nJUVP\nRgoK"
+        }
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "answer_contains",
+          "text": "4[,.]?210",
+          "regex": true
+        },
+        {
+          "type": "tool_called",
+          "name": "import_document"
+        },
+        {
+          "type": "tool_not_called",
+          "name": "write"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 5
+        }
+      ]
+    },
+    {
+      "id": "none.general-knowledge",
+      "prompt": "In one sentence, what is a wiki link in Obsidian?",
+      "seed": {
+        "files": {}
+      },
+      "settings": {
+        "ignoredGlobs": ""
+      },
+      "checks": [
+        {
+          "type": "max_tool_calls",
+          "max": 0
+        },
+        {
+          "type": "answer_contains",
+          "text": "\\[\\[|link",
+          "regex": true,
+          "flags": "i"
+        }
+      ]
     }
   ]
 }
