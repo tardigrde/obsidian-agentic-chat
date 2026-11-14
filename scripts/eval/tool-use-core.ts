@@ -5,6 +5,8 @@
  * Obsidian metadata cache, so grading is synchronous and parser-free.
  */
 
+import { MUTATING_TOOLS } from "../../src/tools/tool-contracts";
+
 export const TOOL_USE_SUITE_VERSION = 1;
 export const TOOL_USE_ALLOWED_MODELS = ["deepseek/deepseek-v4.1-flash"] as const;
 
@@ -188,13 +190,16 @@ export interface CaseSummary {
   meanMs: number;
 }
 
+/**
+ * Harness tools that mutate the vault but have no built-in contract. Keep this
+ * list as small as possible: every other mutating tool must come from the
+ * product's own `MUTATING_TOOLS` set.
+ */
+const EVAL_EXTRA_MUTATING = ["create_skill"] as const;
+
 export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "write",
-  "edit",
-  "rename",
-  "delete",
-  "set_properties",
-  "create_skill",
+  ...MUTATING_TOOLS,
+  ...EVAL_EXTRA_MUTATING,
 ]);
 
 export function validateToolUseSuite(input: unknown): ToolUseSuite {

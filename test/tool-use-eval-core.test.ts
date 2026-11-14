@@ -15,6 +15,7 @@ import {
   type ToolUseCheck,
   type ToolUseSuite,
 } from "../scripts/eval/tool-use-core";
+import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
 
 const SUITE_PATH = path.join(process.cwd(), "test/evals/tool-use/tool-use.eval.json");
 const tempRoots: string[] = [];
@@ -206,6 +207,17 @@ describe("tool-use eval core", () => {
     );
 
     expect(result.checks.map((check) => check.ok)).toEqual([true, true, false, true, true, false, false]);
+  });
+
+  it("treats every product mutating tool as mutating in the wildcard", async () => {
+    const toolCalls = [...MUTATING_TOOLS].map((name) => ({ name }));
+    const result = await grade(
+      [{ type: "tool_called", name: "*mutating*", min: MUTATING_TOOLS.size }],
+      { toolCalls },
+    );
+
+    expect(MUTATING_TOOLS.size).toBeGreaterThan(0);
+    expect(checkByType(result, "tool_called").ok).toBe(true);
   });
 
   it("grades max_tool_calls and no_tool_errors", async () => {
