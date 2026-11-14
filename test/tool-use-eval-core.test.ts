@@ -1,0 +1,396 @@
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
+import { pathToFileURL } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  BudgetTracker,
+  costUsd,
+  gradeRun,
+  summarizeCase,
+  validateToolUseSuite,
+  type ToolUseCase,
+  type ToolUseCheck,
+  type ToolUseSuite,
+} from "../scripts/eval/tool-use-core";
+
+const SUITE_PATH = path.join(process.cwd(), "test/evals/tool-use/tool-use.eval.json");
+const tempRoots: string[] = [];
+
+afterEach(async () => {
+  for (const root of tempRoots.splice(0)) {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+function loadSuite(): ToolUseSuite {
+  return validateToolUseSuite(JSON.parse(readFileSync(SUITE_PATH, "utf8")) as unknown);
+}
+
+function cloneSuite(): Record<string, unknown> {
+  return JSON.parse(readFileSync(SUITE_PATH, "utf8")) as Record<string, unknown>;
+}
+
+function makeCase(
+  checks: ToolUseCheck[],
+  seedFiles: Record<string, string> = {},
+): ToolUseCase {
+  return { id: "test.case", prompt: "Do the task.", seed: { files: seedFiles }, checks };
+}
+
+async function grade(
+  checks: ToolUseCheck[],
+  observed: { files?: Record<string, string>; toolCalls?: Array<{ name: string; isError?: boolean }>; answer?: string },
+  seedFiles: Record<string, string> = {},
+) {
+  return gradeRun(makeCase(checks, seedFiles), {
+    files: observed.files ?? {},
+    toolCalls: observed.toolCalls ?? [],
+    answer: observed.answer ?? "",
+  });
+}
+
+function checkByType(result: { checks: Array<{ type: string; ok: boolean; detail: string }> }, type: string) {
+  const check = result.checks.find((entry) => entry.type === type);
+  if (!check) throw new Error(`missing ${type} check result`);
+  return check;
+}
+
+describe("tool-use eval core", () => {
+  it("accepts the committed suite", () => {
+    const suite = loadSuite();
+    expect(suite.name).toBe("tool-use");
+    expect(suite.cases.map((entry) => entry.id)).toEqual([
+      "none.arithmetic",
+      "edit.find-and-edit",
+      "rename.keep-links",
+    ]);
+  });
+
+  it("reports each suite validation problem", () => {
+    const cases: Array<{ mutate: (suite: Record<string, unknown>) => void; pattern: RegExp }> = [
+      {
+        mutate: (suite) => {
+          suite.model = "openrouter/auto";
+        },
+        pattern: /suite\.model must be one of/,
+      },
+      {
+        mutate: (suite) => {
+          suite.runsPerCase = 0;
+        },
+        pattern: /runsPerCase must be an integer of at least 1/,
+      },
+      {
+        mutate: (suite) => {
+          const entries = suite.cases as Array<Record<string, unknown>>;
+          entries[1].id = entries[0].id;
+        },
+        pattern: /Duplicate tool-use case id/,
+      },
+      {
+        mutate: (suite) => {
+          const entries = suite.cases as Array<Record<string, unknown>>;
+          (entries[0].checks as Array<Record<string, unknown>>)[0].type = "not_a_check";
+        },
+        pattern: /Unknown check type/,
+      },
+      {
+        mutate: (suite) => {
+          const entries = suite.cases as Array<Record<string, unknown>>;
+          delete (entries[0].checks as Array<Record<string, unknown>>)[0].text;
+        },
+        pattern: /checks\[0\]\.text must be a non-empty string/,
+      },
+    ];
+
+    for (const entry of cases) {
+      const suite = cloneSuite();
+      entry.mutate(suite);
+      expect(() => validateToolUseSuite(suite)).toThrow(entry.pattern);
+    }
+  });
+
+  it("grades file_exists and file_absent", async () => {
+    const result = await grade(
+      [
+        { type: "file_exists", path: "Note.md" },
+        { type: "file_absent", path: "Gone.md" },
+        { type: "file_exists", path: "Missing.md" },
+        { type: "file_absent", path: "Note.md" },
+      ],
+      { files: { "Note.md": "body" } },
+    );
+
+    expect(result.checks.map((check) => [check.type, check.ok])).toEqual([
+      ["file_exists", true],
+      ["file_absent", true],
+      ["file_exists", false],
+      ["file_absent", false],
+    ]);
+  });
+
+  it("grades file_contains and file_not_contains, plain and regex", async () => {
+    const result = await grade(
+      [
+        { type: "file_contains", path: "Note.md", text: "alpha" },
+        { type: "file_contains", path: "Note.md", text: "gamma" },
+        { type: "file_contains", path: "Note.md", text: "a.+a", regex: true },
+        { type: "file_not_contains", path: "Note.md", text: "gamma" },
+        { type: "file_not_contains", path: "Note.md", text: "alpha" },
+        { type: "file_not_contains", path: "Missing.md", text: "alpha" },
+      ],
+      { files: { "Note.md": "alpha beta" } },
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, false, true, true, false, true]);
+  });
+
+  it("grades frontmatter scalars and arrays with the shared splitter", async () => {
+    const content = "---\ntags: [alpha, beta]\ncount: 3\npublished: true\nname: Atlas\n---\nBody\n";
+    const result = await grade(
+      [
+        { type: "frontmatter_equals", path: "Note.md", key: "tags", value: ["alpha"] },
+        { type: "frontmatter_equals", path: "Note.md", key: "tags", value: ["alpha", "beta"] },
+        { type: "frontmatter_equals", path: "Note.md", key: "tags", value: ["alpha", "gamma"] },
+        { type: "frontmatter_equals", path: "Note.md", key: "count", value: 3 },
+        { type: "frontmatter_equals", path: "Note.md", key: "published", value: true },
+        { type: "frontmatter_equals", path: "Note.md", key: "name", value: "Atlas" },
+        { type: "frontmatter_equals", path: "Note.md", key: "missing", value: "x" },
+      ],
+      { files: { "Note.md": content } },
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, true, false, true, true, true, false]);
+  });
+
+  it("grades unchanged against the seed", async () => {
+    const seed = { "Keep.md": "stable", "Edit.md": "before" };
+    const result = await grade(
+      [
+        { type: "unchanged", path: "Keep.md" },
+        { type: "unchanged", path: "Edit.md" },
+        { type: "unchanged", path: "NotSeeded.md" },
+      ],
+      { files: { "Keep.md": "stable", "Edit.md": "after" } },
+      seed,
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, false, false]);
+  });
+
+  it("grades tool_called, tool_not_called, and the mutating wildcard", async () => {
+    const toolCalls = [{ name: "edit" }, { name: "read" }, { name: "edit" }];
+    const result = await grade(
+      [
+        { type: "tool_called", name: "edit" },
+        { type: "tool_called", name: "edit", min: 2 },
+        { type: "tool_called", name: "edit", min: 3 },
+        { type: "tool_called", name: "*mutating*" },
+        { type: "tool_not_called", name: "write" },
+        { type: "tool_not_called", name: "*mutating*" },
+        { type: "tool_called", name: "delete" },
+      ],
+      { toolCalls },
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, true, false, true, true, false, false]);
+  });
+
+  it("grades max_tool_calls and no_tool_errors", async () => {
+    const result = await grade(
+      [
+        { type: "max_tool_calls", max: 2 },
+        { type: "max_tool_calls", max: 3 },
+        { type: "no_tool_errors" },
+      ],
+      { toolCalls: [{ name: "read" }, { name: "edit" }, { name: "read" }] },
+    );
+    expect(result.checks.map((check) => check.ok)).toEqual([false, true, true]);
+
+    const withError = await grade(
+      [{ type: "no_tool_errors" }],
+      { toolCalls: [{ name: "edit", isError: true }] },
+    );
+    expect(checkByType(withError, "no_tool_errors").ok).toBe(false);
+  });
+
+  it("grades answer_contains and answer_not_contains, plain and regex", async () => {
+    const result = await grade(
+      [
+        { type: "answer_contains", text: "51" },
+        { type: "answer_contains", text: "^51$" },
+        { type: "answer_contains", text: "^51$", regex: true },
+        { type: "answer_not_contains", text: "52" },
+        { type: "answer_not_contains", text: "51" },
+        { type: "answer_not_contains", text: "\\d+", regex: true },
+      ],
+      { answer: "51" },
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, false, true, true, false, false]);
+  });
+
+  it("fails the whole run when any check fails", async () => {
+    const result = await grade(
+      [
+        { type: "file_exists", path: "Note.md" },
+        { type: "answer_contains", text: "nope" },
+      ],
+      { files: { "Note.md": "body" }, answer: "yes" },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(checkByType(result, "file_exists").detail).toContain("found Note.md");
+    expect(checkByType(result, "answer_contains").detail).toContain("does not contain");
+  });
+
+  it("computes cost from input, output, and cache-read tokens", () => {
+    const usd = costUsd(
+      { input: 1_000, output: 500, cacheRead: 200 },
+      { input: 0.000001, output: 0.000002, cacheRead: 0.0000005 },
+    );
+    expect(usd).toBeCloseTo(0.0021, 10);
+  });
+
+  it("stops on each budget cap", () => {
+    const pricing = { input: 1, output: 0, cacheRead: 0 };
+
+    const usd = new BudgetTracker({ maxUsd: 0.5, maxModelCalls: 100, maxTokens: 100_000 }, pricing);
+    usd.add({ usage: { input: 1 } });
+    expect(usd.exceeded()).toContain("maxUsd");
+
+    const calls = new BudgetTracker({ maxUsd: 100, maxModelCalls: 2, maxTokens: 100_000 }, pricing);
+    calls.add({ usage: { input: 0 }, modelCalls: 2 });
+    expect(calls.exceeded()).toContain("maxModelCalls");
+
+    const tokens = new BudgetTracker({ maxUsd: 100, maxModelCalls: 100, maxTokens: 10 }, pricing);
+    tokens.add({ usage: { totalTokens: 10 } });
+    expect(tokens.exceeded()).toContain("maxTokens");
+
+    const clear = new BudgetTracker({ maxUsd: 100, maxModelCalls: 100, maxTokens: 100 }, pricing);
+    clear.add({ usage: { input: 1 }, modelCalls: 1 });
+    expect(clear.exceeded()).toBeNull();
+  });
+
+  it("summarizes pass rate, tokens, USD, and time", () => {
+    const summary = summarizeCase([
+      { status: "pass", usage: { totalTokens: 100 }, usd: 0.01, ms: 1_000 },
+      { status: "fail", usage: { totalTokens: 200 }, usd: 0.02, ms: 3_000 },
+      { status: "skipped-budget", usage: {}, usd: 0, ms: 0 },
+    ]);
+
+    expect(summary).toMatchObject({
+      runs: 3,
+      executed: 2,
+      passed: 1,
+      skipped: 1,
+      passRate: 0.5,
+      meanTokens: 150,
+      maxTokens: 200,
+      totalUsd: 0.03,
+      meanUsd: 0.015,
+      meanMs: 2_000,
+    });
+  });
+
+  it("extracts tool calls, usage, and the final answer from session text", async () => {
+    const analyzer = (await import(
+      pathToFileURL(path.join(process.cwd(), "scripts/analyze-session-trace.mjs")).href
+    )) as {
+      analyzeSessionText: (text: string) => {
+        files: Array<{ toolCalls: Array<{ name: string; isError: boolean }>; finalAssistantText: string }>;
+        aggregate: { usage: { totalTokens: number } };
+      };
+    };
+    const text = [
+      {
+        type: "message",
+        message: { role: "user", content: [{ type: "text", text: "Update the note." }] },
+      },
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          usage: { input: 20, output: 10, totalTokens: 30 },
+          content: [{ type: "toolCall", id: "call-1", name: "edit", arguments: {} }],
+        },
+      },
+      {
+        type: "message",
+        message: {
+          role: "toolResult",
+          toolCallId: "call-1",
+          toolName: "edit",
+          isError: false,
+          content: [{ type: "text", text: "ok" }],
+        },
+      },
+      { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Done." }] } },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n");
+
+    const result = analyzer.analyzeSessionText(text);
+    expect(result.files[0].toolCalls).toEqual([{ name: "edit", isError: false, toolCallId: "call-1" }]);
+    expect(result.files[0].finalAssistantText).toBe("Done.");
+    expect(result.aggregate.usage.totalTokens).toBe(30);
+  });
+
+  it("grades frontmatter through the Node runner's obsidian shim", () => {
+    const script = [
+      'import { registerHooks } from "node:module";',
+      'import { pathToFileURL } from "node:url";',
+      'import path from "node:path";',
+      'const mockUrl = pathToFileURL(path.resolve("test/mocks/obsidian.ts")).href;',
+      "registerHooks({",
+      "  resolve(specifier, context, nextResolve) {",
+      '    if (specifier === "obsidian") return { url: mockUrl, shortCircuit: true };',
+      "    return nextResolve(specifier, context);",
+      "  },",
+      "});",
+      'const core = await import("./scripts/eval/tool-use-core.ts");',
+      "const result = await core.gradeRun(",
+      '  { id: "shim", prompt: "p", seed: { files: {} }, checks: [{ type: "frontmatter_equals", path: "Note.md", key: "tags", value: ["a"] }] },',
+      '  { files: { "Note.md": "---\\ntags: [a]\\n---\\nBody" }, toolCalls: [], answer: "" },',
+      ");",
+      "console.log(JSON.stringify(result));",
+    ].join("\n");
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "--input-type=module", "--eval", script],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('"ok":true');
+  });
+
+  it("prints a dry-run plan without network or output files", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "tool-use-dry-"));
+    tempRoots.push(root);
+    const outputDir = path.join(root, "out");
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/run-tool-use-evals.ts",
+        "--dry-run",
+        "--run-id",
+        "dry-test",
+        "--out-dir",
+        outputDir,
+      ],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("3 case(s) x 3 run(s)");
+    expect(result.stdout).toContain("prices: not fetched (dry run)");
+    expect(result.stdout).toContain("estimated cost");
+    expect(existsSync(outputDir)).toBe(false);
+  });
+});

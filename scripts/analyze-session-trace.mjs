@@ -188,7 +188,12 @@ function resolveSessionFiles(target) {
 }
 
 function analyzeSessionFile(file) {
-  const lines = readSessionLines(file);
+  return analyzeSessionText(fs.readFileSync(file, "utf8"), file).files[0];
+}
+
+/** Pure entry point: parse an in-memory JSONL session without touching disk. */
+export function analyzeSessionText(text, file = "(session)") {
+  const lines = parseSessionLines(text);
   const state = createSessionState();
 
   for (const entry of lines) {
@@ -196,12 +201,12 @@ function analyzeSessionFile(file) {
   }
 
   const turns = state.turnStates.map(finalizeTurnState);
-  return buildSessionSummary(file, lines, state, turns);
+  const summary = buildSessionSummary(file, lines, state, turns);
+  return { files: [summary], aggregate: combineSummaries([summary]) };
 }
 
-function readSessionLines(file) {
-  return fs
-    .readFileSync(file, "utf8")
+function parseSessionLines(text) {
+  return String(text ?? "")
     .split("\n")
     .filter((line) => line.trim())
     .map((line) => JSON.parse(line));
@@ -221,6 +226,9 @@ function createSessionState() {
     approvalDenialReasons: {},
     toolErrorsByTool: {},
     noteMutations: {},
+    toolCalls: [],
+    toolCallIndexById: new Map(),
+    finalAssistantText: "",
     toolStarts: 0,
     cacheHits: 0,
     maxUserMessageChars: 0,
@@ -239,7 +247,10 @@ function collectMessageEntry(entry, state) {
   const message = entry.message ?? {};
   if (message.role === "user") recordUserMessage(message, state);
   if (message.role === "assistant") recordAssistantMessage(message, state);
-  if (message.role === "toolResult" && message.details?.cached === true) recordCacheHit(state);
+  if (message.role === "toolResult") {
+    if (message.isError === true) markToolCallError(state, message.toolCallId, message.toolName);
+    if (message.details?.cached === true) recordCacheHit(state);
+  }
 }
 
 function recordUserMessage(message, state) {
@@ -266,6 +277,8 @@ function recordAssistantMessage(message, state) {
   for (const part of Array.isArray(message.content) ? message.content : []) {
     if (part?.type === "toolCall") recordToolStart(state, part.name ?? "(unknown)", part.id, part.arguments ?? {});
   }
+  const text = contentText(message).trim();
+  if (text) state.finalAssistantText = text;
 }
 
 function recordCacheHit(state) {
@@ -297,6 +310,18 @@ function recordToolCallError(event, state) {
   const turn = ensureCurrentTurn(state);
   state.toolErrorsByTool[event.toolName] = (state.toolErrorsByTool[event.toolName] ?? 0) + 1;
   turn.summary.toolErrorsByTool[event.toolName] = (turn.summary.toolErrorsByTool[event.toolName] ?? 0) + 1;
+  markToolCallError(state, event.toolCallId, event.toolName);
+}
+
+function markToolCallError(state, toolCallId, toolName) {
+  const index = toolCallId ? state.toolCallIndexById.get(toolCallId) : undefined;
+  if (index !== undefined) {
+    state.toolCalls[index].isError = true;
+    return;
+  }
+  const record = { name: toolName ?? "(unknown)", isError: true, toolCallId: toolCallId ?? null };
+  state.toolCalls.push(record);
+  if (toolCallId) state.toolCallIndexById.set(toolCallId, state.toolCalls.length - 1);
 }
 
 function recordApprovalDecision(event, state) {
@@ -326,6 +351,8 @@ function recordToolStart(state, toolName, toolCallId, args) {
   if (toolCallId && state.seenToolCallIds.has(toolCallId)) return;
   if (toolCallId) state.seenToolCallIds.add(toolCallId);
   const turn = ensureCurrentTurn(state);
+  state.toolCalls.push({ name: toolName, isError: false, toolCallId: toolCallId ?? null });
+  if (toolCallId) state.toolCallIndexById.set(toolCallId, state.toolCalls.length - 1);
   state.toolStarts += 1;
   state.toolStartsByTool[toolName] = (state.toolStartsByTool[toolName] ?? 0) + 1;
   const exactKey = exactToolCallKeyFrom(toolName, args);
@@ -370,6 +397,8 @@ function buildSessionSummary(file, lines, state, turns) {
     approvalDecisionsByTool: state.approvalDecisionsByTool,
     approvalDenialReasons: repeatedIncludingSingles(state.approvalDenialReasons),
     toolErrorsByTool: state.toolErrorsByTool,
+    toolCalls: state.toolCalls,
+    finalAssistantText: state.finalAssistantText,
     noteMutations: repeatedIncludingSingles(state.noteMutations),
     activeNoteCounts: state.activeNoteCounts,
     activeNoteBodyCounts: state.activeNoteBodyCounts,

@@ -2,6 +2,13 @@
  * Minimal Obsidian API mock, substituted for the real `obsidian` package via
  * a vitest resolve alias. Only what the non-UI modules touch at runtime.
  */
+import { createRequire } from "node:module";
+
+const requireFromMock = createRequire(import.meta.url);
+// Obsidian ships only type declarations. The tool-use eval runner maps the bare
+// `obsidian` specifier to this mock so the shared frontmatter splitter works in
+// Node too. js-yaml matches the real parser closely enough for grading.
+const yaml = requireFromMock("js-yaml") as { load(input: string): unknown };
 
 export class TAbstractFile {
   path = "";
@@ -96,20 +103,12 @@ export function requestUrl(): Promise<{
   return Promise.reject(new Error("requestUrl is not available in tests"));
 }
 
-/** Tiny YAML frontmatter parser: enough for `key: value` and `key: "value"` lines. */
+/** YAML frontmatter parser backed by js-yaml, matching Obsidian's real parser. */
 export function parseYaml(input: string): Record<string, unknown> {
-  const data: Record<string, unknown> = {};
   for (const line of input.split(/\r?\n/)) {
-    // js-yaml (Obsidian's real parser) rejects tab indentation; mirror that so
-    // the frontmatter error path is reachable in tests.
+    // js-yaml rejects tab indentation; mirror the error path in src too.
     if (line.includes("\t")) throw new Error("found character that cannot start any token");
-    const match = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line.trim());
-    if (!match) continue;
-    let value: string = match[2];
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    data[match[1]] = value;
   }
-  return data;
+  const parsed = yaml.load(input);
+  return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
 }

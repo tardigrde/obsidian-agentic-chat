@@ -109,6 +109,20 @@ const lanes = {
     // Skips hide unexecuted coverage. The lane fails on any skip unless the
     // child script grows an explicit opt-out.
     const forwarded = args.filter((arg) => arg !== "--fail-on-skip");
+    const suiteIndex = forwarded.indexOf("--suite");
+    const suiteValue = suiteIndex >= 0 ? forwarded[suiteIndex + 1] : undefined;
+    const toolUse = suiteValue === "tool-use" || /tool-use(\.eval)?\.json$/.test(suiteValue ?? "");
+    if (toolUse) {
+      const passthrough = forwarded.filter((_, index) => index !== suiteIndex && index !== suiteIndex + 1);
+      return [
+        step("tool-use evals", NODE, [
+          "--import",
+          "tsx",
+          "scripts/run-tool-use-evals.ts",
+          ...passthrough,
+        ]),
+      ];
+    }
     return [
       step("agentic evals", NODE, [
         "--import",
