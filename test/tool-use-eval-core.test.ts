@@ -317,6 +317,18 @@ describe("tool-use eval core", () => {
     expect(result.checks.map((check) => check.ok)).toEqual([true, false, true, true, false, false]);
   });
 
+  it("requires the arithmetic case to answer exactly 51", () => {
+    const suite = loadSuite();
+    const arithmetic = suite.cases.find((entry) => entry.id === "none.arithmetic");
+    if (!arithmetic) throw new Error("missing none.arithmetic case");
+    const gradeAnswer = (answer: string) =>
+      gradeRun(arithmetic, { files: {}, frontmatter: {}, toolCalls: [], answer });
+
+    expect(gradeAnswer("151").ok).toBe(false);
+    expect(gradeAnswer("51.").ok).toBe(true);
+    expect(gradeAnswer("The answer is 51").ok).toBe(true);
+  });
+
   it("fails the whole run when any check fails", async () => {
     const result = await grade(
       [
