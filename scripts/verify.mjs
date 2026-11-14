@@ -11,6 +11,7 @@ const NODE = process.execPath;
 const TSC7 = path.resolve("scripts", "tsc7.mjs");
 const SMOKE_SPEC = "test/e2e/specs/smoke.e2e.ts";
 const DESIGN_AUDIT_SPEC = "test/e2e/specs/design-audit.e2e.ts";
+const DEFAULT_TOOL_USE_SUITE = "test/evals/tool-use/tool-use.eval.json";
 
 function bin(name) {
   return path.resolve("node_modules", ".bin", process.platform === "win32" ? `${name}.cmd` : name);
@@ -109,11 +110,20 @@ const lanes = {
     // Skips hide unexecuted coverage. The lane fails on any skip unless the
     // child script grows an explicit opt-out.
     const forwarded = args.filter((arg) => arg !== "--fail-on-skip");
-    const suiteIndex = forwarded.indexOf("--suite");
-    const suiteValue = suiteIndex >= 0 ? forwarded[suiteIndex + 1] : undefined;
+    const suite = findSuiteArg(forwarded);
+    const suiteValue = suite?.value;
     const toolUse = suiteValue === "tool-use" || /tool-use(\.eval)?\.json$/.test(suiteValue ?? "");
     if (toolUse) {
-      const passthrough = forwarded.filter((_, index) => index !== suiteIndex && index !== suiteIndex + 1);
+      const passthrough = [...forwarded];
+      if (suite) {
+        const resolved = suiteValue === "tool-use" ? DEFAULT_TOOL_USE_SUITE : suiteValue;
+        if (suite.inline) {
+          // The runner takes a separate value, so normalize `--suite=<path>`.
+          passthrough.splice(suite.index, 1, "--suite", resolved);
+        } else {
+          passthrough[suite.index + 1] = resolved;
+        }
+      }
       return [
         step("tool-use evals", NODE, [
           "--import",
@@ -159,6 +169,21 @@ const lanes = {
     ...lanes.eval([]),
   ],
 };
+
+function findSuiteArg(args) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--suite") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) return undefined;
+      return { index, value, inline: false };
+    }
+    if (arg.startsWith("--suite=")) {
+      return { index, value: arg.slice("--suite=".length), inline: true };
+    }
+  }
+  return undefined;
+}
 
 function usage() {
   const names = Object.keys(lanes).join(", ");
