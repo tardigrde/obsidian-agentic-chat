@@ -24,5 +24,5 @@ features:
   - title: Visible control
     details: Every tool call renders inline with arguments and timing. Mutating calls show diffs for approval, and /undo reverts the last change.
   - title: Opt-in power only
-    details: Web research, remote MCP tools, semantic indexing, and observability export stay off until you enable them in Settings.
+    details: Web research, remote MCP tools, and observability export stay off until you enable them in Settings.
 ---

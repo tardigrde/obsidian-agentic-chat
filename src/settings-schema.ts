@@ -10,7 +10,6 @@ import {
 } from "./llm/models";
 import { healPerToolMap, type ApprovalSettings, DEFAULT_APPROVAL_SETTINGS } from "./agent/approval";
 import { type AgentMode, DEFAULT_MODE, healMode } from "./agent/modes";
-import { DEFAULT_OUTPUT_STYLE, type OutputStyle, OUTPUT_STYLES } from "./agent/output-styles";
 import { DEFAULT_SYSTEM_PROMPT } from "./agent/system-prompt";
 import { isRecord } from "./utils/records";
 import { DEFAULT_PLUGIN_SETTINGS, healPluginMcpState, type PluginSettings } from "./plugins/settings";
@@ -35,12 +34,6 @@ import {
   healObservabilitySettings,
   type ObservabilitySettings,
 } from "./observability/settings";
-import {
-  DEFAULT_EMBEDDING_SETTINGS,
-  healEmbeddingSettings,
-  type EmbeddingProviderId,
-  type EmbeddingSettings,
-} from "./retrieval/embeddings";
 
 export interface AgenticChatSettings {
   provider: ProviderId;
@@ -87,8 +80,6 @@ export interface AgenticChatSettings {
    * mutating tools.
    */
   mode: AgentMode;
-  /** How the assistant talks: a built-in system-prompt overlay. */
-  outputStyle: OutputStyle;
   privacy: PrivacySettings;
   approval: ApprovalSettings;
   /** Agent Plugins packages loaded from a vault folder. */
@@ -112,8 +103,6 @@ export interface AgenticChatSettings {
   web: WebSettings;
   /** Remote MCP tools over HTTPS Streamable HTTP. Off by default — sends data off-device. */
   mcp: McpSettings;
-  /** Optional semantic retrieval index configuration. Uses existing provider secrets. */
-  embeddings: EmbeddingSettings;
   /** Optional opt-in OTLP/Langfuse observability export. */
   observability: ObservabilitySettings;
 }
@@ -189,7 +178,6 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   maxTurnsPerPrompt: PARENT_TURN_CAP,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   mode: DEFAULT_MODE,
-  outputStyle: DEFAULT_OUTPUT_STYLE,
   // Strongest privacy out of the box: zero data retention, no prompt
   // logging/training, and any fallback provider must also satisfy both.
   privacy: { denyDataCollection: true, requireZDR: true, allowFallbacks: true },
@@ -216,14 +204,13 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
     ...DEFAULT_PROXY_SETTINGS,
     servers: [],
   },
-  embeddings: DEFAULT_EMBEDDING_SETTINGS,
   observability: DEFAULT_OBSERVABILITY_SETTINGS,
 };
 
 /**
  * Numeric leaves the settings UI bounds. A persisted value outside its range is
  * treated like a wrong type and falls back to the default. Fields with a
- * dedicated heal (turn cap, embeddings, sampling) keep their own policy.
+ * dedicated heal (turn cap, sampling) keep their own policy.
  */
 const SETTING_NUMBER_RANGES: Readonly<Record<string, readonly [number, number]>> = {
   temperature: [0, 2],
@@ -261,8 +248,6 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     ),
     mode: healMode(stored?.mode),
     openaiCompatibleContextWindow: healContextWindow(stored?.openaiCompatibleContextWindow),
-    outputStyle:
-      stored?.outputStyle && stored.outputStyle in OUTPUT_STYLES ? stored.outputStyle : DEFAULT_OUTPUT_STYLE,
     privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored?.privacy ?? {}) },
     approval: healApprovalSettings(stored?.approval),
     notifications: { ...DEFAULT_SETTINGS.notifications, ...stored?.notifications },
@@ -284,7 +269,6 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     plugins: healedPlugins,
     subagentTimeoutSeconds: healSubagentTimeout(stored?.subagentTimeoutSeconds),
     maxTurnsPerPrompt: healMaxTurns(stored?.maxTurnsPerPrompt),
-    embeddings: healEmbeddingSettings(stored?.embeddings),
     observability: healObservabilitySettings(sanitizeProxyLeaves(stored?.observability)),
   };
   // Last pass: a persisted leaf whose type (or UI-bounded number) is invalid
@@ -384,7 +368,7 @@ function migrateLegacyPluginServers(healedMcp: McpSettings, healedPlugins: Plugi
 }
 
 /** Retired feature keys removed from persisted data.json on load. */
-const RETIRED_SETTING_KEYS = ["projects", "agentsFolder", "enableBuiltinAgents"] as const;
+const RETIRED_SETTING_KEYS = ["projects", "agentsFolder", "enableBuiltinAgents", "outputStyle", "embeddings"] as const;
 
 /**
  * Merge the stored approval policy over the defaults. Unknown legacy keys such as
@@ -430,6 +414,15 @@ export function retiredSettingsNotices(stored: unknown): string[] {
   const mode = stored.mode;
   if (typeof mode === "string" && Object.prototype.hasOwnProperty.call(RETIRED_MODE_LABELS, mode)) {
     notices.push(`${RETIRED_MODE_LABELS[mode]} mode was removed in this version. Agentic Chat now starts in Safe mode.`);
+  }
+  const style = stored.outputStyle;
+  if (typeof style === "string" && style !== "default") {
+    notices.push(
+      `Output styles were removed in this version. Your "${style}" style no longer applies. Put the style you want in AGENTS.md or in your message.`,
+    );
+  }
+  if (isRecord(stored.embeddings) && stored.embeddings.enabled === true) {
+    notices.push("The semantic index was removed in this version. No tool read it. The agent uses vault search.");
   }
   return notices;
 }
@@ -503,12 +496,6 @@ function healPluginsFolder(raw: unknown): string {
 
 function healProvider(stored: ProviderId | undefined): ProviderId {
   return healProviderId(stored, DEFAULT_SETTINGS.provider);
-}
-
-export function embeddingModelPlaceholder(provider: EmbeddingProviderId): string {
-  if (provider === "ollama") return DEFAULT_EMBEDDING_SETTINGS.ollamaModel;
-  if (provider === "openai-compatible") return "text-embedding-model";
-  return DEFAULT_EMBEDDING_SETTINGS.openrouterModel;
 }
 
 /** The model id used for the active provider. */

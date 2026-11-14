@@ -24,9 +24,7 @@ const REMOVED_ALIASES = [
 const SUPPORTED_COMMANDS = [
   "usage",
   "doctor",
-  "style",
   "sessions",
-  "semantic-index",
   "effort",
 ] as const;
 
@@ -79,10 +77,10 @@ describe("resolveCommand", () => {
 
 describe("parseSlashInput", () => {
   it("parses canonical commands with trimmed argument strings", () => {
-    const input = parseSlashInput("/semantic-index start folder Research/Notes");
+    const input = parseSlashInput("/sessions start folder Research/Notes");
 
-    expect(input.word).toBe("semantic-index");
-    expect(input.command?.name).toBe("semantic-index");
+    expect(input.word).toBe("sessions");
+    expect(input.command?.name).toBe("sessions");
     expect(input.argString).toBe("start folder Research/Notes");
     expect(input.args).toEqual(["start", "folder", "Research/Notes"]);
   });

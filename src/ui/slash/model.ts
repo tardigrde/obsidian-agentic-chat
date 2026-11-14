@@ -1,6 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { apiKeyForProvider } from "../../settings-schema";
-import { OUTPUT_STYLE_ORDER, OUTPUT_STYLES, type OutputStyle } from "../../agent/output-styles";
 import { listOpenAICompatibleModels, listOpenRouterModels } from "../../llm/models";
 import { createFetchFromWebFetcher, createProxiedFetcher } from "../../mcp/fetcher";
 import { errorMessage } from "../../utils/errors";
@@ -58,42 +57,6 @@ export async function switchModel(ctx: SlashContext): Promise<void> {
   } catch (error) {
     ctx.renderErrorMessage(errorMessage(error));
   }
-}
-
-/** `/style [name]`: no arg shows a picker; an arg switches output style directly. */
-export async function runStyle(ctx: SlashContext, arg: string): Promise<void> {
-  ctx.clearEmptyState();
-  if (!arg) {
-    showStyleList(ctx);
-    return;
-  }
-  const lower = arg.toLowerCase();
-  const style = OUTPUT_STYLE_ORDER.find((id) => id === lower || OUTPUT_STYLES[id].label.toLowerCase() === lower);
-  if (!style) {
-    ctx.renderErrorMessage(`Unknown output style "${arg}". Options: ${OUTPUT_STYLE_ORDER.join(", ")}.`);
-    return;
-  }
-  await chooseStyle(ctx, style);
-}
-
-/** Clickable output-style picker, applied in-pane. */
-export function showStyleList(ctx: SlashContext): void {
-  const { settings } = ctx.plugin;
-  ctx.renderActionList(
-    "Output style",
-    `How the assistant talks · current: ${OUTPUT_STYLES[settings.outputStyle].label}`,
-    OUTPUT_STYLE_ORDER.map((id) => ({
-      label: OUTPUT_STYLES[id].label,
-      detail: OUTPUT_STYLES[id].description,
-      icon: OUTPUT_STYLES[id].icon,
-      onClick: () => void chooseStyle(ctx, id),
-    })),
-  );
-}
-
-export async function chooseStyle(ctx: SlashContext, style: OutputStyle): Promise<void> {
-  await ctx.setOutputStyle(style);
-  ctx.renderInfoMessage("Output style", [[OUTPUT_STYLES[style].label, OUTPUT_STYLES[style].description]]);
 }
 
 /** `/effort [level]`: no arg shows a picker; an arg sets your reasoning effort (persisted). */

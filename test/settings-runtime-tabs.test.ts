@@ -22,7 +22,6 @@ describe("settings runtime tabs", () => {
       "notifications",
       "plugins",
       "subagents",
-      "retrieval",
       "ignored-files",
     ]);
   });

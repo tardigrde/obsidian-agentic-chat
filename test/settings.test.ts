@@ -4,12 +4,6 @@ import { applyOpenAICompatiblePreset, OPENAI_COMPATIBLE_PRESETS, openAICompatibl
 import { activeModelConfig, activeModelId, apiKeyForProvider, DEFAULT_SETTINGS, mergeSettings, type AgenticChatSettings } from "../src/settings-schema";
 import { DEFAULT_OPENAI_COMPATIBLE_BASE_URL } from "../src/llm/models";
 import {
-  DEFAULT_EMBEDDING_SETTINGS,
-  activeEmbeddingModel,
-  embeddingConfigFromSettings,
-  healEmbeddingSettings,
-} from "../src/retrieval/embeddings";
-import {
   DEFAULT_MCP_SETTINGS,
   createMcpServerSettings,
   exportMcpServerConfig,
@@ -187,55 +181,6 @@ describe("mergeSettings — network proxy", () => {
       noProxy: "localhost,*.internal.example",
     });
     expect(mergeSettings({ network: { proxyUrl: "socks://proxy:1080", noProxy: "" } }).network.proxyUrl).toBe("");
-  });
-});
-
-describe("mergeSettings — embeddings", () => {
-  it("defaults semantic indexing off and reuses provider credentials", () => {
-    const merged = mergeSettings(null);
-
-    expect(merged.embeddings).toEqual(DEFAULT_EMBEDDING_SETTINGS);
-    expect(activeEmbeddingModel(merged.embeddings)).toBe(DEFAULT_EMBEDDING_SETTINGS.openrouterModel);
-    expect(
-      embeddingConfigFromSettings(merged.embeddings, {
-        openrouterApiKey: "or-key",
-        openaiCompatibleApiKey: "oa-key",
-        privacy: merged.privacy,
-      }),
-    ).toMatchObject({
-      provider: "openrouter",
-      model: DEFAULT_EMBEDDING_SETTINGS.openrouterModel,
-      apiKey: "or-key",
-      privacy: merged.privacy,
-    });
-  });
-
-  it("heals malformed embedding settings to bounded safe values", () => {
-    const merged = mergeSettings({
-      embeddings: {
-        enabled: true,
-        provider: "missing",
-        openrouterModel: "  ",
-        ollamaModel: "  local-embed  ",
-        openaiCompatibleModel: "  custom-embed  ",
-        dimensions: 1_000_000,
-        languageCoverage: "wat",
-        batchSize: 0,
-        maxDocumentChars: 10,
-      } as never,
-    });
-
-    expect(merged.embeddings).toMatchObject({
-      enabled: true,
-      provider: "openrouter",
-      openrouterModel: DEFAULT_EMBEDDING_SETTINGS.openrouterModel,
-      ollamaModel: "local-embed",
-      openaiCompatibleModel: "custom-embed",
-      dimensions: 16_384,
-      languageCoverage: "multilingual",
-      batchSize: 1,
-      maxDocumentChars: 500,
-    });
   });
 });
 
@@ -822,13 +767,6 @@ describe("mergeSettings — MCP", () => {
 
     if (previousNavigator) Object.defineProperty(globalThis, "navigator", previousNavigator);
     else delete (globalThis as { navigator?: Navigator }).navigator;
-  });
-});
-
-describe("embedding settings — lease id", () => {
-  it("heals a missing lease id and preserves a stored one", () => {
-    expect(healEmbeddingSettings(undefined).leaseId).toBe("");
-    expect(healEmbeddingSettings({ leaseId: "vault-1" }).leaseId).toBe("vault-1");
   });
 });
 

@@ -15,7 +15,6 @@ export const SETTINGS_SECTION_IDS = [
   "notifications",
   "plugins",
   "subagents",
-  "retrieval",
   "ignored-files",
 ] as const;
 
@@ -46,7 +45,6 @@ export const SETTINGS_TABS: readonly SettingsTabDefinition[] = [
       "notifications",
       "plugins",
       "subagents",
-      "retrieval",
       "ignored-files",
     ],
   },

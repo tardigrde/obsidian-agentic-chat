@@ -74,19 +74,6 @@ Plugin management and diagnostics. Buttons: **Install pluginâ€¦**, **New skillâ€
 
 - **Subagent timeout**: `0` (disabled). Auto-abort a child after N seconds, up to 86400.
 
-### Semantic retrieval
-
-Off by default. Reuses the secrets on the **Models** tab. Lives under **Advanced > Semantic retrieval**.
-
-| Setting | Default |
-| --- | --- |
-| Embedding provider | OpenRouter |
-| Embedding model | `openai/text-embedding-3-small` on OpenRouter, `nomic-embed-text` on Ollama, empty on OpenAI-compatible until you set one |
-| Vector dimensions | `1536` (must match the model) |
-| Language coverage | `multilingual` |
-| Batch size | `32` notes per request |
-| Max indexed characters per note | `12,000` |
-
 ### Ignored files
 
 - **Ignore list**: one gitignore-style glob per line. Matching notes are invisible to the agent and report as not found.

@@ -142,7 +142,6 @@ export class AgentObservabilityRuntime {
         "agentic.provider": context.provider,
         "agentic.model": activeModelId(context),
         "agentic.mode": context.mode,
-        "agentic.output_style": context.outputStyle,
         "agentic.thinking_level": context.thinkingLevel,
         "agentic.observability.payload_mode": settings.payloadMode,
       },

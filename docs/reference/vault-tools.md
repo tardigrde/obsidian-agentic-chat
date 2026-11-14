@@ -30,12 +30,11 @@ Mutating tools follow the approval policy. `/undo` reverts the latest undoable v
 | Tool | What it does |
 | --- | --- |
 | `ask_user` | Inline clarification prompt. The answer steers the run. |
-| `search_memory` | Explicit long-term memory lookup. Never automatic. See [Memory](../features/memory.md). |
 | `subagent` | Delegates recon to the read-only Explorer, one level deep. |
 | `load_skill` / `unload_skill` / `read_skill` | Load a skill body only when the agent needs it. |
 | `create_skill` | Create a skill package. Defaults to ask. YOLO does not auto-approve it. `/undo` cannot revert it. |
 | `read_artifact` / `search_artifact` / `list_artifacts` | Inspect large tool outputs kept out of context. |
-| `import_pdf` / `import_document` | Extract PDF, EPUB, DOCX, PPTX, or XLSX text into artifacts with citations. |
+| `import_document` | Extract PDF, EPUB, DOCX, PPTX, or XLSX text into artifacts with citations. |
 | `web_search` / `fetch_url` | Opt-in web tools. See [Web, MCP, and observability](../features/web-mcp-observability.md). |
 | `mcp__<id>__<tool>` | Opt-in remote MCP tools behind the approval gate. |
 

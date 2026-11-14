@@ -291,12 +291,6 @@ Add focused scenarios that each run in their own conversation/session:
   - ignored or private active note
   - multiple attached notes
   - exported session note exists but must not become active context
-- Memory system:
-  - add a preference and retrieve it later
-  - add conflicting memory and verify how it is presented
-  - export memory
-  - exercise memory clear guards
-  - verify unrelated vault content is not leaked through memory
 - MCP usage:
   - disabled MCP
   - bad MCP URL
@@ -392,7 +386,6 @@ Then run sad paths that a naive user is likely to hit:
 
 Cover feature areas that are easy to miss in basic dogfood:
 
-- memory add, recall, conflict, export, and clear flows
 - MCP disabled state, bad URL, approval deny/ask/allow, and tool failure
   recovery
 - slash commands beyond `/status`, especially commands that mutate session,
@@ -422,10 +415,10 @@ model tokens:
 
 - run against a fresh throwaway vault, not only the normal dogfood vault
 - seed multiple vault shapes: empty folders, messy duplicates, large notes,
-  ignored/restricted notes, multilingual filenames, and existing memory records
+  ignored/restricted notes, and multilingual filenames
 - script the model to force each default tool at least once: read,
   vault_inspect, write, edit, rename, delete, set_properties,
-  search_memory, and ask_user
+  and ask_user
 - change approval and tool-budget settings mid-run; verify the
   harness behavior changes, then restore defaults
 - include sad paths that should fail safely: ignored active note, denied
@@ -476,7 +469,7 @@ only from more hand-written happy paths. Build this in layers.
      very long paths
    - ignored folders that contain tempting relevant content and obvious secret
      markers
-   - partial plugin state, old session files, memory records, and exported
+   - partial plugin state, old session files, and exported
       transcripts
    - nested folders and vault-relative paths
 
@@ -490,7 +483,6 @@ only from more hand-written happy paths. Build this in layers.
    - explicit file path, active-note reference, Obsidian link, and ambiguous
      "this"
    - same repo docs reordered, renamed, or moved under a different folder
-   - same task with memory enabled, memory disabled, and conflicting memory
    - same request before and after `/export`, model change, plugin reload, and
      session switch
 
@@ -526,7 +518,6 @@ only from more hand-written happy paths. Build this in layers.
    - switch sessions, switch back, then continue
    - change settings, save, reopen the vault, and verify the runtime reflects
      the setting
-   - create memory, forget it, restart, then verify it stays forgotten
    - create notes, undo some changes, restart, then verify checkpoints are
      still coherent
 
@@ -586,7 +577,7 @@ generated dogfood vault:
 
 - a tiny empty vault where every feature has to handle missing context
 - a messy long-lived vault with old sessions, stale generated notes, broken
-  links, forgotten memory, conflicting memory, and partial plugin state
+  links, and partial plugin state
 - a non-code personal-knowledge vault to catch assumptions that every task is a
   DevOps repo inventory
 - a deliberately hostile vault with secrets in ignored paths, huge notes,
@@ -596,11 +587,11 @@ Force feature crossovers that users naturally create:
 
 - change model/provider mid-session, send a prompt, then restore the original
   model and verify recovery
-- attach files, active notes, folder listings, and memory in the
+- attach files, active notes, and folder listings in the
   same run, then check which context actually reached the model
 - switch Safe/YOLO, the composition paths (Enter to
   steer, **Queue**, **Stop** then send), `/new`,
-  `/sessions`, `/memory`, `/export`, `/undo`, and `/doctor`
+  `/sessions`, `/export`, `/undo`, and `/doctor`
   around real tool calls instead of as isolated command smoke tests
 - start long workflows that create notes, refine them, delete unused ones, check
   backlinks/local graph, export the transcript, reload the plugin, then continue
@@ -621,7 +612,7 @@ Attack the sad paths deliberately:
 
 Improve observability so failures are cheaper to mine:
 
-- write a per-turn context ledger with active note, attached files, memory hits,
+- write a per-turn context ledger with active note, attached files,
   token estimate, and cache hit/miss evidence
 - record approval lifecycle events separately from tool starts so modal-close,
   double-click, and settings-race behavior is obvious in traces

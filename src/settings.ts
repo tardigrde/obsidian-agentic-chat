@@ -24,7 +24,7 @@ import {
 import type { SettingsTabHost } from "./settings-tab-host";
 import { modelsDefinitions } from "./settings-tab-models";
 import { pluginDefinitions } from "./settings-tab-plugins";
-import { ignoredFileDefinitions, retrievalDefinitions } from "./settings-tab-retrieval";
+import { ignoredFileDefinitions } from "./settings-tab-ignored-files";
 import { observabilityDefinitions, webDefinitions } from "./settings-tab-web";
 import { PROVIDERS, type AgenticChatSettings } from "./settings-schema";
 import { SETTINGS_TABS, type SettingsSectionId, type SettingsTabId } from "./settings-tabs";
@@ -52,7 +52,6 @@ const SECTION_HEADINGS: Record<SettingsSectionId, string> = {
   notifications: "Notifications",
   plugins: "Agent plugins",
   subagents: "Subagents",
-  retrieval: "Semantic retrieval",
   "ignored-files": "Ignored files",
 };
 
@@ -64,7 +63,6 @@ const CONTROL_KEYS_THAT_REDRAW = new Set([
   "mcp.enabled",
   "observability.enabled",
   "observability.backend",
-  "embeddings.provider",
   "plugins.folder",
 ]);
 
@@ -230,9 +228,6 @@ export class AgenticChatSettingTab extends PluginSettingTab {
         break;
       case "subagents":
         items.push(...subagentDefinitions(settings, this.host));
-        break;
-      case "retrieval":
-        items.push(...retrievalDefinitions(settings, this.host));
         break;
       case "ignored-files":
         items.push(...ignoredFileDefinitions(settings, this.host));

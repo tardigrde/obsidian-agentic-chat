@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeVaultPath } from "../src/vault/path";
-import { normalizePath as normalizeRelevantNotesPath } from "../src/retrieval/relevant-notes";
+import { normalizeLookupPath as normalizeRelevantNotesPath, normalizeVaultPath } from "../src/vault/path";
 import { normalizePath as normalizeAuditPath } from "../src/agent/action-audit-log";
 import { normalizeNotePath } from "../src/retrieval/citations";
 import { normalizeSourcePath } from "../src/retrieval/source-ingest";

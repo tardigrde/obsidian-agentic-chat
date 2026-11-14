@@ -81,7 +81,7 @@ a settings row, a click path) from a cloud run. Say which claim needs a CI
 ### Multi-instance harness
 
 Every chat tab and window builds its own service over shared state (the session
-folder, the semantic-index lease). `test/helpers/interleave.ts` wraps an
+folder). `test/helpers/interleave.ts` wraps an
 adapter so each call yields a seeded number of macrotask turns; a scenario runs
 two instances with `Promise.all` under many seeds and asserts invariants that
 must hold for every ordering. See `test/session-multi-instance.test.ts`. A

@@ -31,7 +31,7 @@ describe("shared helper copies", () => {
   });
 
   it("keeps exactly one shared isRecord declaration", () => {
-    expect(declarations("isRecord")).toEqual(["src/retrieval/embeddings.ts", "src/utils/records.ts"]);
+    expect(declarations("isRecord")).toEqual(["src/utils/records.ts"]);
   });
 
   it("keeps exactly one shared asRecord declaration", () => {

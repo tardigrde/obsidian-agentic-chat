@@ -36,7 +36,6 @@ function enableEverything(settings: Settings): void {
   settings.web.enabled = true;
   settings.mcp.enabled = true;
   settings.observability.enabled = true;
-  settings.embeddings.enabled = true;
   settings.web.searchProvider = "searxng";
 }
 
@@ -88,8 +87,6 @@ describe("setControlValue normalization (#286)", () => {
         "observability.backend",
         "observability.payloadMode",
         "observability.authHeaderName",
-        "embeddings.provider",
-        "embeddings.languageCoverage",
         "web.searchProvider",
         "notifications.costCapUsd",
         "temperature",

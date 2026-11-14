@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TFile, TFolder, type App } from "obsidian";
 import type { AssistantMessage, Model, TranscriptContext } from "@earendil-works/pi-ai";
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
-import { createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, getCurrentTools } from "@earendil-works/pi-ai";
 import { AgentService } from "../src/agent/agent-service";
 import type { AgentCompactionRuntime } from "../src/agent/compaction-runtime";
 import { STOPPED_APPROVAL_REASON, type UserApprovalChoice } from "../src/agent/tool-call-controller";
@@ -13,10 +13,8 @@ import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-sche
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
 import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
-import { fakeMemoryJsonl } from "./helpers/memory-fixtures";
 import { FakeVault } from "./helpers/fake-vault";
 
-const MEMORY_PATH = ".obsidian/plugins/agentic-chat/memory/memories.jsonl";
 
 /** Stream function that returns a fixed assistant reply without any network. */
 function cannedStreamFn(text: string): StreamFn {
@@ -426,40 +424,6 @@ describe("AgentService", () => {
     expect(seenTools[0]).not.toContain("fetch_url");
     expect(seenTools[1]).toContain("web_search");
     expect(seenTools[1]).toContain("fetch_url");
-  });
-
-  it("registers memory search without silently injecting stored memories into prompts", async () => {
-    const memoryAdapter = new MemoryAdapter();
-    await memoryAdapter.write(MEMORY_PATH, fakeMemoryJsonl());
-    const base = cannedStreamFn("ok");
-    let seenContext: TranscriptContext | undefined;
-    const streamFn: StreamFn = ((model: Model<"openai-completions">, context: TranscriptContext, options: unknown) => {
-      seenContext = context;
-      return (base as (...args: unknown[]) => unknown)(model, context, options);
-    }) as unknown as StreamFn;
-    const app = {
-      vault: {
-        adapter: memoryAdapter.asDataAdapter(),
-        configDir: ".obsidian",
-        on: () => ({}),
-        offref: () => {},
-      },
-      workspace: {},
-    } as unknown as App;
-    const { service } = makeService(streamFn, async () => ({ approved: true, remember: false }), app);
-
-    await service.sendPrompt("Use the normal prompt context");
-
-    expect(seenContext).toBeDefined();
-    expect(getCurrentTools(seenContext!.messages).map((tool) => tool.name)).toContain("search_memory");
-    // pi 1.0.0 carries the prompt as a transcript system message, so serialize
-    // the replayed prompt rather than a `systemPrompt` field.
-    const serializedContext = JSON.stringify({
-      systemPrompt: getCurrentSystemPrompt(seenContext!.messages),
-      messages: seenContext!.messages,
-    });
-    expect(serializedContext).not.toContain("The user prefers concise answers");
-    expect(serializedContext).not.toContain("Large vault embedding generation");
   });
 
   it("runs ask_user through the registered UI handler and continues", async () => {

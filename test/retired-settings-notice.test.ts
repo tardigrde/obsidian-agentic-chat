@@ -36,6 +36,24 @@ describe("retiredSettingsNotices", () => {
     expect(load({ mode: "plan" }).mode).toBe("safe");
   });
 
+  it("says a chosen output style was removed, but not the default style", () => {
+    const notices = retiredSettingsNotices({ outputStyle: "learning" });
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain("Output styles were removed");
+    expect(notices[0]).toContain("learning");
+    expect(notices[0]).toContain("AGENTS.md");
+    expect(retiredSettingsNotices({ outputStyle: "default" })).toEqual([]);
+    expect(load({ outputStyle: "learning" })).not.toHaveProperty("outputStyle");
+  });
+
+  it("says an enabled semantic index was removed, but not a disabled one", () => {
+    const notices = retiredSettingsNotices({ embeddings: { enabled: true, provider: "ollama" } });
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain("semantic index was removed");
+    expect(retiredSettingsNotices({ embeddings: { enabled: false } })).toEqual([]);
+    expect(load({ embeddings: { enabled: true } })).not.toHaveProperty("embeddings");
+  });
+
   it("reports both changes for a data.json with both", () => {
     expect(retiredSettingsNotices({ mode: "plan", approval: { workingDirs: ["Projects"] } })).toHaveLength(2);
   });
@@ -64,7 +82,7 @@ describe("retiredCommandHint", () => {
     expect(retiredCommandHint("followup")).toMatch(/Queue/);
     expect(retiredCommandHint("redirect")).toMatch(/Stop/);
     expect(retiredCommandHint("history")).toMatch(/\/sessions/);
-    expect(retiredCommandHint("semindex")).toMatch(/\/semantic-index/);
+    expect(retiredCommandHint("semindex")).toMatch(/semantic index is gone/);
     expect(retiredCommandHint("thinking")).toMatch(/\/effort/);
     expect(retiredCommandHint("add-dir")).toMatch(/Ignored files/);
   });
@@ -82,7 +100,7 @@ describe("retiredCommandHint", () => {
   });
 
   it("returns nothing for live commands, unknown words, and /plan (still a plain prompt)", () => {
-    for (const word of ["new", "sessions", "effort", "semantic-index", "help", "my-skill", "", "constructor", "plan"]) {
+    for (const word of ["new", "sessions", "effort", "help", "my-skill", "", "constructor", "plan"]) {
       expect(retiredCommandHint(word)).toBeUndefined();
     }
   });

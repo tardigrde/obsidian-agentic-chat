@@ -67,7 +67,7 @@ behavior.
 
 | # | Principle | Current behavior | Status | Rationale / evidence |
 |---|-----------|-----------------|--------|----------------------|
-| 21 | Priority-based context assembly | `composeSystemPrompt` orders: base prompt → mode overlay → output style → subagent system → skills listing → standing instructions | compliant | Priority order is fixed by code, not negotiated per turn |
+| 21 | Priority-based context assembly | `composeSystemPrompt` orders: base prompt → mode overlay → subagent system → skills listing → standing instructions | compliant | Priority order is fixed by code, not negotiated per turn |
 | 22 | Tool-schema budget (priority 1, active tools only) | `ToolBudget` sheds optional tools at schema% threshold (`tool-budget.ts:1-50`) | compliant | Mirrors the guide's "only loaded skills, not all tools" rule |
 | 23 | Three lines of defense: decay / threshold / active summary | Threshold compaction only: `CompactionConfig { thresholdFraction: 0.8, keepFraction: 0.3 }` (`compaction.ts:19-23`); manual `/compact`; no auto-decay window | partial | Decay is unnecessary for short vault tasks; the threshold compactor handles long sessions. No active-summarize step (no periodic checkpoint), only manual |
 | 24 | Token budgeting per turn | `estimateNextCost` includes full system prompt + skills + tools; `getContextFraction` reports `0–1` fill | compliant | Readout before send (`agent-service.ts:376-378, 422-433`) |

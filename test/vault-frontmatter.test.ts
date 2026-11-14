@@ -10,7 +10,7 @@ describe("shared frontmatter table", () => {
     expect(parseFrontmatterFields("---\r\nname: x\r\n---\r\nbody")).toBeNull();
   });
 
-  it("matches the relevant-notes simple parser", () => {
+  it("parses the simple frontmatter flavor", () => {
     const result = splitFrontmatter(
       "---\r\nname: 'quoted'\r\ntags: [a, b]\r\nbad key: no\r\n---\r\n\r\nbody",
       { flavor: "simple", normalizeNewlines: true, body: "drop-one-newline" },

@@ -401,7 +401,7 @@ async function runSlash(action: ChaosAction): Promise<void> {
   const panelsBefore = await browser.execute(() => document.querySelectorAll(".agentic-chat-info").length);
   await sendPrompt(action.prompt ?? "");
   // `/help` and `/status` both answer locally with a new info panel. `/status`
-  // lists the provider; an action list belongs to `/memory manage`, not here.
+  // lists the provider; an action list belongs to a picker command, not here.
   const expected = action.prompt === "/status" ? "Provider" : "";
   await browser.waitUntil(
     async () =>

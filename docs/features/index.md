@@ -32,25 +32,10 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 - Real-time composer control: Enter steers the active turn, **Queue** holds a draft until the turn ends, and **Stop** then send replaces the turn.
 - Reasoning effort control through `/effort`.
 
-## Memory
-
-- Long-term memory with kinds: preference, fact, instruction, summary.
-- Scopes: global, vault.
-- Add memories with `/memory add`.
-- Search memories with the `search_memory` tool.
-- Export or clear memory stores.
-
-## Semantic retrieval
-
-- Opt-in semantic index over vault notes.
-- Configurable embedding provider (OpenRouter, Ollama, OpenAI-compatible).
-- Scoped indexing by vault, folder, tag, or the active note's folder.
-- `/semantic-index` commands to estimate, start, or cancel indexing.
-
 ## Document import
 
 - Import PDF, EPUB, DOCX, PPTX, and XLSX files into plugin-managed source artifacts.
-- `import_pdf` and `import_document` tools extract text with provenance and citation anchors.
+- The `import_document` tool extracts text with provenance and citation anchors.
 - Artifact chunks are inspectable with `read_artifact` and `search_artifact`.
 
 ## Extensibility

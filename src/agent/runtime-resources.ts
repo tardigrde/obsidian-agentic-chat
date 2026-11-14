@@ -10,7 +10,6 @@ import {
 } from "../plugins/loader";
 import { createVaultTools } from "../tools/vault-tools";
 import { createWebTools } from "../tools/web-tools";
-import { createMemoryTools } from "../tools/memory-tools";
 import { createDocumentTools } from "../tools/document-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
@@ -35,7 +34,6 @@ import {
   loadAgentRoles,
 } from "./subagents";
 import { buildSystemPrompt } from "./system-prompt";
-import { OUTPUT_STYLES } from "./output-styles";
 import {
   applyToolBudget,
   type ToolBudgetSnapshot,
@@ -140,7 +138,6 @@ export function composeAgentSystemPrompt(
   const overlays = [
     selfAwarenessOverlay,
     resources.instructionsOverlay,
-    OUTPUT_STYLES[settings.outputStyle].promptOverlay,
     formatAgentRolesForSystemPrompt(resources.profiles),
     pluginSkillTrustBoundary(resources.plugins, settings.plugins.folder),
     formatLoadedSkillsOverlay(resources.skills, skillLoads),
@@ -226,7 +223,6 @@ export function buildAgentParentTools(options: {
   const tools = [
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
     ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
-    ...createMemoryTools(options.app),
     ...createDocumentTools(options.app, options.artifactStore),
     ...createWebTools(options.settings.web, options.webFetch, options.artifactStore),
     ...createToolArtifactTools(options.artifactStore),

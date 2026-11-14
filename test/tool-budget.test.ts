@@ -39,9 +39,7 @@ describe("tool budget", () => {
         "read",
         "write",
         "ask_user",
-        "search_memory",
         "get_active_note",
-        "import_pdf",
         "import_document",
         "web_search",
         "fetch_url",
@@ -61,14 +59,12 @@ describe("tool budget", () => {
       "read",
       "write",
       "ask_user",
-      "search_memory",
       "get_active_note",
     ]);
     expect(result.snapshot).toMatchObject({
       active: true,
       contextWindow: 500,
       droppedTools: [
-        { name: "import_pdf", reason: "document import" },
         { name: "import_document", reason: "document import" },
         { name: "web_search", reason: "web egress" },
         { name: "fetch_url", reason: "web egress" },
@@ -159,7 +155,6 @@ describe("tool budget", () => {
     expect(toolBudgetDropReason("read")).toBeNull();
     expect(toolBudgetDropReason("write")).toBeNull();
     expect(toolBudgetDropReason("ask_user")).toBeNull();
-    expect(toolBudgetDropReason("search_memory")).toBeNull();
     expect(toolBudgetDropReason("get_active_note")).toBeNull();
     expect(toolBudgetDropReason("web_search")).toBe("web egress");
     expect(toolBudgetDropReason("mcp__docs__lookup")).toBe("remote MCP");

@@ -8,8 +8,7 @@ import { getParentPath } from "./path";
  * - the vault API (`vault.createFolder`), for paths the user sees in the file
  *   tree: agent tools, undo, and Agent Plugins packages;
  * - the raw adapter (`adapter.mkdir` / `adapter.write`), for plugin-internal
- *   state the vault tree never indexes: sessions, artifacts, memory, and the
- *   semantic index.
+ *   state the vault tree never indexes: sessions and artifacts.
  *
  * Each layer has exactly one folder helper here, and every whole-file rewrite
  * of plugin state goes through `writeFileAtomically`.

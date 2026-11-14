@@ -34,7 +34,6 @@ import { migrateLegacyPlaintextSecrets, withUnmigratedSecrets } from "./secrets/
 import { applyRememberedApprovalChoice } from "./agent/approval-memory";
 import { PluginService } from "./plugins/service";
 import { type AgentMode, resolveModeTransition, validateModeTransition } from "./agent/modes";
-import { setSemanticIndexLeaseScope } from "./retrieval/semantic-index";
 import { SettingsStore } from "./settings-store";
 
 declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean;
@@ -58,29 +57,6 @@ export default class AgenticChatPlugin extends Plugin {
     // The mode broadcast is a listener of the owner, not a special case inside save.
     this.settingsStore.onChange(() => this.broadcastModeChange());
     await this.loadSettings();
-    // Scope the cross-window lease to this vault. Desktop uses the absolute
-    // base path, which is identical in every window and avoids a first-load id
-    // race. Mobile has one window; the generated id keeps same-named vaults
-    // apart.
-    if (!this.settings.embeddings.leaseId) {
-      // A refusing secret store makes every save throw (#285). The lease id is
-      // usable in memory; it is persisted by the next successful save.
-      try {
-        await this.settingsStore.update((settings) => {
-          settings.embeddings.leaseId =
-            typeof crypto.randomUUID === "function"
-              ? crypto.randomUUID()
-              : `vault-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-        });
-      } catch (error: unknown) {
-        console.warn("Agentic chat: could not persist the semantic lease id", error);
-      }
-    }
-    const adapter = this.app.vault.adapter as { getBasePath?: () => string };
-    const basePath = adapter.getBasePath?.() ?? "";
-    setSemanticIndexLeaseScope(this.app.vault.adapter, {
-      namespace: basePath || this.settings.embeddings.leaseId,
-    });
     // Recover an interrupted package install before any turn can load plugins:
     // a retained backup must own the settings readers use.
     try {

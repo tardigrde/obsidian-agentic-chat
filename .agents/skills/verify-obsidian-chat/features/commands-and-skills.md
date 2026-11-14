@@ -53,7 +53,7 @@ await $(".agentic-chat-info").waitForExist();
 | `/help` | `src/ui/commands.ts#name: "help"` | `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
 | `/init` | `src/ui/commands.ts#name: "init"` | `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
 | `/compact` | `src/ui/commands.ts#name: "compact"` | `test/e2e/specs/smoke.e2e.ts#clears slash commands immediately and preserves /init tail text in the transcript` | `covered` |
-| `/memory` | `src/ui/commands.ts#name: "memory"` | `test/e2e/specs/smoke.e2e.ts#forgets a saved memory through the memory manager` | `covered` |
+| `/memory` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /memory and shows a retired hint` (unit only) | `partial` |
 | `/status` | `src/ui/commands.ts#name: "status"` | `test/e2e/specs/runtime-behavior.e2e.ts#shows model/provider status, local undo state, and web tools when enabled` | `covered` |
 | `/plan` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` | `covered` |
 | `/undo` | `src/ui/commands.ts#name: "undo"` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
@@ -61,13 +61,12 @@ await $(".agentic-chat-info").waitForExist();
 | `/new` | `src/ui/commands.ts#name: "new"` | `test/session-actions.test.ts#makeActions` (unit only) | `partial` |
 | Alias-free command lookup | `src/ui/commands.ts#resolveCommand` | `test/commands.test.ts#does not resolve the removed working-directory commands or their aliases` (unit only) | `partial` |
 | `/model` | `src/ui/commands.ts#name: "model"` | no committed check | `NONE` |
-| `/style` | `src/ui/commands.ts#name: "style"` | no committed check | `NONE` |
+| `/style` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /style and shows a retired hint` (unit only) | `partial` |
 | `/effort` | `src/ui/commands.ts#name: "effort"` | no committed check | `NONE` |
 | `/usage` | `src/ui/commands.ts#name: "usage"` | no committed check | `NONE` |
 | `/export` | `src/ui/commands.ts#name: "export"` | `test/session-export.test.ts#session export` (renderer only) | `partial` |
-| `/semantic-index` | `src/ui/commands.ts#name: "semantic-index"` | `test/semantic-index-workflow-controller.test.ts#SemanticIndexWorkflowController` (workflow unit) | `partial` |
-| Repair a stale semantic index on read | `src/retrieval/semantic-index.ts#readSemanticIndexFile` | `test/semantic-index.test.ts#repairs a stale running state on load` | `partial` |
-| One semantic index writer across tabs | `src/retrieval/semantic-index.ts#acquireDurable` | `test/semantic-index-lease.test.ts#blocks a direct bootstrap call while another registry owns the path` | `partial` |
+| `import_pdf` tool removed | `src/tools/document-tools.ts#createDocumentTools` | `test/feature-cut-2026-11.test.ts#does not give the model the import_pdf alias` (unit only) | `partial` |
+| `/semantic-index` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /semantic-index and shows a retired hint` (unit only) | `partial` |
 | `/doctor` | `src/ui/commands.ts#name: "doctor"` | `test/runtime-diagnostics.test.ts#runtime diagnostics` (diagnostics only) | `partial` |
 | `/add-dir` and `/dirs` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
 | `/agent` | `src/ui/commands.ts#name: "agent"` | `test/command-dispatcher.test.ts#resolves a named subagent with the trimmed task` (unit only) | `partial` |

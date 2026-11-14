@@ -10,18 +10,10 @@ import {
 import { runAgent, runInit, runSkill } from "./slash/agents";
 import type { SlashContext } from "./slash/context";
 import { runDoctor, showHelp, showStatus, showUsage } from "./slash/info";
-import {
-  createMemoryWorkflow,
-  runMemory,
-  runSemanticIndex,
-  semanticIndexWorkflowController,
-} from "./slash/index-commands";
-import { runEffort, runStyle, switchModel } from "./slash/model";
+import { runEffort, switchModel } from "./slash/model";
 import { createWorkflowRenderer } from "./slash/renderer";
 import { createSessionWorkflow, exportSession, newSession, runCompact, runSessions, runUndo } from "./slash/session";
-import type { MemoryWorkflowController } from "./memory-workflow-controller";
 import type { SessionWorkflowController } from "./session-workflow-controller";
-import type { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import type { WorkflowRenderer } from "./workflow-renderer";
 import { errorMessage } from "../utils/errors";
 
@@ -71,13 +63,10 @@ export class ChatActions {
     const { argString } = input;
     return {
       new: () => this.newSession(),
-      style: () => this.runStyle(argString),
       effort: () => this.runEffort(argString),
       sessions: () => this.runSessions(argString),
       model: () => this.switchModel(),
       status: () => this.showStatus(),
-      memory: () => this.runMemory(argString),
-      "semantic-index": () => this.runSemanticIndex(argString),
       doctor: () => this.runDoctor(),
       usage: () => this.showUsage(),
       compact: () => this.runCompact(argString),
@@ -94,8 +83,6 @@ export class ChatActions {
 
   runSessions(arg: string): unknown { return runSessions(this.deps.slashCtx(), arg); }
 
-  runMemory(arg: string): unknown { return runMemory(this.deps.slashCtx(), arg); }
-
   switchModel(): Promise<void> { return switchModel(this.deps.slashCtx()); }
 
   runDoctor(): Promise<void> { return runDoctor(this.deps.slashCtx()); }
@@ -110,21 +97,12 @@ export class ChatActions {
 
   runCompact(instructions = ""): Promise<void> { return runCompact(this.deps.slashCtx(), instructions); }
 
-  runStyle(arg: string): Promise<void> { return runStyle(this.deps.slashCtx(), arg); }
 
   runEffort(arg: string): void { runEffort(this.deps.slashCtx(), arg); }
 
   runAgent(name: string | undefined, task: string): Promise<void> {
     return runAgent(this.deps.slashCtx(), name, task);
   }
-
-  runSemanticIndex(arg: string): Promise<void> { return runSemanticIndex(this.deps.slashCtx(), arg); }
-
-  semanticIndexWorkflowController(): SemanticIndexWorkflowController {
-    return semanticIndexWorkflowController(this.deps.slashCtx());
-  }
-
-  createMemoryWorkflow(): MemoryWorkflowController { return createMemoryWorkflow(this.deps.slashCtx()); }
 
   workflowRenderer(): WorkflowRenderer { return createWorkflowRenderer(this.deps.slashCtx()); }
 

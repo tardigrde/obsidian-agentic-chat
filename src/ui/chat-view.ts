@@ -39,8 +39,6 @@ import {
   resolveModeTransition,
   validateModeTransition,
 } from "../agent/modes";
-import type { OutputStyle } from "../agent/output-styles";
-import { SemanticIndexWorkflowController } from "./semantic-index-workflow-controller";
 import { SessionActivationCoordinator, type SessionUiResetOptions } from "./session-activation-coordinator";
 import {
   renderActionPanel,
@@ -64,9 +62,6 @@ export class ChatView extends ItemView {
   // The current active note's path. View-level: it follows the focused leaf,
   // not the conversation; each tab decides whether it is suppressed.
   private activeNotePath: string | null = null;
-  // Semantic indexing can outlive the command that starts it; keep one
-  // controller so cancel/running-state checks see the active AbortController.
-  private semanticIndexWorkflow: SemanticIndexWorkflowController | null = null;
 
   private messagesEl!: HTMLElement;
   private transcript!: TranscriptView;
@@ -379,10 +374,6 @@ export class ChatView extends ItemView {
     this.cancelAutocomplete();
     this.menu?.detach();
     this.transcript?.dispose();
-    // The view owns the semantic index run; abort it so a closed view cannot
-    // keep writing the index in the background.
-    this.semanticIndexWorkflow?.dispose();
-    this.semanticIndexWorkflow = null;
     // The view owns its tab services; dispose them so no detached agent keeps running.
     for (const tab of this.tabs) {
       tab.unsubscribe();
@@ -683,15 +674,6 @@ export class ChatView extends ItemView {
     this.syncChrome();
   }
 
-  private async setOutputStyle(style: OutputStyle): Promise<void> {
-    if (this.service.isStreaming()) return;
-    if (this.plugin.settings.outputStyle === style) return;
-    await this.plugin.settingsStore.update((settings) => {
-      settings.outputStyle = style;
-    });
-    this.syncControls();
-  }
-
   /**
    * Reflect settings (e.g. changed via the settings tab) back into the composer
    * toggle, and disable it while the agent is streaming so the posture can't
@@ -772,8 +754,6 @@ export class ChatView extends ItemView {
       get app() { return view.app; },
       get inputEl() { return view.inputEl; },
       get activeNotePath() { return view.activeNotePath; },
-      get semanticIndexWorkflow() { return view.semanticIndexWorkflow; },
-      set semanticIndexWorkflow(value) { view.semanticIndexWorkflow = value; },
       clearEmptyState: () => view.clearEmptyState(),
       renderInfoMessage: (title, entries) => view.renderInfoMessage(title, entries),
       renderActionList: (title, subtitle, items) => view.renderActionList(title, subtitle, items),
@@ -782,12 +762,9 @@ export class ChatView extends ItemView {
       renderOutgoingUserMessage: (text, attachments, images) => view.renderOutgoingUserMessage(text, attachments, images),
       renderTranscript: (messages) => view.renderTranscript(messages),
       syncChrome: () => view.syncChrome(),
-      setOutputStyle: (style) => view.setOutputStyle(style),
       setComposerValue: (text) => view.setComposerValue(text),
       createSessionWorkflow: () => view.actions.createSessionWorkflow(),
       createSessionActivationCoordinator: () => view.createSessionActivationCoordinator(),
-      createMemoryWorkflow: () => view.actions.createMemoryWorkflow(),
-      semanticIndexWorkflowController: () => view.actions.semanticIndexWorkflowController(),
       workflowRenderer: () => view.actions.workflowRenderer(),
       clearAllSessions: () => view.actions.clearAllSessions(),
       loadSession: (path) => view.actions.loadSession(path),
@@ -838,7 +815,6 @@ export class ChatView extends ItemView {
     }
   }
 
-  private runSemanticIndex(arg: string): Promise<void> { return this.actions.runSemanticIndex(arg); }
 
   /** Render a collapsible info block in the transcript (not sent to the model). */
   private renderInfoMessage(title: string, entries: Array<[string, string]>): void {

@@ -291,34 +291,6 @@ describe("ChatView async lifecycle", () => {
     await expect(view.sendPrompt("hello")).resolves.toBeUndefined();
     expect(view.showServiceError).not.toHaveBeenCalled();
   });
-
-  it("aborts a running semantic index when the view closes", async () => {
-    const dispose = vi.fn();
-    type CloseHarness = {
-      closed: boolean;
-      tabs: unknown[];
-      semanticIndexWorkflow: { dispose: () => void } | null;
-      cancelAutocomplete: () => void;
-      menu: { detach: () => void } | null;
-      bubble: { dispose: () => void } | null;
-      userScrollIntentTimer: number | null;
-      onClose: () => Promise<void>;
-    };
-    const view = chatViewHarness({
-      closed: false,
-      tabs: [],
-      semanticIndexWorkflow: { dispose },
-      cancelAutocomplete: vi.fn(),
-      menu: { detach: vi.fn() },
-      bubble: null,
-      userScrollIntentTimer: null,
-    }) as CloseHarness;
-
-    await view.onClose();
-
-    expect(dispose).toHaveBeenCalledTimes(1);
-    expect(view.semanticIndexWorkflow).toBeNull();
-  });
 });
 
 interface FakeService {

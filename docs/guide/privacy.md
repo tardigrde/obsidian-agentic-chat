@@ -1,6 +1,6 @@
 # Privacy model
 
-Agentic Chat sends vault content only to services you configure. Chat requests go to your model provider, and opt-in features such as embeddings, web, MCP, and observability add their own egress paths. The plugin renders every tool call inline.
+Agentic Chat sends vault content only to services you configure. Chat requests go to your model provider, and opt-in features such as web, MCP, and observability add their own egress paths. The plugin renders every tool call inline.
 
 ## Defaults
 
@@ -41,14 +41,7 @@ MCP sends tool arguments to the MCP servers you configure. Servers outside the l
 
 Observability sends trace data to the OTLP or Langfuse endpoint you configure. Metadata-only is the default payload mode.
 
-## Memory privacy
-
-The plugin stores memories locally in `memories.jsonl` inside the plugin directory. It sends them to a provider only when the agent calls `search_memory` and the result is included in a prompt. You can clear all memories with `/memory clear --confirm`.
-
-## Semantic retrieval privacy
-
-Embedding requests send note text to the configured provider. Use Ollama for fully local embeddings if you want note content to stay on your device. The local vector index lives inside the plugin directory.
 
 ## Document import privacy
 
-The `import_pdf` and `import_document` tools extract text from vault files into plugin-managed source artifacts. The plugin stores the extracted text locally in the artifact system and sends it to the model only when the agent reads the artifact.
+The `import_document` tool extracts text from vault files into plugin-managed source artifacts. The plugin stores the extracted text locally in the artifact system and sends it to the model only when the agent reads the artifact.
