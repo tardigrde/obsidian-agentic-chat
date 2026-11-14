@@ -329,6 +329,91 @@ describe("legacy plaintext secret migration (#285)", () => {
   });
 });
 
+describe("secret slot parity pin", () => {
+  it("persists the exact data.json shape and secret-store keys when every slot is set", () => {
+    const settings = mergeSettings({
+      mcp: {
+        ...DEFAULT_SETTINGS.mcp,
+        enabled: true,
+        servers: [
+          {
+            ...createMcpServerSettings({
+              id: "docs",
+              name: "Docs",
+              url: "https://mcp.example.com/mcp",
+              authType: "bearer",
+            }),
+            authHeaderValue: "mcp-header",
+          },
+        ],
+      },
+      plugins: {
+        ...DEFAULT_SETTINGS.plugins,
+        mcpState: {
+          plugin_docs_docs: createMcpServerState("plugin_docs_docs", { enabled: true }),
+        },
+      },
+    });
+    settings.openrouterApiKey = "or-key";
+    settings.openaiCompatibleApiKey = "oai-key";
+    settings.web.searchApiKey = "search-key";
+    settings.observability.langfusePublicKey = "lf-public";
+    settings.observability.langfuseSecretKey = "lf-secret";
+    settings.observability.authHeaderValue = "Bearer otel";
+    const server = settings.mcp.servers[0];
+    server.authHeaderValue = "mcp-header";
+    server.oauth.clientSecret = "mcp-client-secret";
+    server.oauth.accessToken = "mcp-access-token";
+    server.oauth.refreshToken = "mcp-refresh-token";
+    const state = settings.plugins.mcpState.plugin_docs_docs;
+    state.authHeaderValue = "state-header";
+    state.oauth.clientSecret = "state-client-secret";
+    state.oauth.accessToken = "state-access-token";
+    state.oauth.refreshToken = "state-refresh-token";
+
+    const store = new MemorySecretStore();
+    const stored = settingsForStorage(settings, store);
+
+    const expected = structuredClone(settings) as unknown as Record<string, unknown>;
+    delete expected.openrouterApiKey;
+    delete expected.openaiCompatibleApiKey;
+    delete (expected.web as Record<string, unknown>).searchApiKey;
+    const expectedObservability = expected.observability as Record<string, unknown>;
+    delete expectedObservability.langfusePublicKey;
+    delete expectedObservability.langfuseSecretKey;
+    delete expectedObservability.authHeaderValue;
+    const expectedServer = (expected.mcp as { servers: Array<Record<string, unknown>> }).servers[0];
+    delete expectedServer.authHeaderValue;
+    delete (expectedServer.oauth as Record<string, unknown>).clientSecret;
+    delete (expectedServer.oauth as Record<string, unknown>).accessToken;
+    delete (expectedServer.oauth as Record<string, unknown>).refreshToken;
+    const expectedState = (expected.plugins as { mcpState: Record<string, Record<string, unknown>> }).mcpState
+      .plugin_docs_docs;
+    delete expectedState.authHeaderValue;
+    delete (expectedState.oauth as Record<string, unknown>).clientSecret;
+    delete (expectedState.oauth as Record<string, unknown>).accessToken;
+    delete (expectedState.oauth as Record<string, unknown>).refreshToken;
+
+    expect(stored).toEqual(expected);
+    expect(Object.fromEntries([...store.secrets.entries()].sort(([a], [b]) => a.localeCompare(b)))).toEqual({
+      "agentic-chat-langfuse-public-key": "lf-public",
+      "agentic-chat-langfuse-secret-key": "lf-secret",
+      "agentic-chat-mcp-docs-auth-header-value": "mcp-header",
+      "agentic-chat-mcp-docs-oauth-access-token": "mcp-access-token",
+      "agentic-chat-mcp-docs-oauth-client-secret": "mcp-client-secret",
+      "agentic-chat-mcp-docs-oauth-refresh-token": "mcp-refresh-token",
+      "agentic-chat-mcp-plugin-docs-docs-auth-header-value": "state-header",
+      "agentic-chat-mcp-plugin-docs-docs-oauth-access-token": "state-access-token",
+      "agentic-chat-mcp-plugin-docs-docs-oauth-client-secret": "state-client-secret",
+      "agentic-chat-mcp-plugin-docs-docs-oauth-refresh-token": "state-refresh-token",
+      "agentic-chat-observability-auth-header-value": "Bearer otel",
+      "agentic-chat-openai-compatible-api-key": "oai-key",
+      "agentic-chat-openrouter-api-key": "or-key",
+      "agentic-chat-web-search-api-key": "search-key",
+    });
+  });
+});
+
 describe("clearing MCP secret slots", () => {
   it("clears the normalized slot for a legacy id over 64 chars", () => {
     const values = new Map<string, string>();

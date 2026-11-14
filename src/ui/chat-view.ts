@@ -483,9 +483,9 @@ export class ChatView extends ItemView {
     tab.pendingApprovalModal = modal;
     try {
       const choice = await modal.ask(signal);
-      if (applyRememberedApprovalChoice(this.plugin.settings, request.toolName, choice)) {
-        await this.plugin.saveSettings();
-      }
+      await this.plugin.settingsStore.update((settings) =>
+        applyRememberedApprovalChoice(settings, request.toolName, choice),
+      );
       return choice;
     } finally {
       tab.pendingApprovalModal = undefined;
@@ -938,8 +938,9 @@ export class ChatView extends ItemView {
     if (current === mode) return false;
     const transition = resolveModeTransition(current, mode);
     if (!transition) return false;
-    this.plugin.settings.mode = transition.nextMode;
-    await this.plugin.saveSettings();
+    await this.plugin.settingsStore.update((settings) => {
+      settings.mode = transition.nextMode;
+    });
     // Repaint the whole chrome so the Safe↔YOLO segment + aria-checked flip
     // instantly after the mode lands on disk (syncChrome calls syncControls).
     this.syncChrome();
@@ -972,8 +973,9 @@ export class ChatView extends ItemView {
   private async setOutputStyle(style: OutputStyle): Promise<void> {
     if (this.service.isStreaming()) return;
     if (this.plugin.settings.outputStyle === style) return;
-    this.plugin.settings.outputStyle = style;
-    await this.plugin.saveSettings();
+    await this.plugin.settingsStore.update((settings) => {
+      settings.outputStyle = style;
+    });
     this.syncControls();
   }
 
