@@ -564,6 +564,8 @@ export class ChatView extends ItemView {
       },
     });
     this.messagesEl = layout.messagesEl;
+    // The empty state renders into messagesEl, so it needs the field set first.
+    this.renderEmptyState();
     this.transcript = layout.transcript;
     this.tabsEl = layout.tabsEl;
     this.chipsEl = layout.chipsEl;

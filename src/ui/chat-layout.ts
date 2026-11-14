@@ -76,7 +76,6 @@ export function buildLayout(deps: ChatLayoutDeps): ChatLayoutElements {
   deps.registerDomEvent(messagesEl, "pointerdown", () => transcript.markUserScrollIntent());
   deps.registerDomEvent(messagesEl, "keydown", () => transcript.markUserScrollIntent());
   deps.registerDomEvent(messagesEl, "scroll", () => transcript.updateScrollPinning());
-  callbacks.renderEmptyState();
 
   const composer = root.createDiv({ cls: "agentic-chat-composer" });
 
