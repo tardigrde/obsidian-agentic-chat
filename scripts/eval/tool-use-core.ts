@@ -144,6 +144,12 @@ export interface NoToolErrorsCheck {
   type: "no_tool_errors";
 }
 
+/** Passes when at least one inner check passes (for example: ask_user OR a question in the answer). */
+export interface AnyOfCheck {
+  type: "any_of";
+  checks: ToolUseCheck[];
+}
+
 export type ToolUseCheck =
   | FileExistsCheck
   | FileAbsentCheck
@@ -157,7 +163,8 @@ export type ToolUseCheck =
   | MaxToolCallsCheck
   | AnswerContainsCheck
   | AnswerNotContainsCheck
-  | NoToolErrorsCheck;
+  | NoToolErrorsCheck
+  | AnyOfCheck;
 
 export interface ObservedToolCall {
   name: string;
@@ -610,6 +617,15 @@ function validateCheck(input: unknown, at: string, problems: string[]): ToolUseC
     }
     case "no_tool_errors":
       return { type };
+    case "any_of": {
+      if (!Array.isArray(check.checks) || check.checks.length < 2) {
+        problems.push(`${at}.checks must be an array of at least 2 checks.`);
+        return undefined;
+      }
+      const inner = check.checks.map((entry, index) => validateCheck(entry, `${at}.checks[${index}]`, problems));
+      if (inner.some((entry) => entry === undefined)) return undefined;
+      return { type, checks: inner as ToolUseCheck[] };
+    }
     default:
       problems.push(`Unknown check type at ${at}: ${type}.`);
       return undefined;
@@ -719,6 +735,11 @@ function evaluateCheck(
     case "answer_not_contains": {
       const matches = matchesText(observed.answer, check.text, check.regex === true, check.flags);
       return result(check, !matches, `answer ${matches ? "contains" : "does not contain"} ${JSON.stringify(check.text)}`);
+    }
+    case "any_of": {
+      const inner = check.checks.map((entry) => evaluateCheck(entry, caseDef, observed));
+      const ok = inner.some((entry) => entry.ok);
+      return result(check, ok, inner.map((entry) => `${entry.ok ? "ok" : "no"}: ${entry.detail}`).join("; "));
     }
     case "no_tool_errors": {
       const errors = observed.toolCalls.filter((call) => call.isError === true);

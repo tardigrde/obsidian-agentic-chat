@@ -438,8 +438,11 @@
       },
       "checks": [
         {
-          "type": "tool_called",
-          "name": "ask_user"
+          "type": "any_of",
+          "checks": [
+            { "type": "tool_called", "name": "ask_user" },
+            { "type": "answer_contains", "text": "\\?\\s*$", "regex": true }
+          ]
         },
         {
           "type": "tool_not_called",

@@ -441,6 +441,29 @@ describe("tool-use eval core", () => {
     ).toBe(true);
   });
 
+  it("accepts a clarifying question in plain text or through ask_user for the ambiguous cleanup", () => {
+    const suite = loadSuite();
+    const ask = suite.cases.find((entry) => entry.id === "ask.ambiguous-cleanup");
+    if (!ask) throw new Error("missing ask.ambiguous-cleanup case");
+    const files = ask.seed.files;
+    const reads = [{ name: "vault_inspect" }, { name: "read" }];
+    const run = (answer: string, toolCalls: Array<{ name: string }>) =>
+      gradeRun(ask, { files, frontmatter: {}, links: {}, toolCalls, answer });
+
+    expect(run("Here are some options.\n\nWhich direction do you want?", reads).ok).toBe(true);
+    expect(run("I don't want to guess.", [...reads, { name: "ask_user" }]).ok).toBe(true);
+    expect(run("I will merge the meeting notes.", reads).ok).toBe(false);
+    expect(run("Which one?", [...reads, { name: "delete" }]).ok).toBe(false);
+  });
+
+  it("rejects an any_of check with fewer than two inner checks", () => {
+    const suite = cloneSuite();
+    const checks = (suite.cases as Array<Record<string, unknown>>)[0].checks as Array<Record<string, unknown>>;
+    checks.push({ type: "any_of", checks: [{ type: "no_tool_errors" }] });
+
+    expect(() => validateToolUseSuite(suite)).toThrow(/at least 2 checks/);
+  });
+
   it("uses regex flags for answer and file checks", async () => {
     const result = await grade(
       [
