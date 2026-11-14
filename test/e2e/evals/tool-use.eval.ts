@@ -10,7 +10,7 @@ import {
   type ToolUseBudgetCaps,
   type ToolUseCheckResult,
 } from "../../../scripts/eval/tool-use-core";
-import { readLatestSessionRaw, sendPrompt, waitForTurnEnd } from "../dogfood/dogfood-helpers";
+import { sendPrompt, waitForTurnEnd } from "../dogfood/dogfood-helpers";
 
 const PLAN_PATH = process.env.TOOL_USE_PLAN?.trim() ?? "";
 const RESULTS_DIR = process.env.TOOL_USE_RESULTS_DIR?.trim() ?? "";
@@ -108,9 +108,13 @@ describe("tool-use eval", function () {
       }
 
       const startedAt = Date.now();
+      let sessionBaseline: string[] | undefined;
       try {
         await prepareVault(evalCase.seed.files);
         await applyCaseSettings(evalCase.settings ?? {});
+        // The command callback is fire-and-forget, so take the set before it
+        // starts. The new session file is the only one that may appear.
+        sessionBaseline = await listSessionPaths();
         await browser.executeObsidianCommand("agentic-chat:new-conversation");
         await $(".agentic-chat-empty").waitForExist({ timeout: 10_000 });
         await sendPrompt(evalCase.prompt);
@@ -122,7 +126,7 @@ describe("tool-use eval", function () {
         const ms = Date.now() - startedAt;
         const files = await readVaultMarkdown();
         const frontmatter = await readVaultFrontmatter();
-        const observation = await readObservation();
+        const observation = await readObservation(sessionBaseline);
         writeResult({ caseId: evalCase.id, run: planned.run, files, frontmatter, ...observation, ms });
       } catch (error) {
         const ms = Date.now() - startedAt;
@@ -135,10 +139,12 @@ describe("tool-use eval", function () {
         } catch {
           // Keep the empty map; the runner will fail the checks.
         }
-        try {
-          observation = await readObservation();
-        } catch {
-          // Keep the empty observation.
+        if (sessionBaseline) {
+          try {
+            observation = await readObservation(sessionBaseline);
+          } catch {
+            // Keep the empty observation.
+          }
         }
         writeResult({
           caseId: evalCase.id,
@@ -273,9 +279,8 @@ async function readVaultFrontmatter(): Promise<Record<string, Record<string, unk
   });
 }
 
-async function readObservation(): Promise<ObservedSession> {
-  const raw = await readSessionRaw();
-  if (!raw.trim()) return emptyObservation();
+async function readObservation(sessionBaseline: string[]): Promise<ObservedSession> {
+  const raw = await readNewSessionRaw(sessionBaseline);
   const analysis = analyzer.analyzeSessionText(raw);
   const file = analysis.files[0];
   return {
@@ -286,13 +291,62 @@ async function readObservation(): Promise<ObservedSession> {
   };
 }
 
-async function readSessionRaw(): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const raw = await readLatestSessionRaw();
-    if (raw.trim()) return raw;
-    await browser.pause(200);
+/** Read the one session file this run's new-conversation created. */
+async function readNewSessionRaw(sessionBaseline: string[]): Promise<string> {
+  const before = new Set(sessionBaseline);
+  const deadline = Date.now() + 5_000;
+  let added: string[] = [];
+  while (Date.now() < deadline) {
+    added = (await listSessionPaths()).filter((sessionPath) => !before.has(sessionPath));
+    if (added.length > 1) {
+      throw new Error(`Expected exactly one new session file, found ${added.length}: ${added.join(", ")}`);
+    }
+    if (added.length === 1) {
+      const raw = await readSessionFileRaw(added[0]);
+      if (hasAssistantMessage(raw)) return raw;
+    }
+    await browser.pause(100);
   }
-  return "";
+  if (added.length !== 1) {
+    throw new Error(
+      `Expected exactly one new session file after this run, found ${added.length}` +
+        (added.length > 0 ? `: ${added.join(", ")}` : ""),
+    );
+  }
+  throw new Error(`The new session ${added[0]} did not get an assistant message within 5 s`);
+}
+
+async function listSessionPaths(): Promise<string[]> {
+  return await browser.executeObsidian(async ({ app }) => {
+    const plugin = (app as unknown as {
+      plugins?: { plugins?: Record<string, { manifest?: { dir?: string } }> };
+    }).plugins?.plugins?.["agentic-chat"];
+    const pluginDir = plugin?.manifest?.dir ?? `${app.vault.configDir}/plugins/agentic-chat`;
+    const sessionsDir = `${pluginDir}/sessions`;
+    const adapter = app.vault.adapter;
+    if (!(await adapter.exists(sessionsDir))) return [];
+    const listing = await adapter.list(sessionsDir);
+    return listing.files.filter((file) => file.endsWith(".jsonl"));
+  });
+}
+
+async function readSessionFileRaw(sessionPath: string): Promise<string> {
+  return await browser.executeObsidian(async ({ app }, target) => {
+    return await app.vault.adapter.read(target);
+  }, sessionPath);
+}
+
+function hasAssistantMessage(raw: string): boolean {
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line) as { type?: string; message?: { role?: string } };
+      if (entry.type === "message" && entry.message?.role === "assistant") return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 function emptyObservation(): ObservedSession {
