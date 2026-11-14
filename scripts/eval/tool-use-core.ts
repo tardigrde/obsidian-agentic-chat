@@ -108,6 +108,12 @@ export interface LinkResolvesCheck {
   to: string;
 }
 
+export interface NoUnresolvedLinksCheck {
+  type: "no_unresolved_links";
+  /** The note that must have no unresolved links. */
+  path: string;
+}
+
 export interface ToolCalledCheck {
   type: "tool_called";
   name: string;
@@ -158,6 +164,7 @@ export type ToolUseCheck =
   | FrontmatterEqualsCheck
   | UnchangedCheck
   | LinkResolvesCheck
+  | NoUnresolvedLinksCheck
   | ToolCalledCheck
   | ToolNotCalledCheck
   | MaxToolCallsCheck
@@ -176,6 +183,8 @@ export interface ObservedRun {
   frontmatter: Record<string, Record<string, unknown>>;
   /** Source note path to the file paths Obsidian resolved its links to. */
   links: Record<string, string[]>;
+  /** Source note path to the link targets Obsidian could not resolve. */
+  unresolvedLinks: Record<string, string[]>;
   toolCalls: ObservedToolCall[];
   answer: string;
 }
@@ -585,6 +594,8 @@ function validateCheck(input: unknown, at: string, problems: string[]): ToolUseC
         from: readString(check.from, `${at}.from`, problems),
         to: readString(check.to, `${at}.to`, problems),
       };
+    case "no_unresolved_links":
+      return { type, path: readString(check.path, `${at}.path`, problems) };
     case "tool_called": {
       const min = check.min === undefined ? undefined : readNumber(check.min, `${at}.min`, problems);
       if (min !== undefined && (!Number.isInteger(min) || min < 1)) {
@@ -711,6 +722,17 @@ function evaluateCheck(
         ok
           ? `${check.from} resolves a link to ${check.to}`
           : `${check.from} does not resolve a link to ${check.to}; resolved ${JSON.stringify(targets)}`,
+      );
+    }
+    case "no_unresolved_links": {
+      const targets = observed.unresolvedLinks[check.path] ?? [];
+      const ok = targets.length === 0;
+      return result(
+        check,
+        ok,
+        ok
+          ? `${check.path} has no unresolved links`
+          : `${check.path} has unresolved links: ${JSON.stringify(targets)}`,
       );
     }
     case "tool_called": {

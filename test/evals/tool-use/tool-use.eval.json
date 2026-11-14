@@ -118,6 +118,14 @@
           "to": "Projects/Atlas Launch.md"
         },
         {
+          "type": "no_unresolved_links",
+          "path": "Index.md"
+        },
+        {
+          "type": "no_unresolved_links",
+          "path": "Weekly.md"
+        },
+        {
           "type": "tool_called",
           "name": "rename"
         },

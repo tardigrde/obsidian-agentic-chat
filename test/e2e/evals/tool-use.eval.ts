@@ -48,6 +48,7 @@ interface RunResult extends ObservedSession {
   files: Record<string, string>;
   frontmatter: Record<string, Record<string, unknown>>;
   links: Record<string, string[]>;
+  unresolvedLinks: Record<string, string[]>;
   ms: number;
   status?: string;
   error?: string;
@@ -101,6 +102,7 @@ describe("tool-use eval", function () {
           files: {},
           frontmatter: {},
           links: {},
+          unresolvedLinks: {},
           toolCalls: [],
           answer: "",
           usage: {},
@@ -134,15 +136,25 @@ describe("tool-use eval", function () {
         const ms = Date.now() - startedAt;
         const files = await readVaultMarkdown();
         const frontmatter = await readVaultFrontmatter();
-        const links = await readVaultLinks();
+        const { links, unresolvedLinks } = await readVaultLinks();
         const observation = await readObservation(sessionBaseline);
-        writeResult({ caseId: evalCase.id, run: planned.run, files, frontmatter, links, ...observation, ms });
+        writeResult({
+          caseId: evalCase.id,
+          run: planned.run,
+          files,
+          frontmatter,
+          links,
+          unresolvedLinks,
+          ...observation,
+          ms,
+        });
       } catch (error) {
         const ms = Date.now() - startedAt;
         await stopIfRunning();
         let files: Record<string, string> = {};
         const frontmatter: Record<string, Record<string, unknown>> = {};
         let links: Record<string, string[]> = {};
+        let unresolvedLinks: Record<string, string[]> = {};
         let observation = emptyObservation();
         try {
           files = await readVaultMarkdown();
@@ -150,9 +162,9 @@ describe("tool-use eval", function () {
           // Keep the empty map; the runner will fail the checks.
         }
         try {
-          links = await readVaultLinks();
+          ({ links, unresolvedLinks } = await readVaultLinks());
         } catch {
-          // Keep the empty map; the runner will fail the checks.
+          // Keep the empty maps; the runner will fail the checks.
         }
         if (sessionBaseline) {
           try {
@@ -167,6 +179,7 @@ describe("tool-use eval", function () {
           files,
           frontmatter,
           links,
+          unresolvedLinks,
           ...observation,
           ms,
           error: errorMessage(error),
@@ -313,7 +326,10 @@ async function readVaultFrontmatter(): Promise<Record<string, Record<string, unk
   });
 }
 
-async function readVaultLinks(): Promise<Record<string, string[]>> {
+async function readVaultLinks(): Promise<{
+  links: Record<string, string[]>;
+  unresolvedLinks: Record<string, string[]>;
+}> {
   return await browser.executeObsidian(async ({ app }) => {
     const files = app.vault.getMarkdownFiles();
     // Use the same metadata-cache wait as readVaultFrontmatter so links are
@@ -324,9 +340,15 @@ async function readVaultLinks(): Promise<Record<string, string[]>> {
     }
 
     const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+    const unresolvedBySource = app.metadataCache.unresolvedLinks as Record<string, Record<string, number>>;
     const links: Record<string, string[]> = {};
-    for (const file of files) links[file.path] = Object.keys(resolvedLinks[file.path] ?? {});
-    return links;
+    const unresolvedLinks: Record<string, string[]> = {};
+    for (const file of files) {
+      links[file.path] = Object.keys(resolvedLinks[file.path] ?? {});
+      const targets = Object.keys(unresolvedBySource[file.path] ?? {});
+      if (targets.length > 0) unresolvedLinks[file.path] = targets;
+    }
+    return { links, unresolvedLinks };
   });
 }
 

@@ -65,6 +65,7 @@ async function grade(
     files?: Record<string, string>;
     frontmatter?: Record<string, Record<string, unknown>>;
     links?: Record<string, string[]>;
+    unresolvedLinks?: Record<string, string[]>;
     toolCalls?: Array<{ name: string; isError?: boolean }>;
     answer?: string;
   },
@@ -74,6 +75,7 @@ async function grade(
     files: observed.files ?? {},
     frontmatter: observed.frontmatter ?? {},
     links: observed.links ?? {},
+    unresolvedLinks: observed.unresolvedLinks ?? {},
     toolCalls: observed.toolCalls ?? [],
     answer: observed.answer ?? "",
   });
@@ -334,6 +336,27 @@ describe("tool-use eval core", () => {
     expect(result.checks.map((check) => check.ok)).toEqual([true, false, false]);
   });
 
+  it("accepts a no_unresolved_links check", () => {
+    const suite = cloneSuite();
+    const checks = (suite.cases as Array<Record<string, unknown>>)[0].checks as Array<Record<string, unknown>>;
+    checks.push({ type: "no_unresolved_links", path: "Index.md" });
+
+    expect(() => validateToolUseSuite(suite)).not.toThrow();
+  });
+
+  it("grades no_unresolved_links against the observed unresolved links", async () => {
+    const result = await grade(
+      [
+        { type: "no_unresolved_links", path: "Index.md" },
+        { type: "no_unresolved_links", path: "Weekly.md" },
+        { type: "no_unresolved_links", path: "Broken.md" },
+      ],
+      { unresolvedLinks: { "Weekly.md": ["Missing"], "Broken.md": ["Missing"] } },
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, false, false]);
+  });
+
   it("grades tool_called, tool_not_called, and the mutating wildcard", async () => {
     const toolCalls = [{ name: "edit" }, { name: "read" }, { name: "edit" }];
     const result = await grade(
@@ -402,7 +425,7 @@ describe("tool-use eval core", () => {
     const arithmetic = suite.cases.find((entry) => entry.id === "none.arithmetic");
     if (!arithmetic) throw new Error("missing none.arithmetic case");
     const gradeAnswer = (answer: string) =>
-      gradeRun(arithmetic, { files: {}, frontmatter: {}, links: {}, toolCalls: [], answer });
+      gradeRun(arithmetic, { files: {}, frontmatter: {}, links: {}, unresolvedLinks: {}, toolCalls: [], answer });
 
     expect(gradeAnswer("51").ok).toBe(true);
     expect(gradeAnswer("51.").ok).toBe(true);
@@ -432,6 +455,7 @@ describe("tool-use eval core", () => {
         "Index.md": ["Wrong/Atlas Launch.md"],
         "Weekly.md": ["Wrong/Atlas Launch.md"],
       },
+      unresolvedLinks: {},
     };
 
     expect(gradeRun(rename, observed).ok).toBe(false);
@@ -453,7 +477,7 @@ describe("tool-use eval core", () => {
     const files = ask.seed.files;
     const reads = [{ name: "vault_inspect" }, { name: "read" }];
     const run = (answer: string, toolCalls: Array<{ name: string }>) =>
-      gradeRun(ask, { files, frontmatter: {}, links: {}, toolCalls, answer });
+      gradeRun(ask, { files, frontmatter: {}, links: {}, unresolvedLinks: {}, toolCalls, answer });
 
     expect(run("Here are some options.\n\nWhich direction do you want?", reads).ok).toBe(true);
     expect(run("I don't want to guess.", [...reads, { name: "ask_user" }]).ok).toBe(true);

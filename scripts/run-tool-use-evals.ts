@@ -52,6 +52,7 @@ interface RunFile {
   files: Record<string, string>;
   frontmatter: Record<string, Record<string, unknown>>;
   links: Record<string, string[]>;
+  unresolvedLinks: Record<string, string[]>;
   toolCalls: Array<{ name: string; isError?: boolean }>;
   answer: string;
   usage: RunUsage;
@@ -263,6 +264,7 @@ function gradeRunFile(
     files: runFile.files,
     frontmatter: runFile.frontmatter,
     links: runFile.links,
+    unresolvedLinks: runFile.unresolvedLinks,
     toolCalls: runFile.toolCalls,
     answer: runFile.answer,
   });
@@ -291,6 +293,7 @@ function parseRunFile(input: unknown, at: string): RunFile {
     files: stringRecord(input.files),
     frontmatter: frontmatterValue(input.frontmatter),
     links: linksValue(input.links),
+    unresolvedLinks: linksValue(input.unresolvedLinks),
     toolCalls: toolCallsValue(input.toolCalls),
     answer: typeof input.answer === "string" ? input.answer : "",
     usage: usageValue(input.usage),
