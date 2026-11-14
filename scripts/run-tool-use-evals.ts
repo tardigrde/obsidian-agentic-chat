@@ -140,6 +140,9 @@ async function main(): Promise<void> {
   const resultsDir = path.join(outDir, "results");
   await mkdir(vaultPath, { recursive: true });
   await mkdir(path.join(vaultPath, ".obsidian"), { recursive: true });
+  // Keep links working on rename without Obsidian's "Update links?" prompt; a
+  // modal would block the turn. Most users turn this on.
+  await writeFile(path.join(vaultPath, ".obsidian", "app.json"), `${JSON.stringify({ alwaysUpdateLinks: true })}\n`);
   await mkdir(resultsDir, { recursive: true });
 
   const plan = {

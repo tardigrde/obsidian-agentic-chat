@@ -88,6 +88,7 @@ describe("tool-use eval", function () {
       if (!evalCase) throw new Error(`Plan refers to an unknown case: ${planned.caseId}`);
 
       await stopIfRunning();
+      await closeModals();
       const exceeded = budgetExceeded();
       if (exceeded) {
         writeResult({
@@ -113,6 +114,9 @@ describe("tool-use eval", function () {
         await browser.executeObsidianCommand("agentic-chat:new-conversation");
         await $(".agentic-chat-empty").waitForExist({ timeout: 10_000 });
         await sendPrompt(evalCase.prompt);
+        // waitForTurnEnd passes while Stop is still hidden, so first wait for this
+        // run's assistant bubble (the transcript was empty after new-conversation).
+        await $(".agentic-chat-assistant").waitForExist({ timeout: 30_000 });
         await waitForTurnEnd(plan.turn.timeoutMs);
 
         const ms = Date.now() - startedAt;
@@ -340,6 +344,16 @@ async function stopIfRunning(): Promise<void> {
       timeoutMsg: "tool-use turn did not stop",
     })
     .catch(() => undefined);
+}
+
+/** A modal left open by a run (for example a confirm dialog) blocks the next one. */
+async function closeModals(): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const open = await browser.execute(() => document.querySelectorAll(".modal-container").length);
+    if (open === 0) return;
+    await browser.keys("Escape");
+    await browser.pause(200);
+  }
 }
 
 function errorMessage(error: unknown): string {
