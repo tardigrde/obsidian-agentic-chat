@@ -14,7 +14,7 @@ import { type ApprovalPolicy, type ApprovalSettings } from "../src/agent/approva
 import { type AgentMode, resolveModePolicy } from "../src/agent/modes";
 import type { AgentRole } from "../src/agent/subagents";
 import { createMcpServerSettings } from "../src/mcp/settings";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { SubagentRegistry } from "../src/tools/subagent-tool";
 import { MemoryAdapter } from "./helpers/memory-adapter";
@@ -127,7 +127,7 @@ function makeService(
   };
   const confirmCalls = { count: 0 };
   const adapter = new MemoryAdapter();
-  const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+  const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   const service = new AgentService({
     app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
     getSettings: () => merged,

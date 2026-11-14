@@ -6,7 +6,7 @@ import {
   createFileCheckpointFromUndo,
   restoreFileCheckpoint,
 } from "../src/agent/file-checkpoints";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { parseSessionEntries, type SessionEntry } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
@@ -180,7 +180,7 @@ describe("file checkpoints", () => {
 
   it("persists checkpoints in session JSONL for reload/export", async () => {
     const adapter = new MemoryAdapter();
-    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const info = await manager.createSession(DEFAULTS);
     const checkpoint = createFileCheckpointFromUndo({
       toolCallId: "call-jsonl",
@@ -199,7 +199,7 @@ describe("file checkpoints", () => {
 
   it("keeps the full body on the first checkpoint per path, then drops it for subsequent ones", async () => {
     const adapter = new MemoryAdapter();
-    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const info = await manager.createSession(DEFAULTS);
 
     const first = createFileCheckpointFromUndo({
@@ -256,7 +256,7 @@ describe("file checkpoints", () => {
 
   it("slims the entry body but leaves rename and delete_folder entries intact", async () => {
     const adapter = new MemoryAdapter();
-    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const info = await manager.createSession(DEFAULTS);
 
     // First checkpoint for the path: full body.

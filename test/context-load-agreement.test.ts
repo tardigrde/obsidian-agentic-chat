@@ -6,7 +6,7 @@ import { estimateContextUsage } from "../src/agent/compaction";
 import { CachedContextOverheadCounter } from "../src/agent/readouts";
 import { agentContextOverheadTokens, agentContextReadout } from "../src/agent/service-readouts";
 import { estimateToolDefinitionTokens } from "../src/agent/tool-budget";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 import { managerCompactionTarget } from "./helpers/compaction-target";
@@ -59,7 +59,7 @@ function tool(name: string, descriptionChars: number): AgentTool {
 
 async function runtime(): Promise<AgentCompactionRuntime> {
   const adapter = new MemoryAdapter();
-  const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+  const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   await manager.createSession({ provider: "openrouter", modelId: "test/model", thinkingLevel: "off" });
   return new AgentCompactionRuntime({
     getSettings: () => settings,
