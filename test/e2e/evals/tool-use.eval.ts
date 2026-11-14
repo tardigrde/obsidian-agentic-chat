@@ -435,7 +435,9 @@ async function stopIfRunning(): Promise<void> {
   try {
     await stop.click();
   } catch (error) {
-    throw new Error(`tool-use turn did not stop: the stop button click failed (${errorMessage(error)})`);
+    throw new Error(`tool-use turn did not stop: the stop button click failed (${errorMessage(error)})`, {
+      cause: error,
+    });
   }
   try {
     await browser.waitUntil(async () => !(await stop.isDisplayed().catch(() => false)), {
@@ -443,7 +445,7 @@ async function stopIfRunning(): Promise<void> {
       timeoutMsg: "tool-use turn did not stop",
     });
   } catch (error) {
-    throw new Error(`tool-use turn did not stop within 10 s (${errorMessage(error)})`);
+    throw new Error(`tool-use turn did not stop within 10 s (${errorMessage(error)})`, { cause: error });
   }
 }
 
