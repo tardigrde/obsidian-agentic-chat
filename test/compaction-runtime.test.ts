@@ -10,7 +10,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { AgentCompactionRuntime, type SummarizeFn } from "../src/agent/compaction-runtime";
 import { getCompactedUsage, isSummaryMessage } from "../src/agent/compaction";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
@@ -61,7 +61,7 @@ async function setup(
   } = {},
 ): Promise<{ adapter: MemoryAdapter; manager: ObsidianSessionManager; runtime: AgentCompactionRuntime; path: string }> {
   const adapter = new MemoryAdapter();
-  const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+  const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   const info = await manager.createSession(DEFAULTS);
   const runtime = new AgentCompactionRuntime({
     getSettings: () => options.settings ?? settings(),

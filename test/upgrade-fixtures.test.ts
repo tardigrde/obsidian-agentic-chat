@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { mergeSettings, retiredSettingsNotices } from "../src/settings-schema";
 import { migrateLegacyPlaintextSecrets } from "../src/secrets/legacy-plaintext";
 import { hydrateSettingsSecrets, MemorySecretStore, settingsForStorage } from "../src/secrets/secret-store";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
 /**
@@ -91,7 +91,7 @@ describe("upgrade fixtures", () => {
       const adapter = new MemoryAdapter();
       await adapter.mkdir("sessions");
       await adapter.write(`sessions/${file}`, content);
-      const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:fixture");
+      const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:fixture", new SessionWriteRegistry());
 
       const listed = await manager.listSessions();
       expect(listed.map((info) => info.path)).toContain(`sessions/${file}`);

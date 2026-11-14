@@ -8,7 +8,7 @@ import type { AgentCompactionRuntime } from "../src/agent/compaction-runtime";
 import { STOPPED_APPROVAL_REASON, type UserApprovalChoice } from "../src/agent/tool-call-controller";
 import type { AskUserHandler, AskUserRequest } from "../src/tools/ask-user-tool";
 import { isSummaryMessage } from "../src/agent/compaction";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
 import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
@@ -219,7 +219,7 @@ function makeService(
 } {
   const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
   const adapter = new MemoryAdapter();
-  const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+  const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
   const service = new AgentService({
     app,
     getSettings: () => settings,
@@ -337,7 +337,7 @@ describe("AgentService", () => {
       new AgentService({
         app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
         getSettings: () => settings,
-        sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test"),
+        sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry()),
         confirmToolCall: async () => ({ approved: true, remember: false }),
         streamFn: cannedStreamFn("reply"),
       });
@@ -376,7 +376,7 @@ describe("AgentService", () => {
     const firstPath = first.service.getSessionInfo()?.path;
     expect(firstPath).toBeDefined();
 
-    const secondSessionManager = new ObsidianSessionManager(first.adapter.asDataAdapter(), "sessions", "vault:test");
+    const secondSessionManager = new ObsidianSessionManager(first.adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const second = new AgentService({
       app: minimalApp(),
       getSettings: () => first.settings,
@@ -849,7 +849,7 @@ describe("AgentService", () => {
       openrouterModel: "test/compaction-model",
     };
     const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     let summarizeCalls = 0;
     const service = new AgentService({
       app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
@@ -884,7 +884,7 @@ describe("AgentService", () => {
     const reloaded = new AgentService({
       app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
       getSettings: () => settings,
-      sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test"),
+      sessionManager: new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry()),
       confirmToolCall: async () => ({ approved: true, remember: false }),
       streamFn: bigUsageStream,
       summarize: async () => "unused",
@@ -932,7 +932,7 @@ describe("AgentService", () => {
       openrouterModel: "test/compaction-model",
     };
     const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     let summarizeCalls = 0;
     const service = new AgentService({
       app: minimalApp(),
@@ -1011,7 +1011,7 @@ describe("AgentService", () => {
   it("records successful manual compaction with one start and one end event", async () => {
     const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
     const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const service = new AgentService({
       app: minimalApp(),
       getSettings: () => settings,
@@ -1057,7 +1057,7 @@ describe("AgentService", () => {
     });
     const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
     const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const service = new AgentService({
       app: minimalApp(),
       getSettings: () => settings,
@@ -1147,7 +1147,7 @@ describe("AgentService", () => {
       openrouterModel: "test/compaction-model",
     };
     const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const service = new AgentService({
       app: minimalApp(),
       getSettings: () => settings,
@@ -1211,7 +1211,7 @@ describe("AgentService", () => {
       openrouterModel: "test/compaction-model",
     };
     const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const service = new AgentService({
       app: minimalApp(),
       getSettings: () => settings,
@@ -1254,7 +1254,7 @@ describe("AgentService", () => {
     });
     const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
     const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const service = new AgentService({
       app: minimalApp(),
       getSettings: () => settings,
@@ -1299,7 +1299,7 @@ describe("AgentService", () => {
     });
     const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
     const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const service = new AgentService({
       app: minimalApp(),
       getSettings: () => settings,
@@ -1357,7 +1357,7 @@ describe("AgentService", () => {
     });
     const settings: AgenticChatSettings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
     const adapter = new MemoryAdapter();
-    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const sessionManager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const service = new AgentService({
       app: minimalApp(),
       getSettings: () => settings,

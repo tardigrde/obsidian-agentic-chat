@@ -10,7 +10,7 @@ import {
   touchedFilesForTool,
   type ActionAuditEvent,
 } from "../src/agent/action-audit-log";
-import { ObsidianSessionManager } from "../src/session/session-manager";
+import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { parseSessionEntries, type SessionEntry } from "../src/session/jsonl";
 import { MemoryAdapter } from "./helpers/memory-adapter";
 
@@ -59,7 +59,7 @@ describe("AgentActionAuditRecorder", () => {
 
   it("persists turn and tool-call audit events into the active session", async () => {
     const adapter = new MemoryAdapter();
-    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const info = await manager.createSession(DEFAULTS);
     const recorder = new AgentActionAuditRecorder({
       sessionManager: manager,
@@ -121,7 +121,7 @@ describe("AgentActionAuditRecorder", () => {
 
   it("keeps audit entries in the session file across a transcript rewrite", async () => {
     const adapter = new MemoryAdapter();
-    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test");
+    const manager = new ObsidianSessionManager(adapter.asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry());
     const info = await manager.createSession(DEFAULTS);
     const recorder = new AgentActionAuditRecorder({
       sessionManager: manager,
