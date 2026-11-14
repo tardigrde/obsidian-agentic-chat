@@ -176,6 +176,20 @@ describe("tool-use eval core", () => {
     expect(result.checks.map((check) => check.ok)).toEqual([true, true, false, true, true, true, false]);
   });
 
+  it("supports exact frontmatter array equality", async () => {
+    const result = await grade(
+      [
+        { type: "frontmatter_equals", path: "Note.md", key: "tags", value: ["alpha", "beta"], exact: true },
+        { type: "frontmatter_equals", path: "Note.md", key: "tags", value: ["beta", "alpha"], exact: true },
+        { type: "frontmatter_equals", path: "Note.md", key: "tags", value: ["alpha"], exact: true },
+        { type: "frontmatter_equals", path: "Note.md", key: "tags", value: ["alpha", "beta"] },
+      ],
+      { frontmatter: { "Note.md": { tags: ["alpha", "beta"] } } },
+    );
+
+    expect(result.checks.map((check) => check.ok)).toEqual([true, true, false, true]);
+  });
+
   it("grades unchanged against the seed", async () => {
     const seed = { "Keep.md": "stable", "Edit.md": "before" };
     const result = await grade(

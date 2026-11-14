@@ -76,7 +76,16 @@ export interface FrontmatterEqualsCheck {
   type: "frontmatter_equals";
   path: string;
   key: string;
+  /**
+   * Array modes:
+   * - default (`exact` false): the property must contain every expected item,
+   *   and extra items are allowed.
+   * - `exact` true: the property must contain the same items in any order,
+   *   with no missing and no extra items.
+   * Scalar values always compare exactly.
+   */
   value: string | number | boolean | string[];
+  exact?: boolean;
 }
 
 export interface UnchangedCheck {
@@ -439,6 +448,7 @@ function validateCheck(input: unknown, at: string, problems: string[]): ToolUseC
         path: readString(check.path, `${at}.path`, problems),
         key: readString(check.key, `${at}.key`, problems),
         value,
+        exact: readOptionalBoolean(check.exact, `${at}.exact`, problems),
       };
     }
     case "unchanged":
@@ -521,6 +531,16 @@ function evaluateCheck(
         }
         const actualItems = actual.map((item) => String(item));
         const missing = check.value.filter((item) => !actualItems.includes(item));
+        if (check.exact === true) {
+          const equal = sameStringItems(check.value, actualItems);
+          return result(
+            check,
+            equal,
+            equal
+              ? `${check.key} equals ${JSON.stringify(check.value)}`
+              : `${check.key} is not exactly ${JSON.stringify(check.value)}; actual ${JSON.stringify(actual)}`,
+          );
+        }
         return result(
           check,
           missing.length === 0,
@@ -580,6 +600,14 @@ function result(check: ToolUseCheck, ok: boolean, detail: string): ToolUseCheckR
 function matchingToolCalls(calls: ObservedToolCall[], name: string): ObservedToolCall[] {
   if (name === "*mutating*") return calls.filter((call) => MUTATING_TOOL_NAMES.has(call.name));
   return calls.filter((call) => call.name === name);
+}
+
+/** Compare string arrays as multisets: same items, in any order. */
+function sameStringItems(expected: string[], actual: string[]): boolean {
+  if (expected.length !== actual.length) return false;
+  const sortedExpected = [...expected].sort();
+  const sortedActual = [...actual].sort();
+  return sortedExpected.every((item, index) => item === sortedActual[index]);
 }
 
 function matchesText(text: string, pattern: string, regex: boolean): boolean {
