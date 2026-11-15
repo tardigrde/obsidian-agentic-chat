@@ -27,7 +27,8 @@
           "300 Areas/Health/Dentist reschedule.md": "# Dentist reschedule\n\nThe 2024-06-18 appointment moved to 2024-07-02 at 11:00. Same clinic.\n",
           "900 Archive/Dentist appointment.md": "---\ntitle: Dentist appointment\ntags:\n  - archive\nstatus: archived\n---\n\n# Dentist appointment\n\nArchived copy. Keep for history; do not edit.\n\n- Appointment: 2024-03-05 at 14:00\n- Clinic: Riverside Dental\n",
           "300 Areas/Health/Pharmacy.md": "# Pharmacy\n\nRefill the prescription before 2024-07-01. The dentist appointment is unrelated to this note.\n",
-          "300 Areas/Health/Dentist appointment old.md": "# Dentist appointment (old)\n\n- Appointment: 2024-05-01 at 10:00\n- This appointment was cancelled.\n"
+          "300 Areas/Health/Dentist appointment old.md": "# Dentist appointment (old)\n\n- Appointment: 2024-05-01 at 10:00\n- This appointment was cancelled.\n",
+          "300 Areas/Health/Dentist reschedule 2.md": "# Dentist reschedule 2\n\nThe 2024-07-02 appointment moved to 2024-07-09 at 15:00. Same clinic.\n"
         }
       },
       "settings": {
@@ -36,6 +37,10 @@
       "checks": [
         {
           "type": "answer_contains",
+          "text": "2024-07-09"
+        },
+        {
+          "type": "answer_not_contains",
           "text": "2024-07-02"
         },
         {
@@ -60,6 +65,14 @@
         },
         {
           "type": "unchanged",
+          "path": "300 Areas/Health/Dentist reschedule 2.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "300 Areas/Health/Dentist appointment old.md"
+        },
+        {
+          "type": "unchanged",
           "path": "900 Archive/Dentist appointment.md"
         },
         {
@@ -73,10 +86,6 @@
         {
           "type": "max_tool_calls",
           "max": 8
-        },
-        {
-          "type": "unchanged",
-          "path": "300 Areas/Health/Dentist appointment old.md"
         }
       ],
       "expected": {
@@ -1938,7 +1947,7 @@
     },
     {
       "id": "tools.easy.search",
-      "prompt": "Which notes mention Zephyr? Only the exact word Zephyr counts; Zephyrus is a different word and must not be listed. Do not count code samples or fenced code blocks. Reply with a plain bullet list of note names without folders, and no explanation. Do not list notes that do not mention Zephyr, and do not open them.",
+      "prompt": "Which notes mention Zephyr? Frontmatter mentions count; code samples do not. Only the exact word Zephyr counts; Zephyrus is a different word and must not be listed. Reply with a plain bullet list of note names without folders, and no explanation. Do not list notes that do not mention Zephyr, and do not open them.",
       "seed": {
         "vault": {
           "size": "S",
@@ -1952,7 +1961,8 @@
           "200 Resources/Research/pricing-notes.md": "# Pricing notes\n\nPricing notes for the quarter.\n",
           "400 Projects/roadmap.md": "# Roadmap\n\nRoadmap for the quarter.\n",
           "300 Areas/meeting-cadence.md": "# Meeting cadence\n\nWeekly sync notes.\n",
-          "200 Resources/Research/zephyr-code.md": "# Zephyr code\n\nExample only:\n\n```text\nZephyr\n```\n"
+          "200 Resources/Research/zephyr-code.md": "# Zephyr code\n\nExample only:\n\n```text\nZephyr\n```\n",
+          "200 Resources/Research/zephyr-meta.md": "---\ntitle: Project notes\nsummary: Zephyr migration notes\n---\n\nThe body has no matching word.\n"
         }
       },
       "settings": {
@@ -2010,6 +2020,14 @@
         {
           "type": "unchanged",
           "path": "200 Resources/Research/zephyr-code.md"
+        },
+        {
+          "type": "answer_contains",
+          "text": "zephyr-meta"
+        },
+        {
+          "type": "unchanged",
+          "path": "200 Resources/Research/zephyr-meta.md"
         }
       ],
       "expected": {
