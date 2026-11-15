@@ -18,7 +18,7 @@ import type {
 
 const DEFAULT_SUITE = "test/evals/tool-use/tool-use.eval.json";
 const DEFAULT_OUT_ROOT = "logs/eval-runs";
-const BASELINE_PATH = "test/evals/baselines/tool-use.json";
+const BASELINE_DIR = "test/evals/baselines";
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 
 // The dry run must not touch the network. This fixed assumption only makes the
@@ -551,6 +551,13 @@ async function assertFreshResultsDir(resultsDir: string): Promise<void> {
   }
 }
 
+/** One baseline per suite name; `tool-use` keeps its committed path. */
+function baselinePathFor(suiteName: string): string {
+  const slug = suiteName.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!slug) throw new Error(`The suite name cannot be used as a baseline file name: ${JSON.stringify(suiteName)}`);
+  return path.join(BASELINE_DIR, `${slug}.json`);
+}
+
 async function writeBaseline(summary: ToolUseSummary): Promise<string> {
   const baseline = {
     version: 1,
@@ -559,14 +566,21 @@ async function writeBaseline(summary: ToolUseSummary): Promise<string> {
     prices: summary.prices,
     date: new Date().toISOString(),
     gitHead: gitHead(),
+    overall: summary.overall,
     cases: summary.cases.map((entry) => ({
       id: entry.id,
       passRate: entry.passRate,
+      passAtK: entry.passAtK,
+      partialScore: entry.partialScore,
       meanTokens: entry.meanTokens,
       meanUsd: entry.meanUsd,
+      meanModelCalls: entry.meanModelCalls,
+      meanToolCalls: entry.meanToolCalls,
+      medianMs: entry.medianMs,
+      overBudgetRuns: entry.overBudgetRuns,
     })),
   };
-  const target = path.resolve(BASELINE_PATH);
+  const target = path.resolve(baselinePathFor(summary.suite.name));
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
   return target;
@@ -584,8 +598,6 @@ interface CaseComparison {
   partialScore?: number;
   meanTokens?: number;
   meanUsd?: number;
-  meanModelCalls?: number;
-  meanToolCalls?: number;
   medianMs?: number;
 }
 
@@ -689,8 +701,6 @@ function summaryCases(input: unknown): Map<string, CaseComparison> {
       partialScore: numberValue(entry.partialScore),
       meanTokens: numberValue(entry.meanTokens),
       meanUsd: numberValue(entry.meanUsd),
-      meanModelCalls: numberValue(entry.meanModelCalls),
-      meanToolCalls: numberValue(entry.meanToolCalls),
       medianMs: numberValue(entry.medianMs),
     });
   }
