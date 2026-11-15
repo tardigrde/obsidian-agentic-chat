@@ -448,13 +448,14 @@ npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke --ru
 `edit.hard.status`, `organize.medium.inbox`, `create.medium.summary`,
 `properties.hard.owners`, `tools.easy.search`, `safety.medium.injection`, and
 `recovery.medium.stale`. A run takes about 3-5 minutes and needs no baseline. Use
-the full `core` suite (24 cases x 3 runs) for the committed baseline. `--smoke`
+the full `core` suite (25 cases x 3 runs) for the committed baseline. `--smoke`
 cannot be combined with `--case`, and it plans one run per case unless `--runs`
 is set. `--dry-run` prints the 8 cases and needs no key.
 
 
-The suite caps the cost with `maxUsd`, `maxModelCalls`, and `maxTokens`. Each
-case also has a `max_tool_calls` check. The suite names the model
+The suite caps the cost with `maxUsd`, `maxModelCalls`, and `maxTokens`. Every
+case with an `expected.maxToolCalls` also has a matching `max_tool_calls` check.
+The suite names the model
 (`deepseek/deepseek-v4.1-flash`). A run needs `AGENTIC_CHAT_API_KEY` and a
 display. It runs locally only; CI does not run it.
 
@@ -472,16 +473,18 @@ for example a PDF. The `unchanged` check covers text seeds only.
 ### The `core` suite and generated vaults
 
 `tool-use` stays the regression tier: 14 cases, saturated at 100%. `core` is the
-non-saturated tier for prompt, tool, and model comparisons. It has 24 cases
-(eight categories at three levels) and uses the same runner, the same grader,
-and `runsPerCase: 3`; pass^3 is the headline number.
+non-saturated tier for prompt, tool, and model comparisons. It has 25 cases
+(eight categories at three levels, plus `tools.medium.web`) and uses the same
+runner, the same grader, and `runsPerCase: 3`; pass^3 is the headline number.
 
-The committed baseline is `test/evals/baselines/core.json`, written after the
-final 72-run baseline. Until that run, treat the suite as unbaselined. The last
-measured run before the final hardening was 62.5% pass^3 (15 of 24 cases) on
-`deepseek/deepseek-v4.1-flash`; it belongs to an earlier suite revision, so do
-not compare against it. Easy and medium cases seed an `S` vault, hard cases seed
-`M`.
+The committed baseline is `test/evals/baselines/core.json`, measured on
+2026-11-15 with a 75-run baseline at gitHead `17a5905` on
+`deepseek/deepseek-v4.1-flash` (`thinkingLevel: off`). Suite revision: 25 cases
+(24 plus `tools.medium.web`). Overall: 76% pass^3 (19 of 25 cases), 84% mean
+pass@1, 0.978 partial score, $0.0215 total. Per level, pass^3 was easy 87.5%
+(7/8), medium 66.7% (6/9), and hard 75% (6/8). The baseline was measured on the
+committed suite; the `gitHead` and the empty `core.eval.json` diff prove it.
+Easy and medium cases seed an `S` vault, hard cases seed `M`.
 
 Saturation rule: a case that reaches pass^3 in three baselines in a row moves to
 the `tool-use` regression tier, and `core` gets a harder variant of it. A case
@@ -525,9 +528,9 @@ does not run them.
 
 ### Local fixture server for web cases
 
-`scripts/eval/fixture-server.ts` is a local HTTP server for future `fetch_url`
-eval cases. It binds `127.0.0.1` and uses an OS-assigned port by default, so
-cases stay deterministic and offline:
+`scripts/eval/fixture-server.ts` is a local HTTP server for `fetch_url` eval
+cases. It binds `127.0.0.1` and uses an OS-assigned port by default, so cases
+stay deterministic and offline:
 
 ```bash
 npm run fixture:serve -- --json
@@ -544,15 +547,17 @@ The runner starts the server only when a selected case needs it: a prompt with
 `fixtureBaseUrl` into `plan.json`, replaces every `{{fixture}}` in the prompt,
 and closes the server in a `finally` block. `--dry-run` and `--compare` start
 no server; a dry run marks such a case with `, fixture server` in its plan. A
-prompt that uses `{{fixture}}` with no base URL fails before the e2e starts.
-The `core` suite has no such case, so its path is unchanged.
+prompt that uses `{{fixture}}` with no base URL fails before the e2e starts. The
+`core` suite has one such case, `tools.medium.web`: it sets `web.enabled: true`
+and uses `{{fixture}}`, and the runner allows its one exact origin. Every other
+core case starts no server.
 
 The eval spec sets the `__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__` window global to
 that base URL's origin in the Obsidian window. `normalizeWebUrl` allows one
 exact match and nothing else: the hook is unset by default, so every other
 loopback, private, or different-port address stays blocked.
 
-A future web case looks like this:
+A web case has this shape:
 
 ```json
 {
@@ -567,6 +572,14 @@ A future web case looks like this:
 `web.enabled` is false in the base eval config, so a case must opt in. The fake
 MCP server (about 30 tools for P12 `search_tools`) is a separate change, not
 part of this wiring.
+
+`tools.medium.web` is the live case. In the 2026-11-15 baseline it failed 0/3
+because the pinned model's provider rewrote `127.0.0.1` to `[IP_ADDRESS]` in
+the tool argument. The trajectory shows `fetch_url` was called and the fixture
+server started and closed; the call then failed on the redacted URL. The case
+and the wiring are correct, but the harness needs a loopback form the provider
+does not rewrite (for example a `localhost` base URL or an origin alias) before
+the case can pass.
 
 ### Local fake MCP server for tool-search cases
 
