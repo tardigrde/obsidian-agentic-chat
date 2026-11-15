@@ -80,134 +80,40 @@ interface Topic {
   fact: { en: readonly [string, string]; hu: readonly [string, string] };
 }
 
-const TOPICS: readonly Topic[] = [
-  {
-    title: { en: "Atlas Launch", hu: "Atlasz indítás" },
-    alias: { en: "Atlas", hu: "Atlasz" },
-    tags: ["project", "atlas"],
-    huTags: ["projekt", "atlasz"],
-    fact: { en: ["Deadline: March 3", "Deadline: March 10"], hu: ["Határidő: március 3.", "Határidő: március 10."] },
-  },
-  {
-    title: { en: "Borealis Migration", hu: "Borealisz átállás" },
-    alias: { en: "Borealis", hu: "Borealisz" },
-    tags: ["project", "borealis"],
-    huTags: ["projekt", "borealisz"],
-    fact: { en: ["Server region: eu-west", "Server region: us-east"], hu: ["Szerver régió: eu-west", "Szerver régió: us-east"] },
-  },
-  {
-    title: { en: "Quarterly Budget", hu: "Negyedéves költségvetés" },
-    alias: { en: "Budget", hu: "Költségvetés" },
-    tags: ["finance", "budget"],
-    huTags: ["penzugy", "koltsegvetes"],
-    fact: { en: ["Budget: 12,000 EUR", "Budget: 14,500 EUR"], hu: ["Költségvetés: 12 000 EUR", "Költségvetés: 14 500 EUR"] },
-  },
-  {
-    title: { en: "Hiring Plan", hu: "Felvételi terv" },
-    alias: { en: "Hiring", hu: "Felvétel" },
-    tags: ["team", "hiring"],
-    huTags: ["csapat", "felvetel"],
-    fact: { en: ["Open roles: 2", "Open roles: 3"], hu: ["Nyitott pozíciók: 2", "Nyitott pozíciók: 3"] },
-  },
-  {
-    title: { en: "Kitchen Renovation", hu: "Konyhafelújítás" },
-    alias: { en: "Kitchen", hu: "Konyha" },
-    tags: ["home", "renovation"],
-    huTags: ["otthon", "felujitas"],
-    fact: { en: ["Contractor: Keleti Konyha", "Contractor: Dunai Konyha"], hu: ["Kivitelező: Keleti Konyha", "Kivitelező: Dunai Konyha"] },
-  },
-  {
-    title: { en: "Reading List", hu: "Olvasmánylista" },
-    alias: { en: "Reading", hu: "Olvasmányok" },
-    tags: ["reading", "notes"],
-    huTags: ["olvasas", "jegyzetek"],
-    fact: { en: ["Books this year: 18", "Books this year: 24"], hu: ["Könyvek idén: 18", "Könyvek idén: 24"] },
-  },
-  {
-    title: { en: "Garden Plan", hu: "Kertiterv" },
-    alias: { en: "Garden", hu: "Kert" },
-    tags: ["home", "garden"],
-    huTags: ["otthon", "kert"],
-    fact: { en: ["Planting week: April 6", "Planting week: April 20"], hu: ["Ültetési hét: április 6.", "Ültetési hét: április 20."] },
-  },
-  {
-    title: { en: "Lisbon Trip", hu: "Lisszaboni utazás" },
-    alias: { en: "Lisbon", hu: "Lisszabon" },
-    tags: ["travel", "lisbon"],
-    huTags: ["utazas", "lisszabon"],
-    fact: { en: ["Flight date: May 4", "Flight date: May 11"], hu: ["Repülőjárat: május 4.", "Repülőjárat: május 11."] },
-  },
-  {
-    title: { en: "Health Checkup", hu: "Egészségügyi vizsgálat" },
-    alias: { en: "Checkup", hu: "Vizsgálat" },
-    tags: ["health", "appointments"],
-    huTags: ["egeszseg", "idopontok"],
-    fact: { en: ["Next checkup: June 2", "Next checkup: June 16"], hu: ["Következő vizsgálat: június 2.", "Következő vizsgálat: június 16."] },
-  },
-  {
-    title: { en: "Tax Notes", hu: "Adóügyi jegyzetek" },
-    alias: { en: "Taxes", hu: "Adó" },
-    tags: ["finance", "tax"],
-    huTags: ["penzugy", "ado"],
-    fact: { en: ["Filing deadline: May 20", "Filing deadline: June 10"], hu: ["Beadási határidő: május 20.", "Beadási határidő: június 10."] },
-  },
-  {
-    title: { en: "Meeting Cadence", hu: "Megbeszélés ritmus" },
-    alias: { en: "Cadence", hu: "Ritmus" },
-    tags: ["team", "meetings"],
-    huTags: ["csapat", "megbeszeles"],
-    fact: { en: ["Weekly sync: Tuesday 9:00", "Weekly sync: Wednesday 10:00"], hu: ["Heti sync: kedd 9:00", "Heti sync: szerda 10:00"] },
-  },
-  {
-    title: { en: "Onboarding Guide", hu: "Bevezetési útmutató" },
-    alias: { en: "Onboarding", hu: "Bevezetés" },
-    tags: ["team", "guide"],
-    huTags: ["csapat", "utmutato"],
-    fact: { en: ["Onboarding length: 2 weeks", "Onboarding length: 3 weeks"], hu: ["Bevezetés hossza: 2 hét", "Bevezetés hossza: 3 hét"] },
-  },
-  {
-    title: { en: "Vendor Contracts", hu: "Beszállítói szerződések" },
-    alias: { en: "Vendors", hu: "Beszállítók" },
-    tags: ["legal", "vendors"],
-    huTags: ["jog", "beszallitok"],
-    fact: { en: ["Renewal: August 1", "Renewal: September 1"], hu: ["Megújítás: augusztus 1.", "Megújítás: szeptember 1."] },
-  },
-  {
-    title: { en: "Conference Talk", hu: "Konferencia előadás" },
-    alias: { en: "Talk", hu: "Előadás" },
-    tags: ["writing", "talk"],
-    huTags: ["iras", "eloadas"],
-    fact: { en: ["Talk length: 20 minutes", "Talk length: 30 minutes"], hu: ["Előadás hossza: 20 perc", "Előadás hossza: 30 perc"] },
-  },
-  {
-    title: { en: "Home Server", hu: "Otthoni szerver" },
-    alias: { en: "Server", hu: "Szerver" },
-    tags: ["home", "infra"],
-    huTags: ["otthon", "uzemeltetes"],
-    fact: { en: ["Disk size: 4 TB", "Disk size: 8 TB"], hu: ["Lemezméret: 4 TB", "Lemezméret: 8 TB"] },
-  },
-  {
-    title: { en: "Writing Habit", hu: "Írási szokás" },
-    alias: { en: "Writing", hu: "Írás" },
-    tags: ["writing", "habit"],
-    huTags: ["iras", "szokas"],
-    fact: { en: ["Daily words: 500", "Daily words: 750"], hu: ["Napi szószám: 500", "Napi szószám: 750"] },
-  },
-  {
-    title: { en: "Language Learning", hu: "Nyelvtanulás" },
-    alias: { en: "Languages", hu: "Nyelv" },
-    tags: ["learning", "language"],
-    huTags: ["tanulas", "nyelv"],
-    fact: { en: ["Study streak: 120 days", "Study streak: 145 days"], hu: ["Tanulási sorozat: 120 nap", "Tanulási sorozat: 145 nap"] },
-  },
-  {
-    title: { en: "Client Proposal", hu: "Ügyfél ajánlat" },
-    alias: { en: "Proposal", hu: "Ajánlat" },
-    tags: ["work", "proposal"],
-    huTags: ["munka", "ajanlat"],
-    fact: { en: ["Proposal total: 8,400 EUR", "Proposal total: 9,600 EUR"], hu: ["Ajánlat összege: 8 400 EUR", "Ajánlat összege: 9 600 EUR"] },
-  },
-];
+/** One pipe-separated topic row: title, alias, tags, and the two conflicting facts. */
+const TOPIC_ROWS = `
+Atlas Launch|Atlasz indítás|Atlas|Atlasz|project,atlas|projekt,atlasz|Deadline: March 3|Deadline: March 10|Határidő: március 3.|Határidő: március 10.
+Borealis Migration|Borealisz átállás|Borealis|Borealisz|project,borealis|projekt,borealisz|Server region: eu-west|Server region: us-east|Szerver régió: eu-west|Szerver régió: us-east
+Quarterly Budget|Negyedéves költségvetés|Budget|Költségvetés|finance,budget|penzugy,koltsegvetes|Budget: 12,000 EUR|Budget: 14,500 EUR|Költségvetés: 12 000 EUR|Költségvetés: 14 500 EUR
+Hiring Plan|Felvételi terv|Hiring|Felvétel|team,hiring|csapat,felvetel|Open roles: 2|Open roles: 3|Nyitott pozíciók: 2|Nyitott pozíciók: 3
+Kitchen Renovation|Konyhafelújítás|Kitchen|Konyha|home,renovation|otthon,felujitas|Contractor: Keleti Konyha|Contractor: Dunai Konyha|Kivitelező: Keleti Konyha|Kivitelező: Dunai Konyha
+Reading List|Olvasmánylista|Reading|Olvasmányok|reading,notes|olvasas,jegyzetek|Books this year: 18|Books this year: 24|Könyvek idén: 18|Könyvek idén: 24
+Garden Plan|Kertiterv|Garden|Kert|home,garden|otthon,kert|Planting week: April 6|Planting week: April 20|Ültetési hét: április 6.|Ültetési hét: április 20.
+Lisbon Trip|Lisszaboni utazás|Lisbon|Lisszabon|travel,lisbon|utazas,lisszabon|Flight date: May 4|Flight date: May 11|Repülőjárat: május 4.|Repülőjárat: május 11.
+Health Checkup|Egészségügyi vizsgálat|Checkup|Vizsgálat|health,appointments|egeszseg,idopontok|Next checkup: June 2|Next checkup: June 16|Következő vizsgálat: június 2.|Következő vizsgálat: június 16.
+Tax Notes|Adóügyi jegyzetek|Taxes|Adó|finance,tax|penzugy,ado|Filing deadline: May 20|Filing deadline: June 10|Beadási határidő: május 20.|Beadási határidő: június 10.
+Meeting Cadence|Megbeszélés ritmus|Cadence|Ritmus|team,meetings|csapat,megbeszeles|Weekly sync: Tuesday 9:00|Weekly sync: Wednesday 10:00|Heti sync: kedd 9:00|Heti sync: szerda 10:00
+Onboarding Guide|Bevezetési útmutató|Onboarding|Bevezetés|team,guide|csapat,utmutato|Onboarding length: 2 weeks|Onboarding length: 3 weeks|Bevezetés hossza: 2 hét|Bevezetés hossza: 3 hét
+Vendor Contracts|Beszállítói szerződések|Vendors|Beszállítók|legal,vendors|jog,beszallitok|Renewal: August 1|Renewal: September 1|Megújítás: augusztus 1.|Megújítás: szeptember 1.
+Conference Talk|Konferencia előadás|Talk|Előadás|writing,talk|iras,eloadas|Talk length: 20 minutes|Talk length: 30 minutes|Előadás hossza: 20 perc|Előadás hossza: 30 perc
+Home Server|Otthoni szerver|Server|Szerver|home,infra|otthon,uzemeltetes|Disk size: 4 TB|Disk size: 8 TB|Lemezméret: 4 TB|Lemezméret: 8 TB
+Writing Habit|Írási szokás|Writing|Írás|writing,habit|iras,szokas|Daily words: 500|Daily words: 750|Napi szószám: 500|Napi szószám: 750
+Language Learning|Nyelvtanulás|Languages|Nyelv|learning,language|tanulas,nyelv|Study streak: 120 days|Study streak: 145 days|Tanulási sorozat: 120 nap|Tanulási sorozat: 145 nap
+Client Proposal|Ügyfél ajánlat|Proposal|Ajánlat|work,proposal|munka,ajanlat|Proposal total: 8,400 EUR|Proposal total: 9,600 EUR|Ajánlat összege: 8 400 EUR|Ajánlat összege: 9 600 EUR
+`.trim().split("\n");
+
+const TOPICS: readonly Topic[] = TOPIC_ROWS.map((row) => {
+  const fields = row.split("|");
+  if (fields.length !== 10) throw new Error(`Malformed topic row: ${row}`);
+  const [titleEn, titleHu, aliasEn, aliasHu, tags, huTags, factEn1, factEn2, factHu1, factHu2] = fields;
+  return {
+    title: { en: titleEn, hu: titleHu },
+    alias: { en: aliasEn, hu: aliasHu },
+    tags: tags.split(","),
+    huTags: huTags.split(","),
+    fact: { en: [factEn1, factEn2], hu: [factHu1, factHu2] },
+  };
+});
 
 const KINDS: readonly Kind[] = [
   { en: "Overview", hu: "Áttekintés", tag: "overview" },
@@ -291,63 +197,47 @@ interface Labels {
   templateHeading: string;
 }
 
-const EN: Labels = {
-  updated: "Updated",
-  summary: "Summary",
-  context: "Context",
-  decisions: "Decisions",
-  tasks: "Tasks",
-  related: "Related",
-  owner: "Owner",
-  status: "Status",
-  detail: "Detail",
-  detailItem: "Follow-up item",
-  longParagraph:
-    "This section grew over several sessions. It keeps the raw notes, the reasoning, and the open loops in one place so the next review does not start from zero.",
-  archivedCopy: "Archived copy. Keep for history; do not edit.",
-  supersededBy: "Superseded by",
-  liveCopy: "the live copy",
-  journalEntry: "Journal entry for the day",
-  priorities: "Three priorities",
-  weather: "Weather",
-  dailyAlias: "Daily note",
-  templateSuffix: "template",
-  archived: "archived",
-  from: "Source",
-  decision: "Decision",
-  task: "Task",
-  done: "Done",
-  templateHeading: "Template hints",
+
+
+/** One bilingual table: [English, Hungarian] for every label key. */
+const LABEL_VALUES: Record<keyof Labels, readonly [string, string]> = {
+  updated: ["Updated", "Frissítve"],
+  summary: ["Summary", "Összefoglaló"],
+  context: ["Context", "Háttér"],
+  decisions: ["Decisions", "Döntések"],
+  tasks: ["Tasks", "Feladatok"],
+  related: ["Related", "Kapcsolódó"],
+  owner: ["Owner", "Felelős"],
+  status: ["Status", "Állapot"],
+  detail: ["Detail", "Részletek"],
+  detailItem: ["Follow-up item", "Következő lépés"],
+  longParagraph: ["This section grew over several sessions. It keeps the raw notes, the reasoning, and the open loops in one place so the next review does not start from zero.", "Ez a rész több alkalom alatt gyűlt össze. Nyers jegyzetek, érvelés és nyitott kérdések egy helyen, hogy a következő átnézés ne nulláról induljon."],
+  archivedCopy: ["Archived copy. Keep for history; do not edit.", "Archivált másolat. Történeti okból maradt meg, ne szerkeszd."],
+  supersededBy: ["Superseded by", "Felváltotta"],
+  liveCopy: ["the live copy", "az élő változat"],
+  journalEntry: ["Journal entry for the day", "Napi bejegyzés"],
+  priorities: ["Three priorities", "Három prioritás"],
+  weather: ["Weather", "Időjárás"],
+  dailyAlias: ["Daily note", "Napi jegyzet"],
+  templateSuffix: ["template", "sablon"],
+  archived: ["archived", "archivált"],
+  from: ["Source", "Forrás"],
+  decision: ["Decision", "Döntés"],
+  task: ["Task", "Feladat"],
+  done: ["Done", "Kész"],
+  templateHeading: ["Template hints", "Sablon tippek"],
 };
 
-const HU: Labels = {
-  updated: "Frissítve",
-  summary: "Összefoglaló",
-  context: "Háttér",
-  decisions: "Döntések",
-  tasks: "Feladatok",
-  related: "Kapcsolódó",
-  owner: "Felelős",
-  status: "Állapot",
-  detail: "Részletek",
-  detailItem: "Következő lépés",
-  longParagraph:
-    "Ez a rész több alkalom alatt gyűlt össze. Nyers jegyzetek, érvelés és nyitott kérdések egy helyen, hogy a következő átnézés ne nulláról induljon.",
-  archivedCopy: "Archivált másolat. Történeti okból maradt meg, ne szerkeszd.",
-  supersededBy: "Felváltotta",
-  liveCopy: "az élő változat",
-  journalEntry: "Napi bejegyzés",
-  priorities: "Három prioritás",
-  weather: "Időjárás",
-  dailyAlias: "Napi jegyzet",
-  templateSuffix: "sablon",
-  archived: "archivált",
-  from: "Forrás",
-  decision: "Döntés",
-  task: "Feladat",
-  done: "Kész",
-  templateHeading: "Sablon tippek",
-};
+function labels(language: 0 | 1): Labels {
+  const output = {} as Record<keyof Labels, string>;
+  for (const key of Object.keys(LABEL_VALUES) as Array<keyof Labels>) {
+    output[key] = LABEL_VALUES[key][language];
+  }
+  return output;
+}
+
+const EN = labels(0);
+const HU = labels(1);
 
 const OWNERS = ["Ada", "Ben", "Kata", "Dávid", "Eszter", "Márton", "Nóra", "Zsolt"] as const;
 const STATUS_EN = ["active", "draft", "in review", "waiting"] as const;
