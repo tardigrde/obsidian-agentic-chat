@@ -62,7 +62,15 @@ function send(
 // Only the path and query are read. Request bodies and headers are never read
 // or logged, so eval payloads stay out of the terminal.
 function handleRequest(request: IncomingMessage, response: ServerResponse, slowMs: number): void {
-  const url = new URL(request.url ?? "/", `http://${HOST}`);
+  let url: URL;
+  try {
+    url = new URL(request.url ?? "/", `http://${HOST}`);
+  } catch {
+    // A malformed request target (for example `//[`) must not crash the
+    // process that a test runner depends on.
+    send(response, 400, TEXT, "Bad Request\n");
+    return;
+  }
   switch (url.pathname) {
     case "/article":
       send(response, 200, MARKDOWN, ARTICLE);

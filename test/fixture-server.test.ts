@@ -1,3 +1,4 @@
+import { connect } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { startFixtureServer, type FixtureServer } from "../scripts/eval/fixture-server";
 
@@ -15,6 +16,22 @@ afterEach(async () => {
 
 function contentType(response: Response): string {
   return response.headers.get("content-type") ?? "";
+}
+
+/** Send a raw request target that `fetch` would normalize or reject. */
+function rawGet(port: number, path: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, "127.0.0.1", () => {
+      socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`);
+    });
+    let data = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk: string) => {
+      data += chunk;
+    });
+    socket.on("end", () => resolve(data));
+    socket.on("error", reject);
+  });
 }
 
 describe("fixture server", () => {
@@ -118,5 +135,12 @@ describe("fixture server", () => {
     await server.close();
     await server.close();
     await expect(fetch(`${server.url}/article`)).rejects.toThrow();
+  });
+
+  it("answers a malformed request target with 400 and keeps serving", async () => {
+    const { port, url } = await start();
+    const malformed = await rawGet(port, "//[");
+    expect(malformed).toContain("HTTP/1.1 400");
+    expect((await fetch(`${url}/article`)).status).toBe(200);
   });
 });
