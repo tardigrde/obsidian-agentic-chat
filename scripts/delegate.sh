@@ -46,11 +46,12 @@ config() { # <work|review> <edit-resource, relative to the worktree>
 }
 
 run() { # <worktree> <title> <config> <prompt-file> <log>
+  local worktree=$1 title=$2 config_content=$3 prompt_file=$4 log_file=$5
   # gitGuardEnv: git ignores fsmonitor and hooks for the worker's whole process tree.
   # Redact before tee: a child that prints its environment must not reach a log.
-  (cd "$1" && eval "$(node "$ROOT/scripts/delegate-config.mjs" git-env)" && \
-    OPENCODE_CONFIG_CONTENT="$3" opencode run --standalone --archived \
-    --title "$2" --model "$MODEL" < "$4" 2>&1 | node "$ROOT/scripts/redact-log.mjs" | tee "$5")
+  (cd "$worktree" && eval "$(node "$ROOT/scripts/delegate-config.mjs" git-env)" && \
+    OPENCODE_CONFIG_CONTENT="$config_content" opencode run --standalone --archived \
+    --title "$title" --model "$MODEL" < "$prompt_file" 2>&1 | node "$ROOT/scripts/redact-log.mjs" | tee "$log_file")
 }
 
 # Newest fast-lane summary in a worktree: "<unit passed> <smoke passed>".

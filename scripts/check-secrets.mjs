@@ -14,6 +14,7 @@ import { createRedactor, countSecrets, findRepoRoot, redactText } from "./redact
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const SKIP_DIRS = new Set(["node_modules", ".git", ".obsidian-cache"]);
+const KNOWN_ARGS = new Set(["--fix", "--all-worktrees"]);
 
 function usage() {
   return `Usage: node scripts/check-secrets.mjs [--fix] [--all-worktrees]
@@ -44,10 +45,11 @@ function isTooLarge(file) {
 }
 
 function listTracked(root) {
-  const raw = execFileSync("git", ["-C", root, "ls-files", "-z"], {
-    encoding: "buffer",
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  const raw = execFileSync(
+    "git", // NOSONAR:S4036 -- git is a fixed developer binary resolved from PATH; local tooling, not a privileged service.
+    ["-C", root, "ls-files", "-z"],
+    { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 },
+  );
   return raw.toString("utf8").split("\0").filter(Boolean);
 }
 
@@ -69,7 +71,11 @@ function walkLogs(dir, files) {
 }
 
 function worktreePaths(root) {
-  const raw = execFileSync("git", ["-C", root, "worktree", "list", "--porcelain"], { encoding: "utf8" });
+  const raw = execFileSync(
+    "git", // NOSONAR:S4036 -- git is a fixed developer binary resolved from PATH; local tooling, not a privileged service.
+    ["-C", root, "worktree", "list", "--porcelain"],
+    { encoding: "utf8" },
+  );
   const paths = [];
   for (const line of raw.split(/\r?\n/)) {
     if (line.startsWith("worktree ")) paths.push(line.slice("worktree ".length));
@@ -83,49 +89,67 @@ function display(file) {
   return path.resolve(file);
 }
 
-function main() {
-  const args = process.argv.slice(2);
-  if (args.includes("--help") || args.includes("-h")) {
-    process.stdout.write(usage());
-    return 0;
-  }
-  const known = new Set(["--fix", "--all-worktrees"]);
-  const unknown = args.find((arg) => !known.has(arg));
-  if (unknown) {
-    process.stderr.write(`check-secrets: unknown argument: ${unknown}\n\n${usage()}`);
-    return 2;
-  }
+function parseArgs(args) {
+  if (args.includes("--help") || args.includes("-h")) return { help: true };
+  const unknown = args.find((arg) => !KNOWN_ARGS.has(arg));
+  if (unknown) return { error: unknown };
+  return { help: false, fix: args.includes("--fix"), allWorktrees: args.includes("--all-worktrees") };
+}
 
-  const fix = args.includes("--fix");
-  const allWorktrees = args.includes("--all-worktrees");
-  const root = findRepoRoot();
-  const redactor = createRedactor({ root });
-  let scanned = 0;
-  let leaks = 0;
-  let fixed = 0;
+function printUsageError(message) {
+  process.stderr.write(`check-secrets: ${message}\n\n${usage()}`);
+  return 2;
+}
 
+function scanTrackedFile(file, root, secrets, state) {
+  if (skipPath(file)) return;
+  const absolute = path.resolve(root, file);
+  let info;
+  try {
+    info = lstatSync(absolute);
+  } catch {
+    return;
+  }
+  if (!info.isFile()) return;
+  if (isTooLarge(absolute)) {
+    process.stdout.write(`SKIP ${file} (over 20 MB)\n`);
+    return;
+  }
+  state.scanned += 1;
+  const count = countSecrets(readFileSync(absolute, "utf8"), secrets);
+  if (count === 0) return;
+  state.leaks += 1;
+  process.stdout.write(`LEAK ${file} (${count})\n`);
+}
+
+function scanTrackedFiles(root, secrets, state) {
   const tracked = listTracked(root);
-  const trackedFiles = new Set(tracked.map((file) => path.resolve(root, file)));
-  for (const file of tracked) {
-    if (skipPath(file)) continue;
-    const absolute = path.resolve(root, file);
-    try {
-      if (!lstatSync(absolute).isFile()) continue;
-    } catch {
-      continue;
-    }
-    if (isTooLarge(absolute)) {
-      process.stdout.write(`SKIP ${file} (over 20 MB)\n`);
-      continue;
-    }
-    scanned += 1;
-    const text = readFileSync(absolute, "utf8");
-    const count = countSecrets(text, redactor.secrets);
-    if (count === 0) continue;
-    leaks += 1;
-    process.stdout.write(`LEAK ${file} (${count})\n`);
-  }
+  const files = new Set(tracked.map((file) => path.resolve(root, file)));
+  for (const file of tracked) scanTrackedFile(file, root, secrets, state);
+  return files;
+}
 
+function scanLogFile(absolute, secrets, fix, state) {
+  if (isTooLarge(absolute)) {
+    process.stdout.write(`SKIP ${display(absolute)} (over 20 MB)\n`);
+    return;
+  }
+  state.scanned += 1;
+  const text = readFileSync(absolute, "utf8");
+  const count = countSecrets(text, secrets);
+  if (count === 0) return;
+  const shown = display(absolute);
+  if (fix) {
+    writeFileSync(absolute, redactText(text, secrets));
+    state.fixed += 1;
+    process.stdout.write(`REDACTED ${shown} (${count})\n`);
+    return;
+  }
+  state.leaks += 1;
+  process.stdout.write(`LEAK ${shown} (${count})\n`);
+}
+
+function scanLogs(root, allWorktrees, secrets, fix, trackedFiles, state) {
   const trees = allWorktrees ? worktreePaths(root) : [root];
   const seen = new Set();
   for (const tree of trees) {
@@ -138,33 +162,37 @@ function main() {
       if (seen.has(absolute)) continue;
       seen.add(absolute);
       if (trackedFiles.has(absolute)) continue;
-      if (isTooLarge(absolute)) {
-        process.stdout.write(`SKIP ${display(absolute)} (over 20 MB)\n`);
-        continue;
-      }
-      scanned += 1;
-      const text = readFileSync(absolute, "utf8");
-      const count = countSecrets(text, redactor.secrets);
-      if (count === 0) continue;
-      const shown = display(absolute);
-      if (fix) {
-        writeFileSync(absolute, redactText(text, redactor.secrets));
-        fixed += 1;
-        process.stdout.write(`REDACTED ${shown} (${count})\n`);
-      } else {
-        leaks += 1;
-        process.stdout.write(`LEAK ${shown} (${count})\n`);
-      }
+      scanLogFile(absolute, secrets, fix, state);
     }
   }
+}
 
-  if (leaks > 0) {
-    process.stdout.write(`secret scan: ${leaks} leak(s); ${fixed} log file(s) redacted (${scanned} files)\n`);
+function printSummary(state, fix) {
+  if (state.leaks > 0) {
+    process.stdout.write(
+      `secret scan: ${state.leaks} leak(s); ${state.fixed} log file(s) redacted (${state.scanned} files)\n`,
+    );
     if (fix) process.stdout.write("tracked files are never edited; fix those leaks by hand\n");
     return 1;
   }
-  process.stdout.write(`secret scan: clean (${scanned} files, ${fixed} log file(s) redacted)\n`);
+  process.stdout.write(`secret scan: clean (${state.scanned} files, ${state.fixed} log file(s) redacted)\n`);
   return 0;
+}
+
+function main() {
+  const options = parseArgs(process.argv.slice(2));
+  if (options.help) {
+    process.stdout.write(usage());
+    return 0;
+  }
+  if (options.error) return printUsageError(`unknown argument: ${options.error}`);
+
+  const root = findRepoRoot();
+  const redactor = createRedactor({ root });
+  const state = { scanned: 0, leaks: 0, fixed: 0 };
+  const trackedFiles = scanTrackedFiles(root, redactor.secrets, state);
+  scanLogs(root, options.allWorktrees, redactor.secrets, options.fix, trackedFiles, state);
+  return printSummary(state, options.fix);
 }
 
 const exitCode = main();

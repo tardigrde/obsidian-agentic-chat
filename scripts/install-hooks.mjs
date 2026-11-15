@@ -11,7 +11,11 @@ exec npm run check:secrets -- --all-worktrees
 `;
 
 function hookPath() {
-  const gitPath = execFileSync("git", ["rev-parse", "--git-path", "hooks/pre-push"], { encoding: "utf8" }).trim();
+  const gitPath = execFileSync(
+    "git", // NOSONAR:S4036 -- git is a fixed developer binary resolved from PATH; local tooling, not a privileged service.
+    ["rev-parse", "--git-path", "hooks/pre-push"],
+    { encoding: "utf8" },
+  ).trim();
   return path.resolve(gitPath);
 }
 

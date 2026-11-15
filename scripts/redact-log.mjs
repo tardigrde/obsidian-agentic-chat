@@ -21,11 +21,11 @@ export const LABELS = {
 
 /** Longest prefix first: `sk-or-` must win over the generic `sk-` rule. */
 const PATTERN_SPECS = [
-  { label: LABELS.openrouter, source: "\\bsk-or-[A-Za-z0-9_-]{8,}" },
-  { label: LABELS.opencode, source: "\\boc_sk_[A-Za-z0-9_-]{8,}" },
-  { label: LABELS.github, source: "\\bgithub_pat_[A-Za-z0-9_]{20,}" },
-  { label: LABELS.github, source: "\\bghp_[A-Za-z0-9]{20,}" },
-  { label: LABELS.secret, source: "\\bsk-(?!or-)[A-Za-z0-9_-]{16,}" },
+  { label: LABELS.openrouter, source: String.raw`\bsk-or-[A-Za-z0-9_-]{8,}` },
+  { label: LABELS.opencode, source: String.raw`\boc_sk_[A-Za-z0-9_-]{8,}` },
+  { label: LABELS.github, source: String.raw`\bgithub_pat_[A-Za-z0-9_]{20,}` },
+  { label: LABELS.github, source: String.raw`\bghp_[A-Za-z0-9]{20,}` },
+  { label: LABELS.secret, source: String.raw`\bsk-(?!or-)[A-Za-z0-9_-]{16,}` },
 ];
 
 const SECRET_ENV_NAME = /_(KEY|TOKEN|SECRET|PASSWORD)$/i;
@@ -48,22 +48,40 @@ export function findRepoRoot(startDir = process.cwd()) {
   }
 }
 
+/** Strip an `export ` prefix and keep only a valid shell name. */
+function envName(rawName) {
+  let name = rawName.trim();
+  if (name.startsWith("export") && /\s/.test(name.charAt("export".length))) {
+    name = name.slice("export".length).trim();
+  }
+  return /^[A-Za-z_]\w*$/.test(name) ? name : undefined;
+}
+
+/** Trim a value and remove one matching pair of quotes. */
+function envValue(rawValue) {
+  const value = rawValue.trim();
+  if (value.length < 2) return value;
+  const quoted =
+    (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"));
+  return quoted ? value.slice(1, -1) : value;
+}
+
+function parseEnvLine(rawLine) {
+  const line = rawLine.trim();
+  if (!line || line.startsWith("#")) return undefined;
+  const equals = line.indexOf("=");
+  if (equals <= 0) return undefined;
+  const name = envName(line.slice(0, equals));
+  if (!name) return undefined;
+  return { name, value: envValue(line.slice(equals + 1)) };
+}
+
 /** Minimal dotenv reader. Values stay in memory; the caller never prints them. */
 export function parseEnvFile(text) {
   const entries = [];
   for (const rawLine of String(text ?? "").split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
-    if (!match) continue;
-    let value = match[2].trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
-      (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
-    ) {
-      value = value.slice(1, -1);
-    }
-    entries.push({ name: match[1], value });
+    const entry = parseEnvLine(rawLine);
+    if (entry) entries.push(entry);
   }
   return entries;
 }
