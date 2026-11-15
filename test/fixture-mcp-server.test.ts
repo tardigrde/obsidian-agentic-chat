@@ -87,7 +87,7 @@ describe("fake MCP server", () => {
   it("answers initialize with a protocol version, a tools capability, server info, and a session id", async () => {
     const server = await start();
     expect(server.port).toBeGreaterThan(0);
-    expect(server.url).toBe(`http://127.0.0.1:${server.port}/mcp`);
+    expect(server.url).toBe(`http://localhost:${server.port}/mcp`);
     const { response, body, id, sessionId } = await initialize(server);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/json");

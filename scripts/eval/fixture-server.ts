@@ -11,7 +11,7 @@ import {
 } from "./fixture-http";
 
 export interface FixtureServerOptions {
-  /** Port to bind on 127.0.0.1. Default 0: the OS assigns a free port. */
+  /** Port to bind on the dual-stack wildcard listener. Default 0: the OS assigns a free port. The fixture serves static test data and closes after the run. */
   port?: number;
   /** Delay for GET /slow in milliseconds. Default 250. */
   slowMs?: number;

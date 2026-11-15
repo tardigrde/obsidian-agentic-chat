@@ -26,7 +26,7 @@ function runDryRun(suitePath: string) {
     {
       cwd: process.cwd(),
       encoding: "utf8",
-      env: { ...process.env, AGENTIC_CHAT_API_KEY: "" },
+      env: { ...process.env, AGENTIC_CHAT_API_KEY: "", AGENTIC_CHAT_THINKING_LEVEL: "" },
     },
   );
 }
@@ -66,16 +66,16 @@ describe("fixture helpers", () => {
   it("replaces every placeholder with the base URL", () => {
     const [expanded] = expandFixturePlaceholders(
       [makeCase({ prompt: "Compare {{fixture}}/article with {{fixture}}/article-v2." })],
-      "http://127.0.0.1:4321",
+      "http://localhost:4321",
     );
 
-    expect(expanded.prompt).toBe("Compare http://127.0.0.1:4321/article with http://127.0.0.1:4321/article-v2.");
+    expect(expanded.prompt).toBe("Compare http://localhost:4321/article with http://localhost:4321/article-v2.");
   });
 
   it("returns a case without a placeholder unchanged", () => {
     const original = makeCase({ prompt: "Answer from the vault only." });
 
-    const [expanded] = expandFixturePlaceholders([original], "http://127.0.0.1:4321");
+    const [expanded] = expandFixturePlaceholders([original], "http://localhost:4321");
 
     expect(expanded).toBe(original);
   });
@@ -118,10 +118,15 @@ describe("fixture wiring in the tool-use runner", () => {
     expect(result.stdout).toContain(`- web.easy.article: 1 run(s), 0 seed file(s)${FIXTURE_MARKER}`);
   });
 
-  it("leaves the core dry-run plan unchanged", () => {
+  it("marks only tools.medium.web in the core dry-run plan", () => {
     const result = runDryRun(CORE_SUITE_PATH);
 
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).not.toContain(FIXTURE_MARKER);
+    const caseLines = result.stdout.split("\n").filter((line) => line.startsWith("- "));
+    expect(caseLines).toHaveLength(25);
+    const webLine = caseLines.find((line) => line.startsWith("- tools.medium.web: "));
+    expect(webLine, "tools.medium.web must be in the core dry run").toBeDefined();
+    expect(webLine).toContain(FIXTURE_MARKER);
+    expect(caseLines.filter((line) => line.includes(FIXTURE_MARKER))).toEqual([webLine]);
   });
 });

@@ -14,6 +14,22 @@ const CASE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 
 export type ToolUseModel = (typeof TOOL_USE_ALLOWED_MODELS)[number];
 
+/**
+ * Reasoning levels an eval run may request. This mirrors the product's
+ * `THINKING_LEVELS`; a unit test keeps the two lists equal. The default is
+ * `low`, not `off`: with `off` this model gets no reasoning parameter and
+ * OpenRouter then applies the provider default, which is `high`.
+ */
+export const TOOL_USE_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export type ToolUseThinkingLevel = (typeof TOOL_USE_THINKING_LEVELS)[number];
+export const DEFAULT_TOOL_USE_THINKING_LEVEL: ToolUseThinkingLevel = "low";
+export type ThinkingLevelSource = "cli" | "env" | "suite" | "default";
+
+export interface ThinkingLevelResolution {
+  level: ToolUseThinkingLevel;
+  source: ThinkingLevelSource;
+}
+
 export interface ToolUseBudgetCaps {
   maxUsd: number;
   maxModelCalls: number;
@@ -52,6 +68,8 @@ export interface ToolUseCase {
   prompt: string;
   seed: ToolUseSeed;
   settings?: Record<string, ToolUseSettingValue>;
+  /** Pins this case; wins over the run-level level. Omit to use the run level. */
+  thinkingLevel?: ToolUseThinkingLevel;
   checks: ToolUseCheck[];
   expected?: ToolUseExpected;
 }
@@ -64,6 +82,8 @@ export interface ToolUseSuite {
   runsPerCase: number;
   budget: ToolUseBudgetCaps;
   turn: ToolUseTurnLimits;
+  /** Run-level reasoning level; CLI and env overrides win over it. */
+  thinkingLevel?: ToolUseThinkingLevel;
   cases: ToolUseCase[];
 }
 
@@ -324,6 +344,7 @@ export function validateToolUseSuite(input: unknown): ToolUseSuite {
 
   const budget = validateBudget(suite.budget, problems);
   const turn = validateTurn(suite.turn, problems);
+  const thinkingLevel = readThinkingLevel(suite.thinkingLevel, "suite.thinkingLevel", problems);
   const casesRaw = asArray(suite.cases, "suite.cases", problems) ?? [];
   if (casesRaw.length === 0) problems.push("suite.cases must contain at least one case.");
 
@@ -345,8 +366,60 @@ export function validateToolUseSuite(input: unknown): ToolUseSuite {
     runsPerCase: runsPerCase as number,
     budget: budget as ToolUseBudgetCaps,
     turn: turn as ToolUseTurnLimits,
+    ...(thinkingLevel ? { thinkingLevel } : {}),
     cases: cases as ToolUseCase[],
   };
+}
+
+/**
+ * Check one level and name its source. The runner calls this for `--thinking-level`
+ * and `AGENTIC_CHAT_THINKING_LEVEL`; suite validation collects the same problem
+ * into its error list instead of throwing on the first one.
+ */
+export function parseThinkingLevel(value: unknown, source: string): ToolUseThinkingLevel {
+  if (typeof value === "string" && (TOOL_USE_THINKING_LEVELS as readonly string[]).includes(value)) {
+    return value as ToolUseThinkingLevel;
+  }
+  throw new Error(
+    `${source} must be one of ${TOOL_USE_THINKING_LEVELS.join(", ")}; got ${JSON.stringify(value)}.`,
+  );
+}
+
+/** CLI > env > suite field > the low default. */
+export function resolveThinkingLevel(input: {
+  cli?: string;
+  env?: string;
+  suite?: ToolUseThinkingLevel;
+}): ThinkingLevelResolution {
+  if (input.cli !== undefined) return { level: parseThinkingLevel(input.cli, "--thinking-level"), source: "cli" };
+  if (input.env !== undefined) {
+    return { level: parseThinkingLevel(input.env, "AGENTIC_CHAT_THINKING_LEVEL"), source: "env" };
+  }
+  if (input.suite !== undefined) return { level: input.suite, source: "suite" };
+  return { level: DEFAULT_TOOL_USE_THINKING_LEVEL, source: "default" };
+}
+
+/** A case pin wins over the run-level level. */
+export function effectiveThinkingLevel(
+  evalCase: Pick<ToolUseCase, "thinkingLevel">,
+  runLevel: ToolUseThinkingLevel,
+): ToolUseThinkingLevel {
+  return evalCase.thinkingLevel ?? runLevel;
+}
+
+function readThinkingLevel(
+  input: unknown,
+  at: string,
+  problems: string[],
+): ToolUseThinkingLevel | undefined {
+  if (input === undefined) return undefined;
+  if (typeof input === "string" && (TOOL_USE_THINKING_LEVELS as readonly string[]).includes(input)) {
+    return input as ToolUseThinkingLevel;
+  }
+  problems.push(
+    `${at} must be one of ${TOOL_USE_THINKING_LEVELS.join(", ")}; got ${JSON.stringify(input)}.`,
+  );
+  return undefined;
 }
 
 export function gradeRun(caseDef: ToolUseCase, observed: ObservedRun): GradeResult {
@@ -620,6 +693,7 @@ function validateCase(input: unknown, index: number, problems: string[]): ToolUs
   }
 
   const settings = validateSettings(evalCase.settings, `${at}.settings`, problems);
+  const thinkingLevel = readThinkingLevel(evalCase.thinkingLevel, `${at}.thinkingLevel`, problems);
   const expected = validateExpected(evalCase.expected, `${at}.expected`, problems);
   const checksRaw = asArray(evalCase.checks, `${at}.checks`, problems) ?? [];
   if (checksRaw.length === 0) problems.push(`${at}.checks must contain at least one check.`);
@@ -639,6 +713,7 @@ function validateCase(input: unknown, index: number, problems: string[]): ToolUs
       ...(vault ? { vault } : {}),
     },
     settings,
+    ...(thinkingLevel ? { thinkingLevel } : {}),
     checks,
     ...(expected ? { expected } : {}),
   };

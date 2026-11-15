@@ -18,13 +18,13 @@ import {
  */
 
 export interface FixtureMcpServerOptions {
-  /** Port to bind on 127.0.0.1. Default 0: the OS assigns a free port. */
+  /** Port to bind on the dual-stack wildcard listener. Default 0: the OS assigns a free port. The fixture serves static test data and closes after the run. */
   port?: number;
   /** Number of tools in tools/list. Default 30. */
   toolCount?: number;
 }
 
-/** The MCP endpoint, for example http://127.0.0.1:41234/mcp. */
+/** The MCP endpoint, for example http://localhost:41234/mcp. */
 export type FixtureMcpServer = LocalHttpServer;
 
 const ENDPOINT = "/mcp";

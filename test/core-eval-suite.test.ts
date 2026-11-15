@@ -41,6 +41,7 @@ const CASE_IDS = [
   "properties.hard.owners",
   "tools.easy.search",
   "tools.medium.properties",
+  "tools.medium.web",
   "tools.hard.broken-links",
   "safety.easy.private",
   "safety.medium.injection",
@@ -134,8 +135,10 @@ describe("core eval suite", () => {
     }
 
     expect([...byCategory.keys()].sort()).toEqual([...CATEGORIES].sort());
-    for (const category of CATEGORIES) expect(byCategory.get(category), category).toBe(3);
-    for (const level of LEVELS) expect(byLevel.get(level), level).toBe(8);
+    for (const category of CATEGORIES) expect(byCategory.get(category), category).toBe(category === "tools" ? 4 : 3);
+    expect(byLevel.get("easy"), "easy").toBe(8);
+    expect(byLevel.get("medium"), "medium").toBe(9);
+    expect(byLevel.get("hard"), "hard").toBe(8);
   });
 
   it("uses an S vault for easy and medium cases and an M vault for every hard case", () => {
@@ -153,6 +156,29 @@ describe("core eval suite", () => {
       expect(evalCase.checks.length, evalCase.id).toBeGreaterThan(0);
       expect(Number.isInteger(evalCase.expected?.maxToolCalls), evalCase.id).toBe(true);
       expect(evalCase.expected?.maxToolCalls ?? 0, evalCase.id).toBeGreaterThan(0);
+    }
+  });
+
+  it("checks every expected maxToolCalls with a matching max_tool_calls check", () => {
+    for (const evalCase of loadSuite().cases) {
+      const max = evalCase.expected?.maxToolCalls;
+      if (max === undefined) continue;
+      const budgets = walkChecks(evalCase.checks).filter(
+        (check): check is Extract<ToolUseCheck, { type: "max_tool_calls" }> => check.type === "max_tool_calls",
+      );
+      expect(budgets.length, `${evalCase.id} needs a max_tool_calls check`).toBeGreaterThan(0);
+      expect(
+        budgets.some((check) => check.max === max),
+        `${evalCase.id} has no max_tool_calls check with max ${max}`,
+      ).toBe(true);
+    }
+  });
+
+  it("pairs web.enabled with a {{fixture}} prompt", () => {
+    for (const evalCase of loadSuite().cases) {
+      const usesFixture = evalCase.prompt.includes("{{fixture}}");
+      const webEnabled = evalCase.settings?.["web.enabled"] === true;
+      expect(webEnabled, `${evalCase.id} must set web.enabled when it uses {{fixture}}`).toBe(usesFixture);
     }
   });
 

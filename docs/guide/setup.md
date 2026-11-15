@@ -50,12 +50,12 @@ Some models support adjustable reasoning effort. The default is `off`. Set it in
 
 | Level | When to use it |
 | --- | --- |
-| `off` | Default. Simple questions and small edits. |
-| `minimal`, `low` | A small amount of reasoning for routine tasks. |
-| `medium` | Multi-step vault tasks. |
+| `off` | Default. Send no reasoning parameter; the provider decides. Some routes return no reasoning, while `deepseek/deepseek-v4.1-flash` can apply its own `high` default. |
+| `low` | Explicit low reasoning, and the level the eval suite pins for a reproducible measurement. |
+| `minimal`, `medium` | Less or more reasoning than `low` for the task in front of you. |
 | `high`, `xhigh` | Hard planning and research. These levels use more tokens. |
 
-Other models ignore the setting.
+Other models ignore the setting. `off` is provider-dependent: a named level is the only way to ask for the same amount of reasoning every time. A saved choice still wins; nothing migrates an existing level.
 
 ## Proxy settings
 

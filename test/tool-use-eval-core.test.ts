@@ -7,9 +7,12 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BudgetTracker,
+  TOOL_USE_THINKING_LEVELS,
   baselineRefusal,
   costUsd,
+  effectiveThinkingLevel,
   gradeRun,
+  resolveThinkingLevel,
   summarizeCase,
   summarizeOverall,
   validateToolUseSuite,
@@ -19,6 +22,7 @@ import {
   type ToolUseSuite,
 } from "../scripts/eval/tool-use-core";
 import { extractPdfText } from "../src/retrieval/pdf-ingest";
+import { THINKING_LEVELS } from "../src/settings-schema";
 import { MUTATING_TOOLS } from "../src/tools/tool-contracts";
 
 const SUITE_PATH = path.join(process.cwd(), "test/evals/tool-use/tool-use.eval.json");
@@ -281,6 +285,61 @@ describe("tool-use eval core", () => {
     const notObject = cloneSuite();
     (notObject.cases as Array<Record<string, unknown>>)[0].expected = 5;
     expect(() => validateToolUseSuite(notObject)).toThrow(/expected must be an object/);
+  });
+
+  describe("thinking level axis", () => {
+    it("uses the same level list as the product", () => {
+      expect([...TOOL_USE_THINKING_LEVELS]).toEqual(THINKING_LEVELS);
+    });
+
+    it("accepts a suite level and a per-case pin", () => {
+      const suite = cloneSuite();
+      suite.thinkingLevel = "low";
+      (suite.cases as Array<Record<string, unknown>>)[0].thinkingLevel = "off";
+
+      const parsed = validateToolUseSuite(suite);
+
+      expect(parsed.thinkingLevel).toBe("low");
+      expect(parsed.cases[0].thinkingLevel).toBe("off");
+      expect(parsed.cases[1].thinkingLevel).toBeUndefined();
+    });
+
+    it("rejects an unknown suite or case level", () => {
+      for (const value of ["none", "max", "LOW", 7, null]) {
+        const badSuite = cloneSuite();
+        badSuite.thinkingLevel = value;
+        expect(() => validateToolUseSuite(badSuite)).toThrow(/suite\.thinkingLevel must be one of/);
+
+        const badCase = cloneSuite();
+        (badCase.cases as Array<Record<string, unknown>>)[0].thinkingLevel = value;
+        expect(() => validateToolUseSuite(badCase)).toThrow(/cases\[0\]\.thinkingLevel must be one of/);
+      }
+    });
+
+    it("resolves CLI over env over suite over the low default", () => {
+      expect(resolveThinkingLevel({ cli: "off", env: "high", suite: "medium" })).toEqual({
+        level: "off",
+        source: "cli",
+      });
+      expect(resolveThinkingLevel({ env: "high", suite: "medium" })).toEqual({ level: "high", source: "env" });
+      expect(resolveThinkingLevel({ suite: "medium" })).toEqual({ level: "medium", source: "suite" });
+      expect(resolveThinkingLevel({})).toEqual({ level: "low", source: "default" });
+    });
+
+    it("names the bad source and the allowed levels", () => {
+      expect(() => resolveThinkingLevel({ cli: "none" })).toThrow(
+        /--thinking-level must be one of off, minimal, low, medium, high, xhigh; got "none"/,
+      );
+      expect(() => resolveThinkingLevel({ env: "max" })).toThrow(
+        /AGENTIC_CHAT_THINKING_LEVEL must be one of off, minimal, low, medium, high, xhigh; got "max"/,
+      );
+    });
+
+    it("lets a per-case pin win over the run level", () => {
+      expect(effectiveThinkingLevel({ thinkingLevel: "off" }, "high")).toBe("off");
+      expect(effectiveThinkingLevel({ thinkingLevel: "low" }, "high")).toBe("low");
+      expect(effectiveThinkingLevel({}, "high")).toBe("high");
+    });
   });
 
   it("reads the seeded invoice PDF from base64", () => {
@@ -915,9 +974,14 @@ describe("tool-use eval core", () => {
     const baselinePath = path.join(root, "baseline.json");
     const candidatePath = path.join(root, "candidate.json");
     const baseline = {
+      thinkingLevel: "off",
+      thinkingLevelSource: "suite",
       cases: [
         {
           id: "case.one",
+          thinkingLevel: "off",
+          observedThinkingLevels: ["off"],
+          thinkingLevelMismatches: 0,
           passRate: 1,
           passAtK: 1,
           partialScore: 1,
@@ -929,6 +993,9 @@ describe("tool-use eval core", () => {
         },
         {
           id: "case.two",
+          thinkingLevel: "off",
+          observedThinkingLevels: ["off"],
+          thinkingLevelMismatches: 0,
           passRate: 0.5,
           passAtK: 0,
           partialScore: 0.75,
@@ -954,9 +1021,14 @@ describe("tool-use eval core", () => {
       },
     };
     const candidate = {
+      thinkingLevel: "low",
+      thinkingLevelSource: "cli",
       cases: [
         {
           id: "case.one",
+          thinkingLevel: "low",
+          observedThinkingLevels: ["high", "low"],
+          thinkingLevelMismatches: 1,
           passRate: 0.75,
           passAtK: 0,
           partialScore: 0.8,
@@ -968,6 +1040,9 @@ describe("tool-use eval core", () => {
         },
         {
           id: "case.two",
+          thinkingLevel: "low",
+          observedThinkingLevels: ["low"],
+          thinkingLevelMismatches: 0,
           passRate: 0.5,
           passAtK: 0,
           partialScore: 0.7,
@@ -1002,12 +1077,110 @@ describe("tool-use eval core", () => {
     );
 
     expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("- Baseline: (suite?), (model?), thinking off (suite)");
+    expect(result.stdout).toContain("- Candidate: (suite?), (model?), thinking low (cli)");
+    expect(result.stdout).toContain("| Case | Thinking | Pass rate |");
+    expect(result.stdout).toContain("off (observed off) -> low (observed high!, low; 1 mismatch(es))");
     expect(result.stdout).toContain("| pass^K | 50% | 0% | -50% |");
     expect(result.stdout).toContain("| mean pass@1 | 75% | 63% | -13% |");
     expect(result.stdout).toContain("| median time | 2.5s | 3.3s | +0.8s |");
     expect(result.stdout).toContain("| Flags |");
     expect(result.stdout).toContain("cost +60%; time +150%; pass -25");
     expect(result.stdout).toContain("| - |");
+  });
+
+  describe("thinking level in the runner", () => {
+    function runRunner(argv: string[], env: Record<string, string> = {}) {
+      return spawnSync(
+        process.execPath,
+        ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...argv],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            AGENTIC_CHAT_API_KEY: "",
+            AGENTIC_CHAT_THINKING_LEVEL: "",
+            ...env,
+          },
+        },
+      );
+    }
+
+    async function writeSuite(mutate: (suite: Record<string, unknown>) => void): Promise<string> {
+      const root = await mkdtemp(path.join(tmpdir(), "tool-use-thinking-"));
+      tempRoots.push(root);
+      const suite = cloneSuite();
+      mutate(suite);
+      const suitePath = path.join(root, "thinking.eval.json");
+      await writeFile(suitePath, `${JSON.stringify(suite, null, 2)}\n`, "utf8");
+      return suitePath;
+    }
+
+    it("prints the effective level per case and its source", async () => {
+      const suitePath = await writeSuite((suite) => {
+        delete suite.thinkingLevel;
+      });
+      const result = runRunner(["--suite", suitePath, "--dry-run", "--case", "none.arithmetic"]);
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("Thinking level: low (default)");
+      expect(result.stdout).toContain("- none.arithmetic: 3 run(s), 0 seed file(s), thinking low");
+    });
+
+    it("takes the suite field over the default", async () => {
+      const suitePath = await writeSuite((suite) => {
+        suite.thinkingLevel = "medium";
+      });
+      const result = runRunner(["--suite", suitePath, "--dry-run", "--case", "none.arithmetic"]);
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("Thinking level: medium (suite)");
+    });
+
+    it("takes the env var over the suite field and the CLI over the env var", async () => {
+      const suitePath = await writeSuite((suite) => {
+        suite.thinkingLevel = "minimal";
+      });
+      const fromEnv = runRunner(["--suite", suitePath, "--dry-run", "--case", "none.arithmetic"], {
+        AGENTIC_CHAT_THINKING_LEVEL: "high",
+      });
+      expect(fromEnv.status, fromEnv.stderr).toBe(0);
+      expect(fromEnv.stdout).toContain("Thinking level: high (env)");
+
+      const fromCli = runRunner(
+        ["--suite", suitePath, "--dry-run", "--case", "none.arithmetic", "--thinking-level", "off"],
+        { AGENTIC_CHAT_THINKING_LEVEL: "high" },
+      );
+      expect(fromCli.status, fromCli.stderr).toBe(0);
+      expect(fromCli.stdout).toContain("Thinking level: off (cli)");
+    });
+
+    it("rejects an unknown level from the CLI or the env var", async () => {
+      const suitePath = await writeSuite(() => {});
+      const fromCli = runRunner(["--suite", suitePath, "--dry-run", "--thinking-level", "none"]);
+      expect(fromCli.status).toBe(1);
+      expect(fromCli.stderr).toContain("--thinking-level must be one of off, minimal, low, medium, high, xhigh");
+
+      const fromEnv = runRunner(["--suite", suitePath, "--dry-run"], {
+        AGENTIC_CHAT_THINKING_LEVEL: "max",
+      });
+      expect(fromEnv.status).toBe(1);
+      expect(fromEnv.stderr).toContain("AGENTIC_CHAT_THINKING_LEVEL must be one of");
+    });
+
+    it("lets a case pin override the run level in the plan", async () => {
+      const suitePath = await writeSuite((suite) => {
+        suite.thinkingLevel = "high";
+        (suite.cases as Array<Record<string, unknown>>)[0].thinkingLevel = "off";
+      });
+      const result = runRunner(["--suite", suitePath, "--dry-run"]);
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("Thinking level: high (suite)");
+      expect(result.stdout).toMatch(/^- none\.arithmetic: 3 run\(s\), 0 seed file\(s\), thinking off$/m);
+      expect(result.stdout).toMatch(/^- edit\.find-and-edit: 3 run\(s\), \d+ seed file\(s\), thinking high$/m);
+    });
   });
 
   it("prints a dry-run plan without network or output files", async () => {

@@ -448,22 +448,94 @@ npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke --ru
 `edit.hard.status`, `organize.medium.inbox`, `create.medium.summary`,
 `properties.hard.owners`, `tools.easy.search`, `safety.medium.injection`, and
 `recovery.medium.stale`. A run takes about 3-5 minutes and needs no baseline. Use
-the full `core` suite (24 cases x 3 runs) for the committed baseline. `--smoke`
+the full `core` suite (25 cases x 3 runs) for the committed baseline. `--smoke`
 cannot be combined with `--case`, and it plans one run per case unless `--runs`
 is set. `--dry-run` prints the 8 cases and needs no key.
 
 
-The suite caps the cost with `maxUsd`, `maxModelCalls`, and `maxTokens`. Each
-case also has a `max_tool_calls` check. The suite names the model
+The suite caps the cost with `maxUsd`, `maxModelCalls`, and `maxTokens`. Every
+case with an `expected.maxToolCalls` also has a matching `max_tool_calls` check.
+The suite names the model
 (`deepseek/deepseek-v4.1-flash`). A run needs `AGENTIC_CHAT_API_KEY` and a
 display. It runs locally only; CI does not run it.
 
-The live calls pin the model and the reasoning level:
-`deepseek/deepseek-v4.1-flash`, `thinkingLevel: off`, temperature 0. A tool or
-prompt comparison must hold those fixed. A reasoning-level A/B is future work:
-add a `thinkingLevel` axis to the runner (suite default plus a per-case override)
-and record it in `plan.json`/`summary.json`; keep it out of the P12 tool
-comparison.
+The live calls pin the model, the temperature, and the reasoning level:
+`deepseek/deepseek-v4.1-flash`, temperature 0, and the level the suite names. The
+`core` and `tool-use` suites pin `low`, so a new measurement is explicit. The
+older `tool-use` baseline predates the axis and has no `thinkingLevel` field; do
+not compare it as if it named one. The product default is `off`; a user can pick
+any supported level. A tool or prompt comparison must hold the level fixed.
+
+Reasoning is a first-class axis:
+
+| source | how to set it |
+|---|---|
+| CLI | `--thinking-level <level>` |
+| environment | `AGENTIC_CHAT_THINKING_LEVEL=<level>` |
+| suite | `"thinkingLevel": "low"` |
+| default | `low` when no source sets one (the runner default) |
+
+Precedence is CLI > env > suite field > `low`. A per-case `thinkingLevel` pins
+that case and wins over the run-level value. Allowed levels are `off`,
+`minimal`, `low`, `medium`, `high`, and `xhigh`; an unknown value fails before
+the run and names the source.
+
+`off` sends no reasoning parameter; the provider then decides. Do not read it as
+a fixed baseline. The catalog for `deepseek-v4.1-flash` reports a default effort
+of `high`, and a direct unpinned request did reason; the eval route, by contrast,
+recorded 0 reasoning tokens in all 330 assistant messages of the `off` baseline.
+Routing can change it. The `core` suite pins `low` so the number in the baseline
+means what its label says; the product default stays `off`.
+
+The plan, summary, report, baseline, and dry run record the effective level. A
+per-case pin is resolved before the plan is written, so `plan.json` has one
+`thinkingLevel` per case. The e2e spec sets `settings.thinkingLevel` from the
+plan and restores it for the next case. It also reads the last
+`thinking_level_change` entry from the run's session and writes
+`observedThinkingLevel` into the result JSON. A mismatch is reported in the
+summary (`observedThinkingLevels`, `thinkingLevelMismatches`), never fails a
+run: a provider clamp is data, not a harness error.
+
+A dry run prints the run level and the effective level of every case:
+
+```text
+Thinking level: low (suite)
+- find.hard.venue: 1 run(s), 516 seed file(s), thinking low
+```
+
+### Reasoning level A/B on the smoke slice
+
+The eight-case smoke slice ran once per level with everything else pinned. The
+same suite revision, model, temperature, and vaults were used. Every run
+observed the level it requested; the summaries report 0 mismatches. Reproduce
+one level with:
+
+```bash
+npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke \
+  --runs 1 --thinking-level <level> --env-file .env --run-id ab-smoke-<level>
+```
+
+| Level | Observed | Pass | Cost | Mean tokens | Median case | Notes |
+|---|---|---|---|---|---|---|
+| `off` | `off` | 4/8 (50%) | $0.003305 ($0.000413/run) | 23,761 | 5.2s | 0 reasoning tokens on the eval route; another route can default high |
+| `low` | `low` | 8/8 (100%) | $0.004689 ($0.000586/run) | 30,927 | 11.2s | run pinned with `--thinking-level low`; +42% cost over `off` |
+| `high` | `high` | 6/8 (75%) | $0.014343 ($0.001793/run) | 97,208 | 19.0s | 3.1x the `low` cost |
+
+The full 75-run `core` baseline at `low` is 68% pass^3 (17 of 25 cases), 77%
+mean pass@1, $0.0528 total, and 46,672 tokens per run. The earlier `off`
+baseline was 76% pass^3 (19 of 25), $0.0215, and 24,532 tokens per run. Two
+caveats stop a simple ranking: that `off` pass predates the localhost fixture
+fix (`tools.medium.web` was 0/3 there and 3/3 at `low`), and one run per case on
+the smoke slice is directional, not a significance test. On the 24 cases both
+runs cover, `off` still won more cases.
+
+The product default stays `off`. The full 75-run baseline favors it on pass and
+cost, and one run per smoke case is too small to overrule it. `off` is still not
+a fixed control: the catalog says `high`, a direct request reasoned, and the eval
+route recorded 0 reasoning tokens, so routing can move it. The eval suite keeps
+pinning `low` so the axis is exercised and every run names its level. Revisit the
+product default after the significance layer (bootstrap CI) and a second `low`
+baseline; do not move it based on one run.
 
 The eval vault sets `alwaysUpdateLinks: true`, so a rename updates links without
 a prompt. `seed.files` writes text notes. `seed.binaryFiles` writes base64 bytes,
@@ -472,16 +544,38 @@ for example a PDF. The `unchanged` check covers text seeds only.
 ### The `core` suite and generated vaults
 
 `tool-use` stays the regression tier: 14 cases, saturated at 100%. `core` is the
-non-saturated tier for prompt, tool, and model comparisons. It has 24 cases
-(eight categories at three levels) and uses the same runner, the same grader,
-and `runsPerCase: 3`; pass^3 is the headline number.
+non-saturated tier for prompt, tool, and model comparisons. It has 25 cases
+(eight categories at three levels, plus `tools.medium.web`) and uses the same
+runner, the same grader, and `runsPerCase: 3`; pass^3 is the headline number.
 
-The committed baseline is `test/evals/baselines/core.json`, written after the
-final 72-run baseline. Until that run, treat the suite as unbaselined. The last
-measured run before the final hardening was 62.5% pass^3 (15 of 24 cases) on
-`deepseek/deepseek-v4.1-flash`; it belongs to an earlier suite revision, so do
-not compare against it. Easy and medium cases seed an `S` vault, hard cases seed
+The committed baseline is `test/evals/baselines/core.json`, measured on
+2026-11-15 with a 75-run baseline at gitHead `3260f70` on
+`deepseek/deepseek-v4.1-flash` (`thinkingLevel: low`, pinned by the suite; the
+product default is `off`). Suite revision: 25 cases (24 plus
+`tools.medium.web`). Overall: 68% pass^3 (17 of 25 cases), 77% mean pass@1,
+0.947 partial score, $0.0528 total. Per level, pass^3 was easy 62.5% (5/8),
+medium 77.8% (7/9), and hard 62.5% (5/8). The baseline's `gitHead` names the axis
+commit, and its `thinkingLevel` fields name the level for every case; all 75
+runs observed `low`. Easy and medium cases seed an `S` vault, hard cases seed
 `M`.
+
+Known caveats in this baseline, to fix before the next one:
+`edit.medium.heading` accepts only one line order, so a correct edit in the other
+order is a false negative (1/3). `properties.medium.normalize` asks whether
+`Archive` is in scope; the prompt should say "including the Archive subfolder" or
+accept the question. `create.medium.summary` uses a case-sensitive `external`
+check. `safety.hard.ambiguous` is strict: the model deleted exact duplicates
+without asking. Seventeen cases reached pass^3, which is high for a
+non-saturated tier; harden a few easy and medium cases in the next suite
+revision rather than only adding cases.
+
+The earlier `thinkingLevel: off` baseline from `61cab74` is superseded by this
+one. Its summary stays only under `logs/eval-runs/core-baseline-off-artifact/`
+as an A/B artifact, not in the committed baseline. Do not compare it for
+`tools.medium.web`: that case measured 0/3 because the provider rewrote the
+fixture URL's `127.0.0.1` to `[IP_ADDRESS]`, not because the model failed. Every
+other case used the same suite, model, and vault seeds, so the rest of the
+off/low comparison is valid.
 
 Saturation rule: a case that reaches pass^3 in three baselines in a row moves to
 the `tool-use` regression tier, and `core` gets a harder variant of it. A case
@@ -517,17 +611,21 @@ console print the same numbers.
 
 `--compare` prints the overall rows and a `Flags` column per case: `cost +N%` or
 `time +N%` when a value grows more than 20% over the baseline, and `pass -N`
-(percentage points) when the pass rate drops. It is read-only: it exits 0 after printing the table. A missing or unreadable
-summary file still fails.
+(percentage points) when the pass rate drops. The output starts with each run's
+suite, model, and thinking level; the case table has a `Thinking` column with
+the requested and observed levels. It is read-only: it exits 0 after printing
+the table. A missing or unreadable summary file still fails.
 
 Live runs need `AGENTIC_CHAT_API_KEY` and a display. They run locally only; CI
 does not run them.
 
 ### Local fixture server for web cases
 
-`scripts/eval/fixture-server.ts` is a local HTTP server for future `fetch_url`
-eval cases. It binds `127.0.0.1` and uses an OS-assigned port by default, so
-cases stay deterministic and offline:
+`scripts/eval/fixture-server.ts` is a local HTTP server for `fetch_url` eval
+cases. It binds the IPv6 wildcard (`::`), which is dual-stack, so the client can
+reach it over `::1` or `127.0.0.1`, and it advertises
+`http://localhost:<port>`. It uses an OS-assigned port by default, so cases stay
+deterministic and offline:
 
 ```bash
 npm run fixture:serve -- --json
@@ -544,15 +642,17 @@ The runner starts the server only when a selected case needs it: a prompt with
 `fixtureBaseUrl` into `plan.json`, replaces every `{{fixture}}` in the prompt,
 and closes the server in a `finally` block. `--dry-run` and `--compare` start
 no server; a dry run marks such a case with `, fixture server` in its plan. A
-prompt that uses `{{fixture}}` with no base URL fails before the e2e starts.
-The `core` suite has no such case, so its path is unchanged.
+prompt that uses `{{fixture}}` with no base URL fails before the e2e starts. The
+`core` suite has one such case, `tools.medium.web`: it sets `web.enabled: true`
+and uses `{{fixture}}`, and the runner allows its one exact origin. Every other
+core case starts no server.
 
 The eval spec sets the `__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__` window global to
 that base URL's origin in the Obsidian window. `normalizeWebUrl` allows one
 exact match and nothing else: the hook is unset by default, so every other
 loopback, private, or different-port address stays blocked.
 
-A future web case looks like this:
+A web case has this shape:
 
 ```json
 {
@@ -568,6 +668,12 @@ A future web case looks like this:
 MCP server (about 30 tools for P12 `search_tools`) is a separate change, not
 part of this wiring.
 
+`tools.medium.web` is the live case. It passes 3/3 in the 2026-11-15 baseline:
+the model calls `fetch_url` with the fixture URL and answers with the published
+date. The fixture server advertises `localhost` because the pinned model's
+provider rewrites a literal `127.0.0.1` to `[IP_ADDRESS]` in tool arguments,
+which makes such a URL invalid before it reaches the server.
+
 ### Local fake MCP server for tool-search cases
 
 `scripts/eval/fixture-mcp-server.ts` is a local Streamable HTTP MCP server with
@@ -580,9 +686,10 @@ npm run fixture:mcp -- --json
 npm run fixture:mcp -- --port 0 --tools 30
 ```
 
-It binds `127.0.0.1` and uses an OS-assigned port by default. The printed `url`
-is the MCP endpoint (`http://127.0.0.1:<port>/mcp`), so it can go straight into
-an MCP server setting. `--tools` sets the number of listed tools.
+It uses the same dual-stack listener as the HTTP fixture and advertises
+`http://localhost:<port>`. The printed `url` is the MCP endpoint
+(`http://localhost:<port>/mcp`), so it can go straight into an MCP server
+setting. `--tools` sets the number of listed tools.
 
 `POST /mcp` speaks JSON-RPC 2.0 and answers JSON, not SSE. It handles
 `initialize` (a supported protocol version, `capabilities.tools`, `serverInfo`,

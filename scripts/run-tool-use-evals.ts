@@ -12,10 +12,12 @@ import type {
   OverallSummary,
   RunPricing,
   RunUsage,
+  ThinkingLevelSource,
   ToolUseBudgetCaps,
   ToolUseCase,
   ToolUseCheckResult,
   ToolUseSuite,
+  ToolUseThinkingLevel,
 } from "./eval/tool-use-core";
 
 const DEFAULT_SUITE = "test/evals/tool-use/tool-use.eval.json";
@@ -56,6 +58,7 @@ interface CliArgs {
   outDir?: string;
   envFile?: string;
   maxUsd?: string;
+  thinkingLevel?: string;
   dryRun: boolean;
   writeBaseline: boolean;
   compare?: [string, string];
@@ -78,6 +81,8 @@ interface RunFile {
   usage: RunUsage;
   modelCalls: number;
   ms: number;
+  /** Level read from the session `thinking_level_change` entry, when present. */
+  observedThinkingLevel?: string;
   status?: string;
   error?: string;
 }
@@ -92,12 +97,21 @@ interface CaseRunEntry {
   /** Share of checks that passed; a run with no checks scores 0. */
   partialScore: number;
   usd: number;
+  /** The level this run requested. */
+  thinkingLevel: ToolUseThinkingLevel;
+  /** Reporting only: a provider clamp or a stale setting must not fail a run. */
+  observedThinkingLevel?: string;
   checks: ToolUseCheckResult[];
   error?: string;
 }
 
 interface CaseSummaryWithRuns extends CaseSummary {
   id: string;
+  thinkingLevel: ToolUseThinkingLevel;
+  /** Distinct observed levels, sorted. Empty when the session had no entry. */
+  observedThinkingLevels: string[];
+  /** Runs whose observed level differs from the requested one. Reporting only. */
+  thinkingLevelMismatches: number;
   runResults: CaseRunEntry[];
 }
 
@@ -106,6 +120,8 @@ interface ToolUseSummary {
   runId: string;
   suite: { name: string; description?: string; path: string };
   model: string;
+  thinkingLevel: ToolUseThinkingLevel;
+  thinkingLevelSource: ThinkingLevelSource;
   startedAt: string;
   finishedAt: string;
   durationMs: number;
@@ -138,7 +154,24 @@ async function main(): Promise<void> {
         ? 1
         : suite.runsPerCase
       : positiveInteger(args.runs, "--runs");
-  const cases = selectCases(suite, args.cases, args.smoke).map(expandCaseSeed);
+  if (args.envFile) {
+    if (!existsSync(args.envFile)) throw new Error(`--env-file does not exist: ${args.envFile}`);
+    // Load before the dry run so its printed level is the level a live run uses.
+    applyEnvFile(args.envFile);
+  }
+  const thinking = core.resolveThinkingLevel({
+    cli: args.thinkingLevel,
+    env: process.env.AGENTIC_CHAT_THINKING_LEVEL?.trim() || undefined,
+    suite: suite.thinkingLevel,
+  });
+  // A case pin wins over the run level. Store the effective level on every case
+  // so the plan, summary, and baseline need no second resolution step.
+  const cases = selectCases(suite, args.cases, args.smoke)
+    .map(expandCaseSeed)
+    .map((evalCase) => ({
+      ...evalCase,
+      thinkingLevel: core.effectiveThinkingLevel(evalCase, thinking.level),
+    }));
   const plannedRuns = planRuns(cases, runsPerCase);
   const runId = args.runId ?? timestampRunId();
   const outDir = path.resolve(args.outDir ?? path.join(DEFAULT_OUT_ROOT, runId));
@@ -155,16 +188,13 @@ async function main(): Promise<void> {
       plannedRuns,
       budget,
       outDir,
+      thinking,
     });
     return;
   }
 
   await assertFreshResultsDir(resultsDir);
 
-  if (args.envFile) {
-    if (!existsSync(args.envFile)) throw new Error(`--env-file does not exist: ${args.envFile}`);
-    applyEnvFile(args.envFile);
-  }
   const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("AGENTIC_CHAT_API_KEY is required. Set it in the environment or pass --env-file; the runner never prints it.");
@@ -197,6 +227,8 @@ async function main(): Promise<void> {
       suite: { name: suite.name, description: suite.description, path: suitePath },
       model: suite.model,
       runsPerCase,
+      thinkingLevel: thinking.level,
+      thinkingLevelSource: thinking.source,
       budget,
       turn: suite.turn,
       prices,
@@ -206,6 +238,7 @@ async function main(): Promise<void> {
         prompt: evalCase.prompt,
         seed: evalCase.seed,
         settings: evalCase.settings ?? {},
+        thinkingLevel: evalCase.thinkingLevel,
         checks: evalCase.checks,
         ...(evalCase.expected ? { expected: evalCase.expected } : {}),
       })),
@@ -237,12 +270,13 @@ async function main(): Promise<void> {
         throw new Error(`Missing tool-use result: ${resultPath}`);
       }
       const runFile = parseRunFile(JSON.parse(await readFile(resultPath, "utf8")) as unknown, resultPath);
-      const entry = gradeRunFile(core, evalCase, runFile, prices);
+      const entry = gradeRunFile(core, evalCase, runFile, prices, evalCase.thinkingLevel ?? thinking.level);
       caseEntries.get(evalCase.id)?.push(entry);
     }
 
     const caseSummaries: CaseSummaryWithRuns[] = planCases.map((evalCase) => {
       const runs = caseEntries.get(evalCase.id) ?? [];
+      const level = evalCase.thinkingLevel ?? thinking.level;
       const summary = core.summarizeCase(
         runs.map((run) => ({
           status: run.status,
@@ -255,7 +289,16 @@ async function main(): Promise<void> {
         })),
         { maxToolCalls: evalCase.expected?.maxToolCalls },
       );
-      return { id: evalCase.id, ...summary, runResults: runs };
+      return {
+        id: evalCase.id,
+        thinkingLevel: level,
+        observedThinkingLevels: observedLevels(runs),
+        thinkingLevelMismatches: runs.filter(
+          (run) => run.observedThinkingLevel !== undefined && run.observedThinkingLevel !== level,
+        ).length,
+        ...summary,
+        runResults: runs,
+      };
     });
 
     const tracker = new core.BudgetTracker(budget, prices);
@@ -268,6 +311,8 @@ async function main(): Promise<void> {
       runId,
       suite: { name: suite.name, description: suite.description, path: suitePath },
       model: suite.model,
+      thinkingLevel: thinking.level,
+      thinkingLevelSource: thinking.source,
       startedAt: startedAt.toISOString(),
       finishedAt: finishedAt.toISOString(),
       durationMs: finishedAt.getTime() - startedAt.getTime(),
@@ -300,6 +345,7 @@ function gradeRunFile(
   evalCase: ToolUseCase,
   runFile: RunFile,
   prices: RunPricing,
+  thinkingLevel: ToolUseThinkingLevel,
 ): CaseRunEntry {
   if (runFile.status === "skipped-budget") {
     return {
@@ -311,6 +357,8 @@ function gradeRunFile(
       toolCalls: 0,
       partialScore: 0,
       usd: 0,
+      thinkingLevel,
+      ...(runFile.observedThinkingLevel ? { observedThinkingLevel: runFile.observedThinkingLevel } : {}),
       checks: [],
       error: runFile.error,
     };
@@ -335,9 +383,18 @@ function gradeRunFile(
     toolCalls: runFile.toolCalls.length,
     partialScore: grade.checks.length > 0 ? grade.checks.filter((check) => check.ok).length / grade.checks.length : 0,
     usd,
+    thinkingLevel,
+    ...(runFile.observedThinkingLevel ? { observedThinkingLevel: runFile.observedThinkingLevel } : {}),
     checks: grade.checks,
     error: runFile.error,
   };
+}
+
+/** Distinct observed levels for a case, sorted; missing observations are omitted. */
+function observedLevels(runs: CaseRunEntry[]): string[] {
+  return [...new Set(runs.map((run) => run.observedThinkingLevel).filter((level): level is string => !!level))].sort(
+    (left, right) => left.localeCompare(right),
+  );
 }
 
 function parseRunFile(input: unknown, at: string): RunFile {
@@ -357,6 +414,8 @@ function parseRunFile(input: unknown, at: string): RunFile {
     usage: usageValue(input.usage),
     modelCalls: numberValue(input.modelCalls) ?? 0,
     ms: numberValue(input.ms) ?? 0,
+    observedThinkingLevel:
+      typeof input.observedThinkingLevel === "string" ? input.observedThinkingLevel : undefined,
     status: typeof input.status === "string" ? input.status : undefined,
     error: typeof input.error === "string" ? input.error : undefined,
   };
@@ -487,7 +546,7 @@ const FIXTURE_PLACEHOLDER = "{{fixture}}";
 
 /**
  * True when a case needs the local fixture server: its prompt asks for the
- * fixture URL, or it turns web access on. The core suite has neither, so the
+ * fixture URL, or it turns web access on. When no selected case needs it, the
  * normal eval path starts no server.
  */
 export function needsFixture(cases: readonly ToolUseCase[]): boolean {
@@ -525,6 +584,7 @@ function printDryRun(options: {
   plannedRuns: PlannedRun[];
   budget: ToolUseBudgetCaps;
   outDir: string;
+  thinking: { level: ToolUseThinkingLevel; source: ThinkingLevelSource };
 }): void {
   const inputTokens = DRY_RUN_ESTIMATE.tokensPerRun * DRY_RUN_ESTIMATE.inputShare;
   const outputTokens = DRY_RUN_ESTIMATE.tokensPerRun * (1 - DRY_RUN_ESTIMATE.inputShare);
@@ -536,12 +596,16 @@ function printDryRun(options: {
     `Tool-use eval plan: ${options.suite.name}`,
     `Suite: ${options.suitePath}`,
     `Model: ${options.suite.model}`,
+    `Thinking level: ${options.thinking.level} (${options.thinking.source})`,
     `Cases: ${options.cases.length}; ${options.cases.length} case(s) x ${options.runsPerCase} run(s) = ${options.plannedRuns.length} run(s)`,
   ];
   for (const evalCase of options.cases) {
     const seedFiles = Object.keys(evalCase.seed.files).length;
     const fixtureNote = needsFixture([evalCase]) ? ", fixture server" : "";
-    lines.push(`- ${evalCase.id}: ${options.runsPerCase} run(s), ${seedFiles} seed file(s)${fixtureNote}`);
+    const level = evalCase.thinkingLevel ?? options.thinking.level;
+    lines.push(
+      `- ${evalCase.id}: ${options.runsPerCase} run(s), ${seedFiles} seed file(s)${fixtureNote}, thinking ${level}`,
+    );
   }
   lines.push(
     `Budget: maxUsd ${options.budget.maxUsd}, maxModelCalls ${options.budget.maxModelCalls}, maxTokens ${options.budget.maxTokens}`,
@@ -560,6 +624,7 @@ function formatReport(summary: ToolUseSummary): string {
     "",
     `Suite: ${summary.suite.name}`,
     `Model: ${summary.model}`,
+    `Thinking level: ${summary.thinkingLevel} (${summary.thinkingLevelSource})`,
     `Prices (USD/token): input ${summary.prices.input}, output ${summary.prices.output}, cache-read ${summary.prices.cacheRead}, cache-write ${summary.prices.cacheWrite ?? 0}`,
     `Budget used: $${summary.budget.used.usd.toFixed(6)}, ${summary.budget.used.modelCalls} model call(s), ${summary.budget.used.tokens} token(s)`,
     `Budget exceeded: ${summary.budget.exceeded ?? "no"}`,
@@ -573,12 +638,12 @@ function formatReport(summary: ToolUseSummary): string {
     `- Calls: ${overall.meanModelCalls.toFixed(1)} model, ${overall.meanToolCalls.toFixed(1)} tool per run`,
     `- Median case time: ${(overall.medianCaseMs / 1000).toFixed(1)}s`,
     "",
-    "| Case | Pass rate | pass^K | Partial score | Mean model calls | Mean tool calls | Over budget | Median seconds | Mean seconds | Mean tokens | USD |",
-    "|---|---|---|---|---|---|---|---|---|---|---|",
+    "| Case | Thinking | Pass rate | pass^K | Partial score | Mean model calls | Mean tool calls | Over budget | Median seconds | Mean seconds | Mean tokens | USD |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   for (const entry of summary.cases) {
     lines.push(
-      `| ${entry.id} | ${entry.passed}/${entry.executed} | ${entry.passAtK} | ${entry.partialScore.toFixed(3)} | ${entry.meanModelCalls.toFixed(1)} | ${entry.meanToolCalls.toFixed(1)} | ${entry.overBudgetRuns} | ${(entry.medianMs / 1000).toFixed(1)} | ${(entry.meanMs / 1000).toFixed(1)} | ${Math.round(entry.meanTokens)} | $${entry.totalUsd.toFixed(6)} |`,
+      `| ${entry.id} | ${formatCaseThinking(entry)} | ${entry.passed}/${entry.executed} | ${entry.passAtK} | ${entry.partialScore.toFixed(3)} | ${entry.meanModelCalls.toFixed(1)} | ${entry.meanToolCalls.toFixed(1)} | ${entry.overBudgetRuns} | ${(entry.medianMs / 1000).toFixed(1)} | ${(entry.meanMs / 1000).toFixed(1)} | ${Math.round(entry.meanTokens)} | $${entry.totalUsd.toFixed(6)} |`,
     );
   }
   lines.push("", "## Per-run check failures", "");
@@ -598,15 +663,27 @@ function formatReport(summary: ToolUseSummary): string {
   return `${lines.join("\n")}\n`;
 }
 
+/** `low (observed low)` or `low (observed high 1/3)`; missing observations print as the requested level. */
+function formatCaseThinking(entry: CaseSummaryWithRuns | CaseComparison): string {
+  const requested = entry.thinkingLevel;
+  if (!requested) return "(missing)";
+  const observed = entry.observedThinkingLevels ?? [];
+  if (observed.length === 0) return requested;
+  const mismatches = entry.thinkingLevelMismatches ?? 0;
+  const shown = observed.map((level) => (level === requested ? level : `${level}!`)).join(", ");
+  return `${requested} (observed ${shown}${mismatches > 0 ? `; ${mismatches} mismatch(es)` : ""})`;
+}
+
 function formatConsoleSummary(summary: ToolUseSummary, summaryPath: string, reportPath: string): string {
   const overall = summary.overall;
   const lines = [
     `Tool-use eval: ${summary.runId}`,
+    `Thinking level: ${summary.thinkingLevel} (${summary.thinkingLevelSource})`,
     `Cases: ${summary.cases.length}; runs: ${overall.runs} executed; pass^K: ${percent(overall.passAtK)}; mean pass@1: ${percent(overall.meanPassAt1)}`,
   ];
   for (const entry of summary.cases) {
     lines.push(
-      `- ${entry.id}: ${entry.passed}/${entry.executed} (pass^K ${entry.passAtK}, partial ${entry.partialScore.toFixed(2)}, ${entry.meanModelCalls.toFixed(1)} model calls, ${entry.meanToolCalls.toFixed(1)} tool calls, ${(entry.medianMs / 1000).toFixed(1)}s median, ${Math.round(entry.meanTokens)} tokens, $${entry.totalUsd.toFixed(6)})`,
+      `- ${entry.id}: ${entry.passed}/${entry.executed} (thinking ${formatCaseThinking(entry)}, pass^K ${entry.passAtK}, partial ${entry.partialScore.toFixed(2)}, ${entry.meanModelCalls.toFixed(1)} model calls, ${entry.meanToolCalls.toFixed(1)} tool calls, ${(entry.medianMs / 1000).toFixed(1)}s median, ${Math.round(entry.meanTokens)} tokens, $${entry.totalUsd.toFixed(6)})`,
     );
   }
   lines.push(
@@ -645,12 +722,17 @@ async function writeBaseline(summary: ToolUseSummary): Promise<string> {
     version: 1,
     suite: summary.suite.name,
     model: summary.model,
+    thinkingLevel: summary.thinkingLevel,
+    thinkingLevelSource: summary.thinkingLevelSource,
     prices: summary.prices,
     date: new Date().toISOString(),
     gitHead: gitHead(),
     overall: summary.overall,
     cases: summary.cases.map((entry) => ({
       id: entry.id,
+      thinkingLevel: entry.thinkingLevel,
+      observedThinkingLevels: entry.observedThinkingLevels,
+      thinkingLevelMismatches: entry.thinkingLevelMismatches,
       passRate: entry.passRate,
       passAtK: entry.passAtK,
       partialScore: entry.partialScore,
@@ -675,6 +757,9 @@ async function compareCommand(input: [string, string]): Promise<void> {
 }
 
 interface CaseComparison {
+  thinkingLevel?: string;
+  observedThinkingLevels?: string[];
+  thinkingLevelMismatches?: number;
   passRate?: number;
   passAtK?: number;
   partialScore?: number;
@@ -702,6 +787,9 @@ function formatComparison(baseline: unknown, candidate: unknown): string {
   const lines = [
     "# Tool-use eval comparison",
     "",
+    runIdentity("Baseline", baseline),
+    runIdentity("Candidate", candidate),
+    "",
     "## Overall",
     "",
     "| Metric | Baseline | Candidate | Change |",
@@ -710,17 +798,34 @@ function formatComparison(baseline: unknown, candidate: unknown): string {
     "",
     "## Cases",
     "",
-    "| Case | Pass rate | pass^K | Partial score | Median s | Mean tokens | Mean USD | Flags |",
-    "|---|---|---|---|---|---|---|---|",
+    "| Case | Thinking | Pass rate | pass^K | Partial score | Median s | Mean tokens | Mean USD | Flags |",
+    "|---|---|---|---|---|---|---|---|---|",
   ];
   for (const id of ids) {
     const left = before.get(id) ?? {};
     const right = after.get(id) ?? {};
     lines.push(
-      `| ${id} | ${formatDelta(left.passRate, right.passRate, percent)} | ${formatDelta(left.passAtK, right.passAtK, whole)} | ${formatDelta(left.partialScore, right.partialScore, ratio)} | ${formatDelta(left.medianMs, right.medianMs, seconds)} | ${formatDelta(left.meanTokens, right.meanTokens, whole)} | ${formatDelta(left.meanUsd, right.meanUsd, usd)} | ${caseFlags(left, right)} |`,
+      `| ${id} | ${formatCompareThinking(left, right)} | ${formatDelta(left.passRate, right.passRate, percent)} | ${formatDelta(left.passAtK, right.passAtK, whole)} | ${formatDelta(left.partialScore, right.partialScore, ratio)} | ${formatDelta(left.medianMs, right.medianMs, seconds)} | ${formatDelta(left.meanTokens, right.meanTokens, whole)} | ${formatDelta(left.meanUsd, right.meanUsd, usd)} | ${caseFlags(left, right)} |`,
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+/** One line that names the suite, model, and reasoning level of a summary or baseline. */
+function runIdentity(label: string, input: unknown): string {
+  if (!isRecord(input)) return `- ${label}: (missing)`;
+  const suite = isRecord(input.suite) ? input.suite : {};
+  const name = typeof suite.name === "string" ? suite.name : "(suite?)";
+  const model = typeof input.model === "string" ? input.model : "(model?)";
+  const level = typeof input.thinkingLevel === "string" ? input.thinkingLevel : "(not recorded)";
+  const source = typeof input.thinkingLevelSource === "string" ? ` (${input.thinkingLevelSource})` : "";
+  return `- ${label}: ${name}, ${model}, thinking ${level}${source}`;
+}
+
+function formatCompareThinking(before: CaseComparison, after: CaseComparison): string {
+  const left = formatCaseThinking(before);
+  const right = formatCaseThinking(after);
+  return left === right ? left : `${left} -> ${right}`;
 }
 
 function overallRows(before: OverallComparison, after: OverallComparison): string[] {
@@ -778,6 +883,11 @@ function summaryCases(input: unknown): Map<string, CaseComparison> {
   for (const entry of input.cases) {
     if (!isRecord(entry) || typeof entry.id !== "string") continue;
     output.set(entry.id, {
+      thinkingLevel: typeof entry.thinkingLevel === "string" ? entry.thinkingLevel : undefined,
+      observedThinkingLevels: Array.isArray(entry.observedThinkingLevels)
+        ? entry.observedThinkingLevels.filter((level): level is string => typeof level === "string")
+        : undefined,
+      thinkingLevelMismatches: numberValue(entry.thinkingLevelMismatches),
       passRate: numberValue(entry.passRate),
       passAtK: numberValue(entry.passAtK),
       partialScore: numberValue(entry.partialScore),
@@ -910,6 +1020,9 @@ function parseArgs(argv: string[]): CliArgs {
       case "max-usd":
         args.maxUsd = value;
         break;
+      case "thinking-level":
+        args.thinkingLevel = value;
+        break;
       default:
         throw new Error(`Unknown option: --${key}`);
     }
@@ -924,10 +1037,12 @@ function usageText(): string {
   return [
     "Usage:",
     "  npm run eval:tool-use -- [--suite path] [--case id[,id] | --smoke] [--runs n] [--run-id id]",
-    "      [--out-dir dir] [--env-file path] [--max-usd usd] [--dry-run] [--write-baseline]",
+    "      [--out-dir dir] [--env-file path] [--max-usd usd] [--thinking-level level]",
+    "      [--dry-run] [--write-baseline]",
     "  npm run eval:tool-use -- --compare <base-summary.json> <head-summary.json>",
     "",
     "  --smoke runs one core case per category, once each, unless --runs is set.",
+    "  --thinking-level wins over AGENTIC_CHAT_THINKING_LEVEL, the suite field, and the low default.",
     "",
   ].join("\n");
 }

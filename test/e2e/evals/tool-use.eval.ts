@@ -21,6 +21,8 @@ interface EvalCasePlan {
   prompt: string;
   seed: { files: Record<string, string>; binaryFiles?: Record<string, string> };
   settings?: Record<string, string | number | boolean>;
+  /** The level this case requests; the plan already applied the per-case pin. */
+  thinkingLevel?: string;
   checks: unknown[];
 }
 
@@ -28,6 +30,9 @@ interface EvalPlan {
   runId: string;
   model: string;
   runsPerCase: number;
+  thinkingLevel: string;
+  /** cli, env, suite, or default. */
+  thinkingLevelSource?: string;
   budget: ToolUseBudgetCaps;
   turn: { timeoutMs: number; maxTurnsPerPrompt: number };
   prices: RunPricing;
@@ -42,6 +47,8 @@ interface ObservedSession {
   answer: string;
   usage: RunUsage;
   modelCalls: number;
+  /** Level read from the run's session `thinking_level_change` entry. */
+  observedThinkingLevel?: string;
 }
 
 interface RunResult extends ObservedSession {
@@ -122,7 +129,10 @@ describe("tool-use eval", function () {
       let sessionBaseline: string[] | undefined;
       try {
         await prepareVault(evalCase.seed.files, evalCase.seed.binaryFiles ?? {});
-        await applyCaseSettings(evalCase.settings ?? {});
+        await applyCaseSettings(
+          evalCase.settings ?? {},
+          evalCase.thinkingLevel ?? plan.thinkingLevel ?? "low",
+        );
         // The command callback is fire-and-forget, so take the set before it
         // starts. The new session file is the only one that may appear.
         sessionBaseline = await listSessionPaths();
@@ -233,9 +243,12 @@ async function configurePlugin(): Promise<void> {
   // A case may set a dotted path such as "web.enabled". Capture and restore the
   // whole top-level object, so the next case starts from the base again.
   const settingKeys = [
-    ...new Set(
-      plan.cases.flatMap((entry) => Object.keys(entry.settings ?? {}).map((key) => key.split(".")[0])),
-    ),
+    ...new Set([
+      // The runner sets this on every case from the plan, not only when a case
+      // names it in `settings`, so capture and restore it like every other key.
+      "thinkingLevel",
+      ...plan.cases.flatMap((entry) => Object.keys(entry.settings ?? {}).map((key) => key.split(".")[0])),
+    ]),
   ];
   const configured = await browser.executeObsidian(async ({ app }, config) => {
     const plugin = (app as unknown as {
@@ -305,7 +318,10 @@ async function configurePlugin(): Promise<void> {
   baseCaseSettings = configured.base;
 }
 
-async function applyCaseSettings(settings: Record<string, string | number | boolean>): Promise<void> {
+async function applyCaseSettings(
+  settings: Record<string, string | number | boolean>,
+  thinkingLevel: string,
+): Promise<void> {
   await browser.executeObsidian(async ({ app }, payload) => {
     const plugin = (app as unknown as {
       plugins?: {
@@ -330,8 +346,10 @@ async function applyCaseSettings(settings: Record<string, string | number | bool
     const current = plugin.settings;
     for (const [key, value] of Object.entries(payload.base)) setSettingPath(current, key, value);
     for (const [key, value] of Object.entries(payload.caseSettings)) setSettingPath(current, key, value);
+    // The plan value is authoritative. It already contains the per-case pin.
+    current.thinkingLevel = payload.thinkingLevel;
     await plugin.saveSettings?.();
-  }, { base: baseCaseSettings, caseSettings: settings });
+  }, { base: baseCaseSettings, caseSettings: settings, thinkingLevel });
 }
 
 async function prepareVault(
@@ -436,12 +454,34 @@ async function readObservation(sessionBaseline: string[]): Promise<ObservedSessi
   if (apiError) throw new Error(`model request failed: ${apiError}`);
   const analysis = analyzer.analyzeSessionText(raw);
   const file = analysis.files[0];
+  const observedLevel = observedThinkingLevel(raw);
   return {
     toolCalls: file?.toolCalls ?? [],
     answer: file?.finalAssistantText ?? "",
     usage: analysis.aggregate.usage ?? {},
     modelCalls: analysis.aggregate.messages?.assistant ?? 0,
+    ...(observedLevel ? { observedThinkingLevel: observedLevel } : {}),
   };
+}
+
+/**
+ * The last `thinking_level_change` entry is the level the last request used.
+ * Report it, never fail on it: the provider may clamp, and a mismatch is data.
+ */
+function observedThinkingLevel(raw: string): string | undefined {
+  let level: string | undefined;
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line) as { type?: string; thinkingLevel?: unknown };
+      if (entry.type === "thinking_level_change" && typeof entry.thinkingLevel === "string") {
+        level = entry.thinkingLevel;
+      }
+    } catch {
+      // A partial line is not evidence; the run already reports its own errors.
+    }
+  }
+  return level;
 }
 
 /** A provider 402/429 is a run error, not an empty answer. The trace keeps it on the assistant message. */

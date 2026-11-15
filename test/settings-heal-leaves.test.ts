@@ -34,6 +34,20 @@ function write(root: Json, path: string[], value: unknown): void {
 
 const leaves = primitiveLeaves(DEFAULT_SETTINGS);
 
+describe("thinking level default", () => {
+  it("starts a fresh install at off and lets the provider decide", () => {
+    expect(DEFAULT_SETTINGS.thinkingLevel).toBe("off");
+    expect(mergeSettings({}).thinkingLevel).toBe("off");
+    expect(mergeSettings(null).thinkingLevel).toBe("off");
+  });
+
+  it("keeps a stored level, including low, and heals an unknown one to off", () => {
+    expect(mergeSettings({ thinkingLevel: "low" }).thinkingLevel).toBe("low");
+    expect(mergeSettings({ thinkingLevel: "high" }).thinkingLevel).toBe("high");
+    expect(mergeSettings({ thinkingLevel: "ultra" } as never).thinkingLevel).toBe("off");
+  });
+});
+
 describe("mergeSettings heals every primitive leaf", () => {
   it("walks a broad table of defaults", () => {
     expect(leaves.length).toBeGreaterThan(40);
