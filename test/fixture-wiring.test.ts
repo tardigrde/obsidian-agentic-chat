@@ -118,10 +118,15 @@ describe("fixture wiring in the tool-use runner", () => {
     expect(result.stdout).toContain(`- web.easy.article: 1 run(s), 0 seed file(s)${FIXTURE_MARKER}`);
   });
 
-  it("leaves the core dry-run plan unchanged", () => {
+  it("marks only tools.medium.web in the core dry-run plan", () => {
     const result = runDryRun(CORE_SUITE_PATH);
 
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).not.toContain(FIXTURE_MARKER);
+    const caseLines = result.stdout.split("\n").filter((line) => line.startsWith("- "));
+    expect(caseLines).toHaveLength(25);
+    const webLine = caseLines.find((line) => line.startsWith("- tools.medium.web: "));
+    expect(webLine, "tools.medium.web must be in the core dry run").toBeDefined();
+    expect(webLine).toContain(FIXTURE_MARKER);
+    expect(caseLines.filter((line) => line.includes(FIXTURE_MARKER))).toEqual([webLine]);
   });
 });

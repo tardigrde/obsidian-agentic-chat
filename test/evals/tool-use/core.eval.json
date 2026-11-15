@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "core",
-  "description": "The non-saturated tier: 24 code-graded cases over seeded S and M vaults, 3 runs per case.",
+  "description": "The non-saturated tier: 25 code-graded cases over seeded S and M vaults, 3 runs per case.",
   "model": "deepseek/deepseek-v4.1-flash",
   "runsPerCase": 3,
   "budget": {
@@ -2142,6 +2142,29 @@
       "expected": {
         "maxToolCalls": 18
       }
+    },
+    {
+      "id": "tools.medium.web",
+      "prompt": "Fetch {{fixture}}/article and report its published date in ISO format. Use the page, not your own knowledge. Reply with the date only.",
+      "seed": {
+        "vault": {
+          "size": "S",
+          "seed": 117
+        },
+        "files": {
+          "300 Areas/Reading list.md": "# Reading list\n\n- Fixture article, check the published date.\n"
+        }
+      },
+      "settings": { "web.enabled": true },
+      "checks": [
+        { "type": "tool_called", "name": "fetch_url" },
+        { "type": "answer_contains", "text": "2026-01-05" },
+        { "type": "answer_not_contains", "text": "2026-07-19" },
+        { "type": "max_tool_calls", "max": 6 },
+        { "type": "no_tool_errors" },
+        { "type": "unchanged", "path": "300 Areas/Reading list.md" }
+      ],
+      "expected": { "maxToolCalls": 6 }
     },
     {
       "id": "tools.hard.broken-links",
