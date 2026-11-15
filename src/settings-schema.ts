@@ -170,7 +170,7 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   openaiCompatibleApiKey: "",
   openaiCompatibleModel: "",
   openaiCompatibleContextWindow: 0,
-  thinkingLevel: "off",
+  thinkingLevel: "low",
   temperature: 0.3,
   maxTokens: 0,
   requestTimeoutMs: 90_000,
