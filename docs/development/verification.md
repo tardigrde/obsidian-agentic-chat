@@ -304,9 +304,10 @@ the witness, `fast`, or a committed e2e assertion.
 `--charter eval-mining` is the first experiment for the data engine. It asks one
 explore run to act like a vault owner with a single realistic goal over 2-8 chat
 turns, so the run leaves a session trace under `sessions/`. `npm run
-analyze:session` summarizes it today; the trace miner (`npm run trace:mine`, once
-it lands) will turn it into anonymized candidates. It does not replace the core
-suite, and it does not write eval cases by itself.
+analyze:session` summarizes it today. `npm run trace:mine` turns the trace into
+anonymized candidates, and `npm run eval:from-trace` turns one candidate into a
+draft case for human review. Neither writes a final eval case by itself, and
+neither replaces the core suite.
 
 ## Promotion
 
@@ -339,6 +340,26 @@ npm run analyze:session -- --compare <before-dir> <after-dir> --format markdown
 
 Markdown output is for human triage and highlights token use, cache hits, active
 note context, duplicate tool calls, approval denials, and tool errors.
+
+`npm run trace:mine -- --sessions <sessions-dir>` writes anonymized
+`candidates.json` and `report.md` under `logs/trace-mining/<timestamp>/`. To turn
+one candidate into a draft case:
+
+```bash
+npm run trace:mine -- --sessions <sessions-dir>
+npm run eval:from-trace -- --candidate logs/trace-mining/<timestamp>/candidates.json --id <candidate-id>
+```
+
+The converter writes `logs/eval-candidates/<timestamp>/<id>/case.draft.json` and
+`README.md` from the redacted candidate only. It never reads a session file and
+never calls a model. `--out <dir>` changes the base directory. `--sessions <dir>`
+is accepted for a future session lookup and is not read in v1.
+
+Then fill the TODOs in the draft: choose or capture the vault, restore the exact
+prompt, write code-gradeable checks, and replay on current `main` with a live
+model. Add the case to `core` only if the replay fails and the checks are fair. A
+draft has `checks: []`, so it is not a suite case and must not be committed as
+one.
 
 ## Tool-use evals
 
