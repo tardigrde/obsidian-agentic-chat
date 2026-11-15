@@ -2,6 +2,7 @@ import type { App, TFile } from "obsidian";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { IgnoreMatcher } from "../../vault/ignore";
 import { normalizeVaultPath } from "../../vault/path";
+import { findVaultFile, pathSuggestion } from "../../vault/path-lookup";
 import type { ReadMemo } from "../../vault/read-memo";
 import { truncateToolOutput } from "../../vault/truncate";
 import { toolResult, untrustedToolResult } from "../result";
@@ -25,13 +26,16 @@ export function normalizeVisibleVaultPath(isIgnored: IgnoreMatcher, path: string
 
 export function getVisibleVaultFile(app: App, isIgnored: IgnoreMatcher, path: string): { path: string; file: TFile } {
   const normalized = normalizeVisibleVaultPath(isIgnored, path);
-  return { path: normalized, file: getVaultFile(app, normalized) };
+  return { path: normalized, file: getVaultFile(app, normalized, isIgnored) };
 }
 
-export function getVaultFile(app: App, path: string): TFile {
-  const file = app.vault.getFileByPath(path);
-  if (!file) throw new Error(`File not found: ${path}`);
-  return file;
+export function getVaultFile(app: App, path: string, isIgnored: IgnoreMatcher): TFile {
+  // Exact path first; NFC drift resolves only when a single file matches.
+  const file = findVaultFile(app, path);
+  if (file) return file;
+  const base = `File not found: ${path}`;
+  const suggestion = pathSuggestion(app, path, isIgnored);
+  throw new Error(suggestion ? `${base}\nDid you mean "${suggestion}"?` : base);
 }
 
 /**

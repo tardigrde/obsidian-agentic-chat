@@ -545,6 +545,15 @@ export class AgentService {
   }
 
   /**
+   * Continue the current transcript without adding a user message. The caller
+   * keeps the user turn and tool results and drops only a failed assistant
+   * reply, so a retry re-runs the turn instead of sending the prompt twice.
+   */
+  async continueTurn(expectedSessionToken?: number): Promise<void> {
+    await this.runPrompt((agent) => agent.continue(), expectedSessionToken);
+  }
+
+  /**
    * The conversation a send binds to. It changes when a session swap or a
    * rewind commits, and survives compaction.
    */

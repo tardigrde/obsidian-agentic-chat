@@ -80,3 +80,64 @@ describe("mode broadcast to chat views", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 });
+
+describe("mode change listeners", () => {
+  it("notifies a listener once with the new mode after a changed save", async () => {
+    const { plugin } = await loadedPlugin();
+    const listener = vi.fn();
+    plugin.onModeChange(listener);
+    const next = plugin.settings.mode === "safe" ? "yolo" : "safe";
+
+    await plugin.settingsStore.update((settings) => {
+      settings.mode = next;
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith(next);
+  });
+
+  it("does not notify a listener on an unchanged save", async () => {
+    const { plugin } = await loadedPlugin();
+    const listener = vi.fn();
+    plugin.onModeChange(listener);
+
+    await plugin.saveSettings();
+    await plugin.settingsStore.update((settings) => {
+      settings.systemPrompt = `${settings.systemPrompt ?? ""} more`;
+    });
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("does not notify a listener when the save fails", async () => {
+    const { plugin } = await loadedPlugin();
+    const listener = vi.fn();
+    plugin.onModeChange(listener);
+    (plugin as unknown as { saveData: () => Promise<void> }).saveData = async () => {
+      throw new Error("disk full");
+    };
+    const next = plugin.settings.mode === "safe" ? "yolo" : "safe";
+
+    await expect(
+      plugin.settingsStore.update((settings) => {
+        settings.mode = next;
+      }),
+    ).rejects.toThrow("disk full");
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("stops notifying a listener after it unsubscribes", async () => {
+    const { plugin } = await loadedPlugin();
+    const listener = vi.fn();
+    const unsubscribe = plugin.onModeChange(listener);
+    unsubscribe();
+    const next = plugin.settings.mode === "safe" ? "yolo" : "safe";
+
+    await plugin.settingsStore.update((settings) => {
+      settings.mode = next;
+    });
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
