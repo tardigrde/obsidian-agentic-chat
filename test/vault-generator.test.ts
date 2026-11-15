@@ -140,13 +140,15 @@ describe("seeded L vault", () => {
   });
 
   it("keeps every L path and every L basename unique and clean", () => {
-    const paths = Object.keys(generateVault("L", 5).files);
-    const notes = notePaths(generateVault("L", 5));
+    const vault = generateVault("L", 5);
+    const paths = Object.keys(vault.files);
+    const notes = notePaths(vault);
     const basenames = notes.map(basename);
 
     expect(notes).toHaveLength(2_000);
     expect(new Set(paths).size, "duplicate path").toBe(paths.length);
     expect(new Set(basenames).size, "duplicate basename").toBe(basenames.length);
+    expect(basenames.some((name) => / - .* \d+$/.test(name)), "a repeated live name takes a number").toBe(true);
 
     for (const filePath of paths) {
       const segments = filePath.split("/");
