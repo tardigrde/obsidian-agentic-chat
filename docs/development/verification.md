@@ -433,6 +433,25 @@ summary file still fails.
 Live runs need `AGENTIC_CHAT_API_KEY` and a display. They run locally only; CI
 does not run them.
 
+### Local fixture server for web cases
+
+`scripts/eval/fixture-server.ts` is a local HTTP server for future `fetch_url`
+eval cases. It binds `127.0.0.1` and uses an OS-assigned port by default, so
+cases stay deterministic and offline:
+
+```bash
+npm run fixture:serve -- --json
+npm run fixture:serve -- --port 8080 --slow-ms 500
+```
+
+The endpoints cover the cases a web tool must handle: `/article` and
+`/article-v2` (different dates), `/redirect`, `/429` with `Retry-After`,
+`/slow`, `/json`, `/not-found`, and `/echo?q=...` for prompt-injection
+payloads. `--slow-ms` sets the `/slow` delay.
+
+The eval runner does not use the server yet. The fake MCP server (about 30 tools
+for P12 `search_tools`) is a follow-up, not part of this change.
+
 ## CI
 
 `ci` runs `npm run verify -- ci` on Node 24: app, e2e, and scripts typechecks;
