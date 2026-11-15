@@ -34,6 +34,21 @@ npm run verify -- all                  # everything above
 | L5 | `npm run verify -- dogfood` | multi-tool agent flows in a generated vault | minutes |
 | L6 | `npm run verify -- eval` | prompt, tool, context, or provider changes | minutes |
 
+L4 and the eval/dogfood lanes open real Obsidian windows. On a desktop, every
+window asks the window manager to activate it and steals the cursor. Run them on
+a nested Xephyr display:
+
+```bash
+npm run nested -- npm run verify -- e2e test/e2e/specs/smoke.e2e.ts
+npm run nested -- npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --runs 3 --env-file .env
+```
+
+`npm run nested` starts Xephyr on a free display and stops it when the command
+exits. It is a real GUI Obsidian, not `AGENTIC_CHAT_E2E_HEADLESS=1` (headless has
+no accessibility tree). Use `--display :N` to reuse a running Xephyr and
+`--screen WxH` to change its size. Probes and the chaos runner already own their
+display.
+
 For agent-quality changes, compare two eval runs instead of reading one:
 
 ```bash
