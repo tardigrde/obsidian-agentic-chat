@@ -18,7 +18,6 @@ import type {
 
 const DEFAULT_SUITE = "test/evals/tool-use/tool-use.eval.json";
 const DEFAULT_OUT_ROOT = "logs/eval-runs";
-const BASELINE_PATH = "test/evals/baselines/tool-use.json";
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 
 // The dry run must not touch the network. This fixed assumption only makes the
@@ -248,7 +247,7 @@ async function main(): Promise<void> {
   if (args.writeBaseline) {
     const refusal = core.baselineRefusal(summary, plannedRuns.length, suite);
     if (refusal) throw new Error(`Refusing to write baseline: ${refusal}`);
-    const baselinePath = await writeBaseline(summary);
+    const baselinePath = await writeBaseline(summary, core.baselineRelativePath(summary.suite.name));
     console.log(`Baseline: ${baselinePath}`);
   }
 
@@ -551,7 +550,7 @@ async function assertFreshResultsDir(resultsDir: string): Promise<void> {
   }
 }
 
-async function writeBaseline(summary: ToolUseSummary): Promise<string> {
+async function writeBaseline(summary: ToolUseSummary, relativePath: string): Promise<string> {
   const baseline = {
     version: 1,
     suite: summary.suite.name,
@@ -566,7 +565,7 @@ async function writeBaseline(summary: ToolUseSummary): Promise<string> {
       meanUsd: entry.meanUsd,
     })),
   };
-  const target = path.resolve(BASELINE_PATH);
+  const target = path.resolve(relativePath);
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
   return target;

@@ -368,6 +368,20 @@ export interface BaselineRefusalSuite {
 }
 
 /** Failing checks may enter a baseline; incomplete or errored runs may not. */
+/**
+ * Baseline files are named after the suite, so a second suite can never
+ * overwrite the `tool-use` regression baseline. The name is restricted to a
+ * slug so the suite cannot point the writer outside `test/evals/baselines/`.
+ */
+export function baselineRelativePath(suiteName: string): string {
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(suiteName)) {
+    throw new Error(
+      `suite.name must match /^[a-z0-9][a-z0-9-]*$/ to name a baseline file; got ${JSON.stringify(suiteName)}.`,
+    );
+  }
+  return `test/evals/baselines/${suiteName}.json`;
+}
+
 export function baselineRefusal(
   summary: BaselineRefusalSummary,
   plannedRunCount: number,
