@@ -348,9 +348,10 @@ for example a PDF. The `unchanged` check covers text seeds only.
 
 ### The `core` suite and generated vaults
 
-`tool-use` stays the regression tier: 14 cases, saturated at 100%. `core` is the
-non-saturated tier for prompt, tool, and model comparisons. It uses the same
-runner, the same grader, and `runsPerCase: 3`; pass^3 is the headline number.
+`tool-use` stays the regression tier: 14 cases, saturated at 100%. The follow-up
+PR adds `core`, the non-saturated tier for prompt, tool, and model comparisons.
+It uses the same runner, the same grader, and `runsPerCase: 3`; pass^3 is the
+headline number.
 
 A case can ask for a seeded synthetic vault instead of a hand-written seed:
 
@@ -373,7 +374,8 @@ console print the same numbers.
 
 `--compare` prints the overall rows and a `Flags` column per case: `cost +N%` or
 `time +N%` when a value grows more than 20% over the baseline, and `pass -N`
-(percentage points) when the pass rate drops. It is read-only and always exits 0.
+(percentage points) when the pass rate drops. It is read-only: it exits 0 after printing the table. A missing or unreadable
+summary file still fails.
 
 Live runs need `AGENTIC_CHAT_API_KEY` and a display. They run locally only; CI
 does not run them.
