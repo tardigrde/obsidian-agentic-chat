@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import {
   mineSessionText,
+  mineTarget,
   parseMiningArgs,
   runTraceMiner,
   type TraceCandidate,
@@ -416,6 +417,23 @@ describe("privacy regressions", () => {
     expect(evidence).not.toContain("Next closest");
   });
 
+  it("strips the oldText payload from a must-match-exactly-once edit error", () => {
+    const errorText = 'oldText must match exactly once: "The secret duplicated line"';
+    const session = new FixtureSession()
+      .user("Fix the heading.")
+      .assistant({ toolCalls: [{ id: "call-1", name: "vault_edit", args: { path: "Note.md" } }] })
+      .toolResult("call-1", "vault_edit", errorText, true)
+      .assistant({ text: "I could not edit it." });
+
+    const [candidate] = mine(session);
+    const evidence = candidate?.evidence ?? "";
+
+    expect(candidate?.signal).toBe("tool-error");
+    expect(evidence).toContain("oldText must match exactly once");
+    expect(evidence).toContain("[oldText]");
+    expect(evidence).not.toContain("The secret duplicated line");
+  });
+
   it("strips a compressed context marker and its attached path list", () => {
     const marker =
       "<context unchanged since previous turn. Attached: Private/Diary.md, Private/Keys.md. " +
@@ -451,6 +469,32 @@ describe("privacy regressions", () => {
     expect(serialized).not.toContain("id_rsa");
     expect(serialized).not.toContain("jane");
     expect(serialized).not.toContain("diary");
+  });
+});
+
+describe("file target guard", () => {
+  it("rejects a non-.jsonl file before reading its content", async () => {
+    const dir = await tempDir();
+    const envFile = path.join(dir, ".env");
+    const txtFile = path.join(dir, "notes.txt");
+    const envSecret = "sk-live-secret-value-123456789";
+    const txtSecret = "PRIVATE TXT CONTENT";
+    await writeFile(envFile, `API_KEY=${envSecret}\n`);
+    await writeFile(txtFile, `${txtSecret}\n`);
+
+    for (const [file, secret] of [
+      [envFile, envSecret],
+      [txtFile, txtSecret],
+    ] as const) {
+      let message = "";
+      try {
+        mineTarget(file);
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toMatch(/non-\.jsonl/);
+      expect(message).not.toContain(secret);
+    }
   });
 });
 

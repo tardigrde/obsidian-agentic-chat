@@ -1,8 +1,9 @@
 /**
  * Mine session JSONL into anonymized failure candidates for the eval loop.
  *
- * Local only: this module never calls a model, opens a socket, or reads a
- * secret. Sessions are read-only input; the only writes go to the output
+ * Local only: this module never calls a model or opens a socket. Sessions are
+ * read-only input, and only `.jsonl` files are read: a file target with another
+ * extension is rejected before any read. The only writes go to the output
  * directory. `logs/` is git-ignored, so a real run cannot land in the repo.
  *
  * Entry shapes come from `src/session/jsonl.ts`. The miner reads the entries in
@@ -123,8 +124,9 @@ const ABSOLUTE_PATH_PATTERN = /\/(?:home|Users|root)\b(?:\/[^\s"'`<>()[\]]*[^\s"
 const CONTEXT_BLOCK_PATTERN = /<context\b[\s\S]*?<\/context>/gi;
 const FOCUS_HINT_PATTERN = /^\s*Focus: The user's request after this line is the primary task\.[^\n]*$/gm;
 const EDIT_PAYLOAD_PATTERN =
-  /(\boldText (?:was not found|matches \d+ times[^:\n]*)):\s*"(?:\\.|[^"\\])*"/g;
-const EDIT_PAYLOAD_OPEN_PATTERN = /(\boldText (?:was not found|matches \d+ times[^:\n]*)):\s*"[^\n]*/g;
+  /(\boldText (?:was not found|must match exactly once|matches \d+ times[^:\n]*)):\s*"(?:\\.|[^"\\])*"/g;
+const EDIT_PAYLOAD_OPEN_PATTERN =
+  /(\boldText (?:was not found|must match exactly once|matches \d+ times[^:\n]*)):\s*"[^\n]*/g;
 const EDIT_FUZZY_LINE_PATTERN = /^[ \t]*(?:Closest match|Next closest) \(line \d+\):.*$/gim;
 
 interface RawEntry {
@@ -340,7 +342,14 @@ function resolveSessionFiles(target: string): string[] {
   const resolved = path.resolve(target);
   if (!existsSync(resolved)) return [];
   const stat = statSync(resolved);
-  if (stat.isFile()) return [resolved];
+  if (stat.isFile()) {
+    if (!resolved.toLowerCase().endsWith(".jsonl")) {
+      throw new Error(
+        `Refusing to read a non-.jsonl file: ${path.basename(resolved)}. Pass a session .jsonl file or a directory.`,
+      );
+    }
+    return [resolved];
+  }
   if (!stat.isDirectory()) return [];
   return readdirSync(resolved)
     .filter((name) => name.endsWith(".jsonl"))
