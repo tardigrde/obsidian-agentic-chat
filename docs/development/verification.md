@@ -482,16 +482,19 @@ is the MCP endpoint (`http://127.0.0.1:<port>/mcp`), so it can go straight into
 an MCP server setting. `--tools` sets the number of listed tools.
 
 `POST /mcp` speaks JSON-RPC 2.0 and answers JSON, not SSE. It handles
-`initialize` (protocol version, `capabilities.tools`, `serverInfo`, and an
-`Mcp-Session-Id` header), `notifications/initialized` (202, no body), `ping`,
-`tools/list`, and `tools/call`. A few tools return fixed records; the rest echo
+`initialize` (a supported protocol version, `capabilities.tools`, `serverInfo`,
+and an `Mcp-Session-Id` header), `notifications/initialized` (202, no body),
+`ping`, `tools/list`, and `tools/call`. The protocol version is `2025-11-25`,
+with `2025-06-18` and `2024-11-05` as explicit fallbacks; an unknown value gets
+`2025-11-25`, never an echo. A few tools return fixed records; the rest echo
 their arguments, so every call is deterministic. An unknown tool returns a
 JSON-RPC `-32602` error. `GET /mcp` returns 405 because the server never asks
 the client to open an SSE stream.
 
 The tools cover search, documents, tickets, calendar, files, and admin.
 `test/fixture-mcp-server.test.ts` checks the raw protocol and one handshake,
-listing, and call through `McpHttpClient`.
+listing, and call through `McpHttpClient`. Both fixture servers share
+`scripts/eval/fixture-http.ts` for the listener, response, and CLI lifecycle.
 
 ## CI
 

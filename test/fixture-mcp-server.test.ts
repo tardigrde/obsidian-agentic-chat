@@ -100,6 +100,32 @@ describe("fake MCP server", () => {
     expect(body.result?.serverInfo?.version).toEqual(expect.any(String));
   });
 
+  it("negotiates only supported protocol versions instead of echoing any value", async () => {
+    const server = await start();
+    const unknown = await rpc(server, {
+      jsonrpc: "2.0",
+      id: nextId++,
+      method: "initialize",
+      params: {
+        protocolVersion: "1999-01-01",
+        capabilities: {},
+        clientInfo: { name: "fixture-test", version: "0.0.0" },
+      },
+    });
+    expect(unknown.body.result?.protocolVersion).toBe("2025-11-25");
+    const fallback = await rpc(server, {
+      jsonrpc: "2.0",
+      id: nextId++,
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "fixture-test", version: "0.0.0" },
+      },
+    });
+    expect(fallback.body.result?.protocolVersion).toBe("2024-11-05");
+  });
+
   it("accepts notifications/initialized with 202 and no body", async () => {
     const server = await start();
     const { response, body } = await rpc(server, {
@@ -169,7 +195,7 @@ describe("fake MCP server", () => {
       jsonrpc: "2.0",
       id: 13,
       method: "tools/call",
-      params: { name: "get_ticket", arguments: { id: "T-42" } },
+      params: { name: "get_ticket", arguments: { ticketId: "T-42" } },
     });
     const text = body.result?.content?.[0]?.text ?? "";
     expect(text).toContain("T-42");
@@ -277,7 +303,7 @@ describe("fake MCP server", () => {
     const tools = await client.listTools();
     expect(tools).toHaveLength(30);
     expect(tools.map((tool) => tool.name)).toContain("get_document");
-    const result = await client.callTool("get_ticket", { id: "T-42" });
+    const result = await client.callTool("get_ticket", { ticketId: "T-42" });
     expect(result.isError).toBeUndefined();
     expect(result.content?.[0]).toMatchObject({ type: "text" });
     expect((result.content?.[0] as { text: string }).text).toContain("T-42");

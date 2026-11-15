@@ -1,8 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import {
+  JSON_CONTENT_TYPE,
+  TEXT_CONTENT_TYPE,
+  requestUrl,
+  runFixtureCli,
+  send,
+  startLocalHttpServer,
+  type LocalHttpServer,
+} from "./fixture-http";
 
 /**
  * A fake Streamable HTTP MCP server for local evals. It answers JSON-RPC over
@@ -17,22 +24,15 @@ export interface FixtureMcpServerOptions {
   toolCount?: number;
 }
 
-export interface FixtureMcpServer {
-  /** MCP endpoint, for example http://127.0.0.1:41234/mcp. */
-  url: string;
-  port: number;
-  /** Stop the listener. Safe to call more than once. */
-  close: () => Promise<void>;
-}
+/** The MCP endpoint, for example http://127.0.0.1:41234/mcp. */
+export type FixtureMcpServer = LocalHttpServer;
 
-const HOST = "127.0.0.1";
 const ENDPOINT = "/mcp";
 const DEFAULT_TOOL_COUNT = 30;
-const PROTOCOL_VERSION = "2025-11-25";
+const SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2024-11-05"] as const;
+const PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
 const SERVER_NAME = "agentic-chat-fixture-mcp";
 const SERVER_VERSION = "0.0.0";
-const JSON_TYPE = "application/json; charset=utf-8";
-const TEXT_TYPE = "text/plain; charset=utf-8";
 
 interface SchemaProperty {
   type: "string" | "integer" | "boolean";
@@ -358,27 +358,22 @@ function buildTools(toolCount: number): FixtureTool[] {
   });
 }
 
-function send(response: ServerResponse, status: number, contentType: string, text: string, headers: Record<string, string> = {}): void {
-  response.writeHead(status, {
-    "content-type": contentType,
-    "content-length": Buffer.byteLength(text),
-    "cache-control": "no-store",
-    ...headers,
-  });
-  response.end(text);
-}
-
 function sendJsonRpcResult(
   response: ServerResponse,
   id: number | string,
   result: unknown,
   headers: Record<string, string> = {},
 ): void {
-  send(response, 200, JSON_TYPE, JSON.stringify({ jsonrpc: "2.0", id, result }), headers);
+  send(response, 200, JSON_CONTENT_TYPE, JSON.stringify({ jsonrpc: "2.0", id, result }), {
+    "cache-control": "no-store",
+    ...headers,
+  });
 }
 
 function sendJsonRpcError(response: ServerResponse, id: number | string | null, code: number, message: string): void {
-  send(response, 200, JSON_TYPE, JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }));
+  send(response, 200, JSON_CONTENT_TYPE, JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }), {
+    "cache-control": "no-store",
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -420,7 +415,7 @@ function toolResult(name: string, args: Record<string, unknown>): { content: Arr
       break;
     }
     case "get_ticket": {
-      const id = stringArg(args, "ticketId", "id") || "T-1";
+      const id = stringArg(args, "ticketId") || "T-1";
       text = `Ticket ${id}\nStatus: open\nPriority: normal\nSummary: Printer is offline on floor 3.`;
       break;
     }
@@ -456,7 +451,7 @@ async function handlePost(request: IncomingMessage, response: ServerResponse, to
   try {
     payload = JSON.parse(await readBody(request));
   } catch {
-    send(response, 400, TEXT_TYPE, "Bad Request: body must be JSON.\n");
+    send(response, 400, TEXT_CONTENT_TYPE, "Bad Request: body must be JSON.\n");
     return;
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -480,15 +475,14 @@ async function handlePost(request: IncomingMessage, response: ServerResponse, to
   const params = asRecord(message.params);
   switch (method) {
     case "initialize": {
-      const requested =
-        typeof params.protocolVersion === "string" && params.protocolVersion.trim()
-          ? params.protocolVersion.trim()
-          : PROTOCOL_VERSION;
+      const requested = typeof params.protocolVersion === "string" ? params.protocolVersion.trim() : "";
+      const protocolVersion =
+        SUPPORTED_PROTOCOL_VERSIONS.find((version) => version === requested) ?? PROTOCOL_VERSION;
       sendJsonRpcResult(
         response,
         id,
         {
-          protocolVersion: requested,
+          protocolVersion,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
         },
@@ -525,114 +519,29 @@ async function handleRequest(
   response: ServerResponse,
   tools: readonly FixtureTool[],
 ): Promise<void> {
-  let url: URL;
-  try {
-    url = new URL(request.url ?? "/", `http://${HOST}`);
-  } catch {
-    send(response, 400, TEXT_TYPE, "Bad Request\n");
-    return;
-  }
+  const url = requestUrl(request, response);
+  if (!url) return;
   if (url.pathname !== ENDPOINT) {
-    send(response, 404, TEXT_TYPE, "Not Found\n");
+    send(response, 404, TEXT_CONTENT_TYPE, "Not Found\n");
     return;
   }
   if (request.method !== "POST") {
     // The fixture answers JSON on POST. It never returns 202, so the product
     // client never needs the standalone GET/SSE stream.
-    send(response, 405, TEXT_TYPE, "Method Not Allowed\n", { allow: "POST" });
+    send(response, 405, TEXT_CONTENT_TYPE, "Method Not Allowed\n", { allow: "POST" });
     return;
   }
   await handlePost(request, response, tools);
 }
 
-function closeServer(server: Server): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-    server.closeAllConnections();
-  });
-}
-
 export function startFixtureMcpServer(options: FixtureMcpServerOptions = {}): Promise<FixtureMcpServer> {
   const tools = buildTools(options.toolCount ?? DEFAULT_TOOL_COUNT);
-  const server = createServer((request, response) => {
-    handleRequest(request, response, tools).catch(() => {
-      if (response.headersSent) {
-        response.destroy();
-        return;
-      }
-      send(response, 500, TEXT_TYPE, "Internal Server Error\n");
-    });
-  });
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(options.port ?? 0, HOST, () => {
-      server.removeListener("error", reject);
-      const { port } = server.address() as AddressInfo;
-      let closing: Promise<void> | undefined;
-      resolve({
-        url: `http://${HOST}:${port}${ENDPOINT}`,
-        port,
-        close: () => {
-          closing ??= closeServer(server);
-          return closing;
-        },
-      });
-    });
+  return startLocalHttpServer((request, response) => handleRequest(request, response, tools), {
+    port: options.port,
+    path: ENDPOINT,
   });
 }
 
-interface CliOptions {
-  port?: number;
-  toolCount?: number;
-  json?: boolean;
-}
-
-function integerArg(value: string | undefined, flag: string): number {
-  const parsed = Number(value);
-  if (value === undefined || !Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(`${flag} needs a non-negative integer`);
-  }
-  return parsed;
-}
-
-function parseCliArgs(argv: string[]): CliOptions {
-  const options: CliOptions = {};
-  for (let index = 0; index < argv.length; index += 1) {
-    const raw = argv[index];
-    if (raw === "--json") {
-      options.json = true;
-      continue;
-    }
-    if (raw === "--port") {
-      options.port = integerArg(argv[index + 1], "--port");
-      index += 1;
-      continue;
-    }
-    if (raw === "--tools") {
-      options.toolCount = integerArg(argv[index + 1], "--tools");
-      index += 1;
-      continue;
-    }
-    throw new Error(`Unknown argument: ${raw}`);
-  }
-  return options;
-}
-
-async function main(): Promise<void> {
-  const options = parseCliArgs(process.argv.slice(2));
-  const server = await startFixtureMcpServer({ port: options.port, toolCount: options.toolCount });
-  const line = options.json ? JSON.stringify({ url: server.url, port: server.port }) : server.url;
-  process.stdout.write(`${line}\n`);
-  const stop = (): void => {
-    void server.close().then(() => process.exit(0));
-  };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
-  });
-}
+runFixtureCli(import.meta.url, process.argv.slice(2), "--tools", (args) =>
+  startFixtureMcpServer({ port: args.port, toolCount: args.extra }),
+);
