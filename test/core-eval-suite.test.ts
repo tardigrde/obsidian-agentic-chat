@@ -104,6 +104,28 @@ function hasFileCheck(checks: ToolUseCheck[]): boolean {
   return walkChecks(checks).some((check) => FILE_CHECK_TYPES.has(check.type));
 }
 
+function caseById(id: string): ToolUseCase {
+  const found = loadSuite().cases.find((entry) => entry.id === id);
+  if (!found) throw new Error(`missing ${id}`);
+  return expandCase(found);
+}
+
+function gradeFiles(
+  evalCase: ToolUseCase,
+  files: Record<string, string>,
+  links: Record<string, string[]> = {},
+  toolCalls: Array<{ name: string }> = [],
+): boolean {
+  return gradeRun(evalCase, {
+    files,
+    frontmatter: {},
+    links,
+    unresolvedLinks: {},
+    toolCalls,
+    answer: "",
+  }).ok;
+}
+
 describe("core eval suite", () => {
   it("accepts the committed core suite", () => {
     const suite = loadSuite();
@@ -231,6 +253,55 @@ describe("core eval suite", () => {
         expect(checks.length, evalCase.id).toBeGreaterThan(0);
       }
     }
+  });
+
+  it("accepts either adjacent line order for edit.medium.heading and rejects other sections", () => {
+    const evalCase = caseById("edit.medium.heading");
+    const runbook = "400 Projects/Runbook.md";
+    const seed = evalCase.seed.files[runbook];
+    const insertAfter = (anchor: string) => seed.replace(anchor, `${anchor}\n- check the backup log`);
+
+    const after = insertAfter("## Notes\n\n- beta one");
+    const before = seed.replace("## Notes\n\n- beta one", "## Notes\n\n- check the backup log\n- beta one");
+    const first = insertAfter("## Notes\n\n- alpha one");
+    const third = insertAfter("## Notes\n\n- gamma one");
+    for (const variant of [after, before, first, third]) {
+      expect(variant, "the variant must change the seed").not.toBe(seed);
+    }
+
+    expect(gradeFiles(evalCase, { ...evalCase.seed.files, [runbook]: after }, {}, [{ name: "edit" }])).toBe(true);
+    expect(gradeFiles(evalCase, { ...evalCase.seed.files, [runbook]: before }, {}, [{ name: "edit" }])).toBe(true);
+    expect(gradeFiles(evalCase, { ...evalCase.seed.files, [runbook]: first }, {}, [{ name: "edit" }])).toBe(false);
+    expect(gradeFiles(evalCase, { ...evalCase.seed.files, [runbook]: third }, {}, [{ name: "edit" }])).toBe(false);
+  });
+
+  it("states the Archive scope in properties.medium.normalize", () => {
+    expect(caseById("properties.medium.normalize").prompt).toMatch(/including the Archive subfolder/i);
+  });
+
+  it("accepts external in any case for create.medium.summary and still rejects wrong figures", () => {
+    const evalCase = caseById("create.medium.summary");
+    const summaryPath = "400 Projects/Summit/Summit summary.md";
+    const summary = (catering: string) =>
+      [
+        "# Summit summary",
+        "",
+        "- Venue: Riverside Loft",
+        "- Budget: 14,800 EUR",
+        `- Catering: ${catering}`,
+        "",
+        "Sources: [[2024-04-02 meeting]] and [[2024-04-16 meeting]].",
+        "",
+      ].join("\n");
+    const files = (content: string) => ({ ...evalCase.seed.files, [summaryPath]: content });
+    const links = {
+      [summaryPath]: ["400 Projects/Summit/2024-04-02 meeting.md", "400 Projects/Summit/2024-04-16 meeting.md"],
+    };
+    const grade = (content: string) => gradeFiles(evalCase, files(content), links, [{ name: "write" }]);
+
+    expect(grade(summary("External"))).toBe(true);
+    expect(grade(summary("external"))).toBe(true);
+    expect(grade(summary("external").replace("14,800 EUR", "14,500 EUR"))).toBe(false);
   });
 
   it("seeds a real NFD path whose NFC form differs", () => {
