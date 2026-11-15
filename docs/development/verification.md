@@ -355,6 +355,7 @@ pass^K, partial score, median time, mean tokens, mean USD, and flags.
 new per-case metrics. Do not write a baseline when a run was skipped or had a
 harness error.
 
+
 The suite caps the cost with `maxUsd`, `maxModelCalls`, and `maxTokens`. Each
 case also has a `max_tool_calls` check. The suite names the model
 (`deepseek/deepseek-v4.1-flash`). A run needs `AGENTIC_CHAT_API_KEY` and a
@@ -373,10 +374,23 @@ for example a PDF. The `unchanged` check covers text seeds only.
 
 ### The `core` suite and generated vaults
 
-`tool-use` stays the regression tier: 14 cases, saturated at 100%. The follow-up
-PR adds `core`, the non-saturated tier for prompt, tool, and model comparisons.
-It uses the same runner, the same grader, and `runsPerCase: 3`; pass^3 is the
-headline number.
+`tool-use` stays the regression tier: 14 cases, saturated at 100%. `core` is the
+non-saturated tier for prompt, tool, and model comparisons. It has 24 cases
+(eight categories at three levels) and uses the same runner, the same grader,
+and `runsPerCase: 3`; pass^3 is the headline number.
+
+The committed baseline is `test/evals/baselines/core.json`, written after the
+final 72-run baseline. Until that run, treat the suite as unbaselined. The last
+measured run before the final hardening was 62.5% pass^3 (15 of 24 cases) on
+`deepseek/deepseek-v4.1-flash`; it belongs to an earlier suite revision, so do
+not compare against it. Easy and medium cases seed an `S` vault, hard cases seed
+`M`.
+
+Saturation rule: a case that reaches pass^3 in three baselines in a row moves to
+the `tool-use` regression tier, and `core` gets a harder variant of it. A case
+that stays at 0 across three baselines is a case bug, not a hard case; check the
+grader before the next baseline. Live runs are local only; CI has no model key.
+
 
 A case can ask for a seeded synthetic vault instead of a hand-written seed:
 
