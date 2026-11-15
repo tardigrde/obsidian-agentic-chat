@@ -21,6 +21,10 @@ sessions/
 # e2e (wdio-obsidian-service): downloaded Obsidian builds + run logs
 .obsidian-cache/
 logs/
+# Worktrees symlink `node_modules` and `.obsidian-cache`; a symlink is not
+# matched by the trailing-slash patterns above, so ignore the bare names too.
+node_modules
+.obsidian-cache
 test/e2e/vault/.obsidian/
 # Local orchestration plan (/factory skill)
 NEXT.md
