@@ -411,7 +411,7 @@
     },
     {
       "id": "edit.hard.status",
-      "prompt": "In 400 Projects/Status index.md, the Owner column says who owns each project and the Note column links to its note. Set status: paused on the active note of every project that has no owner. Leave owned projects, draft notes, and everything in 900 Archive unchanged. Only change the status property.",
+      "prompt": "In 400 Projects/Status index.md, the Owner column says who owns each project and the Note column links to its note. The Owner column uses (none), TBD, and unassigned to mean no owner. Set status: paused on the active note of every project that has no owner. Leave owned projects, draft notes, and everything in 900 Archive unchanged. Only change the status property.",
       "seed": {
         "vault": {
           "size": "M",
@@ -1080,6 +1080,10 @@
           "type": "link_resolves",
           "from": "400 Projects/Vector Launch/Briefs/Vector brief.md",
           "to": "400 Projects/Vector Launch/Briefs/Deep/Deeper/Vector deepest.md"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 45
         }
       ],
       "expected": {

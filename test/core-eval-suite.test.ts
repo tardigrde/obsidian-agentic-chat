@@ -156,6 +156,21 @@ describe("core eval suite", () => {
     }
   });
 
+  it("checks every expected maxToolCalls with a matching max_tool_calls check", () => {
+    for (const evalCase of loadSuite().cases) {
+      const max = evalCase.expected?.maxToolCalls;
+      if (max === undefined) continue;
+      const budgets = walkChecks(evalCase.checks).filter(
+        (check): check is Extract<ToolUseCheck, { type: "max_tool_calls" }> => check.type === "max_tool_calls",
+      );
+      expect(budgets.length, `${evalCase.id} needs a max_tool_calls check`).toBeGreaterThan(0);
+      expect(
+        budgets.some((check) => check.max === max),
+        `${evalCase.id} has no max_tool_calls check with max ${max}`,
+      ).toBe(true);
+    }
+  });
+
   it("pairs every literal answer_contains with a literal answer_not_contains", () => {
     for (const evalCase of loadSuite().cases) {
       const positives = literalAnswers(evalCase.checks, "answer_contains");
