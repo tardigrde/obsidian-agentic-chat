@@ -42,6 +42,7 @@ export default class AgenticChatPlugin extends Plugin {
   /** The same object the settings store owns; both change only through the store. */
   settings: AgenticChatSettings = DEFAULT_SETTINGS;
   private lastSyncedMode: AgentMode | null = null;
+  private readonly modeListeners = new Set<(mode: AgentMode) => void>();
   private secretStore!: ObsidianSecretStore;
   private readonly sessionWriteRegistry = new SessionWriteRegistry();
   private readonly mcpOAuthCallbacks = new McpOAuthObsidianCallbackBridge();
@@ -315,11 +316,31 @@ export default class AgenticChatPlugin extends Plugin {
     await this.saveData(settingsForStorage(settings, this.secretStore));
   }
 
+  /**
+   * Subscribe to persisted Safe ↔ YOLO changes. Returns an unsubscribe
+   * function. Listeners run only when a save actually changed the mode, never
+   * on an unrelated or failed save.
+   */
+  onModeChange(listener: (mode: AgentMode) => void): () => void {
+    this.modeListeners.add(listener);
+    return () => {
+      this.modeListeners.delete(listener);
+    };
+  }
+
   /** Only broadcast when mode actually changed — avoids repaint + notification side-effects on unrelated saves. */
   private broadcastModeChange(): void {
     if (this.lastSyncedMode === this.settings.mode) return;
     this.lastSyncedMode = this.settings.mode;
+    const mode = this.settings.mode;
     this.syncModeToViews();
+    for (const listener of [...this.modeListeners]) {
+      try {
+        listener(mode);
+      } catch (error: unknown) {
+        console.warn("Agentic chat: mode change listener failed", error);
+      }
+    }
   }
 
   /** S4: single-source mode — after any persisted mode change, push chrome to every chat leaf atomically (Codex ThreadSettingsOverrides pattern). */

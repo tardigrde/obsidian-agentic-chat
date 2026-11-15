@@ -12,6 +12,7 @@ import { chatViewHarness } from "./helpers/chat-view-harness";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { MemoryAdapter } from "./helpers/memory-adapter";
+import type { AskUserHandler } from "../src/tools/ask-user-tool";
 
 const IMAGE: ImageContent = { type: "image", data: "aW1hZ2U=", mimeType: "image/png" };
 
@@ -117,6 +118,78 @@ function failingThenOkStreamFn(reason: "error" | "aborted"): { streamFn: StreamF
   return { streamFn, contexts };
 }
 
+/** First call runs a tool, second fails with no content, third answers. */
+function toolThenFailThenOkStreamFn(reason: "error" | "aborted"): {
+  streamFn: StreamFn;
+  contexts: TranscriptContext[];
+} {
+  const contexts: TranscriptContext[] = [];
+  const streamFn = ((model: Model<"openai-completions">, context: TranscriptContext) => {
+    contexts.push(structuredClone(context));
+    const call = contexts.length;
+    const stream = createAssistantMessageEventStream();
+    const base = {
+      role: "assistant" as const,
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: {
+        input: 1,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      timestamp: Date.now(),
+    };
+    if (call === 1) {
+      const message = {
+        ...base,
+        content: [
+          {
+            type: "toolCall" as const,
+            id: "call-1",
+            name: "ask_user",
+            arguments: { question: "Which folder should I use?", choices: ["Notes"] },
+          },
+        ],
+        stopReason: "toolUse" as const,
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "toolUse", message });
+        stream.end(message);
+      });
+    } else if (call === 2) {
+      const message = {
+        ...base,
+        content: [],
+        stopReason: reason,
+        errorMessage: reason === "aborted" ? "Request was aborted." : "boom",
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "error", reason, error: message } as never);
+        stream.end(message);
+      });
+    } else {
+      const message = {
+        ...base,
+        content: [{ type: "text" as const, text: "Done." }],
+        stopReason: "stop" as const,
+      };
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: { ...message, content: [] } });
+        stream.push({ type: "done", reason: "stop", message });
+        stream.end(message);
+      });
+    }
+    return stream;
+  }) as unknown as StreamFn;
+  return { streamFn, contexts };
+}
+
 function retryView(service: AgentService): RetryHarness {
   return chatViewHarness<RetryHarness>({
     service,
@@ -139,13 +212,14 @@ function userTexts(context: TranscriptContext): string[] {
     );
 }
 
-function realService(streamFn: StreamFn): AgentService {
+function realService(streamFn: StreamFn, askUser?: AskUserHandler): AgentService {
   const settings = { ...DEFAULT_SETTINGS, openrouterApiKey: "test-key" };
   return new AgentService({
     app: { vault: { on: () => ({}), offref: () => {} }, workspace: {} } as unknown as App,
     getSettings: () => settings,
     sessionManager: new ObsidianSessionManager(new MemoryAdapter().asDataAdapter(), "sessions", "vault:test", new SessionWriteRegistry()),
     confirmToolCall: async () => ({ approved: true, remember: false }),
+    askUser,
     streamFn,
   });
 }
@@ -203,6 +277,7 @@ describe("ChatView retry", () => {
         getSessionToken: () => sessionToken,
         truncateMessages,
         sendPrompt,
+        continueTurn: vi.fn(),
         reportSessionChanged: vi.fn(),
         getError: () => undefined,
       },
@@ -259,6 +334,75 @@ describe("ChatView retry", () => {
       expect(roles).toEqual(["user", "assistant"]);
     },
   );
+
+  it.each(["error", "aborted"] as const)(
+    "continues a failed (%s) turn after a tool instead of resending the prompt",
+    async (reason) => {
+      const { streamFn, contexts } = toolThenFailThenOkStreamFn(reason);
+      const service = realService(streamFn, async () => "Notes");
+      await service.sendPrompt("organize this note");
+      const sendPrompt = vi.spyOn(service, "sendPrompt");
+
+      await retryView(service).retryLast();
+
+      expect(sendPrompt).not.toHaveBeenCalled();
+      expect(contexts).toHaveLength(3);
+      const retried = contexts[2];
+      expect(userTexts(retried)).toEqual(["organize this note"]);
+      expect(retried.messages.some((message) => message.role === "toolResult")).toBe(true);
+      expect(
+        retried.messages.some(
+          (message) => message.role === "assistant" && (message as { stopReason?: string }).stopReason === reason,
+        ),
+      ).toBe(false);
+      const roles = service.getMessages().map((message) => message.role);
+      expect(roles).toEqual(["user", "assistant", "toolResult", "assistant"]);
+      const last = service.getMessages().at(-1) as {
+        stopReason?: string;
+        content?: Array<{ type: string; text?: string }>;
+      };
+      expect(last.stopReason).toBe("stop");
+      expect((last.content ?? []).map((block) => block.text ?? "").join("")).toBe("Done.");
+    },
+  );
+
+  it("continues from the kept tool results when a stopped turn has no failed reply", async () => {
+    const messages = [
+      userMessage("read two files"),
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "a.md" } }],
+        stopReason: "toolUse",
+        timestamp: 2,
+      } as unknown as AgentMessage,
+      { role: "toolResult", content: [{ type: "text", text: "ok" }], timestamp: 3 } as unknown as AgentMessage,
+    ];
+    const continueTurn = vi.fn(async () => {});
+    const sendPrompt = vi.fn(async () => {});
+    const truncateMessages = vi.fn(async () => 1);
+    const view = chatViewHarness<RetryHarness>({
+      service: {
+        isStreaming: () => false,
+        getMessages: () => messages,
+        getSessionToken: () => "session-a",
+        continueTurn,
+        sendPrompt,
+        truncateMessages,
+        getError: () => undefined,
+      },
+      state: { lastSentPrompt: null, lastSentDisplay: null },
+      clearEmptyState: vi.fn(),
+      renderTranscript: vi.fn(),
+      renderOutgoingUserMessage: vi.fn(),
+      showServiceError: vi.fn(),
+    });
+
+    await view.retryLast();
+
+    expect(continueTurn).toHaveBeenCalledWith("session-a");
+    expect(truncateMessages).not.toHaveBeenCalled();
+    expect(sendPrompt).not.toHaveBeenCalled();
+  });
 
   it("keeps a successful turn when Ask again re-runs it", async () => {
     const { streamFn, contexts } = capturingStreamFn();
