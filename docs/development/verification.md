@@ -190,6 +190,58 @@ Check the observation method before trusting the result:
   The report states `mode: live` or `mode: scripted`. Never present scripted as
   live.
 
+## Secret handling
+
+The verify and delegate sinks redact a line before they write it:
+
+- exact values from `process.env` and the repo `.env`, for names that end in
+  `_KEY`, `_TOKEN`, `_SECRET`, or `_PASSWORD` and have at least 8 characters;
+- known key shapes: `sk-or-…` (OpenRouter), `oc_sk_…` (OpenCode Go), `ghp_…` and
+  `github_pat_…` (GitHub), and `sk-…` (generic).
+
+`scripts/redact-log.mjs` holds the one implementation and the labels. The CLI is
+line-buffered: a key inside a long JSON line is caught even when a chunk boundary
+splits it. `scripts/verify.mjs` sends every child line through it before stdout
+and before `logs/verify/<ts>/<step>.log`. `scripts/delegate.sh` pipes the worker
+and reviewer output through it, and redacts the verdict file in place before it
+posts the comment.
+
+`npm run check:secrets` scans tracked files and `logs/`. It prints a path and a
+count, never a value. `--fix` redacts log files in place; a tracked file is never
+edited, so a tracked leak stays a failure. The scan skips `.env`, `.env.*`
+(except `.env.example`), `node_modules`, `.git`, `.obsidian-cache`, and files over
+20 MB. `npm run check:secrets -- --all-worktrees` also scans every
+`git worktree list` path's `logs/`. The `fast` and `ci` lanes run the scan, and
+`npm run hooks:install` writes a pre-push hook that runs the all-worktrees scan.
+
+The sinks redact and the scanner guards. Neither is a security boundary: a key
+that another process writes elsewhere is still a leak.
+
+### The proper long-term fix (follow-up)
+
+Stop passing the raw key to the e2e child and to the plugin settings. Use one of
+these, or more than one as defense in depth:
+
+1. **Obsidian secret storage.** Keep the live eval key in Obsidian's secret
+   storage and read it by name. The key never enters a settings dump, a session
+   JSONL, or a child `process.env`.
+2. **Local key-injecting proxy.** Point the plugin and the e2e child at a local
+   proxy with a dummy key. The proxy adds the real key to the upstream request.
+   Then a settings dump or a child environment holds only the dummy key.
+3. **Deny `env`, `printenv`, and direct `.env` reads in the delegate sandbox.**
+   A worker cannot print what it cannot read.
+
+These are defense in depth. They do not replace redaction.
+
+### Incident
+
+A real OpenRouter key and a real OpenCode Go key leaked into 8 ignored
+`logs/verify` and `logs/delegate` files. An e2e child printed a full
+`process.env` JSON on a WebDriver error, and the verify and delegate sinks wrote
+the raw output. The 8 files are redacted and `.env` has mode 600. Rotate both keys
+(OpenRouter and OpenCode Go) and clear the shell history entry. Redaction stops
+the next copy; rotation and removal stop the current one.
+
 ## Probes
 
 Use a probe when you do not yet know what correct looks like, or when a human needs
