@@ -471,10 +471,10 @@ no server; a dry run marks such a case with `, fixture server` in its plan. A
 prompt that uses `{{fixture}}` with no base URL fails before the e2e starts.
 The `core` suite has no such case, so its path is unchanged.
 
-The eval spec sets `globalThis.__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__` to that
-base URL's origin in the Obsidian window. `normalizeWebUrl` allows one exact
-match and nothing else: the hook is unset by default, so every other loopback,
-private, or different-port address stays blocked.
+The eval spec sets the `__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__` window global to
+that base URL's origin in the Obsidian window. `normalizeWebUrl` allows one
+exact match and nothing else: the hook is unset by default, so every other
+loopback, private, or different-port address stays blocked.
 
 A future web case looks like this:
 

@@ -388,7 +388,9 @@ interface EvalFixtureHook {
 }
 
 function evalFixtureOrigin(): string | undefined {
-  const origin = (globalThis as EvalFixtureHook).__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__;
+  // `window` is the same object as `globalThis` in the renderer. The Obsidian
+  // lint rule requires `window`, and vitest maps it to `globalThis` too.
+  const origin = (window as unknown as EvalFixtureHook).__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__;
   return typeof origin === "string" && origin.length > 0 ? origin : undefined;
 }
 
