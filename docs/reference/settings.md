@@ -28,7 +28,7 @@ Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Permission mode | Safe | Safe follows the approval gates. YOLO auto-approves most mutating tools until you switch back; recursive folder deletes and `create_skill` still ask. |
-| Thinking level | `low` | `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Only models that support reasoning effort are affected. `off` sends no reasoning parameter, so the provider default applies; for `deepseek/deepseek-v4.1-flash` that default is `high`. |
+| Thinking level | `low` | `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Only models that support reasoning effort are affected. `off` sends no reasoning parameter, so the provider decides; for `deepseek/deepseek-v4.1-flash` the catalog says `high`. The eval suite pins `low` for a reproducible measurement. |
 | System prompt | built-in | Sent at the start of every conversation. |
 | Standing instructions | vault root | `AGENTS.md`, with `CLAUDE.md` and `GEMINI.md` as fallbacks. Loaded every turn and truncated after 16,000 characters with a notice. |
 | Auto-compaction | on at 80% | Triggers at 50% to 95% context fill (configurable). |
