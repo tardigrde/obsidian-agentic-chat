@@ -463,8 +463,35 @@ The endpoints cover the cases a web tool must handle: `/article` and
 `/slow`, `/json`, `/not-found`, and `/echo?q=...` for prompt-injection
 payloads. `--slow-ms` sets the `/slow` delay.
 
-The eval runner does not use the server yet. The fake MCP server (about 30 tools
-for P12 `search_tools`) is a follow-up, not part of this change.
+The eval runner does not use the server yet.
+
+### Local fake MCP server for tool-search cases
+
+`scripts/eval/fixture-mcp-server.ts` is a local Streamable HTTP MCP server with
+30 tools. It exists for a future P12 `search_tools` case where the model must
+find one MCP tool among 30 realistic candidates. It is not wired into the eval
+runner yet, and it uses no external network.
+
+```bash
+npm run fixture:mcp -- --json
+npm run fixture:mcp -- --port 0 --tools 30
+```
+
+It binds `127.0.0.1` and uses an OS-assigned port by default. The printed `url`
+is the MCP endpoint (`http://127.0.0.1:<port>/mcp`), so it can go straight into
+an MCP server setting. `--tools` sets the number of listed tools.
+
+`POST /mcp` speaks JSON-RPC 2.0 and answers JSON, not SSE. It handles
+`initialize` (protocol version, `capabilities.tools`, `serverInfo`, and an
+`Mcp-Session-Id` header), `notifications/initialized` (202, no body), `ping`,
+`tools/list`, and `tools/call`. A few tools return fixed records; the rest echo
+their arguments, so every call is deterministic. An unknown tool returns a
+JSON-RPC `-32602` error. `GET /mcp` returns 405 because the server never asks
+the client to open an SSE stream.
+
+The tools cover search, documents, tickets, calendar, files, and admin.
+`test/fixture-mcp-server.test.ts` checks the raw protocol and one handshake,
+listing, and call through `McpHttpClient`.
 
 ## CI
 
