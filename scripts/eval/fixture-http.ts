@@ -5,7 +5,17 @@ import { pathToFileURL } from "node:url";
 
 /** Shared lifecycle and CLI plumbing for the local eval fixture servers. */
 
-export const FIXTURE_HOST = "127.0.0.1";
+/**
+ * Host the fixture servers advertise. Never use a literal loopback IP here:
+ * the eval provider redacts `127.0.0.1` in tool arguments to `[IP_ADDRESS]`,
+ * so `fetch_url` would fail before it reaches the server. `localhost` survives.
+ */
+export const FIXTURE_HOST = "localhost";
+/**
+ * Listener host. The IPv6 wildcard is dual-stack by default, so it accepts
+ * `localhost` whether the client resolves it to `::1` or to `127.0.0.1`.
+ */
+export const FIXTURE_BIND_HOST = "::";
 export const TEXT_CONTENT_TYPE = "text/plain; charset=utf-8";
 export const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 
@@ -57,7 +67,7 @@ export function startLocalHttpServer(
   });
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(options.port ?? 0, FIXTURE_HOST, () => {
+    server.listen(options.port ?? 0, FIXTURE_BIND_HOST, () => {
       server.removeListener("error", reject);
       const { port } = server.address() as AddressInfo;
       let closing: Promise<void> | undefined;

@@ -459,12 +459,62 @@ The suite names the model
 (`deepseek/deepseek-v4.1-flash`). A run needs `AGENTIC_CHAT_API_KEY` and a
 display. It runs locally only; CI does not run it.
 
-The live calls pin the model and the reasoning level:
-`deepseek/deepseek-v4.1-flash`, `thinkingLevel: off`, temperature 0. A tool or
-prompt comparison must hold those fixed. A reasoning-level A/B is future work:
-add a `thinkingLevel` axis to the runner (suite default plus a per-case override)
-and record it in `plan.json`/`summary.json`; keep it out of the P12 tool
-comparison.
+The live calls pin the model, the temperature, and the reasoning level:
+`deepseek/deepseek-v4.1-flash`, temperature 0, and `thinkingLevel: low` (the
+product and eval default). A tool or prompt comparison must hold those fixed.
+
+Reasoning is a first-class axis:
+
+| source | how to set it |
+|---|---|
+| CLI | `--thinking-level <level>` |
+| environment | `AGENTIC_CHAT_THINKING_LEVEL=<level>` |
+| suite | `"thinkingLevel": "low"` |
+| default | `low` when no source sets one |
+
+Precedence is CLI > env > suite field > `low`. A per-case `thinkingLevel` pins
+that case and wins over the run-level value. Allowed levels are `off`,
+`minimal`, `low`, `medium`, `high`, and `xhigh`; an unknown value fails before
+the run and names the source.
+
+`off` does not mean "no reasoning" on this model. It omits the reasoning
+parameter, and OpenRouter then applies the provider default, which the catalog
+reports as `high` (`default_effort: "high"`). Only a named level such as `low`
+measures the level its label says. Read `off` as "provider default high" in a
+comparison, not as a zero-reasoning baseline.
+
+The plan, summary, report, baseline, and dry run record the effective level. A
+per-case pin is resolved before the plan is written, so `plan.json` has one
+`thinkingLevel` per case. The e2e spec sets `settings.thinkingLevel` from the
+plan and restores it for the next case. It also reads the last
+`thinking_level_change` entry from the run's session and writes
+`observedThinkingLevel` into the result JSON. A mismatch is reported in the
+summary (`observedThinkingLevels`, `thinkingLevelMismatches`), never fails a
+run: a provider clamp is data, not a harness error.
+
+A dry run prints the run level and the effective level of every case:
+
+```text
+Thinking level: low (suite)
+- find.hard.venue: 1 run(s), 516 seed file(s), thinking low
+```
+
+### Reasoning level A/B on the smoke slice
+
+The eight-case smoke slice ran once per level with everything else pinned. The
+same suite revision, model, temperature, and vaults were used. Fill this table
+from `--compare` after the run; `low` is the recommendation.
+
+| Level | Observed | Pass | Cost | Mean tokens | Median case | Notes |
+|---|---|---|---|---|---|---|
+| `off` | | | | | | provider default `high` |
+| `low` | | | | | | new default |
+| `high` | | | | | | explicit high |
+
+The A/B answers one question: does the default spend more tokens for a better
+pass rate? If `low` matches `high` at a lower cost, keep `low`. If `off` wins on
+cost with the same pass rate, remember that it is still provider-default `high`,
+not zero reasoning.
 
 The eval vault sets `alwaysUpdateLinks: true`, so a rename updates links without
 a prompt. `seed.files` writes text notes. `seed.binaryFiles` writes base64 bytes,
@@ -529,8 +579,10 @@ does not run them.
 ### Local fixture server for web cases
 
 `scripts/eval/fixture-server.ts` is a local HTTP server for `fetch_url` eval
-cases. It binds `127.0.0.1` and uses an OS-assigned port by default, so cases
-stay deterministic and offline:
+cases. It binds the IPv6 wildcard (`::`), which is dual-stack, so the client can
+reach it over `::1` or `127.0.0.1`, and it advertises
+`http://localhost:<port>`. It uses an OS-assigned port by default, so cases stay
+deterministic and offline:
 
 ```bash
 npm run fixture:serve -- --json
@@ -593,9 +645,10 @@ npm run fixture:mcp -- --json
 npm run fixture:mcp -- --port 0 --tools 30
 ```
 
-It binds `127.0.0.1` and uses an OS-assigned port by default. The printed `url`
-is the MCP endpoint (`http://127.0.0.1:<port>/mcp`), so it can go straight into
-an MCP server setting. `--tools` sets the number of listed tools.
+It uses the same dual-stack listener as the HTTP fixture and advertises
+`http://localhost:<port>`. The printed `url` is the MCP endpoint
+(`http://localhost:<port>/mcp`), so it can go straight into an MCP server
+setting. `--tools` sets the number of listed tools.
 
 `POST /mcp` speaks JSON-RPC 2.0 and answers JSON, not SSE. It handles
 `initialize` (a supported protocol version, `capabilities.tools`, `serverInfo`,

@@ -38,7 +38,7 @@ describe("fixture server", () => {
   it("serves GET /article as markdown with a title, a date, and a fact", async () => {
     const { url, port } = await start();
     expect(port).toBeGreaterThan(0);
-    expect(url).toBe(`http://127.0.0.1:${port}`);
+    expect(url).toBe(`http://localhost:${port}`);
     const response = await fetch(`${url}/article`);
     expect(response.status).toBe(200);
     expect(contentType(response)).toContain("text/markdown");

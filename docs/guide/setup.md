@@ -46,16 +46,16 @@ Then paste the gateway bearer token and the model id that the gateway exposes.
 
 ## Thinking level
 
-Some models support adjustable reasoning effort. The default is `off`. Set it in **Settings > Agentic Chat** on the **Agent** tab, or per message with `/effort [level]` in chat:
+Some models support adjustable reasoning effort. The default is `low`. Set it in **Settings > Agentic Chat** on the **Agent** tab, or per message with `/effort [level]` in chat:
 
 | Level | When to use it |
 | --- | --- |
-| `off` | Default. Simple questions and small edits. |
-| `minimal`, `low` | A small amount of reasoning for routine tasks. |
-| `medium` | Multi-step vault tasks. |
+| `off` | Send no reasoning parameter. The provider decides; for `deepseek/deepseek-v4.1-flash` that means `high`. |
+| `low` | Default. A small amount of reasoning for routine tasks. |
+| `minimal`, `medium` | Less or more reasoning than `low` for the task in front of you. |
 | `high`, `xhigh` | Hard planning and research. These levels use more tokens. |
 
-Other models ignore the setting.
+Other models ignore the setting. `off` is not "no reasoning" on every model: when the parameter is missing, a reasoning model can apply its own high default. This default change does not migrate an existing choice: a saved `off` stays `off`.
 
 ## Proxy settings
 

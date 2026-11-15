@@ -66,16 +66,16 @@ describe("fixture helpers", () => {
   it("replaces every placeholder with the base URL", () => {
     const [expanded] = expandFixturePlaceholders(
       [makeCase({ prompt: "Compare {{fixture}}/article with {{fixture}}/article-v2." })],
-      "http://127.0.0.1:4321",
+      "http://localhost:4321",
     );
 
-    expect(expanded.prompt).toBe("Compare http://127.0.0.1:4321/article with http://127.0.0.1:4321/article-v2.");
+    expect(expanded.prompt).toBe("Compare http://localhost:4321/article with http://localhost:4321/article-v2.");
   });
 
   it("returns a case without a placeholder unchanged", () => {
     const original = makeCase({ prompt: "Answer from the vault only." });
 
-    const [expanded] = expandFixturePlaceholders([original], "http://127.0.0.1:4321");
+    const [expanded] = expandFixturePlaceholders([original], "http://localhost:4321");
 
     expect(expanded).toBe(original);
   });
