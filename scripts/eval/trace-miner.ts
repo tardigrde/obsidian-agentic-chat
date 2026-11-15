@@ -5,9 +5,10 @@
  * secret. Sessions are read-only input; the only writes go to the output
  * directory. `logs/` is git-ignored, so a real run cannot land in the repo.
  *
- * Entry shapes come from `src/session/jsonl.ts`. The miner walks the active
- * parent chain (the same branch the transcript shows), not every abandoned
- * retry branch in the file.
+ * Entry shapes come from `src/session/jsonl.ts`. The miner reads the entries in
+ * append order, not only the active parent chain: a retry truncates the
+ * transcript and starts a new branch, so the failed run that caused it is
+ * abandoned. That abandoned run is the evidence the eval loop needs.
  */
 
 import { createHash } from "node:crypto";
@@ -225,9 +226,8 @@ export function mineSessionText(text: string, session = "(session)"): TraceCandi
 function mineSession(text: string, session: string): { candidates: TraceCandidate[]; corruptLines: number } {
   const parsed = parseSessionLines(text);
   const header = parsed.entries.find((entry) => entry.type === "session");
-  const branch = activeBranch(parsed.entries);
-  const metadata = sessionMetadata(branch, header);
-  const turns = buildTurns(branch);
+  const metadata = sessionMetadata(parsed.entries, header);
+  const turns = buildTurns(parsed.entries);
   const raw = buildCandidates(turns);
   raw.sort((left, right) => candidateRank(right) - candidateRank(left));
 
@@ -355,43 +355,13 @@ function parseSessionLines(text: string): { entries: RawEntry[]; corruptLines: n
   return { entries, corruptLines };
 }
 
-/** Walk the transcript branch the UI shows: the last leaf's parent chain. */
-function activeBranch(entries: RawEntry[]): RawEntry[] {
-  const byId = new Map<string, RawEntry>();
-  for (const entry of entries) {
-    if (entry.type !== "session" && typeof entry.id === "string") byId.set(entry.id, entry);
-  }
-
-  let leaf: RawEntry | undefined;
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry && entry.type !== "session" && typeof entry.id === "string") {
-      leaf = entry;
-      break;
-    }
-  }
-  if (!leaf) return [];
-
-  const branch: RawEntry[] = [];
-  const seen = new Set<string>();
-  let current: RawEntry | undefined = leaf;
-  while (current) {
-    branch.unshift(current);
-    const parentId = typeof current.parentId === "string" ? current.parentId : undefined;
-    if (!parentId || seen.has(parentId)) break;
-    seen.add(parentId);
-    current = byId.get(parentId);
-  }
-  return branch;
-}
-
-function sessionMetadata(branch: RawEntry[], header: RawEntry | undefined): SessionMetadata {
+function sessionMetadata(entries: RawEntry[], header: RawEntry | undefined): SessionMetadata {
   const headerTimestamp = typeof header?.timestamp === "string" ? header.timestamp : undefined;
-  const firstTimestamp = branch.find((entry) => typeof entry.timestamp === "string")?.timestamp;
+  const firstTimestamp = entries.find((entry) => typeof entry.timestamp === "string")?.timestamp;
   const timestamp = headerTimestamp ?? (typeof firstTimestamp === "string" ? firstTimestamp : undefined);
 
   let model: string | undefined;
-  for (const entry of branch) {
+  for (const entry of entries) {
     if (entry.type === "model_change" && typeof entry.provider === "string" && typeof entry.modelId === "string") {
       model = `${entry.provider}/${entry.modelId}`;
     }
@@ -410,7 +380,7 @@ function sessionMetadata(branch: RawEntry[], header: RawEntry | undefined): Sess
   };
 }
 
-function buildTurns(branch: RawEntry[]): TurnRecord[] {
+function buildTurns(entries: RawEntry[]): TurnRecord[] {
   const turns: TurnRecord[] = [];
   let current: TurnRecord | undefined;
 
@@ -433,7 +403,7 @@ function buildTurns(branch: RawEntry[]): TurnRecord[] {
   };
   const ensureTurn = (): TurnRecord => current ?? startTurn("", 0, true);
 
-  for (const entry of branch) {
+  for (const entry of entries) {
     if (entry.type === "message" && entry.message) {
       const message = entry.message;
       if (message.role === "user") {

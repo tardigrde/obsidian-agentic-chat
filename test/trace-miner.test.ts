@@ -50,7 +50,7 @@ class FixtureSession {
     }
   }
 
-  user(text: string, images = 0): this {
+  user(text: string, images = 0, parentId?: string): this {
     const content =
       images > 0
         ? [
@@ -58,7 +58,7 @@ class FixtureSession {
             ...Array.from({ length: images }, () => ({ type: "image", data: "aGVsbG8=", mimeType: "image/png" })),
           ]
         : text;
-    return this.message("user", { content });
+    return this.message("user", { content }, parentId);
   }
 
   assistant(parts: {
@@ -127,13 +127,20 @@ class FixtureSession {
     return `${this.entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
   }
 
-  private message(role: string, message: JsonEntry): this {
-    return this.add({ type: "message", timestamp: this.timestamp, message: { role, timestamp: this.timestamp, ...message } });
+  get lastEntryId(): string {
+    return this.lastId ?? "";
   }
 
-  private add(entry: JsonEntry): this {
+  private message(role: string, message: JsonEntry, parentId = this.lastId): this {
+    return this.add(
+      { type: "message", timestamp: this.timestamp, message: { role, timestamp: this.timestamp, ...message } },
+      parentId,
+    );
+  }
+
+  private add(entry: JsonEntry, parentId = this.lastId): this {
     const id = `entry-${(this.seq += 1)}`;
-    this.entries.push({ ...entry, id, parentId: this.lastId });
+    this.entries.push({ ...entry, id, parentId });
     this.lastId = id;
     return this;
   }
@@ -252,6 +259,22 @@ describe("mineSessionText", () => {
 
     expect(candidates.map((candidate) => candidate.signal)).toEqual(["retry"]);
     expect(candidates[0]?.evidence.toLowerCase()).toContain("error");
+  });
+
+  it("keeps an abandoned failed tool turn so its error stays a candidate", () => {
+    const session = new FixtureSession().user("Open the note.");
+    const firstUserId = session.lastEntryId;
+    session
+      .assistant({ toolCalls: [{ id: "call-1", name: "vault_read", args: { path: "Note.md" } }] })
+      .toolResult("call-1", "vault_read", "Error: permission denied", true)
+      .assistant({ text: "I could not open it." })
+      .user("Open the note.", 0, firstUserId)
+      .assistant({ text: "Here is the note." });
+
+    const candidates = mine(session);
+
+    expect(candidates.map((candidate) => candidate.signal)).toContain("tool-error");
+    expect(candidates.some((candidate) => candidate.signal === "retry")).toBe(true);
   });
 
   it("flags more than 15 tool calls in one user turn as a long chain", () => {
