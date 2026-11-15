@@ -513,6 +513,38 @@ A future web case looks like this:
 MCP server (about 30 tools for P12 `search_tools`) is a separate change, not
 part of this wiring.
 
+### Local fake MCP server for tool-search cases
+
+`scripts/eval/fixture-mcp-server.ts` is a local Streamable HTTP MCP server with
+30 tools. It exists for a future P12 `search_tools` case where the model must
+find one MCP tool among 30 realistic candidates. It is not wired into the eval
+runner yet, and it uses no external network.
+
+```bash
+npm run fixture:mcp -- --json
+npm run fixture:mcp -- --port 0 --tools 30
+```
+
+It binds `127.0.0.1` and uses an OS-assigned port by default. The printed `url`
+is the MCP endpoint (`http://127.0.0.1:<port>/mcp`), so it can go straight into
+an MCP server setting. `--tools` sets the number of listed tools.
+
+`POST /mcp` speaks JSON-RPC 2.0 and answers JSON, not SSE. It handles
+`initialize` (a supported protocol version, `capabilities.tools`, `serverInfo`,
+and an `Mcp-Session-Id` header), `notifications/initialized` (202, no body),
+`ping`, `tools/list`, and `tools/call`. The protocol version is `2025-11-25`,
+with `2025-06-18` and `2024-11-05` as explicit fallbacks; an unknown value gets
+`2025-11-25`, never an echo. A few tools return fixed records; the rest echo
+their arguments, so every call is deterministic. An unknown tool returns a
+JSON-RPC `-32602` error. `GET /mcp` returns 405 because the server never asks
+the client to open an SSE stream.
+
+The tools cover search, documents, tickets, calendar, files, and admin.
+`test/fixture-mcp-server.test.ts` checks the raw protocol and one handshake,
+listing, and call through `McpHttpClient`. Both fixture servers share
+`scripts/eval/fixture-http.ts` for the listener, response, and CLI lifecycle.
+
+
 ## CI
 
 `ci` runs `npm run verify -- ci` on Node 24: app, e2e, and scripts typechecks;
