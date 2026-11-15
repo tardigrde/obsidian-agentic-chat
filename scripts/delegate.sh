@@ -47,9 +47,10 @@ config() { # <work|review> <edit-resource, relative to the worktree>
 
 run() { # <worktree> <title> <config> <prompt-file> <log>
   # gitGuardEnv: git ignores fsmonitor and hooks for the worker's whole process tree.
+  # Redact before tee: a child that prints its environment must not reach a log.
   (cd "$1" && eval "$(node "$ROOT/scripts/delegate-config.mjs" git-env)" && \
     OPENCODE_CONFIG_CONTENT="$3" opencode run --standalone --archived \
-    --title "$2" --model "$MODEL" < "$4" > "$5" 2>&1)
+    --title "$2" --model "$MODEL" < "$4" 2>&1 | node "$ROOT/scripts/redact-log.mjs" | tee "$5")
 }
 
 # Newest fast-lane summary in a worktree: "<unit passed> <smoke passed>".
@@ -94,6 +95,8 @@ gate_rerun() { # <pr>
 # Post a verdict or recheck file and set the labels a PASS earns.
 post_verdict() { # <pr> <file> <worktree>
   local pr=$1 file=$2 w=$3 verdict files lines
+  # A reviewer may paste a log; redact the file before it becomes a comment.
+  node "$ROOT/scripts/redact-log.mjs" --file "$file" --in-place
   gh pr comment "$pr" --body-file "$file" > /dev/null
   verdict=$(sed -n 's/^Verdict: //p' "$file" | head -n 1)
   if [ "$verdict" = "PASS" ] || [ "$verdict" = "PASS+NOTES" ]; then

@@ -3,8 +3,11 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { createRedactor } from "./redact-log.mjs";
 
 const NODE = process.execPath;
+// Read process.env and .env once. Every child line passes through this.
+const REDACTOR = createRedactor();
 // Typecheck with TypeScript 7. The `typescript` package stays on 5.x for
 // typescript-eslint, which needs the JS compiler API that TS 7.0 does not ship
 // (upstream typescript-eslint#10940).
@@ -224,6 +227,7 @@ function runStep(s) {
   return new Promise((resolve) => {
     const started = Date.now();
     let output = "";
+    let pending = "";
     let settled = false;
     let timedOut = false;
 
@@ -253,20 +257,41 @@ function runStep(s) {
         }, s.timeoutMs)
       : undefined;
 
+    const writeLine = (text) => {
+      const safe = REDACTOR.redact(text);
+      output += safe;
+      process.stdout.write(safe);
+    };
+    // Line-buffer so a key split across chunks is still on one line when the
+    // redactor sees it. Flush the tail on close.
     const onData = (chunk) => {
-      const text = chunk.toString();
-      output += text;
-      process.stdout.write(text);
+      pending += chunk.toString();
+      let index = pending.indexOf("\n");
+      while (index >= 0) {
+        writeLine(pending.slice(0, index + 1));
+        pending = pending.slice(index + 1);
+        index = pending.indexOf("\n");
+      }
+    };
+    const flush = () => {
+      if (pending.length === 0) return;
+      writeLine(pending);
+      pending = "";
     };
 
     child.stdout.on("data", onData);
     child.stderr.on("data", onData);
     child.on("error", (error) => {
-      output += `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`;
+      flush();
+      const text = `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`;
+      output += REDACTOR.redact(text);
       process.stderr.write(output);
       finish(1);
     });
-    child.on("close", (code) => finish(code ?? 1));
+    child.on("close", (code) => {
+      flush();
+      finish(code ?? 1);
+    });
   });
 }
 

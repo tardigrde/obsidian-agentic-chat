@@ -1,3 +1,10 @@
+export const LABELS: {
+  openrouter: string;
+  opencode: string;
+  github: string;
+  secret: string;
+};
+
 export interface Redactor {
   secrets: string[];
   redact(text: string): string;
