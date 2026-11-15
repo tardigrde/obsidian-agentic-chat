@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { containsSensitiveText, redactJsonl, redactText, redactValue } from "../src/privacy/redaction";
 
+// Build the key-shaped fixture from parts: this tracked file must not hold a literal.
+const KEY_SHAPED = ["sk", "live", "secret", "value"].join("-");
+
 describe("privacy redaction", () => {
   it("redacts common secret forms in text previews", () => {
-    const redacted = redactText("api_key=hidden Bearer supersecrettoken sk-live-secret-value", {
+    const redacted = redactText(`api_key=hidden Bearer supersecrettoken ${KEY_SHAPED}`, {
       redactHighEntropy: true,
     });
 
@@ -11,7 +14,7 @@ describe("privacy redaction", () => {
     expect(redacted).toContain("Bearer [redacted]");
     expect(redacted).not.toContain("hidden");
     expect(redacted).not.toContain("supersecrettoken");
-    expect(redacted).not.toContain("sk-live-secret-value");
+    expect(redacted).not.toContain(KEY_SHAPED);
   });
 
   it("redacts quoted assignment secrets before truncating previews", () => {

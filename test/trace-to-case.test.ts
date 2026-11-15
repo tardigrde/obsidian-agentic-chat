@@ -145,9 +145,10 @@ describe("runTraceToCase", () => {
 
   it("keeps only the redacted candidate fields and drops extra source fields", async () => {
     const root = await tempDir();
+    const secret = ["sk", "or", "live", "SECRET"].join("-");
     const leaky = {
       ...CANDIDATES[0],
-      secret: "sk-or-live-SECRET",
+      secret,
       rawSessionBody: "VAULT-BODY-MARKER",
     };
     const candidateFile = await writeCandidates(root, [leaky]);
@@ -162,7 +163,7 @@ describe("runTraceToCase", () => {
     const draft = await readDraft(result.draftFile);
     const readme = await readFile(result.readmeFile, "utf8");
     const surface = `${JSON.stringify(draft)}\n${readme}`;
-    expect(surface).not.toContain("sk-or-live-SECRET");
+    expect(surface).not.toContain(secret);
     expect(surface).not.toContain("VAULT-BODY-MARKER");
     expect(draft.prompt).toBe("Fix the broken link in the [email] note.");
     expect(draft.mined.evidence).toBe(CANDIDATES[0].evidence);

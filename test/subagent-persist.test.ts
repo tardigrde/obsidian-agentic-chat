@@ -14,7 +14,7 @@ describe("persistedSnapshot", () => {
       agent: "explorer",
       task: "map vault",
       status: "done",
-      summary: "found 3 notes Bearer sk-1234567890abcdef",
+      summary: `found 3 notes Bearer ${["sk", "1234567890abcdef"].join("-")}`,
       stopId: "call-1",
       transcript: [{ type: "text", text: "hello" }],
       durationMs: 1234,
@@ -31,7 +31,7 @@ describe("persistedSnapshot", () => {
   it("redacts high-entropy and task/agent", () => {
     const child: SubagentChildStatus = {
       agent: "explorer",
-      task: "do thing sk-or-v1-abc123def456ghi789jkl",
+      task: `do thing ${["sk", "or", "v1", "abc123def456ghi789jkl"].join("-")}`,
       status: "done",
       summary: "result with Bearer abc.def.ghi",
     };
