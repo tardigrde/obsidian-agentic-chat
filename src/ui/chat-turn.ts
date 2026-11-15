@@ -280,32 +280,43 @@ export class ChatTurn {
     // below can await, and a same-tab session load during that await must not
     // receive this prompt.
     let sessionToken = service.getSessionToken();
-    const lastTurn = lastUserTurn(service.getMessages());
+    const messages = service.getMessages();
+    const lastTurn = lastUserTurn(messages);
     const prompt = state.lastSentPrompt ?? lastTurn?.text;
     if (!prompt) return;
     // Pair images with the text they were sent with: a stale lastSentPrompt
     // from a blocked send must not pick up an older turn's images.
     const images = lastTurn?.text === prompt ? lastTurn.images : [];
     const display = state.lastSentDisplay ?? stripContextPreamble(prompt);
-    // A failed turn is replaced, not repeated: drop it so the model sees the
-    // prompt once. Only when it is the turn being resent.
-    const failedIndex = failedLastTurnIndex(service.getMessages());
+    // A failed turn is replaced, not repeated: drop only the trailing failed
+    // assistant reply (if any) and continue from the kept user message and tool
+    // results, so the model sees the prompt once. Only when it is the turn
+    // being retried. `messages.length` means a stopped tool batch with no reply
+    // to drop: keep everything and continue from the tool results.
+    const failedIndex = failedLastTurnIndex(messages);
     if (failedIndex !== undefined && lastTurn?.text === prompt) {
-      try {
-        // The rewind starts a new conversation token; bind the resend to it.
-        sessionToken = await service.truncateMessages(failedIndex);
-      } catch (error) {
-        this.deps.renderErrorMessage(errorMessage(error));
-        return;
+      this.deps.clearEmptyState();
+      if (failedIndex < messages.length) {
+        try {
+          // The rewind starts a new conversation token; bind the continuation to it.
+          sessionToken = await service.truncateMessages(failedIndex);
+        } catch (error) {
+          this.deps.renderErrorMessage(errorMessage(error));
+          return;
+        }
+        if (service.getSessionToken() !== sessionToken) {
+          service.reportSessionChanged();
+          this.deps.showServiceError();
+          return;
+        }
+        if (this.deps.isLiveTab(tab)) {
+          this.deps.renderTranscript(service.getMessages());
+        }
       }
-      if (service.getSessionToken() !== sessionToken) {
-        service.reportSessionChanged();
-        this.deps.showServiceError();
-        return;
-      }
-      if (this.deps.isLiveTab(tab)) {
-        this.deps.renderTranscript(service.getMessages());
-      }
+      await service.continueTurn(sessionToken);
+      if (!this.deps.isLiveTab(tab)) return;
+      this.deps.showServiceError();
+      return;
     }
     this.deps.clearEmptyState();
     // A retried image turn shows the same thumbnails it sends (#250).
