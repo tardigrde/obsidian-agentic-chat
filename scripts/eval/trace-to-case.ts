@@ -11,10 +11,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
 
 import type { TraceCandidate, TraceSeverity } from "./trace-miner";
-import { displayPath, timestampSlug } from "./trace-utils";
+import { displayPath, parseStringOptions, runCli, timestampSlug } from "./trace-utils";
 
 export interface MinedCaseDraft {
   id: string;
@@ -41,8 +40,6 @@ export interface CaseDraftOptions {
   id: string;
   /** Base output directory; the candidate id becomes a subdirectory. */
   out?: string;
-  /** Accepted for a future session lookup; not read in v1. */
-  sessions?: string;
   now?: Date;
 }
 
@@ -50,7 +47,6 @@ export interface DraftArgs {
   candidate: string;
   id: string;
   out?: string;
-  sessions?: string;
   help: boolean;
 }
 
@@ -161,25 +157,18 @@ function renderDraftReadme(draft: MinedCaseDraft): string {
     "`npm run verify -- fast`, CI does not run it, and this converter never",
     "calls a model.",
     "",
-    "## Session lookup is deferred",
-    "",
-    "This converter reads only `candidates.json`. `--sessions <dir>` is accepted",
-    "for a future session lookup and is not read in v1.",
+    "This converter reads only `candidates.json`. It never opens a session file.",
     "",
   ].join("\n");
 }
 
 export function parseDraftArgs(argv: string[]): DraftArgs {
-  const parsed: DraftArgs = { candidate: "", id: "", help: false };
-  let index = 0;
-  while (index < argv.length) {
-    index = applyDraftArg(argv, index, parsed);
+  const { values, help } = parseStringOptions(argv, ["candidate", "id", "out"]);
+  if (!help) {
+    if (!values.candidate) throw new Error("--candidate is required.");
+    if (!values.id) throw new Error("--id is required.");
   }
-  if (!parsed.help) {
-    if (!parsed.candidate) throw new Error("--candidate is required.");
-    if (!parsed.id) throw new Error("--id is required.");
-  }
-  return parsed;
+  return { candidate: values.candidate ?? "", id: values.id ?? "", out: values.out, help };
 }
 
 export async function runTraceToCase(options: CaseDraftOptions): Promise<CaseDraftOutput> {
@@ -195,37 +184,6 @@ export async function runTraceToCase(options: CaseDraftOptions): Promise<CaseDra
   await writeFile(draftFile, `${JSON.stringify(draft, null, 2)}\n`);
   await writeFile(readmeFile, renderDraftReadme(draft));
   return { candidate, draft, outDir, draftFile, readmeFile };
-}
-
-function applyDraftArg(argv: string[], index: number, parsed: DraftArgs): number {
-  const arg = argv[index];
-  if (arg === "--candidate") {
-    parsed.candidate = requireOptionValue(argv, index, "--candidate", "a candidates.json path");
-    return index + 2;
-  }
-  if (arg === "--id") {
-    parsed.id = requireOptionValue(argv, index, "--id", "a candidate id");
-    return index + 2;
-  }
-  if (arg === "--out") {
-    parsed.out = requireOptionValue(argv, index, "--out", "a directory");
-    return index + 2;
-  }
-  if (arg === "--sessions") {
-    parsed.sessions = requireOptionValue(argv, index, "--sessions", "a sessions directory");
-    return index + 2;
-  }
-  if (arg === "--help" || arg === "-h") {
-    parsed.help = true;
-    return index + 1;
-  }
-  throw new Error(`Unknown option: ${String(arg)}`);
-}
-
-function requireOptionValue(argv: string[], index: number, flag: string, noun: string): string {
-  const value = argv[index + 1];
-  if (!value) throw new Error(`${flag} needs ${noun}.`);
-  return value;
 }
 
 function toCandidate(value: unknown, index: number): TraceCandidate {
@@ -280,13 +238,12 @@ function assertSafeDirName(id: string): void {
 function usageText(): string {
   return [
     "Usage:",
-    "  npm run eval:from-trace -- --candidate <candidates.json> --id <candidate-id> [--out <dir>] [--sessions <dir>]",
+    "  npm run eval:from-trace -- --candidate <candidates.json> --id <candidate-id> [--out <dir>]",
     "",
     "Writes <out>/<id>/case.draft.json and README.md for one trace candidate.",
     "Default output: logs/eval-candidates/<timestamp>/<id>/",
     "",
     "The draft has empty checks and is not a suite case. A live replay is required.",
-    "--sessions is accepted for a future session lookup and is not read in v1.",
   ].join("\n");
 }
 
@@ -300,7 +257,6 @@ async function main(): Promise<void> {
     candidateFile: args.candidate,
     id: args.id,
     out: args.out,
-    sessions: args.sessions,
   });
   process.stdout.write(
     `[eval:from-trace] candidate: ${result.candidate.id} (${result.candidate.signal}, ${result.candidate.severity})\n`,
@@ -312,9 +268,4 @@ async function main(): Promise<void> {
   );
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  main().catch((error: unknown) => {
-    process.stderr.write(`[eval:from-trace] ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
-}
+runCli(import.meta.url, "eval:from-trace", main);

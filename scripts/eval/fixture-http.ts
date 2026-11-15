@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
 
 /** Shared lifecycle and CLI plumbing for the local eval fixture servers. */
 
@@ -59,7 +60,8 @@ export function requestUrl(request: IncomingMessage, response: ServerResponse): 
 export function startLocalHttpServer(
   handler: (request: IncomingMessage, response: ServerResponse) => void | Promise<void>,
   options: { port?: number; path?: string } = {},
-): Promise<LocalHttpServer> {  const server = createServer((request, response) => {
+): Promise<LocalHttpServer> {
+  const server = createServer((request, response) => {
     try {
       const result = handler(request, response);
       if (result) void result.catch(() => failRequest(response));
@@ -100,78 +102,59 @@ function closeServer(server: Server): Promise<void> {
   });
 }
 
-export interface FixtureCliArgs {
+export interface FixtureCliArgs<Flag extends string> {
   port?: number;
-  json?: boolean;
-  /** Value of the server-specific integer flag, for example --slow-ms or --tools. */
-  extra?: number;
+  json: boolean;
+  /** The server's own integer flags, for example `slow-ms` or `tools`. */
+  flags: Partial<Record<Flag, number>>;
 }
 
-function integerArg(value: string | undefined, flag: string): number {
-  const parsed = Number(value);
-  if (value === undefined || !Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(`${flag} needs a non-negative integer`);
-  }
-  return parsed;
-}
-
-function parseFixtureCliArgs(argv: string[], extraFlag: string): FixtureCliArgs {
-  const args: FixtureCliArgs = {};
-  for (let index = 0; index < argv.length; index += 1) {
-    const raw = argv[index];
-    if (raw === "--json") {
-      args.json = true;
-      continue;
+function parseFixtureCliArgs<Flag extends string>(argv: string[], flags: readonly Flag[]): FixtureCliArgs<Flag> {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      port: { type: "string" },
+      json: { type: "boolean" },
+      ...Object.fromEntries(flags.map((flag) => [flag, { type: "string" as const }])),
+    },
+  }) as { values: Record<string, string | boolean | undefined> };
+  const integer = (name: string): number | undefined => {
+    const value = values[name];
+    if (value === undefined) return undefined;
+    const parsed = Number(value);
+    if (typeof value !== "string" || !Number.isInteger(parsed) || parsed < 0) {
+      throw new Error(`--${name} needs a non-negative integer`);
     }
-    if (raw === "--port") {
-      args.port = integerArg(argv[index + 1], "--port");
-      index += 1;
-      continue;
-    }
-    if (raw === extraFlag) {
-      args.extra = integerArg(argv[index + 1], extraFlag);
-      index += 1;
-      continue;
-    }
-    throw new Error(`Unknown argument: ${raw}`);
-  }
-  return args;
-}
-
-/** Print the endpoint and keep the process alive until SIGINT or SIGTERM. */
-function serveCli(server: LocalHttpServer, json: boolean | undefined): void {
-  const line = json ? JSON.stringify({ url: server.url, port: server.port }) : server.url;
-  process.stdout.write(`${line}\n`);
-  const stop = (): void => {
-    void server.close().then(() => process.exit(0));
+    return parsed;
   };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
-}
-
-function isCliEntry(metaUrl: string): boolean {
-  const entry = process.argv[1];
-  return Boolean(entry) && metaUrl === pathToFileURL(entry).href;
-}
-
-function exitOnCliError(error: unknown): never {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+  const parsedFlags: Partial<Record<Flag, number>> = {};
+  for (const flag of flags) parsedFlags[flag] = integer(flag);
+  return { port: integer("port"), json: values.json === true, flags: parsedFlags };
 }
 
 /**
- * Parse the fixture CLI flags, print the endpoint, and wait for a stop signal.
- * Does nothing when the module is imported instead of run as a script.
+ * When the module is the process entry point: parse `--port`, `--json`, and the
+ * server's own integer flags, print the endpoint, and serve until SIGINT or
+ * SIGTERM. Does nothing when the module is imported.
  */
-export function runFixtureCli(
+export function runFixtureCli<Flag extends string>(
   metaUrl: string,
-  argv: string[],
-  extraFlag: string,
-  start: (args: FixtureCliArgs) => Promise<LocalHttpServer>,
+  flags: readonly Flag[],
+  start: (args: FixtureCliArgs<Flag>) => Promise<LocalHttpServer>,
 ): void {
-  if (!isCliEntry(metaUrl)) return;
-  const args = parseFixtureCliArgs(argv, extraFlag);
-  void start(args)
-    .then((server) => serveCli(server, args.json))
-    .catch(exitOnCliError);
+  const entry = process.argv[1];
+  if (!entry || metaUrl !== pathToFileURL(entry).href) return;
+  void (async () => {
+    const args = parseFixtureCliArgs(process.argv.slice(2), flags);
+    const server = await start(args);
+    process.stdout.write(`${args.json ? JSON.stringify({ url: server.url, port: server.port }) : server.url}\n`);
+    const stop = (): void => {
+      void server.close().then(() => process.exit(0));
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  })().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
 }

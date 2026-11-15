@@ -231,43 +231,20 @@ describe("runTraceToCase", () => {
       runTraceToCase({ candidateFile: file, id: "trace-aaaa1111-1", out: path.join(root, "out") }),
     ).rejects.toThrow("candidates.json must be an array of trace candidates.");
   });
-
-  it("accepts --sessions but does not read it in v1", async () => {
-    const root = await tempDir();
-    const candidateFile = await writeCandidates(root, CANDIDATES);
-
-    const result = await runTraceToCase({
-      candidateFile,
-      id: "trace-aaaa1111-1",
-      out: path.join(root, "out"),
-      sessions: path.join(root, "no-such-sessions-dir"),
-      now: FIXED_NOW,
-    });
-
-    expect(result.draft.mined.candidateId).toBe("trace-aaaa1111-1");
-  });
 });
 
 describe("parseDraftArgs", () => {
-  it("parses the candidate, id, output, and sessions options", () => {
-    expect(
-      parseDraftArgs([
-        "--candidate",
-        "candidates.json",
-        "--id",
-        "trace-aaaa1111-1",
-        "--out",
-        "logs/out",
-        "--sessions",
-        "sessions",
-      ]),
-    ).toEqual({
+  it("parses the candidate, id, and output options", () => {
+    expect(parseDraftArgs(["--candidate", "candidates.json", "--id", "trace-aaaa1111-1", "--out", "logs/out"])).toEqual({
       candidate: "candidates.json",
       id: "trace-aaaa1111-1",
       out: "logs/out",
-      sessions: "sessions",
       help: false,
     });
+  });
+
+  it("rejects an option it does not read", () => {
+    expect(() => parseDraftArgs(["--candidate", "c.json", "--id", "x", "--sessions", "dir"])).toThrow(/--sessions/);
   });
 
   it("requires --candidate and --id", () => {
@@ -277,6 +254,6 @@ describe("parseDraftArgs", () => {
   });
 
   it("prints help without the required options", () => {
-    expect(parseDraftArgs(["--help"])).toEqual({ candidate: "", id: "", help: true });
+    expect(parseDraftArgs(["--help"])).toEqual({ candidate: "", id: "", out: undefined, help: true });
   });
 });

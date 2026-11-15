@@ -17,9 +17,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
 import { redactText } from "../../src/privacy/redaction";
-import { displayPath, timestampSlug } from "./trace-utils";
+import { displayPath, parseStringOptions, runCli, timestampSlug } from "./trace-utils";
 
 export type TraceSeverity = "high" | "medium" | "low";
 
@@ -39,7 +38,7 @@ export interface TraceCandidate {
   pluginVersion?: string;
   model?: string;
   date?: string;
-  signal: string;
+  signal: TraceSignal;
   severity: TraceSeverity;
   userTurns: TraceUserTurn[];
   toolCalls: TraceToolCall[];
@@ -83,7 +82,17 @@ const LONG_CHAIN_LIMIT = 15;
 const REPEATED_CALL_LIMIT = 3;
 const REPORT_TOP_LIMIT = 20;
 
-const SIGNAL_RANK: Record<string, number> = {
+export type TraceSignal =
+  | "tool-error"
+  | "approval-stopped"
+  | "approval-declined"
+  | "user-correction"
+  | "retry"
+  | "long-chain"
+  | "repeated-tool-call"
+  | "recovery-signal";
+
+const SIGNAL_RANK: Record<TraceSignal, number> = {
   "tool-error": 90,
   "approval-stopped": 88,
   "approval-declined": 86,
@@ -96,12 +105,15 @@ const SIGNAL_RANK: Record<string, number> = {
 
 const SEVERITY_RANK: Record<TraceSeverity, number> = { high: 3, medium: 2, low: 1 };
 const APPROVAL_KINDS = ["approval-stopped", "approval-declined"] as const;
+type ApprovalKind = (typeof APPROVAL_KINDS)[number];
 
 const CORRECTION_PATTERN = /\b(?:no|wrong|not what|undo|try again|fix it)\b/i;
+// The first pattern is the text of `STOPPED_APPROVAL_REASON` in
+// `src/agent/tool-call-controller.ts`; `test/trace-miner.test.ts` keeps the
+// two in step.
 const STOPPED_APPROVAL_PATTERNS: readonly RegExp[] = [
   /The turn was stopped before approval\.?/i,
   /\bOperation aborted\b/i,
-  /\bSTOPPED_APPROVAL_REASON\b/,
 ];
 const USER_DECLINED_PATTERN = /\bUser declined\b/i;
 const RECOVERY_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
@@ -194,7 +206,7 @@ interface ToolErrorRecord {
 interface ApprovalRecord {
   toolName: string;
   reason: string;
-  kind: "approval-stopped" | "approval-declined";
+  kind: ApprovalKind;
 }
 
 interface RecoveryRecord {
@@ -222,7 +234,7 @@ interface SessionMetadata {
 }
 
 interface RawCandidate {
-  signal: string;
+  signal: TraceSignal;
   severity: TraceSeverity;
   userTurns: TraceUserTurn[];
   toolCalls: TraceToolCall[];
@@ -306,46 +318,11 @@ export async function runTraceMiner(options: TraceMinerOptions): Promise<TraceMi
 }
 
 export function parseMiningArgs(argv: string[]): MiningArgs {
-  const parsed: MiningArgs = { sessions: "", help: false };
-  let index = 0;
-  while (index < argv.length) {
-    index = applyMiningArg(argv, index, parsed);
-  }
-  if (!parsed.sessions && !parsed.help) throw new Error("--sessions is required.");
-  return parsed;
-}
-
-function applyMiningArg(argv: string[], index: number, parsed: MiningArgs): number {
-  const arg = argv[index];
-  if (arg === "--sessions") {
-    parsed.sessions = requireOptionValue(argv, index, "--sessions", "a directory or JSONL file");
-    return index + 2;
-  }
-  if (arg === "--out") {
-    parsed.out = requireOptionValue(argv, index, "--out", "a directory");
-    return index + 2;
-  }
-  if (arg === "--max") {
-    parsed.max = parseMaxOption(argv[index + 1]);
-    return index + 2;
-  }
-  if (arg === "--help" || arg === "-h") {
-    parsed.help = true;
-    return index + 1;
-  }
-  throw new Error(`Unknown option: ${String(arg)}`);
-}
-
-function requireOptionValue(argv: string[], index: number, flag: string, noun: string): string {
-  const value = argv[index + 1];
-  if (!value) throw new Error(`${flag} needs ${noun}.`);
-  return value;
-}
-
-function parseMaxOption(value: string | undefined): number {
-  const max = Number(value);
-  if (!Number.isInteger(max) || max < 1) throw new Error("--max needs a positive integer.");
-  return max;
+  const { values, help } = parseStringOptions(argv, ["sessions", "out", "max"]);
+  if (!values.sessions && !help) throw new Error("--sessions is required.");
+  const max = values.max === undefined ? undefined : Number(values.max);
+  if (max !== undefined && (!Number.isInteger(max) || max < 1)) throw new Error("--max needs a positive integer.");
+  return { sessions: values.sessions ?? "", out: values.out, max, help };
 }
 
 function resolveSessionFiles(target: string): string[] {
@@ -628,7 +605,7 @@ function approvalCandidates(turn: TurnRecord): RawCandidate[] {
   return APPROVAL_KINDS.filter((kind) => kinds.has(kind)).map((kind) => approvalCandidate(turn, kind));
 }
 
-function approvalCandidate(turn: TurnRecord, kind: "approval-stopped" | "approval-declined"): RawCandidate {
+function approvalCandidate(turn: TurnRecord, kind: ApprovalKind): RawCandidate {
   const approval = turn.approvals.find((entry) => entry.kind === kind);
   const tool = approval?.toolName ?? "a tool";
   const verdict = kind === "approval-stopped" ? "was stopped" : "was declined";
@@ -902,8 +879,8 @@ function excerptText(text: string): string {
   return redactTraceText(text.replace(/\s+/g, " ").trim(), 160);
 }
 
-function candidateRank(candidate: { signal: string; severity: TraceSeverity }): number {
-  return SEVERITY_RANK[candidate.severity] * 100 + (SIGNAL_RANK[candidate.signal] ?? 0);
+function candidateRank(candidate: { signal: TraceSignal; severity: TraceSeverity }): number {
+  return SEVERITY_RANK[candidate.severity] * 100 + SIGNAL_RANK[candidate.signal];
 }
 
 function compareCandidates(left: TraceCandidate, right: TraceCandidate): number {
@@ -978,8 +955,8 @@ function renderReport(result: TraceMiningResult, generatedAt: Date): string {
 
 function signalCounts(
   candidates: TraceCandidate[],
-): Array<{ signal: string; severity: TraceSeverity; count: number }> {
-  const counts = new Map<string, { signal: string; severity: TraceSeverity; count: number }>();
+): Array<{ signal: TraceSignal; severity: TraceSeverity; count: number }> {
+  const counts = new Map<TraceSignal, { signal: TraceSignal; severity: TraceSeverity; count: number }>();
   for (const candidate of candidates) {
     const entry = counts.get(candidate.signal) ?? {
       signal: candidate.signal,
@@ -1047,9 +1024,4 @@ async function main(): Promise<void> {
   );
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  main().catch((error: unknown) => {
-    process.stderr.write(`[trace:mine] ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
-}
+runCli(import.meta.url, "trace:mine", main);

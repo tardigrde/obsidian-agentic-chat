@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import process from "node:process";
 import {
   JSON_CONTENT_TYPE,
   TEXT_CONTENT_TYPE,
@@ -561,6 +560,6 @@ export function startFixtureMcpServer(options: FixtureMcpServerOptions = {}): Pr
   });
 }
 
-runFixtureCli(import.meta.url, process.argv.slice(2), "--tools", (args) =>
-  startFixtureMcpServer({ port: args.port, toolCount: args.extra }),
+runFixtureCli(import.meta.url, ["tools"], (args) =>
+  startFixtureMcpServer({ port: args.port, toolCount: args.flags.tools }),
 );
