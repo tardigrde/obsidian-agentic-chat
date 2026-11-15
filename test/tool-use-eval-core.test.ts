@@ -247,9 +247,13 @@ describe("tool-use eval core", () => {
 
     expect(validateToolUseSuite(suite).cases[0].seed.vault).toEqual({ size: "S", seed: 7 });
 
+    const large = cloneSuite();
+    ((large.cases as Array<Record<string, unknown>>)[0].seed as Record<string, unknown>).vault = { size: "L", seed: 3 };
+    expect(validateToolUseSuite(large).cases[0].seed.vault).toEqual({ size: "L", seed: 3 });
+
     const invalid: Array<{ vault: unknown; pattern: RegExp }> = [
       { vault: "S", pattern: /seed\.vault must be an object/ },
-      { vault: { size: "XL", seed: 1 }, pattern: /seed\.vault\.size must be "S" or "M"/ },
+      { vault: { size: "XL", seed: 1 }, pattern: /seed\.vault\.size must be "S", "M", or "L"/ },
       { vault: { size: "S" }, pattern: /seed\.vault\.seed must be a non-negative integer/ },
       { vault: { size: "S", seed: -1 }, pattern: /seed\.vault\.seed must be a non-negative integer/ },
       { vault: { size: "S", seed: 1.5 }, pattern: /seed\.vault\.seed must be a non-negative integer/ },
