@@ -304,9 +304,10 @@ the witness, `fast`, or a committed e2e assertion.
 `--charter eval-mining` is the first experiment for the data engine. It asks one
 explore run to act like a vault owner with a single realistic goal over 2-8 chat
 turns, so the run leaves a session trace under `sessions/`. `npm run
-analyze:session` summarizes it today; the trace miner (`npm run trace:mine`, once
-it lands) will turn it into anonymized candidates. It does not replace the core
-suite, and it does not write eval cases by itself.
+analyze:session` summarizes it today. `npm run trace:mine` turns the trace into
+anonymized candidates, and `npm run eval:from-trace` turns one candidate into a
+draft case for human review. Neither writes a final eval case by itself, and
+neither replaces the core suite.
 
 ## Promotion
 
@@ -339,6 +340,26 @@ npm run analyze:session -- --compare <before-dir> <after-dir> --format markdown
 
 Markdown output is for human triage and highlights token use, cache hits, active
 note context, duplicate tool calls, approval denials, and tool errors.
+
+`npm run trace:mine -- --sessions <sessions-dir>` writes anonymized
+`candidates.json` and `report.md` under `logs/trace-mining/<timestamp>/`. To turn
+one candidate into a draft case:
+
+```bash
+npm run trace:mine -- --sessions <sessions-dir>
+npm run eval:from-trace -- --candidate logs/trace-mining/<timestamp>/candidates.json --id <candidate-id>
+```
+
+The converter writes `logs/eval-candidates/<timestamp>/<id>/case.draft.json` and
+`README.md` from the redacted candidate only. It never reads a session file and
+never calls a model. `--out <dir>` changes the base directory. `--sessions <dir>`
+is accepted for a future session lookup and is not read in v1.
+
+Then fill the TODOs in the draft: choose or capture the vault, restore the exact
+prompt, write code-gradeable checks, and replay on current `main` with a live
+model. Add the case to `core` only if the replay fails and the checks are fair. A
+draft has `checks: []`, so it is not a suite case and must not be committed as
+one.
 
 ## Tool-use evals
 
@@ -463,7 +484,34 @@ The endpoints cover the cases a web tool must handle: `/article` and
 `/slow`, `/json`, `/not-found`, and `/echo?q=...` for prompt-injection
 payloads. `--slow-ms` sets the `/slow` delay.
 
-The eval runner does not use the server yet.
+The runner starts the server only when a selected case needs it: a prompt with
+`{{fixture}}`, or a case that sets `"web.enabled": true`. It writes
+`fixtureBaseUrl` into `plan.json`, replaces every `{{fixture}}` in the prompt,
+and closes the server in a `finally` block. `--dry-run` and `--compare` start
+no server; a dry run marks such a case with `, fixture server` in its plan. A
+prompt that uses `{{fixture}}` with no base URL fails before the e2e starts.
+The `core` suite has no such case, so its path is unchanged.
+
+The eval spec sets the `__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__` window global to
+that base URL's origin in the Obsidian window. `normalizeWebUrl` allows one
+exact match and nothing else: the hook is unset by default, so every other
+loopback, private, or different-port address stays blocked.
+
+A future web case looks like this:
+
+```json
+{
+  "id": "web.medium.article",
+  "prompt": "Fetch {{fixture}}/article and report its published date.",
+  "seed": { "files": {} },
+  "settings": { "web.enabled": true },
+  "checks": [{ "type": "answer_contains", "text": "2026-01-05" }]
+}
+```
+
+`web.enabled` is false in the base eval config, so a case must opt in. The fake
+MCP server (about 30 tools for P12 `search_tools`) is a separate change, not
+part of this wiring.
 
 ### Local fake MCP server for tool-search cases
 
@@ -495,6 +543,7 @@ The tools cover search, documents, tickets, calendar, files, and admin.
 `test/fixture-mcp-server.test.ts` checks the raw protocol and one handshake,
 listing, and call through `McpHttpClient`. Both fixture servers share
 `scripts/eval/fixture-http.ts` for the listener, response, and CLI lifecycle.
+
 
 ## CI
 

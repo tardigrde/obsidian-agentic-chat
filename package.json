@@ -41,6 +41,7 @@
     "verify:provider-live": "node scripts/verify-provider-live.mjs",
     "analyze:session": "node scripts/analyze-session-trace.mjs",
     "trace:mine": "tsx scripts/eval/trace-miner.ts",
+    "eval:from-trace": "tsx scripts/eval/trace-to-case.ts",
     "verify": "node scripts/verify.mjs",
     "verify:fast": "node scripts/verify.mjs fast",
     "nested": "node scripts/run-nested.mjs",
