@@ -482,7 +482,14 @@ function recordToolResult(message: RawMessage, turn: TurnRecord): void {
   for (const approval of approvalTextHits(text, toolName)) turn.approvals.push(approval);
 
   if (isError) {
-    turn.errors.push({ toolName, toolCallId, text, recovery: recoveryLabels(text) });
+    const recovery = recoveryLabels(text);
+    const existing = toolCallId ? turn.errors.find((error) => error.toolCallId === toolCallId) : undefined;
+    if (existing) {
+      existing.text = text;
+      existing.recovery = recovery;
+    } else {
+      turn.errors.push({ toolName, toolCallId, text, recovery });
+    }
     return;
   }
   const labels = recoveryLabels(text);

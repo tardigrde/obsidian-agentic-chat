@@ -196,6 +196,20 @@ describe("mineSessionText", () => {
     expect(candidates[0]?.evidence).toContain("vault_read");
   });
 
+  it("does not double-count an error reported by both the audit log and the tool result", () => {
+    const session = new FixtureSession()
+      .user("Read it.")
+      .assistant({ toolCalls: [{ id: "call-1", name: "vault_read", args: { path: "Note.md" } }] })
+      .auditToolError("call-1", "vault_read")
+      .toolResult("call-1", "vault_read", "Error: permission denied", true)
+      .assistant({ text: "Failed." });
+
+    const errors = mine(session).filter((candidate) => candidate.signal === "tool-error");
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.evidence).toContain("permission denied");
+  });
+
   it("flags a user correction after an assistant turn and strips the note body", () => {
     const context =
       '<context>\nThe user attached the following from their vault:\n\nActive note "Private.md":\n\nSECRET NOTE BODY\n</context>';
