@@ -62,19 +62,21 @@ describe("seeded vault generator", () => {
   });
 
   it("keeps 25-30% of the notes Hungarian, with accented paths and frontmatter", () => {
-    const vault = generateVault("M", 9);
-    const notes = notePaths(vault);
-    const accented = Object.keys(vault.files).filter((filePath) => /[^\x20-\x7E]/.test(filePath));
+    for (const size of ["M", "L"] as VaultSize[]) {
+      const vault = generateVault(size, 9);
+      const notes = notePaths(vault);
+      const accented = Object.keys(vault.files).filter((filePath) => /[^\x20-\x7E]/.test(filePath));
 
-    expect(accented.length).toBeGreaterThan(0);
-    for (const path of accented) expect(path).toBe(path.normalize("NFC"));
+      expect(accented.length).toBeGreaterThan(0);
+      for (const path of accented) expect(path).toBe(path.normalize("NFC"));
 
-    const accentedTitles = Object.values(vault.files).filter((content) => /^title: ".*[^\x20-\x7E]/m.test(content));
-    expect(accentedTitles.length).toBeGreaterThan(0);
+      const accentedTitles = Object.values(vault.files).filter((content) => /^title: ".*[^\x20-\x7E]/m.test(content));
+      expect(accentedTitles.length).toBeGreaterThan(0);
 
-    const hungarian = notes.filter((path) => contentOf(vault, path).includes("## Összefoglaló"));
-    expect(hungarian.length / notes.length).toBeGreaterThanOrEqual(0.25);
-    expect(hungarian.length / notes.length).toBeLessThanOrEqual(0.3);
+      const hungarian = notes.filter((path) => contentOf(vault, path).includes("## Összefoglaló"));
+      expect(hungarian.length / notes.length, size).toBeGreaterThanOrEqual(0.25);
+      expect(hungarian.length / notes.length, size).toBeLessThanOrEqual(0.3);
+    }
   });
 
   it("keeps near-duplicate copies in the archive with older facts", () => {
@@ -120,6 +122,85 @@ describe("seeded vault generator", () => {
   it("generates M well inside the CI ceiling", () => {
     const started = performance.now();
     generateVault("M", 123);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+});
+
+describe("seeded L vault", () => {
+  it("generates exactly 2,000 L notes", () => {
+    expect(notePaths(generateVault("L", 1))).toHaveLength(2_000);
+  });
+
+  it("repeats an L seed byte for byte and changes with the seed", () => {
+    const first = generateVault("L", 42);
+    const second = generateVault("L", 42);
+
+    expect(JSON.stringify(first.files)).toBe(JSON.stringify(second.files));
+    expect(first.files).not.toEqual(generateVault("L", 43).files);
+  });
+
+  it("keeps every L path and every L basename unique and clean", () => {
+    const vault = generateVault("L", 5);
+    const paths = Object.keys(vault.files);
+    const notes = notePaths(vault);
+    const basenames = notes.map(basename);
+
+    expect(notes).toHaveLength(2_000);
+    expect(new Set(paths).size, "duplicate path").toBe(paths.length);
+    expect(new Set(basenames).size, "duplicate basename").toBe(basenames.length);
+    expect(basenames.some((name) => / - .* \d+$/.test(name)), "a repeated live name takes a number").toBe(true);
+
+    for (const filePath of paths) {
+      const segments = filePath.split("/");
+      expect(filePath.startsWith("/")).toBe(false);
+      expect(filePath).not.toContain("\\");
+      expect(segments).not.toContain("..");
+      expect(segments).not.toContain(".obsidian");
+      expect(filePath.startsWith(".")).toBe(false);
+      expect(filePath).toBe(filePath.normalize("NFC"));
+    }
+  });
+
+  it("keeps accented NFC names and non-ASCII frontmatter at L", () => {
+    const vault = generateVault("L", 9);
+    const accented = Object.keys(vault.files).filter((filePath) => /[^\x20-\x7E]/.test(filePath));
+
+    expect(accented.length).toBeGreaterThan(0);
+    for (const filePath of accented) expect(filePath).toBe(filePath.normalize("NFC"));
+
+    const accentedTitles = Object.values(vault.files).filter((content) => /^title: ".*[^\x20-\x7E]/m.test(content));
+    expect(accentedTitles.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the L shape: dailies, templates, archive copies, embeds, and block refs", () => {
+    const vault = generateVault("L", 6);
+    const notes = notePaths(vault);
+    const contents = notes.map((path) => contentOf(vault, path));
+    const dailies = notes.filter((path) => /^500 Journal\/\d{4}\/\d{4}-\d{2}-\d{2}(?: \d+)?\.md$/.test(path));
+    const archived = notes.filter((path) => path.startsWith("900 Archive/"));
+
+    expect(dailies.length).toBeGreaterThan(100);
+    expect(notes.filter((path) => path.startsWith("800 Templates/")).length).toBeGreaterThan(0);
+    expect(archived.length).toBeGreaterThan(100);
+    expect(contents.filter((content) => content.includes("![[")).length).toBeGreaterThan(0);
+    expect(contents.filter((content) => /\^blk-[a-z0-9]+-\d/m.test(content)).length).toBeGreaterThan(0);
+    expect(contents.filter((content) => content.split("\n").length >= 100).length).toBeGreaterThan(0);
+
+    for (const path of archived) {
+      const content = contentOf(vault, path);
+      const source = content.match(/\[\[([^|\]]+)\|/);
+      if (!source) throw new Error(`archive copy without a live source: ${path}`);
+
+      expect(content).toContain("status: archived");
+      expect(source[1].startsWith("900 Archive/")).toBe(false);
+      expect(vault.files[`${source[1]}.md`], `dangling live source in ${path}`).toBeDefined();
+      expect(content).not.toBe(contentOf(vault, `${source[1]}.md`));
+    }
+  });
+
+  it("generates L well inside the CI ceiling", () => {
+    const started = performance.now();
+    generateVault("L", 123);
     expect(performance.now() - started).toBeLessThan(2_000);
   });
 });

@@ -10,7 +10,7 @@
  * deliberate contradictions that a retrieval or edit task has to resolve.
  */
 
-export type VaultSize = "S" | "M";
+export type VaultSize = "S" | "M" | "L";
 
 export interface GeneratedVault {
   size: VaultSize;
@@ -18,8 +18,8 @@ export interface GeneratedVault {
   files: Record<string, string>;
 }
 
-const NOTE_COUNTS: Record<VaultSize, number> = { S: 50, M: 500 };
-const SIZE_SALT: Record<VaultSize, number> = { S: 0x5a17, M: 0x51a7 };
+const NOTE_COUNTS: Record<VaultSize, number> = { S: 50, M: 500, L: 2_000 };
+const SIZE_SALT: Record<VaultSize, number> = { S: 0x5a17, M: 0x51a7, L: 0x1a7e };
 const DAY_MS = 86_400_000;
 const YEAR = 2024;
 const DAYS_IN_YEAR = 366;
@@ -260,10 +260,17 @@ interface NoteSpec {
   archived: boolean;
   /** 0 keeps the older fact, 1 the newer one. */
   factIndex: 0 | 1;
+  /** Calendar date for a daily note; the basename can carry a uniqueness suffix. */
+  dailyDate?: string;
   /** Live source path without `.md`, for an archive copy. */
   sourcePath?: string;
   templateBody?: readonly string[];
   hash: number;
+}
+
+interface NameBook {
+  unique: boolean;
+  taken: Set<string>;
 }
 
 interface RenderContext {
@@ -275,8 +282,8 @@ interface RenderContext {
 }
 
 export function generateVault(size: VaultSize, seed: number): GeneratedVault {
-  if (size !== "S" && size !== "M") {
-    throw new Error(`Unknown vault size: ${String(size)}. Use "S" or "M".`);
+  if (size !== "S" && size !== "M" && size !== "L") {
+    throw new Error(`Unknown vault size: ${String(size)}. Use "S", "M", or "L".`);
   }
   if (!Number.isInteger(seed) || seed < 0) {
     throw new Error("The vault seed must be a non-negative integer.");
@@ -331,12 +338,16 @@ function buildSpecs(size: VaultSize, rng: () => number): NoteSpec[] {
     }
   }
   const usedPaths = new Set<string>();
+  // `S` and `M` are frozen: they seed the committed eval baselines, so their
+  // bytes must not change. At `L` the topic/kind/language pairs repeat, and a
+  // wikilink resolves by basename, so every basename there must stay unique.
+  const names: NameBook = { unique: size === "L", taken: new Set<string>() };
 
   const dailySpecs: NoteSpec[] = [];
   for (let index = 0; index < dailyCount; index += 1) {
     const date = dateFromDay(Math.floor((index * DAYS_IN_YEAR) / dailyCount));
     const year = date.slice(0, 4);
-    const basename = date;
+    const basename = claimBasename(names, date);
     dailySpecs.push({
       path: uniquePath(`${FOLDERS.journal}/${year}/${basename}.md`, usedPaths),
       basename,
@@ -348,6 +359,7 @@ function buildSpecs(size: VaultSize, rng: () => number): NoteSpec[] {
       daily: true,
       archived: false,
       factIndex: 1,
+      dailyDate: date,
       hash: hashString(basename),
     });
   }
@@ -356,7 +368,7 @@ function buildSpecs(size: VaultSize, rng: () => number): NoteSpec[] {
   for (let index = 0; index < templateCount; index += 1) {
     const template = TEMPLATES[index];
     const hungarian = hungarianSet.has(dailyCount + index);
-    const basename = hungarian ? template.name.hu : template.name.en;
+    const basename = claimBasename(names, hungarian ? template.name.hu : template.name.en);
     templateSpecs.push({
       path: uniquePath(`${FOLDERS.templates}/${basename}.md`, usedPaths),
       basename,
@@ -381,7 +393,10 @@ function buildSpecs(size: VaultSize, rng: () => number): NoteSpec[] {
     const kind = KINDS[kindIndex];
     const folder = LIVE_FOLDERS[index % LIVE_FOLDERS.length];
     const hungarian = hungarianSet.has(liveSlotStart + index);
-    const basename = hungarian ? `${topic.title.hu} - ${kind.hu}` : `${topic.title.en} - ${kind.en}`;
+    const basename = claimBasename(
+      names,
+      hungarian ? `${topic.title.hu} - ${kind.hu}` : `${topic.title.en} - ${kind.en}`,
+    );
     liveSpecs.push({
       path: uniquePath(`${folder}/${basename}.md`, usedPaths),
       basename,
@@ -401,12 +416,14 @@ function buildSpecs(size: VaultSize, rng: () => number): NoteSpec[] {
   const archiveSources = pickArchiveSources(liveSpecs, hungarianArchives, archiveCount);
   const archiveSpecs: NoteSpec[] = [];
   for (const source of archiveSources) {
-    const path = uniquePath(`${FOLDERS.archive}/${source.basename}.md`, usedPaths);
+    const basename = claimBasename(names, source.basename);
+    const path = uniquePath(`${FOLDERS.archive}/${basename}.md`, usedPaths);
     archiveSpecs.push({
       ...source,
       path,
+      basename,
       folder: FOLDERS.archive,
-      title: source.basename,
+      title: basename,
       long: false,
       daily: false,
       archived: true,
@@ -440,7 +457,9 @@ function renderNote(spec: NoteSpec, context: RenderContext): string {
   const rng = mulberry32((context.seed ^ spec.hash) >>> 0);
   const labels: Labels = spec.hungarian ? HU : EN;
   const baseDay = spec.hash % DAYS_IN_YEAR;
-  const created = spec.daily ? spec.basename : dateFromDay(spec.archived ? Math.max(0, baseDay - 90) : baseDay);
+  const created = spec.daily
+    ? (spec.dailyDate ?? spec.basename)
+    : dateFromDay(spec.archived ? Math.max(0, baseDay - 90) : baseDay);
   const otherLanguageTitle = spec.topic ? (spec.hungarian ? spec.topic.title.en : spec.topic.title.hu) : undefined;
   const aliases = spec.archived
     ? [`${spec.title} (${labels.archived})`]
@@ -588,6 +607,26 @@ function uniquePath(candidate: string, used: Set<string>): string {
     }
   }
   throw new Error(`Could not make a unique path for ${candidate}.`);
+}
+
+/**
+ * A stable `" 2"`, `" 3"` suffix on a repeated basename. Wikilinks resolve by
+ * basename, so a repeated name would make a link ambiguous.
+ */
+function claimBasename(book: NameBook, stem: string): string {
+  if (!book.unique) return stem;
+  if (!book.taken.has(stem)) {
+    book.taken.add(stem);
+    return stem;
+  }
+  for (let suffix = 2; suffix < 10_000; suffix += 1) {
+    const next = `${stem} ${suffix}`;
+    if (!book.taken.has(next)) {
+      book.taken.add(next);
+      return next;
+    }
+  }
+  throw new Error(`Could not make a unique basename for ${stem}.`);
 }
 
 function range(length: number): number[] {
