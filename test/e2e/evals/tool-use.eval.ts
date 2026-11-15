@@ -131,6 +131,7 @@ describe("tool-use eval", function () {
         // An open ask-user card means the turn waits for a human. Treat it as
         // the end for this run, then stop the turn so the next run starts clean.
         await waitForTurnOrAskUser(plan.turn.timeoutMs);
+        await closeModals();
         await stopIfRunning();
 
         const ms = Date.now() - startedAt;
@@ -150,6 +151,7 @@ describe("tool-use eval", function () {
         });
       } catch (error) {
         const ms = Date.now() - startedAt;
+        await closeModals();
         await stopIfRunning();
         let files: Record<string, string> = {};
         const frontmatter: Record<string, Record<string, unknown>> = {};
@@ -228,7 +230,11 @@ async function configurePlugin(): Promise<void> {
     settings.temperature = 0;
     settings.mode = "safe";
     settings.approval.mutating = "allow";
-    settings.approval.perTool = {};
+    // The eval vault is synthetic. Recursive deletes still ask even under a
+    // blanket allow, and the approval modal would block the stop button and
+    // hang the turn. A per-tool allow lets the run finish; the checks, not a
+    // modal, decide whether the delete was right.
+    settings.approval.perTool = { delete: "allow" };
     // The eval vault is synthetic and holds no private data, so provider
     // privacy filters add routing noise without protecting anything. Pin one
     // provider path so a fallback or a ZDR filter does not move the score.
