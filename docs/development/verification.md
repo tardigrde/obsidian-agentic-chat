@@ -407,8 +407,7 @@ npm run eval:from-trace -- --candidate logs/trace-mining/<timestamp>/candidates.
 
 The converter writes `logs/eval-candidates/<timestamp>/<id>/case.draft.json` and
 `README.md` from the redacted candidate only. It never reads a session file and
-never calls a model. `--out <dir>` changes the base directory. `--sessions <dir>`
-is accepted for a future session lookup and is not read in v1.
+never calls a model. `--out <dir>` changes the base directory.
 
 Then fill the TODOs in the draft: choose or capture the vault, restore the exact
 prompt, write code-gradeable checks, and replay on current `main` with a live
@@ -435,8 +434,30 @@ suite. `--compare` shows the overall metrics and a per-case table: pass rate,
 pass^K, partial score, median time, mean tokens, mean USD, and flags.
 `--write-baseline` writes `test/evals/baselines/<suite>.json` (`tool-use` →
 `tool-use.json`, `core` → `core.json`) and includes the `overall` object plus the
-new per-case metrics. Do not write a baseline when a run was skipped or had a
-harness error.
+per-case metrics. The runner refuses to write a baseline when a run was skipped
+or had a harness error.
+
+`npm run verify -- eval --suite <suite>` reaches the same runner for any suite
+file in `test/evals/tool-use/`, by path or by bare name (`--suite core`).
+
+The harness is split by job:
+
+| File | Job |
+|---|---|
+| `scripts/run-tool-use-evals.ts` | CLI and I/O only: suite, plan, WDIO launch, output files |
+| `scripts/eval/tool-use-core.ts` | suite validation, check grading, cost, budget, case and overall metrics |
+| `scripts/eval/tool-use-plan.ts` | the runner/spec contract: `plan.json`, the run record, case selection |
+| `scripts/eval/tool-use-report.ts` | summary, report, baseline, dry-run text |
+| `scripts/eval/tool-use-compare.ts` | `--compare` |
+| `test/e2e/evals/tool-use.eval.ts` | drives Obsidian and writes one run record per run; it never grades |
+
+A run has one of four statuses. `pass` and `fail` are the model's result.
+`error` is the harness's: the run gave no gradeable observation (a provider
+error, a turn timeout, a missing run record). `skipped-budget` did not start.
+An `error` run counts as executed and as not passed, but the report lists it
+apart from failed checks, because it says nothing about the model. If the WDIO
+spec dies half-way, the runner still writes `summary.json` and `report.md` for
+the runs that finished, marks the rest as `error`, and exits non-zero.
 
 For a quick before/after of a prompt or tool change, run the smoke slice:
 
@@ -444,14 +465,16 @@ For a quick before/after of a prompt or tool change, run the smoke slice:
 npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke --runs 1 --env-file .env
 ```
 
-`--smoke` runs 8 `core` cases, one per category, once each: `find.hard.venue`,
+`--smoke` runs the slice that the suite file itself names in its top-level
+`smoke` list. For `core` that is 8 cases, one per category: `find.hard.venue`,
 `edit.hard.status`, `organize.medium.inbox`, `create.medium.summary`,
 `properties.hard.owners`, `tools.easy.search`, `safety.medium.injection`, and
-`recovery.medium.stale`. A run takes about 3-5 minutes and needs no baseline. Use
-the full `core` suite (25 cases x 3 runs) for the committed baseline. `--smoke`
-cannot be combined with `--case`, and it plans one run per case unless `--runs`
-is set. `--dry-run` prints the 8 cases and needs no key.
-
+`recovery.medium.stale`. The validator rejects a `smoke` id that is not a case
+in the suite, and `--smoke` fails for a suite with no `smoke` list (`tool-use`
+has none). A run takes about 3-5 minutes and needs no baseline. Use the full
+`core` suite (25 cases x 3 runs) for the committed baseline. `--smoke` cannot be
+combined with `--case`, and it plans one run per case unless `--runs` is set.
+`--dry-run` prints the 8 cases and needs no key.
 
 The suite caps the cost with `maxUsd`, `maxModelCalls`, and `maxTokens`. Every
 case with an `expected.maxToolCalls` also has a matching `max_tool_calls` check.
@@ -540,7 +563,9 @@ baseline; do not move it based on one run.
 
 The eval vault sets `alwaysUpdateLinks: true`, so a rename updates links without
 a prompt. `seed.files` writes text notes. `seed.binaryFiles` writes base64 bytes,
-for example a PDF. The `unchanged` check covers text seeds only.
+for example a PDF. The `unchanged` check covers text seeds only. `file_exists`
+and `file_absent` see every file in the vault, so a moved PDF or CSV is
+gradeable; the content checks read Markdown only.
 
 ### The `core` suite and generated vaults
 
@@ -581,7 +606,6 @@ the `tool-use` regression tier, and `core` gets a harder variant of it. A case
 that stays at 0 across three baselines is a case bug, not a hard case; check the
 grader before the next baseline. Live runs are local only; CI has no model key.
 
-
 A case can ask for a seeded synthetic vault instead of a hand-written seed:
 
 ```json
@@ -601,19 +625,22 @@ names take a stable number (`Atlas Launch - Overview 2`). Every basename stays
 unique, so a wikilink always resolves to one note. `S` and `M` keep the bytes
 they had before `L` existed; `core.eval.json` still seeds `S` and `M` only.
 
-`summary.json` has an `overall` object: `passAtK` (share of cases where every
+`summary.json` has an `overall` object: `passAllK` (share of cases where every
 run passed), `meanPassAt1`, `partialScore`, `totalUsd`, `meanUsd`, `meanTokens`,
 `meanModelCalls`, `meanToolCalls`, and `medianCaseMs`. Each case also reports
-`passAtK`, `partialScore`, `medianMs`, and `overBudgetRuns` (runs above
+`passAllK`, `partialScore`, `medianMs`, and `overBudgetRuns` (runs above
 `expected.maxToolCalls`; a reporting budget, not a check). `report.md` and the
 console print the same numbers.
 
 `--compare` prints the overall rows and a `Flags` column per case: `cost +N%` or
 `time +N%` when a value grows more than 20% over the baseline, and `pass -N`
-(percentage points) when the pass rate drops. The output starts with each run's
-suite, model, and thinking level; the case table has a `Thinking` column with
-the requested and observed levels. It is read-only: it exits 0 after printing
-the table. A missing or unreadable summary file still fails.
+(percentage points) when the pass rate drops. A case on one side only is flagged
+`new case` or `removed case`, and a value that one side lacks reads `(missing)`,
+never 0. The output starts with each run's suite, model, and thinking level, and
+a warning line appears when the two files name a different suite or model; the
+case table has a `Thinking` column with the requested and observed levels. It is
+read-only: it exits 0 after printing the table. A missing or unreadable summary
+file still fails.
 
 ### Significance
 
@@ -684,8 +711,12 @@ core case starts no server.
 
 The eval spec sets the `__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__` window global to
 that base URL's origin in the Obsidian window. `normalizeWebUrl` allows one
-exact match and nothing else: the hook is unset by default, so every other
-loopback, private, or different-port address stays blocked.
+exact match and nothing else: every other loopback, private, or different-port
+address stays blocked. Only the e2e build reads the global. It sits behind the
+same build flag as the replay stream (`__AGENTIC_CHAT_ENABLE_E2E_STREAM__`), so
+a release bundle contains no such code and no window global can relax the SSRF
+gate there. `scripts/verify-mobile-compat.mjs` fails a release bundle that still
+contains the hook name.
 
 A web case has this shape:
 

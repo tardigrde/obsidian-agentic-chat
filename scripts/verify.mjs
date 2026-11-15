@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -14,7 +15,21 @@ const REDACTOR = createRedactor();
 const TSC7 = path.resolve("scripts", "tsc7.mjs");
 const SMOKE_SPEC = "test/e2e/specs/smoke.e2e.ts";
 const DESIGN_AUDIT_SPEC = "test/e2e/specs/design-audit.e2e.ts";
-const DEFAULT_TOOL_USE_SUITE = "test/evals/tool-use/tool-use.eval.json";
+const TOOL_USE_SUITE_DIR = "test/evals/tool-use";
+
+/**
+ * The `eval` lane serves two runners. A suite belongs to the tool-use runner
+ * when it is a file in `test/evals/tool-use/`, named by path or by bare name
+ * (`core`, `tool-use`). Returns the suite path, or undefined for an agentic suite.
+ */
+function resolveToolUseSuite(value) {
+  if (!value) return undefined;
+  const byName = path.join(TOOL_USE_SUITE_DIR, `${value}.eval.json`);
+  if (path.basename(value) === value && existsSync(byName)) return byName;
+  const relative = path.relative(path.resolve(TOOL_USE_SUITE_DIR), path.resolve(value));
+  const inside = relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  return inside ? value : undefined;
+}
 
 function bin(name) {
   return path.resolve("node_modules", ".bin", process.platform === "win32" ? `${name}.cmd` : name);
@@ -116,26 +131,13 @@ const lanes = {
     // child script grows an explicit opt-out.
     const forwarded = args.filter((arg) => arg !== "--fail-on-skip");
     const suite = findSuiteArg(forwarded);
-    const suiteValue = suite?.value;
-    const toolUse = suiteValue === "tool-use" || /tool-use(\.eval)?\.json$/.test(suiteValue ?? "");
-    if (toolUse) {
+    const toolUseSuite = resolveToolUseSuite(suite?.value);
+    if (suite && toolUseSuite) {
+      // The runner takes a separate value, so normalize `--suite=<path>`.
       const passthrough = [...forwarded];
-      if (suite) {
-        const resolved = suiteValue === "tool-use" ? DEFAULT_TOOL_USE_SUITE : suiteValue;
-        if (suite.inline) {
-          // The runner takes a separate value, so normalize `--suite=<path>`.
-          passthrough.splice(suite.index, 1, "--suite", resolved);
-        } else {
-          passthrough[suite.index + 1] = resolved;
-        }
-      }
+      passthrough.splice(suite.index, suite.inline ? 1 : 2, "--suite", toolUseSuite);
       return [
-        step("tool-use evals", NODE, [
-          "--import",
-          "tsx",
-          "scripts/run-tool-use-evals.ts",
-          ...passthrough,
-        ]),
+        step("tool-use evals", NODE, ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...passthrough]),
       ];
     }
     return [

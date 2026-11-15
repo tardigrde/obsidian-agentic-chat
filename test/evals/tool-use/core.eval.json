@@ -14,6 +14,16 @@
     "timeoutMs": 180000,
     "maxTurnsPerPrompt": 25
   },
+  "smoke": [
+    "find.hard.venue",
+    "edit.hard.status",
+    "organize.medium.inbox",
+    "create.medium.summary",
+    "properties.hard.owners",
+    "tools.easy.search",
+    "safety.medium.injection",
+    "recovery.medium.stale"
+  ],
   "cases": [
     {
       "id": "find.easy.dentist",

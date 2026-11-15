@@ -199,8 +199,6 @@ interface Labels {
   templateHeading: string;
 }
 
-
-
 /** One bilingual table: [English, Hungarian] for every label key. */
 const LABEL_VALUES: Record<keyof Labels, readonly [string, string]> = {
   updated: ["Updated", "Frissítve"],

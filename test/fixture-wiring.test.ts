@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ToolUseCase } from "../scripts/eval/tool-use-core";
-import { expandFixturePlaceholders, needsFixture } from "../scripts/run-tool-use-evals";
+import { expandFixturePlaceholders, needsFixture } from "../scripts/eval/tool-use-plan";
 
 const CORE_SUITE_PATH = path.join(process.cwd(), "test/evals/tool-use/core.eval.json");
 const FIXTURE_MARKER = ", fixture server";
@@ -37,7 +37,7 @@ async function writeSuite(evalCase: Record<string, unknown>): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "fixture-wiring-"));
   tempRoots.push(root);
   const suitePath = path.join(root, "fixture-wiring.eval.json");
-  const suite = { ...base, name: "fixture-wiring", runsPerCase: 1, cases: [evalCase] };
+  const suite = { ...base, name: "fixture-wiring", runsPerCase: 1, smoke: undefined, cases: [evalCase] };
   await writeFile(suitePath, `${JSON.stringify(suite, null, 2)}\n`, "utf8");
   return suitePath;
 }

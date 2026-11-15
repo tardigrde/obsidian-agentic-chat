@@ -1,8 +1,12 @@
 /**
- * Pure grading, validation, cost, and budget logic for the `tool-use` eval
- * suite. The runner and the WDIO spec both import this module, so it must not
- * load Obsidian at module scope. Frontmatter comes from the evaluator's real
- * Obsidian metadata cache, so grading is synchronous and parser-free.
+ * Pure suite validation, grading, cost, and budget logic for the tool-use
+ * evals. The runner and the WDIO spec both import this module, so it must not
+ * load Obsidian at module scope. Frontmatter and links come from the
+ * evaluator's real Obsidian metadata cache, so grading is synchronous and
+ * parser-free.
+ *
+ * Related modules: `tool-use-plan.ts` (the runner/spec contract),
+ * `tool-use-report.ts` (summary, report, baseline), `tool-use-compare.ts`.
  */
 
 import { MUTATING_TOOLS } from "../../src/tools/tool-contracts";
@@ -84,6 +88,11 @@ export interface ToolUseSuite {
   turn: ToolUseTurnLimits;
   /** Run-level reasoning level; CLI and env overrides win over it. */
   thinkingLevel?: ToolUseThinkingLevel;
+  /**
+   * Case ids of the quick before/after slice that `--smoke` runs, in run
+   * order. The slice belongs to the suite, so the runner holds no case ids.
+   */
+  smoke?: string[];
   cases: ToolUseCase[];
 }
 
@@ -97,22 +106,22 @@ export interface FileAbsentCheck {
   path: string;
 }
 
-export interface FileContainsCheck {
-  type: "file_contains";
-  path: string;
+/** A literal substring, or a regular expression when `regex` is true. */
+export interface TextMatcher {
   text: string;
   regex?: boolean;
   /** RegExp flags, for example "i". Defaults to "". */
   flags?: string;
 }
 
-export interface FileNotContainsCheck {
+export interface FileContainsCheck extends TextMatcher {
+  type: "file_contains";
+  path: string;
+}
+
+export interface FileNotContainsCheck extends TextMatcher {
   type: "file_not_contains";
   path: string;
-  text: string;
-  regex?: boolean;
-  /** RegExp flags, for example "i". Defaults to "". */
-  flags?: string;
 }
 
 export interface FrontmatterEqualsCheck {
@@ -166,20 +175,12 @@ export interface MaxToolCallsCheck {
   max: number;
 }
 
-export interface AnswerContainsCheck {
+export interface AnswerContainsCheck extends TextMatcher {
   type: "answer_contains";
-  text: string;
-  regex?: boolean;
-  /** RegExp flags, for example "i". Defaults to "". */
-  flags?: string;
 }
 
-export interface AnswerNotContainsCheck {
+export interface AnswerNotContainsCheck extends TextMatcher {
   type: "answer_not_contains";
-  text: string;
-  regex?: boolean;
-  /** RegExp flags, for example "i". Defaults to "". */
-  flags?: string;
 }
 
 export interface NoToolErrorsCheck {
@@ -215,7 +216,14 @@ export interface ObservedToolCall {
 }
 
 export interface ObservedRun {
+  /** Markdown path to its text. */
   files: Record<string, string>;
+  /**
+   * Every file path in the vault, Markdown or not. `file_exists` and
+   * `file_absent` read this list, so a moved PDF or CSV is gradeable. A record
+   * without it falls back to the Markdown paths.
+   */
+  paths?: string[];
   frontmatter: Record<string, Record<string, unknown>>;
   /** Source note path to the file paths Obsidian resolved its links to. */
   links: Record<string, string[]>;
@@ -233,6 +241,8 @@ export interface ToolUseCheckResult {
 
 export interface GradeResult {
   ok: boolean;
+  /** Share of checks that passed. */
+  score: number;
   checks: ToolUseCheckResult[];
 }
 
@@ -255,8 +265,16 @@ export interface RunPricing {
   cacheWrite?: number;
 }
 
+/**
+ * `fail` is the model's result: a check did not pass. `error` is the
+ * harness's: the run did not produce a gradeable observation (a provider
+ * error, a timeout, a missing result file). Both count as executed and as not
+ * passed, but only `fail` says something about the model.
+ */
+export type RunStatus = "pass" | "fail" | "error" | "skipped-budget";
+
 export interface CaseRunSummaryInput {
-  status: "pass" | "fail" | "skipped-budget" | string;
+  status: RunStatus;
   usage: RunUsage;
   usd: number;
   ms: number;
@@ -270,10 +288,12 @@ export interface CaseSummary {
   runs: number;
   executed: number;
   passed: number;
+  /** Executed runs that ended in a harness error instead of a grade. */
+  errored: number;
   skipped: number;
   passRate: number;
   /** 1 only when every executed run passed; the K is the run count. */
-  passAtK: number;
+  passAllK: number;
   /** Mean share of checks that passed per executed run. */
   partialScore: number;
   meanTokens: number;
@@ -294,7 +314,7 @@ export interface OverallSummary {
   cases: number;
   runs: number;
   /** Share of cases where every executed run passed. */
-  passAtK: number;
+  passAllK: number;
   /** Mean of the per-case pass rates. */
   meanPassAt1: number;
   partialScore: number;
@@ -355,6 +375,7 @@ export function validateToolUseSuite(input: unknown): ToolUseSuite {
     if (seen.has(evalCase.id)) problems.push(`Duplicate tool-use case id: ${evalCase.id}.`);
     seen.add(evalCase.id);
   }
+  const smoke = validateSmoke(suite.smoke, seen, problems);
 
   if (problems.length > 0) throw validationError(problems);
 
@@ -367,6 +388,7 @@ export function validateToolUseSuite(input: unknown): ToolUseSuite {
     budget: budget as ToolUseBudgetCaps,
     turn: turn as ToolUseTurnLimits,
     ...(thinkingLevel ? { thinkingLevel } : {}),
+    ...(smoke ? { smoke } : {}),
     cases: cases as ToolUseCase[],
   };
 }
@@ -424,14 +446,20 @@ function readThinkingLevel(
 
 export function gradeRun(caseDef: ToolUseCase, observed: ObservedRun): GradeResult {
   const checks = caseDef.checks.map((check) => evaluateCheck(check, caseDef, observed));
-  return { ok: checks.every((check) => check.ok), checks };
+  const passed = checks.filter((check) => check.ok).length;
+  return {
+    ok: passed === checks.length,
+    // A run with no checks scores 0, not 1: nothing was shown to work.
+    score: checks.length > 0 ? passed / checks.length : 0,
+    checks,
+  };
 }
 
 export interface BaselineRefusalSummary {
   budget: { exceeded: string | null };
   cases: Array<{
     id: string;
-    runResults: Array<{ status: string; error?: string }>;
+    runResults: Array<{ status: RunStatus; error?: string }>;
   }>;
 }
 
@@ -451,13 +479,12 @@ export function baselineRefusal(
   if (skipped.length > 0) {
     return `${skipped.length} run(s) were skipped by the budget; rerun with a higher cap.`;
   }
-  const errored = runs.filter((run) => typeof run.error === "string" && run.error.length > 0);
+  const errored = runs.filter((run) => run.status === "error" || Boolean(run.error));
   if (errored.length > 0) {
     return `${errored.length} run(s) have a harness error; inspect the report.`;
   }
-  const executed = summary.cases.reduce((total, entry) => total + entry.runResults.length, 0);
-  if (executed !== plannedRunCount) {
-    return `only ${executed} of ${plannedRunCount} planned run(s) executed.`;
+  if (runs.length !== plannedRunCount) {
+    return `only ${runs.length} of ${plannedRunCount} planned run(s) executed.`;
   }
   if (summary.budget.exceeded) {
     return `the budget was exceeded (${summary.budget.exceeded}); rerun with a higher cap.`;
@@ -490,9 +517,10 @@ export function summarizeCase(
     runs: runs.length,
     executed: executed.length,
     passed,
+    errored: executed.filter((run) => run.status === "error").length,
     skipped,
     passRate: executed.length > 0 ? passed / executed.length : 0,
-    passAtK: executed.length > 0 && passed === executed.length ? 1 : 0,
+    passAllK: executed.length > 0 && passed === executed.length ? 1 : 0,
     partialScore: mean(executed.reduce((total, run) => total + finite(run.partialScore), 0)),
     meanTokens: mean(tokenCounts.reduce((total, count) => total + count, 0)),
     maxTokens: tokenCounts.length > 0 ? Math.max(...tokenCounts) : 0,
@@ -530,7 +558,7 @@ export function summarizeOverall(
   return {
     cases: cases.length,
     runs,
-    passAtK: meanOfCases((entry) => (entry.passAtK === 1 ? 1 : 0)),
+    passAllK: meanOfCases((entry) => (entry.passAllK === 1 ? 1 : 0)),
     meanPassAt1: meanOfCases((entry) => entry.passRate),
     partialScore: meanOfCases((entry) => entry.partialScore),
     totalUsd,
@@ -719,6 +747,23 @@ function validateCase(input: unknown, index: number, problems: string[]): ToolUs
   };
 }
 
+/** The smoke slice must name suite cases, each once. */
+function validateSmoke(input: unknown, caseIds: ReadonlySet<string>, problems: string[]): string[] | undefined {
+  if (input === undefined) return undefined;
+  const entries = asArray(input, "suite.smoke", problems);
+  if (!entries) return undefined;
+  if (entries.length === 0) problems.push("suite.smoke must name at least one case when it is set.");
+  const smoke: string[] = [];
+  for (const [index, entry] of entries.entries()) {
+    const id = readString(entry, `suite.smoke[${index}]`, problems);
+    if (!id) continue;
+    if (!caseIds.has(id)) problems.push(`suite.smoke[${index}] is not a case id in this suite: ${id}.`);
+    else if (smoke.includes(id)) problems.push(`suite.smoke[${index}] repeats the case id ${id}.`);
+    else smoke.push(id);
+  }
+  return smoke;
+}
+
 function validateSeedVault(
   input: unknown,
   at: string,
@@ -784,23 +829,17 @@ function validateCheck(input: unknown, at: string, problems: string[]): ToolUseC
 
   switch (type) {
     case "file_exists":
-      return { type, path: readString(check.path, `${at}.path`, problems) };
     case "file_absent":
+    case "unchanged":
+    case "no_unresolved_links":
       return { type, path: readString(check.path, `${at}.path`, problems) };
-    case "file_contains": {
-      const regex = readOptionalBoolean(check.regex, `${at}.regex`, problems);
-      const flags = readOptionalString(check.flags, `${at}.flags`, problems);
-      const text = readString(check.text, `${at}.text`, problems);
-      validateRegex(text, regex, flags, `${at}.text`, problems);
-      return { type, path: readString(check.path, `${at}.path`, problems), text, regex, flags };
-    }
-    case "file_not_contains": {
-      const regex = readOptionalBoolean(check.regex, `${at}.regex`, problems);
-      const flags = readOptionalString(check.flags, `${at}.flags`, problems);
-      const text = readString(check.text, `${at}.text`, problems);
-      validateRegex(text, regex, flags, `${at}.text`, problems);
-      return { type, path: readString(check.path, `${at}.path`, problems), text, regex, flags };
-    }
+    case "file_contains":
+    case "file_not_contains":
+      return {
+        type,
+        path: readString(check.path, `${at}.path`, problems),
+        ...readTextMatcher(check, at, problems),
+      };
     case "frontmatter_equals": {
       const value = check.value;
       if (!isFrontmatterValue(value)) {
@@ -815,16 +854,12 @@ function validateCheck(input: unknown, at: string, problems: string[]): ToolUseC
         exact: readOptionalBoolean(check.exact, `${at}.exact`, problems),
       };
     }
-    case "unchanged":
-      return { type, path: readString(check.path, `${at}.path`, problems) };
     case "link_resolves":
       return {
         type,
         from: readString(check.from, `${at}.from`, problems),
         to: readString(check.to, `${at}.to`, problems),
       };
-    case "no_unresolved_links":
-      return { type, path: readString(check.path, `${at}.path`, problems) };
     case "tool_called": {
       const min = check.min === undefined ? undefined : readNumber(check.min, `${at}.min`, problems);
       if (min !== undefined && (!Number.isInteger(min) || min < 1)) {
@@ -841,20 +876,9 @@ function validateCheck(input: unknown, at: string, problems: string[]): ToolUseC
       }
       return { type, max: max ?? 0 };
     }
-    case "answer_contains": {
-      const regex = readOptionalBoolean(check.regex, `${at}.regex`, problems);
-      const flags = readOptionalString(check.flags, `${at}.flags`, problems);
-      const text = readString(check.text, `${at}.text`, problems);
-      validateRegex(text, regex, flags, `${at}.text`, problems);
-      return { type, text, regex, flags };
-    }
-    case "answer_not_contains": {
-      const regex = readOptionalBoolean(check.regex, `${at}.regex`, problems);
-      const flags = readOptionalString(check.flags, `${at}.flags`, problems);
-      const text = readString(check.text, `${at}.text`, problems);
-      validateRegex(text, regex, flags, `${at}.text`, problems);
-      return { type, text, regex, flags };
-    }
+    case "answer_contains":
+    case "answer_not_contains":
+      return { type, ...readTextMatcher(check, at, problems) };
     case "no_tool_errors":
       return { type };
     case "any_of": {
@@ -893,7 +917,7 @@ function evaluateCheck(
         const ok = check.type === "file_not_contains";
         return result(check, ok, `missing ${check.path}`);
       }
-      const matches = matchesText(content, check.text, check.regex === true, check.flags);
+      const matches = matchesText(content, check);
       const ok = check.type === "file_contains" ? matches : !matches;
       return result(
         check,
@@ -979,13 +1003,11 @@ function evaluateCheck(
         observed.toolCalls.length <= check.max,
         `${observed.toolCalls.length} tool call(s), limit ${check.max}`,
       );
-    case "answer_contains": {
-      const matches = matchesText(observed.answer, check.text, check.regex === true, check.flags);
-      return result(check, matches, `answer ${matches ? "contains" : "does not contain"} ${JSON.stringify(check.text)}`);
-    }
+    case "answer_contains":
     case "answer_not_contains": {
-      const matches = matchesText(observed.answer, check.text, check.regex === true, check.flags);
-      return result(check, !matches, `answer ${matches ? "contains" : "does not contain"} ${JSON.stringify(check.text)}`);
+      const matches = matchesText(observed.answer, check);
+      const ok = check.type === "answer_contains" ? matches : !matches;
+      return result(check, ok, `answer ${matches ? "contains" : "does not contain"} ${JSON.stringify(check.text)}`);
     }
     case "any_of": {
       const inner = check.checks.map((entry) => evaluateCheck(entry, caseDef, observed));
@@ -1020,17 +1042,14 @@ function sameStringItems(expected: string[], actual: string[]): boolean {
   return sortedExpected.every((item, index) => item === sortedActual[index]);
 }
 
-function matchesText(text: string, pattern: string, regex: boolean, flags?: string): boolean {
-  if (!regex) return text.includes(pattern);
-  try {
-    return new RegExp(pattern, flags ?? "").test(text);
-  } catch {
-    return false;
-  }
+/** `validateToolUseSuite` has already compiled every pattern, so this cannot throw for a suite case. */
+function matchesText(text: string, matcher: TextMatcher): boolean {
+  if (matcher.regex !== true) return text.includes(matcher.text);
+  return new RegExp(matcher.text, matcher.flags ?? "").test(text);
 }
 
 function hasFile(observed: ObservedRun, path: string): boolean {
-  return hasOwn(observed.files, path);
+  return observed.paths ? observed.paths.includes(path) : hasOwn(observed.files, path);
 }
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
@@ -1108,29 +1127,23 @@ function readOptionalBoolean(input: unknown, at: string, problems: string[]): bo
   return input;
 }
 
-function validateRegex(
-  text: string,
-  regex: boolean | undefined,
-  flags: string | undefined,
-  at: string,
-  problems: string[],
-): void {
-  if (flags !== undefined) {
+function readTextMatcher(check: Record<string, unknown>, at: string, problems: string[]): TextMatcher {
+  const text = readString(check.text, `${at}.text`, problems);
+  const regex = readOptionalBoolean(check.regex, `${at}.regex`, problems);
+  const flags = readOptionalString(check.flags, `${at}.flags`, problems);
+  const compiles = (pattern: string, label: string, what: string): boolean => {
     try {
-      new RegExp("", flags);
+      new RegExp(pattern, flags ?? "");
+      return true;
     } catch (error) {
-      problems.push(
-        `${at}.flags is not a valid regular expression flag set: ${error instanceof Error ? error.message : String(error)}.`,
-      );
-      return;
+      problems.push(`${at}.${label} is not ${what}: ${error instanceof Error ? error.message : String(error)}.`);
+      return false;
     }
+  };
+  if (compiles("", "flags", "a valid regular expression flag set") && regex) {
+    compiles(text, "text", "a valid regular expression");
   }
-  if (!regex || !text) return;
-  try {
-    new RegExp(text, flags ?? "");
-  } catch (error) {
-    problems.push(`${at} is not a valid regular expression: ${error instanceof Error ? error.message : String(error)}.`);
-  }
+  return { text, regex, flags };
 }
 
 function isFrontmatterValue(value: unknown): value is string | number | boolean | string[] {
