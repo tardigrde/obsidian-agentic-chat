@@ -94,6 +94,7 @@ const SIGNAL_RANK: Record<string, number> = {
 };
 
 const SEVERITY_RANK: Record<TraceSeverity, number> = { high: 3, medium: 2, low: 1 };
+const APPROVAL_KINDS = ["approval-stopped", "approval-declined"] as const;
 
 const CORRECTION_PATTERN = /\b(?:no|wrong|not what|undo|try again|fix it)\b/i;
 const STOPPED_APPROVAL_PATTERNS: readonly RegExp[] = [
@@ -113,7 +114,7 @@ const RECOVERY_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
 
 const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`]+/gi;
-const GITHUB_PAT_PATTERN = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
+const GITHUB_PAT_PATTERN = /\bgithub_pat_\w{20,}\b/g;
 const GITHUB_TOKEN_PATTERN = /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g;
 // Match the whole path, dot segments included. The last character must not be
 // sentence punctuation, so "/root/.ssh/id_rsa." keeps its final period.
@@ -122,7 +123,7 @@ const ABSOLUTE_PATH_PATTERN = /\/(?:home|Users|root)\b(?:\/[^\s"'`<>()[\]]*[^\s"
 // `<context unchanged since previous turn. Attached: …</context>` with no `>`
 // after the attribute text. Match both from `<context` to the closing tag.
 const CONTEXT_BLOCK_PATTERN = /<context\b[\s\S]*?<\/context>/gi;
-const FOCUS_HINT_PATTERN = /^\s*Focus: The user's request after this line is the primary task\.[^\n]*$/gm;
+const FOCUS_HINT_PATTERN = /^[ \t]*Focus: The user's request after this line is the primary task\.[^\n]*$/gm;
 const EDIT_PAYLOAD_PATTERN =
   /(\boldText (?:was not found|must match exactly once|matches \d+ times[^:\n]*)):\s*"(?:\\.|[^"\\])*"/g;
 const EDIT_PAYLOAD_OPEN_PATTERN =
@@ -305,37 +306,45 @@ export async function runTraceMiner(options: TraceMinerOptions): Promise<TraceMi
 
 export function parseMiningArgs(argv: string[]): MiningArgs {
   const parsed: MiningArgs = { sessions: "", help: false };
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === "--sessions") {
-      const value = argv[index + 1];
-      if (!value) throw new Error("--sessions needs a directory or JSONL file.");
-      parsed.sessions = value;
-      index += 1;
-      continue;
-    }
-    if (arg === "--out") {
-      const value = argv[index + 1];
-      if (!value) throw new Error("--out needs a directory.");
-      parsed.out = value;
-      index += 1;
-      continue;
-    }
-    if (arg === "--max") {
-      const value = Number(argv[index + 1]);
-      if (!Number.isInteger(value) || value < 1) throw new Error("--max needs a positive integer.");
-      parsed.max = value;
-      index += 1;
-      continue;
-    }
-    if (arg === "--help" || arg === "-h") {
-      parsed.help = true;
-      continue;
-    }
-    throw new Error(`Unknown option: ${String(arg)}`);
+  let index = 0;
+  while (index < argv.length) {
+    index = applyMiningArg(argv, index, parsed);
   }
   if (!parsed.sessions && !parsed.help) throw new Error("--sessions is required.");
   return parsed;
+}
+
+function applyMiningArg(argv: string[], index: number, parsed: MiningArgs): number {
+  const arg = argv[index];
+  if (arg === "--sessions") {
+    parsed.sessions = requireOptionValue(argv, index, "--sessions", "a directory or JSONL file");
+    return index + 2;
+  }
+  if (arg === "--out") {
+    parsed.out = requireOptionValue(argv, index, "--out", "a directory");
+    return index + 2;
+  }
+  if (arg === "--max") {
+    parsed.max = parseMaxOption(argv[index + 1]);
+    return index + 2;
+  }
+  if (arg === "--help" || arg === "-h") {
+    parsed.help = true;
+    return index + 1;
+  }
+  throw new Error(`Unknown option: ${String(arg)}`);
+}
+
+function requireOptionValue(argv: string[], index: number, flag: string, noun: string): string {
+  const value = argv[index + 1];
+  if (!value) throw new Error(`${flag} needs ${noun}.`);
+  return value;
+}
+
+function parseMaxOption(value: string | undefined): number {
+  const max = Number(value);
+  if (!Number.isInteger(max) || max < 1) throw new Error("--max needs a positive integer.");
+  return max;
 }
 
 function resolveSessionFiles(target: string): string[] {
@@ -353,7 +362,7 @@ function resolveSessionFiles(target: string): string[] {
   if (!stat.isDirectory()) return [];
   return readdirSync(resolved)
     .filter((name) => name.endsWith(".jsonl"))
-    .sort()
+    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
     .map((name) => path.join(resolved, name));
 }
 
@@ -374,28 +383,55 @@ function parseSessionLines(text: string): { entries: RawEntry[]; corruptLines: n
 }
 
 function sessionMetadata(entries: RawEntry[], header: RawEntry | undefined): SessionMetadata {
-  const headerTimestamp = typeof header?.timestamp === "string" ? header.timestamp : undefined;
-  const firstTimestamp = entries.find((entry) => typeof entry.timestamp === "string")?.timestamp;
-  const timestamp = headerTimestamp ?? (typeof firstTimestamp === "string" ? firstTimestamp : undefined);
+  return {
+    date: sessionDate(entries, header),
+    model: sessionModel(entries),
+    pluginVersion: asString(header?.pluginVersion),
+  };
+}
 
+function sessionDate(entries: RawEntry[], header: RawEntry | undefined): string | undefined {
+  const timestamp = asString(header?.timestamp) ?? firstEntryTimestamp(entries);
+  return timestamp ? timestamp.slice(0, 10) : undefined;
+}
+
+function firstEntryTimestamp(entries: RawEntry[]): string | undefined {
+  for (const entry of entries) {
+    const timestamp = asString(entry.timestamp);
+    if (timestamp) return timestamp;
+  }
+  return undefined;
+}
+
+function sessionModel(entries: RawEntry[]): string | undefined {
   let model: string | undefined;
   for (const entry of entries) {
-    if (entry.type === "model_change" && typeof entry.provider === "string" && typeof entry.modelId === "string") {
-      model = `${entry.provider}/${entry.modelId}`;
-    }
-    if (entry.type === "message" && entry.message?.role === "assistant") {
-      const provider = typeof entry.message.provider === "string" ? entry.message.provider : "";
-      const modelId = typeof entry.message.model === "string" ? entry.message.model : "";
-      if (provider && modelId) model = `${provider}/${modelId}`;
-      else if (modelId) model = modelId;
-    }
+    const candidate = modelFromEntry(entry);
+    if (candidate) model = candidate;
   }
+  return model;
+}
 
-  return {
-    date: timestamp ? timestamp.slice(0, 10) : undefined,
-    model,
-    pluginVersion: typeof header?.pluginVersion === "string" ? header.pluginVersion : undefined,
-  };
+function modelFromEntry(entry: RawEntry): string | undefined {
+  if (entry.type === "model_change") return pairLabel(entry.provider, entry.modelId);
+  if (entry.type === "message" && entry.message?.role === "assistant") return assistantModelLabel(entry.message);
+  return undefined;
+}
+
+function assistantModelLabel(message: RawMessage): string | undefined {
+  const provider = asString(message.provider) ?? "";
+  const modelId = asString(message.model) ?? "";
+  if (provider && modelId) return `${provider}/${modelId}`;
+  return modelId || undefined;
+}
+
+function pairLabel(provider: unknown, modelId: unknown): string | undefined {
+  if (typeof provider !== "string" || typeof modelId !== "string") return undefined;
+  return `${provider}/${modelId}`;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 function buildTurns(entries: RawEntry[]): TurnRecord[] {
@@ -485,31 +521,53 @@ function recordToolResult(message: RawMessage, turn: TurnRecord): void {
 }
 
 function recordAuditEvent(event: RawEvent, turn: TurnRecord): void {
-  if (event.category === "tool_call" && event.action === "start") {
-    addToolCall(turn, {
-      id: typeof event.toolCallId === "string" ? event.toolCallId : undefined,
-      name: typeof event.toolName === "string" ? event.toolName : "(unknown)",
-      args: event.args,
-      isError: false,
-    });
+  if (isToolStartEvent(event)) {
+    recordAuditToolStart(event, turn);
     return;
   }
-  if (event.category === "tool_call" && event.action === "end" && event.isError === true) {
-    const toolName = typeof event.toolName === "string" ? event.toolName : "(unknown)";
-    const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : undefined;
-    markToolCallError(turn, toolCallId, toolName, true);
-    const known = toolCallId ? turn.errors.some((error) => error.toolCallId === toolCallId) : false;
-    if (!known) turn.errors.push({ toolName, toolCallId, text: "", recovery: [] });
+  if (isToolErrorEvent(event)) {
+    recordAuditToolError(event, turn);
     return;
   }
-  if (event.category === "approval" && event.action === "decision" && event.decision === "denied") {
-    const reason = typeof event.reason === "string" ? event.reason : "";
-    turn.approvals.push({
-      toolName: typeof event.toolName === "string" ? event.toolName : "(unknown)",
-      reason,
-      kind: isStoppedApproval(reason) ? "approval-stopped" : "approval-declined",
-    });
-  }
+  if (isDeniedApprovalEvent(event)) recordAuditApproval(event, turn);
+}
+
+function isToolStartEvent(event: RawEvent): boolean {
+  return event.category === "tool_call" && event.action === "start";
+}
+
+function isToolErrorEvent(event: RawEvent): boolean {
+  return event.category === "tool_call" && event.action === "end" && event.isError === true;
+}
+
+function isDeniedApprovalEvent(event: RawEvent): boolean {
+  return event.category === "approval" && event.action === "decision" && event.decision === "denied";
+}
+
+function recordAuditToolStart(event: RawEvent, turn: TurnRecord): void {
+  addToolCall(turn, {
+    id: asString(event.toolCallId),
+    name: asString(event.toolName) ?? "(unknown)",
+    args: event.args,
+    isError: false,
+  });
+}
+
+function recordAuditToolError(event: RawEvent, turn: TurnRecord): void {
+  const toolName = asString(event.toolName) ?? "(unknown)";
+  const toolCallId = asString(event.toolCallId);
+  markToolCallError(turn, toolCallId, toolName, true);
+  const known = toolCallId ? turn.errors.some((error) => error.toolCallId === toolCallId) : false;
+  if (!known) turn.errors.push({ toolName, toolCallId, text: "", recovery: [] });
+}
+
+function recordAuditApproval(event: RawEvent, turn: TurnRecord): void {
+  const reason = asString(event.reason) ?? "";
+  turn.approvals.push({
+    toolName: asString(event.toolName) ?? "(unknown)",
+    reason,
+    kind: isStoppedApproval(reason) ? "approval-stopped" : "approval-declined",
+  });
 }
 
 function addToolCall(turn: TurnRecord, call: ToolCallRecord): void {
@@ -529,98 +587,135 @@ function markToolCallError(turn: TurnRecord, id: string | undefined, name: strin
 
 function buildCandidates(turns: TurnRecord[]): RawCandidate[] {
   const candidates: RawCandidate[] = [];
-
   for (const [index, turn] of turns.entries()) {
-    const previous = index > 0 ? turns[index - 1] : undefined;
-
-    for (const error of turn.errors) {
-      const detail = error.text.trim() ? redactTraceText(stripEditErrorContent(error.text)) : "no error text";
-      const recovery = error.recovery.length > 0 ? ` [recovery: ${error.recovery.join(", ")}]` : "";
-      candidates.push({
-        signal: "tool-error",
-        severity: "high",
-        userTurns: userTurnsFor([turn]),
-        toolCalls: toolCallsFor([turn]),
-        evidence: finishEvidence(`Tool ${error.toolName} returned an error: ${detail}${recovery}`),
-        replayHint: `Replay the user turn with ${error.toolName} stubbed to return this error; assert the assistant recovers without repeating the call.`,
-      });
-    }
-
-    const approvalKinds = new Set(turn.approvals.map((approval) => approval.kind));
-    for (const kind of ["approval-stopped", "approval-declined"] as const) {
-      if (!approvalKinds.has(kind)) continue;
-      const approval = turn.approvals.find((entry) => entry.kind === kind);
-      const tool = approval?.toolName ?? "a tool";
-      const verdict = kind === "approval-stopped" ? "was stopped" : "was declined";
-      const reason = approval?.reason ? `: ${excerptText(approval.reason)}` : "";
-      candidates.push({
-        signal: kind,
-        severity: "high",
-        userTurns: userTurnsFor([turn]),
-        toolCalls: toolCallsFor([turn]),
-        evidence: finishEvidence(`Approval for ${tool} ${verdict}${reason}`),
-        replayHint:
-          kind === "approval-stopped"
-            ? `Replay and stop the turn at the ${tool} approval; assert the turn ends cleanly with no further tool calls.`
-            : `Replay with the approval answer set to deny ${tool}; assert the assistant asks for a safer alternative instead of retrying.`,
-      });
-    }
-
-    const canCompareWithPrevious = previous !== undefined && !previous.synthetic && !turn.synthetic;
-    if (canCompareWithPrevious && previous.assistantSeen && CORRECTION_PATTERN.test(turn.text)) {
-      candidates.push({
-        signal: "user-correction",
-        severity: "medium",
-        userTurns: userTurnsFor([previous, turn]),
-        toolCalls: toolCallsFor([previous, turn]),
-        evidence: finishEvidence(`User corrected the assistant: "${excerptText(turn.text)}"`),
-        replayHint:
-          "Replay the earlier turn, then send this correction; assert the assistant applies it without repeating the wrong action.",
-      });
-    }
-
-    if (
-      canCompareWithPrevious &&
-      turn.text.trim() &&
-      normalizeUserText(turn.text) === normalizeUserText(previous.text)
-    ) {
-      const why = previous.endedWithError ? "after an error or abort" : "twice in a row";
-      candidates.push({
-        signal: "retry",
-        severity: "medium",
-        userTurns: userTurnsFor([previous, turn]),
-        toolCalls: toolCallsFor([previous]),
-        evidence: finishEvidence(`Repeated user text ${why}: "${excerptText(turn.text)}"`),
-        replayHint:
-          "Replay the repeated user text once; assert one response handles it and no duplicate tool batch runs.",
-      });
-    }
-
-    if (turn.toolCalls.length > LONG_CHAIN_LIMIT) {
-      candidates.push({
-        signal: "long-chain",
-        severity: "medium",
-        userTurns: userTurnsFor([turn]),
-        toolCalls: toolCallsFor([turn]),
-        evidence: `${turn.toolCalls.length} tool calls in one user turn (limit ${LONG_CHAIN_LIMIT})`,
-        replayHint: `Replay with a ${LONG_CHAIN_LIMIT}-call budget; assert the assistant batches or stops before exceeding it.`,
-      });
-    }
-
-    if (turn.recovery.length > 0) {
-      const labels = unique(turn.recovery.flatMap((hit) => hit.labels));
-      const sources = unique(turn.recovery.map((hit) => hit.source));
-      candidates.push({
-        signal: "recovery-signal",
-        severity: "low",
-        userTurns: userTurnsFor([turn]),
-        toolCalls: toolCallsFor([turn]),
-        evidence: finishEvidence(`Recovery signal in ${sources.join(", ")}: ${labels.join(", ")}`),
-        replayHint: `Replay with ${sources[0] ?? "the tool"} returning this recovery text; assert the assistant adapts instead of ending the turn.`,
-      });
-    }
+    addTurnCandidates(candidates, turn, index > 0 ? turns[index - 1] : undefined);
   }
+  candidates.push(...repeatedToolCallCandidates(turns));
+  return candidates;
+}
 
+function addTurnCandidates(candidates: RawCandidate[], turn: TurnRecord, previous: TurnRecord | undefined): void {
+  candidates.push(...toolErrorCandidates(turn));
+  candidates.push(...approvalCandidates(turn));
+  const correction = correctionCandidate(turn, previous);
+  if (correction) candidates.push(correction);
+  const retry = retryCandidate(turn, previous);
+  if (retry) candidates.push(retry);
+  const longChain = longChainCandidate(turn);
+  if (longChain) candidates.push(longChain);
+  const recovery = recoveryCandidate(turn);
+  if (recovery) candidates.push(recovery);
+}
+
+function toolErrorCandidates(turn: TurnRecord): RawCandidate[] {
+  return turn.errors.map((error): RawCandidate => {
+    const detail = error.text.trim() ? redactTraceText(stripEditErrorContent(error.text)) : "no error text";
+    const recovery = error.recovery.length > 0 ? ` [recovery: ${error.recovery.join(", ")}]` : "";
+    return {
+      signal: "tool-error",
+      severity: "high",
+      userTurns: userTurnsFor([turn]),
+      toolCalls: toolCallsFor([turn]),
+      evidence: finishEvidence(`Tool ${error.toolName} returned an error: ${detail}${recovery}`),
+      replayHint: `Replay the user turn with ${error.toolName} stubbed to return this error; assert the assistant recovers without repeating the call.`,
+    };
+  });
+}
+
+function approvalCandidates(turn: TurnRecord): RawCandidate[] {
+  const kinds = new Set(turn.approvals.map((approval) => approval.kind));
+  return APPROVAL_KINDS.filter((kind) => kinds.has(kind)).map((kind) => approvalCandidate(turn, kind));
+}
+
+function approvalCandidate(turn: TurnRecord, kind: "approval-stopped" | "approval-declined"): RawCandidate {
+  const approval = turn.approvals.find((entry) => entry.kind === kind);
+  const tool = approval?.toolName ?? "a tool";
+  const verdict = kind === "approval-stopped" ? "was stopped" : "was declined";
+  const reason = approval?.reason ? `: ${excerptText(approval.reason)}` : "";
+  return {
+    signal: kind,
+    severity: "high",
+    userTurns: userTurnsFor([turn]),
+    toolCalls: toolCallsFor([turn]),
+    evidence: finishEvidence(`Approval for ${tool} ${verdict}${reason}`),
+    replayHint:
+      kind === "approval-stopped"
+        ? `Replay and stop the turn at the ${tool} approval; assert the turn ends cleanly with no further tool calls.`
+        : `Replay with the approval answer set to deny ${tool}; assert the assistant asks for a safer alternative instead of retrying.`,
+  };
+}
+
+function correctionCandidate(turn: TurnRecord, previous: TurnRecord | undefined): RawCandidate | undefined {
+  if (!canCompareWithPrevious(turn, previous)) return undefined;
+  if (!previous.assistantSeen || !CORRECTION_PATTERN.test(turn.text)) return undefined;
+  return {
+    signal: "user-correction",
+    severity: "medium",
+    userTurns: userTurnsFor([previous, turn]),
+    toolCalls: toolCallsFor([previous, turn]),
+    evidence: finishEvidence(`User corrected the assistant: "${excerptText(turn.text)}"`),
+    replayHint:
+      "Replay the earlier turn, then send this correction; assert the assistant applies it without repeating the wrong action.",
+  };
+}
+
+function retryCandidate(turn: TurnRecord, previous: TurnRecord | undefined): RawCandidate | undefined {
+  if (!canCompareWithPrevious(turn, previous)) return undefined;
+  if (!turn.text.trim()) return undefined;
+  if (normalizeUserText(turn.text) !== normalizeUserText(previous.text)) return undefined;
+  const why = previous.endedWithError ? "after an error or abort" : "twice in a row";
+  return {
+    signal: "retry",
+    severity: "medium",
+    userTurns: userTurnsFor([previous, turn]),
+    toolCalls: toolCallsFor([previous]),
+    evidence: finishEvidence(`Repeated user text ${why}: "${excerptText(turn.text)}"`),
+    replayHint:
+      "Replay the repeated user text once; assert one response handles it and no duplicate tool batch runs.",
+  };
+}
+
+function longChainCandidate(turn: TurnRecord): RawCandidate | undefined {
+  if (turn.toolCalls.length <= LONG_CHAIN_LIMIT) return undefined;
+  return {
+    signal: "long-chain",
+    severity: "medium",
+    userTurns: userTurnsFor([turn]),
+    toolCalls: toolCallsFor([turn]),
+    evidence: `${turn.toolCalls.length} tool calls in one user turn (limit ${LONG_CHAIN_LIMIT})`,
+    replayHint: `Replay with a ${LONG_CHAIN_LIMIT}-call budget; assert the assistant batches or stops before exceeding it.`,
+  };
+}
+
+function recoveryCandidate(turn: TurnRecord): RawCandidate | undefined {
+  if (turn.recovery.length === 0) return undefined;
+  const labels = unique(turn.recovery.flatMap((hit) => hit.labels));
+  const sources = unique(turn.recovery.map((hit) => hit.source));
+  return {
+    signal: "recovery-signal",
+    severity: "low",
+    userTurns: userTurnsFor([turn]),
+    toolCalls: toolCallsFor([turn]),
+    evidence: finishEvidence(`Recovery signal in ${sources.join(", ")}: ${labels.join(", ")}`),
+    replayHint: `Replay with ${sources[0] ?? "the tool"} returning this recovery text; assert the assistant adapts instead of ending the turn.`,
+  };
+}
+
+function canCompareWithPrevious(turn: TurnRecord, previous: TurnRecord | undefined): previous is TurnRecord {
+  return previous !== undefined && !previous.synthetic && !turn.synthetic;
+}
+
+function repeatedToolCallCandidates(turns: TurnRecord[]): RawCandidate[] {
+  const candidates: RawCandidate[] = [];
+  for (const group of groupToolCalls(turns).values()) {
+    if (group.turns.length < REPEATED_CALL_LIMIT) continue;
+    const turn = group.turns[REPEATED_CALL_LIMIT - 1];
+    if (turn) candidates.push(repeatedToolCallCandidate(group.toolName, group.turns.length, turn));
+  }
+  return candidates;
+}
+
+function groupToolCalls(turns: TurnRecord[]): Map<string, { toolName: string; turns: TurnRecord[] }> {
   const callsByKey = new Map<string, { toolName: string; turns: TurnRecord[] }>();
   for (const turn of turns) {
     for (const call of turn.toolCalls) {
@@ -630,21 +725,18 @@ function buildCandidates(turns: TurnRecord[]): RawCandidate[] {
       callsByKey.set(key, group);
     }
   }
-  for (const group of callsByKey.values()) {
-    if (group.turns.length < REPEATED_CALL_LIMIT) continue;
-    const turn = group.turns[REPEATED_CALL_LIMIT - 1];
-    if (!turn) continue;
-    candidates.push({
-      signal: "repeated-tool-call",
-      severity: "medium",
-      userTurns: userTurnsFor([turn]),
-      toolCalls: toolCallsFor([turn]),
-      evidence: `${group.toolName} called ${group.turns.length} times with identical arguments`,
-      replayHint: `Replay with ${group.toolName} counted; assert the third identical call is blocked or its result is reused.`,
-    });
-  }
+  return callsByKey;
+}
 
-  return candidates;
+function repeatedToolCallCandidate(toolName: string, count: number, turn: TurnRecord): RawCandidate {
+  return {
+    signal: "repeated-tool-call",
+    severity: "medium",
+    userTurns: userTurnsFor([turn]),
+    toolCalls: toolCallsFor([turn]),
+    evidence: `${toolName} called ${count} times with identical arguments`,
+    replayHint: `Replay with ${toolName} counted; assert the third identical call is blocked or its result is reused.`,
+  };
 }
 
 function userTurnsFor(turns: TurnRecord[]): TraceUserTurn[] {
@@ -659,15 +751,17 @@ function toolCallsFor(turns: TurnRecord[]): TraceToolCall[] {
   const calls: TraceToolCall[] = [];
   for (const turn of turns) {
     for (const call of turn.toolCalls) {
-      if (call.id) {
-        if (seen.has(call.id)) continue;
-        seen.add(call.id);
-      }
-      calls.push(call.isError ? { name: call.name, isError: true } : { name: call.name });
       if (calls.length >= MAX_TOOL_CALLS) return calls;
+      if (call.id && seen.has(call.id)) continue;
+      if (call.id) seen.add(call.id);
+      calls.push(toTraceToolCall(call));
     }
   }
   return calls;
+}
+
+function toTraceToolCall(call: ToolCallRecord): TraceToolCall {
+  return call.isError ? { name: call.name, isError: true } : { name: call.name };
 }
 
 function messageText(message: RawMessage): string {
@@ -692,12 +786,8 @@ function countImages(message: RawMessage): number {
  * own request and never a copied note body or attached path list.
  */
 function stripPromptContext(text: string): string {
-  return text
-    .replace(CONTEXT_BLOCK_PATTERN, " ")
-    .replace(FOCUS_HINT_PATTERN, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  const withoutContext = text.replace(CONTEXT_BLOCK_PATTERN, " ").replace(FOCUS_HINT_PATTERN, " ");
+  return trimTrailingHorizontalWhitespace(withoutContext).replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /**
@@ -705,21 +795,35 @@ function stripPromptContext(text: string): string {
  * real note lines as fuzzy hints. Keep the non-content prefix; drop the rest.
  */
 function stripEditErrorContent(text: string): string {
-  return text
+  const withoutPayload = text
     .replace(EDIT_PAYLOAD_PATTERN, "$1: [oldText]")
     .replace(EDIT_PAYLOAD_OPEN_PATTERN, "$1: [oldText]")
-    .replace(EDIT_FUZZY_LINE_PATTERN, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(EDIT_FUZZY_LINE_PATTERN, "");
+  return trimTrailingHorizontalWhitespace(withoutPayload).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function trimTrailingHorizontalWhitespace(text: string): string {
+  return text.split("\n").map(trimLineEnd).join("\n");
+}
+
+function trimLineEnd(line: string): string {
+  let end = line.length;
+  while (end > 0 && (line[end - 1] === " " || line[end - 1] === "\t")) end -= 1;
+  return line.slice(0, end);
 }
 
 function normalizeUserText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[.!?]+$/, "");
+  return stripTrailingSentencePunctuation(text.toLowerCase().replace(/\s+/g, " ").trim());
+}
+
+function stripTrailingSentencePunctuation(text: string): string {
+  let end = text.length;
+  while (end > 0) {
+    const char = text[end - 1];
+    if (char !== "." && char !== "!" && char !== "?") break;
+    end -= 1;
+  }
+  return text.slice(0, end);
 }
 
 function approvalTextHits(text: string, source: string): ApprovalRecord[] {
@@ -753,8 +857,9 @@ function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
   const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`;
+  const keys = Object.keys(record).sort((left, right) => left.localeCompare(right));
+  const entries = keys.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+  return `{${entries.join(",")}}`;
 }
 
 function unique(values: string[]): string[] {
@@ -900,7 +1005,10 @@ function markdownTable(headers: string[], rows: Array<Array<string | number>>): 
 }
 
 function markdownCell(value: string | number): string {
-  return String(value).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+  return String(value)
+    .replaceAll("|", String.raw`\|`)
+    .replaceAll("\r\n", " ")
+    .replaceAll("\n", " ");
 }
 
 function timestampSlug(date: Date): string {
