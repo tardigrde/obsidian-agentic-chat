@@ -19,6 +19,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { redactText } from "../../src/privacy/redaction";
+import { displayPath, timestampSlug } from "./trace-utils";
 
 export type TraceSeverity = "high" | "medium" | "low";
 
@@ -1009,15 +1010,6 @@ function markdownCell(value: string | number): string {
     .replaceAll("|", String.raw`\|`)
     .replaceAll("\r\n", " ")
     .replaceAll("\n", " ");
-}
-
-function timestampSlug(date: Date): string {
-  return date.toISOString().replace(/[:.]/g, "-").replace(/Z$/, "");
-}
-
-function displayPath(file: string): string {
-  const relative = path.relative(process.cwd(), file);
-  return relative && !relative.startsWith("..") ? relative : file;
 }
 
 function usageText(): string {

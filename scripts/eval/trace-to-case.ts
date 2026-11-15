@@ -14,6 +14,7 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 
 import type { TraceCandidate, TraceSeverity } from "./trace-miner";
+import { displayPath, timestampSlug } from "./trace-utils";
 
 export interface MinedCaseDraft {
   id: string;
@@ -72,14 +73,14 @@ const DEFAULT_MAX_TOOL_CALLS = 20;
 const MAX_SLUG_WORDS = 8;
 const MAX_SLUG_CHARS = 48;
 const REQUIRED_STRING_FIELDS = ["id", "session", "signal", "evidence", "replayHint"] as const;
-const SEVERITIES: readonly TraceSeverity[] = ["high", "medium", "low"];
+const SEVERITIES: ReadonlySet<TraceSeverity> = new Set<TraceSeverity>(["high", "medium", "low"]);
 const SAFE_DIR_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /** Read the candidate array that `trace:mine` writes, and check its shape. */
 function parseCandidates(text: string): TraceCandidate[] {
   const parsed: unknown = JSON.parse(text);
   if (!Array.isArray(parsed)) throw new Error("candidates.json must be an array of trace candidates.");
-  return parsed.map(toCandidate);
+  return parsed.map((value, index) => toCandidate(value, index));
 }
 
 /** Select exactly one candidate; a miss names the ids that are available. */
@@ -232,7 +233,7 @@ function toCandidate(value: unknown, index: number): TraceCandidate {
   for (const field of REQUIRED_STRING_FIELDS) {
     if (typeof value[field] !== "string") throw badCandidate(index, `a string "${field}"`);
   }
-  if (!SEVERITIES.includes(value.severity as TraceSeverity)) {
+  if (!SEVERITIES.has(value.severity as TraceSeverity)) {
     throw badCandidate(index, 'a severity of "high", "medium", or "low"');
   }
   if (!Array.isArray(value.userTurns) || !Array.isArray(value.toolCalls)) {
@@ -264,7 +265,8 @@ function draftSlug(source: string): string {
     .split("-")
     .filter(Boolean)
     .slice(0, MAX_SLUG_WORDS);
-  const slug = words.join("-").slice(0, MAX_SLUG_CHARS).replace(/-+$/, "");
+  // Words are joined with single hyphens, so a cut leaves at most one trailing hyphen.
+  const slug = words.join("-").slice(0, MAX_SLUG_CHARS).replace(/-$/, "");
   return slug || "untitled";
 }
 
@@ -273,15 +275,6 @@ function assertSafeDirName(id: string): void {
   if (!SAFE_DIR_NAME.test(id) || id.includes("..")) {
     throw new Error(`Candidate id "${id}" is not a safe directory name.`);
   }
-}
-
-function timestampSlug(date: Date): string {
-  return date.toISOString().replace(/[:.]/g, "-").replace(/Z$/, "");
-}
-
-function displayPath(file: string): string {
-  const relative = path.relative(process.cwd(), file);
-  return relative && !relative.startsWith("..") ? relative : file;
 }
 
 function usageText(): string {
