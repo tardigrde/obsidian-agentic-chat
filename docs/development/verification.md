@@ -521,16 +521,17 @@ npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke \
 | `low` | `low` | 8/8 (100%) | $0.004689 ($0.000586/run) | 30,927 | 11.2s | run pinned with `--thinking-level low`; +42% cost over `off` |
 | `high` | `high` | 6/8 (75%) | $0.014343 ($0.001793/run) | 97,208 | 19.0s | 3.1x the `low` cost |
 
-The full 75-run `core` baseline at `low` is 68% pass^3 (17 of 25 cases), 77%
-mean pass@1, $0.0528 total, and 46,672 tokens per run. The earlier `off`
-baseline was 76% pass^3 (19 of 25), $0.0215, and 24,532 tokens per run. Two
-caveats stop a simple ranking: that `off` pass predates the localhost fixture
-fix (`tools.medium.web` was 0/3 there and 3/3 at `low`), and one run per case on
-the smoke slice is directional, not a significance test. On the 24 cases both
-runs cover, `off` still won more cases.
+The full 75-run `core` baseline at `low` is 76% pass^3 (19 of 25 cases), 83%
+mean pass@1, $0.0354 total, and 34,065 tokens per run. The earlier `off`
+baseline was 76% pass^3 (19 of 25), 84% mean pass@1, $0.0215, and 24,532
+tokens per run. Two caveats stop a simple ranking: that `off` pass predates the
+localhost fixture fix (`tools.medium.web` was 0/3 there and 3/3 at `low`), and
+one run per case on the smoke slice is directional, not a significance test. On
+the 24 cases both runs cover, `off` still won more cases.
 
-The product default stays `off`. The full 75-run baseline favors it on pass and
-cost, and one run per smoke case is too small to overrule it. `off` is still not
+The product default stays `off`. The full 75-run baseline equalizes pass^3 and
+favors `off` on mean pass@1 and cost, and one run per smoke case is too small to
+overrule it. `off` is still not
 a fixed control: the catalog says `high`, a direct request reasoned, and the eval
 route recorded 0 reasoning tokens, so routing can move it. The eval suite keeps
 pinning `low` so the axis is exercised and every run names its level. Revisit the
@@ -549,25 +550,23 @@ non-saturated tier for prompt, tool, and model comparisons. It has 25 cases
 runner, the same grader, and `runsPerCase: 3`; pass^3 is the headline number.
 
 The committed baseline is `test/evals/baselines/core.json`, measured on
-2026-11-15 with a 75-run baseline at gitHead `3260f70` on
+2026-11-15 with a 75-run baseline at gitHead `d43b49b` on
 `deepseek/deepseek-v4.1-flash` (`thinkingLevel: low`, pinned by the suite; the
 product default is `off`). Suite revision: 25 cases (24 plus
-`tools.medium.web`). Overall: 68% pass^3 (17 of 25 cases), 77% mean pass@1,
-0.947 partial score, $0.0528 total. Per level, pass^3 was easy 62.5% (5/8),
-medium 77.8% (7/9), and hard 62.5% (5/8). The baseline's `gitHead` names the axis
-commit, and its `thinkingLevel` fields name the level for every case; all 75
-runs observed `low`. Easy and medium cases seed an `S` vault, hard cases seed
-`M`.
+`tools.medium.web`). Overall: 76% pass^3 (19 of 25 cases), 83% mean pass@1,
+0.973 partial score, $0.0354 total. Per level, pass^3 was easy 62.5% (5/8),
+medium 100% (9/9), and hard 62.5% (5/8). The baseline's `gitHead` names the
+case-fix commit, and its `thinkingLevel` fields name the level for every case;
+all 75 runs observed `low`. Easy and medium cases seed an `S` vault, hard cases
+seed `M`.
 
 Known caveats in this baseline, to fix before the next one:
-`edit.medium.heading` accepts only one line order, so a correct edit in the other
-order is a false negative (1/3). `properties.medium.normalize` asks whether
-`Archive` is in scope; the prompt should say "including the Archive subfolder" or
-accept the question. `create.medium.summary` uses a case-sensitive `external`
-check. `safety.hard.ambiguous` is strict: the model deleted exact duplicates
-without asking. Seventeen cases reached pass^3, which is high for a
-non-saturated tier; harden a few easy and medium cases in the next suite
-revision rather than only adding cases.
+`safety.hard.ambiguous` is strict: the model deleted exact duplicates without
+asking. `tools.easy.search` has a heading/code-sample ambiguity:
+`zephyr-code.md` has `Zephyr` in its heading and a code sample, so a model can
+fairly list it. Nineteen cases reached pass^3 (76%), above the 75% mark; harden
+a few easy and medium cases in the next suite revision rather than only adding
+cases.
 
 The earlier `thinkingLevel: off` baseline from `61cab74` is superseded by this
 one. Its summary stays only under `logs/eval-runs/core-baseline-off-artifact/`

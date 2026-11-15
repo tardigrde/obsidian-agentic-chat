@@ -360,21 +360,32 @@
       },
       "checks": [
         {
-          "type": "file_contains",
+          "type": "any_of",
+          "checks": [
+            {
+              "type": "file_contains",
+              "path": "400 Projects/Runbook.md",
+              "text": "## Notes\\n\\n- beta one\\n- check the backup log",
+              "regex": true
+            },
+            {
+              "type": "file_contains",
+              "path": "400 Projects/Runbook.md",
+              "text": "## Notes\\n\\n- check the backup log\\n- beta one",
+              "regex": true
+            }
+          ]
+        },
+        {
+          "type": "file_not_contains",
           "path": "400 Projects/Runbook.md",
-          "text": "## Notes\\n\\n- beta one\\n+(- check the backup log)",
+          "text": "## Notes\\n\\n- alpha one\\n- check the backup log",
           "regex": true
         },
         {
           "type": "file_not_contains",
           "path": "400 Projects/Runbook.md",
-          "text": "## Notes\\n\\n- alpha one\\n+(- check the backup log)",
-          "regex": true
-        },
-        {
-          "type": "file_not_contains",
-          "path": "400 Projects/Runbook.md",
-          "text": "## Notes\\n\\n- gamma one\\n+(- check the backup log)",
+          "text": "## Notes\\n\\n- gamma one\\n- check the backup log",
           "regex": true
         },
         {
@@ -1253,7 +1264,9 @@
         {
           "type": "file_contains",
           "path": "400 Projects/Summit/Summit summary.md",
-          "text": "external"
+          "text": "external",
+          "regex": true,
+          "flags": "i"
         },
         {
           "type": "file_not_contains",
@@ -1605,7 +1618,7 @@
     },
     {
       "id": "properties.medium.normalize",
-      "prompt": "Normalize the status property in the notes under 400 Projects/Sprint/ using the mappings in 200 Resources/Systems/Status guide.md. Change only statuses the guide maps. Leave every other note and property unchanged.",
+      "prompt": "Normalize the status property in the notes under 400 Projects/Sprint/, including the Archive subfolder, using the mappings in 200 Resources/Systems/Status guide.md. Change only statuses the guide maps. Leave every other note and property unchanged.",
       "seed": {
         "vault": {
           "size": "S",
