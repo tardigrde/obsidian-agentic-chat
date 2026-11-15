@@ -652,8 +652,8 @@ function validateSeedVault(
   if (input === undefined) return undefined;
   const record = asRecord(input, at, problems);
   if (!record) return undefined;
-  const size = record.size === "S" || record.size === "M" ? record.size : undefined;
-  if (size === undefined) problems.push(`${at}.size must be "S" or "M".`);
+  const size = record.size === "S" || record.size === "M" || record.size === "L" ? record.size : undefined;
+  if (size === undefined) problems.push(`${at}.size must be "S", "M", or "L".`);
   const seed =
     typeof record.seed === "number" && Number.isInteger(record.seed) && record.seed >= 0
       ? record.seed
