@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import * as path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import { applyEnvFile } from "./live-env.mjs";
 import { generateVault } from "./eval/vault-generator";
 import type {
@@ -21,6 +22,21 @@ const DEFAULT_OUT_ROOT = "logs/eval-runs";
 const BASELINE_DIR = "test/evals/baselines";
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 
+/**
+ * One `core` case per category, in the order `--smoke` runs them. This is the
+ * quick before/after slice; the full `core` suite stays 24 cases x 3 runs.
+ */
+export const SMOKE_CASE_IDS: readonly string[] = [
+  "find.hard.venue",
+  "edit.hard.status",
+  "organize.medium.inbox",
+  "create.medium.summary",
+  "properties.hard.owners",
+  "tools.easy.search",
+  "safety.medium.injection",
+  "recovery.medium.stale",
+];
+
 // The dry run must not touch the network. This fixed assumption only makes the
 // plan readable; the live run replaces it with fetched prices.
 const DRY_RUN_ESTIMATE = {
@@ -33,6 +49,7 @@ const DRY_RUN_ESTIMATE = {
 interface CliArgs {
   suite?: string;
   cases?: string[];
+  smoke: boolean;
   runs?: string;
   runId?: string;
   outDir?: string;
@@ -97,10 +114,12 @@ interface ToolUseSummary {
   cases: CaseSummaryWithRuns[];
 }
 
-void main().catch((error: unknown) => {
-  process.stderr.write(`${errorMessage(error)}\n`);
-  process.exit(1);
-});
+if (isCliEntrypoint()) {
+  void main().catch((error: unknown) => {
+    process.stderr.write(`${errorMessage(error)}\n`);
+    process.exit(1);
+  });
+}
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -112,8 +131,13 @@ async function main(): Promise<void> {
   const core = await import("./eval/tool-use-core");
   const suitePath = path.resolve(args.suite ?? DEFAULT_SUITE);
   const suite = core.validateToolUseSuite(JSON.parse(await readFile(suitePath, "utf8")) as unknown);
-  const runsPerCase = args.runs === undefined ? suite.runsPerCase : positiveInteger(args.runs, "--runs");
-  const cases = selectCases(suite, args.cases).map(expandCaseSeed);
+  const runsPerCase =
+    args.runs === undefined
+      ? args.smoke
+        ? 1
+        : suite.runsPerCase
+      : positiveInteger(args.runs, "--runs");
+  const cases = selectCases(suite, args.cases, args.smoke).map(expandCaseSeed);
   const plannedRuns = planRuns(cases, runsPerCase);
   const runId = args.runId ?? timestampRunId();
   const outDir = path.resolve(args.outDir ?? path.join(DEFAULT_OUT_ROOT, runId));
@@ -406,7 +430,14 @@ function planRuns(cases: ToolUseCase[], runsPerCase: number): PlannedRun[] {
   );
 }
 
-function selectCases(suite: ToolUseSuite, requested: string[] | undefined): ToolUseCase[] {
+function selectCases(suite: ToolUseSuite, requested: string[] | undefined, smoke: boolean): ToolUseCase[] {
+  if (smoke) {
+    return SMOKE_CASE_IDS.map((id) => {
+      const evalCase = suite.cases.find((entry) => entry.id === id);
+      if (!evalCase) throw new Error(`The --smoke case is missing from the suite: ${id}`);
+      return evalCase;
+    });
+  }
   if (!requested || requested.length === 0) return suite.cases;
   const ids = requested.flatMap((value) => value.split(",")).map((value) => value.trim()).filter(Boolean);
   const selected = ids.map((id) => {
@@ -771,7 +802,7 @@ function runE2e(options: {
 }
 
 function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { dryRun: false, writeBaseline: false };
+  const args: CliArgs = { dryRun: false, writeBaseline: false, smoke: false };
   for (let index = 0; index < argv.length; index += 1) {
     const raw = argv[index];
     if (raw === "--") continue;
@@ -785,6 +816,10 @@ function parseArgs(argv: string[]): CliArgs {
     }
     if (raw === "--write-baseline") {
       args.writeBaseline = true;
+      continue;
+    }
+    if (raw === "--smoke") {
+      args.smoke = true;
       continue;
     }
     if (!raw.startsWith("--")) throw new Error(`Unexpected argument: ${raw}`);
@@ -828,15 +863,20 @@ function parseArgs(argv: string[]): CliArgs {
         throw new Error(`Unknown option: --${key}`);
     }
   }
+  if (args.smoke && args.cases && args.cases.length > 0) {
+    throw new Error("--smoke cannot be combined with --case; use one selector.");
+  }
   return args;
 }
 
 function usageText(): string {
   return [
     "Usage:",
-    "  npm run eval:tool-use -- [--suite path] [--case id[,id]] [--runs n] [--run-id id]",
+    "  npm run eval:tool-use -- [--suite path] [--case id[,id] | --smoke] [--runs n] [--run-id id]",
     "      [--out-dir dir] [--env-file path] [--max-usd usd] [--dry-run] [--write-baseline]",
     "  npm run eval:tool-use -- --compare <base-summary.json> <head-summary.json>",
+    "",
+    "  --smoke runs one core case per category, once each, unless --runs is set.",
     "",
   ].join("\n");
 }
@@ -891,4 +931,9 @@ function mergeNoProxy(current: string | undefined): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isCliEntrypoint(): boolean {
+  const entrypoint = process.argv[1];
+  return typeof entrypoint === "string" && import.meta.url === pathToFileURL(entrypoint).href;
 }
