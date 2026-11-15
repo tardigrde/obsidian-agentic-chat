@@ -96,6 +96,7 @@ function makeApp(spec: VaultSpec): App {
     vault: {
       getFileByPath: (path: string) => files.get(path) ?? null,
       getFiles: () => [...files.values()],
+      getAllLoadedFiles: () => [...folders.values(), ...files.values()],
       getFolderByPath: (path: string) => folders.get(path || "/") ?? null,
       getAbstractFileByPath: (path: string) => files.get(path) ?? folders.get(path || "/") ?? null,
       getRoot: () => root,

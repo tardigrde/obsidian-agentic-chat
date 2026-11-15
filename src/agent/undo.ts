@@ -1,5 +1,6 @@
 import { type App, TFile, TFolder, type TAbstractFile } from "obsidian";
 import { normalizeVaultPath } from "../vault/path";
+import { renameVaultEntry } from "../vault/rename";
 import { fnv1a32 } from "../utils/hash";
 import { ensureVaultFolder, ensureVaultParentFolder } from "../vault/storage";
 export { UNDOABLE_TOOLS } from "../tools/tool-contracts";
@@ -127,7 +128,7 @@ export async function applyUndo(app: App, entry: UndoEntry): Promise<string> {
 async function applyRenameUndo(app: App, entry: Extract<UndoEntry, { kind: "rename" }>): Promise<string> {
   const file = app.vault.getAbstractFileByPath(entry.to);
   if (!(file instanceof TFile)) throw new Error(`${entry.to} no longer exists.`);
-  await app.fileManager.renameFile(file, entry.from);
+  await renameVaultEntry(app, file, entry.from);
   return `Renamed ${entry.to} back to ${entry.from}.`;
 }
 
