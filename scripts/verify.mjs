@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { createRedactor } from "./redact-log.mjs";
+import { createLineRedactor, createRedactor } from "./redact-log.mjs";
 
 const NODE = process.execPath;
 // Read process.env and .env once. Every child line passes through this.
@@ -229,7 +229,6 @@ function runStep(s) {
   return new Promise((resolve) => {
     const started = Date.now();
     let output = "";
-    let pending = "";
     let settled = false;
     let timedOut = false;
 
@@ -259,30 +258,29 @@ function runStep(s) {
         }, s.timeoutMs)
       : undefined;
 
-    const writeLine = (text) => {
-      const safe = REDACTOR.redact(text);
-      output += safe;
-      process.stdout.write(safe);
-    };
-    // Line-buffer so a key split across chunks is still on one line when the
-    // redactor sees it. Flush the tail on close.
-    const onData = (chunk) => {
-      pending += chunk.toString();
-      let index = pending.indexOf("\n");
-      while (index >= 0) {
-        writeLine(pending.slice(0, index + 1));
-        pending = pending.slice(index + 1);
-        index = pending.indexOf("\n");
-      }
+    // One buffer per stream: a stderr line must not split a key on stdout.
+    // Each buffer redacts complete lines; flush both tails on close.
+    const stdoutLines = createLineRedactor(REDACTOR.redact);
+    const stderrLines = createLineRedactor(REDACTOR.redact);
+    const write = (text) => {
+      output += text;
+      process.stdout.write(text);
     };
     const flush = () => {
-      if (pending.length === 0) return;
-      writeLine(pending);
-      pending = "";
+      for (const buffer of [stdoutLines, stderrLines]) {
+        const text = buffer.flush();
+        if (text) write(text);
+      }
     };
 
-    child.stdout.on("data", onData);
-    child.stderr.on("data", onData);
+    child.stdout.on("data", (chunk) => {
+      const text = stdoutLines.push(chunk);
+      if (text) write(text);
+    });
+    child.stderr.on("data", (chunk) => {
+      const text = stderrLines.push(chunk);
+      if (text) write(text);
+    });
     child.on("error", (error) => {
       flush();
       const text = `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`;
@@ -488,7 +486,7 @@ async function writeSummary(results, lane, startedAt, finishedAt, verdict) {
         durationMs: result.durationMs,
         counts,
         log: logName,
-        command: [result.command, ...result.args].join(" "),
+        command: REDACTOR.redact([result.command, ...result.args].join(" ")),
       };
     }),
   );

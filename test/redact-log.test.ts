@@ -20,6 +20,7 @@ const GENERIC_KEY = ["sk", "proj", "a1b2c3d4e5f6g7h8i9j0k1l2"].join("-");
 const EXACT_ENV_VALUE = ["local", "secret", "value", "123456"].join("-");
 const ENV_FILE_VALUE = ["env", "file", "value", "987654"].join("-");
 const SINK_SECRET = ["sink", "secret", "value", "123456789"].join("-");
+const SPLIT_SECRET = ["split", "secret", "value", "0123456789"].join("-");
 
 const SCRIPT = fileURLToPath(new URL("../scripts/redact-log.mjs", import.meta.url));
 
@@ -36,6 +37,44 @@ function tempDir(): string {
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
+
+function makeVerifyRoot() {
+  const root = tempDir();
+  const scriptsDir = path.join(root, "scripts");
+  const binDir = path.join(root, "node_modules", ".bin");
+  mkdirSync(scriptsDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  for (const name of ["verify.mjs", "redact-log.mjs"]) {
+    writeFileSync(
+      path.join(scriptsDir, name),
+      readFileSync(fileURLToPath(new URL(`../scripts/${name}`, import.meta.url)), "utf8"),
+    );
+  }
+  return { root, scriptsDir, binDir };
+}
+
+function writeFakeVitest(binDir: string, source: string) {
+  const fake = path.join(binDir, "vitest");
+  writeFileSync(fake, source);
+  chmodSync(fake, 0o755);
+  return fake;
+}
+
+function runVerify(root: string, scriptsDir: string, args: string[], env: NodeJS.ProcessEnv = {}) {
+  return spawnSync(process.execPath, [path.join(scriptsDir, "verify.mjs"), ...args], {
+    cwd: root,
+    env: { ...process.env, ...env },
+    encoding: "utf8",
+  });
+}
+
+function unitTestLog(root: string): string {
+  const stamp = readdirSync(path.join(root, "logs", "verify"))[0];
+  const dir = path.join(root, "logs", "verify", stamp);
+  const name = readdirSync(dir).find((entry) => entry.endsWith("-unit-tests.log"));
+  if (!name) throw new Error("no unit test log");
+  return readFileSync(path.join(dir, name), "utf8");
+}
 
 describe("redact-log", () => {
   it("redacts exact env values and known key shapes, and keeps normal text", () => {
@@ -124,22 +163,23 @@ describe("redact-log", () => {
     expect(text).not.toContain(OPENCODE_KEY);
   });
 
+  it("replaces an exact value before a pattern inside it", () => {
+    const exact = `prefix-${OPENROUTER_KEY}-suffix`;
+    const list = collectSecrets({ AGENTIC_CHAT_EXACT_TEST_KEY: exact }, "");
+
+    const output = redactText(`token=${exact}`, list);
+
+    expect(output).toBe("token=[REDACTED_SECRET]");
+    expect(output).not.toContain(exact);
+    expect(output).not.toContain(OPENROUTER_KEY);
+    expect(output).not.toContain("prefix-");
+  });
+
   it("redacts a verify step before it reaches stdout and the log file", () => {
-    const root = tempDir();
-    const scriptsDir = path.join(root, "scripts");
-    const binDir = path.join(root, "node_modules", ".bin");
-    mkdirSync(scriptsDir, { recursive: true });
-    mkdirSync(binDir, { recursive: true });
-    for (const name of ["verify.mjs", "redact-log.mjs"]) {
-      writeFileSync(
-        path.join(scriptsDir, name),
-        readFileSync(fileURLToPath(new URL(`../scripts/${name}`, import.meta.url)), "utf8"),
-      );
-    }
-    const fakeVitest = path.join(binDir, "vitest");
+    const { root, scriptsDir, binDir } = makeVerifyRoot();
     // Two chunks of one line, so a per-chunk replacement would miss the key.
-    writeFileSync(
-      fakeVitest,
+    writeFakeVitest(
+      binDir,
       [
         "#!/usr/bin/env node",
         `process.stdout.write(${JSON.stringify(`{"env":"${SINK_SECRET.slice(0, 12)}`)});`,
@@ -149,29 +189,73 @@ describe("redact-log", () => {
         "",
       ].join("\n"),
     );
-    chmodSync(fakeVitest, 0o755);
 
-    const result = spawnSync(
-      process.execPath,
-      [path.join(scriptsDir, "verify.mjs"), "change", "test/example.test.ts"],
-      {
-        cwd: root,
-        env: { ...process.env, AGENTIC_CHAT_SINK_TEST_KEY: SINK_SECRET },
-        encoding: "utf8",
-      },
-    );
+    const result = runVerify(root, scriptsDir, ["change", "test/example.test.ts"], {
+      AGENTIC_CHAT_SINK_TEST_KEY: SINK_SECRET,
+    });
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("[REDACTED_SECRET]");
     expect(result.stdout).toContain("2 passed");
     expect(result.stdout).not.toContain(SINK_SECRET);
 
-    const stamp = readdirSync(path.join(root, "logs", "verify"))[0];
-    const logDir = path.join(root, "logs", "verify", stamp);
-    const logName = readdirSync(logDir).find((name) => name.endsWith("-unit-tests.log"));
-    expect(logName).toBeTruthy();
-    const log = readFileSync(path.join(logDir, logName ?? ""), "utf8");
+    const log = unitTestLog(root);
     expect(log).toContain("[REDACTED_SECRET]");
     expect(log).not.toContain(SINK_SECRET);
+  });
+
+  it("keeps stdout and stderr line buffers separate", () => {
+    const { root, scriptsDir, binDir } = makeVerifyRoot();
+    const partial = SPLIT_SECRET.slice(0, 18);
+    const rest = SPLIT_SECRET.slice(18);
+    writeFakeVitest(
+      binDir,
+      [
+        "#!/usr/bin/env node",
+        `process.stdout.write(${JSON.stringify(partial)});`,
+        `setTimeout(() => {`,
+        `  process.stderr.write(${JSON.stringify("\n")});`,
+        `  setTimeout(() => {`,
+        `    process.stdout.write(${JSON.stringify(`${rest}\nTests  2 passed (2)\n`)});`,
+        `  }, 40);`,
+        `}, 40);`,
+        "",
+      ].join("\n"),
+    );
+
+    const result = runVerify(root, scriptsDir, ["change", "test/example.test.ts"], {
+      AGENTIC_CHAT_SPLIT_TEST_KEY: SPLIT_SECRET,
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("[REDACTED_SECRET]");
+    expect(result.stdout).not.toContain(SPLIT_SECRET);
+    expect(result.stdout).not.toContain(partial);
+    expect(result.stdout).not.toContain(rest.slice(0, 8));
+
+    const log = unitTestLog(root);
+    expect(log).toContain("[REDACTED_SECRET]");
+    expect(log).not.toContain(partial);
+    expect(log).not.toContain(SPLIT_SECRET);
+  });
+
+  it("redacts a key in a step's command in summary.json", () => {
+    const { root, scriptsDir, binDir } = makeVerifyRoot();
+    writeFakeVitest(
+      binDir,
+      [
+        "#!/usr/bin/env node",
+        `process.stdout.write(${JSON.stringify("Tests  2 passed (2)\n")});`,
+        "",
+      ].join("\n"),
+    );
+
+    const result = runVerify(root, scriptsDir, ["change", OPENROUTER_KEY]);
+
+    expect(result.status, result.stderr).toBe(0);
+    const stamp = readdirSync(path.join(root, "logs", "verify"))[0];
+    const summary = readFileSync(path.join(root, "logs", "verify", stamp, "summary.json"), "utf8");
+    expect(summary).toContain("[REDACTED_OPENROUTER_KEY]");
+    expect(summary).not.toContain(OPENROUTER_KEY);
   });
 });

@@ -207,12 +207,15 @@ and reviewer output through it, and redacts the verdict file in place before it
 posts the comment.
 
 `npm run check:secrets` scans tracked files and `logs/`. It prints a path and a
-count, never a value. `--fix` redacts log files in place; a tracked file is never
-edited, so a tracked leak stays a failure. The scan skips `.env`, `.env.*`
-(except `.env.example`), `node_modules`, `.git`, `.obsidian-cache`, and files over
-20 MB. `npm run check:secrets -- --all-worktrees` also scans every
-`git worktree list` path's `logs/`. The `fast` and `ci` lanes run the scan, and
-`npm run hooks:install` writes a pre-push hook that runs the all-worktrees scan.
+count, never a value. `--fix` redacts log files in place; a tracked file or a log
+over 20 MB is never edited, so a leak there stays a failure. The scan skips
+`.env`, `.env.*` (except `.env.example`), `node_modules`, `.git`, and
+`.obsidian-cache`. A file over 20 MB is read in 1 MB chunks with a 64 KB overlap,
+so it is never reported clean without a scan. Symlinked log files are followed and
+deduplicated by real path. `npm run check:secrets -- --all-worktrees` also scans
+every `git worktree list` path's `logs/`. The `fast` and `ci` lanes run the scan,
+and `npm run hooks:install` writes a pre-push hook that runs the all-worktrees
+scan.
 
 The sinks redact and the scanner guards. Neither is a security boundary: a key
 that another process writes elsewhere is still a leak.

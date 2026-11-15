@@ -7,12 +7,25 @@
  * to fix. Exit 1 while a leak remains.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  readSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { createRedactor, countSecrets, findRepoRoot, redactText } from "./redact-log.mjs";
 
 const MAX_BYTES = 20 * 1024 * 1024;
+const CHUNK_BYTES = 1024 * 1024;
+const OVERLAP_BYTES = 64 * 1024;
 const SKIP_DIRS = new Set(["node_modules", ".git", ".obsidian-cache"]);
 const KNOWN_ARGS = new Set(["--fix", "--all-worktrees"]);
 
@@ -44,6 +57,31 @@ function isTooLarge(file) {
   }
 }
 
+/** Stream a large file in chunks. The overlap catches a key on a chunk boundary. */
+function countLargeFile(file, secrets) {
+  const fd = openSync(file, "r");
+  try {
+    let count = 0;
+    let carry = "";
+    const buffer = Buffer.alloc(CHUNK_BYTES);
+    for (;;) {
+      const read = readSync(fd, buffer, 0, buffer.length, null);
+      if (read === 0) break;
+      const text = carry + buffer.toString("utf8", 0, read);
+      // Subtract matches already counted in the carry; new matches stay counted.
+      count += countSecrets(text, secrets) - countSecrets(carry, secrets);
+      carry = text.slice(-OVERLAP_BYTES);
+    }
+    return count;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function countFileSecrets(file, secrets) {
+  return isTooLarge(file) ? countLargeFile(file, secrets) : countSecrets(readFileSync(file, "utf8"), secrets);
+}
+
 function listTracked(root) {
   const raw = execFileSync(
     "git", // NOSONAR:S4036 -- git is a fixed developer binary resolved from PATH; local tooling, not a privileged service.
@@ -66,6 +104,12 @@ function walkLogs(dir, files) {
       if (!SKIP_DIRS.has(entry.name)) walkLogs(file, files);
     } else if (entry.isFile()) {
       if (!skipPath(file)) files.push(file);
+    } else if (entry.isSymbolicLink()) {
+      try {
+        if (statSync(file).isFile() && !skipPath(file)) files.push(file);
+      } catch {
+        // A broken or looping symlink is not a log file.
+      }
     }
   }
 }
@@ -111,12 +155,8 @@ function scanTrackedFile(file, root, secrets, state) {
     return;
   }
   if (!info.isFile()) return;
-  if (isTooLarge(absolute)) {
-    process.stdout.write(`SKIP ${file} (over 20 MB)\n`);
-    return;
-  }
   state.scanned += 1;
-  const count = countSecrets(readFileSync(absolute, "utf8"), secrets);
+  const count = countFileSecrets(absolute, secrets);
   if (count === 0) return;
   state.leaks += 1;
   process.stdout.write(`LEAK ${file} (${count})\n`);
@@ -124,23 +164,29 @@ function scanTrackedFile(file, root, secrets, state) {
 
 function scanTrackedFiles(root, secrets, state) {
   const tracked = listTracked(root);
-  const files = new Set(tracked.map((file) => path.resolve(root, file)));
-  for (const file of tracked) scanTrackedFile(file, root, secrets, state);
+  const files = new Set();
+  for (const file of tracked) {
+    const absolute = path.resolve(root, file);
+    files.add(absolute);
+    try {
+      files.add(realpathSync(absolute));
+    } catch {
+      // A missing tracked path cannot be a symlinked log target.
+    }
+    scanTrackedFile(file, root, secrets, state);
+  }
   return files;
 }
 
 function scanLogFile(absolute, secrets, fix, state) {
-  if (isTooLarge(absolute)) {
-    process.stdout.write(`SKIP ${display(absolute)} (over 20 MB)\n`);
-    return;
-  }
+  const large = isTooLarge(absolute);
   state.scanned += 1;
-  const text = readFileSync(absolute, "utf8");
-  const count = countSecrets(text, secrets);
+  const text = large ? undefined : readFileSync(absolute, "utf8");
+  const count = large ? countLargeFile(absolute, secrets) : countSecrets(text ?? "", secrets);
   if (count === 0) return;
   const shown = display(absolute);
-  if (fix) {
-    writeFileSync(absolute, redactText(text, secrets));
+  if (fix && !large) {
+    writeFileSync(absolute, redactText(text ?? "", secrets));
     state.fixed += 1;
     process.stdout.write(`REDACTED ${shown} (${count})\n`);
     return;
@@ -159,9 +205,15 @@ function scanLogs(root, allWorktrees, secrets, fix, trackedFiles, state) {
     walkLogs(logs, files);
     for (const file of files) {
       const absolute = path.resolve(file);
-      if (seen.has(absolute)) continue;
-      seen.add(absolute);
-      if (trackedFiles.has(absolute)) continue;
+      let real;
+      try {
+        real = realpathSync(absolute);
+      } catch {
+        continue;
+      }
+      if (seen.has(real)) continue;
+      seen.add(real);
+      if (trackedFiles.has(absolute) || trackedFiles.has(real)) continue;
       scanLogFile(absolute, secrets, fix, state);
     }
   }
@@ -172,7 +224,7 @@ function printSummary(state, fix) {
     process.stdout.write(
       `secret scan: ${state.leaks} leak(s); ${state.fixed} log file(s) redacted (${state.scanned} files)\n`,
     );
-    if (fix) process.stdout.write("tracked files are never edited; fix those leaks by hand\n");
+    if (fix) process.stdout.write("tracked and large files are never edited; fix those leaks by hand\n");
     return 1;
   }
   process.stdout.write(`secret scan: clean (${state.scanned} files, ${state.fixed} log file(s) redacted)\n`);

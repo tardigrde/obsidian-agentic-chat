@@ -118,12 +118,13 @@ function hasPattern(value) {
 /** Replace exact values and known key shapes. Returns text, never a value. */
 export function redactText(text, secrets = []) {
   let output = String(text ?? "");
-  for (const spec of PATTERN_SPECS) {
-    output = output.replace(new RegExp(spec.source, "g"), spec.label);
-  }
+  // Exact values first: a pattern inside an exact value must not leave a prefix.
   for (const value of secrets) {
     if (!value) continue;
     output = output.split(value).join(LABELS.secret);
+  }
+  for (const spec of PATTERN_SPECS) {
+    output = output.replace(new RegExp(spec.source, "g"), spec.label);
   }
   return output;
 }
