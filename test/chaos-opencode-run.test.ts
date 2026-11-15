@@ -112,7 +112,7 @@ describe("opencodeComplete", () => {
   it("runs the agent with stdin and reads the reply", async () => {
     process.env.OPENCODE_BIN = fakeBin(okScript);
     const savedKey = process.env.AGENTIC_CHAT_API_KEY;
-    process.env.AGENTIC_CHAT_API_KEY = "sk-or-test-not-for-the-child";
+    process.env.AGENTIC_CHAT_API_KEY = ["sk", "or", "test", "not", "for", "the", "child"].join("-");
     onTestFinished(() => {
       if (savedKey === undefined) delete process.env.AGENTIC_CHAT_API_KEY;
       else process.env.AGENTIC_CHAT_API_KEY = savedKey;

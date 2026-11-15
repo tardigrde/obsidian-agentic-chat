@@ -308,9 +308,11 @@ describe("mineSessionText", () => {
   });
 
   it("redacts emails, tokens, URL query secrets, and absolute home paths", () => {
+    const token = ["sk", "abc123def456ghi789"].join("-");
+    const pat = ["ghp", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"].join("_");
     const session = new FixtureSession()
       .user(
-        "Email jane.doe@example.com, use sk-abc123def456ghi789 and ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789. " +
+        `Email jane.doe@example.com, use ${token} and ${pat}. ` +
           "Fetch https://example.com/hook?token=super-secret-value&page=2 and read /home/levente/Vault/Private.md",
       )
       .assistant({ text: "Done." })
@@ -325,8 +327,8 @@ describe("mineSessionText", () => {
     expect(text).toContain("token=[redacted]");
     expect(text).toContain("/[path]");
     expect(serialized).not.toContain("jane.doe@example.com");
-    expect(serialized).not.toContain("sk-abc123def456ghi789");
-    expect(serialized).not.toContain("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+    expect(serialized).not.toContain(token);
+    expect(serialized).not.toContain(pat);
     expect(serialized).not.toContain("super-secret-value");
     expect(serialized).not.toContain("/home/levente");
   });
@@ -477,7 +479,7 @@ describe("file target guard", () => {
     const dir = await tempDir();
     const envFile = path.join(dir, ".env");
     const txtFile = path.join(dir, "notes.txt");
-    const envSecret = "sk-live-secret-value-123456789";
+    const envSecret = ["sk", "live", "secret", "value", "123456789"].join("-");
     const txtSecret = "PRIVATE TXT CONTENT";
     await writeFile(envFile, `API_KEY=${envSecret}\n`);
     await writeFile(txtFile, `${txtSecret}\n`);

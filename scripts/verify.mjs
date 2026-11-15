@@ -3,8 +3,11 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { createLineRedactor, createRedactor } from "./redact-log.mjs";
 
 const NODE = process.execPath;
+// Read process.env and .env once. Every child line passes through this.
+const REDACTOR = createRedactor();
 // Typecheck with TypeScript 7. The `typescript` package stays on 5.x for
 // typescript-eslint, which needs the JS compiler API that TS 7.0 does not ship
 // (upstream typescript-eslint#10940).
@@ -23,6 +26,7 @@ function step(label, command, args, options = {}) {
 
 const lanes = {
   fast: () => [
+    step("secret scan", NODE, ["scripts/check-secrets.mjs"]),
     step("typecheck", NODE, [TSC7, "-noEmit"]),
     step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
     step("lint", bin("eslint"), ["."]),
@@ -39,6 +43,7 @@ const lanes = {
   ],
 
   ci: () => [
+    step("secret scan", NODE, ["scripts/check-secrets.mjs"]),
     step("typecheck", NODE, [TSC7, "-noEmit"]),
     step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
     step("scripts typecheck", NODE, [TSC7, "-p", "config/tsconfig.eslint.json", "--noEmit"]),
@@ -253,20 +258,40 @@ function runStep(s) {
         }, s.timeoutMs)
       : undefined;
 
-    const onData = (chunk) => {
-      const text = chunk.toString();
+    // One buffer per stream: a stderr line must not split a key on stdout.
+    // Each buffer redacts complete lines; flush both tails on close.
+    const stdoutLines = createLineRedactor(REDACTOR.redact);
+    const stderrLines = createLineRedactor(REDACTOR.redact);
+    const write = (text) => {
       output += text;
       process.stdout.write(text);
     };
+    const flush = () => {
+      for (const buffer of [stdoutLines, stderrLines]) {
+        const text = buffer.flush();
+        if (text) write(text);
+      }
+    };
 
-    child.stdout.on("data", onData);
-    child.stderr.on("data", onData);
+    child.stdout.on("data", (chunk) => {
+      const text = stdoutLines.push(chunk);
+      if (text) write(text);
+    });
+    child.stderr.on("data", (chunk) => {
+      const text = stderrLines.push(chunk);
+      if (text) write(text);
+    });
     child.on("error", (error) => {
-      output += `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`;
+      flush();
+      const text = `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`;
+      output += REDACTOR.redact(text);
       process.stderr.write(output);
       finish(1);
     });
-    child.on("close", (code) => finish(code ?? 1));
+    child.on("close", (code) => {
+      flush();
+      finish(code ?? 1);
+    });
   });
 }
 
@@ -461,7 +486,7 @@ async function writeSummary(results, lane, startedAt, finishedAt, verdict) {
         durationMs: result.durationMs,
         counts,
         log: logName,
-        command: [result.command, ...result.args].join(" "),
+        command: REDACTOR.redact([result.command, ...result.args].join(" ")),
       };
     }),
   );
