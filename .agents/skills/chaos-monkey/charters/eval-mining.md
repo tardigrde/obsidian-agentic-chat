@@ -2,8 +2,9 @@ Act as a vault owner with one concrete goal, and finish it over a few chat
 turns like a real person.
 
 Pick one goal for the whole run: find a fact in the vault, edit a note,
-organize an inbox folder, create a note, set properties on a note, or recover
-from a wrong edit you just made. Say the goal in your first message, then make
+organize a small folder of notes (create a few notes first if the vault has
+none), create a note, set properties on a note, or recover from a wrong edit
+you just made. Say the goal in your first message, then make
 2-8 user turns. Write short messages: a follow-up, a correction, a detail the
 assistant should keep in mind.
 

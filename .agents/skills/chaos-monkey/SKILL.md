@@ -123,10 +123,11 @@ npm run analyze:session -- logs/chaos/<run>/sessions
 ```
 
 The run writes the usual `findings.md` and issue drafts, plus the copied session
-JSONL under `sessions/`. The trace miner (`npm run analyze:session`) reads that
-JSONL. A person still reads the trace and promotes a pattern into a suite case.
-Without `--live`, explore mode also needs `--replay <run>`; a dry run loads the
-charter but drives recorded decisions.
+JSONL under `sessions/`. The trace miner (`npm run trace:mine`, once it lands)
+reads that JSONL; until then, `npm run analyze:session` gives a summary. A person
+still reads the trace and promotes a pattern into a suite case. Without
+`--live`, explore mode also needs `--replay <run>`; a dry run loads the charter
+but drives recorded decisions.
 
 ## Cheap runs: `--llm opencode`
 
