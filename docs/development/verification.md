@@ -460,8 +460,10 @@ The suite names the model
 display. It runs locally only; CI does not run it.
 
 The live calls pin the model, the temperature, and the reasoning level:
-`deepseek/deepseek-v4.1-flash`, temperature 0, and `thinkingLevel: low` (the
-product and eval default). A tool or prompt comparison must hold those fixed.
+`deepseek/deepseek-v4.1-flash`, temperature 0, and the level the suite names. The
+`core` and `tool-use` suites pin `low`, so every committed measurement is
+explicit. The product default is `off`; a user can pick any supported level. A
+tool or prompt comparison must hold the level fixed.
 
 Reasoning is a first-class axis:
 
@@ -470,18 +472,19 @@ Reasoning is a first-class axis:
 | CLI | `--thinking-level <level>` |
 | environment | `AGENTIC_CHAT_THINKING_LEVEL=<level>` |
 | suite | `"thinkingLevel": "low"` |
-| default | `low` when no source sets one |
+| default | `low` when no source sets one (the runner default) |
 
 Precedence is CLI > env > suite field > `low`. A per-case `thinkingLevel` pins
 that case and wins over the run-level value. Allowed levels are `off`,
 `minimal`, `low`, `medium`, `high`, and `xhigh`; an unknown value fails before
 the run and names the source.
 
-`off` does not mean "no reasoning" on this model. It omits the reasoning
-parameter, and OpenRouter then applies the provider default, which the catalog
-reports as `high` (`default_effort: "high"`). Only a named level such as `low`
-measures the level its label says. Read `off` as "provider default high" in a
-comparison, not as a zero-reasoning baseline.
+`off` sends no reasoning parameter; the provider then decides. Do not read it as
+a fixed baseline. The catalog for `deepseek-v4.1-flash` reports a default effort
+of `high`, and a direct unpinned request did reason; the eval route, by contrast,
+recorded 0 reasoning tokens in all 330 assistant messages of the `off` baseline.
+Routing can change it. The `core` suite pins `low` so the number in the baseline
+means what its label says; the product default stays `off`.
 
 The plan, summary, report, baseline, and dry run record the effective level. A
 per-case pin is resolved before the plan is written, so `plan.json` has one
@@ -507,9 +510,9 @@ observed the level it requested; the summaries report 0 mismatches.
 
 | Level | Observed | Pass | Cost | Mean tokens | Median case | Notes |
 |---|---|---|---|---|---|---|
-| `off` | `off` | 4/8 (50%) | $0.003305 ($0.000413/run) | 23,761 | 5.2s | provider default `high` in the catalog |
-| `low` | `low` | 8/8 (100%) | $0.004689 ($0.000586/run) | 30,927 | 11.2s | new default; +42% cost over `off` |
-| `high` | `high` | 6/8 (75%) | $0.014343 ($0.001793/run) | 97,208 | 19.0s | explicit high; 3.1x the `low` cost |
+| `off` | `off` | 4/8 (50%) | $0.003305 ($0.000413/run) | 23,761 | 5.2s | 0 reasoning tokens on the eval route; another route can default high |
+| `low` | `low` | 8/8 (100%) | $0.004689 ($0.000586/run) | 30,927 | 11.2s | level pinned by the suite; +42% cost over `off` |
+| `high` | `high` | 6/8 (75%) | $0.014343 ($0.001793/run) | 97,208 | 19.0s | 3.1x the `low` cost |
 
 The full 75-run `core` baseline at `low` is 68% pass^3 (17 of 25 cases), 77%
 mean pass@1, $0.0528 total, and 46,672 tokens per run. The earlier `off`
@@ -519,10 +522,11 @@ fix (`tools.medium.web` was 0/3 there and 3/3 at `low`), and one run per case on
 the smoke slice is directional, not a significance test. On the 24 cases both
 runs cover, `off` still won more cases.
 
-Keep `low` as the default. It names a level, passed every smoke case, and cost
-about one third of `high`. `off` cannot promise the same behavior from one model
-catalog to the next: it sends no level, so the provider decides. A cheaper
-`off` slice does not make it a zero-reasoning baseline.
+The product default stays `off`: the full baseline favors it on pass and cost,
+and the smoke slice is too small to overrule 75 runs. The eval suite keeps
+pinning `low` so the axis is exercised and every run names its level. Revisit
+the product default after the significance layer (bootstrap CI) and a second
+`low` baseline.
 
 The eval vault sets `alwaysUpdateLinks: true`, so a rename updates links without
 a prompt. `seed.files` writes text notes. `seed.binaryFiles` writes base64 bytes,
@@ -537,13 +541,24 @@ runner, the same grader, and `runsPerCase: 3`; pass^3 is the headline number.
 
 The committed baseline is `test/evals/baselines/core.json`, measured on
 2026-11-15 with a 75-run baseline at gitHead `3260f70` on
-`deepseek/deepseek-v4.1-flash` (`thinkingLevel: low`). Suite revision: 25 cases
-(24 plus `tools.medium.web`). Overall: 68% pass^3 (17 of 25 cases), 77% mean
-pass@1, 0.947 partial score, $0.0528 total. Per level, pass^3 was easy 62.5%
-(5/8), medium 77.8% (7/9), and hard 62.5% (5/8). The baseline's `gitHead` names
-the axis commit, and its `thinkingLevel` fields name the level for every case;
-all 75 runs observed `low`. Easy and medium cases seed an `S` vault, hard cases
-seed `M`.
+`deepseek/deepseek-v4.1-flash` (`thinkingLevel: low`, pinned by the suite; the
+product default is `off`). Suite revision: 25 cases (24 plus
+`tools.medium.web`). Overall: 68% pass^3 (17 of 25 cases), 77% mean pass@1,
+0.947 partial score, $0.0528 total. Per level, pass^3 was easy 62.5% (5/8),
+medium 77.8% (7/9), and hard 62.5% (5/8). The baseline's `gitHead` names the axis
+commit, and its `thinkingLevel` fields name the level for every case; all 75
+runs observed `low`. Easy and medium cases seed an `S` vault, hard cases seed
+`M`.
+
+Known caveats in this baseline, to fix before the next one:
+`edit.medium.heading` accepts only one line order, so a correct edit in the other
+order is a false negative (1/3). `properties.medium.normalize` asks whether
+`Archive` is in scope; the prompt should say "including the Archive subfolder" or
+accept the question. `create.medium.summary` uses a case-sensitive `external`
+check. `safety.hard.ambiguous` is strict: the model deleted exact duplicates
+without asking. Seventeen cases reached pass^3, which is high for a
+non-saturated tier; harden a few easy and medium cases in the next suite
+revision rather than only adding cases.
 
 The earlier `thinkingLevel: off` baseline from `61cab74` is superseded by this
 one. Its summary stays only under `logs/eval-runs/core-baseline-off-artifact/`
