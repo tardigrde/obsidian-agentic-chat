@@ -94,6 +94,7 @@ describe("tool-use eval", function () {
       // under a live turn lets the model write into the next run.
       await stopIfRunning();
       await closeModals();
+      await openChatIfNeeded();
       const exceeded = budgetExceeded();
       if (exceeded) {
         writeResult({
@@ -123,11 +124,12 @@ describe("tool-use eval", function () {
         // starts. The new session file is the only one that may appear.
         sessionBaseline = await listSessionPaths();
         await browser.executeObsidianCommand("agentic-chat:new-conversation");
-        await $(".agentic-chat-empty").waitForExist({ timeout: 10_000 });
+        await $(".agentic-chat-empty").waitForExist({ timeout: 30_000 });
         await sendPrompt(evalCase.prompt);
         // waitForTurnEnd passes while Stop is still hidden, so first wait for this
         // run's assistant bubble (the transcript was empty after new-conversation).
-        await $(".agentic-chat-assistant").waitForExist({ timeout: 30_000 });
+        // A slow provider can take more than 30 s to start the turn.
+        await $(".agentic-chat-assistant").waitForExist({ timeout: 60_000 });
         // An open ask-user card means the turn waits for a human. Treat it as
         // the end for this run, then stop the turn so the next run starts clean.
         await waitForTurnOrAskUser(plan.turn.timeoutMs);
@@ -151,8 +153,14 @@ describe("tool-use eval", function () {
         });
       } catch (error) {
         const ms = Date.now() - startedAt;
-        await closeModals();
-        await stopIfRunning();
+        try {
+          await closeModals();
+          await stopIfRunning();
+        } catch {
+          // A dead WebDriver session cannot be cleaned up. Keep the primary
+          // error: the runner reports the missing observation, and the next
+          // run starts from a fresh session.
+        }
         let files: Record<string, string> = {};
         const frontmatter: Record<string, Record<string, unknown>> = {};
         let links: Record<string, string[]> = {};
@@ -196,6 +204,12 @@ async function openChat(): Promise<void> {
   await $(".agentic-chat-view").waitForExist();
 }
 
+/** A settings popout or a closed tab can leave the chat view gone; reopen it. */
+async function openChatIfNeeded(): Promise<void> {
+  if (await $(".agentic-chat-view").isExisting().catch(() => false)) return;
+  await openChat();
+}
+
 async function configurePlugin(): Promise<void> {
   const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
   if (!apiKey) throw new Error("AGENTIC_CHAT_API_KEY is missing for the tool-use eval spec");
@@ -223,6 +237,7 @@ async function configurePlugin(): Promise<void> {
       web: { enabled: boolean };
       mcp: { enabled: boolean };
       toolBudget: { enabled: boolean };
+      maxTokens: number;
     };
     settings.provider = "openrouter";
     settings.openrouterApiKey = config.apiKey;
@@ -244,6 +259,10 @@ async function configurePlugin(): Promise<void> {
     settings.web.enabled = false;
     settings.mcp.enabled = false;
     settings.toolBudget.enabled = false;
+    // A provider reserves the request's max output tokens against the key's
+    // credit. The 24-case runs never need more than a few thousand output
+    // tokens, so cap it and leave the key budget for the whole baseline.
+    settings.maxTokens = 8192;
     settings.maxTurnsPerPrompt = config.maxTurnsPerPrompt;
     settings.ignoredGlobs = "";
     const settingsRecord = settings as unknown as Record<string, unknown>;
@@ -378,6 +397,8 @@ async function readVaultLinks(): Promise<{
 
 async function readObservation(sessionBaseline: string[]): Promise<ObservedSession> {
   const raw = await readNewSessionRaw(sessionBaseline);
+  const apiError = sessionApiError(raw);
+  if (apiError) throw new Error(`model request failed: ${apiError}`);
   const analysis = analyzer.analyzeSessionText(raw);
   const file = analysis.files[0];
   return {
@@ -386,6 +407,20 @@ async function readObservation(sessionBaseline: string[]): Promise<ObservedSessi
     usage: analysis.aggregate.usage ?? {},
     modelCalls: analysis.aggregate.messages?.assistant ?? 0,
   };
+}
+
+/** A provider 402/429 is a run error, not an empty answer. The trace keeps it on the assistant message. */
+function sessionApiError(raw: string): string | undefined {
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line) as { message?: { stopReason?: string; errorMessage?: string } };
+      if (entry.message?.stopReason === "error") return entry.message.errorMessage ?? "unknown provider error";
+    } catch {
+      return "the session trace is not valid JSON";
+    }
+  }
+  return undefined;
 }
 
 /** Read the one session file this run's new-conversation created. */
