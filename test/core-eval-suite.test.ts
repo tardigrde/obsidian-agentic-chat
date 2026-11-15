@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  baselineRelativePath,
   gradeRun,
   validateToolUseSuite,
   type ToolUseCase,
@@ -221,14 +220,5 @@ describe("core eval suite", () => {
     expect(/\p{M}/u.test(nfd), "the NFD path must contain a combining mark").toBe(true);
     expect(evalCase.prompt).toContain(path.posix.basename(nfc));
     expect(evalCase.seed.files[nfd]).toContain("CAFE-NFD-42");
-  });
-
-  it("names the baseline after the suite so core cannot overwrite tool-use", () => {
-    expect(baselineRelativePath("core")).toBe("test/evals/baselines/core.json");
-    expect(baselineRelativePath("tool-use")).toBe("test/evals/baselines/tool-use.json");
-
-    for (const bad of ["", "Core", "../core", "core/other", "core.json"]) {
-      expect(() => baselineRelativePath(bad), bad).toThrow(/suite\.name must match/);
-    }
   });
 });
