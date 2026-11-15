@@ -502,19 +502,27 @@ Thinking level: low (suite)
 ### Reasoning level A/B on the smoke slice
 
 The eight-case smoke slice ran once per level with everything else pinned. The
-same suite revision, model, temperature, and vaults were used. Fill this table
-from `--compare` after the run; `low` is the recommendation.
+same suite revision, model, temperature, and vaults were used. Every run
+observed the level it requested; the summaries report 0 mismatches.
 
 | Level | Observed | Pass | Cost | Mean tokens | Median case | Notes |
 |---|---|---|---|---|---|---|
-| `off` | | | | | | provider default `high` |
-| `low` | | | | | | new default |
-| `high` | | | | | | explicit high |
+| `off` | `off` | 4/8 (50%) | $0.003305 ($0.000413/run) | 23,761 | 5.2s | provider default `high` in the catalog |
+| `low` | `low` | 8/8 (100%) | $0.004689 ($0.000586/run) | 30,927 | 11.2s | new default; +42% cost over `off` |
+| `high` | `high` | 6/8 (75%) | $0.014343 ($0.001793/run) | 97,208 | 19.0s | explicit high; 3.1x the `low` cost |
 
-The A/B answers one question: does the default spend more tokens for a better
-pass rate? If `low` matches `high` at a lower cost, keep `low`. If `off` wins on
-cost with the same pass rate, remember that it is still provider-default `high`,
-not zero reasoning.
+The full 75-run `core` baseline at `low` is 68% pass^3 (17 of 25 cases), 77%
+mean pass@1, $0.0528 total, and 46,672 tokens per run. The earlier `off`
+baseline was 76% pass^3 (19 of 25), $0.0215, and 24,532 tokens per run. Two
+caveats stop a simple ranking: that `off` pass predates the localhost fixture
+fix (`tools.medium.web` was 0/3 there and 3/3 at `low`), and one run per case on
+the smoke slice is directional, not a significance test. On the 24 cases both
+runs cover, `off` still won more cases.
+
+Keep `low` as the default. It names a level, passed every smoke case, and cost
+about one third of `high`. `off` cannot promise the same behavior from one model
+catalog to the next: it sends no level, so the provider decides. A cheaper
+`off` slice does not make it a zero-reasoning baseline.
 
 The eval vault sets `alwaysUpdateLinks: true`, so a rename updates links without
 a prompt. `seed.files` writes text notes. `seed.binaryFiles` writes base64 bytes,
@@ -532,9 +540,10 @@ The committed baseline is `test/evals/baselines/core.json`, measured on
 `deepseek/deepseek-v4.1-flash` (`thinkingLevel: low`). Suite revision: 25 cases
 (24 plus `tools.medium.web`). Overall: 68% pass^3 (17 of 25 cases), 77% mean
 pass@1, 0.947 partial score, $0.0528 total. Per level, pass^3 was easy 62.5%
-(5/8), medium 77.8% (7/9), and hard 62.5% (5/8). The baseline was measured on the
-committed suite; the `gitHead` and the empty `core.eval.json` diff prove it.
-Easy and medium cases seed an `S` vault, hard cases seed `M`.
+(5/8), medium 77.8% (7/9), and hard 62.5% (5/8). The baseline's `gitHead` names
+the axis commit, and its `thinkingLevel` fields name the level for every case;
+all 75 runs observed `low`. Easy and medium cases seed an `S` vault, hard cases
+seed `M`.
 
 The earlier `thinkingLevel: off` baseline from `61cab74` is superseded by this
 one. Its summary stays only under `logs/eval-runs/core-baseline-off-artifact/`
