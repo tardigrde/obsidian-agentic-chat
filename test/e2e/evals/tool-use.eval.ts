@@ -31,6 +31,8 @@ interface EvalPlan {
   budget: ToolUseBudgetCaps;
   turn: { timeoutMs: number; maxTurnsPerPrompt: number };
   prices: RunPricing;
+  /** Base URL of the local fixture server; absent when no case needs it. */
+  fixtureBaseUrl?: string;
   cases: EvalCasePlan[];
   runs: Array<{ caseId: string; run: number }>;
 }
@@ -81,6 +83,7 @@ describe("tool-use eval", function () {
     analyzer = (await import(
       pathToFileURL(path.join(process.cwd(), "scripts/analyze-session-trace.mjs")).href
     )) as AnalyzerModule;
+    await installFixtureOrigin(plan.fixtureBaseUrl);
     await openChat();
     await configurePlugin();
   });
@@ -210,10 +213,30 @@ async function openChatIfNeeded(): Promise<void> {
   await openChat();
 }
 
+/**
+ * WDIO-only hook: allow the plugin to reach the one loopback origin owned by
+ * this run's fixture server. Unset means the SSRF gate keeps every local and
+ * private address blocked.
+ */
+async function installFixtureOrigin(baseUrl: string | undefined): Promise<void> {
+  const origin = baseUrl ? new URL(baseUrl).origin : undefined;
+  await browser.execute((fixtureOrigin) => {
+    const target = globalThis as { __AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__?: string };
+    if (fixtureOrigin) target.__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__ = fixtureOrigin;
+    else delete target.__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__;
+  }, origin);
+}
+
 async function configurePlugin(): Promise<void> {
   const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
   if (!apiKey) throw new Error("AGENTIC_CHAT_API_KEY is missing for the tool-use eval spec");
-  const settingKeys = [...new Set(plan.cases.flatMap((entry) => Object.keys(entry.settings ?? {})))];
+  // A case may set a dotted path such as "web.enabled". Capture and restore the
+  // whole top-level object, so the next case starts from the base again.
+  const settingKeys = [
+    ...new Set(
+      plan.cases.flatMap((entry) => Object.keys(entry.settings ?? {}).map((key) => key.split(".")[0])),
+    ),
+  ];
   const configured = await browser.executeObsidian(async ({ app }, config) => {
     const plugin = (app as unknown as {
       plugins?: {
@@ -293,9 +316,20 @@ async function applyCaseSettings(settings: Record<string, string | number | bool
       };
     }).plugins?.plugins?.["agentic-chat"];
     if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
+    /** Assign a dotted key such as "web.enabled" inside the settings object. */
+    const setSettingPath = (target: Record<string, unknown>, key: string, value: unknown): void => {
+      const parts = key.split(".");
+      let cursor = target;
+      for (const part of parts.slice(0, -1)) {
+        const next = cursor[part];
+        if (next === null || typeof next !== "object" || Array.isArray(next)) cursor[part] = {};
+        cursor = cursor[part] as Record<string, unknown>;
+      }
+      cursor[parts[parts.length - 1]] = value;
+    };
     const current = plugin.settings;
-    for (const [key, value] of Object.entries(payload.base)) current[key] = value;
-    for (const [key, value] of Object.entries(payload.caseSettings)) current[key] = value;
+    for (const [key, value] of Object.entries(payload.base)) setSettingPath(current, key, value);
+    for (const [key, value] of Object.entries(payload.caseSettings)) setSettingPath(current, key, value);
     await plugin.saveSettings?.();
   }, { base: baseCaseSettings, caseSettings: settings });
 }

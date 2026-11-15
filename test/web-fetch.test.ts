@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike, ToolArtifactWriteInput } from "../src/artifacts/tool-artifact-store";
 import { parseSourceReference } from "../src/retrieval/citations";
@@ -128,6 +128,51 @@ describe("normalizeWebUrl", () => {
 
   it("still allows IPv4-mapped IPv6 of a public address", () => {
     expect(() => normalizeWebUrl("http://[::ffff:8.8.8.8]/x")).not.toThrow();
+  });
+});
+
+describe("normalizeWebUrl eval fixture hook", () => {
+  const HOOK = "__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__";
+
+  function setFixtureOrigin(origin: string | undefined): void {
+    const target = globalThis as unknown as Record<string, unknown>;
+    if (origin === undefined) delete target[HOOK];
+    else target[HOOK] = origin;
+  }
+
+  afterEach(() => {
+    setFixtureOrigin(undefined);
+  });
+
+  it("blocks the fixture port when the hook is unset", () => {
+    expect(() => normalizeWebUrl("http://127.0.0.1:1234/article")).toThrow(/local or private/i);
+  });
+
+  it("allows exactly the origin set by the hook", () => {
+    setFixtureOrigin("http://127.0.0.1:1234");
+    expect(normalizeWebUrl("http://127.0.0.1:1234/article")).toBe("http://127.0.0.1:1234/article");
+  });
+
+  it("still blocks a different port, host, or scheme", () => {
+    setFixtureOrigin("http://127.0.0.1:1234");
+    for (const url of [
+      "http://127.0.0.1:9999/article",
+      "http://localhost:1234/article",
+      "https://127.0.0.1:1234/article",
+      "http://192.168.1.10:1234/article",
+    ]) {
+      expect(() => normalizeWebUrl(url), url).toThrow(/local or private/i);
+    }
+  });
+
+  it("lets the fetch_url tool read the fixture origin", async () => {
+    setFixtureOrigin("http://127.0.0.1:1234");
+    const tool = createWebFetchTool({
+      fetcher: stubFetcher({ text: "# Fixture Article", headers: { "content-type": "text/markdown" } }),
+      charLimit: 10_000,
+    });
+    const result = await run(tool, { url: "http://127.0.0.1:1234/article" });
+    expect(result.text).toContain("Fixture Article");
   });
 });
 
