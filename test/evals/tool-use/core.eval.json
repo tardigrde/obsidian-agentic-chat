@@ -4,6 +4,7 @@
   "description": "The non-saturated tier: 25 code-graded cases over seeded S and M vaults, 3 runs per case.",
   "model": "deepseek/deepseek-v4.1-flash",
   "runsPerCase": 3,
+  "thinkingLevel": "low",
   "budget": {
     "maxUsd": 5,
     "maxModelCalls": 1500,

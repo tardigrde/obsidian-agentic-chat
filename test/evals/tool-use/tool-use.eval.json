@@ -4,6 +4,7 @@
   "description": "Live tool-choice and vault-state evals graded by code, not by a judge model.",
   "model": "deepseek/deepseek-v4.1-flash",
   "runsPerCase": 3,
+  "thinkingLevel": "low",
   "budget": {
     "maxUsd": 1.0,
     "maxModelCalls": 300,

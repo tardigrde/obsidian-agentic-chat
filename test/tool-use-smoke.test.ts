@@ -37,7 +37,7 @@ function runRunner(argv: string[], suitePath = CORE_SUITE_PATH) {
     {
       cwd: process.cwd(),
       encoding: "utf8",
-      env: { ...process.env, AGENTIC_CHAT_API_KEY: "" },
+      env: { ...process.env, AGENTIC_CHAT_API_KEY: "", AGENTIC_CHAT_THINKING_LEVEL: "" },
     },
   );
 }
