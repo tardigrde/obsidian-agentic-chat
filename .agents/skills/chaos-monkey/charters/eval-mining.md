@@ -4,9 +4,9 @@ turns like a real person.
 Pick one goal for the whole run: find a fact in the vault, edit a note,
 organize a small folder of notes (create a few notes first if the vault has
 none), create a note, set properties on a note, or recover from a wrong edit
-you just made. Say the goal in your first message, then make
-2-8 user turns. Write short messages: a follow-up, a correction, a detail the
-assistant should keep in mind.
+you just made. Say the goal in your first message and make 2-8 user turns in
+total. Write short messages: a follow-up, a correction, a detail the assistant
+should keep in mind.
 
 Prefer the chat composer and the notes the goal needs. Do not open settings,
 the command palette, or unrelated UI unless the goal truly needs it.
