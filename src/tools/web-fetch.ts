@@ -361,10 +361,8 @@ function normalizeTranscriptText(raw: string): string {
  * by a fetched page's content, so it should not be able to probe the local
  * network. This is hostname/literal-IP based; it cannot stop DNS rebinding.
  *
- * One WDIO-only hook can allow a single loopback origin: when the eval harness
- * sets `globalThis.__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__`, that exact origin (the
- * local fixture server) is reachable. Unset is the default, and any other
- * local/private address stays blocked.
+ * The e2e build (and only that build) can allow one loopback origin for the
+ * eval fixture server; see `evalFixtureOrigin`.
  */
 export function normalizeWebUrl(input: string): string {
   let parsed: URL;
@@ -382,15 +380,24 @@ export function normalizeWebUrl(input: string): string {
   return parsed.toString();
 }
 
-/** WDIO-only hook: one exact loopback origin the eval harness owns. */
-interface EvalFixtureHook {
-  __AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__?: string;
-}
+/** Set by `scripts/build.mjs`: true only in the e2e build, never in a release. */
+declare const __AGENTIC_CHAT_ENABLE_E2E_STREAM__: boolean | undefined;
 
+/**
+ * The one loopback origin the eval harness owns, or `undefined`.
+ *
+ * The eval spec sets `window.__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__` to the
+ * origin of its local fixture server. Only the e2e build reads it: in a
+ * release build the flag below is the constant `false`, so the bundler drops
+ * the read and no window global can relax the SSRF gate.
+ * `scripts/verify-mobile-compat.mjs` fails a release bundle that still
+ * contains the hook name.
+ */
 function evalFixtureOrigin(): string | undefined {
-  // `window` is the same object as `globalThis` in the renderer. The Obsidian
-  // lint rule requires `window`, and vitest maps it to `globalThis` too.
-  const origin = (window as unknown as EvalFixtureHook).__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__;
+  if (typeof __AGENTIC_CHAT_ENABLE_E2E_STREAM__ === "undefined" || !__AGENTIC_CHAT_ENABLE_E2E_STREAM__) {
+    return undefined;
+  }
+  const origin = (window as { __AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__?: unknown }).__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__;
   return typeof origin === "string" && origin.length > 0 ? origin : undefined;
 }
 
