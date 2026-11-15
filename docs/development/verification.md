@@ -357,6 +357,13 @@ case also has a `max_tool_calls` check. The suite names the model
 (`deepseek/deepseek-v4.1-flash`). A run needs `AGENTIC_CHAT_API_KEY` and a
 display. It runs locally only; CI does not run it.
 
+The live calls pin the model and the reasoning level:
+`deepseek/deepseek-v4.1-flash`, `thinkingLevel: off`, temperature 0. A tool or
+prompt comparison must hold those fixed. A reasoning-level A/B is future work:
+add a `thinkingLevel` axis to the runner (suite default plus a per-case override)
+and record it in `plan.json`/`summary.json`; keep it out of the P12 tool
+comparison.
+
 The eval vault sets `alwaysUpdateLinks: true`, so a rename updates links without
 a prompt. `seed.files` writes text notes. `seed.binaryFiles` writes base64 bytes,
 for example a PDF. The `unchanged` check covers text seeds only.
