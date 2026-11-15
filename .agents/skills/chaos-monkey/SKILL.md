@@ -64,6 +64,9 @@ npm run chaos -- --mode explore --live
 
 # Watch it on your own screen instead of Xvfb
 npm run chaos -- --mode explore --live --display :0
+# `--display :0` can steal the cursor. Prefer a nested display:
+Xephyr :1 -screen 1440x1000 -ac -noreset &
+npm run chaos -- --mode explore --live --display :1
 
 # Focus the exploration with a charter
 npm run chaos -- --mode explore --live --charter settings

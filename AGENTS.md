@@ -145,6 +145,24 @@ A seeded throwaway vault, an isolated display, real UI actions, and live model
 calls when `--live` is set. Hard caps and a cancel file bound every run. See
 `@chaos-monkey`.
 
+## Headed Obsidian runs
+
+`npm run verify -- e2e`, `npm run eval:tool-use`, and the dogfood lanes open real
+Obsidian windows. On a desktop session every new window asks the window manager
+to activate it, which steals the cursor. Run them on a nested Xephyr display:
+
+```bash
+npm run nested -- npm run verify -- e2e test/e2e/specs/smoke.e2e.ts
+npm run nested -- npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --runs 3 --env-file .env
+```
+
+`npm run nested` starts Xephyr on a free display it chooses, passes `DISPLAY`
+to the command, and stops Xephyr when the command exits. It is a real
+GUI Obsidian, not `AGENTIC_CHAT_E2E_HEADLESS=1` (headless has no accessibility
+tree). Use `--display :N` to reuse an Xephyr that is already running and
+`--screen 390x844` for the narrow viewport. Probes already own Xvfb; this helper
+is for the lanes that otherwise run on `:0`.
+
 ## Real Obsidian e2e
 
 `npm run verify -- e2e <spec>` uses `scripts/run-e2e.ts`: it resolves the matching
