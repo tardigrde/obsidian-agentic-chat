@@ -360,6 +360,11 @@ function normalizeTranscriptText(raw: string): string {
  * private/link-local IPs) as best-effort SSRF defense — the model can be steered
  * by a fetched page's content, so it should not be able to probe the local
  * network. This is hostname/literal-IP based; it cannot stop DNS rebinding.
+ *
+ * One WDIO-only hook can allow a single loopback origin: when the eval harness
+ * sets `globalThis.__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__`, that exact origin (the
+ * local fixture server) is reachable. Unset is the default, and any other
+ * local/private address stays blocked.
  */
 export function normalizeWebUrl(input: string): string {
   let parsed: URL;
@@ -371,10 +376,22 @@ export function normalizeWebUrl(input: string): string {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(`Only http(s) URLs can be fetched: ${input}`);
   }
-  if (isPrivateNetworkHost(parsed.hostname)) {
+  if (isPrivateNetworkHost(parsed.hostname) && parsed.origin !== evalFixtureOrigin()) {
     throw new Error(`Refusing to fetch a local or private address: ${parsed.hostname}`);
   }
   return parsed.toString();
+}
+
+/** WDIO-only hook: one exact loopback origin the eval harness owns. */
+interface EvalFixtureHook {
+  __AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__?: string;
+}
+
+function evalFixtureOrigin(): string | undefined {
+  // `window` is the same object as `globalThis` in the renderer. The Obsidian
+  // lint rule requires `window`, and vitest maps it to `globalThis` too.
+  const origin = (window as unknown as EvalFixtureHook).__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__;
+  return typeof origin === "string" && origin.length > 0 ? origin : undefined;
 }
 
 /** Cap returned characters between a sane floor and the configured default. */

@@ -463,8 +463,34 @@ The endpoints cover the cases a web tool must handle: `/article` and
 `/slow`, `/json`, `/not-found`, and `/echo?q=...` for prompt-injection
 payloads. `--slow-ms` sets the `/slow` delay.
 
-The eval runner does not use the server yet. The fake MCP server (about 30 tools
-for P12 `search_tools`) is a follow-up, not part of this change.
+The runner starts the server only when a selected case needs it: a prompt with
+`{{fixture}}`, or a case that sets `"web.enabled": true`. It writes
+`fixtureBaseUrl` into `plan.json`, replaces every `{{fixture}}` in the prompt,
+and closes the server in a `finally` block. `--dry-run` and `--compare` start
+no server; a dry run marks such a case with `, fixture server` in its plan. A
+prompt that uses `{{fixture}}` with no base URL fails before the e2e starts.
+The `core` suite has no such case, so its path is unchanged.
+
+The eval spec sets the `__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__` window global to
+that base URL's origin in the Obsidian window. `normalizeWebUrl` allows one
+exact match and nothing else: the hook is unset by default, so every other
+loopback, private, or different-port address stays blocked.
+
+A future web case looks like this:
+
+```json
+{
+  "id": "web.medium.article",
+  "prompt": "Fetch {{fixture}}/article and report its published date.",
+  "seed": { "files": {} },
+  "settings": { "web.enabled": true },
+  "checks": [{ "type": "answer_contains", "text": "2026-01-05" }]
+}
+```
+
+`web.enabled` is false in the base eval config, so a case must opt in. The fake
+MCP server (about 30 tools for P12 `search_tools`) is a separate change, not
+part of this wiring.
 
 ## CI
 

@@ -5,6 +5,7 @@ import * as path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { applyEnvFile } from "./live-env.mjs";
+import { startFixtureServer, type FixtureServer } from "./eval/fixture-server";
 import { generateVault } from "./eval/vault-generator";
 import type {
   CaseSummary,
@@ -179,104 +180,119 @@ async function main(): Promise<void> {
   await writeFile(path.join(vaultPath, ".obsidian", "app.json"), `${JSON.stringify({ alwaysUpdateLinks: true })}\n`);
   await mkdir(resultsDir, { recursive: true });
 
-  const plan = {
-    version: 1,
-    runId,
-    suite: { name: suite.name, description: suite.description, path: suitePath },
-    model: suite.model,
-    runsPerCase,
-    budget,
-    turn: suite.turn,
-    prices,
-    cases: cases.map((evalCase) => ({
-      id: evalCase.id,
-      prompt: evalCase.prompt,
-      seed: evalCase.seed,
-      settings: evalCase.settings ?? {},
-      checks: evalCase.checks,
-      ...(evalCase.expected ? { expected: evalCase.expected } : {}),
-    })),
-    runs: plannedRuns,
-  };
-  const planPath = path.join(outDir, "plan.json");
-  await writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`, "utf8");
-
-  console.log(`Tool-use eval: ${runId}`);
-  console.log(`Vault: ${vaultPath}`);
-  console.log(`Plan: ${planPath}`);
-  console.log(`Run: ${cases.length} case(s) x ${runsPerCase} run(s) = ${plannedRuns.length} run(s)`);
-
-  const timeoutMs = Math.max(10 * 60 * 1000, plannedRuns.length * suite.turn.timeoutMs + 120_000);
-  const exitCode = await runE2e({ vaultPath, planPath, resultsDir, apiKey, timeoutMs });
-  if (exitCode !== 0) {
-    throw new Error(`The WDIO tool-use spec exited with code ${exitCode}. Results under ${resultsDir} may be incomplete.`);
-  }
-
-  const caseById = new Map(cases.map((evalCase) => [evalCase.id, evalCase]));
-  const caseEntries = new Map<string, CaseRunEntry[]>();
-  for (const evalCase of cases) caseEntries.set(evalCase.id, []);
-
-  for (const planned of plannedRuns) {
-    const evalCase = caseById.get(planned.caseId);
-    if (!evalCase) throw new Error(`Plan refers to an unknown case: ${planned.caseId}`);
-    const resultPath = path.join(resultsDir, evalCase.id, `${planned.run}.json`);
-    if (!existsSync(resultPath)) {
-      throw new Error(`Missing tool-use result: ${resultPath}`);
+  // The fixture server lives only for this run: a case that needs it gets its
+  // base URL in the plan, and every other case sees no hook at all.
+  let fixture: FixtureServer | undefined;
+  try {
+    let fixtureBaseUrl: string | undefined;
+    if (needsFixture(cases)) {
+      fixture = await startFixtureServer();
+      fixtureBaseUrl = fixture.url;
     }
-    const runFile = parseRunFile(JSON.parse(await readFile(resultPath, "utf8")) as unknown, resultPath);
-    const entry = gradeRunFile(core, evalCase, runFile, prices);
-    caseEntries.get(evalCase.id)?.push(entry);
-  }
+    const planCases = expandFixturePlaceholders(cases, fixtureBaseUrl);
 
-  const caseSummaries: CaseSummaryWithRuns[] = cases.map((evalCase) => {
-    const runs = caseEntries.get(evalCase.id) ?? [];
-    const summary = core.summarizeCase(
-      runs.map((run) => ({
-        status: run.status,
-        usage: run.usage,
-        usd: run.usd,
-        ms: run.ms,
-        modelCalls: run.modelCalls,
-        toolCalls: run.toolCalls,
-        partialScore: run.partialScore,
+    const plan = {
+      version: 1,
+      runId,
+      suite: { name: suite.name, description: suite.description, path: suitePath },
+      model: suite.model,
+      runsPerCase,
+      budget,
+      turn: suite.turn,
+      prices,
+      ...(fixtureBaseUrl ? { fixtureBaseUrl } : {}),
+      cases: planCases.map((evalCase) => ({
+        id: evalCase.id,
+        prompt: evalCase.prompt,
+        seed: evalCase.seed,
+        settings: evalCase.settings ?? {},
+        checks: evalCase.checks,
+        ...(evalCase.expected ? { expected: evalCase.expected } : {}),
       })),
-      { maxToolCalls: evalCase.expected?.maxToolCalls },
-    );
-    return { id: evalCase.id, ...summary, runResults: runs };
-  });
+      runs: plannedRuns,
+    };
+    const planPath = path.join(outDir, "plan.json");
+    await writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`, "utf8");
 
-  const tracker = new core.BudgetTracker(budget, prices);
-  for (const run of caseSummaries.flatMap((entry) => entry.runResults)) {
-    tracker.add({ usage: run.usage, modelCalls: run.modelCalls });
+    console.log(`Tool-use eval: ${runId}`);
+    console.log(`Vault: ${vaultPath}`);
+    console.log(`Plan: ${planPath}`);
+    console.log(`Run: ${planCases.length} case(s) x ${runsPerCase} run(s) = ${plannedRuns.length} run(s)`);
+
+    const timeoutMs = Math.max(10 * 60 * 1000, plannedRuns.length * suite.turn.timeoutMs + 120_000);
+    const exitCode = await runE2e({ vaultPath, planPath, resultsDir, apiKey, timeoutMs });
+    if (exitCode !== 0) {
+      throw new Error(`The WDIO tool-use spec exited with code ${exitCode}. Results under ${resultsDir} may be incomplete.`);
+    }
+
+    const caseById = new Map(planCases.map((evalCase) => [evalCase.id, evalCase]));
+    const caseEntries = new Map<string, CaseRunEntry[]>();
+    for (const evalCase of planCases) caseEntries.set(evalCase.id, []);
+
+    for (const planned of plannedRuns) {
+      const evalCase = caseById.get(planned.caseId);
+      if (!evalCase) throw new Error(`Plan refers to an unknown case: ${planned.caseId}`);
+      const resultPath = path.join(resultsDir, evalCase.id, `${planned.run}.json`);
+      if (!existsSync(resultPath)) {
+        throw new Error(`Missing tool-use result: ${resultPath}`);
+      }
+      const runFile = parseRunFile(JSON.parse(await readFile(resultPath, "utf8")) as unknown, resultPath);
+      const entry = gradeRunFile(core, evalCase, runFile, prices);
+      caseEntries.get(evalCase.id)?.push(entry);
+    }
+
+    const caseSummaries: CaseSummaryWithRuns[] = planCases.map((evalCase) => {
+      const runs = caseEntries.get(evalCase.id) ?? [];
+      const summary = core.summarizeCase(
+        runs.map((run) => ({
+          status: run.status,
+          usage: run.usage,
+          usd: run.usd,
+          ms: run.ms,
+          modelCalls: run.modelCalls,
+          toolCalls: run.toolCalls,
+          partialScore: run.partialScore,
+        })),
+        { maxToolCalls: evalCase.expected?.maxToolCalls },
+      );
+      return { id: evalCase.id, ...summary, runResults: runs };
+    });
+
+    const tracker = new core.BudgetTracker(budget, prices);
+    for (const run of caseSummaries.flatMap((entry) => entry.runResults)) {
+      tracker.add({ usage: run.usage, modelCalls: run.modelCalls });
+    }
+    const finishedAt = new Date();
+    const summary: ToolUseSummary = {
+      version: 1,
+      runId,
+      suite: { name: suite.name, description: suite.description, path: suitePath },
+      model: suite.model,
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt.toISOString(),
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+      prices,
+      budget: { caps: budget, used: tracker.totals(), exceeded: tracker.exceeded() },
+      overall: core.summarizeOverall(caseSummaries),
+      cases: caseSummaries,
+    };
+
+    const summaryPath = path.join(outDir, "summary.json");
+    const reportPath = path.join(outDir, "report.md");
+    await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+    await writeFile(reportPath, formatReport(summary), "utf8");
+
+    if (args.writeBaseline) {
+      const refusal = core.baselineRefusal(summary, plannedRuns.length, suite);
+      if (refusal) throw new Error(`Refusing to write baseline: ${refusal}`);
+      const baselinePath = await writeBaseline(summary);
+      console.log(`Baseline: ${baselinePath}`);
+    }
+
+    console.log(formatConsoleSummary(summary, summaryPath, reportPath));
+  } finally {
+    await fixture?.close();
   }
-  const finishedAt = new Date();
-  const summary: ToolUseSummary = {
-    version: 1,
-    runId,
-    suite: { name: suite.name, description: suite.description, path: suitePath },
-    model: suite.model,
-    startedAt: startedAt.toISOString(),
-    finishedAt: finishedAt.toISOString(),
-    durationMs: finishedAt.getTime() - startedAt.getTime(),
-    prices,
-    budget: { caps: budget, used: tracker.totals(), exceeded: tracker.exceeded() },
-    overall: core.summarizeOverall(caseSummaries),
-    cases: caseSummaries,
-  };
-
-  const summaryPath = path.join(outDir, "summary.json");
-  const reportPath = path.join(outDir, "report.md");
-  await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-  await writeFile(reportPath, formatReport(summary), "utf8");
-
-  if (args.writeBaseline) {
-    const refusal = core.baselineRefusal(summary, plannedRuns.length, suite);
-    if (refusal) throw new Error(`Refusing to write baseline: ${refusal}`);
-    const baselinePath = await writeBaseline(summary);
-    console.log(`Baseline: ${baselinePath}`);
-  }
-
-  console.log(formatConsoleSummary(summary, summaryPath, reportPath));
 }
 
 function gradeRunFile(
@@ -467,6 +483,40 @@ function expandCaseSeed(evalCase: ToolUseCase): ToolUseCase {
   };
 }
 
+const FIXTURE_PLACEHOLDER = "{{fixture}}";
+
+/**
+ * True when a case needs the local fixture server: its prompt asks for the
+ * fixture URL, or it turns web access on. The core suite has neither, so the
+ * normal eval path starts no server.
+ */
+export function needsFixture(cases: readonly ToolUseCase[]): boolean {
+  return cases.some(
+    (evalCase) =>
+      evalCase.prompt.includes(FIXTURE_PLACEHOLDER) || evalCase.settings?.["web.enabled"] === true,
+  );
+}
+
+/**
+ * Replace every `{{fixture}}` in the case prompts with the fixture server's
+ * base URL. A prompt that asks for the fixture with no URL fails here instead
+ * of sending the model a broken address.
+ */
+export function expandFixturePlaceholders(
+  cases: readonly ToolUseCase[],
+  baseUrl: string | undefined,
+): ToolUseCase[] {
+  return cases.map((evalCase) => {
+    if (!evalCase.prompt.includes(FIXTURE_PLACEHOLDER)) return evalCase;
+    if (!baseUrl) {
+      throw new Error(
+        `Case ${evalCase.id} uses {{fixture}} in its prompt, but no fixture server base URL is available.`,
+      );
+    }
+    return { ...evalCase, prompt: evalCase.prompt.replaceAll(FIXTURE_PLACEHOLDER, baseUrl) };
+  });
+}
+
 function printDryRun(options: {
   suite: ToolUseSuite;
   suitePath: string;
@@ -490,7 +540,8 @@ function printDryRun(options: {
   ];
   for (const evalCase of options.cases) {
     const seedFiles = Object.keys(evalCase.seed.files).length;
-    lines.push(`- ${evalCase.id}: ${options.runsPerCase} run(s), ${seedFiles} seed file(s)`);
+    const fixtureNote = needsFixture([evalCase]) ? ", fixture server" : "";
+    lines.push(`- ${evalCase.id}: ${options.runsPerCase} run(s), ${seedFiles} seed file(s)${fixtureNote}`);
   }
   lines.push(
     `Budget: maxUsd ${options.budget.maxUsd}, maxModelCalls ${options.budget.maxModelCalls}, maxTokens ${options.budget.maxTokens}`,
