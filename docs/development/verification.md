@@ -398,11 +398,18 @@ A case can ask for a seeded synthetic vault instead of a hand-written seed:
 "seed": { "vault": { "size": "M", "seed": 7 }, "files": {} }
 ```
 
-`size` is `S` (50 notes) or `M` (500 notes); `seed` is a non-negative integer.
-`scripts/eval/vault-generator.ts` builds the notes with a seeded PRNG, so the
-same pair always produces the same bytes. Case `seed.files` entries are merged
-over the generated base, so a case can add or replace needles. The runner writes
-the expanded map into `plan.json`; the spec still reads `seed.files`.
+`size` is `S` (50 notes), `M` (500 notes), or `L` (2,000 notes); `seed` is a
+non-negative integer. `scripts/eval/vault-generator.ts` builds the notes with a
+seeded PRNG, so the same pair always produces the same bytes. Case `seed.files`
+entries are merged over the generated base, so a case can add or replace needles.
+The runner writes the expanded map into `plan.json`; the spec still reads
+`seed.files`.
+
+`L` is for a small hard slice, not the default: it costs more to seed and more
+tokens to search. At that size the topic/kind/language pairs repeat, so repeated
+names take a stable number (`Atlas Launch - Overview 2`). Every basename stays
+unique, so a wikilink always resolves to one note. `S` and `M` keep the bytes
+they had before `L` existed; `core.eval.json` still seeds `S` and `M` only.
 
 `summary.json` has an `overall` object: `passAtK` (share of cases where every
 run passed), `meanPassAt1`, `partialScore`, `totalUsd`, `meanUsd`, `meanTokens`,
