@@ -3,6 +3,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 /**
  * Run a headed Obsidian command on a nested Xephyr display.
@@ -22,8 +23,6 @@ import process from "node:process";
 
 const DEFAULT_SCREEN = "1440x1000";
 const DEFAULT_TITLE = "agentic-chat e2e";
-const FIRST_DISPLAY = 101;
-const LAST_DISPLAY = 199;
 
 export function displaySocket(displayNumber) {
   return `/tmp/.X11-unix/X${displayNumber}`;
@@ -71,38 +70,58 @@ export function normalizeDisplay(value) {
   return Number(match[1]);
 }
 
-/** First display whose socket does not exist, so parallel runs do not collide. */
-export function pickDisplay(isTaken = (number) => existsSync(displaySocket(number))) {
-  for (let number = FIRST_DISPLAY; number <= LAST_DISPLAY; number += 1) {
-    if (!isTaken(number)) return number;
-  }
-  throw new Error(`No free X display in :${FIRST_DISPLAY}-:${LAST_DISPLAY}.`);
-}
-
-async function waitForDisplay(number, timeoutMs = 5_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (existsSync(displaySocket(number))) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`Xephyr did not create ${displaySocket(number)} within ${timeoutMs} ms.`);
-}
-
-function startXephyr(number, args) {
+/**
+ * Start Xephyr and let it choose the display with `-displayfd 3`, so two
+ * wrappers cannot both pick the same number. With `--display`, only check that
+ * the server is already there; the caller owns its lifetime.
+ */
+function startXephyr(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      "Xephyr",
-      [`:${number}`, "-screen", args.screen, "-ac", "-noreset", "-title", args.title],
-      { stdio: "ignore" },
-    );
-    child.once("error", (error) => {
-      if (error && error.code === "ENOENT") {
-        reject(new Error("Xephyr is not on PATH. Install xserver-xephyr, or use `xvfb-run -a` for an invisible run."));
+    if (args.display !== undefined) {
+      if (!existsSync(displaySocket(args.display))) {
+        reject(new Error(`No X server on :${args.display}. Start Xephyr first or drop --display.`));
         return;
       }
-      reject(error);
+      resolve({ child: undefined, display: args.display });
+      return;
+    }
+
+    const child = spawn( // NOSONAR:S4036 -- Xephyr is a fixed developer binary resolved from PATH; this is local tooling, not a privileged service.
+      "Xephyr",
+      ["-displayfd", "3", "-screen", args.screen, "-ac", "-noreset", "-title", args.title],
+      { stdio: ["ignore", "ignore", "ignore", "pipe"] },
+    );
+    let settled = false;
+    let buffer = "";
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
+    child.once("error", (error) => {
+      if (error && error.code === "ENOENT") {
+        finish(
+          reject,
+          new Error("Xephyr is not on PATH. Install xserver-xephyr, or use `xvfb-run -a` for an invisible run."),
+        );
+        return;
+      }
+      finish(reject, error);
     });
-    child.once("spawn", () => resolve(child));
+    child.once("exit", (code, signal) => {
+      finish(reject, new Error(`Xephyr exited before choosing a display (${code ?? signal}).`));
+    });
+    child.stdio[3]?.on("data", (data) => {
+      buffer += data.toString();
+      const line = buffer.split("\n")[0]?.trim();
+      if (!line) return;
+      const display = Number(line);
+      if (!Number.isInteger(display) || display < 1) {
+        finish(reject, new Error(`Xephyr wrote an invalid display number: ${JSON.stringify(line)}`));
+        return;
+      }
+      finish(resolve, { child, display });
+    });
   });
 }
 
@@ -115,9 +134,9 @@ function usage() {
     "  npm run nested -- npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --runs 3 --env-file .env",
     "  npm run nested -- --screen 390x844 -- npm run verify -- e2e test/e2e/specs/mobile-viewport.e2e.ts",
     "",
-    "Without --display, the script starts Xephyr on a free display and stops it",
-    "when the command exits. With --display, it uses that display and leaves the",
-    "Xephyr process alone.",
+    "Without --display, Xephyr picks a free display and the wrapper stops it when",
+    "the command exits. With --display, the wrapper reuses that server and leaves",
+    "its lifetime to you.",
   ].join("\n");
 }
 
@@ -132,43 +151,51 @@ async function main() {
     throw new Error("The nested display helper is Linux-only. Use the CI xvfb-run lane on other platforms.");
   }
 
-  const ownsDisplay = args.display === undefined;
-  const number = args.display ?? pickDisplay();
-  let xephyr;
-  if (ownsDisplay) {
-    xephyr = await startXephyr(number, args);
-    await waitForDisplay(number);
-    console.log(`[nested] Xephyr :${number} (${args.screen}); the host display keeps focus.`);
-  } else {
-    console.log(`[nested] reusing display :${number}.`);
-  }
+  const { child: xephyr, display } = await startXephyr(args);
+  console.log(
+    xephyr
+      ? `[nested] Xephyr :${display} (${args.screen}); the host display keeps focus.`
+      : `[nested] reusing display :${display}.`,
+  );
 
+  let commandChild;
   const stopXephyr = () => {
     if (xephyr && !xephyr.killed) xephyr.kill("SIGTERM");
   };
+  const onSignal = (signal) => {
+    commandChild?.kill(signal);
+    stopXephyr();
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  };
   process.on("exit", stopXephyr);
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
 
   try {
     const [command, ...commandArgs] = args.command;
-    const child = spawn(command, commandArgs, {
+    commandChild = spawn(command, commandArgs, {
       stdio: "inherit",
-      env: { ...process.env, DISPLAY: `:${number}` },
+      env: { ...process.env, DISPLAY: `:${display}` },
     });
     const code = await new Promise((resolve) => {
-      child.on("error", (error) => {
+      commandChild.on("error", (error) => {
         console.error(`[nested] could not start ${command}: ${error.message}`);
         resolve(1);
       });
-      child.on("exit", (exitCode, signal) => resolve(exitCode ?? (signal ? 1 : 0)));
+      commandChild.on("exit", (exitCode, signal) => resolve(exitCode ?? (signal ? 1 : 0)));
     });
     process.exitCode = code;
   } finally {
     stopXephyr();
     process.removeListener("exit", stopXephyr);
+    process.removeListener("SIGINT", onSignal);
+    process.removeListener("SIGTERM", onSignal);
   }
 }
 
-void main().catch((error) => {
-  console.error(`[nested] ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  void main().catch((error) => {
+    console.error(`[nested] ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}

@@ -156,8 +156,8 @@ npm run nested -- npm run verify -- e2e test/e2e/specs/smoke.e2e.ts
 npm run nested -- npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --runs 3 --env-file .env
 ```
 
-`npm run nested` starts Xephyr on a free display (`:101`-`:199`), passes
-`DISPLAY` to the command, and stops Xephyr when the command exits. It is a real
+`npm run nested` starts Xephyr on a free display it chooses, passes `DISPLAY`
+to the command, and stops Xephyr when the command exits. It is a real
 GUI Obsidian, not `AGENTIC_CHAT_E2E_HEADLESS=1` (headless has no accessibility
 tree). Use `--display :N` to reuse an Xephyr that is already running and
 `--screen 390x844` for the narrow viewport. Probes already own Xvfb; this helper

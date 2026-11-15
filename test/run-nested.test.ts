@@ -3,7 +3,6 @@ import {
   displaySocket,
   normalizeDisplay,
   parseArgs,
-  pickDisplay,
 } from "../scripts/run-nested.mjs";
 
 describe("nested display helper", () => {
@@ -57,19 +56,19 @@ describe("nested display helper", () => {
     expect(() => parseArgs(["--display", "--", "npm"])).toThrow(/--display needs a value/);
   });
 
-  it("picks the first free display socket", () => {
-    expect(pickDisplay(() => false)).toBe(101);
-    expect(pickDisplay((number) => number < 104)).toBe(104);
+  it("builds the X socket path for a display", () => {
     expect(displaySocket(104)).toBe("/tmp/.X11-unix/X104");
-  });
-
-  it("fails when every display in the range is taken", () => {
-    expect(() => pickDisplay(() => true)).toThrow(/No free X display/);
   });
 
   it("reads --help without a command", () => {
     const parsed = parseArgs(["--help"]);
     expect(parsed.help).toBe(true);
     expect(parsed.command).toEqual([]);
+  });
+
+  it("does not run the CLI when the module is imported", () => {
+    // Reaching this assertion proves the import guard: without it, main() would
+    // print usage and set process.exitCode from the vitest argv.
+    expect(process.exitCode ?? 0).toBe(0);
   });
 });

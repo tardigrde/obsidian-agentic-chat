@@ -9,4 +9,3 @@ export interface NestedArgs {
 export function displaySocket(displayNumber: number): string;
 export function parseArgs(argv: string[]): NestedArgs;
 export function normalizeDisplay(value: string): number;
-export function pickDisplay(isTaken?: (displayNumber: number) => boolean): number;
