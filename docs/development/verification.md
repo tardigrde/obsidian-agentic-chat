@@ -528,11 +528,11 @@ non-saturated tier for prompt, tool, and model comparisons. It has 25 cases
 runner, the same grader, and `runsPerCase: 3`; pass^3 is the headline number.
 
 The committed baseline is `test/evals/baselines/core.json`, measured on
-2026-11-15 with a 75-run baseline at gitHead `17a5905` on
-`deepseek/deepseek-v4.1-flash` (`thinkingLevel: off`). Suite revision: 25 cases
-(24 plus `tools.medium.web`). Overall: 76% pass^3 (19 of 25 cases), 84% mean
-pass@1, 0.978 partial score, $0.0215 total. Per level, pass^3 was easy 87.5%
-(7/8), medium 66.7% (6/9), and hard 75% (6/8). The baseline was measured on the
+2026-11-15 with a 75-run baseline at gitHead `3260f70` on
+`deepseek/deepseek-v4.1-flash` (`thinkingLevel: low`). Suite revision: 25 cases
+(24 plus `tools.medium.web`). Overall: 68% pass^3 (17 of 25 cases), 77% mean
+pass@1, 0.947 partial score, $0.0528 total. Per level, pass^3 was easy 62.5%
+(5/8), medium 77.8% (7/9), and hard 62.5% (5/8). The baseline was measured on the
 committed suite; the `gitHead` and the empty `core.eval.json` diff prove it.
 Easy and medium cases seed an `S` vault, hard cases seed `M`.
 
@@ -625,13 +625,11 @@ A web case has this shape:
 MCP server (about 30 tools for P12 `search_tools`) is a separate change, not
 part of this wiring.
 
-`tools.medium.web` is the live case. In the 2026-11-15 baseline it failed 0/3
-because the pinned model's provider rewrote `127.0.0.1` to `[IP_ADDRESS]` in
-the tool argument. The trajectory shows `fetch_url` was called and the fixture
-server started and closed; the call then failed on the redacted URL. The case
-and the wiring are correct, but the harness needs a loopback form the provider
-does not rewrite (for example a `localhost` base URL or an origin alias) before
-the case can pass.
+`tools.medium.web` is the live case. It passes 3/3 in the 2026-11-15 baseline:
+the model calls `fetch_url` with the fixture URL and answers with the published
+date. The fixture server advertises `localhost` because the pinned model's
+provider rewrites a literal `127.0.0.1` to `[IP_ADDRESS]` in tool arguments,
+which makes such a URL invalid before it reaches the server.
 
 ### Local fake MCP server for tool-search cases
 
