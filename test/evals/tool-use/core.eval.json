@@ -441,7 +441,7 @@
     },
     {
       "id": "tools.easy.search",
-      "prompt": "Which notes mention Zephyr? List their note names without folders as bullet points. Do not open notes that do not mention Zephyr.",
+      "prompt": "Which notes mention Zephyr? List their note names without folders as bullet points. Do not list notes that do not mention Zephyr, and do not open them.",
       "seed": {
         "vault": { "size": "S", "seed": 111 },
         "files": {
@@ -469,7 +469,7 @@
     },
     {
       "id": "tools.medium.properties",
-      "prompt": "Which notes under 400 Projects/Sprint/ have a status that is not one of active, paused, or done? List their note names only. Do not edit anything.",
+      "prompt": "Which notes under 400 Projects/Sprint/ have a status that is not one of active, paused, or done? List their note names only, and do not list notes with a valid status. Do not edit anything.",
       "seed": {
         "vault": { "size": "S", "seed": 112 },
         "files": {
@@ -499,7 +499,7 @@
     },
     {
       "id": "tools.hard.broken-links",
-      "prompt": "Some notes contain links to a note that does not exist. Find every note with an unresolved link and list its path. Do not edit anything.",
+      "prompt": "Some notes contain links to a note that does not exist. Find every note with an unresolved link and list its path. Do not list notes whose links resolve or notes with only plain-text mentions. Do not edit anything.",
       "seed": {
         "vault": { "size": "M", "seed": 206 },
         "files": {
