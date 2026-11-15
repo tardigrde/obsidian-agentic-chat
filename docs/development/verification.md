@@ -462,8 +462,8 @@ display. It runs locally only; CI does not run it.
 The live calls pin the model, the temperature, and the reasoning level:
 `deepseek/deepseek-v4.1-flash`, temperature 0, and the level the suite names. The
 `core` and `tool-use` suites pin `low`, so every committed measurement is
-explicit. The product default is `off`; a user can pick any supported level. A
-tool or prompt comparison must hold the level fixed.
+explicit. The product default is `off`; a user can pick any supported level.
+A tool or prompt comparison must hold the level fixed.
 
 Reasoning is a first-class axis:
 
@@ -522,11 +522,13 @@ fix (`tools.medium.web` was 0/3 there and 3/3 at `low`), and one run per case on
 the smoke slice is directional, not a significance test. On the 24 cases both
 runs cover, `off` still won more cases.
 
-The product default stays `off`: the full baseline favors it on pass and cost,
-and the smoke slice is too small to overrule 75 runs. The eval suite keeps
-pinning `low` so the axis is exercised and every run names its level. Revisit
-the product default after the significance layer (bootstrap CI) and a second
-`low` baseline.
+The product default stays `off`. The full 75-run baseline favors it on pass and
+cost, and one run per smoke case is too small to overrule it. `off` is still not
+a fixed control: the catalog says `high`, a direct request reasoned, and the eval
+route recorded 0 reasoning tokens, so routing can move it. The eval suite keeps
+pinning `low` so the axis is exercised and every run names its level. Revisit the
+product default after the significance layer (bootstrap CI) and a second `low`
+baseline; do not move it based on one run.
 
 The eval vault sets `alwaysUpdateLinks: true`, so a rename updates links without
 a prompt. `seed.files` writes text notes. `seed.binaryFiles` writes base64 bytes,

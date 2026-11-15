@@ -46,12 +46,12 @@ Then paste the gateway bearer token and the model id that the gateway exposes.
 
 ## Thinking level
 
-Some models support adjustable reasoning effort. The default is `low`. Set it in **Settings > Agentic Chat** on the **Agent** tab, or per message with `/effort [level]` in chat:
+Some models support adjustable reasoning effort. The default is `off`. Set it in **Settings > Agentic Chat** on the **Agent** tab, or per message with `/effort [level]` in chat:
 
 | Level | When to use it |
 | --- | --- |
-| `off` | Send no reasoning parameter. The provider decides; some routes return no reasoning, while `deepseek/deepseek-v4.1-flash` can apply its own `high` default. |
-| `low` | Default. Explicit low reasoning, and the level the eval suite pins for a reproducible measurement. |
+| `off` | Default. Send no reasoning parameter; the provider decides. Some routes return no reasoning, while `deepseek/deepseek-v4.1-flash` can apply its own `high` default. |
+| `low` | Explicit low reasoning, and the level the eval suite pins for a reproducible measurement. |
 | `minimal`, `medium` | Less or more reasoning than `low` for the task in front of you. |
 | `high`, `xhigh` | Hard planning and research. These levels use more tokens. |
 
