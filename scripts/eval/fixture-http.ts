@@ -13,7 +13,9 @@ import { pathToFileURL } from "node:url";
 export const FIXTURE_HOST = "localhost";
 /**
  * Listener host. The IPv6 wildcard is dual-stack by default, so it accepts
- * `localhost` whether the client resolves it to `::1` or to `127.0.0.1`.
+ * `localhost` whether the client resolves it to `::1` or to `127.0.0.1`. It is
+ * not loopback-only; the fixture serves static test data on an ephemeral port
+ * and closes after the run.
  */
 export const FIXTURE_BIND_HOST = "::";
 export const TEXT_CONTENT_TYPE = "text/plain; charset=utf-8";

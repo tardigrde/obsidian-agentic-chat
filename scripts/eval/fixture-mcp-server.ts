@@ -18,7 +18,7 @@ import {
  */
 
 export interface FixtureMcpServerOptions {
-  /** Port to bind on the dual-stack loopback listener. Default 0: the OS assigns a free port. */
+  /** Port to bind on the dual-stack wildcard listener. Default 0: the OS assigns a free port. The fixture serves static test data and closes after the run. */
   port?: number;
   /** Number of tools in tools/list. Default 30. */
   toolCount?: number;

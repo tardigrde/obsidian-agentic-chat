@@ -55,7 +55,7 @@ Some models support adjustable reasoning effort. The default is `off`. Set it in
 | `minimal`, `medium` | Less or more reasoning than `low` for the task in front of you. |
 | `high`, `xhigh` | Hard planning and research. These levels use more tokens. |
 
-Other models ignore the setting. `off` is provider-dependent: a named level is the only way to ask for the same amount of reasoning every time. A saved choice still wins; this change does not migrate an existing level, so a user with `off` stays `off`.
+Other models ignore the setting. `off` is provider-dependent: a named level is the only way to ask for the same amount of reasoning every time. A saved choice still wins; nothing migrates an existing level.
 
 ## Proxy settings
 

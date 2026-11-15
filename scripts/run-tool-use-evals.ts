@@ -546,7 +546,7 @@ const FIXTURE_PLACEHOLDER = "{{fixture}}";
 
 /**
  * True when a case needs the local fixture server: its prompt asks for the
- * fixture URL, or it turns web access on. The core suite has neither, so the
+ * fixture URL, or it turns web access on. When no selected case needs it, the
  * normal eval path starts no server.
  */
 export function needsFixture(cases: readonly ToolUseCase[]): boolean {

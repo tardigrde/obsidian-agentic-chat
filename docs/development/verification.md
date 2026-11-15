@@ -461,9 +461,10 @@ display. It runs locally only; CI does not run it.
 
 The live calls pin the model, the temperature, and the reasoning level:
 `deepseek/deepseek-v4.1-flash`, temperature 0, and the level the suite names. The
-`core` and `tool-use` suites pin `low`, so every committed measurement is
-explicit. The product default is `off`; a user can pick any supported level.
-A tool or prompt comparison must hold the level fixed.
+`core` and `tool-use` suites pin `low`, so a new measurement is explicit. The
+older `tool-use` baseline predates the axis and has no `thinkingLevel` field; do
+not compare it as if it named one. The product default is `off`; a user can pick
+any supported level. A tool or prompt comparison must hold the level fixed.
 
 Reasoning is a first-class axis:
 
@@ -506,12 +507,18 @@ Thinking level: low (suite)
 
 The eight-case smoke slice ran once per level with everything else pinned. The
 same suite revision, model, temperature, and vaults were used. Every run
-observed the level it requested; the summaries report 0 mismatches.
+observed the level it requested; the summaries report 0 mismatches. Reproduce
+one level with:
+
+```bash
+npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke \
+  --runs 1 --thinking-level <level> --env-file .env --run-id ab-smoke-<level>
+```
 
 | Level | Observed | Pass | Cost | Mean tokens | Median case | Notes |
 |---|---|---|---|---|---|---|
 | `off` | `off` | 4/8 (50%) | $0.003305 ($0.000413/run) | 23,761 | 5.2s | 0 reasoning tokens on the eval route; another route can default high |
-| `low` | `low` | 8/8 (100%) | $0.004689 ($0.000586/run) | 30,927 | 11.2s | level pinned by the suite; +42% cost over `off` |
+| `low` | `low` | 8/8 (100%) | $0.004689 ($0.000586/run) | 30,927 | 11.2s | run pinned with `--thinking-level low`; +42% cost over `off` |
 | `high` | `high` | 6/8 (75%) | $0.014343 ($0.001793/run) | 97,208 | 19.0s | 3.1x the `low` cost |
 
 The full 75-run `core` baseline at `low` is 68% pass^3 (17 of 25 cases), 77%
@@ -604,8 +611,10 @@ console print the same numbers.
 
 `--compare` prints the overall rows and a `Flags` column per case: `cost +N%` or
 `time +N%` when a value grows more than 20% over the baseline, and `pass -N`
-(percentage points) when the pass rate drops. It is read-only: it exits 0 after printing the table. A missing or unreadable
-summary file still fails.
+(percentage points) when the pass rate drops. The output starts with each run's
+suite, model, and thinking level; the case table has a `Thinking` column with
+the requested and observed levels. It is read-only: it exits 0 after printing
+the table. A missing or unreadable summary file still fails.
 
 Live runs need `AGENTIC_CHAT_API_KEY` and a display. They run locally only; CI
 does not run them.
