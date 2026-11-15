@@ -84,8 +84,8 @@ npm run chaos:file -- logs/chaos/<run> 1 3
 ```
 
 Charters live in `charters/` next to this file: `broad` (default), `settings`,
-`composer`, `notes-approvals`, `sessions`, `layout`. `--charter` also takes a
-file path or plain text. Add a charter file when a theme repeats.
+`composer`, `notes-approvals`, `sessions`, `layout`, `eval-mining`. `--charter`
+also takes a file path or plain text. Add a charter file when a theme repeats.
 
 Model lock: every live chaos run uses `deepseek/deepseek-v4.1-flash` for the
 plugin, the explorer, and the miner. `AGENTIC_CHAT_MODEL` is ignored. Use
@@ -108,6 +108,26 @@ action log (with the explorer's expectations and surprises), the plugin session
 transcript, console errors, and open `chaos` issues. It writes `findings.md`,
 `miner-report.json`, and `issues/NN-<slug>.md` drafts for confident, new
 product findings. Nothing is filed until you run `chaos:file` with draft numbers.
+
+## Eval mining
+
+`--charter eval-mining` makes one explore run act like a vault owner with a
+single realistic goal over 2-8 chat turns, so the plugin writes a session JSONL
+that looks like real use. It is the first experiment for the data engine, not a
+test suite and not automatic case writing.
+
+```bash
+npm run chaos -- --mode explore --live --charter eval-mining \
+  --max-steps 12 --max-seconds 300 --max-tokens 300000
+npm run analyze:session -- logs/chaos/<run>/sessions
+```
+
+The run writes the usual `findings.md` and issue drafts, plus the copied session
+JSONL under `sessions/`. The trace miner (`npm run trace:mine`, once it lands)
+reads that JSONL; until then, `npm run analyze:session` gives a summary. A person
+still reads the trace and promotes a pattern into a suite case. Without
+`--live`, explore mode also needs `--replay <run>`; a dry run loads the charter
+but drives recorded decisions.
 
 ## Cheap runs: `--llm opencode`
 

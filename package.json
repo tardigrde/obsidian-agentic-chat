@@ -22,6 +22,7 @@
     "eval:agentic:dogfood": "node --import tsx scripts/run-agentic-evals.ts --run-scripted",
     "eval:agentic:judge": "node --import tsx scripts/run-agentic-evals.ts --suite test/evals/agentic-chat/judge.eval.json --run-judge",
     "eval:agentic:compare": "node --import tsx scripts/compare-agentic-evals.ts",
+    "fixture:serve": "tsx scripts/eval/fixture-server.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",

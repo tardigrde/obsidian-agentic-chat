@@ -301,6 +301,13 @@ time, model calls, and estimated tokens; `touch logs/chaos/<timestamp>/CANCEL`
 is the kill switch. A chaos report is exploratory evidence and never replaces
 the witness, `fast`, or a committed e2e assertion.
 
+`--charter eval-mining` is the first experiment for the data engine. It asks one
+explore run to act like a vault owner with a single realistic goal over 2-8 chat
+turns, so the run leaves a session trace under `sessions/`. `npm run
+analyze:session` summarizes it today; the trace miner (`npm run trace:mine`, once
+it lands) will turn it into anonymized candidates. It does not replace the core
+suite, and it does not write eval cases by itself.
+
 ## Promotion
 
 Every verification gap that caused a real problem becomes structure, not prose:
@@ -354,6 +361,20 @@ pass^K, partial score, median time, mean tokens, mean USD, and flags.
 `tool-use.json`, `core` → `core.json`) and includes the `overall` object plus the
 new per-case metrics. Do not write a baseline when a run was skipped or had a
 harness error.
+
+For a quick before/after of a prompt or tool change, run the smoke slice:
+
+```bash
+npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke --runs 1 --env-file .env
+```
+
+`--smoke` runs 8 `core` cases, one per category, once each: `find.hard.venue`,
+`edit.hard.status`, `organize.medium.inbox`, `create.medium.summary`,
+`properties.hard.owners`, `tools.easy.search`, `safety.medium.injection`, and
+`recovery.medium.stale`. A run takes about 3-5 minutes and needs no baseline. Use
+the full `core` suite (24 cases x 3 runs) for the committed baseline. `--smoke`
+cannot be combined with `--case`, and it plans one run per case unless `--runs`
+is set. `--dry-run` prints the 8 cases and needs no key.
 
 
 The suite caps the cost with `maxUsd`, `maxModelCalls`, and `maxTokens`. Each
@@ -418,6 +439,25 @@ summary file still fails.
 
 Live runs need `AGENTIC_CHAT_API_KEY` and a display. They run locally only; CI
 does not run them.
+
+### Local fixture server for web cases
+
+`scripts/eval/fixture-server.ts` is a local HTTP server for future `fetch_url`
+eval cases. It binds `127.0.0.1` and uses an OS-assigned port by default, so
+cases stay deterministic and offline:
+
+```bash
+npm run fixture:serve -- --json
+npm run fixture:serve -- --port 8080 --slow-ms 500
+```
+
+The endpoints cover the cases a web tool must handle: `/article` and
+`/article-v2` (different dates), `/redirect`, `/429` with `Retry-After`,
+`/slow`, `/json`, `/not-found`, and `/echo?q=...` for prompt-injection
+payloads. `--slow-ms` sets the `/slow` delay.
+
+The eval runner does not use the server yet. The fake MCP server (about 30 tools
+for P12 `search_tools`) is a follow-up, not part of this change.
 
 ## CI
 
