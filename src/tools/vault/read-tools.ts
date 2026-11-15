@@ -2,6 +2,7 @@ import { type App, TFolder, MarkdownView } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { IgnoreMatcher } from "../../vault/ignore";
 import { normalizeFolderPath } from "../../vault/path";
+import { findVaultEntry, pathSuggestion } from "../../vault/path-lookup";
 import {
   alreadyReadMessage,
   cachedReadMessage,
@@ -260,9 +261,9 @@ export function createLsTool(app: App, isIgnored: IgnoreMatcher): AgentTool<type
     execute: async (_id, params) => {
       const path = normalizeFolderPath(params.path ?? "");
       if (path && isIgnored(path)) throw new Error(`Folder not found: ${path}`);
-      const folder = path ? app.vault.getFolderByPath(path) : app.vault.getRoot();
-      if (folder) {
-        const rows = folder.children
+      const entry = path ? findVaultEntry(app, path) : app.vault.getRoot();
+      if (entry instanceof TFolder) {
+        const rows = entry.children
           .slice()
           .filter((child) => !isIgnored(child.path))
           .sort((left, right) => left.path.localeCompare(right.path))
@@ -292,10 +293,16 @@ export function createLsTool(app: App, isIgnored: IgnoreMatcher): AgentTool<type
           count: rows.length,
         });
       } catch {
-        throw new Error(`Folder not found: ${path || "/"}`);
+        throw new Error(folderNotFoundMessage(app, path, isIgnored));
       }
     },
   };
+}
+
+function folderNotFoundMessage(app: App, path: string, isIgnored: IgnoreMatcher): string {
+  const base = `Folder not found: ${path || "/"}`;
+  const suggestion = pathSuggestion(app, path, isIgnored);
+  return suggestion ? `${base}\nDid you mean "${suggestion}"?` : base;
 }
 
 export function createActiveNoteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof ActiveNoteParameters> {

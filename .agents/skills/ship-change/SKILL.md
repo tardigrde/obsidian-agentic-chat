@@ -48,7 +48,9 @@ Own the change end to end. Plan, implement, verify, and report evidence.
    - logic: `npm run verify -- change <file-or-name>`
    - types, lint, unit, bundle: `npm run verify -- ci`
    - merge gate: `npm run verify -- fast`
-   - UI wiring: `npm run verify -- e2e <spec>` or `npm run probe -- --scenario <name>`
+   - UI wiring: `npm run verify -- e2e <spec>` (on a desktop, wrap it as
+     `npm run nested -- <command>` so Obsidian does not steal the cursor) or
+     `npm run probe -- --scenario <name>`
    - prompt, tool, or context: `npm run verify -- eval` plus `compare --fail-on-regression`
 6. Update the feature map: entry points, proof command, last verified date.
 7. Report evidence: command, exit code, counts, artifact path.

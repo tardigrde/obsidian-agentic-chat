@@ -250,6 +250,7 @@ async function configurePlugin(): Promise<void> {
     // hang the turn. A per-tool allow lets the run finish; the checks, not a
     // modal, decide whether the delete was right.
     settings.approval.perTool = { delete: "allow" };
+
     // The eval vault is synthetic and holds no private data, so provider
     // privacy filters add routing noise without protecting anything. Pin one
     // provider path so a fallback or a ZDR filter does not move the score.

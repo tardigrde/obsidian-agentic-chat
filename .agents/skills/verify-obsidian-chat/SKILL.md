@@ -25,6 +25,18 @@ Both build first. Scripted probes use the E2E stream bundle; live probes use the
 production bundle. `wdio.conf.mts` loads `test/e2e/probe/**` only when
 `AGENTIC_CHAT_PROBE=1`.
 
+`verify -- e2e` runs on the host display by default. Every Obsidian window asks
+the window manager to activate it, which steals the cursor. Run the lane on a
+nested Xephyr display instead:
+
+```bash
+npm run nested -- npm run verify -- e2e test/e2e/specs/smoke.e2e.ts
+```
+
+This is a real GUI Obsidian, not `AGENTIC_CHAT_E2E_HEADLESS=1`. `--display :N`
+reuses an Xephyr; `--screen 390x844` matches the narrow viewport. Probes already
+own Xvfb, so they do not need the wrapper.
+
 ## Doctor
 
 Before trusting a run, check:

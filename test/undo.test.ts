@@ -40,6 +40,8 @@ function makeApp(initial: Record<string, string> = {}, initialFolders: string[] 
       },
       createFolder: async (p: string) => void folders.add(p),
       getFolderByPath: (p: string) => (folders.has(p) ? { path: p } : null),
+      getConfig: () => false,
+      setConfig: () => undefined,
     },
     fileManager: {
       renameFile: async (f: TFile, np: string) => {

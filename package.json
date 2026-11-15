@@ -40,6 +40,7 @@
     "analyze:session": "node scripts/analyze-session-trace.mjs",
     "verify": "node scripts/verify.mjs",
     "verify:fast": "node scripts/verify.mjs fast",
+    "nested": "node scripts/run-nested.mjs",
     "verify:witness": "node scripts/verify-witness.mjs",
     "capture:release-fixtures": "node scripts/capture-release-fixtures.mjs",
     "check:feature-map": "node scripts/check-feature-map.mjs",

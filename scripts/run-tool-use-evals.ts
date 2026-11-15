@@ -672,7 +672,7 @@ function formatChange(
 
 /**
  * A flag is a warning, not a verdict: cost and time regressions over 20% and a
- * drop in the pass rate. The command stays read-only and always exits 0.
+ * drop in the pass rate. The command stays read-only.
  */
 function caseFlags(before: CaseComparison, after: CaseComparison): string {
   const flags: string[] = [];
