@@ -11,7 +11,9 @@ import {
   costUsd,
   gradeRun,
   summarizeCase,
+  summarizeOverall,
   validateToolUseSuite,
+  type CaseRunSummaryInput,
   type ToolUseCase,
   type ToolUseCheck,
   type ToolUseSuite,
@@ -85,6 +87,19 @@ function checkByType(result: { checks: Array<{ type: string; ok: boolean; detail
   const check = result.checks.find((entry) => entry.type === type);
   if (!check) throw new Error(`missing ${type} check result`);
   return check;
+}
+
+function runSummary(overrides: Partial<CaseRunSummaryInput> = {}): CaseRunSummaryInput {
+  return {
+    status: "pass",
+    usage: { totalTokens: 100 },
+    usd: 0.01,
+    ms: 1_000,
+    modelCalls: 2,
+    toolCalls: 3,
+    partialScore: 1,
+    ...overrides,
+  };
 }
 
 describe("tool-use eval core", () => {
@@ -223,6 +238,45 @@ describe("tool-use eval core", () => {
       seed.binaryFiles = entry.binaryFiles;
       expect(() => validateToolUseSuite(suite)).toThrow(entry.pattern);
     }
+  });
+
+  it("validates an optional generated vault seed", () => {
+    const suite = cloneSuite();
+    const seed = (suite.cases as Array<Record<string, unknown>>)[0].seed as Record<string, unknown>;
+    seed.vault = { size: "S", seed: 7 };
+
+    expect(validateToolUseSuite(suite).cases[0].seed.vault).toEqual({ size: "S", seed: 7 });
+
+    const invalid: Array<{ vault: unknown; pattern: RegExp }> = [
+      { vault: "S", pattern: /seed\.vault must be an object/ },
+      { vault: { size: "XL", seed: 1 }, pattern: /seed\.vault\.size must be "S" or "M"/ },
+      { vault: { size: "S" }, pattern: /seed\.vault\.seed must be a non-negative integer/ },
+      { vault: { size: "S", seed: -1 }, pattern: /seed\.vault\.seed must be a non-negative integer/ },
+      { vault: { size: "S", seed: 1.5 }, pattern: /seed\.vault\.seed must be a non-negative integer/ },
+      { vault: { size: "S", seed: "7" }, pattern: /seed\.vault\.seed must be a non-negative integer/ },
+    ];
+
+    for (const entry of invalid) {
+      const bad = cloneSuite();
+      ((bad.cases as Array<Record<string, unknown>>)[0].seed as Record<string, unknown>).vault = entry.vault;
+      expect(() => validateToolUseSuite(bad)).toThrow(entry.pattern);
+    }
+  });
+
+  it("validates expected.maxToolCalls as a reporting budget", () => {
+    const suite = cloneSuite();
+    (suite.cases as Array<Record<string, unknown>>)[0].expected = { maxToolCalls: 3 };
+    expect(validateToolUseSuite(suite).cases[0].expected).toEqual({ maxToolCalls: 3 });
+
+    for (const value of [0, -1, 1.5, "3"]) {
+      const bad = cloneSuite();
+      (bad.cases as Array<Record<string, unknown>>)[0].expected = { maxToolCalls: value };
+      expect(() => validateToolUseSuite(bad)).toThrow(/expected\.maxToolCalls must be a positive integer/);
+    }
+
+    const notObject = cloneSuite();
+    (notObject.cases as Array<Record<string, unknown>>)[0].expected = 5;
+    expect(() => validateToolUseSuite(notObject)).toThrow(/expected must be an object/);
   });
 
   it("reads the seeded invoice PDF from base64", () => {
@@ -592,6 +646,85 @@ describe("tool-use eval core", () => {
     });
   });
 
+  it("keeps pass@K at 1 only when every executed run passes", () => {
+    expect(summarizeCase([runSummary(), runSummary()]).passAtK).toBe(1);
+    expect(summarizeCase([runSummary(), runSummary({ status: "fail" })]).passAtK).toBe(0);
+    expect(summarizeCase([runSummary(), runSummary({ status: "skipped-budget" })]).passAtK).toBe(1);
+    expect(summarizeCase([]).passAtK).toBe(0);
+  });
+
+  it("takes the median of the executed run times", () => {
+    expect(summarizeCase([runSummary({ ms: 5_000 }), runSummary({ ms: 1_000 }), runSummary({ ms: 3_000 })]).medianMs).toBe(3_000);
+    expect(summarizeCase([runSummary({ ms: 1_000 }), runSummary({ ms: 3_000 })]).medianMs).toBe(2_000);
+    expect(summarizeCase([runSummary({ ms: 1_000 }), runSummary({ ms: 9_000, status: "skipped-budget" })]).medianMs).toBe(1_000);
+    expect(summarizeCase([]).medianMs).toBe(0);
+  });
+
+  it("means the share of checks that passed and scores no checks as 0", () => {
+    expect(summarizeCase([runSummary({ partialScore: 1 }), runSummary({ partialScore: 0.5 })]).partialScore).toBe(0.75);
+    expect(summarizeCase([runSummary({ partialScore: 0 })]).partialScore).toBe(0);
+    expect(summarizeCase([runSummary({ partialScore: undefined })]).partialScore).toBe(0);
+    expect(
+      summarizeCase([runSummary({ partialScore: 1 }), runSummary({ partialScore: 0, status: "skipped-budget" })]).partialScore,
+    ).toBe(1);
+  });
+
+  it("means model calls and tool calls over the executed runs", () => {
+    const summary = summarizeCase([
+      runSummary({ modelCalls: 1, toolCalls: 2 }),
+      runSummary({ modelCalls: 3, toolCalls: 4 }),
+      runSummary({ modelCalls: 9, toolCalls: 9, status: "skipped-budget" }),
+    ]);
+
+    expect(summary.meanModelCalls).toBe(2);
+    expect(summary.meanToolCalls).toBe(3);
+    expect(summarizeCase([]).meanModelCalls).toBe(0);
+    expect(summarizeCase([]).meanToolCalls).toBe(0);
+  });
+
+  it("counts runs over the expected tool-call budget", () => {
+    const runs = [runSummary({ toolCalls: 2 }), runSummary({ toolCalls: 5 }), runSummary({ toolCalls: 7 })];
+
+    expect(summarizeCase(runs, { maxToolCalls: 6 }).overBudgetRuns).toBe(1);
+    expect(summarizeCase(runs, { maxToolCalls: 2 }).overBudgetRuns).toBe(2);
+    expect(summarizeCase(runs).overBudgetRuns).toBe(0);
+    expect(
+      summarizeCase([...runs, runSummary({ toolCalls: 99, status: "skipped-budget" })], { maxToolCalls: 2 }).overBudgetRuns,
+    ).toBe(2);
+  });
+
+  it("aggregates the overall object from the per-case summaries", () => {
+    const firstRuns = [runSummary({ status: "pass" }), runSummary({ status: "pass" })];
+    const secondRuns = [runSummary({ status: "fail", partialScore: 0.5, usd: 0.02 })];
+    const overall = summarizeOverall([
+      { ...summarizeCase(firstRuns, { maxToolCalls: 2 }), runResults: firstRuns },
+      { ...summarizeCase(secondRuns), runResults: secondRuns },
+    ]);
+
+    expect(overall).toMatchObject({
+      cases: 2,
+      runs: 3,
+      passAtK: 0.5,
+      meanPassAt1: 0.5,
+      partialScore: 0.75,
+      totalUsd: 0.04,
+      meanTokens: 100,
+      meanModelCalls: 2,
+      meanToolCalls: 3,
+      medianCaseMs: 1_000,
+    });
+    expect(overall.meanUsd).toBeCloseTo(0.04 / 3, 10);
+  });
+
+  it("keeps skipped runs out of the overall run metrics", () => {
+    const runs = [runSummary({ status: "pass" }), runSummary({ status: "skipped-budget", usage: {}, usd: 0, ms: 0 })];
+    const overall = summarizeOverall([{ ...summarizeCase(runs), runResults: runs }]);
+
+    expect(overall.runs).toBe(1);
+    expect(overall.meanUsd).toBeCloseTo(0.01, 10);
+    expect(overall.meanTokens).toBe(100);
+  });
+
   describe("baseline refusal", () => {
     const suite = { runsPerCase: 2, cases: [{ id: "case.one" }] };
     const summary = (
@@ -770,6 +903,107 @@ describe("tool-use eval core", () => {
         expect.objectContaining({ name: "write", isError: true }),
       ]),
     );
+  });
+
+  it("compares overall metrics and flags cost, time, and pass regressions", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "tool-use-compare-"));
+    tempRoots.push(root);
+    const baselinePath = path.join(root, "baseline.json");
+    const candidatePath = path.join(root, "candidate.json");
+    const baseline = {
+      cases: [
+        {
+          id: "case.one",
+          passRate: 1,
+          passAtK: 1,
+          partialScore: 1,
+          meanTokens: 1_000,
+          meanUsd: 0.01,
+          meanModelCalls: 2,
+          meanToolCalls: 3,
+          medianMs: 1_000,
+        },
+        {
+          id: "case.two",
+          passRate: 0.5,
+          passAtK: 0,
+          partialScore: 0.75,
+          meanTokens: 2_000,
+          meanUsd: 0.02,
+          meanModelCalls: 4,
+          meanToolCalls: 6,
+          medianMs: 4_000,
+        },
+      ],
+      overall: {
+        cases: 2,
+        runs: 6,
+        passAtK: 0.5,
+        meanPassAt1: 0.75,
+        partialScore: 0.875,
+        totalUsd: 0.09,
+        meanUsd: 0.015,
+        meanTokens: 1_500,
+        meanModelCalls: 3,
+        meanToolCalls: 4.5,
+        medianCaseMs: 2_500,
+      },
+    };
+    const candidate = {
+      cases: [
+        {
+          id: "case.one",
+          passRate: 0.75,
+          passAtK: 0,
+          partialScore: 0.8,
+          meanTokens: 1_200,
+          meanUsd: 0.016,
+          meanModelCalls: 3,
+          meanToolCalls: 5,
+          medianMs: 2_500,
+        },
+        {
+          id: "case.two",
+          passRate: 0.5,
+          passAtK: 0,
+          partialScore: 0.7,
+          meanTokens: 1_900,
+          meanUsd: 0.02,
+          meanModelCalls: 4,
+          meanToolCalls: 6,
+          medianMs: 4_000,
+        },
+      ],
+      overall: {
+        cases: 2,
+        runs: 6,
+        passAtK: 0,
+        meanPassAt1: 0.625,
+        partialScore: 0.75,
+        totalUsd: 0.108,
+        meanUsd: 0.018,
+        meanTokens: 1_550,
+        meanModelCalls: 3.5,
+        meanToolCalls: 5.5,
+        medianCaseMs: 3_250,
+      },
+    };
+    await writeFile(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
+    await writeFile(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
+
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "scripts/run-tool-use-evals.ts", "--compare", baselinePath, candidatePath],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("| pass^K | 50% | 0% | -50% |");
+    expect(result.stdout).toContain("| mean pass@1 | 75% | 63% | -13% |");
+    expect(result.stdout).toContain("| median time | 2.5s | 3.3s | +0.8s |");
+    expect(result.stdout).toContain("| Flags |");
+    expect(result.stdout).toContain("cost +60%; time +150%; pass -25");
+    expect(result.stdout).toContain("| - |");
   });
 
   it("prints a dry-run plan without network or output files", async () => {

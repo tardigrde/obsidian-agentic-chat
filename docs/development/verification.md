@@ -333,9 +333,12 @@ npm run eval:tool-use -- --compare logs/eval-runs/base/summary.json logs/eval-ru
 ```
 
 `--case` takes one id or a comma list. `--runs` overrides the run count in the
-suite. `--compare` shows the pass rate, mean tokens, and mean USD for each case.
-`--write-baseline` writes `test/evals/baselines/tool-use.json`. Do not write a
-baseline when a run was skipped or had a harness error.
+suite. `--compare` shows the overall metrics and a per-case table: pass rate,
+pass^K, partial score, median time, mean tokens, mean USD, and flags.
+`--write-baseline` writes `test/evals/baselines/<suite>.json` (`tool-use` →
+`tool-use.json`, `core` → `core.json`) and includes the `overall` object plus the
+new per-case metrics. Do not write a baseline when a run was skipped or had a
+harness error.
 
 The suite caps the cost with `maxUsd`, `maxModelCalls`, and `maxTokens`. Each
 case also has a `max_tool_calls` check. The suite names the model
@@ -345,6 +348,40 @@ display. It runs locally only; CI does not run it.
 The eval vault sets `alwaysUpdateLinks: true`, so a rename updates links without
 a prompt. `seed.files` writes text notes. `seed.binaryFiles` writes base64 bytes,
 for example a PDF. The `unchanged` check covers text seeds only.
+
+### The `core` suite and generated vaults
+
+`tool-use` stays the regression tier: 14 cases, saturated at 100%. The follow-up
+PR adds `core`, the non-saturated tier for prompt, tool, and model comparisons.
+It uses the same runner, the same grader, and `runsPerCase: 3`; pass^3 is the
+headline number.
+
+A case can ask for a seeded synthetic vault instead of a hand-written seed:
+
+```json
+"seed": { "vault": { "size": "M", "seed": 7 }, "files": {} }
+```
+
+`size` is `S` (50 notes) or `M` (500 notes); `seed` is a non-negative integer.
+`scripts/eval/vault-generator.ts` builds the notes with a seeded PRNG, so the
+same pair always produces the same bytes. Case `seed.files` entries are merged
+over the generated base, so a case can add or replace needles. The runner writes
+the expanded map into `plan.json`; the spec still reads `seed.files`.
+
+`summary.json` has an `overall` object: `passAtK` (share of cases where every
+run passed), `meanPassAt1`, `partialScore`, `totalUsd`, `meanUsd`, `meanTokens`,
+`meanModelCalls`, `meanToolCalls`, and `medianCaseMs`. Each case also reports
+`passAtK`, `partialScore`, `medianMs`, and `overBudgetRuns` (runs above
+`expected.maxToolCalls`; a reporting budget, not a check). `report.md` and the
+console print the same numbers.
+
+`--compare` prints the overall rows and a `Flags` column per case: `cost +N%` or
+`time +N%` when a value grows more than 20% over the baseline, and `pass -N`
+(percentage points) when the pass rate drops. It is read-only: it exits 0 after printing the table. A missing or unreadable
+summary file still fails.
+
+Live runs need `AGENTIC_CHAT_API_KEY` and a display. They run locally only; CI
+does not run them.
 
 ## CI
 
