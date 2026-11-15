@@ -2,7 +2,9 @@ import { type App, TAbstractFile, TFile, TFolder } from "obsidian";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { applyExactEditsPartial, type EditApplyResult } from "../../vault/edit";
 import type { IgnoreMatcher } from "../../vault/ignore";
+import { findVaultEntry } from "../../vault/path-lookup";
 import type { ReadMemo } from "../../vault/read-memo";
+import { renameVaultEntry } from "../../vault/rename";
 import { ensureVaultParentFolder } from "../../vault/storage";
 import {
   DeleteParameters,
@@ -33,7 +35,7 @@ export function createWriteTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadM
     execute: async (_id, params) => {
       const path = normalizeVisibleVaultPath(isIgnored, params.path);
       await ensureVaultParentFolder(app, path);
-      const existing = app.vault.getAbstractFileByPath(path);
+      const existing = findVaultEntry(app, path);
       if (existing instanceof TFolder) {
         throw new TypeError(`Cannot write file because a folder exists at ${path}.`);
       }
@@ -131,11 +133,11 @@ export function createRenameTool(app: App, isIgnored: IgnoreMatcher, memo?: Read
       const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
       const newPath = normalizeVisibleVaultPath(isIgnored, params.newPath);
       // Block both the source (invisible) and the destination (no smuggling into an ignored zone).
-      if (app.vault.getAbstractFileByPath(newPath)) {
+      if (findVaultEntry(app, newPath)) {
         throw new Error(`Something already exists at ${newPath}.`);
       }
       await ensureVaultParentFolder(app, newPath);
-      await app.fileManager.renameFile(file, newPath);
+      await renameVaultEntry(app, file, newPath);
       memo?.invalidate(path);
       memo?.invalidate(newPath);
       return textResult(`Renamed ${path} to ${newPath}.`, { path, newPath });

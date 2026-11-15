@@ -217,6 +217,7 @@ async function configurePlugin(): Promise<void> {
       maxTurnsPerPrompt: number;
       ignoredGlobs: string;
       approval: { mutating: string; perTool: Record<string, string> };
+      privacy: { allowFallbacks: boolean; denyDataCollection: boolean; requireZDR: boolean };
       web: { enabled: boolean };
       mcp: { enabled: boolean };
       toolBudget: { enabled: boolean };
@@ -228,6 +229,12 @@ async function configurePlugin(): Promise<void> {
     settings.mode = "safe";
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};
+    // The eval vault is synthetic and holds no private data, so provider
+    // privacy filters add routing noise without protecting anything. Pin one
+    // provider path so a fallback or a ZDR filter does not move the score.
+    settings.privacy.allowFallbacks = false;
+    settings.privacy.denyDataCollection = false;
+    settings.privacy.requireZDR = false;
     settings.web.enabled = false;
     settings.mcp.enabled = false;
     settings.toolBudget.enabled = false;

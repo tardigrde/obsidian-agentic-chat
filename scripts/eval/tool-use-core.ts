@@ -6,6 +6,7 @@
  */
 
 import { MUTATING_TOOLS } from "../../src/tools/tool-contracts";
+import type { VaultSize } from "./vault-generator";
 
 export const TOOL_USE_SUITE_VERSION = 1;
 export const TOOL_USE_ALLOWED_MODELS = ["deepseek/deepseek-v4.1-flash"] as const;
@@ -24,10 +25,24 @@ export interface ToolUseTurnLimits {
   maxTurnsPerPrompt: number;
 }
 
+export interface ToolUseSeedVault {
+  /** `S` has 50 notes, `M` has 500. The runner expands them into `seed.files`. */
+  size: VaultSize;
+  /** Non-negative PRNG seed. The same pair always gives the same bytes. */
+  seed: number;
+}
+
 export interface ToolUseSeed {
   files: Record<string, string>;
   /** Vault-relative path to base64 file bytes. Whitespace in the value is ignored. */
   binaryFiles: Record<string, string>;
+  /** Optional generated base vault. Case `files` win over the generated ones. */
+  vault?: ToolUseSeedVault;
+}
+
+/** Reporting budgets. They never fail a check. */
+export interface ToolUseExpected {
+  maxToolCalls?: number;
 }
 
 export type ToolUseSettingValue = string | number | boolean;
@@ -38,6 +53,7 @@ export interface ToolUseCase {
   seed: ToolUseSeed;
   settings?: Record<string, ToolUseSettingValue>;
   checks: ToolUseCheck[];
+  expected?: ToolUseExpected;
 }
 
 export interface ToolUseSuite {
@@ -224,6 +240,10 @@ export interface CaseRunSummaryInput {
   usage: RunUsage;
   usd: number;
   ms: number;
+  modelCalls?: number;
+  toolCalls?: number;
+  /** Share of checks that passed. A run with no checks scores 0, not 1. */
+  partialScore?: number;
 }
 
 export interface CaseSummary {
@@ -232,11 +252,39 @@ export interface CaseSummary {
   passed: number;
   skipped: number;
   passRate: number;
+  /** 1 only when every executed run passed; the K is the run count. */
+  passAtK: number;
+  /** Mean share of checks that passed per executed run. */
+  partialScore: number;
   meanTokens: number;
   maxTokens: number;
   totalUsd: number;
   meanUsd: number;
   meanMs: number;
+  /** Median wall-clock time of the executed runs. */
+  medianMs: number;
+  meanModelCalls: number;
+  meanToolCalls: number;
+  /** Runs whose tool-call count exceeds `expected.maxToolCalls`. */
+  overBudgetRuns: number;
+}
+
+/** Top-level `overall` object in `summary.json`. */
+export interface OverallSummary {
+  cases: number;
+  runs: number;
+  /** Share of cases where every executed run passed. */
+  passAtK: number;
+  /** Mean of the per-case pass rates. */
+  meanPassAt1: number;
+  partialScore: number;
+  totalUsd: number;
+  meanUsd: number;
+  meanTokens: number;
+  meanModelCalls: number;
+  meanToolCalls: number;
+  /** Median of the per-case median run times. */
+  medianCaseMs: number;
 }
 
 /**
@@ -353,13 +401,17 @@ export function baselineRefusal(
   return null;
 }
 
-export function summarizeCase(runs: CaseRunSummaryInput[]): CaseSummary {
+export function summarizeCase(
+  runs: CaseRunSummaryInput[],
+  options: { maxToolCalls?: number } = {},
+): CaseSummary {
   const skipped = runs.filter((run) => run.status === "skipped-budget").length;
   const executed = runs.filter((run) => run.status !== "skipped-budget");
   const passed = executed.filter((run) => run.status === "pass").length;
   const tokenCounts = executed.map((run) => tokenCount(run.usage));
   const totalUsd = executed.reduce((total, run) => total + finite(run.usd), 0);
   const mean = (value: number): number => (executed.length > 0 ? value / executed.length : 0);
+  const maxToolCalls = options.maxToolCalls;
 
   return {
     runs: runs.length,
@@ -367,11 +419,53 @@ export function summarizeCase(runs: CaseRunSummaryInput[]): CaseSummary {
     passed,
     skipped,
     passRate: executed.length > 0 ? passed / executed.length : 0,
+    passAtK: executed.length > 0 && passed === executed.length ? 1 : 0,
+    partialScore: mean(executed.reduce((total, run) => total + finite(run.partialScore), 0)),
     meanTokens: mean(tokenCounts.reduce((total, count) => total + count, 0)),
     maxTokens: tokenCounts.length > 0 ? Math.max(...tokenCounts) : 0,
     totalUsd,
     meanUsd: mean(totalUsd),
     meanMs: mean(executed.reduce((total, run) => total + finite(run.ms), 0)),
+    medianMs: median(executed.map((run) => finite(run.ms))),
+    meanModelCalls: mean(executed.reduce((total, run) => total + finite(run.modelCalls), 0)),
+    meanToolCalls: mean(executed.reduce((total, run) => total + finite(run.toolCalls), 0)),
+    overBudgetRuns:
+      maxToolCalls === undefined
+        ? 0
+        : executed.filter((run) => finite(run.toolCalls) > maxToolCalls).length,
+  };
+}
+
+/**
+ * Aggregate the per-case summaries into the `overall` object. Cost, tokens,
+ * and calls are weighted by executed runs; the rate columns weigh each case
+ * once, so a case with a skipped run does not skew the pass numbers.
+ */
+export function summarizeOverall(
+  cases: Array<CaseSummary & { runResults: CaseRunSummaryInput[] }>,
+): OverallSummary {
+  const executedRuns = cases.flatMap((entry) =>
+    entry.runResults.filter((run) => run.status !== "skipped-budget"),
+  );
+  const runs = executedRuns.length;
+  const totalUsd = cases.reduce((total, entry) => total + finite(entry.totalUsd), 0);
+  const meanOfRuns = (value: number): number => (runs > 0 ? value / runs : 0);
+  const meanOfCases = (pick: (entry: CaseSummary) => number): number =>
+    cases.length > 0 ? cases.reduce((total, entry) => total + finite(pick(entry)), 0) / cases.length : 0;
+  const casesWithRuns = cases.filter((entry) => entry.executed > 0);
+
+  return {
+    cases: cases.length,
+    runs,
+    passAtK: meanOfCases((entry) => (entry.passAtK === 1 ? 1 : 0)),
+    meanPassAt1: meanOfCases((entry) => entry.passRate),
+    partialScore: meanOfCases((entry) => entry.partialScore),
+    totalUsd,
+    meanUsd: meanOfRuns(totalUsd),
+    meanTokens: meanOfRuns(executedRuns.reduce((total, run) => total + tokenCount(run.usage), 0)),
+    meanModelCalls: meanOfRuns(executedRuns.reduce((total, run) => total + finite(run.modelCalls), 0)),
+    meanToolCalls: meanOfRuns(executedRuns.reduce((total, run) => total + finite(run.toolCalls), 0)),
+    medianCaseMs: median(casesWithRuns.map((entry) => entry.medianMs)),
   };
 }
 
@@ -388,6 +482,13 @@ export function tokenCount(usage: RunUsage): number {
   const total = finite(usage.totalTokens);
   if (total > 0) return total;
   return finite(usage.input) + finite(usage.output) + finite(usage.cacheRead) + finite(usage.cacheWrite);
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }
 
 export class BudgetTracker {
@@ -519,13 +620,66 @@ function validateCase(input: unknown, index: number, problems: string[]): ToolUs
   }
 
   const settings = validateSettings(evalCase.settings, `${at}.settings`, problems);
+  const expected = validateExpected(evalCase.expected, `${at}.expected`, problems);
   const checksRaw = asArray(evalCase.checks, `${at}.checks`, problems) ?? [];
   if (checksRaw.length === 0) problems.push(`${at}.checks must contain at least one check.`);
   const checks = checksRaw
     .map((entry, checkIndex) => validateCheck(entry, `${at}.checks[${checkIndex}]`, problems))
     .filter((check): check is ToolUseCheck => check !== undefined);
 
-  return { id, prompt, seed: { files, binaryFiles }, settings, checks };
+  const vault = seedRecord
+    ? validateSeedVault(seedRecord.vault, `${at}.seed.vault`, problems)
+    : undefined;
+  return {
+    id,
+    prompt,
+    seed: {
+      files,
+      binaryFiles,
+      ...(vault ? { vault } : {}),
+    },
+    settings,
+    checks,
+    ...(expected ? { expected } : {}),
+  };
+}
+
+function validateSeedVault(
+  input: unknown,
+  at: string,
+  problems: string[],
+): ToolUseSeedVault | undefined {
+  if (input === undefined) return undefined;
+  const record = asRecord(input, at, problems);
+  if (!record) return undefined;
+  const size = record.size === "S" || record.size === "M" ? record.size : undefined;
+  if (size === undefined) problems.push(`${at}.size must be "S" or "M".`);
+  const seed =
+    typeof record.seed === "number" && Number.isInteger(record.seed) && record.seed >= 0
+      ? record.seed
+      : undefined;
+  if (seed === undefined) problems.push(`${at}.seed must be a non-negative integer.`);
+  return { size: size ?? "S", seed: seed ?? 0 };
+}
+
+function validateExpected(
+  input: unknown,
+  at: string,
+  problems: string[],
+): ToolUseExpected | undefined {
+  if (input === undefined) return undefined;
+  const record = asRecord(input, at, problems);
+  if (!record) return undefined;
+  const maxToolCalls =
+    typeof record.maxToolCalls === "number" &&
+    Number.isInteger(record.maxToolCalls) &&
+    record.maxToolCalls > 0
+      ? record.maxToolCalls
+      : undefined;
+  if (record.maxToolCalls !== undefined && maxToolCalls === undefined) {
+    problems.push(`${at}.maxToolCalls must be a positive integer.`);
+  }
+  return { maxToolCalls };
 }
 
 function validateSettings(

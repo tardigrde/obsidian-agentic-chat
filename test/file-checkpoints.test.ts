@@ -63,6 +63,8 @@ function makeCheckpointApp(
       },
       createFolder: async (path: string) => void folders.add(path),
       getFolderByPath: (path: string) => (folders.has(path) ? { path } : null),
+      getConfig: () => false,
+      setConfig: () => undefined,
     },
     fileManager: {
       renameFile: async (file: TFile, newPath: string) => {

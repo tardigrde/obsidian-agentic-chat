@@ -12,7 +12,7 @@ import {
 /** A declarative row. Use render only when the control needs a side effect a plain control cannot express. */
 export function row(
   name: string,
-  render: (setting: Setting, group: SettingGroup) => void,
+  render: (setting: Setting, group: SettingGroup) => void | (() => void),
   extra: Omit<SettingDefinitionRender, "name" | "render"> = {},
 ): SettingDefinitionRender {
   return { name, render, ...extra };

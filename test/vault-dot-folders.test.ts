@@ -67,6 +67,19 @@ function makeStaleDotFolderApp() {
         return root;
       },
       getFiles: () => [],
+      getAllLoadedFiles: () => [
+        ...[...treeFolders].map((path) => {
+          const folder = new TFolder();
+          folder.path = path;
+          folder.name = path === "/" ? "" : (path.split("/").pop() ?? path);
+          return folder;
+        }),
+        ...[...treeFiles.keys()].map((path) => {
+          const file = new TFile();
+          file.path = path;
+          return file;
+        }),
+      ],
       cachedRead: async (file: TFile) => treeFiles.get(file.path) ?? "",
       process: async (file: TFile, fn: (content: string) => string) => {
         const next = fn(treeFiles.get(file.path) ?? "");

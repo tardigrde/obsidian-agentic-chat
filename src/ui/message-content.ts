@@ -144,10 +144,12 @@ export function lastUserTurn(messages: AgentMessage[]): LastUserTurn | undefined
 }
 
 /**
- * Index of the last user message when its turn failed: every message after it
- * is an assistant reply that ended in an error or an abort. Retry drops that
- * turn before it resends, so the model does not get the same prompt twice.
- * A turn that ran a tool (a toolResult follows) or answered is kept.
+ * Index to truncate the transcript at before retrying a turn that did not
+ * finish. For a trailing failed assistant run (`stopReason` is `error` or
+ * `aborted`) this is the first message of that run. When the transcript instead
+ * ends with the last user turn's tool results and no assistant reply, it is
+ * `messages.length`: keep everything and continue from the tools. Returns
+ * undefined for a successful turn or a bare user turn.
  */
 export function failedLastTurnIndex(messages: AgentMessage[]): number | undefined {
   let index = messages.length - 1;
@@ -156,6 +158,17 @@ export function failedLastTurnIndex(messages: AgentMessage[]): number | undefine
     if (stopReason !== "error" && stopReason !== "aborted") return undefined;
     index--;
   }
-  if (index < 0 || index === messages.length - 1 || messages[index].role !== "user") return undefined;
-  return index;
+  if (index < 0) return undefined;
+  if (index !== messages.length - 1) {
+    const previous = messages[index].role;
+    if (previous !== "user" && previous !== "toolResult") return undefined;
+    return index + 1;
+  }
+  // No trailing assistant reply: a stopped tool batch leaves its results last.
+  while (index >= 0 && messages[index].role === "toolResult") index--;
+  if (index < 0) return undefined;
+  const owner = messages[index];
+  if (owner.role !== "assistant") return undefined;
+  if ((owner as { stopReason?: unknown }).stopReason !== "toolUse") return undefined;
+  return messages.length;
 }
