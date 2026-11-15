@@ -355,6 +355,20 @@ pass^K, partial score, median time, mean tokens, mean USD, and flags.
 new per-case metrics. Do not write a baseline when a run was skipped or had a
 harness error.
 
+For a quick before/after of a prompt or tool change, run the smoke slice:
+
+```bash
+npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke --runs 1 --env-file .env
+```
+
+`--smoke` runs 8 `core` cases, one per category, once each: `find.hard.venue`,
+`edit.hard.status`, `organize.medium.inbox`, `create.medium.summary`,
+`properties.hard.owners`, `tools.easy.search`, `safety.medium.injection`, and
+`recovery.medium.stale`. A run takes about 3-5 minutes and needs no baseline. Use
+the full `core` suite (24 cases x 3 runs) for the committed baseline. `--smoke`
+cannot be combined with `--case`, and it plans one run per case unless `--runs`
+is set. `--dry-run` prints the 8 cases and needs no key.
+
 
 The suite caps the cost with `maxUsd`, `maxModelCalls`, and `maxTokens`. Each
 case also has a `max_tool_calls` check. The suite names the model
