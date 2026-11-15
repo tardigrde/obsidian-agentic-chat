@@ -536,6 +536,14 @@ pass@1, 0.947 partial score, $0.0528 total. Per level, pass^3 was easy 62.5%
 committed suite; the `gitHead` and the empty `core.eval.json` diff prove it.
 Easy and medium cases seed an `S` vault, hard cases seed `M`.
 
+The earlier `thinkingLevel: off` baseline from `61cab74` is superseded by this
+one. Its summary stays only under `logs/eval-runs/core-baseline-off-artifact/`
+as an A/B artifact, not in the committed baseline. Do not compare it for
+`tools.medium.web`: that case measured 0/3 because the provider rewrote the
+fixture URL's `127.0.0.1` to `[IP_ADDRESS]`, not because the model failed. Every
+other case used the same suite, model, and vault seeds, so the rest of the
+off/low comparison is valid.
+
 Saturation rule: a case that reaches pass^3 in three baselines in a row moves to
 the `tool-use` regression tier, and `core` gets a harder variant of it. A case
 that stays at 0 across three baselines is a case bug, not a hard case; check the
