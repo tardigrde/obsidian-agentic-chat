@@ -389,6 +389,71 @@ describe("mineSessionText", () => {
   });
 });
 
+describe("privacy regressions", () => {
+  it("strips note lines and the oldText payload from an edit error", () => {
+    const errorText = [
+      'oldText was not found: "The secret line from the note"',
+      "Closest match (line 12): PRIVATE NOTE LINE",
+      "Next closest (line 20): ANOTHER PRIVATE LINE",
+    ].join("\n");
+    const session = new FixtureSession()
+      .user("Fix the heading.")
+      .assistant({ toolCalls: [{ id: "call-1", name: "vault_edit", args: { path: "Note.md" } }] })
+      .toolResult("call-1", "vault_edit", errorText, true)
+      .assistant({ text: "I could not edit it." });
+
+    const [candidate] = mine(session);
+    const evidence = candidate?.evidence ?? "";
+
+    expect(candidate?.signal).toBe("tool-error");
+    expect(evidence).toContain("vault_edit");
+    expect(evidence).toContain("oldText was not found");
+    expect(evidence).toContain("[oldText]");
+    expect(evidence).not.toContain("The secret line from the note");
+    expect(evidence).not.toContain("PRIVATE NOTE LINE");
+    expect(evidence).not.toContain("ANOTHER PRIVATE LINE");
+    expect(evidence).not.toContain("Closest match");
+    expect(evidence).not.toContain("Next closest");
+  });
+
+  it("strips a compressed context marker and its attached path list", () => {
+    const marker =
+      "<context unchanged since previous turn. Attached: Private/Diary.md, Private/Keys.md. " +
+      "Use the read tool to open any attached note if you need the full content.</context>";
+    const session = new FixtureSession()
+      .user(`${marker}\n\nRename the heading.`)
+      .assistant({ text: "Done." })
+      .user("No, that is wrong.");
+
+    const candidates = mine(session);
+    const text = candidates[0]?.userTurns[0]?.text ?? "";
+
+    expect(text).toBe("Rename the heading.");
+    expect(JSON.stringify(candidates)).not.toContain("Private/");
+    expect(JSON.stringify(candidates)).not.toContain("Attached:");
+  });
+
+  it("redacts dot-segment home paths and every URL query value", () => {
+    const session = new FixtureSession()
+      .user(
+        "Read /root/.ssh/id_rsa and /home/jane/.config/secret, then open https://example.com/?q=diary",
+      )
+      .assistant({ text: "Done." })
+      .user("No, that is wrong.");
+
+    const candidates = mine(session);
+    const text = candidates[0]?.userTurns[0]?.text ?? "";
+    const serialized = JSON.stringify(candidates);
+
+    expect(text).toContain("/[path]");
+    expect(text).toContain("q=[redacted]");
+    expect(serialized).not.toContain("/root/.ssh");
+    expect(serialized).not.toContain("id_rsa");
+    expect(serialized).not.toContain("jane");
+    expect(serialized).not.toContain("diary");
+  });
+});
+
 describe("runTraceMiner", () => {
   it("writes candidates.json and report.md and applies --max", async () => {
     const session = new FixtureSession();

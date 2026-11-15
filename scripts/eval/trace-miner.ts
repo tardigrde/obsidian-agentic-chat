@@ -112,11 +112,20 @@ const RECOVERY_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
 
 const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
 const URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`]+/gi;
-const TOKEN_QUERY_KEY_PATTERN = /(?:token|key|secret|signature|sig|auth|password|passwd|credential|session|code)/i;
 const GITHUB_PAT_PATTERN = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
 const GITHUB_TOKEN_PATTERN = /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g;
-const ABSOLUTE_PATH_PATTERN = /\/(?:home|Users|root)\/[^\s"'`<>()[\].,;]+/g;
+// Match the whole path, dot segments included. The last character must not be
+// sentence punctuation, so "/root/.ssh/id_rsa." keeps its final period.
+const ABSOLUTE_PATH_PATTERN = /\/(?:home|Users|root)\b(?:\/[^\s"'`<>()[\]]*[^\s"'`<>()[\].,;:!?])?/g;
+// The normal block is `<context>…</context>`; the compressed marker is
+// `<context unchanged since previous turn. Attached: …</context>` with no `>`
+// after the attribute text. Match both from `<context` to the closing tag.
+const CONTEXT_BLOCK_PATTERN = /<context\b[\s\S]*?<\/context>/gi;
 const FOCUS_HINT_PATTERN = /^\s*Focus: The user's request after this line is the primary task\.[^\n]*$/gm;
+const EDIT_PAYLOAD_PATTERN =
+  /(\boldText (?:was not found|matches \d+ times[^:\n]*)):\s*"(?:\\.|[^"\\])*"/g;
+const EDIT_PAYLOAD_OPEN_PATTERN = /(\boldText (?:was not found|matches \d+ times[^:\n]*)):\s*"[^\n]*/g;
+const EDIT_FUZZY_LINE_PATTERN = /^[ \t]*(?:Closest match|Next closest) \(line \d+\):.*$/gim;
 
 interface RawEntry {
   type?: unknown;
@@ -516,7 +525,7 @@ function buildCandidates(turns: TurnRecord[]): RawCandidate[] {
     const previous = index > 0 ? turns[index - 1] : undefined;
 
     for (const error of turn.errors) {
-      const detail = error.text.trim() ? redactTraceText(error.text) : "no error text";
+      const detail = error.text.trim() ? redactTraceText(stripEditErrorContent(error.text)) : "no error text";
       const recovery = error.recovery.length > 0 ? ` [recovery: ${error.recovery.join(", ")}]` : "";
       candidates.push({
         signal: "tool-error",
@@ -669,13 +678,28 @@ function countImages(message: RawMessage): number {
 }
 
 /**
- * Remove the `<context>` preamble (attached note bodies) and the focus hint, so
- * a candidate keeps the user's own request and never a copied note body.
+ * Remove the `<context>` preamble (attached note bodies and the compressed
+ * `Attached:` marker) and the focus hint, so a candidate keeps only the user's
+ * own request and never a copied note body or attached path list.
  */
 function stripPromptContext(text: string): string {
   return text
-    .replace(/<context>[\s\S]*?<\/context>/g, " ")
+    .replace(CONTEXT_BLOCK_PATTERN, " ")
     .replace(FOCUS_HINT_PATTERN, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * An `oldText` edit error quotes the attempted payload and appends up to two
+ * real note lines as fuzzy hints. Keep the non-content prefix; drop the rest.
+ */
+function stripEditErrorContent(text: string): string {
+  return text
+    .replace(EDIT_PAYLOAD_PATTERN, "$1: [oldText]")
+    .replace(EDIT_PAYLOAD_OPEN_PATTERN, "$1: [oldText]")
+    .replace(EDIT_FUZZY_LINE_PATTERN, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -749,11 +773,8 @@ function redactUrlQuery(url: string): string {
   const fragment = hashIndex === -1 ? "" : tail.slice(hashIndex);
   const pairs = query.split("&").map((pair) => {
     const equals = pair.indexOf("=");
-    if (equals <= 0) return pair;
-    const key = pair.slice(0, equals);
-    const queryValue = pair.slice(equals + 1);
-    if (TOKEN_QUERY_KEY_PATTERN.test(key) || queryValue.length >= 20) return `${key}=[redacted]`;
-    return pair;
+    if (equals === -1) return pair;
+    return `${pair.slice(0, equals)}=[redacted]`;
   });
   return `${head}${pairs.join("&")}${fragment}`;
 }
@@ -834,7 +855,7 @@ function renderReport(result: TraceMiningResult, generatedAt: Date): string {
   lines.push(
     "## Redaction",
     "",
-    "Emails, `sk-`/`ghp_` style tokens, token-like URL query values, and absolute `/home`, `/Users`, and `/root` paths are replaced. Attached note bodies (`<context>...</context>`) and the focus hint are removed from user turns. Tool output is never copied; only tool names and the redacted, truncated error text stay in a candidate.",
+    "Emails, `sk-`/`ghp_` style tokens, URL query values, and absolute `/home`, `/Users`, and `/root` paths are replaced. Attached note bodies, compressed `<context>` markers, and the focus hint are removed from user turns. Edit errors lose their quoted `oldText` payload and fuzzy note lines. Tool output is never copied; only tool names and the redacted, truncated error text stay in a candidate.",
     "",
   );
   return `${lines.join("\n")}\n`;
