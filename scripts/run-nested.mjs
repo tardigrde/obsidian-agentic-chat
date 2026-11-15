@@ -48,12 +48,10 @@ export function parseArgs(argv) {
       args.help = true;
       continue;
     }
-    if (arg === "--screen" || arg === "--title" || arg === "--display") {
+    if (isOption(arg)) {
       const value = rest[index + 1];
       if (!value || value.startsWith("--")) throw new Error(`${arg} needs a value`);
-      if (arg === "--screen") args.screen = value;
-      if (arg === "--title") args.title = value;
-      if (arg === "--display") args.display = normalizeDisplay(value);
+      applyOption(args, arg, value);
       index += 1;
       continue;
     }
@@ -61,6 +59,16 @@ export function parseArgs(argv) {
     break;
   }
   return args;
+}
+
+function isOption(arg) {
+  return arg === "--screen" || arg === "--title" || arg === "--display";
+}
+
+function applyOption(args, arg, value) {
+  if (arg === "--screen") args.screen = value;
+  else if (arg === "--title") args.title = value;
+  else args.display = normalizeDisplay(value);
 }
 
 /** Accept ":1" or "1" and return 1. */
@@ -86,8 +94,8 @@ function startXephyr(args) {
       return;
     }
 
-    const child = spawn( // NOSONAR:S4036 -- Xephyr is a fixed developer binary resolved from PATH; this is local tooling, not a privileged service.
-      "Xephyr",
+    const child = spawn(
+      "Xephyr", // NOSONAR:S4036 -- fixed developer binary resolved from PATH; local tooling, not a privileged service.
       ["-displayfd", "3", "-screen", args.screen, "-ac", "-noreset", "-title", args.title],
       { stdio: ["ignore", "ignore", "ignore", "pipe"] },
     );
@@ -99,7 +107,7 @@ function startXephyr(args) {
       callback(value);
     };
     child.once("error", (error) => {
-      if (error && error.code === "ENOENT") {
+      if (error?.code === "ENOENT") {
         finish(
           reject,
           new Error("Xephyr is not on PATH. Install xserver-xephyr, or use `xvfb-run -a` for an invisible run."),
@@ -194,8 +202,10 @@ async function main() {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  void main().catch((error) => {
+  try {
+    await main();
+  } catch (error) {
     console.error(`[nested] ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
-  });
+  }
 }
