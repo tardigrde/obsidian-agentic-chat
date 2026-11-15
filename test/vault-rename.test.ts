@@ -14,7 +14,14 @@ interface ConfigSet {
  * so a test can prove the toggle happened before the call and was restored
  * after it.
  */
-function makeApp(initial: boolean, options: { failRename?: boolean; files?: string[] } = {}) {
+function makeApp(
+  initial: boolean,
+  options: {
+    failRename?: boolean;
+    files?: string[];
+    beforeRename?: (target: TFile) => Promise<void>;
+  } = {},
+) {
   const files = new Map<string, TFile>();
   for (const path of options.files ?? ["Old.md"]) {
     const file = new TFile();
@@ -47,6 +54,7 @@ function makeApp(initial: boolean, options: { failRename?: boolean; files?: stri
     fileManager: {
       renameFile: async (target: TFile, newPath: string) => {
         renameCalls += 1;
+        await options.beforeRename?.(target);
         trace.push(`rename:${newPath}:alwaysUpdateLinks=${String(config)}`);
         if (options.failRename) throw new Error("rename refused");
         files.delete(target.path);
@@ -74,6 +82,14 @@ function makeApp(initial: boolean, options: { failRename?: boolean; files?: stri
   };
 }
 
+async function waitFor(predicate: () => boolean, label = "condition"): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+}
+
 describe("vault rename link-prompt guard", function () {
   it("updates links once and restores the setting when it is off", async function () {
     const fake = makeApp(false);
@@ -90,7 +106,6 @@ describe("vault rename link-prompt guard", function () {
     // The rename must run while the auto-update flag is on, or Obsidian opens
     // its "Update links?" modal and the turn blocks forever.
     expect(fake.trace).toEqual([
-      "get:alwaysUpdateLinks",
       "get:alwaysUpdateLinks",
       "set:alwaysUpdateLinks=true",
       "rename:New.md:alwaysUpdateLinks=true",
@@ -139,6 +154,45 @@ describe("vault rename link-prompt guard", function () {
     expect(fake.trace).toContain("rename:Old.md:alwaysUpdateLinks=true");
   });
 
+  it("waits for an in-flight toggle rename instead of racing its restore", async function () {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fake = makeApp(false, {
+      files: ["A.md", "B.md"],
+      beforeRename: async (target) => {
+        if (target.path === "A.md") await gate;
+      },
+    });
+    const tool = createRenameTool(fake.app, () => false);
+
+    const first = tool.execute("rename-a", { path: "A.md", newPath: "A2.md" });
+    await waitFor(() => fake.renameCalls() === 1);
+    const second = tool.execute("rename-b", { path: "B.md", newPath: "B2.md" });
+    await Promise.resolve();
+    // The first rename is paused inside renameFile with the flag on. The
+    // second must wait in the queue, not see the flag and bypass it.
+    expect(fake.renameCalls()).toBe(1);
+    expect(fake.config()).toBe(true);
+
+    release();
+    await Promise.all([first, second]);
+
+    expect(fake.renameCalls()).toBe(2);
+    expect(fake.config()).toBe(false);
+    expect(fake.trace).toEqual([
+      "get:alwaysUpdateLinks",
+      "set:alwaysUpdateLinks=true",
+      "rename:A2.md:alwaysUpdateLinks=true",
+      "set:alwaysUpdateLinks=false",
+      "get:alwaysUpdateLinks",
+      "set:alwaysUpdateLinks=true",
+      "rename:B2.md:alwaysUpdateLinks=true",
+      "set:alwaysUpdateLinks=false",
+    ]);
+  });
+
   it("never lets two toggled renames interleave", async function () {
     const fake = makeApp(false, { files: ["A.md", "B.md"] });
     const tool = createRenameTool(fake.app, () => false);
@@ -152,8 +206,6 @@ describe("vault rename link-prompt guard", function () {
     // The first rename finishes (toggle on, rename, toggle off) before the
     // second one touches the setting, so neither ever sees a restored flag.
     expect(fake.trace).toEqual([
-      "get:alwaysUpdateLinks",
-      "get:alwaysUpdateLinks",
       "get:alwaysUpdateLinks",
       "set:alwaysUpdateLinks=true",
       "rename:A2.md:alwaysUpdateLinks=true",

@@ -27,12 +27,15 @@ let toggleQueue: Promise<unknown> = Promise.resolve();
  */
 export async function renameVaultEntry(app: App, file: TFile, newPath: string): Promise<void> {
   const config = app.vault as unknown as VaultConfigStore;
-  if (config.getConfig(ALWAYS_UPDATE_LINKS) === true) {
-    await app.fileManager.renameFile(file, newPath);
-    return;
-  }
+  // The config read must happen inside the queue. A second rename that starts
+  // while the first one has the flag on would otherwise see `true`, skip the
+  // queue, and race the first one's restore back to `false`.
   const run = toggleQueue.then(async () => {
     const previous = config.getConfig(ALWAYS_UPDATE_LINKS);
+    if (previous === true) {
+      await app.fileManager.renameFile(file, newPath);
+      return;
+    }
     config.setConfig(ALWAYS_UPDATE_LINKS, true);
     try {
       await app.fileManager.renameFile(file, newPath);
