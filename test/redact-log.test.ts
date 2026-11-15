@@ -22,7 +22,6 @@ const ENV_FILE_VALUE = ["env", "file", "value", "987654"].join("-");
 const SINK_SECRET = ["sink", "secret", "value", "123456789"].join("-");
 
 const SCRIPT = fileURLToPath(new URL("../scripts/redact-log.mjs", import.meta.url));
-const VERIFY_SCRIPT = fileURLToPath(new URL("../scripts/verify.mjs", import.meta.url));
 
 const secrets = collectSecrets({ AGENTIC_CHAT_TEST_API_KEY: EXACT_ENV_VALUE }, "");
 

@@ -26,6 +26,7 @@ function step(label, command, args, options = {}) {
 
 const lanes = {
   fast: () => [
+    step("secret scan", NODE, ["scripts/check-secrets.mjs"]),
     step("typecheck", NODE, [TSC7, "-noEmit"]),
     step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
     step("lint", bin("eslint"), ["."]),
@@ -42,6 +43,7 @@ const lanes = {
   ],
 
   ci: () => [
+    step("secret scan", NODE, ["scripts/check-secrets.mjs"]),
     step("typecheck", NODE, [TSC7, "-noEmit"]),
     step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
     step("scripts typecheck", NODE, [TSC7, "-p", "config/tsconfig.eslint.json", "--noEmit"]),
