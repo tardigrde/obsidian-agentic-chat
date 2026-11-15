@@ -446,19 +446,61 @@ function readBody(request: IncomingMessage): Promise<string> {
   });
 }
 
-async function handlePost(request: IncomingMessage, response: ServerResponse, tools: readonly FixtureTool[]): Promise<void> {
+async function readJsonRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<Record<string, unknown> | undefined> {
   let payload: unknown;
   try {
     payload = JSON.parse(await readBody(request));
   } catch {
     send(response, 400, TEXT_CONTENT_TYPE, "Bad Request: body must be JSON.\n");
-    return;
+    return undefined;
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     sendJsonRpcError(response, null, -32600, "Invalid Request.");
+    return undefined;
+  }
+  return payload as Record<string, unknown>;
+}
+
+function replyInitialize(response: ServerResponse, id: number | string, params: Record<string, unknown>): void {
+  const requested = typeof params.protocolVersion === "string" ? params.protocolVersion.trim() : "";
+  const protocolVersion =
+    SUPPORTED_PROTOCOL_VERSIONS.find((version) => version === requested) ?? PROTOCOL_VERSION;
+  sendJsonRpcResult(
+    response,
+    id,
+    {
+      protocolVersion,
+      capabilities: { tools: { listChanged: false } },
+      serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
+    },
+    { "mcp-session-id": randomUUID() },
+  );
+}
+
+function replyToolCall(
+  response: ServerResponse,
+  id: number | string,
+  tools: readonly FixtureTool[],
+  params: Record<string, unknown>,
+): void {
+  const name = typeof params.name === "string" ? params.name : "";
+  if (!name) {
+    sendJsonRpcError(response, id, -32602, "Invalid params: tool name is required.");
     return;
   }
-  const message = payload as Record<string, unknown>;
+  if (!tools.some((tool) => tool.name === name)) {
+    sendJsonRpcError(response, id, -32602, `Unknown tool: ${name}`);
+    return;
+  }
+  sendJsonRpcResult(response, id, toolResult(name, asRecord(params.arguments)));
+}
+
+async function handlePost(request: IncomingMessage, response: ServerResponse, tools: readonly FixtureTool[]): Promise<void> {
+  const message = await readJsonRequest(request, response);
+  if (!message) return;
   const method = typeof message.method === "string" ? message.method : "";
   const hasId = typeof message.id === "number" || typeof message.id === "string";
   if (!method) {
@@ -474,41 +516,18 @@ async function handlePost(request: IncomingMessage, response: ServerResponse, to
   const id = message.id as number | string;
   const params = asRecord(message.params);
   switch (method) {
-    case "initialize": {
-      const requested = typeof params.protocolVersion === "string" ? params.protocolVersion.trim() : "";
-      const protocolVersion =
-        SUPPORTED_PROTOCOL_VERSIONS.find((version) => version === requested) ?? PROTOCOL_VERSION;
-      sendJsonRpcResult(
-        response,
-        id,
-        {
-          protocolVersion,
-          capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-        },
-        { "mcp-session-id": randomUUID() },
-      );
+    case "initialize":
+      replyInitialize(response, id, params);
       return;
-    }
     case "ping":
       sendJsonRpcResult(response, id, {});
       return;
     case "tools/list":
       sendJsonRpcResult(response, id, { tools });
       return;
-    case "tools/call": {
-      const name = typeof params.name === "string" ? params.name : "";
-      if (!name) {
-        sendJsonRpcError(response, id, -32602, "Invalid params: tool name is required.");
-        return;
-      }
-      if (!tools.some((tool) => tool.name === name)) {
-        sendJsonRpcError(response, id, -32602, `Unknown tool: ${name}`);
-        return;
-      }
-      sendJsonRpcResult(response, id, toolResult(name, asRecord(params.arguments)));
+    case "tools/call":
+      replyToolCall(response, id, tools, params);
       return;
-    }
     default:
       sendJsonRpcError(response, id, -32601, `Method not found: ${method}`);
   }
