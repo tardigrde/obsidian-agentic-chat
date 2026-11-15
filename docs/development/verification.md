@@ -301,6 +301,13 @@ time, model calls, and estimated tokens; `touch logs/chaos/<timestamp>/CANCEL`
 is the kill switch. A chaos report is exploratory evidence and never replaces
 the witness, `fast`, or a committed e2e assertion.
 
+`--charter eval-mining` is the first experiment for the data engine. It asks one
+explore run to act like a vault owner with a single realistic goal over 2-8 chat
+turns, so the run leaves a session trace under `sessions/`. `npm run
+analyze:session` summarizes it today; the trace miner (`npm run trace:mine`, once
+it lands) will turn it into anonymized candidates. It does not replace the core
+suite, and it does not write eval cases by itself.
+
 ## Promotion
 
 Every verification gap that caused a real problem becomes structure, not prose:
