@@ -12,6 +12,8 @@
  * that a rerun reproduces the number.
  */
 
+import { mulberry32 } from "./prng";
+
 export const DEFAULT_SIGNIFICANCE_SEED = 12345;
 export const DEFAULT_SIGNIFICANCE_RESAMPLES = 2_000;
 
@@ -91,111 +93,141 @@ export function bootstrapCompare(
   if (!Number.isInteger(resamples) || resamples < 1) {
     throw new Error(`resamples must be an integer of at least 1, got ${resamples}`);
   }
-  const beforeById = new Map<string, SignificanceCase>();
-  const afterById = new Map<string, SignificanceCase>();
-  const invalidBefore = new Map<string, string>();
-  const invalidAfter = new Map<string, string>();
-  for (const entry of before) {
-    const field = invalidField(entry);
-    if (field) invalidBefore.set(entry.id, field);
-    else beforeById.set(entry.id, entry);
-  }
-  for (const entry of after) {
-    const field = invalidField(entry);
-    if (field) invalidAfter.set(entry.id, field);
-    else afterById.set(entry.id, entry);
-  }
-  const ids = [
-    ...new Set([
-      ...beforeById.keys(),
-      ...afterById.keys(),
-      ...invalidBefore.keys(),
-      ...invalidAfter.keys(),
-    ]),
-  ].sort((left, right) => left.localeCompare(right));
-
-  const skipped: SkippedCase[] = [];
-  const paired: PairedCase[] = [];
-  for (const id of ids) {
-    const left = beforeById.get(id);
-    const right = afterById.get(id);
-    if (!left) {
-      skipped.push({ id, side: "before", reason: invalidBefore.has(id) ? "invalid" : "missing" });
-      continue;
-    }
-    if (!right) {
-      skipped.push({ id, side: "after", reason: invalidAfter.has(id) ? "invalid" : "missing" });
-      continue;
-    }
-    paired.push({ id, before: left, after: right });
-  }
-
-  const warnings = skipped.map((entry) => {
-    const side = entry.side === "before" ? "baseline" : "candidate";
-    if (entry.reason === "invalid") {
-      const field =
-        (entry.side === "before" ? invalidBefore.get(entry.id) : invalidAfter.get(entry.id)) ?? "score";
-      return `skipped ${entry.id}: invalid ${field} in ${side}`;
-    }
-    return `skipped ${entry.id}: missing in ${side}`;
-  });
-
+  const pairing = pairCases(indexCases(before), indexCases(after));
   const result: SignificanceResult = {
     seed,
     resamples,
-    paired: paired.length,
-    skipped,
-    warnings,
+    paired: pairing.paired.length,
+    skipped: pairing.skipped,
+    warnings: [...pairing.warnings],
     metrics: [],
     flips: [],
   };
-  if (paired.length === 0) {
+  if (pairing.paired.length === 0) {
     result.warnings.push("no paired cases: nothing to resample");
     return result;
   }
+  const metrics = buildMetrics(pairing.paired, seed, resamples);
+  result.metrics = metrics.rows;
+  if (metrics.warning) result.warnings.push(metrics.warning);
+  result.flips = buildFlips(pairing.paired);
+  return result;
+}
 
+interface CaseIndex {
+  valid: Map<string, SignificanceCase>;
+  invalid: Map<string, string>;
+}
+
+interface CasePairing {
+  paired: PairedCase[];
+  skipped: SkippedCase[];
+  warnings: string[];
+}
+
+/** Split one side into usable cases and cases with a named bad field. */
+function indexCases(input: readonly SignificanceCase[]): CaseIndex {
+  const valid = new Map<string, SignificanceCase>();
+  const invalid = new Map<string, string>();
+  for (const entry of input) {
+    const field = invalidField(entry);
+    if (field) invalid.set(entry.id, field);
+    else valid.set(entry.id, entry);
+  }
+  return { valid, invalid };
+}
+
+/** Pair by id across both sides; skipped entries keep the sorted id order. */
+function pairCases(before: CaseIndex, after: CaseIndex): CasePairing {
+  const ids = [
+    ...new Set([
+      ...before.valid.keys(),
+      ...after.valid.keys(),
+      ...before.invalid.keys(),
+      ...after.invalid.keys(),
+    ]),
+  ].sort((left, right) => left.localeCompare(right));
+  const paired: PairedCase[] = [];
+  const skipped: SkippedCase[] = [];
+  for (const id of ids) {
+    const left = before.valid.get(id);
+    const right = after.valid.get(id);
+    if (left && right) paired.push({ id, before: left, after: right });
+    else skipped.push(skipEntry(id, before, after));
+  }
+  return {
+    paired,
+    skipped,
+    warnings: skipped.map((entry) => skipWarning(entry, before, after)),
+  };
+}
+
+function skipEntry(id: string, before: CaseIndex, after: CaseIndex): SkippedCase {
+  if (!before.valid.has(id)) {
+    return { id, side: "before", reason: before.invalid.has(id) ? "invalid" : "missing" };
+  }
+  return { id, side: "after", reason: after.invalid.has(id) ? "invalid" : "missing" };
+}
+
+function skipWarning(entry: SkippedCase, before: CaseIndex, after: CaseIndex): string {
+  const side = entry.side === "before" ? "baseline" : "candidate";
+  if (entry.reason === "invalid") {
+    const index = entry.side === "before" ? before : after;
+    return `skipped ${entry.id}: invalid ${index.invalid.get(entry.id) ?? "score"} in ${side}`;
+  }
+  return `skipped ${entry.id}: missing in ${side}`;
+}
+
+/**
+ * The two metric rows. When any paired case lacks a `passRate`, the pass@1 row
+ * repeats the passAtK numbers and carries the fallback marker.
+ */
+function buildMetrics(
+  paired: readonly PairedCase[],
+  seed: number,
+  resamples: number,
+): { rows: MetricSignificance[]; warning?: string } {
   const hasPassRate = paired.every(
     ({ before: left, after: right }) => isScore(left.passRate) && isScore(right.passRate),
   );
-  if (!hasPassRate) {
-    result.warnings.push("passRate is missing on at least one side; passAtK is used for both metrics");
-  }
-
   const beforePassAtK = paired.map(({ before: entry }) => entry.passAtK);
   const afterPassAtK = paired.map(({ after: entry }) => entry.passAtK);
-  result.metrics.push(
-    bootstrapMetric("passAtK", beforePassAtK, afterPassAtK, seed, resamples),
-  );
-
+  const rows = [bootstrapMetric("passAtK", beforePassAtK, afterPassAtK, seed, resamples)];
   if (hasPassRate) {
-    const beforePassRate = paired.map(({ before: entry }) => entry.passRate as number);
-    const afterPassRate = paired.map(({ after: entry }) => entry.passRate as number);
-    result.metrics.push(
-      bootstrapMetric("passRate", beforePassRate, afterPassRate, seed, resamples),
+    rows.push(
+      bootstrapMetric("passRate", passRates(paired, "before"), passRates(paired, "after"), seed, resamples),
     );
-  } else {
-    result.metrics.push({
-      ...bootstrapMetric("passRate", beforePassAtK, afterPassAtK, seed, resamples),
-      fallbackFrom: "passAtK",
-    });
+    return { rows };
   }
+  rows.push({
+    ...bootstrapMetric("passRate", beforePassAtK, afterPassAtK, seed, resamples),
+    fallbackFrom: "passAtK",
+  });
+  return {
+    rows,
+    warning: "passRate is missing on at least one side; passAtK is used for both metrics",
+  };
+}
 
-  result.flips = paired
-    .map(({ id, before: left, after: right }) => {
-      const flip: CaseFlip = {
-        id,
-        passAtKChange: right.passAtK - left.passAtK,
-        passRateChange:
-          isScore(left.passRate) && isScore(right.passRate)
-            ? right.passRate - left.passRate
-            : undefined,
-      };
-      return flip;
-    })
+function passRates(paired: readonly PairedCase[], side: "before" | "after"): number[] {
+  return paired.map((entry) => entry[side].passRate as number);
+}
+
+function buildFlips(paired: readonly PairedCase[]): CaseFlip[] {
+  return paired
+    .map(({ id, before: left, after: right }) => ({
+      id,
+      passAtKChange: right.passAtK - left.passAtK,
+      passRateChange:
+        isScore(left.passRate) && isScore(right.passRate)
+          ? right.passRate - left.passRate
+          : undefined,
+    }))
     .filter((flip) => flip.passAtKChange !== 0 || (flip.passRateChange ?? 0) !== 0)
-    .sort((left, right) => flipMagnitude(right) - flipMagnitude(left) || left.id.localeCompare(right.id));
-
-  return result;
+    .sort(
+      (left, right) =>
+        flipMagnitude(right) - flipMagnitude(left) || left.id.localeCompare(right.id),
+    );
 }
 
 function bootstrapMetric(
@@ -231,21 +263,6 @@ function bootstrapMetric(
   };
 }
 
-/**
- * Mulberry32: 32-bit state, one multiply and a few shifts per draw. Small and
- * deterministic, which is all a bootstrap seed needs here.
- */
-function mulberry32(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let value = state;
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
-  };
-}
-
 function mean(values: readonly number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
@@ -273,10 +290,13 @@ export interface SignificanceLabels {
   after: string;
 }
 
+/** Shared read-only default; never hand a fresh mutable literal to every call. */
+const DEFAULT_LABELS: SignificanceLabels = Object.freeze({ before: "Before", after: "After" });
+
 /** Compact Markdown: the metric table, the excluded cases, warnings, and flips. */
 export function formatSignificance(
   result: SignificanceResult,
-  labels: SignificanceLabels = { before: "Before", after: "After" },
+  labels: SignificanceLabels = DEFAULT_LABELS,
   excluded: readonly string[] = [],
 ): string {
   const lines = [
