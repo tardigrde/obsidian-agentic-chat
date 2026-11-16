@@ -6,7 +6,7 @@
 - Head: `__BREAK_CHANGE_HEAD__`
 - Base: `__BREAK_CHANGE_BASE__`
 - Started: __BREAK_CHANGE_STARTED_AT__
-- Harness: real Obsidian e2e (`npm run verify -- e2e <spec>`), scripted turns by default
+- Harness: real Obsidian e2e (`npm run verify -- app <spec>`), scripted turns by default
 - Vault: throwaway `test/e2e/vault` sandbox; never a real vault
 
 ## Verdict

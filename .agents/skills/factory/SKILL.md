@@ -26,22 +26,23 @@ review), a shell allowlist, no web, no `.env` reads.
    npm run delegate -- ship <name> <spec.md> "<pr title>" "<review focus>"
    ```
    `ship` = work, then the script (never the worker) pushes and opens the PR from
-   the worker's `logs/delegate/pr-body.md`, then the independent review. The
+   the worker's `logs/delegate/pr-body.md`, then the agent review. The
    shared worker rules in `spec-rules.md` go in front of every spec; the spec
    adds the exact files, the behavior, the witness test, and "Do not touch".
    A vague spec gives a vague diff. (`work` alone still exists.)
 4. **Check the worker.** Read the full diff yourself while the review runs. Fix
    small gaps yourself (then run a new `review`); re-delegate large ones.
-5. **Review.** `review` posts the verdict to the PR and re-runs the Review gate. On
-   a PASS it also sets `no-behavior-change` (when the verdict says
-   `Behavior change: none`) and `large-pr` (over 25 `src/` files or 1000 added
-   lines). The reviewer cites green CI instead of re-running `fast`. Fix real notes
-   before the merge and say which notes you did not fix and why.
+5. **Review.** Once `ci` and `e2e` are green, `review` posts the agent-review
+   verdict to the PR (an advisory comment the owner reads; no gate to re-run). On
+   a PASS it also sets `no-behavior-change` when the verdict says
+   `Behavior change: none`. Size never blocks. The reviewer cites green CI
+   instead of re-running `check`. Fix real notes before the merge and say which
+   notes you did not fix and why.
 6. **Merge.** Only after the user says "merge" (AGENTS.md rule 7); then merge each
    PR when it is green (`gh pr merge <n> --squash`). After each merge, run
    `npm run delegate -- update <next-pr> <name>` for the next PR: it merges `main`,
-   takes `main`'s feature map and fixes its refs, pushes, waits for CI, posts a
-   re-check, and re-runs the gate. It stops on a source conflict.
+   takes `main`'s feature map and fixes its refs, pushes, waits for CI, and posts a
+   re-check. It stops on a source conflict.
 7. **Chaos.** After the PRs merge, load `@chaos-monkey` and run a capped explore
    on the changed area with `--llm opencode` (explorer and miner on the
    subscription; only plugin replies cost money). Check every finding in code

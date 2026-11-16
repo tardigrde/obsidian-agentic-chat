@@ -14,7 +14,7 @@ Codex, and other agents that read that convention get the same workflow.
 | `@probe-feature` | behavior you cannot predict yet, or when the user asks for a recording |
 | `@break-change` | adversarial exploratory QA, removal audits, feature-map gaps |
 | `@chaos-monkey` | live exploratory run against a seeded throwaway vault after several PRs ship |
-| `@verify-pr` | independent verdict on a PR you did not write; red/green witness proof |
+| `@verify-pr` | agent review of a PR you did not write; red/green witness proof |
 | `@worktree` | one task per worktree, env-linked commands, safe cleanup |
 
 Match the weight of the process to the change:
@@ -32,6 +32,11 @@ Match the weight of the process to the change:
 
 Do not load them all at once. Each skill names the next one when it needs it.
 
+After a big change (a new tool, a new UI entry point, a prompt rewrite, or 3+
+merged PRs), **propose** a chaos explore run to the owner
+(`npm run verify -- explore --mode generic --max-steps 6`). Do not run it
+unasked: it is on request only.
+
 Put each rule in the lowest layer that can enforce it: `AGENTS.md` routes,
 skills hold procedure, `scripts/` and CI hold gates.
 
@@ -40,46 +45,44 @@ skills hold procedure, `scripts/` and CI hold gates.
 1. Every change needs a witness: the smallest check that fails before and passes
    after. For a bug, run it before the fix and paste both results.
 2. Never claim done without running the lowest `verify` lane that can actually
-   fail for the risk you introduced.
+   fail for the risk you introduced, and citing its
+   `logs/verify/<ts>/summary.json` and per-tier counts line.
 3. Report test counts, not only exit codes. Zero tests or all tests skipped is a
-   failure, not a pass.
-4. UI claims need a committed e2e assertion or a probe recording plus DOM/state
-   metrics. A screenshot alone is not a verdict. When a change touches a
-   user-visible entry point (command, button, modal, settings row, mode, tab, or
-   panel), attach desktop 1280x1024 and mobile-width 390x844 MP4 clips with
-   "what to watch" timestamps, or an explicit waiver in the PR. The 390x844 clip
-   is a narrow desktop window, not real Obsidian Mobile.
+   failure, not a pass. The only allowed skip in unit and app tests is
+   `it.skip("flaky #<open issue>: ...")`.
+4. UI claims need a committed e2e assertion that fails without the change, plus
+   one screenshot attached to the PR. A screenshot alone is not a verdict.
 5. Never commit secrets, vault plugin data, or generated sessions.
-6. A merge-ready PR has an independent verdict from an agent that did not write
-   it. A green check is not a verdict.
+6. A merge-ready PR has an agent review with evidence: a verdict comment from a
+   reviewer agent that did not write it, posted after CI is green. It is
+   advisory (the owner reads it); a green check is not a verdict.
 7. Never merge a PR unless the user explicitly says "merge". Green checks are not
    permission.
+8. Never call a model from CI, and never present a scripted run as live.
 
-## Verification
+## Testing
+
+Read [docs/development/testing.md](docs/development/testing.md): tiers, the
+eight lanes, what to run for each kind of change, the rules, and the evidence.
+The first command is always:
 
 ```bash
-npm run verify -- fast        # merge gate: typecheck, lints, unit, build, smoke e2e
-npm run verify -- ci          # what CI runs
-npm run verify -- e2e <spec>  # real Obsidian, one spec
-npm run verify -- dogfood     # generated-vault agent flows
-npm run verify -- eval        # prompt/tool/context A/B
+npm run verify -- plan                           # the exact commands this diff needs
+```
+
+The ones you will use most:
+
+```bash
+npm run verify -- change test/settings.test.ts   # the witness loop (several files, or a -t pattern)
+npm run verify -- check                          # merge gate; --no-app without a display
+npm run verify -- app settings-ui                # real Obsidian, one spec (scripted turns)
 npm run verify:witness -- --base origin/main --test-file <test> --src <src...>
-npm run mutation              # on-demand mutation matrix
+npm run tests:status                             # flaky, slower, last red per lane
 ```
 
-`npm run verify:fast` is an alias. Full lane reference, evidence rules, and the
-fake-green list: [docs/development/verification.md](docs/development/verification.md).
-The trust contract, independent verifier, and CI witness gate:
-[docs/development/trust.md](docs/development/trust.md). The `review` check needs a
-verdict comment at the current head; see the findings ledger at
-[docs/development/review-ledger.md](docs/development/review-ledger.md).
-
-Use single tests for tight loops:
-
-```bash
-npm run verify -- change test/settings.test.ts
-npm run verify -- change "uses the generic provider model id"
-```
+Every test file is listed in `test/manifest.json`. Lane internals, real-Obsidian
+e2e, proxies, probes, chaos, and evals: [docs/development/verification.md](docs/development/verification.md).
+Witness and agent review: [docs/development/trust.md](docs/development/trust.md).
 
 ## Fast feedback loop
 
@@ -119,110 +122,6 @@ npm run worktree:cleanup -- --dry-run
 
 `--apply` removes only safe worktrees. Read
 [docs/development/worktrees.md](docs/development/worktrees.md) and `@worktree`.
-
-## Probes
-
-```bash
-npm run probe -- --scenario settings-gate
-npm run probe -- --scenario live-chat --live
-npm run probe -- --scenario layout-smoke
-```
-
-The runner needs `Xvfb` and `ffmpeg`. It records the whole isolated display, so
-Obsidian settings popouts are in frame, and writes `session.mp4`, keyframes,
-metrics, and a report under `logs/probes/`. See `@probe-feature`.
-
-## Chaos monkey
-
-```bash
-npm run chaos -- --mode focused --target settings   # capped dry run
-npm run chaos -- --mode generic --max-steps 6       # dry exploration
-npm run chaos -- --mode focused --target composer --live \
-  --max-steps 2 --max-seconds 180 --max-calls 2 --max-tokens 4000
-```
-
-A seeded throwaway vault, an isolated display, real UI actions, and live model
-calls when `--live` is set. Hard caps and a cancel file bound every run. See
-`@chaos-monkey`.
-
-## Headed Obsidian runs
-
-`npm run verify -- e2e`, `npm run eval:tool-use`, and the dogfood lanes open real
-Obsidian windows. On a desktop session every new window asks the window manager
-to activate it, which steals the cursor. Run them on a nested Xephyr display:
-
-```bash
-npm run nested -- npm run verify -- e2e test/e2e/specs/smoke.e2e.ts
-npm run nested -- npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --runs 3 --env-file .env
-```
-
-`npm run nested` starts Xephyr on a free display it chooses, passes `DISPLAY`
-to the command, and stops Xephyr when the command exits. It is a real
-GUI Obsidian, not `AGENTIC_CHAT_E2E_HEADLESS=1` (headless has no accessibility
-tree). Use `--display :N` to reuse an Xephyr that is already running and
-`--screen 390x844` for the narrow viewport. Probes already own Xvfb; this helper
-is for the lanes that otherwise run on `:0`.
-
-## Real Obsidian e2e
-
-`npm run verify -- e2e <spec>` uses `scripts/run-e2e.ts`: it resolves the matching
-`obsidian-launcher` chromedriver, starts it on a fixed low localhost port
-(`9515`-`9520`), and points WDIO at it with `WDIO_SKIP_DRIVER_SETUP=1`. This avoids
-random high-port `bind() failed` errors on WSL and behind proxies.
-
-If a sandbox blocks nested e2e localhost listeners, rerun the smoke lane as a
-top-level command:
-
-```bash
-rtk npm run verify -- smoke
-```
-
-Live model specs spend tokens. Run them only when validating real calls:
-
-```bash
-AGENTIC_CHAT_API_KEY=sk-or-... \
-AGENTIC_CHAT_BASE_URL=https://openrouter.ai/api/v1 \
-AGENTIC_CHAT_MODEL=openrouter/auto \
-npm run verify -- e2e test/e2e/live/openwebui-live.e2e.ts
-```
-
-## Proxy
-
-Keep the WDIO/chromedriver localhost control plane off the corporate proxy.
-`wdio.conf.mts` strips proxy vars from chromedriver and passes a normalized proxy
-URL to Obsidian/Electron. Chromium wants `scheme://host:port` without the trailing
-slash common in `HTTP_PROXY` / `HTTPS_PROXY`. If Obsidian reports
-`net::ERR_NO_SUPPORTED_PROXIES`, check that flag first. Override with
-`AGENTIC_CHAT_E2E_PROXY_SERVER` and, if needed,
-`AGENTIC_CHAT_E2E_PROXY_BYPASS_LIST`.
-
-## Artifacts
-
-Failed e2e tests write diagnostics under `logs/e2e-artifacts/`: screenshot,
-browser console logs when available, WDIO result metadata, Obsidian UI text,
-redacted plugin settings, and the latest sandbox session JSONL.
-
-Design-audit screenshots (`logs/design-audit/<ts>-<mode>/`, 42 PNGs per mode):
-
-```bash
-npm run verify -- audit                # sidebar (default 300px)
-npm run verify -- audit wide           # 760px
-npm run verify -- audit mobile         # 390px
-npm run verify -- audit fullscreen
-```
-
-## Dogfood and evals
-
-```bash
-npm run verify -- dogfood
-AGENTIC_CHAT_SUBAGENT_DOGFOOD=true \
-AGENTIC_CHAT_API_KEY="<key>" \
-AGENTIC_CHAT_MODEL=openrouter/auto \
-npm run verify -- e2e test/e2e/dogfood/subagent-live.dogfood.ts
-```
-
-Agentic evals and trace mining are documented in
-[docs/development/verification.md](docs/development/verification.md).
 
 ## Providers and secrets
 

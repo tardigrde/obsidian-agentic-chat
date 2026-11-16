@@ -1,11 +1,11 @@
 ---
 name: Verify PR
-description: Use when you must give an independent verdict on a pull request you did not write. Reproduces the red/green witness, runs the merge lane, checks for new global state, and reports PASS, PASS+NOTES, or FAIL. Do not use it to review your own change, and do not merge.
+description: Use when you must give an agent-review verdict on a pull request you did not write. Reproduces the red/green witness, runs the merge lane, checks for new global state, and reports PASS, PASS+NOTES, or FAIL. Do not use it to review your own change, and do not merge.
 ---
 
 # Verify PR
 
-An independent verdict is a claim about a run, not an opinion about a diff. You
+An agent-review verdict is a claim about a run, not an opinion about a diff. You
 did not write the code; your job is to prove the author's witness or reject it.
 
 ## Inputs
@@ -41,7 +41,7 @@ the existing tests still pass. A behavior change with that label is `FAIL`.
 
    ```bash
    gh pr checks <pr>          # ci and e2e passing at the PR head? cite them
-   npm run verify -- fast     # otherwise run it
+   npm run verify -- check     # otherwise run it
    ```
 
    Read the counts. Zero tests, or every test skipped, is a failure.
@@ -70,7 +70,7 @@ the existing tests still pass. A behavior change with that label is `FAIL`.
    - Does it touch per-instance state that another tab or window shares (a
      session folder, a lease, a cache)? Model two instances over one adapter.
    - Does it change a persisted shape (`data.json`, session JSONL)? The
-     upgrade lane (`npm run verify -- upgrade`) must still pass, and a removed
+     upgrade lane (`npm run verify -- change test/upgrade-fixtures.test.ts`) must still pass, and a removed
      key needs a user notice.
    - Does it add a second estimator of a number that already exists (context
      fill, cost, turn count)? Add a test that the two agree.
@@ -81,10 +81,10 @@ the existing tests still pass. A behavior change with that label is `FAIL`.
 
 ## Verdicts
 
-- `PASS`: witness red then green, `fast` green with counts, no unresolved blocker.
+- `PASS`: witness red then green, `check` (or CI) green with counts, no unresolved blocker.
 - `PASS+NOTES`: proven, but a non-blocking risk needs the human's attention.
 - `FAIL`: the witness passes without the fix, the red run never reached an
-  assertion, `fast` fails, the test is not a witness, or a new global state has
+  assertion, `check` fails, the test is not a witness, or a new global state has
   no isolation proof.
 
 ## Output
@@ -103,9 +103,10 @@ New global state: none | <file:line + isolation test>
 Notes: none | <max 5 bullets>
 ```
 
-Post the output as a PR comment. The `Review gate` workflow reads it. A
-`Fast lane: CI` line counts only when the gate itself sees the `ci` and `e2e`
-checks pass at the head. `Behavior change: none` lets the delegate script set
+Post the output as one PR comment, after `ci` and `e2e` are green. The `review`
+check only reports it (advisory, #393 D4); the owner reads it before "merge".
+`Fast lane: CI` is the default when `ci` and `e2e` passed at the head; the field
+name is historical. `Behavior change: none` lets the delegate script set
 the `no-behavior-change` label; write it only for a pure refactor you checked. The `Head`
 must be the current PR head; a push invalidates the verdict.
 
@@ -117,7 +118,7 @@ owns the change. The repository owner alone decides to merge.
 - The witness passes with the fix reverted. Stop; it is not a witness.
 - The red run fails in the loader, a skip, or a timeout. Stop; no assertion ran.
 - The source diff is empty. Stop; there is nothing to verify.
-- `fast` fails for a reason the PR claims to fix. Stop; report the failure.
+- `check` fails for a reason the PR claims to fix. Stop; report the failure.
 - The PR changes product behavior or data format without an explicit decision in
   the body. Return `FAIL`; that decision is the human's call.
 - The PR adds more than roughly 400 lines, or touches more than 10 files, under

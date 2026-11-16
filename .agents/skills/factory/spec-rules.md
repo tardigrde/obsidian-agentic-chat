@@ -36,7 +36,7 @@ the goal, the files, the witness, and a "Do not touch" list.
   `.agents/skills/verify-obsidian-chat/features/` by hand. Run
   `node scripts/check-feature-map.mjs` and follow what it prints (it has a
   `--fix` mode when the map supports it).
-- At the end: `npm run verify -- fast` must PASS. Report the unit and smoke e2e
+- At the end: `npm run verify -- check` must PASS. Report the unit and smoke e2e
   counts in the final message, not in the PR body.
 
 ## The sandbox

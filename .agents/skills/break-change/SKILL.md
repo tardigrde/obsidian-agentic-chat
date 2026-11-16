@@ -113,7 +113,7 @@ node .agents/skills/break-change/scripts/break-change.mjs run \
 
 The wrapper:
 
-- runs `npm run verify -- e2e <generated-spec>`;
+- runs `npm run verify -- app <generated-spec>`;
 - writes `run.log`, parses the test counts, and copies new
   `logs/e2e-artifacts/` directories into the run;
 - snapshots the spec to `spec.snapshot.e2e.ts`;

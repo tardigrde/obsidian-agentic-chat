@@ -154,7 +154,7 @@ function renderDraftReadme(draft: MinedCaseDraft): string {
     "## Replay needs a live model",
     "",
     "The replay calls a real model with an API key. It is not part of",
-    "`npm run verify -- fast`, CI does not run it, and this converter never",
+    "`npm run verify -- check`, CI does not run it, and this converter never",
     "calls a model.",
     "",
     "This converter reads only `candidates.json`. It never opens a session file.",

@@ -105,7 +105,7 @@ const versions = await parseObsidianVersions(env.OBSIDIAN_VERSIONS ?? "latest/la
 // Base, local-only e2e config (D1). It boots Obsidian Desktop through Electron.
 // `AGENTIC_CHAT_E2E_MOBILE_VIEWPORT=1` narrows that desktop runtime to a
 // phone-sized viewport for layout/touch-path smoke tests; real Obsidian Mobile
-// still needs the manual/ADB checklist in MOBILE_TESTING.md.
+// still needs the manual/ADB checklist in docs/development/mobile-testing.md.
 export const config: WebdriverIO.Config = {
   runner: "local",
   framework: "mocha",

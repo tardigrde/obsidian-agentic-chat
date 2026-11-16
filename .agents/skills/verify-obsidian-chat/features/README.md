@@ -25,7 +25,7 @@ Each one keeps the same five sections, in this order:
 
 ## Shared preconditions
 
-- Build before you assert. `npm run verify -- e2e <spec>` rebuilds the e2e
+- Build before you assert. `npm run verify -- app <spec>` rebuilds the e2e
   bundle. `npm run probe -- --scenario <name>` rebuilds by default.
 - Use the throwaway sandbox vault that the runner creates, not `~/MyTestVault`.
 - Real Obsidian settings open in a popout window on Obsidian 1.13 and later.
@@ -81,8 +81,8 @@ paths must exist in the repository.
 - Run `npm run check:feature-map` after any edit. It checks the five sections,
   the table shape, the status values, and that every `path#anchor` is still in its file. It
   also enumerates the command ids, slash commands, and literal settings rows in
-  the source and fails when one is not named in a proof row. It runs in `ci` and
-  `fast`.
+  the source and fails when one is not named in a proof row. It runs in
+  `npm run verify -- check` (and so in CI).
 - A broken anchor means the symbol was renamed or moved to another file: point
   the ref at its new home (`grep -rn <anchor> src test`). Choose a specific
   anchor: a name, id, or title, not a common word.

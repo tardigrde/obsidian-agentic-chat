@@ -114,7 +114,7 @@ rtk npx vitest run test/tool-loading.test.ts test/settings.test.ts
 For broad confidence when time allows:
 
 ```bash
-rtk npm run verify:fast
+rtk npm run verify -- check
 ```
 
 If `verify:fast` reports the known nested smoke-e2e localhost limitation, rerun

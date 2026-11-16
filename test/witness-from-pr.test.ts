@@ -83,7 +83,7 @@ describe("witness-from-pr", () => {
 
   it("rejects a command instead of a test file", () => {
     const decision = witnessDecision({
-      body: "<!-- witness\ntest: npm run verify -- ci\nsrc: src/a.ts\n-->",
+      body: "<!-- witness\ntest: npm run verify -- check --no-app --coverage\nsrc: src/a.ts\n-->",
       labels: [],
       root,
     });
@@ -291,7 +291,7 @@ describe("witness-from-pr", () => {
       env: {
         ...env,
         PR_BODY:
-          "<!-- witness\ntest: npm run verify -- ci\nsrc: src/agent/agent-service.ts\n-->",
+          "<!-- witness\ntest: npm run verify -- check --no-app --coverage\nsrc: src/agent/agent-service.ts\n-->",
       },
       encoding: "utf8",
     });

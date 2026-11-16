@@ -14,7 +14,7 @@ Run these before release work:
 
 ```bash
 npm run verify:mobile
-npm run test:e2e:mobile
+npm run verify -- app --mobile
 ```
 
 `verify:mobile` is a static and bundle-level gate. It fails if source code adds

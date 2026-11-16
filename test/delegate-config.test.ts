@@ -43,7 +43,7 @@ describe("delegate sandbox rules", () => {
         "git diff --no-index /dev/null .env",
         "git diff --output=/tmp/x origin/main",
         "ls > /tmp/escape.txt",
-        "npm run verify -- fast > .env",
+        "npm run verify -- check > .env",
         "cat .env",
         "grep KEY .env",
         "head .env",
@@ -68,7 +68,7 @@ describe("delegate sandbox rules", () => {
       "git log --oneline -3",
       "gh pr view 7",
       "npx vitest run test/settings-ui.test.ts",
-      "npm run verify -- fast",
+      "npm run verify -- check",
       "node scripts/verify-witness.mjs --base origin/main --test-file test/a.test.ts --src src/a.ts",
     ]) {
       expect(decide(review, "shell", command), command).toBe("allow");

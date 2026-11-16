@@ -19,8 +19,8 @@ The lane now:
 - runs with `--max-warnings 0`, so a warning fails the lane instead of passing
   silently.
 
-The same command is a step in `npm run verify -- fast` and
-`npm run verify -- ci`, so CI carries the gate. There is no API that queries the
+The same command is a step in `npm run verify -- check` and
+`npm run verify -- check --no-app --coverage`, so CI carries the gate. There is no API that queries the
 community review portal from CI; the gate is the local rule set.
 
 ## Removed warnings

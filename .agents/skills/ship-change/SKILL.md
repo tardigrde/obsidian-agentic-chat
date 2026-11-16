@@ -6,6 +6,8 @@ description: Use for any code change in this repo: bug, feature, refactor, or de
 # Ship change
 
 Own the change end to end. Plan, implement, verify, and report evidence.
+Commands, tiers, and rules: [testing.md](../../../docs/development/testing.md).
+Start every change with `npm run verify -- plan`.
 
 ## Non-negotiables
 
@@ -15,13 +17,14 @@ Own the change end to end. Plan, implement, verify, and report evidence.
    risk you introduced. Do not run `dogfood` for a CSS change; do not ship a
    prompt change on unit tests alone.
 3. **Counts, not exit codes.** Zero tests or all tests skipped is a failure.
-4. **UI claims need more than a screenshot.** Use a committed e2e assertion, or a
-   probe recording plus DOM/state metrics.
-5. **UI entry points need clips.** If the change adds, removes, or changes a
-   command, button, modal, settings row, mode, tab, or panel, plan desktop
-   1280x1024 and mobile-width 390x844 clips before code. Each clip needs a "what
-   to watch" list. A waiver must be explicit in the PR. The 390x844 clip is a
-   narrow desktop window, not real Obsidian Mobile.
+4. **UI evidence is an assertion plus a screenshot.** If the change adds,
+   removes, or changes a command, button, modal, settings row, mode, tab, or
+   panel, commit an e2e assertion that fails without it and attach one
+   screenshot to the PR. A screenshot alone is not a verdict; no video is
+   required. A removal uses a `kind: removal` witness.
+5. **Prompt or tool changes need the eval.** A change to the system prompt, a
+   tool description, or the agent loop runs `npm run verify -- eval --suite core
+   --runs 3` (live, local) against the baseline before it ships.
 6. **No secret or vault data in a commit.**
 
 ## Route
@@ -40,15 +43,14 @@ Own the change end to end. Plan, implement, verify, and report evidence.
    `.agents/skills/verify-obsidian-chat/features/`.
 2. List every user entry point the change touches. Slash command, palette
    command, settings tab, composer control, drag and drop, agent tool, subagent.
-   For each changed entry point, decide the desktop and mobile-width clips now,
-   or record the waiver.
+   For each changed entry point, name the e2e assertion that will prove it.
 3. Name the witness: the smallest assertion that would fail today.
 4. Implement the smallest change that satisfies it.
 5. Verify:
    - logic: `npm run verify -- change <file-or-name>`
-   - types, lint, unit, bundle: `npm run verify -- ci`
-   - merge gate: `npm run verify -- fast`
-   - UI wiring: `npm run verify -- e2e <spec>` (on a desktop, wrap it as
+   - types, lint, unit, bundle: `npm run verify -- check --no-app --coverage`
+   - merge gate: `npm run verify -- check`
+   - UI wiring: `npm run verify -- app <spec>` (on a desktop, wrap it as
      `npm run nested -- <command>` so Obsidian does not steal the cursor) or
      `npm run probe -- --scenario <name>`
    - prompt, tool, or context: `npm run verify -- eval` plus `compare --fail-on-regression`,
@@ -69,11 +71,11 @@ Own the change end to end. Plan, implement, verify, and report evidence.
 
 ## Upgrade loop
 
-1. Baseline: `npm run verify -- fast` and record the result.
+1. Baseline: `npm run verify -- check` and record the result.
 2. Bump. Prove the resolved version with `npm ls <package>` and a lockfile diff.
-3. Re-run `fast`. If prompt, tool, context, or provider code changed, also run the
+3. Re-run `check`. If prompt, tool, context, or provider code changed, also run the
    eval A/B with `--fail-on-regression`.
-4. For Obsidian: also run `npm run verify -- audit` and the mobile lane.
+4. For Obsidian: also run `AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=sidebar npm run verify -- app design-audit` and the mobile lane.
 
 ## Evals: three objectives, one Pareto frontier
 

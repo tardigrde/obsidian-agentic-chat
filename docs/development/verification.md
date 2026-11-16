@@ -1,45 +1,50 @@
 # Verification
 
-One entry point, several lanes. Pick the lowest lane that can actually fail for the
-risk you introduced. Do not invent a lane per task.
+Reference for the lanes. Start with [testing.md](testing.md): it answers "what
+do I run" in one page. This file holds the internals.
 
 ```bash
-npm run verify -- fast                 # merge gate
-npm run verify -- ci                   # what CI runs
-npm run verify -- smoke                # production bundle + no-key smoke e2e
-npm run verify -- change <target>      # one unit file, or a -t pattern
-npm run verify -- e2e [spec]           # e2e bundle + one spec (or all)
-npm run verify -- dogfood              # generated-vault dogfood
-npm run verify -- eval [args]          # agentic evals
-npm run verify -- audit [mode]         # design audit: sidebar|wide|mobile|fullscreen
-npm run verify -- all                  # everything above
+npm run verify -- plan                    # the commands this diff needs (advisory)
+npm run verify -- check                   # merge gate: T0 + T1 + build + real-Obsidian smoke
+npm run verify -- check --no-app --coverage   # what the CI `ci` job runs
+npm run verify -- change <file...|pattern>    # unit files, or a -t pattern
+npm run verify -- app [spec...]           # real Obsidian, scripted turns (bare names: smoke, settings-ui)
+npm run verify -- app --mobile [spec]     # 390 px viewport (a narrow desktop window)
+npm run verify -- app --dogfood           # generated-vault scripted dogfood
+npm run verify -- live [spec...]          # real model or MCP calls, local only
+npm run verify -- eval [args]             # agentic evals; --suite core for tool-use (live)
+npm run verify -- explore [args]          # chaos explore (leads, not proof)
+npm run verify -- release                 # check --no-app, full app, mobile, scripted dogfood
 ```
 
-`npm run verify:fast` is an alias for `fast`. Each run writes
-`logs/verify/<timestamp>/` with one log per step, `summary.json`, and
-`summary.md`, and prints one pass/fail table.
+Each run writes `logs/verify/<timestamp>/` with one log per step,
+`summary.json`, `summary.md`, and `run-result.json` (the shared envelope: git
+head, mode, counts per tier, per-test rows for unit steps), prints one
+pass/fail table and a per-tier counts line, and appends a compact line to
+`logs/history.jsonl` in the main worktree (`npm run tests:status` reads it). A
+retired lane name (`fast`, `ci`, `cloud`, `smoke`, `upgrade`, `e2e`, `dogfood`,
+`audit`, `all`) exits 2 and names its replacement.
 
 ## The ladder
 
 | tier | command | use when | cost |
 |---|---|---|---|
-| L0 | `npm run verify -- change test/foo.test.ts` | pure logic, one module | seconds |
-| L0 | `npm run verify -- change "test name"` | one behavior by name | seconds |
-| L1 | `npm run verify -- change test/a.test.ts` (repeat) | a few affected modules | seconds |
-| L2 | `npm run verify -- ci` | app/e2e/scripts types, lint, unit + coverage report, bundle | ~1 min |
-| L2 | `npm run verify -- upgrade` | persisted settings or session shape changes | seconds |
-| L2 | `npm run verify -- cloud` | cloud sandbox without a display: everything but e2e | ~1 min |
-| L3 | `npm run verify -- fast` | merge gate, includes smoke e2e | ~2 min |
-| L4 | `npm run verify -- e2e <spec>` | UI wiring, view lifecycle, settings migration | ~1 min |
-| L5 | `npm run verify -- dogfood` | multi-tool agent flows in a generated vault | minutes |
-| L6 | `npm run verify -- eval` | prompt, tool, context, or provider changes | minutes |
+| T1 | `npm run verify -- change test/foo.test.ts` | pure logic, one module | seconds |
+| T1 | `npm run verify -- change "test name"` | one behavior by name | seconds |
+| T1 | `npm run verify -- change test/a.test.ts test/b.test.ts` | a few affected modules | seconds |
+| T1 | `npm run verify -- change test/upgrade-fixtures.test.ts` | persisted settings or session shape changes | seconds |
+| T0+T1 | `npm run verify -- check --no-app` | no display (cloud sandbox): everything but the app tier | ~1 min |
+| T0-T2 | `npm run verify -- check` | merge gate, includes the smoke e2e | ~1-2 min |
+| T2 | `npm run verify -- app <spec>` | UI wiring, view lifecycle, settings migration | ~1 min |
+| T2 | `npm run verify -- app --dogfood` | multi-tool agent flows in a generated vault | ~1 min |
+| T3 | `npm run verify -- eval --suite core --runs 3` | prompt, tool, context, or provider changes | minutes, tokens |
 
-L4 and the eval/dogfood lanes open real Obsidian windows. On a desktop, every
+The app and eval lanes open real Obsidian windows. On a desktop, every
 window asks the window manager to activate it and steals the cursor. Run them on
 a nested Xephyr display:
 
 ```bash
-npm run nested -- npm run verify -- e2e test/e2e/specs/smoke.e2e.ts
+npm run nested -- npm run verify -- app smoke
 npm run nested -- npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --runs 3 --env-file .env
 ```
 
@@ -62,9 +67,11 @@ npm run eval:agentic:compare -- \
   --fail-on-regression
 ```
 
-The `eval` lane adds `--fail-on-skip`, so a skipped case fails the run. Pass
-`--run-scripted` to generate the dogfood artifact instead of skipping it; that
-path needs Obsidian. A leading bare `--` is tolerated, but it is not needed.
+A plain `npm run verify -- eval` runs what needs no display or key (the static
+context case), lists each skipped case, and prints the command that executes it.
+With `--run-scripted` or `--run-judge` the lane adds `--fail-on-skip`, so a case
+that still cannot run fails the lane. `--run-scripted` needs Obsidian. A leading
+bare `--` is tolerated, but it is not needed.
 
 ### Upgrade lane
 
@@ -86,10 +93,10 @@ stages the output and swaps it in only when `data.json` and a session exist, so
 a failed run keeps the committed fixture. It uses this checkout's
 `node_modules`, so very old tags (before the secret store) cannot be captured.
 
-### Cloud lane
+### Without a display
 
 A cloud sandbox cannot start Obsidian, so it cannot run e2e, probes, or chaos.
-Run `npm run verify -- cloud` there. Do not make a UI claim (rendering, layout,
+Run `npm run verify -- check --no-app` there. Do not make a UI claim (rendering, layout,
 a settings row, a click path) from a cloud run. Say which claim needs a CI
 `e2e` run or a local e2e/probe, and leave it for that run.
 
@@ -108,18 +115,16 @@ share.
 - The command, its exit code, and its test counts.
 - A witness for the change: the smallest check that fails before and passes after.
   For a bug, run it before the fix and paste both results.
-- For UI claims, either a committed e2e assertion or a probe recording plus DOM or
-  state metrics. A screenshot or a video alone is not a verdict.
-- For a changed user-visible entry point, desktop `1280x1024` and mobile-width
-  `390x844` clips, each with a “what to watch” list. The `390x844` clip is a
-  narrow desktop window, not real Obsidian Mobile. A removal also needs absence
-  proof; use `@break-change` removal mode. If clips are impossible, put a waiver
-  in the PR.
-- The artifact path when the lane writes one.
+- For UI claims, a committed e2e assertion that fails without the change, plus
+  one screenshot attached to the PR. A screenshot or a video alone is not a
+  verdict. A removal proves absence with a `kind: removal` witness.
+- The `summary.json` path and its per-tier counts line, and `mode` (scripted or
+  live) when the lane writes one.
 
 Zero tests, or every test skipped, is a failure. `verify` fails a lane that expects
-tests when it can prove nothing ran, and the eval lane passes `--fail-on-skip` by
-default. If a lane cannot execute because credentials are missing, say so and run
+tests when it can prove nothing ran, and the eval lane passes `--fail-on-skip`
+whenever it is asked to execute the expensive cases. In unit and app tests the
+only allowed skip is `it.skip("flaky #<open issue>: ...")` (`check` enforces it). If a lane cannot execute because credentials are missing, say so and run
 a lane that can.
 
 ## Live MCP
@@ -128,7 +133,7 @@ The live MCP spec defaults to Context7's `resolve-library-id` tool and makes a
 real HTTPS call:
 
 ```bash
-AGENTIC_CHAT_E2E_MCP_URL=https://mcp.context7.com/mcp npm run verify -- e2e test/e2e/live/mcp-live.e2e.ts
+AGENTIC_CHAT_E2E_MCP_URL=https://mcp.context7.com/mcp npm run verify -- live test/e2e/live/mcp-live.e2e.ts
 ```
 
 The spec skips when `AGENTIC_CHAT_E2E_MCP_URL` is unset, so a zero-test exit is
@@ -173,7 +178,7 @@ The independent verifier protocol and the explicit-merge rule live in
 Check the observation method before trusting the result:
 
 - **Stale bundle.** `main.js` is gitignored but drives every local run. Did the
-  lane rebuild it? `fast` and `smoke` run a production bundle first.
+  lane rebuild it? `check` runs a production bundle first; `app` builds the e2e bundle.
 - **Silent skip.** Live specs skip when `AGENTIC_CHAT_API_KEY` is empty. An exit
   code of 0 with zero passing tests proves nothing. Read the counts.
 - **Wrong vault.** Dogfood and probes use generated vaults. Check the run id in
@@ -213,7 +218,7 @@ over 20 MB is never edited, so a leak there stays a failure. The scan skips
 `.obsidian-cache`. A file over 20 MB is read in 1 MB chunks with a 64 KB overlap,
 so it is never reported clean without a scan. Symlinked log files are followed and
 deduplicated by real path. `npm run check:secrets -- --all-worktrees` also scans
-every `git worktree list` path's `logs/`. The `fast` and `ci` lanes run the scan,
+every `git worktree list` path's `logs/`. The `check` lane runs the scan,
 and `npm run hooks:install` writes a pre-push hook that runs the all-worktrees
 scan.
 
@@ -354,7 +359,7 @@ The vault is always a fresh `<temp>/chaos-monkey-*` directory with a seed
 marker. The runner does not accept a vault path. Hard caps cover steps, wall
 time, model calls, and estimated tokens; `touch logs/chaos/<timestamp>/CANCEL`
 is the kill switch. A chaos report is exploratory evidence and never replaces
-the witness, `fast`, or a committed e2e assertion.
+the witness, `check`, or a committed e2e assertion.
 
 `--charter eval-mining` is the first experiment for the data engine. It asks one
 explore run to act like a vault owner with a single realistic goal over 2-8 chat
@@ -861,28 +866,113 @@ differs from `fetch_url`, whose gate blocks every loopback address unless the
 spec installs `__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__`. The fixture advertises
 `localhost`, which the policy treats as loopback.
 
+## Real Obsidian runs
+
+Moved here from `AGENTS.md` (#393 T10).
+
+### Headed Obsidian runs
+
+`npm run verify -- app`, `npm run eval:tool-use`, and the dogfood lanes open real
+Obsidian windows. On a desktop session every new window asks the window manager
+to activate it, which steals the cursor. Run them on a nested Xephyr display:
+
+```bash
+npm run nested -- npm run verify -- app test/e2e/specs/smoke.e2e.ts
+npm run nested -- npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --runs 3 --env-file .env
+```
+
+`npm run nested` starts Xephyr on a free display it chooses, passes `DISPLAY`
+to the command, and stops Xephyr when the command exits. It is a real
+GUI Obsidian, not `AGENTIC_CHAT_E2E_HEADLESS=1` (headless has no accessibility
+tree). Use `--display :N` to reuse an Xephyr that is already running and
+`--screen 390x844` for the narrow viewport. Probes already own Xvfb; this helper
+is for the lanes that otherwise run on `:0`.
+
+### Real Obsidian e2e
+
+`npm run verify -- app <spec>` uses `scripts/run-e2e.ts`: it resolves the matching
+`obsidian-launcher` chromedriver, starts it on a fixed low localhost port
+(`9515`-`9520`), and points WDIO at it with `WDIO_SKIP_DRIVER_SETUP=1`. This avoids
+random high-port `bind() failed` errors on WSL and behind proxies.
+
+If a sandbox blocks nested e2e localhost listeners, rerun the smoke lane as a
+top-level command (`npm run verify -- app smoke`), or run
+`npm run verify -- check --no-app` and let CI run the app jobs.
+
+Live model specs spend tokens. Run them only when validating real calls:
+
+```bash
+AGENTIC_CHAT_API_KEY=sk-or-... \
+AGENTIC_CHAT_BASE_URL=https://openrouter.ai/api/v1 \
+AGENTIC_CHAT_MODEL=openrouter/auto \
+npm run verify -- live test/e2e/live/openwebui-live.e2e.ts
+```
+
+### Proxy
+
+Keep the WDIO/chromedriver localhost control plane off the corporate proxy.
+`wdio.conf.mts` strips proxy vars from chromedriver and passes a normalized proxy
+URL to Obsidian/Electron. Chromium wants `scheme://host:port` without the trailing
+slash common in `HTTP_PROXY` / `HTTPS_PROXY`. If Obsidian reports
+`net::ERR_NO_SUPPORTED_PROXIES`, check that flag first. Override with
+`AGENTIC_CHAT_E2E_PROXY_SERVER` and, if needed,
+`AGENTIC_CHAT_E2E_PROXY_BYPASS_LIST`.
+
+### Artifacts
+
+Failed e2e tests write diagnostics under `logs/e2e-artifacts/`: screenshot,
+browser console logs when available, WDIO result metadata, Obsidian UI text,
+redacted plugin settings, and the latest sandbox session JSONL.
+
+Design-audit screenshots (`logs/design-audit/<ts>-<mode>/`, 42 PNGs per mode):
+
+```bash
+AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=sidebar npm run verify -- app design-audit                # sidebar (default 300px)
+AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=wide npm run verify -- app design-audit           # 760px
+AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=mobile npm run verify -- app design-audit         # 390px
+AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=fullscreen npm run verify -- app design-audit
+```
+
+### Dogfood and live dogfood
+
+```bash
+npm run verify -- app --dogfood
+AGENTIC_CHAT_SUBAGENT_DOGFOOD=true \
+AGENTIC_CHAT_API_KEY="<key>" \
+AGENTIC_CHAT_MODEL=openrouter/auto \
+npm run verify -- live test/e2e/dogfood/subagent-live.dogfood.ts
+```
+
+Agentic evals and trace mining are documented above.
+
 ## CI
 
-`ci` runs `npm run verify -- ci` on Node 24: app, e2e, and scripts typechecks;
+`ci` runs `npm run verify -- check --no-app --coverage` on Node 24: app, e2e, and scripts typechecks;
 both linters; unit tests plus a coverage report; and the production bundle. The
 coverage report is an uploaded artifact, not a threshold, so a low percentage
 does not fail the job.
 
 The `e2e` job runs the full deterministic suite in a real Obsidian under
-`xvfb-run` with a cached Obsidian runtime:
+`xvfb-run` with a cached Obsidian runtime, then the mobile two-tab lane. The
+`dogfood-scripted` job runs the scripted dogfood eval on its own, so its red
+names itself on the PR page:
 
 ```bash
-xvfb-run -a npm run verify -- e2e
-xvfb-run -a npm run verify -- eval --run-scripted
+xvfb-run -a npm run verify -- app
+xvfb-run -a npm run verify -- app --mobile test/e2e/specs/multi-tab-approval.e2e.ts
+xvfb-run -a npm run verify -- app --dogfood
 ```
 
-The no-key smoke spec is part of the full suite. Live specs skip without
-credentials, and the eval step fails on any skip.
+The no-key smoke spec is part of the full suite. Live specs live in
+`test/e2e/live/` and never run in CI. Draft PRs run `ci` only; a newer push
+cancels the running PR jobs (never on `main`). Each job uploads its
+`run-result.json`.
 
 Mutation testing is on demand: `npm run mutation`; see
 [mutation.md](mutation.md) and [escaped-defects.md](escaped-defects.md).
 
-The `Review gate` workflow requires a verdict comment at the current head. See
+The `Review report` workflow reports whether a verdict comment exists at the head
+and how large the PR is. It is advisory and never fails. See
 [trust.md](trust.md) and [review-ledger.md](review-ledger.md).
 
 The `Witness` workflow runs the verifier self-test on every pull request, then

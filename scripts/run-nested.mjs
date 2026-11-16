@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
  * app is still a real GUI (not `--ozone-platform=headless`), but its windows
  * never touch the host display's focus.
  *
- *   npm run nested -- npm run verify -- e2e test/e2e/specs/smoke.e2e.ts
+ *   npm run nested -- npm run verify -- app test/e2e/specs/smoke.e2e.ts
  *   npm run nested -- npm run eval:tool-use -- --suite ... --runs 3 --env-file .env
  *
  * `--display :1` reuses an Xephyr that is already running. `--screen WxH`
@@ -138,9 +138,9 @@ function usage() {
     "Usage: npm run nested -- [--screen WxH] [--title text] [--display :N] -- <command...>",
     "",
     "Examples:",
-    "  npm run nested -- npm run verify -- e2e test/e2e/specs/smoke.e2e.ts",
+    "  npm run nested -- npm run verify -- app test/e2e/specs/smoke.e2e.ts",
     "  npm run nested -- npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --runs 3 --env-file .env",
-    "  npm run nested -- --screen 390x844 -- npm run verify -- e2e test/e2e/specs/mobile-viewport.e2e.ts",
+    "  npm run nested -- --screen 390x844 -- npm run verify -- app test/e2e/specs/mobile-viewport.e2e.ts",
     "",
     "Without --display, Xephyr picks a free display and the wrapper stops it when",
     "the command exits. With --display, the wrapper reuses that server and leaves",

@@ -120,7 +120,7 @@
       "runner": "vitest",
       "globs": [
         "test/{chaos-*,check-*,verify-*}.test.ts",
-        "test/{analyze-session-trace,delegate-config,dogfood-core,e2e-ports,feature-cut-2026-11,live-env,mobile-compat,redact-log,release-config,run-nested,script-entrypoints,witness-from-pr,worktree-script,test-manifest,logs-prune,tests-status,run-result}.test.ts"
+        "test/{analyze-session-trace,delegate-config,dogfood-core,e2e-ports,feature-cut-2026-11,live-env,mobile-compat,redact-log,release-config,run-nested,script-entrypoints,witness-from-pr,worktree-script,test-manifest,logs-prune,tests-status,run-result,doc-commands}.test.ts"
       ],
       "triggers": ["scripts/**", ".github/**", "config/**", "package.json", "package-lock.json", "test/manifest.json", "vitest*.config.ts", "wdio*.conf.mts", "tsconfig*.json", "eslint.config.mjs"],
       "needs": { "display": false, "key": false, "network": false },

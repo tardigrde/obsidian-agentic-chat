@@ -271,7 +271,7 @@ CI runs the deterministic suite under `xvfb-run` with a cached Obsidian runtime,
 
 `npm run test:e2e:dogfood` generates a fresh adversarial vault under `logs/dogfood-runs/<run-id>/`, installs the current plugin, drives real Obsidian through WDIO, and fails if the dogfood invariant oracle or the generated report finds a regression. It uses a deterministic scripted model by default, so it needs no live model credentials.
 
-`npm run verify:mobile` is part of `npm run build`. It blocks direct Node/Electron API use outside documented desktop fallbacks. `npm run test:e2e:mobile` builds the e2e bundle, enables mobile emulation, applies phone-sized device metrics, and runs a WDIO smoke test for layout regressions. Real Obsidian Mobile needs the Android/iOS checklist in [MOBILE_TESTING.md](MOBILE_TESTING.md).
+`npm run verify:mobile` is part of `npm run build`. It blocks direct Node/Electron API use outside documented desktop fallbacks. `npm run test:e2e:mobile` builds the e2e bundle, enables mobile emulation, applies phone-sized device metrics, and runs a WDIO smoke test for layout regressions. Real Obsidian Mobile needs the Android/iOS checklist in [docs/development/mobile-testing.md](docs/development/mobile-testing.md).
 
 Live model e2e specs are opt-in and skip without keys. Set `AGENTIC_CHAT_API_KEY`, `AGENTIC_CHAT_BASE_URL`, and `AGENTIC_CHAT_MODEL` for an OpenAI-compatible gateway (OpenRouter, OpenWebUI, or a local proxy). Behind a corporate proxy, keep `NO_PROXY=localhost,127.0.0.1,::1`; the WDIO config keeps chromedriver local and passes a normalized proxy to Obsidian/Electron.
 
