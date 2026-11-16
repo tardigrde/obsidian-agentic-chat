@@ -1,223 +1,13 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { createLineRedactor, createRedactor } from "./redact-log.mjs";
+import { LANE_NAMES, RETIRED_LANES, lanes, usage } from "./verify-lanes.mjs";
 
-const NODE = process.execPath;
 // Read process.env and .env once. Every child line passes through this.
 const REDACTOR = createRedactor();
-// Typecheck with TypeScript 7. The `typescript` package stays on 5.x for
-// typescript-eslint, which needs the JS compiler API that TS 7.0 does not ship
-// (upstream typescript-eslint#10940).
-const TSC7 = path.resolve("scripts", "tsc7.mjs");
-const SMOKE_SPEC = "test/e2e/specs/smoke.e2e.ts";
-const DESIGN_AUDIT_SPEC = "test/e2e/specs/design-audit.e2e.ts";
-const TOOL_USE_SUITE_DIR = "test/evals/tool-use";
-
-/**
- * The `eval` lane serves two runners. A suite belongs to the tool-use runner
- * when it is a file in `test/evals/tool-use/`, named by path or by bare name
- * (`core`, `tool-use`). Returns the suite path, or undefined for an agentic suite.
- */
-function resolveToolUseSuite(value) {
-  if (!value) return undefined;
-  const byName = path.join(TOOL_USE_SUITE_DIR, `${value}.eval.json`);
-  if (path.basename(value) === value && existsSync(byName)) return byName;
-  const relative = path.relative(path.resolve(TOOL_USE_SUITE_DIR), path.resolve(value));
-  const inside = relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
-  return inside ? value : undefined;
-}
-
-function bin(name) {
-  return path.resolve("node_modules", ".bin", process.platform === "win32" ? `${name}.cmd` : name);
-}
-
-function step(label, command, args, options = {}) {
-  return { label, command, args, expectTests: false, ...options };
-}
-
-const lanes = {
-  fast: () => [
-    step("secret scan", NODE, ["scripts/check-secrets.mjs"]),
-    step("typecheck", NODE, [TSC7, "-noEmit"]),
-    step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
-    step("lint", bin("eslint"), ["."]),
-    step("lint:obsidian", bin("eslint"), ["-c", "config/eslint.obsidian.mjs", "--max-warnings", "0", "src"]),
-    step("feature map", NODE, ["scripts/check-feature-map.mjs"]),
-    step("unit tests", bin("vitest"), ["run"], { expectTests: true }),
-    step("production bundle", NODE, ["scripts/build.mjs", "production"]),
-    step("release verification", NODE, ["scripts/verify-release.mjs"]),
-    step("mobile compatibility", NODE, ["scripts/verify-mobile-compat.mjs"]),
-    step("smoke e2e", NODE, ["--import", "tsx", "scripts/run-e2e.ts", "--spec", SMOKE_SPEC], {
-      expectTests: true,
-      explainE2eSandboxFailure: true,
-    }),
-  ],
-
-  ci: () => [
-    step("secret scan", NODE, ["scripts/check-secrets.mjs"]),
-    step("typecheck", NODE, [TSC7, "-noEmit"]),
-    step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
-    step("scripts typecheck", NODE, [TSC7, "-p", "config/tsconfig.eslint.json", "--noEmit"]),
-    step("lint", bin("eslint"), ["."]),
-    step("lint:obsidian", bin("eslint"), ["-c", "config/eslint.obsidian.mjs", "--max-warnings", "0", "src"]),
-    step("feature map", NODE, ["scripts/check-feature-map.mjs"]),
-    step("unit tests + coverage report", bin("vitest"), ["run", "--coverage"], { expectTests: true }),
-    step("production bundle", NODE, ["scripts/build.mjs", "production"]),
-  ],
-
-  // Upgrade lane (#290): load each captured release's data.json and sessions
-  // through HEAD's load path. Also part of the unit suite, so `fast` runs it.
-  upgrade: () => [step("upgrade fixtures", bin("vitest"), ["run", "test/upgrade-fixtures.test.ts"], { expectTests: true })],
-
-  // Cloud lane (#290): everything a sandbox without a display can run. It
-  // proves no UI claim; UI claims need a CI e2e run or a local e2e/probe.
-  cloud: () => [
-    step("typecheck", NODE, [TSC7, "-noEmit"]),
-    step("e2e typecheck", NODE, [TSC7, "-p", "tsconfig.e2e.json", "--noEmit"]),
-    step("scripts typecheck", NODE, [TSC7, "-p", "config/tsconfig.eslint.json", "--noEmit"]),
-    step("lint", bin("eslint"), ["."]),
-    step("lint:obsidian", bin("eslint"), ["-c", "config/eslint.obsidian.mjs", "--max-warnings", "0", "src"]),
-    step("feature map", NODE, ["scripts/check-feature-map.mjs"]),
-    step("unit tests", bin("vitest"), ["run"], { expectTests: true }),
-    step("production bundle", NODE, ["scripts/build.mjs", "production"]),
-    step("release verification", NODE, ["scripts/verify-release.mjs"]),
-    step("mobile compatibility", NODE, ["scripts/verify-mobile-compat.mjs"]),
-    step("witness self-test", NODE, ["scripts/verify-witness.mjs", "--self-test"]),
-  ],
-
-  smoke: () => [
-    step("production bundle", NODE, ["scripts/build.mjs", "production"]),
-    step("smoke e2e", NODE, ["--import", "tsx", "scripts/run-e2e.ts", "--spec", SMOKE_SPEC], {
-      expectTests: true,
-      explainE2eSandboxFailure: true,
-    }),
-  ],
-
-  change: (args) => {
-    if (args.length === 0) {
-      throw new Error("verify change needs a test file or a -t pattern, for example: npm run verify -- change test/settings.test.ts");
-    }
-    const target = args[0];
-    const isPath = target.includes("/") || target.endsWith(".test.ts");
-    const vitestArgs = isPath
-      ? ["run", "--reporter=default", target]
-      : ["run", "--reporter=default", "-t", target];
-    return [step("unit tests", bin("vitest"), vitestArgs, { expectTests: true })];
-  },
-
-  e2e: (args) => {
-    const forwarded = args.length > 0 && !args[0].startsWith("-") ? ["--spec", ...args] : args;
-    return [
-      step("e2e bundle", NODE, ["scripts/build-e2e.mjs"]),
-      step("e2e", NODE, ["--import", "tsx", "scripts/run-e2e.ts", ...forwarded], {
-        expectTests: true,
-        explainE2eSandboxFailure: true,
-      }),
-    ];
-  },
-
-  dogfood: () => [
-    step("dogfood e2e", NODE, ["--import", "tsx", "scripts/run-dogfood-e2e.ts"], {
-      timeoutMs: 60 * 60 * 1000,
-    }),
-  ],
-
-  eval: (args) => {
-    // Skips hide unexecuted coverage. The lane fails on any skip unless the
-    // child script grows an explicit opt-out.
-    const forwarded = args.filter((arg) => arg !== "--fail-on-skip");
-    const suite = findSuiteArg(forwarded);
-    const toolUseSuite = resolveToolUseSuite(suite?.value);
-    if (suite && toolUseSuite) {
-      // The runner takes a separate value, so normalize `--suite=<path>`.
-      const passthrough = [...forwarded];
-      passthrough.splice(suite.index, suite.inline ? 1 : 2, "--suite", toolUseSuite);
-      return [
-        step("tool-use evals", NODE, ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...passthrough]),
-      ];
-    }
-    return [
-      step("agentic evals", NODE, [
-        "--import",
-        "tsx",
-        "scripts/run-agentic-evals.ts",
-        "--fail-on-skip",
-        ...forwarded,
-      ]),
-    ];
-  },
-
-  audit: (args) => {
-    const mode = args[0] ?? "sidebar";
-    return [
-      step("e2e bundle", NODE, ["scripts/build-e2e.mjs"]),
-      step("design audit", NODE, ["--import", "tsx", "scripts/run-e2e.ts", "--spec", DESIGN_AUDIT_SPEC], {
-        env: { AGENTIC_CHAT_DESIGN_AUDIT: "1", AGENTIC_CHAT_DESIGN_AUDIT_MODE: mode },
-        expectTests: true,
-        explainE2eSandboxFailure: true,
-      }),
-    ];
-  },
-
-  all: () => [
-    ...lanes.fast(),
-    step("e2e bundle", NODE, ["scripts/build-e2e.mjs"]),
-    step("e2e", NODE, ["--import", "tsx", "scripts/run-e2e.ts"], {
-      expectTests: true,
-      explainE2eSandboxFailure: true,
-    }),
-    step("dogfood e2e", NODE, ["--import", "tsx", "scripts/run-dogfood-e2e.ts"], {
-      timeoutMs: 60 * 60 * 1000,
-    }),
-    ...lanes.eval([]),
-  ],
-};
-
-function findSuiteArg(args) {
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--suite") {
-      const value = args[index + 1];
-      if (!value || value.startsWith("--")) return undefined;
-      return { index, value, inline: false };
-    }
-    if (arg.startsWith("--suite=")) {
-      return { index, value: arg.slice("--suite=".length), inline: true };
-    }
-  }
-  return undefined;
-}
-
-function usage() {
-  const names = Object.keys(lanes).join(", ");
-  return `Usage: npm run verify -- <lane> [args]
-
-Lanes: ${names}
-
-  fast              Merge gate: typecheck, lints, unit, production build, smoke e2e
-  ci                What CI runs: typecheck (app, e2e, scripts), lints, unit + coverage report, production build
-  smoke             Production build plus the no-key smoke e2e
-  upgrade           Load every captured release's data.json and sessions through HEAD
-  cloud             Everything without a display: fast minus smoke e2e, plus witness self-test
-  change <target>   One unit file, or a -t pattern
-  e2e [spec]        E2E bundle plus one spec (defaults to the whole suite)
-  dogfood           Generated-vault dogfood e2e
-  eval [args]       Agentic evals; pass through --suite, --run-judge, etc.
-  audit [mode]      Design audit at sidebar|wide|mobile|fullscreen
-  all               Everything above, including dogfood and evals
-
-Examples:
-  npm run verify -- fast
-  npm run verify -- change test/settings.test.ts
-  npm run verify -- change "uses the generic provider model id"
-  npm run verify -- e2e test/e2e/specs/settings-ui.e2e.ts
-  npm run verify -- audit wide
-`;
-}
 
 function childEnv(extra = {}) {
   const env = { ...process.env };
@@ -436,7 +226,8 @@ function printNestedE2eSandboxHint(output) {
 [verify] The core checks passed, but the smoke e2e runner did not start.
 [verify] In sandboxed shells this can happen when nested e2e needs local IPC/listen sockets.
 [verify] Rerun the smoke e2e as a top-level command:
-[verify]   rtk npm run verify -- smoke
+[verify]   npm run verify -- app smoke
+[verify] Without a display, run \`npm run verify -- check --no-app\` and let CI run the app job.
 `);
 }
 
@@ -522,7 +313,7 @@ async function writeSummary(results, lane, startedAt, finishedAt, verdict) {
 }
 
 async function main() {
-  const laneName = process.argv[2] ?? "fast";
+  const laneName = process.argv[2] ?? "check";
   const laneArgs = process.argv.slice(3);
 
   if (laneName === "--help" || laneName === "-h" || laneName === "help") {
@@ -530,17 +321,29 @@ async function main() {
     return 0;
   }
   if (laneName === "--list") {
-    process.stdout.write(`${Object.keys(lanes).join("\n")}\n`);
+    process.stdout.write(`${LANE_NAMES.join("\n")}\n`);
     return 0;
   }
 
-  const buildLane = lanes[laneName];
+  if (Object.hasOwn(RETIRED_LANES, laneName)) {
+    process.stderr.write(
+      `verify: the "${laneName}" lane was removed (#393). Use: npm run verify -- ${RETIRED_LANES[laneName]}\n`,
+    );
+    return 2;
+  }
+  const buildLane = Object.hasOwn(lanes, laneName) ? lanes[laneName] : undefined;
   if (!buildLane) {
     process.stderr.write(`Unknown verify lane: ${laneName}\n\n${usage()}`);
     return 1;
   }
 
-  const steps = buildLane(laneArgs);
+  let steps;
+  try {
+    steps = buildLane(laneArgs);
+  } catch (error) {
+    process.stderr.write(`verify ${laneName}: ${error instanceof Error ? error.message : String(error)}\n`);
+    return 2;
+  }
   const startedAt = Date.now();
   const results = [];
 
