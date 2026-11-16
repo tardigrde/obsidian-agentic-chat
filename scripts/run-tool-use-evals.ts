@@ -6,6 +6,7 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { applyEnvFile } from "./live-env.mjs";
 import { startFixtureServer, type FixtureServer } from "./eval/fixture-server";
+import { bootstrapCompare, formatSignificance, type SignificanceCase } from "./eval/significance";
 import { generateVault } from "./eval/vault-generator";
 import type {
   CaseSummary,
@@ -62,6 +63,10 @@ interface CliArgs {
   dryRun: boolean;
   writeBaseline: boolean;
   compare?: [string, string];
+  /** With `compare`: add the bootstrap section after the comparison table. */
+  significance: boolean;
+  /** Case ids dropped from the significance read only. */
+  exclude?: string[];
 }
 
 interface PlannedRun {
@@ -141,7 +146,10 @@ if (isCliEntrypoint()) {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.compare) {
-    await compareCommand(args.compare);
+    process.exitCode = await compareCommand(args.compare, {
+      significance: args.significance,
+      exclude: args.exclude ?? [],
+    });
     return;
   }
 
@@ -750,10 +758,63 @@ async function writeBaseline(summary: ToolUseSummary): Promise<string> {
   return target;
 }
 
-async function compareCommand(input: [string, string]): Promise<void> {
+async function compareCommand(
+  input: [string, string],
+  options: { significance: boolean; exclude: string[] },
+): Promise<number> {
   const baseline = JSON.parse(await readFile(path.resolve(input[0]), "utf8")) as unknown;
   const candidate = JSON.parse(await readFile(path.resolve(input[1]), "utf8")) as unknown;
-  process.stdout.write(formatComparison(baseline, candidate));
+  const comparison = formatComparison(baseline, candidate);
+  process.stdout.write(comparison);
+  if (!options.significance) return 0;
+  const excluded = new Set(options.exclude);
+  const result = bootstrapCompare(
+    significanceCases(baseline, excluded),
+    significanceCases(candidate, excluded),
+  );
+  process.stdout.write(
+    formatSignificance(result, { before: "Baseline", after: "Candidate" }, options.exclude),
+  );
+  const known = summaryCaseIds(baseline);
+  for (const id of summaryCaseIds(candidate)) known.add(id);
+  const unknown = options.exclude.filter((id) => !known.has(id));
+  if (unknown.length > 0) {
+    process.stderr.write(
+      `warning: unknown --exclude id: ${unknown.join(", ")}; it is not a case in either summary\n`,
+    );
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * Only the fields the bootstrap needs. A committed baseline has no
+ * `runResults`, and a fresh `summary.json` does; both carry per-case scores.
+ * A missing or non-finite score is passed through as-is so the module can skip
+ * it with a named warning instead of dropping the case without a trace.
+ */
+function significanceCases(input: unknown, excluded: ReadonlySet<string>): SignificanceCase[] {
+  const output: SignificanceCase[] = [];
+  if (!isRecord(input) || !Array.isArray(input.cases)) return output;
+  for (const entry of input.cases) {
+    if (!isRecord(entry) || typeof entry.id !== "string" || excluded.has(entry.id)) continue;
+    output.push({
+      id: entry.id,
+      passAtK: typeof entry.passAtK === "number" ? entry.passAtK : Number.NaN,
+      passRate: typeof entry.passRate === "number" ? entry.passRate : undefined,
+    });
+  }
+  return output;
+}
+
+/** Every case id the summary lists, including ones with a bad score. */
+function summaryCaseIds(input: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!isRecord(input) || !Array.isArray(input.cases)) return ids;
+  for (const entry of input.cases) {
+    if (isRecord(entry) && typeof entry.id === "string") ids.add(entry.id);
+  }
+  return ids;
 }
 
 interface CaseComparison {
@@ -963,9 +1024,38 @@ function runE2e(options: {
 }
 
 function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { dryRun: false, writeBaseline: false, smoke: false };
+  const args: CliArgs = { dryRun: false, writeBaseline: false, smoke: false, significance: false };
+  // `--significance` and `--exclude` are position-free so that
+  // `--compare --significance <base> <head>` (the npm alias) parses.
+  const rest: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const raw = argv[index];
+    if (raw === "--significance") {
+      args.significance = true;
+      continue;
+    }
+    if (raw === "--exclude") {
+      const value = argv[index + 1];
+      if (!value || value.startsWith("--")) throw new Error("Missing value for --exclude");
+      args.exclude = [
+        ...(args.exclude ?? []),
+        ...value.split(",").map((id) => id.trim()).filter((id) => id.length > 0),
+      ];
+      index += 1;
+      continue;
+    }
+    rest.push(raw);
+  }
+  // Check before the positional walk so a lone `--significance` gets the usage
+  // guard, not `Unexpected argument: <base>`.
+  if (args.significance && !rest.includes("--compare")) {
+    throw new Error("--significance needs --compare <base-summary.json> <head-summary.json>");
+  }
+  if (args.exclude && args.exclude.length > 0 && !rest.includes("--compare")) {
+    throw new Error("--exclude needs --compare <base-summary.json> <head-summary.json>");
+  }
+  for (let index = 0; index < rest.length; index += 1) {
+    const raw = rest[index];
     if (raw === "--") continue;
     if (raw === "--help" || raw === "-h") {
       process.stdout.write(usageText());
@@ -986,8 +1076,8 @@ function parseArgs(argv: string[]): CliArgs {
     if (!raw.startsWith("--")) throw new Error(`Unexpected argument: ${raw}`);
     const key = raw.slice(2);
     if (key === "compare") {
-      const baseline = argv[index + 1];
-      const candidate = argv[index + 2];
+      const baseline = rest[index + 1];
+      const candidate = rest[index + 2];
       if (!baseline || baseline.startsWith("--") || !candidate || candidate.startsWith("--")) {
         throw new Error("--compare needs <base-summary.json> <head-summary.json>");
       }
@@ -995,7 +1085,7 @@ function parseArgs(argv: string[]): CliArgs {
       index += 2;
       continue;
     }
-    const value = argv[index + 1];
+    const value = rest[index + 1];
     if (!value || value.startsWith("--")) throw new Error(`Missing value for --${key}`);
     index += 1;
     switch (key) {
@@ -1040,9 +1130,13 @@ function usageText(): string {
     "      [--out-dir dir] [--env-file path] [--max-usd usd] [--thinking-level level]",
     "      [--dry-run] [--write-baseline]",
     "  npm run eval:tool-use -- --compare <base-summary.json> <head-summary.json>",
+    "      [--significance] [--exclude id[,id]]",
+    "  npm run eval:significance -- <base-summary.json> <head-summary.json>",
     "",
     "  --smoke runs one core case per category, once each, unless --runs is set.",
     "  --thinking-level wins over AGENTIC_CHAT_THINKING_LEVEL, the suite field, and the low default.",
+    "  --significance adds a case-level bootstrap section to --compare; --exclude drops cases",
+    "  from that section only.",
     "",
   ].join("\n");
 }

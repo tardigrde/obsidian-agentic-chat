@@ -1089,6 +1089,98 @@ describe("tool-use eval core", () => {
     expect(result.stdout).toContain("| - |");
   });
 
+  it("prints the bootstrap significance section only when asked, on the committed baseline", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "tool-use-significance-"));
+    tempRoots.push(root);
+    const baselinePath = path.join(process.cwd(), "test/evals/baselines/core.json");
+    const baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as {
+      cases: Array<Record<string, unknown> & { id: string }>;
+    };
+    // A fresh summary has runResults; the baseline has none. The significance
+    // read must ignore them and use only the per-case scores.
+    const candidatePath = path.join(root, "candidate.json");
+    await writeFile(candidatePath, `${JSON.stringify(baseline, null, 2)}\n`);
+    const flipped = baseline.cases.map((entry) =>
+      entry.id === "find.easy.dentist"
+        ? { ...entry, passAtK: 1, passRate: 1, runResults: [{ run: 0, status: "passed" }] }
+        : entry,
+    );
+    const flippedPath = path.join(root, "flipped.json");
+    await writeFile(
+      flippedPath,
+      `${JSON.stringify({ ...baseline, cases: flipped }, null, 2)}\n`,
+    );
+
+    function runCompare(argv: string[]) {
+      return spawnSync(
+        process.execPath,
+        ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...argv],
+        { cwd: process.cwd(), encoding: "utf8" },
+      );
+    }
+
+    const plain = runCompare(["--compare", baselinePath, candidatePath]);
+    expect(plain.status, plain.stderr).toBe(0);
+    expect(plain.stdout).toContain("# Tool-use eval comparison");
+    expect(plain.stdout).not.toContain("## Significance");
+
+    const plainFlipped = runCompare(["--compare", baselinePath, flippedPath]);
+    expect(plainFlipped.status, plainFlipped.stderr).toBe(0);
+    expect(plainFlipped.stdout).not.toContain("## Significance");
+
+    const significance = runCompare(["--compare", "--significance", baselinePath, flippedPath]);
+    expect(significance.status, significance.stderr).toBe(0);
+    expect(significance.stdout.startsWith(plainFlipped.stdout)).toBe(true);
+    expect(significance.stdout).toContain("## Significance");
+    expect(significance.stdout).toMatch(/\| Metric \| Baseline \| Candidate \| Difference \| 95% CI \| Verdict \|/);
+    expect(significance.stdout).toContain("2000 resamples");
+    expect(significance.stdout).toContain("seed 12345");
+    expect(significance.stdout).toContain("find.easy.dentist");
+
+    const excluded = runCompare([
+      "--compare",
+      "--significance",
+      "--exclude",
+      "find.easy.dentist",
+      baselinePath,
+      flippedPath,
+    ]);
+    expect(excluded.status, excluded.stderr).toBe(0);
+    expect(excluded.stdout).toContain("Excluded: find.easy.dentist");
+    expect(excluded.stdout).toContain("24 paired cases");
+  });
+
+  it("rejects an unknown --exclude id and a lone --significance", () => {
+    const baselinePath = path.join(process.cwd(), "test/evals/baselines/core.json");
+    function runCompare(argv: string[]) {
+      return spawnSync(
+        process.execPath,
+        ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...argv],
+        { cwd: process.cwd(), encoding: "utf8" },
+      );
+    }
+
+    const typo = runCompare([
+      "--compare",
+      "--significance",
+      "--exclude",
+      "tools.medium.wbe",
+      baselinePath,
+      baselinePath,
+    ]);
+    expect(typo.status, typo.stderr).toBe(1);
+    expect(typo.stdout).toContain("# Tool-use eval comparison");
+    expect(typo.stdout).toContain("## Significance");
+    expect(typo.stderr).toContain("tools.medium.wbe");
+    expect(typo.stderr).toMatch(/unknown --exclude/i);
+
+    const lone = runCompare(["--significance", baselinePath, baselinePath]);
+    expect(lone.status, lone.stderr).toBe(1);
+    expect(lone.stderr).toContain("--significance needs --compare");
+    expect(lone.stderr).not.toContain("Unexpected argument");
+    expect(lone.stdout).toBe("");
+  });
+
   describe("thinking level in the runner", () => {
     function runRunner(argv: string[], env: Record<string, string> = {}) {
       return spawnSync(

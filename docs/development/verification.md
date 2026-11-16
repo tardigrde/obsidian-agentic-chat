@@ -615,6 +615,42 @@ suite, model, and thinking level; the case table has a `Thinking` column with
 the requested and observed levels. It is read-only: it exits 0 after printing
 the table. A missing or unreadable summary file still fails.
 
+### Significance
+
+A 25-case suite cannot separate a few points from noise. `--significance` adds a
+case-level paired bootstrap after the comparison table. The cases, not the runs,
+are the resampling unit: it draws the paired cases with replacement 2,000
+times, with seed 12345, and takes the mean `passAtK` and `passRate` difference
+(candidate - baseline). The 95% CI is the 2.5% and 97.5% percentile bounds. The
+verdict is `significant` only when that interval excludes 0.
+
+```bash
+npm run eval:significance -- <base-summary.json> <head-summary.json>
+npm run eval:tool-use -- --compare <base-summary.json> <head-summary.json> --significance
+```
+
+`--exclude <id[,id]>` drops a case from the significance read only, for a case
+with a known harness fault. The comparison table above it still lists that case,
+and the section prints `Excluded: ...`. An unknown id prints a warning on stderr
+and exits nonzero; both tables still print. A case with a missing or non-finite
+score is skipped and named in the `Warnings` line, not dropped without a trace.
+Both an old baseline without `runResults` and a fresh `summary.json` work; only
+the per-case `passAtK` and `passRate` fields are read. An old baseline without
+`passRate` falls back to `passAtK` and labels the row.
+
+The interval covers the choice of cases, not run-to-run variance, and 25 cases
+make it wide. `not significant` means this suite cannot separate the change from
+noise; it does not prove the change does nothing. `significant` is still local
+to this suite, model, and level.
+
+Low vs off on the 25-case `core` baselines (`61cab74` off, `e002d98` low):
+76% -> 68% pass^K, difference -8 pp, 95% CI [-32, +16] pp, not significant.
+`tools.medium.web` is 0/3 in the off baseline because the provider rewrote the
+fixture URL to `[IP_ADDRESS]`; excluding it gives 79.2% -> 66.7%, -12.5 pp,
+CI [-33.3, +8.3] pp, still not significant. The honest conclusion is that the
+8-point pass^3 gap sits inside the noise band of a 25-case suite. Do not call
+`low` worse, or `off` better, from this pair alone.
+
 Live runs need `AGENTIC_CHAT_API_KEY` and a display. They run locally only; CI
 does not run them.
 
