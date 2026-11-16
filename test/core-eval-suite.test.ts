@@ -159,7 +159,7 @@ describe("core eval suite", () => {
     }
 
     expect([...byCategory.keys()].sort()).toEqual([...CATEGORIES].sort());
-    // find has a second easy case (find.easy.today, the date line) and tools
+    // find has a second easy case (find.easy.today, the current_time tool) and tools
     // has two extra mediums (tools.medium.web, tools.medium.mcp via search_tools).
     const extra: Record<string, number> = { find: 1, tools: 2 };
     for (const category of CATEGORIES) expect(byCategory.get(category), category).toBe(3 + (extra[category] ?? 0));

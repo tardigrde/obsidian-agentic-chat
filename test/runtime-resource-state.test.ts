@@ -58,6 +58,11 @@ afterEach(async () => {
   }
 });
 
+/** Construction only: the tools under test never touch the store. */
+function fakeStore(): ToolArtifactStoreLike {
+  return {} as ToolArtifactStoreLike;
+}
+
 function makeState(
   app: App,
   currentSettings: AgenticChatSettings,
@@ -138,58 +143,66 @@ describe("AgentRuntimeResourceState", () => {
   });
 
 
-  it("puts today's date, but not the time, in the system prompt", async () => {
+  it("keeps the date out of the system prompt and always loads current_time", async () => {
+    // A date line in the prompt cost correctness in the core eval A/B (ADR 0006),
+    // so the model gets the date from the always-loaded current_time tool.
     const currentSettings = settings();
     const fixed = new Date(2026, 10, 16, 14, 37, 5);
     const { state } = makeState(await seededApp(), currentSettings, undefined, () => fixed);
     await state.reload();
 
     const prompt = state.composeSystemPrompt(currentSettings, "test/model");
+    expect(prompt).not.toContain("2026-11-16");
+    expect(prompt).not.toMatch(/Today is/);
+    expect(prompt).not.toContain("- current_time:");
 
-    expect(prompt).toContain("Today is Monday, 2026-11-16 (time zone ");
-    expect(prompt).not.toContain("14:37");
+    const tools = state.buildParentTools(currentSettings);
+    const clock = tools.find((tool) => tool.name === "current_time");
+    expect(clock).toBeDefined();
+    const result = await clock?.execute("call-1", {} as never);
+    expect(JSON.stringify(result?.content)).toContain("2026-11-16 14:37:05 (Monday)");
   });
 
   it("lists the deferred catalog in the prompt and keeps the prompt unchanged when a tool loads", async () => {
     const currentSettings = settings();
-    const { state } = makeState(await seededApp(), currentSettings, undefined, () => new Date(2026, 10, 16));
+    const { state } = makeState(await seededApp(), currentSettings, fakeStore());
     await state.reload();
     const before = state.composeSystemPrompt(currentSettings, "test/model");
     expect(before).toContain("## Deferred tools");
-    expect(before).toContain("- current_time:");
+    expect(before).toContain("- import_document:");
 
     const search = state.buildParentTools(currentSettings).find((tool) => tool.name === "search_tools");
-    await search?.execute("call-1", { query: "current time" } as never);
+    await search?.execute("call-1", { query: "import document" } as never);
 
-    expect(state.getLoadedToolNames()).toEqual(["current_time"]);
+    expect(state.getLoadedToolNames()).toEqual(["import_document"]);
     expect(state.composeSystemPrompt(currentSettings, "test/model")).toBe(before);
   });
 
   it("loads a searched tool for the next step and keeps it on later rebuilds", async () => {
     const currentSettings = settings();
-    const { state } = makeState(await seededApp(), currentSettings);
+    const { state } = makeState(await seededApp(), currentSettings, fakeStore());
     await state.reload();
     const first = state.buildParentTools(currentSettings);
-    expect(first.map((tool) => tool.name)).not.toContain("current_time");
+    expect(first.map((tool) => tool.name)).not.toContain("import_document");
 
     const search = first.find((tool) => tool.name === "search_tools");
-    const result = await search?.execute("call-1", { query: "what time is it" } as never);
-    expect(result?.details).toMatchObject({ loaded: ["current_time"] });
+    const result = await search?.execute("call-1", { query: "extract text from a PDF" } as never);
+    expect(result?.details).toMatchObject({ loaded: ["import_document"] });
 
     const next = state.toolsForNextStep(first, []);
-    expect(next?.map((tool) => tool.name)).toContain("current_time");
+    expect(next?.map((tool) => tool.name)).toContain("import_document");
     // Nothing new to load: no change for the step after.
     expect(state.toolsForNextStep(next ?? [], [])).toBeUndefined();
     // A refresh before the next prompt keeps the loaded tool.
-    expect(state.buildParentTools(currentSettings).map((tool) => tool.name)).toContain("current_time");
+    expect(state.buildParentTools(currentSettings).map((tool) => tool.name)).toContain("import_document");
     // A different session starts without it.
     state.clearSessionState([]);
-    expect(state.buildParentTools(currentSettings).map((tool) => tool.name)).not.toContain("current_time");
+    expect(state.buildParentTools(currentSettings).map((tool) => tool.name)).not.toContain("import_document");
   });
 
   it("loads a deferred tool after a direct call failed because it was not loaded", async () => {
     const currentSettings = settings();
-    const { state } = makeState(await seededApp(), currentSettings);
+    const { state } = makeState(await seededApp(), currentSettings, fakeStore());
     await state.reload();
     const first = state.buildParentTools(currentSettings);
 
@@ -197,8 +210,8 @@ describe("AgentRuntimeResourceState", () => {
       {
         role: "toolResult",
         toolCallId: "call-1",
-        toolName: "current_time",
-        content: [{ type: "text", text: "Tool current_time not found" }],
+        toolName: "import_document",
+        content: [{ type: "text", text: "Tool import_document not found" }],
         isError: true,
         timestamp: 1,
       },
@@ -212,28 +225,28 @@ describe("AgentRuntimeResourceState", () => {
       },
     ] as never);
 
-    expect(next?.map((tool) => tool.name)).toContain("current_time");
-    expect(state.getLoadedToolNames()).toEqual(["current_time"]);
+    expect(next?.map((tool) => tool.name)).toContain("import_document");
+    expect(state.getLoadedToolNames()).toEqual(["import_document"]);
   });
 
   it("restores the loaded tools of a reopened session from its transcript", async () => {
     const currentSettings = settings();
-    const { state } = makeState(await seededApp(), currentSettings);
+    const { state } = makeState(await seededApp(), currentSettings, fakeStore());
     await state.reload();
 
     state.clearSessionState([
-      { role: "user", content: "time?", timestamp: 1 },
+      { role: "user", content: "import my PDF", timestamp: 1 },
       {
         role: "toolResult",
         toolCallId: "call-1",
         toolName: "search_tools",
         content: [{ type: "text", text: "Loaded 1 tool(s)." }],
-        details: { query: "time", loaded: ["current_time"] },
+        details: { query: "import document", loaded: ["import_document"] },
         isError: false,
         timestamp: 2,
       },
     ] as never);
 
-    expect(state.buildParentTools(currentSettings).map((tool) => tool.name)).toContain("current_time");
+    expect(state.buildParentTools(currentSettings).map((tool) => tool.name)).toContain("import_document");
   });
 });

@@ -48,10 +48,10 @@ function serverDiagnostic(toolNames: string[]): McpServerDiagnostic {
 
 describe("isDeferredToolName", () => {
   it("defers MCP tools and the rare built-ins, and keeps the core set loaded", () => {
-    for (const name of ["mcp__x__y", "create_skill", "import_document", "current_time"]) {
+    for (const name of ["mcp__x__y", "create_skill", "import_document"]) {
       expect(isDeferredToolName(name), name).toBe(true);
     }
-    for (const name of ["read", "vault_inspect", "set_properties", "web_search", "skill", "artifact", "search_tools"]) {
+    for (const name of ["read", "vault_inspect", "set_properties", "web_search", "skill", "artifact", "search_tools", "current_time"]) {
       expect(isDeferredToolName(name), name).toBe(false);
     }
   });
@@ -120,13 +120,13 @@ describe("LoadedToolSet", () => {
         isError: false,
         timestamp: 2,
       },
-      { role: "toolResult", toolCallId: "2", toolName: "current_time", content: [], isError: true, timestamp: 3 },
+      { role: "toolResult", toolCallId: "2", toolName: "import_document", content: [], isError: true, timestamp: 3 },
       { role: "toolResult", toolCallId: "3", toolName: "read", content: [], isError: false, timestamp: 4 },
     ] as unknown as AgentMessage[];
 
     loaded.restoreFromMessages(messages);
 
-    expect(loaded.list()).toEqual(["mcp__fixture__get_ticket", "current_time"]);
+    expect(loaded.list()).toEqual(["mcp__fixture__get_ticket", "import_document"]);
   });
 });
 
@@ -135,11 +135,11 @@ describe("partitionTools", () => {
     const loaded = new LoadedToolSet();
     loaded.add(["mcp__fixture__get_ticket"]);
     const { active, deferred } = partitionTools(
-      [tool("read"), tool("current_time"), tool("mcp__fixture__get_ticket"), tool("mcp__fixture__get_user")],
+      [tool("read"), tool("import_document"), tool("mcp__fixture__get_ticket"), tool("mcp__fixture__get_user")],
       loaded,
     );
     expect(active.map((t) => t.name)).toEqual(["read", "mcp__fixture__get_ticket"]);
-    expect(deferred.map((t) => t.name)).toEqual(["current_time", "mcp__fixture__get_user"]);
+    expect(deferred.map((t) => t.name)).toEqual(["import_document", "mcp__fixture__get_user"]);
   });
 });
 
@@ -169,25 +169,25 @@ describe("search_tools", () => {
 
   it("names the deferred tools when nothing matches", async () => {
     const search = createSearchToolsTool({
-      getDeferredTools: () => [tool("current_time", "Current local date and time.")],
+      getDeferredTools: () => [tool("import_document", "Extract document text.")],
       loaded: new LoadedToolSet(),
     });
     const result = await search.execute("1", { query: "zzzz" });
     const text = result.content[0]?.type === "text" ? result.content[0].text : "";
-    expect(text).toContain("Deferred tools: current_time");
+    expect(text).toContain("Deferred tools: import_document");
     expect(result.details).toEqual({ query: "zzzz", loaded: [] });
   });
 });
 
 describe("formatDeferredToolsOverlay", () => {
   it("lists built-in deferred tools one per line and MCP tools one line per server", () => {
-    const catalog = [tool("read", "Read a file."), tool("current_time", "Current local date and time. More text."), ...mcpCatalog()];
+    const catalog = [tool("read", "Read a file."), tool("import_document", "Extract document text. More text."), ...mcpCatalog()];
     const overlay = formatDeferredToolsOverlay(
       catalog,
       [serverDiagnostic(fixtureMcpTools().map((t) => t.name))],
     );
     expect(overlay).toContain("## Deferred tools");
-    expect(overlay).toContain("- current_time: Current local date and time.");
+    expect(overlay).toContain("- import_document: Extract document text.");
     expect(overlay).toContain('- MCP server "Fixture Workspace": 30 tool(s)');
     expect(overlay).not.toContain("- read:");
     expect(overlay).not.toContain("search_documents");

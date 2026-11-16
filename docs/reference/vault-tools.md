@@ -36,6 +36,7 @@ These tools are always loaded:
 | `skill` | Read a skill. `action=read` returns its instructions; `action=read_file` reads a file inside the skill folder. Read-only. |
 | `artifact` | Inspect large tool outputs kept out of context. `action=list`, `search`, `read`, or `export`. Read-only. |
 | `web_search` / `fetch_url` | Opt-in web tools. See [Web, MCP, and observability](../features/web-mcp-observability.md). |
+| `current_time` | Local date, time, weekday, and time zone. The system prompt has no date, so the model calls this when a task depends on today. Read-only. |
 | `search_tools` | Load deferred tools (below) by task or name. Read-only. |
 
 ## Deferred tools
@@ -44,7 +45,6 @@ The system prompt lists these tools, but they are not in the model's tool list u
 
 | Tool | What it does |
 | --- | --- |
-| `current_time` | Local date, time, weekday, and time zone. The system prompt already carries today's date. Read-only. |
 | `import_document` | Extract PDF, EPUB, DOCX, PPTX, or XLSX text into artifacts with citations. |
 | `create_skill` | Create a skill package. Defaults to ask. YOLO does not auto-approve it. `/undo` cannot revert it. |
 | `mcp__<id>__<tool>` | Opt-in remote MCP tools behind the approval gate. The system prompt lists one line per MCP server. |

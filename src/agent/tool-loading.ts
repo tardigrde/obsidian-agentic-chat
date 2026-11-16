@@ -2,13 +2,12 @@ import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { MCP_TOOL_PREFIX, localMcpToolNames, type McpServerDiagnostic } from "../mcp/tools";
 import { toolResult } from "../tools/result";
-import { CURRENT_TIME_TOOL_NAME } from "../tools/current-time-tool";
 
 /**
  * Deferred tool loading.
  *
  * The model always gets a small core set of tools. Rarely used tools (every
- * MCP tool, `create_skill`, `import_document`, `current_time`) are deferred:
+ * MCP tool, `create_skill`, `import_document`) are deferred:
  * the system prompt lists them, and `search_tools` loads the ones that match a
  * query. A loaded tool stays loaded for the rest of the session and is called
  * by its real name, so per-tool approval works the same as for core tools.
@@ -17,11 +16,7 @@ import { CURRENT_TIME_TOOL_NAME } from "../tools/current-time-tool";
 export const SEARCH_TOOLS_TOOL_NAME = "search_tools";
 export const SEARCH_TOOLS_MAX_RESULTS = 5;
 
-const DEFERRED_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "create_skill",
-  "import_document",
-  CURRENT_TIME_TOOL_NAME,
-]);
+const DEFERRED_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set(["create_skill", "import_document"]);
 
 export function isDeferredToolName(name: string): boolean {
   return name.startsWith(MCP_TOOL_PREFIX) || DEFERRED_BUILTIN_TOOL_NAMES.has(name);

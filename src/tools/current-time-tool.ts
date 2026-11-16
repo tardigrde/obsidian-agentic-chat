@@ -7,9 +7,10 @@ export const CURRENT_TIME_TOOL_NAME = "current_time";
 const CurrentTimeParameters = Type.Object({});
 
 /**
- * The `current_time` tool: the local date, time, weekday, and time zone. The
- * system prompt carries only today's date, so this is the source for the time
- * of day. Read-only; deferred behind `search_tools`.
+ * The `current_time` tool: the local date, time, weekday, and time zone.
+ * Read-only and always loaded. The system prompt carries no date: in the core
+ * eval A/B a date line in the prompt cost correctness (ADR 0006), so the model
+ * calls this tool when a task depends on today.
  */
 export function createCurrentTimeTool(now: () => Date = () => new Date()): AgentTool<typeof CurrentTimeParameters> {
   return {
@@ -71,8 +72,3 @@ function localTimeZone(): string {
   }
 }
 
-/** One system-prompt line with today's date only, so the prompt changes at most once a day. */
-export function formatTodayLine(date: Date): string {
-  const clock = describeLocalTime(date);
-  return `Today is ${clock.weekday}, ${clock.date} (time zone ${clock.timeZone}). For the time of day, use the current_time tool.`;
-}

@@ -10,6 +10,7 @@ import type { AgentToolCallController } from "../src/agent/tool-call-controller"
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { ReadMemo } from "../src/vault/read-memo";
 import type { WebFetcher } from "../src/tools/web-fetch";
+import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import { FakeApp } from "./helpers/fake-vault";
 
 const PROFILE: AgentRole = {
@@ -90,6 +91,8 @@ function resourceState(settings: AgenticChatSettings, app: App): AgentRuntimeRes
     getSettings: () => settings,
     readMemo: new ReadMemo(),
     webFetch: noopWebFetch,
+    // Construction only: import_document is the deferred tool under test.
+    artifactStore: {} as ToolArtifactStoreLike,
   });
 }
 
@@ -142,12 +145,12 @@ describe("multi-instance isolation", () => {
 
     const searchA = stateA.buildParentTools(settings).find((tool) => tool.name === "search_tools");
     expect(searchA).toBeDefined();
-    await searchA!.execute("search-a", { query: "current time" });
+    await searchA!.execute("search-a", { query: "import document" });
 
-    expect(stateA.buildParentTools(settings).map((tool) => tool.name)).toContain("current_time");
-    expect(stateB.buildParentTools(settings).map((tool) => tool.name)).not.toContain("current_time");
+    expect(stateA.buildParentTools(settings).map((tool) => tool.name)).toContain("import_document");
+    expect(stateB.buildParentTools(settings).map((tool) => tool.name)).not.toContain("import_document");
 
     stateA.clearSessionState();
-    expect(stateA.buildParentTools(settings).map((tool) => tool.name)).not.toContain("current_time");
+    expect(stateA.buildParentTools(settings).map((tool) => tool.name)).not.toContain("import_document");
   });
 });

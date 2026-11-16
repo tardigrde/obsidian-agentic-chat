@@ -10,7 +10,6 @@ import type { ReadMemo } from "../vault/read-memo";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import type { AgentRole } from "./subagents";
 import type { PluginCatalog } from "../plugins/service";
-import { formatTodayLine } from "../tools/current-time-tool";
 import {
   EMPTY_AGENT_RUNTIME_RESOURCES,
   buildAgentParentTools,
@@ -32,7 +31,7 @@ export interface AgentRuntimeResourceStateOptions {
   skillScaffolder?: SkillScaffolder;
   /** Shared plugin catalog; without it the runtime scans the plugins folder itself. */
   plugins?: PluginCatalog;
-  /** Clock for the date line and `current_time`; tests inject a fixed one. */
+  /** Clock for `current_time`; tests inject a fixed one. */
   now?: () => Date;
 }
 
@@ -148,10 +147,6 @@ export class AgentRuntimeResourceState {
   }
 
   private selfAwarenessOverlay(activeModelId: string): string {
-    const now = this.options.now?.() ?? new Date();
-    return (
-      `Identity: you are the "agentic-chat" Obsidian plugin. You are currently using the model "${activeModelId}".\n` +
-      formatTodayLine(now)
-    );
+    return `Identity: you are the "agentic-chat" Obsidian plugin. You are currently using the model "${activeModelId}".`;
   }
 }

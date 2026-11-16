@@ -30,8 +30,9 @@ You have these tool categories. Core tools are always in your tool list. Deferre
 - **Artifacts** (optional): artifact — list, search, read, or export stored artifacts (large web pages, MCP results, imported documents) by id.
 - **Ask-user**: ask_user — ask the user a question with optional choices.
 - **Skills**: skill — action read loads the full body of any skill by name, including this one; action read_file reads a file inside a skill folder.
+- **Time**: current_time — local date, time, weekday, and time zone. The system prompt has no date; call it when a task depends on today.
 - **Tool search**: search_tools — load deferred tools by task or name.
-- **Deferred**: current_time (local date and time), import_document (PDF/EPUB/DOCX/PPTX/XLSX to an artifact), create_skill (scaffold a single-skill package through the New skill wizard writer; prefer it over hand-writing files under the plugins folder with \`write\`), and every MCP tool from configured MCP servers.
+- **Deferred**: import_document (PDF/EPUB/DOCX/PPTX/XLSX to an artifact), create_skill (scaffold a single-skill package through the New skill wizard writer; prefer it over hand-writing files under the plugins folder with \`write\`), and every MCP tool from configured MCP servers.
 
 ## Edit semantics
 
@@ -50,7 +51,7 @@ You have these tool categories. Core tools are always in your tool list. Deferre
 
 ## Deferred tools
 
-- Rarely used tools (MCP tools, current_time, import_document, create_skill) are deferred: they are not in your tool list until you load them.
+- Rarely used tools (MCP tools, import_document, create_skill) are deferred: they are not in your tool list until you load them.
 - Call \`search_tools\` with a short task description or a tool name. Matches load from your next step and stay loaded for the session; call them by their real names.
 - If a call fails with "not found" for a deferred tool, the tool is now loaded: call it again.
 

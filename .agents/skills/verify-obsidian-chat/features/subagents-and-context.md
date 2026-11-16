@@ -63,7 +63,7 @@ await $(".agentic-chat-action-list").waitForExist();
 | Deferred tools: `search_tools` loads a tool for the next step | `src/agent/tool-loading.ts#createSearchToolsTool` | `test/runtime-resource-state.test.ts#loads a searched tool for the next step and keeps it on later rebuilds` (unit only) | `partial` |
 | Deferred tools: a direct call to an unloaded tool loads it | `src/agent/runtime-resource-state.ts#toolsForNextStep` | `test/runtime-resource-state.test.ts#loads a deferred tool after a direct call failed because it was not loaded` (unit only) | `partial` |
 | Deferred tools: reopened session keeps loaded tools | `src/agent/tool-loading.ts#restoreFromMessages` | `test/runtime-resource-state.test.ts#restores the loaded tools of a reopened session from its transcript` (unit only) | `partial` |
-| Today's date in the system prompt; `current_time` tool | `src/tools/current-time-tool.ts#formatTodayLine` | `test/runtime-resource-state.test.ts#puts today's date, but not the time, in the system prompt` (unit only) | `partial` |
+| `current_time` tool always loaded; no date in the system prompt | `src/tools/current-time-tool.ts#createCurrentTimeTool` | `test/runtime-resource-state.test.ts#keeps the date out of the system prompt and always loads current_time` (unit only) | `partial` |
 | Context-window bar | `src/ui/chat-view.ts#buildLayout` | `test/e2e/probe/scenarios/context-readout.e2e.ts#shows the full-load percentage with a section breakdown` | `covered` |
 
 ## Gotchas

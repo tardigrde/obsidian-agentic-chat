@@ -200,9 +200,10 @@ describe("agent runtime resources", () => {
       "subagent",
       "skill",
       "artifact",
+      "current_time",
       "search_tools",
     ]);
-    expect(deferred.map((tool) => tool.name)).toEqual(["current_time", "create_skill", "import_document"]);
+    expect(deferred.map((tool) => tool.name)).toEqual(["create_skill", "import_document"]);
   });
 
   it("includes discovered MCP tools from plugins in the parent tool snapshot", async () => {

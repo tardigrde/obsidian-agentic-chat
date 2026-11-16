@@ -16,9 +16,10 @@ Before 1.0.0, when tool names become part of the contract:
   `get_active_note`, `get_backlinks`, `get_links`, `local_graph`,
   `get_properties`). `vault_inspect` already covers them.
 - Delete the tool budget. Defer rarely used tools instead: every MCP tool,
-  `create_skill`, `import_document`, and `current_time`. The system prompt lists
-  them; `search_tools` loads matches by their real names from the next step.
-- Put today's date (no time) in the system prompt. `current_time` gives the time.
+  `create_skill`, and `import_document`. The system prompt lists them;
+  `search_tools` loads matches by their real names from the next step.
+- Add an always-loaded `current_time` tool (local date, time, weekday, time
+  zone). The system prompt carries no date.
 
 ## Why
 
@@ -33,13 +34,21 @@ Before 1.0.0, when tool names become part of the contract:
   special case. Removing them removes that case.
 - The tool budget dropped web, MCP, and subagent tools silently at 2% of the
   window, and an unknown model defaulted to 128k. Deferred loading keeps every
-  tool reachable and keeps the per-request tool list small (14 core tools,
+  tool reachable and keeps the per-request tool list small (15 core tools,
   down from 20).
 - `search_tools` returns real tools, not a generic `call_tool(name, args)`, so
   approval, audit, and undo work on the real tool name. Anthropic, OpenAI,
   Claude Code, and Codex use the same "search, then call by name" pattern.
 - The model had no clock. A prompt about "today" made it search the vault for
   the date (5-32 extra tool calls in the `find.easy.dentist` eval).
+- The date goes in a tool, not in the system prompt. A date line in the prompt
+  (2026-11-16, DeepSeek V4.1 Flash, 5 runs per cell) dropped
+  `organize.easy.invoice` from 4/5 to 0/5 and `tools.easy.search` from 5/5 to
+  3/5. A shorter line (0/5, 2/5) and a line at the end of the prompt (1/5, 1/5)
+  did the same. Without the line, and with `current_time` always loaded, the
+  cases scored 3/5 and 5/5, and `find.easy.today` passed 5/5: the model called
+  `current_time` in every run. The tool costs one call; the line also changed
+  the prompt every day.
 
 ## Consequences
 

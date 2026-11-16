@@ -34,7 +34,7 @@ behavior.
 | # | Principle | Current behavior | Status | Rationale / evidence |
 |---|-----------|-----------------|--------|----------------------|
 | 6 | Centralized tool registry with dispatch + error return | `runtime-resources.ts` composes tool sets; each tool returns string-shaped results, errors surface as tool results | compliant | Errors are returned to the model, not raised through the loop |
-| 7 | Dynamic tool loading / skill menu to keep schema cost down | Rarely used tools (MCP, `create_skill`, `import_document`, `current_time`) are deferred; the system prompt lists them and `search_tools` loads matches (`src/agent/tool-loading.ts`) | compliant | Search-then-call-by-name, see ADR 0006 |
+| 7 | Dynamic tool loading / skill menu to keep schema cost down | Rarely used tools (MCP, `create_skill`, `import_document`) are deferred; the system prompt lists them and `search_tools` loads matches (`src/agent/tool-loading.ts`) | compliant | Search-then-call-by-name, see ADR 0006 |
 | 8 | Tool description quality: state behavior, output format, constraints | Tool schemas in `src/tools/*-tools.ts` describe outputs, units, and limits (e.g. `read` with startLine/endLine) | compliant | Descriptions are reviewed alongside tool behavior; example-rich for vault tools |
 | 9 | MCP support | `src/mcp/*` implements MCP client; per-tool server attribution via `isMcpToolName` | compliant | Stdio/transport MCP servers registered through settings; OAuth supported (`mcp/client.ts`) |
 | 10 | Tool composition (sequential / fan-out / conditional) | Emerges from the loop; no harness code | compliant | Per guide, the model composes; we provide the atomic tools |

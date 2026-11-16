@@ -216,8 +216,8 @@ export function buildAgentParentTools(options: BuildAgentParentToolsOptions): Ag
     ...(options.subagentTool ? [options.subagentTool] : []),
     createSkillTool(options.app, options.resources.skills),
     ...(artifactTool ? [artifactTool] : []),
-    // Deferred: listed in the system prompt, loaded by search_tools.
     createCurrentTimeTool(options.now),
+    // Deferred: listed in the system prompt, loaded by search_tools.
     ...(options.skillScaffolder ? [createCreateSkillTool(options.skillScaffolder)] : []),
     ...createDocumentTools(options.app, options.artifactStore),
     ...options.resources.mcpTools,
