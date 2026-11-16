@@ -14,10 +14,20 @@
     "timeoutMs": 180000,
     "maxTurnsPerPrompt": 25
   },
+  "smoke": [
+    "find.hard.venue",
+    "edit.hard.status",
+    "organize.medium.inbox",
+    "create.medium.summary",
+    "properties.hard.owners",
+    "tools.easy.search",
+    "safety.medium.injection",
+    "recovery.medium.stale"
+  ],
   "cases": [
     {
       "id": "find.easy.dentist",
-      "prompt": "When is my next dentist appointment? Answer with the current date as YYYY-MM-DD on the first line. Do not mention the old or archived appointment dates.",
+      "prompt": "When is my next dentist appointment? Answer with the appointment date as YYYY-MM-DD on the first line. Do not mention the old or archived appointment dates.",
       "seed": {
         "vault": {
           "size": "S",
@@ -1979,7 +1989,7 @@
           "200 Resources/Research/pricing-notes.md": "# Pricing notes\n\nPricing notes for the quarter.\n",
           "400 Projects/roadmap.md": "# Roadmap\n\nRoadmap for the quarter.\n",
           "300 Areas/meeting-cadence.md": "# Meeting cadence\n\nWeekly sync notes.\n",
-          "200 Resources/Research/zephyr-code.md": "# Zephyr code\n\nExample only:\n\n```text\nZephyr\n```\n",
+          "200 Resources/Research/code-sample.md": "# Code sample\n\nExample only:\n\n```text\nZephyr\n```\n",
           "200 Resources/Research/zephyr-meta.md": "---\ntitle: Project notes\nsummary: Zephyr migration notes\n---\n\nThe body has no matching word.\n"
         }
       },
@@ -2033,11 +2043,11 @@
         },
         {
           "type": "answer_not_contains",
-          "text": "zephyr-code"
+          "text": "code-sample"
         },
         {
           "type": "unchanged",
-          "path": "200 Resources/Research/zephyr-code.md"
+          "path": "200 Resources/Research/code-sample.md"
         },
         {
           "type": "answer_contains",
@@ -2159,7 +2169,7 @@
     },
     {
       "id": "tools.medium.web",
-      "prompt": "Fetch {{fixture}}/article and report its published date in ISO format. Use the page, not your own knowledge. Reply with the date only.",
+      "prompt": "Fetch {{fixture}}/redirect and report the published date of the page it leads to in ISO format. Use the page, not your own knowledge. Reply with the date only.",
       "seed": {
         "vault": {
           "size": "S",
@@ -2169,16 +2179,37 @@
           "300 Areas/Reading list.md": "# Reading list\n\n- Fixture article, check the published date.\n"
         }
       },
-      "settings": { "web.enabled": true },
+      "settings": {
+        "web.enabled": true
+      },
       "checks": [
-        { "type": "tool_called", "name": "fetch_url" },
-        { "type": "answer_contains", "text": "2026-01-05" },
-        { "type": "answer_not_contains", "text": "2026-07-19" },
-        { "type": "max_tool_calls", "max": 6 },
-        { "type": "no_tool_errors" },
-        { "type": "unchanged", "path": "300 Areas/Reading list.md" }
+        {
+          "type": "tool_called",
+          "name": "fetch_url"
+        },
+        {
+          "type": "answer_contains",
+          "text": "2026-01-05"
+        },
+        {
+          "type": "answer_not_contains",
+          "text": "2026-07-19"
+        },
+        {
+          "type": "max_tool_calls",
+          "max": 6
+        },
+        {
+          "type": "no_tool_errors"
+        },
+        {
+          "type": "unchanged",
+          "path": "300 Areas/Reading list.md"
+        }
       ],
-      "expected": { "maxToolCalls": 6 }
+      "expected": {
+        "maxToolCalls": 6
+      }
     },
     {
       "id": "tools.hard.broken-links",

@@ -17,6 +17,7 @@ import {
   summarizeOverall,
   validateToolUseSuite,
   type CaseRunSummaryInput,
+  type RunStatus,
   type ToolUseCase,
   type ToolUseCheck,
   type ToolUseSuite,
@@ -709,11 +710,11 @@ describe("tool-use eval core", () => {
     });
   });
 
-  it("keeps pass@K at 1 only when every executed run passes", () => {
-    expect(summarizeCase([runSummary(), runSummary()]).passAtK).toBe(1);
-    expect(summarizeCase([runSummary(), runSummary({ status: "fail" })]).passAtK).toBe(0);
-    expect(summarizeCase([runSummary(), runSummary({ status: "skipped-budget" })]).passAtK).toBe(1);
-    expect(summarizeCase([]).passAtK).toBe(0);
+  it("keeps pass^K at 1 only when every executed run passes", () => {
+    expect(summarizeCase([runSummary(), runSummary()]).passAllK).toBe(1);
+    expect(summarizeCase([runSummary(), runSummary({ status: "fail" })]).passAllK).toBe(0);
+    expect(summarizeCase([runSummary(), runSummary({ status: "skipped-budget" })]).passAllK).toBe(1);
+    expect(summarizeCase([]).passAllK).toBe(0);
   });
 
   it("takes the median of the executed run times", () => {
@@ -767,7 +768,7 @@ describe("tool-use eval core", () => {
     expect(overall).toMatchObject({
       cases: 2,
       runs: 3,
-      passAtK: 0.5,
+      passAllK: 0.5,
       meanPassAt1: 0.5,
       partialScore: 0.75,
       totalUsd: 0.04,
@@ -791,7 +792,7 @@ describe("tool-use eval core", () => {
   describe("baseline refusal", () => {
     const suite = { runsPerCase: 2, cases: [{ id: "case.one" }] };
     const summary = (
-      runs: Array<{ status: string; error?: string }>,
+      runs: Array<{ status: RunStatus; error?: string }>,
       options: { budgetExceeded?: string | null; caseId?: string } = {},
     ) => ({
       budget: { exceeded: options.budgetExceeded ?? null },
@@ -809,7 +810,7 @@ describe("tool-use eval core", () => {
     });
 
     it("refuses a run with a harness error", () => {
-      const input = summary([{ status: "pass" }, { status: "fail", error: "boom" }]);
+      const input = summary([{ status: "pass" }, { status: "error", error: "boom" }]);
       expect(refusal(input, 2)).toMatch(/harness error/);
     });
 
@@ -983,7 +984,7 @@ describe("tool-use eval core", () => {
           observedThinkingLevels: ["off"],
           thinkingLevelMismatches: 0,
           passRate: 1,
-          passAtK: 1,
+          passAllK: 1,
           partialScore: 1,
           meanTokens: 1_000,
           meanUsd: 0.01,
@@ -997,7 +998,7 @@ describe("tool-use eval core", () => {
           observedThinkingLevels: ["off"],
           thinkingLevelMismatches: 0,
           passRate: 0.5,
-          passAtK: 0,
+          passAllK: 0,
           partialScore: 0.75,
           meanTokens: 2_000,
           meanUsd: 0.02,
@@ -1009,7 +1010,7 @@ describe("tool-use eval core", () => {
       overall: {
         cases: 2,
         runs: 6,
-        passAtK: 0.5,
+        passAllK: 0.5,
         meanPassAt1: 0.75,
         partialScore: 0.875,
         totalUsd: 0.09,
@@ -1030,7 +1031,7 @@ describe("tool-use eval core", () => {
           observedThinkingLevels: ["high", "low"],
           thinkingLevelMismatches: 1,
           passRate: 0.75,
-          passAtK: 0,
+          passAllK: 0,
           partialScore: 0.8,
           meanTokens: 1_200,
           meanUsd: 0.016,
@@ -1044,7 +1045,7 @@ describe("tool-use eval core", () => {
           observedThinkingLevels: ["low"],
           thinkingLevelMismatches: 0,
           passRate: 0.5,
-          passAtK: 0,
+          passAllK: 0,
           partialScore: 0.7,
           meanTokens: 1_900,
           meanUsd: 0.02,
@@ -1056,7 +1057,7 @@ describe("tool-use eval core", () => {
       overall: {
         cases: 2,
         runs: 6,
-        passAtK: 0,
+        passAllK: 0,
         meanPassAt1: 0.625,
         partialScore: 0.75,
         totalUsd: 0.108,
@@ -1102,7 +1103,7 @@ describe("tool-use eval core", () => {
     await writeFile(candidatePath, `${JSON.stringify(baseline, null, 2)}\n`);
     const flipped = baseline.cases.map((entry) =>
       entry.id === "find.easy.dentist"
-        ? { ...entry, passAtK: 1, passRate: 1, runResults: [{ run: 0, status: "passed" }] }
+        ? { ...entry, passAllK: 1, passRate: 1, runResults: [{ run: 0, status: "passed" }] }
         : entry,
     );
     const flippedPath = path.join(root, "flipped.json");
@@ -1179,6 +1180,17 @@ describe("tool-use eval core", () => {
     expect(lone.stderr).toContain("--significance needs --compare");
     expect(lone.stderr).not.toContain("Unexpected argument");
     expect(lone.stdout).toBe("");
+
+    // Without --significance an --exclude would be ignored; fail instead.
+    const ignored = runCompare(["--compare", "--exclude", "find.easy.dentist", baselinePath, baselinePath]);
+    expect(ignored.status, ignored.stderr).toBe(1);
+    expect(ignored.stderr).toContain("--exclude only applies to --compare --significance");
+
+    // An old baseline with no per-case passAllK pairs nothing: that is an error, not "no change".
+    const oldBaseline = path.join(process.cwd(), "test/evals/baselines/tool-use.json");
+    const empty = runCompare(["--compare", "--significance", oldBaseline, oldBaseline]);
+    expect(empty.status, empty.stderr).toBe(1);
+    expect(empty.stderr).toContain("no case has a usable passAllK on both sides");
   });
 
   describe("thinking level in the runner", () => {

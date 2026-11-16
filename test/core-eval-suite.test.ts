@@ -304,6 +304,37 @@ describe("core eval suite", () => {
     expect(grade(summary("external").replace("14,800 EUR", "14,500 EUR"))).toBe(false);
   });
 
+  it("excludes the code-sample note from tools.easy.search without a heading ambiguity", () => {
+    const evalCase = caseById("tools.easy.search");
+    const codeSample = "200 Resources/Research/code-sample.md";
+
+    expect(JSON.stringify(evalCase), "the old zephyr-code note must be gone").not.toContain("zephyr-code");
+    expect(evalCase.seed.files[codeSample] ?? "", "the code-sample note is seeded").toContain("```text\nZephyr\n```");
+    expect(literalAnswers(evalCase.checks, "answer_not_contains")).toContain("code-sample");
+
+    const answer = ["- zephyr-alpha", "- zephyr-beta", "- zephyr-gamma", "- zephyr-meta"].join("\n");
+    const grade = (text: string) =>
+      gradeRun(evalCase, {
+        files: evalCase.seed.files,
+        frontmatter: {},
+        links: {},
+        unresolvedLinks: {},
+        toolCalls: [{ name: "vault_inspect" }],
+        answer: text,
+      }).ok;
+
+    expect(grade(answer), "the four real mentions must pass").toBe(true);
+    expect(grade(`${answer}\n- code-sample`), "the code sample must fail").toBe(false);
+  });
+
+  it("uses the fixture redirect for tools.medium.web", () => {
+    const evalCase = caseById("tools.medium.web");
+
+    expect(evalCase.prompt).toContain("{{fixture}}/redirect");
+    expect(evalCase.prompt).not.toContain("{{fixture}}/article");
+    expect(evalCase.settings?.["web.enabled"]).toBe(true);
+  });
+
   it("seeds a real NFD path whose NFC form differs", () => {
     const evalCase = loadSuite().cases.find((entry) => entry.id === "recovery.easy.nfd");
     if (!evalCase) throw new Error("missing recovery.easy.nfd");

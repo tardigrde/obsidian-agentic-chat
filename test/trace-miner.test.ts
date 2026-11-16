@@ -9,6 +9,7 @@ import {
   runTraceMiner,
   type TraceCandidate,
 } from "../scripts/eval/trace-miner";
+import { STOPPED_APPROVAL_REASON } from "../src/agent/tool-call-controller";
 
 const SESSION_FILE = "2026-01-02T03-04-05-000Z_trace-fixture.jsonl";
 const FIXED_NOW = new Date("2026-01-02T00:00:00.000Z");
@@ -361,6 +362,19 @@ describe("mineSessionText", () => {
     expect(approvals).toHaveLength(1);
     expect(approvals[0]).toMatchObject({ signal: "approval-stopped", severity: "high" });
     expect(approvals[0]?.evidence).toContain("vault_edit");
+  });
+
+  it("recognizes the product's own stopped-approval reason in a tool result", () => {
+    const session = new FixtureSession()
+      .user("Edit the note.")
+      .assistant({ toolCalls: [{ id: "call-1", name: "vault_edit", args: { path: "Note.md" } }] })
+      .toolResult("call-1", "vault_edit", STOPPED_APPROVAL_REASON, true)
+      .assistant({ text: "Stopped." });
+
+    const approvals = mine(session).filter((candidate) => candidate.signal.startsWith("approval-"));
+
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]).toMatchObject({ signal: "approval-stopped" });
   });
 
   it("flags a known recovery signal from a non-error tool result", () => {

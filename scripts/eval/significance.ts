@@ -20,7 +20,7 @@ export const DEFAULT_SIGNIFICANCE_RESAMPLES = 2_000;
 export interface SignificanceCase {
   id: string;
   /** 0 or 1: every run of the case passed, or at least one did not. */
-  passAtK: number;
+  passAllK: number;
   /** 0..1: share of runs that passed. Missing in older baselines. */
   passRate?: number;
 }
@@ -31,7 +31,7 @@ export interface SignificanceOptions {
   resamples?: number;
 }
 
-export type SignificanceMetric = "passAtK" | "passRate";
+export type SignificanceMetric = "passAllK" | "passRate";
 
 export interface MetricSignificance {
   metric: SignificanceMetric;
@@ -44,13 +44,13 @@ export interface MetricSignificance {
   upper: number;
   /** True when the 95% interval excludes 0. */
   significant: boolean;
-  /** Set when the input had no `passRate` and `passAtK` was used instead. */
-  fallbackFrom?: "passAtK";
+  /** Set when the input had no `passRate` and `passAllK` was used instead. */
+  fallbackFrom?: "passAllK";
 }
 
 export interface CaseFlip {
   id: string;
-  passAtKChange: number;
+  passAllKChange: number;
   passRateChange?: number;
 }
 
@@ -180,7 +180,7 @@ function skipWarning(entry: SkippedCase, before: CaseIndex, after: CaseIndex): s
 
 /**
  * The two metric rows. When any paired case lacks a `passRate`, the pass@1 row
- * repeats the passAtK numbers and carries the fallback marker.
+ * repeats the passAllK numbers and carries the fallback marker.
  */
 function buildMetrics(
   paired: readonly PairedCase[],
@@ -190,9 +190,9 @@ function buildMetrics(
   const hasPassRate = paired.every(
     ({ before: left, after: right }) => isScore(left.passRate) && isScore(right.passRate),
   );
-  const beforePassAtK = paired.map(({ before: entry }) => entry.passAtK);
-  const afterPassAtK = paired.map(({ after: entry }) => entry.passAtK);
-  const rows = [bootstrapMetric("passAtK", beforePassAtK, afterPassAtK, seed, resamples)];
+  const beforePassAllK = paired.map(({ before: entry }) => entry.passAllK);
+  const afterPassAllK = paired.map(({ after: entry }) => entry.passAllK);
+  const rows = [bootstrapMetric("passAllK", beforePassAllK, afterPassAllK, seed, resamples)];
   if (hasPassRate) {
     rows.push(
       bootstrapMetric("passRate", passRates(paired, "before"), passRates(paired, "after"), seed, resamples),
@@ -200,12 +200,12 @@ function buildMetrics(
     return { rows };
   }
   rows.push({
-    ...bootstrapMetric("passRate", beforePassAtK, afterPassAtK, seed, resamples),
-    fallbackFrom: "passAtK",
+    ...bootstrapMetric("passRate", beforePassAllK, afterPassAllK, seed, resamples),
+    fallbackFrom: "passAllK",
   });
   return {
     rows,
-    warning: "passRate is missing on at least one side; passAtK is used for both metrics",
+    warning: "passRate is missing on at least one side; passAllK is used for both metrics",
   };
 }
 
@@ -217,13 +217,13 @@ function buildFlips(paired: readonly PairedCase[]): CaseFlip[] {
   return paired
     .map(({ id, before: left, after: right }) => ({
       id,
-      passAtKChange: right.passAtK - left.passAtK,
+      passAllKChange: right.passAllK - left.passAllK,
       passRateChange:
         isScore(left.passRate) && isScore(right.passRate)
           ? right.passRate - left.passRate
           : undefined,
     }))
-    .filter((flip) => flip.passAtKChange !== 0 || (flip.passRateChange ?? 0) !== 0)
+    .filter((flip) => flip.passAllKChange !== 0 || (flip.passRateChange ?? 0) !== 0)
     .sort(
       (left, right) =>
         flipMagnitude(right) - flipMagnitude(left) || left.id.localeCompare(right.id),
@@ -273,16 +273,16 @@ function isScore(input: unknown): input is number {
 
 /** The first score that cannot be used, or null when the case is valid. */
 function invalidField(entry: SignificanceCase): string | null {
-  const badPassAtK = !Number.isFinite(entry.passAtK);
+  const badPassAllK = !Number.isFinite(entry.passAllK);
   const badPassRate = entry.passRate !== undefined && !Number.isFinite(entry.passRate);
-  if (badPassAtK && badPassRate) return "passAtK and passRate";
-  if (badPassAtK) return "passAtK";
+  if (badPassAllK && badPassRate) return "passAllK and passRate";
+  if (badPassAllK) return "passAllK";
   if (badPassRate) return "passRate";
   return null;
 }
 
 function flipMagnitude(flip: CaseFlip): number {
-  return Math.max(Math.abs(flip.passAtKChange), Math.abs(flip.passRateChange ?? 0));
+  return Math.max(Math.abs(flip.passAllKChange), Math.abs(flip.passRateChange ?? 0));
 }
 
 export interface SignificanceLabels {
@@ -308,8 +308,8 @@ export function formatSignificance(
     "|---|---|---|---|---|---|",
   ];
   for (const metric of result.metrics) {
-    const name = metric.metric === "passAtK" ? "pass^K" : "pass@1";
-    const label = metric.fallbackFrom ? `${name} (passAtK fallback)` : name;
+    const name = metric.metric === "passAllK" ? "pass^K" : "pass@1";
+    const label = metric.fallbackFrom ? `${name} (passAllK fallback)` : name;
     lines.push(
       `| ${label} | ${percent(metric.before)} | ${percent(metric.after)} | ${points(metric.difference)} | ${interval(metric.lower, metric.upper)} | ${verdict(metric)} |`,
     );
@@ -327,7 +327,7 @@ export function formatSignificance(
         flip.passRateChange === undefined
           ? "(missing)"
           : signed(flip.passRateChange, (number) => `${trimmed((number * 100).toFixed(1))} pp`);
-      lines.push(`| ${flip.id} | ${signed(flip.passAtKChange, String)} | ${passRate} |`);
+      lines.push(`| ${flip.id} | ${signed(flip.passAllKChange, String)} | ${passRate} |`);
     }
   } else if (result.paired > 0) {
     lines.push("", "No case changed.");

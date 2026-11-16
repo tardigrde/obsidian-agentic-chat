@@ -1,5 +1,4 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import process from "node:process";
 import {
   JSON_CONTENT_TYPE,
   TEXT_CONTENT_TYPE,
@@ -81,6 +80,6 @@ export function startFixtureServer(options: FixtureServerOptions = {}): Promise<
   });
 }
 
-runFixtureCli(import.meta.url, process.argv.slice(2), "--slow-ms", (args) =>
-  startFixtureServer({ port: args.port, slowMs: args.extra }),
+runFixtureCli(import.meta.url, ["slow-ms"], (args) =>
+  startFixtureServer({ port: args.port, slowMs: args.flags["slow-ms"] }),
 );

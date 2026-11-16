@@ -1,68 +1,35 @@
 import { $, browser } from "@wdio/globals";
 import { before, describe, it } from "mocha";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import { BudgetTracker, type ObservedRun, type RunUsage, type ToolUseCase } from "../../../scripts/eval/tool-use-core";
 import {
-  BudgetTracker,
-  type RunPricing,
-  type RunUsage,
-  type ToolUseBudgetCaps,
-  type ToolUseCheckResult,
-} from "../../../scripts/eval/tool-use-core";
+  emptyObservation,
+  type PlannedRun,
+  type RunRecord,
+  type ToolUsePlan,
+} from "../../../scripts/eval/tool-use-plan";
 import { sendPrompt } from "../dogfood/dogfood-helpers";
+
+/**
+ * Executes the plan that `scripts/run-tool-use-evals.ts` wrote: one fresh
+ * vault and one new conversation per planned run. The spec only observes; it
+ * writes one run record per run and the runner grades them.
+ */
 
 const PLAN_PATH = process.env.TOOL_USE_PLAN?.trim() ?? "";
 const RESULTS_DIR = process.env.TOOL_USE_RESULTS_DIR?.trim() ?? "";
 const PLUGIN_ID = "agentic-chat";
+/** The metadata cache and the session file settle shortly after the turn. */
+const SETTLE_TIMEOUT_MS = 5_000;
 
-interface EvalCasePlan {
-  id: string;
-  prompt: string;
-  seed: { files: Record<string, string>; binaryFiles?: Record<string, string> };
-  settings?: Record<string, string | number | boolean>;
-  /** The level this case requests; the plan already applied the per-case pin. */
-  thinkingLevel?: string;
-  checks: unknown[];
-}
-
-interface EvalPlan {
-  runId: string;
-  model: string;
-  runsPerCase: number;
-  thinkingLevel: string;
-  /** cli, env, suite, or default. */
-  thinkingLevelSource?: string;
-  budget: ToolUseBudgetCaps;
-  turn: { timeoutMs: number; maxTurnsPerPrompt: number };
-  prices: RunPricing;
-  /** Base URL of the local fixture server; absent when no case needs it. */
-  fixtureBaseUrl?: string;
-  cases: EvalCasePlan[];
-  runs: Array<{ caseId: string; run: number }>;
-}
-
-interface ObservedSession {
-  toolCalls: Array<{ name: string; isError?: boolean }>;
-  answer: string;
+type SessionObservation = Pick<ObservedRun, "toolCalls" | "answer"> & {
   usage: RunUsage;
   modelCalls: number;
-  /** Level read from the run's session `thinking_level_change` entry. */
   observedThinkingLevel?: string;
-}
-
-interface RunResult extends ObservedSession {
-  caseId: string;
-  run: number;
-  files: Record<string, string>;
-  frontmatter: Record<string, Record<string, unknown>>;
-  links: Record<string, string[]>;
-  unresolvedLinks: Record<string, string[]>;
-  ms: number;
-  status?: string;
-  error?: string;
-  checks?: ToolUseCheckResult[];
-}
+};
+type VaultObservation = Omit<ObservedRun, "toolCalls" | "answer">;
 
 interface AnalyzerModule {
   analyzeSessionText: (text: string, file?: string) => {
@@ -77,140 +44,136 @@ interface AnalyzerModule {
   };
 }
 
-let plan: EvalPlan;
+interface SessionEntry {
+  type?: string;
+  thinkingLevel?: unknown;
+  message?: {
+    role?: string;
+    stopReason?: string;
+    errorMessage?: string;
+    usage?: { totalTokens?: unknown; cost?: { total?: unknown; totalFromProvider?: unknown } };
+  };
+}
+
+let plan: ToolUsePlan;
 let analyzer: AnalyzerModule;
-let baseCaseSettings: Record<string, unknown> = {};
+/** The top-level settings objects that a case may override, as configured for the eval. */
+let baseSettings: Record<string, unknown> = {};
 
 describe("tool-use eval", function () {
   before(async function () {
     if (!PLAN_PATH) this.skip();
     if (!RESULTS_DIR) throw new Error("TOOL_USE_RESULTS_DIR is required");
-    plan = JSON.parse(readFileSync(PLAN_PATH, "utf8")) as EvalPlan;
-    if (!plan.prices) throw new Error("The tool-use plan has no fetched prices");
+    plan = JSON.parse(readFileSync(PLAN_PATH, "utf8")) as ToolUsePlan;
     analyzer = (await import(
       pathToFileURL(path.join(process.cwd(), "scripts/analyze-session-trace.mjs")).href
     )) as AnalyzerModule;
     await installFixtureOrigin(plan.fixtureBaseUrl);
     await openChat();
-    await configurePlugin();
+    baseSettings = await configurePlugin();
   });
 
   it("runs every planned case run and records its observation", async function () {
+    const caseById = new Map(plan.cases.map((evalCase) => [evalCase.id, evalCase]));
+    // The runner starts every run id with an empty results directory, so the
+    // records this process writes are the whole spend.
+    const budget = new BudgetTracker(plan.budget, plan.prices);
+
     for (const planned of plan.runs) {
-      const evalCase = plan.cases.find((entry) => entry.id === planned.caseId);
+      const evalCase = caseById.get(planned.caseId);
       if (!evalCase) throw new Error(`Plan refers to an unknown case: ${planned.caseId}`);
 
       // A turn that will not stop must fail the spec: seeding the next vault
       // under a live turn lets the model write into the next run.
-      await stopIfRunning();
-      await closeModals();
+      await endTurn();
       await openChatIfNeeded();
-      const exceeded = budgetExceeded();
-      if (exceeded) {
-        writeResult({
-          caseId: evalCase.id,
-          run: planned.run,
-          files: {},
-          frontmatter: {},
-          links: {},
-          unresolvedLinks: {},
-          toolCalls: [],
-          answer: "",
-          usage: {},
-          modelCalls: 0,
-          ms: 0,
-          status: "skipped-budget",
-          error: exceeded,
-        });
-        continue;
-      }
 
-      const startedAt = Date.now();
-      let sessionBaseline: string[] | undefined;
-      try {
-        await prepareVault(evalCase.seed.files, evalCase.seed.binaryFiles ?? {});
-        await applyCaseSettings(
-          evalCase.settings ?? {},
-          evalCase.thinkingLevel ?? plan.thinkingLevel ?? "low",
-        );
-        // The command callback is fire-and-forget, so take the set before it
-        // starts. The new session file is the only one that may appear.
-        sessionBaseline = await listSessionPaths();
-        await browser.executeObsidianCommand("agentic-chat:new-conversation");
-        await $(".agentic-chat-empty").waitForExist({ timeout: 30_000 });
-        await sendPrompt(evalCase.prompt);
-        // waitForTurnEnd passes while Stop is still hidden, so first wait for this
-        // run's assistant bubble (the transcript was empty after new-conversation).
-        // A slow provider can take more than 30 s to start the turn.
-        await $(".agentic-chat-assistant").waitForExist({ timeout: 60_000 });
-        // An open ask-user card means the turn waits for a human. Treat it as
-        // the end for this run, then stop the turn so the next run starts clean.
-        await waitForTurnOrAskUser(plan.turn.timeoutMs);
-        await closeModals();
-        await stopIfRunning();
-
-        const ms = Date.now() - startedAt;
-        const files = await readVaultMarkdown();
-        const frontmatter = await readVaultFrontmatter();
-        const { links, unresolvedLinks } = await readVaultLinks();
-        const observation = await readObservation(sessionBaseline);
-        writeResult({
-          caseId: evalCase.id,
-          run: planned.run,
-          files,
-          frontmatter,
-          links,
-          unresolvedLinks,
-          ...observation,
-          ms,
-        });
-      } catch (error) {
-        const ms = Date.now() - startedAt;
-        try {
-          await closeModals();
-          await stopIfRunning();
-        } catch {
-          // A dead WebDriver session cannot be cleaned up. Keep the primary
-          // error: the runner reports the missing observation, and the next
-          // run starts from a fresh session.
-        }
-        let files: Record<string, string> = {};
-        const frontmatter: Record<string, Record<string, unknown>> = {};
-        let links: Record<string, string[]> = {};
-        let unresolvedLinks: Record<string, string[]> = {};
-        let observation = emptyObservation();
-        try {
-          files = await readVaultMarkdown();
-        } catch {
-          // Keep the empty map; the runner will fail the checks.
-        }
-        try {
-          ({ links, unresolvedLinks } = await readVaultLinks());
-        } catch {
-          // Keep the empty maps; the runner will fail the checks.
-        }
-        if (sessionBaseline) {
-          try {
-            observation = await readObservation(sessionBaseline);
-          } catch {
-            // Keep the empty observation.
-          }
-        }
-        writeResult({
-          caseId: evalCase.id,
-          run: planned.run,
-          files,
-          frontmatter,
-          links,
-          unresolvedLinks,
-          ...observation,
-          ms,
-          error: errorMessage(error),
-        });
-      }
+      const exceeded = budget.exceeded();
+      const record = exceeded ? skippedRecord(planned, exceeded) : await executeRun(evalCase, planned);
+      budget.add(record);
+      writeRecord(record);
     }
   });
 });
+
+/**
+ * Drive one run and observe it. A harness failure does not throw: the record
+ * keeps the error next to whatever could still be observed, so the tokens the
+ * run spent stay in the budget and the report shows what the vault looked like.
+ */
+async function executeRun(evalCase: ToolUseCase, planned: PlannedRun): Promise<RunRecord> {
+  const startedAt = Date.now();
+  let sessionBaseline: string[] | undefined;
+  let error: string | undefined;
+  try {
+    await seedVault(evalCase.seed.files, evalCase.seed.binaryFiles);
+    // The plan already resolved the per-case pin, so this is the level to use.
+    await applyCaseSettings(evalCase.settings ?? {}, evalCase.thinkingLevel ?? plan.thinkingLevel);
+    // The command callback is fire-and-forget, so take the set before it
+    // starts. The new session file is the only one that may appear.
+    sessionBaseline = await listSessionPaths();
+    await browser.executeObsidianCommand("agentic-chat:new-conversation");
+    await $(".agentic-chat-empty").waitForExist({ timeout: 30_000 });
+    await sendPrompt(evalCase.prompt);
+    // The turn-end wait passes while Stop is still hidden, so first wait for
+    // this run's assistant bubble (the transcript was empty after
+    // new-conversation). A slow provider can take more than 30 s to start.
+    await $(".agentic-chat-assistant").waitForExist({ timeout: 60_000 });
+    await waitForTurnOrAskUser(plan.turn.timeoutMs);
+    await endTurn();
+  } catch (caught) {
+    error = errorMessage(caught);
+    // A dead WebDriver session cannot be cleaned up. Keep the primary error;
+    // the next run's own `endTurn` fails the spec if the turn is still live.
+    await endTurn().catch(() => undefined);
+  }
+  const ms = Date.now() - startedAt;
+
+  const vault = await observeVault().catch((caught: unknown) => {
+    error ??= `could not read the vault: ${errorMessage(caught)}`;
+    return emptyVaultObservation();
+  });
+  let session = emptySessionObservation();
+  if (sessionBaseline) {
+    try {
+      const raw = await readNewSession(sessionBaseline);
+      session = observeSession(raw);
+      const apiError = sessionApiError(raw);
+      if (apiError) error ??= `model request failed: ${apiError}`;
+    } catch (caught) {
+      error ??= errorMessage(caught);
+    }
+  }
+
+  return {
+    caseId: planned.caseId,
+    run: planned.run,
+    ms,
+    usage: session.usage,
+    modelCalls: session.modelCalls,
+    ...(session.observedThinkingLevel ? { observedThinkingLevel: session.observedThinkingLevel } : {}),
+    observed: { ...vault, toolCalls: session.toolCalls, answer: session.answer },
+    ...(error ? { error } : {}),
+  };
+}
+
+function skippedRecord(planned: PlannedRun, cap: string): RunRecord {
+  return {
+    caseId: planned.caseId,
+    run: planned.run,
+    ms: 0,
+    usage: {},
+    modelCalls: 0,
+    observed: emptyObservation(),
+    skippedBudget: cap,
+  };
+}
+
+function writeRecord(record: RunRecord): void {
+  const caseDir = path.join(RESULTS_DIR, record.caseId);
+  mkdirSync(caseDir, { recursive: true });
+  writeFileSync(path.join(caseDir, `${record.run}.json`), `${JSON.stringify(record, null, 2)}\n`);
+}
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
@@ -224,9 +187,9 @@ async function openChatIfNeeded(): Promise<void> {
 }
 
 /**
- * WDIO-only hook: allow the plugin to reach the one loopback origin owned by
- * this run's fixture server. Unset means the SSRF gate keeps every local and
- * private address blocked.
+ * Allow the plugin to reach the one loopback origin that this run's fixture
+ * server owns. Only the e2e build reads the hook; a release build has no such
+ * code. Unset, the SSRF gate keeps every local and private address blocked.
  */
 async function installFixtureOrigin(baseUrl: string | undefined): Promise<void> {
   const origin = baseUrl ? new URL(baseUrl).origin : undefined;
@@ -237,26 +200,32 @@ async function installFixtureOrigin(baseUrl: string | undefined): Promise<void> 
   }, origin);
 }
 
-async function configurePlugin(): Promise<void> {
-  const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
-  if (!apiKey) throw new Error("AGENTIC_CHAT_API_KEY is missing for the tool-use eval spec");
-  // A case may set a dotted path such as "web.enabled". Capture and restore the
-  // whole top-level object, so the next case starts from the base again.
-  const settingKeys = [
+/**
+ * Dotted keys such as "web.enabled" override a field inside a top-level
+ * settings object. `thinkingLevel` is always listed: every run sets it from
+ * the plan, so it is restored like any case override.
+ */
+function topLevelSettingKeys(cases: readonly ToolUseCase[]): string[] {
+  return [
     ...new Set([
-      // The runner sets this on every case from the plan, not only when a case
-      // names it in `settings`, so capture and restore it like every other key.
       "thinkingLevel",
-      ...plan.cases.flatMap((entry) => Object.keys(entry.settings ?? {}).map((key) => key.split(".")[0])),
+      ...cases.flatMap((entry) => Object.keys(entry.settings ?? {}).map((key) => key.split(".")[0])),
     ]),
   ];
-  const configured = await browser.executeObsidian(async ({ app }, config) => {
+}
+
+/**
+ * Configure the plugin for a fixed, comparable eval and return the configured
+ * value of every top-level settings key that a case overrides. Each run
+ * restores those values first, so one case's override never reaches the next.
+ */
+async function configurePlugin(): Promise<Record<string, unknown>> {
+  const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
+  if (!apiKey) throw new Error("AGENTIC_CHAT_API_KEY is missing for the tool-use eval spec");
+  const base = await browser.executeObsidian(async ({ app }, config) => {
     const plugin = (app as unknown as {
       plugins?: {
-        plugins?: Record<
-          string,
-          { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }
-        >;
+        plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }>;
       };
     }).plugins?.plugins?.[config.pluginId];
     if (!plugin?.settings) return null;
@@ -278,6 +247,8 @@ async function configurePlugin(): Promise<void> {
     settings.provider = "openrouter";
     settings.openrouterApiKey = config.apiKey;
     settings.openrouterModel = config.model;
+    // Hold the sampling fixed. The reasoning level comes from the plan, per
+    // run (see applyCaseSettings), so a comparison names the level it used.
     settings.temperature = 0;
     settings.mode = "safe";
     settings.approval.mutating = "allow";
@@ -286,10 +257,9 @@ async function configurePlugin(): Promise<void> {
     // hang the turn. A per-tool allow lets the run finish; the checks, not a
     // modal, decide whether the delete was right.
     settings.approval.perTool = { delete: "allow" };
-
-    // The eval vault is synthetic and holds no private data, so provider
-    // privacy filters add routing noise without protecting anything. Pin one
-    // provider path so a fallback or a ZDR filter does not move the score.
+    // The eval vault holds no private data, so provider privacy filters add
+    // routing noise without protecting anything. Pin one provider path so a
+    // fallback or a ZDR filter does not move the score.
     settings.privacy.allowFallbacks = false;
     settings.privacy.denyDataCollection = false;
     settings.privacy.requireZDR = false;
@@ -297,65 +267,57 @@ async function configurePlugin(): Promise<void> {
     settings.mcp.enabled = false;
     settings.toolBudget.enabled = false;
     // A provider reserves the request's max output tokens against the key's
-    // credit. The 24-case runs never need more than a few thousand output
-    // tokens, so cap it and leave the key budget for the whole baseline.
+    // credit. A run never needs more than a few thousand output tokens, so
+    // cap it and leave the key budget for the whole suite.
     settings.maxTokens = 8192;
     settings.maxTurnsPerPrompt = config.maxTurnsPerPrompt;
     settings.ignoredGlobs = "";
-    const settingsRecord = settings as unknown as Record<string, unknown>;
-    const base: Record<string, unknown> = {};
-    for (const key of config.settingKeys) base[key] = settingsRecord[key];
     await plugin.saveSettings?.();
-    return { base };
+    // WebDriver serializes the return value, so this is a copy: a later case
+    // override cannot write through to it.
+    const configured = plugin.settings;
+    return Object.fromEntries(config.overridableKeys.map((key) => [key, configured[key]]));
   }, {
     pluginId: PLUGIN_ID,
     apiKey,
     model: plan.model,
     maxTurnsPerPrompt: plan.turn.maxTurnsPerPrompt,
-    settingKeys,
+    overridableKeys: topLevelSettingKeys(plan.cases),
   });
-  if (!configured) throw new Error("agentic-chat plugin not found in the tool-use vault");
-  baseCaseSettings = configured.base;
+  if (!base) throw new Error("agentic-chat plugin not found in the tool-use vault");
+  return base;
 }
 
 async function applyCaseSettings(
-  settings: Record<string, string | number | boolean>,
+  caseSettings: NonNullable<ToolUseCase["settings"]>,
   thinkingLevel: string,
 ): Promise<void> {
   await browser.executeObsidian(async ({ app }, payload) => {
     const plugin = (app as unknown as {
       plugins?: {
-        plugins?: Record<
-          string,
-          { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }
-        >;
+        plugins?: Record<string, { settings?: Record<string, unknown>; saveSettings?: () => Promise<void> }>;
       };
-    }).plugins?.plugins?.["agentic-chat"];
+    }).plugins?.plugins?.[payload.pluginId];
     if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
-    /** Assign a dotted key such as "web.enabled" inside the settings object. */
-    const setSettingPath = (target: Record<string, unknown>, key: string, value: unknown): void => {
-      const parts = key.split(".");
-      let cursor = target;
+    const settings = plugin.settings;
+    for (const [key, value] of Object.entries(payload.base)) settings[key] = value;
+    for (const [dottedKey, value] of Object.entries(payload.caseSettings)) {
+      const parts = dottedKey.split(".");
+      let cursor = settings;
       for (const part of parts.slice(0, -1)) {
         const next = cursor[part];
         if (next === null || typeof next !== "object" || Array.isArray(next)) cursor[part] = {};
         cursor = cursor[part] as Record<string, unknown>;
       }
       cursor[parts[parts.length - 1]] = value;
-    };
-    const current = plugin.settings;
-    for (const [key, value] of Object.entries(payload.base)) setSettingPath(current, key, value);
-    for (const [key, value] of Object.entries(payload.caseSettings)) setSettingPath(current, key, value);
-    // The plan value is authoritative. It already contains the per-case pin.
-    current.thinkingLevel = payload.thinkingLevel;
+    }
+    settings.thinkingLevel = payload.thinkingLevel;
     await plugin.saveSettings?.();
-  }, { base: baseCaseSettings, caseSettings: settings, thinkingLevel });
+  }, { pluginId: PLUGIN_ID, base: baseSettings, caseSettings, thinkingLevel });
 }
 
-async function prepareVault(
-  seedFiles: Record<string, string>,
-  binaryFiles: Record<string, string>,
-): Promise<void> {
+/** Replace the whole vault content (not `.obsidian`) with the case seed. */
+async function seedVault(files: Record<string, string>, binaryFiles: Record<string, string>): Promise<void> {
   await browser.executeObsidian(async ({ app }, seed) => {
     for (const child of [...app.vault.getRoot().children]) {
       if (child.path === app.vault.configDir) continue;
@@ -377,91 +339,101 @@ async function prepareVault(
       const bytes = Uint8Array.from(atob(base64.replace(/\s+/g, "")), (char) => char.charCodeAt(0));
       await app.vault.createBinary(filePath, bytes.buffer);
     }
-  }, { files: seedFiles, binaryFiles });
+  }, { files, binaryFiles });
 }
 
-async function readVaultMarkdown(): Promise<Record<string, string>> {
-  return await browser.executeObsidian(async ({ app }) => {
+/**
+ * Read what the run left in the vault: every file path, the Markdown text, and
+ * the frontmatter and links as Obsidian's own metadata cache resolved them.
+ */
+async function observeVault(): Promise<VaultObservation> {
+  return await browser.executeObsidian(async ({ app }, settleTimeoutMs) => {
+    const markdown = app.vault.getMarkdownFiles();
     const files: Record<string, string> = {};
-    for (const file of app.vault.getMarkdownFiles()) files[file.path] = await app.vault.read(file);
-    return files;
-  });
-}
+    for (const file of markdown) files[file.path] = await app.vault.read(file);
 
-async function readVaultFrontmatter(): Promise<Record<string, Record<string, unknown>>> {
-  return await browser.executeObsidian(async ({ app }) => {
-    const files = app.vault.getMarkdownFiles();
-    const deadline = Date.now() + 5_000;
-    while (Date.now() < deadline && !files.every((file) => app.metadataCache.getFileCache(file))) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    const frontmatter: Record<string, Record<string, unknown>> = {};
-    for (const file of files) {
-      const entry = app.metadataCache.getFileCache(file)?.frontmatter;
-      if (!entry) continue;
-      const copy: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(entry)) {
-        if (key === "position") continue;
-        copy[key] = value;
-      }
-      frontmatter[file.path] = copy;
-    }
-    return frontmatter;
-  });
-}
-
-async function readVaultLinks(): Promise<{
-  links: Record<string, string[]>;
-  unresolvedLinks: Record<string, string[]>;
-}> {
-  return await browser.executeObsidian(async ({ app }) => {
-    const files = app.vault.getMarkdownFiles();
-    const readSnapshot = () => {
-      const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
-      const unresolvedBySource = app.metadataCache.unresolvedLinks as Record<string, Record<string, number>>;
-      const ready = files.every((file) => app.metadataCache.getFileCache(file));
+    const readCache = () => {
+      const resolved = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+      const unresolved = app.metadataCache.unresolvedLinks as Record<string, Record<string, number>>;
+      const frontmatter: Record<string, Record<string, unknown>> = {};
       const links: Record<string, string[]> = {};
       const unresolvedLinks: Record<string, string[]> = {};
-      for (const file of files) {
-        links[file.path] = Object.keys(resolvedLinks[file.path] ?? {});
-        const targets = Object.keys(unresolvedBySource[file.path] ?? {});
+      let ready = true;
+      for (const file of markdown) {
+        const cache = app.metadataCache.getFileCache(file);
+        if (!cache) ready = false;
+        if (cache?.frontmatter) {
+          // `position` is the parser's own bookkeeping, not a property.
+          const { position: _position, ...properties } = cache.frontmatter as Record<string, unknown>;
+          frontmatter[file.path] = properties;
+        }
+        links[file.path] = Object.keys(resolved[file.path] ?? {});
+        const targets = Object.keys(unresolved[file.path] ?? {});
         if (targets.length > 0) unresolvedLinks[file.path] = targets;
       }
-      return { ready, links, unresolvedLinks, key: JSON.stringify({ links, unresolvedLinks }) };
+      const state = { frontmatter, links, unresolvedLinks };
+      return { ready, state, key: JSON.stringify(state) };
     };
 
-    // Obsidian resolves links after the turn, so a single read can catch a
-    // partial cache. Accept only a ready snapshot that equals the previous
-    // read, and fall back to the last read after 5 s.
-    const deadline = Date.now() + 5_000;
+    // Obsidian indexes after the turn, so one read can catch a partial cache.
+    // Accept a snapshot only when every note is indexed and two reads in a
+    // row agree; after the settle timeout, take the last read.
+    const deadline = Date.now() + settleTimeoutMs;
     let previousKey: string | undefined;
-    let last = readSnapshot();
-    while (true) {
-      if (last.ready && previousKey === last.key) break;
-      if (Date.now() >= deadline) break;
-      previousKey = last.ready ? last.key : undefined;
+    let snapshot = readCache();
+    while (!(snapshot.ready && snapshot.key === previousKey) && Date.now() < deadline) {
+      previousKey = snapshot.ready ? snapshot.key : undefined;
       await new Promise((resolve) => setTimeout(resolve, 250));
-      last = readSnapshot();
+      snapshot = readCache();
     }
-    return { links: last.links, unresolvedLinks: last.unresolvedLinks };
-  });
+    return { files, paths: app.vault.getFiles().map((file) => file.path), ...snapshot.state };
+  }, SETTLE_TIMEOUT_MS);
 }
 
-async function readObservation(sessionBaseline: string[]): Promise<ObservedSession> {
-  const raw = await readNewSessionRaw(sessionBaseline);
-  const apiError = sessionApiError(raw);
-  if (apiError) throw new Error(`model request failed: ${apiError}`);
+function emptyVaultObservation(): VaultObservation {
+  const { toolCalls: _toolCalls, answer: _answer, ...vault } = emptyObservation();
+  return vault;
+}
+
+function emptySessionObservation(): SessionObservation {
+  return { toolCalls: [], answer: "", usage: {}, modelCalls: 0 };
+}
+
+function observeSession(raw: string): SessionObservation {
   const analysis = analyzer.analyzeSessionText(raw);
   const file = analysis.files[0];
   const observedLevel = observedThinkingLevel(raw);
+  const billedUsd = billedCostUsd(raw);
   return {
     toolCalls: file?.toolCalls ?? [],
     answer: file?.finalAssistantText ?? "",
-    usage: analysis.aggregate.usage ?? {},
+    usage: { ...(analysis.aggregate.usage ?? {}), ...(billedUsd > 0 ? { billedUsd } : {}) },
     modelCalls: analysis.aggregate.messages?.assistant ?? 0,
     ...(observedLevel ? { observedThinkingLevel: observedLevel } : {}),
   };
+}
+
+/**
+ * Sum the cost OpenRouter billed. pi-ai stores it as `usage.cost.total` with
+ * `totalFromProvider: true`; the other cost fields are catalog estimates, so
+ * only `total` is read. All or nothing: if one assistant message that used
+ * tokens has no billed cost, a partial sum would be too low, so this returns 0
+ * and the runner prices the whole run from the price table instead. A message
+ * with no tokens (an aborted turn) cost nothing and is skipped.
+ */
+function billedCostUsd(raw: string): number {
+  let total = 0;
+  for (const entry of sessionEntries(raw)) {
+    if (entry?.message?.role !== "assistant") continue;
+    const usage = entry.message.usage;
+    const cost = usage?.cost;
+    if (cost?.totalFromProvider === true && typeof cost.total === "number" && Number.isFinite(cost.total)) {
+      total += cost.total;
+    } else if (typeof usage?.totalTokens === "number" && usage.totalTokens > 0) {
+      return 0;
+    }
+  }
+  return total;
 }
 
 /**
@@ -470,134 +442,80 @@ async function readObservation(sessionBaseline: string[]): Promise<ObservedSessi
  */
 function observedThinkingLevel(raw: string): string | undefined {
   let level: string | undefined;
-  for (const line of raw.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const entry = JSON.parse(line) as { type?: string; thinkingLevel?: unknown };
-      if (entry.type === "thinking_level_change" && typeof entry.thinkingLevel === "string") {
-        level = entry.thinkingLevel;
-      }
-    } catch {
-      // A partial line is not evidence; the run already reports its own errors.
-    }
+  for (const entry of sessionEntries(raw)) {
+    if (entry?.type === "thinking_level_change" && typeof entry.thinkingLevel === "string") level = entry.thinkingLevel;
   }
   return level;
 }
 
+/** Session JSONL entries; a line that is not JSON reads as `undefined`. */
+function sessionEntries(raw: string): Array<SessionEntry | undefined> {
+  return raw
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => {
+      try {
+        return JSON.parse(line) as SessionEntry;
+      } catch {
+        return undefined;
+      }
+    });
+}
+
 /** A provider 402/429 is a run error, not an empty answer. The trace keeps it on the assistant message. */
 function sessionApiError(raw: string): string | undefined {
-  for (const line of raw.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const entry = JSON.parse(line) as { message?: { stopReason?: string; errorMessage?: string } };
-      if (entry.message?.stopReason === "error") return entry.message.errorMessage ?? "unknown provider error";
-    } catch {
-      return "the session trace is not valid JSON";
-    }
+  for (const entry of sessionEntries(raw)) {
+    if (!entry) return "the session trace is not valid JSON";
+    if (entry.message?.stopReason === "error") return entry.message.errorMessage ?? "unknown provider error";
   }
   return undefined;
 }
 
-/** Read the one session file this run's new-conversation created. */
-async function readNewSessionRaw(sessionBaseline: string[]): Promise<string> {
-  const before = new Set(sessionBaseline);
-  const deadline = Date.now() + 5_000;
+function hasAssistantMessage(raw: string): boolean {
+  return sessionEntries(raw).some((entry) => entry?.type === "message" && entry.message?.role === "assistant");
+}
+
+/** Read the one session file that this run's new-conversation created. */
+async function readNewSession(sessionBaseline: string[]): Promise<string> {
+  const known = new Set(sessionBaseline);
+  const deadline = Date.now() + SETTLE_TIMEOUT_MS;
   let added: string[] = [];
   while (Date.now() < deadline) {
-    added = (await listSessionPaths()).filter((sessionPath) => !before.has(sessionPath));
-    if (added.length > 1) {
-      throw new Error(`Expected exactly one new session file, found ${added.length}: ${added.join(", ")}`);
-    }
+    added = (await listSessionPaths()).filter((sessionPath) => !known.has(sessionPath));
+    if (added.length > 1) break;
     if (added.length === 1) {
-      const raw = await readSessionFileRaw(added[0]);
+      const raw = await browser.executeObsidian(({ app }, target) => app.vault.adapter.read(target), added[0]);
       if (hasAssistantMessage(raw)) return raw;
     }
     await browser.pause(100);
   }
   if (added.length !== 1) {
     throw new Error(
-      `Expected exactly one new session file after this run, found ${added.length}` +
+      `Expected exactly one new session file for this run, found ${added.length}` +
         (added.length > 0 ? `: ${added.join(", ")}` : ""),
     );
   }
-  throw new Error(`The new session ${added[0]} did not get an assistant message within 5 s`);
+  throw new Error(`The new session ${added[0]} did not get an assistant message within ${SETTLE_TIMEOUT_MS / 1000} s`);
 }
 
 async function listSessionPaths(): Promise<string[]> {
-  return await browser.executeObsidian(async ({ app }) => {
+  return await browser.executeObsidian(async ({ app }, pluginId) => {
     const plugin = (app as unknown as {
       plugins?: { plugins?: Record<string, { manifest?: { dir?: string } }> };
-    }).plugins?.plugins?.["agentic-chat"];
-    const pluginDir = plugin?.manifest?.dir ?? `${app.vault.configDir}/plugins/agentic-chat`;
+    }).plugins?.plugins?.[pluginId];
+    const pluginDir = plugin?.manifest?.dir ?? `${app.vault.configDir}/plugins/${pluginId}`;
     const sessionsDir = `${pluginDir}/sessions`;
     const adapter = app.vault.adapter;
     if (!(await adapter.exists(sessionsDir))) return [];
     const listing = await adapter.list(sessionsDir);
     return listing.files.filter((file) => file.endsWith(".jsonl"));
-  });
-}
-
-async function readSessionFileRaw(sessionPath: string): Promise<string> {
-  return await browser.executeObsidian(async ({ app }, target) => {
-    return await app.vault.adapter.read(target);
-  }, sessionPath);
-}
-
-function hasAssistantMessage(raw: string): boolean {
-  for (const line of raw.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const entry = JSON.parse(line) as { type?: string; message?: { role?: string } };
-      if (entry.type === "message" && entry.message?.role === "assistant") return true;
-    } catch {
-      return false;
-    }
-  }
-  return false;
-}
-
-function emptyObservation(): ObservedSession {
-  return { toolCalls: [], answer: "", usage: {}, modelCalls: 0 };
-}
-
-// The budget spans the WDIO process boundary: every completed run is already on
-// disk, so re-reading all results before the next run sees the true total.
-function budgetExceeded(): string | null {
-  const tracker = new BudgetTracker(plan.budget, plan.prices);
-  for (const result of existingResults()) {
-    if (result.status === "skipped-budget") continue;
-    tracker.add({ usage: result.usage ?? {}, modelCalls: result.modelCalls ?? 0 });
-  }
-  return tracker.exceeded();
-}
-
-function existingResults(): Array<Partial<RunResult>> {
-  if (!existsSync(RESULTS_DIR)) return [];
-  const results: Array<Partial<RunResult>> = [];
-  for (const entry of readdirSync(RESULTS_DIR, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const caseDir = path.join(RESULTS_DIR, entry.name);
-    for (const filename of readdirSync(caseDir)) {
-      if (!filename.endsWith(".json")) continue;
-      try {
-        results.push(JSON.parse(readFileSync(path.join(caseDir, filename), "utf8")) as Partial<RunResult>);
-      } catch {
-        // A partial file is not budget evidence; the runner reports it as missing.
-      }
-    }
-  }
-  return results;
-}
-
-function writeResult(result: RunResult): void {
-  const caseDir = path.join(RESULTS_DIR, result.caseId);
-  mkdirSync(caseDir, { recursive: true });
-  writeFileSync(path.join(caseDir, `${result.run}.json`), `${JSON.stringify(result, null, 2)}\n`);
+  }, PLUGIN_ID);
 }
 
 /**
- * `waitForTurnEnd` waits for an open ask-user card to close, but an eval run
- * cannot answer it. Stop at the card and let the checks grade the tool call.
+ * The shared turn-end wait also waits for an open ask-user card to close, but
+ * an eval run cannot answer it. Stop at the card and let the checks grade the
+ * tool call; `endTurn` then stops the waiting turn.
  */
 async function waitForTurnOrAskUser(timeoutMs: number): Promise<void> {
   await browser.waitUntil(
@@ -610,33 +528,22 @@ async function waitForTurnOrAskUser(timeoutMs: number): Promise<void> {
   );
 }
 
-async function stopIfRunning(): Promise<void> {
+/** Leave no turn and no modal behind: close open modals, then stop a live turn. Throws if the turn will not stop. */
+async function endTurn(): Promise<void> {
+  // A modal left open by a run (for example a confirm dialog) covers the stop button.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const open = await browser.execute(() => document.querySelectorAll(".modal-container").length);
+    if (open === 0) break;
+    await browser.keys("Escape");
+    await browser.pause(200);
+  }
   const stop = await $(".agentic-chat-stop");
   if (!(await stop.isDisplayed().catch(() => false))) return;
   try {
     await stop.click();
-  } catch (error) {
-    throw new Error(`tool-use turn did not stop: the stop button click failed (${errorMessage(error)})`, {
-      cause: error,
-    });
-  }
-  try {
-    await browser.waitUntil(async () => !(await stop.isDisplayed().catch(() => false)), {
-      timeout: 10_000,
-      timeoutMsg: "tool-use turn did not stop",
-    });
+    await browser.waitUntil(async () => !(await stop.isDisplayed().catch(() => false)), { timeout: 10_000 });
   } catch (error) {
     throw new Error(`tool-use turn did not stop within 10 s (${errorMessage(error)})`, { cause: error });
-  }
-}
-
-/** A modal left open by a run (for example a confirm dialog) blocks the next one. */
-async function closeModals(): Promise<void> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const open = await browser.execute(() => document.querySelectorAll(".modal-container").length);
-    if (open === 0) return;
-    await browser.keys("Escape");
-    await browser.pause(200);
   }
 }
 

@@ -1,237 +1,211 @@
+/**
+ * CLI for the live tool-use evals. This file only does I/O: it reads the suite,
+ * writes the plan, launches the WDIO spec that drives Obsidian, reads the run
+ * records back, and writes the summary, report, and baseline. The logic lives
+ * in `scripts/eval/tool-use-*.ts`, where the unit tests cover it.
+ */
+
 import { execFileSync, spawn } from "node:child_process";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { applyEnvFile } from "./live-env.mjs";
+import { parseArgs } from "node:util";
 import { startFixtureServer, type FixtureServer } from "./eval/fixture-server";
 import { bootstrapCompare, formatSignificance, type SignificanceCase } from "./eval/significance";
-import { generateVault } from "./eval/vault-generator";
-import type {
-  CaseSummary,
-  OverallSummary,
-  RunPricing,
-  RunUsage,
-  ThinkingLevelSource,
-  ToolUseBudgetCaps,
-  ToolUseCase,
-  ToolUseCheckResult,
-  ToolUseSuite,
-  ToolUseThinkingLevel,
+import { formatComparison } from "./eval/tool-use-compare";
+import {
+  baselineRefusal,
+  effectiveThinkingLevel,
+  resolveThinkingLevel,
+  validateToolUseSuite,
+  type RunPricing,
+  type ToolUseBudgetCaps,
 } from "./eval/tool-use-core";
+import {
+  TOOL_USE_PLAN_VERSION,
+  expandCaseSeed,
+  expandFixturePlaceholders,
+  needsFixture,
+  parseRunRecord,
+  planRuns,
+  selectCases,
+  type ToolUsePlan,
+} from "./eval/tool-use-plan";
+import {
+  baselineFileName,
+  buildSummary,
+  formatConsoleSummary,
+  formatDryRun,
+  formatReport,
+  gradeRecord,
+  missingRunEntry,
+  toBaseline,
+  type CaseRunEntry,
+} from "./eval/tool-use-report";
+import { applyEnvFile } from "./live-env.mjs";
 
 const DEFAULT_SUITE = "test/evals/tool-use/tool-use.eval.json";
 const DEFAULT_OUT_ROOT = "logs/eval-runs";
 const BASELINE_DIR = "test/evals/baselines";
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
+const SPEC_PATH = "./test/e2e/evals/tool-use.eval.ts";
+/** Obsidian start-up and teardown, on top of the per-run turn timeouts. */
+const SPEC_OVERHEAD_MS = 120_000;
+const MIN_SPEC_TIMEOUT_MS = 10 * 60 * 1000;
 
-/**
- * One `core` case per category, in the order `--smoke` runs them. This is the
- * quick before/after slice; the full `core` suite stays 24 cases x 3 runs.
- */
-export const SMOKE_CASE_IDS: readonly string[] = [
-  "find.hard.venue",
-  "edit.hard.status",
-  "organize.medium.inbox",
-  "create.medium.summary",
-  "properties.hard.owners",
-  "tools.easy.search",
-  "safety.medium.injection",
-  "recovery.medium.stale",
-];
+const USAGE = `Usage:
+  npm run eval:tool-use -- [--suite path] [--case id[,id] | --smoke] [--runs n] [--run-id id]
+      [--out-dir dir] [--env-file path] [--max-usd usd] [--thinking-level level]
+      [--dry-run] [--write-baseline]
+  npm run eval:tool-use -- --compare <base.json> <head.json> [--significance [--exclude id[,id]]]
+  npm run eval:significance -- <base.json> <head.json>
 
-// The dry run must not touch the network. This fixed assumption only makes the
-// plan readable; the live run replaces it with fetched prices.
-const DRY_RUN_ESTIMATE = {
-  tokensPerRun: 15_000,
-  inputShare: 0.8,
-  inputUsdPerToken: 0.05 / 1_000_000,
-  outputUsdPerToken: 0.2 / 1_000_000,
-};
+  --smoke           runs the suite's own "smoke" slice, once per case unless --runs is set.
+  --thinking-level  wins over AGENTIC_CHAT_THINKING_LEVEL, the suite field, and the low default.
+  --compare         reads two summary.json or baseline files and prints the differences.
+  --significance    adds a case-level bootstrap section to --compare; --exclude drops
+                    cases from that section only.
+`;
 
 interface CliArgs {
-  suite?: string;
-  cases?: string[];
+  suite: string;
+  caseIds: string[];
   smoke: boolean;
-  runs?: string;
-  runId?: string;
+  runs?: number;
+  runId: string;
   outDir?: string;
   envFile?: string;
-  maxUsd?: string;
+  maxUsd?: number;
   thinkingLevel?: string;
   dryRun: boolean;
   writeBaseline: boolean;
-  compare?: [string, string];
+  compare?: [baseline: string, candidate: string];
   /** With `compare`: add the bootstrap section after the comparison table. */
   significance: boolean;
   /** Case ids dropped from the significance read only. */
-  exclude?: string[];
+  exclude: string[];
+  help: boolean;
 }
 
-interface PlannedRun {
-  caseId: string;
-  run: number;
-}
-
-interface RunFile {
-  caseId: string;
-  run: number;
-  files: Record<string, string>;
-  frontmatter: Record<string, Record<string, unknown>>;
-  links: Record<string, string[]>;
-  unresolvedLinks: Record<string, string[]>;
-  toolCalls: Array<{ name: string; isError?: boolean }>;
-  answer: string;
-  usage: RunUsage;
-  modelCalls: number;
-  ms: number;
-  /** Level read from the session `thinking_level_change` entry, when present. */
-  observedThinkingLevel?: string;
-  status?: string;
-  error?: string;
-}
-
-interface CaseRunEntry {
-  run: number;
-  status: string;
-  ms: number;
-  usage: RunUsage;
-  modelCalls: number;
-  toolCalls: number;
-  /** Share of checks that passed; a run with no checks scores 0. */
-  partialScore: number;
-  usd: number;
-  /** The level this run requested. */
-  thinkingLevel: ToolUseThinkingLevel;
-  /** Reporting only: a provider clamp or a stale setting must not fail a run. */
-  observedThinkingLevel?: string;
-  checks: ToolUseCheckResult[];
-  error?: string;
-}
-
-interface CaseSummaryWithRuns extends CaseSummary {
-  id: string;
-  thinkingLevel: ToolUseThinkingLevel;
-  /** Distinct observed levels, sorted. Empty when the session had no entry. */
-  observedThinkingLevels: string[];
-  /** Runs whose observed level differs from the requested one. Reporting only. */
-  thinkingLevelMismatches: number;
-  runResults: CaseRunEntry[];
-}
-
-interface ToolUseSummary {
-  version: 1;
-  runId: string;
-  suite: { name: string; description?: string; path: string };
-  model: string;
-  thinkingLevel: ToolUseThinkingLevel;
-  thinkingLevelSource: ThinkingLevelSource;
-  startedAt: string;
-  finishedAt: string;
-  durationMs: number;
-  prices: RunPricing;
-  budget: { caps: ToolUseBudgetCaps; used: { usd: number; modelCalls: number; tokens: number }; exceeded: string | null };
-  overall: OverallSummary;
-  cases: CaseSummaryWithRuns[];
-}
-
-if (isCliEntrypoint()) {
-  void main().catch((error: unknown) => {
-    process.stderr.write(`${errorMessage(error)}\n`);
-    process.exit(1);
+function parseCliArgs(argv: string[]): CliArgs {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      suite: { type: "string" },
+      case: { type: "string", multiple: true },
+      smoke: { type: "boolean" },
+      runs: { type: "string" },
+      "run-id": { type: "string" },
+      "out-dir": { type: "string" },
+      "env-file": { type: "string" },
+      "max-usd": { type: "string" },
+      "thinking-level": { type: "string" },
+      "dry-run": { type: "boolean" },
+      "write-baseline": { type: "boolean" },
+      compare: { type: "boolean" },
+      significance: { type: "boolean" },
+      exclude: { type: "string", multiple: true },
+      help: { type: "boolean", short: "h" },
+    },
   });
+  const exclude = (values.exclude ?? []).flatMap((value) => value.split(",")).map((id) => id.trim()).filter(Boolean);
+  if (values.significance && !values.compare) {
+    throw new Error("--significance needs --compare <base.json> <head.json>");
+  }
+  if (exclude.length > 0 && !values.significance) {
+    throw new Error("--exclude only applies to --compare --significance <base.json> <head.json>");
+  }
+  if (values.compare && positionals.length !== 2) {
+    throw new Error("--compare needs <base.json> <head.json>");
+  }
+  if (!values.compare && positionals.length > 0) throw new Error(`Unexpected argument: ${positionals[0]}`);
+  const caseIds = (values.case ?? []).flatMap((value) => value.split(",")).map((id) => id.trim()).filter(Boolean);
+  if (values.smoke && caseIds.length > 0) throw new Error("--smoke cannot be combined with --case; use one selector.");
+  return {
+    suite: values.suite ?? DEFAULT_SUITE,
+    caseIds,
+    smoke: values.smoke === true,
+    runs: values.runs === undefined ? undefined : positiveInteger(values.runs, "--runs"),
+    runId: values["run-id"] ?? `tool-use-${new Date().toISOString().replace(/[:.]/g, "-")}`,
+    outDir: values["out-dir"],
+    envFile: values["env-file"],
+    maxUsd: values["max-usd"] === undefined ? undefined : nonNegativeNumber(values["max-usd"], "--max-usd"),
+    thinkingLevel: values["thinking-level"],
+    dryRun: values["dry-run"] === true,
+    writeBaseline: values["write-baseline"] === true,
+    compare: values.compare ? [positionals[0], positionals[1]] : undefined,
+    significance: values.significance === true,
+    exclude,
+    help: values.help === true,
+  };
 }
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseCliArgs(process.argv.slice(2));
+  if (args.help) {
+    process.stdout.write(USAGE);
+    return;
+  }
   if (args.compare) {
-    process.exitCode = await compareCommand(args.compare, {
-      significance: args.significance,
-      exclude: args.exclude ?? [],
-    });
+    const [baseline, candidate] = await Promise.all(args.compare.map(readJson));
+    process.stdout.write(formatComparison(baseline, candidate));
+    if (args.significance) process.exitCode = writeSignificance(baseline, candidate, args.exclude);
     return;
   }
 
-  const core = await import("./eval/tool-use-core");
-  const suitePath = path.resolve(args.suite ?? DEFAULT_SUITE);
-  const suite = core.validateToolUseSuite(JSON.parse(await readFile(suitePath, "utf8")) as unknown);
-  const runsPerCase =
-    args.runs === undefined
-      ? args.smoke
-        ? 1
-        : suite.runsPerCase
-      : positiveInteger(args.runs, "--runs");
-  if (args.envFile) {
-    if (!existsSync(args.envFile)) throw new Error(`--env-file does not exist: ${args.envFile}`);
-    // Load before the dry run so its printed level is the level a live run uses.
-    applyEnvFile(args.envFile);
-  }
-  const thinking = core.resolveThinkingLevel({
+  const suitePath = path.resolve(args.suite);
+  const suite = validateToolUseSuite(await readJson(suitePath));
+  // The smoke slice is a quick look, so it runs each case once by default.
+  const runsPerCase = args.runs ?? (args.smoke ? 1 : suite.runsPerCase);
+  // Load the env file before the dry run, so its printed level is the level a live run uses.
+  loadEnvFile(args.envFile);
+  const thinking = resolveThinkingLevel({
     cli: args.thinkingLevel,
     env: process.env.AGENTIC_CHAT_THINKING_LEVEL?.trim() || undefined,
     suite: suite.thinkingLevel,
   });
-  // A case pin wins over the run level. Store the effective level on every case
+  // A case pin wins over the run level. Store the effective level on every case,
   // so the plan, summary, and baseline need no second resolution step.
-  const cases = selectCases(suite, args.cases, args.smoke)
+  const cases = selectCases(suite, { caseIds: args.caseIds, smoke: args.smoke })
     .map(expandCaseSeed)
-    .map((evalCase) => ({
-      ...evalCase,
-      thinkingLevel: core.effectiveThinkingLevel(evalCase, thinking.level),
-    }));
-  const plannedRuns = planRuns(cases, runsPerCase);
-  const runId = args.runId ?? timestampRunId();
-  const outDir = path.resolve(args.outDir ?? path.join(DEFAULT_OUT_ROOT, runId));
-  const resultsDir = path.join(outDir, "results");
-  const budget: ToolUseBudgetCaps =
-    args.maxUsd === undefined ? suite.budget : { ...suite.budget, maxUsd: nonNegativeNumber(args.maxUsd, "--max-usd") };
+    .map((evalCase) => ({ ...evalCase, thinkingLevel: effectiveThinkingLevel(evalCase, thinking.level) }));
+  const budget: ToolUseBudgetCaps = args.maxUsd === undefined ? suite.budget : { ...suite.budget, maxUsd: args.maxUsd };
+  const outDir = path.resolve(args.outDir ?? path.join(DEFAULT_OUT_ROOT, args.runId));
 
   if (args.dryRun) {
-    printDryRun({
-      suite,
-      suitePath,
-      cases,
-      runsPerCase,
-      plannedRuns,
-      budget,
-      outDir,
-      thinking,
-    });
+    process.stdout.write(
+      formatDryRun({
+        suite: { name: suite.name, path: suitePath, model: suite.model },
+        cases,
+        runsPerCase,
+        budget,
+        turn: suite.turn,
+        outDir,
+        thinking,
+      }),
+    );
     return;
   }
 
+  const resultsDir = path.join(outDir, "results");
   await assertFreshResultsDir(resultsDir);
-
-  const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error("AGENTIC_CHAT_API_KEY is required. Set it in the environment or pass --env-file; the runner never prints it.");
-  }
-
+  const apiKey = readApiKey();
   const startedAt = new Date();
   const prices = await fetchPricing(suite.model);
-  const vaultPath = path.join(outDir, "vault");
-  await mkdir(vaultPath, { recursive: true });
-  await mkdir(path.join(vaultPath, ".obsidian"), { recursive: true });
-  // Keep links working on rename without Obsidian's "Update links?" prompt; a
-  // modal would block the turn. Most users turn this on.
-  await writeFile(path.join(vaultPath, ".obsidian", "app.json"), `${JSON.stringify({ alwaysUpdateLinks: true })}\n`);
-  await mkdir(resultsDir, { recursive: true });
+  const vaultPath = await createVault(outDir);
+  await mkdir(resultsDir, { recursive: true }); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
 
-  // The fixture server lives only for this run: a case that needs it gets its
-  // base URL in the plan, and every other case sees no hook at all.
+  // The fixture server lives only for this run. A case that needs it gets its
+  // base URL through the plan; a run that does not need it starts no server.
   let fixture: FixtureServer | undefined;
   try {
-    let fixtureBaseUrl: string | undefined;
-    if (needsFixture(cases)) {
-      fixture = await startFixtureServer();
-      fixtureBaseUrl = fixture.url;
-    }
-    const planCases = expandFixturePlaceholders(cases, fixtureBaseUrl);
-
-    const plan = {
-      version: 1,
-      runId,
+    if (needsFixture(cases)) fixture = await startFixtureServer();
+    const plan: ToolUsePlan = {
+      version: TOOL_USE_PLAN_VERSION,
+      runId: args.runId,
       suite: { name: suite.name, description: suite.description, path: suitePath },
       model: suite.model,
       runsPerCase,
@@ -240,759 +214,180 @@ async function main(): Promise<void> {
       budget,
       turn: suite.turn,
       prices,
-      ...(fixtureBaseUrl ? { fixtureBaseUrl } : {}),
-      cases: planCases.map((evalCase) => ({
-        id: evalCase.id,
-        prompt: evalCase.prompt,
-        seed: evalCase.seed,
-        settings: evalCase.settings ?? {},
-        thinkingLevel: evalCase.thinkingLevel,
-        checks: evalCase.checks,
-        ...(evalCase.expected ? { expected: evalCase.expected } : {}),
-      })),
-      runs: plannedRuns,
+      ...(fixture ? { fixtureBaseUrl: fixture.url } : {}),
+      cases: expandFixturePlaceholders(cases, fixture?.url),
+      runs: planRuns(cases, runsPerCase),
     };
     const planPath = path.join(outDir, "plan.json");
-    await writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`, "utf8");
+    await writeJson(planPath, plan);
 
-    console.log(`Tool-use eval: ${runId}`);
+    console.log(`Tool-use eval: ${plan.runId}`);
     console.log(`Vault: ${vaultPath}`);
     console.log(`Plan: ${planPath}`);
-    console.log(`Run: ${planCases.length} case(s) x ${runsPerCase} run(s) = ${plannedRuns.length} run(s)`);
+    console.log(`Run: ${plan.cases.length} case(s) x ${runsPerCase} run(s) = ${plan.runs.length} run(s)`);
 
-    const timeoutMs = Math.max(10 * 60 * 1000, plannedRuns.length * suite.turn.timeoutMs + 120_000);
-    const exitCode = await runE2e({ vaultPath, planPath, resultsDir, apiKey, timeoutMs });
-    if (exitCode !== 0) {
-      throw new Error(`The WDIO tool-use spec exited with code ${exitCode}. Results under ${resultsDir} may be incomplete.`);
-    }
-
-    const caseById = new Map(planCases.map((evalCase) => [evalCase.id, evalCase]));
-    const caseEntries = new Map<string, CaseRunEntry[]>();
-    for (const evalCase of planCases) caseEntries.set(evalCase.id, []);
-
-    for (const planned of plannedRuns) {
-      const evalCase = caseById.get(planned.caseId);
-      if (!evalCase) throw new Error(`Plan refers to an unknown case: ${planned.caseId}`);
-      const resultPath = path.join(resultsDir, evalCase.id, `${planned.run}.json`);
-      if (!existsSync(resultPath)) {
-        throw new Error(`Missing tool-use result: ${resultPath}`);
-      }
-      const runFile = parseRunFile(JSON.parse(await readFile(resultPath, "utf8")) as unknown, resultPath);
-      const entry = gradeRunFile(core, evalCase, runFile, prices, evalCase.thinkingLevel ?? thinking.level);
-      caseEntries.get(evalCase.id)?.push(entry);
-    }
-
-    const caseSummaries: CaseSummaryWithRuns[] = planCases.map((evalCase) => {
-      const runs = caseEntries.get(evalCase.id) ?? [];
-      const level = evalCase.thinkingLevel ?? thinking.level;
-      const summary = core.summarizeCase(
-        runs.map((run) => ({
-          status: run.status,
-          usage: run.usage,
-          usd: run.usd,
-          ms: run.ms,
-          modelCalls: run.modelCalls,
-          toolCalls: run.toolCalls,
-          partialScore: run.partialScore,
-        })),
-        { maxToolCalls: evalCase.expected?.maxToolCalls },
-      );
-      return {
-        id: evalCase.id,
-        thinkingLevel: level,
-        observedThinkingLevels: observedLevels(runs),
-        thinkingLevelMismatches: runs.filter(
-          (run) => run.observedThinkingLevel !== undefined && run.observedThinkingLevel !== level,
-        ).length,
-        ...summary,
-        runResults: runs,
-      };
+    const specExitCode = await runSpec({
+      vaultPath,
+      planPath,
+      resultsDir,
+      apiKey,
+      timeoutMs: Math.max(MIN_SPEC_TIMEOUT_MS, plan.runs.length * suite.turn.timeoutMs + SPEC_OVERHEAD_MS),
     });
 
-    const tracker = new core.BudgetTracker(budget, prices);
-    for (const run of caseSummaries.flatMap((entry) => entry.runResults)) {
-      tracker.add({ usage: run.usage, modelCalls: run.modelCalls });
+    // The runs that finished cost real money, so a spec that died half-way
+    // still gets a summary. Its missing runs are reported as harness errors.
+    const entries = await collectEntries(plan, resultsDir, specExitCode);
+    const summary = buildSummary(plan, entries, { startedAt, finishedAt: new Date() });
+    const paths = { summary: path.join(outDir, "summary.json"), report: path.join(outDir, "report.md") };
+    await writeJson(paths.summary, summary);
+    await writeFile(paths.report, formatReport(summary), "utf8");
+    process.stdout.write(formatConsoleSummary(summary, paths));
+
+    if (specExitCode !== 0) {
+      throw new Error(`The WDIO tool-use spec exited with code ${specExitCode}. The summary is incomplete.`);
     }
-    const finishedAt = new Date();
-    const summary: ToolUseSummary = {
-      version: 1,
-      runId,
-      suite: { name: suite.name, description: suite.description, path: suitePath },
-      model: suite.model,
-      thinkingLevel: thinking.level,
-      thinkingLevelSource: thinking.source,
-      startedAt: startedAt.toISOString(),
-      finishedAt: finishedAt.toISOString(),
-      durationMs: finishedAt.getTime() - startedAt.getTime(),
-      prices,
-      budget: { caps: budget, used: tracker.totals(), exceeded: tracker.exceeded() },
-      overall: core.summarizeOverall(caseSummaries),
-      cases: caseSummaries,
-    };
-
-    const summaryPath = path.join(outDir, "summary.json");
-    const reportPath = path.join(outDir, "report.md");
-    await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
-    await writeFile(reportPath, formatReport(summary), "utf8");
-
     if (args.writeBaseline) {
-      const refusal = core.baselineRefusal(summary, plannedRuns.length, suite);
+      const refusal = baselineRefusal(summary, plan.runs.length, suite);
       if (refusal) throw new Error(`Refusing to write baseline: ${refusal}`);
-      const baselinePath = await writeBaseline(summary);
+      const baselinePath = path.resolve(BASELINE_DIR, baselineFileName(suite.name));
+      await mkdir(path.dirname(baselinePath), { recursive: true });
+      await writeJson(baselinePath, toBaseline(summary, { date: new Date(), gitHead: gitHead() }));
       console.log(`Baseline: ${baselinePath}`);
     }
-
-    console.log(formatConsoleSummary(summary, summaryPath, reportPath));
   } finally {
     await fixture?.close();
   }
 }
 
-function gradeRunFile(
-  core: typeof import("./eval/tool-use-core"),
-  evalCase: ToolUseCase,
-  runFile: RunFile,
-  prices: RunPricing,
-  thinkingLevel: ToolUseThinkingLevel,
-): CaseRunEntry {
-  if (runFile.status === "skipped-budget") {
-    return {
-      run: runFile.run,
-      status: "skipped-budget",
-      ms: 0,
-      usage: {},
-      modelCalls: 0,
-      toolCalls: 0,
-      partialScore: 0,
-      usd: 0,
-      thinkingLevel,
-      ...(runFile.observedThinkingLevel ? { observedThinkingLevel: runFile.observedThinkingLevel } : {}),
-      checks: [],
-      error: runFile.error,
-    };
+/** Read and grade every planned run. A missing or unreadable record is a harness error, not a crash. */
+async function collectEntries(
+  plan: ToolUsePlan,
+  resultsDir: string,
+  specExitCode: number,
+): Promise<Map<string, CaseRunEntry[]>> {
+  const caseById = new Map(plan.cases.map((evalCase) => [evalCase.id, evalCase]));
+  const entries = new Map<string, CaseRunEntry[]>(plan.cases.map((evalCase) => [evalCase.id, []]));
+  for (const planned of plan.runs) {
+    const evalCase = caseById.get(planned.caseId);
+    if (!evalCase) throw new Error(`Plan refers to an unknown case: ${planned.caseId}`);
+    const recordPath = path.join(resultsDir, planned.caseId, `${planned.run}.json`);
+    let entry: CaseRunEntry;
+    try {
+      entry = gradeRecord(evalCase, parseRunRecord(await readJson(recordPath), recordPath), plan.prices);
+    } catch (error) {
+      const reason = existsSync(recordPath)
+        ? `unreadable run record: ${errorMessage(error)}`
+        : `no run record was written (the WDIO spec exited with code ${specExitCode})`;
+      entry = missingRunEntry(planned, reason);
+    }
+    entries.get(planned.caseId)?.push(entry);
   }
-
-  const grade = core.gradeRun(evalCase, {
-    files: runFile.files,
-    frontmatter: runFile.frontmatter,
-    links: runFile.links,
-    unresolvedLinks: runFile.unresolvedLinks,
-    toolCalls: runFile.toolCalls,
-    answer: runFile.answer,
-  });
-  const usd = core.costUsd(runFile.usage, prices);
-  const ok = grade.ok && !runFile.error;
-  return {
-    run: runFile.run,
-    status: ok ? "pass" : "fail",
-    ms: runFile.ms,
-    usage: runFile.usage,
-    modelCalls: runFile.modelCalls,
-    toolCalls: runFile.toolCalls.length,
-    partialScore: grade.checks.length > 0 ? grade.checks.filter((check) => check.ok).length / grade.checks.length : 0,
-    usd,
-    thinkingLevel,
-    ...(runFile.observedThinkingLevel ? { observedThinkingLevel: runFile.observedThinkingLevel } : {}),
-    checks: grade.checks,
-    error: runFile.error,
-  };
+  return entries;
 }
 
-/** Distinct observed levels for a case, sorted; missing observations are omitted. */
-function observedLevels(runs: CaseRunEntry[]): string[] {
-  return [...new Set(runs.map((run) => run.observedThinkingLevel).filter((level): level is string => !!level))].sort(
-    (left, right) => left.localeCompare(right),
-  );
-}
-
-function parseRunFile(input: unknown, at: string): RunFile {
-  if (!isRecord(input)) throw new Error(`Result is not an object: ${at}`);
-  const caseId = typeof input.caseId === "string" ? input.caseId : "";
-  const run = numberValue(input.run);
-  if (!caseId || run === undefined) throw new Error(`Result is missing caseId or run: ${at}`);
-  return {
-    caseId,
-    run,
-    files: stringRecord(input.files),
-    frontmatter: frontmatterValue(input.frontmatter),
-    links: linksValue(input.links),
-    unresolvedLinks: linksValue(input.unresolvedLinks),
-    toolCalls: toolCallsValue(input.toolCalls),
-    answer: typeof input.answer === "string" ? input.answer : "",
-    usage: usageValue(input.usage),
-    modelCalls: numberValue(input.modelCalls) ?? 0,
-    ms: numberValue(input.ms) ?? 0,
-    observedThinkingLevel:
-      typeof input.observedThinkingLevel === "string" ? input.observedThinkingLevel : undefined,
-    status: typeof input.status === "string" ? input.status : undefined,
-    error: typeof input.error === "string" ? input.error : undefined,
-  };
-}
-
-function stringRecord(input: unknown): Record<string, string> {
-  if (!isRecord(input)) return {};
-  const output: Record<string, string> = {};
-  for (const [key, value] of Object.entries(input)) {
-    if (typeof value === "string") output[key] = value;
+/**
+ * Print the bootstrap section and return the exit code. An `--exclude` id that
+ * names no case in either file is a typo: warn and exit non-zero.
+ */
+function writeSignificance(baseline: unknown, candidate: unknown, exclude: string[]): number {
+  const excluded = new Set(exclude);
+  const result = bootstrapCompare(significanceCases(baseline, excluded), significanceCases(candidate, excluded));
+  process.stdout.write(formatSignificance(result, { before: "Baseline", after: "Candidate" }, exclude));
+  if (result.paired === 0) {
+    // An empty table must not exit 0: it reads like "no change". An old baseline
+    // without per-case passAllK (for example tool-use.json) gives this.
+    process.stderr.write("error: no case has a usable passAllK on both sides; there is nothing to compare\n");
+    return 1;
   }
-  return output;
+  const known = new Set([...caseIds(baseline), ...caseIds(candidate)]);
+  const unknown = exclude.filter((id) => !known.has(id));
+  if (unknown.length === 0) return 0;
+  process.stderr.write(`warning: unknown --exclude id: ${unknown.join(", ")}; it is not a case in either summary\n`);
+  return 1;
 }
 
-function frontmatterValue(input: unknown): Record<string, Record<string, unknown>> {
-  if (!isRecord(input)) return {};
-  const output: Record<string, Record<string, unknown>> = {};
-  for (const [key, value] of Object.entries(input)) {
-    if (isRecord(value)) output[key] = value;
-  }
-  return output;
-}
-
-function linksValue(input: unknown): Record<string, string[]> {
-  if (!isRecord(input)) return {};
-  const output: Record<string, string[]> = {};
-  for (const [from, targets] of Object.entries(input)) {
-    if (!Array.isArray(targets)) continue;
-    output[from] = targets.filter((target): target is string => typeof target === "string");
-  }
-  return output;
-}
-
-function toolCallsValue(input: unknown): Array<{ name: string; isError?: boolean }> {
-  if (!Array.isArray(input)) return [];
-  return input
-    .filter(isRecord)
-    .map((call) => ({
-      name: typeof call.name === "string" ? call.name : "(unknown)",
-      isError: call.isError === true,
+/**
+ * Only the fields the bootstrap needs. A baseline has no `runResults` and a
+ * `summary.json` does; both carry per-case scores. A missing score is passed
+ * through as NaN, so the module skips it with a named warning.
+ */
+function significanceCases(input: unknown, excluded: ReadonlySet<string>): SignificanceCase[] {
+  return caseRows(input)
+    .filter((entry) => !excluded.has(entry.id as string))
+    .map((entry) => ({
+      id: entry.id as string,
+      passAllK: typeof entry.passAllK === "number" ? entry.passAllK : Number.NaN,
+      passRate: typeof entry.passRate === "number" ? entry.passRate : undefined,
     }));
 }
 
-function usageValue(input: unknown): RunUsage {
-  if (!isRecord(input)) return {};
-  return {
-    input: numberValue(input.input),
-    output: numberValue(input.output),
-    cacheRead: numberValue(input.cacheRead),
-    cacheWrite: numberValue(input.cacheWrite),
-    totalTokens: numberValue(input.totalTokens),
-  };
+function caseIds(input: unknown): string[] {
+  return caseRows(input).map((entry) => entry.id as string);
+}
+
+function caseRows(input: unknown): Array<Record<string, unknown>> {
+  if (!input || typeof input !== "object" || !Array.isArray((input as { cases?: unknown }).cases)) return [];
+  return ((input as { cases: unknown[] }).cases).filter(
+    (entry): entry is Record<string, unknown> =>
+      !!entry && typeof entry === "object" && typeof (entry as { id?: unknown }).id === "string",
+  );
+}
+
+function loadEnvFile(envFile: string | undefined): void {
+  if (!envFile) return;
+  if (!existsSync(envFile)) throw new Error(`--env-file does not exist: ${envFile}`);
+  applyEnvFile(envFile);
+}
+
+function readApiKey(): string {
+  const apiKey = process.env.AGENTIC_CHAT_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error(
+      "AGENTIC_CHAT_API_KEY is required. Set it in the environment or pass --env-file; the runner never prints it.",
+    );
+  }
+  return apiKey;
+}
+
+async function createVault(outDir: string): Promise<string> {
+  const vaultPath = path.join(outDir, "vault");
+  await mkdir(path.join(vaultPath, ".obsidian"), { recursive: true }); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
+  // Keep links working on rename without Obsidian's "Update links?" prompt; a
+  // modal would block the turn. Most users turn this on.
+  await writeJson(path.join(vaultPath, ".obsidian", "app.json"), { alwaysUpdateLinks: true });
+  return vaultPath;
 }
 
 async function fetchPricing(model: string): Promise<RunPricing> {
   const response = await fetch(MODELS_URL);
   if (!response.ok) throw new Error(`OpenRouter models API returned ${response.status}`);
-  const payload = (await response.json()) as unknown;
-  if (!isRecord(payload) || !Array.isArray(payload.data)) {
-    throw new Error("OpenRouter models API returned an unexpected shape.");
-  }
-  const row = payload.data.filter(isRecord).find((entry) => entry.id === model);
+  const payload = (await response.json()) as { data?: Array<{ id?: unknown; pricing?: Record<string, unknown> }> };
+  if (!Array.isArray(payload?.data)) throw new Error("OpenRouter models API returned an unexpected shape.");
+  const row = payload.data.find((entry) => entry?.id === model);
   if (!row) throw new Error(`Model ${model} is not listed at ${MODELS_URL}.`);
-  const pricing = isRecord(row.pricing) ? row.pricing : {};
-  const input = priceValue(pricing.prompt);
-  const output = priceValue(pricing.completion);
+  const price = (name: string): number | undefined => {
+    const value = Number.parseFloat(String(row.pricing?.[name]));
+    return Number.isFinite(value) && value >= 0 ? value : undefined;
+  };
+  const input = price("prompt");
+  const output = price("completion");
   if (input === undefined || output === undefined) {
     throw new Error(`Model ${model} has no usable prompt/completion pricing.`);
   }
-  return {
-    input,
-    output,
-    cacheRead: priceValue(pricing.input_cache_read) ?? 0,
-    cacheWrite: priceValue(pricing.input_cache_write) ?? 0,
-  };
-}
-
-function priceValue(input: unknown): number | undefined {
-  if (typeof input !== "string") return undefined;
-  const value = Number.parseFloat(input);
-  return Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function planRuns(cases: ToolUseCase[], runsPerCase: number): PlannedRun[] {
-  return cases.flatMap((evalCase) =>
-    Array.from({ length: runsPerCase }, (_, index) => ({ caseId: evalCase.id, run: index + 1 })),
-  );
-}
-
-function selectCases(suite: ToolUseSuite, requested: string[] | undefined, smoke: boolean): ToolUseCase[] {
-  if (smoke) {
-    return SMOKE_CASE_IDS.map((id) => {
-      const evalCase = suite.cases.find((entry) => entry.id === id);
-      if (!evalCase) throw new Error(`The --smoke case is missing from the suite: ${id}`);
-      return evalCase;
-    });
-  }
-  if (!requested || requested.length === 0) return suite.cases;
-  const ids = requested.flatMap((value) => value.split(",")).map((value) => value.trim()).filter(Boolean);
-  const selected = ids.map((id) => {
-    const evalCase = suite.cases.find((entry) => entry.id === id);
-    if (!evalCase) throw new Error(`No tool-use case found with id: ${id}`);
-    return evalCase;
-  });
-  return [...new Map(selected.map((entry) => [entry.id, entry])).values()];
-}
-
-/**
- * Expand `seed.vault` into concrete notes before the plan is written. Case
- * `seed.files` win over the generated base, so a case can add or replace
- * needles. Grading uses the same expanded case, so `unchanged` sees the real
- * seed instead of only the hand-written files.
- */
-function expandCaseSeed(evalCase: ToolUseCase): ToolUseCase {
-  const vaultSeed = evalCase.seed.vault;
-  if (!vaultSeed) return evalCase;
-  const generated = generateVault(vaultSeed.size, vaultSeed.seed);
-  return {
-    ...evalCase,
-    seed: {
-      files: { ...generated.files, ...evalCase.seed.files },
-      binaryFiles: evalCase.seed.binaryFiles,
-    },
-  };
-}
-
-const FIXTURE_PLACEHOLDER = "{{fixture}}";
-
-/**
- * True when a case needs the local fixture server: its prompt asks for the
- * fixture URL, or it turns web access on. When no selected case needs it, the
- * normal eval path starts no server.
- */
-export function needsFixture(cases: readonly ToolUseCase[]): boolean {
-  return cases.some(
-    (evalCase) =>
-      evalCase.prompt.includes(FIXTURE_PLACEHOLDER) || evalCase.settings?.["web.enabled"] === true,
-  );
-}
-
-/**
- * Replace every `{{fixture}}` in the case prompts with the fixture server's
- * base URL. A prompt that asks for the fixture with no URL fails here instead
- * of sending the model a broken address.
- */
-export function expandFixturePlaceholders(
-  cases: readonly ToolUseCase[],
-  baseUrl: string | undefined,
-): ToolUseCase[] {
-  return cases.map((evalCase) => {
-    if (!evalCase.prompt.includes(FIXTURE_PLACEHOLDER)) return evalCase;
-    if (!baseUrl) {
-      throw new Error(
-        `Case ${evalCase.id} uses {{fixture}} in its prompt, but no fixture server base URL is available.`,
-      );
-    }
-    return { ...evalCase, prompt: evalCase.prompt.replaceAll(FIXTURE_PLACEHOLDER, baseUrl) };
-  });
-}
-
-function printDryRun(options: {
-  suite: ToolUseSuite;
-  suitePath: string;
-  cases: ToolUseCase[];
-  runsPerCase: number;
-  plannedRuns: PlannedRun[];
-  budget: ToolUseBudgetCaps;
-  outDir: string;
-  thinking: { level: ToolUseThinkingLevel; source: ThinkingLevelSource };
-}): void {
-  const inputTokens = DRY_RUN_ESTIMATE.tokensPerRun * DRY_RUN_ESTIMATE.inputShare;
-  const outputTokens = DRY_RUN_ESTIMATE.tokensPerRun * (1 - DRY_RUN_ESTIMATE.inputShare);
-  const estimatedUsd =
-    options.plannedRuns.length *
-    (inputTokens * DRY_RUN_ESTIMATE.inputUsdPerToken +
-      outputTokens * DRY_RUN_ESTIMATE.outputUsdPerToken);
-  const lines = [
-    `Tool-use eval plan: ${options.suite.name}`,
-    `Suite: ${options.suitePath}`,
-    `Model: ${options.suite.model}`,
-    `Thinking level: ${options.thinking.level} (${options.thinking.source})`,
-    `Cases: ${options.cases.length}; ${options.cases.length} case(s) x ${options.runsPerCase} run(s) = ${options.plannedRuns.length} run(s)`,
-  ];
-  for (const evalCase of options.cases) {
-    const seedFiles = Object.keys(evalCase.seed.files).length;
-    const fixtureNote = needsFixture([evalCase]) ? ", fixture server" : "";
-    const level = evalCase.thinkingLevel ?? options.thinking.level;
-    lines.push(
-      `- ${evalCase.id}: ${options.runsPerCase} run(s), ${seedFiles} seed file(s)${fixtureNote}, thinking ${level}`,
-    );
-  }
-  lines.push(
-    `Budget: maxUsd ${options.budget.maxUsd}, maxModelCalls ${options.budget.maxModelCalls}, maxTokens ${options.budget.maxTokens}`,
-    `Turn: timeoutMs ${options.suite.turn.timeoutMs}, maxTurnsPerPrompt ${options.suite.turn.maxTurnsPerPrompt}`,
-    `Results: ${options.outDir}`,
-    "prices: not fetched (dry run)",
-    `estimated cost: $${estimatedUsd.toFixed(4)} (fixed assumption: 15k tokens/run, 80% input at $0.05/M and 20% output at $0.20/M)`,
-  );
-  process.stdout.write(`${lines.join("\n")}\n`);
-}
-
-function formatReport(summary: ToolUseSummary): string {
-  const overall = summary.overall;
-  const lines = [
-    `# Tool-use eval ${summary.runId}`,
-    "",
-    `Suite: ${summary.suite.name}`,
-    `Model: ${summary.model}`,
-    `Thinking level: ${summary.thinkingLevel} (${summary.thinkingLevelSource})`,
-    `Prices (USD/token): input ${summary.prices.input}, output ${summary.prices.output}, cache-read ${summary.prices.cacheRead}, cache-write ${summary.prices.cacheWrite ?? 0}`,
-    `Budget used: $${summary.budget.used.usd.toFixed(6)}, ${summary.budget.used.modelCalls} model call(s), ${summary.budget.used.tokens} token(s)`,
-    `Budget exceeded: ${summary.budget.exceeded ?? "no"}`,
-    "",
-    "## Overall",
-    "",
-    `- Cases: ${overall.cases}; executed runs: ${overall.runs}`,
-    `- pass^K: ${percent(overall.passAtK)}; mean pass@1: ${percent(overall.meanPassAt1)}; partial score: ${overall.partialScore.toFixed(3)}`,
-    `- Cost: $${overall.totalUsd.toFixed(6)} total, $${overall.meanUsd.toFixed(6)} per run`,
-    `- Tokens: ${Math.round(overall.meanTokens)} per run`,
-    `- Calls: ${overall.meanModelCalls.toFixed(1)} model, ${overall.meanToolCalls.toFixed(1)} tool per run`,
-    `- Median case time: ${(overall.medianCaseMs / 1000).toFixed(1)}s`,
-    "",
-    "| Case | Thinking | Pass rate | pass^K | Partial score | Mean model calls | Mean tool calls | Over budget | Median seconds | Mean seconds | Mean tokens | USD |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|",
-  ];
-  for (const entry of summary.cases) {
-    lines.push(
-      `| ${entry.id} | ${formatCaseThinking(entry)} | ${entry.passed}/${entry.executed} | ${entry.passAtK} | ${entry.partialScore.toFixed(3)} | ${entry.meanModelCalls.toFixed(1)} | ${entry.meanToolCalls.toFixed(1)} | ${entry.overBudgetRuns} | ${(entry.medianMs / 1000).toFixed(1)} | ${(entry.meanMs / 1000).toFixed(1)} | ${Math.round(entry.meanTokens)} | $${entry.totalUsd.toFixed(6)} |`,
-    );
-  }
-  lines.push("", "## Per-run check failures", "");
-  let failures = 0;
-  for (const entry of summary.cases) {
-    for (const run of entry.runResults) {
-      const failed = run.checks.filter((check) => !check.ok);
-      if (!run.error && failed.length === 0) continue;
-      failures += 1;
-      lines.push(`### ${entry.id} run ${run.run} (${run.status})`, "");
-      if (run.error) lines.push(`- run error: ${run.error}`);
-      for (const check of failed) lines.push(`- ${check.type}: ${check.detail}`);
-      lines.push("");
-    }
-  }
-  if (failures === 0) lines.push("- none", "");
-  return `${lines.join("\n")}\n`;
-}
-
-/** `low (observed low)` or `low (observed high 1/3)`; missing observations print as the requested level. */
-function formatCaseThinking(entry: CaseSummaryWithRuns | CaseComparison): string {
-  const requested = entry.thinkingLevel;
-  if (!requested) return "(missing)";
-  const observed = entry.observedThinkingLevels ?? [];
-  if (observed.length === 0) return requested;
-  const mismatches = entry.thinkingLevelMismatches ?? 0;
-  const shown = observed.map((level) => (level === requested ? level : `${level}!`)).join(", ");
-  return `${requested} (observed ${shown}${mismatches > 0 ? `; ${mismatches} mismatch(es)` : ""})`;
-}
-
-function formatConsoleSummary(summary: ToolUseSummary, summaryPath: string, reportPath: string): string {
-  const overall = summary.overall;
-  const lines = [
-    `Tool-use eval: ${summary.runId}`,
-    `Thinking level: ${summary.thinkingLevel} (${summary.thinkingLevelSource})`,
-    `Cases: ${summary.cases.length}; runs: ${overall.runs} executed; pass^K: ${percent(overall.passAtK)}; mean pass@1: ${percent(overall.meanPassAt1)}`,
-  ];
-  for (const entry of summary.cases) {
-    lines.push(
-      `- ${entry.id}: ${entry.passed}/${entry.executed} (thinking ${formatCaseThinking(entry)}, pass^K ${entry.passAtK}, partial ${entry.partialScore.toFixed(2)}, ${entry.meanModelCalls.toFixed(1)} model calls, ${entry.meanToolCalls.toFixed(1)} tool calls, ${(entry.medianMs / 1000).toFixed(1)}s median, ${Math.round(entry.meanTokens)} tokens, $${entry.totalUsd.toFixed(6)})`,
-    );
-  }
-  lines.push(
-    `Totals: $${summary.budget.used.usd.toFixed(6)}, ${summary.budget.used.modelCalls} model call(s), ${summary.budget.used.tokens} token(s)`,
-    `Overall: $${overall.meanUsd.toFixed(6)}/run, ${Math.round(overall.meanTokens)} tokens/run, ${overall.meanModelCalls.toFixed(1)} model calls/run, ${overall.meanToolCalls.toFixed(1)} tool calls/run, ${(overall.medianCaseMs / 1000).toFixed(1)}s median case`,
-    `Summary: ${summaryPath}`,
-    `Report: ${reportPath}`,
-  );
-  return `${lines.join("\n")}\n`;
+  return { input, output, cacheRead: price("input_cache_read") ?? 0, cacheWrite: price("input_cache_write") ?? 0 };
 }
 
 async function assertFreshResultsDir(resultsDir: string): Promise<void> {
-  let entries: string[];
-  try {
-    entries = await readdir(resultsDir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+  const entries = await readdir(resultsDir).catch((error: NodeJS.ErrnoException) => { // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
+    if (error.code === "ENOENT") return [];
     throw error;
-  }
+  });
   if (entries.length > 0) {
-    throw new Error(
-      `run id already used; pick a new --run-id (results directory is not empty: ${resultsDir})`,
-    );
+    throw new Error(`run id already used; pick a new --run-id (results directory is not empty: ${resultsDir})`);
   }
 }
 
-/** One baseline per suite name; `tool-use` keeps its committed path. */
-function baselinePathFor(suiteName: string): string {
-  const slug = suiteName.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-  if (!slug) throw new Error(`The suite name cannot be used as a baseline file name: ${JSON.stringify(suiteName)}`);
-  return path.join(BASELINE_DIR, `${slug}.json`);
-}
-
-async function writeBaseline(summary: ToolUseSummary): Promise<string> {
-  const baseline = {
-    version: 1,
-    suite: summary.suite.name,
-    model: summary.model,
-    thinkingLevel: summary.thinkingLevel,
-    thinkingLevelSource: summary.thinkingLevelSource,
-    prices: summary.prices,
-    date: new Date().toISOString(),
-    gitHead: gitHead(),
-    overall: summary.overall,
-    cases: summary.cases.map((entry) => ({
-      id: entry.id,
-      thinkingLevel: entry.thinkingLevel,
-      observedThinkingLevels: entry.observedThinkingLevels,
-      thinkingLevelMismatches: entry.thinkingLevelMismatches,
-      passRate: entry.passRate,
-      passAtK: entry.passAtK,
-      partialScore: entry.partialScore,
-      meanTokens: entry.meanTokens,
-      meanUsd: entry.meanUsd,
-      meanModelCalls: entry.meanModelCalls,
-      meanToolCalls: entry.meanToolCalls,
-      medianMs: entry.medianMs,
-      overBudgetRuns: entry.overBudgetRuns,
-    })),
-  };
-  const target = path.resolve(baselinePathFor(summary.suite.name));
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
-  return target;
-}
-
-async function compareCommand(
-  input: [string, string],
-  options: { significance: boolean; exclude: string[] },
-): Promise<number> {
-  const baseline = JSON.parse(await readFile(path.resolve(input[0]), "utf8")) as unknown;
-  const candidate = JSON.parse(await readFile(path.resolve(input[1]), "utf8")) as unknown;
-  const comparison = formatComparison(baseline, candidate);
-  process.stdout.write(comparison);
-  if (!options.significance) return 0;
-  const excluded = new Set(options.exclude);
-  const result = bootstrapCompare(
-    significanceCases(baseline, excluded),
-    significanceCases(candidate, excluded),
-  );
-  process.stdout.write(
-    formatSignificance(result, { before: "Baseline", after: "Candidate" }, options.exclude),
-  );
-  const known = summaryCaseIds(baseline);
-  for (const id of summaryCaseIds(candidate)) known.add(id);
-  const unknown = options.exclude.filter((id) => !known.has(id));
-  if (unknown.length > 0) {
-    process.stderr.write(
-      `warning: unknown --exclude id: ${unknown.join(", ")}; it is not a case in either summary\n`,
-    );
-    return 1;
-  }
-  return 0;
-}
-
-/**
- * Only the fields the bootstrap needs. A committed baseline has no
- * `runResults`, and a fresh `summary.json` does; both carry per-case scores.
- * A missing or non-finite score is passed through as-is so the module can skip
- * it with a named warning instead of dropping the case without a trace.
- */
-function significanceCases(input: unknown, excluded: ReadonlySet<string>): SignificanceCase[] {
-  const output: SignificanceCase[] = [];
-  if (!isRecord(input) || !Array.isArray(input.cases)) return output;
-  for (const entry of input.cases) {
-    if (!isRecord(entry) || typeof entry.id !== "string" || excluded.has(entry.id)) continue;
-    output.push({
-      id: entry.id,
-      passAtK: typeof entry.passAtK === "number" ? entry.passAtK : Number.NaN,
-      passRate: typeof entry.passRate === "number" ? entry.passRate : undefined,
-    });
-  }
-  return output;
-}
-
-/** Every case id the summary lists, including ones with a bad score. */
-function summaryCaseIds(input: unknown): Set<string> {
-  const ids = new Set<string>();
-  if (!isRecord(input) || !Array.isArray(input.cases)) return ids;
-  for (const entry of input.cases) {
-    if (isRecord(entry) && typeof entry.id === "string") ids.add(entry.id);
-  }
-  return ids;
-}
-
-interface CaseComparison {
-  thinkingLevel?: string;
-  observedThinkingLevels?: string[];
-  thinkingLevelMismatches?: number;
-  passRate?: number;
-  passAtK?: number;
-  partialScore?: number;
-  meanTokens?: number;
-  meanUsd?: number;
-  medianMs?: number;
-}
-
-interface OverallComparison {
-  passAtK?: number;
-  meanPassAt1?: number;
-  partialScore?: number;
-  totalUsd?: number;
-  meanUsd?: number;
-  meanTokens?: number;
-  meanModelCalls?: number;
-  meanToolCalls?: number;
-  medianCaseMs?: number;
-}
-
-function formatComparison(baseline: unknown, candidate: unknown): string {
-  const before = summaryCases(baseline);
-  const after = summaryCases(candidate);
-  const ids = [...new Set([...before.keys(), ...after.keys()])].sort((left, right) => left.localeCompare(right));
-  const lines = [
-    "# Tool-use eval comparison",
-    "",
-    runIdentity("Baseline", baseline),
-    runIdentity("Candidate", candidate),
-    "",
-    "## Overall",
-    "",
-    "| Metric | Baseline | Candidate | Change |",
-    "|---|---|---|---|",
-    ...overallRows(overallSummary(baseline), overallSummary(candidate)),
-    "",
-    "## Cases",
-    "",
-    "| Case | Thinking | Pass rate | pass^K | Partial score | Median s | Mean tokens | Mean USD | Flags |",
-    "|---|---|---|---|---|---|---|---|---|",
-  ];
-  for (const id of ids) {
-    const left = before.get(id) ?? {};
-    const right = after.get(id) ?? {};
-    lines.push(
-      `| ${id} | ${formatCompareThinking(left, right)} | ${formatDelta(left.passRate, right.passRate, percent)} | ${formatDelta(left.passAtK, right.passAtK, whole)} | ${formatDelta(left.partialScore, right.partialScore, ratio)} | ${formatDelta(left.medianMs, right.medianMs, seconds)} | ${formatDelta(left.meanTokens, right.meanTokens, whole)} | ${formatDelta(left.meanUsd, right.meanUsd, usd)} | ${caseFlags(left, right)} |`,
-    );
-  }
-  return `${lines.join("\n")}\n`;
-}
-
-/** One line that names the suite, model, and reasoning level of a summary or baseline. */
-function runIdentity(label: string, input: unknown): string {
-  if (!isRecord(input)) return `- ${label}: (missing)`;
-  const suite = isRecord(input.suite) ? input.suite : {};
-  const name = typeof suite.name === "string" ? suite.name : "(suite?)";
-  const model = typeof input.model === "string" ? input.model : "(model?)";
-  const level = typeof input.thinkingLevel === "string" ? input.thinkingLevel : "(not recorded)";
-  const source = typeof input.thinkingLevelSource === "string" ? ` (${input.thinkingLevelSource})` : "";
-  return `- ${label}: ${name}, ${model}, thinking ${level}${source}`;
-}
-
-function formatCompareThinking(before: CaseComparison, after: CaseComparison): string {
-  const left = formatCaseThinking(before);
-  const right = formatCaseThinking(after);
-  return left === right ? left : `${left} -> ${right}`;
-}
-
-function overallRows(before: OverallComparison, after: OverallComparison): string[] {
-  const rows: Array<[string, number | undefined, number | undefined, (value: number) => string]> = [
-    ["pass^K", before.passAtK, after.passAtK, percent],
-    ["mean pass@1", before.meanPassAt1, after.meanPassAt1, percent],
-    ["partial score", before.partialScore, after.partialScore, ratio],
-    ["total cost", before.totalUsd, after.totalUsd, usd],
-    ["mean cost", before.meanUsd, after.meanUsd, usd],
-    ["mean tokens", before.meanTokens, after.meanTokens, whole],
-    ["mean model calls", before.meanModelCalls, after.meanModelCalls, oneDecimal],
-    ["mean tool calls", before.meanToolCalls, after.meanToolCalls, oneDecimal],
-    ["median time", before.medianCaseMs, after.medianCaseMs, seconds],
-  ];
-  return rows.map(
-    ([label, left, right, format]) =>
-      `| ${label} | ${left === undefined ? "(missing)" : format(left)} | ${right === undefined ? "(missing)" : format(right)} | ${formatChange(left, right, format)} |`,
-  );
-}
-
-function formatChange(
-  before: number | undefined,
-  after: number | undefined,
-  format: (value: number) => string,
-): string {
-  if (before === undefined || after === undefined) return "(missing)";
-  const delta = after - before;
-  if (delta === 0) return "0";
-  return `${delta > 0 ? "+" : "-"}${format(Math.abs(delta))}`;
-}
-
-/**
- * A flag is a warning, not a verdict: cost and time regressions over 20% and a
- * drop in the pass rate. The command stays read-only.
- */
-function caseFlags(before: CaseComparison, after: CaseComparison): string {
-  const flags: string[] = [];
-  if (before.meanUsd !== undefined && before.meanUsd > 0 && after.meanUsd !== undefined) {
-    const growth = (after.meanUsd - before.meanUsd) / before.meanUsd;
-    if (growth > 0.2) flags.push(`cost +${Math.round(growth * 100)}%`);
-  }
-  if (before.medianMs !== undefined && before.medianMs > 0 && after.medianMs !== undefined) {
-    const growth = (after.medianMs - before.medianMs) / before.medianMs;
-    if (growth > 0.2) flags.push(`time +${Math.round(growth * 100)}%`);
-  }
-  if (before.passRate !== undefined && after.passRate !== undefined && after.passRate < before.passRate) {
-    flags.push(`pass -${Math.round((before.passRate - after.passRate) * 100)}`);
-  }
-  return flags.length > 0 ? flags.join("; ") : "-";
-}
-
-function summaryCases(input: unknown): Map<string, CaseComparison> {
-  const output = new Map<string, CaseComparison>();
-  if (!isRecord(input) || !Array.isArray(input.cases)) return output;
-  for (const entry of input.cases) {
-    if (!isRecord(entry) || typeof entry.id !== "string") continue;
-    output.set(entry.id, {
-      thinkingLevel: typeof entry.thinkingLevel === "string" ? entry.thinkingLevel : undefined,
-      observedThinkingLevels: Array.isArray(entry.observedThinkingLevels)
-        ? entry.observedThinkingLevels.filter((level): level is string => typeof level === "string")
-        : undefined,
-      thinkingLevelMismatches: numberValue(entry.thinkingLevelMismatches),
-      passRate: numberValue(entry.passRate),
-      passAtK: numberValue(entry.passAtK),
-      partialScore: numberValue(entry.partialScore),
-      meanTokens: numberValue(entry.meanTokens),
-      meanUsd: numberValue(entry.meanUsd),
-      medianMs: numberValue(entry.medianMs),
-    });
-  }
-  return output;
-}
-
-function overallSummary(input: unknown): OverallComparison {
-  if (!isRecord(input) || !isRecord(input.overall)) return {};
-  const overall = input.overall;
-  return {
-    passAtK: numberValue(overall.passAtK),
-    meanPassAt1: numberValue(overall.meanPassAt1),
-    partialScore: numberValue(overall.partialScore),
-    totalUsd: numberValue(overall.totalUsd),
-    meanUsd: numberValue(overall.meanUsd),
-    meanTokens: numberValue(overall.meanTokens),
-    meanModelCalls: numberValue(overall.meanModelCalls),
-    meanToolCalls: numberValue(overall.meanToolCalls),
-    medianCaseMs: numberValue(overall.medianCaseMs),
-  };
-}
-
-const percent = (value: number): string => `${Math.round(value * 100)}%`;
-const whole = (value: number): string => String(Math.round(value));
-const usd = (value: number): string => `$${value.toFixed(6)}`;
-const ratio = (value: number): string => value.toFixed(3);
-const oneDecimal = (value: number): string => value.toFixed(1);
-const seconds = (value: number): string => `${(value / 1000).toFixed(1)}s`;
-
-function formatDelta(before: number | undefined, after: number | undefined, format: (value: number) => string): string {
-  if (before === undefined && after === undefined) return "(missing)";
-  const left = before ?? 0;
-  const right = after ?? 0;
-  const delta = right - left;
-  const sign = delta > 0 ? "+" : delta < 0 ? "-" : "";
-  return `${format(left)} -> ${format(right)} (${sign}${format(Math.abs(delta))})`;
-}
-
-function runE2e(options: {
+function runSpec(options: {
   vaultPath: string;
   planPath: string;
   resultsDir: string;
@@ -1000,19 +395,19 @@ function runE2e(options: {
   timeoutMs: number;
 }): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(npmCommand(), ["run", "test:e2e"], {
+    const child = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "test:e2e"], {
       stdio: "inherit",
       env: {
         ...process.env,
         WDIO_CONFIG: "./wdio.dogfood.conf.mts",
         TARGET_VAULT: options.vaultPath,
         DOGFOOD_COPY: "false",
-        DOGFOOD_SPEC: "./test/e2e/evals/tool-use.eval.ts",
+        DOGFOOD_SPEC: SPEC_PATH,
         DOGFOOD_TIMEOUT_MS: String(options.timeoutMs),
         TOOL_USE_PLAN: options.planPath,
         TOOL_USE_RESULTS_DIR: options.resultsDir,
         AGENTIC_CHAT_API_KEY: options.apiKey,
-        NO_PROXY: mergeNoProxy(process.env.NO_PROXY),
+        NO_PROXY: withLoopback(process.env.NO_PROXY),
       },
     });
     child.on("exit", (code) => resolve(code ?? 1));
@@ -1023,122 +418,30 @@ function runE2e(options: {
   });
 }
 
-function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { dryRun: false, writeBaseline: false, smoke: false, significance: false };
-  // `--significance` and `--exclude` are position-free so that
-  // `--compare --significance <base> <head>` (the npm alias) parses.
-  const rest: string[] = [];
-  for (let index = 0; index < argv.length; index += 1) {
-    const raw = argv[index];
-    if (raw === "--significance") {
-      args.significance = true;
-      continue;
-    }
-    if (raw === "--exclude") {
-      const value = argv[index + 1];
-      if (!value || value.startsWith("--")) throw new Error("Missing value for --exclude");
-      args.exclude = [
-        ...(args.exclude ?? []),
-        ...value.split(",").map((id) => id.trim()).filter((id) => id.length > 0),
-      ];
-      index += 1;
-      continue;
-    }
-    rest.push(raw);
-  }
-  // Check before the positional walk so a lone `--significance` gets the usage
-  // guard, not `Unexpected argument: <base>`.
-  if (args.significance && !rest.includes("--compare")) {
-    throw new Error("--significance needs --compare <base-summary.json> <head-summary.json>");
-  }
-  if (args.exclude && args.exclude.length > 0 && !rest.includes("--compare")) {
-    throw new Error("--exclude needs --compare <base-summary.json> <head-summary.json>");
-  }
-  for (let index = 0; index < rest.length; index += 1) {
-    const raw = rest[index];
-    if (raw === "--") continue;
-    if (raw === "--help" || raw === "-h") {
-      process.stdout.write(usageText());
-      process.exit(0);
-    }
-    if (raw === "--dry-run") {
-      args.dryRun = true;
-      continue;
-    }
-    if (raw === "--write-baseline") {
-      args.writeBaseline = true;
-      continue;
-    }
-    if (raw === "--smoke") {
-      args.smoke = true;
-      continue;
-    }
-    if (!raw.startsWith("--")) throw new Error(`Unexpected argument: ${raw}`);
-    const key = raw.slice(2);
-    if (key === "compare") {
-      const baseline = rest[index + 1];
-      const candidate = rest[index + 2];
-      if (!baseline || baseline.startsWith("--") || !candidate || candidate.startsWith("--")) {
-        throw new Error("--compare needs <base-summary.json> <head-summary.json>");
-      }
-      args.compare = [baseline, candidate];
-      index += 2;
-      continue;
-    }
-    const value = rest[index + 1];
-    if (!value || value.startsWith("--")) throw new Error(`Missing value for --${key}`);
-    index += 1;
-    switch (key) {
-      case "suite":
-        args.suite = value;
-        break;
-      case "case":
-        args.cases = [...(args.cases ?? []), value];
-        break;
-      case "runs":
-        args.runs = value;
-        break;
-      case "run-id":
-        args.runId = value;
-        break;
-      case "out-dir":
-        args.outDir = value;
-        break;
-      case "env-file":
-        args.envFile = value;
-        break;
-      case "max-usd":
-        args.maxUsd = value;
-        break;
-      case "thinking-level":
-        args.thinkingLevel = value;
-        break;
-      default:
-        throw new Error(`Unknown option: --${key}`);
-    }
-  }
-  if (args.smoke && args.cases && args.cases.length > 0) {
-    throw new Error("--smoke cannot be combined with --case; use one selector.");
-  }
-  return args;
+/** The WDIO control plane and the fixture server are on loopback; keep them off any proxy. */
+function withLoopback(noProxy: string | undefined): string {
+  const hosts = (noProxy ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+  return [...new Set([...hosts, "localhost", "127.0.0.1", "::1"])].join(",");
 }
 
-function usageText(): string {
-  return [
-    "Usage:",
-    "  npm run eval:tool-use -- [--suite path] [--case id[,id] | --smoke] [--runs n] [--run-id id]",
-    "      [--out-dir dir] [--env-file path] [--max-usd usd] [--thinking-level level]",
-    "      [--dry-run] [--write-baseline]",
-    "  npm run eval:tool-use -- --compare <base-summary.json> <head-summary.json>",
-    "      [--significance] [--exclude id[,id]]",
-    "  npm run eval:significance -- <base-summary.json> <head-summary.json>",
-    "",
-    "  --smoke runs one core case per category, once each, unless --runs is set.",
-    "  --thinking-level wins over AGENTIC_CHAT_THINKING_LEVEL, the suite field, and the low default.",
-    "  --significance adds a case-level bootstrap section to --compare; --exclude drops cases",
-    "  from that section only.",
-    "",
-  ].join("\n");
+function gitHead(): string {
+  try {
+    return execFileSync(
+      "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH like the other scripts.
+      ["rev-parse", "HEAD"],
+      { encoding: "utf8" },
+    ).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+async function readJson(file: string): Promise<unknown> {
+  return JSON.parse(await readFile(path.resolve(file), "utf8")) as unknown; // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
+}
+
+async function writeJson(file: string, value: unknown): Promise<void> {
+  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8"); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
 }
 
 function positiveInteger(value: string, flag: string): number {
@@ -1153,47 +456,14 @@ function nonNegativeNumber(value: string, flag: string): number {
   return parsed;
 }
 
-function numberValue(input: unknown): number | undefined {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined;
-}
-
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return !!input && typeof input === "object" && !Array.isArray(input);
-}
-
-function timestampRunId(): string {
-  return `tool-use-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-}
-
-function gitHead(): string {
-  try {
-    const output = execFileSync(
-      "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH like the other scripts.
-      ["rev-parse", "HEAD"],
-      { encoding: "utf8" },
-    );
-    return output.trim();
-  } catch {
-    return "unknown";
-  }
-}
-
-function npmCommand(): string {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
-}
-
-function mergeNoProxy(current: string | undefined): string {
-  const required = ["localhost", "127.0.0.1", "::1"];
-  const values = new Set((current ?? "").split(",").map((value) => value.trim()).filter(Boolean));
-  for (const value of required) values.add(value);
-  return [...values].join(",");
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isCliEntrypoint(): boolean {
-  const entrypoint = process.argv[1];
-  return typeof entrypoint === "string" && import.meta.url === pathToFileURL(entrypoint).href;
+const entrypoint = process.argv[1];
+if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
+  main().catch((error: unknown) => {
+    process.stderr.write(`${errorMessage(error)}\n`);
+    process.exit(1);
+  });
 }

@@ -170,7 +170,12 @@ function scanBundle(source) {
     }
   }
 
-  for (const marker of ["__AGENTIC_CHAT_E2E_TURNS__", "__AGENTIC_CHAT_E2E_CALLS__", "__AGENTIC_CHAT_E2E_CALL_LOG__"]) {
+  for (const marker of [
+    "__AGENTIC_CHAT_E2E_TURNS__",
+    "__AGENTIC_CHAT_E2E_CALLS__",
+    "__AGENTIC_CHAT_E2E_CALL_LOG__",
+    "__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__",
+  ]) {
     if (source.includes(marker)) failures.push(`main.js contains WDIO-only marker ${marker}.`);
   }
 }

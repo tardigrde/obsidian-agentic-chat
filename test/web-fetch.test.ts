@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ToolArtifactMetadata, ToolArtifactStoreLike, ToolArtifactWriteInput } from "../src/artifacts/tool-artifact-store";
 import { parseSourceReference } from "../src/retrieval/citations";
@@ -140,12 +140,34 @@ describe("normalizeWebUrl eval fixture hook", () => {
     else target[HOOK] = origin;
   }
 
+  /** `scripts/build.mjs` defines this constant; a test stands in for the build. */
+  function setE2EBuild(enabled: boolean | undefined): void {
+    const target = globalThis as unknown as Record<string, unknown>;
+    if (enabled === undefined) delete target.__AGENTIC_CHAT_ENABLE_E2E_STREAM__;
+    else target.__AGENTIC_CHAT_ENABLE_E2E_STREAM__ = enabled;
+  }
+
+  beforeEach(() => {
+    setE2EBuild(true);
+  });
+
   afterEach(() => {
     setFixtureOrigin(undefined);
+    setE2EBuild(undefined);
   });
 
   it("blocks the fixture port when the hook is unset", () => {
     expect(() => normalizeWebUrl("http://127.0.0.1:1234/article")).toThrow(/local or private/i);
+  });
+
+  it("ignores the hook outside the e2e build", () => {
+    setFixtureOrigin("http://127.0.0.1:1234");
+    for (const releaseFlag of [false, undefined]) {
+      setE2EBuild(releaseFlag);
+      expect(() => normalizeWebUrl("http://127.0.0.1:1234/article"), String(releaseFlag)).toThrow(
+        /local or private/i,
+      );
+    }
   });
 
   it("allows exactly the origin set by the hook", () => {
