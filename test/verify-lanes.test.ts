@@ -80,3 +80,15 @@ describe("verify lanes", () => {
     expect(result.stderr).toContain("npm run verify -- check");
   });
 });
+
+describe("change lane", () => {
+  it("runs several files together, or one name pattern", () => {
+    expect(build("change", ["test/a.test.ts", "test/b.test.ts"])[0].args).toEqual([
+      "run",
+      "--reporter=default",
+      "test/a.test.ts",
+      "test/b.test.ts",
+    ]);
+    expect(build("change", ["uses", "the", "model"])[0].args).toEqual(["run", "--reporter=default", "-t", "uses the model"]);
+  });
+});

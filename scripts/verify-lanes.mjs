@@ -185,9 +185,11 @@ export const lanes = {
         "verify change needs a test file or a -t pattern, for example: npm run verify -- change test/settings.test.ts",
       );
     }
-    const target = args[0];
-    const isPath = target.includes("/") || target.endsWith(".test.ts");
-    const vitestArgs = isPath ? ["run", "--reporter=default", target] : ["run", "--reporter=default", "-t", target];
+    const isPath = (target) => target.includes("/") || target.endsWith(".test.ts");
+    // Several files run together; anything else is one -t name pattern.
+    const vitestArgs = args.every(isPath)
+      ? ["run", "--reporter=default", ...args]
+      : ["run", "--reporter=default", "-t", args.join(" ")];
     return [step("unit tests", bin("vitest"), vitestArgs, { expectTests: true })];
   },
 
@@ -282,8 +284,8 @@ Lanes: ${LANE_NAMES.join(", ")}
                     manifest, doc commands, skip rule, unit, witness self-test,
                     production build, real-Obsidian smoke. --no-app drops the smoke
                     (no display); CI runs \`check --no-app --coverage\` plus the app job.
-  change <file|pattern>
-                    One unit file, or a -t pattern.
+  change <file...|pattern>
+                    One or more unit files, or a -t name pattern.
   app [spec...] [--mobile] [--dogfood]
                     Real Obsidian, scripted turns. No spec runs the whole suite;
                     bare names resolve to test/e2e/specs/<name>.e2e.ts.

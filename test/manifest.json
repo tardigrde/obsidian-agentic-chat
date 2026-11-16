@@ -222,7 +222,7 @@
       "tier": "T3",
       "runner": "eval",
       "globs": ["test/e2e/evals/tool-use.eval.ts", "test/evals/tool-use/*.eval.json"],
-      "triggers": ["src/agent/default-system-prompt.ts", "src/tools/**", "src/agent/**", "test/evals/tool-use/**", "scripts/run-tool-use-evals.ts", "scripts/eval/**"],
+      "triggers": ["src/agent/**", "src/tools/**", "test/evals/tool-use/**", "scripts/run-tool-use-evals.ts"],
       "needs": { "display": true, "key": true, "network": true },
       "budgetSeconds": 900,
       "command": "npm run verify -- eval --suite core --runs 3",
