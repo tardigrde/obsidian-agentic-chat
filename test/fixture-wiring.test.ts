@@ -134,16 +134,18 @@ describe("fixture wiring in the tool-use runner", () => {
     expect(result.stdout).toContain(`- tools.easy.mcp: 1 run(s), 0 seed file(s)${MCP_FIXTURE_MARKER}`);
   });
 
-  it("marks only tools.medium.web in the core dry-run plan", () => {
+  it("marks tools.medium.web for the web fixture and tools.medium.mcp for the fake MCP server in the core dry-run plan", () => {
     const result = runDryRun(CORE_SUITE_PATH);
 
     expect(result.status, result.stderr).toBe(0);
     const caseLines = result.stdout.split("\n").filter((line) => line.startsWith("- "));
-    expect(caseLines).toHaveLength(25);
+    expect(caseLines).toHaveLength(27);
     const webLine = caseLines.find((line) => line.startsWith("- tools.medium.web: "));
     expect(webLine, "tools.medium.web must be in the core dry run").toBeDefined();
     expect(webLine).toContain(FIXTURE_MARKER);
     expect(caseLines.filter((line) => line.includes(FIXTURE_MARKER))).toEqual([webLine]);
-    expect(caseLines.filter((line) => line.includes(MCP_FIXTURE_MARKER))).toEqual([]);
+    const mcpLine = caseLines.find((line) => line.startsWith("- tools.medium.mcp: "));
+    expect(mcpLine, "tools.medium.mcp must be in the core dry run").toBeDefined();
+    expect(caseLines.filter((line) => line.includes(MCP_FIXTURE_MARKER))).toEqual([mcpLine]);
   });
 });

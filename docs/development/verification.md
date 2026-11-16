@@ -510,7 +510,7 @@ npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke --ru
 `recovery.medium.stale`. The validator rejects a `smoke` id that is not a case
 in the suite, and `--smoke` fails for a suite with no `smoke` list (`tool-use`
 has none). A run takes about 3-5 minutes and needs no baseline. Use the full
-`core` suite (25 cases x 3 runs) for the committed baseline. `--smoke` cannot be
+`core` suite (27 cases x 3 runs) for the committed baseline. `--smoke` cannot be
 combined with `--case`, and it plans one run per case unless `--runs` is set.
 `--dry-run` prints the 8 cases and needs no key.
 
@@ -608,8 +608,10 @@ gradeable; the content checks read Markdown only.
 ### The `core` suite and generated vaults
 
 `tool-use` stays the regression tier: 14 cases, saturated at 100%. `core` is the
-non-saturated tier for prompt, tool, and model comparisons. It has 25 cases
-(eight categories at three levels, plus `tools.medium.web`) and uses the same
+non-saturated tier for prompt, tool, and model comparisons. It has 27 cases
+(eight categories at three levels, plus `tools.medium.web`, `tools.medium.mcp`
+(an MCP tool found with `search_tools` out of the fake server's 30), and
+`find.easy.today` (a question about today)) and uses the same
 runner, the same grader, and `runsPerCase: 3`; pass^3 is the headline number.
 
 The committed baseline is `test/evals/baselines/core.json`, measured on

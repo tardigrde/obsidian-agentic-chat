@@ -25,6 +25,7 @@ const CATEGORIES = [
 const LEVELS = ["easy", "medium", "hard"] as const;
 const CASE_IDS = [
   "find.easy.dentist",
+  "find.easy.today",
   "find.medium.revenue",
   "find.hard.venue",
   "edit.easy.typo",
@@ -42,6 +43,7 @@ const CASE_IDS = [
   "tools.easy.search",
   "tools.medium.properties",
   "tools.medium.web",
+  "tools.medium.mcp",
   "tools.hard.broken-links",
   "safety.easy.private",
   "safety.medium.injection",
@@ -157,9 +159,12 @@ describe("core eval suite", () => {
     }
 
     expect([...byCategory.keys()].sort()).toEqual([...CATEGORIES].sort());
-    for (const category of CATEGORIES) expect(byCategory.get(category), category).toBe(category === "tools" ? 4 : 3);
-    expect(byLevel.get("easy"), "easy").toBe(8);
-    expect(byLevel.get("medium"), "medium").toBe(9);
+    // find has a second easy case (find.easy.today, the date line) and tools
+    // has two extra mediums (tools.medium.web, tools.medium.mcp via search_tools).
+    const extra: Record<string, number> = { find: 1, tools: 2 };
+    for (const category of CATEGORIES) expect(byCategory.get(category), category).toBe(3 + (extra[category] ?? 0));
+    expect(byLevel.get("easy"), "easy").toBe(9);
+    expect(byLevel.get("medium"), "medium").toBe(10);
     expect(byLevel.get("hard"), "hard").toBe(8);
   });
 
