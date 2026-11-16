@@ -2,6 +2,10 @@ import process from "node:process";
 import { generateDogfoodVault, writeManifest } from "./dogfood-core";
 
 async function main(): Promise<void> {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    process.stdout.write("Usage: npm run dogfood:generate-vault -- --vault <dir> [--run-id <id>] [--secret <text>]\n");
+    return;
+  }
   const args = parseArgs(process.argv.slice(2));
   const vaultPath = requiredArg(args, "vault");
   const manifest = await generateDogfoodVault({

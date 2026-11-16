@@ -165,6 +165,10 @@ export function formatEvalComparisonMarkdown(comparison: EvalRunComparison): str
 }
 
 async function main(): Promise<void> {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    process.stdout.write("Usage: npm run eval:agentic:compare -- <baseline-summary.json> <candidate-summary.json> [--format md|json] [--out <file>] [--fail-on-regression]\n");
+    return;
+  }
   const args = parseArgs(process.argv.slice(2));
   if (!args.baseline || !args.candidate) {
     process.stderr.write(usageText());

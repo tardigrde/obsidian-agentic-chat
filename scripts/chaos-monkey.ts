@@ -517,6 +517,10 @@ Charter:
 }
 
 async function main(): Promise<void> {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    process.stdout.write("Usage: npm run verify -- explore --mode <focused|generic> [--target <area>] [--live] [--max-steps n] [--max-seconds n] [--max-calls n] [--max-tokens n]\n");
+    return;
+  }
   const envFile = path.resolve(".env");
   if (existsSync(envFile)) applyEnvFile(envFile);
 

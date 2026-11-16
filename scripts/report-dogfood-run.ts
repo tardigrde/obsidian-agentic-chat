@@ -2,6 +2,10 @@ import process from "node:process";
 import { assertDogfoodInvariants, writeDogfoodRunReport } from "./dogfood-core";
 
 async function main(): Promise<void> {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    process.stdout.write("Usage: npm run dogfood:report -- --manifest <path> [--out <dir>]\n");
+    return;
+  }
   const args = parseArgs(process.argv.slice(2));
   const manifestPath = requiredArg(args, "manifest");
   const result = await assertDogfoodInvariants(manifestPath);

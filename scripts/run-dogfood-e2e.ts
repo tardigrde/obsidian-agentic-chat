@@ -18,6 +18,10 @@ void main().catch((error: unknown) => {
 });
 
 async function main(): Promise<void> {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    process.stdout.write("Usage: npm run verify -- app --dogfood   (or: node --import tsx scripts/run-dogfood-e2e.ts [--run-id <id>] [--run-dir <dir>])\n");
+    return;
+  }
   const args = parseArgs(process.argv.slice(2));
   const runId = args["run-id"] ?? timestampRunId();
   const reportDir = path.resolve(args["report-dir"] ?? DEFAULT_REPORT_DIR);
