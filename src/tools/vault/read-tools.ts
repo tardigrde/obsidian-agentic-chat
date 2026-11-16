@@ -18,16 +18,13 @@ import {
   truncateToolOutput,
   type LineWindow,
 } from "../../vault/truncate";
-import type { BuiltinToolName } from "../tool-contracts";
 import {
-  ActiveNoteParameters,
-  LsParameters,
   ReadParameters,
   VaultInspectParameters,
   vaultToolDefinition,
 } from "../vault-tool-definitions";
-import { createGetPropertiesTool, createLocalGraphTool } from "./graph-tools";
-import { createSearchTool } from "./search-tools";
+import { inspectLocalGraph, inspectProperties } from "./graph-tools";
+import { searchVault } from "./search-tools";
 import {
   normalizeVisibleVaultPath,
   textResult,
@@ -40,77 +37,46 @@ type VaultInspectAction = "list" | "search" | "active_note" | "local_graph" | "p
 export function createVaultInspectTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof VaultInspectParameters> {
   return {
     ...vaultToolDefinition("vault_inspect"),
-    execute: async (id, params, signal) => {
+    execute: async (_id, params) => {
       const action = normalizeVaultInspectAction(params.action);
-      switch (action) {
-        case "list":
-          return runInspectedTool(createLsTool(app, isIgnored), id, { path: params.path }, action, "ls", signal);
-        case "search":
-          return runInspectedTool(
-            createSearchTool(app, isIgnored),
-            id,
-            {
-              query: requiredString(params.query, "query"),
-              kind: params.kind,
-              path: params.path,
-              caseSensitive: params.caseSensitive,
-              regex: params.regex,
-              maxResults: params.maxResults,
-              maxMatches: params.maxMatches,
-            },
-            action,
-            "search",
-            signal,
-          );
-        case "active_note":
-          return runInspectedTool(
-            createActiveNoteTool(app, isIgnored),
-            id,
-            { includeContent: params.includeContent, includeSelection: params.includeSelection },
-            action,
-            "get_active_note",
-            signal,
-          );
-        case "local_graph":
-          return runInspectedTool(
-            createLocalGraphTool(app, isIgnored),
-            id,
-            { path: requiredString(params.path, "path") },
-            action,
-            "local_graph",
-            signal,
-          );
-        case "properties":
-          return runInspectedTool(
-            createGetPropertiesTool(app, isIgnored),
-            id,
-            { path: requiredString(params.path, "path") },
-            action,
-            "get_properties",
-            signal,
-          );
-      }
+      const result = await runInspectAction(app, isIgnored, action, params);
+      return { ...result, details: { inspectAction: action, ...(result.details ?? {}) } };
     },
   };
 }
 
-async function runInspectedTool(
-  tool: AgentTool,
-  id: string,
-  params: unknown,
+type VaultInspectParams = Parameters<AgentTool<typeof VaultInspectParameters>["execute"]>[1];
+type ToolResult = AgentToolResult<Record<string, unknown>>;
+
+function runInspectAction(
+  app: App,
+  isIgnored: IgnoreMatcher,
   action: VaultInspectAction,
-  delegatedTool: BuiltinToolName,
-  signal: AbortSignal | undefined,
-): Promise<AgentToolResult<Record<string, unknown>>> {
-  const result = await tool.execute(id, params, signal);
-  return {
-    ...result,
-    details: {
-      inspectAction: action,
-      delegatedTool,
-      ...((result.details ?? {}) as Record<string, unknown>),
-    },
-  };
+  params: VaultInspectParams,
+): Promise<ToolResult> {
+  switch (action) {
+    case "list":
+      return listFolder(app, isIgnored, params.path);
+    case "search":
+      return searchVault(app, isIgnored, {
+        query: requiredString(params.query, "query"),
+        kind: params.kind,
+        path: params.path,
+        caseSensitive: params.caseSensitive,
+        regex: params.regex,
+        maxResults: params.maxResults,
+        maxMatches: params.maxMatches,
+      });
+    case "active_note":
+      return inspectActiveNote(app, isIgnored, {
+        includeContent: params.includeContent,
+        includeSelection: params.includeSelection,
+      });
+    case "local_graph":
+      return inspectLocalGraph(app, isIgnored, requiredString(params.path, "path"));
+    case "properties":
+      return inspectProperties(app, isIgnored, requiredString(params.path, "path"));
+  }
 }
 
 function normalizeVaultInspectAction(value: unknown): VaultInspectAction {
@@ -141,7 +107,7 @@ export function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMe
       // misleading "File not found" so the model lists the folder and moves on.
       const entry = app.vault.getAbstractFileByPath(path);
       if (entry instanceof TFolder) {
-        throw new Error(`${path} is a folder — use ls to list its contents.`);
+        throw new Error(`${path} is a folder — use vault_inspect with action "list" to list its contents.`);
       }
       const file = app.vault.getFileByPath(path);
       const range = {
@@ -206,7 +172,7 @@ export function createReadTool(app: App, isIgnored: IgnoreMatcher, memo?: ReadMe
         } catch (listError) {
           throw new Error(`File not found: ${path}`, { cause: listError });
         }
-        throw new Error(`${path} is a folder — use ls to list its contents.`, { cause: readError });
+        throw new Error(`${path} is a folder — use vault_inspect with action "list" to list its contents.`, { cause: readError });
       }
       const guidance = readSizeGuardrail({ path, size: content.length, ...range });
       if (guidance) {
@@ -255,48 +221,44 @@ function finishRead(
   }, "read");
 }
 
-export function createLsTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LsParameters> {
-  return {
-    ...vaultToolDefinition("ls"),
-    execute: async (_id, params) => {
-      const path = normalizeFolderPath(params.path ?? "");
-      if (path && isIgnored(path)) throw new Error(`Folder not found: ${path}`);
-      const entry = path ? findVaultEntry(app, path) : app.vault.getRoot();
-      if (entry instanceof TFolder) {
-        const rows = entry.children
-          .slice()
-          .filter((child) => !isIgnored(child.path))
-          .sort((left, right) => left.path.localeCompare(right.path))
-          .map((child) => `${child instanceof TFolder ? "folder" : "file"}\t${child.path}`);
-        return textResult(rows.length === 0 ? "(empty folder)" : truncateToolOutput(rows.join("\n")), {
-          path,
-          count: rows.length,
-        });
-      }
-      // Stale tree: dot-folders (e.g. .agentic-plugins) created outside the
-      // session are on disk but missing from the vault index — fall back to
-      // the adapter like the plugin loader does. A missing path still throws
-      // below, so "not found" keeps meaning "nowhere", not "stale".
-      try {
-        const listing = await app.vault.adapter.list(path);
-        // Sort by path like the tree branch (which sorts child.path), not by
-        // rendered row — "file\t" sorts before "folder\t" and would regroup.
-        const entries = [
-          ...(listing?.folders ?? []).map((entry) => ({ kind: "folder", path: trimSlashes(entry) })),
-          ...(listing?.files ?? []).map((entry) => ({ kind: "file", path: trimSlashes(entry) })),
-        ]
-          .filter((entry) => entry.path && !isIgnored(entry.path))
-          .sort((left, right) => left.path.localeCompare(right.path));
-        const rows = entries.map((entry) => `${entry.kind}\t${entry.path}`);
-        return textResult(rows.length === 0 ? "(empty folder)" : truncateToolOutput(rows.join("\n")), {
-          path,
-          count: rows.length,
-        });
-      } catch {
-        throw new Error(folderNotFoundMessage(app, path, isIgnored));
-      }
-    },
-  };
+/** List a vault folder (`vault_inspect` action `list`). Ignored children stay hidden. */
+export async function listFolder(app: App, isIgnored: IgnoreMatcher, folder: string | undefined): Promise<ToolResult> {
+  const path = normalizeFolderPath(folder ?? "");
+  if (path && isIgnored(path)) throw new Error(`Folder not found: ${path}`);
+  const entry = path ? findVaultEntry(app, path) : app.vault.getRoot();
+  if (entry instanceof TFolder) {
+    const rows = entry.children
+      .slice()
+      .filter((child) => !isIgnored(child.path))
+      .sort((left, right) => left.path.localeCompare(right.path))
+      .map((child) => `${child instanceof TFolder ? "folder" : "file"}\t${child.path}`);
+    return textResult(rows.length === 0 ? "(empty folder)" : truncateToolOutput(rows.join("\n")), {
+      path,
+      count: rows.length,
+    });
+  }
+  // Stale tree: dot-folders (e.g. .agentic-plugins) created outside the
+  // session are on disk but missing from the vault index — fall back to
+  // the adapter like the plugin loader does. A missing path still throws
+  // below, so "not found" keeps meaning "nowhere", not "stale".
+  try {
+    const listing = await app.vault.adapter.list(path);
+    // Sort by path like the tree branch (which sorts child.path), not by
+    // rendered row — "file\t" sorts before "folder\t" and would regroup.
+    const entries = [
+      ...(listing?.folders ?? []).map((entry) => ({ kind: "folder", path: trimSlashes(entry) })),
+      ...(listing?.files ?? []).map((entry) => ({ kind: "file", path: trimSlashes(entry) })),
+    ]
+      .filter((entry) => entry.path && !isIgnored(entry.path))
+      .sort((left, right) => left.path.localeCompare(right.path));
+    const rows = entries.map((entry) => `${entry.kind}\t${entry.path}`);
+    return textResult(rows.length === 0 ? "(empty folder)" : truncateToolOutput(rows.join("\n")), {
+      path,
+      count: rows.length,
+    });
+  } catch {
+    throw new Error(folderNotFoundMessage(app, path, isIgnored));
+  }
 }
 
 function folderNotFoundMessage(app: App, path: string, isIgnored: IgnoreMatcher): string {
@@ -305,32 +267,32 @@ function folderNotFoundMessage(app: App, path: string, isIgnored: IgnoreMatcher)
   return suggestion ? `${base}\nDid you mean "${suggestion}"?` : base;
 }
 
-export function createActiveNoteTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof ActiveNoteParameters> {
-  return {
-    ...vaultToolDefinition("get_active_note"),
-    execute: async (_id, params) => {
-      const view = app.workspace.getActiveViewOfType(MarkdownView);
-      const activeFile = app.workspace.getActiveFile();
-      const file = view?.file ?? activeFile;
-      // An ignored active note is treated as if no note were open at all.
-      if (file?.extension !== "md" || isIgnored(file.path)) throw new Error("No active Markdown note.");
-      const lines = [`Active note: ${file.path}`];
-      const selection =
-        params.includeSelection && view?.file?.path === file.path
-          ? view.editor.getSelection()
-          : "";
-      if (params.includeSelection) lines.push("", "Selection:", selection || "(no selection)");
-      if (params.includeContent) {
-        const content = await app.vault.cachedRead(file);
-        lines.push("", "Content:", formatTextSlice(file.path, sliceTextByLines(content, { limit: 200 })));
-      }
-      // When content is included, file body is untrusted vault data
-      const useUntrusted = !!params.includeContent;
-      return useUntrusted
-        ? untrustedTextResult(lines.join("\n"), { path: file.path, hasSelection: selection.length > 0 }, "get_active_note")
-        : textResult(lines.join("\n"), { path: file.path, hasSelection: selection.length > 0 });
-    },
-  };
+/** Describe the active note (`vault_inspect` action `active_note`). */
+async function inspectActiveNote(
+  app: App,
+  isIgnored: IgnoreMatcher,
+  params: { includeContent?: boolean; includeSelection?: boolean },
+): Promise<ToolResult> {
+  const view = app.workspace.getActiveViewOfType(MarkdownView);
+  const activeFile = app.workspace.getActiveFile();
+  const file = view?.file ?? activeFile;
+  // An ignored active note is treated as if no note were open at all.
+  if (file?.extension !== "md" || isIgnored(file.path)) throw new Error("No active Markdown note.");
+  const lines = [`Active note: ${file.path}`];
+  const selection =
+    params.includeSelection && view?.file?.path === file.path
+      ? view.editor.getSelection()
+      : "";
+  if (params.includeSelection) lines.push("", "Selection:", selection || "(no selection)");
+  if (params.includeContent) {
+    const content = await app.vault.cachedRead(file);
+    lines.push("", "Content:", formatTextSlice(file.path, sliceTextByLines(content, { limit: 200 })));
+  }
+  // When content is included, file body is untrusted vault data
+  const useUntrusted = !!params.includeContent;
+  return useUntrusted
+    ? untrustedTextResult(lines.join("\n"), { path: file.path, hasSelection: selection.length > 0 }, "vault_inspect")
+    : textResult(lines.join("\n"), { path: file.path, hasSelection: selection.length > 0 });
 }
 
 /**

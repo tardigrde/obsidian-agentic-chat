@@ -434,7 +434,7 @@ describe("MCP tools", () => {
 
     const text = result.content[0].type === "text" ? result.content[0].text : "";
     expect(text).toContain('MCP result stored as artifact "artifact-1"');
-    expect(text).toContain("read_artifact");
+    expect(text).toContain('artifact tool with this id: action "read"');
     expect(text).toContain(`${TOOL_OUTPUT_BEGIN_PREFIX} tool="`);
     expect(artifacts.writes).toHaveLength(1);
     expect(artifacts.writes[0].text).toBe(body);

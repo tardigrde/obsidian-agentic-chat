@@ -10,6 +10,7 @@ import type { AgentToolCallController } from "../src/agent/tool-call-controller"
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { ReadMemo } from "../src/vault/read-memo";
 import type { WebFetcher } from "../src/tools/web-fetch";
+import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import { FakeApp } from "./helpers/fake-vault";
 
 const PROFILE: AgentRole = {
@@ -90,6 +91,8 @@ function resourceState(settings: AgenticChatSettings, app: App): AgentRuntimeRes
     getSettings: () => settings,
     readMemo: new ReadMemo(),
     webFetch: noopWebFetch,
+    // Construction only: import_document is the deferred tool under test.
+    artifactStore: {} as ToolArtifactStoreLike,
   });
 }
 
@@ -132,7 +135,7 @@ describe("multi-instance isolation", () => {
     expect(secondResult.details.children[0].status).toBe("aborted");
   });
 
-  it("keeps loaded skills and clearSessionState per runtime resource state", async () => {
+  it("keeps loaded deferred tools and clearSessionState per runtime resource state", async () => {
     const settings = DEFAULT_SETTINGS;
     const app = new FakeApp() as unknown as App;
     const stateA = resourceState(settings, app);
@@ -140,28 +143,14 @@ describe("multi-instance isolation", () => {
     await stateA.reload();
     await stateB.reload();
 
-    const [skillA, skillB] = stateA.getSkills();
-    expect(skillA).toBeDefined();
-    expect(skillB).toBeDefined();
-    const markerA = skillA.content.slice(0, 80);
-    const markerB = skillB.content.slice(0, 80);
+    const searchA = stateA.buildParentTools(settings).find((tool) => tool.name === "search_tools");
+    expect(searchA).toBeDefined();
+    await searchA!.execute("search-a", { query: "import document" });
 
-    const loadA = stateA.buildParentTools(settings).find((tool) => tool.name === "load_skill");
-    const loadB = stateB.buildParentTools(settings).find((tool) => tool.name === "load_skill");
-    expect(loadA).toBeDefined();
-    expect(loadB).toBeDefined();
-    await loadA!.execute("load-a", { name: skillA.name });
-    await loadB!.execute("load-b", { name: skillB.name });
-
-    const promptA = stateA.composeSystemPrompt(settings, "model");
-    const promptB = stateB.composeSystemPrompt(settings, "model");
-    expect(promptA).toContain(markerA);
-    expect(promptA).not.toContain(markerB);
-    expect(promptB).toContain(markerB);
-    expect(promptB).not.toContain(markerA);
+    expect(stateA.buildParentTools(settings).map((tool) => tool.name)).toContain("import_document");
+    expect(stateB.buildParentTools(settings).map((tool) => tool.name)).not.toContain("import_document");
 
     stateA.clearSessionState();
-    expect(stateA.composeSystemPrompt(settings, "model")).not.toContain(markerA);
-    expect(stateB.composeSystemPrompt(settings, "model")).toContain(markerB);
+    expect(stateA.buildParentTools(settings).map((tool) => tool.name)).not.toContain("import_document");
   });
 });

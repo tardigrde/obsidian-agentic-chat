@@ -9,7 +9,6 @@ import type { SessionInfo } from "../session/session-manager";
 import type { AgentRuntimeResources } from "./runtime-resources";
 import type { McpServerDiagnostic } from "../mcp/tools";
 import type { ObservabilityExportHealth } from "../observability/agent-observability";
-import type { ToolBudgetSnapshot } from "./tool-budget";
 
 export const MAX_RECENT_DIAGNOSTIC_EVENTS = 30;
 
@@ -31,7 +30,6 @@ export interface AgentRuntimeDiagnostics {
     perToolOverrides: number;
   };
   tools: string[];
-  toolBudget: ToolBudgetSnapshot;
   resources: {
     skillCount: number;
     profileCount: number;
@@ -65,7 +63,6 @@ export interface BuildRuntimeDiagnosticsOptions {
   tools: readonly AgentTool[];
   resources: AgentRuntimeResources;
   resourcesReloadedAt: string | null;
-  toolBudget: ToolBudgetSnapshot;
   modelOverride: string | null;
   contextWindow: number | null;
   thinkingLevel: ThinkingLevel;
@@ -100,7 +97,6 @@ export function buildRuntimeDiagnostics(options: BuildRuntimeDiagnosticsOptions)
       perToolOverrides: Object.keys(settings.approval.perTool).length,
     },
     tools: options.tools.map((tool) => tool.name),
-    toolBudget: options.toolBudget,
     resources: {
       skillCount: options.resources.skills.length,
       profileCount: options.resources.profiles.length,
@@ -164,7 +160,6 @@ export function formatRuntimeDiagnosticsRows(diagnostics: AgentRuntimeDiagnostic
     ["Thinking", diagnostics.thinkingLevel],
     ["Mode", diagnostics.mode],
     ["Tools", formatList(diagnostics.tools)],
-    ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],
     ["Approval", formatApproval(diagnostics)],
     ["Pending undo", diagnostics.state.canUndo ? "yes" : "no"],
     ["Resources", formatResources(diagnostics)],
@@ -201,25 +196,6 @@ export function formatMcpDiagnosticRows(servers: readonly McpServerDiagnostic[])
     );
   }
   return rows;
-}
-
-export function formatToolBudgetDiagnostic(toolBudget: ToolBudgetSnapshot): string {
-  if (!toolBudget.enabled) return "off";
-  if (!toolBudget.active) {
-    const current =
-      toolBudget.toolSchemaTokens !== null && toolBudget.contextWindow !== null
-        ? `; current tool schemas ~${toolBudget.toolSchemaTokens} tokens`
-        : "";
-    return `armed at ${toolBudget.thresholdPercent}% tool schemas${current}`;
-  }
-  const trigger =
-    toolBudget.triggeredAtToolSchemaPercent === null
-      ? `${toolBudget.thresholdPercent}%`
-      : `${toolBudget.triggeredAtToolSchemaPercent}%`;
-  const dropped = toolBudget.droppedTools.length === 0
-    ? "no optional tools currently registered"
-    : toolBudget.droppedTools.map((tool) => `${tool.name} (${tool.reason})`).join(", ");
-  return `active after ${trigger} tool schemas; dropped: ${dropped}`;
 }
 
 function formatObservability(diagnostics: AgentRuntimeDiagnostics): string {

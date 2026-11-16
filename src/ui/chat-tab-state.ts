@@ -21,7 +21,6 @@ export interface ChatTabWorkingState {
   history: ComposerHistory;
   notifiedContext: Set<number>;
   notifiedCost: boolean;
-  notifiedToolBudgetKey: string | null;
   /** Compaction count last surfaced to the user, so each compaction toasts once. */
   lastCompactionCount: number;
   /** Last prompt sent (with its context preamble), so Retry re-runs it exactly. */
@@ -42,7 +41,6 @@ export function freshChatTabState(): ChatTabWorkingState {
     history: new ComposerHistory(),
     notifiedContext: new Set<number>(),
     notifiedCost: false,
-    notifiedToolBudgetKey: null,
     lastCompactionCount: 0,
     lastSentPrompt: null,
     lastSentDisplay: null,

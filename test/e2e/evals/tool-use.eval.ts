@@ -287,7 +287,6 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
       privacy: { allowFallbacks: boolean; denyDataCollection: boolean; requireZDR: boolean };
       web: { enabled: boolean };
       mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: McpServerSettings[] };
-      toolBudget: { enabled: boolean };
       maxTokens: number;
     };
     settings.provider = "openrouter";
@@ -319,7 +318,6 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
       settings.mcp.noProxy = "localhost,127.0.0.1,::1";
       settings.mcp.servers = config.mcpServers;
     }
-    settings.toolBudget.enabled = false;
     // A provider reserves the request's max output tokens against the key's
     // credit. A run never needs more than a few thousand output tokens, so
     // cap it and leave the key budget for the whole suite.

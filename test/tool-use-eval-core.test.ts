@@ -1150,7 +1150,7 @@ describe("tool-use eval core", () => {
     ]);
     expect(excluded.status, excluded.stderr).toBe(0);
     expect(excluded.stdout).toContain("Excluded: find.easy.dentist");
-    expect(excluded.stdout).toContain("24 paired cases");
+    expect(excluded.stdout).toContain(`${baseline.cases.length - 1} paired cases`);
   });
 
   it("rejects an unknown --exclude id and a lone --significance", () => {

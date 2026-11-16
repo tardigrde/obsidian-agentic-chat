@@ -15,7 +15,7 @@ export interface AgentParentConfigurationOptions {
   turns: Pick<AgentTurnConfiguration, "buildModelForTurn" | "getActiveModelId" | "thinkingLevelForTurn">;
   runtimeResources: Pick<
     AgentRuntimeResourceState,
-    "buildParentTools" | "composeSystemPrompt" | "getProfiles"
+    "buildParentTools" | "composeSystemPrompt" | "getProfiles" | "toolsForNextStep"
   >;
   subagents: Pick<AgentSubagentRuntime, "createTool">;
   toolCalls: Pick<
@@ -50,9 +50,7 @@ export class AgentParentConfigurationRuntime {
       ),
       model,
       thinkingLevel: this.options.turns.thinkingLevelForTurn(settings),
-      tools: this.options.runtimeResources.buildParentTools(settings, subagentTool, {
-        contextWindow: model.contextWindow,
-      }),
+      tools: this.options.runtimeResources.buildParentTools(settings, subagentTool),
       getApiKey: (provider) => apiKeyForProvider(this.options.getSettings(), provider),
       beforeToolCall: (context, signal) => this.options.toolCalls.beforeToolCall(context, signal),
       afterToolCall: (context) => this.options.toolCalls.afterToolCall(context),
@@ -67,6 +65,8 @@ export class AgentParentConfigurationRuntime {
         if (loopGuardDecision) return loopGuardDecision;
         return this.options.turnCap.shouldStopAfterTurn(turn) ? { action: "end" as const } : undefined;
       },
+      toolsForNextStep: (turn) =>
+        this.options.runtimeResources.toolsForNextStep(turn.context.tools ?? [], turn.toolResults),
       sessionId: this.options.sessions.info?.id,
       onEvent: (event) => this.options.onEvent(event),
     };

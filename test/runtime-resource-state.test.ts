@@ -58,7 +58,17 @@ afterEach(async () => {
   }
 });
 
-function makeState(app: App, currentSettings: AgenticChatSettings, store?: ToolArtifactStoreLike): {
+/** Construction only: the tools under test never touch the store. */
+function fakeStore(): ToolArtifactStoreLike {
+  return {} as ToolArtifactStoreLike;
+}
+
+function makeState(
+  app: App,
+  currentSettings: AgenticChatSettings,
+  store?: ToolArtifactStoreLike,
+  now?: () => Date,
+): {
   state: AgentRuntimeResourceState;
 } {
   const state = new AgentRuntimeResourceState({
@@ -67,6 +77,7 @@ function makeState(app: App, currentSettings: AgenticChatSettings, store?: ToolA
     readMemo: new ReadMemo(),
     webFetch: noopFetcher,
     artifactStore: store,
+    now,
   });
   return { state };
 }
@@ -132,36 +143,110 @@ describe("AgentRuntimeResourceState", () => {
   });
 
 
-  it("drops optional parent tools when tool schemas exceed the budget threshold", async () => {
-    const currentSettings = settings({ web: { enabled: true } });
-    const { state } = makeState(await seededApp(), currentSettings);
+  it("keeps the date out of the system prompt and always loads current_time", async () => {
+    // A date line in the prompt cost correctness in the core eval A/B (ADR 0006),
+    // so the model gets the date from the always-loaded current_time tool.
+    const currentSettings = settings();
+    const fixed = new Date(2026, 10, 16, 14, 37, 5);
+    const { state } = makeState(await seededApp(), currentSettings, undefined, () => fixed);
     await state.reload();
-    const subagentTool = { name: "subagent", label: "Subagent" } as AgentTool;
 
-    const dropped = state
-      .buildParentTools(currentSettings, subagentTool, { contextWindow: 1_000 })
-      .map((tool) => tool.name);
+    const prompt = state.composeSystemPrompt(currentSettings, "test/model");
+    expect(prompt).not.toContain("2026-11-16");
+    expect(prompt).not.toMatch(/Today is/);
+    expect(prompt).not.toContain("- current_time:");
 
-    expect(dropped).toEqual(expect.arrayContaining(["read", "vault_inspect", "write"]));
-    expect(dropped).not.toContain("web_search");
-    expect(dropped).not.toContain("fetch_url");
-    expect(dropped).not.toContain("subagent");
-    expect(state.getToolBudgetSnapshot()).toMatchObject({
-      active: true,
-      contextWindow: 1_000,
-      droppedTools: [
-        { name: "web_search", reason: "web egress" },
-        { name: "fetch_url", reason: "web egress" },
-        { name: "subagent", reason: "subagent delegation" },
-      ],
-    });
-    expect(state.getToolBudgetSnapshot().triggeredAtToolSchemaPercent).toBeGreaterThanOrEqual(2);
+    const tools = state.buildParentTools(currentSettings);
+    const clock = tools.find((tool) => tool.name === "current_time");
+    expect(clock).toBeDefined();
+    const result = await clock?.execute("call-1", {} as never);
+    expect(JSON.stringify(result?.content)).toContain("2026-11-16 14:37:05 (Monday)");
+  });
 
-    const restored = state
-      .buildParentTools(currentSettings, subagentTool, { contextWindow: 1_000_000 })
-      .map((tool) => tool.name);
+  it("lists the deferred catalog in the prompt and keeps the prompt unchanged when a tool loads", async () => {
+    const currentSettings = settings();
+    const { state } = makeState(await seededApp(), currentSettings, fakeStore());
+    await state.reload();
+    const before = state.composeSystemPrompt(currentSettings, "test/model");
+    expect(before).toContain("## Deferred tools");
+    expect(before).toContain("- import_document:");
 
-    expect(restored).toEqual(expect.arrayContaining(["web_search", "fetch_url", "subagent"]));
-    expect(state.getToolBudgetSnapshot()).toMatchObject({ active: false, droppedTools: [] });
+    const search = state.buildParentTools(currentSettings).find((tool) => tool.name === "search_tools");
+    await search?.execute("call-1", { query: "import document" } as never);
+
+    expect(state.getLoadedToolNames()).toEqual(["import_document"]);
+    expect(state.composeSystemPrompt(currentSettings, "test/model")).toBe(before);
+  });
+
+  it("loads a searched tool for the next step and keeps it on later rebuilds", async () => {
+    const currentSettings = settings();
+    const { state } = makeState(await seededApp(), currentSettings, fakeStore());
+    await state.reload();
+    const first = state.buildParentTools(currentSettings);
+    expect(first.map((tool) => tool.name)).not.toContain("import_document");
+
+    const search = first.find((tool) => tool.name === "search_tools");
+    const result = await search?.execute("call-1", { query: "extract text from a PDF" } as never);
+    expect(result?.details).toMatchObject({ loaded: ["import_document"] });
+
+    const next = state.toolsForNextStep(first, []);
+    expect(next?.map((tool) => tool.name)).toContain("import_document");
+    // Nothing new to load: no change for the step after.
+    expect(state.toolsForNextStep(next ?? [], [])).toBeUndefined();
+    // A refresh before the next prompt keeps the loaded tool.
+    expect(state.buildParentTools(currentSettings).map((tool) => tool.name)).toContain("import_document");
+    // A different session starts without it.
+    state.clearSessionState([]);
+    expect(state.buildParentTools(currentSettings).map((tool) => tool.name)).not.toContain("import_document");
+  });
+
+  it("loads a deferred tool after a direct call failed because it was not loaded", async () => {
+    const currentSettings = settings();
+    const { state } = makeState(await seededApp(), currentSettings, fakeStore());
+    await state.reload();
+    const first = state.buildParentTools(currentSettings);
+
+    const next = state.toolsForNextStep(first, [
+      {
+        role: "toolResult",
+        toolCallId: "call-1",
+        toolName: "import_document",
+        content: [{ type: "text", text: "Tool import_document not found" }],
+        isError: true,
+        timestamp: 1,
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call-2",
+        toolName: "mcp__ghost__tool",
+        content: [{ type: "text", text: "Tool mcp__ghost__tool not found" }],
+        isError: true,
+        timestamp: 2,
+      },
+    ] as never);
+
+    expect(next?.map((tool) => tool.name)).toContain("import_document");
+    expect(state.getLoadedToolNames()).toEqual(["import_document"]);
+  });
+
+  it("restores the loaded tools of a reopened session from its transcript", async () => {
+    const currentSettings = settings();
+    const { state } = makeState(await seededApp(), currentSettings, fakeStore());
+    await state.reload();
+
+    state.clearSessionState([
+      { role: "user", content: "import my PDF", timestamp: 1 },
+      {
+        role: "toolResult",
+        toolCallId: "call-1",
+        toolName: "search_tools",
+        content: [{ type: "text", text: "Loaded 1 tool(s)." }],
+        details: { query: "import document", loaded: ["import_document"] },
+        isError: false,
+        timestamp: 2,
+      },
+    ] as never);
+
+    expect(state.buildParentTools(currentSettings).map((tool) => tool.name)).toContain("import_document");
   });
 });

@@ -20,7 +20,7 @@ describe("AgentParentConfigurationRuntime", () => {
     const subagentTool = { name: "subagent" } as AgentTool;
     const readTool = { name: "read" } as AgentTool;
     const session = { id: "session-1" } as SessionInfo;
-    let receivedContextWindow: number | undefined;
+    let nextStepArgs: unknown[] | undefined;
     const runtime = new AgentParentConfigurationRuntime({
       getSettings: () => ({ ...DEFAULT_SETTINGS, openrouterApiKey: "key" }),
       streams: { buildStreamFn: () => streamFn },
@@ -39,9 +39,11 @@ describe("AgentParentConfigurationRuntime", () => {
           } satisfies AgentRole,
         ],
         composeSystemPrompt: (_settings, modelId) => `system:${modelId}`,
-        buildParentTools: (_settings, suppliedSubagentTool, options) => {
-          receivedContextWindow = options?.contextWindow;
-          return [readTool, suppliedSubagentTool].filter(Boolean) as AgentTool[];
+        buildParentTools: (_settings, suppliedSubagentTool) =>
+          [readTool, suppliedSubagentTool].filter(Boolean) as AgentTool[],
+        toolsForNextStep: (...args) => {
+          nextStepArgs = args;
+          return [readTool];
         },
       },
       subagents: { createTool: () => subagentTool },
@@ -63,7 +65,10 @@ describe("AgentParentConfigurationRuntime", () => {
     expect(configuration.thinkingLevel).toBe("low");
     expect(configuration.systemPrompt).toBe("system:model-a");
     expect(configuration.tools.map((tool) => tool.name)).toEqual(["read", "subagent"]);
-    expect(receivedContextWindow).toBe(1000);
+    const turnContext = { tools: [readTool], messages: [] };
+    const nextTools = configuration.toolsForNextStep?.({ context: turnContext, toolResults: [] } as never);
+    expect(nextTools).toEqual([readTool]);
+    expect(nextStepArgs).toEqual([[readTool], []]);
     expect(configuration.sessionId).toBe("session-1");
     expect(configuration.getApiKey("openrouter")).toBe("key");
   });
@@ -83,6 +88,7 @@ describe("AgentParentConfigurationRuntime", () => {
         getProfiles: () => [],
         composeSystemPrompt: () => "",
         buildParentTools: () => [],
+        toolsForNextStep: () => undefined,
       },
       subagents: { createTool: () => ({ name: "subagent" }) as AgentTool },
       toolCalls: {

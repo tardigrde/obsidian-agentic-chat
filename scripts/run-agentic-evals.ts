@@ -5,9 +5,9 @@ import * as path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_SYSTEM_PROMPT } from "../src/agent/default-system-prompt";
-import { estimateToolDefinitionTokens } from "../src/agent/tool-budget";
-import { BUILTIN_TOOL_NAMES, type BuiltinToolSurface } from "../src/tools/tool-contracts";
-import { vaultToolDefinitionsForSurface } from "../src/tools/vault-tool-definitions";
+import { estimateToolDefinitionTokens } from "../src/agent/tool-schema-tokens";
+import { BUILTIN_TOOL_NAMES } from "../src/tools/tool-contracts";
+import { vaultToolDefinitions } from "../src/tools/vault-tool-definitions";
 import {
   evaluateScriptedDogfoodCase,
   evaluateStaticContextCase,
@@ -149,7 +149,7 @@ function createStaticContextSnapshot(evalCase: StaticContextEvalCase): StaticCon
   const baseSystemPrompt = evalCase.systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT;
   const userPrompt = evalCase.prompt ?? "";
   const systemPrompt = baseSystemPrompt;
-  const tools = vaultToolDefinitionsForSurface(evalCase.toolSurface as BuiltinToolSurface | undefined);
+  const tools = vaultToolDefinitions();
   const contextMessages = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },

@@ -108,7 +108,7 @@ Run a quick local sanity check before live dogfooding:
 
 ```bash
 rtk npm run typecheck
-rtk npx vitest run test/tool-budget.test.ts test/settings.test.ts
+rtk npx vitest run test/tool-loading.test.ts test/settings.test.ts
 ```
 
 For broad confidence when time allows:
@@ -419,7 +419,7 @@ model tokens:
 - script the model to force each default tool at least once: read,
   vault_inspect, write, edit, rename, delete, set_properties,
   and ask_user
-- change approval and tool-budget settings mid-run; verify the
+- change approval settings mid-run; verify the
   harness behavior changes, then restore defaults
 - include sad paths that should fail safely: ignored active note, denied
   write, unclear cleanup, and missing/empty context

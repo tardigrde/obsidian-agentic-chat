@@ -1,14 +1,12 @@
 import type { App } from "obsidian";
 import type { AgentService } from "../agent/agent-service";
 import type { ContextReadout } from "../agent/readouts";
-import { formatToolBudgetDiagnostic } from "../agent/diagnostics";
 import type AgenticChatPlugin from "../main";
 import { activeModelId } from "../settings-schema";
 import type { ChatTabWorkingState } from "./chat-tab-state";
 import {
   buildModelPillState,
   buildTurnUsageChromeParts,
-  toolBudgetNotificationKey,
 } from "./chrome-state";
 import { contextLevel, contextPercent, formatContextReadoutTitle } from "./context-bar";
 import { formatUsage } from "./format";
@@ -183,17 +181,6 @@ export class ChatChrome {
         this.notifier.notify("cost", `This conversation has cost $${cost.toFixed(2)} (alert set at $${cap.toFixed(2)}).`);
       }
     }
-    this.checkToolBudgetNotification();
-  }
-
-  private checkToolBudgetNotification(): void {
-    const toolBudget = this.deps.service().getRuntimeDiagnostics().toolBudget;
-    const key = toolBudgetNotificationKey(toolBudget);
-    if (key === null) return;
-    const state = this.deps.state();
-    if (key === state.notifiedToolBudgetKey) return;
-    state.notifiedToolBudgetKey = key;
-    this.notifier.notify("info", `Agentic chat: ${formatToolBudgetDiagnostic(toolBudget)}.`);
   }
 
   /** Notify when a turn finishes while the user is working elsewhere. */
@@ -232,7 +219,6 @@ export class ChatChrome {
     const state = this.deps.state();
     state.notifiedContext = new Set<number>();
     state.notifiedCost = false;
-    state.notifiedToolBudgetKey = null;
     state.lastCompactionCount = service.getCompactionCount();
     if (!muteExisting) return;
     const fraction = service.getContextFraction();
@@ -245,7 +231,6 @@ export class ChatChrome {
     if (cap > 0 && (service.getSessionUsage().cost?.total ?? 0) >= cap) {
       state.notifiedCost = true;
     }
-    state.notifiedToolBudgetKey = toolBudgetNotificationKey(service.getRuntimeDiagnostics().toolBudget);
   }
 
   /** Render the composer effort knob from the level the next message will use. */

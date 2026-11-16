@@ -3,7 +3,7 @@ import { TFile, TFolder, type App } from "obsidian";
 import { createIgnoreMatcher, type IgnoreMatcher } from "../src/vault/ignore";
 import { findVaultEntry, findVaultFile, pathSuggestion } from "../src/vault/path-lookup";
 import { getVisibleVaultFile } from "../src/tools/vault/shared";
-import { createLsTool } from "../src/tools/vault/read-tools";
+import { listFolder } from "../src/tools/vault/read-tools";
 import { createRenameTool, createWriteTool } from "../src/tools/vault/write-tools";
 
 /**
@@ -154,9 +154,7 @@ describe("vault path lookup", function () {
 
   it("suggests the real folder for a near-miss ls target", async function () {
     const { app } = makeApp([REAL_PATH]);
-    const tool = createLsTool(app, () => false);
-
-    await expect(tool.execute("ls-near-miss", { path: "000 Inbox/dani-legendsbúcsú" })).rejects.toThrow(
+    await expect(listFolder(app, () => false, "000 Inbox/dani-legendsbúcsú")).rejects.toThrow(
       'Folder not found: 000 Inbox/dani-legendsbúcsú\nDid you mean "000 Inbox/dani-legenbucsu"?',
     );
   });
@@ -164,9 +162,7 @@ describe("vault path lookup", function () {
   it("never suggests an ignored near-match folder", async function () {
     const { app } = makeApp([REAL_PATH]);
     const isIgnored: IgnoreMatcher = createIgnoreMatcher(["000 Inbox/dani-legenbucsu"]);
-    const tool = createLsTool(app, isIgnored);
-
-    await expect(tool.execute("ls-ignored", { path: "000 Inbox/dani-legendsbúcsú" })).rejects.toThrow(
+    await expect(listFolder(app, isIgnored, "000 Inbox/dani-legendsbúcsú")).rejects.toThrow(
       "Folder not found: 000 Inbox/dani-legendsbúcsú",
     );
   });

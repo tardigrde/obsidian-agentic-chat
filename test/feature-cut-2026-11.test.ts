@@ -16,7 +16,7 @@ import { resolveCommand, retiredCommandHint, SLASH_COMMANDS } from "../src/ui/co
  */
 const commandNames = (): string[] => SLASH_COMMANDS.map((command) => command.name);
 
-/** The full parent tool list: web on, ask_user, subagent, and create_skill present, no tool budget. */
+/** The full parent tool list (active and deferred): web on, ask_user, subagent, and create_skill present. */
 function parentToolNames(): string[] {
   const subagentTool = createSubagentTool({
     getProfiles: () => [],
@@ -24,12 +24,11 @@ function parentToolNames(): string[] {
       throw new Error("n/a");
     },
   }) as unknown as AgentTool;
-  const { tools } = buildAgentParentTools({
+  const { all } = buildAgentParentTools({
     app: { vault: {}, workspace: {} } as unknown as App,
     settings: {
       ...DEFAULT_SETTINGS,
       web: { ...DEFAULT_SETTINGS.web, enabled: true },
-      toolBudget: { enabled: false, thresholdPercent: 2 },
     },
     resources: EMPTY_AGENT_RUNTIME_RESOURCES,
     readMemo: new ReadMemo(),
@@ -44,7 +43,7 @@ function parentToolNames(): string[] {
       },
     },
   });
-  return tools.map((tool) => tool.name);
+  return all.map((tool) => tool.name);
 }
 
 function mergedKeys(stored: Record<string, unknown>): string[] {
@@ -99,5 +98,28 @@ describe("feature cut 2026-11: document import", () => {
     const names = parentToolNames();
     expect(names).not.toContain("import_pdf");
     expect(names).toContain("import_document");
+  });
+});
+
+describe("feature cut 2026-11: tool consolidation", () => {
+  it("replaces the separate skill and artifact tools with one skill and one artifact tool", () => {
+    const names = parentToolNames();
+    for (const retired of [
+      "read_skill",
+      "read_skill_file",
+      "load_skill",
+      "unload_skill",
+      "list_artifacts",
+      "read_artifact",
+      "search_artifact",
+      "export_artifact",
+    ]) {
+      expect(names, retired).not.toContain(retired);
+    }
+    expect(names).toEqual(expect.arrayContaining(["skill", "artifact", "search_tools", "current_time"]));
+  });
+
+  it("retires the tool budget setting key", () => {
+    expect(mergedKeys({ toolBudget: { enabled: true, thresholdPercent: 2 } })).not.toContain("toolBudget");
   });
 });

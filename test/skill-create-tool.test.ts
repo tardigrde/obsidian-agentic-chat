@@ -84,7 +84,7 @@ describe("create_skill tool", () => {
     ).rejects.toThrow(/letter or digit/);
   });
 
-  it("appears in parent tools only when a scaffolder is wired", () => {
+  it("is a deferred parent tool, present only when a scaffolder is wired", () => {
     const base = {
       app: { vault: {}, workspace: {} } as unknown as App,
       settings: { ...DEFAULT_SETTINGS, web: { ...DEFAULT_SETTINGS.web, enabled: true } },
@@ -92,7 +92,7 @@ describe("create_skill tool", () => {
       readMemo: new ReadMemo(),
       webFetch: noopFetcher,
     };
-    const without = buildAgentParentTools({ ...base }).tools.map((tool) => tool.name);
+    const without = buildAgentParentTools({ ...base }).all.map((tool) => tool.name);
     expect(without).not.toContain("create_skill");
     const scaffolder = scaffolderFor(async () => ({
       rootPath: ".agentic-plugins/x",
@@ -100,7 +100,8 @@ describe("create_skill tool", () => {
       updated: false,
       skills: 1,
     }));
-    const withTool = buildAgentParentTools({ ...base, skillScaffolder: scaffolder }).tools.map((tool) => tool.name);
-    expect(withTool).toContain("create_skill");
+    const withTool = buildAgentParentTools({ ...base, skillScaffolder: scaffolder });
+    expect(withTool.deferred.map((tool) => tool.name)).toContain("create_skill");
+    expect(withTool.active.map((tool) => tool.name)).not.toContain("create_skill");
   });
 });

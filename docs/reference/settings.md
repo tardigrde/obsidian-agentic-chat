@@ -32,7 +32,6 @@ Keys live in Obsidian secret storage. `data.json` stores secret ids, not values.
 | System prompt | built-in | Sent at the start of every conversation. |
 | Standing instructions | vault root | `AGENTS.md`, with `CLAUDE.md` and `GEMINI.md` as fallbacks. Loaded every turn and truncated after 16,000 characters with a notice. |
 | Auto-compaction | on at 80% | Triggers at 50% to 95% context fill (configurable). |
-| Tool budget | on | Withholds optional tools (web, MCP, subagent, document import, artifacts) when tool schemas exceed 2% of the context window. An unknown window never drops tools. |
 
 ### Approval
 

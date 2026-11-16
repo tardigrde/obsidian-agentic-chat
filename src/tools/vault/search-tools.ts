@@ -1,102 +1,56 @@
 import type { App, TFile } from "obsidian";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { IgnoreMatcher } from "../../vault/ignore";
 import { normalizeFolderPath } from "../../vault/path";
 import { formatGrepMatches, grepContent, matchesFindPattern, type GrepMatch } from "../../vault/search";
-import {
-  FindParameters,
-  GrepParameters,
-  SearchParameters,
-  vaultToolDefinition,
-} from "../vault-tool-definitions";
-import { TEXT_EXTENSIONS, textResult, untrustedTextResult } from "./shared";
-
-export function createFindTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof FindParameters> {
-  return {
-    ...vaultToolDefinition("find"),
-    execute: async (_id, params) => {
-      const maxResults = params.maxResults ?? 100;
-      const matches = app.vault
-        .getFiles()
-        .map((file) => file.path)
-        .filter((path) => !isIgnored(path))
-        .filter((path) => matchesFindPattern(path, params.pattern))
-        .sort((left, right) => left.localeCompare(right));
-      const visible = matches.slice(0, maxResults);
-      const truncated = matches.length > visible.length;
-      const output = visible.length === 0 ? "No files found." : visible.join("\n");
-      return textResult(truncated ? `${output}\n\n[Results truncated.]` : output, {
-        pattern: params.pattern,
-        count: matches.length,
-        truncated,
-      });
-    },
-  };
-}
+import { TEXT_EXTENSIONS, untrustedTextResult } from "./shared";
 
 type SearchKind = "both" | "files" | "content";
 
-export function createSearchTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof SearchParameters> {
-  return {
-    ...vaultToolDefinition("search"),
-    execute: async (_id, params) => {
-      const query = params.query.trim();
-      if (!query) throw new Error("search: provide a non-empty query.");
-
-      const kind = normalizeSearchKind(params.kind);
-      const rootPath = params.path ? normalizeFolderPath(params.path) : "";
-      const includeFiles = kind === "both" || kind === "files";
-      const includeContent = kind === "both" || kind === "content";
-
-      const fileResults = includeFiles
-        ? findVaultFiles(app, isIgnored, query, rootPath, params.maxResults ?? 100)
-        : emptyFileSearch();
-      const contentResults = includeContent
-        ? await searchVaultContent(app, isIgnored, query, rootPath, {
-            caseSensitive: params.caseSensitive,
-            regex: params.regex,
-            maxMatches: params.maxMatches ?? 100,
-          })
-        : emptyContentSearch();
-
-      return untrustedTextResult(formatSearchResults({ kind, fileResults, contentResults }), {
-        query,
-        kind,
-        path: rootPath,
-        fileCount: fileResults.count,
-        fileTruncated: fileResults.truncated,
-        contentCount: contentResults.matches.length,
-        contentTruncated: contentResults.truncated,
-      }, "search");
-    },
-  };
+export interface VaultSearchParams {
+  query: string;
+  kind?: string;
+  path?: string;
+  caseSensitive?: boolean;
+  regex?: boolean;
+  maxResults?: number;
+  maxMatches?: number;
 }
 
-export function createGrepTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof GrepParameters> {
-  return {
-    ...vaultToolDefinition("grep"),
-    execute: async (_id, params) => {
-      const maxMatches = params.maxMatches ?? 100;
-      const rootPath = params.path ? normalizeFolderPath(params.path) : "";
-      const matches: GrepMatch[] = [];
-      for (const file of getSearchableFiles(app, rootPath, isIgnored)) {
-        const content = await app.vault.cachedRead(file);
-        matches.push(
-          ...grepContent(file.path, content, params.pattern, {
-            caseSensitive: params.caseSensitive,
-            regex: params.regex,
-            maxMatches: maxMatches - matches.length,
-          }),
-        );
-        if (matches.length >= maxMatches) break;
-      }
-      return untrustedTextResult(formatGrepMatches(matches, matches.length >= maxMatches), {
-        pattern: params.pattern,
-        count: matches.length,
-        truncated: matches.length >= maxMatches,
-      }, "grep");
-    },
-  };
+/** Search vault file names and text (`vault_inspect` action `search`). Ignored paths stay hidden. */
+export async function searchVault(
+  app: App,
+  isIgnored: IgnoreMatcher,
+  params: VaultSearchParams,
+): Promise<AgentToolResult<Record<string, unknown>>> {
+  const query = params.query.trim();
+  if (!query) throw new Error("search: provide a non-empty query.");
+
+  const kind = normalizeSearchKind(params.kind);
+  const rootPath = params.path ? normalizeFolderPath(params.path) : "";
+  const includeFiles = kind === "both" || kind === "files";
+  const includeContent = kind === "both" || kind === "content";
+
+  const fileResults = includeFiles
+    ? findVaultFiles(app, isIgnored, query, rootPath, params.maxResults ?? 100)
+    : emptyFileSearch();
+  const contentResults = includeContent
+    ? await searchVaultContent(app, isIgnored, query, rootPath, {
+        caseSensitive: params.caseSensitive,
+        regex: params.regex,
+        maxMatches: params.maxMatches ?? 100,
+      })
+    : emptyContentSearch();
+
+  return untrustedTextResult(formatSearchResults({ kind, fileResults, contentResults }), {
+    query,
+    kind,
+    path: rootPath,
+    fileCount: fileResults.count,
+    fileTruncated: fileResults.truncated,
+    contentCount: contentResults.matches.length,
+    contentTruncated: contentResults.truncated,
+  }, "vault_inspect");
 }
 
 function normalizeSearchKind(kind: string | undefined): SearchKind {

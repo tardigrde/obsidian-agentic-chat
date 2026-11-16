@@ -185,9 +185,14 @@ describe("loadAgentRoles", () => {
     const roles = loadAgentRoles();
     expect(roles.map((p) => p.name).sort()).toEqual(["explorer"]);
     expect(roles).toHaveLength(BUILTIN_AGENT_ROLES.length);
-    expect(roles.find((role) => role.name === "explorer")?.toolAllowlist).toEqual(
-      expect.arrayContaining(["web_search", "fetch_url", "read_artifact"]),
-    );
+    expect(roles.find((role) => role.name === "explorer")?.toolAllowlist).toEqual([
+      "read",
+      "vault_inspect",
+      "web_search",
+      "fetch_url",
+      "artifact",
+      "skill",
+    ]);
   });
 
   it("isolates caller mutations from the frozen builtin singleton", () => {

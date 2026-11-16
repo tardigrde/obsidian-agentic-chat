@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Usage } from "@earendil-works/pi-ai";
-import type { ToolBudgetSnapshot } from "../src/agent/tool-budget";
 import {
   buildModelPillState,
   buildTurnUsageChromeParts,
   cacheHitTone,
   modelProviderLabel,
-  toolBudgetNotificationKey,
 } from "../src/ui/chrome-state";
 
 describe("chrome state helpers", () => {
@@ -72,30 +70,4 @@ describe("chrome state helpers", () => {
     ]);
   });
 
-  it("keys tool-budget notifications by dropped tool names only when active", () => {
-    expect(toolBudgetNotificationKey(toolBudget({ active: false, droppedTools: [{ name: "web_search", reason: "budget" }] }))).toBeNull();
-    expect(toolBudgetNotificationKey(toolBudget({ active: true, droppedTools: [] }))).toBeNull();
-    expect(
-      toolBudgetNotificationKey(toolBudget({
-        active: true,
-        droppedTools: [
-          { name: "web_search", reason: "budget" },
-          { name: "fetch_url", reason: "budget" },
-        ],
-      })),
-    ).toBe("web_search,fetch_url");
-  });
 });
-
-function toolBudget(overrides: Partial<ToolBudgetSnapshot>): ToolBudgetSnapshot {
-  return {
-    enabled: true,
-    active: false,
-    thresholdPercent: 2,
-    triggeredAtToolSchemaPercent: null,
-    toolSchemaTokens: null,
-    contextWindow: null,
-    droppedTools: [],
-    ...overrides,
-  };
-}

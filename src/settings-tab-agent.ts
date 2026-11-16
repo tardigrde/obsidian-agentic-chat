@@ -92,17 +92,6 @@ export function agentDefinitions(settings: AgenticChatSettings, host: SettingsTa
       { type: "slider", key: "compaction.thresholdPercent", min: 50, max: 95, step: 5 },
       "Trigger compaction once the conversation fills this share of the model's context window.",
     ),
-    headingRow("Tool budget"),
-    controlDef(
-      "Drop optional tools when schemas are large",
-      { type: "toggle", key: "toolBudget.enabled" },
-      "When registered tool schemas alone exceed the threshold, hide optional expansion tools such as web, MCP, artifacts, PDF import, and subagents.",
-    ),
-    controlDef(
-      "Drop tools when schemas exceed (% of context window)",
-      { type: "slider", key: "toolBudget.thresholdPercent", min: 1, max: 50, step: 1 },
-      "Low by default so large tool catalogs shed optional tools before tool schemas become expensive.",
-    ),
   ];
 }
 

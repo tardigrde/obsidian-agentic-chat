@@ -34,7 +34,7 @@ Supported auth modes:
 - custom static header
 - MCP OAuth
 
-Remote tools are named `mcp__<server-id>__<tool-name>`. They use the approval gate and return capped text into model context. Large results become artifacts that the model can inspect with `read_artifact` and `search_artifact`.
+Remote tools are named `mcp__<server-id>__<tool-name>`. They use the approval gate and return capped text into model context. Large results become artifacts that the model can inspect with the `artifact` tool. MCP tools are deferred: the system prompt lists one line per server, and the model loads the tools it needs with `search_tools`.
 
 ## Observability
 

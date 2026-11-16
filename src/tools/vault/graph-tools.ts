@@ -1,80 +1,35 @@
 import type { App, TFile } from "obsidian";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { splitFrontmatter } from "../../vault/frontmatter";
 import type { IgnoreMatcher } from "../../vault/ignore";
 import { truncateToolOutput } from "../../vault/truncate";
-import {
-  BacklinksParameters,
-  GetPropertiesParameters,
-  LinksParameters,
-  LocalGraphParameters,
-  SetPropertiesParameters,
-  vaultToolDefinition,
-} from "../vault-tool-definitions";
+import { SetPropertiesParameters, vaultToolDefinition } from "../vault-tool-definitions";
 import { getVisibleVaultFile, textResult, untrustedTextResult } from "./shared";
 
-export function createBacklinksTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof BacklinksParameters> {
-  return {
-    ...vaultToolDefinition("get_backlinks"),
-    execute: async (_id, params) => {
-      const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
-      const sources = getBacklinkSources(app, file).filter((entry) => !isIgnored(entry.path));
-      const lines = sources.map((entry) => `${entry.path}\t${entry.count} ref${entry.count === 1 ? "" : "s"}`);
-      return textResult(lines.length === 0 ? "No backlinks." : truncateToolOutput(lines.join("\n")), {
-        path,
-        count: sources.length,
-        sources: sources.map((entry) => entry.path),
-      });
-    },
-  };
+type ToolResult = AgentToolResult<Record<string, unknown>>;
+
+/** Map a note's inbound and outbound links (`vault_inspect` action `local_graph`). */
+export function inspectLocalGraph(app: App, isIgnored: IgnoreMatcher, notePath: string): Promise<ToolResult> {
+  const { path, file } = getVisibleVaultFile(app, isIgnored, notePath);
+  const inbound = getBacklinkSources(app, file).filter((entry) => !isIgnored(entry.path));
+  const outbound = getOutboundLinks(app, file.path).filter((entry) => !isIgnored(entry.path));
+  const inboundLines = inbound.length === 0 ? ["  (none)"] : inbound.map((entry) => `  ${entry.path}`);
+  const outboundLines = outbound.length === 0 ? ["  (none)"] : outbound.map((entry) => `  ${entry.path}`);
+  const text = [`Inbound (${inbound.length}):`, ...inboundLines, `Outbound (${outbound.length}):`, ...outboundLines].join("\n");
+  return Promise.resolve(textResult(truncateToolOutput(text), {
+    path,
+    inbound: inbound.map((entry) => entry.path),
+    outbound: outbound.map((entry) => entry.path),
+  }));
 }
 
-export function createLinksTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LinksParameters> {
-  return {
-    ...vaultToolDefinition("get_links"),
-    execute: async (_id, params) => {
-      const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
-      const targets = getOutboundLinks(app, file.path).filter((entry) => !isIgnored(entry.path));
-      const lines = targets.map((entry) => `${entry.path}\t${entry.count} link${entry.count === 1 ? "" : "s"}`);
-      return textResult(lines.length === 0 ? "No outbound links." : truncateToolOutput(lines.join("\n")), {
-        path,
-        count: targets.length,
-        targets: targets.map((entry) => entry.path),
-      });
-    },
-  };
-}
-
-export function createLocalGraphTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof LocalGraphParameters> {
-  return {
-    ...vaultToolDefinition("local_graph"),
-    execute: async (_id, params) => {
-      const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
-      const inbound = getBacklinkSources(app, file).filter((entry) => !isIgnored(entry.path));
-      const outbound = getOutboundLinks(app, file.path).filter((entry) => !isIgnored(entry.path));
-      const inboundLines = inbound.length === 0 ? ["  (none)"] : inbound.map((entry) => `  ${entry.path}`);
-      const outboundLines = outbound.length === 0 ? ["  (none)"] : outbound.map((entry) => `  ${entry.path}`);
-      const text = [`Inbound (${inbound.length}):`, ...inboundLines, `Outbound (${outbound.length}):`, ...outboundLines].join("\n");
-      return textResult(truncateToolOutput(text), {
-        path,
-        inbound: inbound.map((entry) => entry.path),
-        outbound: outbound.map((entry) => entry.path),
-      });
-    },
-  };
-}
-
-export function createGetPropertiesTool(app: App, isIgnored: IgnoreMatcher): AgentTool<typeof GetPropertiesParameters> {
-  return {
-    ...vaultToolDefinition("get_properties"),
-    execute: async (_id, params) => {
-      const { path, file } = getVisibleVaultFile(app, isIgnored, params.path);
-      const frontmatter = await readFrontmatter(app, file);
-      const keys = Object.keys(frontmatter);
-      const text = keys.length === 0 ? "(no frontmatter properties)" : JSON.stringify(frontmatter, null, 2);
-      return untrustedTextResult(truncateToolOutput(text), { path, keys }, "get_properties");
-    },
-  };
+/** Read a note's frontmatter as structured data (`vault_inspect` action `properties`). */
+export async function inspectProperties(app: App, isIgnored: IgnoreMatcher, notePath: string): Promise<ToolResult> {
+  const { path, file } = getVisibleVaultFile(app, isIgnored, notePath);
+  const frontmatter = await readFrontmatter(app, file);
+  const keys = Object.keys(frontmatter);
+  const text = keys.length === 0 ? "(no frontmatter properties)" : JSON.stringify(frontmatter, null, 2);
+  return untrustedTextResult(truncateToolOutput(text), { path, keys }, "vault_inspect");
 }
 
 export function createSetPropertiesTool(

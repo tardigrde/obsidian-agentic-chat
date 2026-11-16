@@ -3,7 +3,8 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { App } from "obsidian";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { buildAgentParentTools } from "../src/agent/runtime-resources";
-import { estimateToolDefinitionTokens } from "../src/agent/tool-budget";
+import { estimateTextTokens } from "@earendil-works/pi-ai/utils/estimate";
+import { estimateToolDefinitionTokens } from "../src/agent/tool-schema-tokens";
 import { createSubagentTool } from "../src/tools/subagent-tool";
 import { createVaultTools } from "../src/tools/vault-tools";
 import type { WebFetcher } from "../src/tools/web-fetch";
@@ -25,7 +26,7 @@ function parentTools(withScaffolder: boolean): AgentTool[] {
       return { rootPath: ".agentic-plugins/x", name: "x", updated: false, skills: 1 };
     },
   };
-  const { tools } = buildAgentParentTools({
+  const { active } = buildAgentParentTools({
     app: { vault: {}, workspace: {} } as unknown as App,
     settings: { ...DEFAULT_SETTINGS, web: { ...DEFAULT_SETTINGS.web, enabled: true } },
     resources: {
@@ -44,25 +45,30 @@ function parentTools(withScaffolder: boolean): AgentTool[] {
     subagentTool,
     ...(withScaffolder ? { skillScaffolder: scaffolder } : {}),
   });
-  return tools;
+  return active;
 }
 
-describe("tool schema token budget", () => {
-  it("keeps the full parent tool set under 2400 model-visible schema tokens", () => {
+describe("tool schema token ceiling", () => {
+  it("keeps the active parent tool set under 2400 model-visible schema tokens", () => {
     const tokens = estimateToolDefinitionTokens(parentTools(false));
-    // Trimmed tool descriptions are a per-turn context + cost win and keep the
-    // tool budget (2% of a 128k window = 2560) from silently dropping optional
-    // tools. This ceiling guards against prose creeping back in. F10+H8 added
-    // read_skill_file + load/unload_skill (+~150 tokens) so limit raised 2200→2400.
+    // 15 always-loaded tools, measured at 3.5 chars/token (about 2284 on
+    // 2026-11-16, down from 2663 for the 20 tools before tool consolidation).
+    // This ceiling guards against prose creeping back into descriptions.
     expect(tokens).toBeLessThan(2400);
   });
 
-  it("keeps the production parent tool set (with create_skill) under the same ceiling", () => {
-    const tokens = estimateToolDefinitionTokens(parentTools(true));
-    // create_skill adds ~750 tokens of schema (name/description/body/overwrite
-    // params + safety description). Production already carries MCP tools on top,
-    // so this ceiling only guards prose creep in the fixed test config.
-    expect(tokens).toBeLessThan(2700);
+  it("uses pi-ai's text ratio, so the context bar sums one unit", () => {
+    const tools = parentTools(false);
+    const modelVisible = tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? "",
+      parameters: tool.parameters ?? {},
+    }));
+    expect(estimateToolDefinitionTokens(tools)).toBe(estimateTextTokens(JSON.stringify(modelVisible)));
+  });
+
+  it("does not grow the active set with create_skill: it is deferred behind search_tools", () => {
+    expect(estimateToolDefinitionTokens(parentTools(true))).toBe(estimateToolDefinitionTokens(parentTools(false)));
   });
 
   it("keeps the default vault surface under 1000 tokens (eval max_tool_schema_tokens is 1200)", () => {

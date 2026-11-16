@@ -13,16 +13,13 @@ import { createWebTools } from "../tools/web-tools";
 import { createDocumentTools } from "../tools/document-tools";
 import type { WebFetcher } from "../tools/web-fetch";
 import { createAskUserTool, type AskUserHandler } from "../tools/ask-user-tool";
-import { createReadSkillTool, createReadSkillFileTool } from "../tools/read-skill-tool";
-import { createSkillLoadTools, createCreateSkillTool, type SkillScaffolder } from "../tools/skill-tools";
-import { SkillLoadRegistry } from "../skills/skill-load-state";
-import { formatSkillInvocation } from "../skills/skills";
-import { wrapToolOutput } from "../tools/tool-output-wrapper";
-import { truncateToolOutput } from "../vault/truncate";
+import { createSkillTool } from "../tools/skill-tool";
+import { createCreateSkillTool, type SkillScaffolder } from "../tools/skill-tools";
+import { createCurrentTimeTool } from "../tools/current-time-tool";
 import { createMcpFetcher } from "../mcp/fetcher";
 import { createMcpToolsWithDiagnostics, type McpServerDiagnostic } from "../mcp/tools";
 import { mcpServerStateFromServer, type McpServerSettings } from "../mcp/settings";
-import { createToolArtifactTools } from "../artifacts/tool-artifact-tools";
+import { createArtifactTool } from "../artifacts/tool-artifact-tools";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import { type IgnoreMatcher } from "../vault/ignore";
 import { createFileSystemDenyMatcher } from "../vault/file-system-sandbox";
@@ -35,10 +32,11 @@ import {
 } from "./subagents";
 import { buildSystemPrompt } from "./system-prompt";
 import {
-  applyToolBudget,
-  type ToolBudgetSnapshot,
-  type ToolBudgetState,
-} from "./tool-budget";
+  LoadedToolSet,
+  createSearchToolsTool,
+  formatDeferredToolsOverlay,
+  partitionTools,
+} from "./tool-loading";
 
 export interface AgentRuntimeResources {
   skills: Skill[];
@@ -133,39 +131,17 @@ export function composeAgentSystemPrompt(
   settings: AgenticChatSettings,
   resources: AgentRuntimeResources,
   selfAwarenessOverlay: string,
-  skillLoads?: SkillLoadRegistry,
+  /** The deferred tool catalog (loaded or not); listed so `search_tools` can find them. */
+  deferredTools: readonly AgentTool[] = [],
 ): string {
   const overlays = [
     selfAwarenessOverlay,
     resources.instructionsOverlay,
     formatAgentRolesForSystemPrompt(resources.profiles),
     pluginSkillTrustBoundary(resources.plugins, settings.plugins.folder),
-    formatLoadedSkillsOverlay(resources.skills, skillLoads),
+    formatDeferredToolsOverlay(deferredTools, resources.mcpDiagnostics),
   ];
   return buildSystemPrompt(settings.systemPrompt, resources.skills, overlays);
-}
-
-const MAX_LOADED_SKILLS_CHARS = 16_000;
-
-function formatLoadedSkillsOverlay(skills: Skill[], skillLoads?: SkillLoadRegistry): string {
-  const loadedNames = skillLoads?.names() ?? [];
-  if (loadedNames.length === 0) return "";
-  const byName = new Map(skills.map((s) => [s.name, s] as const));
-  const loaded = loadedNames.map((name) => byName.get(name)).filter((s): s is Skill => Boolean(s));
-  // Prune stale names that no longer exist (plugin disabled/removed)
-  if (loaded.length !== loadedNames.length) {
-    skillLoads?.prune(new Set(skills.map((s) => s.name)));
-  }
-  if (loaded.length === 0) return "";
-  const blocks = loaded.map((skill) => {
-    const raw = formatSkillInvocation(skill);
-    // Wrap as untrusted DATA so model treats body as data, not instructions
-    return wrapToolOutput(raw, `load_skill:${skill.name}`);
-  });
-  const joined = blocks.join("\n\n");
-  if (joined.length <= MAX_LOADED_SKILLS_CHARS) return joined;
-  const truncated = truncateToolOutput(joined, MAX_LOADED_SKILLS_CHARS);
-  return `${truncated}\n\n[Loaded skills truncated at ${MAX_LOADED_SKILLS_CHARS} chars — unload some skills to free context.]`;
 }
 
 /**
@@ -204,7 +180,7 @@ function pluginSkillTrustBoundary(plugins: LoadedPlugin[], folder?: string): str
   );
 }
 
-export function buildAgentParentTools(options: {
+export interface BuildAgentParentToolsOptions {
   app: App;
   settings: AgenticChatSettings;
   resources: AgentRuntimeResources;
@@ -213,38 +189,45 @@ export function buildAgentParentTools(options: {
   artifactStore?: ToolArtifactStoreLike;
   askUser?: AskUserHandler;
   subagentTool?: AgentTool;
-  contextWindow?: number;
-  toolBudgetState?: ToolBudgetState;
-  /** When present, the agent gets a `create_skill` tool backed by the New skill wizard writer. */
+  /** When present, the agent gets a deferred `create_skill` tool backed by the New skill wizard writer. */
   skillScaffolder?: SkillScaffolder;
-  /** Shared loaded-skill state for `load_skill` / `unload_skill` and the prompt overlay. */
-  skillLoadRegistry?: SkillLoadRegistry;
-}): { tools: AgentTool[]; toolBudget: ToolBudgetSnapshot } {
-  const tools = [
+  /** Deferred tools loaded in this session; `search_tools` adds to it. */
+  loadedTools?: LoadedToolSet;
+  /** Clock for `current_time`; tests inject a fixed one. */
+  now?: () => Date;
+}
+
+export interface AgentParentTools {
+  /** Tools sent to the model: the core set, loaded deferred tools, and `search_tools`. */
+  active: AgentTool[];
+  /** Deferred tools not loaded yet; the system prompt lists them. */
+  deferred: AgentTool[];
+  /** Every tool, active and deferred, so a later turn can load more without a rebuild. */
+  all: AgentTool[];
+}
+
+export function buildAgentParentTools(options: BuildAgentParentToolsOptions): AgentParentTools {
+  const loaded = options.loadedTools ?? new LoadedToolSet();
+  const artifactTool = createArtifactTool(options.artifactStore);
+  const all = [
     ...createVaultTools(options.app, options.resources.ignoreMatcher, options.readMemo),
-    ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
-    ...createDocumentTools(options.app, options.artifactStore),
     ...createWebTools(options.settings.web, options.webFetch, options.artifactStore),
-    ...createToolArtifactTools(options.artifactStore),
-    ...options.resources.mcpTools,
-    createReadSkillTool(options.resources.skills),
-    createReadSkillFileTool(options.app, options.resources.skills),
-    ...createSkillLoadTools(options.resources.skills, options.skillLoadRegistry),
-    ...(options.skillScaffolder ? [createCreateSkillTool(options.skillScaffolder)] : []),
+    ...(options.askUser ? [createAskUserTool(options.askUser)] : []),
     ...(options.subagentTool ? [options.subagentTool] : []),
+    createSkillTool(options.app, options.resources.skills),
+    ...(artifactTool ? [artifactTool] : []),
+    createCurrentTimeTool(options.now),
+    // Deferred: listed in the system prompt, loaded by search_tools.
+    ...(options.skillScaffolder ? [createCreateSkillTool(options.skillScaffolder)] : []),
+    ...createDocumentTools(options.app, options.artifactStore),
+    ...options.resources.mcpTools,
   ];
-  const budgeted = applyToolBudget({
-    tools,
-    settings: options.settings.toolBudget,
-    state:
-      options.toolBudgetState ?? {
-        droppedToolNames: new Set<string>(),
-        triggeredAtToolSchemaFraction: null,
-        toolSchemaTokens: null,
-      },
-    contextWindow: options.contextWindow,
+  const { active, deferred } = partitionTools(all, loaded);
+  const searchTool = createSearchToolsTool({
+    getDeferredTools: () => partitionTools(all, loaded).deferred,
+    loaded,
   });
-  return { tools: budgeted.tools, toolBudget: budgeted.snapshot };
+  return { active: [...active, searchTool], deferred, all: [...all, searchTool] };
 }
 
 async function loadRuntimeSkills(

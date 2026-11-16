@@ -111,7 +111,7 @@ function formatImportPdfResult(result: PdfImportResult): string {
   return [
     `PDF source artifact: ${result.artifactCitation}${duplicate}`,
     `Extracted ${result.provenance.sourceTextChars} characters across ${result.provenance.chunkCount} chunk(s), ${pageCount}.`,
-    "Use read_artifact with the artifact id to inspect cited chunks.",
+    "Use the artifact tool (action \"read\" or \"search\") with the artifact id to inspect cited chunks.",
   ].join("\n");
 }
 
@@ -120,7 +120,7 @@ function formatImportDocumentResult(result: DocumentImportWriteResult): string {
   return [
     `${result.provenance.kind.toUpperCase()} source artifact: ${result.artifactCitation}${duplicate}`,
     `Extracted ${result.provenance.sourceTextChars} characters across ${result.provenance.chunkCount} chunk(s), ${result.provenance.itemCount} item(s).`,
-    "Use read_artifact with the artifact id to inspect cited chunks.",
+    "Use the artifact tool (action \"read\" or \"search\") with the artifact id to inspect cited chunks.",
   ].join("\n");
 }
 

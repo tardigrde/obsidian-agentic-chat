@@ -30,7 +30,7 @@ describe("builtinSkills", () => {
     expect(SELF_KNOWLEDGE_SKILL.content).toMatch(/Tools inventory/);
     expect(SELF_KNOWLEDGE_SKILL.content).toMatch(/Edit semantics/);
     expect(SELF_KNOWLEDGE_SKILL.content).toMatch(/Approval modes/);
-    expect(SELF_KNOWLEDGE_SKILL.content).toMatch(/Tool budget/);
+    expect(SELF_KNOWLEDGE_SKILL.content).toMatch(/Deferred tools/);
     expect(SELF_KNOWLEDGE_SKILL.content).toMatch(/Doomloop guard/);
     expect(SELF_KNOWLEDGE_SKILL.content).toMatch(/Error pattern catalog/);
     expect(SELF_KNOWLEDGE_SKILL.content).toMatch(/subagent/);

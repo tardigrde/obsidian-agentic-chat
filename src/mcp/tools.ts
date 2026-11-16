@@ -392,7 +392,7 @@ function renderArtifactPreview(text: string, artifact: ToolArtifactMetadata): st
   const preview = text.slice(0, MCP_ARTIFACT_PREVIEW_CHARS);
   return (
     `MCP result stored as artifact "${artifact.id}" because it is ${artifact.charLength.toLocaleString()} characters.\n` +
-    'Use read_artifact with this id to inspect it in chunks, or search_artifact to find specific text.\n\n' +
+    'Use the artifact tool with this id: action "read" for chunks, action "search" to find specific text.\n\n' +
     `Preview (first ${preview.length.toLocaleString()} characters):\n${preview}` +
     (preview.length < text.length ? `\n\n[Preview truncated. Next read offset: ${preview.length}.]` : "")
   );

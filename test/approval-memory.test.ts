@@ -33,7 +33,7 @@ describe("approval memory", () => {
   });
 
   it("never remembers allow for persistent skill tools (injection gate)", () => {
-    for (const tool of ["create_skill", "load_skill", "unload_skill"]) {
+    for (const tool of ["create_skill"]) {
       const current = settings();
       expect(applyRememberedApprovalChoice(current, tool, { approved: true, remember: true })).toBe(false);
       expect(current.approval.perTool[tool]).toBeUndefined();

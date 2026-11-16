@@ -7,7 +7,6 @@ import {
   UNDOABLE_TOOLS,
   approvalPreviewNeedsContent,
   builtinToolExecutionMode,
-  builtinToolContractsForSurface,
   builtinToolLabel,
   getBuiltinToolContract,
   toolApprovalDescription,
@@ -21,41 +20,13 @@ describe("built-in tool contracts", () => {
     expect(new Set(contractNames).size).toBe(contractNames.length);
   });
 
-  it("drives default and compatibility tool registration order", () => {
+  it("drives tool registration order; the old standalone inspect tools are gone", () => {
     const contractNames = BUILTIN_TOOL_CONTRACTS.map((contract) => contract.name);
-    const defaultNames = builtinToolContractsForSurface().map((contract) => contract.name);
-    expect(defaultNames).toContain("vault_inspect");
-    expect(defaultNames).not.toContain("ls");
-    expect(defaultNames).not.toContain("search");
-    expect(defaultNames).not.toContain("find");
-    expect(defaultNames).not.toContain("grep");
-    expect(defaultNames).not.toContain("get_active_note");
-    expect(defaultNames).not.toContain("get_backlinks");
-    expect(defaultNames).not.toContain("get_links");
-    expect(defaultNames).not.toContain("local_graph");
-    expect(defaultNames).not.toContain("get_properties");
-
-    const tools = createVaultTools({} as App);
-    expect(tools.map((tool) => tool.name)).toEqual(defaultNames);
-
-    const compatibilityTools = createVaultTools({} as App, undefined, undefined, { surface: "compat" });
-    expect(compatibilityTools.map((tool) => tool.name)).toEqual(contractNames);
-  });
-
-  it("keeps the default prompt surface smaller than the compatibility surface", () => {
-    const defaultTools = createVaultTools({} as App);
-    const compatibilityTools = createVaultTools({} as App, undefined, undefined, { surface: "compat" });
-    const promptFootprint = (tools: ReturnType<typeof createVaultTools>): number =>
-      JSON.stringify(
-        tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters,
-        })),
-      ).length;
-
-    expect(defaultTools.length).toBeLessThan(compatibilityTools.length);
-    expect(promptFootprint(defaultTools)).toBeLessThan(promptFootprint(compatibilityTools));
+    expect(contractNames).toEqual(["read", "vault_inspect", "write", "edit", "rename", "delete", "set_properties"]);
+    for (const removed of ["ls", "search", "find", "grep", "get_active_note", "get_backlinks", "get_links", "local_graph", "get_properties"]) {
+      expect(getBuiltinToolContract(removed), removed).toBeUndefined();
+    }
+    expect(createVaultTools({} as App).map((tool) => tool.name)).toEqual(contractNames);
   });
 
   it("is the source of truth for created tool labels and execution mode", () => {
@@ -87,9 +58,6 @@ describe("built-in tool contracts", () => {
   it("pins path arguments and ignore-list semantics for sensitive tools", () => {
     expect(getBuiltinToolContract("read")?.pathArgs).toEqual([{ name: "path", required: true, kind: "file" }]);
     expect(getBuiltinToolContract("vault_inspect")?.pathArgs).toEqual([{ name: "path", required: false, kind: "search-root" }]);
-    expect(getBuiltinToolContract("search")?.pathArgs).toEqual([{ name: "path", required: false, kind: "search-root" }]);
-    expect(getBuiltinToolContract("grep")?.pathArgs).toEqual([{ name: "path", required: false, kind: "search-root" }]);
-    expect(getBuiltinToolContract("find")?.pathArgs).toEqual([]);
     expect(getBuiltinToolContract("rename")?.pathArgs).toEqual([
       { name: "path", required: true, kind: "file" },
       { name: "newPath", required: true, kind: "destination" },
@@ -98,9 +66,7 @@ describe("built-in tool contracts", () => {
 
     expect(getBuiltinToolContract("read")?.ignoreBehavior).toBe("target-hidden");
     expect(getBuiltinToolContract("rename")?.ignoreBehavior).toBe("source-and-destination-hidden");
-    expect(getBuiltinToolContract("get_active_note")?.ignoreBehavior).toBe("active-note-hidden");
-    expect(getBuiltinToolContract("search")?.ignoreBehavior).toBe("results-filtered");
-    expect(getBuiltinToolContract("local_graph")?.ignoreBehavior).toBe("target-and-linked-results-hidden");
+    expect(getBuiltinToolContract("vault_inspect")?.ignoreBehavior).toBe("results-filtered");
   });
 
   it("pins approval copy and preview content reads", () => {

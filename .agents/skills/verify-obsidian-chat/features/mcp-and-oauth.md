@@ -69,6 +69,7 @@ await clickMcpAddButton("Add MCP server");
 | Setup guide / Copy config | `src/settings-mcp-section.ts#mcpServerDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` (button existence only) | `partial` |
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts#installPackage` | `test/e2e/specs/composio-install.e2e.ts#installs Composio bundle via archive URL and verifies 2 skills + 1 MCP (popout-safe)` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts#mcpServerFromPluginEntry` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
+| MCP tools are deferred; the prompt lists one line per server | `src/agent/tool-loading.ts#formatDeferredToolsOverlay` | `test/tool-loading.test.ts#formatDeferredToolsOverlay` (unit only) | `partial` |
 | Discover and call a remote MCP tool | `src/mcp/tools.ts#createMcpTools` | `test/e2e/specs/mcp-live.e2e.ts#agentic-chat live MCP over HTTPS` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
 | Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts#normalizeMcpUrl` | `test/mcp-client.test.ts#makes multiple Last-Event-ID resume attempts when SSE redelivery is incremental` (unit only) | `partial` |
 | MCP server: Name | `src/settings-mcp-section.ts#row("Name"` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `partial` |

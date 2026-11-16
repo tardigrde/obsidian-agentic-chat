@@ -21,11 +21,9 @@ describe("agentic-chat subagent live dogfood", function () {
     await browser.executeObsidianCommand("agentic-chat:open-chat");
     await $(".agentic-chat-view").waitForExist();
 
-    // The tool budget drops `subagent` only if the resolved context window is small
-    // relative to the schema. On the OpenRouter provider the window comes from the
-    // live /models catalog (e.g. deepseek-v4-flash-0731 = 1M), so the subagent tool
-    // stays. Wait for the catalog to be resolved before prompting so the first turn
-    // is not built against the 128k fallback.
+    // On the OpenRouter provider the context window comes from the live /models
+    // catalog (e.g. deepseek-v4-flash-0731 = 1M). Wait for the catalog to be
+    // resolved before prompting so the first turn uses the real window.
     await browser.waitUntil(
       async () => {
         const contextWindow = await browser.executeObsidian(async ({ app }) => {

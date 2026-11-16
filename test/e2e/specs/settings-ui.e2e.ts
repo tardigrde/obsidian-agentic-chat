@@ -275,6 +275,20 @@ describe("agentic-chat settings UI", function () {
     }, "Approval settings were not persisted from the settings UI");
   });
 
+  it("removes the tool budget rows and keeps the context window section", async function () {
+    await selectSettingsTab("Agent");
+    await waitForSetting("Auto-compaction");
+
+    const body = await readSettingsBodyText();
+    expect(body).toContain("Compact at (% of context window)");
+    expect(body).not.toContain("Tool budget");
+    expect(body).not.toContain("Drop optional tools when schemas are large");
+    expect(body).not.toContain("Drop tools when schemas exceed");
+
+    const stored = await readAgenticChatSettings<Record<string, unknown>>();
+    expect("toolBudget" in stored).toBe(false);
+  });
+
   it("persists and clamps the turn cap through the Agent tab (#283)", async function () {
     await selectSettingsTab("Agent");
     await setSettingText("Max turns per prompt", "60");

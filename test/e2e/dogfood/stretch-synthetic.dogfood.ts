@@ -92,7 +92,6 @@ async function configurePlugin(): Promise<boolean> {
       mode: string;
       ignoredGlobs: string;
       approval: { mutating: string; perTool: Record<string, string> };
-      toolBudget: { enabled: boolean; thresholdPercent: number };
       web: { enabled: boolean };
       mcp: { enabled: boolean; servers: unknown[]; proxyUrl: string; noProxy: string };
     };
@@ -102,8 +101,6 @@ async function configurePlugin(): Promise<boolean> {
     settings.ignoredGlobs = ["Restricted/**", "*.secret.md"].join("\n");
     settings.approval.mutating = "allow";
     settings.approval.perTool = {};
-    settings.toolBudget.enabled = false;
-    settings.toolBudget.thresholdPercent = 25;
     settings.web.enabled = false;
     settings.mcp = { enabled: false, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] };
     await plugin.saveSettings?.();
@@ -119,11 +116,8 @@ async function setChaosSettings(): Promise<void> {
     if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
     const settings = plugin.settings as {
       approval: { perTool: Record<string, string> };
-      toolBudget: { enabled: boolean; thresholdPercent: number };
     };
     settings.approval.perTool = { ...settings.approval.perTool, write: "deny" };
-    settings.toolBudget.enabled = true;
-    settings.toolBudget.thresholdPercent = 1;
     await plugin.saveSettings?.();
   });
 }
@@ -136,11 +130,8 @@ async function restoreSafeSettings(): Promise<void> {
     if (!plugin?.settings) throw new Error("agentic-chat plugin not found");
     const settings = plugin.settings as {
       approval: { perTool: Record<string, string> };
-      toolBudget: { enabled: boolean; thresholdPercent: number };
     };
     settings.approval.perTool = {};
-    settings.toolBudget.enabled = false;
-    settings.toolBudget.thresholdPercent = 25;
     await plugin.saveSettings?.();
   });
 }
@@ -410,7 +401,7 @@ describe("agentic-chat stretched synthetic dogfood", function () {
   it("survives chaos settings and then restores safe behavior", async function () {
     await setChaosSettings();
     const diagnostics = await runSlashCommand("/doctor");
-    expect(diagnostics).toContain("Tool budget");
+    expect(diagnostics).not.toContain("Tool budget");
     expect(diagnostics).toContain("active");
 
     const chaosPrompt = "Try to write while chaos settings deny it.";

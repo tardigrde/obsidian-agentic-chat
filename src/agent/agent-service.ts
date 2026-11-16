@@ -478,7 +478,6 @@ export class AgentService {
       tools: this.agent?.state.tools ?? [],
       resources: this.runtimeResources.current,
       resourcesReloadedAt: this.runtimeResources.lastReloadAt,
-      toolBudget: this.runtimeResources.getToolBudgetSnapshot(),
       modelOverride: this.getModelOverride(),
       contextWindow: this.turns.buildModelForTurn().contextWindow || null,
       thinkingLevel: this.getActiveThinkingLevel(),
