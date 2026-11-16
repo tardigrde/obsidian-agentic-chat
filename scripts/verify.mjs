@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { createLineRedactor, createRedactor } from "./redact-log.mjs";
 import { LANE_NAMES, RETIRED_LANES, lanes, usage } from "./verify-lanes.mjs";
+import { appendHistory, buildRunResult, gitInfo, parseVitestJson } from "./lib/run-result.mjs";
 
 // Read process.env and .env once. Every child line passes through this.
 const REDACTOR = createRedactor();
@@ -261,9 +263,49 @@ function printTable(results, lane) {
   }
 }
 
-async function writeSummary(results, lane, startedAt, finishedAt, verdict) {
+function runDir(startedAt) {
   const stamp = new Date(startedAt).toISOString().replace(/[:.]/g, "-").replace(/Z$/, "");
-  const dir = path.resolve("logs", "verify", stamp);
+  return path.resolve("logs", "verify", stamp);
+}
+
+/**
+ * Unit steps also write Vitest's JSON report into the run dir, so the run
+ * result can name each test and its time. The console output is unchanged.
+ */
+function withJsonReporter(s, dir, index) {
+  if (!s.vitestJson) return s;
+  const reportPath = path.join(dir, `vitest-${String(index + 1).padStart(2, "0")}.json`);
+  const reporters = s.args.includes("--reporter=default") ? [] : ["--reporter=default"];
+  return {
+    ...s,
+    args: [...s.args, ...reporters, "--reporter=json", `--outputFile.json=${reportPath}`],
+    reportPath,
+  };
+}
+
+function testsFrom(results) {
+  const tests = [];
+  for (const result of results) {
+    if (!result.reportPath || !existsSync(result.reportPath)) continue;
+    try {
+      tests.push(...parseVitestJson(JSON.parse(readFileSync(result.reportPath, "utf8")), process.cwd()));
+    } catch {
+      // A torn report (killed run) leaves step counts only.
+    }
+  }
+  return tests;
+}
+
+/** "all" unless a unit step named files (`change <file...>`). */
+function scopeOf(results) {
+  const files = results
+    .filter((result) => result.vitestJson)
+    .flatMap((result) => result.args.filter((arg) => arg.endsWith(".test.ts")));
+  return files.length > 0 ? files : "all";
+}
+
+async function writeSummary(results, lane, startedAt, finishedAt, verdict, laneArgs = []) {
+  const dir = runDir(startedAt);
   await mkdir(dir, { recursive: true });
 
   const steps = await Promise.all(
@@ -309,6 +351,38 @@ async function writeSummary(results, lane, startedAt, finishedAt, verdict) {
     `# Verify: ${lane}\n\n- verdict: **${verdict}**\n- duration: ${formatDuration(summary.durationMs)}\n\n| Status | Step | Duration | Detail |\n|---|---|---|---|\n${rows}\n`,
   );
 
+  const envelope = buildRunResult({
+    lane,
+    args: laneArgs,
+    command: `npm run verify -- ${[lane, ...laneArgs].join(" ")}`,
+    verdict,
+    startedAt,
+    finishedAt,
+    steps: steps.map((entry, index) => ({
+      ...entry,
+      tier: results[index].tier,
+      mode: results[index].mode,
+    })),
+    tests: testsFrom(results),
+    scope: scopeOf(results),
+    artifacts: [path.relative(process.cwd(), path.join(dir, "summary.json"))],
+    git: gitInfo(),
+  });
+  await writeFile(path.join(dir, "run-result.json"), `${JSON.stringify(envelope, null, 2)}\n`);
+  const tierLine = Object.entries(envelope.tiers)
+    .filter(([, counts]) => counts.total > 0)
+    .map(([tier, counts]) => `${tier} ${counts.passed} passed, ${counts.failed} failed, ${counts.skipped} skipped`)
+    .join("; ");
+  process.stdout.write(`[verify] mode: ${envelope.mode}; counts: ${tierLine || "no test counts"}\n`);
+  // History is advisory: a failure to append never changes the verdict.
+  if (results.some((result) => result.record !== false) && process.env.AGENTIC_CHAT_HISTORY !== "0") {
+    try {
+      appendHistory(envelope);
+    } catch (error) {
+      process.stderr.write(`[verify] history not written: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+  }
+
   return dir;
 }
 
@@ -349,7 +423,10 @@ async function main() {
 
   process.stdout.write(`[verify] ${laneName}: ${steps.length} steps\n`);
 
-  for (const s of steps) {
+  const dir = runDir(startedAt);
+  await mkdir(dir, { recursive: true });
+  for (const [index, rawStep] of steps.entries()) {
+    const s = withJsonReporter(rawStep, dir, index);
     process.stdout.write(`\n[verify] ${s.label}\n`);
     const result = await runStep(s);
     results.push(result);
@@ -359,7 +436,7 @@ async function main() {
 
     if (s.explainE2eSandboxFailure) printNestedE2eSandboxHint(result.output);
     printTable(results, laneName);
-    const dir = await writeSummary(results, laneName, startedAt, Date.now(), "FAIL");
+    await writeSummary(results, laneName, startedAt, Date.now(), "FAIL", laneArgs);
     const exitCode = result.code === 0 ? 1 : result.code;
     process.stderr.write(`\n[verify] ${s.label} failed with exit code ${exitCode}.\n`);
     process.stderr.write(`[verify] artifacts: ${dir}\n`);
@@ -367,7 +444,7 @@ async function main() {
   }
 
   printTable(results, laneName);
-  const dir = await writeSummary(results, laneName, startedAt, Date.now(), "PASS");
+  await writeSummary(results, laneName, startedAt, Date.now(), "PASS", laneArgs);
   process.stdout.write(`\n[verify] all checks passed\n[verify] artifacts: ${dir}\n`);
   return 0;
 }

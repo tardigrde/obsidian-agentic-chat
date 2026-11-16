@@ -65,7 +65,11 @@ describe("verify lanes", () => {
   it(
     "`verify -- eval` exits 0 on a clean checkout and names the next command",
     () => {
-      const result = spawnSync(process.execPath, ["scripts/verify.mjs", "eval"], { encoding: "utf8", timeout: 60_000 });
+      const result = spawnSync(process.execPath, ["scripts/verify.mjs", "eval"], {
+        encoding: "utf8",
+        timeout: 60_000,
+        env: { ...process.env, AGENTIC_CHAT_HISTORY: "0" },
+      });
       const output = `${result.stdout}\n${result.stderr}`;
       expect(result.status, output).toBe(0);
       expect(output).toContain("Not executed: 1 case(s)");

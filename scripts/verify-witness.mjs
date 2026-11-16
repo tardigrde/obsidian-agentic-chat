@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { appendHistory, buildRunResult, gitInfo } from "./lib/run-result.mjs";
 
 /**
  * Prove that a test is a witness: it must fail when the production change is
@@ -370,6 +371,7 @@ function testFileChanged(options, cwd) {
 }
 
 function verifyWitness(options, cwd = process.cwd()) {
+  const startedAt = Date.now();
   const spec = resolveTest(options);
   if (!options.base) throw new Error("Provide --base.");
   if (options.sources.length === 0) throw new Error("Provide at least one --src.");
@@ -437,6 +439,7 @@ function verifyWitness(options, cwd = process.cwd()) {
   const decision = verdictFor(reverted, restored, { testChanged: testFileChanged(options, cwd) });
   return {
     ...decision,
+    startedAt,
     base: options.base,
     head,
     sources: options.sources,
@@ -446,6 +449,32 @@ function verifyWitness(options, cwd = process.cwd()) {
     reverted,
     restored,
   };
+}
+
+/** The shared run-result envelope (#393 T24). Advisory: never changes the verdict. */
+function recordRun(result) {
+  try {
+    const finishedAt = Date.now();
+    const envelope = buildRunResult({
+      lane: "witness",
+      args: ["--base", result.base, ...result.sources.flatMap((source) => ["--src", source])],
+      command: result.testDisplay,
+      verdict: result.verdict,
+      startedAt: result.startedAt ?? finishedAt,
+      finishedAt,
+      steps: [
+        { label: "fix reverted (expect red)", tier: "T1", status: result.reverted.status === 0 ? "FAIL" : "PASS", durationMs: 0 },
+        { label: "fix restored (expect green)", tier: "T1", status: result.restored.status === 0 ? "PASS" : "FAIL", durationMs: 0 },
+      ],
+      scope: [],
+      artifacts: [path.join(result.reportDir, "summary.json")],
+      git: gitInfo(),
+    });
+    writeFileSync(path.join(result.reportDir, "run-result.json"), `${JSON.stringify(envelope, null, 2)}\n`);
+    if (process.env.AGENTIC_CHAT_HISTORY !== "0") appendHistory(envelope);
+  } catch (error) {
+    console.error(`verify-witness: run result not recorded (${error.message})`);
+  }
 }
 
 function printResult(result) {
@@ -790,7 +819,10 @@ function main() {
     process.exit(2);
   }
 
-  if (result.verdict !== "DRY-RUN") writeReport(result.reportDir, result);
+  if (result.verdict !== "DRY-RUN") {
+    writeReport(result.reportDir, result);
+    recordRun(result);
+  }
   printResult(result);
   if (result.verdict === "FAIL") {
     console.error("verify-witness: red output");

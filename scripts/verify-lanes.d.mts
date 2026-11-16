@@ -6,6 +6,10 @@ export interface VerifyStep {
   explainE2eSandboxFailure?: boolean;
   timeoutMs?: number;
   env?: Record<string, string>;
+  tier: "T0" | "T1" | "T2" | "T3" | "T4";
+  mode?: "live" | "scripted";
+  vitestJson?: boolean;
+  record?: boolean;
 }
 export const SMOKE_SPEC: string;
 export const MOBILE_SPEC: string;

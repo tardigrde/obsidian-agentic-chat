@@ -51,8 +51,13 @@ function bin(name) {
   return path.join("node_modules", ".bin", process.platform === "win32" ? `${name}.cmd` : name);
 }
 
+/**
+ * One lane step. `tier` (T0 static, T1 hermetic logic, T2 real app, T3 live,
+ * T4 exploration) groups counts in the run result; `vitestJson` asks verify to
+ * add a JSON reporter so the history can name individual tests.
+ */
 export function step(label, command, args, options = {}) {
-  return { label, command, args, expectTests: false, ...options };
+  return { label, command, args, expectTests: false, tier: "T0", ...options };
 }
 
 function takeFlag(args, flag) {
@@ -92,6 +97,8 @@ function e2eStep(label, specs, options = {}) {
     expectTests: true,
     explainE2eSandboxFailure: true,
     env: options.env,
+    tier: options.tier ?? "T2",
+    ...(options.mode ? { mode: options.mode } : {}),
   });
 }
 
@@ -99,6 +106,7 @@ function mobileStep(label, spec) {
   return step(label, NODE, ["scripts/run-e2e-mobile.mjs", "--spec", spec], {
     expectTests: true,
     explainE2eSandboxFailure: true,
+    tier: "T2",
   });
 }
 
@@ -107,7 +115,7 @@ function scriptedDogfoodStep() {
     "scripted dogfood eval",
     NODE,
     ["--import", "tsx", "scripts/run-agentic-evals.ts", "--fail-on-skip", "--run-scripted"],
-    { timeoutMs: 30 * 60 * 1000 },
+    { timeoutMs: 30 * 60 * 1000, tier: "T2" },
   );
 }
 
@@ -161,7 +169,7 @@ function findSuiteArg(args) {
 const AGENTIC_EXECUTE_FLAGS = ["--run-scripted", "--run-judge"];
 
 export const lanes = {
-  plan: (args) => [step("plan", NODE, ["scripts/verify-plan.mjs", ...args])],
+  plan: (args) => [step("plan", NODE, ["scripts/verify-plan.mjs", ...args], { record: false })],
 
   check: (input) => {
     const args = [...input];
@@ -172,8 +180,10 @@ export const lanes = {
       ...staticSteps(),
       step(coverage ? "unit tests + coverage report" : "unit tests", bin("vitest"), coverage ? ["run", "--coverage"] : ["run"], {
         expectTests: true,
+        tier: "T1",
+        vitestJson: true,
       }),
-      step("witness self-test", NODE, ["scripts/verify-witness.mjs", "--self-test"]),
+      step("witness self-test", NODE, ["scripts/verify-witness.mjs", "--self-test"], { tier: "T1" }),
       ...buildSteps(),
       ...(noApp ? [] : [e2eStep("smoke e2e", [SMOKE_SPEC])]),
     ];
@@ -190,7 +200,7 @@ export const lanes = {
     const vitestArgs = args.every(isPath)
       ? ["run", "--reporter=default", ...args]
       : ["run", "--reporter=default", "-t", args.join(" ")];
-    return [step("unit tests", bin("vitest"), vitestArgs, { expectTests: true })];
+    return [step("unit tests", bin("vitest"), vitestArgs, { expectTests: true, tier: "T1", vitestJson: true })];
   },
 
   app: (input) => {
@@ -212,19 +222,23 @@ export const lanes = {
 
   live: (args) => {
     if (args.length === 0) {
-      return [step("live unit tests", bin("vitest"), ["run", "--config", "vitest.live.config.ts"], { expectTests: true })];
+      return [
+        step("live unit tests", bin("vitest"), ["run", "--config", "vitest.live.config.ts"], { expectTests: true, tier: "T3", mode: "live" }),
+      ];
     }
     const specs = args.map((arg) => resolveSpec(arg, LIVE_FIRST));
     if (specs.every((spec) => spec.endsWith(".test.ts"))) {
       return [
         step("live unit tests", bin("vitest"), ["run", "--config", "vitest.live.config.ts", ...specs], {
           expectTests: true,
+          tier: "T3",
+          mode: "live",
         }),
       ];
     }
     return [
       step("e2e bundle", NODE, ["scripts/build-e2e.mjs"]),
-      e2eStep("live e2e", specs, { env: { AGENTIC_CHAT_LIVE: "1" } }),
+      e2eStep("live e2e", specs, { env: { AGENTIC_CHAT_LIVE: "1" }, tier: "T3", mode: "live" }),
     ];
   },
 
@@ -236,7 +250,12 @@ export const lanes = {
       // The runner takes a separate value, so normalize `--suite=<path>`.
       const passthrough = [...forwarded];
       passthrough.splice(suite.index, suite.inline ? 1 : 2, "--suite", toolUseSuite);
-      return [step("tool-use evals", NODE, ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...passthrough])];
+      return [
+        step("tool-use evals", NODE, ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...passthrough], {
+          tier: "T3",
+          mode: "live",
+        }),
+      ];
     }
     // A skip hides unexecuted coverage, so the lane fails on one whenever the
     // caller asked to execute the expensive cases. A plain `verify -- eval`
@@ -249,13 +268,15 @@ export const lanes = {
         "scripts/run-agentic-evals.ts",
         ...(execute ? ["--fail-on-skip"] : []),
         ...forwarded,
-      ]),
+      ], { tier: forwarded.includes("--run-judge") ? "T3" : forwarded.includes("--run-scripted") ? "T2" : "T1" }),
     ];
   },
 
   explore: (args) => [
     step("chaos explore", NODE, ["--import", "tsx", "scripts/chaos-monkey.ts", ...args], {
       timeoutMs: 2 * 60 * 60 * 1000,
+      tier: "T4",
+      mode: args.includes("--live") ? "live" : "scripted",
     }),
   ],
 
