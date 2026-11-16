@@ -522,7 +522,7 @@ npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --smoke \
 | `high` | `high` | 6/8 (75%) | $0.014343 ($0.001793/run) | 97,208 | 19.0s | 3.1x the `low` cost |
 
 The 2026-11-15 full 75-run `core` baseline at `low` (the suite revision before
-the saturation pass) was 76% pass^3 (19 of 25 cases), 83% mean pass@1, $0.0354
+the saturation passes) was 76% pass^3 (19 of 25 cases), 83% mean pass@1, $0.0354
 total, and 34,065 tokens per run. The earlier `off`
 baseline was 76% pass^3 (19 of 25), 84% mean pass@1, $0.0215, and 24,532
 tokens per run. Two caveats stop a simple ranking: that `off` pass predates the
@@ -551,13 +551,13 @@ comparison tier for prompt, tool, and model comparisons. It has 25 cases
 runner, the same grader, and `runsPerCase: 3`; pass^3 is the headline number.
 
 The committed baseline is `test/evals/baselines/core.json`, measured on
-2026-11-16 with a 75-run baseline at gitHead `1b40259` on
+2026-11-16 with a 75-run baseline at gitHead `5448c0f` on
 `deepseek/deepseek-v4.1-flash` (`thinkingLevel: low`, pinned by the suite; the
 product default is `off`). Suite revision: 25 cases (24 plus
-`tools.medium.web`). Overall: 80% pass^3 (20 of 25 cases), 85% mean pass@1,
-0.975 partial score, $0.0889 total (39,413 tokens per run, 5,492 ms median
-case). Per level, pass^3 was easy 75% (6/8), medium 100% (9/9), and hard 62.5%
-(5/8). The baseline's `gitHead` names the case-fix commit, and its
+`tools.medium.web`). Overall: 88% pass^3 (22 of 25 cases), 91% mean pass@1,
+0.976 partial score, $0.0757 total (31,660 tokens per run, 6,776 ms median
+case). Per level, pass^3 was easy 87.5% (7/8), medium 100% (9/9), and hard 75%
+(6/8). The baseline's `gitHead` names the case-fix commit, and its
 `thinkingLevel` fields name the level for every case; all 75 runs observed
 `low`. Easy cases seed an `S` vault, hard cases seed `M`, and medium cases may
 seed either; `find.medium.revenue`, `create.medium.summary`, and
@@ -568,14 +568,18 @@ Known caveats in this baseline:
 asking, and the case failed 0/3; do not weaken it. `properties.hard.owners` puts
 `Marlin` in `100 Staging/` while its check expects an owner, so a model can
 fairly read the staging note as not live; one run stopped to ask instead of
-editing it and failed. Twenty cases reached pass^3 (80%), above the 75% mark.
-Medium is still saturated (9/9): `find.medium.revenue`, `edit.medium.heading`,
+editing it and failed. `find.easy.dentist` still fails 0/3: the prompt's
+"current date" can read as today's date, so a model may refuse to invent one,
+and the runs also listed old appointment dates and exceeded the 8-call budget.
+Twenty-two cases reached pass^3 (88%), above the 75% mark. Medium is still
+saturated (9/9): `find.medium.revenue`, `edit.medium.heading`,
 `organize.medium.inbox`, `create.medium.summary`,
 `properties.medium.normalize`, `tools.medium.properties`, `tools.medium.web`,
 `safety.medium.injection`, and `recovery.medium.stale` passed every run. This
-revision fixed the `tools.easy.search` ambiguity and hardened four medium cases;
-the model handled all four, so the next revision needs harder variants or a new
-tier, not more edits at the same level.
+revision fixed the `tools.easy.search` ambiguity, hardened four medium cases,
+and seeded three medium cases with the `M` vault; the model handled all of them,
+so the next revision needs harder variants or a new tier, not more edits or
+noise at the same level.
 
 The earlier `thinkingLevel: off` baseline from `61cab74` is superseded by this
 one. Its summary stays only under `logs/eval-runs/core-baseline-off-artifact/`
