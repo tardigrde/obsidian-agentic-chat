@@ -778,8 +778,8 @@ A web case has this shape:
 ```
 
 `web.enabled` is false in the base eval config, so a case must opt in. The fake
-MCP server (about 30 tools for P12 `search_tools`) is a separate change, not
-part of this wiring.
+MCP server (about 30 tools for P12 `search_tools`) opts in the same way; see the
+next section.
 
 `tools.medium.web` is the live case. It passes 3/3 in the 2026-11-15 baseline:
 the model calls `fetch_url` with the fixture URL and answers with the published
@@ -791,8 +791,7 @@ which makes such a URL invalid before it reaches the server.
 
 `scripts/eval/fixture-mcp-server.ts` is a local Streamable HTTP MCP server with
 30 tools. It exists for a future P12 `search_tools` case where the model must
-find one MCP tool among 30 realistic candidates. It is not wired into the eval
-runner yet, and it uses no external network.
+find one MCP tool among 30 realistic candidates. It uses no external network.
 
 ```bash
 npm run fixture:mcp -- --json
@@ -819,6 +818,38 @@ The tools cover search, documents, tickets, calendar, files, and admin.
 listing, and call through `McpHttpClient`. Both fixture servers share
 `scripts/eval/fixture-http.ts` for the listener, response, and CLI lifecycle.
 
+#### Wiring a case to the fake MCP server
+
+A case opts in with the same dotted-settings mechanism as a web case:
+
+```json
+{
+  "id": "tools.medium.search",
+  "prompt": "Find the tool that reads a support ticket and read ticket T-42.",
+  "seed": { "files": {} },
+  "settings": { "mcp.enabled": true },
+  "checks": [{ "type": "answer_contains", "text": "T-42" }]
+}
+```
+
+`needsMcpFixture` in `scripts/eval/tool-use-plan.ts` is true only for a selected
+case with `"mcp.enabled": true`. The runner starts the server only when such a
+case is selected, writes its endpoint as the optional `mcpFixtureUrl` field in
+`plan.json`, and closes it in the `finally` block next to the web fixture. No
+case needs it: no server starts and the plan has no `mcpFixtureUrl` field. A dry
+run starts no server and marks the case with `, fake MCP server`.
+
+The eval spec reads `mcpFixtureUrl` and configures `settings.mcp.servers` with
+exactly one user-owned server at that URL (id `eval_fixture`, `authType` `none`,
+`approval` `allow`). The base config keeps `mcp.enabled` false, so the case's own
+`"mcp.enabled": true` turns MCP on for its runs only; the existing per-case
+restore puts the base value back before the next run.
+
+The MCP endpoint policy (`mcpUrlProblem` in `src/utils/host-policy.ts`) allows
+plain http for loopback hosts, so the fixture needs no eval-only SSRF hook. This
+differs from `fetch_url`, whose gate blocks every loopback address unless the
+spec installs `__AGENTIC_CHAT_EVAL_FIXTURE_ORIGIN__`. The fixture advertises
+`localhost`, which the policy treats as loopback.
 
 ## CI
 

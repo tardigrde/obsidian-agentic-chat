@@ -22,7 +22,7 @@ import {
   type ToolUseCheckResult,
   type ToolUseThinkingLevel,
 } from "./tool-use-core";
-import { needsFixture, type PlannedRun, type RunRecord, type ToolUsePlan } from "./tool-use-plan";
+import { needsFixture, needsMcpFixture, type PlannedRun, type RunRecord, type ToolUsePlan } from "./tool-use-plan";
 
 export const TOOL_USE_SUMMARY_VERSION = 1;
 
@@ -393,8 +393,9 @@ export function formatDryRun(plan: DryRunPlan): string {
     ...plan.cases.map((evalCase) => {
       const seedFiles = Object.keys(evalCase.seed.files).length;
       const fixtureNote = needsFixture([evalCase]) ? ", fixture server" : "";
+      const mcpFixtureNote = needsMcpFixture([evalCase]) ? ", fake MCP server" : "";
       const level = evalCase.thinkingLevel ?? plan.thinking.level;
-      return `- ${evalCase.id}: ${plan.runsPerCase} run(s), ${seedFiles} seed file(s)${fixtureNote}, thinking ${level}`;
+      return `- ${evalCase.id}: ${plan.runsPerCase} run(s), ${seedFiles} seed file(s)${fixtureNote}${mcpFixtureNote}, thinking ${level}`;
     }),
     `Budget: maxUsd ${plan.budget.maxUsd}, maxModelCalls ${plan.budget.maxModelCalls}, maxTokens ${plan.budget.maxTokens}`,
     `Turn: timeoutMs ${plan.turn.timeoutMs}, maxTurnsPerPrompt ${plan.turn.maxTurnsPerPrompt}`,

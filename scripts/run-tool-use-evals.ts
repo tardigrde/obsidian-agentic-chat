@@ -13,6 +13,7 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { startFixtureServer, type FixtureServer } from "./eval/fixture-server";
+import { startFixtureMcpServer, type FixtureMcpServer } from "./eval/fixture-mcp-server";
 import { bootstrapCompare, formatSignificance, type SignificanceCase } from "./eval/significance";
 import { formatComparison } from "./eval/tool-use-compare";
 import {
@@ -27,6 +28,8 @@ import {
   TOOL_USE_PLAN_VERSION,
   expandCaseSeed,
   expandFixturePlaceholders,
+  fixturePlanFields,
+  needsMcpFixture,
   needsFixture,
   parseRunRecord,
   planRuns,
@@ -198,11 +201,13 @@ async function main(): Promise<void> {
   const vaultPath = await createVault(outDir);
   await mkdir(resultsDir, { recursive: true }); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
 
-  // The fixture server lives only for this run. A case that needs it gets its
-  // base URL through the plan; a run that does not need it starts no server.
+  // The fixture servers live only for this run. A case that needs one gets its
+  // URL through the plan; a run that does not need one starts no server.
   let fixture: FixtureServer | undefined;
+  let mcpFixture: FixtureMcpServer | undefined;
   try {
     if (needsFixture(cases)) fixture = await startFixtureServer();
+    if (needsMcpFixture(cases)) mcpFixture = await startFixtureMcpServer();
     const plan: ToolUsePlan = {
       version: TOOL_USE_PLAN_VERSION,
       runId: args.runId,
@@ -214,7 +219,7 @@ async function main(): Promise<void> {
       budget,
       turn: suite.turn,
       prices,
-      ...(fixture ? { fixtureBaseUrl: fixture.url } : {}),
+      ...fixturePlanFields(cases, { web: fixture?.url, mcp: mcpFixture?.url }),
       cases: expandFixturePlaceholders(cases, fixture?.url),
       runs: planRuns(cases, runsPerCase),
     };
@@ -255,7 +260,7 @@ async function main(): Promise<void> {
       console.log(`Baseline: ${baselinePath}`);
     }
   } finally {
-    await fixture?.close();
+    await Promise.all([fixture?.close(), mcpFixture?.close()]);
   }
 }
 
