@@ -55,6 +55,8 @@ export interface CaseFlip {
 export interface SkippedCase {
   id: string;
   side: "before" | "after";
+  /** `invalid` means a score was missing where it was required or not finite. */
+  reason: "missing" | "invalid";
 }
 
 export interface SignificanceResult {
@@ -89,11 +91,28 @@ export function bootstrapCompare(
   if (!Number.isInteger(resamples) || resamples < 1) {
     throw new Error(`resamples must be an integer of at least 1, got ${resamples}`);
   }
-  const beforeById = new Map(before.map((entry) => [entry.id, entry]));
-  const afterById = new Map(after.map((entry) => [entry.id, entry]));
-  const ids = [...new Set([...beforeById.keys(), ...afterById.keys()])].sort((left, right) =>
-    left.localeCompare(right),
-  );
+  const beforeById = new Map<string, SignificanceCase>();
+  const afterById = new Map<string, SignificanceCase>();
+  const invalidBefore = new Map<string, string>();
+  const invalidAfter = new Map<string, string>();
+  for (const entry of before) {
+    const field = invalidField(entry);
+    if (field) invalidBefore.set(entry.id, field);
+    else beforeById.set(entry.id, entry);
+  }
+  for (const entry of after) {
+    const field = invalidField(entry);
+    if (field) invalidAfter.set(entry.id, field);
+    else afterById.set(entry.id, entry);
+  }
+  const ids = [
+    ...new Set([
+      ...beforeById.keys(),
+      ...afterById.keys(),
+      ...invalidBefore.keys(),
+      ...invalidAfter.keys(),
+    ]),
+  ].sort((left, right) => left.localeCompare(right));
 
   const skipped: SkippedCase[] = [];
   const paired: PairedCase[] = [];
@@ -101,25 +120,32 @@ export function bootstrapCompare(
     const left = beforeById.get(id);
     const right = afterById.get(id);
     if (!left) {
-      skipped.push({ id, side: "before" });
+      skipped.push({ id, side: "before", reason: invalidBefore.has(id) ? "invalid" : "missing" });
       continue;
     }
     if (!right) {
-      skipped.push({ id, side: "after" });
+      skipped.push({ id, side: "after", reason: invalidAfter.has(id) ? "invalid" : "missing" });
       continue;
     }
     paired.push({ id, before: left, after: right });
   }
+
+  const warnings = skipped.map((entry) => {
+    const side = entry.side === "before" ? "baseline" : "candidate";
+    if (entry.reason === "invalid") {
+      const field =
+        (entry.side === "before" ? invalidBefore.get(entry.id) : invalidAfter.get(entry.id)) ?? "score";
+      return `skipped ${entry.id}: invalid ${field} in ${side}`;
+    }
+    return `skipped ${entry.id}: missing in ${side}`;
+  });
 
   const result: SignificanceResult = {
     seed,
     resamples,
     paired: paired.length,
     skipped,
-    warnings: skipped.map(
-      (entry) =>
-        `skipped ${entry.id}: missing in ${entry.side === "before" ? "baseline" : "candidate"}`,
-    ),
+    warnings,
     metrics: [],
     flips: [],
   };
@@ -226,6 +252,16 @@ function mean(values: readonly number[]): number {
 
 function isScore(input: unknown): input is number {
   return typeof input === "number" && Number.isFinite(input);
+}
+
+/** The first score that cannot be used, or null when the case is valid. */
+function invalidField(entry: SignificanceCase): string | null {
+  const badPassAtK = !Number.isFinite(entry.passAtK);
+  const badPassRate = entry.passRate !== undefined && !Number.isFinite(entry.passRate);
+  if (badPassAtK && badPassRate) return "passAtK and passRate";
+  if (badPassAtK) return "passAtK";
+  if (badPassRate) return "passRate";
+  return null;
 }
 
 function flipMagnitude(flip: CaseFlip): number {

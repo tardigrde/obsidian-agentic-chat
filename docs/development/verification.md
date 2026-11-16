@@ -631,10 +631,12 @@ npm run eval:tool-use -- --compare <base-summary.json> <head-summary.json> --sig
 
 `--exclude <id[,id]>` drops a case from the significance read only, for a case
 with a known harness fault. The comparison table above it still lists that case,
-and the section prints `Excluded: ...`. Both an old baseline without
-`runResults` and a fresh `summary.json` work; only the per-case `passAtK` and
-`passRate` fields are read. An old baseline without `passRate` falls back to
-`passAtK` and labels the row.
+and the section prints `Excluded: ...`. An unknown id prints a warning on stderr
+and exits nonzero; both tables still print. A case with a missing or non-finite
+score is skipped and named in the `Warnings` line, not dropped without a trace.
+Both an old baseline without `runResults` and a fresh `summary.json` work; only
+the per-case `passAtK` and `passRate` fields are read. An old baseline without
+`passRate` falls back to `passAtK` and labels the row.
 
 The interval covers the choice of cases, not run-to-run variance, and 25 cases
 make it wide. `not significant` means this suite cannot separate the change from

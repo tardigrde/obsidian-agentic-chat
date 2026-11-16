@@ -1150,6 +1150,37 @@ describe("tool-use eval core", () => {
     expect(excluded.stdout).toContain("24 paired cases");
   });
 
+  it("rejects an unknown --exclude id and a lone --significance", () => {
+    const baselinePath = path.join(process.cwd(), "test/evals/baselines/core.json");
+    function runCompare(argv: string[]) {
+      return spawnSync(
+        process.execPath,
+        ["--import", "tsx", "scripts/run-tool-use-evals.ts", ...argv],
+        { cwd: process.cwd(), encoding: "utf8" },
+      );
+    }
+
+    const typo = runCompare([
+      "--compare",
+      "--significance",
+      "--exclude",
+      "tools.medium.wbe",
+      baselinePath,
+      baselinePath,
+    ]);
+    expect(typo.status, typo.stderr).toBe(1);
+    expect(typo.stdout).toContain("# Tool-use eval comparison");
+    expect(typo.stdout).toContain("## Significance");
+    expect(typo.stderr).toContain("tools.medium.wbe");
+    expect(typo.stderr).toMatch(/unknown --exclude/i);
+
+    const lone = runCompare(["--significance", baselinePath, baselinePath]);
+    expect(lone.status, lone.stderr).toBe(1);
+    expect(lone.stderr).toContain("--significance needs --compare");
+    expect(lone.stderr).not.toContain("Unexpected argument");
+    expect(lone.stdout).toBe("");
+  });
+
   describe("thinking level in the runner", () => {
     function runRunner(argv: string[], env: Record<string, string> = {}) {
       return spawnSync(

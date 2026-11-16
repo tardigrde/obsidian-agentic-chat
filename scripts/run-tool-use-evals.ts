@@ -146,7 +146,10 @@ if (isCliEntrypoint()) {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.compare) {
-    await compareCommand(args.compare, { significance: args.significance, exclude: args.exclude ?? [] });
+    process.exitCode = await compareCommand(args.compare, {
+      significance: args.significance,
+      exclude: args.exclude ?? [],
+    });
     return;
   }
 
@@ -758,39 +761,60 @@ async function writeBaseline(summary: ToolUseSummary): Promise<string> {
 async function compareCommand(
   input: [string, string],
   options: { significance: boolean; exclude: string[] },
-): Promise<void> {
+): Promise<number> {
   const baseline = JSON.parse(await readFile(path.resolve(input[0]), "utf8")) as unknown;
   const candidate = JSON.parse(await readFile(path.resolve(input[1]), "utf8")) as unknown;
   const comparison = formatComparison(baseline, candidate);
-  if (!options.significance) {
-    process.stdout.write(comparison);
-    return;
-  }
+  process.stdout.write(comparison);
+  if (!options.significance) return 0;
   const excluded = new Set(options.exclude);
   const result = bootstrapCompare(
     significanceCases(baseline, excluded),
     significanceCases(candidate, excluded),
   );
-  process.stdout.write(comparison);
   process.stdout.write(
     formatSignificance(result, { before: "Baseline", after: "Candidate" }, options.exclude),
   );
+  const known = summaryCaseIds(baseline);
+  for (const id of summaryCaseIds(candidate)) known.add(id);
+  const unknown = options.exclude.filter((id) => !known.has(id));
+  if (unknown.length > 0) {
+    process.stderr.write(
+      `warning: unknown --exclude id: ${unknown.join(", ")}; it is not a case in either summary\n`,
+    );
+    return 1;
+  }
+  return 0;
 }
 
 /**
  * Only the fields the bootstrap needs. A committed baseline has no
  * `runResults`, and a fresh `summary.json` does; both carry per-case scores.
+ * A missing or non-finite score is passed through as-is so the module can skip
+ * it with a named warning instead of dropping the case without a trace.
  */
 function significanceCases(input: unknown, excluded: ReadonlySet<string>): SignificanceCase[] {
   const output: SignificanceCase[] = [];
   if (!isRecord(input) || !Array.isArray(input.cases)) return output;
   for (const entry of input.cases) {
     if (!isRecord(entry) || typeof entry.id !== "string" || excluded.has(entry.id)) continue;
-    const passAtK = numberValue(entry.passAtK);
-    if (passAtK === undefined) continue;
-    output.push({ id: entry.id, passAtK, passRate: numberValue(entry.passRate) });
+    output.push({
+      id: entry.id,
+      passAtK: typeof entry.passAtK === "number" ? entry.passAtK : Number.NaN,
+      passRate: typeof entry.passRate === "number" ? entry.passRate : undefined,
+    });
   }
   return output;
+}
+
+/** Every case id the summary lists, including ones with a bad score. */
+function summaryCaseIds(input: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!isRecord(input) || !Array.isArray(input.cases)) return ids;
+  for (const entry of input.cases) {
+    if (isRecord(entry) && typeof entry.id === "string") ids.add(entry.id);
+  }
+  return ids;
 }
 
 interface CaseComparison {
@@ -1022,6 +1046,14 @@ function parseArgs(argv: string[]): CliArgs {
     }
     rest.push(raw);
   }
+  // Check before the positional walk so a lone `--significance` gets the usage
+  // guard, not `Unexpected argument: <base>`.
+  if (args.significance && !rest.includes("--compare")) {
+    throw new Error("--significance needs --compare <base-summary.json> <head-summary.json>");
+  }
+  if (args.exclude && args.exclude.length > 0 && !rest.includes("--compare")) {
+    throw new Error("--exclude needs --compare <base-summary.json> <head-summary.json>");
+  }
   for (let index = 0; index < rest.length; index += 1) {
     const raw = rest[index];
     if (raw === "--") continue;
@@ -1084,12 +1116,6 @@ function parseArgs(argv: string[]): CliArgs {
       default:
         throw new Error(`Unknown option: --${key}`);
     }
-  }
-  if (args.significance && !args.compare) {
-    throw new Error("--significance needs --compare <base-summary.json> <head-summary.json>");
-  }
-  if (args.exclude && args.exclude.length > 0 && !args.compare) {
-    throw new Error("--exclude needs --compare <base-summary.json> <head-summary.json>");
   }
   if (args.smoke && args.cases && args.cases.length > 0) {
     throw new Error("--smoke cannot be combined with --case; use one selector.");

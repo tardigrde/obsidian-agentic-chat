@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_SIGNIFICANCE_RESAMPLES,
-  DEFAULT_SIGNIFICANCE_SEED,
   bootstrapCompare,
   formatSignificance,
   type SignificanceCase,
@@ -30,8 +28,8 @@ describe("bootstrapCompare", () => {
     expect(result.paired).toBe(3);
     expect(result.skipped).toEqual([]);
     expect(result.flips).toEqual([]);
-    expect(result.seed).toBe(DEFAULT_SIGNIFICANCE_SEED);
-    expect(result.resamples).toBe(DEFAULT_SIGNIFICANCE_RESAMPLES);
+    expect(result.seed).toBe(12345);
+    expect(result.resamples).toBe(2000);
 
     const passAtK = result.metrics.find((metric) => metric.metric === "passAtK");
     expect(passAtK).toMatchObject({
@@ -111,6 +109,32 @@ describe("bootstrapCompare", () => {
     }
   });
 
+  it("resamples with the requested seed, not only the reported one", () => {
+    const before: SignificanceCase[] = Array.from({ length: 25 }, (_, index) => ({
+      id: `case.${String(index).padStart(2, "0")}`,
+      passAtK: index % 3 === 0 ? 0 : 1,
+      passRate: index % 4 === 0 ? 1 / 3 : index % 5 === 0 ? 2 / 3 : 1,
+    }));
+    const after = before.map((entry, index) => ({
+      ...entry,
+      passAtK: index < 7 ? 1 - entry.passAtK : entry.passAtK,
+      passRate: index % 3 === 0 ? 0.5 : entry.passRate,
+    }));
+    const standard = bootstrapCompare(before, after);
+    expect(standard.seed).toBe(12345);
+    const other = bootstrapCompare(before, after, { seed: 7 });
+    expect(other.seed).toBe(7);
+
+    // A mutation that ignores the requested seed produces the same bounds for
+    // both calls. The observed means are seed-independent; the interval is not.
+    const bounds = (result: typeof standard) =>
+      result.metrics.flatMap((metric) => [metric.metric, metric.lower, metric.upper]);
+    expect(bounds(other)).not.toEqual(bounds(standard));
+    expect(other.metrics.map((metric) => metric.difference)).toEqual(
+      standard.metrics.map((metric) => metric.difference),
+    );
+  });
+
   it("skips a case that is missing on one side and names it", () => {
     const before = cases([
       ["a", 1, 1],
@@ -123,9 +147,33 @@ describe("bootstrapCompare", () => {
     ]);
     const result = bootstrapCompare(before, after);
     expect(result.paired).toBe(2);
-    expect(result.skipped).toEqual([{ id: "gone", side: "after" }]);
+    expect(result.skipped).toEqual([{ id: "gone", side: "after", reason: "missing" }]);
     expect(result.warnings).toEqual(["skipped gone: missing in candidate"]);
     expect(result.metrics.find((metric) => metric.metric === "passAtK")?.difference).toBe(0);
+  });
+
+  it("skips a case with a non-finite score and names it", () => {
+    const before = cases([
+      ["a", 1, 1],
+      ["b", Number.NaN, 0.5],
+      ["c", 0, Number.POSITIVE_INFINITY],
+    ]);
+    const after = cases([
+      ["a", 1, 1],
+      ["b", 1, 0.5],
+      ["c", 0, 1],
+    ]);
+    const result = bootstrapCompare(before, after);
+    expect(result.paired).toBe(1);
+    expect(result.skipped).toEqual([
+      { id: "b", side: "before", reason: "invalid" },
+      { id: "c", side: "before", reason: "invalid" },
+    ]);
+    expect(result.warnings).toEqual([
+      "skipped b: invalid passAtK in baseline",
+      "skipped c: invalid passRate in baseline",
+    ]);
+    expect(result.metrics.every((metric) => Number.isFinite(metric.difference))).toBe(true);
   });
 
   it("falls back to passAtK when an old baseline has no passRate", () => {
