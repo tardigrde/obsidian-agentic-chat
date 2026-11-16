@@ -57,10 +57,12 @@ export function paretoCompare(baseline: unknown, candidate: unknown): ParetoResu
     ["cost", "meanUsd", "lower"],
     ["time", "medianCaseMs", "lower"],
   ];
+  const costComparable = sameCostSource(baseline, candidate);
   for (const [axis, key, direction] of axes) {
     const left = numberValue(before[key]);
     const right = numberValue(after[key]);
-    if (left === undefined || right === undefined) {
+    // A price-table cost and a billed cost differ by up to ~45%; never rank one against the other.
+    if (left === undefined || right === undefined || (axis === "cost" && !costComparable)) {
       result.missing.push(axis);
       continue;
     }
@@ -166,12 +168,23 @@ export function formatComparison(baseline: unknown, candidate: unknown): string 
   return `${lines.join("\n")}\n`;
 }
 
+/** Both sides name the same cost source, and it is not `mixed`. An old file with no field is unknown. */
+function sameCostSource(baseline: unknown, candidate: unknown): boolean {
+  const left = costSourceName(baseline);
+  return left !== undefined && left !== "mixed" && left === costSourceName(candidate);
+}
+
+function costSourceName(input: unknown): string | undefined {
+  return isRecord(input) && typeof input.costSource === "string" ? input.costSource : undefined;
+}
+
 /** One line that names the suite, model, and reasoning level of a summary or baseline. */
 function runIdentity(label: string, input: unknown): string {
   if (!isRecord(input)) return `- ${label}: (missing)`;
   const level = typeof input.thinkingLevel === "string" ? input.thinkingLevel : "(not recorded)";
   const source = typeof input.thinkingLevelSource === "string" ? ` (${input.thinkingLevelSource})` : "";
-  return `- ${label}: ${suiteName(input) ?? "(suite?)"}, ${modelName(input) ?? "(model?)"}, thinking ${level}${source}`;
+  const cost = costSourceName(input) ?? "unknown";
+  return `- ${label}: ${suiteName(input) ?? "(suite?)"}, ${modelName(input) ?? "(model?)"}, thinking ${level}${source}, cost ${cost}`;
 }
 
 function compareThinking(before: CaseMetrics | undefined, after: CaseMetrics | undefined): string {
@@ -192,6 +205,11 @@ function identityWarnings(baseline: unknown, candidate: unknown): string[] {
     if (left && right && left !== right) {
       warnings.push(`> Warning: the ${label} differs (baseline \`${left}\`, candidate \`${right}\`).`);
     }
+  }
+  if (!sameCostSource(baseline, candidate)) {
+    warnings.push(
+      `> Warning: the cost source differs or is unknown (baseline \`${costSourceName(baseline) ?? "unknown"}\`, candidate \`${costSourceName(candidate) ?? "unknown"}\`); the cost axis is not compared.`,
+    );
   }
   return warnings.length > 0 ? [...warnings, ""] : [];
 }

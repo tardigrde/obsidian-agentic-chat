@@ -55,6 +55,13 @@ export interface CaseThinking {
   thinkingLevelMismatches: number;
 }
 
+/**
+ * Where a run set's USD came from. `billed`: every priced run carries the
+ * provider's bill. `table`: none does. `mixed`: some do. Two sides with a
+ * different source are not comparable on cost.
+ */
+export type CostSource = "billed" | "table" | "mixed";
+
 export interface CaseSummaryWithRuns extends CaseSummary, CaseThinking {
   id: string;
   runResults: CaseRunEntry[];
@@ -67,6 +74,7 @@ export interface ToolUseSummary {
   model: string;
   thinkingLevel: ToolUseThinkingLevel;
   thinkingLevelSource: ThinkingLevelSource;
+  costSource: CostSource;
   startedAt: string;
   finishedAt: string;
   durationMs: number;
@@ -87,6 +95,7 @@ export interface ToolUseBaseline {
   model: string;
   thinkingLevel: ToolUseThinkingLevel;
   thinkingLevelSource: ThinkingLevelSource;
+  costSource: CostSource;
   prices: RunPricing;
   date: string;
   gitHead: string;
@@ -190,6 +199,7 @@ export function buildSummary(
     model: plan.model,
     thinkingLevel: plan.thinkingLevel,
     thinkingLevelSource: plan.thinkingLevelSource,
+    costSource: costSourceOf(cases.flatMap((entry) => entry.runResults)),
     startedAt: timing.startedAt.toISOString(),
     finishedAt: timing.finishedAt.toISOString(),
     durationMs: timing.finishedAt.getTime() - timing.startedAt.getTime(),
@@ -207,6 +217,7 @@ export function toBaseline(summary: ToolUseSummary, stamp: { date: Date; gitHead
     model: summary.model,
     thinkingLevel: summary.thinkingLevel,
     thinkingLevelSource: summary.thinkingLevelSource,
+    costSource: summary.costSource,
     prices: summary.prices,
     date: stamp.date.toISOString(),
     gitHead: stamp.gitHead,
@@ -227,6 +238,14 @@ export function toBaseline(summary: ToolUseSummary, stamp: { date: Date; gitHead
       overBudgetRuns: entry.overBudgetRuns,
     })),
   };
+}
+
+/** Only runs that spent something count: a skipped run or an empty error run has no source. */
+export function costSourceOf(runs: readonly CaseRunEntry[]): CostSource {
+  const priced = runs.filter((run) => run.usd > 0);
+  const billed = priced.filter((run) => run.usdSource === "billed").length;
+  if (billed === priced.length) return "billed";
+  return billed === 0 ? "table" : "mixed";
 }
 
 /** Distinct observed levels for a case, sorted; missing observations are omitted. */

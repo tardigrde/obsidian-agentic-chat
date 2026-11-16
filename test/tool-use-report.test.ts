@@ -149,6 +149,8 @@ describe("tool-use billed cost", () => {
       { startedAt: new Date(0), finishedAt: new Date(1_000) },
     );
     expect(formatReport(summary)).toContain("Cost source: billed by the provider for 1/2 run(s)");
+    expect(summary.costSource).toBe("mixed");
+    expect(toBaseline(summary, { date: new Date(0), gitHead: "abc" }).costSource).toBe("mixed");
     expect(summary.budget.used.usd).toBeCloseTo(0.01 + 1_000 * 1e-6 + 500 * 2e-6, 12);
   });
 });
