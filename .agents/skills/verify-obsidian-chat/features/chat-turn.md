@@ -44,7 +44,7 @@ await browser.waitUntil(async () =>
 - Deterministic: install scripted turns with `installScriptedTurns()` as
   `test/e2e/specs/approval-deterministic.e2e.ts` does.
 - Live: configure `openai-compatible` with the three `AGENTIC_CHAT_*`
-  environment variables, as `test/e2e/specs/openwebui-live.e2e.ts` does.
+  environment variables, as `test/e2e/live/openwebui-live.e2e.ts` does.
 - Approval: wait for `.agentic-chat-approval`, then `button=Allow` or
   `button=Deny`.
 - Side effect: `browser.executeObsidian(({ app, obsidian }, path) => ...)`.

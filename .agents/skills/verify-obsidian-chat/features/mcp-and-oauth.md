@@ -40,7 +40,7 @@ await clickMcpAddButton("Add MCP server");
   `.agentic-chat-oauth-banner`, and the **Authenticate & test** button.
 - The OAuth browser flow is not scripted in a committed e2e. Unit tests cover
   discovery, registration, PKCE, callback delivery, and refresh.
-- For a real remote call, use `test/e2e/specs/mcp-live.e2e.ts`. It needs
+- For a real remote call, use `test/e2e/live/mcp-live.e2e.ts`. It needs
   `AGENTIC_CHAT_E2E_MCP_URL` and skips without it.
 - Assert imported servers through `plugins.mcpState`. They start disabled.
 
@@ -70,7 +70,7 @@ await clickMcpAddButton("Add MCP server");
 | Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts#installPackage` | `test/e2e/specs/composio-install.e2e.ts#installs Composio bundle via archive URL and verifies 2 skills + 1 MCP (popout-safe)` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts#mcpServerFromPluginEntry` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
 | MCP tools are deferred; the prompt lists one line per server | `src/agent/tool-loading.ts#formatDeferredToolsOverlay` | `test/tool-loading.test.ts#formatDeferredToolsOverlay` (unit only) | `partial` |
-| Discover and call a remote MCP tool | `src/mcp/tools.ts#createMcpTools` | `test/e2e/specs/mcp-live.e2e.ts#agentic-chat live MCP over HTTPS` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
+| Discover and call a remote MCP tool | `src/mcp/tools.ts#createMcpTools` | `test/e2e/live/mcp-live.e2e.ts#agentic-chat live MCP over HTTPS` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |
 | Reject non-HTTPS MCP endpoints except loopback | `src/mcp/client.ts#normalizeMcpUrl` | `test/mcp-client.test.ts#makes multiple Last-Event-ID resume attempts when SSE redelivery is incremental` (unit only) | `partial` |
 | MCP server: Name | `src/settings-mcp-section.ts#row("Name"` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `partial` |
 | MCP server: Server id | `src/settings-mcp-section.ts#row("Server id"` | no committed check | `NONE` |

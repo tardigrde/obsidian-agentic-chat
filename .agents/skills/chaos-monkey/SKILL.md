@@ -252,7 +252,7 @@ Raise the caps only after the first run is clean.
 ## What the driver does not do
 
 - It does not run OAuth or a live MCP tool call. Use
-  `test/e2e/specs/mcp-live.e2e.ts` for that. The MCP step proves the settings
+  `test/e2e/live/mcp-live.e2e.ts` for that. The MCP step proves the settings
   surface and records the limitation in the report.
 - It cannot force a live model to keep looping. A live `max-turns` run depends
   on the model choosing to make more than the assistant-turn limit; a model that

@@ -128,7 +128,7 @@ The live MCP spec defaults to Context7's `resolve-library-id` tool and makes a
 real HTTPS call:
 
 ```bash
-AGENTIC_CHAT_E2E_MCP_URL=https://mcp.context7.com/mcp npm run verify -- e2e test/e2e/specs/mcp-live.e2e.ts
+AGENTIC_CHAT_E2E_MCP_URL=https://mcp.context7.com/mcp npm run verify -- e2e test/e2e/live/mcp-live.e2e.ts
 ```
 
 The spec skips when `AGENTIC_CHAT_E2E_MCP_URL` is unset, so a zero-test exit is

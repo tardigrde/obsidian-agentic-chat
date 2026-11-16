@@ -204,7 +204,7 @@ async function installFixtureOrigin(baseUrl: string | undefined): Promise<void> 
 /**
  * One user-owned MCP server that points at this run's fake MCP server. The spec
  * assigns raw settings, so every field the client reads must be present
- * (compare `test/e2e/specs/mcp-live.e2e.ts`). The MCP endpoint policy allows
+ * (compare `test/e2e/live/mcp-live.e2e.ts`). The MCP endpoint policy allows
  * plain http for loopback hosts, so no eval-only SSRF hook is needed here.
  * `approval: "allow"` matches the eval's blanket mutating allow: an "ask"
  * default would open a modal and block the turn.

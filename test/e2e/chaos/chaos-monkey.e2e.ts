@@ -1113,7 +1113,7 @@ async function runMcp(): Promise<void> {
     // The live MCP call itself is owned by `mcp-live.e2e.ts`; this driver only
     // proves the add-server surface. Record that limitation in the report.
     result.runnerNotes.push(
-      "live MCP tool call is not driven here; run test/e2e/specs/mcp-live.e2e.ts for the call",
+      "live MCP tool call is not driven here; run test/e2e/live/mcp-live.e2e.ts for the call",
     );
   }
   await browser.pause(400);

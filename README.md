@@ -285,7 +285,7 @@ Live MCP e2e is also opt-in and refuses insecure endpoints:
 AGENTIC_CHAT_E2E_MCP_URL=https://mcp.example.com/mcp \
 AGENTIC_CHAT_E2E_MCP_TOOL=tool-name \
 AGENTIC_CHAT_E2E_MCP_ARGS_JSON='{"input":"value"}' \
-npm run test:e2e -- --spec test/e2e/specs/mcp-live.e2e.ts
+npm run test:e2e -- --spec test/e2e/live/mcp-live.e2e.ts
 ```
 
 For static-header servers, also set `AGENTIC_CHAT_E2E_MCP_HEADER_NAME` and `AGENTIC_CHAT_E2E_MCP_HEADER_VALUE`.

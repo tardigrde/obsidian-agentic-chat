@@ -183,7 +183,7 @@ Live model specs spend tokens. Run them only when validating real calls:
 AGENTIC_CHAT_API_KEY=sk-or-... \
 AGENTIC_CHAT_BASE_URL=https://openrouter.ai/api/v1 \
 AGENTIC_CHAT_MODEL=openrouter/auto \
-npm run verify -- e2e test/e2e/specs/openwebui-live.e2e.ts
+npm run verify -- e2e test/e2e/live/openwebui-live.e2e.ts
 ```
 
 ## Proxy

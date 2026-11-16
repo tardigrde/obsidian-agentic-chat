@@ -472,7 +472,11 @@ describe("agentic-chat next-level dogfood", function () {
   let manifest: DogfoodManifest;
 
   before(async function () {
-    if (!MANIFEST_PATH) this.skip();
+    // The scripted dogfood runner always sets the manifest. Without it this is
+    // a misuse, not a reason to report a green skip.
+    if (!MANIFEST_PATH) {
+      throw new Error("DOGFOOD_FIXTURE_MANIFEST is not set; run `npm run verify -- app --dogfood`.");
+    }
     manifest = await loadDogfoodManifest(MANIFEST_PATH);
     await installScriptedTurns(scriptedTurns());
     const configured = await configurePlugin(manifest);
