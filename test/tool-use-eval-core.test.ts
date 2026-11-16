@@ -1180,6 +1180,17 @@ describe("tool-use eval core", () => {
     expect(lone.stderr).toContain("--significance needs --compare");
     expect(lone.stderr).not.toContain("Unexpected argument");
     expect(lone.stdout).toBe("");
+
+    // Without --significance an --exclude would be ignored; fail instead.
+    const ignored = runCompare(["--compare", "--exclude", "find.easy.dentist", baselinePath, baselinePath]);
+    expect(ignored.status, ignored.stderr).toBe(1);
+    expect(ignored.stderr).toContain("--exclude only applies to --compare --significance");
+
+    // An old baseline with no per-case passAllK pairs nothing: that is an error, not "no change".
+    const oldBaseline = path.join(process.cwd(), "test/evals/baselines/tool-use.json");
+    const empty = runCompare(["--compare", "--significance", oldBaseline, oldBaseline]);
+    expect(empty.status, empty.stderr).toBe(1);
+    expect(empty.stderr).toContain("no case has a usable passAllK on both sides");
   });
 
   describe("thinking level in the runner", () => {

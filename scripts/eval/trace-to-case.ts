@@ -172,17 +172,17 @@ export function parseDraftArgs(argv: string[]): DraftArgs {
 }
 
 export async function runTraceToCase(options: CaseDraftOptions): Promise<CaseDraftOutput> {
-  const candidates = parseCandidates(await readFile(options.candidateFile, "utf8"));
+  const candidates = parseCandidates(await readFile(options.candidateFile, "utf8")); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   const candidate = selectCandidate(candidates, options.id);
   assertSafeDirName(candidate.id);
   const base = options.out ?? path.join("logs", "eval-candidates", timestampSlug(options.now ?? new Date()));
   const outDir = path.resolve(base, candidate.id);
   const draft = buildCaseDraft(candidate);
-  await mkdir(outDir, { recursive: true });
+  await mkdir(outDir, { recursive: true }); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   const draftFile = path.join(outDir, "case.draft.json");
   const readmeFile = path.join(outDir, "README.md");
-  await writeFile(draftFile, `${JSON.stringify(draft, null, 2)}\n`);
-  await writeFile(readmeFile, renderDraftReadme(draft));
+  await writeFile(draftFile, `${JSON.stringify(draft, null, 2)}\n`); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
+  await writeFile(readmeFile, renderDraftReadme(draft)); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   return { candidate, draft, outDir, draftFile, readmeFile };
 }
 

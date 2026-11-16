@@ -95,6 +95,14 @@ describe("tool-use comparison", () => {
       expect(paretoCompare(base, run(0.8, 0.00105, 10_900)).verdict).toBe("same");
     });
 
+    it("reads a change of exactly 10% as the same, despite float error", () => {
+      expect(paretoCompare(base, run(0.8, 0.0011, 11_000)).verdict).toBe("same");
+    });
+
+    it("does not call a tiny cost change on a zero-cost baseline a loss", () => {
+      expect(paretoCompare(run(0.8, 0, 10_000), run(0.8, 0.0000005, 10_000)).verdict).toBe("same");
+    });
+
     it("gives no verdict when an axis is missing on one side", () => {
       expect(paretoCompare(base, { overall: { passAllK: 1, meanUsd: 0.001 } })).toMatchObject({
         verdict: "incomplete",

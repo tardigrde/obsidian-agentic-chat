@@ -24,6 +24,12 @@ const REGRESSION_THRESHOLD = 0.2;
  */
 export const PARETO_NOISE_SHARE = 0.1;
 
+/** Absolute floors, so a zero or tiny baseline does not turn any change into a verdict. */
+const PARETO_NOISE_FLOOR: Record<"cost" | "time", number> = { cost: 1e-6, time: 100 };
+
+/** Float slack: 0.0011 - 0.001 is a hair above 1e-4, and "exactly 10%" must read as same. */
+const FLOAT_SLACK = 1e-12;
+
 export type ParetoAxis = "correctness" | "cost" | "time";
 export type ParetoVerdict = "dominates" | "dominated" | "trade-off" | "same" | "incomplete";
 
@@ -59,9 +65,10 @@ export function paretoCompare(baseline: unknown, candidate: unknown): ParetoResu
       continue;
     }
     // Correctness: any change counts; the significance section says if it is noise.
-    const tolerance = axis === "correctness" ? 0 : Math.abs(left) * PARETO_NOISE_SHARE;
+    const tolerance =
+      axis === "correctness" ? 0 : Math.max(Math.abs(left) * PARETO_NOISE_SHARE, PARETO_NOISE_FLOOR[axis]);
     const gain = direction === "higher" ? right - left : left - right;
-    if (Math.abs(gain) <= tolerance) result.same.push(axis);
+    if (Math.abs(gain) <= tolerance + FLOAT_SLACK) result.same.push(axis);
     else if (gain > 0) result.better.push(axis);
     else result.worse.push(axis);
   }

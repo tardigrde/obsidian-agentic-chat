@@ -303,11 +303,11 @@ export async function writeMiningResult(
   outDir: string,
   now = new Date(),
 ): Promise<{ candidatesFile: string; reportFile: string }> {
-  await mkdir(outDir, { recursive: true });
+  await mkdir(outDir, { recursive: true }); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   const candidatesFile = path.join(outDir, "candidates.json");
   const reportFile = path.join(outDir, "report.md");
-  await writeFile(candidatesFile, `${JSON.stringify(result.candidates, null, 2)}\n`);
-  await writeFile(reportFile, renderReport(result, now));
+  await writeFile(candidatesFile, `${JSON.stringify(result.candidates, null, 2)}\n`); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
+  await writeFile(reportFile, renderReport(result, now)); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   return { candidatesFile, reportFile };
 }
 
@@ -328,7 +328,7 @@ export function parseMiningArgs(argv: string[]): MiningArgs {
 function resolveSessionFiles(target: string): string[] {
   const resolved = path.resolve(target);
   if (!existsSync(resolved)) return [];
-  const stat = statSync(resolved);
+  const stat = statSync(resolved); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   if (stat.isFile()) {
     if (!resolved.toLowerCase().endsWith(".jsonl")) {
       throw new Error(
@@ -341,7 +341,7 @@ function resolveSessionFiles(target: string): string[] {
   return readdirSync(resolved)
     .filter((name) => name.endsWith(".jsonl"))
     .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
-    .map((name) => path.join(resolved, name));
+    .map((name) => path.join(resolved, name)); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
 }
 
 function parseSessionLines(text: string): { entries: RawEntry[]; corruptLines: number } {

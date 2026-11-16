@@ -435,8 +435,8 @@ improves one axis and makes no other axis worse. A change that gains
 correctness and costs more is a trade-off: name it and decide on purpose, do
 not report it as a win. `--compare` prints this verdict under the overall
 table: `dominates`, `dominated`, `trade-off`, `same`, or `incomplete`. A cost or
-time change under 10% of the baseline counts as `same` (one sample moves that
-much). Use `--significance` to see whether a correctness change is noise.
+time change of at most 10% of the baseline counts as `same` (one sample moves
+that much), with floors of $0.000001 and 100 ms for a tiny baseline. Use `--significance` to see whether a correctness change is noise.
 
 No cheating. These moves do not reach the frontier, they only move a number:
 
@@ -690,7 +690,7 @@ file still fails.
 A 25-case suite cannot separate a few points from noise. `--significance` adds a
 case-level paired bootstrap after the comparison table. The cases, not the runs,
 are the resampling unit: it draws the paired cases with replacement 2,000
-times, with seed 12345, and takes the mean `passAtK` and `passRate` difference
+times, with seed 12345, and takes the mean `passAllK` and `passRate` difference
 (candidate - baseline). The 95% CI is the 2.5% and 97.5% percentile bounds. The
 verdict is `significant` only when that interval excludes 0.
 
@@ -705,8 +705,11 @@ and the section prints `Excluded: ...`. An unknown id prints a warning on stderr
 and exits nonzero; both tables still print. A case with a missing or non-finite
 score is skipped and named in the `Warnings` line, not dropped without a trace.
 Both an old baseline without `runResults` and a fresh `summary.json` work; only
-the per-case `passAtK` and `passRate` fields are read. An old baseline without
-`passRate` falls back to `passAtK` and labels the row.
+the per-case `passAllK` and `passRate` fields are read. An old baseline without
+`passRate` falls back to `passAllK` and labels the row. If no case has a
+usable `passAllK` on both sides, the command prints the empty section and exits
+1. The committed `tool-use.json` baseline predates `passAllK` and `overall`, so
+it gives that error until the regression tier gets a new baseline.
 
 The interval covers the choice of cases, not run-to-run variance, and 25 cases
 make it wide. `not significant` means this suite cannot separate the change from

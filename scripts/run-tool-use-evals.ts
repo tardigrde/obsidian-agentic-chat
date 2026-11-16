@@ -115,7 +115,9 @@ function parseCliArgs(argv: string[]): CliArgs {
   if (values.significance && !values.compare) {
     throw new Error("--significance needs --compare <base.json> <head.json>");
   }
-  if (exclude.length > 0 && !values.compare) throw new Error("--exclude needs --compare <base.json> <head.json>");
+  if (exclude.length > 0 && !values.significance) {
+    throw new Error("--exclude only applies to --compare --significance <base.json> <head.json>");
+  }
   if (values.compare && positionals.length !== 2) {
     throw new Error("--compare needs <base.json> <head.json>");
   }
@@ -194,7 +196,7 @@ async function main(): Promise<void> {
   const startedAt = new Date();
   const prices = await fetchPricing(suite.model);
   const vaultPath = await createVault(outDir);
-  await mkdir(resultsDir, { recursive: true });
+  await mkdir(resultsDir, { recursive: true }); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
 
   // The fixture server lives only for this run. A case that needs it gets its
   // base URL through the plan; a run that does not need it starts no server.
@@ -291,6 +293,12 @@ function writeSignificance(baseline: unknown, candidate: unknown, exclude: strin
   const excluded = new Set(exclude);
   const result = bootstrapCompare(significanceCases(baseline, excluded), significanceCases(candidate, excluded));
   process.stdout.write(formatSignificance(result, { before: "Baseline", after: "Candidate" }, exclude));
+  if (result.paired === 0) {
+    // An empty table must not exit 0: it reads like "no change". An old baseline
+    // without per-case passAllK (for example tool-use.json) gives this.
+    process.stderr.write("error: no case has a usable passAllK on both sides; there is nothing to compare\n");
+    return 1;
+  }
   const known = new Set([...caseIds(baseline), ...caseIds(candidate)]);
   const unknown = exclude.filter((id) => !known.has(id));
   if (unknown.length === 0) return 0;
@@ -343,7 +351,7 @@ function readApiKey(): string {
 
 async function createVault(outDir: string): Promise<string> {
   const vaultPath = path.join(outDir, "vault");
-  await mkdir(path.join(vaultPath, ".obsidian"), { recursive: true });
+  await mkdir(path.join(vaultPath, ".obsidian"), { recursive: true }); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   // Keep links working on rename without Obsidian's "Update links?" prompt; a
   // modal would block the turn. Most users turn this on.
   await writeJson(path.join(vaultPath, ".obsidian", "app.json"), { alwaysUpdateLinks: true });
@@ -370,7 +378,7 @@ async function fetchPricing(model: string): Promise<RunPricing> {
 }
 
 async function assertFreshResultsDir(resultsDir: string): Promise<void> {
-  const entries = await readdir(resultsDir).catch((error: NodeJS.ErrnoException) => {
+  const entries = await readdir(resultsDir).catch((error: NodeJS.ErrnoException) => { // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
     if (error.code === "ENOENT") return [];
     throw error;
   });
@@ -429,11 +437,11 @@ function gitHead(): string {
 }
 
 async function readJson(file: string): Promise<unknown> {
-  return JSON.parse(await readFile(path.resolve(file), "utf8")) as unknown;
+  return JSON.parse(await readFile(path.resolve(file), "utf8")) as unknown; // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
 }
 
 async function writeJson(file: string, value: unknown): Promise<void> {
-  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8"); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
 }
 
 function positiveInteger(value: string, flag: string): number {

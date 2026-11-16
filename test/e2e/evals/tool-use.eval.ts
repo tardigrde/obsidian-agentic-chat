@@ -51,7 +51,7 @@ interface SessionEntry {
     role?: string;
     stopReason?: string;
     errorMessage?: string;
-    usage?: { cost?: { total?: unknown; totalFromProvider?: unknown } };
+    usage?: { totalTokens?: unknown; cost?: { total?: unknown; totalFromProvider?: unknown } };
   };
 }
 
@@ -416,15 +416,21 @@ function observeSession(raw: string): SessionObservation {
 /**
  * Sum the cost OpenRouter billed. pi-ai stores it as `usage.cost.total` with
  * `totalFromProvider: true`; the other cost fields are catalog estimates, so
- * only `total` is read. A message without the flag adds nothing, and the
- * runner then falls back to the price table.
+ * only `total` is read. All or nothing: if one assistant message that used
+ * tokens has no billed cost, a partial sum would be too low, so this returns 0
+ * and the runner prices the whole run from the price table instead. A message
+ * with no tokens (an aborted turn) cost nothing and is skipped.
  */
 function billedCostUsd(raw: string): number {
   let total = 0;
   for (const entry of sessionEntries(raw)) {
-    const cost = entry?.message?.role === "assistant" ? entry.message.usage?.cost : undefined;
+    if (entry?.message?.role !== "assistant") continue;
+    const usage = entry.message.usage;
+    const cost = usage?.cost;
     if (cost?.totalFromProvider === true && typeof cost.total === "number" && Number.isFinite(cost.total)) {
       total += cost.total;
+    } else if (typeof usage?.totalTokens === "number" && usage.totalTokens > 0) {
+      return 0;
     }
   }
   return total;
