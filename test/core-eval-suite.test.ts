@@ -169,14 +169,24 @@ describe("core eval suite", () => {
     expect(byLevel.get("hard"), "hard").toBe(8);
   });
 
-  it("uses an S vault for easy and medium cases and an M vault for every hard case", () => {
+  it("uses an S vault for easy cases, an M vault for hard cases, and S or M for medium cases", () => {
+    const mediumSizes: string[] = [];
     for (const evalCase of loadSuite().cases) {
       const level = evalCase.id.split(".")[1];
       expect(evalCase.seed.vault, `${evalCase.id} needs seed.vault`).toBeDefined();
-      expect(evalCase.seed.vault?.size, evalCase.id).toBe(level === "hard" ? "M" : "S");
+      const size = evalCase.seed.vault?.size;
+      if (level === "easy") {
+        expect(size, evalCase.id).toBe("S");
+      } else if (level === "hard") {
+        expect(size, evalCase.id).toBe("M");
+      } else {
+        expect(["S", "M"], evalCase.id).toContain(size);
+        mediumSizes.push(size as string);
+      }
       expect(Number.isInteger(evalCase.seed.vault?.seed), evalCase.id).toBe(true);
       expect(Object.keys(evalCase.seed.files).length, `${evalCase.id} needs its own needles`).toBeGreaterThan(0);
     }
+    expect(mediumSizes, "at least one medium case must seed M").toContain("M");
   });
 
   it("gives every case a tool-call budget and at least one check", () => {

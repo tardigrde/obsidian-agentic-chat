@@ -98,7 +98,7 @@
       "prompt": "What was Orchid's net Q3 revenue after refunds? Use the live notes under 400 Projects/Orchid, not the archive, and apply the final correction. Reply with the amount in EUR on the first line. Do not include archived or other-quarter figures.",
       "seed": {
         "vault": {
-          "size": "S",
+          "size": "M",
           "seed": 102
         },
         "files": {
@@ -1265,7 +1265,7 @@
       "prompt": "Write 400 Projects/Summit/Summit summary.md that combines the final decisions from the two meeting notes 400 Projects/Summit/2024-04-02 meeting.md and 400 Projects/Summit/2024-04-16 meeting.md. Apply any corrections dated after the meeting. Use the later decision when the notes disagree. Include the venue, budget, and catering. Link both source notes. Do not include the earlier figures.",
       "seed": {
         "vault": {
-          "size": "S",
+          "size": "M",
           "seed": 108
         },
         "files": {
@@ -2101,7 +2101,7 @@
       "prompt": "Which notes under 400 Projects/Sprint/, including the Archive subfolder, have a status that is not one of active, paused, or done? Status values are case-sensitive. List their note names only, and do not list notes outside that folder. Do not edit anything.",
       "seed": {
         "vault": {
-          "size": "S",
+          "size": "M",
           "seed": 112
         },
         "files": {

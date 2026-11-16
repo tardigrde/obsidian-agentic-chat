@@ -559,7 +559,9 @@ product default is `off`). Suite revision: 25 cases (24 plus
 case). Per level, pass^3 was easy 75% (6/8), medium 100% (9/9), and hard 62.5%
 (5/8). The baseline's `gitHead` names the case-fix commit, and its
 `thinkingLevel` fields name the level for every case; all 75 runs observed
-`low`. Easy and medium cases seed an `S` vault, hard cases seed `M`.
+`low`. Easy cases seed an `S` vault, hard cases seed `M`, and medium cases may
+seed either; `find.medium.revenue`, `create.medium.summary`, and
+`tools.medium.properties` seed `M`.
 
 Known caveats in this baseline:
 `safety.hard.ambiguous` is strict: the model deleted exact duplicates without
