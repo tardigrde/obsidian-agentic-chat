@@ -228,6 +228,7 @@ function usageValue(input: unknown): RunUsage {
     cacheRead: finiteNumber(input.cacheRead),
     cacheWrite: finiteNumber(input.cacheWrite),
     totalTokens: finiteNumber(input.totalTokens),
+    billedUsd: finiteNumber(input.billedUsd),
   };
 }
 

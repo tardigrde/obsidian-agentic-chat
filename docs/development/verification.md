@@ -417,6 +417,43 @@ one.
 
 ## Tool-use evals
 
+### The goal: three objectives, one Pareto frontier
+
+The evals are a multi-objective harness, not a pass-rate harness. They measure
+three objectives together:
+
+| Objective | Metric | Better |
+|---|---|---|
+| Correctness | pass^3 (every run of a case passed), with mean pass@1 and partial score | higher |
+| Cost | billed USD per run (what OpenRouter charged, not a price-table estimate) | lower |
+| Time | median case wall time | lower |
+
+The target is the Pareto frontier of that three-axis space, for the plugin
+(prompts, tools, context, model, reasoning level) and for the harness itself
+(a run must cost little and finish fast). A change is a win only when it
+improves one axis and makes no other axis worse. A change that gains
+correctness and costs more is a trade-off: name it and decide on purpose, do
+not report it as a win. `--compare` prints this verdict under the overall
+table: `dominates`, `dominated`, `trade-off`, `same`, or `incomplete`. A cost or
+time change under 10% of the baseline counts as `same` (one sample moves that
+much). Use `--significance` to see whether a correctness change is noise.
+
+No cheating. These moves do not reach the frontier, they only move a number:
+
+- weakening, deleting, or loosening a check so a case passes,
+- editing a case only to raise or lower its pass rate (a case is fixed only
+  when it is unfair: ambiguous, impossible, or graded on the wrong thing),
+- changing the suite, the model, the reasoning level, or the vaults between
+  the two sides of an A/B,
+- cutting cost or time by skipping work the task needs (fewer runs, a smaller
+  vault, a lower turn cap) and calling it a plugin gain,
+- tuning the suite toward a target pass rate. A saturated case is a regression
+  check, not a problem to fix with more full runs.
+
+Keep the loop cheap: a smoke run (`--smoke`, 1 run per case) per change, a full
+`core` x 3 run only for a model, prompt, tool, or context change and at most
+once per PR.
+
 The `tool-use` suite measures tool choice and the vault state that the model
 leaves behind. Code grades the run; no judge model is used. Checks cover the
 answer, the tool calls, the files, the frontmatter, and unchanged seed notes.
@@ -627,7 +664,13 @@ they had before `L` existed; `core.eval.json` still seeds `S` and `M` only.
 
 `summary.json` has an `overall` object: `passAllK` (share of cases where every
 run passed), `meanPassAt1`, `partialScore`, `totalUsd`, `meanUsd`, `meanTokens`,
-`meanModelCalls`, `meanToolCalls`, and `medianCaseMs`. Each case also reports
+`meanModelCalls`, `meanToolCalls`, and `medianCaseMs`. Cost is what OpenRouter
+billed: the spec sums `usage.cost.total` from every assistant message with
+`totalFromProvider: true` into the run's `usage.billedUsd`. Only when a run has
+no billed cost does the price table times tokens apply; each run records
+`usdSource` (`billed` or `table`), and the report prints a `Cost source` line.
+The table alone was about 45% too low on 2026-11-16 (reasoning tokens and
+per-provider prices), so do not compare a table number with a billed one. Each case also reports
 `passAllK`, `partialScore`, `medianMs`, and `overBudgetRuns` (runs above
 `expected.maxToolCalls`; a reporting budget, not a check). `report.md` and the
 console print the same numbers.

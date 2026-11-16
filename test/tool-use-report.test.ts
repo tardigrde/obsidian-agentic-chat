@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { gradeRun, summarizeCase, type ToolUseCase } from "../scripts/eval/tool-use-core";
-import { emptyObservation, type RunRecord, type ToolUsePlan } from "../scripts/eval/tool-use-plan";
+import { emptyObservation, parseRunRecord, type RunRecord, type ToolUsePlan } from "../scripts/eval/tool-use-plan";
 import {
   baselineFileName,
   buildSummary,
@@ -118,6 +118,38 @@ describe("tool-use run entries", () => {
     ]);
     expect(summary).toMatchObject({ runs: 3, executed: 3, passed: 1, errored: 2, passAllK: 0 });
     expect(summary.passRate).toBeCloseTo(1 / 3);
+  });
+});
+
+describe("tool-use billed cost", () => {
+  it("uses the USD the provider billed over the price table", () => {
+    const entry = gradeRecord(CASE, record({ usage: { input: 1_000, output: 500, billedUsd: 0.005 } }), PRICES);
+    expect(entry.usd).toBe(0.005);
+    expect(entry.usdSource).toBe("billed");
+  });
+
+  it("falls back to the price table when no billed cost was recorded", () => {
+    const entry = gradeRecord(CASE, record(), PRICES);
+    expect(entry.usd).toBeCloseTo(1_000 * 1e-6 + 500 * 2e-6, 12);
+    expect(entry.usdSource).toBe("table");
+  });
+
+  it("keeps the billed cost when the run record is read back from disk", () => {
+    const raw = JSON.parse(JSON.stringify(record({ usage: { input: 10, billedUsd: 0.25 } }))) as unknown;
+    expect(parseRunRecord(raw, "1.json").usage.billedUsd).toBe(0.25);
+  });
+
+  it("names the cost source in the report", () => {
+    const summary = buildSummary(
+      { ...plan(), runs: [{ caseId: CASE.id, run: 1 }, { caseId: CASE.id, run: 2 }] },
+      new Map([[CASE.id, [
+        gradeRecord(CASE, record({ usage: { billedUsd: 0.01 } }), PRICES),
+        gradeRecord(CASE, record({ run: 2 }), PRICES),
+      ]]]),
+      { startedAt: new Date(0), finishedAt: new Date(1_000) },
+    );
+    expect(formatReport(summary)).toContain("Cost source: billed by the provider for 1/2 run(s)");
+    expect(summary.budget.used.usd).toBeCloseTo(0.01 + 1_000 * 1e-6 + 500 * 2e-6, 12);
   });
 });
 

@@ -36,6 +36,8 @@ export interface CaseRunEntry {
   /** Share of checks that passed; a run with no checks scores 0. */
   partialScore: number;
   usd: number;
+  /** `billed`: OpenRouter's own cost. `table`: price table x tokens (no billed cost recorded). */
+  usdSource: "billed" | "table";
   checks: ToolUseCheckResult[];
   /** Level the session recorded. Reporting only: a provider clamp must not fail a run. */
   observedThinkingLevel?: string;
@@ -121,6 +123,7 @@ export function gradeRecord(evalCase: ToolUseCase, record: RunRecord, prices: Ru
       toolCalls: 0,
       partialScore: 0,
       usd: 0,
+      usdSource: "table",
       checks: [],
       error: record.skippedBudget,
     };
@@ -135,6 +138,7 @@ export function gradeRecord(evalCase: ToolUseCase, record: RunRecord, prices: Ru
     toolCalls: record.observed.toolCalls.length,
     partialScore: grade.score,
     usd: costUsd(record.usage, prices),
+    usdSource: (record.usage.billedUsd ?? 0) > 0 ? "billed" : "table",
     checks: grade.checks,
     ...(record.observedThinkingLevel ? { observedThinkingLevel: record.observedThinkingLevel } : {}),
     ...(record.error ? { error: record.error } : {}),
@@ -152,6 +156,7 @@ export function missingRunEntry(planned: PlannedRun, reason: string): CaseRunEnt
     toolCalls: 0,
     partialScore: 0,
     usd: 0,
+    usdSource: "table",
     checks: [],
     error: reason,
   };
@@ -269,6 +274,7 @@ export function formatReport(summary: ToolUseSummary): string {
     `Prices (USD/token): input ${prices.input}, output ${prices.output}, cache-read ${prices.cacheRead}, cache-write ${prices.cacheWrite ?? 0}`,
     `Budget used: ${usd(budget.used.usd)}, ${budget.used.modelCalls} model call(s), ${budget.used.tokens} token(s)`,
     `Budget exceeded: ${budget.exceeded ?? "no"}`,
+    costSourceLine(summary),
     "",
     "## Overall",
     "",
@@ -318,6 +324,13 @@ export function formatReport(summary: ToolUseSummary): string {
   return `${lines.join("\n")}\n`;
 }
 
+/** How many runs carry OpenRouter's billed cost; the rest fall back to the price table. */
+export function costSourceLine(summary: ToolUseSummary): string {
+  const runs = summary.cases.flatMap((entry) => entry.runResults).filter((run) => run.status !== "skipped-budget");
+  const billed = runs.filter((run) => run.usdSource === "billed").length;
+  return `Cost source: billed by the provider for ${billed}/${runs.length} run(s); price table for the rest`;
+}
+
 export function formatConsoleSummary(summary: ToolUseSummary, paths: { summary: string; report: string }): string {
   const { overall, budget } = summary;
   const errored = summary.cases.reduce((total, entry) => total + entry.errored, 0);
@@ -336,6 +349,7 @@ export function formatConsoleSummary(summary: ToolUseSummary, paths: { summary: 
   }
   lines.push(
     `Totals: ${usd(budget.used.usd)}, ${budget.used.modelCalls} model call(s), ${budget.used.tokens} token(s)`,
+    costSourceLine(summary),
     `Overall: ${usd(overall.meanUsd)}/run, ${whole(overall.meanTokens)} tokens/run, ${oneDecimal(overall.meanModelCalls)} model calls/run, ${oneDecimal(overall.meanToolCalls)} tool calls/run, ${seconds(overall.medianCaseMs)} median case`,
     `Summary: ${paths.summary}`,
     `Report: ${paths.report}`,

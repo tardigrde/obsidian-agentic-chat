@@ -252,6 +252,12 @@ export interface RunUsage {
   cacheRead?: number;
   cacheWrite?: number;
   totalTokens?: number;
+  /**
+   * USD that OpenRouter billed for the run (the sum of `usage.cost.total` on
+   * messages with `totalFromProvider`). When set, it wins over the price table:
+   * the table misses reasoning tokens and per-provider prices.
+   */
+  billedUsd?: number;
 }
 
 export interface RunPricing {
@@ -571,6 +577,7 @@ export function summarizeOverall(
 }
 
 export function costUsd(usage: RunUsage, pricing: RunPricing): number {
+  if (finite(usage.billedUsd) > 0) return finite(usage.billedUsd);
   return (
     finite(usage.input) * finite(pricing.input) +
     finite(usage.output) * finite(pricing.output) +

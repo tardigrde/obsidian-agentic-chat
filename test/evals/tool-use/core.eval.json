@@ -27,7 +27,7 @@
   "cases": [
     {
       "id": "find.easy.dentist",
-      "prompt": "When is my next dentist appointment? Answer with the current date as YYYY-MM-DD on the first line. Do not mention the old or archived appointment dates.",
+      "prompt": "When is my next dentist appointment? Answer with the appointment date as YYYY-MM-DD on the first line. Do not mention the old or archived appointment dates.",
       "seed": {
         "vault": {
           "size": "S",

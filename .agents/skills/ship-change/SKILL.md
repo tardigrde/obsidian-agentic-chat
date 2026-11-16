@@ -51,7 +51,8 @@ Own the change end to end. Plan, implement, verify, and report evidence.
    - UI wiring: `npm run verify -- e2e <spec>` (on a desktop, wrap it as
      `npm run nested -- <command>` so Obsidian does not steal the cursor) or
      `npm run probe -- --scenario <name>`
-   - prompt, tool, or context: `npm run verify -- eval` plus `compare --fail-on-regression`
+   - prompt, tool, or context: `npm run verify -- eval` plus `compare --fail-on-regression`,
+     then the tool-use A/B (see "Evals" below)
 6. Update the feature map: entry points, proof command, last verified date.
 7. Report evidence: command, exit code, counts, artifact path.
 
@@ -73,6 +74,26 @@ Own the change end to end. Plan, implement, verify, and report evidence.
 3. Re-run `fast`. If prompt, tool, context, or provider code changed, also run the
    eval A/B with `--fail-on-regression`.
 4. For Obsidian: also run `npm run verify -- audit` and the mobile lane.
+
+## Evals: three objectives, one Pareto frontier
+
+The evals optimize correctness, cost, and time together. They are not a
+pass-rate harness. The goal is the Pareto frontier of that space, for the
+plugin and for the harness. Rules:
+
+- Report all three axes for every A/B: pass^3, billed USD per run, and median
+  case time. `--compare` prints a Pareto verdict (`dominates`, `dominated`,
+  `trade-off`, `same`, `incomplete`). A `trade-off` is not a win; name it.
+- Hold everything fixed but the one variable: suite, model, reasoning level,
+  vaults, run count.
+- No cheating: never weaken a check, never edit a case only to move its pass
+  rate, never cut work the task needs to look cheaper or faster. Fix a case
+  only when it is unfair (ambiguous, impossible, wrong grader).
+- Keep it cheap: `--smoke` (1 run per case) per change; full `core` x 3 only for
+  a model, prompt, tool, or context change, at most once per PR. Do not tune a
+  suite toward a pass-rate target.
+
+Details: `docs/development/verification.md`, section "Tool-use evals".
 
 ## Done means
 

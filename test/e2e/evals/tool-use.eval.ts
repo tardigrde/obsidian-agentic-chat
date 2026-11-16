@@ -47,7 +47,12 @@ interface AnalyzerModule {
 interface SessionEntry {
   type?: string;
   thinkingLevel?: unknown;
-  message?: { role?: string; stopReason?: string; errorMessage?: string };
+  message?: {
+    role?: string;
+    stopReason?: string;
+    errorMessage?: string;
+    usage?: { cost?: { total?: unknown; totalFromProvider?: unknown } };
+  };
 }
 
 let plan: ToolUsePlan;
@@ -398,13 +403,31 @@ function observeSession(raw: string): SessionObservation {
   const analysis = analyzer.analyzeSessionText(raw);
   const file = analysis.files[0];
   const observedLevel = observedThinkingLevel(raw);
+  const billedUsd = billedCostUsd(raw);
   return {
     toolCalls: file?.toolCalls ?? [],
     answer: file?.finalAssistantText ?? "",
-    usage: analysis.aggregate.usage ?? {},
+    usage: { ...(analysis.aggregate.usage ?? {}), ...(billedUsd > 0 ? { billedUsd } : {}) },
     modelCalls: analysis.aggregate.messages?.assistant ?? 0,
     ...(observedLevel ? { observedThinkingLevel: observedLevel } : {}),
   };
+}
+
+/**
+ * Sum the cost OpenRouter billed. pi-ai stores it as `usage.cost.total` with
+ * `totalFromProvider: true`; the other cost fields are catalog estimates, so
+ * only `total` is read. A message without the flag adds nothing, and the
+ * runner then falls back to the price table.
+ */
+function billedCostUsd(raw: string): number {
+  let total = 0;
+  for (const entry of sessionEntries(raw)) {
+    const cost = entry?.message?.role === "assistant" ? entry.message.usage?.cost : undefined;
+    if (cost?.totalFromProvider === true && typeof cost.total === "number" && Number.isFinite(cost.total)) {
+      total += cost.total;
+    }
+  }
+  return total;
 }
 
 /**

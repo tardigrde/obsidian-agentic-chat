@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatComparison } from "../scripts/eval/tool-use-compare";
+import { formatComparison, paretoCompare } from "../scripts/eval/tool-use-compare";
 
 const caseRow = (id: string, overrides: Record<string, number> = {}) => ({
   id,
@@ -63,5 +63,49 @@ describe("tool-use comparison", () => {
     expect(text).toMatch(/\| case\.cost \|.*\| cost \+30% \|/);
     expect(text).toMatch(/\| case\.steady \|.*\| - \|/);
     expect(text).toMatch(/\| case\.pass \|.*\| pass -10 \|/);
+  });
+
+  describe("Pareto verdict on correctness, cost, and time", () => {
+    const run = (passAllK: number, meanUsd: number, medianCaseMs: number) => ({
+      overall: { passAllK, meanUsd, medianCaseMs },
+    });
+    const base = run(0.8, 0.001, 10_000);
+
+    it("dominates when one axis is better and none is worse", () => {
+      expect(paretoCompare(base, run(0.8, 0.0005, 10_000))).toMatchObject({
+        verdict: "dominates",
+        better: ["cost"],
+        same: ["correctness", "time"],
+      });
+    });
+
+    it("calls a correctness gain that costs more a trade-off, not a win", () => {
+      expect(paretoCompare(base, run(0.88, 0.0015, 10_000))).toMatchObject({
+        verdict: "trade-off",
+        better: ["correctness"],
+        worse: ["cost"],
+      });
+    });
+
+    it("is dominated when one axis is worse and none is better", () => {
+      expect(paretoCompare(base, run(0.8, 0.001, 20_000)).verdict).toBe("dominated");
+    });
+
+    it("treats a cost or time change inside the noise share as the same", () => {
+      expect(paretoCompare(base, run(0.8, 0.00105, 10_900)).verdict).toBe("same");
+    });
+
+    it("gives no verdict when an axis is missing on one side", () => {
+      expect(paretoCompare(base, { overall: { passAllK: 1, meanUsd: 0.001 } })).toMatchObject({
+        verdict: "incomplete",
+        missing: ["time"],
+      });
+    });
+
+    it("prints the verdict under the overall table", () => {
+      expect(formatComparison(base, run(0.8, 0.0005, 10_000))).toContain(
+        "Pareto (correctness, cost, time): **dominates**",
+      );
+    });
   });
 });

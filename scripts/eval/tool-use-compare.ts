@@ -18,6 +18,74 @@ import {
 /** A cost or time increase above this share of the baseline gets a flag. */
 const REGRESSION_THRESHOLD = 0.2;
 
+/**
+ * For the Pareto verdict, a cost or time change smaller than this share of the
+ * baseline counts as "same": one 75-run sample moves by a few percent.
+ */
+export const PARETO_NOISE_SHARE = 0.1;
+
+export type ParetoAxis = "correctness" | "cost" | "time";
+export type ParetoVerdict = "dominates" | "dominated" | "trade-off" | "same" | "incomplete";
+
+export interface ParetoResult {
+  verdict: ParetoVerdict;
+  better: ParetoAxis[];
+  worse: ParetoAxis[];
+  same: ParetoAxis[];
+  missing: ParetoAxis[];
+}
+
+/**
+ * Compare two runs on the three objectives together: correctness (pass^K,
+ * higher is better), cost (mean USD per run), and time (median case time),
+ * both lower is better. A candidate that is better on one axis and worse on
+ * none dominates; better on one and worse on another is a trade-off that a
+ * person must name. A pass^K gain alone is never "better" if it costs more.
+ */
+export function paretoCompare(baseline: unknown, candidate: unknown): ParetoResult {
+  const before = overallOf(baseline);
+  const after = overallOf(candidate);
+  const result: ParetoResult = { verdict: "same", better: [], worse: [], same: [], missing: [] };
+  const axes: Array<[ParetoAxis, string, "higher" | "lower"]> = [
+    ["correctness", "passAllK", "higher"],
+    ["cost", "meanUsd", "lower"],
+    ["time", "medianCaseMs", "lower"],
+  ];
+  for (const [axis, key, direction] of axes) {
+    const left = numberValue(before[key]);
+    const right = numberValue(after[key]);
+    if (left === undefined || right === undefined) {
+      result.missing.push(axis);
+      continue;
+    }
+    // Correctness: any change counts; the significance section says if it is noise.
+    const tolerance = axis === "correctness" ? 0 : Math.abs(left) * PARETO_NOISE_SHARE;
+    const gain = direction === "higher" ? right - left : left - right;
+    if (Math.abs(gain) <= tolerance) result.same.push(axis);
+    else if (gain > 0) result.better.push(axis);
+    else result.worse.push(axis);
+  }
+  if (result.missing.length > 0) result.verdict = "incomplete";
+  else if (result.better.length > 0 && result.worse.length === 0) result.verdict = "dominates";
+  else if (result.worse.length > 0 && result.better.length === 0) result.verdict = "dominated";
+  else if (result.better.length > 0) result.verdict = "trade-off";
+  return result;
+}
+
+export function formatPareto(result: ParetoResult): string {
+  const parts = (["better", "worse", "same", "missing"] as const)
+    .filter((key) => result[key].length > 0)
+    .map((key) => `${key}: ${result[key].join(", ")}`);
+  const meaning: Record<ParetoVerdict, string> = {
+    dominates: "the candidate is at least as good on all three axes and better on one",
+    dominated: "the candidate is worse on at least one axis and better on none",
+    "trade-off": "the candidate trades one axis for another; name the trade before you accept it",
+    same: "no axis moved beyond noise",
+    incomplete: "an axis is missing on one side; this is no verdict",
+  };
+  return `Pareto (correctness, cost, time): **${result.verdict}** (${parts.join("; ")}). ${meaning[result.verdict]}.`;
+}
+
 type Format = (value: number) => string;
 
 interface CaseMetrics {
@@ -74,6 +142,7 @@ export function formatComparison(baseline: unknown, candidate: unknown): string 
     const right = numberValue(overallAfter[key]);
     lines.push(`| ${label} | ${cell(left, format)} | ${cell(right, format)} | ${change(left, right, format)} |`);
   }
+  lines.push("", formatPareto(paretoCompare(baseline, candidate)));
   lines.push(
     "",
     "## Cases",
@@ -187,6 +256,10 @@ function caseMetrics(input: unknown): Map<string, CaseMetrics> {
     output.set(entry.id, metrics);
   }
   return output;
+}
+
+function overallOf(input: unknown): Record<string, unknown> {
+  return isRecord(input) && isRecord(input.overall) ? input.overall : {};
 }
 
 function numberValue(input: unknown): number | undefined {
