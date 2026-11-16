@@ -41,18 +41,19 @@ describe("tool-use comparison", () => {
     expect(text).toContain("> Warning: the model differs (baseline `model-a`, candidate `model-b`).");
   });
 
-  it("prints no warning for a baseline and a summary of the same suite and model", () => {
+  it("prints no warning for a baseline and a summary of the same suite, model, and cost source", () => {
     const text = formatComparison(
-      { suite: "core", model: "model-a", cases: [] },
-      { suite: { name: "core" }, model: "model-a", cases: [] },
+      { suite: "core", model: "model-a", costSource: "billed", cases: [] },
+      { suite: { name: "core" }, model: "model-a", costSource: "billed", cases: [] },
     );
     expect(text).not.toContain("Warning");
   });
 
   it("flags only growth above 20% and any pass-rate drop", () => {
     const text = formatComparison(
-      { cases: [caseRow("case.cost"), caseRow("case.steady"), caseRow("case.pass")] },
+      { costSource: "billed", cases: [caseRow("case.cost"), caseRow("case.steady"), caseRow("case.pass")] },
       {
+        costSource: "billed",
         cases: [
           caseRow("case.cost", { meanUsd: 0.013, medianMs: 1_100 }),
           caseRow("case.steady", { meanUsd: 0.012, medianMs: 1_200 }),
@@ -66,7 +67,8 @@ describe("tool-use comparison", () => {
   });
 
   describe("Pareto verdict on correctness, cost, and time", () => {
-    const run = (passAllK: number, meanUsd: number, medianCaseMs: number) => ({
+    const run = (passAllK: number, meanUsd: number, medianCaseMs: number, costSource = "billed") => ({
+      costSource,
       overall: { passAllK, meanUsd, medianCaseMs },
     });
     const base = run(0.8, 0.001, 10_000);
@@ -103,8 +105,34 @@ describe("tool-use comparison", () => {
       expect(paretoCompare(run(0.8, 0, 10_000), run(0.8, 0.0000005, 10_000)).verdict).toBe("same");
     });
 
+    it("never ranks a price-table cost against a billed cost", () => {
+      const table = run(0.8, 0.0004, 10_000, "table");
+      expect(paretoCompare(table, run(0.8, 0.001, 10_000))).toMatchObject({
+        verdict: "incomplete",
+        missing: ["cost"],
+      });
+      expect(formatComparison(table, run(0.8, 0.001, 10_000))).toContain("the cost axis is not compared");
+    });
+
+    it("hides the per-case cost flag when the cost sources differ", () => {
+      const text = formatComparison(
+        { costSource: "table", cases: [caseRow("case.cost")] },
+        { costSource: "billed", cases: [caseRow("case.cost", { meanUsd: 0.05 })] },
+      );
+      expect(text).not.toContain("cost +");
+    });
+
+    it("never compares cost for a run that spent nothing", () => {
+      expect(paretoCompare(run(0.8, 0, 10_000, "none"), run(0.8, 0, 10_000, "none")).missing).toEqual(["cost"]);
+    });
+
+    it("treats a file with no cost source (an old baseline) as unknown", () => {
+      const old = { overall: { passAllK: 0.8, meanUsd: 0.001, medianCaseMs: 10_000 } };
+      expect(paretoCompare(old, run(0.8, 0.001, 10_000)).missing).toEqual(["cost"]);
+    });
+
     it("gives no verdict when an axis is missing on one side", () => {
-      expect(paretoCompare(base, { overall: { passAllK: 1, meanUsd: 0.001 } })).toMatchObject({
+      expect(paretoCompare(base, { costSource: "billed", overall: { passAllK: 1, meanUsd: 0.001 } })).toMatchObject({
         verdict: "incomplete",
         missing: ["time"],
       });

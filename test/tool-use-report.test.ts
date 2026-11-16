@@ -149,6 +149,14 @@ describe("tool-use billed cost", () => {
       { startedAt: new Date(0), finishedAt: new Date(1_000) },
     );
     expect(formatReport(summary)).toContain("Cost source: billed by the provider for 1/2 run(s)");
+    expect(summary.costSource).toBe("mixed");
+    const nothingSpent = buildSummary(plan(), new Map([[CASE.id, [missingRunEntry({ caseId: CASE.id, run: 1 }, "no record")]]]), {
+      startedAt: new Date(0),
+      finishedAt: new Date(1),
+    });
+    expect(nothingSpent.costSource).toBe("none");
+    expect(formatReport(nothingSpent)).toContain("Cost source: none (no run spent anything");
+    expect(toBaseline(summary, { date: new Date(0), gitHead: "abc" }).costSource).toBe("mixed");
     expect(summary.budget.used.usd).toBeCloseTo(0.01 + 1_000 * 1e-6 + 500 * 2e-6, 12);
   });
 });

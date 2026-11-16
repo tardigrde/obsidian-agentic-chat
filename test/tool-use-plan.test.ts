@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { validateToolUseSuite, type ToolUseSuite } from "../scripts/eval/tool-use-core";
+import { validateToolUseSuite, type ToolUseCase, type ToolUseSuite } from "../scripts/eval/tool-use-core";
 import {
   emptyObservation,
   expandCaseSeed,
+  fixturePlanFields,
+  needsMcpFixture,
   parseRunRecord,
   planRuns,
   selectCases,
@@ -60,6 +62,47 @@ describe("tool-use case selection", () => {
       { caseId: "find.easy.dentist", run: 1 },
       { caseId: "find.easy.dentist", run: 2 },
     ]);
+  });
+});
+
+describe("tool-use MCP fixture", () => {
+  function evalCase(overrides: Partial<ToolUseCase> = {}): ToolUseCase {
+    return {
+      id: "tools.medium.search",
+      prompt: "Find the right MCP tool and use it.",
+      seed: { files: {}, binaryFiles: {} },
+      checks: [],
+      ...overrides,
+    };
+  }
+
+  it("needs the fake MCP server only when a case turns MCP on", () => {
+    expect(needsMcpFixture([evalCase({ settings: { "mcp.enabled": true } })])).toBe(true);
+    expect(needsMcpFixture([evalCase({ settings: { "mcp.enabled": false } })])).toBe(false);
+    expect(needsMcpFixture([evalCase({ settings: { "web.enabled": true } })])).toBe(false);
+    expect(needsMcpFixture([evalCase()])).toBe(false);
+    expect(needsMcpFixture([])).toBe(false);
+  });
+
+  it("writes an MCP fixture URL into the plan only when a case needs that server", () => {
+    const mcpCase = evalCase({ settings: { "mcp.enabled": true } });
+    expect(fixturePlanFields([mcpCase], { mcp: "http://localhost:41234/mcp" })).toEqual({
+      mcpFixtureUrl: "http://localhost:41234/mcp",
+    });
+    expect(fixturePlanFields([evalCase()], { mcp: "http://localhost:41234/mcp" })).toEqual({});
+    expect(fixturePlanFields([], { web: "http://localhost:8080", mcp: "http://localhost:41234/mcp" })).toEqual({});
+  });
+
+  it("keeps the web and MCP fixture fields independent", () => {
+    const webCase = evalCase({ prompt: "Fetch {{fixture}}/article.", settings: { "web.enabled": true } });
+    const mcpCase = evalCase({ id: "tools.medium.mcp", settings: { "mcp.enabled": true } });
+
+    expect(fixturePlanFields([webCase], { web: "http://localhost:8080", mcp: "http://localhost:41234/mcp" })).toEqual({
+      fixtureBaseUrl: "http://localhost:8080",
+    });
+    expect(
+      fixturePlanFields([webCase, mcpCase], { web: "http://localhost:8080", mcp: "http://localhost:41234/mcp" }),
+    ).toEqual({ fixtureBaseUrl: "http://localhost:8080", mcpFixtureUrl: "http://localhost:41234/mcp" });
   });
 });
 

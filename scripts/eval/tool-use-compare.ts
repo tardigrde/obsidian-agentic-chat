@@ -57,10 +57,12 @@ export function paretoCompare(baseline: unknown, candidate: unknown): ParetoResu
     ["cost", "meanUsd", "lower"],
     ["time", "medianCaseMs", "lower"],
   ];
+  const costComparable = sameCostSource(baseline, candidate);
   for (const [axis, key, direction] of axes) {
     const left = numberValue(before[key]);
     const right = numberValue(after[key]);
-    if (left === undefined || right === undefined) {
+    // A price-table cost and a billed cost differ by up to ~45%; never rank one against the other.
+    if (left === undefined || right === undefined || (axis === "cost" && !costComparable)) {
       result.missing.push(axis);
       continue;
     }
@@ -129,6 +131,7 @@ const OVERALL_ROWS: ReadonlyArray<[label: string, key: string, format: Format]> 
 export function formatComparison(baseline: unknown, candidate: unknown): string {
   const before = caseMetrics(baseline);
   const after = caseMetrics(candidate);
+  const costComparable = sameCostSource(baseline, candidate);
   const ids = [...new Set([...before.keys(), ...after.keys()])].sort((left, right) => left.localeCompare(right));
   const overallBefore = isRecord(baseline) && isRecord(baseline.overall) ? baseline.overall : {};
   const overallAfter = isRecord(candidate) && isRecord(candidate.overall) ? candidate.overall : {};
@@ -161,9 +164,21 @@ export function formatComparison(baseline: unknown, candidate: unknown): string 
     const left = before.get(id);
     const right = after.get(id);
     const cells = CASE_COLUMNS.map(([, key, format]) => delta(left?.[key], right?.[key], format));
-    lines.push(`| ${id} | ${compareThinking(left, right)} | ${cells.join(" | ")} | ${caseFlags(left, right)} |`);
+    lines.push(
+      `| ${id} | ${compareThinking(left, right)} | ${cells.join(" | ")} | ${caseFlags(left, right, costComparable)} |`,
+    );
   }
   return `${lines.join("\n")}\n`;
+}
+
+/** Both sides are `billed` or both are `table`. `mixed`, `none`, and an old file with no field are not comparable. */
+function sameCostSource(baseline: unknown, candidate: unknown): boolean {
+  const left = costSourceName(baseline);
+  return (left === "billed" || left === "table") && left === costSourceName(candidate);
+}
+
+function costSourceName(input: unknown): string | undefined {
+  return isRecord(input) && typeof input.costSource === "string" ? input.costSource : undefined;
 }
 
 /** One line that names the suite, model, and reasoning level of a summary or baseline. */
@@ -171,7 +186,8 @@ function runIdentity(label: string, input: unknown): string {
   if (!isRecord(input)) return `- ${label}: (missing)`;
   const level = typeof input.thinkingLevel === "string" ? input.thinkingLevel : "(not recorded)";
   const source = typeof input.thinkingLevelSource === "string" ? ` (${input.thinkingLevelSource})` : "";
-  return `- ${label}: ${suiteName(input) ?? "(suite?)"}, ${modelName(input) ?? "(model?)"}, thinking ${level}${source}`;
+  const cost = costSourceName(input) ?? "unknown";
+  return `- ${label}: ${suiteName(input) ?? "(suite?)"}, ${modelName(input) ?? "(model?)"}, thinking ${level}${source}, cost ${cost}`;
 }
 
 function compareThinking(before: CaseMetrics | undefined, after: CaseMetrics | undefined): string {
@@ -193,6 +209,11 @@ function identityWarnings(baseline: unknown, candidate: unknown): string[] {
       warnings.push(`> Warning: the ${label} differs (baseline \`${left}\`, candidate \`${right}\`).`);
     }
   }
+  if (!sameCostSource(baseline, candidate)) {
+    warnings.push(
+      `> Warning: the cost source differs or is unknown (baseline \`${costSourceName(baseline) ?? "unknown"}\`, candidate \`${costSourceName(candidate) ?? "unknown"}\`); the cost axis is not compared.`,
+    );
+  }
   return warnings.length > 0 ? [...warnings, ""] : [];
 }
 
@@ -207,12 +228,16 @@ function modelName(input: unknown): string | undefined {
   return isRecord(input) && typeof input.model === "string" ? input.model : undefined;
 }
 
-function caseFlags(before: CaseMetrics | undefined, after: CaseMetrics | undefined): string {
+function caseFlags(
+  before: CaseMetrics | undefined,
+  after: CaseMetrics | undefined,
+  costComparable: boolean,
+): string {
   if (!before) return "new case";
   if (!after) return "removed case";
   const flags: string[] = [];
   const cost = growth(before.meanUsd, after.meanUsd);
-  if (cost > REGRESSION_THRESHOLD) flags.push(`cost +${Math.round(cost * 100)}%`);
+  if (costComparable && cost > REGRESSION_THRESHOLD) flags.push(`cost +${Math.round(cost * 100)}%`);
   const time = growth(before.medianMs, after.medianMs);
   if (time > REGRESSION_THRESHOLD) flags.push(`time +${Math.round(time * 100)}%`);
   if (before.passRate !== undefined && after.passRate !== undefined && after.passRate < before.passRate) {

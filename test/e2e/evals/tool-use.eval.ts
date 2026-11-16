@@ -10,6 +10,7 @@ import {
   type RunRecord,
   type ToolUsePlan,
 } from "../../../scripts/eval/tool-use-plan";
+import type { McpServerSettings } from "../../../src/mcp/settings";
 import { sendPrompt } from "../dogfood/dogfood-helpers";
 
 /**
@@ -201,6 +202,51 @@ async function installFixtureOrigin(baseUrl: string | undefined): Promise<void> 
 }
 
 /**
+ * One user-owned MCP server that points at this run's fake MCP server. The spec
+ * assigns raw settings, so every field the client reads must be present
+ * (compare `test/e2e/specs/mcp-live.e2e.ts`). The MCP endpoint policy allows
+ * plain http for loopback hosts, so no eval-only SSRF hook is needed here.
+ * `approval: "allow"` matches the eval's blanket mutating allow: an "ask"
+ * default would open a modal and block the turn.
+ */
+function fixtureMcpServer(url: string): McpServerSettings {
+  return {
+    id: "eval_fixture",
+    name: "Eval fixture MCP",
+    url,
+    enabled: true,
+    authType: "none",
+    authHeaderName: "",
+    authHeaderValueSecretId: "agentic-chat-mcp-eval-fixture-auth-header-value",
+    authHeaderValue: "",
+    oauth: {
+      clientId: "",
+      clientSecretSecretId: "agentic-chat-mcp-eval-fixture-oauth-client-secret",
+      clientSecret: "",
+      dynamicClientRegistration: false,
+      registeredRedirectUri: "",
+      authorizationServer: "",
+      authorizationEndpoint: "",
+      tokenEndpoint: "",
+      registrationEndpoint: "",
+      resourceMetadataUrl: "",
+      accessTokenSecretId: "agentic-chat-mcp-eval-fixture-oauth-access-token",
+      accessToken: "",
+      refreshTokenSecretId: "agentic-chat-mcp-eval-fixture-oauth-refresh-token",
+      refreshToken: "",
+      expiresAt: 0,
+      scope: "",
+    },
+    approval: "allow",
+    knownTools: [],
+    enabledTools: [],
+    disabledTools: [],
+    headers: {},
+    source: "user",
+  };
+}
+
+/**
  * Dotted keys such as "web.enabled" override a field inside a top-level
  * settings object. `thinkingLevel` is always listed: every run sets it from
  * the plan, so it is restored like any case override.
@@ -240,7 +286,7 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
       approval: { mutating: string; perTool: Record<string, string> };
       privacy: { allowFallbacks: boolean; denyDataCollection: boolean; requireZDR: boolean };
       web: { enabled: boolean };
-      mcp: { enabled: boolean };
+      mcp: { enabled: boolean; proxyUrl: string; noProxy: string; servers: McpServerSettings[] };
       toolBudget: { enabled: boolean };
       maxTokens: number;
     };
@@ -265,6 +311,14 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
     settings.privacy.requireZDR = false;
     settings.web.enabled = false;
     settings.mcp.enabled = false;
+    if (config.mcpServers.length > 0) {
+      // The plan named this run's fake MCP server, so the plugin gets exactly
+      // one MCP server. The base leaves mcp.enabled false; a case that sets
+      // "mcp.enabled": true turns MCP on for its own runs only.
+      settings.mcp.proxyUrl = "";
+      settings.mcp.noProxy = "localhost,127.0.0.1,::1";
+      settings.mcp.servers = config.mcpServers;
+    }
     settings.toolBudget.enabled = false;
     // A provider reserves the request's max output tokens against the key's
     // credit. A run never needs more than a few thousand output tokens, so
@@ -282,6 +336,7 @@ async function configurePlugin(): Promise<Record<string, unknown>> {
     apiKey,
     model: plan.model,
     maxTurnsPerPrompt: plan.turn.maxTurnsPerPrompt,
+    mcpServers: plan.mcpFixtureUrl ? [fixtureMcpServer(plan.mcpFixtureUrl)] : [],
     overridableKeys: topLevelSettingKeys(plan.cases),
   });
   if (!base) throw new Error("agentic-chat plugin not found in the tool-use vault");

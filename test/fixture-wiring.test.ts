@@ -9,6 +9,7 @@ import { expandFixturePlaceholders, needsFixture } from "../scripts/eval/tool-us
 
 const CORE_SUITE_PATH = path.join(process.cwd(), "test/evals/tool-use/core.eval.json");
 const FIXTURE_MARKER = ", fixture server";
+const MCP_FIXTURE_MARKER = ", fake MCP server";
 
 const tempRoots: string[] = [];
 
@@ -118,6 +119,21 @@ describe("fixture wiring in the tool-use runner", () => {
     expect(result.stdout).toContain(`- web.easy.article: 1 run(s), 0 seed file(s)${FIXTURE_MARKER}`);
   });
 
+  it("marks a case that enables MCP as needing the fake MCP server", async () => {
+    const suitePath = await writeSuite({
+      id: "tools.easy.mcp",
+      prompt: "Find the ticket tool and read ticket T-42.",
+      seed: { files: {} },
+      settings: { "mcp.enabled": true },
+      checks: [{ type: "answer_contains", text: "T-42" }],
+    });
+
+    const result = runDryRun(suitePath);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(`- tools.easy.mcp: 1 run(s), 0 seed file(s)${MCP_FIXTURE_MARKER}`);
+  });
+
   it("marks only tools.medium.web in the core dry-run plan", () => {
     const result = runDryRun(CORE_SUITE_PATH);
 
@@ -128,5 +144,6 @@ describe("fixture wiring in the tool-use runner", () => {
     expect(webLine, "tools.medium.web must be in the core dry run").toBeDefined();
     expect(webLine).toContain(FIXTURE_MARKER);
     expect(caseLines.filter((line) => line.includes(FIXTURE_MARKER))).toEqual([webLine]);
+    expect(caseLines.filter((line) => line.includes(MCP_FIXTURE_MARKER))).toEqual([]);
   });
 });

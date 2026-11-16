@@ -46,6 +46,8 @@ export interface ToolUsePlan {
   prices: RunPricing;
   /** Base URL of the local fixture server; absent when no case needs it. */
   fixtureBaseUrl?: string;
+  /** MCP endpoint of the local fake MCP server; absent when no case needs it. */
+  mcpFixtureUrl?: string;
   /**
    * Cases with the generated vault and the fixture URL already expanded. Each
    * case carries its effective `thinkingLevel` (a case pin wins over the run level).
@@ -135,6 +137,28 @@ export function needsFixture(cases: readonly ToolUseCase[]): boolean {
   return cases.some(
     (evalCase) => evalCase.prompt.includes(FIXTURE_PLACEHOLDER) || evalCase.settings?.["web.enabled"] === true,
   );
+}
+
+/**
+ * True when a case needs the local fake MCP server: it turns MCP on for that
+ * case with `"mcp.enabled": true`. A suite with no such case starts no server.
+ */
+export function needsMcpFixture(cases: readonly ToolUseCase[]): boolean {
+  return cases.some((evalCase) => evalCase.settings?.["mcp.enabled"] === true);
+}
+
+/**
+ * The fixture URL fields of a plan. A URL is written only when a selected case
+ * needs that server, so a suite with no fixture case has neither field.
+ */
+export function fixturePlanFields(
+  cases: readonly ToolUseCase[],
+  urls: { web?: string; mcp?: string },
+): Pick<ToolUsePlan, "fixtureBaseUrl" | "mcpFixtureUrl"> {
+  return {
+    ...(needsFixture(cases) && urls.web ? { fixtureBaseUrl: urls.web } : {}),
+    ...(needsMcpFixture(cases) && urls.mcp ? { mcpFixtureUrl: urls.mcp } : {}),
+  };
 }
 
 /**
