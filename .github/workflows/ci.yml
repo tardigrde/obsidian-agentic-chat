@@ -2,13 +2,25 @@ name: CI
 
 permissions:
   contents: read
+  # The skip rule asks GitHub that each "flaky #<n>" issue is still open.
+  issues: read
 
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# A newer push to the same PR supersedes the running one. Runs on main are
+# never cancelled: each merge keeps its own record.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # T0 + T1: static checks, unit tests with coverage, witness self-test,
+  # production build. The real-app tier runs in the jobs below, so this job is
+  # `check --no-app`.
   ci:
     runs-on: ubuntu-latest
     steps:
@@ -23,8 +35,10 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
-      - name: Verify (typecheck, lint, unit + coverage report, production build)
-        run: npm run verify -- ci # NOSONAR:S6505 -- runs the project verify script, not a package install.
+      - name: Check (static, unit + coverage, witness self-test, production build)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run verify -- check --no-app --coverage # NOSONAR:S6505 -- runs the project verify script, not a package install.
 
       - name: Upload coverage report
         if: always()
@@ -32,6 +46,16 @@ jobs:
         with:
           name: coverage-report
           path: coverage/
+          retention-days: 30
+
+      - name: Upload run result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: run-result-ci
+          path: |
+            logs/verify/*/run-result.json
+            logs/verify/*/summary.json
           retention-days: 30
 
       - name: Coverage summary
@@ -52,14 +76,12 @@ jobs:
             echo "No coverage summary generated." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Production build
-        run: npm run build
-
-  # Full deterministic e2e suite in a real Obsidian under a virtual display.
-  # Headless ozone lacks the accessibility tree `toHaveText` needs, so the job
-  # uses Xvfb. The no-key smoke spec is part of this suite; live specs skip
-  # without credentials. The scripted dogfood eval then runs in the same job.
+  # T2: the full deterministic e2e suite in a real Obsidian under Xvfb, plus
+  # the mobile two-tab lane. Headless ozone lacks the accessibility tree
+  # `toHaveText` needs, so the job uses Xvfb. Live specs live in test/e2e/live
+  # and never run here. Draft PRs skip it; marking ready runs it.
   e2e:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -88,20 +110,70 @@ jobs:
             e2e-obsidian-${{ runner.os }}-
 
       - name: Full e2e suite (xvfb)
-        run: xvfb-run -a npm run verify -- e2e
+        run: xvfb-run -a npm run verify -- app
 
       - name: Mobile two-tab lane (xvfb)
-        run: xvfb-run -a npm run test:e2e:mobile -- --spec test/e2e/specs/multi-tab-approval.e2e.ts
+        run: xvfb-run -a npm run verify -- app --mobile test/e2e/specs/multi-tab-approval.e2e.ts
 
-      - name: Scripted dogfood eval (xvfb)
-        run: xvfb-run -a npm run verify -- eval --run-scripted
+      - name: Upload run result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: run-result-e2e
+          path: |
+            logs/verify/*/run-result.json
+            logs/verify/*/summary.json
+          retention-days: 30
 
       - name: Upload e2e failure artifacts
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-artifacts
+          path: logs/e2e-artifacts/
+          retention-days: 14
+
+  # T2: the scripted dogfood eval in its own job, so its red names itself on
+  # the PR page instead of hiding inside `e2e` (it caught the #391 production
+  # import crash). Not a required check until the owner adds it.
+  dogfood-scripted:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Electron system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libxss1 libxtst6 libxrandr2 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libdrm2 libsecret-1-0 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64
+
+      - name: Cache Obsidian runtime
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .obsidian-cache
+          key: e2e-obsidian-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            e2e-obsidian-${{ runner.os }}-
+
+      - name: Scripted dogfood eval (xvfb)
+        run: xvfb-run -a npm run verify -- app --dogfood
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dogfood-scripted
           path: |
-            logs/e2e-artifacts/
+            logs/verify/*/run-result.json
+            logs/verify/*/summary.json
             logs/eval-runs/
           retention-days: 14

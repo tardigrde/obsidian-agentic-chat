@@ -1,27 +1,27 @@
-name: Review gate
+name: Review report
 
 permissions:
   contents: read
   issues: read
   pull-requests: read
-  # The gate reads the ci and e2e check runs when a verdict cites CI.
+  # The report reads the ci and e2e check runs when a verdict cites CI.
   checks: read
 
+# Advisory (#393 T02, decisions D4/D7). The agent-review verdict is a PR
+# comment the owner reads before writing "merge"; this job only reports whether
+# a verdict exists at the head and how large the PR is. It never fails, and a
+# comment no longer triggers a run (comment runs attached to main and could not
+# update the PR check anyway).
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
-  issue_comment:
-    types: [created, edited, deleted]
+    types: [opened, synchronize, reopened, ready_for_review]
 
-# Comment runs get their own group: a bot comment (CodeRabbit, Sonar) must not
-# cancel the pull_request run that reports the PR's required `review` check.
 concurrency:
-  group: review-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   review:
-    if: github.event_name == 'pull_request' || (github.event.issue.pull_request && github.event.comment.user.type != 'Bot')
     runs-on: ubuntu-latest
     steps:
       # The PR head is the tree being measured (size and head SHA). Its own
@@ -29,18 +29,16 @@ jobs:
       - name: Check out the PR head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/pull/${{ github.event.pull_request.number || github.event.issue.number }}/head
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           path: pr
           persist-credentials: false
 
-      # The gate script comes from the trusted base, so a PR cannot weaken the
-      # gate that judges it. issue_comment events have no base SHA; use the
-      # default branch.
-      - name: Check out the trusted gate
+      # The report script comes from the trusted base, like the witness.
+      - name: Check out the trusted report script
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          ref: ${{ github.event.pull_request.base.sha }}
           path: trusted
           persist-credentials: false
 
@@ -48,14 +46,13 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Verdict and size gate
+      - name: Verdict and size report (advisory)
+        # A base whose script still enforces must not turn the report red.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # This repository has one GitHub account. Independence is the separate
-          # reviewer agent, recorded in the Reviewer field; the gate cannot read
-          # a second login. Set to 0 when a reviewer account exists.
           REVIEW_GATE_SINGLE_ACCOUNT: "1"
         working-directory: pr
         run: node ../trusted/scripts/check-review-gate.mjs

@@ -12,6 +12,7 @@ export interface ReviewGateInput {
   changedFiles: number;
   labels?: string[];
   singleAccount?: boolean;
+  ciGreen?: boolean;
 }
 
 export interface ReviewGateResult {
@@ -20,17 +21,18 @@ export interface ReviewGateResult {
   verdict: string | null;
   reviewer: string | null;
   commentsAtHead: number;
+  sizeNotes: string[];
 }
 
 export function isGeneratedFile(file: string): boolean;
 export function parseVerdict(
   body: string | null | undefined,
 ): { verdict: string; head: string; reviewer: string } | null;
-export function sizeErrors(input: {
-  changedLines: number;
-  changedFiles: number;
-  labels?: string[];
-}): string[];
+export function sizeNotes(input: { changedLines: number; changedFiles: number; labels?: string[] }): string[];
+export function formatReport(
+  result: ReviewGateResult,
+  size: { changedLines: number; changedFiles: number },
+): string[];
 export function reviewGate(input: ReviewGateInput): ReviewGateResult;
 export function readNumstat(base: string, head: string, cwd?: string): string;
 export function measureNumstat(output: string): { changedLines: number; changedFiles: number };

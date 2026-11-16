@@ -5,7 +5,13 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 
 /**
- * Require an independent verdict comment and keep pull requests small.
+ * Report the agent-review verdict and the PR size (#393 T02, decisions D4/D7).
+ *
+ * Advisory: the `review` check always exits 0. A missing verdict and a large
+ * PR are printed (and written to the job summary), never enforced. The owner
+ * reads the verdict before writing "merge". The verdict is "agent review with
+ * evidence" by a reviewer agent other than the author agent, on the same
+ * GitHub account, not an independent human review.
  *
  * A verdict is a comment that contains all of:
  *   Verdict: PASS | PASS+NOTES | FAIL
@@ -87,20 +93,16 @@ function headMatches(reviewed, current) {
   return reviewed.length >= 7 && current.startsWith(reviewed);
 }
 
-export function sizeErrors({ changedLines, changedFiles, labels = [] }) {
-  if (labels.map((label) => label.toLowerCase()).includes("large-pr")) return [];
-  const errors = [];
+/** Size notes for the summary. They describe the PR; they never block it (D7). */
+export function sizeNotes({ changedLines, changedFiles }) {
+  const notes = [];
   if (changedLines > LIMITS.changedLines) {
-    errors.push(
-      `this PR adds ${changedLines} lines under src/; the limit is ${LIMITS.changedLines} (add the large-pr label to override)`,
-    );
+    notes.push(`large PR: ${changedLines} added lines under src/ (review guide: ${LIMITS.changedLines})`);
   }
   if (changedFiles > LIMITS.changedFiles) {
-    errors.push(
-      `this PR adds code to ${changedFiles} files under src/; the limit is ${LIMITS.changedFiles} (add the large-pr label to override)`,
-    );
+    notes.push(`large PR: ${changedFiles} src/ files with added code (review guide: ${LIMITS.changedFiles})`);
   }
-  return errors;
+  return notes;
 }
 
 export function reviewGate({
@@ -151,10 +153,10 @@ export function reviewGate({
     );
   }
 
-  errors.push(...sizeErrors({ changedLines, changedFiles, labels }));
   return {
     ok: errors.length === 0,
     errors,
+    sizeNotes: sizeNotes({ changedLines, changedFiles, labels }),
     verdict: latest?.parsed.verdict ?? null,
     reviewer: latest?.parsed.reviewer ?? null,
     commentsAtHead: candidates.length,
@@ -244,8 +246,16 @@ function normalizeComment(item) {
   };
 }
 
-function printErrors(errors) {
-  for (const error of errors) console.error(`  ${error}`);
+/** The report lines. Pure, so tests can pin the advisory wording. */
+export function formatReport(result, size) {
+  const lines = [
+    `review report: verdict ${result.ok ? "present" : "missing or open"}; src/ size ${size.changedFiles} files, ${size.changedLines} added lines`,
+  ];
+  if (result.verdict) lines.push(`  verdict: ${result.verdict} by ${result.reviewer}`);
+  for (const error of result.errors) lines.push(`  note: ${error}`);
+  for (const note of result.sizeNotes ?? []) lines.push(`  note: ${note}`);
+  lines.push("  advisory: this check never blocks; the owner reads the verdict before merging.");
+  return lines;
 }
 
 async function main() {
@@ -253,16 +263,14 @@ async function main() {
   const repository = process.env.GITHUB_REPOSITORY;
   const number = process.env.PR_NUMBER;
   if (!token || !repository || !number) {
-    console.error("review gate: GH_TOKEN, GITHUB_REPOSITORY, and PR_NUMBER are required");
-    process.exitCode = 1;
+    console.error("review report: GH_TOKEN, GITHUB_REPOSITORY, and PR_NUMBER are required");
     return;
   }
 
   const pull = await api(`/repos/${repository}/pulls/${number}`, token);
   const fullSha = /^[0-9a-f]{40}$/;
   if (!fullSha.test(pull.head.sha) || !fullSha.test(pull.base.sha)) {
-    console.error("review gate: GitHub returned an invalid commit SHA");
-    process.exitCode = 1;
+    console.error("review report: GitHub returned an invalid commit SHA");
     return;
   }
   const head = execFileSync(
@@ -271,8 +279,7 @@ async function main() {
     { encoding: "utf8" },
   ).trim();
   if (head !== pull.head.sha) {
-    console.error("review gate: checked out head does not match the API head");
-    process.exitCode = 1;
+    console.error("review report: checked out head does not match the API head");
     return;
   }
 
@@ -305,18 +312,11 @@ async function main() {
     ciGreen,
   });
 
-  console.log(
-    `review gate: ${result.ok ? "PASS" : "FAIL"} (src/ budget: ${size.changedFiles} files, ${size.changedLines} added lines, ${result.commentsAtHead} verdict(s) at this head)`,
-  );
-  if (result.verdict) console.log(`  verdict: ${result.verdict} by ${result.reviewer}`);
-  if (!result.ok) {
-    printErrors(result.errors);
-    process.exitCode = 1;
-  }
-  if (process.env.GITHUB_EVENT_NAME === "issue_comment") {
-    console.log(
-      "  note: this run was triggered by a comment and attaches to the default branch, not the PR head. Re-trigger the PR's review check (for example, edit the PR body) so the required check updates.",
-    );
+  const lines = formatReport(result, size);
+  for (const line of lines) console.log(line);
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    const { appendFileSync } = await import("node:fs");
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Agent review\n\n${lines.map((line) => `- ${line.trim()}`).join("\n")}\n`);
   }
 }
 
@@ -324,7 +324,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     await main();
   } catch (error) {
-    console.error(`review gate: ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
+    // Advisory: an API hiccup is reported, not turned into a red check.
+    console.error(`review report: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
