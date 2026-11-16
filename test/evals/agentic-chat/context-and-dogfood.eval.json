@@ -6,7 +6,6 @@
     {
       "id": "static.default-context",
       "type": "static-context",
-      "toolSurface": "default",
       "contextWindow": 128000,
       "prompt": "Build a concise DevOps knowledge base from the vault and keep context/tool use efficient.",
       "assertions": [

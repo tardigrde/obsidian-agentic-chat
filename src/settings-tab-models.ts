@@ -280,9 +280,9 @@ export function openAICompatibleDefinitions(
     row("Context window (tokens)", (setting) => {
       setting
         .setDesc(
-          "Optional. 0 auto-detects from the OpenRouter catalog for the same model slug (best effort) and keeps every " +
-            "tool when unknown. Set the real value (e.g. 128000) if your gateway exposes a different window than " +
-            "OpenRouter; this drives the tool budget and auto-compaction.",
+          "Optional. 0 auto-detects from the OpenRouter catalog for the same model slug (best effort). " +
+            "Set the real value (e.g. 128000) if your gateway exposes a different window than " +
+            "OpenRouter; this drives the context bar and auto-compaction.",
         )
         .addText((text) =>
           text

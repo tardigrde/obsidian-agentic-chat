@@ -291,11 +291,17 @@ const GATE_CELLS: GateCell[] = [
   { name: "yolo keeps per-tool deny", mode: "yolo", approval: { mutating: "allow", perTool: { write: "deny" } }, tool: "write", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
   { name: "yolo keeps per-tool ask", mode: "yolo", approval: { mutating: "allow", perTool: { write: "ask" } }, tool: "write", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
 
-  // Persistent skill tools default to ask.
-  { name: "load_skill ignores mutating allow", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "load_skill", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
-  { name: "load_skill honors per-tool allow", mode: "safe", approval: { mutating: "ask", perTool: { load_skill: "allow" } }, tool: "load_skill", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  // The persistent skill writer defaults to ask.
+  { name: "create_skill ignores mutating allow", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "create_skill", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  { name: "create_skill honors per-tool allow", mode: "safe", approval: { mutating: "ask", perTool: { create_skill: "allow" } }, tool: "create_skill", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
   { name: "create_skill honors per-tool deny", mode: "safe", approval: { mutating: "allow", perTool: { create_skill: "deny" } }, tool: "create_skill", expectedDecision: "denied", expectedConfirmed: false, expectedBlocked: true },
-  { name: "yolo still asks skill tools", mode: "yolo", approval: { mutating: "deny", perTool: {} }, tool: "unload_skill", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+  { name: "yolo still asks create_skill", mode: "yolo", approval: { mutating: "deny", perTool: {} }, tool: "create_skill", expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },
+
+  // Read-only merged and loader tools run without a prompt, even when mutations are denied.
+  { name: "skill runs under mutating deny", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "skill", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "artifact runs under mutating deny", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "artifact", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "search_tools runs under mutating deny", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "search_tools", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
+  { name: "current_time runs under mutating deny", mode: "safe", approval: { mutating: "deny", perTool: {} }, tool: "current_time", expectedDecision: "auto-approved", expectedConfirmed: false, expectedBlocked: false },
 
   // Recursive folder delete always asks unless the user gave a standing allow.
   { name: "recursive delete asks even when mutating allows", mode: "safe", approval: { mutating: "allow", perTool: {} }, tool: "delete", args: { path: "Folder", recursive: true }, expectedDecision: "approved", expectedConfirmed: true, expectedBlocked: false },

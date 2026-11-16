@@ -1,5 +1,4 @@
 import type { Usage } from "@earendil-works/pi-ai";
-import type { ToolBudgetSnapshot } from "../agent/tool-budget";
 import { cacheHitPercent, formatCost, formatTokenInteger, shortModelLabel } from "./format";
 
 export interface ModelPillState {
@@ -65,7 +64,3 @@ export interface UsageChromePart {
   title?: string;
 }
 
-export function toolBudgetNotificationKey(toolBudget: ToolBudgetSnapshot): string | null {
-  if (!toolBudget.active || toolBudget.droppedTools.length === 0) return null;
-  return toolBudget.droppedTools.map((tool) => tool.name).join(",");
-}

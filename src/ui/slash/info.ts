@@ -5,7 +5,6 @@ import {
   formatMcpDiagnosticRows,
   formatMcpDiagnosticSummary,
   formatRuntimeDiagnosticsRows,
-  formatToolBudgetDiagnostic,
 } from "../../agent/diagnostics";
 import { errorMessage } from "../../utils/errors";
 import { formatDetailedUsage } from "../format";
@@ -66,7 +65,6 @@ export function showStatus(ctx: SlashContext): void {
     // actually supports — the raw setting alone can overstate the next turn.
     ["Thinking", ctx.service.getActiveThinkingLevel()],
     ["Approval (mutating)", settings.approval.mutating],
-    ["Tool budget", formatToolBudgetDiagnostic(diagnostics.toolBudget)],
     ["Session", session ? `${session.messageCount} messages` : "(none)"],
     ["MCP", formatMcpDiagnosticSummary(diagnostics.resources.mcpServers)],
     ...formatMcpDiagnosticRows(diagnostics.resources.mcpServers),

@@ -1,5 +1,6 @@
 import type { App } from "obsidian";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import type { Skill } from "../skills/skill-prompt";
 import type { AgenticChatSettings } from "../settings-schema";
 import type { WebFetcher } from "../tools/web-fetch";
@@ -9,24 +10,16 @@ import type { ReadMemo } from "../vault/read-memo";
 import type { ToolArtifactStoreLike } from "../artifacts/tool-artifact-store";
 import type { AgentRole } from "./subagents";
 import type { PluginCatalog } from "../plugins/service";
+import { formatTodayLine } from "../tools/current-time-tool";
 import {
   EMPTY_AGENT_RUNTIME_RESOURCES,
   buildAgentParentTools,
   composeAgentSystemPrompt,
   loadAgentRuntimeResources,
+  type AgentParentTools,
   type AgentRuntimeResources,
 } from "./runtime-resources";
-import { SkillLoadRegistry } from "../skills/skill-load-state";
-import {
-  createToolBudgetState,
-  DEFAULT_TOOL_BUDGET_SETTINGS,
-  resetToolBudgetState,
-  type ToolBudgetSnapshot,
-} from "./tool-budget";
-
-export interface BuildParentToolsOptions {
-  contextWindow?: number;
-}
+import { LoadedToolSet, isDeferredToolName, partitionTools } from "./tool-loading";
 
 export interface AgentRuntimeResourceStateOptions {
   app: App;
@@ -39,22 +32,15 @@ export interface AgentRuntimeResourceStateOptions {
   skillScaffolder?: SkillScaffolder;
   /** Shared plugin catalog; without it the runtime scans the plugins folder itself. */
   plugins?: PluginCatalog;
+  /** Clock for the date line and `current_time`; tests inject a fixed one. */
+  now?: () => Date;
 }
 
 export class AgentRuntimeResourceState {
   private resources: AgentRuntimeResources = EMPTY_AGENT_RUNTIME_RESOURCES;
   private reloadedAt: string | null = null;
-  private readonly toolBudgetState = createToolBudgetState();
-  private readonly skillLoads = new SkillLoadRegistry();
-  private toolBudgetSnapshot: ToolBudgetSnapshot = {
-    enabled: DEFAULT_TOOL_BUDGET_SETTINGS.enabled,
-    active: false,
-    thresholdPercent: DEFAULT_TOOL_BUDGET_SETTINGS.thresholdPercent,
-    triggeredAtToolSchemaPercent: null,
-    toolSchemaTokens: null,
-    contextWindow: null,
-    droppedTools: [],
-  };
+  private readonly loadedTools = new LoadedToolSet();
+  private lastBuild: AgentParentTools | null = null;
 
   constructor(private readonly options: AgentRuntimeResourceStateOptions) {}
 
@@ -70,35 +56,26 @@ export class AgentRuntimeResourceState {
     return this.resources.skills;
   }
 
-  get skillLoadRegistry(): SkillLoadRegistry {
-    return this.skillLoads;
-  }
-
   getProfiles(): AgentRole[] {
     return this.resources.profiles;
   }
 
-  getToolBudgetSnapshot(): ToolBudgetSnapshot {
-    return this.toolBudgetSnapshot;
+  /** Names of the deferred tools loaded in this session. */
+  getLoadedToolNames(): string[] {
+    return this.loadedTools.list();
   }
 
   isPathIgnored(path: string): boolean {
     return this.resources.ignoreMatcher(path);
   }
 
-  clearSessionState(): void {
-    this.skillLoads.clear();
-    resetToolBudgetState(this.toolBudgetState);
-    const settings = this.options.getSettings();
-    this.toolBudgetSnapshot = {
-      enabled: settings.toolBudget.enabled,
-      active: false,
-      thresholdPercent: settings.toolBudget.thresholdPercent,
-      triggeredAtToolSchemaPercent: null,
-      toolSchemaTokens: null,
-      contextWindow: null,
-      droppedTools: [],
-    };
+  /**
+   * Reset session-local state for a newly active transcript. The loaded
+   * deferred tools are rebuilt from that transcript, so a reopened session can
+   * still call the tools it loaded before.
+   */
+  clearSessionState(messages: readonly AgentMessage[] = []): void {
+    this.loadedTools.restoreFromMessages(messages);
   }
 
   async reload(): Promise<AgentRuntimeResources> {
@@ -114,22 +91,48 @@ export class AgentRuntimeResourceState {
       this.options.artifactStore,
       plugins,
     );
-    // Prune any loaded skill that disappeared (plugin disabled/removed)
-    this.skillLoads.prune(new Set(this.resources.skills.map((s) => s.name)));
     this.reloadedAt = new Date().toISOString();
     return this.resources;
   }
 
   composeSystemPrompt(settings: AgenticChatSettings, activeModelId: string): string {
-    return composeAgentSystemPrompt(settings, this.resources, this.selfAwarenessOverlay(activeModelId), this.skillLoads);
+    return composeAgentSystemPrompt(
+      settings,
+      this.resources,
+      this.selfAwarenessOverlay(activeModelId),
+      // The whole deferred catalog, loaded or not: the prompt must not change
+      // when search_tools loads a tool, or every load would break the prompt cache.
+      this.build(settings).all.filter((tool) => isDeferredToolName(tool.name)),
+    );
   }
 
-  buildParentTools(
-    settings: AgenticChatSettings,
-    subagentTool?: AgentTool,
-    buildOptions: BuildParentToolsOptions = {},
-  ): AgentTool[] {
-    const result = buildAgentParentTools({
+  buildParentTools(settings: AgenticChatSettings, subagentTool?: AgentTool): AgentTool[] {
+    this.lastBuild = this.build(settings, subagentTool);
+    return this.lastBuild.active;
+  }
+
+  /**
+   * Tool changes for the next step of a running turn. `search_tools` adds to
+   * the loaded set while it runs; a direct call to a deferred tool that was not
+   * loaded fails once ("not found") and loads the tool. Returns the new active
+   * tool list when it changed, else undefined.
+   */
+  toolsForNextStep(currentTools: readonly AgentTool[], toolResults: readonly ToolResultMessage[]): AgentTool[] | undefined {
+    const build = this.lastBuild;
+    if (!build) return undefined;
+    const known = new Set(build.all.map((tool) => tool.name));
+    const missed = toolResults
+      .filter((result) => result.isError && isDeferredToolName(result.toolName) && known.has(result.toolName))
+      .map((result) => result.toolName);
+    this.loadedTools.add(missed);
+    const { active } = partitionTools(build.all, this.loadedTools);
+    const current = new Set(currentTools.map((tool) => tool.name));
+    if (active.length === current.size && active.every((tool) => current.has(tool.name))) return undefined;
+    return active;
+  }
+
+  private build(settings: AgenticChatSettings, subagentTool?: AgentTool): AgentParentTools {
+    return buildAgentParentTools({
       app: this.options.app,
       settings,
       resources: this.resources,
@@ -138,16 +141,17 @@ export class AgentRuntimeResourceState {
       artifactStore: this.options.artifactStore,
       askUser: this.options.askUser,
       subagentTool,
-      contextWindow: buildOptions.contextWindow,
-      toolBudgetState: this.toolBudgetState,
       skillScaffolder: this.options.skillScaffolder,
-      skillLoadRegistry: this.skillLoads,
+      loadedTools: this.loadedTools,
+      now: this.options.now,
     });
-    this.toolBudgetSnapshot = result.toolBudget;
-    return result.tools;
   }
 
   private selfAwarenessOverlay(activeModelId: string): string {
-    return `Identity: you are the "agentic-chat" Obsidian plugin. You are currently using the model "${activeModelId}".`;
+    const now = this.options.now?.() ?? new Date();
+    return (
+      `Identity: you are the "agentic-chat" Obsidian plugin. You are currently using the model "${activeModelId}".\n` +
+      formatTodayLine(now)
+    );
   }
 }

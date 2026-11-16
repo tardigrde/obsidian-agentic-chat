@@ -1,3 +1,4 @@
+import { LoadedToolSet } from "../src/agent/tool-loading";
 import { describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../src/skills/skill-prompt";
@@ -167,7 +168,7 @@ describe("agent runtime resources", () => {
       mcpDiagnostics: [],
     };
     const subagentTool = { name: "subagent", label: "Subagent" } as AgentTool;
-    const { tools } = buildAgentParentTools({
+    const { active, deferred } = buildAgentParentTools({
       app: { vault: {}, workspace: {} } as unknown as App,
       settings: settings({ web: { enabled: true } }),
       resources,
@@ -176,21 +177,32 @@ describe("agent runtime resources", () => {
       artifactStore: noopArtifactStore,
       askUser: async () => "answer",
       subagentTool,
+      skillScaffolder: {
+        packageExists: async () => false,
+        async scaffoldSkill() {
+          return { rootPath: ".agentic-plugins/x", name: "x", updated: false, skills: 1 };
+        },
+      },
     });
 
-    expect(tools.map((tool) => tool.name)).toEqual(
-      expect.arrayContaining([
-        "read",
-        "vault_inspect",
-        "write",
-        "ask_user",
-        "web_search",
-        "fetch_url",
-        "read_artifact",
-        "search_artifact",
-        "subagent",
-      ]),
-    );
+    // The core set the model always gets; nothing else.
+    expect(active.map((tool) => tool.name)).toEqual([
+      "read",
+      "vault_inspect",
+      "write",
+      "edit",
+      "rename",
+      "delete",
+      "set_properties",
+      "web_search",
+      "fetch_url",
+      "ask_user",
+      "subagent",
+      "skill",
+      "artifact",
+      "search_tools",
+    ]);
+    expect(deferred.map((tool) => tool.name)).toEqual(["current_time", "create_skill", "import_document"]);
   });
 
   it("includes discovered MCP tools from plugins in the parent tool snapshot", async () => {
@@ -216,15 +228,24 @@ describe("agent runtime resources", () => {
       mcpFetcher(),
     );
 
-    const { tools } = buildAgentParentTools({
-      app: { vault: {}, workspace: {} } as unknown as App,
-      settings: settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] } }),
-      resources,
-      readMemo: new ReadMemo(),
-      webFetch: noopFetcher,
-    });
+    const loadedTools = new LoadedToolSet();
+    const build = () =>
+      buildAgentParentTools({
+        app: { vault: {}, workspace: {} } as unknown as App,
+        settings: settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [] } }),
+        resources,
+        readMemo: new ReadMemo(),
+        webFetch: noopFetcher,
+        loadedTools,
+      });
+    const mcpName = `mcp__${enabledPluginServer().id}__resolve_library_id`;
 
-    expect(tools.map((tool) => tool.name)).toContain(`mcp__${enabledPluginServer().id}__resolve_library_id`);
+    // MCP tools are deferred until search_tools loads them.
+    const before = build();
+    expect(before.active.map((tool) => tool.name)).not.toContain(mcpName);
+    expect(before.deferred.map((tool) => tool.name)).toContain(mcpName);
+    loadedTools.add([mcpName]);
+    expect(build().active.map((tool) => tool.name)).toContain(mcpName);
   });
 
   it("persists a plugin server's OAuth challenge to its state map", async () => {

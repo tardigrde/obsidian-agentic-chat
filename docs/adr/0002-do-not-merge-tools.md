@@ -1,6 +1,6 @@
 # 0002 — Do not merge granular tools
 
-- Status: Accepted
+- Status: Superseded by [0006](0006-consolidate-tools-and-defer-loading.md) (2026-11-16)
 - Date: 2026-11-07
 - Issue: #144
 

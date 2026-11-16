@@ -21,7 +21,6 @@ import {
   OPENROUTER_API_KEY_SECRET_ID,
   WEB_SEARCH_API_KEY_SECRET_ID,
 } from "./secrets/secret-store";
-import { DEFAULT_TOOL_BUDGET_SETTINGS, healToolBudgetSettings, type ToolBudgetSettings } from "./agent/tool-budget";
 import {
   DEFAULT_PROXY_SETTINGS,
   type ProxySettings,
@@ -62,7 +61,7 @@ export interface AgenticChatSettings {
    * Optional context-window override for the OpenAI-compatible provider. 0 means
    * "auto-detect": try the OpenRouter catalog for the same model slug (exact or
    * confident suffix match), else treat the window as unknown. Unknown windows
-   * keep all tools (the tool budget never drops) and disable auto-compaction.
+   * disable auto-compaction.
    */
   openaiCompatibleContextWindow: number;
   /** Reasoning effort for your messages, set via the composer knob or `/effort`. */
@@ -96,7 +95,6 @@ export interface AgenticChatSettings {
   /** Auto-compaction: summarize old turns as the context window fills. */
   compaction: CompactionSettings;
   /** Tool-schema guard: withhold optional tools once registered tool definitions get large. */
-  toolBudget: ToolBudgetSettings;
   /** Optional plugin-owned HTTP proxy for request paths the plugin controls. */
   network: NetworkSettings;
   /** Open-web access: search + fetch tools. Off by default — sends data off-device. */
@@ -187,7 +185,6 @@ export const DEFAULT_SETTINGS: AgenticChatSettings = {
   ignoredGlobs: "",
   notifications: { enabled: true, costAlertUsd: 0, costCapUsd: 0 },
   compaction: { enabled: true, thresholdPercent: 80 },
-  toolBudget: { ...DEFAULT_TOOL_BUDGET_SETTINGS },
   network: { ...DEFAULT_PROXY_SETTINGS },
   web: {
     enabled: false,
@@ -252,7 +249,6 @@ export function mergeSettings(stored: Partial<AgenticChatSettings> | null | unde
     approval: healApprovalSettings(stored?.approval),
     notifications: { ...DEFAULT_SETTINGS.notifications, ...stored?.notifications },
     compaction: { ...DEFAULT_SETTINGS.compaction, ...stored?.compaction },
-    toolBudget: healToolBudgetSettings(stored?.toolBudget),
     network: healNetworkSettings(stored?.network),
     web: {
       ...DEFAULT_SETTINGS.web,
@@ -368,7 +364,14 @@ function migrateLegacyPluginServers(healedMcp: McpSettings, healedPlugins: Plugi
 }
 
 /** Retired feature keys removed from persisted data.json on load. */
-const RETIRED_SETTING_KEYS = ["projects", "agentsFolder", "enableBuiltinAgents", "outputStyle", "embeddings"] as const;
+const RETIRED_SETTING_KEYS = [
+  "projects",
+  "agentsFolder",
+  "enableBuiltinAgents",
+  "outputStyle",
+  "embeddings",
+  "toolBudget",
+] as const;
 
 /**
  * Merge the stored approval policy over the defaults. Unknown legacy keys such as

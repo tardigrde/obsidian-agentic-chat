@@ -7,7 +7,7 @@ import type { AgentTurnContext, StreamFn } from "@earendil-works/pi-agent-core";
 import { AgentSubagentRuntime, type ChildTurnCap } from "../src/agent/subagent-runtime";
 import { AgentTurnCap } from "../src/agent/turn-cap";
 import type { AgentRuntimeResources } from "../src/agent/runtime-resources";
-import type { AgentRole } from "../src/agent/subagents";
+import { loadAgentRoles, type AgentRole } from "../src/agent/subagents";
 import type { ToolArtifactStoreLike } from "../src/artifacts/tool-artifact-store";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import type { WebFetcher } from "../src/tools/web-fetch";
@@ -208,12 +208,28 @@ describe("AgentSubagentRuntime", () => {
     ]);
   });
 
+  it("gives the built-in explorer the vault_inspect tool, so it can list and search the vault", () => {
+    const explorer = loadAgentRoles().find((role) => role.name === "explorer");
+    if (!explorer) throw new Error("explorer role missing");
+    const runtime = makeRuntime({
+      settings: settings({ web: { ...DEFAULT_SETTINGS.web, enabled: true } }),
+      profiles: [explorer],
+      artifactStore,
+    });
+
+    const names = runtime.createChildAgent(explorer).state.tools.map((tool) => tool.name);
+
+    expect(names).toContain("vault_inspect");
+    expect(names).toContain("read");
+    expect(names).not.toContain("write");
+  });
+
   it("exposes enabled web and artifact lookup tools to allowlisted research children", () => {
     const profile: AgentRole = {
       name: "researcher",
       description: "Research",
       systemPrompt: "research",
-      toolAllowlist: ["read", "web_search", "fetch_url", "list_artifacts", "read_artifact", "search_artifact"],
+      toolAllowlist: ["read", "vault_inspect", "web_search", "fetch_url", "artifact", "skill"],
     };
     const runtime = makeRuntime({
       settings: settings({ web: { ...DEFAULT_SETTINGS.web, enabled: true } }),
@@ -224,11 +240,11 @@ describe("AgentSubagentRuntime", () => {
     const child = runtime.createChildAgent(profile);
 
     expect(child.state.tools.map((tool) => tool.name).sort()).toEqual([
+      "artifact",
       "fetch_url",
-      "list_artifacts",
       "read",
-      "read_artifact",
-      "search_artifact",
+      "skill",
+      "vault_inspect",
       "web_search",
     ]);
   });

@@ -184,23 +184,10 @@ describe("mergeSettings — network proxy", () => {
   });
 });
 
-describe("mergeSettings — tool budget", () => {
-  it("defaults optional tool dropping on at a low tool-schema threshold", () => {
-    expect(mergeSettings(null).toolBudget).toEqual({
-      enabled: true,
-      thresholdPercent: 2,
-    });
-  });
-
-  it("heals malformed tool budget settings to bounded safe values", () => {
-    expect(mergeSettings({ toolBudget: { enabled: false, thresholdPercent: 999 } }).toolBudget).toEqual({
-      enabled: false,
-      thresholdPercent: 50,
-    });
-    expect(mergeSettings({ toolBudget: { enabled: "yes", thresholdPercent: -10 } as never }).toolBudget).toEqual({
-      enabled: true,
-      thresholdPercent: 1,
-    });
+describe("mergeSettings — removed tool budget", () => {
+  it("drops a stale toolBudget key from older data.json instead of carrying it forward", () => {
+    const merged = mergeSettings({ toolBudget: { enabled: false, thresholdPercent: 7 } } as never);
+    expect("toolBudget" in merged).toBe(false);
   });
 });
 

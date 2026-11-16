@@ -7,7 +7,7 @@
 - Models: provider, global network proxy, OpenRouter privacy toggles, Ollama
   fields, OpenAI-compatible gateway fields, API keys.
 - Agent: permission mode, sampling, timeout, retries, system prompt, compaction,
-  tool budget, approval gates, per-tool overrides.
+  approval gates, per-tool overrides. The tool budget rows were removed.
 - Advanced: web access, MCP, observability, notifications, agent plugins,
   subagents, ignored files.
 - The plugin stores secrets in Obsidian secret storage, not in `data.json`.
@@ -54,7 +54,8 @@ await closeAgenticChatSettings();
 | Ollama server URL and model | `src/settings-tab-models.ts#ollamaDefinitions` | no committed check | `NONE` |
 | Global network proxy | `src/settings-tab-models.ts#headingRow("Network proxy")` | no committed check | `NONE` |
 | Agent: Permission mode | `src/settings-tab-agent.ts#row("Permission mode"` | no committed check | `NONE` |
-| Agent: sampling, timeout, retries, prompt, compaction, budget | `src/settings-tab-agent.ts#agentDefinitions` | no committed check | `NONE` |
+| Agent: sampling, timeout, retries, prompt, compaction | `src/settings-tab-agent.ts#agentDefinitions` | no committed check | `NONE` |
+| Agent: tool budget rows removed | `src/settings-tab-agent.ts#agentDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the tool budget rows and keeps the context window section` | `covered` |
 | Approval gates: Per-tool overrides | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
 | Approval: working directories section removed | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
 | Web: enable, provider, key, results, fetch limit | `src/settings-tab-web.ts#webDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |

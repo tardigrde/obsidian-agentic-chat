@@ -145,8 +145,7 @@ function buildOpenAICompatibleModel(config: ModelConfig): Model<"openai-completi
   const info = resolveModelInfoSync("openai-compatible", config.modelId);
   // Context window: explicit override wins; else try the OpenRouter catalog for
   // the same slug (exact, or an unambiguous suffix match); else 0 = unknown.
-  // An unknown window keeps every tool (the tool budget fail-opens) and disables
-  // auto-compaction — better than guessing 128k and silently dropping tools.
+  // An unknown window disables auto-compaction — better than guessing 128k.
   const override = config.openaiCompatibleContextWindow ?? 0;
   const contextWindow = override > 0 ? override : info?.c && info.c > 0 ? info.c : 0;
   return {

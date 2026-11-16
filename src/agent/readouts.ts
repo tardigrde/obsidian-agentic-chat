@@ -10,13 +10,13 @@ import {
   hasPricing,
   type RequestCostEstimate,
 } from "./cost";
-import { estimateToolDefinitionTokens } from "./tool-budget";
+import { estimateToolDefinitionTokens } from "./tool-schema-tokens";
 
 export interface ContextLoadInput {
   messages: AgentMessage[];
   /** Composed system prompt (base prompt, overlays, and loaded skill bodies). */
   systemPrompt?: string;
-  /** Tools the model can currently call (after the tool budget runs). */
+  /** Tools the model can currently call (loaded tools only; deferred tools are not sent). */
   tools?: readonly AgentTool[];
   /** Tokens held back for the model's response. */
   reserveTokens?: number;

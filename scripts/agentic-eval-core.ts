@@ -17,7 +17,6 @@ export interface StaticContextEvalCase {
   type: "static-context";
   prompt?: string;
   systemPrompt?: string;
-  toolSurface?: "default" | "compat";
   contextWindow?: number;
   assertions: EvalAssertion[];
 }
@@ -353,7 +352,6 @@ function validateCase(input: unknown, index: number): AgenticEvalCase {
       type,
       prompt: optionalString(evalCase.prompt),
       systemPrompt: optionalString(evalCase.systemPrompt),
-      toolSurface: evalCase.toolSurface === "compat" ? "compat" : "default",
       contextWindow: optionalPositiveNumber(evalCase.contextWindow, `suite.cases[${index}].contextWindow`),
       assertions,
     };

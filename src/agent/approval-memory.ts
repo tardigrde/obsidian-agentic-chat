@@ -20,7 +20,7 @@ export function applyRememberedApprovalChoice(
   const policy = approvalPolicyForRememberedChoice(choice);
   if (!policy) return false;
   if (isPersistentSkillTool(toolName) && policy === "allow") {
-    // Persistent prompt-implant primitives (create/load/unload_skill) must
+    // A persistent skill write (create_skill) must
     // never be silently auto-allowed: one fatigued "don't ask again" would
     // disarm the injection gate for all future calls. Remember deny, not allow.
     return false;
@@ -29,7 +29,7 @@ export function applyRememberedApprovalChoice(
   return true;
 }
 
-/** Tools whose effect persists across sessions via the prompt overlay or vault packages. */
+/** Tools whose effect persists across sessions as a vault skill package. */
 function isPersistentSkillTool(toolName: string): boolean {
-  return toolName === "create_skill" || toolName === "load_skill" || toolName === "unload_skill";
+  return toolName === "create_skill";
 }

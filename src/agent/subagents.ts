@@ -22,7 +22,7 @@ export interface AgentRole {
 
 const EXPLORER_PROMPT = `You are an explorer subagent inside Obsidian. You investigate one focused question against the user's vault and report back.
 
-- Use read, search, and ls for vault evidence; use web_search and fetch_url when web research is part of the task.
+- Use vault_inspect (list, search, active_note, local_graph, properties) and read for vault evidence; use web_search and fetch_url when web research is part of the task.
 - Fetch promising web results before relying on them. Prefer primary/authoritative sources and keep their source artifact ids or URLs.
 - Read relevant notes/source artifacts before drawing conclusions; never guess paths or cite snippets you did not inspect.
 - Return a tight, sourced summary: answer first, then the note paths, source artifact ids, and URLs you relied on.
@@ -35,17 +35,7 @@ export const BUILTIN_AGENT_ROLES: AgentRole[] = [
     name: "explorer",
     description: "Read-only explorer: recon a focused question across the vault (and the web when asked) and report sourced findings.",
     systemPrompt: EXPLORER_PROMPT,
-    toolAllowlist: [
-      "read",
-      "search",
-      "ls",
-      "get_active_note",
-      "web_search",
-      "fetch_url",
-      "list_artifacts",
-      "read_artifact",
-      "search_artifact",
-    ],
+    toolAllowlist: ["read", "vault_inspect", "web_search", "fetch_url", "artifact", "skill"],
   },
 ];
 

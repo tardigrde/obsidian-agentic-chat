@@ -101,7 +101,7 @@ describe("agentic eval judge", () => {
     expect(packet.conversation.assistantResponses).toEqual(["Done."]);
     expect(packet.generatedNotes[0]).toEqual(expect.objectContaining({ path: "Generated/Oracle.md" }));
     expect(packet.trace.approvalDenials).toEqual([{ key: "write: no", count: 1 }]);
-    expect(packet.promptContext.defaultSystemPromptExcerpt).toContain("read_skill");
+    expect(packet.promptContext.defaultSystemPromptExcerpt).toContain("`skill` tool");
   });
 
   it("returns cached judge results without making a provider request", async () => {

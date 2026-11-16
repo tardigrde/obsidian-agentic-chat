@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { truncateToolOutput } from "../vault/truncate";
 import { toolResult, untrustedToolResult } from "../tools/result";
@@ -14,166 +14,171 @@ const DEFAULT_SEARCH_MATCHES = 10;
 const MAX_SEARCH_MATCHES = 50;
 const SEARCH_CONTEXT_CHARS = 220;
 
-export function createToolArtifactTools(store: ToolArtifactStoreLike | undefined): AgentTool[] {
-  if (!store) return [];
-  const tools: AgentTool[] = [];
-  if (store.listArtifacts) tools.push(createListArtifactsTool(store));
-  tools.push(createReadArtifactTool(store), createSearchArtifactTool(store), createExportArtifactTool(store));
-  return tools;
+export const ARTIFACT_TOOL_NAME = "artifact";
+
+const ARTIFACT_ACTIONS = ["list", "search", "read", "export"] as const;
+type ArtifactAction = (typeof ARTIFACT_ACTIONS)[number];
+
+const ArtifactParameters = Type.Object({
+  action: Type.Unsafe<ArtifactAction>({
+    type: "string",
+    enum: [...ARTIFACT_ACTIONS],
+    description: "list recent artifacts, search one, read a chunk, or export it",
+  }),
+  id: Type.Optional(Type.String({ description: "artifact id from a previous result (search/read/export)" })),
+  query: Type.Optional(Type.String({ description: "case-insensitive text to find (search)" })),
+  offset: Type.Optional(Type.Integer({ minimum: 0, description: "0-based char offset (read)" })),
+  limit: Type.Optional(
+    Type.Integer({
+      minimum: 1,
+      maximum: MAX_EXPORT_LIMIT,
+      description:
+        `list: max artifacts (default ${DEFAULT_LIST_LIMIT}); read: max chars (default ${DEFAULT_READ_LIMIT}); ` +
+        `export: max chars (default ${DEFAULT_EXPORT_LIMIT})`,
+    }),
+  ),
+  maxMatches: Type.Optional(
+    Type.Integer({
+      minimum: 1,
+      maximum: MAX_SEARCH_MATCHES,
+      description: `max matches (search, default ${DEFAULT_SEARCH_MATCHES})`,
+    }),
+  ),
+  sourceKind: Type.Optional(Type.String({ description: "kind filter: web, pdf, epub, docx, pptx, xlsx (list)" })),
+  format: Type.Optional(Type.String({ description: "markdown|json (export)" })),
+});
+
+interface ArtifactParams {
+  action: ArtifactAction;
+  id?: string;
+  query?: string;
+  offset?: number;
+  limit?: number;
+  maxMatches?: number;
+  sourceKind?: string;
+  format?: string;
 }
 
-function createListArtifactsTool(store: ToolArtifactStoreLike): AgentTool {
+type ArtifactResult = AgentToolResult<Record<string, unknown>>;
+
+/**
+ * The `artifact` tool: one read-only tool for stored artifacts (large web
+ * pages, MCP results, imported documents). Every action only reads the store,
+ * so one approval policy covers the tool.
+ */
+export function createArtifactTool(store: ToolArtifactStoreLike | undefined): AgentTool | undefined {
+  if (!store) return undefined;
   return {
-    name: "list_artifacts",
-    label: "List artifacts",
+    name: ARTIFACT_TOOL_NAME,
+    label: "Artifact",
     description:
-      "List recent artifacts by metadata. Find an imported artifact before reading or exporting it.",
-    parameters: Type.Object({
-      sourceKind: Type.Optional(
-        Type.String({ description: "kind filter: web, pdf, epub, docx, pptx, xlsx" }),
-      ),
-      limit: Type.Optional(
-        Type.Integer({
-          minimum: 1,
-          maximum: MAX_LIST_LIMIT,
-          description: `max artifacts (default ${DEFAULT_LIST_LIMIT})`,
-        }),
-      ),
-    }),
+      "Read-only access to stored artifacts (large web pages, MCP results, imported documents) by id. " +
+      "action: list (recent artifacts), search (find text in one), read (a chunk by offset), " +
+      "export (a bounded copy; use write to save it in the vault).",
+    parameters: ArtifactParameters,
     execute: async (_id, params) => {
-      const sourceKind = normalizeSourceKind((params as { sourceKind?: string }).sourceKind);
-      const limit = normalizeLimit((params as { limit?: number }).limit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
-      const artifacts = (await store.listArtifacts?.()) ?? [];
-      const visible = artifacts
-        .filter((artifact) => !sourceKind || artifact.sourceKind === sourceKind)
-        .slice(0, limit);
-      return toolResult(formatArtifactList(visible, sourceKind), {
-        count: visible.length,
-        sourceKind,
-        limit,
-        totalAvailable: artifacts.length,
-      });
+      const input = params as ArtifactParams;
+      switch (normalizeAction(input.action)) {
+        case "list":
+          return listArtifacts(store, input);
+        case "search":
+          return searchArtifact(store, input);
+        case "read":
+          return readArtifact(store, input);
+        case "export":
+          return exportArtifact(store, input);
+      }
     },
   };
 }
 
-function createReadArtifactTool(store: ToolArtifactStoreLike): AgentTool {
-  return {
-    name: "read_artifact",
-    label: "Read artifact",
-    description:
-      "Read a stored artifact (from a previous tool call) by id, e.g. a large MCP result, without re-running it.",
-    parameters: Type.Object({
-      id: Type.String({ description: "artifact id from a previous result" }),
-      offset: Type.Optional(Type.Integer({ minimum: 0, description: "0-based char offset" })),
-      limit: Type.Optional(
-        Type.Integer({
-          minimum: 1,
-          maximum: MAX_READ_LIMIT,
-          description: `max chars (default ${DEFAULT_READ_LIMIT})`,
-        }),
-      ),
-    }),
-    execute: async (_id, params) => {
-      const read = await store.readArtifact(String((params as { id: string }).id));
-      const offset = normalizeOffset((params as { offset?: number }).offset, read.text.length);
-      const limit = normalizeLimit((params as { limit?: number }).limit, DEFAULT_READ_LIMIT, MAX_READ_LIMIT);
-      const end = Math.min(read.text.length, offset + limit);
-      const chunk = read.text.slice(offset, end);
-      return untrustedToolResult(
-        truncateToolOutput(formatArtifactRead(read, offset, end, chunk), MAX_READ_LIMIT + 1_000),
-        {
-          artifactId: read.metadata.id,
-          offset,
-          limit,
-          returnedChars: chunk.length,
-          totalChars: read.text.length,
-          truncated: end < read.text.length,
-        },
-        "read_artifact",
-      );
-    },
-  };
+function normalizeAction(value: unknown): ArtifactAction {
+  if (typeof value === "string" && (ARTIFACT_ACTIONS as readonly string[]).includes(value)) return value as ArtifactAction;
+  throw new Error(`artifact: action must be one of ${ARTIFACT_ACTIONS.join(", ")}.`);
 }
 
-function createSearchArtifactTool(store: ToolArtifactStoreLike): AgentTool {
-  return {
-    name: "search_artifact",
-    label: "Search artifact",
-    description:
-      "Search a stored artifact (from a previous tool call) by id for a term before reading a chunk.",
-    parameters: Type.Object({
-      id: Type.String({ description: "artifact id from a previous result" }),
-      query: Type.String({ minLength: 1, description: "case-insensitive text to find" }),
-      maxMatches: Type.Optional(
-        Type.Integer({
-          minimum: 1,
-          maximum: MAX_SEARCH_MATCHES,
-          description: `max matches (default ${DEFAULT_SEARCH_MATCHES})`,
-        }),
-      ),
-    }),
-    execute: async (_id, params) => {
-      const id = String((params as { id: string }).id);
-      const query = String((params as { query: string }).query);
-      const maxMatches = normalizeLimit(
-        (params as { maxMatches?: number }).maxMatches,
-        DEFAULT_SEARCH_MATCHES,
-        MAX_SEARCH_MATCHES,
-      );
-      const read = await store.readArtifact(id);
-      const matches = findMatches(read.text, query, maxMatches);
-      return untrustedToolResult(
-        truncateToolOutput(formatArtifactSearch(read, query, matches)),
-        {
-          artifactId: read.metadata.id,
-          query,
-          matches: matches.length,
-          totalChars: read.text.length,
-        },
-        "search_artifact",
-      );
-    },
-  };
+function requiredId(params: ArtifactParams): string {
+  const id = typeof params.id === "string" ? params.id.trim() : "";
+  if (!id) throw new Error(`artifact: id is required for action "${params.action}".`);
+  return id;
 }
 
-function createExportArtifactTool(store: ToolArtifactStoreLike): AgentTool {
-  return {
-    name: "export_artifact",
-    label: "Export artifact",
-    description:
-      "Return a bounded export of a stored artifact (read-only). Use write to save it into the vault.",
-    parameters: Type.Object({
-      id: Type.String({ description: "artifact id from a previous result" }),
-      format: Type.Optional(Type.String({ description: "markdown|json" })),
-      limit: Type.Optional(
-        Type.Integer({
-          minimum: 1,
-          maximum: MAX_EXPORT_LIMIT,
-          description: `max chars (default ${DEFAULT_EXPORT_LIMIT})`,
-        }),
-      ),
-    }),
-    execute: async (_id, params) => {
-      const read = await store.readArtifact(String((params as { id: string }).id));
-      const format = normalizeExportFormat((params as { format?: string }).format);
-      const limit = normalizeLimit((params as { limit?: number }).limit, DEFAULT_EXPORT_LIMIT, MAX_EXPORT_LIMIT);
-      const truncated = read.text.length > limit;
-      const payload = formatArtifactExport(read, format, limit);
-      return untrustedToolResult(
-        truncateToolOutput(payload, MAX_EXPORT_LIMIT + 2_000),
-        {
-          artifactId: read.metadata.id,
-          format,
-          limit,
-          returnedChars: Math.min(read.text.length, limit),
-          totalChars: read.text.length,
-          truncated,
-        },
-        "export_artifact",
-      );
+async function listArtifacts(store: ToolArtifactStoreLike, params: ArtifactParams): Promise<ArtifactResult> {
+  const sourceKind = normalizeSourceKind(params.sourceKind);
+  const limit = normalizeLimit(params.limit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const artifacts = (await store.listArtifacts?.()) ?? [];
+  const visible = artifacts
+    .filter((artifact) => !sourceKind || artifact.sourceKind === sourceKind)
+    .slice(0, limit);
+  return toolResult(formatArtifactList(visible, sourceKind), {
+    action: "list",
+    count: visible.length,
+    sourceKind,
+    limit,
+    totalAvailable: artifacts.length,
+  });
+}
+
+async function readArtifact(store: ToolArtifactStoreLike, params: ArtifactParams): Promise<ArtifactResult> {
+  const read = await store.readArtifact(requiredId(params));
+  const offset = normalizeOffset(params.offset, read.text.length);
+  const limit = normalizeLimit(params.limit, DEFAULT_READ_LIMIT, MAX_READ_LIMIT);
+  const end = Math.min(read.text.length, offset + limit);
+  const chunk = read.text.slice(offset, end);
+  return untrustedToolResult(
+    truncateToolOutput(formatArtifactRead(read, offset, end, chunk), MAX_READ_LIMIT + 1_000),
+    {
+      action: "read",
+      artifactId: read.metadata.id,
+      offset,
+      limit,
+      returnedChars: chunk.length,
+      totalChars: read.text.length,
+      truncated: end < read.text.length,
     },
-  };
+    ARTIFACT_TOOL_NAME,
+  );
+}
+
+async function searchArtifact(store: ToolArtifactStoreLike, params: ArtifactParams): Promise<ArtifactResult> {
+  const id = requiredId(params);
+  const query = typeof params.query === "string" ? params.query : "";
+  if (!query.trim()) throw new Error('artifact: query is required for action "search".');
+  const maxMatches = normalizeLimit(params.maxMatches, DEFAULT_SEARCH_MATCHES, MAX_SEARCH_MATCHES);
+  const read = await store.readArtifact(id);
+  const matches = findMatches(read.text, query, maxMatches);
+  return untrustedToolResult(
+    truncateToolOutput(formatArtifactSearch(read, query, matches)),
+    {
+      action: "search",
+      artifactId: read.metadata.id,
+      query,
+      matches: matches.length,
+      totalChars: read.text.length,
+    },
+    ARTIFACT_TOOL_NAME,
+  );
+}
+
+async function exportArtifact(store: ToolArtifactStoreLike, params: ArtifactParams): Promise<ArtifactResult> {
+  const read = await store.readArtifact(requiredId(params));
+  const format = normalizeExportFormat(params.format);
+  const limit = normalizeLimit(params.limit, DEFAULT_EXPORT_LIMIT, MAX_EXPORT_LIMIT);
+  const truncated = read.text.length > limit;
+  const payload = formatArtifactExport(read, format, limit);
+  return untrustedToolResult(
+    truncateToolOutput(payload, MAX_EXPORT_LIMIT + 2_000),
+    {
+      action: "export",
+      artifactId: read.metadata.id,
+      format,
+      limit,
+      returnedChars: Math.min(read.text.length, limit),
+      totalChars: read.text.length,
+      truncated,
+    },
+    ARTIFACT_TOOL_NAME,
+  );
 }
 
 function normalizeOffset(value: number | undefined, totalChars: number): number {
@@ -194,7 +199,7 @@ function normalizeSourceKind(value: string | undefined): string | undefined {
 function normalizeExportFormat(value: string | undefined): "markdown" | "json" {
   if (value === undefined || value.trim() === "" || value === "markdown") return "markdown";
   if (value === "json") return "json";
-  throw new Error('export_artifact: format must be "markdown" or "json".');
+  throw new Error('artifact: format must be "markdown" or "json".');
 }
 
 function artifactMetadataLines(read: ToolArtifactReadResult): string[] {
@@ -214,7 +219,7 @@ function formatArtifactRead(read: ToolArtifactReadResult, offset: number, end: n
     ...artifactMetadataLines(read),
     `Characters ${range} of ${read.text.length}${end < read.text.length ? " (truncated)" : ""}`,
   ].join("\n");
-  const next = end < read.text.length ? `\n\nNext chunk: call read_artifact with offset ${end}.` : "";
+  const next = end < read.text.length ? `\n\nNext chunk: call artifact with action "read" and offset ${end}.` : "";
   return `${header}\n\n${chunk}${next}`;
 }
 
@@ -312,7 +317,7 @@ function formatArtifactExport(read: ToolArtifactReadResult, format: "markdown" |
     read.metadata.sourceUrl ? `- source_url: ${read.metadata.sourceUrl}` : null,
     `- characters: ${read.text.length}`,
     read.metadata.byteLength !== undefined ? `- bytes: ${read.metadata.byteLength}` : null,
-    truncated ? `- truncated: true; call export_artifact with a larger limit or read_artifact with offsets for the rest.` : null,
+    truncated ? `- truncated: true; call artifact (action "export") with a larger limit, or action "read" with offsets, for the rest.` : null,
     "",
     "## Content",
     "",

@@ -30,7 +30,7 @@ export interface ConversationSessionState {
   sessionEvents: { markPersistedMessages(messages: AgentMessage[]): void };
   sessionState: { reset(): void };
   toolCalls: { clearSessionState(): void };
-  runtimeResources: { clearSessionState(): void; reload(): Promise<unknown> };
+  runtimeResources: { clearSessionState(messages?: readonly AgentMessage[]): void; reload(): Promise<unknown> };
 }
 
 export interface AgentConversationOptions extends ConversationSessionState {
@@ -148,7 +148,7 @@ export class AgentConversation {
     this.options.sessionEvents.markPersistedMessages(messages);
     this.options.sessionState.reset();
     this.options.toolCalls.clearSessionState();
-    this.options.runtimeResources.clearSessionState();
+    this.options.runtimeResources.clearSessionState(messages);
     this.replaceAgent(messages);
   }
 

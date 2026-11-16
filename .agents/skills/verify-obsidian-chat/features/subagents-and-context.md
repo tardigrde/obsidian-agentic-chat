@@ -59,6 +59,11 @@ await $(".agentic-chat-action-list").waitForExist();
 | Ignore-list withholding | `src/ui/attachments.ts#buildAttachmentSection` | `test/attachments.test.ts#never inlines content for a restricted (ignore-listed) path` (unit only) | `partial` |
 | Context chips order and removal | `src/ui/context-chip-renderer.ts#renderContextChips` | `test/context-chip-renderer.test.ts#renders the active note and explicit attachments in a stable order` (unit only) | `partial` |
 | Source chips and note open | `src/ui/assistant-bubble.ts#renderSourceChips` | `test/e2e/specs/beautifului-polish.e2e.ts#renders deduped source chips only for read-style tools and opens the note on click` | `covered` |
+| Model calls the `artifact` tool (list, search, read, export) | `src/artifacts/tool-artifact-tools.ts#createArtifactTool` | `test/tool-artifact-tools.test.ts#artifact tool` (unit only) | `partial` |
+| Deferred tools: `search_tools` loads a tool for the next step | `src/agent/tool-loading.ts#createSearchToolsTool` | `test/runtime-resource-state.test.ts#loads a searched tool for the next step and keeps it on later rebuilds` (unit only) | `partial` |
+| Deferred tools: a direct call to an unloaded tool loads it | `src/agent/runtime-resource-state.ts#toolsForNextStep` | `test/runtime-resource-state.test.ts#loads a deferred tool after a direct call failed because it was not loaded` (unit only) | `partial` |
+| Deferred tools: reopened session keeps loaded tools | `src/agent/tool-loading.ts#restoreFromMessages` | `test/runtime-resource-state.test.ts#restores the loaded tools of a reopened session from its transcript` (unit only) | `partial` |
+| Today's date in the system prompt; `current_time` tool | `src/tools/current-time-tool.ts#formatTodayLine` | `test/runtime-resource-state.test.ts#puts today's date, but not the time, in the system prompt` (unit only) | `partial` |
 | Context-window bar | `src/ui/chat-view.ts#buildLayout` | `test/e2e/probe/scenarios/context-readout.e2e.ts#shows the full-load percentage with a section breakdown` | `covered` |
 
 ## Gotchas

@@ -27,31 +27,35 @@ Mutating tools follow the approval policy. `/undo` reverts the latest undoable v
 
 ## Other tools you will see as step cards
 
+These tools are always loaded:
+
 | Tool | What it does |
 | --- | --- |
 | `ask_user` | Inline clarification prompt. The answer steers the run. |
 | `subagent` | Delegates recon to the read-only Explorer, one level deep. |
-| `load_skill` / `unload_skill` / `read_skill` | Load a skill body only when the agent needs it. |
-| `create_skill` | Create a skill package. Defaults to ask. YOLO does not auto-approve it. `/undo` cannot revert it. |
-| `read_artifact` / `search_artifact` / `list_artifacts` | Inspect large tool outputs kept out of context. |
-| `import_document` | Extract PDF, EPUB, DOCX, PPTX, or XLSX text into artifacts with citations. |
+| `skill` | Read a skill. `action=read` returns its instructions; `action=read_file` reads a file inside the skill folder. Read-only. |
+| `artifact` | Inspect large tool outputs kept out of context. `action=list`, `search`, `read`, or `export`. Read-only. |
 | `web_search` / `fetch_url` | Opt-in web tools. See [Web, MCP, and observability](../features/web-mcp-observability.md). |
-| `mcp__<id>__<tool>` | Opt-in remote MCP tools behind the approval gate. |
+| `search_tools` | Load deferred tools (below) by task or name. Read-only. |
 
-## Compatibility tools
+## Deferred tools
 
-The plugin keeps the following tools for backward compatibility but does not send them to the model by default. Use `vault_inspect` instead.
+The system prompt lists these tools, but they are not in the model's tool list until `search_tools` loads them. This keeps the tool list small. A loaded tool stays loaded for the rest of the session and keeps its own approval policy. If the model calls a deferred tool before it is loaded, the call fails once with "not found" and the tool loads for the next step.
 
-| Tool | Status | Preferred replacement |
-| --- | --- | --- |
-| `ls` | Compatibility | `vault_inspect` with `action=list` |
-| `search` | Compatibility | `vault_inspect` with `action=search` |
-| `find` | Compatibility | `vault_inspect` with `action=search` and `kind=files` |
-| `grep` | Compatibility | `vault_inspect` with `action=search` and `kind=content` |
-| `get_active_note` | Compatibility | `vault_inspect` with `action=active_note` |
-| `get_backlinks` | Compatibility | `vault_inspect` with `action=local_graph` |
-| `get_links` | Compatibility | `vault_inspect` with `action=local_graph` |
-| `local_graph` | Compatibility | `vault_inspect` with `action=local_graph` |
-| `get_properties` | Compatibility | `vault_inspect` with `action=properties` |
+| Tool | What it does |
+| --- | --- |
+| `current_time` | Local date, time, weekday, and time zone. The system prompt already carries today's date. Read-only. |
+| `import_document` | Extract PDF, EPUB, DOCX, PPTX, or XLSX text into artifacts with citations. |
+| `create_skill` | Create a skill package. Defaults to ask. YOLO does not auto-approve it. `/undo` cannot revert it. |
+| `mcp__<id>__<tool>` | Opt-in remote MCP tools behind the approval gate. The system prompt lists one line per MCP server. |
 
-Compatibility tools are available only to callers that request the compatibility surface. There is no settings toggle. New setups use `vault_inspect`.
+## Removed tools
+
+Before 1.0.0 these tools were merged or removed. Per-tool approval entries for the old names have no effect.
+
+| Old tool | Use instead |
+| --- | --- |
+| `read_skill`, `read_skill_file` | `skill` with `action=read` or `action=read_file` |
+| `load_skill`, `unload_skill` | `skill` with `action=read` (the body goes into the conversation) |
+| `list_artifacts`, `read_artifact`, `search_artifact`, `export_artifact` | `artifact` with `action=list`, `read`, `search`, or `export` |
+| `ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties` | `vault_inspect` with `action=list`, `search`, `active_note`, `local_graph`, or `properties` |

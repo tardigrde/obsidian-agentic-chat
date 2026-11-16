@@ -95,6 +95,10 @@ export class FakeVault {
     return this.files.get(path)?.file ?? this.folders.get(path) ?? null;
   }
 
+  getFileByPath(path: string): TFile | null {
+    return this.files.get(path)?.file ?? null;
+  }
+
   getMarkdownFiles(): TFile[] {
     return [...this.files.values()]
       .filter((entry) => entry.file.extension === "md")

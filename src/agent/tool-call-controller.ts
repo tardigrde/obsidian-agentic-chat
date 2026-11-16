@@ -403,8 +403,8 @@ export class AgentToolCallController {
       const profile = findAgentRole(this.getProfiles(), task.agent);
       if (!profile) return false;
       return profile.toolAllowlist.some((name) => {
-        // Child agents only ever receive vault + web + artifact + read-skill tools
-        // (see AgentSubagentRuntime.createChildAgent) — never MCP/load_skill.
+        // Child agents only ever receive vault + web + artifact + skill tools
+        // (see AgentSubagentRuntime.createChildAgent) — never MCP/create_skill.
         // Gating on those names here would false-trigger a deny prompt for a role
         // that lists them aspirationally, so only MUTATING_TOOLS counts.
         if (!MUTATING_TOOLS.has(name)) return false;

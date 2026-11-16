@@ -336,6 +336,11 @@ function objectSchema(
   };
 }
 
+/** The tool list the server advertises, for tests that rank tools without a server. */
+export function fixtureMcpTools(toolCount = TOOL_SPECS.length): Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> {
+  return buildTools(toolCount);
+}
+
 function buildTools(toolCount: number): FixtureTool[] {
   const count = Number.isFinite(toolCount) ? Math.max(0, Math.trunc(toolCount)) : 0;
   return Array.from({ length: count }, (_, index) => {

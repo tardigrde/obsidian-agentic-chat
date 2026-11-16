@@ -7,8 +7,8 @@
 - Local commands that never call the model.
 - Model-facing commands that inject a prompt or control the active turn.
 - Skills: built-in, plugin-provided, and bare `/skill-name` invocation.
-- Skill tools: `read_skill`, `read_skill_file`, `load_skill`, `unload_skill`,
-  `create_skill`.
+- Skill tools: `skill` (actions `read` and `read_file`, always loaded) and
+  `create_skill` (deferred; the model loads it with `search_tools`).
 - The New skill wizard on the Advanced settings tab (Agent plugins).
 - The Repair built-ins action.
 
@@ -79,14 +79,13 @@ await $(".agentic-chat-info").waitForExist();
 | Autocomplete keyboard keys | `src/ui/autocomplete-menu.ts#handleKey` | no committed check | `NONE` |
 | Built-in skills are available | `src/skills/builtin-skills.ts#builtinSkills` | `test/builtin-skills.test.ts#builtinSkills` (catalog only) | `partial` |
 | Plugin skills load with built-ins | `src/agent/runtime-resources.ts#loadAgentRuntimeResources` | `test/runtime-resources.test.ts#composes the system prompt from a loaded resource snapshot` (unit only) | `partial` |
-| `read_skill` | `src/tools/read-skill-tool.ts#createReadSkillTool` | `test/read-skill-tool.test.ts#createReadSkillTool` (unit only) | `partial` |
-| `read_skill_file` | `src/tools/read-skill-tool.ts#createReadSkillFileTool` | no committed check | `NONE` |
-| `load_skill` | `src/tools/skill-tools.ts#createLoadSkillTool` | no committed check | `NONE` |
-| `unload_skill` | `src/tools/skill-tools.ts#createUnloadSkillTool` | no committed check | `NONE` |
-| `create_skill` | `src/tools/skill-tools.ts#createCreateSkillTool` | `test/skill-create-tool.test.ts#create_skill tool` (unit only) | `partial` |
+| `skill` tool, action `read` | `src/tools/skill-tool.ts#createSkillTool` | `test/skill-tool.test.ts#skill tool: action read` (unit only) | `partial` |
+| `skill` tool, action `read_file` | `src/tools/skill-tool.ts#readSkillFile` | `test/skill-tool.test.ts#skill tool: action read_file` (unit only) | `partial` |
+| Retired `read_skill`, `read_skill_file`, `load_skill`, `unload_skill` tools | `src/agent/runtime-resources.ts#buildAgentParentTools` | `test/feature-cut-2026-11.test.ts#feature cut 2026-11: tool consolidation` (unit only) | `partial` |
+| `create_skill` (deferred; loaded by `search_tools`) | `src/tools/skill-tools.ts#createCreateSkillTool` | `test/skill-create-tool.test.ts#create_skill tool` (unit only) | `partial` |
 | New skill modal | `src/ui/new-skill-modal.ts#onOpen` | no committed check | `NONE` |
 | Repair built-ins | `src/settings-tab-plugins.ts#pluginDefinitions` | no committed check | `NONE` |
-| Unregistered compat tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/vault-tools.ts#createVaultTools` | no production caller passes `surface: "compat"`; the default surface filters these out at `src/tools/tool-contracts.ts#DEFAULT_BUILTIN_TOOL_CONTRACTS` | `unreachable` |
+| Retired standalone inspect tools (`ls`, `search`, `find`, `grep`, `get_active_note`, `get_backlinks`, `get_links`, `local_graph`, `get_properties`) | `src/tools/tool-contracts.ts#BUILTIN_TOOL_NAMES` | `test/tool-contracts.test.ts#drives tool registration order; the old standalone inspect tools are gone` (unit only) | `partial` |
 
 ## Gotchas
 
@@ -100,7 +99,6 @@ await $(".agentic-chat-info").waitForExist();
 - `/compact` accepts tail instructions. The tail guides the summary.
 - `/template` has no command handler. It only triggers skill-argument
   autocomplete.
-- The approval modal cannot remember approvals for `create_skill`, `load_skill`,
-  or `unload_skill`.
+- The approval modal cannot remember approvals for `create_skill`.
 - The `.agentic-chat-info` element may exist from an earlier command. Assert the
   new text.

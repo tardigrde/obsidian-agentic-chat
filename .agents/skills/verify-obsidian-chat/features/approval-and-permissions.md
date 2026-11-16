@@ -10,8 +10,8 @@
 - Modes: Safe and YOLO.
 - In-chat mode toggle.
 - Background-tab approval with a tab badge and a session label.
-- The approval modal cannot remember the persistent skill tools
-  (`create_skill`, `load_skill`, `unload_skill`).
+- The approval modal cannot remember the persistent skill writer
+  (`create_skill`).
 
 ## How to get to it (user view)
 
@@ -65,8 +65,7 @@ await (await modal.$("button=Allow")).click();
   confirms.
 - `deny` overrides `allow` at every layer. A per-tool deny overrides the global
   policy, and a remembered choice writes into the same `perTool` map.
-- "Don't ask again" is hidden for `create_skill`, `load_skill`, and
-  `unload_skill`.
+- "Don't ask again" is hidden for `create_skill`.
 - The plugin refuses mode changes while any tab streams.
 - A background approval does not take focus. The tab shows a badge and the modal
   title includes the tab label.

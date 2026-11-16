@@ -61,12 +61,10 @@ function resolveVaultPolicy(query: VaultPolicyQuery): ApprovalPolicyDecision {
   if (modeDecision.policy === "deny" && modeDecision.reason) {
     return { policy: "deny", reason: modeDecision.reason };
   }
-  // H8 load/unload mutates prompt overlay (persistent) — default to ask to prevent
-  // auto-injection via indirect prompt injection (fetch_url -> load_skill evil).
-  // create_skill persists a new vault package — same ask default.
+  // create_skill persists a new vault package — default to ask, so an indirect
+  // prompt injection (fetch_url -> create_skill evil) cannot plant a skill.
   // Respects perTool override so user can set allow/deny explicitly.
-  const isPersistentSkillTool =
-    query.toolName === "load_skill" || query.toolName === "unload_skill" || query.toolName === "create_skill";
+  const isPersistentSkillTool = query.toolName === "create_skill";
   const policy = isPersistentSkillTool
     ? (getPerToolApproval(query.approval, query.toolName) ?? "ask")
     : modeDecision.policy;

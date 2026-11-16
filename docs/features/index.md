@@ -36,7 +36,7 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 
 - Import PDF, EPUB, DOCX, PPTX, and XLSX files into plugin-managed source artifacts.
 - The `import_document` tool extracts text with provenance and citation anchors.
-- Artifact chunks are inspectable with `read_artifact` and `search_artifact`.
+- Artifact chunks are inspectable with the `artifact` tool (`action=read` or `action=search`).
 
 ## Extensibility
 
@@ -49,4 +49,5 @@ Agentic Chat is a sidebar chat panel (`ItemView`) with streaming answers, inline
 - `/doctor` audit of agent plugin spec compliance.
 - Optional OTLP or Langfuse observability export.
 - Artifact system for large tool outputs.
-- `read_skill` tool to load full skill content on demand.
+- `skill` tool to read full skill content on demand.
+- Deferred tools (MCP tools, `current_time`, `import_document`, `create_skill`) load on demand through `search_tools`.

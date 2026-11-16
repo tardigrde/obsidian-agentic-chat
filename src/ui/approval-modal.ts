@@ -76,12 +76,9 @@ export class ApprovalModal extends Modal {
     }
 
     let remember = false;
-    // Persistent prompt-implant primitives must never offer "don't ask again":
+    // A persistent skill write must never offer "don't ask again":
     // one fatigued Allow+remember would auto-approve all future skill writes.
-    const isPersistentSkillTool =
-      this.request.toolName === "create_skill" ||
-      this.request.toolName === "load_skill" ||
-      this.request.toolName === "unload_skill";
+    const isPersistentSkillTool = this.request.toolName === "create_skill";
     if (isPersistentSkillTool) {
       contentEl.createEl("p", {
         cls: "agentic-chat-approval-note",

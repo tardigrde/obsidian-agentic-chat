@@ -1,11 +1,10 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import {
-  builtinToolContractsForSurface,
+  BUILTIN_TOOL_NAMES,
   builtinToolExecutionMode,
   builtinToolLabel,
   type BuiltinToolName,
-  type BuiltinToolSurface,
 } from "./tool-contracts";
 
 export const ReadParameters = Type.Object({
@@ -47,38 +46,6 @@ export const EditParameters = Type.Object({
   ),
 });
 
-export const LsParameters = Type.Object({
-  path: Type.Optional(Type.String({ description: "folder path; empty = vault root" })),
-});
-
-export const FindParameters = Type.Object({
-  pattern: Type.String({ description: "case-insensitive substring or * / ? glob" }),
-  maxResults: Type.Optional(Type.Number()),
-});
-
-export const GrepParameters = Type.Object({
-  pattern: Type.String({ description: "text or regex to find" }),
-  path: Type.Optional(Type.String({ description: "restrict to folder" })),
-  caseSensitive: Type.Optional(Type.Boolean()),
-  regex: Type.Optional(Type.Boolean({ description: "treat pattern as regex" })),
-  maxMatches: Type.Optional(Type.Number()),
-});
-
-export const SearchParameters = Type.Object({
-  query: Type.String({ description: "filename or text to find" }),
-  kind: Type.Optional(Type.String({ description: "both|files|content" })),
-  path: Type.Optional(Type.String({ description: "restrict to folder" })),
-  caseSensitive: Type.Optional(Type.Boolean()),
-  regex: Type.Optional(Type.Boolean({ description: "treat query as regex" })),
-  maxResults: Type.Optional(Type.Number({ description: "max filename matches" })),
-  maxMatches: Type.Optional(Type.Number({ description: "max content matches" })),
-});
-
-export const ActiveNoteParameters = Type.Object({
-  includeContent: Type.Optional(Type.Boolean({ description: "include note text" })),
-  includeSelection: Type.Optional(Type.Boolean({ description: "include selection" })),
-});
-
 export const RenameParameters = Type.Object({
   path: Type.String({ description: "current path" }),
   newPath: Type.String({ description: "new path; links update automatically" }),
@@ -93,22 +60,6 @@ export const DeleteParameters = Type.Object({
   ),
 });
 
-export const BacklinksParameters = Type.Object({
-  path: Type.String({ description: "note to find inbound links to" }),
-});
-
-export const LinksParameters = Type.Object({
-  path: Type.String({ description: "note whose outbound links to list" }),
-});
-
-export const LocalGraphParameters = Type.Object({
-  path: Type.String({ description: "note whose neighborhood to map" }),
-});
-
-export const GetPropertiesParameters = Type.Object({
-  path: Type.String({ description: "note whose frontmatter to read" }),
-});
-
 export const SetPropertiesParameters = Type.Object({
   path: Type.String({ description: "note whose frontmatter to update" }),
   properties: Type.Record(Type.String(), Type.Unknown(), {
@@ -121,17 +72,8 @@ type VaultToolParameterSchemaByName = {
   vault_inspect: typeof VaultInspectParameters;
   write: typeof WriteParameters;
   edit: typeof EditParameters;
-  ls: typeof LsParameters;
-  search: typeof SearchParameters;
-  find: typeof FindParameters;
-  grep: typeof GrepParameters;
-  get_active_note: typeof ActiveNoteParameters;
   rename: typeof RenameParameters;
   delete: typeof DeleteParameters;
-  get_backlinks: typeof BacklinksParameters;
-  get_links: typeof LinksParameters;
-  local_graph: typeof LocalGraphParameters;
-  get_properties: typeof GetPropertiesParameters;
   set_properties: typeof SetPropertiesParameters;
 };
 
@@ -152,20 +94,9 @@ const VAULT_TOOL_DESCRIPTIONS: Record<BuiltinToolName, string> = {
     "For frontmatter-only changes, prefer set_properties.",
   edit:
     "Apply exact text replacements to a vault file. Each oldText must match exactly once.",
-  ls: "List files and folders in a vault folder.",
-  search:
-    "Search vault file names and text in one tool. kind: both, files, or content.",
-  find: "Find vault files by substring or * / ? glob.",
-  grep: "Search vault file text. Literal by default; set regex to treat the pattern as a regular expression.",
-  get_active_note:
-    "Return the active note path and optional text/selection. Use when the user says 'this note'.",
   rename: "Rename or move a vault file; wikilinks and backlinks update automatically.",
   delete:
     "Move a vault file or folder to trash. recursive:true empties folders, only on plain request.",
-  get_backlinks: "List notes that link TO a note (inbound wikilinks).",
-  get_links: "List the notes a note links TO (outbound resolved links).",
-  local_graph: "Show a note's inbound and outbound link neighborhood.",
-  get_properties: "Read a note's YAML frontmatter as structured data.",
   set_properties:
     "Merge keys into a note's YAML frontmatter (set/overwrite; pass null to delete a key). " +
     "Edits structured frontmatter, never raw YAML text.",
@@ -176,17 +107,8 @@ const VAULT_TOOL_PARAMETERS: VaultToolParameterSchemaByName = {
   vault_inspect: VaultInspectParameters,
   write: WriteParameters,
   edit: EditParameters,
-  ls: LsParameters,
-  search: SearchParameters,
-  find: FindParameters,
-  grep: GrepParameters,
-  get_active_note: ActiveNoteParameters,
   rename: RenameParameters,
   delete: DeleteParameters,
-  get_backlinks: BacklinksParameters,
-  get_links: LinksParameters,
-  local_graph: LocalGraphParameters,
-  get_properties: GetPropertiesParameters,
   set_properties: SetPropertiesParameters,
 };
 
@@ -200,6 +122,6 @@ export function vaultToolDefinition<Name extends BuiltinToolName>(name: Name): V
   } as VaultToolDefinition<Name>;
 }
 
-export function vaultToolDefinitionsForSurface(surface?: BuiltinToolSurface): VaultToolDefinition[] {
-  return builtinToolContractsForSurface(surface).map((contract) => vaultToolDefinition(contract.name));
+export function vaultToolDefinitions(): VaultToolDefinition[] {
+  return BUILTIN_TOOL_NAMES.map((name) => vaultToolDefinition(name));
 }

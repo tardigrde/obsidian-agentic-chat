@@ -22,17 +22,16 @@ Consult this skill proactively when: the user is unhappy with how the agent is w
 
 ## Tools inventory
 
-You have these tool categories. Each is callable via function call when present in your active tool set; some may be dropped by the tool budget (see below).
+You have these tool categories. Core tools are always in your tool list. Deferred tools are listed in the system prompt; load them with \`search_tools\` (see below).
 
-- **Vault**: read, vault_inspect, write, edit, rename, delete, set_properties. vault_inspect covers listing folders, searching names/content, the active note, local graph, and frontmatter. Standalone ls, search, grep, find, get_active_note, get_backlinks, get_links, local_graph, and get_properties exist only in compatibility mode — they are not in your active tool set.
+- **Vault**: read, vault_inspect, write, edit, rename, delete, set_properties. vault_inspect covers listing folders, searching names/content, the active note, local graph, and frontmatter.
 - **Web** (optional): web_search, fetch_url.
 - **Subagent** (optional): subagent — delegate focused subtasks to specialist child agents. One call = one subagent ({agent, task}); make several parallel calls to delegate multiple tasks (up to 10 run at once). Do not spawn subagents after being told not to.
-- **Artifacts** (optional): list_artifacts, read_artifact, search_artifact, export_artifact.
-- **Documents** (optional): import_document.
-- **MCP** (optional): remote tools from configured MCP servers.
+- **Artifacts** (optional): artifact — list, search, read, or export stored artifacts (large web pages, MCP results, imported documents) by id.
 - **Ask-user**: ask_user — ask the user a question with optional choices.
-- **Read-skill**: read_skill — load the full body of any skill by name, including this one.
-- **Skill authoring**: create_skill — scaffold a single-skill package through the New skill wizard writer. Prefer it over hand-writing files under the plugins folder with \`write\` (generic file tools go stale on dot-folders).
+- **Skills**: skill — action read loads the full body of any skill by name, including this one; action read_file reads a file inside a skill folder.
+- **Tool search**: search_tools — load deferred tools by task or name.
+- **Deferred**: current_time (local date and time), import_document (PDF/EPUB/DOCX/PPTX/XLSX to an artifact), create_skill (scaffold a single-skill package through the New skill wizard writer; prefer it over hand-writing files under the plugins folder with \`write\`), and every MCP tool from configured MCP servers.
 
 ## Edit semantics
 
@@ -40,7 +39,7 @@ You have these tool categories. Each is callable via function call when present 
 - Use \`edit\` for small, exact changes (oldText/newText). It preserves the rest of the file.
 - Use \`write\` to create a new file or fully replace an existing one.
 - Use \`set_properties\` for frontmatter/property-only changes; do not rewrite raw YAML by hand.
-- Copying a skill? \`read_skill\` strips frontmatter — use \`read\` on the SKILL.md file for a byte-exact copy.
+- Copying a skill? The \`skill\` tool (action read) strips frontmatter — use \`read\` on the SKILL.md file for a byte-exact copy.
 
 ## Approval modes and boundaries
 
@@ -49,10 +48,11 @@ You have these tool categories. Each is callable via function call when present 
 - Deleting needs a plain, undoubted user request for that exact path — never assume. When ambiguous, ask back with \`ask_user\` first.
 - Recursive folder delete (\`delete\` with \`recursive:true\`) ONLY after the user undoubtedly, clearly, plainly asked to delete that exact folder and its contents. Ask back even if slightly unsure; never recursive-delete on assumption.
 
-## Tool budget behavior
+## Deferred tools
 
-- Optional tools (web, MCP, subagent, artifacts, document import) may be silently dropped when the total tool-schema size exceeds a threshold (default 2% of the context window).
-- If a tool you expected is missing, it was likely withheld by the budget, not broken. Use the diagnostics readout to check dropped tools.
+- Rarely used tools (MCP tools, current_time, import_document, create_skill) are deferred: they are not in your tool list until you load them.
+- Call \`search_tools\` with a short task description or a tool name. Matches load from your next step and stay loaded for the session; call them by their real names.
+- If a call fails with "not found" for a deferred tool, the tool is now loaded: call it again.
 
 ## Context hygiene
 
@@ -75,7 +75,7 @@ You have these tool categories. Each is callable via function call when present 
 
 - Permission denied = boundary; do not retry.
 - Not found → use vault_inspect first; do not guess paths.
-- Tool budget dropped optional tool = withheld, not broken; check diagnostics.
+- Expected tool missing = deferred, not broken; load it with search_tools.
 - Repeated identical errors → doomloop; escalate to user.
 
 ## Model identity
@@ -105,7 +105,7 @@ Follow these steps:
 
 1. **Plan as supervisor.** Restate the question in one line, then list the 3-6 sub-questions you must answer. If the scope is ambiguous, ask the user one clarifying question before searching.
 2. **Dispatch parallel searchers.** Make several parallel \`subagent\` calls, one per \`explorer\` child, each \`{agent: "explorer", task: "<sub-question>"}\`, to run 2-6 explorers at once. Give each child one focused sub-question and explicitly tell it to use \`web_search\` and \`fetch_url\`, fetch promising results before relying on them, and return claim-by-claim evidence with source artifact ids and URLs.
-3. **Read and consolidate evidence.** Inspect child summaries. Use \`read_artifact\` or \`search_artifact\` for saved source artifacts when a claim depends on a large fetched source. Run extra \`web_search\`/\`fetch_url\` yourself only to close obvious gaps.
+3. **Read and consolidate evidence.** Inspect child summaries. Use the \`artifact\` tool (action \`read\` or \`search\`) for saved source artifacts when a claim depends on a large fetched source. Run extra \`web_search\`/\`fetch_url\` yourself only to close obvious gaps.
 4. **Dispatch an adversarial verifier.** Use \`subagent\` to run another \`explorer\` (adversarial review) on your draft claim set and source list. Ask it to flag unsupported claims, stale/low-authority sources, missing citations, and contradictions.
 5. **Synthesize.** Write the answer in your own words, organized by sub-question. Note where sources disagree or evidence is thin; do not paper over uncertainty.
 6. **Cite.** Every non-obvious claim must connect to evidence: prefer saved source artifact citations when available, or inline Markdown links \`[label](https://...)\`. End the note with a "## Sources" list of every source artifact id and URL you relied on. Never cite a page you did not actually fetch or inspect.

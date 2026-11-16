@@ -154,10 +154,36 @@ function makeApp(spec: VaultSpec): App {
   } as unknown as App;
 }
 
+/** vault_inspect actions that replaced the old standalone inspect tools. */
+const INSPECT_ACTIONS: Record<string, string> = {
+  ls: "list",
+  search: "search",
+  get_active_note: "active_note",
+  local_graph: "local_graph",
+  get_properties: "properties",
+};
+
+/**
+ * A real vault tool by name. The old standalone inspect names (ls, search,
+ * get_active_note, local_graph, get_properties) map onto the matching
+ * vault_inspect action, so their behavior stays covered through the one tool
+ * the model gets.
+ */
 function getTool(app: App, name: string, isIgnored?: IgnoreMatcher): AgentTool {
-  const tool = createVaultTools(app, isIgnored, undefined, { surface: "compat" }).find((candidate) => candidate.name === name);
+  const tools = createVaultTools(app, isIgnored);
+  const action = INSPECT_ACTIONS[name];
+  const toolName = action ? "vault_inspect" : name;
+  const tool = tools.find((candidate) => candidate.name === toolName);
   if (!tool) throw new Error(`tool not found: ${name}`);
-  return tool;
+  if (!action) return tool;
+  return {
+    ...tool,
+    execute: (id, params, signal) => {
+      const raw = { ...(params as Record<string, unknown>) };
+      // The old search tool's "query" maps straight; nothing else is renamed.
+      return tool.execute(id, { ...raw, action } as never, signal);
+    },
+  };
 }
 
 async function run(tool: AgentTool, params: unknown): Promise<{ text: string; details: Record<string, unknown> }> {
@@ -173,7 +199,7 @@ const ignore = (...paths: string[]): IgnoreMatcher => {
 
 describe("vault tool surface", () => {
   it("pins tool names, order, and parameter keys", () => {
-    const tools = createVaultTools({} as App, undefined, undefined, { surface: "compat" });
+    const tools = createVaultTools({} as App);
     const shapes = tools.map((tool) => ({
       name: tool.name,
       keys: Object.keys((tool.parameters as { properties: Record<string, unknown> }).properties),
@@ -198,17 +224,8 @@ describe("vault tool surface", () => {
       },
       { name: "write", keys: ["path", "content"] },
       { name: "edit", keys: ["path", "edits"] },
-      { name: "ls", keys: ["path"] },
-      { name: "search", keys: ["query", "kind", "path", "caseSensitive", "regex", "maxResults", "maxMatches"] },
-      { name: "find", keys: ["pattern", "maxResults"] },
-      { name: "grep", keys: ["pattern", "path", "caseSensitive", "regex", "maxMatches"] },
-      { name: "get_active_note", keys: ["includeContent", "includeSelection"] },
       { name: "rename", keys: ["path", "newPath"] },
       { name: "delete", keys: ["path", "recursive"] },
-      { name: "get_backlinks", keys: ["path"] },
-      { name: "get_links", keys: ["path"] },
-      { name: "local_graph", keys: ["path"] },
-      { name: "get_properties", keys: ["path"] },
       { name: "set_properties", keys: ["path", "properties"] },
     ]);
   });
@@ -252,7 +269,6 @@ describe("vault_inspect", () => {
     expect(text).not.toContain("Private");
     expect(details).toMatchObject({
       inspectAction: "search",
-      delegatedTool: "search",
       query: "needle",
       path: "Projects",
     });
@@ -270,10 +286,10 @@ describe("vault_inspect", () => {
     const graph = await run(tool, { action: "local_graph", path: "Target.md" });
     const properties = await run(tool, { action: "properties", path: "Target.md" });
 
-    expect(graph.details).toMatchObject({ inspectAction: "local_graph", delegatedTool: "local_graph" });
+    expect(graph.details).toMatchObject({ inspectAction: "local_graph" });
     expect(graph.text).toContain("Inbound (1):");
     expect(graph.text).toContain("Outbound (1):");
-    expect(properties.details).toMatchObject({ inspectAction: "properties", delegatedTool: "get_properties" });
+    expect(properties.details).toMatchObject({ inspectAction: "properties" });
     expect(properties.text).toContain('"status": "active"');
   });
 
@@ -302,7 +318,6 @@ describe("vault_inspect", () => {
     expect(text).toContain("Selection:\n(no selection)");
     expect(details).toMatchObject({
       inspectAction: "active_note",
-      delegatedTool: "get_active_note",
       path: "Scratch.md",
       hasSelection: false,
     });
@@ -378,107 +393,9 @@ describe("search", () => {
     });
   });
 
-  it("keeps find and grep available on the compatibility surface", async () => {
-    const app = makeApp({
-      files: {
-        "Alpha.md": { content: "hello compat" },
-      },
-    });
-
-    const find = await run(getTool(app, "find"), { pattern: "alpha" });
-    const grep = await run(getTool(app, "grep"), { pattern: "compat" });
-
-    expect(find.text).toContain("Alpha.md");
-    expect(grep.text).toContain("Alpha.md:1: hello compat");
-  });
 });
 
-describe("get_backlinks", () => {
-  const spec: VaultSpec = {
-    files: {
-      "Target.md": {},
-      "A.md": { links: { "Target.md": 2 } },
-      "B.md": { links: { "Target.md": 1, "A.md": 1 } },
-      "Unrelated.md": {},
-    },
-  };
 
-  it("lists notes that link to the target with ref counts", async () => {
-    const app = makeApp(spec);
-    const { text, details } = await run(getTool(app, "get_backlinks"), { path: "Target.md" });
-    expect(details.sources).toEqual(["A.md", "B.md"]);
-    expect(text).toContain("A.md\t2 refs");
-    expect(text).toContain("B.md\t1 ref");
-  });
-
-  it("handles a Map-shaped backlink result defensively", async () => {
-    const app = makeApp({ ...spec, backlinksAsMap: true });
-    const { details } = await run(getTool(app, "get_backlinks"), { path: "Target.md" });
-    expect(details.sources).toEqual(["A.md", "B.md"]);
-  });
-
-  it("hides ignored source notes", async () => {
-    const app = makeApp(spec);
-    const { text, details } = await run(getTool(app, "get_backlinks", ignore("A.md")), { path: "Target.md" });
-    expect(details.sources).toEqual(["B.md"]);
-    expect(text).not.toContain("A.md");
-  });
-
-  it("reports an ignored target as not found", async () => {
-    const app = makeApp(spec);
-    await expect(run(getTool(app, "get_backlinks", ignore("Target.md")), { path: "Target.md" })).rejects.toThrow(
-      /not found/,
-    );
-  });
-
-  it("reports a missing target as not found", async () => {
-    const app = makeApp(spec);
-    await expect(run(getTool(app, "get_backlinks"), { path: "Nope.md" })).rejects.toThrow(/not found/);
-  });
-
-  it("reports no backlinks cleanly", async () => {
-    const app = makeApp(spec);
-    const { text, details } = await run(getTool(app, "get_backlinks"), { path: "Unrelated.md" });
-    expect(unwrapToolOutput(text)).toBe("No backlinks.");
-    expect(details.count).toBe(0);
-  });
-});
-
-describe("get_links", () => {
-  const spec: VaultSpec = {
-    files: {
-      "Source.md": { links: { "X.md": 1, "Y.md": 3 } },
-      "X.md": {},
-      "Y.md": {},
-    },
-  };
-
-  it("lists outbound resolved links with counts", async () => {
-    const app = makeApp(spec);
-    const { text, details } = await run(getTool(app, "get_links"), { path: "Source.md" });
-    expect(details.targets).toEqual(["X.md", "Y.md"]);
-    expect(text).toContain("X.md\t1 link");
-    expect(text).toContain("Y.md\t3 links");
-  });
-
-  it("hides ignored target notes", async () => {
-    const app = makeApp(spec);
-    const { details } = await run(getTool(app, "get_links", ignore("X.md")), { path: "Source.md" });
-    expect(details.targets).toEqual(["Y.md"]);
-  });
-
-  it("reports an ignored source as not found", async () => {
-    const app = makeApp(spec);
-    await expect(run(getTool(app, "get_links", ignore("Source.md")), { path: "Source.md" })).rejects.toThrow(
-      /not found/,
-    );
-  });
-
-  it("reports a missing source as not found", async () => {
-    const app = makeApp(spec);
-    await expect(run(getTool(app, "get_links"), { path: "Ghost.md" })).rejects.toThrow(/not found/);
-  });
-});
 
 describe("local_graph", () => {
   const spec: VaultSpec = {
@@ -614,8 +531,8 @@ describe("read — dedup + size guardrail", () => {
   it("returns an actionable error when the target is a folder, not a note", async () => {
     const app = makeApp({ files: { "Note.md": { content: "hello" } }, folders: ["Inbox"] });
     const read = createVaultTools(app).find((t) => t.name === "read")!;
-    await expect(run(read, { path: "Inbox/" })).rejects.toThrow(/is a folder — use ls/i);
-    await expect(run(read, { path: "Inbox" })).rejects.toThrow(/is a folder — use ls/i);
+    await expect(run(read, { path: "Inbox/" })).rejects.toThrow(/is a folder — use vault_inspect with action "list"/i);
+    await expect(run(read, { path: "Inbox" })).rejects.toThrow(/is a folder — use vault_inspect with action "list"/i);
   });
 
   it("returns content on the first read, a pointer on the second identical read", async () => {

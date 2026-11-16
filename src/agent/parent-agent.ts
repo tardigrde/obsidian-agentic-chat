@@ -4,6 +4,7 @@ import {
   type AgentMessage,
   type AgentOptions,
   type AgentTool,
+  type PrepareNextTurnContext,
   type StreamFn,
   type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
@@ -27,6 +28,11 @@ export interface ParentAgentOptions {
   beforeToolCall: BeforeToolCall;
   afterToolCall: AfterToolCall;
   finishTurn?: FinishTurn;
+  /**
+   * Tools for the next step of a running turn. A run keeps its own tool
+   * snapshot, so tools loaded mid-run (search_tools) must come in here.
+   */
+  toolsForNextStep?: (turn: PrepareNextTurnContext) => AgentTool[] | undefined;
   sessionId?: string;
   onEvent: (event: AgentEvent) => Promise<void> | void;
 }
@@ -50,6 +56,16 @@ export function createParentAgent(options: ParentAgentOptions): ParentAgentHandl
     beforeToolCall: options.beforeToolCall,
     afterToolCall: options.afterToolCall,
     finishTurn: options.finishTurn,
+    prepareNextTurnWithContext: options.toolsForNextStep
+      ? (turn) => {
+          const tools = options.toolsForNextStep?.(turn);
+          if (!tools) return undefined;
+          // Keep the live state in sync, so readouts and the next run's snapshot
+          // see the same tools the loop declares to the model.
+          agent.state.tools = tools;
+          return { context: { ...turn.context, tools } };
+        }
+      : undefined,
     // Guard stop notices are transcript-only (#283).
     convertToLlm: toLlmMessages,
     sessionId: options.sessionId,
