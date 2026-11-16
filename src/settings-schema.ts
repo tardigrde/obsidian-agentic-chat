@@ -94,7 +94,6 @@ export interface AgenticChatSettings {
   notifications: NotificationSettings;
   /** Auto-compaction: summarize old turns as the context window fills. */
   compaction: CompactionSettings;
-  /** Tool-schema guard: withhold optional tools once registered tool definitions get large. */
   /** Optional plugin-owned HTTP proxy for request paths the plugin controls. */
   network: NetworkSettings;
   /** Open-web access: search + fetch tools. Off by default — sends data off-device. */

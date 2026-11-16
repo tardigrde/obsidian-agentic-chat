@@ -353,8 +353,7 @@ describe("buildModel — OpenAI-compatible", () => {
     );
 
     expect(model.contextWindow).toBe(0);
-    // Unknown windows must not trip the tool budget (applyToolBudget fail-opens
-    // on non-positive context windows) and must keep reasoning off.
+    // An unknown window stays 0 (no guessed 128k) and keeps reasoning off.
     expect(model.reasoning).toBe(false);
   });
 

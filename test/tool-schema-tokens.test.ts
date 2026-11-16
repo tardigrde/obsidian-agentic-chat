@@ -3,6 +3,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { App } from "obsidian";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
 import { buildAgentParentTools } from "../src/agent/runtime-resources";
+import { estimateTextTokens } from "@earendil-works/pi-ai/utils/estimate";
 import { estimateToolDefinitionTokens } from "../src/agent/tool-schema-tokens";
 import { createSubagentTool } from "../src/tools/subagent-tool";
 import { createVaultTools } from "../src/tools/vault-tools";
@@ -50,10 +51,20 @@ function parentTools(withScaffolder: boolean): AgentTool[] {
 describe("tool schema token ceiling", () => {
   it("keeps the active parent tool set under 2400 model-visible schema tokens", () => {
     const tokens = estimateToolDefinitionTokens(parentTools(false));
-    // 14 always-loaded tools, measured at 3.5 chars/token (about 2240 on
+    // 15 always-loaded tools, measured at 3.5 chars/token (about 2284 on
     // 2026-11-16, down from 2663 for the 20 tools before tool consolidation).
     // This ceiling guards against prose creeping back into descriptions.
     expect(tokens).toBeLessThan(2400);
+  });
+
+  it("uses pi-ai's text ratio, so the context bar sums one unit", () => {
+    const tools = parentTools(false);
+    const modelVisible = tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? "",
+      parameters: tool.parameters ?? {},
+    }));
+    expect(estimateToolDefinitionTokens(tools)).toBe(estimateTextTokens(JSON.stringify(modelVisible)));
   });
 
   it("does not grow the active set with create_skill: it is deferred behind search_tools", () => {
