@@ -171,7 +171,7 @@ export function formatComparison(baseline: unknown, candidate: unknown): string 
   return `${lines.join("\n")}\n`;
 }
 
-/** Both sides name the same cost source, and it is not `mixed`. An old file with no field is unknown. */
+/** Both sides are `billed` or both are `table`. `mixed`, `none`, and an old file with no field are not comparable. */
 function sameCostSource(baseline: unknown, candidate: unknown): boolean {
   const left = costSourceName(baseline);
   return (left === "billed" || left === "table") && left === costSourceName(candidate);

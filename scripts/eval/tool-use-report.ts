@@ -348,6 +348,7 @@ export function formatReport(summary: ToolUseSummary): string {
 /** How many runs carry OpenRouter's billed cost; the rest fall back to the price table. */
 export function costSourceLine(summary: ToolUseSummary): string {
   const runs = summary.cases.flatMap((entry) => entry.runResults).filter((run) => run.status !== "skipped-budget");
+  if (summary.costSource === "none") return `Cost source: none (no run spent anything; ${runs.length} run(s))`;
   const billed = runs.filter((run) => run.usdSource === "billed").length;
   return `Cost source: billed by the provider for ${billed}/${runs.length} run(s); price table for the rest`;
 }
