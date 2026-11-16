@@ -338,10 +338,10 @@ function resolveSessionFiles(target: string): string[] {
     return [resolved];
   }
   if (!stat.isDirectory()) return [];
-  return readdirSync(resolved)
+  return readdirSync(resolved) // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
     .filter((name) => name.endsWith(".jsonl"))
     .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
-    .map((name) => path.join(resolved, name)); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
+    .map((name) => path.join(resolved, name));
 }
 
 function parseSessionLines(text: string): { entries: RawEntry[]; corruptLines: number } {

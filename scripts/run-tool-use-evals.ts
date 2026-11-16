@@ -59,7 +59,7 @@ const USAGE = `Usage:
   npm run eval:tool-use -- [--suite path] [--case id[,id] | --smoke] [--runs n] [--run-id id]
       [--out-dir dir] [--env-file path] [--max-usd usd] [--thinking-level level]
       [--dry-run] [--write-baseline]
-  npm run eval:tool-use -- --compare <base.json> <head.json> [--significance] [--exclude id[,id]]
+  npm run eval:tool-use -- --compare <base.json> <head.json> [--significance [--exclude id[,id]]]
   npm run eval:significance -- <base.json> <head.json>
 
   --smoke           runs the suite's own "smoke" slice, once per case unless --runs is set.

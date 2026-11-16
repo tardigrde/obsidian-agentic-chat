@@ -436,7 +436,8 @@ correctness and costs more is a trade-off: name it and decide on purpose, do
 not report it as a win. `--compare` prints this verdict under the overall
 table: `dominates`, `dominated`, `trade-off`, `same`, or `incomplete`. A cost or
 time change of at most 10% of the baseline counts as `same` (one sample moves
-that much), with floors of $0.000001 and 100 ms for a tiny baseline. Use `--significance` to see whether a correctness change is noise.
+that much), with floors of $0.000001 and 100 ms for a tiny baseline. Use
+`--significance` to see whether a correctness change is noise.
 
 No cheating. These moves do not reach the frontier, they only move a number:
 
