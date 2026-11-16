@@ -103,7 +103,8 @@
         },
         "files": {
           "400 Projects/Orchid/Orchid revenue.md": "# Orchid revenue\n\n- Gross revenue Q3: 184,200 EUR\n- Refunds Q3: 7,900 EUR\n",
-          "400 Projects/Orchid/Orchid revenue correction.md": "# Orchid revenue correction\n\nFinal correction, approved by Finance: Q3 refunds are 9,900 EUR, not 7,900 EUR.\n",
+          "400 Projects/Orchid/Orchid revenue correction.md": "# Orchid revenue correction\n\n2024-07-10 correction, approved by Finance: Q3 refunds are 9,900 EUR, not 7,900 EUR.\n",
+          "400 Projects/Orchid/2024-07 reconciliation/Orchid revenue correction 2.md": "# Orchid revenue correction 2\n\n2024-07-18 correction, approved by Finance: Q3 refunds are 11,400 EUR, not 9,900 EUR.\n",
           "400 Projects/Orchid/Orchid revenue draft.md": "# Orchid revenue draft\n\n- Gross revenue Q3: 190,000 EUR\n- Refunds Q3: 7,900 EUR\n\nDraft. Finance has not signed off.\n",
           "400 Projects/Orchid/Orchid Q2 revenue.md": "# Orchid Q2 revenue\n\n- Gross revenue Q2: 160,000 EUR\n- Refunds Q2: 5,000 EUR\n",
           "400 Projects/Orchid/Orchid finance review.md": "# Orchid finance review\n\nThe Q3 close is final. Use the figures in the revenue note and apply any corrections.\nRefunds are already approved and must be subtracted.\n",
@@ -116,6 +117,10 @@
       "checks": [
         {
           "type": "answer_contains",
+          "text": "172,800"
+        },
+        {
+          "type": "answer_not_contains",
           "text": "174,300"
         },
         {
@@ -141,6 +146,10 @@
         {
           "type": "unchanged",
           "path": "400 Projects/Orchid/Orchid revenue correction.md"
+        },
+        {
+          "type": "unchanged",
+          "path": "400 Projects/Orchid/2024-07 reconciliation/Orchid revenue correction 2.md"
         },
         {
           "type": "unchanged",
@@ -352,7 +361,7 @@
           "seed": 104
         },
         "files": {
-          "400 Projects/Runbook.md": "# Runbook\n\nIntro ALPHA.\n\n## Notes\n\n- alpha one\n\nMiddle BETA.\n\n## Notes\n\n- beta one\n\nMiddle GAMMA.\n\n## Notes\n\n- gamma one\n"
+          "400 Projects/Runbook.md": "# Runbook\n\nIntro ALPHA.\n\n## Notes\n\n- alpha one\n\nMiddle BETA.\n\n## Notes\n\n- beta one\n\nMiddle GAMMA.\n\n## Notes\n\n- gamma one\n\n## Notes archive\n\n- old note\n"
         }
       },
       "settings": {
@@ -385,7 +394,31 @@
         {
           "type": "file_not_contains",
           "path": "400 Projects/Runbook.md",
+          "text": "## Notes\\n\\n- check the backup log\\n- alpha one",
+          "regex": true
+        },
+        {
+          "type": "file_not_contains",
+          "path": "400 Projects/Runbook.md",
           "text": "## Notes\\n\\n- gamma one\\n- check the backup log",
+          "regex": true
+        },
+        {
+          "type": "file_not_contains",
+          "path": "400 Projects/Runbook.md",
+          "text": "## Notes\\n\\n- check the backup log\\n- gamma one",
+          "regex": true
+        },
+        {
+          "type": "file_contains",
+          "path": "400 Projects/Runbook.md",
+          "text": "## Notes archive\\n\\n- old note",
+          "regex": true
+        },
+        {
+          "type": "file_not_contains",
+          "path": "400 Projects/Runbook.md",
+          "text": "## Notes archive\\n\\n- check the backup log",
           "regex": true
         },
         {
@@ -1633,6 +1666,7 @@
           "400 Projects/Sprint/Sprint D.md": "---\ntitle: Sprint D\nstatus: completed\n---\n\n# Sprint D\n\nShipped.\n",
           "400 Projects/Sprint/Sprint E.md": "---\ntitle: Sprint E\nstatus: blocked\n---\n\n# Sprint E\n\nBlocked on the vendor.\n",
           "400 Projects/Sprint/Sprint G.md": "---\ntitle: Sprint G\nstatus: review\n---\n\n# Sprint G\n\nIn review.\n",
+          "400 Projects/Sprint/Sprint H.md": "---\ntitle: Sprint H\nstatus: in-progress\n---\n\n# Sprint H\n\nNear-miss status.\n",
           "400 Projects/Sprint/Archive/Sprint F.md": "---\ntitle: Sprint F\nstatus: on hold\n---\n\n# Sprint F\n\nParked for now.\n",
           "200 Resources/Systems/Status guide 2024-05-22.md": "# Status guide (2024-05-22)\n\nThis replaces Status guide.md.\n\n- \"blocked\" -> paused\n- \"review\" -> active\n"
         }
@@ -1682,6 +1716,16 @@
           "path": "400 Projects/Sprint/Sprint E.md",
           "key": "status",
           "value": "blocked"
+        },
+        {
+          "type": "frontmatter_equals",
+          "path": "400 Projects/Sprint/Sprint H.md",
+          "key": "status",
+          "value": "in-progress"
+        },
+        {
+          "type": "unchanged",
+          "path": "400 Projects/Sprint/Sprint H.md"
         },
         {
           "type": "unchanged",
@@ -1979,7 +2023,7 @@
           "200 Resources/Research/pricing-notes.md": "# Pricing notes\n\nPricing notes for the quarter.\n",
           "400 Projects/roadmap.md": "# Roadmap\n\nRoadmap for the quarter.\n",
           "300 Areas/meeting-cadence.md": "# Meeting cadence\n\nWeekly sync notes.\n",
-          "200 Resources/Research/zephyr-code.md": "# Zephyr code\n\nExample only:\n\n```text\nZephyr\n```\n",
+          "200 Resources/Research/code-sample.md": "# Code sample\n\nExample only:\n\n```text\nZephyr\n```\n",
           "200 Resources/Research/zephyr-meta.md": "---\ntitle: Project notes\nsummary: Zephyr migration notes\n---\n\nThe body has no matching word.\n"
         }
       },
@@ -2033,11 +2077,11 @@
         },
         {
           "type": "answer_not_contains",
-          "text": "zephyr-code"
+          "text": "code-sample"
         },
         {
           "type": "unchanged",
-          "path": "200 Resources/Research/zephyr-code.md"
+          "path": "200 Resources/Research/code-sample.md"
         },
         {
           "type": "answer_contains",
@@ -2159,7 +2203,7 @@
     },
     {
       "id": "tools.medium.web",
-      "prompt": "Fetch {{fixture}}/article and report its published date in ISO format. Use the page, not your own knowledge. Reply with the date only.",
+      "prompt": "Fetch {{fixture}}/redirect and report the published date of the page it leads to in ISO format. Use the page, not your own knowledge. Reply with the date only.",
       "seed": {
         "vault": {
           "size": "S",

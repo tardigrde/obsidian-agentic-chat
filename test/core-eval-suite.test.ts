@@ -89,6 +89,12 @@ function literalAnswers(checks: ToolUseCheck[], type: "answer_contains" | "answe
     .map((check) => check.text);
 }
 
+function unchangedPaths(checks: ToolUseCheck[]): string[] {
+  return walkChecks(checks)
+    .filter((check): check is Extract<ToolUseCheck, { type: "unchanged" }> => check.type === "unchanged")
+    .map((check) => check.path);
+}
+
 function gradeEmpty(evalCase: ToolUseCase, answer = ""): ToolUseCheckResult[] {
   return gradeRun(evalCase, {
     files: {},
@@ -258,25 +264,132 @@ describe("core eval suite", () => {
   it("accepts either adjacent line order for edit.medium.heading and rejects other sections", () => {
     const evalCase = caseById("edit.medium.heading");
     const runbook = "400 Projects/Runbook.md";
-    const seed = evalCase.seed.files[runbook];
-    const insertAfter = (anchor: string) => seed.replace(anchor, `${anchor}\n- check the backup log`);
+    const seed = evalCase.seed.files[runbook] ?? "";
+    const insertAfter = (content: string, line: string) =>
+      content.replace(`## Notes\n\n${line}`, `## Notes\n\n${line}\n- check the backup log`);
+    const insertBefore = (content: string, line: string) =>
+      content.replace(`## Notes\n\n${line}`, `## Notes\n\n- check the backup log\n${line}`);
+    const wrongSectionEdits = [
+      (content: string) => insertAfter(content, "- alpha one"),
+      (content: string) => insertBefore(content, "- alpha one"),
+      (content: string) => insertAfter(content, "- gamma one"),
+      (content: string) => insertBefore(content, "- gamma one"),
+    ];
+    const grade = (content: string) =>
+      gradeFiles(evalCase, { ...evalCase.seed.files, [runbook]: content }, {}, [{ name: "edit" }]);
 
-    const after = insertAfter("## Notes\n\n- beta one");
-    const before = seed.replace("## Notes\n\n- beta one", "## Notes\n\n- check the backup log\n- beta one");
-    const first = insertAfter("## Notes\n\n- alpha one");
-    const third = insertAfter("## Notes\n\n- gamma one");
-    for (const variant of [after, before, first, third]) {
+    const after = insertAfter(seed, "- beta one");
+    const before = insertBefore(seed, "- beta one");
+    const wrongSections = wrongSectionEdits.map((insert) => insert(seed));
+    for (const variant of [after, before, ...wrongSections]) {
       expect(variant, "the variant must change the seed").not.toBe(seed);
     }
 
-    expect(gradeFiles(evalCase, { ...evalCase.seed.files, [runbook]: after }, {}, [{ name: "edit" }])).toBe(true);
-    expect(gradeFiles(evalCase, { ...evalCase.seed.files, [runbook]: before }, {}, [{ name: "edit" }])).toBe(true);
-    expect(gradeFiles(evalCase, { ...evalCase.seed.files, [runbook]: first }, {}, [{ name: "edit" }])).toBe(false);
-    expect(gradeFiles(evalCase, { ...evalCase.seed.files, [runbook]: third }, {}, [{ name: "edit" }])).toBe(false);
+    expect(grade(after)).toBe(true);
+    expect(grade(before)).toBe(true);
+    for (const wrong of wrongSections) expect(grade(wrong), "a wrong section must fail").toBe(false);
+
+    // The correct beta edit must not excuse a wrong-section insertion in either order.
+    for (const [index, betaEdit] of [after, before].entries()) {
+      const betaLine =
+        index === 0 ? "## Notes\n\n- beta one\n- check the backup log" : "## Notes\n\n- check the backup log\n- beta one";
+      for (const insert of wrongSectionEdits) {
+        const mixed = insert(betaEdit);
+        expect(mixed, "the mixed variant must change the beta edit").not.toBe(betaEdit);
+        expect(mixed, "the mixed variant must keep the beta edit").toContain(betaLine);
+        expect(grade(mixed), "the correct beta edit plus a wrong section must fail").toBe(false);
+      }
+    }
+  });
+
+  it("names the later correction as the final one in find.medium.revenue", () => {
+    const evalCase = caseById("find.medium.revenue");
+    const laterCorrection =
+      evalCase.seed.files["400 Projects/Orchid/2024-07 reconciliation/Orchid revenue correction 2.md"] ?? "";
+
+    expect(evalCase.seed.files["400 Projects/Orchid/Orchid revenue correction.md"] ?? "", "the first correction is dated").toContain(
+      "2024-07-10",
+    );
+    expect(laterCorrection, "the second correction is dated later").toContain("2024-07-18");
+    expect(literalAnswers(evalCase.checks, "answer_contains")).toContain("172,800");
+    expect(literalAnswers(evalCase.checks, "answer_not_contains")).toContain("174,300");
+    expect(unchangedPaths(evalCase.checks)).toContain(
+      "400 Projects/Orchid/2024-07 reconciliation/Orchid revenue correction 2.md",
+    );
+  });
+
+  it("guards the Notes archive near-miss in edit.medium.heading", () => {
+    const evalCase = caseById("edit.medium.heading");
+    const runbook = "400 Projects/Runbook.md";
+
+    expect(evalCase.seed.files[runbook] ?? "", "the near-miss section is seeded").toContain(
+      "## Notes archive\n\n- old note",
+    );
+    expect(walkChecks(evalCase.checks)).toContainEqual(
+      expect.objectContaining({ type: "file_contains", path: runbook, text: "## Notes archive\\n\\n- old note" }),
+    );
+    expect(walkChecks(evalCase.checks)).toContainEqual(
+      expect.objectContaining({
+        type: "file_not_contains",
+        path: runbook,
+        text: "## Notes archive\\n\\n- check the backup log",
+      }),
+    );
   });
 
   it("states the Archive scope in properties.medium.normalize", () => {
     expect(caseById("properties.medium.normalize").prompt).toMatch(/including the Archive subfolder/i);
+  });
+
+  it("keeps the unmapped hyphenated in-progress status in properties.medium.normalize", () => {
+    const evalCase = caseById("properties.medium.normalize");
+    const sprintH = "400 Projects/Sprint/Sprint H.md";
+
+    expect(evalCase.seed.files[sprintH] ?? "", "Sprint H seeds the hyphenated status").toContain(
+      "status: in-progress",
+    );
+    expect(evalCase.seed.files["200 Resources/Systems/Status guide.md"] ?? "", "the named guide does not map it").not.toContain(
+      "in-progress",
+    );
+    expect(walkChecks(evalCase.checks)).toContainEqual(
+      expect.objectContaining({ type: "frontmatter_equals", path: sprintH, key: "status", value: "in-progress" }),
+    );
+    expect(unchangedPaths(evalCase.checks)).toContain(sprintH);
+  });
+
+  it("excludes the code-sample note from tools.easy.search without a heading ambiguity", () => {
+    const evalCase = caseById("tools.easy.search");
+    const codeSample = "200 Resources/Research/code-sample.md";
+
+    expect(JSON.stringify(evalCase), "the old zephyr-code note must be gone").not.toContain("zephyr-code");
+    expect(evalCase.seed.files[codeSample] ?? "", "the code-sample note is seeded").toContain("```text\nZephyr\n```");
+    expect(literalAnswers(evalCase.checks, "answer_not_contains")).toContain("code-sample");
+    expect(unchangedPaths(evalCase.checks)).toContain(codeSample);
+
+    const answer = ["- zephyr-alpha", "- zephyr-beta", "- zephyr-gamma", "- zephyr-meta"].join("\n");
+    const grade = (text: string) =>
+      gradeRun(evalCase, {
+        files: evalCase.seed.files,
+        frontmatter: {},
+        links: {},
+        unresolvedLinks: {},
+        toolCalls: [{ name: "vault_inspect" }],
+        answer: text,
+      }).ok;
+
+    expect(grade(answer), "the four real mentions must pass").toBe(true);
+    expect(grade(`${answer}\n- code-sample`), "the code sample must fail").toBe(false);
+  });
+
+  it("uses the fixture redirect for tools.medium.web", () => {
+    const evalCase = caseById("tools.medium.web");
+
+    expect(evalCase.prompt).toContain("{{fixture}}/redirect");
+    expect(evalCase.prompt).not.toContain("{{fixture}}/article");
+    expect(evalCase.settings?.["web.enabled"]).toBe(true);
+    expect(literalAnswers(evalCase.checks, "answer_contains")).toContain("2026-01-05");
+    expect(literalAnswers(evalCase.checks, "answer_not_contains")).toContain("2026-07-19");
+    expect(walkChecks(evalCase.checks)).toContainEqual(expect.objectContaining({ type: "max_tool_calls", max: 6 }));
   });
 
   it("accepts external in any case for create.medium.summary and still rejects wrong figures", () => {
