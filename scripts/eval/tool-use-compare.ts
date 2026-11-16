@@ -131,6 +131,7 @@ const OVERALL_ROWS: ReadonlyArray<[label: string, key: string, format: Format]> 
 export function formatComparison(baseline: unknown, candidate: unknown): string {
   const before = caseMetrics(baseline);
   const after = caseMetrics(candidate);
+  const costComparable = sameCostSource(baseline, candidate);
   const ids = [...new Set([...before.keys(), ...after.keys()])].sort((left, right) => left.localeCompare(right));
   const overallBefore = isRecord(baseline) && isRecord(baseline.overall) ? baseline.overall : {};
   const overallAfter = isRecord(candidate) && isRecord(candidate.overall) ? candidate.overall : {};
@@ -163,7 +164,9 @@ export function formatComparison(baseline: unknown, candidate: unknown): string 
     const left = before.get(id);
     const right = after.get(id);
     const cells = CASE_COLUMNS.map(([, key, format]) => delta(left?.[key], right?.[key], format));
-    lines.push(`| ${id} | ${compareThinking(left, right)} | ${cells.join(" | ")} | ${caseFlags(left, right)} |`);
+    lines.push(
+      `| ${id} | ${compareThinking(left, right)} | ${cells.join(" | ")} | ${caseFlags(left, right, costComparable)} |`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }
@@ -171,7 +174,7 @@ export function formatComparison(baseline: unknown, candidate: unknown): string 
 /** Both sides name the same cost source, and it is not `mixed`. An old file with no field is unknown. */
 function sameCostSource(baseline: unknown, candidate: unknown): boolean {
   const left = costSourceName(baseline);
-  return left !== undefined && left !== "mixed" && left === costSourceName(candidate);
+  return (left === "billed" || left === "table") && left === costSourceName(candidate);
 }
 
 function costSourceName(input: unknown): string | undefined {
@@ -225,12 +228,16 @@ function modelName(input: unknown): string | undefined {
   return isRecord(input) && typeof input.model === "string" ? input.model : undefined;
 }
 
-function caseFlags(before: CaseMetrics | undefined, after: CaseMetrics | undefined): string {
+function caseFlags(
+  before: CaseMetrics | undefined,
+  after: CaseMetrics | undefined,
+  costComparable: boolean,
+): string {
   if (!before) return "new case";
   if (!after) return "removed case";
   const flags: string[] = [];
   const cost = growth(before.meanUsd, after.meanUsd);
-  if (cost > REGRESSION_THRESHOLD) flags.push(`cost +${Math.round(cost * 100)}%`);
+  if (costComparable && cost > REGRESSION_THRESHOLD) flags.push(`cost +${Math.round(cost * 100)}%`);
   const time = growth(before.medianMs, after.medianMs);
   if (time > REGRESSION_THRESHOLD) flags.push(`time +${Math.round(time * 100)}%`);
   if (before.passRate !== undefined && after.passRate !== undefined && after.passRate < before.passRate) {

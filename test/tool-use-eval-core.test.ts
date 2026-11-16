@@ -975,6 +975,7 @@ describe("tool-use eval core", () => {
     const baselinePath = path.join(root, "baseline.json");
     const candidatePath = path.join(root, "candidate.json");
     const baseline = {
+      costSource: "billed",
       thinkingLevel: "off",
       thinkingLevelSource: "suite",
       cases: [
@@ -1022,6 +1023,7 @@ describe("tool-use eval core", () => {
       },
     };
     const candidate = {
+      costSource: "billed",
       thinkingLevel: "low",
       thinkingLevelSource: "cli",
       cases: [

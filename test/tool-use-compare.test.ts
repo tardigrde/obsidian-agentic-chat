@@ -51,8 +51,9 @@ describe("tool-use comparison", () => {
 
   it("flags only growth above 20% and any pass-rate drop", () => {
     const text = formatComparison(
-      { cases: [caseRow("case.cost"), caseRow("case.steady"), caseRow("case.pass")] },
+      { costSource: "billed", cases: [caseRow("case.cost"), caseRow("case.steady"), caseRow("case.pass")] },
       {
+        costSource: "billed",
         cases: [
           caseRow("case.cost", { meanUsd: 0.013, medianMs: 1_100 }),
           caseRow("case.steady", { meanUsd: 0.012, medianMs: 1_200 }),
@@ -111,6 +112,18 @@ describe("tool-use comparison", () => {
         missing: ["cost"],
       });
       expect(formatComparison(table, run(0.8, 0.001, 10_000))).toContain("the cost axis is not compared");
+    });
+
+    it("hides the per-case cost flag when the cost sources differ", () => {
+      const text = formatComparison(
+        { costSource: "table", cases: [caseRow("case.cost")] },
+        { costSource: "billed", cases: [caseRow("case.cost", { meanUsd: 0.05 })] },
+      );
+      expect(text).not.toContain("cost +");
+    });
+
+    it("never compares cost for a run that spent nothing", () => {
+      expect(paretoCompare(run(0.8, 0, 10_000, "none"), run(0.8, 0, 10_000, "none")).missing).toEqual(["cost"]);
     });
 
     it("treats a file with no cost source (an old baseline) as unknown", () => {

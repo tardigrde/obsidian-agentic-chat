@@ -57,10 +57,11 @@ export interface CaseThinking {
 
 /**
  * Where a run set's USD came from. `billed`: every priced run carries the
- * provider's bill. `table`: none does. `mixed`: some do. Two sides with a
- * different source are not comparable on cost.
+ * provider's bill. `table`: none does. `mixed`: some do. `none`: no run spent
+ * anything (all skipped or errored). Only two equal `billed` or `table` sides
+ * are comparable on cost.
  */
-export type CostSource = "billed" | "table" | "mixed";
+export type CostSource = "billed" | "table" | "mixed" | "none";
 
 export interface CaseSummaryWithRuns extends CaseSummary, CaseThinking {
   id: string;
@@ -243,6 +244,7 @@ export function toBaseline(summary: ToolUseSummary, stamp: { date: Date; gitHead
 /** Only runs that spent something count: a skipped run or an empty error run has no source. */
 export function costSourceOf(runs: readonly CaseRunEntry[]): CostSource {
   const priced = runs.filter((run) => run.usd > 0);
+  if (priced.length === 0) return "none";
   const billed = priced.filter((run) => run.usdSource === "billed").length;
   if (billed === priced.length) return "billed";
   return billed === 0 ? "table" : "mixed";
