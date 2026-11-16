@@ -51,6 +51,7 @@
     "capture:release-fixtures": "node scripts/capture-release-fixtures.mjs",
     "check:feature-map": "node scripts/check-feature-map.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
+    "logs:prune": "node scripts/logs-prune.mjs",
     "probe": "tsx scripts/probe.ts",
     "chaos": "tsx scripts/chaos-monkey.ts",
     "delegate": "bash scripts/delegate.sh",
