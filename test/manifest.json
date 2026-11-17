@@ -117,7 +117,8 @@
       "runner": "vitest",
       "globs": [
         "test/{agentic-eval-*,trace-*,fixture-server,fixture-mcp-server,fixture-wiring}.test.ts",
-        "test/{tool-use-compare,tool-use-eval-core,tool-use-plan,tool-use-report,core-eval-suite,significance,provider-cache-live}.test.ts"
+        "test/{tool-use-compare,tool-use-eval-core,tool-use-plan,tool-use-report,core-eval-suite,significance,provider-cache-live}.test.ts",
+        "test/{baseline-files,eval-ab,eval-canary,eval-explain,eval-run-loop}.test.ts"
       ],
       "triggers": ["scripts/eval/**", "scripts/*eval*", "test/evals/**"],
       "needs": { "display": false, "key": false, "network": false },
