@@ -152,7 +152,7 @@ describe("fixupRenderedAssistantImages", () => {
 
     fixupRenderedAssistantImages(root, app, "");
 
-    const [local, remote] = root.querySelectorAll("img");
+    const [local, remote] = Array.from(root.querySelectorAll("img"));
     expect(local.getAttribute("src")).toBe("app://resource/images/pic.png");
     expect(local.hasClass("agentic-chat-image")).toBe(true);
     expect(remote.getAttribute("src")).toBe("https://example.com/a.png");
@@ -179,7 +179,7 @@ describe("fixupRenderedAssistantImages", () => {
 
     fixupRenderedAssistantImages(root, app, "");
 
-    for (const embed of root.querySelectorAll(".internal-embed")) {
+    for (const embed of Array.from(root.querySelectorAll(".internal-embed"))) {
       expect(embed.querySelector("img")).toBeNull();
       expect(embed.hasClass("is-unresolved")).toBe(true);
     }
