@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { saturatedCases, type ToolUseBaseline } from "../scripts/eval/baseline-files";
+import { saturatedCases } from "../scripts/eval/baseline-files";
+import type { ToolUseBaseline } from "../scripts/eval/tool-use-report";
 import { explainRun, toolCallsFromTrace } from "../scripts/eval/explain";
 
 const TRACE = [
