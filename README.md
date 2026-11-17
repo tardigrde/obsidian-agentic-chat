@@ -271,11 +271,11 @@ CI runs the deterministic suite under `xvfb-run` with a cached Obsidian runtime,
 
 `npm run test:e2e:dogfood` generates a fresh adversarial vault under `logs/dogfood-runs/<run-id>/`, installs the current plugin, drives real Obsidian through WDIO, and fails if the dogfood invariant oracle or the generated report finds a regression. It uses a deterministic scripted model by default, so it needs no live model credentials.
 
-`npm run verify:mobile` is part of `npm run build`. It blocks direct Node/Electron API use outside documented desktop fallbacks. `npm run test:e2e:mobile` builds the e2e bundle, enables mobile emulation, applies phone-sized device metrics, and runs a WDIO smoke test for layout regressions. Real Obsidian Mobile needs the Android/iOS checklist in [MOBILE_TESTING.md](MOBILE_TESTING.md).
+`npm run verify:mobile` is part of `npm run build`. It blocks direct Node/Electron API use outside documented desktop fallbacks. `npm run test:e2e:mobile` builds the e2e bundle, enables mobile emulation, applies phone-sized device metrics, and runs a WDIO smoke test for layout regressions. Real Obsidian Mobile needs the Android/iOS checklist in [docs/development/mobile-testing.md](docs/development/mobile-testing.md).
 
 Live model e2e specs are opt-in and skip without keys. Set `AGENTIC_CHAT_API_KEY`, `AGENTIC_CHAT_BASE_URL`, and `AGENTIC_CHAT_MODEL` for an OpenAI-compatible gateway (OpenRouter, OpenWebUI, or a local proxy). Behind a corporate proxy, keep `NO_PROXY=localhost,127.0.0.1,::1`; the WDIO config keeps chromedriver local and passes a normalized proxy to Obsidian/Electron.
 
-The live tool-use evals (`npm run eval:tool-use`) measure three objectives together: correctness (pass^3), cost (the USD the provider billed), and time (median case time). They are a multi-objective harness, not a pass-rate score. The goal is the Pareto frontier of those three axes, for the plugin and for the harness. A change that gains correctness but costs more or runs slower is a trade-off, not a win, and `--compare` says so. No check is weakened and no case is tuned to move a number. Details: [docs/development/verification.md](docs/development/verification.md#tool-use-evals).
+The live tool-use evals (`npm run eval:tool-use`) measure three objectives together: correctness (pass^3), cost (the USD the provider billed), and time (median case time). They are a multi-objective harness, not a pass-rate score. The goal is the Pareto frontier of those three axes, for the plugin and for the harness. A change that gains correctness but costs more or runs slower is a trade-off, not a win, and `--compare` says so. No check is weakened and no case is tuned to move a number. Details: [docs/development/evals.md](docs/development/evals.md#tool-use-evals).
 
 When provider transport, model settings, proxy handling, or request formatting changes, run `npm run verify:provider-live`. Unlike the default e2e command, it requires live credentials and fails instead of accepting skipped provider specs. That gate also runs `npm run eval:provider-cache-live`, which sends repeated large stable prompts through the OpenAI-compatible gateway and fails unless a warm request reports provider cache-read tokens. The cache probe accepts `OPENAI_COMPATIBLE_*` variables or the `OPENWEBUI_*` variables used by the e2e spec. To load a local dotenv file without shell-sourcing secrets, pass `npm run eval:provider-cache-live -- --env-file .env`.
 
@@ -285,7 +285,7 @@ Live MCP e2e is also opt-in and refuses insecure endpoints:
 AGENTIC_CHAT_E2E_MCP_URL=https://mcp.example.com/mcp \
 AGENTIC_CHAT_E2E_MCP_TOOL=tool-name \
 AGENTIC_CHAT_E2E_MCP_ARGS_JSON='{"input":"value"}' \
-npm run test:e2e -- --spec test/e2e/specs/mcp-live.e2e.ts
+npm run test:e2e -- --spec test/e2e/live/mcp-live.e2e.ts
 ```
 
 For static-header servers, also set `AGENTIC_CHAT_E2E_MCP_HEADER_NAME` and `AGENTIC_CHAT_E2E_MCP_HEADER_VALUE`.

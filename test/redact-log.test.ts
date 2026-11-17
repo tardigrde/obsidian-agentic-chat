@@ -38,13 +38,17 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
+// verify.mjs and the modules it imports, relative to scripts/.
+const VERIFY_MODULES = ["verify.mjs", "verify-lanes.mjs", "redact-log.mjs", "lib/run-result.mjs"];
+
 function makeVerifyRoot() {
   const root = tempDir();
   const scriptsDir = path.join(root, "scripts");
   const binDir = path.join(root, "node_modules", ".bin");
   mkdirSync(scriptsDir, { recursive: true });
   mkdirSync(binDir, { recursive: true });
-  for (const name of ["verify.mjs", "redact-log.mjs"]) {
+  for (const name of VERIFY_MODULES) {
+    mkdirSync(path.dirname(path.join(scriptsDir, name)), { recursive: true });
     writeFileSync(
       path.join(scriptsDir, name),
       readFileSync(fileURLToPath(new URL(`../scripts/${name}`, import.meta.url)), "utf8"),

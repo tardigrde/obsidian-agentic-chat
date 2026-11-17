@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { appendHistory, buildRunResult, gitInfo } from "./lib/run-result.mjs";
 
 /**
  * Prove that a test is a witness: it must fail when the production change is
@@ -49,12 +50,25 @@ const NON_ASSERTION_RED_MARKERS = [
   { label: "Unexpected token", pattern: /Unexpected token/ },
   { label: "TSError", pattern: /TSError/ },
   { label: "TypeScript compiler error", pattern: /error TS\d+/ },
-  { label: "TypeError", pattern: /\bTypeError\b/ },
-  { label: "is not a function", pattern: /\bis not a function\b/ },
+  // A bundled or transformed import that resolved to nothing. The test asked
+  // for an export the reverted tree does not have: a loader red, not a behavior red.
+  { label: "missing import binding", pattern: /\(0\s*,\s*[\w$]+\.[\w$]+\) is not a function/ },
+  { label: "missing import binding", pattern: /__vi_import_\d+__\.[\w$]+ is not a (?:function|constructor)/ },
   {
     label: "setup hook failure",
     pattern: /\b(?:beforeEach|beforeAll|afterEach|afterAll)\b[^\n]*\b(?:failed|error)\b/i,
   },
+];
+
+/**
+ * A crash marker that is a real red only when the test is the one the base
+ * already had. When the PR changed or added the test, a TypeError usually
+ * means the test calls something the reverted tree lacks. When the test is
+ * unchanged, the same TypeError comes from the product code the fix repairs.
+ */
+const CHANGED_TEST_RED_MARKERS = [
+  { label: "TypeError", pattern: /\bTypeError\b/ },
+  { label: "is not a function", pattern: /\bis not a function\b/ },
 ];
 
 const FAILED_TEST_COUNT_PATTERNS = [
@@ -207,8 +221,11 @@ function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-function nonAssertionRedMarker(output) {
-  const match = NON_ASSERTION_RED_MARKERS.find((marker) => marker.pattern.test(output));
+function nonAssertionRedMarker(output, { testChanged = true } = {}) {
+  const markers = testChanged
+    ? [...NON_ASSERTION_RED_MARKERS, ...CHANGED_TEST_RED_MARKERS]
+    : NON_ASSERTION_RED_MARKERS;
+  const match = markers.find((marker) => marker.pattern.test(output));
   return match?.label;
 }
 
@@ -220,7 +237,7 @@ function failedTestCount(output) {
   return undefined;
 }
 
-function verdictFor(reverted, restored) {
+function verdictFor(reverted, restored, { testChanged = true } = {}) {
   if (reverted.status === 0) {
     return {
       verdict: "FAIL",
@@ -234,7 +251,7 @@ function verdictFor(reverted, restored) {
     };
   }
   const red = stripAnsi(reverted.combined);
-  const marker = nonAssertionRedMarker(red);
+  const marker = nonAssertionRedMarker(red, { testChanged });
   if (marker) {
     return {
       verdict: "FAIL",
@@ -339,7 +356,22 @@ function writeReport(reportDir, result) {
   return { summaryPath, reportPath };
 }
 
+/**
+ * True unless the named test file is byte-identical at the base and the head.
+ * An arbitrary `--test` command names no file, so it counts as changed.
+ */
+function testFileChanged(options, cwd) {
+  if (!options.testFile) return true;
+  const atBase = git(["cat-file", "-e", `${options.base}:${options.testFile}`], cwd, { allowFailure: true });
+  if (atBase.status !== 0) return true;
+  const diff = git(["diff", "--quiet", `${options.base}...HEAD`, "--", options.testFile], cwd, {
+    allowFailure: true,
+  });
+  return diff.status !== 0;
+}
+
 function verifyWitness(options, cwd = process.cwd()) {
+  const startedAt = Date.now();
   const spec = resolveTest(options);
   if (!options.base) throw new Error("Provide --base.");
   if (options.sources.length === 0) throw new Error("Provide at least one --src.");
@@ -404,9 +436,10 @@ function verifyWitness(options, cwd = process.cwd()) {
   if (restoreFailure) throw restoreFailure;
 
   const restored = runTest(spec, cwd);
-  const decision = verdictFor(reverted, restored);
+  const decision = verdictFor(reverted, restored, { testChanged: testFileChanged(options, cwd) });
   return {
     ...decision,
+    startedAt,
     base: options.base,
     head,
     sources: options.sources,
@@ -416,6 +449,32 @@ function verifyWitness(options, cwd = process.cwd()) {
     reverted,
     restored,
   };
+}
+
+/** The shared run-result envelope (#393 T24). Advisory: never changes the verdict. */
+function recordRun(result) {
+  try {
+    const finishedAt = Date.now();
+    const envelope = buildRunResult({
+      lane: "witness",
+      args: ["--base", result.base, ...result.sources.flatMap((source) => ["--src", source])],
+      command: result.testDisplay,
+      verdict: result.verdict,
+      startedAt: result.startedAt ?? finishedAt,
+      finishedAt,
+      steps: [
+        { label: "fix reverted (expect red)", tier: "T1", status: result.reverted.status === 0 ? "FAIL" : "PASS", durationMs: 0 },
+        { label: "fix restored (expect green)", tier: "T1", status: result.restored.status === 0 ? "PASS" : "FAIL", durationMs: 0 },
+      ],
+      scope: [],
+      artifacts: [path.join(result.reportDir, "summary.json")],
+      git: gitInfo(),
+    });
+    writeFileSync(path.join(result.reportDir, "run-result.json"), `${JSON.stringify(envelope, null, 2)}\n`);
+    if (process.env.AGENTIC_CHAT_HISTORY !== "0") appendHistory(envelope);
+  } catch (error) {
+    console.error(`verify-witness: run result not recorded (${error.message})`);
+  }
 }
 
 function printResult(result) {
@@ -642,12 +701,86 @@ function selfTest() {
       throw new Error(`self-test uncounted case gave the wrong reason: ${uncounted.reason}`);
     }
 
+    // Red run is a TypeError from the product code, and the test is the one
+    // the base already had. That is the crash the fix repairs: a real red.
+    const lockPath = path.join(repo, "src", "lock.mjs");
+    const lockTestPath = path.join(repo, "test", "lock.test.mjs");
+    writeFileSync(lockPath, "export const lock = undefined;\n");
+    writeFileSync(
+      lockTestPath,
+      countedTest([
+        'import { lock } from "../src/lock.mjs";',
+        "function check() {",
+        "  assert.equal(lock(), true);",
+        "}",
+      ]),
+    );
+    const crashBase = commit("product crash: lock is not a function");
+    writeFileSync(lockPath, "export const lock = () => true;\n");
+    commit("fix the crash");
+
+    const crash = verifyWitness(
+      {
+        base: crashBase,
+        sources: ["src/lock.mjs"],
+        testFile: "test/lock.test.mjs",
+        testCommand: {
+          display: `${process.execPath} test/lock.test.mjs`,
+          command: process.execPath,
+          args: [lockTestPath],
+          shell: false,
+        },
+        reportDir: path.join(scratch, "crash-report"),
+      },
+      repo,
+    );
+    if (crash.verdict !== "PASS") {
+      throw new Error(`self-test product TypeError case failed: ${crash.reason} ${crash.detail ?? ""}`);
+    }
+
+    // A fix that deletes a source file: the red side restores it from the base.
+    const legacyPath = path.join(repo, "src", "legacy.mjs");
+    const legacyTestPath = path.join(repo, "test", "legacy.test.mjs");
+    writeFileSync(legacyPath, 'export const mode = "legacy";\n');
+    const legacyBase = commit("add a legacy module");
+    rmSync(legacyPath);
+    writeFileSync(
+      legacyTestPath,
+      countedTest([
+        'import { existsSync } from "node:fs";',
+        "function check() {",
+        '  assert.equal(existsSync(new URL("../src/legacy.mjs", import.meta.url)), false);',
+        "}",
+      ]),
+    );
+    commit("delete the legacy module");
+
+    const deleted = verifyWitness(
+      {
+        base: legacyBase,
+        sources: ["src/legacy.mjs"],
+        testCommand: {
+          display: `${process.execPath} test/legacy.test.mjs`,
+          command: process.execPath,
+          args: [legacyTestPath],
+          shell: false,
+        },
+        reportDir: path.join(scratch, "deleted-report"),
+      },
+      repo,
+    );
+    if (deleted.verdict !== "PASS") {
+      throw new Error(`self-test deleted source case failed: ${deleted.reason}`);
+    }
+
     console.log("SELF-TEST PASS");
     console.log("  positive: red without the fix, green with it");
     console.log("  negative: rejected a test that passes without the fix");
     console.log("  syntax error: rejected a red run that never reached an assertion");
     console.log("  setup hook: rejected a red run that died before an assertion");
     console.log("  no count: rejected a red run without a failed test count");
+    console.log("  product crash: accepted a TypeError red when the test is unchanged");
+    console.log("  deleted source: restored a deleted file on the red side");
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -686,7 +819,10 @@ function main() {
     process.exit(2);
   }
 
-  if (result.verdict !== "DRY-RUN") writeReport(result.reportDir, result);
+  if (result.verdict !== "DRY-RUN") {
+    writeReport(result.reportDir, result);
+    recordRun(result);
+  }
   printResult(result);
   if (result.verdict === "FAIL") {
     console.error("verify-witness: red output");

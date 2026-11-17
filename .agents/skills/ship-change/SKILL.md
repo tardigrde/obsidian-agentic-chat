@@ -6,6 +6,8 @@ description: Use for any code change in this repo: bug, feature, refactor, or de
 # Ship change
 
 Own the change end to end. Plan, implement, verify, and report evidence.
+Commands, tiers, and rules: [testing.md](../../../docs/development/testing.md).
+Start every change with `npm run verify -- plan`.
 
 ## Non-negotiables
 
@@ -15,13 +17,14 @@ Own the change end to end. Plan, implement, verify, and report evidence.
    risk you introduced. Do not run `dogfood` for a CSS change; do not ship a
    prompt change on unit tests alone.
 3. **Counts, not exit codes.** Zero tests or all tests skipped is a failure.
-4. **UI claims need more than a screenshot.** Use a committed e2e assertion, or a
-   probe recording plus DOM/state metrics.
-5. **UI entry points need clips.** If the change adds, removes, or changes a
-   command, button, modal, settings row, mode, tab, or panel, plan desktop
-   1280x1024 and mobile-width 390x844 clips before code. Each clip needs a "what
-   to watch" list. A waiver must be explicit in the PR. The 390x844 clip is a
-   narrow desktop window, not real Obsidian Mobile.
+4. **UI evidence is an assertion plus a screenshot.** If the change adds,
+   removes, or changes a command, button, modal, settings row, mode, tab, or
+   panel, commit an e2e assertion that fails without it and attach one
+   screenshot to the PR. A screenshot alone is not a verdict; no video is
+   required. A removal uses a `kind: removal` witness.
+5. **Prompt or tool changes need the eval.** A change to the system prompt, a
+   tool description, or the agent loop runs `npm run verify -- eval --suite core
+   --runs 3` (live, local) against the baseline before it ships.
 6. **No secret or vault data in a commit.**
 
 ## Route
@@ -40,19 +43,12 @@ Own the change end to end. Plan, implement, verify, and report evidence.
    `.agents/skills/verify-obsidian-chat/features/`.
 2. List every user entry point the change touches. Slash command, palette
    command, settings tab, composer control, drag and drop, agent tool, subagent.
-   For each changed entry point, decide the desktop and mobile-width clips now,
-   or record the waiver.
+   For each changed entry point, name the e2e assertion that will prove it.
 3. Name the witness: the smallest assertion that would fail today.
 4. Implement the smallest change that satisfies it.
-5. Verify:
-   - logic: `npm run verify -- change <file-or-name>`
-   - types, lint, unit, bundle: `npm run verify -- ci`
-   - merge gate: `npm run verify -- fast`
-   - UI wiring: `npm run verify -- e2e <spec>` (on a desktop, wrap it as
-     `npm run nested -- <command>` so Obsidian does not steal the cursor) or
-     `npm run probe -- --scenario <name>`
-   - prompt, tool, or context: `npm run verify -- eval` plus `compare --fail-on-regression`,
-     then the tool-use A/B (see "Evals" below)
+5. Verify: run what `npm run verify -- plan` prints (the table in
+   testing.md, "What to run, by change"). On a desktop, wrap app runs as
+   `npm run nested -- <command>`.
 6. Update the feature map: entry points, proof command, last verified date.
 7. Report evidence: command, exit code, counts, artifact path.
 
@@ -69,49 +65,28 @@ Own the change end to end. Plan, implement, verify, and report evidence.
 
 ## Upgrade loop
 
-1. Baseline: `npm run verify -- fast` and record the result.
+1. Baseline: `npm run verify -- check` and record the result.
 2. Bump. Prove the resolved version with `npm ls <package>` and a lockfile diff.
-3. Re-run `fast`. If prompt, tool, context, or provider code changed, also run the
+3. Re-run `check`. If prompt, tool, context, or provider code changed, also run the
    eval A/B with `--fail-on-regression`.
-4. For Obsidian: also run `npm run verify -- audit` and the mobile lane.
+4. For Obsidian: also run `AGENTIC_CHAT_DESIGN_AUDIT=1 AGENTIC_CHAT_DESIGN_AUDIT_MODE=sidebar npm run verify -- app design-audit` and the mobile lane.
 
-## Evals: three objectives, one Pareto frontier
+## Evals
 
-The evals optimize correctness, cost, and time together. They are not a
-pass-rate harness. The goal is the Pareto frontier of that space, for the
-plugin and for the harness. Rules:
-
-- Report all three axes for every A/B: pass^3, billed USD per run, and median
-  case time. `--compare` prints a Pareto verdict (`dominates`, `dominated`,
-  `trade-off`, `same`, `incomplete`). A `trade-off` is not a win; name it.
-- Hold everything fixed but the one variable: suite, model, reasoning level,
-  vaults, run count.
-- No cheating: never weaken a check, never edit a case only to move its pass
-  rate, never cut work the task needs to look cheaper or faster. Fix a case
-  only when it is unfair (ambiguous, impossible, wrong grader).
-- Keep it cheap: `--smoke` (1 run per case) per change; full `core` x 3 only for
-  a model, prompt, tool, or context change, at most once per PR. Do not tune a
-  suite toward a pass-rate target.
-
-Details: `docs/development/verification.md`, section "Tool-use evals".
+Correctness, cost, and time are judged together; a `trade-off` is not a win.
+Hold everything fixed but one variable. Never weaken a check or tune a case to
+move a number. `--smoke` per change; full `core` x 3 at most once per PR.
+Details: [evals.md](../../../docs/development/evals.md).
 
 ## Done means
 
 - Witness exists and was shown failing first.
 - The chosen lane is green with counts recorded.
 - Feature map updated if a user-facing entry point changed.
-- Changed entry points have desktop and mobile-width clips, or an explicit waiver.
+- Changed entry points have an e2e assertion and one screenshot in the PR.
 - Evidence is in the response, not just "it works".
 
-## Promotion
-
-| finding | promote to |
-|---|---|
-| Bug found live | deterministic replay test |
-| New entry point | feature map plus e2e assertion |
-| Rule broken twice | lint rule, script check, or CI gate |
-| Layout regression | assertion in `test/e2e/support/layout.ts` |
-| Flaky test | fix the observation or fixture; never add a retry |
+## Test quality
 
 Prefer no test over a bad test. A bad test mocks the subject, encodes the current
 implementation, or would be deleted immediately after proving the fix.
@@ -120,4 +95,4 @@ implementation, or would be deleted immediately after proving the fix.
 
 - `@verify-obsidian-chat` for the real app and the feature map.
 - `@probe-feature` for exploratory work.
-- `docs/development/verification.md` for lanes and the fake-green list.
+- `docs/development/verification.md` for lane internals and the fake-green list.

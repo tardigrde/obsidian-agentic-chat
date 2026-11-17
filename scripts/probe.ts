@@ -353,6 +353,10 @@ async function finalize(options: Options, result: ProbeRun, ffmpegPath: string):
 }
 
 async function main(): Promise<void> {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    process.stdout.write("Usage: npm run probe -- --scenario <name> [--live]   (npm run probe -- --list for scenarios)\n");
+    return;
+  }
   if (hasFlag("--list")) {
     for (const scenario of await listScenarios()) process.stdout.write(`${scenario}\n`);
     return;

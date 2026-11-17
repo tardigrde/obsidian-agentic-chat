@@ -28,7 +28,7 @@ removal. Use this when you want breadth after several changes.
 | You suspect a provider, tool, or settings interaction that a fixed spec misses | `focused` or `generic` with `--live` |
 
 Do **not** use it as a merge gate. A green chaos run does not replace the
-witness, `npm run verify -- fast`, or a committed e2e assertion.
+witness, `npm run verify -- check`, or a committed e2e assertion.
 
 ## Safety rules
 
@@ -252,7 +252,7 @@ Raise the caps only after the first run is clean.
 ## What the driver does not do
 
 - It does not run OAuth or a live MCP tool call. Use
-  `test/e2e/specs/mcp-live.e2e.ts` for that. The MCP step proves the settings
+  `test/e2e/live/mcp-live.e2e.ts` for that. The MCP step proves the settings
   surface and records the limitation in the report.
 - It cannot force a live model to keep looping. A live `max-turns` run depends
   on the model choosing to make more than the assistant-turn limit; a model that

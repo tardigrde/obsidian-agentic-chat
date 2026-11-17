@@ -4,7 +4,7 @@
  * the harness can be proven before it is pointed at a product change.
  *
  * Run it through the repository e2e lane:
- *   npm run verify -- e2e test/e2e/specs/break-change.<run>.e2e.ts
+ *   npm run verify -- app test/e2e/specs/break-change.<run>.e2e.ts
  *
  * The wrapper (`break-change.mjs run`) does that and removes this file. It also
  * exports BREAK_CHANGE_RUN_DIR, so scenario events land in the run report.

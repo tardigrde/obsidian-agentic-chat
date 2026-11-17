@@ -17,6 +17,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const BLOCK_PATTERN = /<!--\s*witness\b([\s\S]*?)-->|```witness[ \t]*\r?\n([\s\S]*?)```/gi;
 const BEHAVIOR_LABELS = new Set(["behavior", "witness"]);
 const OPT_OUT_LABEL = "no-behavior-change";
+const WITNESS_KINDS = new Set(["test", "removal"]);
+/** A witness may revert production code (`src/`) or tooling (`scripts/`). */
+const SOURCE_DIRECTORIES = ["src", "scripts"];
 
 export function extractWitnessBlocks(body) {
   return [...String(body ?? "").matchAll(BLOCK_PATTERN)].map(
@@ -27,17 +30,14 @@ export function extractWitnessBlocks(body) {
 export function extractWitnessBlock(body) {
   const blocks = extractWitnessBlocks(body);
   return (
-    blocks.find((block) => {
-      const spec = parseWitnessBlock(block);
-      return spec.testFile || spec.sources.length > 0 || spec.errors.length > 0;
-    }) ??
+    blocks.find((block) => isFilled(parseWitnessBlock(block))) ??
     blocks[0] ??
     null
   );
 }
 
 export function parseWitnessBlock(block) {
-  const spec = { testFile: null, sources: [], errors: [] };
+  const spec = { kind: "test", testFile: null, sources: [], gone: [], absent: [], errors: [] };
   for (const rawLine of String(block ?? "").split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
@@ -66,6 +66,20 @@ export function parseWitnessBlock(block) {
       case "base":
         // CI supplies the base so the PR cannot widen or narrow its own diff.
         break;
+      case "kind":
+        if (!WITNESS_KINDS.has(value.toLowerCase())) {
+          spec.errors.push(`kind must be "test" or "removal", got "${value}"`);
+        } else {
+          spec.kind = value.toLowerCase();
+        }
+        break;
+      case "gone":
+        spec.gone.push(value);
+        break;
+      case "absent":
+        if (value) spec.absent.push(value);
+        else spec.errors.push("an `absent:` line needs the text that must be gone");
+        break;
       default:
         spec.errors.push(`unknown key "${key}"`);
     }
@@ -73,44 +87,111 @@ export function parseWitnessBlock(block) {
   return spec;
 }
 
-function isRepoFile(root, value, directory) {
-  if (!value || path.isAbsolute(value)) return false;
+function normalizeRepoPath(value) {
+  if (!value || path.isAbsolute(value)) return null;
   const normalized = value.replaceAll("\\", "/");
-  if (normalized.split("/").includes("..")) return false;
-  if (!normalized.startsWith(`${directory}/`)) return false;
+  if (normalized.split("/").includes("..")) return null;
+  return normalized;
+}
+
+function isUnder(normalized, directories) {
+  return directories.some((directory) => normalized.startsWith(`${directory}/`));
+}
+
+function isRepoFile(root, normalized) {
   const absolute = path.resolve(root, normalized);
   return existsSync(absolute) && statSync(absolute).isFile();
 }
 
-export function validateWitnessSpec(spec, root = process.cwd()) {
-  const errors = [...spec.errors];
+function validateTestWitness(spec, root, changed) {
+  const errors = [];
   if (!spec.testFile) {
     errors.push("add one `test: test/...test.ts` line");
-  } else if (!isRepoFile(root, spec.testFile, "test")) {
-    errors.push(`test file is missing or outside test/: ${spec.testFile}`);
-  } else if (!spec.testFile.endsWith(".ts")) {
-    errors.push(`test file must be TypeScript: ${spec.testFile}`);
-  }
-  if (spec.sources.length === 0) {
-    errors.push("add at least one `src: src/...` line");
-  }
-  for (const source of spec.sources) {
-    if (!isRepoFile(root, source, "src")) {
-      errors.push(`source file is missing or outside src/: ${source}`);
+  } else {
+    const testFile = normalizeRepoPath(spec.testFile);
+    if (!testFile || !isUnder(testFile, ["test"]) || !isRepoFile(root, testFile)) {
+      errors.push(`test file is missing or outside test/: ${spec.testFile}`);
+    } else if (!testFile.endsWith(".ts")) {
+      errors.push(`test file must be TypeScript: ${spec.testFile}`);
     }
   }
+  if (spec.sources.length === 0) {
+    errors.push("add at least one `src: src/...` (or `src: scripts/...`) line");
+  }
+  for (const source of spec.sources) {
+    const normalized = normalizeRepoPath(source);
+    // A source the PR deletes or moves is gone from the head checkout. The
+    // verifier restores it from the base on the red side, so accept it when
+    // the diff names it.
+    const valid =
+      normalized &&
+      isUnder(normalized, SOURCE_DIRECTORIES) &&
+      (isRepoFile(root, normalized) || changed.has(normalized));
+    if (!valid) {
+      errors.push(`source file is missing, outside src/ or scripts/, and not deleted by this PR: ${source}`);
+    }
+  }
+  return errors;
+}
+
+function validateRemovalWitness(spec, root, changed) {
+  const errors = [];
+  if (spec.gone.length === 0 && spec.absent.length === 0) {
+    errors.push("a removal witness needs at least one `gone: <path>` or `absent: <text>` line");
+  }
+  if (spec.testFile || spec.sources.length > 0) {
+    errors.push("a removal witness takes `gone:` and `absent:` lines, not `test:` or `src:`");
+  }
+  for (const gone of spec.gone) {
+    const normalized = normalizeRepoPath(gone);
+    if (!normalized) {
+      errors.push(`gone path must be relative to the repo: ${gone}`);
+    } else if (isRepoFile(root, normalized)) {
+      errors.push(`gone path still exists at the head: ${gone}`);
+    } else if (!changed.has(normalized)) {
+      errors.push(`gone path is not deleted by this PR: ${gone}`);
+    }
+  }
+  return errors;
+}
+
+export function validateWitnessSpec(spec, root = process.cwd(), changedFiles = []) {
+  const changed = new Set(changedFiles.map((file) => String(file).replaceAll("\\", "/")));
+  const errors = [
+    ...spec.errors,
+    ...(spec.kind === "removal"
+      ? validateRemovalWitness(spec, root, changed)
+      : validateTestWitness(spec, root, changed)),
+  ];
   return [...new Set(errors)];
 }
 
 function filledSpecs(body) {
   return extractWitnessBlocks(body)
     .map(parseWitnessBlock)
-    .filter((spec) => spec.testFile || spec.sources.length > 0 || spec.errors.length > 0);
+    .filter(isFilled);
+}
+
+function isFilled(spec) {
+  return (
+    spec.testFile ||
+    spec.sources.length > 0 ||
+    spec.gone.length > 0 ||
+    spec.absent.length > 0 ||
+    spec.errors.length > 0 ||
+    spec.kind !== "test"
+  );
 }
 
 function specSignature(spec) {
-  const sources = [...spec.sources].sort((a, b) => a.localeCompare(b));
-  return JSON.stringify({ testFile: spec.testFile, sources });
+  const sorted = (values) => [...values].sort((a, b) => a.localeCompare(b));
+  return JSON.stringify({
+    kind: spec.kind,
+    testFile: spec.testFile,
+    sources: sorted(spec.sources),
+    gone: sorted(spec.gone),
+    absent: sorted(spec.absent),
+  });
 }
 
 export function witnessDecision({ body, labels = [], root = process.cwd(), changedFiles = [] }) {
@@ -154,9 +235,42 @@ export function witnessDecision({ body, labels = [], root = process.cwd(), chang
     };
   }
 
-  const errors = validateWitnessSpec(spec, root);
+  const errors = validateWitnessSpec(spec, root, changedFiles);
   if (errors.length > 0) return { action: "fail", reason: errors.join("; "), spec };
-  return { action: "run", spec };
+  return { action: spec.kind === "removal" ? "removal" : "run", spec };
+}
+
+function gitStatus(args, cwd) {
+  return spawnSync("git", args, { cwd, encoding: "utf8" }).status; // NOSONAR:S4036 -- git from PATH, as above.
+}
+
+/**
+ * Prove a deletion: every `gone:` path existed at the base and is absent at
+ * the head, and every `absent:` text (a command id, a setting key, a class
+ * name) appears under src/ at the base and nowhere under src/ at the head.
+ */
+export function checkRemoval({ base, spec, cwd = process.cwd() }) {
+  const results = [];
+  for (const gone of spec.gone) {
+    const atBase = gitStatus(["cat-file", "-e", `${base}:${gone}`], cwd) === 0;
+    const atHead = gitStatus(["cat-file", "-e", `HEAD:${gone}`], cwd) === 0;
+    results.push({
+      check: `gone: ${gone}`,
+      ok: atBase && !atHead,
+      detail: !atBase ? "missing at the base, so the PR did not remove it" : atHead ? "still present at the head" : "present at the base, absent at the head",
+    });
+  }
+  for (const text of spec.absent) {
+    const grep = (ref) => gitStatus(["grep", "-q", "-F", "-e", text, ref, "--", "src"], cwd) === 0;
+    const atBase = grep(base);
+    const atHead = grep("HEAD");
+    results.push({
+      check: `absent: ${text}`,
+      ok: atBase && !atHead,
+      detail: !atBase ? "not found under src/ at the base, so it proves nothing" : atHead ? "still found under src/ at the head" : "found at the base, gone at the head",
+    });
+  }
+  return { verdict: results.every((result) => result.ok) ? "PASS" : "FAIL", results };
 }
 
 function changedFiles(base, cwd) {
@@ -183,6 +297,13 @@ function fail(message) {
       "<!-- witness",
       "test: test/example.test.ts",
       "src: src/example.ts",
+      "-->",
+      "",
+      "A deletion can prove the entry point is gone instead:",
+      "<!-- witness",
+      "kind: removal",
+      "gone: src/old-feature.ts",
+      "absent: agentic-chat:old-command",
       "-->",
       "",
       `A pure refactor that changes src/ can use the "${OPT_OUT_LABEL}" label instead.`,
@@ -220,6 +341,15 @@ function main() {
   }
   if (decision.action === "fail") {
     fail(decision.reason);
+    return;
+  }
+  if (decision.action === "removal") {
+    const removal = checkRemoval({ base, spec: decision.spec, cwd });
+    console.log(`witness: removal ${removal.verdict} against ${base}`);
+    for (const result of removal.results) {
+      console.log(`  ${result.ok ? "ok  " : "FAIL"} ${result.check} (${result.detail})`);
+    }
+    process.exitCode = removal.verdict === "PASS" ? 0 : 1;
     return;
   }
 

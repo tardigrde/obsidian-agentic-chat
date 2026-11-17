@@ -80,6 +80,10 @@ void main().catch((error: unknown) => {
 });
 
 async function main(): Promise<void> {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    process.stdout.write("Usage: npm run verify -- eval [--suite <path>] [--case <id>] [--run-scripted] [--run-judge] [--fail-on-skip] [--strict]\n");
+    return;
+  }
   const args = parseArgs(process.argv.slice(2));
   const startedAt = new Date();
   const runId = args["run-id"] ?? timestampRunId();
@@ -127,6 +131,7 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+  if (summary.totals.skipped > 0) process.stdout.write(formatSkipHint(summary.results));
   if (!args["allow-problems"]) {
     if (summary.totals.errors > 0) process.exit(1);
     if (args.strict && summary.totals.warnings > 0) process.exit(1);
@@ -531,6 +536,27 @@ function formatConsoleSummary(summary: EvalRunSummary, summaryMdPath: string, su
     lines.push(`- ${finding.severity.toUpperCase()} ${finding.caseId} [${finding.area}] ${finding.message}`);
   }
   if (findings.length > 12) lines.push(`- ... ${findings.length - 12} more finding(s) in summary.md`);
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * A skip is not a pass. Name each skipped case and the command that executes
+ * it, so a no-arg run ends with the next step instead of a silent gap.
+ */
+function formatSkipHint(results: EvalCaseResult[]): string {
+  const skipped = results.filter((result) => result.status === "skipped");
+  if (skipped.length === 0) return "";
+  const lines = [`Not executed: ${skipped.length} case(s). This run proves nothing about them.`];
+  for (const result of skipped) lines.push(`  - ${result.id}: ${result.skippedReason ?? "skipped"}`);
+  const needs = new Set(skipped.map((result) => result.skippedReason ?? ""));
+  const commands: string[] = [];
+  if ([...needs].some((reason) => reason.includes("--run-scripted"))) {
+    commands.push("npm run verify -- eval --run-scripted   # needs a display (xvfb-run -a on Linux)");
+  }
+  if ([...needs].some((reason) => reason.includes("--run-judge"))) {
+    commands.push("npm run verify -- eval --suite test/evals/agentic-chat/judge.eval.json --run-judge   # needs a key");
+  }
+  if (commands.length > 0) lines.push("Next:", ...commands.map((command) => `  ${command}`));
   return `${lines.join("\n")}\n`;
 }
 

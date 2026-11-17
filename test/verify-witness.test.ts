@@ -17,6 +17,8 @@ describe("verify-witness", () => {
       expect(output).toContain("negative: rejected a test that passes without the fix");
       expect(output).toContain("syntax error: rejected a red run that never reached an assertion");
       expect(output).toContain("no count: rejected a red run without a failed test count");
+      expect(output).toContain("product crash: accepted a TypeError red when the test is unchanged");
+      expect(output).toContain("deleted source: restored a deleted file on the red side");
     },
     120_000,
   );

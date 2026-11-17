@@ -17,7 +17,9 @@
 <!--
 The witness is the smallest check that fails before the fix and passes after it.
 CI runs the block below when this PR changes `src/`.
-Use one `test:` line and one `src:` line per changed source path.
+Use one `test:` line and one `src:` line per changed source path. A `src:` path
+may be under `src/` or `scripts/`, and may be a file this PR deletes.
+A pure deletion uses `kind: removal` with `gone: <path>` and `absent: <text>` lines.
 A pure refactor uses the `no-behavior-change` label instead of this block.
 Keep the block empty when this PR has no source change.
 -->
@@ -37,38 +39,28 @@ After: `PASS` — test name, assertion, and counts
 ## Verification
 
 ```text
+npm run verify -- plan
 npm run verify -- change <witness>
-npm run verify -- fast
+npm run verify -- check
 ```
 
 Do not paste test counts here: they go stale after the next push. The
 latest verdict comment carries the counts at its head.
 
-## Break-change
-
-<!-- Run @break-change for behavior changes and removals, or state a waiver. -->
-- Report: `logs/break-change/<timestamp>/report.md` | waiver: <reason>
-- Verdict: `PASS` | `FINDINGS` | `INCONCLUSIVE`
-
 ## UI evidence
 
-<!-- Required for user-visible changes. Clips stay local; never commit them. -->
-- Desktop 1280x1024 clip: `logs/break-change/<timestamp>/clips/desktop-1280x1024/session.mp4`
-- Mobile 390x844 clip: `logs/break-change/<timestamp>/clips/mobile-390x844/session.mp4`
-- Watch: <timestamps and mark labels>
-- Waiver: <reason when no clips>
+<!-- Required when a command, button, modal, settings row, mode, tab, or panel changes. -->
+- E2E assertion: `test/e2e/specs/<spec>.e2e.ts` > `<test name>` (fails without this change)
+- Screenshot: attach one image to this PR
+- Waiver: <reason when there is no UI change>
 
-## Independent verdict
+## Agent review
 
-<!-- Filled in by a verifier that did not write the change. See @verify-pr. -->
-
-- Verifier:
-- Result: `PASS` | `PASS+NOTES` | `FAIL`
-- Head:
-- Notes:
+<!-- Posted by a reviewer agent that did not write the change, after CI is green. See @verify-pr. -->
 
 Post the verdict as a PR comment with `Verdict`, `Head`, `Reviewer`, and
-`Fast lane`. The `review` check reads that comment.
+`Fast lane` (cite `CI` when `ci` and `e2e` are green at the head). The `review`
+check only reports it; the owner reads it before "merge".
 
 ## Attention
 

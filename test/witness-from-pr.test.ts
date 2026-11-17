@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  checkRemoval,
   extractWitnessBlock,
   parseWitnessBlock,
   validateWitnessSpec,
@@ -82,7 +83,7 @@ describe("witness-from-pr", () => {
 
   it("rejects a command instead of a test file", () => {
     const decision = witnessDecision({
-      body: "<!-- witness\ntest: npm run verify -- ci\nsrc: src/a.ts\n-->",
+      body: "<!-- witness\ntest: npm run verify -- check --no-app --coverage\nsrc: src/a.ts\n-->",
       labels: [],
       root,
     });
@@ -180,6 +181,94 @@ describe("witness-from-pr", () => {
     ).toMatchObject({ action: "skip" });
   });
 
+  it("accepts a scripts/ source path", () => {
+    mkdirSync(path.join(root, "scripts", "eval"), { recursive: true });
+    writeFileSync(path.join(root, "scripts", "eval", "compare.ts"), "export {};\n");
+    const decision = witnessDecision({
+      body: "<!-- witness\ntest: test/a.test.ts\nsrc: scripts/eval/compare.ts\n-->",
+      labels: [],
+      root,
+      changedFiles: ["scripts/eval/compare.ts"],
+    });
+    expect(decision).toMatchObject({ action: "run" });
+  });
+
+  it("accepts a source the PR deletes, and rejects a missing one it does not", () => {
+    const body = "<!-- witness\ntest: test/a.test.ts\nsrc: src/agent/tool-budget.ts\nsrc: src/a.ts\n-->";
+    expect(
+      witnessDecision({ body, labels: [], root, changedFiles: ["src/agent/tool-budget.ts", "src/a.ts"] }),
+    ).toMatchObject({ action: "run" });
+    expect(witnessDecision({ body, labels: [], root, changedFiles: ["src/a.ts"] })).toMatchObject({
+      action: "fail",
+    });
+  });
+
+  it("still rejects a source outside src/ and scripts/", () => {
+    writeFileSync(path.join(root, "README.md"), "x\n");
+    const decision = witnessDecision({
+      body: "<!-- witness\ntest: test/a.test.ts\nsrc: README.md\n-->",
+      labels: [],
+      root,
+      changedFiles: ["README.md"],
+    });
+    expect(decision).toMatchObject({ action: "fail" });
+  });
+
+  it("parses a removal witness and validates its paths", () => {
+    const body = "<!-- witness\nkind: removal\ngone: src/plan.ts\nabsent: agentic-chat:toggle-plan\n-->";
+    expect(
+      witnessDecision({ body, labels: [], root, changedFiles: ["src/plan.ts"] }),
+    ).toMatchObject({ action: "removal", spec: { gone: ["src/plan.ts"], absent: ["agentic-chat:toggle-plan"] } });
+    // A gone path the PR does not delete proves nothing.
+    expect(witnessDecision({ body, labels: [], root, changedFiles: ["src/a.ts"] })).toMatchObject({
+      action: "fail",
+    });
+    // A removal witness with nothing to check is invalid.
+    expect(
+      witnessDecision({ body: "<!-- witness\nkind: removal\n-->", labels: [], root, changedFiles: ["src/a.ts"] }),
+    ).toMatchObject({ action: "fail" });
+    expect(validateWitnessSpec(parseWitnessBlock("kind: sideways"), root)).toContain(
+      'kind must be "test" or "removal", got "sideways"',
+    );
+  });
+
+  it("checks a removal against the base and the head", () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), "witness-removal-"));
+    try {
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+      git("init");
+      git("config", "user.email", "witness@example.test");
+      git("config", "user.name", "Witness Test");
+      mkdirSync(path.join(repo, "src"), { recursive: true });
+      writeFileSync(path.join(repo, "src", "plan.ts"), "export const id = 'agentic-chat:toggle-plan';\n");
+      writeFileSync(path.join(repo, "src", "main.ts"), "import './plan';\n");
+      git("add", ".");
+      git("commit", "-m", "base");
+      const base = git("rev-parse", "HEAD").toString().trim();
+      rmSync(path.join(repo, "src", "plan.ts"));
+      writeFileSync(path.join(repo, "src", "main.ts"), "export {};\n");
+      git("add", "-A");
+      git("commit", "-m", "remove plan");
+
+      const pass = checkRemoval({
+        base,
+        cwd: repo,
+        spec: { ...parseWitnessBlock("kind: removal\ngone: src/plan.ts\nabsent: agentic-chat:toggle-plan") },
+      });
+      expect(pass.verdict).toBe("PASS");
+
+      const fail = checkRemoval({
+        base,
+        cwd: repo,
+        spec: { ...parseWitnessBlock("kind: removal\ngone: src/main.ts\nabsent: never-existed") },
+      });
+      expect(fail.verdict).toBe("FAIL");
+      expect(fail.results.map((result) => result.ok)).toEqual([false, false]);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   it("accepts a non-TypeScript source under src/", () => {
     writeFileSync(path.join(root, "src", "vendor.js"), "export const a = 1;\n");
     expect(
@@ -202,7 +291,7 @@ describe("witness-from-pr", () => {
       env: {
         ...env,
         PR_BODY:
-          "<!-- witness\ntest: npm run verify -- ci\nsrc: src/agent/agent-service.ts\n-->",
+          "<!-- witness\ntest: npm run verify -- check --no-app --coverage\nsrc: src/agent/agent-service.ts\n-->",
       },
       encoding: "utf8",
     });

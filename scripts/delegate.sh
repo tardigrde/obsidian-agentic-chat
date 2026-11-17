@@ -10,12 +10,12 @@
 # work:    implement the spec; edits allowed only inside the worktree.
 # review:  read-only verify-pr review; may write only logs/delegate/verdict-<pr>.md.
 # recheck: after a merge from main, wait for CI at the new head and write
-#          logs/delegate/recheck-<pr>.md; posts it and re-runs the Review gate.
+#          logs/delegate/recheck-<pr>.md; posts it.
 # update:  merge origin/main into the PR, take main's feature map and fix its
 #          refs, fold that into the merge commit, push, then recheck.
 # ship:    work, then the script (not the worker) pushes and opens the PR from
 #          logs/delegate/pr-body.md, then review. Stops at a FAIL or for the merge.
-# review and recheck post their file to the PR and re-run the Review gate.
+# review and recheck post their file to the PR (an advisory comment, #393 T02).
 #
 # Sandbox: `opencode run --standalone` with OpenCode V2 `permissions` rules in
 # OPENCODE_CONFIG_CONTENT (see scripts/delegate-config.mjs). Without --standalone
@@ -54,7 +54,7 @@ run() { # <worktree> <title> <config> <prompt-file> <log>
     --title "$title" --model "$MODEL" < "$prompt_file" 2>&1 | node "$ROOT/scripts/redact-log.mjs" | tee "$log_file")
 }
 
-# Newest fast-lane summary in a worktree: "<unit passed> <smoke passed>".
+# Newest passing `check` summary in a worktree: "<unit passed> <smoke passed>".
 fast_counts() {
   local summary
   summary=$(ls -t "$1"/logs/verify/*/summary.json 2>/dev/null | head -n 1) || true
@@ -62,40 +62,20 @@ fast_counts() {
   python3 -I - "$summary" <<'PY'
 import json, sys
 s = json.load(open(sys.argv[1]))
-if s.get("lane") != "fast" or s.get("verdict") != "PASS":
-    sys.exit(f"summary is lane={s.get('lane')} verdict={s.get('verdict')}, not a passing fast lane")
+if s.get("lane") != "check" or s.get("verdict") != "PASS":
+    sys.exit(f"summary is lane={s.get('lane')} verdict={s.get('verdict')}, not a passing check lane")
 counts = {step["label"]: (step.get("counts") or {}) for step in s["steps"]}
 unit, smoke = counts.get("unit tests", {}).get("passed"), counts.get("smoke e2e", {}).get("passed")
 if not unit or not smoke:
-    sys.exit("fast summary has no unit or smoke e2e count")
+    sys.exit("check summary has no unit or smoke e2e count")
 print(unit, smoke)
 PY
 }
 
-# Re-run the newest pull_request "Review gate" run for this PR. The `review`
-# check comes from that run; a new comment alone does not update it.
-gate_rerun() { # <pr>
-  local branch head run tries=0
-  branch=$(gh pr view "$1" --json headRefName -q .headRefName)
-  head=$(gh pr view "$1" --json headRefOid -q .headRefOid)
-  # Only the run for the current head counts; wait for GitHub to register it.
-  while [ $tries -lt 12 ]; do
-    run=$(gh run list --branch "$branch" --workflow "Review gate" --event pull_request -L 10 --json databaseId,headSha \
-      -q "[.[] | select(.headSha==\"$head\")][0].databaseId")
-    [ -n "$run" ] && break
-    tries=$((tries + 1)); sleep 5
-  done
-  [ -n "$run" ] || { echo "delegate: no Review gate run for #$1" >&2; return 0; }
-  gh run watch "$run" > /dev/null 2>&1 || true
-  gh run rerun "$run" > /dev/null 2>&1 || true
-  sleep 10
-  gh run watch "$run" > /dev/null 2>&1 || true
-  echo "review gate #$1: $(gh pr checks "$1" --json name,state -q '.[] | select(.name=="review") | .state')"
-}
-
-# Post a verdict or recheck file and set the labels a PASS earns.
+# Post a verdict or recheck file and set the label a PASS earns. The review
+# check is an advisory report since #393 T02: no gate re-run, no size label.
 post_verdict() { # <pr> <file> <worktree>
-  local pr=$1 file=$2 w=$3 verdict files lines
+  local pr=$1 file=$2 verdict
   # A reviewer may paste a log; redact the file before it becomes a comment.
   node "$ROOT/scripts/redact-log.mjs" --file "$file" --in-place
   gh pr comment "$pr" --body-file "$file" > /dev/null
@@ -103,11 +83,7 @@ post_verdict() { # <pr> <file> <worktree>
   if [ "$verdict" = "PASS" ] || [ "$verdict" = "PASS+NOTES" ]; then
     # The reviewer confirms a pure refactor; the label then replaces the witness run.
     if grep -qi '^Behavior change: none' "$file"; then gh pr edit "$pr" --add-label no-behavior-change > /dev/null; fi
-    # A reviewed PR over the size budget gets the override (the owner prefers few PRs).
-    read -r files lines < <(git -C "$w" diff --numstat origin/main...HEAD -- src | awk '$1 != "-" { f++; l += $1 } END { print f + 0, l + 0 }')
-    if [ "$files" -gt 25 ] || [ "$lines" -gt 1000 ]; then gh pr edit "$pr" --add-label large-pr > /dev/null; fi
   fi
-  gate_rerun "$pr"
 }
 
 # Wait for CI at <sha>; print "PASS" only when ci and e2e both pass there.
@@ -141,7 +117,7 @@ Also write logs/delegate/pr-body.md from .github/pull_request_template.md: why, 
 changed, the witness block (or "Refactor: no runtime behavior change"), and the
 witness red/green result. Do not paste test counts in it; the verdict carries them.
 Final message: files changed, the witness (fails before, passes after, with counts),
-the fast-lane unit and smoke e2e counts, and the commit hash.
+the \`npm run verify -- check\` unit and smoke e2e counts, and the commit hash.
 EOF
   } > "$PROMPT"
   status=0
@@ -169,7 +145,7 @@ Focus: $3
 Always: prove the witness. For a src/ change it must fail ON AN ASSERTION without the
 src change, for example node scripts/verify-witness.mjs --base origin/main --test-file <t> --src <s>.
 Fast lane: if \`gh pr checks $PR\` shows ci and e2e passing at this head, cite them and do
-not re-run \`npm run verify -- fast\`. Otherwise run it and report the counts.
+not re-run \`npm run verify -- check\`. Otherwise run it and report the counts.
 Decide whether the change alters runtime behavior. Write "none" only for a pure
 refactor that you checked against the diff.
 
@@ -206,7 +182,7 @@ do_recheck() { # <pr> <worktree-name> <reviewed-head>
   [ "$state" -eq 0 ] || die "no passing review at ${REVIEWED:0:7}, or a later FAIL (state $state); run a real review"
   PR_HEAD=$(gh pr view "$PR" --json headRefOid -q .headRefOid)
   [ "$HEAD" = "$PR_HEAD" ] || die "worktree head ${HEAD:0:7} is not PR head ${PR_HEAD:0:7}"
-  # CI already runs the fast lane and e2e at this head; wait for it instead of a local run.
+  # CI already runs check and e2e at this head; wait for it instead of a local run.
   ci=$(ci_at_head "$PR" "$HEAD")
   [ "$ci" = "PASS" ] || die "CI at ${HEAD:0:7}: $ci"
   OUT="$W/logs/delegate/recheck-$PR.md"

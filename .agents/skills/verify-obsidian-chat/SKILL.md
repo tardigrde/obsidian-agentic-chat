@@ -14,23 +14,23 @@ Two ways in:
 
 ```bash
 npm run probe -- --scenario settings-gate     # recorded exploratory run
-npm run verify -- e2e test/e2e/specs/smoke.e2e.ts
+npm run verify -- app test/e2e/specs/smoke.e2e.ts
 ```
 
 `probe` starts an isolated Xvfb display and records the whole display with ffmpeg,
-so Obsidian settings popouts are in frame. `verify -- e2e` runs a committed spec
+so Obsidian settings popouts are in frame. `verify -- app` runs a committed spec
 without recording.
 
 Both build first. Scripted probes use the E2E stream bundle; live probes use the
 production bundle. `wdio.conf.mts` loads `test/e2e/probe/**` only when
 `AGENTIC_CHAT_PROBE=1`.
 
-`verify -- e2e` runs on the host display by default. Every Obsidian window asks
+`verify -- app` runs on the host display by default. Every Obsidian window asks
 the window manager to activate it, which steals the cursor. Run the lane on a
 nested Xephyr display instead:
 
 ```bash
-npm run nested -- npm run verify -- e2e test/e2e/specs/smoke.e2e.ts
+npm run nested -- npm run verify -- app test/e2e/specs/smoke.e2e.ts
 ```
 
 This is a real GUI Obsidian, not `AGENTIC_CHAT_E2E_HEADLESS=1`. `--display :N`
@@ -42,7 +42,7 @@ own Xvfb, so they do not need the wrapper.
 Before trusting a run, check:
 
 - The plugin under test is the one you just built. `probe` rebuilds by default;
-  `verify -- e2e` runs `scripts/build-e2e.mjs` first.
+  `verify -- app` runs `scripts/build-e2e.mjs` first.
 - The vault is the throwaway sandbox, not `~/MyTestVault`.
 - `Session ID` and Obsidian version appear in the reporter header.
 - For live runs, `AGENTIC_CHAT_API_KEY` is present. A missing key skips tests and
@@ -88,19 +88,16 @@ position differ every run.
 
 ### Entry-point changes
 
-When a change adds, removes, or changes a user-visible entry point, record two
-clips:
-
-- desktop `1280x1024`
-- mobile-width `390x844`
-
-The `390x844` clip is a narrow desktop window, not real Obsidian Mobile. State
-that honestly. Each clip needs a “what to watch” list with labels or timestamps.
+When a change adds, removes, or changes a user-visible entry point, the evidence
+is a committed e2e assertion that fails without the change, plus one screenshot
+attached to the PR (#393 D11). Run `npm run verify -- app --mobile` too when the
+layout changed; the 390 px viewport is a narrow desktop window, not real
+Obsidian Mobile.
 
 A removal also needs absence proof: the command is gone from `/help` and the
 command registry, the UI entry point is gone, and the docs and feature map no
-longer claim it. Use `@break-change` removal mode. If clips are impossible, put a
-waiver in the PR.
+longer claim it. Use a `kind: removal` witness (see
+[trust.md](../../../docs/development/trust.md)).
 
 State the mode. `mode: live` means a real model answered. `mode: scripted` uses
 the `__AGENTIC_CHAT_E2E_TURNS__` hook. Never present scripted as live.

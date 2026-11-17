@@ -48,16 +48,19 @@ Use [Architecture](./architecture.md) for the single owner of each mutable state
 its invariants, and the current ownership gaps. The file is the design input for
 the structural ownership PRs.
 
-## Verification
+## Testing
 
-Use [Verification](./verification.md) for the lane reference, evidence rules, the fake-green list, and probe workflows. The merge gate is:
+Start with [Testing](./testing.md): tiers, the eight lanes, what to run for each
+kind of change, and the rules. The first command for any change is:
 
 ```bash
-npm run verify -- fast
+npm run verify -- plan
 ```
 
-For the witness tool, the CI witness gate, the independent verifier, and the
-merge protocol, use [Trust the change](./trust.md). For the on-demand mutation
+[Verification](./verification.md) is the lane reference: real-Obsidian runs,
+the fake-green list, and CI. [Evals](./evals.md) covers agent-quality evals. For the witness tool, the CI witness gate,
+agent review, and the merge protocol, use [Trust the change](./trust.md). For
+Obsidian Mobile, use [Mobile testing](./mobile-testing.md). For the on-demand mutation
 matrix, use [Mutation testing](./mutation.md).
 
 For the community plugin review warnings, the lint gate, and the two intentional

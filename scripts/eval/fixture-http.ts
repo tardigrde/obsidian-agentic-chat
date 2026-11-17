@@ -19,6 +19,7 @@ export const FIXTURE_HOST = "localhost";
  * and closes after the run.
  */
 export const FIXTURE_BIND_HOST = "::";
+const FIXTURE_IPV4_FALLBACK_HOST = "127.0.0.1";
 export const TEXT_CONTENT_TYPE = "text/plain; charset=utf-8";
 export const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 
@@ -70,8 +71,20 @@ export function startLocalHttpServer(
     }
   });
   return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(options.port ?? 0, FIXTURE_BIND_HOST, () => {
+    // A host without IPv6 (some CI sandboxes) cannot bind the dual-stack
+    // wildcard. There `localhost` resolves to 127.0.0.1, so bind that instead.
+    const listen = (host: string) => server.listen(options.port ?? 0, host, onListening);
+    const onError = (error: NodeJS.ErrnoException) => {
+      if (error.code === "EAFNOSUPPORT" && !server.listening) {
+        server.once("error", reject);
+        listen(FIXTURE_IPV4_FALLBACK_HOST);
+        return;
+      }
+      reject(error);
+    };
+    server.once("error", onError);
+    const onListening = () => {
+      server.removeListener("error", onError);
       server.removeListener("error", reject);
       const { port } = server.address() as AddressInfo;
       let closing: Promise<void> | undefined;
@@ -83,7 +96,8 @@ export function startLocalHttpServer(
           return closing;
         },
       });
-    });
+    };
+    listen(FIXTURE_BIND_HOST);
   });
 }
 

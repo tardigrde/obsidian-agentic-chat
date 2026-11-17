@@ -1,5 +1,12 @@
-# The witness gate is part of the merge contract. Changes to the workflow or the
-# verifier need the repository owner's review before they can weaken the gate.
+# The gates are part of the merge contract. A change to a workflow, a gate
+# script, or the lane table needs the repository owner's review, so an agent
+# cannot weaken the check that judges its own PR. The owner turns on
+# "Require review from Code Owners" in the ruleset to enforce this (#393 T04).
 /.github/workflows/ @tardigrde
+/.github/CODEOWNERS @tardigrde
+/scripts/verify.mjs @tardigrde
+/scripts/verify-lanes.mjs @tardigrde
 /scripts/verify-witness.mjs @tardigrde
 /scripts/witness-from-pr.mjs @tardigrde
+/scripts/check-*.mjs @tardigrde
+/test/manifest.json @tardigrde

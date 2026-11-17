@@ -4,7 +4,7 @@
  * Break-change run helper.
  *
  * This is an orchestrator, not a new test runner. It wraps the existing
- * `npm run verify -- e2e` lane, captures evidence, and removes the generated
+ * `npm run verify -- app` lane, captures evidence, and removes the generated
  * spec on success, failure, and interruption.
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -532,8 +532,8 @@ async function runSpec(args) {
   const relativeSpec = relativeToRepo(specPath);
   const startedAt = Date.now();
 
-  process.stdout.write(`[break-change] running ${relativeSpec} through npm run verify -- e2e\n`);
-  const child = spawn(npmCommand(), ["run", "verify", "--", "e2e", relativeSpec], {
+  process.stdout.write(`[break-change] running ${relativeSpec} through npm run verify -- app\n`);
+  const child = spawn(npmCommand(), ["run", "verify", "--", "app", relativeSpec], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,

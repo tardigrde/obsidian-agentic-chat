@@ -9,7 +9,7 @@ import { waitForComposerReady } from "../support/layout";
  *
  * Gated on `AGENTIC_CHAT_API_KEY` (it spends real tokens). Run locally, never in CI:
  *
- *   AGENTIC_CHAT_API_KEY=sk-... npm run test:e2e -- --spec test/e2e/specs/guardrails.e2e.ts
+ *   AGENTIC_CHAT_API_KEY=sk-... npm run test:e2e -- --spec test/e2e/live/guardrails.e2e.ts
  *
  * Without the key the whole suite `skip`s, so it stays inert in a key-less local
  * run. It is excluded from the tsc/eslint/vitest gates (see tsconfig.e2e.json) and
