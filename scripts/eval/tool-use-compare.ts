@@ -352,6 +352,16 @@ function delta(before: number | undefined, after: number | undefined, format: Fo
   return `${format(before)} -> ${format(after)} (${change(before, after, format)})`;
 }
 
+/** An older file has no per-case median: the run list gives one, else the mean stands in and says so. */
+function fillMedianUsd(metrics: CaseMetrics, entry: Record<string, unknown>): void {
+  if (metrics.medianUsd !== undefined) return;
+  metrics.medianUsd = medianRunUsd(entry);
+  if (metrics.medianUsd === undefined && metrics.meanUsd !== undefined) {
+    metrics.medianUsd = metrics.meanUsd;
+    metrics.medianFromMean = true;
+  }
+}
+
 function caseMetrics(input: unknown): Map<string, CaseMetrics> {
   const output = new Map<string, CaseMetrics>();
   if (!isRecord(input) || !Array.isArray(input.cases)) return output;
@@ -368,14 +378,7 @@ function caseMetrics(input: unknown): Map<string, CaseMetrics> {
     };
     for (const [, key] of CASE_COLUMNS) metrics[key] = numberValue(entry[key]);
     metrics.runs = caseRuns(input, entry);
-    // An older file has no per-case median: the mean stands in, so the column is never blank.
-    if (metrics.medianUsd === undefined) {
-      metrics.medianUsd = medianRunUsd(entry);
-      if (metrics.medianUsd === undefined && metrics.meanUsd !== undefined) {
-        metrics.medianUsd = metrics.meanUsd;
-        metrics.medianFromMean = true;
-      }
-    }
+    fillMedianUsd(metrics, entry);
     output.set(entry.id, metrics);
   }
   return output;

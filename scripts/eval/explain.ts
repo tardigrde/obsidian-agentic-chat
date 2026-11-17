@@ -67,20 +67,24 @@ function traceMessage(line: string): TraceMessage | undefined {
 export function toolCallsFromTrace(raw: string): ExplainedCall[] {
   const calls: ExplainedCall[] = [];
   const byId = new Map<string, ExplainedCall>();
-  for (const message of raw.split("\n").map(traceMessage)) {
-    if (message?.role === "assistant" && Array.isArray(message.content)) {
-      const parts = (message.content as ToolCallPart[]).filter((part) => part?.type === "toolCall" && typeof part.name === "string");
-      for (const part of parts) {
-        const call = { name: part.name as string, args: JSON.stringify(part.arguments ?? {}), isError: false };
-        calls.push(call);
-        if (part.id) byId.set(part.id, call);
-      }
-    } else if (message?.role === "toolResult" && message.isError === true && message.toolCallId) {
+  for (const message of raw.split("\n").map((line) => traceMessage(line))) {
+    if (message?.role === "assistant") addCalls(message, calls, byId);
+    else if (message?.role === "toolResult" && message.isError === true && message.toolCallId) {
       const call = byId.get(message.toolCallId);
       if (call) call.isError = true;
     }
   }
   return calls;
+}
+
+function addCalls(message: TraceMessage, calls: ExplainedCall[], byId: Map<string, ExplainedCall>): void {
+  if (!Array.isArray(message.content)) return;
+  const parts = (message.content as ToolCallPart[]).filter((part) => part?.type === "toolCall" && typeof part.name === "string");
+  for (const part of parts) {
+    const call = { name: part.name as string, args: JSON.stringify(part.arguments ?? {}), isError: false };
+    calls.push(call);
+    if (part.id) byId.set(part.id, call);
+  }
 }
 
 /** Read a JSON file under the run directory the developer named; undefined when absent. */
@@ -145,9 +149,8 @@ export function explainRun(runDir: string, select: { caseId?: string; run?: numb
   ];
   if (run.error) lines.push("", `Error: ${run.error}`);
   lines.push("", "## Prompt", "", "```text", prompt, "```", "", "## Tool calls", "");
-  if (calls.length === 0) lines.push("(none)");
-  lines.push(...calls.map(callLine));
-  lines.push("", "## Answer", "", "```text", record?.observed?.answer ?? "(no record)", "```", "", "## Checks", "");
+  const callLines = calls.length === 0 ? ["(none)"] : calls.map((call, index) => callLine(call, index));
+  lines.push(...callLines, "", "## Answer", "", "```text", record?.observed?.answer ?? "(no record)", "```", "", "## Checks", "");
   const checks = run.checks ?? [];
   lines.push(...checks.map((check) => `- ${check.ok ? "pass" : "FAIL"} ${check.type}: ${check.detail}`));
   if (checks.length === 0) lines.push("(none)");

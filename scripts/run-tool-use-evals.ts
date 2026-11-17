@@ -100,6 +100,21 @@ interface CliArgs {
   help: boolean;
 }
 
+/** One selector per run; --write-baseline-from and --git-head only with each other. */
+function assertSelectors(values: {
+  smoke?: boolean;
+  canary?: boolean;
+  compare?: boolean;
+  caseCount: number;
+  "write-baseline-from"?: string;
+  "git-head"?: string;
+}): void {
+  if (values.smoke && values.caseCount > 0) throw new Error("--smoke cannot be combined with --case; use one selector.");
+  if (values.canary && (values.caseCount > 0 || values.smoke)) throw new Error("--canary cannot be combined with --case or --smoke.");
+  if (values["write-baseline-from"] && values.compare) throw new Error("--write-baseline-from cannot be combined with --compare.");
+  if (values["git-head"] && !values["write-baseline-from"]) throw new Error("--git-head needs --write-baseline-from.");
+}
+
 function parseCliArgs(argv: string[]): CliArgs {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -137,10 +152,7 @@ function parseCliArgs(argv: string[]): CliArgs {
   }
   if (!values.compare && positionals.length > 0) throw new Error(`Unexpected argument: ${positionals[0]}`);
   const caseIds = (values.case ?? []).flatMap((value) => value.split(",")).map((id) => id.trim()).filter(Boolean);
-  if (values.smoke && caseIds.length > 0) throw new Error("--smoke cannot be combined with --case; use one selector.");
-  if (values.canary && (caseIds.length > 0 || values.smoke)) throw new Error("--canary cannot be combined with --case or --smoke.");
-  if (values["write-baseline-from"] && values.compare) throw new Error("--write-baseline-from cannot be combined with --compare.");
-  if (values["git-head"] && !values["write-baseline-from"]) throw new Error("--git-head needs --write-baseline-from.");
+  assertSelectors({ ...values, caseCount: caseIds.length });
   return {
     suite: values.suite ?? DEFAULT_SUITE,
     caseIds,
