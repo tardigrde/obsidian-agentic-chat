@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { startFixtureServer, type FixtureServer } from "./eval/fixture-server";
 import { startFixtureMcpServer, type FixtureMcpServer } from "./eval/fixture-mcp-server";
-import { writeBaselineFiles, writeBaselineFromSummary } from "./eval/baseline-files";
+import { BASELINE_DIR, writeBaselineFiles, writeBaselineFromSummary } from "./eval/baseline-files";
 import { inhibitSleep } from "./eval/run-loop";
 import { CANARY_RUNS, formatCanary } from "./eval/canary";
 import { bootstrapCompare, formatSignificance, type SignificanceCase } from "./eval/significance";
@@ -39,6 +39,7 @@ import {
   type ToolUsePlan,
 } from "./eval/tool-use-plan";
 import {
+  baselineFileName,
   buildSummary,
   formatConsoleSummary,
   formatDryRun,
