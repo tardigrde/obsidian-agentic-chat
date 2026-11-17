@@ -1,7 +1,8 @@
-# The gates are part of the merge contract. A change to a workflow, a gate
-# script, or the lane table needs the repository owner's review, so an agent
-# cannot weaken the check that judges its own PR. The owner turns on
-# "Require review from Code Owners" in the ruleset to enforce this (#393 T04).
+# The gates are part of the merge contract. This file names who owns them, so
+# GitHub requests the owner's review on a PR that changes a workflow, a gate
+# script, or the lane table. "Require review from Code Owners" stays OFF on
+# purpose: the owner is also the PR author, and GitHub never counts a
+# self-approval (decided 2026-11-17, #393). The owner reads the diff before "merge".
 /.github/workflows/ @tardigrde
 /.github/CODEOWNERS @tardigrde
 /scripts/verify.mjs @tardigrde
