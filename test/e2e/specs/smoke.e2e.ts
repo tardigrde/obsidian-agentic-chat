@@ -45,7 +45,7 @@ import {
 const WRITE_PATH = "E2E-Smoke-Write.md";
 const DENIED_PATH = "E2E-Smoke-Denied.md";
 const PRIVATE_NOTE = "Private/Smoke-Secret.md";
-const SMOKE_KEY = "sk-smoke-e2e-gateway-key";
+const SMOKE_KEY = "smoke-e2e-gateway-placeholder";
 const SMOKE_KEY_SECRET_ID = "agentic-chat-openai-compatible-api-key";
 const SMOKE_BASE_URL = "https://smoke.example/api";
 
