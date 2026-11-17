@@ -80,7 +80,7 @@ describe("--write-baseline-from (#392 item 4)", () => {
     const written = writeBaselineFromSummary({ summaryPath, dir: out });
 
     expect(written.latest).toBe(path.join(out, "unit.json"));
-    expect(written.history).toBe(path.join(out, "unit", "2026-11-17-abcdef1.json"));
+    expect(written.history).toBe(path.join(out, "unit", "2026-11-17T09-01-abcdef1.json"));
     const latest = JSON.parse(readFileSync(written.latest, "utf8"));
     expect(latest).toMatchObject({ suite: "unit", gitHead: "abcdef1234567", date: "2026-11-17T09:01:00.000Z" });
     expect(latest.cases).toEqual([expect.objectContaining({ id: CASE.id, passAllK: 1, executed: 2 })]);

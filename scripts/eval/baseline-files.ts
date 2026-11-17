@@ -14,8 +14,9 @@ import { baselineFileName, toBaseline, type ToolUseBaseline, type ToolUseSummary
 
 export const BASELINE_DIR = "test/evals/baselines";
 
+/** `<date>T<hh>-<mm>-<head>.json`: sorts by time; two baselines of one head on one day do not collide. */
 export function baselineHistoryName(date: Date, gitHead: string): string {
-  return `${date.toISOString().slice(0, 10)}-${gitHead.slice(0, 7)}.json`;
+  return `${date.toISOString().slice(0, 16).replace(":", "-")}-${gitHead.slice(0, 7)}.json`;
 }
 
 export interface WrittenBaseline {
@@ -87,4 +88,24 @@ export function readBaselineHistory(suiteName: string, dir = BASELINE_DIR): Tool
     .filter((name) => name.endsWith(".json"))
     .sort()
     .map((name) => JSON.parse(readFileSync(path.join(historyDir, name), "utf8")) as ToolUseBaseline);
+}
+
+/** A case at pass^k this many baselines in a row is saturated: it no longer moves. */
+export const SATURATION_STREAK = 3;
+
+/**
+ * Cases at pass^k = 1 in each of the last `streak` baselines (#393 T21).
+ * Older files call the field `passAtK`. Fewer baselines than the streak: none.
+ */
+export function saturatedCases(history: readonly ToolUseBaseline[], streak = SATURATION_STREAK): string[] {
+  if (history.length < streak) return [];
+  const recent = history.slice(-streak);
+  const full = (baseline: ToolUseBaseline) =>
+    new Set(
+      baseline.cases
+        .filter((entry) => ((entry as { passAllK?: number }).passAllK ?? (entry as { passAtK?: number }).passAtK) === 1)
+        .map((entry) => entry.id),
+    );
+  const [first, ...rest] = recent.map(full);
+  return [...first].filter((id) => rest.every((set) => set.has(id))).sort();
 }

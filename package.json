@@ -21,6 +21,7 @@
     "eval:agentic": "node --import tsx scripts/run-agentic-evals.ts",
     "eval:tool-use": "node --import tsx scripts/run-tool-use-evals.ts",
     "eval:ab": "node --import tsx scripts/eval-ab.ts",
+    "eval:explain": "node --import tsx scripts/eval-explain.ts",
     "eval:significance": "node --import tsx scripts/run-tool-use-evals.ts --compare --significance",
     "eval:agentic:compare": "node --import tsx scripts/compare-agentic-evals.ts",
     "fixture:serve": "tsx scripts/eval/fixture-server.ts",

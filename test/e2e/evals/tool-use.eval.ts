@@ -145,6 +145,8 @@ async function executeRun(evalCase: ToolUseCase, planned: PlannedRun): Promise<R
   if (sessionBaseline) {
     try {
       const raw = await readNewSession(sessionBaseline);
+      // `eval:explain` reads the trace for tool arguments (#393 T21).
+      writeSessionTrace(planned, raw);
       session = observeSession(raw);
       const apiError = sessionApiError(raw);
       if (apiError) error ??= `model request failed: ${apiError}`;
@@ -175,6 +177,12 @@ function skippedRecord(planned: PlannedRun, cap: string): RunRecord {
     observed: emptyObservation(),
     skippedBudget: cap,
   };
+}
+
+function writeSessionTrace(planned: PlannedRun, raw: string): void {
+  const caseDir = path.join(RESULTS_DIR, planned.caseId);
+  mkdirSync(caseDir, { recursive: true });
+  writeFileSync(path.join(caseDir, `${planned.run}.session.jsonl`), raw);
 }
 
 function writeRecord(record: RunRecord): void {
