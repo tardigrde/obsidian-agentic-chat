@@ -93,6 +93,11 @@ export interface ToolUseSuite {
    * order. The slice belongs to the suite, so the runner holds no case ids.
    */
   smoke?: string[];
+  /**
+   * The prompt-change canary (#393 T20): the cases a system-prompt or tool
+   * description change moves first. `--canary` runs them 5 times each.
+   */
+  canary?: string[];
   cases: ToolUseCase[];
 }
 
@@ -383,7 +388,8 @@ export function validateToolUseSuite(input: unknown): ToolUseSuite {
     if (seen.has(evalCase.id)) problems.push(`Duplicate tool-use case id: ${evalCase.id}.`);
     seen.add(evalCase.id);
   }
-  const smoke = validateSmoke(suite.smoke, seen, problems);
+  const smoke = validateSlice("smoke", suite.smoke, seen, problems);
+  const canary = validateSlice("canary", suite.canary, seen, problems);
 
   if (problems.length > 0) throw validationError(problems);
 
@@ -397,6 +403,7 @@ export function validateToolUseSuite(input: unknown): ToolUseSuite {
     turn: turn as ToolUseTurnLimits,
     ...(thinkingLevel ? { thinkingLevel } : {}),
     ...(smoke ? { smoke } : {}),
+    ...(canary ? { canary } : {}),
     cases: cases as ToolUseCase[],
   };
 }
@@ -757,21 +764,26 @@ function validateCase(input: unknown, index: number, problems: string[]): ToolUs
   };
 }
 
-/** The smoke slice must name suite cases, each once. */
-function validateSmoke(input: unknown, caseIds: ReadonlySet<string>, problems: string[]): string[] | undefined {
+/** A named slice (`smoke`, `canary`) must name suite cases, each once. */
+function validateSlice(
+  name: "smoke" | "canary",
+  input: unknown,
+  caseIds: ReadonlySet<string>,
+  problems: string[],
+): string[] | undefined {
   if (input === undefined) return undefined;
-  const entries = asArray(input, "suite.smoke", problems);
+  const entries = asArray(input, `suite.${name}`, problems);
   if (!entries) return undefined;
-  if (entries.length === 0) problems.push("suite.smoke must name at least one case when it is set.");
-  const smoke: string[] = [];
+  if (entries.length === 0) problems.push(`suite.${name} must name at least one case when it is set.`);
+  const slice: string[] = [];
   for (const [index, entry] of entries.entries()) {
-    const id = readString(entry, `suite.smoke[${index}]`, problems);
+    const id = readString(entry, `suite.${name}[${index}]`, problems);
     if (!id) continue;
-    if (!caseIds.has(id)) problems.push(`suite.smoke[${index}] is not a case id in this suite: ${id}.`);
-    else if (smoke.includes(id)) problems.push(`suite.smoke[${index}] repeats the case id ${id}.`);
-    else smoke.push(id);
+    if (!caseIds.has(id)) problems.push(`suite.${name}[${index}] is not a case id in this suite: ${id}.`);
+    else if (slice.includes(id)) problems.push(`suite.${name}[${index}] repeats the case id ${id}.`);
+    else slice.push(id);
   }
-  return smoke;
+  return slice;
 }
 
 function validateSeedVault(

@@ -24,6 +24,13 @@
     "safety.medium.injection",
     "recovery.medium.stale"
   ],
+  "canary": [
+    "organize.easy.invoice",
+    "tools.easy.search",
+    "organize.medium.inbox",
+    "safety.medium.injection",
+    "edit.easy.typo"
+  ],
   "cases": [
     {
       "id": "find.easy.dentist",

@@ -16,6 +16,7 @@ import { startFixtureServer, type FixtureServer } from "./eval/fixture-server";
 import { startFixtureMcpServer, type FixtureMcpServer } from "./eval/fixture-mcp-server";
 import { writeBaselineFiles, writeBaselineFromSummary } from "./eval/baseline-files";
 import { inhibitSleep } from "./eval/run-loop";
+import { CANARY_RUNS, formatCanary } from "./eval/canary";
 import { bootstrapCompare, formatSignificance, type SignificanceCase } from "./eval/significance";
 import { formatComparison } from "./eval/tool-use-compare";
 import {
@@ -57,7 +58,7 @@ const SPEC_OVERHEAD_MS = 120_000;
 const MIN_SPEC_TIMEOUT_MS = 10 * 60 * 1000;
 
 const USAGE = `Usage:
-  npm run eval:tool-use -- [--suite path] [--case id[,id] | --smoke] [--runs n] [--run-id id]
+  npm run eval:tool-use -- [--suite path] [--case id[,id] | --smoke | --canary] [--runs n] [--run-id id]
       [--out-dir dir] [--env-file path] [--max-usd usd] [--thinking-level level]
       [--dry-run] [--write-baseline]
   npm run eval:tool-use -- --compare <base.json> <head.json> [--significance [--exclude id[,id]]]
@@ -65,6 +66,8 @@ const USAGE = `Usage:
   npm run eval:tool-use -- --write-baseline-from <run>/summary.json [--git-head sha] [--suite path]
 
   --smoke           runs the suite's own "smoke" slice, once per case unless --runs is set.
+  --canary          runs the suite's "canary" slice, 5 times per case unless --runs is set,
+                    and prints a Wilson interval per case against the baseline.
   --thinking-level  wins over AGENTIC_CHAT_THINKING_LEVEL, the suite field, and the low default.
   --compare         reads two summary.json or baseline files and prints the differences.
   --significance    adds a case-level bootstrap section to --compare; --exclude drops
@@ -77,6 +80,7 @@ interface CliArgs {
   suite: string;
   caseIds: string[];
   smoke: boolean;
+  canary: boolean;
   runs?: number;
   runId: string;
   outDir?: string;
@@ -103,6 +107,7 @@ function parseCliArgs(argv: string[]): CliArgs {
       suite: { type: "string" },
       case: { type: "string", multiple: true },
       smoke: { type: "boolean" },
+      canary: { type: "boolean" },
       runs: { type: "string" },
       "run-id": { type: "string" },
       "out-dir": { type: "string" },
@@ -132,10 +137,12 @@ function parseCliArgs(argv: string[]): CliArgs {
   if (!values.compare && positionals.length > 0) throw new Error(`Unexpected argument: ${positionals[0]}`);
   const caseIds = (values.case ?? []).flatMap((value) => value.split(",")).map((id) => id.trim()).filter(Boolean);
   if (values.smoke && caseIds.length > 0) throw new Error("--smoke cannot be combined with --case; use one selector.");
+  if (values.canary && (caseIds.length > 0 || values.smoke)) throw new Error("--canary cannot be combined with --case or --smoke.");
   return {
     suite: values.suite ?? DEFAULT_SUITE,
     caseIds,
     smoke: values.smoke === true,
+    canary: values.canary === true,
     runs: values.runs === undefined ? undefined : positiveInteger(values.runs, "--runs"),
     runId: values["run-id"] ?? `tool-use-${new Date().toISOString().replace(/[:.]/g, "-")}`,
     outDir: values["out-dir"],
@@ -179,7 +186,8 @@ async function main(): Promise<void> {
   const suitePath = path.resolve(args.suite);
   const suite = validateToolUseSuite(await readJson(suitePath));
   // The smoke slice is a quick look, so it runs each case once by default.
-  const runsPerCase = args.runs ?? (args.smoke ? 1 : suite.runsPerCase);
+  // The canary needs 5 runs to separate a real drop from noise (Wilson interval).
+  const runsPerCase = args.runs ?? (args.smoke ? 1 : args.canary ? CANARY_RUNS : suite.runsPerCase);
   // Load the env file before the dry run, so its printed level is the level a live run uses.
   loadEnvFile(args.envFile);
   const thinking = resolveThinkingLevel({
@@ -189,7 +197,7 @@ async function main(): Promise<void> {
   });
   // A case pin wins over the run level. Store the effective level on every case,
   // so the plan, summary, and baseline need no second resolution step.
-  const cases = selectCases(suite, { caseIds: args.caseIds, smoke: args.smoke })
+  const cases = selectCases(suite, { caseIds: args.caseIds, smoke: args.smoke, canary: args.canary })
     .map(expandCaseSeed)
     .map((evalCase) => ({ ...evalCase, thinkingLevel: effectiveThinkingLevel(evalCase, thinking.level) }));
   const budget: ToolUseBudgetCaps = args.maxUsd === undefined ? suite.budget : { ...suite.budget, maxUsd: args.maxUsd };
@@ -265,6 +273,10 @@ async function main(): Promise<void> {
     await writeJson(paths.summary, summary);
     await writeFile(paths.report, formatReport(summary), "utf8");
     process.stdout.write(formatConsoleSummary(summary, paths));
+    if (args.canary) {
+      const baselinePath = path.resolve(BASELINE_DIR, baselineFileName(suite.name));
+      process.stdout.write(`\n${formatCanary(summary, existsSync(baselinePath) ? await readJson(baselinePath) : undefined)}`);
+    }
 
     if (specExitCode !== 0) {
       const died = summary.cases.flatMap((entry) => entry.runResults).find((run) => run.error?.startsWith("harness died:"));

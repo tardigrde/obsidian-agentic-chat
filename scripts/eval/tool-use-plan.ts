@@ -83,17 +83,22 @@ export interface CaseSelection {
   caseIds?: string[];
   /** Run the suite's own `smoke` slice. */
   smoke?: boolean;
+  /** Run the suite's own `canary` slice. */
+  canary?: boolean;
 }
 
 export function selectCases(suite: ToolUseSuite, selection: CaseSelection = {}): ToolUseCase[] {
   const byId = new Map(suite.cases.map((evalCase) => [evalCase.id, evalCase]));
-  if (selection.smoke) {
-    if (selection.caseIds?.length) throw new Error("--smoke cannot be combined with --case; use one selector.");
-    if (!suite.smoke?.length) {
-      throw new Error(`Suite ${suite.name} defines no smoke slice. Add a "smoke" list of case ids to the suite file.`);
+  if (selection.smoke && selection.canary) throw new Error("--smoke cannot be combined with --canary; use one selector.");
+  const sliceName = selection.smoke ? "smoke" : selection.canary ? "canary" : undefined;
+  if (sliceName) {
+    if (selection.caseIds?.length) throw new Error(`--${sliceName} cannot be combined with --case; use one selector.`);
+    const slice = suite[sliceName];
+    if (!slice?.length) {
+      throw new Error(`Suite ${suite.name} defines no ${sliceName} slice. Add a "${sliceName}" list of case ids to the suite file.`);
     }
-    // The validator has already checked every smoke id against the cases.
-    return suite.smoke.map((id) => byId.get(id) as ToolUseCase);
+    // The validator has already checked every slice id against the cases.
+    return slice.map((id) => byId.get(id) as ToolUseCase);
   }
   if (!selection.caseIds?.length) return suite.cases;
   const selected = new Map<string, ToolUseCase>();
