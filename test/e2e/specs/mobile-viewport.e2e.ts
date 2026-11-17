@@ -1,12 +1,14 @@
 import { $, browser, expect } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
-import { waitForComposerReady } from "../support/layout";
+import { expectWithinWindow, waitForComposerReady } from "../support/layout";
 import { installScriptedTurns, textTurn, toolTurn } from "../support/scripted-stream";
 import { openAgenticChatSettings, closeAgenticChatSettings, selectSettingsTab, waitForSetting } from "../support/settings-ui";
 
 const VIEW_TYPE_AGENT_CHAT = "agentic-chat-chat-view";
 const MOBILE_WIDTH = Number(process.env.AGENTIC_CHAT_E2E_VIEWPORT_WIDTH || 390);
 const MOBILE_HEIGHT = Number(process.env.AGENTIC_CHAT_E2E_VIEWPORT_HEIGHT || 844);
+/** The parts of the chat a phone user must reach. */
+const COMPOSER_PARTS = [".agentic-chat-view", ".agentic-chat-input", ".agentic-chat-send"];
 const MOBILE_WRITE_PATH = "Mobile/E2E-Mobile-Approval.md";
 const MOBILE_WRITE_BODY = "mobile approval write ok";
 
@@ -42,6 +44,7 @@ async function openChat(): Promise<void> {
 }
 
 async function sendPrompt(prompt: string): Promise<void> {
+  await waitForComposerReady();
   const input = await $(".agentic-chat-input");
   await input.click();
   await input.setValue(prompt);
@@ -367,6 +370,7 @@ describe("agentic-chat mobile viewport", function () {
     await expect($(".agentic-chat-mode-toggle")).toBeDisplayed();
     await assertFits(".agentic-chat-view", "chat view");
     await assertFits(".agentic-chat-field", "composer field");
+    await expectWithinWindow(COMPOSER_PARTS);
   });
 
   it("keeps the settings tab UI usable at phone width", async function () {
@@ -429,6 +433,8 @@ describe("agentic-chat mobile viewport", function () {
       { timeout: 10_000, timeoutMsg: "mobile long response did not render" },
     );
     await assertFits(".agentic-chat-messages", "message list");
+    // After a transcript, the composer must still be inside the window.
+    await expectWithinWindow(COMPOSER_PARTS);
     await browser.executeObsidian(async ({ app }, viewType) => {
       const view = app.workspace.getLeavesOfType(viewType)[0]?.view as unknown as {
         service?: { abort?: () => void };

@@ -160,8 +160,8 @@ redact.
 
 | job | runs |
 |---|---|
-| `ci` | `npm run verify -- check --no-app --coverage` on Node 24 (coverage is an artifact, not a threshold) |
-| `e2e` | `verify -- app` (full deterministic suite) and `verify -- app --mobile test/e2e/specs/multi-tab-approval.e2e.ts`, under `xvfb-run` |
+| `ci` | `npm run verify -- check --no-app --coverage` on Node 24 (coverage is an artifact, not a threshold), then `npm run docs:build` |
+| `e2e` | `verify -- app --prod` (release bundle boots), `verify -- app` (full deterministic suite), and `verify -- app --mobile` (phone-width spec), under `xvfb-run` |
 | `dogfood-scripted` | `verify -- app --dogfood` |
 | `witness` | the verifier self-test, then the PR's witness block ([trust.md](trust.md)) |
 | `review` | advisory report: verdict comment present at head, PR size; never fails |

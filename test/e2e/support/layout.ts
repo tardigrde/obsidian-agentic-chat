@@ -123,3 +123,28 @@ export async function expectNoOverlap(firstSelector: string, secondSelector: str
   const height = Math.min(first.bottom, second.bottom) - Math.max(first.y, second.y);
   expect(Math.max(0, width) * Math.max(0, height)).toBe(0);
 }
+
+/**
+ * Each element must sit inside the window horizontally. `expectNoHorizontalOverflow`
+ * compares a pane with itself, so it passes when the whole pane is wider than the
+ * window; this compares against `window.innerWidth` (#393 T16).
+ */
+export async function expectWithinWindow(selectors: string[]): Promise<void> {
+  const report = await browser.execute((list) => {
+    const width = window.innerWidth;
+    return list.map((selector) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (!element) return { selector, missing: true, x: 0, right: 0, width };
+      const rect = element.getBoundingClientRect();
+      return { selector, missing: false, x: Math.round(rect.x), right: Math.round(rect.right), width };
+    });
+  }, selectors);
+  const bad = report.filter((entry) => entry.missing || entry.x < -1 || entry.right > entry.width + 1);
+  if (bad.length > 0) {
+    throw new Error(
+      `outside the ${report[0]?.width}px window: ` +
+        bad.map((entry) => (entry.missing ? `${entry.selector} missing` : `${entry.selector} x=${entry.x} right=${entry.right}`)).join("; ") +
+        ` (all: ${report.map((entry) => `${entry.selector} ${entry.x}..${entry.right}`).join(", ")})`,
+    );
+  }
+}

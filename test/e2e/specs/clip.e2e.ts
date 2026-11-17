@@ -1,7 +1,18 @@
-import { browser, $ } from "@wdio/globals";
+import { browser, expect, $ } from "@wdio/globals";
 import { describe, it, before } from "mocha";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
+import { expectWithinWindow } from "../support/layout";
+
+/** What a user must reach in a narrow window, plus the containers that explain a failure. */
+const NARROW_PARTS = [
+  ".workspace-split.mod-left-split",
+  ".agentic-chat-view",
+  ".agentic-chat-field",
+  ".agentic-chat-toolbar",
+  ".agentic-chat-input",
+  ".agentic-chat-send",
+];
 
 /**
  * Clip regression: right side cut off after window resize / splitter drag.
@@ -9,6 +20,19 @@ import { mkdirSync } from "node:fs";
  * view right <= leaf right) at 1200, 860, 760 widths. Screenshots in
  * logs/clip-debug for manual inspection. No AI vision, pure geometry.
  */
+
+/** Wait for the window to reach a size (best effort) and for two frames of
+ * layout, instead of a fixed sleep. */
+async function settleLayout(width?: number): Promise<void> {
+  if (width !== undefined) {
+    await browser
+      .waitUntil(async () => Math.abs((await browser.execute(() => window.outerWidth)) - width) <= 2, { timeout: 3_000 })
+      .catch(() => {}); // resize is best effort on the Obsidian runtime
+  }
+  await browser.execute(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  );
+}
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
@@ -83,6 +107,7 @@ async function checkNoClip(label: string): Promise<{ ok: boolean; details: strin
     testEl("messages", messages);
     testEl("field", field);
     testEl("composer", composer);
+
     // also check that view itself is not wider than leaf
     if (viewRect.width > leafRect.width + 1.5) {
       ok = false;
@@ -140,7 +165,7 @@ describe("agentic-chat clip regression", function () {
         } catch (_e) {
           // window resize best-effort on Obsidian runtime
         }
-        await browser.pause(600);
+        await settleLayout(w);
 
         // force leaf sizer to be narrow like user's "editor + chat" state: shrink chat leaf to ~300px
         if (name.includes("760") || name.includes("860")) {
@@ -155,7 +180,7 @@ describe("agentic-chat clip regression", function () {
             }
             if (split) split.style.minWidth = "0px";
           });
-          await browser.pause(400);
+          await settleLayout();
         }
 
         const res = await checkNoClip(name);
@@ -182,7 +207,7 @@ describe("agentic-chat clip regression", function () {
         }
         if (split) split.style.minWidth = orig.splitMinWidth;
       }, originalLeafStyles);
-      await browser.pause(300);
+      await settleLayout();
 
       // widen again to ensure no sticky overflow after resize back
       try {
@@ -190,7 +215,7 @@ describe("agentic-chat clip regression", function () {
       } catch (_e) {
         // best-effort
       }
-      await browser.pause(600);
+      await settleLayout(1200);
       const final = await checkNoClip("04-back-to-1200");
       // eslint-disable-next-line no-console
       console.log(`[clip-debug] ${final.details} ok=${final.ok}`);
@@ -208,6 +233,44 @@ describe("agentic-chat clip regression", function () {
         }
         if (split) split.style.minWidth = orig.splitMinWidth;
       }, originalLeafStyles);
+    }
+  });
+
+  it("keeps the chat inside a 390 px desktop window (not Obsidian Mobile)", async function () {
+    // Resize the Electron window itself: WebDriver `setWindowSize` is a no-op
+    // without a window manager (Xvfb, Xephyr), and this keeps the desktop
+    // layout, which is where the audit measured the overflow (#393 T16).
+    const resize = async (width: number, height: number): Promise<boolean> =>
+      await browser.execute(
+        (w, h) => {
+          const win = (window as unknown as { electronWindow?: { setSize?: (w: number, h: number) => void } }).electronWindow;
+          if (!win?.setSize) return false;
+          win.setSize(w, h);
+          return true;
+        },
+        width,
+        height,
+      );
+    const original = await browser.execute(() => ({ width: window.outerWidth, height: window.outerHeight }));
+    if (!(await resize(390, 844))) throw new Error("this runtime cannot resize its window; the 390 px case cannot run");
+    try {
+      await browser.waitUntil(async () => (await browser.execute(() => window.innerWidth)) <= 400, {
+        timeout: 5_000,
+        timeoutMsg: "the window did not narrow to 390 px",
+      });
+      // The user runs "Open chat" in the narrow window; the left sidebar is open.
+      await browser.executeObsidian(({ app }) => app.workspace.leftSplit.expand());
+      await openChat();
+      await settleLayout();
+      await expectWithinWindow(NARROW_PARTS);
+      await emitUser("narrow window check");
+      await emitAssistant("A short answer, so the transcript is not empty.");
+      await settleLayout();
+      await expectWithinWindow(NARROW_PARTS);
+      expect(await browser.executeObsidian(({ app }) => app.workspace.leftSplit.collapsed)).toBe(true);
+    } finally {
+      await resize(original.width, original.height);
+      await browser.executeObsidian(({ app }) => app.workspace.leftSplit.expand());
     }
   });
 });

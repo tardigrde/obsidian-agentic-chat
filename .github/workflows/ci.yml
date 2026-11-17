@@ -41,6 +41,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run verify -- check --no-app --coverage # NOSONAR:S6505 -- runs the project verify script, not a package install.
 
+      - name: Docs build (dead links fail)
+        run: npm run docs:build
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -77,8 +80,8 @@ jobs:
             echo "No coverage summary generated." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  # T2: the full deterministic e2e suite in a real Obsidian under Xvfb, plus
-  # the mobile two-tab lane. Headless ozone lacks the accessibility tree
+  # T2: a production-bundle boot, the full deterministic e2e suite in a real
+  # Obsidian under Xvfb, and the phone-width spec. Headless ozone lacks the accessibility tree
   # `toHaveText` needs, so the job uses Xvfb. Live specs live in test/e2e/live
   # and never run here. Draft PRs skip it; marking ready runs it.
   e2e:
@@ -112,11 +115,16 @@ jobs:
           restore-keys: |
             e2e-obsidian-${{ runner.os }}-
 
+      # The bundle users install, booted once in a real Obsidian. Every other
+      # app step runs the e2e bundle with the scripted-turn hook.
+      - name: Production bundle boot (xvfb)
+        run: xvfb-run -a npm run verify -- app --prod
+
       - name: Full e2e suite (xvfb)
         run: xvfb-run -a npm run verify -- app
 
-      - name: Mobile two-tab lane (xvfb)
-        run: xvfb-run -a npm run verify -- app --mobile test/e2e/specs/multi-tab-approval.e2e.ts
+      - name: Phone-width spec (xvfb)
+        run: xvfb-run -a npm run verify -- app --mobile --reuse-bundle
 
       - name: Upload run result
         if: always()

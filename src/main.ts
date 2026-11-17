@@ -1,4 +1,5 @@
 import {
+  Platform,
   Plugin,
   Notice,
   TFile,
@@ -26,6 +27,7 @@ import {
 import { ObsidianSessionManager, SessionWriteRegistry } from "./session/session-manager";
 import { initPricingCache } from "./llm/pricing-cache";
 import { ApprovalModal } from "./ui/approval-modal";
+import { shouldCollapseLeftSidebar } from "./ui/chat-placement";
 import { ChatView } from "./ui/chat-view";
 import { buildQuickAskTarget } from "./ui/quick-ask";
 import { QuickAskModal } from "./ui/quick-ask-modal";
@@ -238,6 +240,10 @@ export default class AgenticChatPlugin extends Plugin {
       leaf = workspace.getRightLeaf(false);
       if (!leaf) return;
       await leaf.setViewState({ type: VIEW_TYPE_AGENT_CHAT, active: true });
+    }
+    // A narrow desktop window cannot hold both sidebars: make room for the chat.
+    if (shouldCollapseLeftSidebar(window.innerWidth, Platform.isMobile, workspace.leftSplit.collapsed)) {
+      workspace.leftSplit.collapse();
     }
     await workspace.revealLeaf(leaf);
     workspace.setActiveLeaf(leaf, { focus: true });

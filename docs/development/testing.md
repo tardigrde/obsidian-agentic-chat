@@ -31,9 +31,9 @@ npm run verify -- plan --explain src/ui/chat-view.ts   # why a path needs what i
 | Lane | Use |
 |---|---|
 | `plan` | the commands this diff needs |
-| `check [--no-app] [--coverage]` | merge gate: T0 + T1 + production build + real-Obsidian smoke. `--no-app` without a display |
+| `check [--no-app] [--coverage]` | merge gate: T0 + T1 + production build, the release bundle booted in Obsidian, then the smoke on the e2e bundle. `--no-app` without a display |
 | `change <file...\|pattern>` | the witness loop: one or more unit files, or a `-t` name pattern |
-| `app [spec...] [--mobile] [--dogfood]` | real Obsidian, scripted turns; bare names resolve to `test/e2e/specs/<name>.e2e.ts` |
+| `app [spec...] [--mobile] [--dogfood] [--prod] [--reuse-bundle]` | real Obsidian, scripted turns; bare names resolve to `test/e2e/specs/<name>.e2e.ts`; `--prod` boots the release bundle |
 | `live [spec...]` | real model or MCP calls; local only |
 | `eval [args]` | agentic evals; `--suite core` runs the tool-use suite (live) |
 | `explore [args]` | chaos explore in a throwaway vault: leads, not proof |
