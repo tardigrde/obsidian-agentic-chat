@@ -23,29 +23,55 @@ interface CaseEntry {
   runResults?: RunEntry[];
 }
 
+interface RunSummary {
+  runId?: string;
+  model?: string;
+  gitHead?: string;
+  cases?: CaseEntry[];
+}
+
+interface RunRecordFile {
+  observed?: { answer?: string; toolCalls?: Array<{ name: string; isError?: boolean }> };
+}
+
 export interface ExplainedCall {
   name: string;
   args: string;
   isError: boolean;
 }
 
+interface TraceMessage {
+  role?: string;
+  content?: unknown;
+  toolCallId?: string;
+  isError?: boolean;
+}
+
+interface ToolCallPart {
+  type?: string;
+  id?: string;
+  name?: string;
+  arguments?: unknown;
+}
+
+function traceMessage(line: string): TraceMessage | undefined {
+  if (!line.trim()) return undefined;
+  try {
+    return (JSON.parse(line) as { message?: TraceMessage }).message;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Tool calls with arguments from a session JSONL, in order; a result marks its call as an error. */
 export function toolCallsFromTrace(raw: string): ExplainedCall[] {
   const calls: ExplainedCall[] = [];
   const byId = new Map<string, ExplainedCall>();
-  for (const line of raw.split("\n")) {
-    if (!line.trim()) continue;
-    let entry: { message?: { role?: string; content?: unknown; toolCallId?: string; isError?: boolean } };
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const message = entry.message;
+  for (const message of raw.split("\n").map(traceMessage)) {
     if (message?.role === "assistant" && Array.isArray(message.content)) {
-      for (const part of message.content as Array<{ type?: string; id?: string; name?: string; arguments?: unknown }>) {
-        if (part?.type !== "toolCall" || typeof part.name !== "string") continue;
-        const call = { name: part.name, args: JSON.stringify(part.arguments ?? {}), isError: false };
+      const parts = (message.content as ToolCallPart[]).filter((part) => part?.type === "toolCall" && typeof part.name === "string");
+      for (const part of parts) {
+        const call = { name: part.name as string, args: JSON.stringify(part.arguments ?? {}), isError: false };
         calls.push(call);
         if (part.id) byId.set(part.id, call);
       }
@@ -57,57 +83,74 @@ export function toolCallsFromTrace(raw: string): ExplainedCall[] {
   return calls;
 }
 
-function readJson(file: string): unknown {
-  return JSON.parse(readFileSync(file, "utf8"));
+/** Read a JSON file under the run directory the developer named; undefined when absent. */
+function readJsonIfExists<T>(file: string): T | undefined {
+  if (!existsSync(file)) return undefined;
+  return JSON.parse(readFileSync(file, "utf8")) as T; // NOSONAR:S8707 -- local dev CLI: the path is the developer's own run directory on their own machine.
+}
+
+function wanted(run: RunEntry, select: { run?: number }): boolean {
+  if (select.run !== undefined) return run.run === select.run;
+  return run.status === "fail" || run.status === "error";
+}
+
+function pickRun(cases: CaseEntry[], select: { caseId?: string; run?: number }): { entry: CaseEntry; run: RunEntry } | undefined {
+  for (const entry of cases) {
+    if (select.caseId && entry.id !== select.caseId) continue;
+    const run = (entry.runResults ?? []).find((candidate) => wanted(candidate, select));
+    if (run) return { entry, run };
+  }
+  return undefined;
+}
+
+function notFound(select: { caseId?: string; run?: number }): string {
+  if (!select.caseId) return "a failed run";
+  return select.run === undefined ? select.caseId : `${select.caseId} run ${select.run}`;
+}
+
+function readCalls(base: string, record: RunRecordFile | undefined): ExplainedCall[] {
+  const tracePath = `${base}.session.jsonl`;
+  if (existsSync(tracePath)) {
+    return toolCallsFromTrace(readFileSync(tracePath, "utf8")); // NOSONAR:S8707 -- local dev CLI: a file inside the developer's own run directory.
+  }
+  return (record?.observed?.toolCalls ?? []).map((call) => ({ name: call.name, args: "(no trace saved)", isError: call.isError === true }));
+}
+
+function callLine(call: ExplainedCall, index: number): string {
+  const marker = call.isError ? " (error)" : "";
+  return `${index + 1}. \`${call.name}\`${marker} ${truncate(call.args, 400)}`;
 }
 
 export function explainRun(runDir: string, select: { caseId?: string; run?: number } = {}): string {
   const summaryPath = path.join(runDir, "summary.json");
-  if (!existsSync(summaryPath)) throw new Error(`no summary.json in ${runDir}`);
-  const summary = readJson(summaryPath) as { runId?: string; model?: string; gitHead?: string; cases?: CaseEntry[] };
-  const plan = existsSync(path.join(runDir, "plan.json"))
-    ? (readJson(path.join(runDir, "plan.json")) as { cases?: Array<{ id: string; prompt?: string }> })
-    : {};
-  const cases = summary.cases ?? [];
-
-  let picked: { entry: CaseEntry; run: RunEntry } | undefined;
-  for (const entry of cases) {
-    if (select.caseId && entry.id !== select.caseId) continue;
-    for (const run of entry.runResults ?? []) {
-      if (select.run !== undefined ? run.run === select.run : run.status === "fail" || run.status === "error") {
-        picked = { entry, run };
-        break;
-      }
-    }
-    if (picked) break;
-  }
-  if (!picked) {
-    const what = select.caseId ? `${select.caseId}${select.run === undefined ? "" : ` run ${select.run}`}` : "a failed run";
-    throw new Error(`${what} not found in ${summaryPath}`);
-  }
+  const summary = readJsonIfExists<RunSummary>(summaryPath);
+  if (!summary) throw new Error(`no summary.json in ${runDir}`);
+  const plan = readJsonIfExists<{ cases?: Array<{ id: string; prompt?: string }> }>(path.join(runDir, "plan.json"));
+  const picked = pickRun(summary.cases ?? [], select);
+  if (!picked) throw new Error(`${notFound(select)} not found in ${summaryPath}`);
 
   const { entry, run } = picked;
-  const prompt = plan.cases?.find((evalCase) => evalCase.id === entry.id)?.prompt ?? "(no plan.json)";
+  const prompt = plan?.cases?.find((evalCase) => evalCase.id === entry.id)?.prompt ?? "(no plan.json)";
   const base = path.join(runDir, "results", entry.id, String(run.run));
-  const record = existsSync(`${base}.json`)
-    ? (readJson(`${base}.json`) as { observed?: { answer?: string; toolCalls?: Array<{ name: string; isError?: boolean }> } })
-    : undefined;
-  const calls = existsSync(`${base}.session.jsonl`)
-    ? toolCallsFromTrace(readFileSync(`${base}.session.jsonl`, "utf8"))
-    : (record?.observed?.toolCalls ?? []).map((call) => ({ name: call.name, args: "(no trace saved)", isError: call.isError === true }));
+  const record = readJsonIfExists<RunRecordFile>(`${base}.json`);
+  const calls = readCalls(base, record);
 
+  const head = summary.gitHead?.slice(0, 7) ?? "?";
+  const cost = (run.usd ?? 0).toFixed(5);
+  const seconds = ((run.ms ?? 0) / 1000).toFixed(1);
   const lines = [
     `# ${entry.id} run ${run.run}: ${run.status}`,
     "",
-    `Run: ${summary.runId ?? path.basename(runDir)}; model ${summary.model ?? "?"}; head ${summary.gitHead?.slice(0, 7) ?? "?"}; ${run.toolCalls ?? calls.length} tool call(s); $${(run.usd ?? 0).toFixed(5)}; ${((run.ms ?? 0) / 1000).toFixed(1)}s`,
+    `Run: ${summary.runId ?? path.basename(runDir)}; model ${summary.model ?? "?"}; head ${head}; ${run.toolCalls ?? calls.length} tool call(s); $${cost}; ${seconds}s`,
   ];
   if (run.error) lines.push("", `Error: ${run.error}`);
   lines.push("", "## Prompt", "", "```text", prompt, "```", "", "## Tool calls", "");
   if (calls.length === 0) lines.push("(none)");
-  calls.forEach((call, index) => lines.push(`${index + 1}. \`${call.name}\`${call.isError ? " (error)" : ""} ${truncate(call.args, 400)}`));
+  lines.push(...calls.map(callLine));
   lines.push("", "## Answer", "", "```text", record?.observed?.answer ?? "(no record)", "```", "", "## Checks", "");
-  for (const check of run.checks ?? []) lines.push(`- ${check.ok ? "pass" : "FAIL"} ${check.type}: ${check.detail}`);
-  if (!run.checks?.length) lines.push("(none)");
+  const checks = run.checks ?? [];
+  lines.push(...checks.map((check) => `- ${check.ok ? "pass" : "FAIL"} ${check.type}: ${check.detail}`));
+  if (checks.length === 0) lines.push("(none)");
   return `${lines.join("\n")}\n`;
 }
 

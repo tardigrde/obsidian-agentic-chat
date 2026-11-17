@@ -107,6 +107,16 @@ describe("tool-use comparison", () => {
     expect(same).not.toContain("disagree");
   });
 
+  it("says when Median USD only repeats the mean (an old baseline with no per-run cost)", () => {
+    const text = formatComparison(
+      { costSource: "billed", cases: [{ ...caseRow("old"), meanUsd: 0.004 }] },
+      { costSource: "billed", cases: [{ ...caseRow("old"), meanUsd: 0.005, runResults: [{ run: 1, status: "pass", usd: 0.005 }] }] },
+    );
+    expect(text).toContain("Median USD repeats the mean for 1 case(s)");
+    expect(text).toContain("Robust cost: not compared");
+    expect(text).not.toContain("per-case medians sum");
+  });
+
   describe("Pareto verdict on correctness, cost, and time", () => {
     const run = (passAllK: number, meanUsd: number, medianCaseMs: number, costSource = "billed") => ({
       costSource,

@@ -90,7 +90,9 @@ export interface CaseSelection {
 export function selectCases(suite: ToolUseSuite, selection: CaseSelection = {}): ToolUseCase[] {
   const byId = new Map(suite.cases.map((evalCase) => [evalCase.id, evalCase]));
   if (selection.smoke && selection.canary) throw new Error("--smoke cannot be combined with --canary; use one selector.");
-  const sliceName = selection.smoke ? "smoke" : selection.canary ? "canary" : undefined;
+  let sliceName: "smoke" | "canary" | undefined;
+  if (selection.smoke) sliceName = "smoke";
+  else if (selection.canary) sliceName = "canary";
   if (sliceName) {
     if (selection.caseIds?.length) throw new Error(`--${sliceName} cannot be combined with --case; use one selector.`);
     const slice = suite[sliceName];

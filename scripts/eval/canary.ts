@@ -58,11 +58,12 @@ export function formatCanary(summary: unknown, baseline: unknown): string {
       `| ${row.id} | ${passed}/${runs} | [${pct(interval.lower)}, ${pct(interval.upper)}] | ${baselineRate === undefined ? "-" : pct(baselineRate)} | ${signal} |`,
     );
   }
-  lines.push(
-    "",
-    moved.length > 0
-      ? `Signal: ${moved.join(", ")}. Check base vs head with eval:ab before you act.`
-      : "No signal: every baseline rate is inside its interval.",
-  );
+  lines.push("", canaryVerdict(moved, base.size > 0));
   return `${lines.join("\n")}\n`;
+}
+
+function canaryVerdict(moved: readonly string[], hasBaseline: boolean): string {
+  if (!hasBaseline) return "No baseline: nothing to compare against. Write one with --write-baseline first.";
+  if (moved.length > 0) return `Signal: ${moved.join(", ")}. Check base vs head with eval:ab before you act.`;
+  return "No signal: every baseline rate is inside its interval.";
 }

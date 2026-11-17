@@ -222,7 +222,7 @@ describe("cost and time rows (#392 item 3)", () => {
   it("a uniform +30% cost shift gives a CI that excludes 0", () => {
     const before = cases(25, (index) => 0.001 + index * 0.0001, (index) => 3_000 + index * 100);
     const after = cases(25, (index) => (0.001 + index * 0.0001) * 1.3, (index) => 3_000 + index * 100);
-    const cost = bootstrapCompare(before, after, { costComparable: true }).axes.find((axis) => axis.axis === "cost");
+    const cost = bootstrapCompare(before, after, { costComparable: true }).axes?.find((axis) => axis.axis === "cost");
     expect(cost?.change).toBeCloseTo(0.3, 6);
     expect(cost?.significant).toBe(true);
     expect(cost?.lower).toBeGreaterThan(0);
@@ -231,7 +231,7 @@ describe("cost and time rows (#392 item 3)", () => {
   it("one cost-heavy outlier case gives a wide CI that includes 0", () => {
     const before = cases(25, () => 0.001, () => 3_000);
     const after = cases(25, (index) => (index === 7 ? 0.0085 : 0.001), () => 3_000);
-    const cost = bootstrapCompare(before, after, { costComparable: true }).axes.find((axis) => axis.axis === "cost");
+    const cost = bootstrapCompare(before, after, { costComparable: true }).axes?.find((axis) => axis.axis === "cost");
     expect(cost?.change).toBeCloseTo(0.3, 6);
     expect(cost?.significant).toBe(false);
     expect((cost?.lower ?? 1) <= 0 && (cost?.upper ?? 0) > 0.3).toBe(true);
@@ -241,8 +241,8 @@ describe("cost and time rows (#392 item 3)", () => {
     const before = cases(5, () => 0.001, () => 2_000);
     const after = cases(5, () => 0.002, () => 4_000);
     const result = bootstrapCompare(before, after, { costComparable: false });
-    expect(result.axes[0]).toEqual({ axis: "cost", notCompared: "the cost source differs or is not billed on both sides" });
-    expect(result.axes[1]).toMatchObject({ axis: "time", change: 1, significant: true });
+    expect(result.axes?.[0]).toEqual({ axis: "cost", notCompared: "the cost source differs or is not billed on both sides" });
+    expect(result.axes?.[1]).toMatchObject({ axis: "time", change: 1, significant: true });
     const text = formatSignificance(result);
     expect(text).toContain("| total cost | - | - | - | - | not compared (the cost source differs or is not billed on both sides) |");
     expect(text).toMatch(/\| median case time \| 2\.0s \| 4\.0s \| \+100% \| \[\+100, \+100\]% \| significant \(CI excludes 0\) \|/);

@@ -52,9 +52,9 @@ export function parseAbArgs(argv: string[], env: NodeJS.ProcessEnv = process.env
   const help = values.help === true;
   if (!help && cases.length === 0) throw new Error("--case <id[,id]> is required");
   const runs = values.runs === undefined ? AB_DEFAULT_RUNS : Number(values.runs);
-  if (!Number.isInteger(runs) || runs < 1) throw new Error(`--runs must be a positive integer, got ${values.runs}`);
+  if (!Number.isInteger(runs) || runs <= 0) throw new Error(`--runs must be a positive integer, got ${values.runs}`);
   const maxUsd = values["max-usd"] === undefined ? undefined : Number(values["max-usd"]);
-  if (maxUsd !== undefined && !(maxUsd > 0)) throw new Error(`--max-usd must be a positive number, got ${values["max-usd"]}`);
+  if (maxUsd !== undefined && (Number.isNaN(maxUsd) || maxUsd <= 0)) throw new Error(`--max-usd must be a positive number, got ${values["max-usd"]}`);
   return {
     cases: [...new Set(cases)],
     runs,
@@ -154,9 +154,12 @@ function rows(summary: unknown): Map<string, AbCaseRow> {
   return output;
 }
 
-const pass = (row?: AbCaseRow) => (row && row.executed !== undefined ? `${row.passed ?? 0}/${row.executed}` : "-");
+const pass = (row?: AbCaseRow) => (row?.executed === undefined ? "-" : `${row.passed ?? 0}/${row.executed}`);
 const num = (value: number | undefined, format: (value: number) => string) => (value === undefined ? "-" : format(value));
 const pair = (left: string, right: string) => `${left} -> ${right}`;
+const calls = (value: number) => value.toFixed(1);
+const dollars = (value: number) => "$" + value.toFixed(5);
+const secs = (value: number) => (value / 1000).toFixed(1);
 
 /** One table: case, base pass k/n, head pass k/n, mean tool calls, mean USD, median time; a bootstrap under it for 2+ cases. */
 export function formatAbTable(base: unknown, head: unknown): string {
@@ -171,7 +174,16 @@ export function formatAbTable(base: unknown, head: unknown): string {
     const left = before.get(id);
     const right = after.get(id);
     lines.push(
-      `| ${id} | ${pass(left)} | ${pass(right)} | ${pair(num(left?.meanToolCalls, (v) => v.toFixed(1)), num(right?.meanToolCalls, (v) => v.toFixed(1)))} | ${pair(num(left?.meanUsd, (v) => `$${v.toFixed(5)}`), num(right?.meanUsd, (v) => `$${v.toFixed(5)}`))} | ${pair(num(left?.medianMs, (v) => (v / 1000).toFixed(1)), num(right?.medianMs, (v) => (v / 1000).toFixed(1)))} |`,
+      [
+        "",
+        id,
+        pass(left),
+        pass(right),
+        pair(num(left?.meanToolCalls, calls), num(right?.meanToolCalls, calls)),
+        pair(num(left?.meanUsd, dollars), num(right?.meanUsd, dollars)),
+        pair(num(left?.medianMs, secs), num(right?.medianMs, secs)),
+        "",
+      ].join(" | ").trim(),
     );
   }
   let text = `${lines.join("\n")}\n`;

@@ -142,9 +142,9 @@ export function bootstrapCompare(
   if (metrics.warning) result.warnings.push(metrics.warning);
   result.flips = buildFlips(pairing.paired);
   result.axes = [
-    options.costComparable === false
-      ? { axis: "cost", notCompared: "the cost source differs or is not billed on both sides" }
-      : bootstrapAxis("cost", pairing.paired, (entry) => entry.meanUsd, sum, seed, resamples),
+    options.costComparable === true
+      ? bootstrapAxis("cost", pairing.paired, (entry) => entry.meanUsd, sum, seed, resamples)
+      : { axis: "cost", notCompared: "the cost source differs or is not billed on both sides" },
     bootstrapAxis("time", pairing.paired, (entry) => entry.medianMs, medianOf, seed, resamples),
   ];
   return result;
@@ -174,17 +174,13 @@ function bootstrapAxis(
   const before = usable.map(({ before: entry }) => pick(entry) as number);
   const after = usable.map(({ after: entry }) => pick(entry) as number);
   const base = aggregate(before);
-  if (!(base > 0)) return { axis, notCompared: `the baseline ${axis} is zero` };
+  if (Number.isNaN(base) || base <= 0) return { axis, notCompared: `the baseline ${axis} is zero` };
   const random = mulberry32(seed);
   const changes: number[] = [];
   for (let draw = 0; draw < resamples; draw += 1) {
-    const left: number[] = [];
-    const right: number[] = [];
-    for (let pickIndex = 0; pickIndex < usable.length; pickIndex += 1) {
-      const index = Math.floor(random() * usable.length);
-      left.push(before[index]);
-      right.push(after[index]);
-    }
+    const picks = usable.map(() => Math.floor(random() * usable.length));
+    const left = picks.map((index) => before[index]);
+    const right = picks.map((index) => after[index]);
     const leftValue = aggregate(left);
     if (leftValue > 0) changes.push(aggregate(right) / leftValue - 1);
   }

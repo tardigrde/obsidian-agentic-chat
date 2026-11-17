@@ -59,13 +59,14 @@ export async function driveRuns(
   for (let index = 0; index < runs.length; index += 1) {
     let reason: string | undefined;
     try {
-      const record = await execute(runs[index]);
+      // Runs are sequential by design: one Obsidian, one vault, fixed driver ports.
+      const record = await execute(runs[index]); // NOSONAR:S9382 -- one run at a time is the contract.
       write(record);
       reason = deadHarnessMessage(record.error);
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
+    } catch (error_) {
+      const message = error_ instanceof Error ? error_.message : String(error_);
       reason = deadHarnessMessage(message);
-      if (!reason) throw caught;
+      if (!reason) throw error_;
       write(harnessDiedRecord(runs[index], reason));
     }
     if (reason) {
@@ -104,7 +105,7 @@ export function holdSleepInhibit(why: string, hasBinary: () => boolean = systemd
   if (!hasBinary()) return () => undefined;
   let holder: ChildProcess | undefined;
   try {
-    holder = spawn("systemd-inhibit", ["--what=sleep:idle", `--why=${why}`, "cat"], { stdio: ["pipe", "ignore", "ignore"] });
+    holder = spawn("systemd-inhibit", ["--what=sleep:idle", `--why=${why}`, "cat"], { stdio: ["pipe", "ignore", "ignore"] }); // NOSONAR:S4036 -- systemd-inhibit and cat are fixed system tools, found on PATH like git in the other scripts.
     holder.on("error", () => undefined);
     holder.unref();
   } catch {

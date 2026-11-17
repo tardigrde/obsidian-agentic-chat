@@ -6,7 +6,7 @@
  */
 
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, realpathSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, symlinkSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
@@ -29,6 +29,13 @@ async function main(): Promise<void> {
 
   await mkdir(plan.root, { recursive: true });
   git(["worktree", "add", "--detach", plan.baseWorktree, args.base], headRoot);
+  // Ctrl+C must not leave the temporary worktree registered.
+  const onSignal = (signal: NodeJS.Signals) => {
+    removeWorktree(plan.baseWorktree, headRoot);
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
   try {
     linkLocalFiles(headRoot, plan.baseWorktree);
     const [base, head] = plan.sides;
@@ -44,16 +51,22 @@ async function main(): Promise<void> {
       process.exitCode = 1;
     }
   } finally {
-    try {
-      git(["worktree", "remove", "--force", plan.baseWorktree], headRoot);
-    } catch (error) {
-      process.stderr.write(`eval:ab: could not remove ${plan.baseWorktree}: ${(error as Error).message}\n`);
-    }
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    removeWorktree(plan.baseWorktree, headRoot);
+  }
+}
+
+function removeWorktree(worktree: string, headRoot: string): void {
+  try {
+    git(["worktree", "remove", "--force", worktree], headRoot);
+  } catch (error) {
+    process.stderr.write(`eval:ab: could not remove ${worktree}: ${(error as Error).message}\n`);
   }
 }
 
 function git(args: string[], cwd: string): string {
-  return execFileSync(
+  return execFileSync( // NOSONAR:S8705 -- local dev CLI: the developer's own --base and paths, as an argv array (no shell).
     "git", // NOSONAR:S4036 -- git is the repository tool, resolved from PATH like the other scripts.
     args,
     { cwd, encoding: "utf8" },
@@ -72,7 +85,10 @@ function linkLocalFiles(headRoot: string, target: string): void {
     const source = path.join(headRoot, name);
     const destination = path.join(target, name);
     if (!existsSync(source) || existsSync(destination) || isLink(destination)) continue;
-    symlinkSync(realpathSync(source), destination);
+    // Same rules as scripts/worktree.mjs: nested names get their folder, a directory is a junction on Windows.
+    mkdirSync(path.dirname(destination), { recursive: true });
+    const type = process.platform === "win32" && statSync(source).isDirectory() ? "junction" : undefined;
+    symlinkSync(realpathSync(source), destination, type);
   }
 }
 

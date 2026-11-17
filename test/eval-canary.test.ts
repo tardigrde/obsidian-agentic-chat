@@ -50,5 +50,6 @@ describe("Wilson interval and the signal rule", () => {
     expect(text).toContain("| a | 0/5 | [0%, 43%] | 80% | drop |");
     expect(text).toContain("| b | 4/5 | [38%, 96%] | 67% | noise |");
     expect(text).toContain("Signal: a (drop).");
+    expect(formatCanary({ cases: [{ id: "a", passed: 5, executed: 5 }] }, undefined)).toContain("No baseline: nothing to compare against.");
   });
 });

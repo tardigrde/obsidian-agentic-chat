@@ -114,9 +114,11 @@ interface CaseMetrics {
   /** Executed runs behind the rates; undefined in an old baseline. */
   runs?: number;
   thinking: Partial<CaseThinking>;
+  /** The file has no per-run cost, so Median USD repeats the mean. */
+  medianFromMean?: boolean;
 }
 
-const CASE_COLUMNS: ReadonlyArray<[label: string, key: Exclude<keyof CaseMetrics, "thinking" | "runs">, format: Format]> = [
+const CASE_COLUMNS: ReadonlyArray<[label: string, key: Exclude<keyof CaseMetrics, "thinking" | "runs" | "medianFromMean">, format: Format]> = [
   ["Pass rate", "passRate", percent],
   ["pass^K", "passAllK", whole],
   ["Partial score", "partialScore", ratio],
@@ -181,6 +183,10 @@ export function formatComparison(baseline: unknown, candidate: unknown): string 
     if (flags.thinPass) thinPassFlags.push(id);
     lines.push(`| ${id} | ${compareThinking(left, right)} | ${cells.join(" | ")} | ${flags.text} |`);
   }
+  const meanOnly = ids.filter((id) => before.get(id)?.medianFromMean || after.get(id)?.medianFromMean);
+  if (meanOnly.length > 0) {
+    lines.push("", `Median USD repeats the mean for ${meanOnly.length} case(s): the file has no per-run cost (an older baseline).`);
+  }
   if (thinPassFlags.length > 0) {
     lines.push(
       "",
@@ -211,6 +217,9 @@ function robustCostNote(
 ): string | null {
   if (!costComparable) return null;
   const shared = [...before.keys()].filter((id) => after.has(id));
+  if (shared.some((id) => before.get(id)?.medianFromMean || after.get(id)?.medianFromMean)) {
+    return "Robust cost: not compared; a side has no per-run cost, so its medians would only repeat the means.";
+  }
   const sum = (side: ReadonlyMap<string, CaseMetrics>, key: "meanUsd" | "medianUsd"): number | undefined => {
     let total = 0;
     for (const id of shared) {
@@ -224,10 +233,13 @@ function robustCostNote(
   const meanAfter = sum(after, "meanUsd");
   const medianBefore = sum(before, "medianUsd");
   const medianAfter = sum(after, "medianUsd");
-  if ([meanBefore, meanAfter, medianBefore, medianAfter].some((value) => value === undefined)) return null;
+  if ([meanBefore, meanAfter, medianBefore, medianAfter].includes(undefined)) return null;
   const meanMove = Math.sign((meanAfter as number) - (meanBefore as number));
   const medianMove = Math.sign((medianAfter as number) - (medianBefore as number));
-  const name = (move: number) => (move > 0 ? "up" : move < 0 ? "down" : "flat");
+  const name = (move: number) => {
+    if (move > 0) return "up";
+    return move < 0 ? "down" : "flat";
+  };
   const line = `Robust cost: per-case medians sum ${usd(medianBefore as number)} -> ${usd(medianAfter as number)} (${name(medianMove)}); means sum ${usd(meanBefore as number)} -> ${usd(meanAfter as number)} (${name(meanMove)}).`;
   if (meanMove !== 0 && medianMove !== 0 && meanMove !== medianMove) {
     return `${line} The mean and the median disagree on the direction: a few long runs drive the cost axis; read the cost verdict with care.`;
@@ -357,7 +369,13 @@ function caseMetrics(input: unknown): Map<string, CaseMetrics> {
     for (const [, key] of CASE_COLUMNS) metrics[key] = numberValue(entry[key]);
     metrics.runs = caseRuns(input, entry);
     // An older file has no per-case median: the mean stands in, so the column is never blank.
-    metrics.medianUsd ??= medianRunUsd(entry) ?? metrics.meanUsd;
+    if (metrics.medianUsd === undefined) {
+      metrics.medianUsd = medianRunUsd(entry);
+      if (metrics.medianUsd === undefined && metrics.meanUsd !== undefined) {
+        metrics.medianUsd = metrics.meanUsd;
+        metrics.medianFromMean = true;
+      }
+    }
     output.set(entry.id, metrics);
   }
   return output;

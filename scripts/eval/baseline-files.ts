@@ -14,9 +14,9 @@ import { baselineFileName, toBaseline, type ToolUseBaseline, type ToolUseSummary
 
 export const BASELINE_DIR = "test/evals/baselines";
 
-/** `<date>T<hh>-<mm>-<head>.json`: sorts by time; two baselines of one head on one day do not collide. */
+/** `<date>T<hh>-<mm>-<ss>-<head>.json`: sorts by time. A second write in the same second is refused. */
 export function baselineHistoryName(date: Date, gitHead: string): string {
-  return `${date.toISOString().slice(0, 16).replace(":", "-")}-${gitHead.slice(0, 7)}.json`;
+  return `${date.toISOString().slice(0, 19).replaceAll(":", "-")}-${gitHead.slice(0, 7)}.json`;
 }
 
 export interface WrittenBaseline {
@@ -42,10 +42,12 @@ export function writeBaselineFiles(options: {
   const latest = path.join(dir, fileName);
   const historyDir = path.join(dir, fileName.replace(/\.json$/, ""));
   const history = path.join(historyDir, baselineHistoryName(options.date, options.gitHead));
-  mkdirSync(historyDir, { recursive: true });
+  // The history is append-only: never overwrite an entry.
+  if (existsSync(history)) throw new Error(`Refusing to write baseline: ${history} already exists.`); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
+  mkdirSync(historyDir, { recursive: true }); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   const text = `${JSON.stringify(baseline, null, 2)}\n`;
-  writeFileSync(latest, text, "utf8");
-  writeFileSync(history, text, "utf8");
+  writeFileSync(latest, text, "utf8"); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
+  writeFileSync(history, text, "utf8"); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   return { latest, history, baseline };
 }
 
@@ -61,13 +63,13 @@ export function writeBaselineFromSummary(options: {
   date?: Date;
   dir?: string;
 }): WrittenBaseline {
-  const summary = JSON.parse(readFileSync(options.summaryPath, "utf8")) as ToolUseSummary;
+  const summary = JSON.parse(readFileSync(options.summaryPath, "utf8")) as ToolUseSummary; // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   const planPath = path.join(path.dirname(options.summaryPath), "plan.json");
   if (!existsSync(planPath)) throw new Error(`no plan.json next to ${options.summaryPath}; a baseline needs the plan of the run`);
-  const plan = JSON.parse(readFileSync(planPath, "utf8")) as ToolUsePlan;
+  const plan = JSON.parse(readFileSync(planPath, "utf8")) as ToolUsePlan; // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   const suitePath = options.suitePath ?? plan.suite.path;
   if (!existsSync(suitePath)) throw new Error(`suite file not found: ${suitePath}; pass --suite`);
-  const suite = validateToolUseSuite(JSON.parse(readFileSync(suitePath, "utf8")));
+  const suite = validateToolUseSuite(JSON.parse(readFileSync(suitePath, "utf8"))); // NOSONAR:S8707 -- local dev CLI: the path is the developer's own argument on their own machine.
   const gitHead = plan.gitHead ?? summary.gitHead ?? options.gitHead;
   if (!gitHead) throw new Error("the run recorded no git head; pass --git-head <sha>");
   return writeBaselineFiles({
@@ -75,9 +77,15 @@ export function writeBaselineFromSummary(options: {
     plannedRunCount: plan.runs.length,
     suite,
     gitHead,
-    date: options.date ?? new Date(summary.finishedAt),
+    date: options.date ?? finishDate(summary),
     dir: options.dir,
   });
+}
+
+function finishDate(summary: ToolUseSummary): Date {
+  const date = new Date(summary.finishedAt);
+  if (Number.isNaN(date.getTime())) throw new Error("the run recorded no finish time (summary.finishedAt); it cannot date a baseline");
+  return date;
 }
 
 /** History files of one suite, oldest first. */
@@ -86,7 +94,7 @@ export function readBaselineHistory(suiteName: string, dir = BASELINE_DIR): Tool
   if (!existsSync(historyDir)) return [];
   return readdirSync(historyDir)
     .filter((name) => name.endsWith(".json"))
-    .sort()
+    .sort((left, right) => left.localeCompare(right))
     .map((name) => JSON.parse(readFileSync(path.join(historyDir, name), "utf8")) as ToolUseBaseline);
 }
 
@@ -107,5 +115,5 @@ export function saturatedCases(history: readonly ToolUseBaseline[], streak = SAT
         .map((entry) => entry.id),
     );
   const [first, ...rest] = recent.map(full);
-  return [...first].filter((id) => rest.every((set) => set.has(id))).sort();
+  return [...first].filter((id) => rest.every((set) => set.has(id))).sort((left, right) => left.localeCompare(right));
 }

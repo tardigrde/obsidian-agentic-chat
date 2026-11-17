@@ -17,7 +17,7 @@ export type RunOptions = {
   env?: NodeJS.ProcessEnv;
   allowFailure?: boolean;
   quiet?: boolean;
-  /** Wall-time cap: SIGTERM the child and reject with this message's text after the cap. */
+  /** Wall-time cap: SIGTERM the child (SIGKILL 5 s later) and reject with this message's text. */
   timeout?: { ms: number; message: string };
 };
 
@@ -109,15 +109,26 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
       stdio: options.quiet ? ["ignore", "ignore", "ignore"] : "inherit",
     });
     let timedOut = false;
+    let killTimer: NodeJS.Timeout | undefined;
     const timer = options.timeout
       ? setTimeout(() => {
           timedOut = true;
           child.kill("SIGTERM");
+          // A child that ignores SIGTERM still ends.
+          killTimer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+          killTimer.unref();
         }, options.timeout.ms)
       : undefined;
-    child.on("error", reject);
-    child.on("close", (code) => {
+    const clearTimers = () => {
       if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+    };
+    child.on("error", (error) => {
+      clearTimers();
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimers();
       if (timedOut && options.timeout) {
         reject(new Error(options.timeout.message));
         return;

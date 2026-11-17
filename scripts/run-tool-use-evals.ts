@@ -139,6 +139,8 @@ function parseCliArgs(argv: string[]): CliArgs {
   const caseIds = (values.case ?? []).flatMap((value) => value.split(",")).map((id) => id.trim()).filter(Boolean);
   if (values.smoke && caseIds.length > 0) throw new Error("--smoke cannot be combined with --case; use one selector.");
   if (values.canary && (caseIds.length > 0 || values.smoke)) throw new Error("--canary cannot be combined with --case or --smoke.");
+  if (values["write-baseline-from"] && values.compare) throw new Error("--write-baseline-from cannot be combined with --compare.");
+  if (values["git-head"] && !values["write-baseline-from"]) throw new Error("--git-head needs --write-baseline-from.");
   return {
     suite: values.suite ?? DEFAULT_SUITE,
     caseIds,
@@ -161,6 +163,28 @@ function parseCliArgs(argv: string[]): CliArgs {
   };
 }
 
+/** The smoke slice is a quick look (1 run); the canary needs 5 to separate a drop from noise. */
+function defaultRuns(args: CliArgs, suiteRuns: number): number {
+  if (args.smoke) return 1;
+  return args.canary ? CANARY_RUNS : suiteRuns;
+}
+
+function writeBaselineFromCli(summaryPath: string, args: CliArgs): void {
+  const written = writeBaselineFromSummary({
+    summaryPath: path.resolve(summaryPath),
+    gitHead: args.gitHead,
+    suitePath: args.suite === DEFAULT_SUITE ? undefined : path.resolve(args.suite),
+  });
+  console.log(`Baseline: ${written.latest}`); // NOSONAR:S8689 -- prints a file path the developer chose, not a secret.
+  console.log(`History: ${written.history}`); // NOSONAR:S8689 -- prints a file path the developer chose, not a secret.
+}
+
+async function compareCli(files: string[], args: CliArgs): Promise<void> {
+  const [baseline, candidate] = await Promise.all(files.map(readJson));
+  process.stdout.write(formatComparison(baseline, candidate));
+  if (args.significance) process.exitCode = writeSignificance(baseline, candidate, args.exclude);
+}
+
 async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2));
   if (args.help) {
@@ -168,27 +192,17 @@ async function main(): Promise<void> {
     return;
   }
   if (args.writeBaselineFrom) {
-    const written = writeBaselineFromSummary({
-      summaryPath: path.resolve(args.writeBaselineFrom),
-      gitHead: args.gitHead,
-      suitePath: args.suite === DEFAULT_SUITE ? undefined : path.resolve(args.suite),
-    });
-    console.log(`Baseline: ${written.latest}`);
-    console.log(`History: ${written.history}`);
+    writeBaselineFromCli(args.writeBaselineFrom, args);
     return;
   }
   if (args.compare) {
-    const [baseline, candidate] = await Promise.all(args.compare.map(readJson));
-    process.stdout.write(formatComparison(baseline, candidate));
-    if (args.significance) process.exitCode = writeSignificance(baseline, candidate, args.exclude);
+    await compareCli(args.compare, args);
     return;
   }
 
   const suitePath = path.resolve(args.suite);
   const suite = validateToolUseSuite(await readJson(suitePath));
-  // The smoke slice is a quick look, so it runs each case once by default.
-  // The canary needs 5 runs to separate a real drop from noise (Wilson interval).
-  const runsPerCase = args.runs ?? (args.smoke ? 1 : args.canary ? CANARY_RUNS : suite.runsPerCase);
+  const runsPerCase = args.runs ?? defaultRuns(args, suite.runsPerCase);
   // Load the env file before the dry run, so its printed level is the level a live run uses.
   loadEnvFile(args.envFile);
   const thinking = resolveThinkingLevel({
