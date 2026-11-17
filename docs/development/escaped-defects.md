@@ -15,6 +15,6 @@ row per escaped defect. Keep the row after the fix.
 4. Add a mutation case or a fault case if a normal unit test cannot cover it.
 5. Fill the row and link the test path and line.
 
-Run the mutation matrix on demand before a release or after a fault fix. A
+Run the mutation matrix weekly, before a release, or after a fault fix. A
 surviving mutant that matches an escaped defect is a strong signal to add the
 test to the default matrix.

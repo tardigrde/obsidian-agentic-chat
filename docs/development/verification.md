@@ -169,4 +169,4 @@ redact.
 Live specs never run in CI. Draft PRs run `ci` only. A newer push cancels the
 running PR jobs (never on `main`). The `ci`, `e2e`, and `dogfood-scripted` jobs
 upload their `run-result.json`; `witness` writes one but does not upload it.
-Mutation testing is on demand: `npm run mutation` ([mutation.md](mutation.md)).
+Mutation testing is a weekly local run on the five UI hot spots: `npm run mutation` ([mutation.md](mutation.md)). It prints a score and never gates. CI prints diff coverage for a PR in the `ci` job summary (advisory).

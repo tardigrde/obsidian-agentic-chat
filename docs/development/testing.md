@@ -21,7 +21,7 @@ npm run verify -- plan --explain src/ui/chat-view.ts   # why a path needs what i
 | Tier | What | Where | Budget |
 |---|---|---|---|
 | T0 static | secret scan, typecheck (src, e2e, scripts), lint, Obsidian lint, feature map, test manifest, doc commands, skip rule | `check`, CI | ≤ 30 s |
-| T1 hermetic logic | vitest by domain group, witness self-test | `check`, CI | ≤ 30 s |
+| T1 hermetic logic | vitest by domain group (`unit` project, no DOM), rendering on happy-dom (`ui` project, `test/ui/`), witness self-test | `check`, CI | ≤ 30 s |
 | T2 hermetic real app | real Obsidian with scripted turns: smoke, app specs, mobile, scripted dogfood | `check` (smoke), CI (rest) | smoke ≤ 25 s, suite ≤ 110 s |
 | T3 live | live specs (`test/e2e/live/`, `test/live/`), tool-use evals | local only, needs a key | 1-15 min |
 | T4 exploration | chaos explore, probes, design audit | local, on request | per run |
@@ -101,6 +101,44 @@ npm run logs:prune      # dry run; add -- --apply to delete old runs under logs/
 
 History lives in the main worktree, so every worktree's runs land in one file.
 It is advisory: nothing fails on it. `AGENTIC_CHAT_HISTORY=0` turns it off for a run.
+
+## Where a UI check goes
+
+| Question the check answers | Layer |
+|---|---|
+| What does the view render for this event, state, or click? | `test/ui/` (happy-dom, the real `ChatView` via `mountChatView`) |
+| Which composer state are we in: idle, streaming, approval pending, stopped, error? | `test/ui/chat-view-states.test.ts` |
+| Does it fit the window, scroll, or wire into Obsidian (commands, leaves, settings tab)? | `test/e2e/specs/` (real Obsidian) |
+
+`test/ui/` runs the real view, tabs, composer, transcript, modals, and
+`AgentService`; only the model is scripted (`ReplayTurn`). The Obsidian API there
+is `test/ui/support/obsidian-dom.ts`: element helpers, `Component`, `ItemView`,
+`Modal`, `Setting`, `setIcon`, and a small markdown renderer. happy-dom has no
+layout engine, so a check that needs sizes or scrolling stays in e2e. A feature-map
+row may point at a `test/ui/` file that mounts the view as `covered` proof.
+
+## Hermetic T1
+
+- **Offline guard.** `test/setup.ts` and `test/ui/support/setup.ts` make `fetch`
+  and raw sockets to a non-loopback host throw. Inject a fake fetcher, or use a
+  local server. `AGENTIC_CHAT_TEST_ALLOW_NETWORK=1` turns the guard off for one run.
+- **No fixed ports.** Bind `listen(0)` and read the port back
+  (`test/offline-guard.test.ts` fails on a fixed `listen(<port>)`).
+- **No real waits.** A retry backoff or a timeout runs under fake timers:
+  `withFakeClock` in `test/support/fake-clock.ts`.
+- **One fake DOM, one fake adapter.** happy-dom (`test/ui/`) and
+  `test/support/fake-adapter.ts`.
+
+## Coverage and mutation (advisory)
+
+```bash
+npm run verify -- check --no-app --coverage
+node scripts/diff-coverage.mjs --base origin/main   # changed src/ lines the unit suite runs
+npm run mutation                                    # weekly, local: the five UI hot spots
+```
+
+CI prints diff coverage in the `ci` job summary of a PR. Neither number fails a
+build. See [mutation.md](mutation.md).
 
 ## Adding a test
 

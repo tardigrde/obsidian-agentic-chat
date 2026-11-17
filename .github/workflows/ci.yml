@@ -26,6 +26,9 @@ jobs:
       issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The PR merge commit and its first parent (the base), for diff coverage.
+          fetch-depth: 2
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -79,6 +82,11 @@ jobs:
           else
             echo "No coverage summary generated." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      # Advisory (#393 T18): how many changed src/ lines the unit suite runs. Never fails.
+      - name: Diff coverage
+        if: always() && github.event_name == 'pull_request'
+        run: node scripts/diff-coverage.mjs --base HEAD^1 --markdown | tee -a "$GITHUB_STEP_SUMMARY"
 
   # T2: a production-bundle boot, the full deterministic e2e suite in a real
   # Obsidian under Xvfb, and the phone-width spec. Headless ozone lacks the accessibility tree
