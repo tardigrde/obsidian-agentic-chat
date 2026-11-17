@@ -1,21 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { renderStepEditDiff } from "../src/ui/assistant-markdown";
-import { renderApprovalDiffLines } from "../src/ui/approval-modal";
-import { renderQuickAskDiff } from "../src/ui/quick-ask-modal";
-import { fakeElement, type FakeElement } from "./helpers/fake-dom";
+import { renderStepEditDiff } from "../../src/ui/assistant-markdown";
+import { renderApprovalDiffLines } from "../../src/ui/approval-modal";
+import { renderQuickAskDiff } from "../../src/ui/quick-ask-modal";
 
 function container(): HTMLElement {
-  return fakeElement() as unknown as HTMLElement;
+  return document.createElement("div");
 }
 
-function classes(root: FakeElement): string[] {
-  return root.querySelectorAll("*").flatMap((el) => el.className.split(/\s+/).filter(Boolean));
+function classes(root: HTMLElement): string[] {
+  return Array.from(root.querySelectorAll("*")).flatMap((el) => Array.from(el.classList));
 }
 
 describe("diff renderer class names", () => {
   it("step cards use only the step diff line class", () => {
-    const root = container() as unknown as FakeElement;
-    renderStepEditDiff(root as unknown as HTMLElement, [{ oldText: "old\nline", newText: "new" }]);
+    const root = container();
+    renderStepEditDiff(root, [{ oldText: "old\nline", newText: "new" }]);
 
     expect(root.querySelectorAll(".agentic-chat-step-diff-line.is-del")).toHaveLength(2);
     expect(root.querySelectorAll(".agentic-chat-step-diff-line.is-add")).toHaveLength(1);
@@ -24,8 +23,8 @@ describe("diff renderer class names", () => {
   });
 
   it("the approval modal uses only the approval diff line class", () => {
-    const root = container() as unknown as FakeElement;
-    renderApprovalDiffLines(root as unknown as HTMLElement, [
+    const root = container();
+    renderApprovalDiffLines(root, [
       { op: "add", text: "new" },
       { op: "remove", text: "old" },
       { op: "context", text: "same" },
@@ -39,8 +38,8 @@ describe("diff renderer class names", () => {
   });
 
   it("Quick Ask uses only the quick ask diff line class", () => {
-    const root = container() as unknown as FakeElement;
-    renderQuickAskDiff(root as unknown as HTMLElement, "old\nsame", "new\nsame");
+    const root = container();
+    renderQuickAskDiff(root, "old\nsame", "new\nsame");
 
     expect(root.querySelectorAll(".agentic-chat-quick-ask-diff-line.is-add").length).toBeGreaterThan(0);
     expect(root.querySelectorAll(".agentic-chat-quick-ask-diff-line.is-remove").length).toBeGreaterThan(0);

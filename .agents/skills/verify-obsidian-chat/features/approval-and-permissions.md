@@ -54,7 +54,7 @@ await (await modal.$("button=Allow")).click();
 | Safe asks before mutating tools | `src/agent/tool-call-controller.ts#beforeToolCall` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted write and undo removes the created note` | `covered` |
 | Safe/YOLO toggle | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` (existence only) | `partial` |
 | `/plan` and the Plan badge are gone | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/smoke.e2e.ts#renders a scripted turn, treats /plan and /skill as chat, and Stop clears a running turn` | `covered` |
-| Invalid mode transition is blocked | `src/ui/chat-view.ts#setMode` | `test/modes.test.ts#validateModeTransition` (unit only) | `partial` |
+| Invalid mode transition is blocked | `src/ui/chat-view.ts#setMode` | `test/ui/chat-view-states.test.ts#the mode toggle flips Safe <-> YOLO when idle and refuses while streaming` (happy-dom) | `partial` |
 | Background-tab approval badge and label | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
 | Closing a tab clears its pending approval | `src/ui/chat-tabs.ts#closeTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` | `covered` |
 | Approval modal at phone width | `src/ui/approval-modal.ts#ApprovalModal` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps approval modals visible and touchable at phone width` | `covered` |

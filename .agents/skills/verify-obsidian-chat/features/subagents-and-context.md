@@ -33,7 +33,7 @@ await $(".agentic-chat-action-list").waitForExist();
 ```
 
 - Subagent replay: inject `tool_execution_start` and `tool_execution_end` with
-  `details.children`, as `test/e2e/specs/subagent-replay.e2e.ts` does.
+  `details.children`, as `test/ui/chat-render.test.ts` and `test/ui/chat-sessions.test.ts` do.
 - Live child progress uses `tool_execution_update` with `details.children`.
 - Per-child Stop: `.agentic-chat-subagent-stop` inside the running child row.
 - Assert attachment content through `buildPromptContext` unit tests or the
@@ -50,15 +50,15 @@ await $(".agentic-chat-action-list").waitForExist();
 | Parallel cap of ten and queueing | `src/tools/subagent-tool.ts#MAX_CONCURRENCY` | `test/subagents.test.ts#caps concurrent dispatches at 10 and queues the rest, promoting on stop` (unit only) | `partial` |
 | Live child status tree | `src/ui/assistant-bubble.ts#updateStep` | `test/e2e/specs/design-audit.e2e.ts#captures the full design journey screenshots` (disabled unless `AGENTIC_CHAT_DESIGN_AUDIT=1`) | `partial` |
 | Per-child Stop button | `src/ui/subagent-tree.ts#renderSubagentHeader` | `test/subagents.test.ts#lets a caller abort one dispatch without stopping its siblings` (abort path only, no button click) | `partial` |
-| Replay a done dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/e2e/specs/subagent-replay.e2e.ts#rehydrates a done dispatch from tool_execution_end alone (no updateStep), collapsed with summary` | `covered` |
-| Replay a stopped dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/e2e/specs/subagent-replay.e2e.ts#rehydrates an aborted dispatch as stopped (red) without re-running` | `covered` |
-| Replay a failed dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/e2e/specs/subagent-replay.e2e.ts#rehydrates an error dispatch as failed (red) from persisted details` | `covered` |
+| Replay a done dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/ui/chat-render.test.ts#rehydrates a done dispatch from tool_execution_end alone, collapsed with its summary` | `covered` |
+| Replay a stopped dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/ui/chat-render.test.ts#rehydrates an aborted dispatch as stopped (red) and an error dispatch as failed` | `covered` |
+| Replay a failed dispatch | `src/ui/assistant-bubble.ts#endStep` | `test/ui/chat-render.test.ts#rehydrates an aborted dispatch as stopped (red) and an error dispatch as failed` | `covered` |
 | Subagent timeout behavior | `src/agent/subagent-runtime.ts#AgentSubagentRuntime` | `test/subagents.test.ts#settles a timed-out child as aborted without rejecting the dispatch` (unit only) | `partial` |
 | Subagent timeout | `src/settings-tab-agent.ts#row("Subagent timeout"` | no committed check | `NONE` |
 | Attachment budget: inline or path reference | `src/ui/attachments.ts#buildAttachmentSection` | `test/attachments.test.ts#switches to a path-only reference when over the budget (no body inlined)` (unit only) | `partial` |
 | Ignore-list withholding | `src/ui/attachments.ts#buildAttachmentSection` | `test/attachments.test.ts#never inlines content for a restricted (ignore-listed) path` (unit only) | `partial` |
-| Context chips order and removal | `src/ui/context-chip-renderer.ts#renderContextChips` | `test/context-chip-renderer.test.ts#renders the active note and explicit attachments in a stable order` (unit only) | `partial` |
-| Source chips and note open | `src/ui/assistant-bubble.ts#renderSourceChips` | `test/e2e/specs/beautifului-polish.e2e.ts#renders deduped source chips only for read-style tools and opens the note on click` | `covered` |
+| Context chips order and removal | `src/ui/context-chip-renderer.ts#renderContextChips` | `test/ui/context-chip-renderer.test.ts#renders the active note and explicit attachments in a stable order` (unit only) | `partial` |
+| Source chips and note open | `src/ui/assistant-bubble.ts#renderSourceChips` | `test/ui/chat-render.test.ts#renders deduped chips only for read-style tools and opens the note on click` | `covered` |
 | Model calls the `artifact` tool (list, search, read, export) | `src/artifacts/tool-artifact-tools.ts#createArtifactTool` | `test/tool-artifact-tools.test.ts#artifact tool` (unit only) | `partial` |
 | Deferred tools: `search_tools` loads a tool for the next step | `src/agent/tool-loading.ts#createSearchToolsTool` | `test/runtime-resource-state.test.ts#loads a searched tool for the next step and keeps it on later rebuilds` (unit only) | `partial` |
 | Deferred tools: a direct call to an unloaded tool loads it | `src/agent/runtime-resource-state.ts#toolsForNextStep` | `test/runtime-resource-state.test.ts#loads a deferred tool after a direct call failed because it was not loaded` (unit only) | `partial` |

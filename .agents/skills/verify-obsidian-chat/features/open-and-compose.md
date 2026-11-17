@@ -56,7 +56,7 @@ await $(".agentic-chat-send").click();
 | File context menu | `src/main.ts#registerContextMenus` | no committed check | `NONE` |
 | Files context menu (multi-select) | `src/main.ts#registerContextMenus` | no committed check | `NONE` |
 | Composer card mounts | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` | `covered` |
-| Empty-state suggestion chips | `src/ui/chat-view.ts#renderEmptyState` | no committed check | `NONE` |
+| Empty-state suggestion chips | `src/ui/chat-view.ts#renderEmptyState` | `test/ui/chat-view-states.test.ts#a suggestion chip sends its prompt` (happy-dom) | `partial` |
 | Enter sends while idle | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
 | Enter steers while the agent runs | `src/ui/composer-input.ts#resolveComposerAction` | `test/e2e/specs/composer-paths.e2e.ts#steers after a successful tool call while the agent is running` | `covered` |
 | Shift+Enter inserts a newline | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/composer-paths.e2e.ts#inserts a newline with Shift+Enter without sending` | `covered` |
@@ -69,7 +69,7 @@ await $(".agentic-chat-send").click();
 | Drag-and-drop attach | `src/ui/chat-view.ts#handleDrop` | `test/drag-drop.test.ts#parseDroppedVaultPath` (parser only) | `partial` |
 | Active note auto-chip | `src/ui/chat-view.ts#private effectiveActiveNote()` | `test/e2e/specs/smoke.e2e.ts#attaches the active note as a chip, but not an ignored note or AGENTS.md` | `covered` |
 | Ignored active note stays out | `src/ui/active-note.ts#autoActiveNotePath` | `test/e2e/specs/runtime-behavior.e2e.ts#does not auto-attach an ignored active note` | `covered` |
-| Remove an attachment chip | `src/ui/chat-view.ts#renderChips` | `test/context-chip-renderer.test.ts#wires remove callbacks to the matching chip` (unit only) | `partial` |
+| Remove an attachment chip | `src/ui/chat-view.ts#renderChips` | `test/ui/context-chip-renderer.test.ts#wires remove callbacks to the matching chip` (unit only) | `partial` |
 | Image attachment guard | `src/ui/chat-view.ts#addAttachment` | `test/image-attachments.test.ts#collectUserImageThumbs,` (encoding only) | `partial` |
 | Quick Ask accept | `src/ui/quick-ask-modal.ts#onOpen` | `test/e2e/specs/smoke.e2e.ts#applies a Quick Ask edit to selected editor text without a model call` | `covered` |
 | Quick Ask Enter accept | `src/ui/quick-ask-modal.ts#onOpen` | no committed check | `NONE` |

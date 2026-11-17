@@ -85,12 +85,15 @@ function refsIn(cell) {
 /**
  * A `covered` row needs a check that drives the user action, not only a unit
  * test. A deterministic e2e or probe scenario qualifies, and so does a replay
- * that imports the replay harness. A live spec (which skips without keys), a
- * dogfood spec (which needs a generated vault), a helper, and a plain vitest
- * file do not.
+ * that imports the replay harness, or a `test/ui/` file that mounts the real
+ * ChatView in happy-dom (`mountChatView`) and drives its controls. A live spec
+ * (which skips without keys), a dogfood spec (which needs a generated vault), a
+ * helper, and a plain vitest file do not.
  */
 const REPLAY_IMPORT =
   /^import\s+(?!type\b)\{[^}]*\brunAgentReplay\b[^}]*\}\s+from\s+["'][^"']*helpers\/agent-replay["']/m;
+const MOUNTED_VIEW_IMPORT =
+  /^import\s+(?!type\b)\{[^}]*\bmountChatView\b[^}]*\}\s+from\s+["'][^"']*support\/mount-chat-view["']/m;
 
 function isUserActionProof(root, ref) {
   const file = normalizedPath(ref.path);
@@ -107,7 +110,8 @@ function isUserActionProof(root, ref) {
   const text = readFileSync(absolute, "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
-  return REPLAY_IMPORT.test(text);
+  if (REPLAY_IMPORT.test(text)) return true;
+  return file.startsWith("test/ui/") && MOUNTED_VIEW_IMPORT.test(text);
 }
 
 function stripRefs(cell) {
@@ -392,15 +396,16 @@ export function checkFeatureMap(root = process.cwd()) {
   return { ok: errors.length === 0, errors, journeys: files.length, rows, refs };
 }
 
+/** The CLI report, as text. Tests read it in process instead of spawning the CLI. */
+export function formatFeatureMapReport(result) {
+  if (result.ok) return `feature map: PASS (${result.journeys} journeys, ${result.rows} rows, ${result.refs} refs)\n`;
+  return [`feature map: FAIL (${result.errors.length} errors)`, ...result.errors.map((error) => `  ${error}`)].join("\n") + "\n";
+}
+
 function reportCheck(result) {
-  if (result.ok) {
-    console.log(
-      `feature map: PASS (${result.journeys} journeys, ${result.rows} rows, ${result.refs} refs)`,
-    );
-    return;
-  }
-  console.error(`feature map: FAIL (${result.errors.length} errors)`);
-  for (const error of result.errors) console.error(`  ${error}`);
+  const text = formatFeatureMapReport(result);
+  if (result.ok) process.stdout.write(text);
+  else process.stderr.write(text);
 }
 
 function main() {
