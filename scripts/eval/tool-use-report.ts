@@ -80,6 +80,8 @@ export interface ToolUseSummary {
   finishedAt: string;
   durationMs: number;
   prices: RunPricing;
+  /** The commit the run measured (from the plan). */
+  gitHead?: string;
   budget: {
     caps: ToolUseBudgetCaps;
     used: { usd: number; modelCalls: number; tokens: number };
@@ -104,11 +106,13 @@ export interface ToolUseBaseline {
   cases: Array<
     { id: string } & CaseThinking & Pick<
       CaseSummary,
+      | "executed"
       | "passRate"
       | "passAllK"
       | "partialScore"
       | "meanTokens"
       | "meanUsd"
+      | "medianUsd"
       | "meanModelCalls"
       | "meanToolCalls"
       | "medianMs"
@@ -205,6 +209,7 @@ export function buildSummary(
     finishedAt: timing.finishedAt.toISOString(),
     durationMs: timing.finishedAt.getTime() - timing.startedAt.getTime(),
     prices: plan.prices,
+    ...(plan.gitHead ? { gitHead: plan.gitHead } : {}),
     budget: { caps: plan.budget, used: tracker.totals(), exceeded: tracker.exceeded() },
     overall: summarizeOverall(cases),
     cases,
@@ -228,11 +233,13 @@ export function toBaseline(summary: ToolUseSummary, stamp: { date: Date; gitHead
       thinkingLevel: entry.thinkingLevel,
       observedThinkingLevels: entry.observedThinkingLevels,
       thinkingLevelMismatches: entry.thinkingLevelMismatches,
+      executed: entry.executed,
       passRate: entry.passRate,
       passAllK: entry.passAllK,
       partialScore: entry.partialScore,
       meanTokens: entry.meanTokens,
       meanUsd: entry.meanUsd,
+      medianUsd: entry.medianUsd,
       meanModelCalls: entry.meanModelCalls,
       meanToolCalls: entry.meanToolCalls,
       medianMs: entry.medianMs,

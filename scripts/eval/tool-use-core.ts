@@ -306,6 +306,8 @@ export interface CaseSummary {
   maxTokens: number;
   totalUsd: number;
   meanUsd: number;
+  /** Median run cost: robust to one long run that moves the mean (#392 item 3). */
+  medianUsd: number;
   meanMs: number;
   /** Median wall-clock time of the executed runs. */
   medianMs: number;
@@ -532,6 +534,7 @@ export function summarizeCase(
     maxTokens: tokenCounts.length > 0 ? Math.max(...tokenCounts) : 0,
     totalUsd,
     meanUsd: mean(totalUsd),
+    medianUsd: median(executed.map((run) => finite(run.usd))),
     meanMs: mean(executed.reduce((total, run) => total + finite(run.ms), 0)),
     medianMs: median(executed.map((run) => finite(run.ms))),
     meanModelCalls: mean(executed.reduce((total, run) => total + finite(run.modelCalls), 0)),

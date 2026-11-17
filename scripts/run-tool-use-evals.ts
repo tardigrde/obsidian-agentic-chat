@@ -14,10 +14,10 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { startFixtureServer, type FixtureServer } from "./eval/fixture-server";
 import { startFixtureMcpServer, type FixtureMcpServer } from "./eval/fixture-mcp-server";
+import { writeBaselineFiles, writeBaselineFromSummary } from "./eval/baseline-files";
 import { bootstrapCompare, formatSignificance, type SignificanceCase } from "./eval/significance";
 import { formatComparison } from "./eval/tool-use-compare";
 import {
-  baselineRefusal,
   effectiveThinkingLevel,
   resolveThinkingLevel,
   validateToolUseSuite,
@@ -37,21 +37,18 @@ import {
   type ToolUsePlan,
 } from "./eval/tool-use-plan";
 import {
-  baselineFileName,
   buildSummary,
   formatConsoleSummary,
   formatDryRun,
   formatReport,
   gradeRecord,
   missingRunEntry,
-  toBaseline,
   type CaseRunEntry,
 } from "./eval/tool-use-report";
 import { applyEnvFile } from "./live-env.mjs";
 
 const DEFAULT_SUITE = "test/evals/tool-use/tool-use.eval.json";
 const DEFAULT_OUT_ROOT = "logs/eval-runs";
-const BASELINE_DIR = "test/evals/baselines";
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 const SPEC_PATH = "./test/e2e/evals/tool-use.eval.ts";
 /** Obsidian start-up and teardown, on top of the per-run turn timeouts. */
@@ -64,12 +61,15 @@ const USAGE = `Usage:
       [--dry-run] [--write-baseline]
   npm run eval:tool-use -- --compare <base.json> <head.json> [--significance [--exclude id[,id]]]
   npm run eval:significance -- <base.json> <head.json>
+  npm run eval:tool-use -- --write-baseline-from <run>/summary.json [--git-head sha] [--suite path]
 
   --smoke           runs the suite's own "smoke" slice, once per case unless --runs is set.
   --thinking-level  wins over AGENTIC_CHAT_THINKING_LEVEL, the suite field, and the low default.
   --compare         reads two summary.json or baseline files and prints the differences.
   --significance    adds a case-level bootstrap section to --compare; --exclude drops
                     cases from that section only.
+  --write-baseline-from  writes the baseline from a finished run (no model call), with the
+                    same refusal rules as --write-baseline; reads plan.json next to it.
 `;
 
 interface CliArgs {
@@ -89,6 +89,8 @@ interface CliArgs {
   significance: boolean;
   /** Case ids dropped from the significance read only. */
   exclude: string[];
+  writeBaselineFrom?: string;
+  gitHead?: string;
   help: boolean;
 }
 
@@ -111,6 +113,8 @@ function parseCliArgs(argv: string[]): CliArgs {
       compare: { type: "boolean" },
       significance: { type: "boolean" },
       exclude: { type: "string", multiple: true },
+      "write-baseline-from": { type: "string" },
+      "git-head": { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -142,6 +146,8 @@ function parseCliArgs(argv: string[]): CliArgs {
     compare: values.compare ? [positionals[0], positionals[1]] : undefined,
     significance: values.significance === true,
     exclude,
+    writeBaselineFrom: values["write-baseline-from"],
+    gitHead: values["git-head"],
     help: values.help === true,
   };
 }
@@ -150,6 +156,16 @@ async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2));
   if (args.help) {
     process.stdout.write(USAGE);
+    return;
+  }
+  if (args.writeBaselineFrom) {
+    const written = writeBaselineFromSummary({
+      summaryPath: path.resolve(args.writeBaselineFrom),
+      gitHead: args.gitHead,
+      suitePath: args.suite === DEFAULT_SUITE ? undefined : path.resolve(args.suite),
+    });
+    console.log(`Baseline: ${written.latest}`);
+    console.log(`History: ${written.history}`);
     return;
   }
   if (args.compare) {
@@ -219,6 +235,7 @@ async function main(): Promise<void> {
       budget,
       turn: suite.turn,
       prices,
+      gitHead: gitHead(),
       ...fixturePlanFields(cases, { web: fixture?.url, mcp: mcpFixture?.url }),
       cases: expandFixturePlaceholders(cases, fixture?.url),
       runs: planRuns(cases, runsPerCase),
@@ -252,12 +269,15 @@ async function main(): Promise<void> {
       throw new Error(`The WDIO tool-use spec exited with code ${specExitCode}. The summary is incomplete.`);
     }
     if (args.writeBaseline) {
-      const refusal = baselineRefusal(summary, plan.runs.length, suite);
-      if (refusal) throw new Error(`Refusing to write baseline: ${refusal}`);
-      const baselinePath = path.resolve(BASELINE_DIR, baselineFileName(suite.name));
-      await mkdir(path.dirname(baselinePath), { recursive: true });
-      await writeJson(baselinePath, toBaseline(summary, { date: new Date(), gitHead: gitHead() }));
-      console.log(`Baseline: ${baselinePath}`);
+      const written = writeBaselineFiles({
+        summary,
+        plannedRunCount: plan.runs.length,
+        suite,
+        gitHead: plan.gitHead ?? gitHead(),
+        date: new Date(),
+      });
+      console.log(`Baseline: ${written.latest}`);
+      console.log(`History: ${written.history}`);
     }
   } finally {
     await Promise.all([fixture?.close(), mcpFixture?.close()]);
@@ -296,7 +316,10 @@ async function collectEntries(
  */
 function writeSignificance(baseline: unknown, candidate: unknown, exclude: string[]): number {
   const excluded = new Set(exclude);
-  const result = bootstrapCompare(significanceCases(baseline, excluded), significanceCases(candidate, excluded));
+  const costComparable = costSourceOf(baseline) === "billed" && costSourceOf(candidate) === "billed";
+  const result = bootstrapCompare(significanceCases(baseline, excluded), significanceCases(candidate, excluded), {
+    costComparable,
+  });
   process.stdout.write(formatSignificance(result, { before: "Baseline", after: "Candidate" }, exclude));
   if (result.paired === 0) {
     // An empty table must not exit 0: it reads like "no change". An old baseline
@@ -323,7 +346,15 @@ function significanceCases(input: unknown, excluded: ReadonlySet<string>): Signi
       id: entry.id as string,
       passAllK: typeof entry.passAllK === "number" ? entry.passAllK : Number.NaN,
       passRate: typeof entry.passRate === "number" ? entry.passRate : undefined,
+      meanUsd: typeof entry.meanUsd === "number" ? entry.meanUsd : undefined,
+      medianMs: typeof entry.medianMs === "number" ? entry.medianMs : undefined,
     }));
+}
+
+function costSourceOf(input: unknown): string | undefined {
+  return input && typeof input === "object" && typeof (input as { costSource?: unknown }).costSource === "string"
+    ? (input as { costSource: string }).costSource
+    : undefined;
 }
 
 function caseIds(input: unknown): string[] {

@@ -44,6 +44,8 @@ export interface ToolUsePlan {
   budget: ToolUseBudgetCaps;
   turn: ToolUseTurnLimits;
   prices: RunPricing;
+  /** The commit the run measured; a baseline written later from this run uses it. */
+  gitHead?: string;
   /** Base URL of the local fixture server; absent when no case needs it. */
   fixtureBaseUrl?: string;
   /** MCP endpoint of the local fake MCP server; absent when no case needs it. */
