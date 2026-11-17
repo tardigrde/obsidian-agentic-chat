@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { holdSleepInhibit } from "./eval/run-loop";
 import {
   applyEnvFile,
   extractFrames,
@@ -34,6 +35,8 @@ type Options = {
   displayOverride?: string;
   gif?: string;
   outDir: string;
+  /** Wall-time cap for the scenario run, in minutes. */
+  maxMinutes: number;
 };
 
 type ProbeRun = {
@@ -215,6 +218,7 @@ function parseOptions(): Options {
     scenario,
     live,
     noBuild: hasFlag("--no-build"),
+    maxMinutes: positiveNumber(readArg("--max-minutes") ?? "10", "--max-minutes"),
     keepDisplay: hasFlag("--keep-display"),
     size: parseSize(readArg("--size") ?? "1440x1000", fail),
     fps,
@@ -288,6 +292,11 @@ async function runProbe(options: Options, ffmpegPath: string, xvfbPath: string |
       ["--import", "tsx", "scripts/run-e2e.ts", "--spec", options.scenario],
       {
         allowFailure: true,
+        // A probe that runs across a laptop sleep can hang for an hour (#392 item 5).
+        timeout: {
+          ms: options.maxMinutes * 60_000,
+          message: `probe stopped: over the wall-time cap of ${options.maxMinutes} min (--max-minutes)`,
+        },
         env: {
           DISPLAY: display,
           AGENTIC_CHAT_PROBE: "1",
@@ -352,9 +361,15 @@ async function finalize(options: Options, result: ProbeRun, ffmpegPath: string):
   }
 }
 
+function positiveNumber(value: string, flag: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) fail(`${flag} must be a positive number, got ${value}`);
+  return parsed;
+}
+
 async function main(): Promise<void> {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    process.stdout.write("Usage: npm run probe -- --scenario <name> [--live]   (npm run probe -- --list for scenarios)\n");
+    process.stdout.write("Usage: npm run probe -- --scenario <name> [--live] [--max-minutes 10]   (npm run probe -- --list for scenarios)\n");
     return;
   }
   if (hasFlag("--list")) {
@@ -374,7 +389,8 @@ async function main(): Promise<void> {
   process.stdout.write(`[probe] display: ${options.displayOverride ?? "auto"} ${options.size.width}x${options.size.height}\n`);
   process.stdout.write(`[probe] output: ${options.outDir}\n`);
 
-  const result = await runProbe(options, binaries.ffmpeg, binaries.xvfb);
+  const releaseInhibit = holdSleepInhibit("agentic-chat probe");
+  const result = await runProbe(options, binaries.ffmpeg, binaries.xvfb).finally(releaseInhibit);
   await finalize(options, result, binaries.ffmpeg);
 
   if (result.failure) console.error(`[probe] ${result.failure}`);

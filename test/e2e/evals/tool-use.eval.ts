@@ -10,6 +10,7 @@ import {
   type RunRecord,
   type ToolUsePlan,
 } from "../../../scripts/eval/tool-use-plan";
+import { driveRuns } from "../../../scripts/eval/run-loop";
 import type { McpServerSettings } from "../../../src/mcp/settings";
 import { sendPrompt } from "../dogfood/dogfood-helpers";
 
@@ -80,20 +81,26 @@ describe("tool-use eval", function () {
     // records this process writes are the whole spend.
     const budget = new BudgetTracker(plan.budget, plan.prices);
 
-    for (const planned of plan.runs) {
-      const evalCase = caseById.get(planned.caseId);
-      if (!evalCase) throw new Error(`Plan refers to an unknown case: ${planned.caseId}`);
+    // A dead harness stops the loop: the rest of the plan is written as
+    // `harness died` and no more model calls happen (#392 item 5).
+    await driveRuns(
+      plan.runs,
+      async (planned) => {
+        const evalCase = caseById.get(planned.caseId);
+        if (!evalCase) throw new Error(`Plan refers to an unknown case: ${planned.caseId}`);
 
-      // A turn that will not stop must fail the spec: seeding the next vault
-      // under a live turn lets the model write into the next run.
-      await endTurn();
-      await openChatIfNeeded();
+        // A turn that will not stop must fail the spec: seeding the next vault
+        // under a live turn lets the model write into the next run.
+        await endTurn();
+        await openChatIfNeeded();
 
-      const exceeded = budget.exceeded();
-      const record = exceeded ? skippedRecord(planned, exceeded) : await executeRun(evalCase, planned);
-      budget.add(record);
-      writeRecord(record);
-    }
+        const exceeded = budget.exceeded();
+        const record = exceeded ? skippedRecord(planned, exceeded) : await executeRun(evalCase, planned);
+        budget.add(record);
+        return record;
+      },
+      writeRecord,
+    );
   });
 });
 
@@ -138,6 +145,8 @@ async function executeRun(evalCase: ToolUseCase, planned: PlannedRun): Promise<R
   if (sessionBaseline) {
     try {
       const raw = await readNewSession(sessionBaseline);
+      // `eval:explain` reads the trace for tool arguments (#393 T21).
+      writeSessionTrace(planned, raw);
       session = observeSession(raw);
       const apiError = sessionApiError(raw);
       if (apiError) error ??= `model request failed: ${apiError}`;
@@ -168,6 +177,12 @@ function skippedRecord(planned: PlannedRun, cap: string): RunRecord {
     observed: emptyObservation(),
     skippedBudget: cap,
   };
+}
+
+function writeSessionTrace(planned: PlannedRun, raw: string): void {
+  const caseDir = path.join(RESULTS_DIR, planned.caseId);
+  mkdirSync(caseDir, { recursive: true });
+  writeFileSync(path.join(caseDir, `${planned.run}.session.jsonl`), raw);
 }
 
 function writeRecord(record: RunRecord): void {

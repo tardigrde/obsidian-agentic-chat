@@ -14,10 +14,12 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { startFixtureServer, type FixtureServer } from "./eval/fixture-server";
 import { startFixtureMcpServer, type FixtureMcpServer } from "./eval/fixture-mcp-server";
+import { BASELINE_DIR, writeBaselineFiles, writeBaselineFromSummary } from "./eval/baseline-files";
+import { inhibitSleep } from "./eval/run-loop";
+import { CANARY_RUNS, formatCanary } from "./eval/canary";
 import { bootstrapCompare, formatSignificance, type SignificanceCase } from "./eval/significance";
 import { formatComparison } from "./eval/tool-use-compare";
 import {
-  baselineRefusal,
   effectiveThinkingLevel,
   resolveThinkingLevel,
   validateToolUseSuite,
@@ -44,14 +46,12 @@ import {
   formatReport,
   gradeRecord,
   missingRunEntry,
-  toBaseline,
   type CaseRunEntry,
 } from "./eval/tool-use-report";
 import { applyEnvFile } from "./live-env.mjs";
 
 const DEFAULT_SUITE = "test/evals/tool-use/tool-use.eval.json";
 const DEFAULT_OUT_ROOT = "logs/eval-runs";
-const BASELINE_DIR = "test/evals/baselines";
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 const SPEC_PATH = "./test/e2e/evals/tool-use.eval.ts";
 /** Obsidian start-up and teardown, on top of the per-run turn timeouts. */
@@ -59,23 +59,29 @@ const SPEC_OVERHEAD_MS = 120_000;
 const MIN_SPEC_TIMEOUT_MS = 10 * 60 * 1000;
 
 const USAGE = `Usage:
-  npm run eval:tool-use -- [--suite path] [--case id[,id] | --smoke] [--runs n] [--run-id id]
+  npm run eval:tool-use -- [--suite path] [--case id[,id] | --smoke | --canary] [--runs n] [--run-id id]
       [--out-dir dir] [--env-file path] [--max-usd usd] [--thinking-level level]
       [--dry-run] [--write-baseline]
   npm run eval:tool-use -- --compare <base.json> <head.json> [--significance [--exclude id[,id]]]
   npm run eval:significance -- <base.json> <head.json>
+  npm run eval:tool-use -- --write-baseline-from <run>/summary.json [--git-head sha] [--suite path]
 
   --smoke           runs the suite's own "smoke" slice, once per case unless --runs is set.
+  --canary          runs the suite's "canary" slice, 5 times per case unless --runs is set,
+                    and prints a Wilson interval per case against the baseline.
   --thinking-level  wins over AGENTIC_CHAT_THINKING_LEVEL, the suite field, and the low default.
   --compare         reads two summary.json or baseline files and prints the differences.
   --significance    adds a case-level bootstrap section to --compare; --exclude drops
                     cases from that section only.
+  --write-baseline-from  writes the baseline from a finished run (no model call), with the
+                    same refusal rules as --write-baseline; reads plan.json next to it.
 `;
 
 interface CliArgs {
   suite: string;
   caseIds: string[];
   smoke: boolean;
+  canary: boolean;
   runs?: number;
   runId: string;
   outDir?: string;
@@ -89,7 +95,24 @@ interface CliArgs {
   significance: boolean;
   /** Case ids dropped from the significance read only. */
   exclude: string[];
+  writeBaselineFrom?: string;
+  gitHead?: string;
   help: boolean;
+}
+
+/** One selector per run; --write-baseline-from and --git-head only with each other. */
+function assertSelectors(values: {
+  smoke?: boolean;
+  canary?: boolean;
+  compare?: boolean;
+  caseCount: number;
+  "write-baseline-from"?: string;
+  "git-head"?: string;
+}): void {
+  if (values.smoke && values.caseCount > 0) throw new Error("--smoke cannot be combined with --case; use one selector.");
+  if (values.canary && (values.caseCount > 0 || values.smoke)) throw new Error("--canary cannot be combined with --case or --smoke.");
+  if (values["write-baseline-from"] && values.compare) throw new Error("--write-baseline-from cannot be combined with --compare.");
+  if (values["git-head"] && !values["write-baseline-from"]) throw new Error("--git-head needs --write-baseline-from.");
 }
 
 function parseCliArgs(argv: string[]): CliArgs {
@@ -100,6 +123,7 @@ function parseCliArgs(argv: string[]): CliArgs {
       suite: { type: "string" },
       case: { type: "string", multiple: true },
       smoke: { type: "boolean" },
+      canary: { type: "boolean" },
       runs: { type: "string" },
       "run-id": { type: "string" },
       "out-dir": { type: "string" },
@@ -111,6 +135,8 @@ function parseCliArgs(argv: string[]): CliArgs {
       compare: { type: "boolean" },
       significance: { type: "boolean" },
       exclude: { type: "string", multiple: true },
+      "write-baseline-from": { type: "string" },
+      "git-head": { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -126,11 +152,12 @@ function parseCliArgs(argv: string[]): CliArgs {
   }
   if (!values.compare && positionals.length > 0) throw new Error(`Unexpected argument: ${positionals[0]}`);
   const caseIds = (values.case ?? []).flatMap((value) => value.split(",")).map((id) => id.trim()).filter(Boolean);
-  if (values.smoke && caseIds.length > 0) throw new Error("--smoke cannot be combined with --case; use one selector.");
+  assertSelectors({ ...values, caseCount: caseIds.length });
   return {
     suite: values.suite ?? DEFAULT_SUITE,
     caseIds,
     smoke: values.smoke === true,
+    canary: values.canary === true,
     runs: values.runs === undefined ? undefined : positiveInteger(values.runs, "--runs"),
     runId: values["run-id"] ?? `tool-use-${new Date().toISOString().replace(/[:.]/g, "-")}`,
     outDir: values["out-dir"],
@@ -142,8 +169,32 @@ function parseCliArgs(argv: string[]): CliArgs {
     compare: values.compare ? [positionals[0], positionals[1]] : undefined,
     significance: values.significance === true,
     exclude,
+    writeBaselineFrom: values["write-baseline-from"],
+    gitHead: values["git-head"],
     help: values.help === true,
   };
+}
+
+/** The smoke slice is a quick look (1 run); the canary needs 5 to separate a drop from noise. */
+function defaultRuns(args: CliArgs, suiteRuns: number): number {
+  if (args.smoke) return 1;
+  return args.canary ? CANARY_RUNS : suiteRuns;
+}
+
+function writeBaselineFromCli(summaryPath: string, args: CliArgs): void {
+  const written = writeBaselineFromSummary({
+    summaryPath: path.resolve(summaryPath),
+    gitHead: args.gitHead,
+    suitePath: args.suite === DEFAULT_SUITE ? undefined : path.resolve(args.suite),
+  });
+  console.log(`Baseline: ${written.latest}`); // NOSONAR:S8689 -- prints a file path the developer chose, not a secret.
+  console.log(`History: ${written.history}`); // NOSONAR:S8689 -- prints a file path the developer chose, not a secret.
+}
+
+async function compareCli(files: string[], args: CliArgs): Promise<void> {
+  const [baseline, candidate] = await Promise.all(files.map(readJson));
+  process.stdout.write(formatComparison(baseline, candidate));
+  if (args.significance) process.exitCode = writeSignificance(baseline, candidate, args.exclude);
 }
 
 async function main(): Promise<void> {
@@ -152,17 +203,18 @@ async function main(): Promise<void> {
     process.stdout.write(USAGE);
     return;
   }
+  if (args.writeBaselineFrom) {
+    writeBaselineFromCli(args.writeBaselineFrom, args);
+    return;
+  }
   if (args.compare) {
-    const [baseline, candidate] = await Promise.all(args.compare.map(readJson));
-    process.stdout.write(formatComparison(baseline, candidate));
-    if (args.significance) process.exitCode = writeSignificance(baseline, candidate, args.exclude);
+    await compareCli(args.compare, args);
     return;
   }
 
   const suitePath = path.resolve(args.suite);
   const suite = validateToolUseSuite(await readJson(suitePath));
-  // The smoke slice is a quick look, so it runs each case once by default.
-  const runsPerCase = args.runs ?? (args.smoke ? 1 : suite.runsPerCase);
+  const runsPerCase = args.runs ?? defaultRuns(args, suite.runsPerCase);
   // Load the env file before the dry run, so its printed level is the level a live run uses.
   loadEnvFile(args.envFile);
   const thinking = resolveThinkingLevel({
@@ -172,7 +224,7 @@ async function main(): Promise<void> {
   });
   // A case pin wins over the run level. Store the effective level on every case,
   // so the plan, summary, and baseline need no second resolution step.
-  const cases = selectCases(suite, { caseIds: args.caseIds, smoke: args.smoke })
+  const cases = selectCases(suite, { caseIds: args.caseIds, smoke: args.smoke, canary: args.canary })
     .map(expandCaseSeed)
     .map((evalCase) => ({ ...evalCase, thinkingLevel: effectiveThinkingLevel(evalCase, thinking.level) }));
   const budget: ToolUseBudgetCaps = args.maxUsd === undefined ? suite.budget : { ...suite.budget, maxUsd: args.maxUsd };
@@ -219,6 +271,7 @@ async function main(): Promise<void> {
       budget,
       turn: suite.turn,
       prices,
+      gitHead: gitHead(),
       ...fixturePlanFields(cases, { web: fixture?.url, mcp: mcpFixture?.url }),
       cases: expandFixturePlaceholders(cases, fixture?.url),
       runs: planRuns(cases, runsPerCase),
@@ -247,17 +300,26 @@ async function main(): Promise<void> {
     await writeJson(paths.summary, summary);
     await writeFile(paths.report, formatReport(summary), "utf8");
     process.stdout.write(formatConsoleSummary(summary, paths));
+    if (args.canary) {
+      const baselinePath = path.resolve(BASELINE_DIR, baselineFileName(suite.name));
+      process.stdout.write(`\n${formatCanary(summary, existsSync(baselinePath) ? await readJson(baselinePath) : undefined)}`);
+    }
 
     if (specExitCode !== 0) {
+      const died = summary.cases.flatMap((entry) => entry.runResults).find((run) => run.error?.startsWith("harness died:"));
+      if (died) throw new Error(`${died.error}. The rest of the plan was not run; the summary is incomplete.`);
       throw new Error(`The WDIO tool-use spec exited with code ${specExitCode}. The summary is incomplete.`);
     }
     if (args.writeBaseline) {
-      const refusal = baselineRefusal(summary, plan.runs.length, suite);
-      if (refusal) throw new Error(`Refusing to write baseline: ${refusal}`);
-      const baselinePath = path.resolve(BASELINE_DIR, baselineFileName(suite.name));
-      await mkdir(path.dirname(baselinePath), { recursive: true });
-      await writeJson(baselinePath, toBaseline(summary, { date: new Date(), gitHead: gitHead() }));
-      console.log(`Baseline: ${baselinePath}`);
+      const written = writeBaselineFiles({
+        summary,
+        plannedRunCount: plan.runs.length,
+        suite,
+        gitHead: plan.gitHead ?? gitHead(),
+        date: new Date(),
+      });
+      console.log(`Baseline: ${written.latest}`);
+      console.log(`History: ${written.history}`);
     }
   } finally {
     await Promise.all([fixture?.close(), mcpFixture?.close()]);
@@ -296,7 +358,10 @@ async function collectEntries(
  */
 function writeSignificance(baseline: unknown, candidate: unknown, exclude: string[]): number {
   const excluded = new Set(exclude);
-  const result = bootstrapCompare(significanceCases(baseline, excluded), significanceCases(candidate, excluded));
+  const costComparable = costSourceOf(baseline) === "billed" && costSourceOf(candidate) === "billed";
+  const result = bootstrapCompare(significanceCases(baseline, excluded), significanceCases(candidate, excluded), {
+    costComparable,
+  });
   process.stdout.write(formatSignificance(result, { before: "Baseline", after: "Candidate" }, exclude));
   if (result.paired === 0) {
     // An empty table must not exit 0: it reads like "no change". An old baseline
@@ -323,7 +388,15 @@ function significanceCases(input: unknown, excluded: ReadonlySet<string>): Signi
       id: entry.id as string,
       passAllK: typeof entry.passAllK === "number" ? entry.passAllK : Number.NaN,
       passRate: typeof entry.passRate === "number" ? entry.passRate : undefined,
+      meanUsd: typeof entry.meanUsd === "number" ? entry.meanUsd : undefined,
+      medianMs: typeof entry.medianMs === "number" ? entry.medianMs : undefined,
     }));
+}
+
+function costSourceOf(input: unknown): string | undefined {
+  return input && typeof input === "object" && typeof (input as { costSource?: unknown }).costSource === "string"
+    ? (input as { costSource: string }).costSource
+    : undefined;
 }
 
 function caseIds(input: unknown): string[] {
@@ -400,7 +473,9 @@ function runSpec(options: {
   timeoutMs: number;
 }): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "test:e2e"], {
+    // A laptop sleep kills the Obsidian session (#392 item 5): block it for the run.
+    const [command, commandArgs] = inhibitSleep(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "test:e2e"], "agentic-chat eval");
+    const child = spawn(command, commandArgs, {
       stdio: "inherit",
       env: {
         ...process.env,

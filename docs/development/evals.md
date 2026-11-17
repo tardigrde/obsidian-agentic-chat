@@ -353,6 +353,36 @@ CI [-33.3, +8.3] pp, still not significant. The honest conclusion is that the
 Live runs need `AGENTIC_CHAT_API_KEY` and a display. They run locally only; CI
 does not run them.
 
+### The A/B loop: canary, eval:ab, explain, baselines
+
+```bash
+npm run eval:tool-use -- --suite test/evals/tool-use/core.eval.json --canary --env-file .env
+npm run eval:ab -- --case organize.easy.invoice,tools.easy.search --runs 5 --env-file .env
+npm run eval:explain -- logs/eval-runs/<run id>          # first failed run, one page
+npm run eval:explain -- --saturation core               # cases at pass^k in the last 3 baselines
+npm run eval:tool-use -- --write-baseline-from logs/eval-runs/<run id>/summary.json
+```
+
+- `--canary` runs the suite's `canary` slice (5 cases) 5 times each. Each case
+  gets a 95% Wilson interval. A case moved ("drop" or "gain") only when its
+  baseline pass rate is outside the interval; otherwise it is noise.
+- `eval:ab` runs the cases on `--base` (default `origin/main`) in a temporary
+  detached worktree, then on the current tree, and prints one table. With 2 or
+  more cases it adds the paired bootstrap. `--dry-run` prints the plan only.
+  `--max-usd` caps each side.
+- `--compare` marks a pass drop at fewer than 5 runs as `(n=3, check with
+  eval:ab)` and prints the `eval:ab` command for those cases.
+- `--significance` also prints total cost (billed on both sides only) and median
+  case time, with the same bootstrap.
+- `eval:explain` shows the prompt, each tool call with its arguments (from
+  `results/<case>/<run>.session.jsonl`), the answer, and the check evidence.
+- Every baseline write also appends `test/evals/baselines/<suite>/<time>-<head>.json`.
+  The saturation flag reads that history. `--write-baseline-from` writes a
+  baseline from a finished run with no model call and the same refusal rules.
+- A dead harness (`invalid session id`, lost window) stops the run at once; the
+  rest of the plan is recorded as `harness died`. The runner blocks sleep with
+  `systemd-inhibit` when it exists.
+
 ### Local fixture server for web cases
 
 `scripts/eval/fixture-server.ts` is a local HTTP server for `fetch_url` eval

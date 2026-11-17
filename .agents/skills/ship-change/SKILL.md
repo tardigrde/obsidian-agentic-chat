@@ -24,7 +24,12 @@ Start every change with `npm run verify -- plan`.
    required. A removal uses a `kind: removal` witness.
 5. **Prompt or tool changes need the eval.** A change to the system prompt, a
    tool description, or the agent loop runs `npm run verify -- eval --suite core
-   --runs 3` (live, local) against the baseline before it ships.
+   --runs 3` (live, local) against the baseline before it ships. First run the
+   canary base vs head and paste the table in the PR:
+   `npm run eval:ab -- --case organize.easy.invoice,tools.easy.search --runs 5`
+   (one extra system-prompt line moved these two from 4/5 and 5/5 to 0/5 and
+   3/5 in card 1). `npm run eval:tool-use -- --suite
+   test/evals/tool-use/core.eval.json --canary` runs the whole 5-case slice.
 6. **No secret or vault data in a commit.**
 
 ## Route

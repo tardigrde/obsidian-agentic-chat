@@ -17,6 +17,8 @@ export type RunOptions = {
   env?: NodeJS.ProcessEnv;
   allowFailure?: boolean;
   quiet?: boolean;
+  /** Wall-time cap: SIGTERM the child (SIGKILL 5 s later) and reject with this message's text. */
+  timeout?: { ms: number; message: string };
 };
 
 export const BINARY_DIRS = ["/usr/bin", "/usr/local/bin", "/bin"];
@@ -106,8 +108,31 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
       env: { ...process.env, ...options.env },
       stdio: options.quiet ? ["ignore", "ignore", "ignore"] : "inherit",
     });
-    child.on("error", reject);
+    let timedOut = false;
+    let killTimer: NodeJS.Timeout | undefined;
+    const timer = options.timeout
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGTERM");
+          // A child that ignores SIGTERM still ends.
+          killTimer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+          killTimer.unref();
+        }, options.timeout.ms)
+      : undefined;
+    const clearTimers = () => {
+      if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+    };
+    child.on("error", (error) => {
+      clearTimers();
+      reject(error);
+    });
     child.on("close", (code) => {
+      clearTimers();
+      if (timedOut && options.timeout) {
+        reject(new Error(options.timeout.message));
+        return;
+      }
       const exit = code ?? 1; // NOSONAR:S7760 -- close passes null on signal termination; a default parameter only catches undefined.
       if (exit !== 0 && !options.allowFailure) {
         reject(new Error(`${command} ${args.join(" ")} exited ${exit}`));

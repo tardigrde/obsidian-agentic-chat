@@ -23,12 +23,39 @@ export interface SignificanceCase {
   passAllK: number;
   /** 0..1: share of runs that passed. Missing in older baselines. */
   passRate?: number;
+  /** Mean USD per run, for the cost row. */
+  meanUsd?: number;
+  /** Median run time, for the time row. */
+  medianMs?: number;
 }
 
 export interface SignificanceOptions {
   /** Fixed by default so two reads of the same input are byte-identical. */
   seed?: number;
   resamples?: number;
+  /**
+   * Both sides carry billed cost (`costSource: billed`). Otherwise the cost row
+   * says "not compared", the same rule `--compare` uses for its cost axis.
+   */
+  costComparable?: boolean;
+}
+
+/**
+ * A relative change on a cost or time axis, with the same paired case-level
+ * bootstrap as the pass rows. The statistic is a ratio minus 1: total cost
+ * (sum of per-case mean USD) or the median of the per-case median times.
+ */
+export interface AxisSignificance {
+  axis: "cost" | "time";
+  before?: number;
+  after?: number;
+  /** after / before - 1 */
+  change?: number;
+  lower?: number;
+  upper?: number;
+  significant?: boolean;
+  /** Set when the axis was not compared, with the reason. */
+  notCompared?: string;
 }
 
 export type SignificanceMetric = "passAllK" | "passRate";
@@ -69,6 +96,8 @@ export interface SignificanceResult {
   skipped: SkippedCase[];
   warnings: string[];
   metrics: MetricSignificance[];
+  /** Cost and time rows (#392 item 3). */
+  axes: AxisSignificance[];
   /** Only the cases that changed, largest absolute change first. */
   flips: CaseFlip[];
 }
@@ -101,6 +130,7 @@ export function bootstrapCompare(
     skipped: pairing.skipped,
     warnings: [...pairing.warnings],
     metrics: [],
+    axes: [],
     flips: [],
   };
   if (pairing.paired.length === 0) {
@@ -111,7 +141,61 @@ export function bootstrapCompare(
   result.metrics = metrics.rows;
   if (metrics.warning) result.warnings.push(metrics.warning);
   result.flips = buildFlips(pairing.paired);
+  result.axes = [
+    options.costComparable === true
+      ? bootstrapAxis("cost", pairing.paired, (entry) => entry.meanUsd, sum, seed, resamples)
+      : { axis: "cost", notCompared: "the cost source differs or is not billed on both sides" },
+    bootstrapAxis("time", pairing.paired, (entry) => entry.medianMs, medianOf, seed, resamples),
+  ];
   return result;
+}
+
+function sum(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+function medianOf(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
+/** Paired bootstrap of `aggregate(after) / aggregate(before) - 1` over cases that carry the field on both sides. */
+function bootstrapAxis(
+  axis: "cost" | "time",
+  paired: readonly PairedCase[],
+  pick: (entry: SignificanceCase) => number | undefined,
+  aggregate: (values: readonly number[]) => number,
+  seed: number,
+  resamples: number,
+): AxisSignificance {
+  const usable = paired.filter(({ before: left, after: right }) => isScore(pick(left)) && isScore(pick(right)));
+  if (usable.length === 0) return { axis, notCompared: `no paired case carries ${axis === "cost" ? "meanUsd" : "medianMs"}` };
+  const before = usable.map(({ before: entry }) => pick(entry) as number);
+  const after = usable.map(({ after: entry }) => pick(entry) as number);
+  const base = aggregate(before);
+  if (Number.isNaN(base) || base <= 0) return { axis, notCompared: `the baseline ${axis} is zero` };
+  const random = mulberry32(seed);
+  const changes: number[] = [];
+  for (let draw = 0; draw < resamples; draw += 1) {
+    const picks = usable.map(() => Math.floor(random() * usable.length));
+    const left = picks.map((index) => before[index]);
+    const right = picks.map((index) => after[index]);
+    const leftValue = aggregate(left);
+    if (leftValue > 0) changes.push(aggregate(right) / leftValue - 1);
+  }
+  changes.sort((leftValue, rightValue) => leftValue - rightValue);
+  const lower = changes[Math.floor(0.025 * (changes.length - 1))];
+  const upper = changes[Math.ceil(0.975 * (changes.length - 1))];
+  return {
+    axis,
+    before: base,
+    after: aggregate(after),
+    change: aggregate(after) / base - 1,
+    lower,
+    upper,
+    significant: lower > 0 || upper < 0,
+  };
 }
 
 interface CaseIndex {
@@ -314,6 +398,7 @@ export function formatSignificance(
       `| ${label} | ${percent(metric.before)} | ${percent(metric.after)} | ${points(metric.difference)} | ${interval(metric.lower, metric.upper)} | ${verdict(metric)} |`,
     );
   }
+  for (const axis of result.axes) lines.push(axisRow(axis));
   if (excluded.length > 0) {
     lines.push("", `Excluded: ${excluded.join(", ")}.`);
   }
@@ -333,6 +418,16 @@ export function formatSignificance(
     lines.push("", "No case changed.");
   }
   return `${lines.join("\n")}\n`;
+}
+
+function axisRow(axis: AxisSignificance): string {
+  const name = axis.axis === "cost" ? "total cost" : "median case time";
+  if (axis.notCompared || axis.change === undefined) {
+    return `| ${name} | - | - | - | - | not compared (${axis.notCompared ?? "no data"}) |`;
+  }
+  const value = (number: number) => (axis.axis === "cost" ? `$${number.toFixed(4)}` : `${(number / 1000).toFixed(1)}s`);
+  const pct = (number: number) => trimmed((number * 100).toFixed(1));
+  return `| ${name} | ${value(axis.before as number)} | ${value(axis.after as number)} | ${signed(axis.change, pct)}% | [${signed(axis.lower as number, pct)}, ${signed(axis.upper as number, pct)}]% | ${axis.significant ? "significant (CI excludes 0)" : "not significant (CI includes 0)"} |`;
 }
 
 function verdict(metric: MetricSignificance): string {

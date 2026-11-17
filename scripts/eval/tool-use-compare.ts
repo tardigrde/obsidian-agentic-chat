@@ -19,6 +19,12 @@ import {
 const REGRESSION_THRESHOLD = 0.2;
 
 /**
+ * Below this many runs a pass-rate drop cannot be told from noise:
+ * P(3/3 | p = 0.8) = 0.51. Such a flag says so and names the A/B command.
+ */
+export const MIN_RUNS_FOR_PASS_FLAG = 5;
+
+/**
  * For the Pareto verdict, a cost or time change smaller than this share of the
  * baseline counts as "same": one 75-run sample moves by a few percent.
  */
@@ -103,17 +109,23 @@ interface CaseMetrics {
   partialScore?: number;
   meanTokens?: number;
   meanUsd?: number;
+  medianUsd?: number;
   medianMs?: number;
+  /** Executed runs behind the rates; undefined in an old baseline. */
+  runs?: number;
   thinking: Partial<CaseThinking>;
+  /** The file has no per-run cost, so Median USD repeats the mean. */
+  medianFromMean?: boolean;
 }
 
-const CASE_COLUMNS: ReadonlyArray<[label: string, key: Exclude<keyof CaseMetrics, "thinking">, format: Format]> = [
+const CASE_COLUMNS: ReadonlyArray<[label: string, key: Exclude<keyof CaseMetrics, "thinking" | "runs" | "medianFromMean">, format: Format]> = [
   ["Pass rate", "passRate", percent],
   ["pass^K", "passAllK", whole],
   ["Partial score", "partialScore", ratio],
   ["Median s", "medianMs", seconds],
   ["Mean tokens", "meanTokens", whole],
   ["Mean USD", "meanUsd", usd],
+  ["Median USD", "medianUsd", usd],
 ];
 
 const OVERALL_ROWS: ReadonlyArray<[label: string, key: string, format: Format]> = [
@@ -153,6 +165,8 @@ export function formatComparison(baseline: unknown, candidate: unknown): string 
     lines.push(`| ${label} | ${cell(left, format)} | ${cell(right, format)} | ${change(left, right, format)} |`);
   }
   lines.push("", formatPareto(paretoCompare(baseline, candidate)));
+  const robust = robustCostNote(before, after, costComparable);
+  if (robust) lines.push("", robust);
   lines.push(
     "",
     "## Cases",
@@ -160,15 +174,77 @@ export function formatComparison(baseline: unknown, candidate: unknown): string 
     `| Case | Thinking | ${CASE_COLUMNS.map(([label]) => label).join(" | ")} | Flags |`,
     `|---|---|${CASE_COLUMNS.map(() => "---|").join("")}---|`,
   );
+  const thinPassFlags: string[] = [];
   for (const id of ids) {
     const left = before.get(id);
     const right = after.get(id);
     const cells = CASE_COLUMNS.map(([, key, format]) => delta(left?.[key], right?.[key], format));
+    const flags = caseFlags(left, right, costComparable);
+    if (flags.thinPass) thinPassFlags.push(id);
+    lines.push(`| ${id} | ${compareThinking(left, right)} | ${cells.join(" | ")} | ${flags.text} |`);
+  }
+  const meanOnly = ids.filter((id) => before.get(id)?.medianFromMean || after.get(id)?.medianFromMean);
+  if (meanOnly.length > 0) {
+    lines.push("", `Median USD repeats the mean for ${meanOnly.length} case(s): the file has no per-run cost (an older baseline).`);
+  }
+  if (thinPassFlags.length > 0) {
     lines.push(
-      `| ${id} | ${compareThinking(left, right)} | ${cells.join(" | ")} | ${caseFlags(left, right, costComparable)} |`,
+      "",
+      `${thinPassFlags.length} pass flag(s) rest on fewer than ${MIN_RUNS_FOR_PASS_FLAG} runs. Check them base vs head before you act:`,
+      "",
+      "```bash",
+      abCommand(thinPassFlags),
+      "```",
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+/** The one command that re-checks flagged cases at a run count that can separate signal from noise. */
+export function abCommand(caseIds: readonly string[], runs = MIN_RUNS_FOR_PASS_FLAG): string {
+  return `npm run eval:ab -- --case ${caseIds.join(",")} --runs ${runs}`;
+}
+
+/**
+ * Mean cost is pulled by one long run (create.hard.weekly: 10, 35, 19 tool
+ * calls). Sum the per-case medians as a robust second read; when it moves the
+ * other way from the mean, say so, because the Pareto cost axis reads the mean.
+ */
+function robustCostNote(
+  before: ReadonlyMap<string, CaseMetrics>,
+  after: ReadonlyMap<string, CaseMetrics>,
+  costComparable: boolean,
+): string | null {
+  if (!costComparable) return null;
+  const shared = [...before.keys()].filter((id) => after.has(id));
+  if (shared.some((id) => before.get(id)?.medianFromMean || after.get(id)?.medianFromMean)) {
+    return "Robust cost: not compared; a side has no per-run cost, so its medians would only repeat the means.";
+  }
+  const sum = (side: ReadonlyMap<string, CaseMetrics>, key: "meanUsd" | "medianUsd"): number | undefined => {
+    let total = 0;
+    for (const id of shared) {
+      const value = side.get(id)?.[key];
+      if (value === undefined) return undefined;
+      total += value;
+    }
+    return total;
+  };
+  const meanBefore = sum(before, "meanUsd");
+  const meanAfter = sum(after, "meanUsd");
+  const medianBefore = sum(before, "medianUsd");
+  const medianAfter = sum(after, "medianUsd");
+  if ([meanBefore, meanAfter, medianBefore, medianAfter].includes(undefined)) return null;
+  const meanMove = Math.sign((meanAfter as number) - (meanBefore as number));
+  const medianMove = Math.sign((medianAfter as number) - (medianBefore as number));
+  const name = (move: number) => {
+    if (move > 0) return "up";
+    return move < 0 ? "down" : "flat";
+  };
+  const line = `Robust cost: per-case medians sum ${usd(medianBefore as number)} -> ${usd(medianAfter as number)} (${name(medianMove)}); means sum ${usd(meanBefore as number)} -> ${usd(meanAfter as number)} (${name(meanMove)}).`;
+  if (meanMove !== 0 && medianMove !== 0 && meanMove !== medianMove) {
+    return `${line} The mean and the median disagree on the direction: a few long runs drive the cost axis; read the cost verdict with care.`;
+  }
+  return line;
 }
 
 /** Both sides are `billed` or both are `table`. `mixed`, `none`, and an old file with no field are not comparable. */
@@ -232,18 +308,24 @@ function caseFlags(
   before: CaseMetrics | undefined,
   after: CaseMetrics | undefined,
   costComparable: boolean,
-): string {
-  if (!before) return "new case";
-  if (!after) return "removed case";
+): { text: string; thinPass: boolean } {
+  if (!before) return { text: "new case", thinPass: false };
+  if (!after) return { text: "removed case", thinPass: false };
   const flags: string[] = [];
+  let thinPass = false;
   const cost = growth(before.meanUsd, after.meanUsd);
   if (costComparable && cost > REGRESSION_THRESHOLD) flags.push(`cost +${Math.round(cost * 100)}%`);
   const time = growth(before.medianMs, after.medianMs);
   if (time > REGRESSION_THRESHOLD) flags.push(`time +${Math.round(time * 100)}%`);
   if (before.passRate !== undefined && after.passRate !== undefined && after.passRate < before.passRate) {
-    flags.push(`pass -${Math.round((before.passRate - after.passRate) * 100)}`);
+    const drop = `pass -${Math.round((before.passRate - after.passRate) * 100)}`;
+    const runs = Math.min(before.runs ?? Number.POSITIVE_INFINITY, after.runs ?? Number.POSITIVE_INFINITY);
+    if (Number.isFinite(runs) && runs < MIN_RUNS_FOR_PASS_FLAG) {
+      thinPass = true;
+      flags.push(`${drop} (n=${runs}, check with eval:ab)`);
+    } else flags.push(drop);
   }
-  return flags.length > 0 ? flags.join("; ") : "-";
+  return { text: flags.length > 0 ? flags.join("; ") : "-", thinPass };
 }
 
 /** Relative increase over a positive baseline; 0 when it cannot be computed. */
@@ -270,6 +352,16 @@ function delta(before: number | undefined, after: number | undefined, format: Fo
   return `${format(before)} -> ${format(after)} (${change(before, after, format)})`;
 }
 
+/** An older file has no per-case median: the run list gives one, else the mean stands in and says so. */
+function fillMedianUsd(metrics: CaseMetrics, entry: Record<string, unknown>): void {
+  if (metrics.medianUsd !== undefined) return;
+  metrics.medianUsd = medianRunUsd(entry);
+  if (metrics.medianUsd === undefined && metrics.meanUsd !== undefined) {
+    metrics.medianUsd = metrics.meanUsd;
+    metrics.medianFromMean = true;
+  }
+}
+
 function caseMetrics(input: unknown): Map<string, CaseMetrics> {
   const output = new Map<string, CaseMetrics>();
   if (!isRecord(input) || !Array.isArray(input.cases)) return output;
@@ -285,9 +377,36 @@ function caseMetrics(input: unknown): Map<string, CaseMetrics> {
       },
     };
     for (const [, key] of CASE_COLUMNS) metrics[key] = numberValue(entry[key]);
+    metrics.runs = caseRuns(input, entry);
+    fillMedianUsd(metrics, entry);
     output.set(entry.id, metrics);
   }
   return output;
+}
+
+/** Executed runs of one case: the field, the run list, or the file-wide average for an old baseline. */
+function caseRuns(input: Record<string, unknown>, entry: Record<string, unknown>): number | undefined {
+  const executed = numberValue(entry.executed);
+  if (executed !== undefined) return executed;
+  if (Array.isArray(entry.runResults)) {
+    return entry.runResults.filter((run) => isRecord(run) && run.status !== "skipped-budget").length;
+  }
+  const overall = overallOf(input);
+  const runs = numberValue(overall.runs);
+  const cases = numberValue(overall.cases);
+  return runs !== undefined && cases ? Math.round(runs / cases) : undefined;
+}
+
+function medianRunUsd(entry: Record<string, unknown>): number | undefined {
+  if (!Array.isArray(entry.runResults)) return undefined;
+  const values = entry.runResults
+    .filter((run): run is Record<string, unknown> => isRecord(run) && run.status !== "skipped-budget")
+    .map((run) => numberValue(run.usd))
+    .filter((value): value is number => value !== undefined)
+    .sort((left, right) => left - right);
+  if (values.length === 0) return undefined;
+  const middle = Math.floor(values.length / 2);
+  return values.length % 2 === 0 ? (values[middle - 1] + values[middle]) / 2 : values[middle];
 }
 
 function overallOf(input: unknown): Record<string, unknown> {

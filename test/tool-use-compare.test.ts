@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatComparison, paretoCompare } from "../scripts/eval/tool-use-compare";
+import { abCommand, formatComparison, paretoCompare } from "../scripts/eval/tool-use-compare";
 
 const caseRow = (id: string, overrides: Record<string, number> = {}) => ({
   id,
@@ -64,6 +64,57 @@ describe("tool-use comparison", () => {
     expect(text).toMatch(/\| case\.cost \|.*\| cost \+30% \|/);
     expect(text).toMatch(/\| case\.steady \|.*\| - \|/);
     expect(text).toMatch(/\| case\.pass \|.*\| pass -10 \|/);
+  });
+
+  it("marks a pass drop at n=3 as thin and prints one eval:ab command for the flagged cases (#392 item 2)", () => {
+    const text = formatComparison(
+      { cases: [caseRow("organize.easy.invoice", { executed: 3 }), caseRow("tools.easy.search", { executed: 3 }), caseRow("edit.easy.typo", { executed: 3 })] },
+      {
+        cases: [
+          caseRow("organize.easy.invoice", { executed: 3, passRate: 2 / 3 }),
+          caseRow("tools.easy.search", { executed: 3, passRate: 1 / 3 }),
+          caseRow("edit.easy.typo", { executed: 3 }),
+        ],
+      },
+    );
+    expect(text).toMatch(/\| organize\.easy\.invoice \|.*\| pass -33 \(n=3, check with eval:ab\) \|/);
+    expect(text).toMatch(/\| tools\.easy\.search \|.*\| pass -67 \(n=3, check with eval:ab\) \|/);
+    expect(text).toContain("npm run eval:ab -- --case organize.easy.invoice,tools.easy.search --runs 5");
+    expect(text).not.toContain("edit.easy.typo --runs");
+  });
+
+  it("keeps a bare pass flag at n>=5, and reads n from an old baseline's overall", () => {
+    const five = formatComparison({ cases: [caseRow("a", { executed: 5 })] }, { cases: [caseRow("a", { executed: 5, passRate: 0.8 })] });
+    expect(five).toMatch(/\| a \|.*\| pass -20 \|/);
+    expect(five).not.toContain("eval:ab");
+    const old = formatComparison(
+      { overall: { runs: 81, cases: 27 }, cases: [caseRow("a")] },
+      { cases: [caseRow("a", { executed: 3, passRate: 2 / 3 })] },
+    );
+    expect(old).toContain("pass -33 (n=3, check with eval:ab)");
+    expect(abCommand(["x"], 7)).toBe("npm run eval:ab -- --case x --runs 7");
+  });
+
+  it("shows the median run cost and notes when the mean and the median move in opposite directions (#392 item 3)", () => {
+    const runs = (...usd: number[]) => usd.map((value, index) => ({ run: index + 1, status: "pass", usd: value }));
+    const base = { costSource: "billed", cases: [{ ...caseRow("long"), meanUsd: 0.004, runResults: runs(0.003, 0.004, 0.005) }] };
+    const head = { costSource: "billed", cases: [{ ...caseRow("long"), meanUsd: 0.006, runResults: runs(0.002, 0.002, 0.014) }] };
+    const text = formatComparison(base, head);
+    expect(text).toContain("$0.004000 -> $0.002000 (-$0.002000)");
+    expect(text).toContain("The mean and the median disagree on the direction");
+    const same = formatComparison(base, { costSource: "billed", cases: [{ ...caseRow("long"), meanUsd: 0.005, runResults: runs(0.004, 0.005, 0.006) }] });
+    expect(same).toContain("Robust cost: per-case medians sum");
+    expect(same).not.toContain("disagree");
+  });
+
+  it("says when Median USD only repeats the mean (an old baseline with no per-run cost)", () => {
+    const text = formatComparison(
+      { costSource: "billed", cases: [{ ...caseRow("old"), meanUsd: 0.004 }] },
+      { costSource: "billed", cases: [{ ...caseRow("old"), meanUsd: 0.005, runResults: [{ run: 1, status: "pass", usd: 0.005 }] }] },
+    );
+    expect(text).toContain("Median USD repeats the mean for 1 case(s)");
+    expect(text).toContain("Robust cost: not compared");
+    expect(text).not.toContain("per-case medians sum");
   });
 
   describe("Pareto verdict on correctness, cost, and time", () => {
