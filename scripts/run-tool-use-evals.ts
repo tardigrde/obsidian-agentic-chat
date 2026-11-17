@@ -15,6 +15,7 @@ import { parseArgs } from "node:util";
 import { startFixtureServer, type FixtureServer } from "./eval/fixture-server";
 import { startFixtureMcpServer, type FixtureMcpServer } from "./eval/fixture-mcp-server";
 import { writeBaselineFiles, writeBaselineFromSummary } from "./eval/baseline-files";
+import { inhibitSleep } from "./eval/run-loop";
 import { bootstrapCompare, formatSignificance, type SignificanceCase } from "./eval/significance";
 import { formatComparison } from "./eval/tool-use-compare";
 import {
@@ -266,6 +267,8 @@ async function main(): Promise<void> {
     process.stdout.write(formatConsoleSummary(summary, paths));
 
     if (specExitCode !== 0) {
+      const died = summary.cases.flatMap((entry) => entry.runResults).find((run) => run.error?.startsWith("harness died:"));
+      if (died) throw new Error(`${died.error}. The rest of the plan was not run; the summary is incomplete.`);
       throw new Error(`The WDIO tool-use spec exited with code ${specExitCode}. The summary is incomplete.`);
     }
     if (args.writeBaseline) {
@@ -431,7 +434,9 @@ function runSpec(options: {
   timeoutMs: number;
 }): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "test:e2e"], {
+    // A laptop sleep kills the Obsidian session (#392 item 5): block it for the run.
+    const [command, commandArgs] = inhibitSleep(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "test:e2e"], "agentic-chat eval");
+    const child = spawn(command, commandArgs, {
       stdio: "inherit",
       env: {
         ...process.env,
