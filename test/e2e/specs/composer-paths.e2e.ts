@@ -246,15 +246,16 @@ describe("agentic-chat composer paths", function () {
         const turn = banner?.closest(".agentic-chat-assistant");
         return Array.from(turn?.querySelectorAll(".agentic-chat-reasoning-body") ?? []).map((body) => (body.textContent ?? "").trim());
       });
-    await browser.pause(300);
-    expect(await readTrace()).toEqual(["I should check the config first."]);
+    await browser.waitUntil(async () => JSON.stringify(await readTrace()) === JSON.stringify(["I should check the config first."]), {
+      timeout: 3_000,
+      timeoutMsg: "the live turn did not render exactly one reasoning trace",
+    });
     // History replay renders the same turn in one synchronous block.
     await browser.executeObsidian(({ app }) => {
       const leaf = app.workspace.getLeavesOfType("agentic-chat-chat-view")[0];
       const view = leaf?.view as unknown as { renderTranscript: (m: unknown[]) => void; service: { getMessages: () => unknown[] } };
       view.renderTranscript(view.service.getMessages());
     });
-    await browser.pause(300);
     expect(await readTrace()).toEqual(["I should check the config first."]);
   });
 

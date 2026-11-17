@@ -76,4 +76,36 @@ describe("createWindowE2EStreamFn", () => {
     expect(target.__AGENTIC_CHAT_E2E_CALLS__).toBe(2);
     expect(target.__AGENTIC_CHAT_E2E_CALL_LOG__?.map((call) => call.index)).toEqual([0, 1]);
   });
+
+  it("reads the window queue on every call, so a spec can install a fresh queue per test", async () => {
+    const target: E2EStreamTarget = {
+      __AGENTIC_CHAT_E2E_TURNS__: [replayTextTurn("old queue first"), replayTextTurn("old queue second")],
+    };
+    const streamFn = createWindowE2EStreamFn({ enabled: true, target });
+    expect((await (await streamFn!(model(), normalizeContext({ messages: [] }))).result()).content).toEqual([
+      { type: "text", text: "old queue first" },
+    ]);
+
+    // What installScriptedTurns does between tests: a new array, counter at 0.
+    target.__AGENTIC_CHAT_E2E_TURNS__ = [replayTextTurn("new queue first")];
+    target.__AGENTIC_CHAT_E2E_CALLS__ = 0;
+    target.__AGENTIC_CHAT_E2E_CALL_LOG__ = [];
+
+    expect((await (await streamFn!(model(), normalizeContext({ messages: [] }))).result()).content).toEqual([
+      { type: "text", text: "new queue first" },
+    ]);
+    expect(target.__AGENTIC_CHAT_E2E_CALL_LOG__?.map((call) => call.index)).toEqual([0]);
+  });
+
+  it("shares one call counter between two stream functions (two chat tabs)", async () => {
+    const target: E2EStreamTarget = {
+      __AGENTIC_CHAT_E2E_TURNS__: [replayTextTurn("tab one"), replayTextTurn("tab two"), replayTextTurn("tab one again")],
+    };
+    const tabOne = createWindowE2EStreamFn({ enabled: true, target });
+    const tabTwo = createWindowE2EStreamFn({ enabled: true, target });
+    const text = async (fn: typeof tabOne) => (await (await fn!(model(), normalizeContext({ messages: [] }))).result()).content;
+    expect(await text(tabOne)).toEqual([{ type: "text", text: "tab one" }]);
+    expect(await text(tabTwo)).toEqual([{ type: "text", text: "tab two" }]);
+    expect(await text(tabOne)).toEqual([{ type: "text", text: "tab one again" }]);
+  });
 });

@@ -1,6 +1,7 @@
 import { browser, expect, $ } from "@wdio/globals";
 import { after, before, describe, it } from "mocha";
-import { clearScriptedTurns, installScriptedTurns } from "../support/scripted-stream";
+import { waitForComposerReady } from "../support/layout";
+import { clearScriptedTurns, installScriptedTurns, releaseScriptedTurns } from "../support/scripted-stream";
 
 async function openChat(): Promise<void> {
   await browser.executeObsidianCommand("agentic-chat:open-chat");
@@ -29,6 +30,7 @@ async function configureSafe(): Promise<void> {
 }
 
 async function sendPrompt(text: string): Promise<void> {
+  await waitForComposerReady();
   await browser.execute((msg) => {
     const textarea = document.querySelector<HTMLTextAreaElement>(".agentic-chat-input");
     const send = document.querySelector<HTMLButtonElement>(".agentic-chat-send");
@@ -94,13 +96,13 @@ describe("two-tab Stop", function () {
       {
         label: "tab one slow",
         stopReason: "stop",
-        delayMs: 12_000,
+        hold: true,
         content: [{ type: "text", text: "Tab one finished" }],
       },
       {
         label: "tab two slow",
         stopReason: "stop",
-        delayMs: 6_000,
+        hold: true,
         content: [{ type: "text", text: "Tab two should stop" }],
       },
     ]);
@@ -114,7 +116,7 @@ describe("two-tab Stop", function () {
     await sendPrompt("start tab one slow turn");
     const tabOneStop = await $(".agentic-chat-stop");
     await tabOneStop.waitForDisplayed({ timeout: 5_000, timeoutMsg: "tab one never started streaming" });
-    // The new tab's stream controller snapshots the call counter at construction.
+    // Tab one's call takes the first scripted turn; tab two's call takes the next.
     await browser.waitUntil(
       async () =>
         await browser.execute(() => {
@@ -133,8 +135,6 @@ describe("two-tab Stop", function () {
         )) as unknown as number) >= 2,
       { timeout: 5_000 },
     );
-    await browser.pause(1_000);
-
     await selectTab(1);
     await waitForComposerIdle();
     await sendPrompt("start tab two slow turn");
@@ -151,17 +151,23 @@ describe("two-tab Stop", function () {
     await stop.waitForDisplayed({ timeout: 5_000 });
     await stop.click();
 
-    // Tab two's scripted answer is due at 6s. If Stop did nothing, it lands.
-    await selectTab(1);
-    await browser.pause(7_000);
-    expect(await tabTranscript(1)).not.toContain("Tab two should stop");
+    // Both turns are held. Stop must end tab two only.
+    await browser.waitUntil(
+      async () => {
+        const states = await streamStates();
+        return states[0] === true && states[1] === false;
+      },
+      { timeout: 5_000, timeoutMsg: "Stop did not end tab two alone" },
+    );
 
-    // Tab one was never stopped; its answer must still arrive.
+    // Release both held answers: tab one's lands, the stopped tab's does not.
+    await releaseScriptedTurns(true);
     await selectTab(0);
     await browser.waitUntil(
       async () => (await tabTranscript(0)).includes("Tab one finished"),
       { timeout: 15_000, timeoutMsg: "the untouched tab's turn did not finish" },
     );
+    expect(await tabTranscript(1)).not.toContain("Tab two should stop");
 
     // Leave no stream running for the next spec.
     await abortTab(0);

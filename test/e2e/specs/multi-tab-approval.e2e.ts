@@ -102,13 +102,14 @@ describe("multi-tab background approval (effort + notify+label)", function () {
       send.click();
     }, "trigger multi-tab write");
 
-    // Quickly switch to Tab2 before approval resolves — background approval should not steal focus
-    await browser.pause(300);
+    // Switch to Tab2 once tab one's turn has started, before approval resolves:
+    // the background approval must not steal focus.
+    await browser.waitUntil(async () => await $(".agentic-chat-stop").isDisplayed(), {
+      timeout: 5_000,
+      timeoutMsg: "tab one's turn did not start",
+    });
     await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.click());
     await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.classList.contains("is-active")), { timeout: 2_000 });
-    // Give tool time to hit approval gate (tool has 1200ms delay)
-    await browser.pause(1300);
-
     const modal = await $(".agentic-chat-approval");
     await modal.waitForExist({ timeout: 10_000 });
 
@@ -139,9 +140,13 @@ describe("multi-tab background approval (effort + notify+label)", function () {
       return exists;
     }, { timeout: 10_000 });
 
-    await browser.pause(300);
-    const tab1ClassAfter = await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[0]?.className ?? "");
-    expect(tab1ClassAfter).not.toContain("is-needs-approval");
+    await browser.waitUntil(
+      async () =>
+        !(await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[0]?.className ?? "")).includes(
+          "is-needs-approval",
+        ),
+      { timeout: 5_000, timeoutMsg: "the approval badge stayed on tab one" },
+    );
   });
 
   it("clears pending modal and badge when background tab is closed", async function () {
@@ -157,10 +162,12 @@ describe("multi-tab background approval (effort + notify+label)", function () {
       send!.click();
     }, "trigger close while pending");
 
-    await browser.pause(300);
+    await browser.waitUntil(async () => await $(".agentic-chat-stop").isDisplayed(), {
+      timeout: 5_000,
+      timeoutMsg: "tab one's turn did not start",
+    });
     await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.click());
     await browser.waitUntil(async () => await browser.execute(() => document.querySelectorAll<HTMLElement>(".agentic-chat-tab")[1]?.classList.contains("is-active")), { timeout: 2_000 });
-    await browser.pause(2000);
     await $(".agentic-chat-approval").waitForExist({ timeout: 12_000 });
 
     // Close Tab1 while its approval modal is open — use direct JS (modal blocks tab clicks) to close tab, modal should close
