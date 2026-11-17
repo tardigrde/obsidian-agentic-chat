@@ -221,10 +221,14 @@ function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
+/** A failed assertion was printed (Vitest/Chai and node:assert both name it). */
+const ASSERTION_FAILED = /\bAssertionError\b/;
+
 function nonAssertionRedMarker(output, { testChanged = true } = {}) {
-  const markers = testChanged
-    ? [...NON_ASSERTION_RED_MARKERS, ...CHANGED_TEST_RED_MARKERS]
-    : NON_ASSERTION_RED_MARKERS;
+  // A TypeError next to a failed assertion (a logged warning, a second test)
+  // does not erase the assertion: the red still reached the behavior.
+  const crashOnly = testChanged && !ASSERTION_FAILED.test(output);
+  const markers = crashOnly ? [...NON_ASSERTION_RED_MARKERS, ...CHANGED_TEST_RED_MARKERS] : NON_ASSERTION_RED_MARKERS;
   const match = markers.find((marker) => marker.pattern.test(output));
   return match?.label;
 }
@@ -527,7 +531,7 @@ function selfTest() {
         '  console.log("\\u001b[2mTests\\u001b[22m \\u001b[31m1 passed\\u001b[39m (1)");',
         "} catch (error) {",
         '  console.log("\\u001b[2mTests\\u001b[22m \\u001b[31m1 failed\\u001b[39m (1)");',
-        "  console.error(error instanceof Error ? error.message : String(error));",
+        "  console.error(error instanceof Error ? `${error.name}: ${error.message}` : String(error));",
         "  process.exitCode = 1;",
         "}",
         "",
@@ -738,6 +742,44 @@ function selfTest() {
       throw new Error(`self-test product TypeError case failed: ${crash.reason} ${crash.detail ?? ""}`);
     }
 
+    // A changed test whose red run logs a TypeError but also fails a real
+    // assertion: the assertion counts, so this is a witness (#394 review note).
+    const mixedPath = path.join(repo, "src", "mixed.mjs");
+    const mixedTestPath = path.join(repo, "test", "mixed.test.mjs");
+    writeFileSync(mixedPath, "export const total = () => 1;\n");
+    const mixedBase = commit("mixed: total is wrong");
+    writeFileSync(mixedPath, "export const total = () => 2;\n");
+    writeFileSync(
+      mixedTestPath,
+      countedTest([
+        'import { total } from "../src/mixed.mjs";',
+        "function check() {",
+        '  console.error("TypeError: a logged warning from a helper");',
+        "  assert.equal(total(), 2);",
+        "}",
+      ]),
+    );
+    commit("fix total and add its test");
+
+    const mixed = verifyWitness(
+      {
+        base: mixedBase,
+        sources: ["src/mixed.mjs"],
+        testFile: "test/mixed.test.mjs",
+        testCommand: {
+          display: `${process.execPath} test/mixed.test.mjs`,
+          command: process.execPath,
+          args: [mixedTestPath],
+          shell: false,
+        },
+        reportDir: path.join(scratch, "mixed-report"),
+      },
+      repo,
+    );
+    if (mixed.verdict !== "PASS") {
+      throw new Error(`self-test mixed TypeError + assertion case failed: ${mixed.reason} ${mixed.detail ?? ""}`);
+    }
+
     // A fix that deletes a source file: the red side restores it from the base.
     const legacyPath = path.join(repo, "src", "legacy.mjs");
     const legacyTestPath = path.join(repo, "test", "legacy.test.mjs");
@@ -780,6 +822,7 @@ function selfTest() {
     console.log("  setup hook: rejected a red run that died before an assertion");
     console.log("  no count: rejected a red run without a failed test count");
     console.log("  product crash: accepted a TypeError red when the test is unchanged");
+    console.log("  mixed red: accepted a changed test whose red logs a TypeError and fails an assertion");
     console.log("  deleted source: restored a deleted file on the red side");
   } finally {
     rmSync(scratch, { recursive: true, force: true });

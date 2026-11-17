@@ -4,20 +4,28 @@ const configured = process.env.STRYKER_MUTATE
   .filter(Boolean);
 
 /**
- * Mutation gate for the state-machine core. Run it on demand with
- * `npm run mutation`; a local run can narrow it with STRYKER_MUTATE.
+ * Weekly local mutation run on the five UI hot spots (#393 T18): the most-fixed
+ * files. It prints a score per file; it is not a gate (no break threshold).
+ * Narrow or widen it with STRYKER_MUTATE (comma-separated paths).
  */
+export const HOT_SPOTS = [
+  "src/ui/chat-view.ts",
+  "src/ui/approval-modal.ts",
+  "src/main.ts",
+  "src/ui/assistant-bubble.ts",
+  "src/ui/session-list-modal.ts",
+];
+
 export default {
   testRunner: "vitest",
-  mutate: configured?.length
-    ? configured
-    : ["src/agent/loop-guard.ts", "src/agent/session-swap-queue.ts"],
+  mutate: configured?.length ? configured : HOT_SPOTS,
   reporters: ["clear-text", "json"],
   jsonReporter: { fileName: "reports/mutation/mutation.json" },
   coverageAnalysis: "perTest",
   timeoutMS: 60_000,
-  concurrency: 2,
-  thresholds: { high: 85, low: 75, break: 70 },
+  concurrency: 4,
+  // Advisory: the score is printed and never fails the run.
+  thresholds: { high: 80, low: 60, break: null },
   tempDirName: ".stryker-tmp",
   cleanTempDir: true,
   ignorePatterns: [
@@ -25,8 +33,14 @@ export default {
     "logs/**",
     "reports/**",
     "dist/**",
+    ".obsidian-cache",
     ".obsidian-cache/**",
     "node_modules/**",
     ".stryker-tmp/**",
+    ".claude",
+    ".claude/**",
+    ".env",
+    "docs/**",
+    "test/e2e/**",
   ],
 };

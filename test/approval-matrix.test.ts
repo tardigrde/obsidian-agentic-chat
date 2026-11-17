@@ -17,7 +17,7 @@ import { createMcpServerSettings } from "../src/mcp/settings";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import { SubagentRegistry } from "../src/tools/subagent-tool";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 /**
  * First-principles tests for the approval matrix: the composition

@@ -1,9 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { AssistantBubble } from "../src/ui/assistant-bubble";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AssistantBubble } from "../../src/ui/assistant-bubble";
 import type { App, Component } from "obsidian";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { TranscriptView } from "../src/ui/transcript-view";
-import { fakeElement } from "./helpers/fake-dom";
+import { TranscriptView } from "../../src/ui/transcript-view";
 
 class CountingResizeObserver {
   static live = new Set<CountingResizeObserver>();
@@ -25,19 +24,17 @@ class CountingResizeObserver {
 
 afterEach(() => {
   CountingResizeObserver.live.clear();
-  delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
-  delete (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
-  delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
+  vi.unstubAllGlobals();
 });
 
 function useCountingObserver(): void {
-  Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: CountingResizeObserver });
-  Object.defineProperty(globalThis, "requestAnimationFrame", { configurable: true, value: () => 1 });
-  Object.defineProperty(globalThis, "cancelAnimationFrame", { configurable: true, value: () => {} });
+  vi.stubGlobal("ResizeObserver", CountingResizeObserver);
+  vi.stubGlobal("requestAnimationFrame", () => 1);
+  vi.stubGlobal("cancelAnimationFrame", () => {});
 }
 
 function transcript(): TranscriptView {
-  return new TranscriptView(fakeElement() as unknown as HTMLElement, {
+  return new TranscriptView(document.createElement("div"), {
     app: { workspace: {}, vault: {} } as unknown as App,
     component: {} as Component,
     renderEmptyState: () => {},
@@ -50,7 +47,7 @@ function transcript(): TranscriptView {
 describe("AssistantBubble observer lifecycle", () => {
   it("keeps the rail observer on a settled history bubble, so its toggles still resize the rail", () => {
     useCountingObserver();
-    const bubble = new AssistantBubble(fakeElement() as unknown as HTMLElement);
+    const bubble = new AssistantBubble(document.createElement("div"));
     bubble.beginThinking();
 
     // TranscriptView disposes the previous live bubble when the next turn

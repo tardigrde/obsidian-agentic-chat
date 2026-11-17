@@ -11,7 +11,7 @@ import { AgentService } from "../src/agent/agent-service";
 import { chatViewHarness } from "./helpers/chat-view-harness";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS } from "../src/settings-schema";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 import type { AskUserHandler } from "../src/tools/ask-user-tool";
 
 const IMAGE: ImageContent = { type: "image", data: "aW1hZ2U=", mimeType: "image/png" };

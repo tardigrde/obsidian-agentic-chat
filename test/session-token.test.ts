@@ -8,7 +8,7 @@ import { isSummaryMessage } from "../src/agent/compaction";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 /**
  * Race guards around the session token, pinned through the public service API

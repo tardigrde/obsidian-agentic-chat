@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { App, Component } from "obsidian";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { TranscriptView, type TranscriptViewHost } from "../src/ui/transcript-view";
-import { fakeElement, type FakeElement } from "./helpers/fake-dom";
+import { TranscriptView, type TranscriptViewHost } from "../../src/ui/transcript-view";
 
 class NoopResizeObserver {
   constructor(_callback: ResizeObserverCallback) {}
@@ -26,30 +25,25 @@ function host(): TranscriptViewHost {
   };
 }
 
-function snapshotLastAssistant(container: FakeElement): string {
-  const assistant = container.children.at(-1);
+function snapshotLastAssistant(container: HTMLElement): string {
+  const assistant = container.lastElementChild;
   if (!assistant) throw new Error("assistant bubble missing");
-  return assistant.snapshot();
+  return assistant.outerHTML;
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
-  delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
-  delete (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame;
-  delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
+  vi.unstubAllGlobals();
 });
 
 describe("TranscriptView renderer agreement", () => {
   it("renders one message list identically through the live path and history replay", () => {
-    Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: NoopResizeObserver });
-    Object.defineProperty(globalThis, "requestAnimationFrame", {
-      configurable: true,
-      value: (callback: FrameRequestCallback) => {
-        callback(0);
-        return 1;
-      },
+    vi.stubGlobal("ResizeObserver", NoopResizeObserver);
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
     });
-    Object.defineProperty(globalThis, "cancelAnimationFrame", { configurable: true, value: () => {} });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
     vi.spyOn(performance, "now").mockReturnValue(1_000);
 
     const answer = message("assistant", "The answer.", {
@@ -65,14 +59,14 @@ describe("TranscriptView renderer agreement", () => {
     });
     const messages = [message("user", "Hello"), answer];
 
-    const liveEl = fakeElement();
-    const live = new TranscriptView(liveEl as unknown as HTMLElement, host());
+    const liveEl = document.createElement("div");
+    const live = new TranscriptView(liveEl, host());
     live.renderOutgoingUserMessage("Hello", []);
     live.beginAssistantMessage();
     live.finalizeBubble(answer);
 
-    const historyEl = fakeElement();
-    const history = new TranscriptView(historyEl as unknown as HTMLElement, host());
+    const historyEl = document.createElement("div");
+    const history = new TranscriptView(historyEl, host());
     history.renderTranscript(messages);
 
     expect(snapshotLastAssistant(historyEl)).toBe(snapshotLastAssistant(liveEl));

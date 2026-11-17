@@ -16,7 +16,7 @@ import {
   parseDocumentImportProvenance,
 } from "../src/retrieval/document-ingest";
 import { SourceArtifactDeduper } from "../src/retrieval/source-artifacts";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 // Minimal DOMParser polyfill for the Node test environment. The text/html doc
 // mirrors real browser behavior: textContent includes <script>/<style> bodies

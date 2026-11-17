@@ -7,6 +7,8 @@ import {
   appendHistory,
   buildRunResult,
   gitInfo,
+  groupCounts,
+  groupCountsLine,
   historyPath,
   parseVitestJson,
   readHistory,
@@ -170,5 +172,25 @@ describe("history and tests:status", () => {
     });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("No history yet");
+  });
+});
+
+describe("per-group counts", () => {
+  it("counts unit rows by manifest group, keeps unlisted files visible, and prints largest first", () => {
+    const tests = [
+      { file: "test/a.test.ts", status: "passed" as const, durationMs: 5 },
+      { file: "test/a.test.ts", status: "failed" as const, durationMs: 7 },
+      { file: "test/ui/b.test.ts", status: "passed" as const, durationMs: 1 },
+      { file: "test/ui/b.test.ts", status: "passed" as const, durationMs: 1 },
+      { file: "test/ui/b.test.ts", status: "passed" as const, durationMs: 1 },
+      { file: "test/stray.test.ts", status: "skipped" as const },
+    ];
+    const groups = groupCounts(tests, (file) => (file.startsWith("test/ui/") ? "unit-ui-dom" : file === "test/a.test.ts" ? "unit-agent" : undefined));
+    expect(groups).toEqual({
+      "unit-agent": { passed: 1, failed: 1, skipped: 0, total: 2, durationMs: 12 },
+      "unit-ui-dom": { passed: 3, failed: 0, skipped: 0, total: 3, durationMs: 3 },
+      unlisted: { passed: 0, failed: 0, skipped: 1, total: 1, durationMs: 0 },
+    });
+    expect(groupCountsLine(groups)).toBe("unit-ui-dom 3, unit-agent 1 (1 failed), unlisted 0 (1 skipped)");
   });
 });

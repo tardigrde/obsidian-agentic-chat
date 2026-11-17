@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ToolArtifactStore } from "../src/artifacts/tool-artifact-store";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 describe("ToolArtifactStore", () => {
   it("writes and reads plugin-managed artifacts through the DataAdapter", async () => {

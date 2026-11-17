@@ -19,6 +19,7 @@ describe("verify-witness", () => {
       expect(output).toContain("no count: rejected a red run without a failed test count");
       expect(output).toContain("product crash: accepted a TypeError red when the test is unchanged");
       expect(output).toContain("deleted source: restored a deleted file on the red side");
+      expect(output).toContain("mixed red: accepted a changed test whose red logs a TypeError and fails an assertion");
     },
     120_000,
   );

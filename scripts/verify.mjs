@@ -6,7 +6,8 @@ import path from "node:path";
 import process from "node:process";
 import { createLineRedactor, createRedactor } from "./redact-log.mjs";
 import { LANE_NAMES, RETIRED_LANES, lanes, usage } from "./verify-lanes.mjs";
-import { appendHistory, buildRunResult, gitInfo, parseVitestJson } from "./lib/run-result.mjs";
+import { appendHistory, buildRunResult, gitInfo, groupCounts, groupCountsLine, parseVitestJson } from "./lib/run-result.mjs";
+import { groupFor, loadManifest } from "./check-test-manifest.mjs";
 
 // Read process.env and .env once. Every child line passes through this.
 const REDACTOR = createRedactor();
@@ -368,12 +369,22 @@ async function writeSummary(results, lane, startedAt, finishedAt, verdict, laneA
     artifacts: [path.relative(process.cwd(), path.join(dir, "summary.json"))],
     git: gitInfo(),
   });
+  const unitTests = envelope.tests ?? [];
+  if (unitTests.length > 0) {
+    try {
+      const manifest = loadManifest();
+      envelope.groups = groupCounts(unitTests, (file) => groupFor(manifest, file)?.id);
+    } catch {
+      // A broken manifest fails `check` on its own; the summary just skips groups.
+    }
+  }
   await writeFile(path.join(dir, "run-result.json"), `${JSON.stringify(envelope, null, 2)}\n`);
   const tierLine = Object.entries(envelope.tiers)
     .filter(([, counts]) => counts.total > 0)
     .map(([tier, counts]) => `${tier} ${counts.passed} passed, ${counts.failed} failed, ${counts.skipped} skipped`)
     .join("; ");
   process.stdout.write(`[verify] mode: ${envelope.mode}; counts: ${tierLine || "no test counts"}\n`);
+  if (envelope.groups) process.stdout.write(`[verify] groups: ${groupCountsLine(envelope.groups)}\n`);
   // History is advisory: a failure to append never changes the verdict.
   if (results.some((result) => result.record !== false) && process.env.AGENTIC_CHAT_HISTORY !== "0") {
     try {

@@ -82,3 +82,16 @@ export interface HistorySummary {
   cost: Array<{ lane: string; startedAt: string; usd: number }>;
 }
 export function summarizeHistory(entries: HistoryLine[], options?: { window?: number }): HistorySummary;
+
+export interface GroupCounts {
+  passed: number;
+  failed: number;
+  skipped: number;
+  total: number;
+  durationMs: number;
+}
+export function groupCounts(
+  tests: Array<{ file: string; status: "passed" | "failed" | "skipped"; durationMs?: number }>,
+  groupOf: (file: string) => string | undefined,
+): Record<string, GroupCounts>;
+export function groupCountsLine(groups: Record<string, GroupCounts>): string;

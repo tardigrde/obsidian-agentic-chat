@@ -15,3 +15,4 @@ export interface EntryPoint {
 
 export function entryPoints(root?: string): EntryPoint[];
 export function checkFeatureMap(root?: string): FeatureMapResult;
+export function formatFeatureMapReport(result: FeatureMapResult): string;

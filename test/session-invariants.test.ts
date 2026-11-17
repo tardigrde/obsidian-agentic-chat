@@ -11,7 +11,7 @@ import { emptyUsage } from "../src/agent/usage";
 import { sumSessionUsage } from "../src/agent/session-usage";
 import { ObsidianSessionManager, SessionWriteRegistry, type SessionDefaults } from "../src/session/session-manager";
 import { replayTextTurn, replayToolCallTurn } from "../src/agent/replay-stream";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 import { runAgentReplay } from "./helpers/agent-replay";
 
 const DEFAULTS: SessionDefaults = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" };

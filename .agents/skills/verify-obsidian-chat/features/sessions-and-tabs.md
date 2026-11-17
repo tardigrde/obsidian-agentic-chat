@@ -47,8 +47,8 @@ await $(".agentic-chat-session-list").waitForExist();
 | Needs-approval tab badge | `src/ui/chat-view.ts#tabLabel` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
 | `x` closes a tab | `src/ui/chat-tabs.ts#onActivate` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` (calls `closeTab`, does not click `x`) | `partial` |
 | Closing the last tab starts a new conversation | `src/ui/chat-tabs.ts#closeTab` | `test/chat-view-tabs.test.ts#starts a new conversation instead of closing the only tab` (unit only) | `partial` |
-| Header New chat button | `src/ui/chat-view.ts#startNewConversation` | no committed check | `NONE` |
-| Header history button | `src/ui/chat-view.ts#buildLayout` | no committed check | `NONE` |
+| Header New chat button | `src/ui/chat-view.ts#startNewConversation` | `test/ui/chat-sessions.test.ts#history lists the earlier conversation and loading it restores the transcript` (happy-dom) | `partial` |
+| Header history button | `src/ui/chat-view.ts#buildLayout` | `test/ui/chat-sessions.test.ts#history lists the earlier conversation and loading it restores the transcript` (happy-dom) | `partial` |
 | `/new` | `src/ui/chat-turn.ts#dispatchPrompt` | `test/session-actions.test.ts#makeActions` (unit only) | `partial` |
 | `/sessions` opens history | `src/ui/chat-turn.ts#dispatchPrompt` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |
 | Search conversations | `src/ui/session-list-modal.ts#onOpen` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |

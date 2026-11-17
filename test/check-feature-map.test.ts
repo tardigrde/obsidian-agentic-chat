@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { checkFeatureMap, formatFeatureMapReport } from "../scripts/check-feature-map.mjs";
 
 const FEATURES = path.join(".agents", "skills", "verify-obsidian-chat", "features");
 const SCRIPT = fileURLToPath(new URL("../scripts/check-feature-map.mjs", import.meta.url));
@@ -46,7 +47,15 @@ function journey(proofRow = row(), section = "## Gotchas") {
   ].join("\n");
 }
 
-function run(cwd: string, ...args: string[]) {
+/** The checker in process: same result and report text as the CLI, without a node spawn per case. */
+function run(cwd: string) {
+  const result = checkFeatureMap(cwd);
+  const output = formatFeatureMapReport(result);
+  return { status: result.ok ? 0 : 1, stdout: result.ok ? output : "", stderr: result.ok ? "" : output, output };
+}
+
+/** The real CLI, once: proves the entry point and its exit code. */
+function runCli(cwd: string, ...args: string[]) {
   const result = spawnSync(process.execPath, [SCRIPT, ...args], {
     cwd,
     encoding: "utf8",
@@ -80,7 +89,7 @@ describe("check-feature-map", () => {
   });
 
   it("accepts the committed map", () => {
-    const result = run(process.cwd());
+    const result = runCli(process.cwd());
     expect(result.status).toBe(0);
     expect(result.output).toContain("feature map: PASS");
     expect(result.output).toMatch(/\(\d+ journeys, \d+ rows, \d+ refs\)/);
@@ -240,6 +249,23 @@ describe("check-feature-map", () => {
       journey(row("src/a.ts#alpha", "`test/replay.test.ts#runAgentReplay`")),
     );
     expect(run(root).status).toBe(0);
+  });
+
+  it("accepts a test/ui file that mounts the real view, but not the same import elsewhere", () => {
+    const features = path.join(root, FEATURES);
+    const mounted = 'import { mountChatView } from "./support/mount-chat-view";\nit("mounted flow", () => {});\n';
+    mkdirSync(path.join(root, "test", "ui"), { recursive: true });
+    writeFileSync(path.join(root, "test", "ui", "flow.test.ts"), mounted);
+    writeFileSync(path.join(features, "sample.md"), journey(row("src/a.ts#alpha", "`test/ui/flow.test.ts#mounted flow`")));
+    expect(run(root).status).toBe(0);
+
+    writeFileSync(path.join(root, "test", "flow.test.ts"), mounted);
+    writeFileSync(path.join(features, "sample.md"), journey(row("src/a.ts#alpha", "`test/flow.test.ts#mounted flow`")));
+    expect(run(root).output).toContain("covered needs a deterministic e2e, probe, or replay reference");
+
+    writeFileSync(path.join(root, "test", "ui", "flow.test.ts"), 'import type { mountChatView } from "./support/mount-chat-view";\nit("mounted flow", () => {});\n');
+    writeFileSync(path.join(features, "sample.md"), journey(row("src/a.ts#alpha", "`test/ui/flow.test.ts#mounted flow`")));
+    expect(run(root).output).toContain("covered needs a deterministic e2e, probe, or replay reference");
   });
 
   it("rejects a non-test file as covered proof", () => {

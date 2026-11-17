@@ -5,69 +5,14 @@ import {
   fixupRenderedAssistantImages,
   resolveVaultImageResource,
   rewriteAssistantMarkdownImages,
-} from "../src/ui/assistant-markdown";
+} from "../../src/ui/assistant-markdown";
 
-class FakeEl {
-  readonly children: FakeEl[] = [];
-  private readonly attrs: Record<string, string> = {};
-  private readonly classes = new Set<string>();
-
-  constructor(
-    readonly tagName: string,
-    attrs: Record<string, string> = {},
-    classes: string[] = [],
-  ) {
-    Object.assign(this.attrs, attrs);
-    for (const cls of classes) this.classes.add(cls);
-  }
-
-  getAttribute(name: string): string | null {
-    return this.attrs[name] ?? null;
-  }
-
-  setAttribute(name: string, value: string): void {
-    this.attrs[name] = value;
-  }
-
-  addClass(value: string): void {
-    this.classes.add(value);
-  }
-
-  removeClass(value: string): void {
-    this.classes.delete(value);
-  }
-
-  hasClass(value: string): boolean {
-    return this.classes.has(value);
-  }
-
-  empty(): void {
-    this.children.splice(0);
-  }
-
-  createEl(tag: string, opts?: { attr?: Record<string, string> }): FakeEl {
-    const child = new FakeEl(tag, opts?.attr ?? {});
-    this.children.push(child);
-    return child;
-  }
-
-  querySelector(selector: string): FakeEl | null {
-    return this.querySelectorAll(selector)[0] ?? null;
-  }
-
-  querySelectorAll(selector: string): FakeEl[] {
-    const all = [...this.walk()];
-    if (selector === "img") return all.filter((el) => el.tagName === "img");
-    if (selector === ".internal-embed") return all.filter((el) => el.hasClass("internal-embed"));
-    return [];
-  }
-
-  private *walk(): Generator<FakeEl> {
-    for (const child of this.children) {
-      yield child;
-      yield* child.walk();
-    }
-  }
+/** A real (happy-dom) element with attributes and classes, like the renderer leaves behind. */
+function el(tag: string, attrs: Record<string, string> = {}, classes: string[] = []): HTMLElement {
+  const node = document.createElement(tag);
+  for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
+  node.classList.add(...classes);
+  return node;
 }
 
 function imageFile(path: string): TFile {
@@ -201,13 +146,13 @@ describe("rewriteAssistantMarkdownImages", () => {
 describe("fixupRenderedAssistantImages", () => {
   it("points vault-path img srcs at resource URLs and skips external ones", () => {
     const app = fakeApp({ "images/pic.png": imageFile("images/pic.png") });
-    const root = new FakeEl("div");
-    root.children.push(new FakeEl("img", { src: "images/pic.png" }));
-    root.children.push(new FakeEl("img", { src: "https://example.com/a.png" }));
+    const root = el("div");
+    root.append(el("img", { src: "images/pic.png" }));
+    root.append(el("img", { src: "https://example.com/a.png" }));
 
-    fixupRenderedAssistantImages(root as unknown as HTMLElement, app, "");
+    fixupRenderedAssistantImages(root, app, "");
 
-    const [local, remote] = root.querySelectorAll("img");
+    const [local, remote] = Array.from(root.querySelectorAll("img"));
     expect(local.getAttribute("src")).toBe("app://resource/images/pic.png");
     expect(local.hasClass("agentic-chat-image")).toBe(true);
     expect(remote.getAttribute("src")).toBe("https://example.com/a.png");
@@ -215,10 +160,10 @@ describe("fixupRenderedAssistantImages", () => {
 
   it("materializes unresolved internal image embeds", () => {
     const app = fakeApp({ "pic.png": imageFile("images/pic.png") });
-    const root = new FakeEl("div");
-    root.children.push(new FakeEl("div", { src: "pic.png" }, ["internal-embed", "is-unresolved"]));
+    const root = el("div");
+    root.append(el("div", { src: "pic.png" }, ["internal-embed", "is-unresolved"]));
 
-    fixupRenderedAssistantImages(root as unknown as HTMLElement, app, "notes/active.md");
+    fixupRenderedAssistantImages(root, app, "notes/active.md");
 
     const embed = root.querySelector(".internal-embed");
     expect(embed?.hasClass("is-unresolved")).toBe(false);
@@ -228,13 +173,13 @@ describe("fixupRenderedAssistantImages", () => {
 
   it("leaves non-image and unresolvable embeds alone", () => {
     const app = fakeApp();
-    const root = new FakeEl("div");
-    root.children.push(new FakeEl("div", { src: "note.md" }, ["internal-embed", "is-unresolved"]));
-    root.children.push(new FakeEl("div", { src: "gone.png" }, ["internal-embed", "is-unresolved"]));
+    const root = el("div");
+    root.append(el("div", { src: "note.md" }, ["internal-embed", "is-unresolved"]));
+    root.append(el("div", { src: "gone.png" }, ["internal-embed", "is-unresolved"]));
 
-    fixupRenderedAssistantImages(root as unknown as HTMLElement, app, "");
+    fixupRenderedAssistantImages(root, app, "");
 
-    for (const embed of root.querySelectorAll(".internal-embed")) {
+    for (const embed of Array.from(root.querySelectorAll(".internal-embed"))) {
       expect(embed.querySelector("img")).toBeNull();
       expect(embed.hasClass("is-unresolved")).toBe(true);
     }
@@ -242,12 +187,12 @@ describe("fixupRenderedAssistantImages", () => {
 
   it("leaves already-resolved embeds (containing an img) untouched", () => {
     const app = fakeApp({ "pic.png": imageFile("images/pic.png") });
-    const root = new FakeEl("div");
-    const embed = new FakeEl("div", { src: "pic.png" }, ["internal-embed", "image-embed"]);
-    embed.children.push(new FakeEl("img", { src: "app://resource/images/pic.png" }));
-    root.children.push(embed);
+    const root = el("div");
+    const embed = el("div", { src: "pic.png" }, ["internal-embed", "image-embed"]);
+    embed.append(el("img", { src: "app://resource/images/pic.png" }));
+    root.append(embed);
 
-    fixupRenderedAssistantImages(root as unknown as HTMLElement, app, "notes/active.md");
+    fixupRenderedAssistantImages(root, app, "notes/active.md");
 
     expect(embed.children).toHaveLength(1);
     expect(embed.querySelector("img")?.getAttribute("src")).toBe("app://resource/images/pic.png");

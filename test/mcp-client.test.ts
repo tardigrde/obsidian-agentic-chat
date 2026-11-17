@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { rejectsWithFakeClock, withFakeClock } from "./support/fake-clock";
 import { McpHttpClient, normalizeMcpUrl } from "../src/mcp/client";
 import { createMcpServerSettings, type McpServerSettings } from "../src/mcp/settings";
 import type { WebFetcher, WebHttpRequest, WebHttpResponse } from "../src/tools/web-fetch";
@@ -797,7 +798,7 @@ describe("McpHttpClient", () => {
     const fetcher: WebFetcher = async () => new Promise<WebHttpResponse>(() => undefined);
     const client = new McpHttpClient({ server: server(), fetcher, requestTimeoutMs: 1 });
 
-    await expect(client.listTools()).rejects.toThrow(/timed out.*Docs MCP initialize/i);
+    expect((await rejectsWithFakeClock(() => client.listTools())).message).toMatch(/timed out.*Docs MCP initialize/i);
   });
 
   it("retries transient 503 for MCP initialize and succeeds", async () => {
@@ -810,7 +811,8 @@ describe("McpHttpClient", () => {
       return { status: 200, text: JSON.stringify({ jsonrpc: "2.0", id: 2, result: { tools: [{ name: "get_time" }] } }), headers: {} };
     };
     const client = new McpHttpClient({ server: server(), fetcher });
-    await expect(client.listTools()).resolves.toMatchObject([{ name: "get_time" }]);
+    const { value } = await withFakeClock(() => client.listTools());
+    expect(value).toMatchObject([{ name: "get_time" }]);
     expect(callCount).toBe(5);
   });
 

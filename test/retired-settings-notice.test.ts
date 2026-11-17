@@ -6,6 +6,7 @@ function load(stored: unknown): AgenticChatSettings {
   return mergeSettings(stored as Partial<AgenticChatSettings>);
 }
 
+// These exact sentences are user-visible copy shown after an upgrade; a change here is a product change.
 describe("retiredSettingsNotices", () => {
   it("names the user's working directories and points at Ignored files", () => {
     const notices = retiredSettingsNotices({

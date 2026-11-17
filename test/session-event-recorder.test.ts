@@ -3,7 +3,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { AgentSessionEventRecorder } from "../src/agent/session-event-recorder";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { parseSessionEntries, type SessionEntry } from "../src/session/jsonl";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 const DEFAULTS = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" as const };
 
