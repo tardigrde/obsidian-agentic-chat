@@ -38,7 +38,7 @@ async function writeSuite(evalCase: Record<string, unknown>): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "fixture-wiring-"));
   tempRoots.push(root);
   const suitePath = path.join(root, "fixture-wiring.eval.json");
-  const suite = { ...base, name: "fixture-wiring", runsPerCase: 1, smoke: undefined, cases: [evalCase] };
+  const suite = { ...base, name: "fixture-wiring", runsPerCase: 1, smoke: undefined, canary: undefined, cases: [evalCase] };
   await writeFile(suitePath, `${JSON.stringify(suite, null, 2)}\n`, "utf8");
   return suitePath;
 }
