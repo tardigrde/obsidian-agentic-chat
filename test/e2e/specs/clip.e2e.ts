@@ -2,7 +2,7 @@ import { browser, expect, $ } from "@wdio/globals";
 import { describe, it, before } from "mocha";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
-import { expectWithinWindow } from "../support/layout";
+import { waitWithinWindow } from "../support/layout";
 
 /** What a user must reach in a narrow window, plus the containers that explain a failure. */
 const NARROW_PARTS = [
@@ -262,11 +262,11 @@ describe("agentic-chat clip regression", function () {
       await browser.executeObsidian(({ app }) => app.workspace.leftSplit.expand());
       await openChat();
       await settleLayout();
-      await expectWithinWindow(NARROW_PARTS);
+      await waitWithinWindow(NARROW_PARTS);
       await emitUser("narrow window check");
       await emitAssistant("A short answer, so the transcript is not empty.");
       await settleLayout();
-      await expectWithinWindow(NARROW_PARTS);
+      await waitWithinWindow(NARROW_PARTS);
       expect(await browser.executeObsidian(({ app }) => app.workspace.leftSplit.collapsed)).toBe(true);
     } finally {
       await resize(original.width, original.height);

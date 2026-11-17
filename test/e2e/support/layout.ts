@@ -148,3 +148,24 @@ export async function expectWithinWindow(selectors: string[]): Promise<void> {
     );
   }
 }
+
+/** `expectWithinWindow`, retried until it holds: a sidebar collapse animates. */
+export async function waitWithinWindow(selectors: string[], timeout = 5_000): Promise<void> {
+  let last: unknown;
+  try {
+    await browser.waitUntil(
+      async () => {
+        try {
+          await expectWithinWindow(selectors);
+          return true;
+        } catch (error) {
+          last = error;
+          return false;
+        }
+      },
+      { timeout, interval: 100 },
+    );
+  } catch {
+    throw last instanceof Error ? last : new Error(String(last));
+  }
+}
