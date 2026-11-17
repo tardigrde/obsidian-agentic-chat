@@ -280,7 +280,7 @@ export function summarizeHistory(entries, { window = 5 } = {}) {
     lanes: laneRows,
     flaky: [...flaky.values()].map((row) => ({ ...row, heads: [...row.heads] })),
     slowerSteps,
-    slowerTests: slowerTests.sort((a, b) => b.latestMs - b.beforeMs - (a.latestMs - a.beforeMs)),
+    slowerTests: slowerTests.toSorted((a, b) => b.latestMs - b.beforeMs - (a.latestMs - a.beforeMs)),
     cost: costRuns.slice(-10).map((entry) => ({ lane: entry.lane, startedAt: entry.startedAt, usd: entry.cost.usd })),
   };
 }

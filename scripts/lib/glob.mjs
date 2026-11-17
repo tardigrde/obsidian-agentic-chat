@@ -6,6 +6,12 @@ import path from "node:path";
  * Supports `**` (any depth), `*` and `?` (within one segment), and `{a,b}`.
  * Kept in-repo so the T0 checkers need no dependency.
  */
+/** Code-unit order, the same as a bare `sort()`, but explicit. */
+export function compareStrings(a, b) {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
+
 export function globToRegExp(glob) {
   let out = "";
   let inBraces = 0;
@@ -58,5 +64,5 @@ export function listFiles(root, dir, skip = new Set(["node_modules", ".git", "lo
     }
   };
   walk(dir);
-  return out.sort();
+  return out.sort(compareStrings);
 }

@@ -6,7 +6,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { groupFor, listTestFiles, loadManifest } from "./check-test-manifest.mjs";
-import { matchesAny } from "./lib/glob.mjs";
+import { compareStrings, matchesAny } from "./lib/glob.mjs";
 
 /**
  * `npm run verify -- plan`: read the diff, match test/manifest.json triggers,
@@ -41,7 +41,7 @@ export function changedFiles(base, cwd = process.cwd()) {
   ];
   const files = new Set();
   for (const list of lists) for (const line of (list ?? "").split("\n")) if (line.trim()) files.add(line.trim());
-  return [...files].sort();
+  return [...files].sort(compareStrings);
 }
 
 function stem(file) {
@@ -135,7 +135,7 @@ export function planFor(files, manifest, testFiles, exists = () => true) {
   }
 
   if (changeTargets.size > 0) {
-    const targets = [...changeTargets].sort();
+    const targets = [...changeTargets].sort(compareStrings);
     add(command("change:", `npm run verify -- change ${targets.join(" ")}`, {
       budgetSeconds: Math.min(30, 3 + 2 * targets.length),
       why: "the unit tests closest to this change (the witness loop)",
@@ -151,7 +151,7 @@ export function planFor(files, manifest, testFiles, exists = () => true) {
       budgetSeconds: 110, why: "a product or dependency change: the full real-Obsidian suite", needs: { display: true },
     }));
   } else {
-    for (const spec of [...appSpecs].sort()) {
+    for (const spec of [...appSpecs].sort(compareStrings)) {
       add(command(`app:${spec}`, `npm run verify -- app ${spec}`, { budgetSeconds: 30, why: "the changed spec", needs: { display: true } }));
     }
   }

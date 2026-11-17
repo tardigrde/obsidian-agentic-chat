@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { listFiles, matchesAny } from "./lib/glob.mjs";
+import { compareStrings, listFiles, matchesAny } from "./lib/glob.mjs";
 import { LANE_NAMES, RETIRED_LANES } from "./verify-lanes.mjs";
 
 /**
@@ -30,7 +30,7 @@ export const IGNORED_DOCS = [
   "CHANGELOG.md",
 ];
 
-const NPM_RUN = /\bnpm run ([A-Za-z0-9:_.-]+)((?:[ \t]+--)?[ \t]+([^\s`'"|;&)]+))?/g;
+const NPM_RUN = /\bnpm run ([A-Za-z0-9:_.-]+)([ \t]+(?:--[ \t]+)?([^\s`'"|;&)]+))?/g;
 
 export function findCommands(text) {
   const found = [];
@@ -65,7 +65,7 @@ export function checkDoc(file, text, scripts) {
 
 export function listDocs(root = process.cwd()) {
   const all = [...listFiles(root, ""), ...listFiles(root, ".agents"), ...listFiles(root, ".github")];
-  return [...new Set(all)].filter((file) => matchesAny(file, DOC_GLOBS) && !matchesAny(file, IGNORED_DOCS)).sort();
+  return [...new Set(all)].filter((file) => matchesAny(file, DOC_GLOBS) && !matchesAny(file, IGNORED_DOCS)).sort(compareStrings);
 }
 
 function main() {
