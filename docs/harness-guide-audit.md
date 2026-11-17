@@ -147,7 +147,7 @@ behavior.
 
 | # | Principle | Current behavior | Status | Rationale / evidence |
 |---|-----------|-----------------|--------|----------------------|
-| 59 | Floor + ceiling enforcement to keep benchmark scores stable | Vitest smoke + `verify:fast` (`typecheck`, `lint`, `test`, `test:e2e --spec smoke`) | compliant | Stable test contract; not a benchmark but a reproducibility floor |
+| 59 | Floor + ceiling enforcement to keep benchmark scores stable | Vitest smoke + `verify -- check` (static checks, unit, production bundle, smoke e2e) | compliant | Stable test contract; not a benchmark but a reproducibility floor |
 
 ### Classifier-Based Permissions
 

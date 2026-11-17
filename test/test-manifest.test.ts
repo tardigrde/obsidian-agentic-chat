@@ -81,6 +81,10 @@ describe("skip rule", () => {
     expect(run({ "test/unit/a.test.ts": SKIP("flaky #412") }).errors).toHaveLength(1);
     expect(findSkips(`before(function () { if (!key) this${"."}skip(); });`).map((s) => s.kind)).toEqual(["this.skip"]);
     expect(findSkips(`const maybe = ok ? it : it${"."}skip;`).map((s) => s.kind)).toEqual(["skip alias"]);
+     // Chained forms skip just as well (review note on #394).
+    expect(findSkips(`it${"."}skip${"."}each([1])("x %s", () => {});`).map((s) => s.kind)).toEqual(["chained skip"]);
+    expect(findSkips(`it${"."}concurrent${"."}skip("x", () => {});`).map((s) => s.kind)).toEqual(["chained skip"]);
+    expect(findSkips(`describe${"."}skip${"."}each([1])("x", () => {});`).map((s) => s.kind)).toEqual(["chained skip"]);
   });
 
   it("lets live suites gate on the environment", () => {

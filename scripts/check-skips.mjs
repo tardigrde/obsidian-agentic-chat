@@ -25,6 +25,11 @@ const SKIP_CALLS = [
   { kind: "this.skip", pattern: /\bthis\.skip\s*\(/g, titled: false },
   { kind: "ctx.skip", pattern: /\bctx\.skip\s*\(/g, titled: false },
   { kind: "xit", pattern: /(?<![\w.])x(?:it|describe)\s*\(/g, titled: false },
+  {
+    kind: "chained skip",
+    pattern: /\b(?:it|test|describe|suite)(?:\.(?:concurrent|sequential|shuffle))*\.skip\.(?:each|for)\b|\b(?:it|test|describe|suite)(?:\.(?:concurrent|sequential|shuffle))+\.skip\b/g,
+    titled: false,
+  },
   { kind: "skip alias", pattern: /\?\s*(?:it|test|describe)\s*:\s*(?:it|test|describe)\.skip\b/g, titled: false },
 ];
 

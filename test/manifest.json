@@ -214,7 +214,7 @@
       "triggers": [],
       "needs": { "display": true, "key": true, "network": true },
       "budgetSeconds": 600,
-      "command": "AGENTIC_CHAT_SUBAGENT_DOGFOOD=true npm run verify -- live test/e2e/dogfood/subagent-live.dogfood.ts",
+      "command": "AGENTIC_CHAT_SUBAGENT_DOGFOOD=true npm run test:e2e:dogfood -- --spec test/e2e/dogfood/subagent-live.dogfood.ts",
       "why": "Model-driven dogfood journeys. Slated for deletion in #393 T23."
     },
     {

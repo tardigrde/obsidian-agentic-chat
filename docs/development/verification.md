@@ -149,6 +149,13 @@ edited. `--all-worktrees` scans every worktree's `logs/`; `npm run
 hooks:install` adds it as a pre-push hook. The sinks and the scanner are guards,
 not a security boundary.
 
+Open follow-up (defense in depth, not done yet): keep the live eval key in
+Obsidian secret storage, or put a local key-injecting proxy in front of the
+plugin, so a raw key never reaches a settings dump or a child `process.env`;
+and deny `env`/`printenv`/`.env` reads in the delegate sandbox. A real key leak
+into ignored `logs/` (an e2e child printed `process.env`) is why the sinks
+redact.
+
 ## CI
 
 | job | runs |
@@ -160,5 +167,6 @@ not a security boundary.
 | `review` | advisory report: verdict comment present at head, PR size; never fails |
 
 Live specs never run in CI. Draft PRs run `ci` only. A newer push cancels the
-running PR jobs (never on `main`). Each job uploads its `run-result.json`.
+running PR jobs (never on `main`). The `ci`, `e2e`, and `dogfood-scripted` jobs
+upload their `run-result.json`; `witness` writes one but does not upload it.
 Mutation testing is on demand: `npm run mutation` ([mutation.md](mutation.md)).
