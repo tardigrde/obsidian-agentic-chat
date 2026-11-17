@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { withFakeClock } from "./support/fake-clock";
 import { normalizeContext, type Context } from "@earendil-works/pi-ai";
 import { buildModel } from "../src/llm/models";
 import {
@@ -524,12 +525,16 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
       };
     };
 
-    const { events, result } = await collect(
-      streamOpenAICompatibleViaRequestUrl(
-        model(),
-        normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }),
-        { apiKey: "test-key", maxRetries: 1 },
-        requester,
+    const {
+      value: { events, result },
+    } = await withFakeClock(() =>
+      collect(
+        streamOpenAICompatibleViaRequestUrl(
+          model(),
+          normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }),
+          { apiKey: "test-key", maxRetries: 1 },
+          requester,
+        ),
       ),
     );
 
@@ -551,8 +556,12 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
         json: { choices: [{ message: { role: "assistant", content: "ok" }, finish_reason: "stop" }] },
       };
     };
-    const { result } = await collect(
-      streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }), { apiKey: "test-key", maxRetries: 2 }, requester),
+    const {
+      value: { result },
+    } = await withFakeClock(() =>
+      collect(
+        streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }), { apiKey: "test-key", maxRetries: 2 }, requester),
+      ),
     );
     expect(attempts).toBe(3);
     expect(result.content).toEqual([{ type: "text", text: "ok" }]);
@@ -567,13 +576,16 @@ describe("streamOpenAICompatibleViaRequestUrl", () => {
       }
       return { status: 200, text: "", json: { choices: [{ message: { role: "assistant", content: "recovered" }, finish_reason: "stop" }] } };
     };
-    const start = Date.now();
-    const { result } = await collect(
-      streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }), { apiKey: "test-key", maxRetries: 1 }, requester),
+    const {
+      value: { result },
+      waitedMs,
+    } = await withFakeClock(() =>
+      collect(
+        streamOpenAICompatibleViaRequestUrl(model(), normalizeContext({ messages: [{ role: "user", content: "ping", timestamp: 1 }] }), { apiKey: "test-key", maxRetries: 1 }, requester),
+      ),
     );
-    const elapsed = Date.now() - start;
     expect(attempts).toBe(2);
-    expect(elapsed).toBeGreaterThanOrEqual(1900);
+    expect(waitedMs).toBeGreaterThanOrEqual(2000);
     expect(result.content).toEqual([{ type: "text", text: "recovered" }]);
   });
 

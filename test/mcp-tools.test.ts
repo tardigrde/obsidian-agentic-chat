@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { rejectsWithFakeClock } from "./support/fake-clock";
 import { validateToolArguments, type JsonObject, type ToolCall } from "@earendil-works/pi-ai";
 import {
   createMcpTools,
@@ -316,7 +317,7 @@ describe("MCP tools", () => {
   });
 
   it("lets connection probe errors surface to settings diagnostics", async () => {
-    await expect(
+    const error = await rejectsWithFakeClock(() =>
       probeMcpServer(
         createMcpServerSettings({ id: "docs", name: "Docs MCP", url: "https://mcp.example.com/mcp" }),
         queuedFetcher([
@@ -325,7 +326,8 @@ describe("MCP tools", () => {
           { status: 500, text: "down", headers: {} },
         ]),
       ),
-    ).rejects.toThrow(/HTTP 500/);
+    );
+    expect(error.message).toMatch(/HTTP 500/);
   });
 
   it("keeps sanitized remote tool names unique per server", async () => {

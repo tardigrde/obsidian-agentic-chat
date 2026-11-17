@@ -5,7 +5,7 @@ import { mergeSettings, retiredSettingsNotices } from "../src/settings-schema";
 import { migrateLegacyPlaintextSecrets } from "../src/secrets/legacy-plaintext";
 import { hydrateSettingsSecrets, MemorySecretStore, settingsForStorage } from "../src/secrets/secret-store";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 /**
  * Upgrade lane (#290): load the data.json and session JSONL that each released

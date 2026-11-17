@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TFolder, type App } from "obsidian";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 import {
   ensureAdapterFolder,
   ensureVaultFolder,

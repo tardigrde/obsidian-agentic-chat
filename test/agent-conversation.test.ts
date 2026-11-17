@@ -5,7 +5,7 @@ import { buildModel } from "../src/llm/models";
 import { AgentConversation, type ParentAgentConfiguration } from "../src/agent/conversation";
 import type { ParentAgentHandle } from "../src/agent/parent-agent";
 import { ObsidianSessionManager, SessionWriteRegistry, type SessionDefaults } from "../src/session/session-manager";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 const DEFAULTS: SessionDefaults = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" };
 

@@ -157,11 +157,15 @@ fs.writeFileSync(file, String(count + 1));
 if (count === 0) { process.stderr.write("first call fails\\n"); process.exit(1); }
 process.stdout.write(JSON.stringify({ type: "text", part: { type: "text", text: "{\\"ok\\":true}" } }) + "\\n");
 `);
+    const start = Date.now();
     const reply = await opencodeComplete(
       { baseUrl: "opencode://run", apiKey: "", model: "opencode-go/deepseek-v4.1-flash", messages: [{ role: "user", content: "hi" }], timeoutMs: 10_000 },
       2,
+      0,
     );
     expect(reply.text).toBe('{"ok":true}');
+    // The retry wait is injectable: a test passes 0 and does not pay the 1.5 s production backoff.
+    expect(Date.now() - start).toBeLessThan(1_200);
   });
 
   it("throws with the exit code after the last attempt", async () => {
@@ -170,6 +174,7 @@ process.stdout.write(JSON.stringify({ type: "text", part: { type: "text", text: 
       opencodeComplete(
         { baseUrl: "opencode://run", apiKey: "", model: "opencode-go/deepseek-v4.1-flash", messages: [{ role: "user", content: "hi" }], timeoutMs: 10_000 },
         2,
+        0,
       ),
     ).rejects.toThrow(/code 1/);
   });

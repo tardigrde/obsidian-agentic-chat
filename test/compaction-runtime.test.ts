@@ -13,7 +13,7 @@ import { getCompactedUsage, isSummaryMessage } from "../src/agent/compaction";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { parseSessionEntries } from "../src/session/jsonl";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 import { managerCompactionTarget } from "./helpers/compaction-target";
 
 const DEFAULTS = { provider: "openrouter", modelId: "test/model", thinkingLevel: "off" as const };

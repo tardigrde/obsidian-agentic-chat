@@ -231,7 +231,8 @@ function runOnce(model: string, input: string, timeoutMs: number): Promise<ChatR
   });
 }
 
-export async function opencodeComplete(request: ChatRequest, attempts = 2): Promise<ChatReply> {
+/** `retryBaseMs` is the wait before attempt 2 (doubled for attempt 3); tests pass 0. */
+export async function opencodeComplete(request: ChatRequest, attempts = 2, retryBaseMs = RETRY_BASE_MS): Promise<ChatReply> {
   const model = qualifiedModel(request.model);
   const input = serializeMessages(request.messages, request.json === true);
   let lastError: unknown;
@@ -243,7 +244,7 @@ export async function opencodeComplete(request: ChatRequest, attempts = 2): Prom
       lastError = error;
     }
     if (attempt === attempts) break;
-    await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_MS * attempt));
+    await new Promise((resolve) => setTimeout(resolve, retryBaseMs * attempt));
   }
 
   const detail = lastError instanceof Error ? lastError.message : String(lastError);

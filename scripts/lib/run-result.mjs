@@ -58,6 +58,34 @@ export function parseVitestJson(json, root) {
   return tests;
 }
 
+/**
+ * Per manifest group counts for unit test rows: which group a test belongs to
+ * comes from test/manifest.json (`groupOf(file)` returns its id). Rows with no
+ * group land under "unlisted" so a gap is visible, not dropped.
+ */
+export function groupCounts(tests, groupOf) {
+  const groups = {};
+  for (const test of tests) {
+    const id = groupOf(test.file) ?? "unlisted";
+    groups[id] ??= { passed: 0, failed: 0, skipped: 0, total: 0, durationMs: 0 };
+    groups[id][test.status] += 1;
+    groups[id].total += 1;
+    groups[id].durationMs += test.durationMs ?? 0;
+  }
+  return groups;
+}
+
+/** One printable line: "unit-agent 812, unit-ui-dom 88 (1 failed), ...", largest first. */
+export function groupCountsLine(groups) {
+  return Object.entries(groups)
+    .sort(([, a], [, b]) => b.total - a.total)
+    .map(([id, counts]) => {
+      const notes = [counts.failed ? `${counts.failed} failed` : "", counts.skipped ? `${counts.skipped} skipped` : ""].filter(Boolean);
+      return `${id} ${counts.passed}${notes.length ? ` (${notes.join(", ")})` : ""}`;
+    })
+    .join(", ");
+}
+
 function sumCounts(list) {
   const total = { passed: 0, failed: 0, skipped: 0, total: 0 };
   for (const counts of list) {

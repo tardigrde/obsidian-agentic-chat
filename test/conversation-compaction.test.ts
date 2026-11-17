@@ -6,7 +6,7 @@ import type { AgentCompactionRunResult } from "../src/agent/compaction-runtime";
 import { CompactionNotLiveError } from "../src/agent/session-actions";
 import { parseSessionEntries, type SessionEntry } from "../src/session/jsonl";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 function userMessage(text: string): AgentMessage {
   return { role: "user", content: [{ type: "text", text }], timestamp: 1 } as AgentMessage;

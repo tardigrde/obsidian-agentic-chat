@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;

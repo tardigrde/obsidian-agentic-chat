@@ -39,7 +39,14 @@ afterEach(() => {
 });
 
 // verify.mjs and the modules it imports, relative to scripts/.
-const VERIFY_MODULES = ["verify.mjs", "verify-lanes.mjs", "redact-log.mjs", "lib/run-result.mjs"];
+const VERIFY_MODULES = [
+  "verify.mjs",
+  "verify-lanes.mjs",
+  "redact-log.mjs",
+  "lib/run-result.mjs",
+  "check-test-manifest.mjs",
+  "lib/glob.mjs",
+];
 
 function makeVerifyRoot() {
   const root = tempDir();

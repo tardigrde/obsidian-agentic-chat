@@ -12,7 +12,7 @@ import {
 } from "../src/agent/action-audit-log";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { parseSessionEntries, type SessionEntry } from "../src/session/jsonl";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 const DEFAULTS = { provider: "openrouter", modelId: "x/y", thinkingLevel: "off" as const };
 const FIXED_NOW = Date.UTC(2026, 5, 26, 9, 0, 0);

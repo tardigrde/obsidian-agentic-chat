@@ -12,7 +12,7 @@ import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/ses
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
 import type { WebFetcher, WebHttpRequest } from "../src/tools/web-fetch";
 import { parseSessionEntries, serializeSessionEntries } from "../src/session/jsonl";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 import { FakeVault } from "./helpers/fake-vault";
 
 

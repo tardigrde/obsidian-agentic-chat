@@ -11,7 +11,7 @@ import {
   extractPdfText,
   formatPdfImportArtifact,
 } from "../src/retrieval/pdf-ingest";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 
 const FIXED_IMPORTED_AT = "2026-06-26T08:00:00.000Z";
 

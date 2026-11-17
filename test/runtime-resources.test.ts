@@ -1,4 +1,5 @@
 import { LoadedToolSet } from "../src/agent/tool-loading";
+import { withFakeClock } from "./support/fake-clock";
 import { describe, expect, it } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Skill } from "../src/skills/skill-prompt";
@@ -314,10 +315,12 @@ describe("agent runtime resources", () => {
         mcpServers: { docs: { type: "streamable-http", url: "https://mcp.example.com/mcp" } },
       }),
     );
-    const resources = await loadAgentRuntimeResources(
-      app,
-      settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [enabledPluginServer()] } }),
-      async () => ({ status: 500, text: "server down", headers: {} }),
+    const { value: resources } = await withFakeClock(() =>
+      loadAgentRuntimeResources(
+        app,
+        settings({ mcp: { enabled: true, proxyUrl: "", noProxy: "localhost,127.0.0.1,::1", servers: [enabledPluginServer()] } }),
+        async () => ({ status: 500, text: "server down", headers: {} }),
+      ),
     );
 
     expect(resources.mcpTools).toEqual([]);

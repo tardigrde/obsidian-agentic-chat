@@ -8,7 +8,7 @@ import { agentContextOverheadTokens, agentContextReadout } from "../src/agent/se
 import { estimateToolDefinitionTokens } from "../src/agent/tool-schema-tokens";
 import { ObsidianSessionManager, SessionWriteRegistry } from "../src/session/session-manager";
 import { DEFAULT_SETTINGS, type AgenticChatSettings } from "../src/settings-schema";
-import { MemoryAdapter } from "./helpers/memory-adapter";
+import { FakeAdapter as MemoryAdapter } from "./support/fake-adapter";
 import { managerCompactionTarget } from "./helpers/compaction-target";
 
 const WINDOW = 10_000;
