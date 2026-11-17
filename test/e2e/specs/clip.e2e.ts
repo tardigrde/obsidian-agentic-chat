@@ -252,6 +252,7 @@ describe("agentic-chat clip regression", function () {
         height,
       );
     const original = await browser.execute(() => ({ width: window.outerWidth, height: window.outerHeight }));
+    const leftWasCollapsed = await browser.executeObsidian(({ app }) => app.workspace.leftSplit.collapsed);
     if (!(await resize(390, 844))) throw new Error("this runtime cannot resize its window; the 390 px case cannot run");
     try {
       await browser.waitUntil(async () => (await browser.execute(() => window.innerWidth)) <= 400, {
@@ -270,7 +271,11 @@ describe("agentic-chat clip regression", function () {
       expect(await browser.executeObsidian(({ app }) => app.workspace.leftSplit.collapsed)).toBe(true);
     } finally {
       await resize(original.width, original.height);
-      await browser.executeObsidian(({ app }) => app.workspace.leftSplit.expand());
+      // Leave the sidebar as this test found it.
+      await browser.executeObsidian(({ app }, collapsed) => {
+        if (collapsed) app.workspace.leftSplit.collapse();
+        else app.workspace.leftSplit.expand();
+      }, leftWasCollapsed);
     }
   });
 });

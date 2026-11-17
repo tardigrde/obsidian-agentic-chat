@@ -68,7 +68,7 @@ alone.
   archive reader uses. About 1,250 lines of tests. No settings. No tools.
   No fixes in two months.
 - **Value.** Without it, the user must copy a folder into `.agentic-plugins/`
-  by hand. `composio-install.e2e.ts` proves a real journey.
+  by hand. `composio-install.e2e.ts` proved a real journey (deleted in #393 T13; the archive install is now in `settings-ui.e2e.ts`).
 - **Verdict.** `keep`. The cost is large, but the model pays nothing, the
   journey has a test, and the code is stable. The format converters (Claude,
   Codex, Copilot) are the first part to examine if this slice returns.

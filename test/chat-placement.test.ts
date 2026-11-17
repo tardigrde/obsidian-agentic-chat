@@ -9,6 +9,8 @@ describe("shouldCollapseLeftSidebar", () => {
 
   it("collapses an open left sidebar in a narrow desktop window, where the chat would overflow", () => {
     expect(shouldCollapseLeftSidebar(390, false, false)).toBe(true);
+    // 600-643 px still overflowed with a 600 px threshold (review of #395).
+    expect(shouldCollapseLeftSidebar(620, false, false)).toBe(true);
     expect(shouldCollapseLeftSidebar(NARROW_WINDOW_PX - 1, false, false)).toBe(true);
   });
 

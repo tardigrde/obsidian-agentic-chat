@@ -457,6 +457,11 @@ describe("agentic-chat smoke", function () {
         `${error instanceof Error ? error.message : String(error)}; expected prefix ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
         { cause: error },
       );
+    } finally {
+      await trashPaths([path]);
+      await browser.execute((key) => {
+        delete (window as unknown as Record<string, unknown>)[key];
+      }, QUICK_ASK_ANCHOR);
     }
   });
 
