@@ -1,6 +1,7 @@
 import * as path from "path";
 import { parseObsidianVersions } from "wdio-obsidian-service";
 import { env } from "process";
+import { browser } from "@wdio/globals";
 import { collectE2EFailureArtifacts } from "./test/e2e/support/failure-artifacts";
 
 // wdio-obsidian-service downloads + sandboxes Obsidian builds into this directory.
@@ -190,6 +191,16 @@ export const config: WebdriverIO.Config = {
   logLevel: "warn",
 
   cacheDir,
+
+  // Deletes go to the vault's own `.trash` folder. The default system trash
+  // needs a desktop trash service; under Xephyr or Xvfb without one, a trashed
+  // file stays where it was and undo/delete specs fail on the host, not the
+  // product (#393 T12).
+  beforeSuite: async () => {
+    await browser.executeObsidian(({ app }) => {
+      (app.vault as unknown as { setConfig: (key: string, value: unknown) => void }).setConfig("trashOption", "local");
+    });
+  },
 
   afterTest: async (test, _context, result) => {
     await collectE2EFailureArtifacts({

@@ -27,15 +27,31 @@ mobile/desktop auth and networking behavior:
   supports app redirects. Localhost-only providers still require desktop.
 - Plugin-owned HTTP proxy settings use desktop Node networking when configured.
 
-`test:e2e:mobile` builds the e2e bundle, boots Obsidian Desktop through the
-existing WDIO harness, enables `wdio-obsidian-service` mobile emulation, and
-applies Chrome phone-sized device metrics. This catches layout/touch-path
+`verify -- app --mobile` builds the e2e bundle, boots Obsidian Desktop through
+the WDIO harness, enables `wdio-obsidian-service` mobile emulation, and applies
+Chrome phone-sized device metrics. CI runs it on every ready PR (`e2e` job). This catches layout/touch-path
 regressions in the chat composer, settings tabs, approval modal, session list,
 and long assistant messages. It is not a substitute for real Obsidian Mobile
 because the runtime is still Electron.
 
 `npm run build` also runs `verify:mobile`, so CI and semantic-release block on
 the mobile compatibility gate.
+
+A narrow **desktop** window is a different layout: Obsidian keeps its desktop
+sidebars. `clip.e2e.ts` covers it with a 390 px desktop viewport and asserts
+that the chat view, input, and send button stay inside the window.
+
+## Release checklist
+
+Before a release with mobile-facing changes:
+
+1. CI is green at the release commit: `e2e` ran the production boot, the full
+   suite, and the phone-width spec.
+2. `npm run verify:mobile` passes locally.
+3. Android smoke (below) on a device or emulator, recorded.
+4. iOS smoke (below) on a device, recorded.
+5. The release notes name the devices, OS versions, Obsidian version, and any
+   known mobile gaps.
 
 ## Android device or emulator smoke
 

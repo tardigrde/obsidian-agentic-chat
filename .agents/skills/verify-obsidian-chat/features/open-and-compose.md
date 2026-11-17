@@ -49,13 +49,13 @@ await $(".agentic-chat-send").click();
 | entry point | source | proof | status |
 |---|---|---|---|
 | Ribbon icon | `src/main.ts#onload` | no committed check | `NONE` |
-| Command palette: Open chat | `src/main.ts#id: "open-chat"` | `test/e2e/specs/smoke.e2e.ts#renders the unified composer card with a tab and textarea` | `covered` |
+| Command palette: Open chat | `src/main.ts#id: "open-chat"` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` | `covered` |
 | Command palette: New conversation | `src/main.ts#id: "new-conversation"` | `test/session-actions.test.ts#makeActions` (unit only) | `partial` |
 | Command palette: Quick Ask inline edit | `src/main.ts#id: "quick-ask-inline-edit"` | `test/e2e/specs/smoke.e2e.ts#applies a Quick Ask edit to selected editor text without a model call` | `covered` |
 | Editor selection context menu | `src/main.ts#registerContextMenus` | no committed check | `NONE` |
 | File context menu | `src/main.ts#registerContextMenus` | no committed check | `NONE` |
 | Files context menu (multi-select) | `src/main.ts#registerContextMenus` | no committed check | `NONE` |
-| Composer card mounts | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/smoke.e2e.ts#renders the unified composer card with a tab and textarea` | `covered` |
+| Composer card mounts | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` | `covered` |
 | Empty-state suggestion chips | `src/ui/chat-view.ts#renderEmptyState` | no committed check | `NONE` |
 | Enter sends while idle | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/composer-paths.e2e.ts#sends with Enter while the agent is idle` | `covered` |
 | Enter steers while the agent runs | `src/ui/composer-input.ts#resolveComposerAction` | `test/e2e/specs/composer-paths.e2e.ts#steers after a successful tool call while the agent is running` | `covered` |
@@ -63,11 +63,11 @@ await $(".agentic-chat-send").click();
 | Send button | `src/ui/chat-layout.ts#cls: ["agentic-chat-send", "mod-cta"]` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
 | ArrowUp/ArrowDown recall | `src/ui/chat-view.ts#buildLayout` | `test/composer-history.test.ts#recalls older entries with Up and swallows Up at the oldest entry without wrapping` (unit only) | `partial` |
 | Escape cancels edit | `src/ui/chat-view.ts#buildLayout` | `test/prompt-edit-state.test.ts#starts editing a prompt and restores the original draft on cancel` (unit only) | `partial` |
-| Autocomplete menu opens | `src/ui/composer-controller.ts#updateAutocomplete` | `test/e2e/specs/autocomplete-dropup.e2e.ts#renders the /sta menu above the input card, fully visible` | `covered` |
+| Autocomplete menu opens | `src/ui/composer-controller.ts#updateAutocomplete` | `test/e2e/specs/smoke.e2e.ts#renders the /sta autocomplete menu above the input card, fully visible` | `covered` |
 | Autocomplete keys | `src/ui/autocomplete-menu.ts#handleKey` | no committed check | `NONE` |
 | `@` mention autocomplete | `src/ui/autocomplete.ts#detectQuery` | `test/autocomplete.test.ts#detects a mention after whitespace mid-message` (detection only) | `partial` |
 | Drag-and-drop attach | `src/ui/chat-view.ts#handleDrop` | `test/drag-drop.test.ts#parseDroppedVaultPath` (parser only) | `partial` |
-| Active note auto-chip | `src/ui/chat-view.ts#private effectiveActiveNote()` | `test/e2e/specs/smoke.e2e.ts#auto-attaches the active note as a context chip` | `covered` |
+| Active note auto-chip | `src/ui/chat-view.ts#private effectiveActiveNote()` | `test/e2e/specs/smoke.e2e.ts#attaches the active note as a chip, but not an ignored note or AGENTS.md` | `covered` |
 | Ignored active note stays out | `src/ui/active-note.ts#autoActiveNotePath` | `test/e2e/specs/runtime-behavior.e2e.ts#does not auto-attach an ignored active note` | `covered` |
 | Remove an attachment chip | `src/ui/chat-view.ts#renderChips` | `test/context-chip-renderer.test.ts#wires remove callbacks to the matching chip` (unit only) | `partial` |
 | Image attachment guard | `src/ui/chat-view.ts#addAttachment` | `test/image-attachments.test.ts#collectUserImageThumbs,` (encoding only) | `partial` |

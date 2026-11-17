@@ -40,7 +40,7 @@ await $(".agentic-chat-session-list").waitForExist();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| Tab strip renders | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/smoke.e2e.ts#renders the unified composer card with a tab and textarea` | `covered` |
+| Tab strip renders | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` | `covered` |
 | `+` adds a tab | `src/ui/chat-tabs.ts#addTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
 | Switch between tabs | `src/ui/chat-view.ts#switchToTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
 | Busy dot on a streaming tab | `src/ui/chat-view.ts#tabLabel` | no committed check | `NONE` |

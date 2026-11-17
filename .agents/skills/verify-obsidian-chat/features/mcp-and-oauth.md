@@ -55,7 +55,7 @@ await clickMcpAddButton("Add MCP server");
 | Static header auth | `src/settings-mcp-section.ts#mcpAuthenticationDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` | `covered` |
 | Bearer token auth | `src/settings-mcp-section.ts#mcpAuthenticationDefinitions` | no committed check | `NONE` |
 | OAuth settings panel | `src/settings-mcp-section.ts#mcpOAuthDefinitions` | no committed check | `NONE` |
-| OAuth required banner | `src/settings-mcp-section.ts#definitions` | `test/e2e/specs/composio-install.e2e.ts#shows OAuth banner for bare MCP when 401 advertises resource_metadata (no auto-redirect)` (banner and button only) | `partial` |
+| OAuth required banner | `src/settings-mcp-section.ts#definitions` | `test/e2e/specs/settings-mcp-dynamic.e2e.ts#shows the OAuth banner for a bare MCP server whose 401 advertises resource_metadata (no auto-redirect)` (banner and button only) | `partial` |
 | Authenticate & test / PKCE sign-in | `src/settings-mcp-section.ts#authenticateAndProbeMcpServer` | `test/mcp-oauth.test.ts#falls back to an ephemeral callback port when the stable port is busy for dynamic clients` (unit only) | `partial` |
 | Desktop loopback callback | `src/mcp/oauth/callback-receivers.ts#createLoopbackOAuthCallbackReceiver` | `test/mcp-oauth.test.ts#falls back to an ephemeral callback port when the stable port is busy for dynamic clients` (unit only) | `partial` |
 | Mobile Obsidian protocol callback | `src/mcp/oauth/callback-receivers.ts#ObsidianProtocolOAuthCallbackReceiver` | `test/mcp-oauth.test.ts#delivers Obsidian protocol OAuth callbacks for mobile sign-in` (unit only) | `partial` |
@@ -67,7 +67,7 @@ await clickMcpAddButton("Add MCP server");
 | Tool allowlist/denylist | `src/settings-mcp-section.ts#mcpToolFilterDefinitions` | `test/mcp-tools.test.ts#filters discovered tools by enabled/disabled globs before registration` (unit only) | `partial` |
 | Per-tool MCP approvals | `src/settings-mcp-section.ts#mcpToolApprovalDefinitions` | no committed check | `NONE` |
 | Setup guide / Copy config | `src/settings-mcp-section.ts#mcpServerDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#persists web access settings through the Advanced tab` (button existence only) | `partial` |
-| Composio bundle: 2 skills + 1 MCP | `src/plugins/import/install.ts#installPackage` | `test/e2e/specs/composio-install.e2e.ts#installs Composio bundle via archive URL and verifies 2 skills + 1 MCP (popout-safe)` | `covered` |
+| Archive package install: skill + MCP (Composio shape dropped, #393 T13) | `src/plugins/import/install.ts#installPackage` | `test/e2e/specs/settings-ui.e2e.ts#installs a plugin package from an archive URL through the Install plugin modal` | `covered` |
 | Imported MCP servers start disabled | `src/plugins/loader.ts#mcpServerFromPluginEntry` | `test/e2e/specs/settings-ui.e2e.ts#generates a plugin package and persists its MCP server through the Advanced tab` | `covered` |
 | MCP tools are deferred; the prompt lists one line per server | `src/agent/tool-loading.ts#formatDeferredToolsOverlay` | `test/tool-loading.test.ts#formatDeferredToolsOverlay` (unit only) | `partial` |
 | Discover and call a remote MCP tool | `src/mcp/tools.ts#createMcpTools` | `test/e2e/live/mcp-live.e2e.ts#agentic-chat live MCP over HTTPS` (gated on `AGENTIC_CHAT_E2E_MCP_URL`) | `partial` |

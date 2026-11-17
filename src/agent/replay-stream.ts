@@ -196,7 +196,7 @@ async function emitReplayTurn(
     if (turn?.emitUpdates) {
       await emitContentUpdates(stream, partial, message.content, turn.updateDelayMs ?? 0, signal);
     }
-    if (turn?.hold) await waitForRelease?.();
+    if (turn?.hold && waitForRelease) await untilReleasedOrAborted(waitForRelease, signal);
     await wait(turn?.delayMs ?? 0, signal);
   } catch {
     const aborted: AssistantMessage = { ...message, content: [], stopReason: "aborted" };
@@ -319,6 +319,26 @@ function replayUsage(usage: ReplayUsage = {}): Usage {
 }
 
 /** Replay checks abort before the delay, so a 0 ms step still stops an aborted turn. */
+/** A held turn ends on release or on abort, like a real provider stream. */
+function untilReleasedOrAborted(waitForRelease: () => Promise<void>, signal?: AbortSignal): Promise<void> {
+  if (!signal) return waitForRelease();
+  if (signal.aborted) return Promise.reject(new Error("aborted"));
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = (): void => reject(new Error("aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    waitForRelease().then(
+      () => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
 function wait(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) return Promise.reject(new Error("aborted"));
   return sleepWithAbort(ms, signal);

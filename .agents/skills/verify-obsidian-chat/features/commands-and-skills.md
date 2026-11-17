@@ -50,12 +50,12 @@ await $(".agentic-chat-info").waitForExist();
 
 | entry point | source | proof | status |
 |---|---|---|---|
-| `/help` | `src/ui/commands.ts#name: "help"` | `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
-| `/init` | `src/ui/commands.ts#name: "init"` | `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
-| `/compact` | `src/ui/commands.ts#name: "compact"` | `test/e2e/specs/smoke.e2e.ts#clears slash commands immediately and preserves /init tail text in the transcript` | `covered` |
+| `/help` | `src/ui/commands.ts#name: "help"` | `test/e2e/specs/smoke.e2e.ts#routes /help, /init, and /compact locally without a model call` | `covered` |
+| `/init` | `src/ui/commands.ts#name: "init"` | `test/e2e/specs/smoke.e2e.ts#routes /help, /init, and /compact locally without a model call` | `covered` |
+| `/compact` | `src/ui/commands.ts#name: "compact"` | `test/e2e/specs/smoke.e2e.ts#routes /help, /init, and /compact locally without a model call` | `covered` |
 | `/memory` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /memory and shows a retired hint` (unit only) | `partial` |
 | `/status` | `src/ui/commands.ts#name: "status"` | `test/e2e/specs/runtime-behavior.e2e.ts#shows model/provider status, local undo state, and web tools when enabled` | `covered` |
-| `/plan` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` | `covered` |
+| `/plan` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/e2e/specs/smoke.e2e.ts#renders a scripted turn, treats /plan and /skill as chat, and Stop clears a running turn` | `covered` |
 | `/undo` | `src/ui/commands.ts#name: "undo"` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted edit and undo restores the prior text` | `covered` |
 | `/sessions` | `src/ui/commands.ts#name: "sessions"` | `test/e2e/specs/runtime-behavior.e2e.ts#reopens, renames, and deletes persisted sessions without a model call` | `covered` |
 | `/new` | `src/ui/commands.ts#name: "new"` | `test/session-actions.test.ts#makeActions` (unit only) | `partial` |
@@ -68,14 +68,14 @@ await $(".agentic-chat-info").waitForExist();
 | `import_pdf` tool removed | `src/tools/document-tools.ts#createDocumentTools` | `test/feature-cut-2026-11.test.ts#does not give the model the import_pdf alias` (unit only) | `partial` |
 | `/semantic-index` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/feature-cut-2026-11.test.ts#does not register /semantic-index and shows a retired hint` (unit only) | `partial` |
 | `/doctor` | `src/ui/commands.ts#name: "doctor"` | `test/runtime-diagnostics.test.ts#runtime diagnostics` (diagnostics only) | `partial` |
-| `/add-dir` and `/dirs` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
+| `/add-dir` and `/dirs` removed | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#routes /help, /init, and /compact locally without a model call` | `covered` |
 | `/agent` | `src/ui/commands.ts#name: "agent"` | `test/command-dispatcher.test.ts#resolves a named subagent with the trimmed task` (unit only) | `partial` |
-| `/skill`, `/skill <name>` | `src/ui/commands.ts#name: "skill"` | `test/e2e/specs/skill-chip.e2e.ts#renders a Skill block naming the loaded skill` | `covered` |
+| `/skill`, `/skill <name>` | `src/ui/commands.ts#name: "skill"` | `test/e2e/specs/smoke.e2e.ts#renders a scripted turn, treats /plan and /skill as chat, and Stop clears a running turn` | `covered` |
 | `/skill` with no name (picker) | `src/ui/slash/agents.ts#runSkill` | no committed check | `NONE` |
 | Bare `/<skill-name>` | `src/ui/chat-turn.ts#dispatchPrompt` | `test/commands.test.ts#keeps multiline argument tails for commands such as init and compact` (parse only) | `partial` |
 | `/template` as a command | `src/ui/chat-turn.ts#dispatchPrompt` | no handler; the word falls through to the model | `unreachable` |
 | `/template <partial>` skill autocomplete | `src/ui/autocomplete.ts#detectQuery` | `test/autocomplete.test.ts#treats /template like /skill for arg completion` (unit only) | `partial` |
-| Autocomplete menu for commands | `src/ui/composer-controller.ts#updateAutocomplete` | `test/e2e/specs/autocomplete-dropup.e2e.ts#renders the /sta menu above the input card, fully visible` | `covered` |
+| Autocomplete menu for commands | `src/ui/composer-controller.ts#updateAutocomplete` | `test/e2e/specs/smoke.e2e.ts#renders the /sta autocomplete menu above the input card, fully visible` | `covered` |
 | Autocomplete keyboard keys | `src/ui/autocomplete-menu.ts#handleKey` | no committed check | `NONE` |
 | Built-in skills are available | `src/skills/builtin-skills.ts#builtinSkills` | `test/builtin-skills.test.ts#builtinSkills` (catalog only) | `partial` |
 | Plugin skills load with built-ins | `src/agent/runtime-resources.ts#loadAgentRuntimeResources` | `test/runtime-resources.test.ts#composes the system prompt from a loaded resource snapshot` (unit only) | `partial` |

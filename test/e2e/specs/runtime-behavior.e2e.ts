@@ -20,6 +20,7 @@ async function runSlashCommand(command: string): Promise<void> {
 }
 
 async function sendPrompt(prompt: string): Promise<void> {
+  await waitForComposerReady();
   const input = await $(".agentic-chat-input");
   await input.click();
   await input.setValue(prompt);

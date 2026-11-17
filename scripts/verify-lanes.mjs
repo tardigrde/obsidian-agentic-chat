@@ -102,6 +102,16 @@ function e2eStep(label, specs, options = {}) {
   });
 }
 
+/**
+ * The release bundle (no scripted-turn hook) boots in a real Obsidian: the one
+ * smoke test that needs no model. Every other app run uses the e2e bundle.
+ */
+export const PRODUCTION_BOOT_TEST = "mounts the chat view with a reachable composer and its toolbar";
+
+function productionBootStep() {
+  return e2eStep("production boot", [SMOKE_SPEC], { extraArgs: ["--mochaOpts.grep", PRODUCTION_BOOT_TEST] });
+}
+
 function mobileStep(label, spec) {
   return step(label, NODE, ["scripts/run-e2e-mobile.mjs", "--spec", spec], {
     expectTests: true,
@@ -185,7 +195,7 @@ export const lanes = {
       }),
       step("witness self-test", NODE, ["scripts/verify-witness.mjs", "--self-test"], { tier: "T1" }),
       ...buildSteps(),
-      ...(noApp ? [] : [e2eStep("smoke e2e", [SMOKE_SPEC])]),
+      ...(noApp ? [] : [productionBootStep(), step("e2e bundle", NODE, ["scripts/build-e2e.mjs"]), e2eStep("smoke e2e", [SMOKE_SPEC])]),
     ];
   },
 
@@ -207,17 +217,23 @@ export const lanes = {
     const args = [...input];
     const mobile = takeFlag(args, "--mobile");
     const dogfood = takeFlag(args, "--dogfood");
+    const prod = takeFlag(args, "--prod");
+    // CI builds the e2e bundle once and reuses it for the next app step.
+    const reuse = takeFlag(args, "--reuse-bundle");
     const specs = args.filter((arg) => !arg.startsWith("-")).map((arg) => resolveSpec(arg));
     const passthrough = args.filter((arg) => arg.startsWith("-"));
-    const bundle = step("e2e bundle", NODE, ["scripts/build-e2e.mjs"]);
+    const bundle = reuse ? [] : [step("e2e bundle", NODE, ["scripts/build-e2e.mjs"])];
     if (dogfood) {
-      return [bundle, scriptedDogfoodStep()];
+      return [...bundle, scriptedDogfoodStep()];
+    }
+    if (prod) {
+      return [step("production bundle", NODE, ["scripts/build.mjs", "production"]), productionBootStep()];
     }
     if (mobile) {
       const targets = specs.length > 0 ? specs : [MOBILE_SPEC];
-      return [bundle, ...targets.map((spec) => mobileStep(`mobile ${path.basename(spec)}`, spec))];
+      return [...bundle, ...targets.map((spec) => mobileStep(`mobile ${path.basename(spec)}`, spec))];
     }
-    return [bundle, e2eStep("e2e", specs, { extraArgs: passthrough })];
+    return [...bundle, e2eStep("e2e", specs, { extraArgs: passthrough })];
   },
 
   live: (args) => {
@@ -303,11 +319,11 @@ Lanes: ${LANE_NAMES.join(", ")}
   check [--no-app] [--coverage]
                     Merge gate: secret scan, typecheck, lints, feature map, test
                     manifest, doc commands, skip rule, unit, witness self-test,
-                    production build, real-Obsidian smoke. --no-app drops the smoke
+                    production build, production boot, e2e smoke. --no-app drops the app steps
                     (no display); CI runs \`check --no-app --coverage\` plus the app job.
   change <file...|pattern>
                     One or more unit files, or a -t name pattern.
-  app [spec...] [--mobile] [--dogfood]
+  app [spec...] [--mobile] [--dogfood] [--prod] [--reuse-bundle]
                     Real Obsidian, scripted turns. No spec runs the whole suite;
                     bare names resolve to test/e2e/specs/<name>.e2e.ts.
   live [spec...]    Real model calls. Local only; needs AGENTIC_CHAT_API_KEY.

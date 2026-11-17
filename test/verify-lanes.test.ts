@@ -41,8 +41,13 @@ describe("verify lanes", () => {
     for (const required of ["secret scan", "typecheck", "scripts typecheck", "test manifest", "doc commands", "skip rule", "unit tests", "witness self-test", "production bundle"]) {
       expect(full).toContain(required);
     }
+    // The release bundle boots first (no scripted hook), then the smoke runs
+    // on the e2e bundle, which has the scripted-turn hook it needs.
+    expect(full.slice(-3)).toEqual(["production boot", "e2e bundle", "smoke e2e"]);
+    expect(full.indexOf("production bundle")).toBeLessThan(full.indexOf("production boot"));
     const ci = labels(build("check", ["--no-app", "--coverage"]));
     expect(ci).not.toContain("smoke e2e");
+    expect(ci).not.toContain("production boot");
     expect(ci).toContain("unit tests + coverage report");
     expect(() => build("check", ["--bogus"])).toThrow(/--no-app/);
   });
@@ -51,6 +56,10 @@ describe("verify lanes", () => {
     expect(resolveSpec("smoke")).toBe("test/e2e/specs/smoke.e2e.ts");
     expect(build("app", ["smoke"])[1].args).toContain("test/e2e/specs/smoke.e2e.ts");
     expect(labels(build("app", ["--mobile"]))).toEqual(["e2e bundle", "mobile mobile-viewport.e2e.ts"]);
+    expect(labels(build("app", ["--mobile", "--reuse-bundle"]))).toEqual(["mobile mobile-viewport.e2e.ts"]);
+    const prod = build("app", ["--prod"]);
+    expect(labels(prod)).toEqual(["production bundle", "production boot"]);
+    expect(prod[1].args).toEqual(expect.arrayContaining(["--spec", "test/e2e/specs/smoke.e2e.ts", "--mochaOpts.grep"]));
     expect(build("app", ["--dogfood"])[1].args).toEqual(
       expect.arrayContaining(["scripts/run-agentic-evals.ts", "--fail-on-skip", "--run-scripted"]),
     );

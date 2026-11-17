@@ -190,44 +190,8 @@ async function dismissOpenApproval(): Promise<void> {
 describe("agentic-chat deterministic approvals", function () {
   before(async function () {
     await cleanupNotes();
-    await installScriptedTurns([
-      toolTurn("write tool call", "e2e-write", "write", { path: WRITE_NOTE_PATH, content: WRITE_NOTE_BODY }),
-      textTurn("write final", "Wrote the deterministic note."),
-      toolTurn("edit tool call", "e2e-edit", "edit", {
-        path: EDIT_NOTE_PATH,
-        edits: [{ oldText: EDIT_BEFORE, newText: EDIT_AFTER }],
-      }),
-      textTurn("edit final", "Edited the deterministic note."),
-      toolTurn("denied write call", "e2e-denied-write", "write", {
-        path: DENIED_NOTE_PATH,
-        content: "should not be written",
-      }),
-      textTurn("denied write final", "The denied write was not applied."),
-      toolTurn("instruction write call", "e2e-instruction-write", "write", {
-        path: INSTRUCTIONS_PATH,
-        content: INSTRUCTIONS_BODY,
-      }),
-      textTurn("instruction write final", "Saved the standing instruction."),
-      toolTurn("remember deny write call", "e2e-remember-deny-write", "write", {
-        path: REMEMBER_DENY_PATH,
-        content: "should not be written",
-      }),
-      textTurn("remember deny final", "Remembered the deny decision."),
-      toolTurn("remember deny second call", "e2e-remember-deny-write-second", "write", {
-        path: REMEMBER_DENY_SECOND_PATH,
-        content: "should not be written either",
-      }),
-      textTurn("remember deny second final", "Still denied without asking."),
-      textTurn("queue first delayed", "Initial queued answer.", { hold: true }),
-      textTurn("queue final", "Queued answer used the edited draft."),
-      toolTurn("empty folder delete call", "e2e-delete-empty-folder", "delete", { path: EMPTY_FOLDER_PATH }),
-      textTurn("empty folder delete final", "Deleted the empty folder."),
-      toolTurn("stop approval call", "e2e-stop-approval", "write", {
-        path: STOP_APPROVAL_NOTE_PATH,
-        content: "should not be written after stop",
-      }),
-      textTurn("stop approval final", "This turn should not run."),
-    ]);
+    // Each test installs its own queue; the hook must exist before the chat opens.
+    await installScriptedTurns([]);
 
     const configured = await configurePlugin();
     if (!configured) throw new Error("agentic-chat plugin not found in the test vault");
@@ -251,6 +215,10 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   it("asks before a scripted write and undo removes the created note", async function () {
+    await installScriptedTurns([
+      toolTurn("write tool call", "e2e-write", "write", { path: WRITE_NOTE_PATH, content: WRITE_NOTE_BODY }),
+      textTurn("write final", "Wrote the deterministic note."),
+    ]);
     await sendPrompt("scripted write deterministic note");
     await allowApproval();
 
@@ -269,6 +237,13 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   it("asks before a scripted edit and undo restores the prior text", async function () {
+    await installScriptedTurns([
+      toolTurn("edit tool call", "e2e-edit", "edit", {
+        path: EDIT_NOTE_PATH,
+        edits: [{ oldText: EDIT_BEFORE, newText: EDIT_AFTER }],
+      }),
+      textTurn("edit final", "Edited the deterministic note."),
+    ]);
     await browser.executeObsidian(async ({ app, obsidian }, note) => {
       const existing = app.vault.getAbstractFileByPath(note.path);
       if (existing instanceof obsidian.TFile) await app.vault.modify(existing, note.before);
@@ -315,26 +290,33 @@ describe("agentic-chat deterministic approvals", function () {
       },
       { timeout: 10_000, timeoutMsg: "undo did not restore the pre-edit note body" },
     );
-    expect(await scriptedCallLabels()).toEqual(["write tool call", "write final", "edit tool call", "edit final"]);
+    expect(await scriptedCallLabels()).toEqual(["edit tool call", "edit final"]);
   });
 
   it("continues after a denied scripted write without creating the note", async function () {
+    await installScriptedTurns([
+      toolTurn("denied write call", "e2e-denied-write", "write", {
+        path: DENIED_NOTE_PATH,
+        content: "should not be written",
+      }),
+      textTurn("denied write final", "The denied write was not applied."),
+    ]);
     await sendPrompt("scripted denied write");
     await denyApproval();
 
     await expect($(".agentic-chat-messages")).toHaveText(/The denied write was not applied/);
     expect(await noteExists(DENIED_NOTE_PATH)).toBe(false);
-    expect(await scriptedCallLabels()).toEqual([
-      "write tool call",
-      "write final",
-      "edit tool call",
-      "edit final",
-      "denied write call",
-      "denied write final",
-    ]);
+    expect(await scriptedCallLabels()).toEqual(["denied write call", "denied write final"]);
   });
 
   it("captures # composer text into standing instructions through approval", async function () {
+    await installScriptedTurns([
+      toolTurn("instruction write call", "e2e-instruction-write", "write", {
+        path: INSTRUCTIONS_PATH,
+        content: INSTRUCTIONS_BODY,
+      }),
+      textTurn("instruction write final", "Saved the standing instruction."),
+    ]);
     await sendPrompt("# Prefer concise vault updates.");
     await allowApproval();
     await browser.waitUntil(
@@ -346,6 +328,18 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   it("keeps don't ask again passive and remembers deny after the final choice", async function () {
+    await installScriptedTurns([
+      toolTurn("remember deny write call", "e2e-remember-deny-write", "write", {
+        path: REMEMBER_DENY_PATH,
+        content: "should not be written",
+      }),
+      textTurn("remember deny final", "Remembered the deny decision."),
+      toolTurn("remember deny second call", "e2e-remember-deny-write-second", "write", {
+        path: REMEMBER_DENY_SECOND_PATH,
+        content: "should not be written either",
+      }),
+      textTurn("remember deny second final", "Still denied without asking."),
+    ]);
     await sendPrompt("scripted remember denied write");
     await clickRememberApprovalChoice();
     expect(await $(".agentic-chat-approval").isExisting()).toBe(true);
@@ -358,13 +352,23 @@ describe("agentic-chat deterministic approvals", function () {
     expect(await noteExists(REMEMBER_DENY_PATH)).toBe(false);
 
     await sendPrompt("scripted remember denied write again");
-    await browser.pause(250);
-    expect(await $(".agentic-chat-approval").isExisting()).toBe(false);
+    // The remembered deny answers without a modal; wait for the final turn.
     await expect($(".agentic-chat-messages")).toHaveText(/Still denied without asking/);
+    expect(await $(".agentic-chat-approval").isExisting()).toBe(false);
+    expect(await scriptedCallLabels()).toEqual([
+      "remember deny write call",
+      "remember deny final",
+      "remember deny second call",
+      "remember deny second final",
+    ]);
     expect(await noteExists(REMEMBER_DENY_SECOND_PATH)).toBe(false);
   });
 
   it("keeps a plain queued message editable until the active turn finishes", async function () {
+    await installScriptedTurns([
+      textTurn("queue first delayed", "Initial queued answer.", { hold: true }),
+      textTurn("queue final", "Queued answer used the edited draft."),
+    ]);
     await sendPrompt("scripted queue initial");
     await browser.waitUntil(
       async () => (await $(".agentic-chat-send").getText()).trim() === "Queue",
@@ -400,6 +404,10 @@ describe("agentic-chat deterministic approvals", function () {
   });
 
   it("can approve deleting an empty folder", async function () {
+    await installScriptedTurns([
+      toolTurn("empty folder delete call", "e2e-delete-empty-folder", "delete", { path: EMPTY_FOLDER_PATH }),
+      textTurn("empty folder delete final", "Deleted the empty folder."),
+    ]);
     await setApproval("ask");
     await browser.executeObsidian(async ({ app }, path) => {
       if (!app.vault.getAbstractFileByPath(path)) await app.vault.createFolder(path);
@@ -413,27 +421,17 @@ describe("agentic-chat deterministic approvals", function () {
       timeoutMsg: "approved empty-folder delete did not remove the folder",
     });
     await expect($(".agentic-chat-messages")).toHaveText(/Deleted the empty folder/);
-    expect(await scriptedCallLabels()).toEqual([
-      "write tool call",
-      "write final",
-      "edit tool call",
-      "edit final",
-      "denied write call",
-      "denied write final",
-      "instruction write call",
-      "instruction write final",
-      "remember deny write call",
-      "remember deny final",
-      "remember deny second call",
-      "remember deny second final",
-      "queue first delayed",
-      "queue final",
-      "empty folder delete call",
-      "empty folder delete final",
-    ]);
+    expect(await scriptedCallLabels()).toEqual(["empty folder delete call", "empty folder delete final"]);
   });
 
   it("closes the approval modal when the user stops the turn", async function () {
+    await installScriptedTurns([
+      toolTurn("stop approval call", "e2e-stop-approval", "write", {
+        path: STOP_APPROVAL_NOTE_PATH,
+        content: "should not be written after stop",
+      }),
+      textTurn("stop approval final", "This turn should not run."),
+    ]);
     await setApproval("ask");
     await sendPrompt("scripted write that will be stopped");
 

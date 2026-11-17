@@ -109,9 +109,10 @@ describe("agentic-chat beautifului polish", function () {
     const done = await probe({ key: "cls", selector: ".agentic-chat-reasoning", attr: "class" });
     expect(done.cls).not.toContain("is-done");
 
-    await browser.pause(250);
-    const time = await probe({ key: "time", selector: ".agentic-chat-reasoning-time" });
-    expect(time.time.length).toBeGreaterThan(0);
+    await browser.waitUntil(async () => (await probe({ key: "time", selector: ".agentic-chat-reasoning-time" })).time.length > 0, {
+      timeout: 3_000,
+      timeoutMsg: "the reasoning timer never showed a time",
+    });
 
     await emit(streamDelta("text_delta", "first token"));
     await $(".agentic-chat-reasoning.is-done").waitForExist({ timeout: 2_000, timeoutMsg: "pill never settled on answer" });
@@ -136,9 +137,10 @@ describe("agentic-chat beautifului polish", function () {
       ],
     );
 
-    await browser.pause(400);
-    const state = await probe({ key: "loaders", selector: ".agentic-chat-loading", all: true });
-    expect(state.loaders).toEqual([]);
+    await browser.waitUntil(
+      async () => (await probe({ key: "loaders", selector: ".agentic-chat-loading", all: true })).loaders.length === 0,
+      { timeout: 3_000, timeoutMsg: "a loader stayed after the instant reply" },
+    );
     await $(".agentic-chat-assistant:last-child .agentic-chat-reasoning.is-done").waitForExist({ timeout: 2_000 });
     const label = await probe({ key: "label", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning-label" });
     expect(label.label).toBe("Thought");
@@ -153,9 +155,11 @@ describe("agentic-chat beautifului polish", function () {
     expect(done.cls).not.toContain("is-done");
 
     await emit(streamDelta("thinking_delta", "trace reasoning step one"));
-    await browser.pause(250);
-    const time = await probe({ key: "time", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning-time" });
-    expect(time.time.length).toBeGreaterThan(0);
+    await browser.waitUntil(
+      async () =>
+        (await probe({ key: "time", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning-time" })).time.length > 0,
+      { timeout: 3_000, timeoutMsg: "the reasoning timer never showed a time" },
+    );
 
     await emit(streamDelta("text_delta", "measured answer"));
     await emit(assistantEndText("measured answer"));
@@ -365,9 +369,11 @@ describe("agentic-chat beautifului polish", function () {
 
   it("aborting mid-thinking settles the pill and leaves no loader behind", async function () {
     await startAssistantTurn();
-    await browser.pause(200);
-    const pre = await probe({ key: "label", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning-label" });
-    expect(pre.label).toBe("Thinking");
+    await browser.waitUntil(
+      async () =>
+        (await probe({ key: "label", selector: ".agentic-chat-assistant:last-child .agentic-chat-reasoning-label" })).label === "Thinking",
+      { timeout: 3_000, timeoutMsg: "the reasoning pill did not show Thinking" },
+    );
     await emit(assistantEndEmpty());
     await emit({ type: "agent_end" });
 

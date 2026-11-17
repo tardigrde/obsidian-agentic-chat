@@ -127,7 +127,12 @@ async function dismissOpenModals(): Promise<void> {
     }
     return containers.length;
   });
-  if (open > 0) await browser.pause(250);
+  if (open > 0) {
+    await browser.waitUntil(async () => !(await $(".modal-container").isExisting()), {
+      timeout: 3_000,
+      timeoutMsg: "a stray modal did not close",
+    });
+  }
 }
 
 describe("agentic-chat rename without link modal", function () {
@@ -175,12 +180,10 @@ describe("agentic-chat rename without link modal", function () {
         !(await $(".agentic-chat-stop").isDisplayed()),
       { timeout: 15_000, timeoutMsg: "the scripted rename neither ran nor settled" },
     );
-    await browser.pause(1_500);
-
+    // A blocking link modal would hang the turn, so the turn must end first.
+    await waitForTurnEnd();
     expect(await $(".modal-container").isExisting()).toBe(false);
     expect(await scriptedCallLabels()).toContain("rename");
-
-    await waitForTurnEnd();
     expect(await noteExists(NEW_PATH)).toBe(true);
     expect(await noteExists(OLD_PATH)).toBe(false);
     expect(await readNote(SOURCE_PATH)).toContain("[[New]]");

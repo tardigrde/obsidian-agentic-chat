@@ -46,6 +46,30 @@ describe("createReplayStreamController", () => {
     expect(JSON.stringify(events)).not.toContain("late answer");
   });
 
+  it("ends a held turn as aborted when the signal aborts before release (Stop on a held turn)", async () => {
+    const replay = createReplayStreamController([replayTextTurn("held answer", { hold: true })], {
+      // Never released: only the abort can end this turn.
+      waitForRelease: () => new Promise<void>(() => {}),
+    });
+    const controller = new AbortController();
+    const stream = replay.streamFn(
+      model(),
+      normalizeContext({
+        systemPrompt: "",
+        messages: [{ role: "user", content: "hi", timestamp: 1 }],
+        tools: [],
+      } as Context),
+      { signal: controller.signal },
+    );
+    setTimeout(() => controller.abort(), 10);
+
+    const events = [];
+    for await (const event of await stream) events.push(event);
+
+    expect(events.at(-1)).toMatchObject({ type: "error", reason: "aborted" });
+    expect(JSON.stringify(events)).not.toContain("held answer");
+  });
+
   it("emits deterministic text/tool-call update events and records provider calls", async () => {
     const replay = createReplayStreamController([
       {
