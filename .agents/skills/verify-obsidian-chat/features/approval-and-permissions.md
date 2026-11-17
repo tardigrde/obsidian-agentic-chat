@@ -50,10 +50,10 @@ await (await modal.$("button=Allow")).click();
 | Global mutating gate persists | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` (persistence; behavior also exercised by `approval-deterministic.e2e.ts`) | `covered` |
 | Per-tool override through settings | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/specs/settings-ui.e2e.ts#removes the working-directory section and still saves approval controls` | `covered` |
 | Per-tool deny flips to allow in a recorded run | `src/settings-tab-agent.ts#approvalDefinitions` | `test/e2e/probe/scenarios/settings-gate.e2e.ts#records a denied write, flips the override, and records the write succeeding` | `covered` |
-| Working directories and `/add-dir` are gone | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#runs an in-pane slash command (/help) without calling the model` | `covered` |
+| Working directories and `/add-dir` are gone | `src/ui/commands.ts#SLASH_COMMANDS` | `test/commands.test.ts` (unit) plus `/help` absence in `test/e2e/specs/smoke.e2e.ts#routes /help, /init, and /compact locally without a model call` | `covered` |
 | Safe asks before mutating tools | `src/agent/tool-call-controller.ts#beforeToolCall` | `test/e2e/specs/approval-deterministic.e2e.ts#asks before a scripted write and undo removes the created note` | `covered` |
-| Safe/YOLO toggle | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` (existence only) | `partial` |
-| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/plan-removal.e2e.ts#out of help and the composer` | `covered` |
+| Safe/YOLO toggle | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/smoke.e2e.ts#mounts the chat view with a reachable composer and its toolbar` (existence only) | `partial` |
+| `/plan` and the Plan badge are gone | `src/ui/chat-view.ts#buildLayout` | `test/e2e/specs/smoke.e2e.ts#renders a scripted turn, treats /plan and /skill as chat, and Stop clears a running turn` | `covered` |
 | Invalid mode transition is blocked | `src/ui/chat-view.ts#setMode` | `test/modes.test.ts#validateModeTransition` (unit only) | `partial` |
 | Background-tab approval badge and label | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
 | Closing a tab clears its pending approval | `src/ui/chat-tabs.ts#closeTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` | `covered` |

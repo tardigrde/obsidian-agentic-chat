@@ -172,4 +172,66 @@ describe("settings MCP dynamic rows", function () {
     const settingsAfter = await readAgenticChatSettings<SettingsSnapshot>();
     expect(settingsAfter.mcp.servers.some((server) => server.url === url)).toBe(false);
   });
+
+  it("shows the OAuth banner for a bare MCP server whose 401 advertises resource_metadata (no auto-redirect)", async function () {
+    this.timeout(30_000);
+    // Moved from composio-install.e2e.ts (#393 T13). A pending OAuth challenge
+    // stands in for the 401: the banner must offer "Authenticate & test" and
+    // must not start a redirect by itself.
+    await closeAgenticChatSettings();
+    const setServer = async (add: boolean): Promise<void> => {
+      await browser.executeObsidian(async ({ app }, shouldAdd) => {
+        const plugin = (app as unknown as {
+          plugins: { plugins: Record<string, { settings: { mcp: { enabled: boolean; servers: Array<Record<string, unknown>> } }; saveSettings: () => Promise<void> }> };
+        }).plugins.plugins["agentic-chat"];
+        const mcp = plugin.settings.mcp;
+        mcp.servers = mcp.servers.filter((server) => server.id !== "e2e-bare-oauth");
+        if (shouldAdd) {
+          mcp.enabled = true;
+          mcp.servers.push({
+            id: "e2e-bare-oauth",
+            name: "e2e-bare-oauth",
+            url: "https://mcp.example.com/mcp",
+            enabled: true,
+            authType: "none",
+            authHeaderName: "",
+            authHeaderValue: "",
+            authHeaderValueSecretId: "test",
+            oauth: {
+              clientId: "", clientSecret: "", clientSecretSecretId: "", dynamicClientRegistration: false,
+              registeredRedirectUri: "", authorizationServer: "", authorizationEndpoint: "", tokenEndpoint: "",
+              registrationEndpoint: "", resourceMetadataUrl: "", accessToken: "", accessTokenSecretId: "",
+              refreshToken: "", refreshTokenSecretId: "", expiresAt: 0, scope: "",
+            },
+            approval: "ask",
+            knownTools: [],
+            headers: {},
+            source: "user",
+            enabledTools: [],
+            disabledTools: [],
+            pendingOAuthChallenge: 'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"',
+            pendingOAuthResourceUrl: "https://mcp.example.com/.well-known/oauth-protected-resource",
+          });
+        }
+        await plugin.saveSettings();
+      }, add);
+    };
+    await setServer(true);
+    try {
+      await openAgenticChatSettings();
+      await selectSettingsTab("Advanced");
+      await browser.waitUntil(
+        async () =>
+          await browser.execute(() => {
+            const text = document.body.textContent ?? "";
+            const button = Array.from(document.querySelectorAll("button")).some((b) => b.innerText.trim() === "Authenticate & test");
+            return text.includes("requires OAuth") && button;
+          }),
+        { timeout: 5_000, timeoutMsg: "the bare MCP OAuth banner or its Authenticate & test button did not render" },
+      );
+    } finally {
+      await closeAgenticChatSettings();
+      await setServer(false);
+    }
+  });
 });

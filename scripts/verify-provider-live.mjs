@@ -5,12 +5,6 @@ import { hasAnyEnv, loadEnvFileFromArgs } from "./live-env.mjs";
 
 const liveProviderSpecs = [
   {
-    label: "OpenAI-compatible guardrail flow",
-    spec: "test/e2e/live/guardrails.e2e.ts",
-    env: ["AGENTIC_CHAT_API_KEY", "AGENTIC_CHAT_API_KEY_FILE"],
-    command: "AGENTIC_CHAT_API_KEY=... AGENTIC_CHAT_BASE_URL=... AGENTIC_CHAT_MODEL=... npm run test:e2e -- --spec test/e2e/live/guardrails.e2e.ts",
-  },
-  {
     label: "OpenAI-compatible live flow",
     spec: "test/e2e/live/openwebui-live.e2e.ts",
     env: ["AGENTIC_CHAT_API_KEY", "AGENTIC_CHAT_API_KEY_FILE"],
