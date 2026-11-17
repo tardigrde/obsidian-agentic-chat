@@ -81,7 +81,8 @@ npm run tests:status                             # flaky, slower, last red per l
 ```
 
 Every test file is listed in `test/manifest.json`. Lane internals, real-Obsidian
-e2e, proxies, probes, chaos, and evals: [docs/development/verification.md](docs/development/verification.md).
+runs, and proxies: [docs/development/verification.md](docs/development/verification.md).
+Evals: [docs/development/evals.md](docs/development/evals.md).
 Witness and agent review: [docs/development/trust.md](docs/development/trust.md).
 
 ## Fast feedback loop

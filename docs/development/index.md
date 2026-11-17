@@ -57,8 +57,8 @@ kind of change, and the rules. The first command for any change is:
 npm run verify -- plan
 ```
 
-[Verification](./verification.md) is the lane reference: e2e internals, the
-fake-green list, probes, and evals. For the witness tool, the CI witness gate,
+[Verification](./verification.md) is the lane reference: real-Obsidian runs,
+the fake-green list, and CI. [Evals](./evals.md) covers agent-quality evals. For the witness tool, the CI witness gate,
 agent review, and the merge protocol, use [Trust the change](./trust.md). For
 Obsidian Mobile, use [Mobile testing](./mobile-testing.md). For the on-demand mutation
 matrix, use [Mutation testing](./mutation.md).

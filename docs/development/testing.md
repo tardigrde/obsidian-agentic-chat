@@ -1,7 +1,8 @@
 # Testing
 
 One page for "what do I run". Deeper references:
-[verification.md](verification.md) (lane internals, e2e, evals, probes),
+[verification.md](verification.md) (lane internals, real-Obsidian runs, fake green),
+[evals.md](evals.md) (agent-quality evals),
 [trust.md](trust.md) (witness and agent review). Source of truth for every
 test file: [`test/manifest.json`](../../test/manifest.json).
 
