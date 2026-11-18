@@ -344,7 +344,7 @@ does not run them.
 npm run eval:tool-use -- --suite core --canary [--parallel 2] --env-file .env
 npm run eval:ab -- --case organize.easy.invoice,tools.easy.search --runs 5 --env-file .env
 npm run eval:explain -- logs/eval-runs/<run id>          # first failed run, one page
-npm run eval:explain -- --saturation core               # cases at pass^k in the last 3 baselines
+npm run eval:explain -- --saturation core               # cases at pass^k in the last 3 baselines with this case set
 npm run eval:tool-use -- --write-baseline-from logs/eval-runs/<run id>/summary.json
 ```
 
@@ -355,7 +355,8 @@ npm run eval:tool-use -- --write-baseline-from logs/eval-runs/<run id>/summary.j
   or two cases moving the same way; one weak move is `Weak: run it once more`.
   Two canary runs on an unchanged `main` (2026-11-18) each had one weak drop
   (`tools.easy.search` 4/5 and 3/5 against a 3/3 baseline), which is why one
-  case alone is not a signal. Those runs: $0.027 and $0.028, 4 min 52 s and
+  case alone is not a signal. A harness-error run (an upstream 429) leaves its
+  case's interval and is counted on its own line. Those runs: $0.027 and $0.028, 4 min 52 s and
   5 min 24 s of spec time; `organize.easy.invoice` was 4/5 and 3/5, so it stays
   in the canary.
 - `--parallel N` runs N Obsidian instances side by side, each with its own
