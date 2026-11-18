@@ -1,37 +1,22 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { DEFAULT_SYSTEM_PROMPT } from "../src/agent/default-system-prompt";
-import { estimateToolDefinitionTokens } from "../src/agent/tool-schema-tokens";
-import { BUILTIN_TOOL_NAMES } from "../src/tools/tool-contracts";
-import { vaultToolDefinitions } from "../src/tools/vault-tool-definitions";
 import {
   evaluateScriptedDogfoodCase,
-  evaluateStaticContextCase,
   skippedEvalCase,
   validateEvalSuite,
   type AgenticEvalCase,
   type EvalCaseResult,
   type EvalSuite,
-  type LlmJudgeEvalCase,
   type ScriptedDogfoodEvalCase,
   type ScriptedDogfoodSnapshot,
   type SessionTraceSnapshot,
-  type StaticContextEvalCase,
-  type StaticContextSnapshot,
 } from "./agentic-eval-core";
-import {
-  buildJudgePacket,
-  resolveJudgeConfig,
-  runJudge,
-  type JudgeRunResult,
-} from "./agentic-eval-judge";
-import { assertDogfoodInvariants, loadDogfoodManifest, type DogfoodManifest } from "./dogfood-core";
+import { assertDogfoodInvariants } from "./dogfood-core";
 
-const DEFAULT_SUITE = "test/evals/agentic-chat/context-and-dogfood.eval.json";
+const DEFAULT_SUITE = "test/e2e/dogfood/scripted-dogfood.eval.json";
 const DEFAULT_OUT_ROOT = "logs/eval-runs";
 const DEFAULT_DOGFOOD_REPORT_ROOT = "logs/dogfood-runs";
 
@@ -46,8 +31,6 @@ interface CliArgs {
   "dogfood-report-dir"?: string;
   "allow-problems"?: boolean;
   "expect-problems"?: boolean;
-  "run-judge"?: boolean;
-  "judge-cache-dir"?: string;
   strict?: boolean;
   "fail-on-skip"?: boolean;
 }
@@ -81,7 +64,7 @@ void main().catch((error: unknown) => {
 
 async function main(): Promise<void> {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    process.stdout.write("Usage: npm run verify -- eval [--suite <path>] [--case <id>] [--run-scripted] [--run-judge] [--fail-on-skip] [--strict]\n");
+    process.stdout.write("Usage: npm run verify -- app --dogfood   (runs this with --run-scripted --fail-on-skip)\n       node --import tsx scripts/run-agentic-evals.ts [--suite <path>] [--case <id>] [--run-scripted] [--fail-on-skip] [--strict]\n");
     return;
   }
   const args = parseArgs(process.argv.slice(2));
@@ -95,13 +78,7 @@ async function main(): Promise<void> {
   const cases = selectCases(suite, args.case);
   const results: EvalCaseResult[] = [];
   for (const evalCase of cases) {
-    if (evalCase.type === "static-context") {
-      results.push(await runStaticContextCase(evalCase, outDir));
-    } else if (evalCase.type === "scripted-dogfood") {
-      results.push(await runScriptedDogfoodCase(evalCase, { args, runId, outDir }));
-    } else {
-      results.push(await runJudgeCase(evalCase, { args, runId, outDir }));
-    }
+    results.push(await runScriptedDogfoodCase(evalCase, { args, runId, outDir }));
   }
 
   const finishedAt = new Date();
@@ -136,42 +113,6 @@ async function main(): Promise<void> {
     if (summary.totals.errors > 0) process.exit(1);
     if (args.strict && summary.totals.warnings > 0) process.exit(1);
   }
-}
-
-async function runStaticContextCase(evalCase: StaticContextEvalCase, outDir: string): Promise<EvalCaseResult> {
-  const snapshot = createStaticContextSnapshot(evalCase);
-  const caseDir = await ensureCaseDir(outDir, evalCase.id);
-  const snapshotPath = path.join(caseDir, "static-context.json");
-  await writeFile(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
-  const result = evaluateStaticContextCase(evalCase, snapshot);
-  return {
-    ...result,
-    artifacts: { ...(result.artifacts ?? {}), snapshot: snapshotPath },
-  };
-}
-
-function createStaticContextSnapshot(evalCase: StaticContextEvalCase): StaticContextSnapshot {
-  const baseSystemPrompt = evalCase.systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT;
-  const userPrompt = evalCase.prompt ?? "";
-  const systemPrompt = baseSystemPrompt;
-  const tools = vaultToolDefinitions();
-  const contextMessages = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userPrompt },
-  ];
-  return {
-    systemPrompt,
-    userPrompt,
-    contextChars: JSON.stringify(contextMessages).length,
-    toolSchemaTokens: estimateToolDefinitionTokens(tools as unknown as AgentTool[]),
-    knownToolNames: [...new Set([...BUILTIN_TOOL_NAMES, ...tools.map((tool) => tool.name)])],
-    tools: tools.map((tool) => ({
-      name: tool.name,
-      label: tool.label,
-      description: tool.description,
-      parameters: tool.parameters,
-    })),
-  };
 }
 
 async function runScriptedDogfoodCase(
@@ -267,142 +208,6 @@ async function writeScriptedDogfoodResult(
       dogfoodReport: reportPath,
     },
   };
-}
-
-async function runJudgeCase(
-  evalCase: LlmJudgeEvalCase,
-  context: { args: CliArgs; runId: string; outDir: string },
-): Promise<EvalCaseResult> {
-  if (context.args["run-judge"] !== true) {
-    return skippedEvalCase(evalCase, "LLM judge is opt-in; pass --run-judge to spend model tokens.");
-  }
-
-  const dogfoodRunId = context.args["dogfood-run-id"] ?? evalCase.dogfoodRunId;
-  if (!dogfoodRunId) return skippedEvalCase(evalCase, "No dogfood run id was provided for the judge packet.");
-
-  const reportRoot = path.resolve(context.args["dogfood-report-dir"] ?? DEFAULT_DOGFOOD_REPORT_ROOT);
-  const runDir = path.resolve(context.args["dogfood-run-dir"] ?? path.join(reportRoot, dogfoodRunId));
-  if (!(await exists(runDir))) return skippedEvalCase(evalCase, `Dogfood run dir does not exist: ${runDir}`);
-
-  const caseDir = await ensureCaseDir(context.outDir, evalCase.id);
-  const configResult = await resolveJudgeConfig({ cwd: process.cwd(), env: process.env });
-  const configPath = path.join(caseDir, "judge-config.redacted.json");
-  await writeFile(configPath, `${JSON.stringify(configResult.redacted, null, 2)}\n`, "utf8");
-  if (!configResult.config) {
-    return {
-      id: evalCase.id,
-      type: evalCase.type,
-      status: "skipped",
-      findings: [],
-      skippedReason: `Judge config is incomplete: ${configResult.redacted.missing.join("; ")}`,
-      artifacts: { redactedConfig: configPath },
-    };
-  }
-
-  const snapshot = await loadDogfoodSnapshot({ dogfoodRunId, runDir });
-  const manifest = await loadManifestIfPresent(path.join(runDir, "vault", ".dogfood", "manifest.json"));
-  const packet = await buildJudgePacket({
-    caseId: evalCase.id,
-    dogfoodRunId,
-    runDir,
-    snapshot,
-    manifest,
-  });
-  const packetPath = path.join(caseDir, "judge-packet.json");
-  await writeFile(packetPath, `${JSON.stringify(packet, null, 2)}\n`, "utf8");
-
-  const cacheDir = path.resolve(context.args["judge-cache-dir"] ?? path.join(DEFAULT_OUT_ROOT, "judge-cache"));
-  try {
-    const judge = await runJudge({ config: configResult.config, packet, cacheDir });
-    const resultPath = path.join(caseDir, "judge-result.json");
-    await writeFile(resultPath, `${JSON.stringify(redactJudgeRunResult(judge), null, 2)}\n`, "utf8");
-    return evaluateJudgeResult(evalCase, judge, {
-      redactedConfig: configPath,
-      packet: packetPath,
-      judgeResult: resultPath,
-      cacheDir,
-    });
-  } catch (error) {
-    return {
-      id: evalCase.id,
-      type: evalCase.type,
-      status: "problem",
-      findings: [
-        {
-          severity: "error",
-          caseId: evalCase.id,
-          area: "llm-judge",
-          message: `Judge run failed: ${errorMessage(error)}`,
-        },
-      ],
-      artifacts: {
-        redactedConfig: configPath,
-        packet: packetPath,
-        cacheDir,
-      },
-    };
-  }
-}
-
-async function loadManifestIfPresent(manifestPath: string): Promise<DogfoodManifest | undefined> {
-  return (await exists(manifestPath)) ? await loadDogfoodManifest(manifestPath) : undefined;
-}
-
-function evaluateJudgeResult(
-  evalCase: LlmJudgeEvalCase,
-  judge: JudgeRunResult,
-  artifacts: Record<string, string>,
-): EvalCaseResult {
-  const minOverallScore = evalCase.minOverallScore ?? 4;
-  const minDimensionScore = evalCase.minDimensionScore ?? 3;
-  const findings = [];
-  if (judge.verdict.overallScore < minOverallScore) {
-    findings.push({
-      severity: "warning" as const,
-      caseId: evalCase.id,
-      area: "llm-judge",
-      message: `Judge overall score ${judge.verdict.overallScore} is below threshold ${minOverallScore}.`,
-      details: { summary: judge.verdict.summary, issues: judge.verdict.issues, promptRecommendations: judge.verdict.promptRecommendations },
-    });
-  }
-  const lowScores = Object.entries(judge.verdict.scores).filter(([, score]) => score < minDimensionScore);
-  if (lowScores.length > 0) {
-    findings.push({
-      severity: "warning" as const,
-      caseId: evalCase.id,
-      area: "llm-judge",
-      message: `Judge dimension score(s) below threshold ${minDimensionScore}: ${lowScores.map(([name]) => name).join(", ")}.`,
-      details: { lowScores: Object.fromEntries(lowScores), issues: judge.verdict.issues, promptRecommendations: judge.verdict.promptRecommendations },
-    });
-  }
-  if (!judge.verdict.pass) {
-    findings.push({
-      severity: "warning" as const,
-      caseId: evalCase.id,
-      area: "llm-judge",
-      message: "Judge marked the run as not passing.",
-      details: { summary: judge.verdict.summary, issues: judge.verdict.issues, promptRecommendations: judge.verdict.promptRecommendations },
-    });
-  }
-  return {
-    id: evalCase.id,
-    type: evalCase.type,
-    status: findings.length > 0 ? "problem" : "pass",
-    findings,
-    metrics: {
-      cacheHit: judge.cacheHit,
-      overallScore: judge.verdict.overallScore,
-      pass: judge.verdict.pass,
-      scores: judge.verdict.scores,
-      issueCount: judge.verdict.issues.length,
-      promptRecommendationCount: judge.verdict.promptRecommendations.length,
-    },
-    artifacts,
-  };
-}
-
-function redactJudgeRunResult(judge: JudgeRunResult): Omit<JudgeRunResult, "rawResponse"> & { rawResponse: string } {
-  return { ...judge, rawResponse: judge.rawResponse };
 }
 
 function runDogfoodE2e(options: {
@@ -551,10 +356,7 @@ function formatSkipHint(results: EvalCaseResult[]): string {
   const needs = new Set(skipped.map((result) => result.skippedReason ?? ""));
   const commands: string[] = [];
   if ([...needs].some((reason) => reason.includes("--run-scripted"))) {
-    commands.push("npm run verify -- eval --run-scripted   # needs a display (xvfb-run -a on Linux)");
-  }
-  if ([...needs].some((reason) => reason.includes("--run-judge"))) {
-    commands.push("npm run verify -- eval --suite test/evals/agentic-chat/judge.eval.json --run-judge   # needs a key");
+    commands.push("npm run verify -- app --dogfood   # needs a display (xvfb-run -a on Linux)");
   }
   if (commands.length > 0) lines.push("Next:", ...commands.map((command) => `  ${command}`));
   return `${lines.join("\n")}\n`;
@@ -564,7 +366,6 @@ function parseArgs(argv: string[]): CliArgs {
   const parsed: Record<string, string | boolean> = {};
   const booleanFlags = new Set([
     "run-scripted",
-    "run-judge",
     "allow-problems",
     "expect-problems",
     "strict",

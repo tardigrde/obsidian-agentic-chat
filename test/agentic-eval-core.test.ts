@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   evaluateScriptedDogfoodCase,
-  evaluateStaticContextCase,
   validateEvalSuite,
   type ScriptedDogfoodEvalCase,
   type ScriptedDogfoodSnapshot,
-  type StaticContextEvalCase,
-  type StaticContextSnapshot,
 } from "../scripts/agentic-eval-core";
 
 describe("agentic eval core", () => {
@@ -16,8 +13,8 @@ describe("agentic eval core", () => {
         version: 1,
         name: "duplicate-suite",
         cases: [
-          { id: "same", type: "static-context", assertions: [] },
-          { id: "same", type: "static-context", assertions: [] },
+          { id: "same", type: "scripted-dogfood", assertions: [] },
+          { id: "same", type: "scripted-dogfood", assertions: [] },
         ],
       }),
     ).toThrow("Duplicate eval case id: same");
@@ -31,7 +28,7 @@ describe("agentic eval core", () => {
         cases: [
           {
             id: "case",
-            type: "static-context",
+            type: "scripted-dogfood",
             assertions: [{ type: "unknown_assertion" }],
           },
         ],
@@ -39,95 +36,12 @@ describe("agentic eval core", () => {
     ).toThrow("Unsupported assertion type");
   });
 
-  it("reports prompt references to unavailable tools", () => {
-    const evalCase: StaticContextEvalCase = {
-      id: "static",
-      type: "static-context",
-      assertions: [
-        {
-          type: "prompt_mentions_only_registered_tools",
-          names: ["read", "search", "ls"],
-          severity: "error",
-        },
-      ],
-    };
-    const snapshot: StaticContextSnapshot = {
-      systemPrompt: "Use read, search, and ls proactively.",
-      userPrompt: "",
-      contextChars: 100,
-      toolSchemaTokens: 20,
-      knownToolNames: ["read", "search", "ls"],
-      tools: [{ name: "read", description: "Read a file." }],
-    };
-
-    const result = evaluateStaticContextCase(evalCase, snapshot);
-
-    expect(result.findings).toEqual([
-      expect.objectContaining({
-        severity: "error",
-        area: "prompt-tools",
-        message: "System prompt mentions unavailable tool(s): search, ls.",
-      }),
-    ]);
-  });
-
-  it("checks every known tool name when the assertion omits an explicit names list", () => {
-    const evalCase: StaticContextEvalCase = {
-      id: "static",
-      type: "static-context",
-      assertions: [{ type: "prompt_mentions_only_registered_tools", severity: "error" }],
-    };
-    const snapshot: StaticContextSnapshot = {
-      systemPrompt: "Use read, grep, and find proactively.",
-      userPrompt: "",
-      contextChars: 100,
-      toolSchemaTokens: 20,
-      knownToolNames: ["read", "search", "ls", "grep", "find"],
-      tools: [{ name: "read", description: "Read a file." }],
-    };
-
-    const result = evaluateStaticContextCase(evalCase, snapshot);
-
-    expect(result.findings).toEqual([
-      expect.objectContaining({
-        severity: "error",
-        area: "prompt-tools",
-        message: "System prompt mentions unavailable tool(s): grep, find.",
-      }),
-    ]);
-  });
-
-  it("reports missing tool-description guidance", () => {
-    const evalCase: StaticContextEvalCase = {
-      id: "descriptions",
-      type: "static-context",
-      assertions: [
-        {
-          type: "tool_description_contains",
-          name: "write",
-          text: "frontmatter",
-          severity: "warning",
-        },
-      ],
-    };
-    const snapshot: StaticContextSnapshot = {
-      systemPrompt: "",
-      userPrompt: "",
-      contextChars: 100,
-      toolSchemaTokens: 20,
-      knownToolNames: ["write"],
-      tools: [{ name: "write", description: "Create or overwrite a vault-relative file." }],
-    };
-
-    const result = evaluateStaticContextCase(evalCase, snapshot);
-
-    expect(result.findings).toEqual([
-      expect.objectContaining({
-        severity: "warning",
-        area: "tool-description",
-        message: "Tool write description does not contain: frontmatter",
-      }),
-    ]);
+  it("rejects the retired static-context and llm-judge case types", () => {
+    for (const type of ["static-context", "llm-judge"]) {
+      expect(() => validateEvalSuite({ version: 1, name: "retired", cases: [{ id: "old", type, assertions: [] }] })).toThrow(
+        `Unsupported eval case type for old: ${type}`,
+      );
+    }
   });
 
   it("reports repeated exact dogfood tool actions", () => {

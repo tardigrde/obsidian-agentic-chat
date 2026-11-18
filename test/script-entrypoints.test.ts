@@ -13,7 +13,6 @@ const TSX_ENTRYPOINTS = [
   "scripts/run-agentic-evals.ts",
   "scripts/run-tool-use-evals.ts",
   "scripts/run-dogfood-e2e.ts",
-  "scripts/compare-agentic-evals.ts",
   "scripts/generate-dogfood-vault.ts",
   "scripts/assert-dogfood-invariants.ts",
   "scripts/report-dogfood-run.ts",

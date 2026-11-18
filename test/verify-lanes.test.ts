@@ -14,12 +14,12 @@ describe("verify lanes", () => {
     for (const retired of Object.keys(RETIRED_LANES)) expect(LANE_NAMES).not.toContain(retired);
   });
 
-  it("does not fail a plain eval run on a skip, but does when asked to execute", () => {
-    const plain = build("eval")[0];
-    expect(plain.args).not.toContain("--fail-on-skip");
-    const scripted = build("eval", ["--run-scripted"])[0];
-    expect(scripted.args).toContain("--fail-on-skip");
-    expect(scripted.args).toContain("--run-scripted");
+  it("eval with no arguments prints the core plan and spends nothing", () => {
+    const [plain] = build("eval");
+    expect(plain.args).toEqual(["--import", "tsx", "scripts/run-tool-use-evals.ts", "--suite", path.join("test/evals/tool-use", "core.eval.json"), "--dry-run"]);
+    expect(build("eval", ["--canary"])[0].args).toEqual(expect.arrayContaining(["--canary"]));
+    expect(build("eval", ["--canary"])[0].args).not.toContain("--dry-run");
+    expect(() => build("eval", ["--suite", "tool-use"])).toThrow(/not a suite/);
   });
 
   it("routes a tool-use suite by name to the tool-use runner", () => {
@@ -72,17 +72,17 @@ describe("verify lanes", () => {
   });
 
   it(
-    "`verify -- eval` exits 0 on a clean checkout and names the next command",
+    "`verify -- eval` exits 0 on a clean checkout without a key and prints the plan",
     () => {
       const result = spawnSync(process.execPath, ["scripts/verify.mjs", "eval"], {
         encoding: "utf8",
         timeout: 60_000,
-        env: { ...process.env, AGENTIC_CHAT_HISTORY: "0" },
+        env: { ...process.env, AGENTIC_CHAT_HISTORY: "0", AGENTIC_CHAT_API_KEY: "" },
       });
       const output = `${result.stdout}\n${result.stderr}`;
       expect(result.status, output).toBe(0);
-      expect(output).toContain("Not executed: 1 case(s)");
-      expect(output).toContain("npm run verify -- eval --run-scripted");
+      expect(output).toContain("Tool-use eval plan: core");
+      expect(output).toContain("12 case(s) x 3 run(s)");
     },
     60_000,
   );

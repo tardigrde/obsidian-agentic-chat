@@ -285,12 +285,23 @@ function identityWarnings(baseline: unknown, candidate: unknown): string[] {
       warnings.push(`> Warning: the ${label} differs (baseline \`${left}\`, candidate \`${right}\`).`);
     }
   }
+  const [leftParallel, rightParallel] = [parallelOf(baseline), parallelOf(candidate)];
+  if (leftParallel !== rightParallel) {
+    warnings.push(
+      `> Warning: the runs used a different --parallel (baseline ${leftParallel}, candidate ${rightParallel}); time per case is not comparable. Correctness and cost are.`,
+    );
+  }
   if (!sameCostSource(baseline, candidate)) {
     warnings.push(
       `> Warning: the cost source differs or is unknown (baseline \`${costSourceName(baseline) ?? "unknown"}\`, candidate \`${costSourceName(candidate) ?? "unknown"}\`); the cost axis is not compared.`,
     );
   }
   return warnings.length > 0 ? [...warnings, ""] : [];
+}
+
+/** Obsidian instances side by side; a run or baseline without the field ran one. */
+function parallelOf(input: unknown): number {
+  return isRecord(input) && typeof input.parallel === "number" && input.parallel > 1 ? input.parallel : 1;
 }
 
 /** A baseline stores the suite name as a string; a summary stores `{ name }`. */

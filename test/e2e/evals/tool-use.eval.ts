@@ -1,6 +1,6 @@
 import { $, browser } from "@wdio/globals";
 import { before, describe, it } from "mocha";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { BudgetTracker, type ObservedRun, type RunUsage, type ToolUseCase } from "../../../scripts/eval/tool-use-core";
@@ -77,9 +77,6 @@ describe("tool-use eval", function () {
 
   it("runs every planned case run and records its observation", async function () {
     const caseById = new Map(plan.cases.map((evalCase) => [evalCase.id, evalCase]));
-    // The runner starts every run id with an empty results directory, so the
-    // records this process writes are the whole spend.
-    const budget = new BudgetTracker(plan.budget, plan.prices);
 
     // A dead harness stops the loop: the rest of the plan is written as
     // `harness died` and no more model calls happen (#392 item 5).
@@ -94,10 +91,10 @@ describe("tool-use eval", function () {
         await endTurn();
         await openChatIfNeeded();
 
-        const exceeded = budget.exceeded();
-        const record = exceeded ? skippedRecord(planned, exceeded) : await executeRun(evalCase, planned);
-        budget.add(record);
-        return record;
+        // The runner starts every run id with an empty results directory, so
+        // the records there are the whole spend, of every --parallel instance.
+        const exceeded = sharedBudget().exceeded();
+        return exceeded ? skippedRecord(planned, exceeded) : await executeRun(evalCase, planned);
       },
       writeRecord,
     );
@@ -183,6 +180,24 @@ function writeSessionTrace(planned: PlannedRun, raw: string): void {
   const caseDir = path.join(RESULTS_DIR, planned.caseId);
   mkdirSync(caseDir, { recursive: true });
   writeFileSync(path.join(caseDir, `${planned.run}.session.jsonl`), raw);
+}
+
+/** The spend of every record written so far, by this instance and by its --parallel siblings. */
+function sharedBudget(): BudgetTracker {
+  const budget = new BudgetTracker(plan.budget, plan.prices);
+  if (!existsSync(RESULTS_DIR)) return budget;
+  for (const caseDir of readdirSync(RESULTS_DIR, { withFileTypes: true })) {
+    if (!caseDir.isDirectory()) continue;
+    for (const file of readdirSync(path.join(RESULTS_DIR, caseDir.name))) {
+      if (!/^\d+\.json$/.test(file)) continue;
+      try {
+        budget.add(JSON.parse(readFileSync(path.join(RESULTS_DIR, caseDir.name, file), "utf8")) as RunRecord);
+      } catch {
+        // A sibling is writing this record right now; the next check counts it.
+      }
+    }
+  }
+  return budget;
 }
 
 function writeRecord(record: RunRecord): void {
