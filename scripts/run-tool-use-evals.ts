@@ -184,6 +184,18 @@ function parseCliArgs(argv: string[]): CliArgs {
   };
 }
 
+/** Median case time per case from the suite's committed baseline; empty when there is none. */
+async function baselineCaseMs(suiteName: string): Promise<Map<string, number>> {
+  const file = path.resolve(BASELINE_DIR, baselineFileName(suiteName));
+  if (!existsSync(file)) return new Map();
+  const baseline = (await readJson(file)) as { cases?: Array<{ id?: unknown; medianMs?: unknown }> };
+  return new Map(
+    (baseline.cases ?? [])
+      .filter((entry) => typeof entry.id === "string" && typeof entry.medianMs === "number")
+      .map((entry) => [entry.id as string, entry.medianMs as number]),
+  );
+}
+
 /** `core` and `regression` name the suites in test/evals/tool-use; anything else is a path. */
 function suitePathOf(value: string | undefined): string {
   if (!value) return DEFAULT_SUITE;
@@ -249,7 +261,7 @@ async function main(): Promise<void> {
     const dryRuns = planRuns(cases, runsPerCase);
     process.stdout.write(
       formatDryRun({
-        shards: shardPlan({ cases, runs: dryRuns } as ToolUsePlan, args.parallel),
+        shards: shardPlan({ cases, runs: dryRuns } as ToolUsePlan, args.parallel, await baselineCaseMs(suite.name)),
         suite: { name: suite.name, path: suitePath, model: suite.model },
         cases,
         runsPerCase,
@@ -293,7 +305,7 @@ async function main(): Promise<void> {
       cases: expandFixturePlaceholders(cases, fixture?.url),
       runs: planRuns(cases, runsPerCase),
     };
-    const shards = shardPlan(plan, args.parallel);
+    const shards = shardPlan(plan, args.parallel, await baselineCaseMs(suite.name));
     if (shards.length > 1) plan.parallel = shards.length;
     const planPath = path.join(outDir, "plan.json");
     await writeJson(planPath, plan);

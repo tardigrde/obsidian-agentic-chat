@@ -233,6 +233,16 @@ describe("parallel plan split (#392 item 7)", () => {
     expect(() => shardPlan(whole, 0)).toThrow(/--parallel must be an integer/);
   });
 
+  it("balances by expected time when the baseline knows it: two slow cases go apart", () => {
+    const cases = ["slow1", "slow2", "fast1", "fast2"].map((id) => ({ id }) as ToolUseCase);
+    const runs = planRuns(cases, 3);
+    const ms = new Map([["slow1", 60_000], ["slow2", 90_000], ["fast1", 4_000], ["fast2", 4_000]]);
+    const shards = shardPlan({ cases, runs } as ToolUsePlan, 2, ms);
+    expect(shards.map((shard) => shard.cases.map((entry) => entry.id).sort())).toEqual([["slow2"], ["fast1", "fast2", "slow1"]]);
+    // Without times the split is by run count only.
+    expect(shardPlan({ cases, runs } as ToolUsePlan, 2).map((shard) => shard.runs.length)).toEqual([6, 6]);
+  });
+
   it("balances uneven cases by run count, largest first", () => {
     const cases = ["a", "b", "c", "d"].map((id) => ({ id }) as ToolUseCase);
     const runs = [...planRuns([cases[0]], 6), ...planRuns(cases.slice(1), 2)];
