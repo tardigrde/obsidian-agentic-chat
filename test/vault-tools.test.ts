@@ -699,6 +699,16 @@ describe("delete", () => {
     expect(result.details).not.toHaveProperty("bypassedTrash");
   });
 
+  it("does not report a delete when the existence check fails", async () => {
+    const app = makeApp({ files: { "Note.md": { content: "body" } } });
+    withNoOpSystemTrash(app, new Set(["Note.md"]));
+    (app.vault.adapter as unknown as { exists: () => Promise<boolean> }).exists = async () => {
+      throw new Error("stat failed");
+    };
+
+    await expect(run(getTool(app, "delete"), { path: "Note.md" })).rejects.toThrow(/stat failed/);
+  });
+
   it("removes the note and says so when no trash works", async () => {
     const app = makeApp({ files: { "Note.md": { content: "body" } } });
     const onDisk = new Set(["Note.md"]);

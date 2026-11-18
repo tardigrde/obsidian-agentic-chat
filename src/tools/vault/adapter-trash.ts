@@ -59,16 +59,26 @@ export async function trashVaultEntry(app: App, entry: TAbstractFile): Promise<"
   const isFolder = entry instanceof TFolder;
   await app.fileManager.trashFile(entry);
   const adapter = app.vault.adapter;
-  if (!(await adapterPathExists(adapter, path))) return "trash";
+  if (!(await stillOnDisk(adapter, path))) return "trash";
   try {
     await adapter.trashLocal(path);
   } catch {
     // Fall through to the existence check and permanent removal.
   }
-  if (!(await adapterPathExists(adapter, path))) return "trash";
+  if (!(await stillOnDisk(adapter, path))) return "trash";
   if (isFolder) await adapter.rmdir(path, false);
   else await adapter.remove(path);
   return "removed";
+}
+
+/**
+ * Strict existence check for the trash postcondition: a failed check throws,
+ * so it is never read as "gone". An adapter without `exists` (no disk to
+ * check) trusts `trashFile`.
+ */
+async function stillOnDisk(adapter: App["vault"]["adapter"] | undefined, path: string): Promise<boolean> {
+  if (typeof adapter?.exists !== "function") return false;
+  return (await adapter.exists(path)) === true;
 }
 
 /**
@@ -76,13 +86,30 @@ export async function trashVaultEntry(app: App, entry: TAbstractFile): Promise<"
  * adapter. Returns "removed" if any part bypassed the trash.
  */
 export async function trashTreeFolderRecursive(app: App, folder: TFolder): Promise<"trash" | "removed"> {
-  let disposition: "trash" | "removed" = "trash";
+  const bypassed: string[] = [];
+  await trashTreeInto(app, folder, bypassed);
+  return bypassed.length > 0 ? "removed" : "trash";
+}
+
+/**
+ * Collects every path that bypassed the trash. A failure part way through
+ * names them: a recursive delete has no per-file undo, so the user must know
+ * what is gone for good.
+ */
+async function trashTreeInto(app: App, folder: TFolder, bypassed: string[]): Promise<void> {
+  const step = async (entry: TAbstractFile): Promise<void> => {
+    try {
+      if ((await trashVaultEntry(app, entry)) === "removed") bypassed.push(entry.path);
+    } catch (error) {
+      if (bypassed.length === 0) throw error;
+      throw new Error(`${errorMessage(error)} Already deleted without trash: ${bypassed.join(", ")}.`, { cause: error });
+    }
+  };
   for (const child of [...folder.children]) {
-    const result = child instanceof TFolder ? await trashTreeFolderRecursive(app, child) : await trashVaultEntry(app, child);
-    if (result === "removed") disposition = "removed";
+    if (child instanceof TFolder) await trashTreeInto(app, child, bypassed);
+    else await step(child);
   }
-  if ((await trashVaultEntry(app, folder)) === "removed") disposition = "removed";
-  return disposition;
+  await step(folder);
 }
 
 /** Prefer trash for adapter-level deletes; fall back to permanent removal. */

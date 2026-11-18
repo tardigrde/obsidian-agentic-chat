@@ -145,17 +145,24 @@ export class ChatActions {
     // background tabs have open. Each of those tabs then starts a fresh
     // session instead of appending to a deleted file.
     const background = this.backgroundTabsWithSession();
+    for (const { tab } of background) tab.state.queuedPromptArmed = false;
+    let deleted: number;
     try {
-      const deleted = await this.deps.service().clearSessions();
-      for (const { tab, path } of background) {
-        tab.state.queuedPromptArmed = false;
-        await tab.service.deleteSession(path);
-      }
-      return deleted;
+      deleted = await this.deps.service().clearSessions();
     } catch (error) {
       this.deps.renderErrorMessage(errorMessage(error));
       return -1;
     }
+    // The files are gone now: reset every tab even if one reset fails, and
+    // report the failure without claiming the clear failed.
+    for (const { tab, path } of background) {
+      try {
+        await tab.service.deleteSession(path);
+      } catch (error) {
+        this.deps.renderErrorMessage(`A background tab could not start a fresh conversation: ${errorMessage(error)}`);
+      }
+    }
+    return deleted;
   }
 
   private backgroundTabsWithSession(): Array<{ tab: ChatTab; path: string }> {
