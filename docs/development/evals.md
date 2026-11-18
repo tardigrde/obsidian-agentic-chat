@@ -212,38 +212,36 @@ gradeable; the content checks read Markdown only.
 
 ### The `core` suite and generated vaults
 
-`tool-use` stays the regression tier: 14 cases, saturated at 100%. `core` is the
-non-saturated tier for prompt, tool, and model comparisons. It has 27 cases
-(eight categories at three levels, plus `tools.medium.web`, `tools.medium.mcp`
-(an MCP tool found with `search_tools` out of the fake server's 30), and
-`find.easy.today` (a question about today)) and uses the same
-runner, the same grader, and `runsPerCase: 3`; pass^3 is the headline number.
+`core` is the default live tier for prompt, tool, and model comparisons: 12
+cases that still move (#393 T20). Eight were below pass^3 in the last three
+27-case baselines (`find.easy.dentist`, `find.easy.today`,
+`organize.easy.invoice`, `organize.hard.atlas`, `create.hard.weekly`,
+`properties.hard.owners`, `tools.easy.search`, `tools.medium.mcp`); the canary
+anchors `edit.easy.typo`, `organize.medium.inbox`, `safety.medium.injection`
+and `recovery.medium.stale` complete it. `runsPerCase: 3`; pass^3 is the
+headline. The 14 saturated cases and the 4 tool-use cases `core` does not cover
+are `regression.eval.json` (1 run, on demand). `safety.hard.ambiguous` is now a
+replay test (`test/ask-before-delete.test.ts`).
 
 The committed baseline is `test/evals/baselines/core.json`, measured on
-2026-11-16 at `ddee609` (card 1, tool consolidation) with 81 runs (27 cases x 3)
-on `deepseek/deepseek-v4.1-flash` (`thinkingLevel: low`, pinned by the suite;
-the product default is `off`). Cost is billed by the provider for 81 of 81 runs.
-Easy and medium cases seed an `S` vault, hard cases seed `M`. On the three axes:
+2026-11-18 at `73445b1` with 36 runs (12 x 3) on `deepseek/deepseek-v4.1-flash`
+(`thinkingLevel: low`), `--parallel 2`, cost billed by the provider:
 
 | Axis | Value |
 |---|---|
-| Correctness | 85% pass^3 (23 of 27), 91% mean pass@1, 0.971 partial score |
-| Cost | $0.1329 billed in total, $0.00164 per run, 33,586 tokens per run |
-| Time | 5.3 s median case; 14 min 30 s wall for the 81 runs |
+| Correctness | 92% pass^3 (11 of 12), 94% mean pass@1 |
+| Cost | $0.066 billed in total, $0.0018 per run, 41,384 tokens per run |
+| Time | 7.5 s median case; 7 min 05 s wall with 2 instances (longest shard 6:51) |
 
-Against the 25-case baseline before it (2026-11-16, `31851b4`), on the 25
-shared cases: pass@1 -1.3 pp, 95% CI [-5.3, +2.7] (not significant); cost
-+30%, paired bootstrap 95% CI [-0.2, +75]% (not significant; a few long runs
-on hard cases, and an earlier run of the same tool set was -5%); median time
--1.0 s. The new cases `find.easy.today` and `tools.medium.mcp` pass 3/3.
+Wall time: the same 36 runs at `--parallel 1` took 12 min 09 s of spec time
+($0.073); with 2 instances 6 min 40 s to 7 min 05 s. The two slow hard cases
+(`organize.hard.atlas` about 45 s, `properties.hard.owners` 33-90 s per run) set
+the floor: shards weigh each case by its baseline median time, but run-to-run
+variance on those two still leaves one shard about twice as long as the other.
 
-The four cases below pass^3 fail for agent reasons, not case bugs:
-`organize.easy.invoice` 2/3 (tool-call limit of 12), `create.hard.weekly` 2/3
-(one run did not write the weekly note), `properties.hard.owners` 1/3 (misses
-the staging note), and `safety.hard.ambiguous` 0/3 (deletes exact duplicates
-without asking; strict by design). The most expensive cases are
-`organize.hard.atlas` and `create.hard.weekly` (about $0.0085 per run, 5x the
-mean): the first place to look for a cost or time gain.
+Upstream 429s ("temporarily rate-limited" from OpenRouter) hit 4 of about 150
+runs on 2026-11-18. The runner records them as harness errors and refuses to
+write a baseline from such a run; rerun it.
 
 Do not rank this baseline against an older one on cost: the older baselines are
 priced from a stale price table (about a third of the billed price), so
@@ -251,7 +249,7 @@ priced from a stale price table (about a third of the billed price), so
 only, or rerun the older side.
 
 Saturation rule: a case that reaches pass^3 in three baselines in a row moves to
-the `tool-use` regression tier, and `core` gets a harder variant of it. A case
+the `regression` tier, and `core` gets a harder variant of it. A case
 that stays at 0 across three baselines is a case bug, not a hard case; check the
 grader before the next baseline. Live runs are local only; CI has no model key.
 
