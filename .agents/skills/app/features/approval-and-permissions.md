@@ -58,6 +58,7 @@ await (await modal.$("button=Allow")).click();
 | Background-tab approval badge and label | `src/ui/chat-view.ts#syncTabStrip` | `test/e2e/specs/multi-tab-approval.e2e.ts#surfaces background tab approval with tab badge and session label (no auto-switch)` | `covered` |
 | Closing a tab clears its pending approval | `src/ui/chat-tabs.ts#closeTab` | `test/e2e/specs/multi-tab-approval.e2e.ts#clears pending modal and badge when background tab is closed` | `covered` |
 | Approval modal at phone width | `src/ui/approval-modal.ts#ApprovalModal` | `test/e2e/specs/mobile-viewport.e2e.ts#keeps approval modals visible and touchable at phone width` | `covered` |
+| Approved delete really leaves the vault (system trash that does nothing falls back to `.trash`) | `src/tools/vault/adapter-trash.ts#trashVaultEntry` | `test/e2e/specs/trash-fallback.e2e.ts#the note is gone from the vault when the tool says it moved it to trash` | `covered` |
 
 ## Gotchas
 
